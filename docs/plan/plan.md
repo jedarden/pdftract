@@ -97,7 +97,8 @@ Feature flags control the binary footprint. The default build (`cargo build`) in
 | `phf` | 0.11 | default | Compile-time AGL hash map (zero runtime allocation) |
 | `clap` | 4 | cli | CLI argument parsing |
 | `thiserror` | 1 | default | Error type derivation |
-| `log` + `env_logger` | 0.4 | default | Structured logging |
+| `log` | 0.4 | default | Logging facade |
+| `env_logger` | 0.4 | default | Logging implementation (stderr, RUST_LOG env var) |
 | `image` | 0.25 | ocr | Raster image decoding and DPI-scaled rendering (TIFF/CCITT support requires system libtiff; documented trade-off) |
 | `tesseract` | 0.14 | ocr | Tesseract OCR FFI bindings |
 | `leptonica-plumbing` | 0.4 | ocr | Leptonica image preprocessing (Sauvola, deskew) |
@@ -259,6 +260,8 @@ Build the in-memory document model over the xref-resolved object graph.
 
 **Crates:** `aes`, `rc4` (both via `decrypt` feature), `quick-xml` (moved to `default` feature for conformance detection)
 
+**Outline traversal:** Walk the `/Outlines` linked list: start at `/Root /Outlines /First`; recurse by following each node's `/First` (first child) and `/Next` (next sibling) pointers until null. For each node: (1) decode `/Title` — if the string starts with the UTF-16BE BOM (0xFE 0xFF), decode as UTF-16BE; otherwise decode as PDFDocEncoding (Latin-1 with named character overrides per Table D.2 of the spec); (2) extract `/Dest` (explicit destination array: `[page_ref /XYZ left top zoom]` etc.) or `/A /GoTo /Dest` (action-based destination), recording the page index and anchor type; (3) record `/Count` (positive = expanded, negative = collapsed). Serialize as a recursive `outline` array in the document-level JSON output. A critical test: PDF with 3-level bookmark hierarchy — all levels, titles, and page destinations extracted correctly.
+
 **Critical tests:**
 - Page inheriting MediaBox from grandparent `/Pages` node
 - Page overriding `/Resources /Font` partially (merged, not replaced)
@@ -287,7 +290,7 @@ Decode stream data through its filter pipeline. Called lazily when stream conten
 
 **Filter pipeline:** `/Filter` is a name or array; `/DecodeParms` is aligned or absent. Apply decoders in order. Mismatched lengths: apply defaults, log diagnostic.
 
-**Error recovery:** zlib decompression error mid-stream: return bytes decoded so far, emit `STREAM_DECODE_ERROR` diagnostic. Never abort the page.
+**Error recovery:** zlib decompression error mid-stream: return bytes decoded so far, emit `STREAM_DECODE_ERROR` diagnostic. Never abort the page. **Decompression limit:** The stream decoder enforces `ExtractionOptions.max_decompress_bytes` (default: `2 * 1024^3` = 2 GB per document). Any single stream or cumulative document total that exceeds this limit triggers a `STREAM_BOMB` diagnostic and returns the bytes decoded so far. This limit applies to all modes (CLI, Python, HTTP serve).
 
 **Crates:** `flate2`, `lzw`, `image` (JPX/CCITT raster decode for OCR path) — DCTDecode SOI/EOI marker validation is a 4-byte inline check; no external crate needed
 
@@ -1042,7 +1045,8 @@ pages: Iterator[dict] = pdftract.extract_stream(path: str, **options)
 # Options (keyword arguments mapped to ExtractionOptions):
 # ocr=False, ocr_language=["eng"], include_invisible=False,
 # extract_forms=False, extract_attachments=False, readability_threshold=0.5,
-# password=None
+# password=None, max_decompress_gb=2,
+# full_render=False  # no-op if binary compiled without full-render feature
 
 # Exceptions
 class PdftractError(Exception): ...       # extraction failed
@@ -1088,6 +1092,7 @@ Implement `pdftract serve --port PORT`. Requires `--features serve` at compile t
 | `extract_forms` | boolean | `false` | `ExtractionOptions.extract_forms` |
 | `extract_attachments` | boolean | `false` | `ExtractionOptions.extract_attachments` |
 | `password` | string | `""` | `ExtractionOptions.password` |
+| `full_render` | boolean | `false` | `ExtractionOptions.full_render` (no-op if binary compiled without `full-render` feature) |
 
 **Error responses:**
 
@@ -1105,7 +1110,7 @@ Response body for all error statuses is `{"error":"code","message":"..."}`. A cu
 **Request size limit:** Default 256 MB; configurable via `--max-upload-mb`.
 
 **Security constraints:**
-- **Decompression limit:** The stream decoder (Phase 1.5) enforces a `max_decompressed_bytes` limit (default: 2 GB per document, configurable via `--max-decompress-gb`). Any stream that exceeds this limit emits a `STREAM_BOMB` diagnostic and returns the bytes decoded so far.
+- **Decompression limit:** Configured via `ExtractionOptions.max_decompress_bytes`; exposed in serve mode as the `max_decompress_gb` form field. Also accessible via `--max-decompress-gb` CLI flag and `max_decompress_gb=2` Python keyword arg.
 - **Authentication:** No auth is built in. Deploy behind a reverse proxy (nginx, Traefik) with authentication. The serve mode is not safe to expose directly on a public port without a proxy.
 - **Path parameters:** No file-path parameters are accepted in serve mode — the PDF is always received as a multipart upload. This eliminates path traversal risk.
 
@@ -1223,7 +1228,7 @@ Extract embedded files from PDF portfolios and `/EmbeddedFiles` name trees.
 - From the EF stream dictionary: `/Subtype` (MIME type hint), `/Params` dict → `/Size`, `/CreationDate`, `/ModDate`, `/CheckSum`
 - Decode the stream (applying its filters)
 
-**Size limit:** If attachment stream decoded size > 50 MB, include metadata only and set `data: null` with a `truncated: true` flag.
+**Size limit:** If attachment stream decoded size > 50 MB, include metadata only and set `data: null` with a `truncated: true` flag. When non-null, `data` is the base64-encoded content of the decoded attachment stream (standard alphabet, no line breaks, no padding omitted). The JSON Schema at `docs/schema/v1.0/pdftract.schema.json` must reflect `{"type": "string", "contentEncoding": "base64"}` for this field. In the Python API, `data` is returned as a Python `bytes` object (PyO3 converts from base64 automatically). In the CLI `--text` mode, attachments are not included.
 
 **Portfolio navigator:** Check for `/Collection` entry in catalog; if present, extract portfolio schema and sort fields for richer metadata.
 
@@ -1371,7 +1376,7 @@ Phase 0 is a prerequisite for all subsequent phases — no milestone release can
 
 | Milestone | Phases Complete | Capability |
 |---|---|---|
-| v0.1.0 (Alpha) | 0, 1–4 (incl. 4.7) | CI infrastructure active; vector PDF extraction with readability validation; plain text and JSON output; CLI only; all three primary objective targets must pass |
+| v0.1.0 (Alpha) | 0, 1–4 (incl. 4.7) | CI infrastructure active; vector PDF extraction with readability validation; plain text and JSON output; CLI only; all applicable primary objective targets must pass (OCR speed target excluded until v0.2.0) |
 | v0.2.0 (Beta) | 0, 1–5 | + Scanned PDF OCR; all page classes handled; competitive benchmark suite green |
 | v0.3.0 (RC) | 0, 1–6 | + PyO3 bindings; HTTP serve; full JSON schema; NDJSON streaming |
 | v1.0.0 (Stable) | 0, 1–7 | + StructTree; tables; forms; signatures; attachments; hyperlinks; article threads |
