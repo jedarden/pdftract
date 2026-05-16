@@ -1,36 +1,50 @@
 # pdftract
 
-A PDF text extraction library designed to address the persistent shortcomings of existing tools.
+A PDF text extraction library that gets the hard parts right.
 
-## The problem
+## What it does
 
-Current PDF text extractors — PyMuPDF, pdfplumber, pdfminer, Camelot, Tabula, marker, nougat — cover a lot of ground but share a set of well-known, largely unsolved failures:
+- **Correct reading order** — layout regions are segmented and sequenced before text is emitted, handling multi-column pages, sidebars, footnotes, and mixed-layout documents without relying on PDF operator order
+- **Font encoding recovery** — when `ToUnicode` CMaps are absent, wrong, or incomplete, pdftract works through a layered recovery pipeline: glyph name lookup via the Adobe Glyph List, font fingerprinting against known metrics and embedded checksums, and glyph outline shape matching
+- **Structure tree extraction** — PDF/UA and PDF/A documents encode their logical structure (headings, paragraphs, lists, tables, reading order) in a `StructTree`; pdftract reads this directly when present, producing accurate semantic output at no extra cost
+- **Per-page hybrid routing** — each page is independently classified and routed to the appropriate pipeline: vector text extraction, full OCR, or assisted OCR where vector hints improve raster accuracy
+- **Structured output with provenance** — the primary output is JSON carrying per-span bounding boxes, font name, size, and confidence score alongside the extracted text, not a flat string dump
 
-- **Reading order is broken** for multi-column layouts, sidebars, footnotes, and mixed-layout pages. Most tools dump text in PDF operator order or naive top-to-bottom order.
-- **Font encoding failures** produce silent garbage when PDFs use missing or incorrect `ToUnicode` CMaps, Type3 fonts, or symbol-font abuse for math.
-- **Tagged PDFs are ignored.** PDF/UA and PDF/A documents contain a `StructTree` with explicit logical structure — headings, paragraphs, lists, tables, reading order — that almost no extractor reads.
-- **No confidence or provenance.** Extracted text carries no signal about reliability, bounding box, or font metadata, making downstream filtering and validation impossible.
-- **Hybrid documents are mishandled.** PDFs that mix vector pages and scanned pages are treated as one type throughout, degrading accuracy on both.
-- **Flat output.** Nearly every tool returns a string or character stream. RAG pipelines, LLM preprocessing, and document QA need structured output — sections, headings, tables, figures — not a flat dump.
+## Output
 
-## What pdftract does differently
+```json
+{
+  "pages": [
+    {
+      "page": 1,
+      "blocks": [
+        { "kind": "heading", "text": "Introduction", "bbox": [72, 680, 400, 700] },
+        { "kind": "paragraph", "text": "...", "bbox": [72, 640, 540, 670] }
+      ],
+      "spans": [
+        { "text": "Introduction", "bbox": [72, 680, 400, 700], "font": "Times-Bold", "size": 14.0, "confidence": 0.99 }
+      ]
+    }
+  ],
+  "metadata": { "title": "...", "author": "...", "page_count": 10 }
+}
+```
 
-- Reads `StructTree` when present (PDF/UA, PDF/A) for near-perfect logical structure at zero cost
-- Per-page hybrid routing: each page is independently classified and sent to the right pipeline (vector extraction, full OCR, or assisted OCR where vector text hints improve accuracy)
-- Font encoding recovery via glyph fingerprinting to reconstruct correct Unicode mappings
-- Layout region segmentation for reading order without requiring a full neural OCR pipeline
-- Structured JSON output as the primary interface, with per-span bounding box and confidence score
+## Usage
+
+```
+pdftract extract invoice.pdf            # structured JSON to stdout
+pdftract extract invoice.pdf --text     # plain text to stdout
+pdftract extract invoice.pdf --output out.json
+pdftract serve --port 8080              # HTTP service: POST /extract
+```
 
 ## Architecture
 
-Rust core with PyO3 Python bindings and a CLI binary. The binary can run as a microservice (`pdftract serve`) for container deployments — the container is just the binary in serve mode, not a separate product.
+Rust core with PyO3 Python bindings and a CLI binary. The same binary runs as a command-line tool or as an HTTP microservice — the container deployment is just `pdftract serve`.
 
-```
-pdftract extract invoice.pdf          # stdout JSON
-pdftract extract invoice.pdf --text   # plain text
-pdftract serve --port 8080            # HTTP: POST /extract
-```
+See `docs/research/` for technical deep-dives into the PDF specification, font encoding, glyph Unicode recovery, and tagged PDF structure. See `docs/notes/` for SDK invocation examples in Python, Node.js, Go, Ruby, Java, Rust, and Bash.
 
 ## Status
 
-Early development. See `docs/plan/` for the implementation roadmap and `docs/research/` for analysis of existing tools and approaches.
+Early development. See `docs/plan/` for the implementation roadmap.
