@@ -101,7 +101,7 @@ Feature flags control the binary footprint. The default build (`cargo build`) in
 | `image` | 0.25 | ocr | Raster image decoding and DPI-scaled rendering (TIFF/CCITT support requires system libtiff; documented trade-off) |
 | `tesseract` | 0.14 | ocr | Tesseract OCR FFI bindings |
 | `leptonica-plumbing` | 0.4 | ocr | Leptonica image preprocessing (Sauvola, deskew) |
-| `quick-xml` | 0.36 | ocr | HOCR and XFA XML parsing |
+| `quick-xml` | 0.36 | default | XMP conformance detection (default build); HOCR parsing and XFA parsing (enabled when ocr/python features are active) |
 | `pdfium-render` | 0.8 | full-render | High-fidelity rasterization via PDFium (large native binary — ~20 MB) |
 | `pyo3` | 0.21 | python | Python bindings |
 | `maturin` | build | python | PyO3 wheel packaging |
@@ -142,7 +142,7 @@ Create Argo WorkflowTemplate `pdftract-ci` in `jedarden/declarative-config → k
    - `x86_64-apple-darwin`
    - `aarch64-apple-darwin`
    - `x86_64-pc-windows-gnu`
-2. Run `cargo test --all-features` on `x86_64-unknown-linux-musl`.
+2. Run `cargo test --features default,serve,decrypt` (excludes `ocr` and `python`) on `x86_64-unknown-linux-musl`. Run `cargo test --all-features` on `x86_64-unknown-linux-gnu` using the standard Debian-based Docker image with `apt-get install -y tesseract-ocr libleptonica-dev libtesseract-dev`. This ensures musl cross-compilation is tested for the production binary feature set, while the full test suite (including OCR integration tests) runs on glibc where system libraries are available.
 3. Publish binaries to GitHub Releases on milestone tags via `gh release upload`.
 4. Build the PyO3 wheel via the `pdftract-py-ci` template (separate template, uses a `ghcr.io/rust-cross/manylinux` base image for Linux wheels; `osxcross` toolchain for macOS targets; `cross` with `x86_64-pc-windows-gnu` for the Windows `.whl`). All five triples ship to PyPI on milestone tags.
 
@@ -859,6 +859,20 @@ Classify each page to select the extraction path before any expensive work.
 
 **PageClass output:** `Vector | Scanned | Hybrid | BrokenVector` with `confidence: f32`.
 
+**PageClass → page_type mapping** (internal enum value → JSON output string):
+
+| PageClass (internal) | page_type (JSON output string) |
+|---|---|
+| `Vector` | `"text"` |
+| `Scanned` | `"scanned"` |
+| `Hybrid` | `"mixed"` |
+| `BrokenVector` (pre-OCR; `ocr` feature absent) | `"broken_vector"` |
+| `BrokenVector` (post-OCR; OCR processed successfully) | `"scanned"` |
+| Page with no text and no images | `"blank"` |
+| Page with only image XObjects, no text | `"figure_only"` |
+
+> **Note:** `broken_vector` is a valid `page_type` output value and must be included in `docs/schema/v1.0/pdftract.schema.json`.
+
 **Hybrid detection:** Compute per-region classification: divide page into 8×8 grid cells. Cells with text operators and high validity → vector; cells with image coverage and no text → scanned. If both types present in significant fractions — defined as ≥ 15% each (≥ 10 of 64 grid cells classified as vector AND ≥ 10 classified as scanned) — → `Hybrid`.
 
 **Critical tests:**
@@ -973,7 +987,7 @@ Implement the complete output schema from `docs/research/extraction-output-schem
 - `errors`: all diagnostics emitted during extraction
 
 **Page-level fields (full schema):**
-- `page_index` (0-based integer, canonical for programmatic use), `page_number` (1-based integer, human-facing; always equals `page_index + 1`), `page_label` (string from PDF `/PageLabels` number tree, e.g. `"iv"` or `"A-3"`; absent if the PDF defines no page labels), `width`, `height`, `rotation`, `page_type`
+- `page_index` (0-based integer, canonical for programmatic use), `page_number` (integer, 1-based, = `page_index + 1`; **Phase 6.1 deliverable:** add this field to `docs/research/extraction-output-schema.md` and to `docs/schema/v1.0/pdftract.schema.json`), `page_label` (string from PDF `/PageLabels` number tree, e.g. `"iv"` or `"A-3"`; absent if the PDF defines no page labels), `width`, `height`, `rotation`, `page_type`
 
   > **Naming convention:** `page_index` is the stable, zero-based identifier used in all internal references (e.g., error diagnostics, NDJSON frame ordering). `page_number` is emitted alongside it as a convenience for human-facing display. Both fields are always present. SDK code and downstream tools MUST key on `page_index` for programmatic access; `page_number` is informational only.
 - `spans`: full Span array per schema
