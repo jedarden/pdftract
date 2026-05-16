@@ -57,7 +57,7 @@ The implementation is organized into eight phases. Phase 0 establishes CI infras
 
 - **File I/O:** `memmap2` for zero-copy random access; `madvise(MADV_SEQUENTIAL)` on content streams.
 - **Object cache:** LRU with 4096-entry capacity (`lru` crate); object streams decompressed once and cached as `Arc<[u8]>`.
-- **Parallelism:** `rayon` for page-level parallelism; per-page work is embarrassingly parallel after Stage 1–2 complete.
+- **Parallelism:** `rayon` for page-level parallelism; per-page work is embarrassingly parallel after Phases 1–2 (parser and font pipeline) complete.
 - **Serialization:** `serde` + `serde_json`; `BufWriter` wrapping `io::Stdout` for NDJSON streaming.
 - **Error model:** All parse errors are recoverable and produce diagnostic entries in the `errors` array; no `panic!` in library code.
 - **Crate layout:** `pdftract-core` (lib), `pdftract-cli` (binary), `pdftract-py` (PyO3, optional feature).
@@ -90,12 +90,13 @@ Feature flags control the binary footprint. The default build (`cargo build`) in
 | `serde_json` | 1 | default | JSON output |
 | `indexmap` | 2 | default | Ordered dictionaries (PDF dict key order matters for CMap parsing) |
 | `unicode-normalization` | 0.1 | default | NFC normalization |
+| `sha2` | 0.10 | default | SHA-256 hashing for font program fingerprinting (Level 3 Unicode recovery) |
 | `encoding_rs` | 0.8 | default | CJK encoding decoding (Shift-JIS, GB18030, Big5, EUC-KR) |
 | `phf` | 0.11 | default | Compile-time AGL hash map (zero runtime allocation) |
 | `clap` | 4 | cli | CLI argument parsing |
 | `thiserror` | 1 | default | Error type derivation |
 | `log` + `env_logger` | 0.4 | default | Structured logging |
-| `image` | 0.25 | ocr | Raster image decoding and DPI-scaled rendering |
+| `image` | 0.25 | ocr | Raster image decoding and DPI-scaled rendering (TIFF/CCITT support requires system libtiff; documented trade-off) |
 | `tesseract` | 0.14 | ocr | Tesseract OCR FFI bindings |
 | `leptonica-plumbing` | 0.4 | ocr | Leptonica image preprocessing (Sauvola, deskew) |
 | `quick-xml` | 0.36 | ocr | HOCR and XFA XML parsing |
@@ -109,8 +110,16 @@ Feature flags control the binary footprint. The default build (`cargo build`) in
 | `bytes` | 1 | serve | Zero-copy byte sharing in HTTP path |
 | `aes` | 0.8 | decrypt | AES-128 and AES-256 decryption (RustCrypto, ~50 KB) |
 | `rc4` | 0.1 | decrypt | RC4 decryption (RustCrypto, ~10 KB) |
-| `bloomfilter` | 0.2 | default (conditional) | Bloom filter word list fallback: replaces phf word list in Phase 4.7 if `cargo bloat` reports the phf::Set exceeds 250 KB; ~25 KB for 20k words at 0.1% false-positive rate |
+| `bloomfilter` | 0.2 | wordlist-bloom (optional) | An alternative to the default phf::Set word list. Enable with `--features wordlist-bloom` to replace the phf word list with a Bloom filter if the binary-size CI check fails. Not a default dep — it is a manual authoring decision. ~25 KB for 20k words at 0.1% false-positive rate |
 | `unicode-bidi` | 0.3 | default | Unicode bidi character category lookup for RTL line detection |
+| `strsim` | 0.11 | default | String similarity metrics (Levenshtein) for header/footer cross-page deduplication |
+
+**Build dependencies (Cargo.toml `[build-dependencies]`):**
+
+| Crate | Version | Purpose |
+|---|---|---|
+| `phf_codegen` | 0.11 | Generates compile-time phf maps (AGL, word list, font fingerprints, glyph shapes) from `build.rs` |
+| `serde_json` | 1 | Parses `build/font-fingerprints.json` and `build/glyph-shapes.json` in `build.rs` |
 
 **Removed vs. first draft:** `jpeg-decoder` dropped — DCTDecode is passthrough; SOI/EOI marker validation is a 4-byte check with no external dependency. `whichlang` dropped — language detection is not on the critical accuracy path; BCP-47 lang tags come from PDF `/Lang` attributes and StructTree `/Lang`, not inference.
 
@@ -238,7 +247,7 @@ Build the in-memory document model over the xref-resolved object graph.
 - **Resource dictionary inheritance:** each page gets a fully resolved `ResourceDict` merging all ancestor `/Resources` dicts (font, XObject, ExtGState, ColorSpace, Shading, Pattern, Properties namespaces). Per-key last-write-wins at the page level.
 - **Encryption dictionary** detection: if `/Encrypt` present in trailer, identify handler (`/Standard` vs. custom), extract `/V`, `/R`, `/KeyLength`, `/CF`/`/StmF`/`/StrF` entries. RC4 and AES-128/256 decryption implemented via the `aes` and `rc4` crates (RustCrypto; both gated behind the `decrypt` feature, which is on by default — see Dependency Matrix). Password attempt: empty string first, then user-supplied. On failure: emit `ENCRYPTION_UNSUPPORTED` and abort.
 
-**Optional Content Groups (OCGs):** If `/OCProperties` is present in the catalog, read each OCG's default visibility state from `/OCProperties /D /AS` (application state for `View` intent). During content stream processing (Phase 3), track the `OC` marked content tag: if a `BDC` block carries `/OC /OCGRef`, check the referenced OCG's default state. If `OFF`, suppress all glyphs within the marked content block (they are not extracted). If `ON` or no OCG present, extract normally. Emit `ocg_present: true` in document metadata. Full OCG toggle support (programmatic state changes) is deferred to Phase 7.
+**Optional Content Groups (OCGs):** If `/OCProperties` is present in the catalog, read default visibility from `/OCProperties /D /BaseState` (name value `ON` or `OFF`; defaults to `ON` if absent). Each individual OCG's membership in the default ON or OFF list is given by the arrays `/OCProperties /D /ON` (array of OCG object refs that are ON by default) and `/D /OFF` (OFF by default). An OCG present in neither array inherits `BaseState`. During content stream processing (Phase 3), track the `OC` marked content tag: if a `BDC` block carries `/OC /OCGRef`, check the referenced OCG's default state. If `OFF`, suppress all glyphs within the marked content block (they are not extracted). If `ON` or no OCG present, extract normally. Emit `ocg_present: true` in document metadata. Full OCG toggle support (programmatic state changes) is deferred to Phase 7.
 
 **JavaScript detection:** Record `contains_javascript = true` if any of the following are present: (1) `/OpenAction` value is a JavaScript action dict (`/S /JavaScript`), (2) `/AA` (Additional Actions) at document or page level contains a JavaScript action, (3) any AcroForm field's `/AA` dict contains a JavaScript action, (4) any annotation's `/A` or `/AA` dict contains a JavaScript action. JavaScript is never executed — only its presence is flagged. This check runs during document model construction and costs one dict key scan per object.
 
@@ -265,9 +274,9 @@ Decode stream data through its filter pipeline. Called lazily when stream conten
 | `ASCIIHexDecode` | hand-written | Digit pairs, whitespace ignored, `>` terminator |
 | `RunLengthDecode` | hand-written | Length byte: 0–127 = copy next N+1 bytes literally; 129–255 = repeat next byte 257-N times; 128 = EOD |
 | `DCTDecode` | passthrough | Pass raw JPEG bytes to consumer; validate SOI/EOI markers; log `/ColorTransform` for consumer |
-| `JBIG2Decode` | passthrough | Pass raw JBIG2 bytes; log global stream reference |
-| `JPXDecode` | passthrough | Pass raw JPEG 2000 bytes; for OCR path, decode via `image` crate |
-| `CCITTFaxDecode` | passthrough | Pass raw CCITT bytes; for OCR path, decode via `image` crate |
+| `JBIG2Decode` | passthrough | Pass raw JBIG2 bytes; log global stream reference. For OCR path: requires `full-render` feature (pdfium-render decodes JBIG2 internally). Without `full-render`, emit `OCR_JBIG2_UNSUPPORTED` diagnostic and skip those image regions; JBIG2 is rare in modern PDFs. |
+| `JPXDecode` | passthrough | Pass raw JPEG 2000 bytes. For OCR path: requires `full-render` feature (pdfium-render decodes JPEG 2000 internally) or system `libopenjp2`. Without either, emit `OCR_JPX_UNSUPPORTED` diagnostic and skip the page. |
+| `CCITTFaxDecode` | passthrough | Pass raw CCITT bytes. For OCR path: `image` with `tiff` feature decodes Group 3/4 CCITT; this requires `libtiff` system library. Alternatively, require `full-render` feature. Emit `OCR_CCITT_UNSUPPORTED` if neither is available. |
 | `Crypt` | identity only | `/Name /Identity` handled; custom crypt filters emit `ENCRYPTION_UNSUPPORTED` |
 
 **Filter pipeline:** `/Filter` is a name or array; `/DecodeParms` is aligned or absent. Apply decoders in order. Mismatched lengths: apply defaults, log diagnostic.
@@ -365,9 +374,11 @@ Set `unicode_source = "agl"`, `confidence = 0.9`.
 
 **Level 3: Font fingerprint cache**
 
-Hash the embedded font program (SHA-256 of the raw font program stream bytes). Look up in a bundled database of known font checksums → per-glyph Unicode mapping tables. Initially populated with the most common 200 commercial fonts.
+Hash the embedded font program (SHA-256 of the raw font program stream bytes, computed via the `sha2` crate). Look up in a bundled database of known font checksums → per-glyph Unicode mapping tables. Initially populated with the most common 200 commercial fonts.
 
 **Database spec:** The database is a compile-time `phf::Map<[u8; 32], &'static [(u16, char)]>` where the key is the 32-byte SHA-256 digest of the raw font program stream (the bytes of the `/FontFile`, `/FontFile2`, or `/FontFile3` stream after filter decoding, before any interpretation) and the value is a slice of `(glyph_id, unicode_char)` pairs covering every mapped glyph in that font. The map is generated at build time from a JSON source file (`build/font-fingerprints.json`) by a `build.rs` script that emits the `phf_codegen` output. **Estimated binary footprint:** ~500 KB added to the stripped binary, within the 4 MB default-feature budget (documented here as an approved allocation). **Source:** Initially curated from open-source font metric data — Adobe's publicly available font databases and Google Fonts `cmap` metric exports. The JSON source file is the authoritative artifact; PRs that add new fonts add entries to `build/font-fingerprints.json`. The database is not user-extensible at runtime.
+
+If the font has no embedded program (Standard-14 fonts or fonts with no `/FontFile`, `/FontFile2`, or `/FontFile3`), skip Level 3 and proceed directly to Level 4. Standard-14 fonts are guaranteed to have AGL-compatible glyph names, so Level 3 is normally unreachable for them; this is a defensive guard.
 
 Set `unicode_source = "fingerprint"`, `confidence = 0.85`.
 
@@ -649,7 +660,7 @@ struct Span {
     confidence: f32,         // minimum glyph confidence
     confidence_source: ConfidenceSource,
     lang: Option<Arc<str>>,  // filled in Phase 7 normalization
-    flags: EnumSet<SpanFlag>, // bold, italic, smallcaps, subscript, superscript
+    flags: u8,               // SpanFlags bitmask: bit 0=bold, 1=italic, 2=smallcaps, 3=subscript, 4=superscript
 }
 ```
 
@@ -719,7 +730,7 @@ Group lines into blocks (paragraphs, headings, etc.).
 
 **Block kind assignment (heuristic):**
 - `heading`: font size > 1.2× body median AND line count == 1 (or short)
-- `header`/`footer`: block y0 in top/bottom 7% of page height AND appears on 3+ consecutive pages with identical or near-identical text. **Sequencing note:** Header/footer detection is a sequential post-processing pass executed after all pages are assembled by rayon. The pass iterates over the sorted page list, maintaining a sliding window of the last 4 pages. Blocks in the top/bottom 7% of the page that appear in ≥ 3 consecutive pages with Levenshtein distance ≤ 5% of the text length are classified `header` or `footer`. This pass runs in O(pages × blocks_per_page) and is negligible compared to per-page extraction time.
+- `header`/`footer`: block y0 in top/bottom 7% of page height AND appears on 3+ consecutive pages with identical or near-identical text. **Sequencing note:** Header/footer detection is a sequential post-processing pass executed after all pages are assembled by rayon. The pass iterates over the sorted page list, maintaining a sliding window of the last 4 pages. Blocks in the top/bottom 7% of the page that appear in ≥ 3 consecutive pages with Levenshtein distance ≤ 5% of the text length are classified `header` or `footer`. This pass runs in O(pages × blocks_per_page) and is negligible compared to per-page extraction time. Crate: `strsim` (`strsim::levenshtein` applied at the Unicode char level, not byte level).
 - `paragraph`: default
 - `figure`: bbox contains only image XObjects, no text glyphs
 - `list`: line starts with bullet/numbered pattern (regex: `^\s*[•‣◦\-\*]\s` or `^\s*\d+[\.\)]\s`)
@@ -736,7 +747,7 @@ Group lines into blocks (paragraphs, headings, etc.).
 
 Determine the reading order of blocks within the page.
 
-**Fast path (tagged PDF):** If `is_tagged = true`, defer to Phase 7 StructTree traversal. Set `reading_order_algorithm = "struct_tree"`.
+**Fast path (tagged PDF):** If `is_tagged = true`, defer to Phase 7 StructTree traversal. Set `reading_order_algorithm = "struct_tree"`. Until Phase 7 is implemented (v0.1.0–v0.3.0), `is_tagged = true` pages fall through to XY-cut; `reading_order_algorithm` is set to `'xy_cut'` and a `TAGGED_PDF_STRUCT_TREE_DEFERRED` informational diagnostic is emitted. Phase 7.1 replaces this path.
 
 **XY-cut algorithm (untagged, rectilinear layouts):**
 1. Find the widest vertical whitespace gap dividing the page's text bbox into left and right halves → split into two regions
@@ -799,11 +810,11 @@ Composite score [0.0, 1.0]. Spans below `readability_threshold` (default 0.5, co
 4. **Soft-hyphen removal:** U+00AD (soft hyphen) stripped from output text; it is a formatting hint, not content.
 5. **Word-break normalization:** U+200B (zero-width space), U+FEFF (BOM mid-stream), U+200C/200D (non-joiner/joiner used incorrectly) stripped unless the script requires them (Arabic, Indic).
 
-**Per-page readability score:** Median of span scores, weighted by span character count. Stored in `page.extraction_quality.readability`. If page score < 0.5 and page is `Vector` class, escalate to `BrokenVector` and re-route to assisted OCR path (Phase 5.5).
+**Per-page readability score:** Median of span scores, weighted by span character count. Stored in `page.extraction_quality.readability`. If page score < 0.5 and page is `Vector` class, escalate to `BrokenVector` and re-route to assisted OCR path (Phase 5.5). Prior to Phase 5 availability (v0.1.0 builds compiled without the `ocr` feature), pages escalated to BrokenVector are emitted with `page_type: 'broken_vector'`, `extraction_quality.readability` set to the computed score, and a `BROKENVECTOR_OCR_UNAVAILABLE` diagnostic. No re-extraction is attempted. The OCR escalation path is compiled conditionally via `#[cfg(feature = 'ocr')]`.
 
 **Crates:** `unicode-normalization` (already in default deps)
 
-**Word list:** Embed a minimal 20,000-word English frequency list as a compile-time `phf::Set` (adds ~200 KB to binary; acceptable). Binary size is verified by a CI check: `cargo bloat --release --crates | grep pdftract_wordlist` must report ≤ 250 KB. If the actual size exceeds this, replace the phf::Set with a Bloom filter (`bloomfilter` crate, ~25 KB for 20k words at 0.1% false-positive rate) and accept that ~0.1% of non-words will score as words — negligible impact on readability scoring accuracy. Non-English documents: score only on printable fraction, whitespace distribution, and glyph confidence (skip dict lookup if `lang` attribute indicates non-English).
+**Word list:** Embed a minimal 20,000-word English frequency list as a compile-time `phf::Set` (adds ~200 KB to binary; acceptable). Binary size is verified by a CI check: `cargo bloat --release --crates | grep pdftract_wordlist` must report ≤ 250 KB. If the actual size exceeds this, replace the phf::Set with a Bloom filter (`bloomfilter` crate, ~25 KB for 20k words at 0.1% false-positive rate) and accept that ~0.1% of non-words will score as words — negligible impact on readability scoring accuracy. Non-English documents: score only on printable fraction, whitespace distribution, and glyph confidence (skip dict lookup if `lang` attribute indicates non-English). The `lang` used here is the document-level language from the catalog `/Lang` entry (available from Phase 1.4), not the per-span `lang` field (which is populated in Phase 7). If `/Lang` is absent or non-English (not matching `en*`), the dictionary word signal is set to 1.0 (disabled) for all spans in the document.
 
 **Critical tests:**
 - Span with split ligature `U+FFFD U+0069` adjacent to `f`: repaired to `fi`
@@ -840,7 +851,7 @@ Classify each page to select the extraction path before any expensive work.
 
 **PageClass output:** `Vector | Scanned | Hybrid | BrokenVector` with `confidence: f32`.
 
-**Hybrid detection:** Compute per-region classification: divide page into 8×8 grid cells. Cells with text operators and high validity → vector; cells with image coverage and no text → scanned. If both types present in significant fractions → `Hybrid`.
+**Hybrid detection:** Compute per-region classification: divide page into 8×8 grid cells. Cells with text operators and high validity → vector; cells with image coverage and no text → scanned. If both types present in significant fractions — defined as ≥ 15% each (≥ 10 of 64 grid cells classified as vector AND ≥ 10 classified as scanned) — → `Hybrid`.
 
 **Critical tests:**
 - Pure text PDF: all pages `Vector` with confidence > 0.95
@@ -863,7 +874,9 @@ For `Scanned` and `Hybrid` pages, produce a raster for Tesseract.
 **DPI selection:**
 - Standard body text (font_size > 8pt equivalent): 300 DPI
 - Fine print or small text: 400 DPI
-- Line art / JBIG2 pages: 200 DPI (already binary; higher DPI doesn't help)
+- Line art / JBIG2 pages: 200 DPI (already binary; higher DPI doesn't help) (JBIG2 decoding for OCR requires `full-render` feature; see Phase 1.5 filter notes)
+
+**Hybrid page handling:** For Hybrid pages, Phase 3 content stream extraction runs first on the entire page to capture vector text. OCR runs only on the grid cells with image coverage fraction > 0.80 (identified during Phase 5.1 classification). Results are merged by bounding box: where a vector span's bbox overlaps an OCR span's bbox by > 50%, the vector span is used (higher confidence); non-overlapping regions use whichever source produced text in that area.
 
 **Output:** Grayscale `image::GrayImage` for each page region needing OCR.
 
@@ -874,7 +887,7 @@ For `Scanned` and `Hybrid` pages, produce a raster for Tesseract.
 Apply the preprocessing pipeline before Tesseract invocation.
 
 **Pipeline (in order):**
-1. **Deskew:** Hough line transform on binarized image; compute dominant angle; rotate by negative angle. Skip if detected angle < 0.3° (no meaningful skew).
+1. **Deskew:** Hough line transform on grayscale input via `leptonica-plumbing`'s `pixDeskew`; no pre-binarization required for skew detection. Compute dominant angle; rotate by negative angle. Skip if detected angle < 0.3° (no meaningful skew).
 2. **Contrast normalization:** Histogram stretch to [0, 255]. Applied before binarization to improve threshold quality on unevenly-lit scans. Skip for JBIG2 (already binary).
 3. **Binarization:** Sauvola local adaptive thresholding for physical scans; Otsu global for digital-origin scans. Detect origin via image XObject filter: DCTDecode → Sauvola; JBIG2Decode → already binary, skip.
 4. **Denoising:** 3×3 median filter for salt-and-pepper noise. Skip for JBIG2 (already clean binary).
@@ -941,13 +954,13 @@ Implement the complete output schema from `docs/research/extraction-output-schem
 
 **Document-level fields:**
 - `schema_version: "1.0"`
-- `metadata`: title, author, subject, keywords, creator, producer, creation_date, modification_date, page_count, pdf_version, is_tagged, is_encrypted, conformance, contains_javascript, contains_xfa, generator
+- `metadata`: title, author, subject, keywords, creator, producer, creation_date, modification_date, page_count, pdf_version, is_tagged, is_encrypted, conformance, contains_javascript, contains_xfa, ocg_present, generator
 - `outline`: recursive bookmark tree with title, destination, level
 - `threads`: article thread chains (Phase 7 feature; empty array in Phase 6)
 - `attachments`: from `/EmbeddedFiles` name tree (Phase 7; empty array in Phase 6)
 - `signatures`: digital signature metadata (Phase 7; empty array in Phase 6)
 - `form_fields`: AcroForm fields with values (Phase 7; empty array in Phase 6)
-- `links`: document-scoped URI and internal destination links
+- `links`: document-scoped URI and internal destination links (Phase 7 feature; empty array in Phase 6)
 - `extraction_quality`: aggregate across all pages
 - `errors`: all diagnostics emitted during extraction
 
@@ -957,7 +970,7 @@ Implement the complete output schema from `docs/research/extraction-output-schem
   > **Naming convention:** `page_index` is the stable, zero-based identifier used in all internal references (e.g., error diagnostics, NDJSON frame ordering). `page_number` is emitted alongside it as a convenience for human-facing display. Both fields are always present. SDK code and downstream tools MUST key on `page_index` for programmatic access; `page_number` is informational only.
 - `spans`: full Span array per schema
 - `blocks`: full Block array per schema
-- `annotations`: highlights, stamps, notes, links from `/Annots`
+- `annotations`: highlights, stamps, notes, links from `/Annots` (Phase 7 feature; empty array in Phase 6)
 - `tables`: parallel table structure objects for `kind: table` blocks (Phase 7)
 
 **Crates:** `serde`, `serde_json`
@@ -982,7 +995,7 @@ Implement `--stream` / `ExtractionOptions.streaming = true`.
 **BufWriter:** Wrap `io::Stdout` in `BufWriter<io::Stdout>` with 128 KB buffer; flush after each frame.
 
 **Critical tests:**
-- 100-page document in streaming mode: frame 0 is header, frames 1–100 are pages in order, frame 101 is footer
+- 100-page document in streaming mode: output contains exactly 102 newline-delimited JSON objects: 1 header object (first), 100 page objects (in page_index=0 to page_index=99 order), 1 footer object (last). Each object is complete and valid JSON.
 - Out-of-order page completion: pages buffered and emitted in correct index order
 - Consumer reads frame-by-frame with `newline` delimiter: each frame is valid JSON
 
@@ -1038,7 +1051,16 @@ Implement `pdftract serve --port PORT`. Requires `--features serve` at compile t
 | POST | `/extract/stream` | same | NDJSON stream (Content-Type: application/x-ndjson) |
 | GET | `/health` | none | `{"status":"ok","version":"x.y.z"}` |
 
-**Options via form fields:** `ocr=true`, `ocr_language=eng,fra`, `readability_threshold=0.5`
+**Optional form fields (all endpoints):**
+
+| Field | Type | Default | Maps to |
+|---|---|---|---|
+| `ocr` | boolean | `false` | `ExtractionOptions.ocr` |
+| `ocr_language` | string (comma-separated) | `eng` | `ExtractionOptions.ocr_language` |
+| `readability_threshold` | float | `0.5` | `ExtractionOptions.readability_threshold` |
+| `include_invisible` | boolean | `false` | `ExtractionOptions.include_invisible` |
+| `extract_forms` | boolean | `false` | `ExtractionOptions.extract_forms` |
+| `extract_attachments` | boolean | `false` | `ExtractionOptions.extract_attachments` |
 
 **Error responses:**
 
@@ -1051,7 +1073,7 @@ Implement `pdftract serve --port PORT`. Requires `--features serve` at compile t
 
 Response body for all error statuses is `{"error":"code","message":"..."}`. A custom `RequestBodyLimit` rejection handler is implemented to convert tower-http's default plain-text 413 response to the standard JSON error body `{"error":"REQUEST_TOO_LARGE","message":"Request body exceeds the configured limit"}`.
 
-**Concurrency:** axum handles concurrent requests; rayon thread pool is shared across all requests. No per-request thread spawning.
+**Concurrency:** axum handles concurrent requests; rayon thread pool is shared across all requests. No per-request thread spawning. Each POST handler bridges async and sync via `tokio::task::spawn_blocking(|| extraction_call())`, which runs the synchronous rayon work on tokio's blocking thread pool (separate from the async executor). Rayon provides within-document page-level parallelism; tokio's blocking pool handles per-request concurrency. The rayon global pool size is set to `num_cpus::get()` at startup.
 
 **Request size limit:** Default 256 MB; configurable via `--max-upload-mb`.
 
@@ -1214,6 +1236,10 @@ Integration tests use a corpus of reference PDFs stored in `tests/fixtures/`. Ea
 - `tests/fixtures/encrypted/`: AES-128, AES-256, RC4 encrypted
 - `tests/fixtures/forms/`: AcroForm and XFA documents
 - `tests/fixtures/tagged/`: PDF/UA and PDF/A-a tagged documents
+- `tests/fixtures/encoding/`: fonts with no ToUnicode CMap; verifies Levels 2–4 Unicode recovery; matched against known-good Unicode output
+- `tests/fixtures/perf/`: one or more large (≥100 page) vector PDFs for speed benchmarking; output is validated for correctness but the primary metric is wall-clock time
+
+`tests/fixtures/bench/` (Tier 4) uses the same PDFs as `tests/fixtures/perf/` plus competitor-run results; no separate corpus needed.
 
 ### Tier 3: Regression Corpus (CI only)
 
