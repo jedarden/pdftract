@@ -7,6 +7,46 @@
 
 ---
 
+## Primary Objectives
+
+pdftract must be the **most accurate, fastest, and lightest-weight** PDF text extraction tool available. These are not aspirational — they are acceptance criteria. Every architectural and dependency decision is evaluated against all three in priority order.
+
+### Accuracy targets (acceptance criteria — CI-gated)
+
+| Metric | Target | Measurement |
+|---|---|---|
+| Character error rate, clean vector PDFs | < 0.5% | Against ground-truth corpus, `tests/fixtures/vector/` |
+| Word error rate, clean OCR (300 DPI scans) | < 3% | Against ground-truth corpus, `tests/fixtures/scanned/` |
+| Reading order correctness, multi-column | > 95% | Left column entirely before right column in all fixtures |
+| Unicode recovery rate (no ToUnicode) | > 90% | Font fingerprint + AGL levels 2–4 on `tests/fixtures/encoding/` |
+| Regression gate, real-world corpus | < 0.5% CER delta vs. golden | 500-PDF private corpus on every PR |
+| Text readability score | > 0.85 | Proprietary composite of printable ratio, dict word ratio, ligature repair |
+
+### Speed targets (acceptance criteria — CI-gated)
+
+| Metric | Target | Measurement |
+|---|---|---|
+| 100-page vector PDF, 4-core CI | < 3 seconds | `cargo bench`, `tests/fixtures/perf/` |
+| 10-page scanned PDF (OCR path), 4-core CI | < 30 seconds | includes Tesseract |
+| Single-page extraction latency (serve mode) | < 150 ms p99 | wrk benchmark against `/extract` |
+| Throughput vs. pdfminer.six (Python) | ≥ 10× faster | Benchmarked on identical hardware |
+| Throughput vs. pypdf (Python) | ≥ 5× faster | Same benchmark suite |
+
+### Weight targets (acceptance criteria)
+
+| Metric | Target |
+|---|---|
+| Binary size, default features (no OCR, no serve) | < 4 MB stripped |
+| Binary size, `--features ocr,serve` | < 12 MB stripped |
+| Default dependency count (`cargo tree -d`) | < 20 unique crates |
+| Shared library dependencies (ldd) | Zero beyond libc + libm |
+| Docker image, CLI only | < 20 MB (distroless base) |
+| Docker image, with OCR (`tesseract-ocr` system pkg) | < 120 MB |
+
+Decisions that violate any target require explicit justification and a waiver comment in the relevant section below.
+
+---
+
 ## Overview
 
 pdftract is a Rust PDF text extraction library with a CLI (`pdftract extract`), an HTTP server mode (`pdftract serve`), and a PyO3 Python binding. It extracts Unicode text from PDF files — including scanned pages via OCR — and produces structured JSON, NDJSON, or plain text output. The output schema is defined in `docs/research/extraction-output-schema.md` and is stable at schema version 1.0.
@@ -26,33 +66,48 @@ The implementation is organized into seven phases. Phases 1–4 deliver a workin
 
 ## Dependency Matrix
 
-| Crate | Version | Purpose |
-|---|---|---|
-| `memmap2` | 0.9 | Memory-mapped file access |
-| `flate2` | 1 | FlateDecode / zlib decompression |
-| `lzw` | 0.10 | LZWDecode |
-| `jpeg-decoder` | 0.3 | DCTDecode passthrough validation |
-| `ttf-parser` | 0.21 | TrueType/OpenType glyph metrics and cmap lookup |
-| `owned_ttf_parser` | 0.21 | Arc-safe wrapper for ttf-parser |
-| `lru` | 0.12 | Object cache eviction |
-| `rayon` | 1 | Page-level parallelism |
-| `serde` | 1 | Serialization derive macros |
-| `serde_json` | 1 | JSON output |
-| `indexmap` | 2 | Ordered dictionaries (PDF dict key order matters for some CMap parsing) |
-| `bytes` | 1 | Zero-copy byte slice sharing for object streams |
-| `unicode-normalization` | 0.1 | NFC normalization in Stage 7 |
-| `encoding_rs` | 0.8 | CJK encoding decoding (Shift-JIS, GB18030, Big5, EUC-KR) |
-| `whichlang` | 0.1 | Language detection |
-| `tesseract` | 0.14 | Tesseract OCR FFI bindings |
-| `leptonica-plumbing` | 0.4 | Leptonica image preprocessing (Sauvola, deskew) |
-| `image` | 0.25 | Raster image decoding and DPI-scaled rendering |
-| `pyo3` | 0.21 | Python bindings (optional feature `python`) |
-| `maturin` | build | PyO3 wheel packaging |
-| `axum` | 0.7 | HTTP serve mode |
-| `tokio` | 1 | Async runtime for axum |
-| `clap` | 4 | CLI argument parsing |
-| `thiserror` | 1 | Error type derivation |
-| `log` + `env_logger` | 0.4 | Structured logging |
+Feature flags control the binary footprint. The default build (`cargo build`) includes only the core extraction path. Heavy optional capabilities are behind named features.
+
+**Feature flags:**
+- `default` = `["cli"]` — strips to core + CLI; no OCR, no HTTP, no Python
+- `ocr` — adds Tesseract + Leptonica (system libraries required)
+- `serve` — adds axum + tokio (HTTP server)
+- `python` — adds PyO3 (maturin build)
+- `full-render` — adds pdfium-render (large native binary; improves scanned-page rasterization)
+- `full` = `["ocr", "serve", "python"]`
+
+| Crate | Version | Feature | Purpose |
+|---|---|---|---|
+| `memmap2` | 0.9 | default | Memory-mapped file access |
+| `flate2` | 1 | default | FlateDecode / zlib decompression |
+| `lzw` | 0.10 | default | LZWDecode |
+| `ttf-parser` | 0.21 | default | TrueType/OpenType glyph metrics and cmap lookup |
+| `owned_ttf_parser` | 0.21 | default | Arc-safe wrapper for ttf-parser |
+| `lru` | 0.12 | default | Object cache eviction |
+| `rayon` | 1 | default | Page-level parallelism |
+| `serde` | 1 | default | Serialization derive macros |
+| `serde_json` | 1 | default | JSON output |
+| `indexmap` | 2 | default | Ordered dictionaries (PDF dict key order matters for CMap parsing) |
+| `unicode-normalization` | 0.1 | default | NFC normalization |
+| `encoding_rs` | 0.8 | default | CJK encoding decoding (Shift-JIS, GB18030, Big5, EUC-KR) |
+| `phf` | 0.11 | default | Compile-time AGL hash map (zero runtime allocation) |
+| `clap` | 4 | cli | CLI argument parsing |
+| `thiserror` | 1 | default | Error type derivation |
+| `log` + `env_logger` | 0.4 | default | Structured logging |
+| `image` | 0.25 | ocr | Raster image decoding and DPI-scaled rendering |
+| `tesseract` | 0.14 | ocr | Tesseract OCR FFI bindings |
+| `leptonica-plumbing` | 0.4 | ocr | Leptonica image preprocessing (Sauvola, deskew) |
+| `quick-xml` | 0.36 | ocr | HOCR and XFA XML parsing |
+| `pdfium-render` | 0.8 | full-render | High-fidelity rasterization via PDFium (large native binary — ~20 MB) |
+| `pyo3` | 0.21 | python | Python bindings |
+| `maturin` | build | python | PyO3 wheel packaging |
+| `axum` | 0.7 | serve | HTTP serve mode |
+| `tokio` | 1 | serve | Async runtime for axum |
+| `tower-http` | 0.5 | serve | Request size limiting and tracing |
+| `multer` | 3 | serve | Multipart form parsing |
+| `bytes` | 1 | serve | Zero-copy byte sharing in HTTP path |
+
+**Removed vs. first draft:** `jpeg-decoder` dropped — DCTDecode is passthrough; SOI/EOI marker validation is a 4-byte check with no external dependency. `whichlang` dropped — language detection is not on the critical accuracy path; BCP-47 lang tags come from PDF `/Lang` attributes and StructTree `/Lang`, not inference.
 
 ---
 
@@ -633,6 +688,44 @@ Implement `--text` output as a projection of the block list.
 - Header block: excluded from `--text` output by default
 - Invisible text span: excluded from `--text` output
 
+### 4.7 Text Readability Validation and Correction
+
+**This phase is a primary accuracy differentiator.** Existing extractors emit raw glyph sequences regardless of whether the output text is human-readable. pdftract validates every span and repairs or discards unreadable output, ensuring extracted text can be used directly without downstream cleanup.
+
+**Readability scoring (per-span):**
+
+| Signal | Weight | Threshold |
+|---|---|---|
+| Printable Unicode fraction (non-U+FFFD, non-control) | 0.35 | > 0.95 → good |
+| Dictionary word coverage (English; fast trie lookup) | 0.30 | > 0.60 → good |
+| Whitespace distribution (not all one word, not all spaces) | 0.15 | ratio in [0.05, 0.40] → good |
+| Ligature integrity (no split ligatures: fi, fl, ffi, ffl) | 0.10 | 0 split ligatures → good |
+| Glyph confidence floor (from Phase 2) | 0.10 | min confidence > 0.6 → good |
+
+Composite score [0.0, 1.0]. Spans below `readability_threshold` (default 0.5, configurable) are flagged `readability: "low"`.
+
+**Correction pipeline (applied before flagging):**
+
+1. **Ligature repair:** If `fi`, `fl`, `ffi`, `ffl`, `ff` appear as adjacent U+FFFD + glyph (Phase 2 glyph level missed the ligature but position data shows adjacency < 0.1pt gap), reconstruct the ligature string from shape-matched component glyphs.
+2. **Hyphenation repair:** End-of-line hyphen (`-\n` at right edge of column) joined with start of next line's first word. Strip the hyphen; concatenate. Applies only within the same block; do not join across block boundaries.
+3. **Mojibake detection:** If the span contains sequences characteristic of Latin-1 interpreted as UTF-8 (e.g., `Ã©` for `é`), attempt re-decoding via `encoding_rs` and accept if readability score improves.
+4. **Soft-hyphen removal:** U+00AD (soft hyphen) stripped from output text; it is a formatting hint, not content.
+5. **Word-break normalization:** U+200B (zero-width space), U+FEFF (BOM mid-stream), U+200C/200D (non-joiner/joiner used incorrectly) stripped unless the script requires them (Arabic, Indic).
+
+**Per-page readability score:** Median of span scores, weighted by span character count. Stored in `page.extraction_quality.readability`. If page score < 0.5 and page is `Vector` class, escalate to `BrokenVector` and re-route to assisted OCR path (Phase 5.5).
+
+**Crates:** `unicode-normalization` (already in default deps)
+
+**Word list:** Embed a minimal 20,000-word English frequency list as a compile-time `phf::Set` (adds ~200 KB to binary; acceptable). Non-English documents: score only on printable fraction, whitespace distribution, and glyph confidence (skip dict lookup if `lang` attribute indicates non-English).
+
+**Critical tests:**
+- Span with split ligature `U+FFFD U+0069` adjacent to `f`: repaired to `fi`
+- Hyphenated word spanning line break: joined correctly, hyphen stripped
+- Latin-1 mojibake `Ã©` → corrected to `é` when re-decode raises readability score
+- Page readability < 0.5 on vector page: page re-classified to BrokenVector, OCR invoked
+- Non-English page (Chinese): dict-word signal disabled; score driven by printable fraction + confidence
+- 20,000-word phf::Set lookup: < 100 ns per word (benchmark assertion)
+
 ---
 
 ## Phase 5: OCR Integration
@@ -672,7 +765,11 @@ Classify each page to select the extraction path before any expensive work.
 
 For `Scanned` and `Hybrid` pages, produce a raster for Tesseract.
 
-**Rendering approach:** Use a PDF rendering backend to rasterize the page. Prefer `pdfium-render` (Chromium's PDFium, FOSS binary available) for rendering fidelity. Fall back to compositing the image XObjects directly using their decoded pixel data and the XObject's placement matrix when a full renderer is not available.
+**Rendering approach — two-tier:**
+
+**Default (no `full-render` feature):** Direct image compositing. Collect all image XObjects on the page, decode each (Phase 1.5 stream decoder), and composite them onto a blank canvas using each XObject's placement matrix (CTM from `cm` and `Do` operators). This path has zero additional binary cost and handles > 90% of scanned PDFs correctly (those where the scan is a single full-page image).
+
+**`full-render` feature:** `pdfium-render` (wraps Chromium's PDFium). Use when the page has complex rendering geometry — multiple overlapping images, image masks, soft masks — where compositing gets the wrong result. Binary cost: ~20 MB native library (tracked against the weight target; document in PR if this feature is enabled in the default Docker image). Enable with `--features full-render` at compile time or set `ExtractionOptions.full_render = true` at runtime (feature must be compiled in).
 
 **DPI selection:**
 - Standard body text (font_size > 8pt equivalent): 300 DPI
@@ -681,7 +778,7 @@ For `Scanned` and `Hybrid` pages, produce a raster for Tesseract.
 
 **Output:** Grayscale `image::GrayImage` for each page region needing OCR.
 
-**Crates:** `pdfium-render` (optional feature), `image`
+**Crates:** `image` (default `ocr` feature), `pdfium-render` (`full-render` feature only)
 
 ### 5.3 Image Preprocessing
 
@@ -835,7 +932,7 @@ class EncryptionError(PdftractError): ... # encrypted, no password
 
 ### 6.4 HTTP Serve Mode
 
-Implement `pdftract serve --port PORT`.
+Implement `pdftract serve --port PORT`. Requires `--features serve` at compile time (`axum` + `tokio` are not in the default build — they add ~2 MB to the binary). The pre-built release binaries for the `serve` Docker image are compiled with `--features ocr,serve`.
 
 **Endpoints:**
 
@@ -998,7 +1095,7 @@ Each module has unit tests covering the critical test cases listed per phase abo
 Integration tests use a corpus of reference PDFs stored in `tests/fixtures/`. Each fixture has a corresponding expected-output JSON file. Tests verify:
 - Exact text content match (for clean vector PDFs)
 - Schema validity (all output against JSON Schema)
-- Performance: extraction of a 100-page PDF completes in < 5 seconds on a 4-core CI machine
+- Performance: extraction of a 100-page vector PDF completes in **< 3 seconds** on a 4-core CI machine (failure = CI block)
 
 **Fixture categories:**
 - `tests/fixtures/vector/`: clean LaTeX, Word, InDesign outputs
@@ -1013,6 +1110,27 @@ Integration tests use a corpus of reference PDFs stored in `tests/fixtures/`. Ea
 
 A private corpus of 500 real-world PDFs from diverse sources runs on every PR. Output is compared against a golden snapshot using a character-level diff. Any regression > 0.5% character error rate blocks the PR.
 
+### Tier 4: Competitive Benchmarks (CI, tracked over time)
+
+Benchmark suite runs `pdftract`, `pdfminer.six`, `pypdf`, and `pdfplumber` against identical fixture PDFs on the same CI machine. Results are stored as a JSON artifact per commit so regressions are detectable.
+
+**Metrics tracked per tool per fixture:**
+- Wall-clock extraction time (mean of 5 runs)
+- Peak RSS (resident set size)
+- Character error rate vs. ground truth
+- Reading order correctness score
+
+**Minimum passing bar (blocks PR if missed):**
+- pdftract must be ≥ 5× faster than `pdfminer.six` on vector PDFs
+- pdftract CER must be ≤ `pdfminer.six` CER on all fixture categories
+- pdftract binary (default features) must be ≤ 4 MB stripped
+
+**Benchmark fixtures** (`tests/fixtures/bench/`):
+- `vector-10.pdf`, `vector-100.pdf`: clean LaTeX output
+- `cjk-20.pdf`: mixed CJK
+- `two-column-academic.pdf`: multi-column reading order
+- `scanned-5.pdf`: physical scan (OCR path only in pdftract)
+
 ---
 
 ## Phase Dependencies and Sequencing
@@ -1021,8 +1139,9 @@ A private corpus of 500 real-world PDFs from diverse sources runs on every PR. O
 Phase 1 (Core Parser)
   └─► Phase 2 (Font Pipeline)
         └─► Phase 3 (Content Stream)
-              └─► Phase 4 (Text Assembly)   ← Plain text output works here
-                    └─► Phase 5 (OCR)       ← Scanned PDFs work here
+              └─► Phase 4 (Text Assembly)
+                    ├─ 4.7 Readability Validation ← feeds back into 5.1 page classification
+                    └─► Phase 5 (OCR)       ← Scanned PDFs work here; 4.7 escalates broken-vector pages here
                           └─► Phase 6 (API) ← PyO3, HTTP, full JSON schema
                                 └─► Phase 7 (Advanced)
                                       ├─ 7.1 StructTree (independent)
@@ -1040,8 +1159,8 @@ Phase 7 sub-tasks are independent of each other and can be assigned to separate 
 
 | Milestone | Phases Complete | Capability |
 |---|---|---|
-| v0.1.0 (Alpha) | 1–4 | Vector PDF extraction; plain text and JSON output; CLI only |
-| v0.2.0 (Beta) | 1–5 | + Scanned PDF OCR; all page classes handled |
+| v0.1.0 (Alpha) | 1–4 (incl. 4.7) | Vector PDF extraction with readability validation; plain text and JSON output; CLI only; all three primary objective targets must pass |
+| v0.2.0 (Beta) | 1–5 | + Scanned PDF OCR; all page classes handled; competitive benchmark suite green |
 | v0.3.0 (RC) | 1–6 | + PyO3 bindings; HTTP serve; full JSON schema; NDJSON streaming |
 | v1.0.0 (Stable) | 1–7 | + StructTree; tables; forms; signatures; attachments |
 
