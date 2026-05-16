@@ -51,7 +51,7 @@ Decisions that violate any target require explicit justification and a waiver co
 
 pdftract is a Rust PDF text extraction library with a CLI (`pdftract extract`), an HTTP server mode (`pdftract serve`), and a PyO3 Python binding. It extracts Unicode text from PDF files — including scanned pages via OCR — and produces structured JSON, NDJSON, or plain text output. The output schema is defined in `docs/research/extraction-output-schema.md` and is stable at schema version 1.0.
 
-The implementation is organized into seven phases. Phases 1–4 deliver a working vector-extraction CLI. Phase 5 adds OCR. Phase 6 adds the full API surface (PyO3, HTTP). Phase 7 adds advanced features that require the Phase 1–4 foundation.
+The implementation is organized into eight phases. Phase 0 establishes CI infrastructure (prerequisite). Phases 1–4 deliver a working vector-extraction CLI. Phase 5 adds OCR. Phase 6 adds the full API surface (PyO3, HTTP). Phase 7 adds advanced features that require the Phase 1–4 foundation.
 
 ### Key architectural decisions (baked in from the start)
 
@@ -69,7 +69,8 @@ The implementation is organized into seven phases. Phases 1–4 deliver a workin
 Feature flags control the binary footprint. The default build (`cargo build`) includes only the core extraction path. Heavy optional capabilities are behind named features.
 
 **Feature flags:**
-- `default` = `["cli"]` — strips to core + CLI; no OCR, no HTTP, no Python
+- `default` = `["cli", "decrypt"]` — strips to core + CLI + encryption; no OCR, no HTTP, no Python
+- `decrypt` — RC4 and AES-128/256 decryption (RustCrypto crates; part of the default feature set because encryption handling is core, not optional)
 - `ocr` — adds Tesseract + Leptonica (system libraries required)
 - `serve` — adds axum + tokio (HTTP server)
 - `python` — adds PyO3 (maturin build)
@@ -106,8 +107,35 @@ Feature flags control the binary footprint. The default build (`cargo build`) in
 | `tower-http` | 0.5 | serve | Request size limiting and tracing |
 | `multer` | 3 | serve | Multipart form parsing |
 | `bytes` | 1 | serve | Zero-copy byte sharing in HTTP path |
+| `aes` | 0.8 | decrypt | AES-128 and AES-256 decryption (RustCrypto, ~50 KB) |
+| `rc4` | 0.1 | decrypt | RC4 decryption (RustCrypto, ~10 KB) |
+| `bloomfilter` | 0.2 | default (conditional) | Bloom filter word list fallback: replaces phf word list in Phase 4.7 if `cargo bloat` reports the phf::Set exceeds 250 KB; ~25 KB for 20k words at 0.1% false-positive rate |
+| `unicode-bidi` | 0.3 | default | Unicode bidi character category lookup for RTL line detection |
 
 **Removed vs. first draft:** `jpeg-decoder` dropped — DCTDecode is passthrough; SOI/EOI marker validation is a 4-byte check with no external dependency. `whichlang` dropped — language detection is not on the critical accuracy path; BCP-47 lang tags come from PDF `/Lang` attributes and StructTree `/Lang`, not inference.
+
+---
+
+## Phase 0: CI Infrastructure (Prerequisite)
+
+**Goal:** Establish the Argo Workflows CI pipeline required by all subsequent phases. Binary releases and Python wheel builds are automated from day one; no milestone can ship without this.
+**Complexity:** Medium
+**Estimate:** 3–5 days
+**Delivers:** `pdftract-ci` and `pdftract-py-ci` WorkflowTemplates active in `iad-ci`; milestone tags trigger automated releases to GitHub Releases and PyPI.
+
+Create Argo WorkflowTemplate `pdftract-ci` in `jedarden/declarative-config → k8s/iad-ci/argo-workflows/`. The template must:
+
+1. Build the Rust binary for five targets using `cross` (Docker-based cross-compilation):
+   - `x86_64-unknown-linux-musl`
+   - `aarch64-unknown-linux-musl`
+   - `x86_64-apple-darwin`
+   - `aarch64-apple-darwin`
+   - `x86_64-pc-windows-gnu`
+2. Run `cargo test --all-features` on `x86_64-unknown-linux-musl`.
+3. Publish binaries to GitHub Releases on milestone tags via `gh release upload`.
+4. Build the PyO3 wheel via the `pdftract-py-ci` template (separate template, uses a `ghcr.io/rust-cross/manylinux` base image for Linux wheels; `osxcross` toolchain for macOS targets; `cross` with `x86_64-pc-windows-gnu` for the Windows `.whl`). All five triples ship to PyPI on milestone tags.
+
+**Phase 0 must be complete before Phase 1 code review begins.**
 
 ---
 
@@ -144,6 +172,7 @@ Tokenize the raw byte slice into PDF tokens. This is the lowest layer; all highe
 - Hex string with odd length: `<4>` → `\x40`
 - Name with `#20` → space character
 - Name with `#00` → rejected (NUL in name is invalid per spec; emit diagnostic)
+- Name object length limit: 127 bytes, applied to the raw byte count in the file before `#XX` hex escape expansion, matching PDF spec section 7.3.5; if exceeded, truncate the name at 127 bytes and emit `STRUCT_INVALID_NAME` diagnostic
 - Whitespace-only file → empty token stream, no panic
 
 ### 1.2 Object Parser
@@ -168,7 +197,7 @@ Parse the token stream into the PDF object model.
 - Object streams (`/ObjStm`): decompress once, parse all embedded objects, cache them under their object numbers
 - Circular reference guard: track in-resolution set per thread; emit `STRUCT_CIRCULAR_REF` diagnostic and return `PdfNull` on cycle
 
-**Crates:** `indexmap` (dict), `bytes` (object stream caching)
+**Crates:** `indexmap` (dict), std `Arc<[u8]>` (object stream caching — no external crate needed)
 
 **Critical tests:**
 - Nested dict: `<< /A << /B 1 >> >>` — correct inner dict
@@ -188,6 +217,8 @@ Build the complete object → byte-offset map from the file's xref structure.
 
 **Incremental updates:** When `/Prev` is present in a trailer, recursively load the previous xref revision; later revisions override earlier entries for the same object number. This handles incremental saves, linearized files, and comment-editing workflows.
 
+**Linearized PDF detection:** Check for a `/Linearized` dictionary in the first object of the file (object at byte offset 0 or nearby). If found: (1) parse the partial xref at the beginning of the file (the 'first-page xref'), (2) parse the complete xref at the end of the file (the 'full xref'), (3) merge them with the full xref taking precedence for any object number present in both. The hint stream (`/H` entry in the Linearized dict) is parsed for page offset hints to accelerate random-access page loading but is not required for correctness. The forward scan fallback is disabled for linearized files (it would find the partial leading xref and stop).
+
 **Crates:** `flate2` (xref stream decompression)
 
 **Critical tests:**
@@ -205,9 +236,13 @@ Build the in-memory document model over the xref-resolved object graph.
 - **Document catalog** from `/Root`: record `/Pages`, `/Outlines`, `/MarkInfo`, `/StructTreeRoot`, `/AcroForm`, `/Names`, `/Metadata`, `/PageLabels`, `/OCProperties`
 - **Page tree** (`/Pages` subtree): flatten into a `Vec<PageDict>` with inherited attributes resolved (MediaBox, CropBox, BleedBox, TrimBox, ArtBox, Resources, Rotate). Inheritance walk: page dict overrides parent dict; root `/Pages` is the ultimate fallback.
 - **Resource dictionary inheritance:** each page gets a fully resolved `ResourceDict` merging all ancestor `/Resources` dicts (font, XObject, ExtGState, ColorSpace, Shading, Pattern, Properties namespaces). Per-key last-write-wins at the page level.
-- **Encryption dictionary** detection: if `/Encrypt` present in trailer, identify handler (`/Standard` vs. custom), extract `/V`, `/R`, `/KeyLength`, `/CF`/`/StmF`/`/StrF` entries. RC4 and AES-128/256 decryption. Password attempt: empty string first, then user-supplied. On failure: emit `ENCRYPTION_UNSUPPORTED` and abort.
+- **Encryption dictionary** detection: if `/Encrypt` present in trailer, identify handler (`/Standard` vs. custom), extract `/V`, `/R`, `/KeyLength`, `/CF`/`/StmF`/`/StrF` entries. RC4 and AES-128/256 decryption implemented via the `aes` and `rc4` crates (RustCrypto; both gated behind the `decrypt` feature, which is on by default — see Dependency Matrix). Password attempt: empty string first, then user-supplied. On failure: emit `ENCRYPTION_UNSUPPORTED` and abort.
 
-**Crates:** none beyond the parser layer
+**Optional Content Groups (OCGs):** If `/OCProperties` is present in the catalog, read each OCG's default visibility state from `/OCProperties /D /AS` (application state for `View` intent). During content stream processing (Phase 3), track the `OC` marked content tag: if a `BDC` block carries `/OC /OCGRef`, check the referenced OCG's default state. If `OFF`, suppress all glyphs within the marked content block (they are not extracted). If `ON` or no OCG present, extract normally. Emit `ocg_present: true` in document metadata. Full OCG toggle support (programmatic state changes) is deferred to Phase 7.
+
+**JavaScript detection:** Record `contains_javascript = true` if any of the following are present: (1) `/OpenAction` value is a JavaScript action dict (`/S /JavaScript`), (2) `/AA` (Additional Actions) at document or page level contains a JavaScript action, (3) any AcroForm field's `/AA` dict contains a JavaScript action, (4) any annotation's `/A` or `/AA` dict contains a JavaScript action. JavaScript is never executed — only its presence is flagged. This check runs during document model construction and costs one dict key scan per object.
+
+**Crates:** `aes`, `rc4` (both via `decrypt` feature)
 
 **Critical tests:**
 - Page inheriting MediaBox from grandparent `/Pages` node
@@ -239,7 +274,7 @@ Decode stream data through its filter pipeline. Called lazily when stream conten
 
 **Error recovery:** zlib decompression error mid-stream: return bytes decoded so far, emit `STREAM_DECODE_ERROR` diagnostic. Never abort the page.
 
-**Crates:** `flate2`, `lzw`, `jpeg-decoder` (JPEG validation only), `image` (JPX/CCITT raster decode for OCR path)
+**Crates:** `flate2`, `lzw`, `image` (JPX/CCITT raster decode for OCR path) — DCTDecode SOI/EOI marker validation is a 4-byte inline check; no external crate needed
 
 **Critical tests:**
 - FlateDecode with PNG predictor 15 (per-row): all six predictor types appear in one stream, all decoded correctly
@@ -288,7 +323,7 @@ Load and classify the font from the resource dictionary.
 | `TrueType` | `/FontFile2` | `/Widths` array; `hmtx` for verification |
 | `Type0` (composite) | Descendant CIDFont | `/DW`, `/W` array in CIDFont dict |
 | `CIDFontType0` | `/FontFile3` (`/CIDFontType0C`) | `/DW`, `/W` |
-| `CIDFontType2` | `/FontFile2` or `/FontFile3` (`/OpenType`) | `/DW`, `/W` |
+| `CIDFontType2` | `/FontFile2` or `/FontFile3` (`/OpenType`) | `/DW`, `/W` — `/CIDToGIDMap` may be the name `/Identity` (GID==CID) or a stream (decoded as 2-byte big-endian GID array) |
 | `Type3` | `/CharProcs` content streams | `/Widths` |
 | OpenType (CFF) | `/FontFile3` (`/OpenType`) | `hhea`/`hmtx` via `ttf-parser` |
 
@@ -300,6 +335,7 @@ Load and classify the font from the resource dictionary.
 - Standard 14 font (no embedding): correct metrics returned without font file
 - Subset font `ABCDEF+Times-Roman`: stripped to `Times-Roman`, standard metrics used
 - CIDFontType2 with `/CIDToGIDMap /Identity`: GID == CID for all lookups
+- CIDFontType2 with `/CIDToGIDMap` as a stream: decode the stream (FlateDecode), interpret as a flat array of 2-byte big-endian GID values indexed by CID (`CIDToGIDMap[CID*2 .. CID*2+2]` → GID); array length is 2 × (max CID + 1)
 - OpenType CFF font: metrics via `ttf-parser`'s CFF support
 
 ### 2.2 Encoding Resolution
@@ -329,13 +365,15 @@ Set `unicode_source = "agl"`, `confidence = 0.9`.
 
 **Level 3: Font fingerprint cache**
 
-Hash the embedded font program (SHA-256 of the font stream bytes). Look up in a bundled database of known font checksums → per-glyph Unicode mapping tables. Initially populated with the most common 200 commercial fonts.
+Hash the embedded font program (SHA-256 of the raw font program stream bytes). Look up in a bundled database of known font checksums → per-glyph Unicode mapping tables. Initially populated with the most common 200 commercial fonts.
+
+**Database spec:** The database is a compile-time `phf::Map<[u8; 32], &'static [(u16, char)]>` where the key is the 32-byte SHA-256 digest of the raw font program stream (the bytes of the `/FontFile`, `/FontFile2`, or `/FontFile3` stream after filter decoding, before any interpretation) and the value is a slice of `(glyph_id, unicode_char)` pairs covering every mapped glyph in that font. The map is generated at build time from a JSON source file (`build/font-fingerprints.json`) by a `build.rs` script that emits the `phf_codegen` output. **Estimated binary footprint:** ~500 KB added to the stripped binary, within the 4 MB default-feature budget (documented here as an approved allocation). **Source:** Initially curated from open-source font metric data — Adobe's publicly available font databases and Google Fonts `cmap` metric exports. The JSON source file is the authoritative artifact; PRs that add new fonts add entries to `build/font-fingerprints.json`. The database is not user-extensible at runtime.
 
 Set `unicode_source = "fingerprint"`, `confidence = 0.85`.
 
 **Level 4: Glyph shape recognition**
 
-Render the glyph to a 32×32 grayscale bitmap using the font program. Hash the bitmap with a perceptual hash. Look up in a bundled shape→Unicode database (see Phase 2.3).
+Render the glyph to a 32×32 grayscale bitmap using the font program. Hash the bitmap with a perceptual hash. Look up in a bundled shape→Unicode database (see `docs/research/glyph-recognition-and-unicode-recovery.md` and Phase 2.5).
 
 Set `unicode_source = "shape_match"`, `confidence = 0.7`.
 
@@ -396,6 +434,20 @@ Type 3 fonts define each glyph as a content stream in `/CharProcs`. No standard 
 - Type 3 glyph stream that invokes a form XObject: recursive processing without stack overflow
 - `/FontMatrix [0.001 0 0 0.001 0 0]`: advances scaled to 1/1000 of text units (matches Type 1)
 
+### 2.5 Glyph Shape Database
+
+The glyph shape database backs Level 4 shape recognition in Phase 2.2 and the Type 3 shape fallback in Phase 2.4. Full methodology is documented in `docs/research/glyph-recognition-and-unicode-recovery.md`.
+
+**Perceptual hash algorithm:** Each glyph outline is rasterized to a 32×32 grayscale bitmap using `ttf-parser`'s outline rasterizer (for TrueType/OpenType glyphs) or the Type 3 content stream renderer (for Type 3 glyphs). The bitmap is then hashed using pHash (perceptual hash): apply a 32×32 DCT, retain the top-left 8×8 AC coefficients (64 values), threshold against the median of those 64 values to produce a 64-bit integer. This yields a scale-invariant hash robust to minor rendering differences.
+
+**Database format:** A compile-time `phf::Map<u64, char>` where the key is the 64-bit pHash and the value is the most common Unicode character that glyph renders as. Generated at build time from a JSON source file (`build/glyph-shapes.json`) via `build.rs` and `phf_codegen`.
+
+**Collision handling:** When two database entries have pHash values within Hamming distance ≤ 8 bits of the query hash, the entry with the lower Hamming distance is selected. If two entries are tied at equal distance, the one with the higher Unicode frequency rank (from the source JSON's `frequency` field) is used. The winning character is returned with `confidence = 0.7`; if no entry falls within the 8-bit threshold, fall through to failure (U+FFFD).
+
+**Estimated binary footprint:** ~300 KB for approximately 5,000 common glyphs (covering Latin, Greek, Cyrillic, common symbols, and extended Latin). Within the 4 MB default-feature budget.
+
+**Source:** Glyph bitmaps are rendered from open-source fonts (Google Fonts corpus, SIL Open Font License fonts) and hashed offline. The JSON source file is the authoritative artifact; new glyphs are added by re-running the offline hash pipeline and updating `build/glyph-shapes.json`.
+
 ---
 
 ## Phase 3: Content Stream Processing
@@ -426,6 +478,20 @@ text_rendering_mode: u8  -- Tr (0–7)
 fill_color: Color
 stroke_color: Color
 ```
+
+**`Color` type definition:** The `fill_color` and `stroke_color` fields above use the following enum, which covers all PDF color spaces relevant to text extraction:
+
+```rust
+enum Color {
+    DeviceGray(f32),           // 0.0–1.0
+    DeviceRGB([f32; 3]),       // 0.0–1.0 each
+    DeviceCMYK([f32; 4]),      // 0.0–1.0 each
+    Spot(Arc<str>, f32),       // (colorant name, tint 0.0–1.0)
+    Other,                     // CalRGB, ICCBased, Pattern — treated as transparent
+}
+```
+
+CSS hex conversion rule for the `color` field in the Span output: `DeviceRGB → #rrggbb`; `DeviceGray(v) → DeviceRGB([v,v,v]) → #rrggbb`; `DeviceCMYK([c,m,y,k]) → approximate RGB via standard formula → #rrggbb`; `Spot` and `Other → null` in the JSON output (not serialized as a color string).
 
 **Stack operators:** `q` pushes a clone of the current state; `Q` pops. Stack depth limit: 64 (per spec); deeper push emits `GSTATE_STACK_OVERFLOW` diagnostic and discards the push (safe failure).
 
@@ -481,6 +547,11 @@ Parse text-showing operators and produce `Glyph` structs.
 
 **Word boundary threshold (adaptive):** Initial threshold = 0.25 * font_size. After processing 20 glyphs, compute the median actual inter-glyph gap and adjust the threshold to 1.5× that median. This adapts to per-document spacing norms. See `docs/research/word-boundary-reconstruction.md` for full formula including Tc, Tw, Tz corrections.
 
+Three implementation requirements:
+- **(a) Comparison space:** The threshold comparison is performed in **text space** (before applying the CTM). Use the glyph's advance width and gap as computed from the text matrix only; do not transform to device space before comparing.
+- **(b) Recalibration window scope:** The 20-glyph recalibration window is **reset on every font switch** (`Tf` operator). Each new font starts fresh with zero samples and the fixed initial threshold.
+- **(c) Bootstrap behavior:** For the **first 20 glyphs** after a font switch (or at stream start), use the fixed initial threshold of `0.25 × font_size` with no recalibration. Recalibration begins only after the 21st glyph in the current font has been processed.
+
 **TJ kerning:** Numeric elements in a TJ array adjust the text position by `-n/1000 * font_size * Tz/100` (negative n = kern closer, positive = move apart). Large positive values (> 0.2 * font_size) produce word boundaries.
 
 **Glyph struct:**
@@ -495,6 +566,7 @@ struct Glyph {
     rendering_mode: u8,
     fill_color: Color,
     is_word_boundary: bool,  // synthetic space injected before this glyph
+    mcid: Option<u32>,       // MCID of innermost enclosing marked content sequence; populated during Phase 3.4 marked content tracking
 }
 ```
 
@@ -581,6 +653,17 @@ struct Span {
 }
 ```
 
+**`ConfidenceSource` enum → output schema string mapping:**
+```
+ConfidenceSource enum → schema string:
+  unicode_source "to_unicode" | "agl"          → confidence_source = "native"
+  unicode_source "fingerprint"                  → confidence_source = "native"
+  unicode_source "shape_match"                  → confidence_source = "heuristic"
+  unicode_source "unknown" (U+FFFD)             → confidence_source = "heuristic"
+  OCR path (Phase 5.4 HOCR)                    → confidence_source = "ocr"
+  Phase 4.7 correction applied                  → confidence_source = "heuristic"
+```
+
 **Flag detection:**
 - Bold: font name contains "Bold" or FontDescriptor `/Flags` bit 18 set or `/StemV` > 120
 - Italic: font name contains "Italic"/"Oblique" or `/ItalicAngle` != 0
@@ -603,7 +686,7 @@ Group spans into lines by baseline proximity.
 3. Within a line, sort spans by x0 (left-to-right for LTR scripts)
 4. **RTL detection:** If the majority of characters in a line have Unicode bidi category R or AL (right-to-left), sort spans by x1 descending and set `direction = "rtl"` on the resulting line struct
 
-**Crates:** None (clustering is a simple sort + gap scan)
+**Crates:** `unicode-bidi` (bidi character category lookup for RTL detection); clustering is otherwise a simple sort + gap scan
 
 **Critical tests:**
 - Two-column layout: columns not merged into one line (column gap exceeds threshold)
@@ -636,11 +719,13 @@ Group lines into blocks (paragraphs, headings, etc.).
 
 **Block kind assignment (heuristic):**
 - `heading`: font size > 1.2× body median AND line count == 1 (or short)
-- `header`/`footer`: block y0 in top/bottom 7% of page height AND appears on 3+ consecutive pages with identical or near-identical text
+- `header`/`footer`: block y0 in top/bottom 7% of page height AND appears on 3+ consecutive pages with identical or near-identical text. **Sequencing note:** Header/footer detection is a sequential post-processing pass executed after all pages are assembled by rayon. The pass iterates over the sorted page list, maintaining a sliding window of the last 4 pages. Blocks in the top/bottom 7% of the page that appear in ≥ 3 consecutive pages with Levenshtein distance ≤ 5% of the text length are classified `header` or `footer`. This pass runs in O(pages × blocks_per_page) and is negligible compared to per-page extraction time.
 - `paragraph`: default
 - `figure`: bbox contains only image XObjects, no text glyphs
 - `list`: line starts with bullet/numbered pattern (regex: `^\s*[•‣◦\-\*]\s` or `^\s*\d+[\.\)]\s`)
 - `caption`: small font, follows a `figure` block within 2 lines
+- `code`: all spans in the block use a monospace font (font name contains 'Mono', 'Courier', 'Code', 'Fixed', or `FontDescriptor /Flags` bit 0 set) AND the block is indented ≥ 2em relative to the surrounding body text baseline. Deferred to Phase 7 for full detection; Phase 4 emits `paragraph` for code blocks and upgrades to `code` in a post-processing pass if the monospace heuristic fires.
+- `formula`: detected in Phase 7 via OpenType Math table presence (see `docs/research/opentype-math-and-formula-extraction.md`). Phase 4 emits `paragraph` for formula blocks.
 
 **Critical tests:**
 - Indented first line of paragraph: not split into two blocks
@@ -660,6 +745,8 @@ Determine the reading order of blocks within the page.
 4. Reading order: left region before right; top before bottom within each region
 
 **Docstrum fallback (when XY-cut produces > 10 regions with < 3 blocks each):** Compute nearest-neighbor pairs between text blocks. Build a graph of adjacency edges weighted by distance and angle. Traverse the connected components in estimated reading order (sort root nodes by page position, follow edges within each component).
+
+**Parameters:** k=5 nearest neighbors per block (standard Docstrum value); distance metric: Euclidean center-to-center in PDF user space; within-line adjacency angle: ±30° from horizontal; between-line adjacency angle: ±30° from vertical (blocks not meeting either constraint are not connected). **Root node definition:** A block with no incoming edges from blocks whose center-y is greater than this block's center-y (i.e., no block above it in the page is connected to it). Root nodes are sorted by (x_column_index, y descending) to establish the traversal start order.
 
 Set `reading_order_algorithm = "xy_cut"` or `"docstrum"` in page output.
 
@@ -716,7 +803,7 @@ Composite score [0.0, 1.0]. Spans below `readability_threshold` (default 0.5, co
 
 **Crates:** `unicode-normalization` (already in default deps)
 
-**Word list:** Embed a minimal 20,000-word English frequency list as a compile-time `phf::Set` (adds ~200 KB to binary; acceptable). Non-English documents: score only on printable fraction, whitespace distribution, and glyph confidence (skip dict lookup if `lang` attribute indicates non-English).
+**Word list:** Embed a minimal 20,000-word English frequency list as a compile-time `phf::Set` (adds ~200 KB to binary; acceptable). Binary size is verified by a CI check: `cargo bloat --release --crates | grep pdftract_wordlist` must report ≤ 250 KB. If the actual size exceeds this, replace the phf::Set with a Bloom filter (`bloomfilter` crate, ~25 KB for 20k words at 0.1% false-positive rate) and accept that ~0.1% of non-words will score as words — negligible impact on readability scoring accuracy. Non-English documents: score only on printable fraction, whitespace distribution, and glyph confidence (skip dict lookup if `lang` attribute indicates non-English).
 
 **Critical tests:**
 - Span with split ligature `U+FFFD U+0069` adjacent to `f`: repaired to `fi`
@@ -771,6 +858,8 @@ For `Scanned` and `Hybrid` pages, produce a raster for Tesseract.
 
 **`full-render` feature:** `pdfium-render` (wraps Chromium's PDFium). Use when the page has complex rendering geometry — multiple overlapping images, image masks, soft masks — where compositing gets the wrong result. Binary cost: ~20 MB native library (tracked against the weight target; document in PR if this feature is enabled in the default Docker image). Enable with `--features full-render` at compile time or set `ExtractionOptions.full_render = true` at runtime (feature must be compiled in).
 
+**Release Docker images:** The standard `pdftract:latest` and `pdftract:ocr` images are built with `--features ocr,serve` only (no `full-render`). A separate `pdftract:full` image tag is built with `--features ocr,serve,full-render` and has a higher size budget (~140 MB). The weight target table's 120 MB limit applies to `pdftract:ocr` only; `pdftract:full` is documented as a heavyweight variant.
+
 **DPI selection:**
 - Standard body text (font_size > 8pt equivalent): 300 DPI
 - Fine print or small text: 400 DPI
@@ -786,9 +875,9 @@ Apply the preprocessing pipeline before Tesseract invocation.
 
 **Pipeline (in order):**
 1. **Deskew:** Hough line transform on binarized image; compute dominant angle; rotate by negative angle. Skip if detected angle < 0.3° (no meaningful skew).
-2. **Binarization:** Sauvola local adaptive thresholding for physical scans; Otsu global for digital-origin scans. Detect origin via image XObject filter: DCTDecode → Sauvola; JBIG2Decode → already binary, skip.
-3. **Denoising:** 3×3 median filter for salt-and-pepper noise. Skip for JBIG2 (already clean binary).
-4. **Contrast normalization:** Histogram stretch to [0, 255] after binarization.
+2. **Contrast normalization:** Histogram stretch to [0, 255]. Applied before binarization to improve threshold quality on unevenly-lit scans. Skip for JBIG2 (already binary).
+3. **Binarization:** Sauvola local adaptive thresholding for physical scans; Otsu global for digital-origin scans. Detect origin via image XObject filter: DCTDecode → Sauvola; JBIG2Decode → already binary, skip.
+4. **Denoising:** 3×3 median filter for salt-and-pepper noise. Skip for JBIG2 (already clean binary).
 5. **Border padding:** Add 10px white border on all sides (Tesseract accuracy improves with padding).
 
 **Crates:** `leptonica-plumbing` (Sauvola, deskew via `pixDeskew`), `image` (Otsu, median filter)
@@ -823,18 +912,18 @@ Invoke Tesseract on preprocessed raster images and parse HOCR output.
 
 ### 5.5 Assisted OCR (BrokenVector Path)
 
-For `BrokenVector` pages, use vector glyph positions as hints to improve Tesseract segmentation.
+For `BrokenVector` pages, use vector glyph position data to validate Tesseract output rather than as segmentation pre-seeds.
 
 **Pipeline:**
 1. Run Phase 3 content stream processing in position-hint mode: collect glyph bboxes but discard Unicode values (treat all as U+FFFD)
-2. Convert glyph bboxes to HOCR-format `word` hint blocks and pass to Tesseract via `SetVariable("applybox_debug", "0")` and Tesseract's box-file input mode
-3. Tesseract uses the hint boxes to seed its segmentation, improving word boundary detection
-4. Parse HOCR output as in Phase 5.4
-5. If OCR confidence > 0.7 for a region: use OCR text; if OCR confidence < 0.3: re-attempt without hints
+2. Run Tesseract in `PSM_SPARSE_TEXT` mode (page segmentation mode 11), which allows Tesseract to find text in arbitrary positions without requiring a dominant text block — appropriate for BrokenVector pages where the visible text layer may be fragmented or partially occluded
+3. After OCR completes, validate each Tesseract word result against the nearest vector glyph bbox: if the Tesseract word's center falls within 5pt of a vector glyph bbox center, the word is accepted with its OCR confidence; otherwise it is flagged low-confidence (confidence capped at 0.4)
+4. Parse HOCR output as in Phase 5.4, applying per-word confidence adjustments from step 3
+5. If OCR confidence > 0.7 for a region: use OCR text; if OCR confidence < 0.3: re-attempt without the validation filter (pure OCR fallback)
 
 **Critical tests:**
 - PDF/A with invisible text layer at correct positions: OCR output better than blind OCR (validate WER delta)
-- PDF/A with incorrect text layer positions (misaligned): hints discarded when Tesseract confidence drops; fallback to unaided OCR
+- PDF/A with incorrect text layer positions (misaligned): validation filter rejects misaligned words; fallback to unaided OCR confidence scores
 
 ---
 
@@ -863,7 +952,9 @@ Implement the complete output schema from `docs/research/extraction-output-schem
 - `errors`: all diagnostics emitted during extraction
 
 **Page-level fields (full schema):**
-- `page_index`, `page_label`, `width`, `height`, `rotation`, `page_type`
+- `page_index` (0-based integer, canonical for programmatic use), `page_number` (1-based integer, human-facing; always equals `page_index + 1`), `page_label` (string from PDF `/PageLabels` number tree, e.g. `"iv"` or `"A-3"`; absent if the PDF defines no page labels), `width`, `height`, `rotation`, `page_type`
+
+  > **Naming convention:** `page_index` is the stable, zero-based identifier used in all internal references (e.g., error diagnostics, NDJSON frame ordering). `page_number` is emitted alongside it as a convenience for human-facing display. Both fields are always present. SDK code and downstream tools MUST key on `page_index` for programmatic access; `page_number` is informational only.
 - `spans`: full Span array per schema
 - `blocks`: full Block array per schema
 - `annotations`: highlights, stamps, notes, links from `/Annots`
@@ -871,8 +962,10 @@ Implement the complete output schema from `docs/research/extraction-output-schem
 
 **Crates:** `serde`, `serde_json`
 
+**JSON Schema deliverable:** A machine-readable JSON Schema is generated from the extraction output schema and stored at `docs/schema/v1.0/pdftract.schema.json`. This file is generated once and checked into the repo. The Phase 6.1 critical test uses `jsonschema` (Python) or `jsonschema-valid` (Rust) to validate test output against this file. Creating this JSON Schema is a Phase 6.1 deliverable alongside the Rust implementation.
+
 **Critical tests:**
-- Schema validator: produce output from a known-good PDF, validate against a JSON Schema definition of the output schema
+- Schema validator: produce output from a known-good PDF, validate against `docs/schema/v1.0/pdftract.schema.json`
 - Page with no text: `spans: []`, `blocks: []`, `page_type: "blank"` or `"figure_only"`
 - Error entries: each emitted diagnostic has stable `code`, `severity`, and `page_index`
 
@@ -883,7 +976,7 @@ Implement `--stream` / `ExtractionOptions.streaming = true`.
 **Frame sequence:**
 1. Header frame: `{"frame":"header","schema_version":"1.0","metadata":{...},"outline":[...],"total_pages":N}`
 2. Per-page frames (emitted as each page completes via rayon): `{"frame":"page","page_index":N,...}`  
-   Note: rayon may complete pages out of order; buffer completed pages and emit in page_index order with a window of 8 pages maximum.
+   Note: rayon may complete pages out of order; buffer completed pages and emit in page_index order with a window of 8 pages maximum. When the out-of-order buffer holds 8 completed pages and the next in-order page has not yet completed, the output thread blocks on a `Condvar` until that page's rayon task signals completion. The window size of 8 is chosen to be larger than the typical rayon thread pool size (4–8 threads), ensuring the output thread is never the bottleneck on balanced workloads. For pathological cases (one very slow page surrounded by fast pages), the window is effectively a backpressure signal to the downstream consumer.
 3. Footer frame: `{"frame":"footer","extraction_quality":{...},"errors":[...],"threads":[],"attachments":[],"signatures":[],"form_fields":[],"links":[]}`
 
 **BufWriter:** Wrap `io::Stdout` in `BufWriter<io::Stdout>` with 128 KB buffer; flush after each frame.
@@ -921,6 +1014,8 @@ class EncryptionError(PdftractError): ... # encrypted, no password
 
 **Build:** `maturin build --features python` produces a `.whl` for the current platform. CI cross-compiles for all five target triples (see `docs/notes/sdk-architecture.md`).
 
+**CI note:** PyO3 wheel cross-compilation for macOS and Windows from a Linux runner is handled using `maturin build --target <triple>` with the `cross` tool (Docker-based cross-compilation). The Argo WorkflowTemplate `pdftract-py-ci` (to be created in `jedarden/declarative-config → k8s/iad-ci/argo-workflows/`) will use a `ghcr.io/rust-cross/manylinux` base image for Linux wheel builds and `osxcross` toolchain for macOS targets. Windows `.whl` is built using `cross` with `x86_64-pc-windows-gnu`. All five triples ship to PyPI on milestone tags via the same workflow.
+
 **Crates:** `pyo3` (feature `extension-module`), `maturin` (build tool)
 
 **Critical tests:**
@@ -945,17 +1040,31 @@ Implement `pdftract serve --port PORT`. Requires `--features serve` at compile t
 
 **Options via form fields:** `ocr=true`, `ocr_language=eng,fra`, `readability_threshold=0.5`
 
-**Error responses:** HTTP 400 for bad request (no file field, unsupported content type); HTTP 422 for extraction error (encrypted file, corrupt file); HTTP 500 for internal error. Response body is `{"error":"code","message":"..."}`.
+**Error responses:**
+
+| Status | Condition |
+|---|---|
+| 400 | Bad request (no file field, unsupported content type) |
+| 413 | Request exceeds `--max-upload-mb` limit |
+| 422 | Extraction error (encrypted file, corrupt file) |
+| 500 | Internal error |
+
+Response body for all error statuses is `{"error":"code","message":"..."}`. A custom `RequestBodyLimit` rejection handler is implemented to convert tower-http's default plain-text 413 response to the standard JSON error body `{"error":"REQUEST_TOO_LARGE","message":"Request body exceeds the configured limit"}`.
 
 **Concurrency:** axum handles concurrent requests; rayon thread pool is shared across all requests. No per-request thread spawning.
 
 **Request size limit:** Default 256 MB; configurable via `--max-upload-mb`.
 
+**Security constraints:**
+- **Decompression limit:** The stream decoder (Phase 1.5) enforces a `max_decompressed_bytes` limit (default: 2 GB per document, configurable via `--max-decompress-gb`). Any stream that exceeds this limit emits a `STREAM_BOMB` diagnostic and returns the bytes decoded so far.
+- **Authentication:** No auth is built in. Deploy behind a reverse proxy (nginx, Traefik) with authentication. The serve mode is not safe to expose directly on a public port without a proxy.
+- **Path parameters:** No file-path parameters are accepted in serve mode — the PDF is always received as a multipart upload. This eliminates path traversal risk.
+
 **Crates:** `axum`, `tokio`, `tower-http` (for `RequestBodyLimit`, `TraceLayer`), `multer` (multipart parsing)
 
 **Critical tests:**
 - `curl -F file=@test.pdf http://localhost:8080/extract`: valid JSON response
-- File exceeding size limit: HTTP 413 response
+- File exceeding size limit: HTTP 413 response with JSON body `{"error":"REQUEST_TOO_LARGE","message":"Request body exceeds the configured limit"}` (not tower-http's default plain-text response)
 - Concurrent requests with 8 simultaneous PDFs: all complete correctly
 - `/health` endpoint: 200 OK, even while extractions are in progress
 
@@ -1121,7 +1230,7 @@ Benchmark suite runs `pdftract`, `pdfminer.six`, `pypdf`, and `pdfplumber` again
 - Reading order correctness score
 
 **Minimum passing bar (blocks PR if missed):**
-- pdftract must be ≥ 5× faster than `pdfminer.six` on vector PDFs
+- pdftract must be ≥ 10× faster than `pdfminer.six` on vector PDFs
 - pdftract CER must be ≤ `pdfminer.six` CER on all fixture categories
 - pdftract binary (default features) must be ≤ 4 MB stripped
 
@@ -1136,14 +1245,15 @@ Benchmark suite runs `pdftract`, `pdfminer.six`, `pypdf`, and `pdfplumber` again
 ## Phase Dependencies and Sequencing
 
 ```
-Phase 1 (Core Parser)
-  └─► Phase 2 (Font Pipeline)
-        └─► Phase 3 (Content Stream)
-              └─► Phase 4 (Text Assembly)
-                    ├─ 4.7 Readability Validation ← feeds back into 5.1 page classification
-                    └─► Phase 5 (OCR)       ← Scanned PDFs work here; 4.7 escalates broken-vector pages here
-                          └─► Phase 6 (API) ← PyO3, HTTP, full JSON schema
-                                └─► Phase 7 (Advanced)
+Phase 0 (CI Infrastructure) ← must complete before Phase 1 code review
+  └─► Phase 1 (Core Parser)
+        └─► Phase 2 (Font Pipeline)
+              └─► Phase 3 (Content Stream)
+                    └─► Phase 4 (Text Assembly)
+                          ├─ 4.7 Readability Validation ← feeds back into 5.1 page classification
+                          └─► Phase 5 (OCR)       ← Scanned PDFs work here; 4.7 escalates broken-vector pages here
+                                └─► Phase 6 (API) ← PyO3, HTTP, full JSON schema
+                                      └─► Phase 7 (Advanced)
                                       ├─ 7.1 StructTree (independent)
                                       ├─ 7.2 Tables (independent)
                                       ├─ 7.3 Signatures (independent)
@@ -1151,7 +1261,7 @@ Phase 1 (Core Parser)
                                       └─ 7.5 Attachments (independent)
 ```
 
-Phase 7 sub-tasks are independent of each other and can be assigned to separate developers once Phase 6 is complete.
+Phase 0 is a prerequisite for all subsequent phases — no milestone release can ship without active CI. Phase 7 sub-tasks are independent of each other and can be assigned to separate developers once Phase 6 is complete.
 
 ---
 
@@ -1159,9 +1269,9 @@ Phase 7 sub-tasks are independent of each other and can be assigned to separate 
 
 | Milestone | Phases Complete | Capability |
 |---|---|---|
-| v0.1.0 (Alpha) | 1–4 (incl. 4.7) | Vector PDF extraction with readability validation; plain text and JSON output; CLI only; all three primary objective targets must pass |
-| v0.2.0 (Beta) | 1–5 | + Scanned PDF OCR; all page classes handled; competitive benchmark suite green |
-| v0.3.0 (RC) | 1–6 | + PyO3 bindings; HTTP serve; full JSON schema; NDJSON streaming |
-| v1.0.0 (Stable) | 1–7 | + StructTree; tables; forms; signatures; attachments |
+| v0.1.0 (Alpha) | 0, 1–4 (incl. 4.7) | CI infrastructure active; vector PDF extraction with readability validation; plain text and JSON output; CLI only; all three primary objective targets must pass |
+| v0.2.0 (Beta) | 0, 1–5 | + Scanned PDF OCR; all page classes handled; competitive benchmark suite green |
+| v0.3.0 (RC) | 0, 1–6 | + PyO3 bindings; HTTP serve; full JSON schema; NDJSON streaming |
+| v1.0.0 (Stable) | 0, 1–7 | + StructTree; tables; forms; signatures; attachments |
 
 Binary releases for all five target triples are published to GitHub Releases on every milestone tag. The PyO3 wheel is published to PyPI. The CLI binary is the sole dependency for the subprocess-based SDKs documented in `docs/notes/sdk-invocation.md`.
