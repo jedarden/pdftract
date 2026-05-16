@@ -38,7 +38,7 @@ pdftract must be the **most accurate, fastest, and lightest-weight** PDF text ex
 |---|---|
 | Binary size, default features (no OCR, no serve) | < 4 MB stripped |
 | Binary size, `--features ocr,serve` | < 12 MB stripped |
-| Default dependency count (`cargo tree -d`) | < 20 unique crates |
+| Default dependency count (`cargo tree -d`) | < 30 unique crates (direct, verified against `cargo tree --depth 1 -e normal --features default`). Transitive dependency count is not gated — only direct crates are tracked. The < 30 direct crate limit is verified as a CI check on the first passing build. |
 | Shared library dependencies (ldd) | Zero beyond libc + libm |
 | Docker image, CLI only | < 20 MB (distroless base) |
 | Docker image, with OCR (`tesseract-ocr` system pkg) | < 120 MB |
@@ -76,6 +76,7 @@ Feature flags control the binary footprint. The default build (`cargo build`) in
 - `python` — adds PyO3 (maturin build)
 - `full-render` — adds pdfium-render (large native binary; improves scanned-page rasterization)
 - `full` = `["ocr", "serve", "python"]`
+- `wordlist-bloom` — replaces the default phf::Set English word list with a Bloom filter; enable if the binary-size CI check (`cargo bloat`) reports the word list exceeds 250 KB.
 
 | Crate | Version | Feature | Purpose |
 |---|---|---|---|
@@ -84,6 +85,7 @@ Feature flags control the binary footprint. The default build (`cargo build`) in
 | `lzw` | 0.10 | default | LZWDecode |
 | `ttf-parser` | 0.21 | default | TrueType/OpenType glyph metrics and cmap lookup |
 | `owned_ttf_parser` | 0.21 | default | Arc-safe wrapper for ttf-parser |
+| `fontdue` | 0.9 | default | TrueType/OpenType glyph rasterization for shape-based Unicode recognition (Level 4). Estimated binary contribution ~60 KB. |
 | `lru` | 0.12 | default | Object cache eviction |
 | `rayon` | 1 | default | Page-level parallelism |
 | `serde` | 1 | default | Serialization derive macros |
@@ -143,6 +145,8 @@ Create Argo WorkflowTemplate `pdftract-ci` in `jedarden/declarative-config → k
 2. Run `cargo test --all-features` on `x86_64-unknown-linux-musl`.
 3. Publish binaries to GitHub Releases on milestone tags via `gh release upload`.
 4. Build the PyO3 wheel via the `pdftract-py-ci` template (separate template, uses a `ghcr.io/rust-cross/manylinux` base image for Linux wheels; `osxcross` toolchain for macOS targets; `cross` with `x86_64-pc-windows-gnu` for the Windows `.whl`). All five triples ship to PyPI on milestone tags.
+
+The `pdftract-py-ci` WorkflowTemplate YAML is created in Phase 0 as a stub with placeholder steps (exit 0) to establish the CI infrastructure. Actual wheel-build logic is filled in during Phase 6.3 implementation.
 
 **Phase 0 must be complete before Phase 1 code review begins.**
 
@@ -243,15 +247,17 @@ Build the in-memory document model over the xref-resolved object graph.
 
 **Structures to build:**
 - **Document catalog** from `/Root`: record `/Pages`, `/Outlines`, `/MarkInfo`, `/StructTreeRoot`, `/AcroForm`, `/Names`, `/Metadata`, `/PageLabels`, `/OCProperties`
-- **Page tree** (`/Pages` subtree): flatten into a `Vec<PageDict>` with inherited attributes resolved (MediaBox, CropBox, BleedBox, TrimBox, ArtBox, Resources, Rotate). Inheritance walk: page dict overrides parent dict; root `/Pages` is the ultimate fallback.
+- **Page tree** (`/Pages` subtree): flatten into a `Vec<PageDict>` with inherited attributes resolved (MediaBox, CropBox, BleedBox, TrimBox, ArtBox, Resources, Rotate). Inheritance walk: page dict overrides parent dict; root `/Pages` is the ultimate fallback. If a page's `/Contents` is an array of stream references, all streams are decoded and concatenated in order before Phase 3 content stream processing begins. Graphics state is NOT reset between concatenated streams — they are treated as a single logical stream.
 - **Resource dictionary inheritance:** each page gets a fully resolved `ResourceDict` merging all ancestor `/Resources` dicts (font, XObject, ExtGState, ColorSpace, Shading, Pattern, Properties namespaces). Per-key last-write-wins at the page level.
-- **Encryption dictionary** detection: if `/Encrypt` present in trailer, identify handler (`/Standard` vs. custom), extract `/V`, `/R`, `/KeyLength`, `/CF`/`/StmF`/`/StrF` entries. RC4 and AES-128/256 decryption implemented via the `aes` and `rc4` crates (RustCrypto; both gated behind the `decrypt` feature, which is on by default — see Dependency Matrix). Password attempt: empty string first, then user-supplied. On failure: emit `ENCRYPTION_UNSUPPORTED` and abort.
+- **Encryption dictionary** detection: if `/Encrypt` present in trailer, identify handler (`/Standard` vs. custom), extract `/V`, `/R`, `/KeyLength`, `/CF`/`/StmF`/`/StrF` entries. RC4 and AES-128/256 decryption implemented via the `aes` and `rc4` crates (RustCrypto; both gated behind the `decrypt` feature, which is on by default — see Dependency Matrix). Password attempt: empty string first, then user-supplied via `ExtractionOptions.password: Option<String>` (CLI: `--password <PASSWORD>`; Python keyword arg: `password=None`; HTTP form field: `password`). On failure: emit `ENCRYPTION_UNSUPPORTED` and abort.
 
 **Optional Content Groups (OCGs):** If `/OCProperties` is present in the catalog, read default visibility from `/OCProperties /D /BaseState` (name value `ON` or `OFF`; defaults to `ON` if absent). Each individual OCG's membership in the default ON or OFF list is given by the arrays `/OCProperties /D /ON` (array of OCG object refs that are ON by default) and `/D /OFF` (OFF by default). An OCG present in neither array inherits `BaseState`. During content stream processing (Phase 3), track the `OC` marked content tag: if a `BDC` block carries `/OC /OCGRef`, check the referenced OCG's default state. If `OFF`, suppress all glyphs within the marked content block (they are not extracted). If `ON` or no OCG present, extract normally. Emit `ocg_present: true` in document metadata. Full OCG toggle support (programmatic state changes) is deferred to Phase 7.
 
 **JavaScript detection:** Record `contains_javascript = true` if any of the following are present: (1) `/OpenAction` value is a JavaScript action dict (`/S /JavaScript`), (2) `/AA` (Additional Actions) at document or page level contains a JavaScript action, (3) any AcroForm field's `/AA` dict contains a JavaScript action, (4) any annotation's `/A` or `/AA` dict contains a JavaScript action. JavaScript is never executed — only its presence is flagged. This check runs during document model construction and costs one dict key scan per object.
 
-**Crates:** `aes`, `rc4` (both via `decrypt` feature)
+**`conformance` detection:** Parse the `/Metadata` stream (if present) as XMP XML using `quick-xml`. Extract the `pdfaid:part` and `pdfaid:conformance` elements to construct values like `PDF/A-1b`, `PDF/A-2u`. If no XMP metadata or no `pdfaid:` namespace tags are present, `conformance = null`. **`quick-xml` feature gate:** Move `quick-xml` from the `ocr` feature to `default` since conformance detection runs for all documents. **`contains_xfa` detection:** Check for the presence of `/AcroForm /XFA` key during document model construction; if present and non-null, `contains_xfa = true`.
+
+**Crates:** `aes`, `rc4` (both via `decrypt` feature), `quick-xml` (moved to `default` feature for conformance detection)
 
 **Critical tests:**
 - Page inheriting MediaBox from grandparent `/Pages` node
@@ -384,13 +390,13 @@ Set `unicode_source = "fingerprint"`, `confidence = 0.85`.
 
 **Level 4: Glyph shape recognition**
 
-Render the glyph to a 32×32 grayscale bitmap using the font program. Hash the bitmap with a perceptual hash. Look up in a bundled shape→Unicode database (see `docs/research/glyph-recognition-and-unicode-recovery.md` and Phase 2.5).
+Render the glyph to a 32×32 grayscale bitmap rendered via `fontdue`'s rasterizer (for TrueType/OpenType glyphs) or the Type 3 content stream renderer (for Type 3 glyphs). Hash the bitmap with a perceptual hash. Look up in a bundled shape→Unicode database (see `docs/research/glyph-recognition-and-unicode-recovery.md` and Phase 2.5).
 
 Set `unicode_source = "shape_match"`, `confidence = 0.7`.
 
 **Failure:** Emit U+FFFD, `unicode_source = "unknown"`, `confidence = 0.0`, log `GLYPH_UNMAPPED` diagnostic.
 
-**Crates:** `ttf-parser` (glyph rendering for shape hash), `phf` (compile-time AGL hash map)
+**Crates:** `fontdue` (glyph rasterization for shape hash), `phf` (compile-time AGL hash map)
 
 **Critical tests:**
 - `ToUnicode` with multi-codepoint bfchar (`fi` ligature → `fi`): expanded to two characters
@@ -449,11 +455,11 @@ Type 3 fonts define each glyph as a content stream in `/CharProcs`. No standard 
 
 The glyph shape database backs Level 4 shape recognition in Phase 2.2 and the Type 3 shape fallback in Phase 2.4. Full methodology is documented in `docs/research/glyph-recognition-and-unicode-recovery.md`.
 
-**Perceptual hash algorithm:** Each glyph outline is rasterized to a 32×32 grayscale bitmap using `ttf-parser`'s outline rasterizer (for TrueType/OpenType glyphs) or the Type 3 content stream renderer (for Type 3 glyphs). The bitmap is then hashed using pHash (perceptual hash): apply a 32×32 DCT, retain the top-left 8×8 AC coefficients (64 values), threshold against the median of those 64 values to produce a 64-bit integer. This yields a scale-invariant hash robust to minor rendering differences.
+**Perceptual hash algorithm:** Each glyph outline is rasterized to a 32×32 grayscale bitmap using `fontdue`'s rasterizer (for TrueType/OpenType glyphs) or the Type 3 content stream renderer (for Type 3 glyphs). The bitmap is then hashed using pHash (perceptual hash): apply a 32×32 DCT, retain the top-left 8×8 AC coefficients (64 values), threshold against the median of those 64 values to produce a 64-bit integer. This yields a scale-invariant hash robust to minor rendering differences.
 
-**Database format:** A compile-time `phf::Map<u64, char>` where the key is the 64-bit pHash and the value is the most common Unicode character that glyph renders as. Generated at build time from a JSON source file (`build/glyph-shapes.json`) via `build.rs` and `phf_codegen`.
+**Database format:** A compile-time `&'static [(u64, char)]` — a sorted slice of `(pHash, char)` pairs sorted by pHash ascending. Generated at build time from a JSON source file (`build/glyph-shapes.json`) via `build.rs` (emitted as a `static` array, no `phf_codegen` needed for this structure). An exact `phf::Map<u64, char>` cannot be used here because the collision-handling requirement needs a nearest-neighbor scan over Hamming distance, not exact key lookup.
 
-**Collision handling:** When two database entries have pHash values within Hamming distance ≤ 8 bits of the query hash, the entry with the lower Hamming distance is selected. If two entries are tied at equal distance, the one with the higher Unicode frequency rank (from the source JSON's `frequency` field) is used. The winning character is returned with `confidence = 0.7`; if no entry falls within the 8-bit threshold, fall through to failure (U+FFFD).
+**Query algorithm:** Linear scan over all ~5,000 entries computing `(query_hash XOR entry_hash).count_ones()` for each entry. Collect all entries with Hamming distance ≤ 8; select the entry with the smallest distance. Ties broken by the Unicode frequency rank stored in the source JSON's `frequency` field (precomputed into a companion `&'static [(u64, u32)]` frequency table sorted by pHash, queried in the same pass). **Performance:** 5,000 entries × ~8 ns per XOR+popcount ≈ 40 µs worst-case scan — well within the per-page time budget. The winning character is returned with `confidence = 0.7`; if no entry falls within the 8-bit Hamming threshold, fall through to failure (U+FFFD).
 
 **Estimated binary footprint:** ~300 KB for approximately 5,000 common glyphs (covering Latin, Greek, Cyrillic, common symbols, and extended Latin). Within the 4 MB default-feature budget.
 
@@ -525,6 +531,8 @@ CSS hex conversion rule for the `color` field in the Span output: `DeviceRGB →
 | `T*` | Equivalent to `Td 0 -leading` |
 
 **CTM operators:** `cm a b c d e f` — multiply CTM by the given matrix.
+
+**Page rotation:** After all glyph bboxes for a page are computed, if the page's `/Rotate` entry is 90, 180, or 270, apply the corresponding inverse rotation matrix to all glyph bboxes so that downstream phases (baseline clustering, column detection, reading order) always operate in an un-rotated coordinate system. The page `width` and `height` in the output schema reflect the rotated page dimensions (as the viewer sees them).
 
 **Crates:** none (hand-written matrix arithmetic; 3x3 f64 matrices, no external linear algebra dependency needed)
 
@@ -779,7 +787,7 @@ Implement `--text` output as a projection of the block list.
 - Page breaks: `\f` (form feed, 0x0C)
 - Headers and footers excluded by default; `--include-headers-footers` flag re-enables
 - Invisible text (Tr=3) excluded unless `--include-invisible-text` flag set
-- Watermark blocks excluded (Phase 6 watermark detection)
+- Watermark blocks excluded (Phase 7 watermark detection — see `docs/research/watermark-and-background-separation.md`). Prior to Phase 7, watermarks are not excluded from `--text` output; `kind: 'watermark'` blocks are not emitted.
 
 **Critical tests:**
 - 10-page document: 9 form-feed characters in output
@@ -992,6 +1000,8 @@ Implement `--stream` / `ExtractionOptions.streaming = true`.
    Note: rayon may complete pages out of order; buffer completed pages and emit in page_index order with a window of 8 pages maximum. When the out-of-order buffer holds 8 completed pages and the next in-order page has not yet completed, the output thread blocks on a `Condvar` until that page's rayon task signals completion. The window size of 8 is chosen to be larger than the typical rayon thread pool size (4–8 threads), ensuring the output thread is never the bottleneck on balanced workloads. For pathological cases (one very slow page surrounded by fast pages), the window is effectively a backpressure signal to the downstream consumer.
 3. Footer frame: `{"frame":"footer","extraction_quality":{...},"errors":[...],"threads":[],"attachments":[],"signatures":[],"form_fields":[],"links":[]}`
 
+**Header/footer detection in streaming mode:** The cross-page header/footer deduplication pass (Phase 4.4) cannot run before individual page frames are emitted. In streaming mode, header and footer blocks are emitted as `kind: 'header'` / `kind: 'footer'` only if they can be identified from the trailing window of up to 4 already-emitted pages. For the first 3 pages, header/footer detection is deferred: those blocks are emitted as `kind: 'paragraph'` and NOT retroactively corrected. Consumers relying on exact `kind` values for headers/footers should use the non-streaming mode.
+
 **BufWriter:** Wrap `io::Stdout` in `BufWriter<io::Stdout>` with 128 KB buffer; flush after each frame.
 
 **Critical tests:**
@@ -1013,10 +1023,12 @@ text: str = pdftract.extract_text(path: str, **options) -> str
 
 # Streaming (returns an iterator of page dicts)
 pages: Iterator[dict] = pdftract.extract_stream(path: str, **options)
+# Yields only page dicts (frame: 'page' equivalent). Metadata and errors are not yielded — call extract() for the full document result including metadata.
 
 # Options (keyword arguments mapped to ExtractionOptions):
 # ocr=False, ocr_language=["eng"], include_invisible=False,
-# extract_forms=False, extract_attachments=False, readability_threshold=0.5
+# extract_forms=False, extract_attachments=False, readability_threshold=0.5,
+# password=None
 
 # Exceptions
 class PdftractError(Exception): ...       # extraction failed
@@ -1061,6 +1073,7 @@ Implement `pdftract serve --port PORT`. Requires `--features serve` at compile t
 | `include_invisible` | boolean | `false` | `ExtractionOptions.include_invisible` |
 | `extract_forms` | boolean | `false` | `ExtractionOptions.extract_forms` |
 | `extract_attachments` | boolean | `false` | `ExtractionOptions.extract_attachments` |
+| `password` | string | `""` | `ExtractionOptions.password` |
 
 **Error responses:**
 
@@ -1073,7 +1086,7 @@ Implement `pdftract serve --port PORT`. Requires `--features serve` at compile t
 
 Response body for all error statuses is `{"error":"code","message":"..."}`. A custom `RequestBodyLimit` rejection handler is implemented to convert tower-http's default plain-text 413 response to the standard JSON error body `{"error":"REQUEST_TOO_LARGE","message":"Request body exceeds the configured limit"}`.
 
-**Concurrency:** axum handles concurrent requests; rayon thread pool is shared across all requests. No per-request thread spawning. Each POST handler bridges async and sync via `tokio::task::spawn_blocking(|| extraction_call())`, which runs the synchronous rayon work on tokio's blocking thread pool (separate from the async executor). Rayon provides within-document page-level parallelism; tokio's blocking pool handles per-request concurrency. The rayon global pool size is set to `num_cpus::get()` at startup.
+**Concurrency:** axum handles concurrent requests; rayon thread pool is shared across all requests. No per-request thread spawning. Each POST handler bridges async and sync via `tokio::task::spawn_blocking(|| extraction_call())`, which runs the synchronous rayon work on tokio's blocking thread pool (separate from the async executor). Rayon provides within-document page-level parallelism; tokio's blocking pool handles per-request concurrency. Rayon's default pool sizing (equivalent to the logical CPU count) is used; no explicit pool configuration is required.
 
 **Request size limit:** Default 256 MB; configurable via `--max-upload-mb`.
 
@@ -1209,6 +1222,51 @@ Extract embedded files from PDF portfolios and `/EmbeddedFiles` name trees.
 - Attachment with no `/Desc`: description is null (not empty string)
 - Attachment exceeding size limit: metadata present, `data: null`, `truncated: true`
 
+### 7.6 Hyperlink and Annotation Extraction
+
+Extract URI hyperlinks and page annotation objects.
+
+**Implementation:**
+- For each page, walk the `/Annots` array in the page dictionary
+- Collect Link annotations (`/Subtype /Link`):
+  - Extract `/A` action dict: if `/S /URI`, read the `/URI` string as the target URL
+  - Extract `/Dest`: if present (named or explicit destination), record as an internal link
+  - Both URI and internal links are appended to the document-level `links` array with `page_index`, `rect` (the annotation bbox), and `uri` or `dest` as appropriate
+- Collect other annotation subtypes (Highlight, Stamp, FreeText, Note, Squiggly, StrikeOut, Underline):
+  - Extract `/Subtype`, `/Rect`, `/Contents` (comment text), `/T` (author), `/M` (modification date), `/C` (color array)
+  - Append to the page-level `annotations` array
+
+**Output:** Document-level `links` array (URI and internal destination links from all pages); page-level `annotations` array (all non-link annotations on each page).
+
+**Crates:** None beyond Phase 1 parser
+
+**Critical tests:**
+- PDF with 5 URI hyperlinks: all 5 appear in document-level `links` with correct URLs
+- Link annotation with named destination (`/Dest /SectionTwo`): emitted as internal link with `dest: "SectionTwo"`
+- Page with Highlight and Note annotations: both appear in page-level `annotations` with correct subtypes
+- Annotation with no `/Contents`: `contents` field is null (not empty string)
+
+### 7.7 Article Thread Chains
+
+Reconstruct PDF article thread chains for multi-column and multi-page reading flows.
+
+**Implementation:**
+- Read the `/Threads` array from the document catalog; each entry is an article thread dict
+- Each thread dict has `/F` (first bead object reference) and `/I` (thread info dict with `/Title`, `/Author`, `/Subject`, `/Keywords`)
+- Walk the bead chain by following `/N` (next bead) links from the first bead; detect the chain end when `/N` loops back to the first bead (circular list)
+- Each bead dict has `/R` (page object reference, resolves to the page containing the bead) and `/V` (bbox rect of the bead region on the page)
+- Reconstruct the ordered list of beads for each thread: `[{ page_index, rect }, ...]`
+
+**Output:** Document-level `threads` array; each entry has `title` (from thread info `/Title`, or null), `author`, `subject`, and `beads` (ordered list of `{ page_index, rect }` objects).
+
+**Crates:** None beyond Phase 1 parser
+
+**Critical tests:**
+- PDF with two article threads: both reconstructed with correct bead order and page references
+- Thread with no `/I` info dict: `title`, `author`, `subject` all null; bead chain still reconstructed
+- Bead `/V` rect correctly converted to PDF user-space coordinates for the referenced page
+- Circular bead chain termination: chain walk stops after visiting all beads without infinite loop
+
 ---
 
 ## Cross-Cutting: Test Infrastructure
@@ -1249,6 +1307,8 @@ A private corpus of 500 real-world PDFs from diverse sources runs on every PR. O
 
 Benchmark suite runs `pdftract`, `pdfminer.six`, `pypdf`, and `pdfplumber` against identical fixture PDFs on the same CI machine. Results are stored as a JSON artifact per commit so regressions are detectable.
 
+**Benchmark runner infrastructure:** A dedicated step in the `pdftract-ci` WorkflowTemplate uses a `python:3.11-slim` container. A `benches/competitors/requirements.txt` file (checked into repo) pins: `pdfminer.six==20231228`, `pypdf==4.2.0`, `pdfplumber==0.11.0`. A `benches/competitors/run_all.py` script drives competitor runs and emits results as `benches/results/<commit-sha>.json`. Results are stored as Argo Workflow artifacts. The pdftract binary time is measured with `hyperfine --warmup 2 --runs 5`.
+
 **Metrics tracked per tool per fixture:**
 - Wall-clock extraction time (mean of 5 runs)
 - Peak RSS (resident set size)
@@ -1284,7 +1344,9 @@ Phase 0 (CI Infrastructure) ← must complete before Phase 1 code review
                                       ├─ 7.2 Tables (independent)
                                       ├─ 7.3 Signatures (independent)
                                       ├─ 7.4 Forms (independent)
-                                      └─ 7.5 Attachments (independent)
+                                      ├─ 7.5 Attachments (independent)
+                                      ├─ 7.6 Hyperlinks & Annotations (independent)
+                                      └─ 7.7 Article Threads (independent)
 ```
 
 Phase 0 is a prerequisite for all subsequent phases — no milestone release can ship without active CI. Phase 7 sub-tasks are independent of each other and can be assigned to separate developers once Phase 6 is complete.
@@ -1298,6 +1360,6 @@ Phase 0 is a prerequisite for all subsequent phases — no milestone release can
 | v0.1.0 (Alpha) | 0, 1–4 (incl. 4.7) | CI infrastructure active; vector PDF extraction with readability validation; plain text and JSON output; CLI only; all three primary objective targets must pass |
 | v0.2.0 (Beta) | 0, 1–5 | + Scanned PDF OCR; all page classes handled; competitive benchmark suite green |
 | v0.3.0 (RC) | 0, 1–6 | + PyO3 bindings; HTTP serve; full JSON schema; NDJSON streaming |
-| v1.0.0 (Stable) | 0, 1–7 | + StructTree; tables; forms; signatures; attachments |
+| v1.0.0 (Stable) | 0, 1–7 | + StructTree; tables; forms; signatures; attachments; hyperlinks; article threads |
 
 Binary releases for all five target triples are published to GitHub Releases on every milestone tag. The PyO3 wheel is published to PyPI. The CLI binary is the sole dependency for the subprocess-based SDKs documented in `docs/notes/sdk-invocation.md`.
