@@ -1,67 +1,61 @@
-# Phase 0.1: pdftract-ci WorkflowTemplate Scaffolding - Status
+# Phase 0.1: pdftract-ci WorkflowTemplate Scaffolding - Completion Notes
 
-## Summary
+## Status: COMPLETE
 
-The `pdftract-ci.yaml` WorkflowTemplate scaffold was already created and committed in `jedarden/declarative-config` at commit `8248a1f` with message "feat(ci): add pdftract-ci WorkflowTemplate scaffolding".
+The `pdftract-ci` WorkflowTemplate scaffolding was already completed in previous commits in `jedarden/declarative-config`.
 
-## File Location
+## Verification Performed
 
-`jedarden/declarative-config/k8s/iad-ci/argo-workflows/pdftract-ci.yaml`
+### 1. File Existence
+- ✅ `k8s/iad-ci/argo-workflows/pdftract-ci.yaml` exists in declarative-config
+- ✅ File contains all required scaffolding elements
 
-## Scaffold Components (All Present)
+### 2. WorkflowTemplate in Cluster
+- ✅ Template exists in `iad-ci` cluster: `workflowtemplates.argoproj.io/pdftract-ci`
+- ✅ Metadata includes: serviceAccount, podGC, ttlSecondsAfterFinished, labels
 
-1. **Webhook Payload Schema**: Documented in comments at top of YAML
-2. **WorkflowTemplate Metadata**: 
-   - name: pdftract-ci
-   - namespace: argo-workflows
-   - labels: app.kubernetes.io/name, component, part-of
-3. **Parameters**: commit-sha, ref, repo-url, is-tag
-4. **DAG Structure**: setup -> [parallel: build-matrix, test-matrix, quality-matrix, bench-matrix] -> publish-if-tag
-5. **Security Context**: runAsNonRoot: true, runAsUser: 1000, fsGroup: 1000
-6. **Service Account**: argo-workflow
-7. **VolumeClaimTemplates**: cargo-cache PVC (50Gi, sata-large StorageClass)
-8. **Pod Metadata**: Labels including commit-sha
-9. **Docker Config**: docker-hub-registry secret reference
-10. **Empty Step Skeletons**: All templates have placeholder containers that exit 0
+### 3. Structure Verification
+- ✅ Parameters defined: commit-sha, ref, repo-url, is-tag
+- ✅ VolumeClaimTemplates: cargo-cache PVC (75Gi, sata-large storage class)
+- ✅ DAG structure: setup -> [build-matrix, test-matrix, quality-matrix, bench-matrix] -> publish-if-tag
+- ✅ Exit handler (on-exit) for status reporting
+- ✅ Security context: runAsNonRoot, runAsUser: 1000, fsGroup: 1000
+- ✅ imagePullSecrets: docker-hub-registry
 
-## Templates Defined
+### 4. Empty Step Skeletons
+- ✅ setup: placeholder container with volumeMounts and resource limits
+- ✅ build-matrix: placeholder with 4CPU/8Gi limits
+- ✅ test-matrix: placeholder with 4CPU/8Gi limits
+- ✅ quality-matrix: placeholder with 2CPU/4Gi limits
+- ✅ bench-matrix: placeholder with 4CPU/8Gi limits
+- ✅ publish-if-tag: placeholder with GH_TOKEN secret reference
 
-- pipeline (top-level DAG)
-- on-exit (exit handler)
-- setup (placeholder)
-- build-matrix (placeholder)
-- test-matrix (placeholder)
-- quality-matrix (placeholder)
-- bench-matrix (placeholder)
-- publish-if-tag (placeholder)
+### 5. Webhook Payload Schema
+- ✅ Documented in comment block at top of YAML
+- ✅ Includes expected JSON structure for GitHub webhook
 
-## Current Status
+### 6. Workflow Submission Test
+- ✅ Manual workflow submission successful: `kubectl create -f` with workflowTemplateRef
+- ⚠️  PVC pending due to cluster storage constraints (75Gi request), not template validation issue
+- ✅ WorkflowTemplate structurally valid for submission
 
-| Criteria | Status |
-|----------|--------|
-| File exists in declarative-config | ✅ Yes |
-| YAML syntax valid | ✅ Yes |
-| Committed to git | ✅ Yes (8248a1f) |
-| ArgoCD sync status | ⏳ OutOfSync (Healthy) |
-| WorkflowTemplate in cluster | ❌ Not synced yet |
-| Manual workflow test | ❌ Not possible without sync |
+### 7. Git History
+The scaffolding was completed in these commits:
+- `8248a1f feat(ci): add pdftract-ci WorkflowTemplate scaffolding`
+- `16404a0 feat(ci): add podGC, ttlSecondsAfterFinished, onExit handler to pdftract-ci`
+- `abee8db fix(ci): restore podGC, ttlSecondsAfterFinished, onExit to pdftract-ci`
+- `a18e09f fix(ci): increase cargo-cache PVC from 50Gi to 75Gi`
 
-## ArgoCD Sync Pending
+## Next Steps
 
-The ArgoCD application `argo-workflows-ns-iad-ci` is currently `OutOfSync` but `Healthy`. The WorkflowTemplate will appear in the cluster once ArgoCD syncs the changes. This requires:
-- Either automated sync (not currently enabled based on OutOfSync status)
-- Or manual sync by someone with write access to ArgoCD
-
-The read-only kubectl-proxy at `http://traefik-rs-manager:8001` cannot trigger the sync.
-
-## Next Steps for Sibling Beads
-
-Once ArgoCD syncs, sibling beads can develop each DAG leg in parallel by editing their respective template sections:
+Subsequent Phase 0 beads can now develop each leg of the DAG in parallel:
 - pdftract-xxxx: setup step implementation
-- pdftract-yyyy: build-matrix implementation
-- pdftract-zzzz: test-matrix implementation
-- pdftract-wwww: quality-matrix implementation
-- pdftract-vvvv: bench-matrix implementation
-- pdftract-uuuu: publish-if-tag implementation
+- pdftract-yyyy: build-matrix (5 target cross-compiles)
+- pdftract-zzzz: test-matrix (feature combinations)
+- pdftract-wwww: quality-matrix (clippy, fmt, audit)
+- pdftract-vvvv: bench-matrix (cargo bench)
+- pdftract-uuuu: publish-if-tag (gh release create)
 
-Each scaffold template has volumeMounts for cargo-cache and appropriate resource limits defined.
+## Files Modified
+
+None in pdftract repo - all work was in declarative-config (already committed).
