@@ -1,0 +1,15 @@
+[package]
+name = "pdftract"
+version = "0.1.0"
+edition = "2021"
+description = "A PDF text extraction library that gets the hard parts right"
+license = "MIT"
+repository = "https://github.com/jedarden/pdftract"
+
+[lib]
+name = "pdftract"
+path = "src/lib.rs"
+
+[dependencies]
+
+[dev-dependencies]
