@@ -236,6 +236,9 @@ print(math.exp(sum(math.log(v) for v in values) / len(values)))
         fi
     done
 
+    # Extract pdftract geomean for regression gate
+    local pdftract_geomean=${tool_geomeans[pdftract]:-"null"}
+
     # Check 10x-faster gate (pdftract vs pdfminer on vector PDFs only)
     # The gate applies only to vector PDFs where pdftract should excel
     log_info "Computing 10x-faster gate on vector PDFs only..."
@@ -270,7 +273,7 @@ print(math.exp(sum(math.log(v) for v in values) / len(values)))
     if [ ${#pdftract_vector_values[@]} -gt 0 ]; then
         pdftract_vector_geomean=$(python3 -c "
 import math
-values = ${pdftract_vector_values[@]}
+values = [${pdftract_vector_values[*]}]
 print(math.exp(sum(math.log(v) for v in values) / len(values)))
 ")
     fi
@@ -278,7 +281,7 @@ print(math.exp(sum(math.log(v) for v in values) / len(values)))
     if [ ${#pdfminer_vector_values[@]} -gt 0 ]; then
         pdfminer_vector_geomean=$(python3 -c "
 import math
-values = ${pdfminer_vector_values[@]}
+values = [${pdfminer_vector_values[*]}]
 print(math.exp(sum(math.log(v) for v in values) / len(values)))
 ")
     fi
