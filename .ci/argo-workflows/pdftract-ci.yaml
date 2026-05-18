@@ -83,6 +83,9 @@ spec:
       - name: regression-mode
         value: "gate"
         description: "Regression mode: 'gate' (PR) fails on CER > 0.5%, 'update' (merge) refreshes baselines"
+      - name: pr-number
+        value: ""
+        description: "Pull request number for posting benchmark comments (empty skips commenting)"
 
   volumeClaimTemplates:
     - metadata:
@@ -164,6 +167,19 @@ spec:
           - name: bench-matrix
             template: bench-matrix
             dependencies: [setup]
+            arguments:
+              artifacts:
+                - name: pdftract-binary
+                  from: "{{tasks.build-matrix.tasks.build-linux-x86_64-musl.outputs.artifacts.pdftract-binary}}"
+
+          - name: benchmark-pr-comment
+            template: benchmark-pr-comment
+            dependencies: [bench-matrix]
+            when: "{{workflow.parameters.pr-number}} != \"\""
+            arguments:
+              artifacts:
+                - name: benchmark-comment
+                  from: "{{tasks.bench-matrix.outputs.artifacts.benchmark-comment}}"
 
           - name: regression-corpus
             template: regression-corpus
@@ -463,6 +479,10 @@ spec:
     # Runs hyperfine against 50-PDF corpus (25 vector + 25 raster)
     # Enforces regression gate (>10%) and 10x-faster gate (vs pdfminer)
     - name: bench-matrix
+      inputs:
+        artifacts:
+          - name: pdftract-binary
+            path: /tmp/pdftract-binary
       activeDeadlineSeconds: 3600
       container:
         image: python:3.11-slim-bookworm
@@ -488,7 +508,7 @@ spec:
 
             # Get pdftract binary from build-matrix artifact
             echo "=== Installing pdftract binary ==="
-            PDFTRACT_ARTIFACT="/argo-inputs/artifacts/pdftract-binary-binary-linux-x86_64-musl"
+            PDFTRACT_ARTIFACT="/tmp/pdftract-binary"
             if [ -f "$PDFTRACT_ARTIFACT" ]; then
               cp "$PDFTRACT_ARTIFACT" /usr/local/bin/pdftract
               chmod +x /usr/local/bin/pdftract
@@ -564,6 +584,56 @@ spec:
             - name: benchmark-comment
               path: /workspace/benchmark-comment.md
 
+    # === Benchmark PR Comment ===
+    # Posts benchmark results as a comment on the pull request
+    # Only runs when pr-number parameter is non-empty
+    - name: benchmark-pr-comment
+      inputs:
+        artifacts:
+          - name: benchmark-comment
+            path: /tmp/benchmark-comment.md
+      activeDeadlineSeconds: 60
+      container:
+        image: debian:12
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            PR_NUMBER="{{workflow.parameters.pr-number}}"
+            COMMENT_FILE="/tmp/benchmark-comment.md"
+
+            echo "=== Posting benchmark comment to PR #$PR_NUMBER ==="
+
+            # Read comment content
+            if [ ! -f "$COMMENT_FILE" ]; then
+              echo "ERROR: Benchmark comment file not found"
+              exit 1
+            fi
+
+            COMMENT_BODY=$(cat "$COMMENT_FILE")
+
+            # Post comment via GitHub API
+            curl -s -X POST \
+              -H "Authorization: token ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/jedarden/pdftract/issues/${PR_NUMBER}/comments" \
+              -d "{\"body\": $(echo "$COMMENT_BODY" | jq -R -s '.')}"
+
+            echo "=== Benchmark comment posted successfully ==="
+        env:
+          - name: GH_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: github-webhook-secret
+                key: token
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+
     # === Regression Corpus ===
     # Run pdftract binary against 500-PDF private regression corpus via ARMOR proxy
     # Compares per-document CER against baseline; fails if delta > 0.5%
@@ -586,6 +656,9 @@ spec:
                   value: "{{item}}"
                 - name: shard-total
                   value: "8"
+              artifacts:
+                - name: pdftract-binary
+                  from: "{{tasks.build-matrix.tasks.build-linux-x86_64-musl.outputs.artifacts.pdftract-binary}}"
 
     # === Build CER Diff Tool ===
     # Build the cer-diff binary for comparing extraction outputs
@@ -627,9 +700,12 @@ spec:
         parameters:
           - name: shard-index
           - name: shard-total
+        artifacts:
+          - name: pdftract-binary
+            path: /tmp/pdftract-binary
       activeDeadlineSeconds: 360
       container:
-        image: debian:12
+        image: pdftract-test-glibc:1.78
         command: [bash, -c]
         args:
           - |
@@ -645,18 +721,14 @@ spec:
             echo "Mode: $REGRESSION_MODE"
             echo "=========================================="
 
-            # Install dependencies
-            apt-get update -qq
-            apt-get install -y -qq awscli curl ca-certificates >/dev/null 2>&1
-
             # Configure AWS CLI for ARMOR proxy
-            export AWS_ACCESS_KEY_ID="$ARMOR_AUTH_ACCESS_KEY"
-            export AWS_SECRET_ACCESS_KEY="$ARMOR_AUTH_SECRET_KEY"
+            export AWS_ACCESS_KEY_ID="$ARMOR_ACCESS_KEY_ID"
+            export AWS_SECRET_ACCESS_KEY="$ARMOR_SECRET_ACCESS_KEY"
             export AWS_ENDPOINT_URL="http://armor.armor.svc.cluster.local:9000"
 
             # Download pdftract binary
             echo "=== Downloading pdftract binary ==="
-            PDFTRACT_ARTIFACT="/argo-inputs/artifacts/pdftract-binary-binary-linux-x86_64-musl"
+            PDFTRACT_ARTIFACT="/tmp/pdftract-binary"
             if [ -f "$PDFTRACT_ARTIFACT" ]; then
               cp "$PDFTRACT_ARTIFACT" ./pdftract-x86_64-unknown-linux-musl
               chmod +x pdftract-x86_64-unknown-linux-musl
@@ -774,17 +846,17 @@ spec:
             fi
 
         env:
-          - name: ARMOR_AUTH_ACCESS_KEY
+          - name: ARMOR_ACCESS_KEY_ID
             valueFrom:
               secretKeyRef:
-                name: armor-secrets
-                key: auth-access-key
+                name: b2-readonly
+                key: access-key-id
                 optional: true
-          - name: ARMOR_AUTH_SECRET_KEY
+          - name: ARMOR_SECRET_ACCESS_KEY
             valueFrom:
               secretKeyRef:
-                name: armor-secrets
-                key: auth-secret-key
+                name: b2-readonly
+                key: secret-access-key
                 optional: true
         volumeMounts:
           - name: workspace
