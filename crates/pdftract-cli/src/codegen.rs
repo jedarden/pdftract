@@ -73,6 +73,10 @@ pub struct Method {
     pub has_options: bool,
     pub options_type: String,
     pub return_type: String,
+    /// True if this method uses string parameters instead of Source (e.g., verify_receipt)
+    pub uses_string_params: bool,
+    /// Number of string parameters if uses_string_params is true
+    pub string_param_count: usize,
 }
 
 /// SDK error definition.
@@ -143,40 +147,33 @@ impl CodeGenerator {
         let mut errors = Vec::new();
 
         // Parse method signatures from the Method surface section
-        let method_sig_re = Regex::new(r"\*\*([a-z_]+)\*\*\s*\n\s*- Signature: [`']?([a-zA-Z0-9_<>():?,\s]+)[`']?").unwrap();
-        let method_table_re = Regex::new(r"\| [`']?([a-z_]+)[`']?\|").unwrap();
+        let _method_sig_re = Regex::new(r"\*\*([a-z_]+)\*\*\s*\n\s*- Signature: [`']?([a-zA-Z0-9_<>():?,\s]+)[`']?").unwrap();
+        let _method_table_re = Regex::new(r"\| [`']?([a-z_]+)[`']?\|").unwrap();
 
         // Parse method table for CLI mappings
-        let mut cli_mappings: HashMap<String, (String, String)> = HashMap::new();
-        let in_method_table = content.contains("## Method surface");
-        if in_method_table {
-            for cap in method_table_re.captures_iter(&content) {
-                if let Some(method) = cap.get(1) {
-                    let method_name = method.as_str().to_string();
-                    // Extract CLI flag from the table row
-                    // This is simplified - full parsing would need more context
-                }
-            }
-        }
+        let _cli_mappings: HashMap<String, (String, String)> = HashMap::new();
+        let _in_method_table = content.contains("## Method surface");
+        // TODO: Implement full contract parsing from markdown
+        // For now, we use the hardcoded contract below
 
         // Parse each method from the "Method signatures" section
-        let signatures_start = content.find("### Method signatures").unwrap_or(0);
-        let signatures_section = content[signatures_start..].to_string();
+        let _signatures_start = content.find("### Method signatures").unwrap_or(0);
+        let _signatures_section = content[_signatures_start..].to_string();
 
         // Method definitions with their details
         let method_patterns = [
-            ("extract", "Extract", "extract", "Document", "ExtractOptions", "Extract structured data from a PDF", false),
-            ("extract_text", "ExtractText", "extract", "string", "ExtractOptions", "Extract plain text from a PDF", true),
-            ("extract_markdown", "ExtractMarkdown", "extract", "string", "ExtractOptions", "Extract Markdown-formatted text from a PDF", true),
-            ("extract_stream", "ExtractStream", "extract", "Page", "ExtractOptions", "Extract pages from a PDF as a stream", false),
-            ("search", "Search", "grep", "Match", "SearchOptions", "Search for text in a PDF", false),
-            ("get_metadata", "GetMetadata", "extract", "Metadata", "BaseOptions", "Get metadata from a PDF", false),
-            ("hash", "Hash", "hash", "Fingerprint", "BaseOptions", "Compute hash fingerprint of a PDF", false),
-            ("classify", "Classify", "classify", "Classification", "", "Classify a PDF document", false),
-            ("verify_receipt", "VerifyReceipt", "verify-receipt", "bool", "", "Verify a receipt", false),
+            ("extract", "Extract", "extract", "Document", "ExtractOptions", "Extract structured data from a PDF", false, false, 0),
+            ("extract_text", "ExtractText", "extract", "string", "ExtractOptions", "Extract plain text from a PDF", true, false, 0),
+            ("extract_markdown", "ExtractMarkdown", "extract", "string", "ExtractOptions", "Extract Markdown-formatted text from a PDF", true, false, 0),
+            ("extract_stream", "ExtractStream", "extract", "Page", "ExtractOptions", "Extract pages from a PDF as a stream", false, false, 0),
+            ("search", "Search", "grep", "Match", "SearchOptions", "Search for text in a PDF", false, false, 0),
+            ("get_metadata", "GetMetadata", "extract", "Metadata", "BaseOptions", "Get metadata from a PDF", false, false, 0),
+            ("hash", "Hash", "hash", "Fingerprint", "BaseOptions", "Compute hash fingerprint of a PDF", false, false, 0),
+            ("classify", "Classify", "classify", "Classification", "", "Classify a PDF document", false, false, 0),
+            ("verify_receipt", "VerifyReceipt", "verify-receipt", "bool", "", "Verify a receipt", false, true, 2),
         ];
 
-        for (name, camel_name, cli_flag, return_type, options_type, description, returns_string) in method_patterns {
+        for (name, camel_name, cli_flag, return_type, options_type, description, returns_string, uses_string_params, string_param_count) in method_patterns {
             methods.push(Method {
                 name: name.to_string(),
                 camel_name: camel_name.to_string(),
@@ -186,6 +183,8 @@ impl CodeGenerator {
                 has_options: !options_type.is_empty(),
                 options_type: options_type.to_string(),
                 return_type: return_type.to_string(),
+                uses_string_params,
+                string_param_count,
             });
         }
 
@@ -236,6 +235,8 @@ impl CodeGenerator {
                     has_options: true,
                     options_type: "ExtractOptions".to_string(),
                     return_type: "Document".to_string(),
+                    uses_string_params: false,
+                    string_param_count: 0,
                 },
                 Method {
                     name: "extract_text".to_string(),
@@ -246,6 +247,8 @@ impl CodeGenerator {
                     has_options: true,
                     options_type: "ExtractOptions".to_string(),
                     return_type: "string".to_string(),
+                    uses_string_params: false,
+                    string_param_count: 0,
                 },
                 Method {
                     name: "extract_markdown".to_string(),
@@ -256,6 +259,8 @@ impl CodeGenerator {
                     has_options: true,
                     options_type: "ExtractOptions".to_string(),
                     return_type: "string".to_string(),
+                    uses_string_params: false,
+                    string_param_count: 0,
                 },
                 Method {
                     name: "extract_stream".to_string(),
@@ -266,6 +271,8 @@ impl CodeGenerator {
                     has_options: true,
                     options_type: "ExtractOptions".to_string(),
                     return_type: "Page".to_string(),
+                    uses_string_params: false,
+                    string_param_count: 0,
                 },
                 Method {
                     name: "search".to_string(),
@@ -276,6 +283,8 @@ impl CodeGenerator {
                     has_options: true,
                     options_type: "SearchOptions".to_string(),
                     return_type: "Match".to_string(),
+                    uses_string_params: false,
+                    string_param_count: 0,
                 },
                 Method {
                     name: "get_metadata".to_string(),
@@ -286,6 +295,8 @@ impl CodeGenerator {
                     has_options: true,
                     options_type: "BaseOptions".to_string(),
                     return_type: "Metadata".to_string(),
+                    uses_string_params: false,
+                    string_param_count: 0,
                 },
                 Method {
                     name: "hash".to_string(),
@@ -296,6 +307,8 @@ impl CodeGenerator {
                     has_options: true,
                     options_type: "BaseOptions".to_string(),
                     return_type: "Fingerprint".to_string(),
+                    uses_string_params: false,
+                    string_param_count: 0,
                 },
                 Method {
                     name: "classify".to_string(),
@@ -306,6 +319,8 @@ impl CodeGenerator {
                     has_options: false,
                     options_type: "".to_string(),
                     return_type: "Classification".to_string(),
+                    uses_string_params: false,
+                    string_param_count: 0,
                 },
                 Method {
                     name: "verify_receipt".to_string(),
@@ -316,6 +331,8 @@ impl CodeGenerator {
                     has_options: false,
                     options_type: "".to_string(),
                     return_type: "bool".to_string(),
+                    uses_string_params: true,
+                    string_param_count: 2,
                 },
             ],
             errors: vec![

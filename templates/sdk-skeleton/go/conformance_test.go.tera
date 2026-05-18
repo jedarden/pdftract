@@ -73,6 +73,8 @@ func testCase(t *testing.T, client *pdftract.Client, tc struct {
 		testHash(t, client, fixturePath, tc.Options, tc.Assertions)
 	case "classify":
 		testClassify(t, client, fixturePath, tc.Assertions)
+	case "verify_receipt":
+		testVerifyReceipt(t, client, fixturePath, tc.Options, tc.Assertions)
 	default:
 		t.Skipf("Method not yet implemented: %s", tc.Method)
 	}
@@ -192,6 +194,25 @@ func testClassify(t *testing.T, client *pdftract.Client, fixturePath string, ass
 
 	if classification.Confidence < 0 || classification.Confidence > 1 {
 		t.Errorf("Expected confidence in [0,1], got %f", classification.Confidence)
+	}
+}
+
+func testVerifyReceipt(t *testing.T, client *pdftract.Client, fixturePath string, options map[string]interface{}, assertions map[string]interface{}) {
+	// The receipt parameter should be provided in the assertions
+	receipt, ok := assertions["receipt"].(string)
+	if !ok {
+		t.Skip("Receipt not provided in assertions")
+	}
+
+	valid, err := client.VerifyReceipt(fixturePath, receipt)
+	if err != nil {
+		t.Fatalf("VerifyReceipt failed: %v", err)
+	}
+
+	if expected, ok := assertions["valid"].(bool); ok {
+		if valid != expected {
+			t.Errorf("Expected valid=%v, got %v", expected, valid)
+		}
 	}
 }
 

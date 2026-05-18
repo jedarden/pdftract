@@ -168,6 +168,29 @@ func (c *Client) {{ method.camel_name }}(source Source, pattern string, options 
 
 	return resultChan, errChan
 }
+{% elif method.name == "verify_receipt" %}
+func (c *Client) {{ method.camel_name }}(path string, receipt string) (bool, error) {
+	args := []string{"{{ method.cli_flag }}", path, receipt}
+
+	cmd := exec.Command(c.binaryPath, args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode := exitErr.ExitCode()
+			// Exit code 10 means receipt verification failed (not an error, return false)
+			if exitCode == 10 {
+				return false, nil
+			}
+		}
+		return false, c.mapError(err, output)
+	}
+
+	var result bool
+	if err := json.Unmarshal(output, &result); err != nil {
+		return false, &PdftractError{Message: fmt.Sprintf("failed to parse output: %v", err)}
+	}
+	return result, nil
+}
 {% else %}
 func (c *Client) {{ method.camel_name }}(source Source{% if method.has_options %}, options *{{ method.options_type }}{% endif %}) ({{ method.return_type }}, error) {
 	args := []string{"{{ method.cli_flag }}"}
