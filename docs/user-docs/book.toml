@@ -1,0 +1,32 @@
+[book]
+title = "pdftract User Documentation"
+authors = ["jedarden"]
+language = "en"
+src = "src"
+
+[build]
+build-dir = "build/user-docs"
+
+[preprocessor.linkcheck]
+optional = true
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/jedarden/pdftract"
+edit-url-template = "https://github.com/jedarden/pdftract/edit/main/docs/user-docs/src/{path}"
+no-section-label = true
+
+[output.html.search]
+enable = true
+limit-results = 30
+use-boolean-and = true
+boost-title = 2
+boost-hierarchy = 2
+boost-paragraph = 1
+expand = true
+heading-split-level = 2
+
+[output.html.fold]
+enable = false
+level = 0
