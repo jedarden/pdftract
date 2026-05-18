@@ -4,59 +4,50 @@ Presentation slides with title, presenter, date, slide titles
 
 ## Match Criteria Summary
 
-Documents matching this profile typically contain:
+This profile matches presentation slides exported to PDF. Documents typically exhibit:
 
-- **Strong text signals**: Words like "presentation", "slide N", "table of contents"
-- **Structural signals**: Landscape page orientation (width > height), 3+ pages, large centered text blocks (titles)
-- **Page count**: Usually 3-200 pages (presentations vary widely)
-- **Layout patterns**: Title slide with centered text, subsequent slides with headings at top or left, content below
+- **Landscape orientation**: Slides are almost always landscape (4:3 or 16:9 aspect ratio)
+- **Large centred text**: Title slides have large, centered text
+- **Multiple pages**: 3+ pages minimum; slide decks often run 10-200 pages
+- **Slide numbering**: "Slide 1", "Slide 2", or table of contents
 
-The classifier looks for presentation-specific terminology combined with landscape orientation and multiple pages. Landscape documents with 3+ pages AND large centered text match with highest confidence.
-
-**Note**: Slide deck PDFs vary enormously in quality depending on the export method (PowerPoint "Save as PDF", Keynote export, Google Slides PDF, etc.). Extraction quality depends heavily on the exporter's text rendering.
+This is a degenerate profile with minimal field extraction (title, presenter, date, slide titles) because slide-deck PDFs vary enormously depending on the presentation software and exporter.
 
 ## Extracted Fields
 
 | Field | Type | Description | Example Value | Source Hint |
 |-------|------|-------------|----------------|-------------|
-| title | string | Presentation title | "Q4 2024 Business Review" | First slide, centered, large font |
-| presenter | string | Presenter name(s) | "Jane Doe, CEO" | First slide, below title |
-| date | string | Presentation date | 2024-01-15 | First slide, bottom area |
-| slide_titles | array | Title of each slide | `["Overview", "Financial Results", "Q&A"]` | Per-slide extraction, top or center |
+| date | date | Extracted from page text using pattern matching | 2024-01-15 | regex patterns, region: first_page_bottom |
+| presenter | string | Extracted from page text using pattern matching | "example value" | regex patterns, region: first_page_below_title |
+| slide_titles | array | Extracted from page text using pattern matching | [...] | regex patterns, region: top_left_or_centre, per-page |
+| title | string | Extracted from page text using pattern matching | "example value" | regex patterns, region: first_page_centre |
 
 ## Known Limitations
 
-- **Export quality**: Poor PDF exports (e.g., from old PowerPoint versions) may have garbled text or text-as-images
-- **Image-only slides**: Slides that are pure images (e.g., photos, screenshots) have no extractable text
-- **Complex layouts**: Slides with multiple text boxes, overlapping elements, or non-standard layouts may not extract correctly
-- **Animations and transitions**: PDF exports capture final state only; animated builds are not represented
-- **Non-title slides**: Slides without clear titles (e.g., photo-only slides) will have null entries in `slide_titles`
-- **Speaker notes**: Speaker notes are typically not included in PDF exports and cannot be extracted
-- **Non-English presentations**: Presentations in other languages may not match pattern lists
-- **Handout formats**: 3-up or 6-up handout PDFs (multiple slides per page) are not supported
-- **Portrait slides**: Rare portrait-orientation slides may not be detected correctly
+*This section documents known edge cases and failure modes. Contributions to improve extraction quality are welcome.*
+
+- **Exporter variability**: Slide-deck PDFs vary enormously depending on the presentation software (PowerPoint, Keynote, Google Slides) and PDF exporter; extraction quality depends heavily on how text was converted to PDF
+- **Image-heavy slides**: Slides with minimal text (e.g., photo slides, diagrams) will not produce meaningful slide_titles
+- **Non-standard layouts**: Slides without clear title regions (e.g., all-center layouts, artistic templates) may not extract slide_titles correctly
+- **Presenter extraction**: Assumes the presenter name appears below the title on the first slide; alternative formats (e.g., title slide with no presenter) will miss this field
+- **Date parsing**: Date extraction from first-page footer may fail if the presentation date is in a non-standard format
 
 ## Sample Input
 
-Example fixtures demonstrating this profile are available in `tests/fixtures/classifier/misc/`.
+Example fixtures demonstrating this profile are available in `tests/fixtures/profiles/slide_deck/`.
 
-Slide deck fixtures are typically landscape PDFs with clear title slides and multiple pages.
+*See the classifier corpus for representative documents.*
 
 ## Configuration Tips
 
-To override this profile for custom slide deck formats:
+To override this profile:
 
 ```bash
-pdftract profiles export slide_deck > my-slides.yaml
-# Edit my-slides.yaml to customize match criteria, fields, or extraction patterns
-pdftract extract --profile my-slides.yaml document.pdf
+pdftract profiles export slide_deck > my-profile.yaml
+# Edit my-profile.yaml to customize match criteria, fields, or extraction patterns
+pdftract extract --profile my-profile.yaml document.pdf
 ```
-
-Common customizations:
-- Adjust `slide_titles.extraction.per_page` to false if you only want the first slide's title
-- For handout formats (multiple slides per page), consider creating a custom profile with different extraction logic
-- Add presenter-specific patterns if your organization uses consistent presenter naming conventions
 
 ---
 
-*This README documents the built-in `slide_deck` profile. See `docs/research/document-classification-and-zone-labeling.md` for classifier theory.*
+*This README was auto-generated from `profile.yaml`. Update the Match Criteria Summary and Known Limitations sections with profile-specific guidance.*

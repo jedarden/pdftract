@@ -4,58 +4,52 @@ Court filing with case number, court, parties, filing date, docket
 
 ## Match Criteria Summary
 
-Documents matching this profile typically contain:
+This profile matches court filings and legal documents. Documents typically contain:
 
-- **Strong text signals**: Words like "case #:", "docket #:", "court of", "superior court", "district court"
-- **Structural signals**: Court header at top, page numbers, signature blocks
-- **Page count**: Usually 1-100 pages (filings vary by document type)
-- **Layout patterns**: Court caption at top (court name, case number, parties), document body, docket entries or certificate of service
+- **Case/docket identifiers**: "Case #:", "Docket #:", "Civil Action No."
+- **Court naming**: "Court of", "Superior Court", "District Court", "United States District Court"
+- **Party designations**: "Plaintiff:", "Defendant:", "Petitioner:", "Respondent:" or "v." notation
+- **Court header formatting**: Formal court headers at the top of pages with page numbers
 
-The classifier looks for legal filing terminology combined with court header structures. Documents with "case/docket" terminology AND court headers match with highest confidence.
+Court filings range from 1-100 pages. The profile expects formal legal formatting with case captions and party identification.
 
 ## Extracted Fields
 
 | Field | Type | Description | Example Value | Source Hint |
 |-------|------|-------------|----------------|-------------|
-| case_number | string | Case or docket number | "CV-2024-001234" or "1:24-cv-00123" | "case", "docket", or "civil action no." fields |
-| court | string | Court name | "Superior Court of California" | First page top, court name patterns |
-| parties | array | Parties to the case | `["Smith", "Jones"]` | "plaintiff", "defendant", "petitioner", "respondent", or "v." patterns |
-| filing_date | date | Date document was filed | 2024-01-15 | "filed", "submitted", or "date filed" fields |
-| docket_entries | array | Docket or proceeding entries | `["[1] Complaint filed"]` | After "docket" heading, numbered list |
+| case_number | string | Extracted from page text using pattern matching | "example value" | regex patterns |
+| court | string | Extracted from page text using pattern matching | "example value" | regex patterns, region: first_page_top |
+| docket_entries | array | Extracted from page text using pattern matching | [...] | regex patterns, region: after_docket_heading |
+| filing_date | date | Extracted from page text using pattern matching | 2024-01-15 | regex patterns |
+| parties | array | Extracted from page text using pattern matching | [...] | regex patterns |
 
 ## Known Limitations
 
-- **Multi-case filings**: Filings referencing multiple cases may only extract the first case number
-- **Sealed filings**: Redacted or sealed filings may have missing information
-- **Exhibit attachments**: Exhibits attached to filings are not processed separately
-- **Complex caption formats**: Some courts use non-standard caption formats that may not parse correctly
-- **Non-English filings**: Filings in languages other than English may not match pattern lists
-- **Scanned filings**: Poor OCR quality can lead to missed fields, especially in dense captions
-- **Multiple parties**: Cases with many parties (e.g., class actions) may not extract all parties
-- **Electronically filed documents**: Some e-filing systems add headers/footers that may interfere with extraction
-- **State-specific formats**: Different states have different caption formats; some may not be supported
+*This section documents known edge cases and failure modes. Contributions to improve extraction quality are welcome.*
+
+- **Multi-party cases**: Only captures the first two parties (plaintiff/petitioner and defendant/respondent); additional parties are not extracted
+- **Cross-claims and counterclaims**: Treated as separate parties; complex multi-party litigation may not extract all parties correctly
+- **Sealed/redacted filings**: Redacted case numbers or party names may not extract correctly
+- **International courts**: Pattern matching is optimized for US court naming conventions; non-US court formats may fail
+- **Docket entry parsing**: Only captures bracketed docket entries ([1], [2]); alternative numbering formats may be missed
+- **Amended filings**: Amendments are treated as separate documents; cross-references between filings are not resolved
 
 ## Sample Input
 
-Example fixtures demonstrating this profile are available in `tests/fixtures/classifier/contract/`.
+Example fixtures demonstrating this profile are available in `tests/fixtures/profiles/legal_filing/`.
 
-Legal filing fixtures are typically multi-page documents with court captions at the top.
+*See the classifier corpus for representative documents.*
 
 ## Configuration Tips
 
-To override this profile for custom legal filing formats:
+To override this profile:
 
 ```bash
-pdftract profiles export legal_filing > my-filing.yaml
-# Edit my-filing.yaml to customize match criteria, fields, or extraction patterns
-pdftract extract --profile my-filing.yaml document.pdf
+pdftract profiles export legal_filing > my-profile.yaml
+# Edit my-profile.yaml to customize match criteria, fields, or extraction patterns
+pdftract extract --profile my-profile.yaml document.pdf
 ```
-
-Common customizations:
-- Add court-specific patterns to `case_number.extraction.patterns`
-- For state-specific formats, update `court.extraction.patterns` with local court names
-- Adjust `parties.extraction.patterns` for different party types (e.g., "appellant", "appellee")
 
 ---
 
-*This README documents the built-in `legal_filing` profile. See `docs/research/document-classification-and-zone-labeling.md` for classifier theory.*
+*This README was auto-generated from `profile.yaml`. Update the Match Criteria Summary and Known Limitations sections with profile-specific guidance.*

@@ -4,57 +4,51 @@ Book chapter with title, chapter number, author, section headings
 
 ## Match Criteria Summary
 
-Documents matching this profile typically contain:
+This profile matches book chapters and book excerpts. Documents typically contain:
 
-- **Strong text signals**: Words like "chapter 1", "section 1.1", numbered headings (1., 2., etc.)
-- **Structural signals**: Running headers (book title, chapter title, page numbers), chapter heading structures
-- **Page count**: Usually 5-50 pages (chapters vary by book type)
-- **Layout patterns**: Chapter title at top, chapter number, author (if different from book), numbered sections, running headers
+- **Chapter headings**: "Chapter XIV", "Chapter 3", or numbered sections like "3.1 Introduction"
+- **Section numbering**: Hierarchical section headings (e.g., "1.2", "3.4.1") or all-caps headings
+- **Running headers**: Book title, author name, or chapter title in page headers
+- **Multi-page structure**: Book chapters are almost always 5+ pages
 
-The classifier looks for book chapter terminology combined with running headers and chapter heading structures. Documents with "chapter" terminology AND running headers match with highest confidence.
+The profile expects formal book formatting with clear chapter/section headings. It works for fiction non-fiction chapters, textbook excerpts, and technical book chapters.
 
 ## Extracted Fields
 
 | Field | Type | Description | Example Value | Source Hint |
 |-------|------|-------------|----------------|-------------|
-| title | string | Chapter title | "The Origins of Language" | First page, after chapter number |
-| chapter_number | string | Chapter identifier | "3" or "III" | "chapter" field or first heading number |
-| author | string | Chapter author (if applicable) | "Dr. Jane Smith" | "by" or "author" fields near title |
-| sections | array | Section headings within chapter | `["Introduction", "Historical Context", "Analysis"]` | Headings throughout the chapter |
+| author | string | Extracted from page text using pattern matching | "example value" | regex patterns |
+| chapter_number | string | Extracted from page text using pattern matching | "example value" | regex patterns, region: first_page_top |
+| sections | array | Extracted from page text using pattern matching | [...] | regex patterns, region: headings |
+| title | string | Extracted from page text using pattern matching | "example value" | regex patterns, region: first_page_top |
 
 ## Known Limitations
 
-- **Books without chapter numbers**: Books with unnumbered chapters (e.g., named chapters only) may not match correctly
-- **Multi-author books**: Chapters by different authors may not extract author if not explicitly labeled
-- **Complex numbering**: Non-standard chapter numbering (e.g., "Chapter 3A") may not parse correctly
-- **Front/back matter**: Prefaces, introductions, and conclusions without "chapter" labels may not match
-- **Non-English books**: Books in other languages may not match pattern lists
-- **Scanned books**: Poor OCR quality can lead to missed headings, especially in decorative fonts
-- **Ebook exports**: Ebook PDF exports may have unusual layouts (e.g., flowing text) that confuse heading detection
-- **Running header variations**: Books with alternating running headers (recto/verso) may not parse consistently
-- **Boxed or sidebar sections**: Sidebars or boxed text may be incorrectly identified as sections
+*This section documents known edge cases and failure modes. Contributions to improve extraction quality are welcome.*
+
+- **Author extraction**: Assumes author is explicitly listed with "by:" or "author:" markers; books without explicit author attribution may miss this field
+- **Section heading parsing**: Only captures top-level headings; nested subsections may be missed
+- **Short chapters**: Chapters under 5 pages may not match (page_count_gte: 5)
+- **Prefaces/introductions**: Front matter without clear chapter numbering may not match
+- **Multi-chapter excerpts**: Excerpts containing multiple chapters may only extract the first chapter number
+- **Non-English books**: Pattern matching is optimized for English terminology like "Chapter" and "Section"
 
 ## Sample Input
 
-Example fixtures demonstrating this profile are available in `tests/fixtures/classifier/misc/`.
+Example fixtures demonstrating this profile are available in `tests/fixtures/profiles/book_chapter/`.
 
-Book chapter fixtures are typically multi-page documents with clear chapter headings and running headers.
+*See the classifier corpus for representative documents.*
 
 ## Configuration Tips
 
-To override this profile for custom book chapter formats:
+To override this profile:
 
 ```bash
-pdftract profiles export book_chapter > my-chapter.yaml
-# Edit my-chapter.yaml to customize match criteria, fields, or extraction patterns
-pdftract extract --profile my-chapter.yaml document.pdf
+pdftract profiles export book_chapter > my-profile.yaml
+# Edit my-profile.yaml to customize match criteria, fields, or extraction patterns
+pdftract extract --profile my-profile.yaml document.pdf
 ```
-
-Common customizations:
-- Add book-specific section numbering patterns to `sections.extraction.patterns`
-- For numbered sections (e.g., "1.1", "1.2"), adjust patterns to capture hierarchical numbering
-- If chapters use roman numerals (I, II, III), ensure patterns include these formats
 
 ---
 
-*This README documents the built-in `book_chapter` profile. See `docs/research/document-classification-and-zone-labeling.md` for classifier theory.*
+*This README was auto-generated from `profile.yaml`. Update the Match Criteria Summary and Known Limitations sections with profile-specific guidance.*

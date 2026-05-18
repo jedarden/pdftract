@@ -4,16 +4,13 @@ Fillable form with fields; uses line_dominant reading order and form_fields from
 
 ## Match Criteria Summary
 
-Documents matching this profile typically contain:
+This profile matches fillable forms and questionnaires. Documents typically contain:
 
-- **Strong text signals**: Words like "form 1099", "application form", "questionnaire", "please fill out", "required fields"
-- **Structural signals**: Form field layout (blanks, checkboxes, labeled input areas), blank lines with colons
-- **Page count**: Usually 1-10 pages (forms are typically concise)
-- **Layout patterns**: Labels followed by blanks/underlines, checkboxes, signature blocks, structured fields
+- **Explicit form markers**: "Form 1234", "Application form", "Questionnaire", "Please fill out", "Required fields"
+- **Field layout**: Repeated label-value pairs with colons or underscores (e.g., "Name: ______", "Date: __/__/__")
+- **Blank input areas**: Lines, boxes, or underscored areas for user input
 
-The classifier looks for form-specific terminology combined with field layout patterns. Documents with "form" terminology AND blank fields match with highest confidence.
-
-**Note**: This is a degenerate profile with **no field extractors**. It uses `line_dominant` reading order and surfaces all `form_fields` from Phase 7.4. The profile enables form-specific processing but does not extract named fields like other profiles.
+This is a degenerate profile with **no field extractors** — it only identifies documents as forms and relies on the `form_fields` integration from Phase 7.4 for field extraction. Forms are typically 1-10 pages.
 
 ## Extracted Fields
 
@@ -21,49 +18,32 @@ The classifier looks for form-specific terminology combined with field layout pa
 |-------|------|-------------|----------------|-------------|
 | *(none)* | - | *This profile has no field extractors* | - | - |
 
-Instead of named fields, this profile integrates with Phase 7.4's `form_fields` system, which extracts:
-- Text input fields (labels + values)
-- Checkbox/radio button states
-- Signature blocks
-- Date fields
-- Multi-line text areas
-
-See Phase 7.4 documentation for the `form_fields` schema.
-
 ## Known Limitations
 
-- **No named extraction**: Unlike other profiles, this does not return named fields; users must process `form_fields` output
-- **Handwritten forms**: Handwritten responses may not be OCRed correctly
-- **Complex layouts**: Forms with non-standard layouts (e.g., grids, nested sections) may confuse field detection
-- **Checkboxes and radio buttons**: Checkbox states may be unreliable depending on PDF encoding
-- **Multi-page forms**: Fields spanning page boundaries may be split incorrectly
-- **Non-English forms**: Forms in other languages may not match pattern lists
-- **Scanned forms**: Poor scan quality can lead to missed fields or incorrect label-value pairing
-- **Dynamic forms**: Forms with conditional fields (e.g., "if yes, go to section B") are not interpreted
+*This section documents known edge cases and failure modes. Contributions to improve extraction quality are welcome.*
+
+- **No field extraction**: This profile only classifies documents as forms; actual field extraction is handled by the `form_fields` integration (Phase 7.4), which must be run separately
+- **Pre-filled forms**: Forms with already-filled handwritten or typed responses may confuse the classifier's field layout detection
+- **Complex layouts**: Forms with non-standard layouts (e.g., grids, nested tables, multi-column designs) may not be recognized
+- **Scanned forms**: Poor scan quality may cause field labels to be missed or misclassified
+- **Non-English forms**: Pattern matching is optimized for English terminology like "form", "application", "questionnaire"
 
 ## Sample Input
 
-Example fixtures demonstrating this profile are available in `tests/fixtures/classifier/misc/`.
+Example fixtures demonstrating this profile are available in `tests/fixtures/profiles/form/`.
 
-Form fixtures are typically single-page documents with labeled fields and blanks for user input.
+*See the classifier corpus for representative documents.*
 
 ## Configuration Tips
 
-To override this profile for custom form formats:
+To override this profile:
 
 ```bash
-pdftract profiles export form > my-form.yaml
-# Edit my-form.yaml to customize match criteria, fields, or extraction patterns
-pdftract extract --profile my-form.yaml document.pdf
+pdftract profiles export form > my-profile.yaml
+# Edit my-profile.yaml to customize match criteria, fields, or extraction patterns
+pdftract extract --profile my-profile.yaml document.pdf
 ```
-
-Common customizations:
-- Add form-specific patterns to `match.text_patterns` for proprietary form types
-- If you need named field extraction, copy this profile and add `profile_fields` entries
-- For government forms (e.g., IRS, USCIS), create specific profiles with known field mappings
-
-**Integration with Phase 7.4**: This profile sets `form_fields_integration: true`, which enables the form field extraction pipeline. The extracted `form_fields` array is included in the output JSON.
 
 ---
 
-*This README documents the built-in `form` profile. See `docs/research/document-classification-and-zone-labeling.md` for classifier theory and Phase 7.4 for `form_fields` schema.*
+*This README was auto-generated from `profile.yaml`. Update the Match Criteria Summary and Known Limitations sections with profile-specific guidance.*

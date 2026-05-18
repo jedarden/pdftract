@@ -33,6 +33,7 @@ struct ExtractionConfig {
     #[serde(default)]
     per_page: Option<bool>,
     #[serde(default)]
+    #[allow(dead_code)]
     fallback: serde_yaml::Value,
 }
 
