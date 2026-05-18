@@ -449,20 +449,24 @@ pub fn parse_catalog(resolver: &XrefResolver, root_ref: ObjRef) -> Result<Catalo
     let pages_ref = match catalog_dict.get("Pages") {
         Some(PdfObject::Ref(ref_)) => *ref_,
         Some(other) => {
+            // Emit STRUCT_MISSING_KEY diagnostic and return empty catalog
             diagnostics.push(Diagnostic {
                 severity: Severity::Error,
                 phase: "1.4".to_string(),
-                message: format!("/Pages is not a reference (type: {})", other.type_name()),
+                message: format!("STRUCT_MISSING_KEY: /Pages is not a reference (type: {})", other.type_name()),
             });
-            return Err(diagnostics);
+            catalog.diagnostics = diagnostics;
+            return Ok(catalog);
         }
         None => {
+            // Emit STRUCT_MISSING_KEY diagnostic and return empty catalog
             diagnostics.push(Diagnostic {
                 severity: Severity::Error,
                 phase: "1.4".to_string(),
-                message: "/Pages key missing from catalog".to_string(),
+                message: "STRUCT_MISSING_KEY: /Pages key missing from catalog".to_string(),
             });
-            return Err(diagnostics);
+            catalog.diagnostics = diagnostics;
+            return Ok(catalog);
         }
     };
 
@@ -545,7 +549,7 @@ mod tests {
             let mut mark_info = indexmap::IndexMap::new();
             mark_info.insert(intern("Marked"), PdfObject::Bool(true));
             mark_info.insert(intern("UserProperties"), PdfObject::Bool(false));
-            PdfObject::Dict(mark_info)
+            PdfObject::Dict(Box::new(mark_info))
         });
         dict.insert(intern("PageLabels"), {
             let mut nums = Vec::new();
@@ -555,20 +559,20 @@ mod tests {
                 label.insert(intern("S"), PdfObject::Name(intern("r")));
                 label.insert(intern("P"), PdfObject::Name(intern("front-")));
                 label.insert(intern("St"), PdfObject::Integer(1));
-                PdfObject::Dict(label)
+                PdfObject::Dict(Box::new(label))
             });
             nums.push(PdfObject::Integer(3));
             nums.push({
                 let mut label = indexmap::IndexMap::new();
                 label.insert(intern("S"), PdfObject::Name(intern("D")));
-                PdfObject::Dict(label)
+                PdfObject::Dict(Box::new(label))
             });
             let mut tree = indexmap::IndexMap::new();
-            tree.insert(intern("Nums"), PdfObject::Array(nums));
-            PdfObject::Dict(tree)
+            tree.insert(intern("Nums"), PdfObject::Array(Box::new(nums)));
+            PdfObject::Dict(Box::new(tree))
         });
         dict.insert(intern("Version"), PdfObject::Name(intern("2.0")));
-        PdfObject::Dict(dict)
+        PdfObject::Dict(Box::new(dict))
     }
 
     #[test]
@@ -578,7 +582,7 @@ mod tests {
         dict.insert(intern("UserProperties"), PdfObject::Bool(true));
         dict.insert(intern("Suspects"), PdfObject::Bool(false));
 
-        let obj = PdfObject::Dict(dict);
+        let obj = PdfObject::Dict(Box::new(dict));
         let mark_info = MarkInfo::parse(&obj);
 
         assert!(mark_info.is_tagged);
@@ -632,7 +636,7 @@ mod tests {
         dict.insert(intern("P"), PdfObject::Name(intern("Appendix-")));
         dict.insert(intern("St"), PdfObject::Integer(1));
 
-        let obj = PdfObject::Dict(dict);
+        let obj = PdfObject::Dict(Box::new(dict));
         let label = PageLabel::parse(&obj).unwrap();
 
         assert_eq!(label.style, PageLabelStyle::RomanLowercase);
@@ -688,13 +692,13 @@ mod tests {
         nums.push({
             let mut label = indexmap::IndexMap::new();
             label.insert(intern("S"), PdfObject::Name(intern("r")));
-            PdfObject::Dict(label)
+            PdfObject::Dict(Box::new(label))
         });
         nums.push(PdfObject::Integer(5));
         nums.push({
             let mut label = indexmap::IndexMap::new();
             label.insert(intern("S"), PdfObject::Name(intern("D")));
-            PdfObject::Dict(label)
+            PdfObject::Dict(Box::new(label))
         });
 
         let mut tree = PageLabelsTree::new();
@@ -744,11 +748,17 @@ mod tests {
         // Cache a catalog without /Pages
         let mut dict = indexmap::IndexMap::new();
         dict.insert(intern("Type"), PdfObject::Name(intern("Catalog")));
-        let catalog_obj = PdfObject::Dict(dict);
+        let catalog_obj = PdfObject::Dict(Box::new(dict));
         resolver.cache_object(root_ref, catalog_obj);
 
         let result = parse_catalog(&resolver, root_ref);
-        assert!(result.is_err());
+        assert!(result.is_ok());
+
+        let catalog = result.unwrap();
+        // Empty catalog should have pages_ref = ObjRef::new(0, 0) from Default
+        assert_eq!(catalog.pages_ref, ObjRef::new(0, 0));
+        // Should have STRUCT_MISSING_KEY diagnostic
+        assert!(catalog.diagnostics.iter().any(|d| d.message.contains("STRUCT_MISSING_KEY")));
     }
 
     #[test]
@@ -781,7 +791,7 @@ mod tests {
         // Minimal catalog: only /Pages
         let mut dict = indexmap::IndexMap::new();
         dict.insert(intern("Pages"), PdfObject::Ref(ObjRef::new(2, 0)));
-        let catalog_obj = PdfObject::Dict(dict);
+        let catalog_obj = PdfObject::Dict(Box::new(dict));
         resolver.cache_object(root_ref, catalog_obj);
 
         let result = parse_catalog(&resolver, root_ref);
@@ -811,9 +821,9 @@ mod tests {
         dict.insert(intern("MarkInfo"), {
             let mut mark_info = indexmap::IndexMap::new();
             mark_info.insert(intern("Marked"), PdfObject::Bool(true));
-            PdfObject::Dict(mark_info)
+            PdfObject::Dict(Box::new(mark_info))
         });
-        let catalog_obj = PdfObject::Dict(dict);
+        let catalog_obj = PdfObject::Dict(Box::new(dict));
         resolver.cache_object(root_ref, catalog_obj);
 
         let catalog = parse_catalog(&resolver, root_ref).unwrap();
@@ -828,7 +838,7 @@ mod tests {
         let mut dict = indexmap::IndexMap::new();
         dict.insert(intern("Pages"), PdfObject::Ref(ObjRef::new(2, 0)));
         dict.insert(intern("Version"), PdfObject::Name(intern("2.0")));
-        let catalog_obj = PdfObject::Dict(dict);
+        let catalog_obj = PdfObject::Dict(Box::new(dict));
         resolver.cache_object(root_ref, catalog_obj);
 
         let catalog = parse_catalog(&resolver, root_ref).unwrap();
@@ -925,7 +935,7 @@ mod proptests {
             any::<bool>().prop_map(PdfObject::Bool),
             any::<i64>().prop_map(PdfObject::Integer),
             any::<f64>().prop_map(|f| if f.is_finite() { PdfObject::Real(f) } else { PdfObject::Real(0.0) }),
-            prop::collection::vec(any::<u8>(), 0..100).prop_map(PdfObject::String),
+            prop::collection::vec(any::<u8>(), 0..100).prop_map(|v| PdfObject::String(Box::new(v))),
             "[a-zA-Z]{1,20}".prop_map(|s| PdfObject::Name(intern(&s))),
             prop::collection::vec(any::<u8>(), 0..100).prop_map(|bytes| {
                 // Try to create a valid name from the bytes
@@ -955,7 +965,7 @@ mod proptests {
             let root_ref = ObjRef::new(1, 0);
 
             // Cache the arbitrary dict as the catalog
-            let catalog_obj = PdfObject::Dict(dict);
+            let catalog_obj = PdfObject::Dict(Box::new(dict));
             resolver.cache_object(root_ref, catalog_obj);
 
             // This should never panic - it should always return Ok or Err with diagnostics

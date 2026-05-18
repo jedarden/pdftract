@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use std::borrow::Cow;
 use crate::parser::object::{ObjRef, PdfObject, PdfDict};
-use crate::parser::stream::PdfSource;
+use crate::parser::stream::{PdfSource, MemorySource};
 
 /// Error type for xref resolution.
 #[derive(Debug, Clone)]
@@ -334,38 +334,47 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
         }
     };
 
-    pos += xref_start as u64 + 3; // Skip "xref"
+    // Advance past "xref" keyword to the byte after it
+    // The keyword is at index xref_start, and we need to move past its 4 bytes
+    let xref_end = xref_start + 4;
+    pos = start_offset + xref_end as u64;
 
     // Parse subsections until we hit "trailer"
     loop {
-        // Skip whitespace before subsection header or trailer
-        let ws_bytes = match source.read_at(pos, 100) {
-            Ok(bytes) => bytes,
+        // Read a chunk to check for trailer or subsection header
+        let chunk_bytes = match source.read_at(pos, 100) {
+            Ok(bytes) if !bytes.is_empty() => bytes,
             _ => {
+                // EOF or error - we're done
+                break;
+            }
+        };
+
+        let chunk_str = match std::str::from_utf8(&chunk_bytes) {
+            Ok(s) => s,
+            Err(_) => {
                 result.diagnostics.push(XrefDiagnostic::with_static(
                     XrefDiagCode::XrefTruncated,
                     pos,
-                    "Failed to read before subsection/trailer",
+                    "Invalid UTF-8 in xref data",
                 ));
                 break;
             }
         };
 
+        let trimmed = chunk_str.trim_start();
+        let ws_offset = chunk_str.len() - trimmed.len();
+
         // Check for trailer keyword
-        let ws_str = std::str::from_utf8(&ws_bytes);
-        if let Ok(s) = ws_str {
-            let trimmed = s.trim_start();
-            if trimmed.starts_with("trailer") {
-                // Found trailer - parse it and we're done
-                pos += (s.len() - trimmed.len()) as u64 + 7; // Skip "trailer"
-                result.trailer = parse_trailer_dict(source, &mut pos, &mut result.diagnostics);
-                break;
-            }
+        if trimmed.starts_with("trailer") {
+            pos += ws_offset as u64 + 7; // Skip "trailer"
+            result.trailer = parse_trailer_dict(source, &mut pos, &mut result.diagnostics);
+            break;
         }
 
-        // Parse subsection header: "obj_start obj_count"
-        let subsection_start = pos;
-        let header_line = match read_line(source, &mut pos, &mut result.diagnostics) {
+        // Otherwise, expect subsection header: "obj_start obj_count"
+        let subsection_start = pos + ws_offset as u64;
+        let header_line = match read_line_at(source, subsection_start) {
             Some(line) => line,
             None => {
                 result.diagnostics.push(XrefDiagnostic::with_static(
@@ -384,11 +393,21 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
                 subsection_start,
                 format!("Invalid subsection header: {}", header_line),
             ));
-            // Try to continue - might be trailer
-            if header_line.trim().starts_with("trailer") {
-                result.trailer = parse_trailer_dict(source, &mut pos, &mut result.diagnostics);
-                break;
-            }
+            // Skip this line and try to continue
+            // Find the line ending length
+            let line_bytes = source.read_at(subsection_start, header_line.len() + 2).ok();
+            let line_ending_len = if let Some(chunk) = line_bytes {
+                if chunk.get(header_line.len()) == Some(&b'\r') {
+                    if chunk.get(header_line.len() + 1) == Some(&b'\n') { 2 } else { 1 }
+                } else if chunk.get(header_line.len()) == Some(&b'\n') {
+                    1
+                } else {
+                    1 // assume at least 1 byte for line ending
+                }
+            } else {
+                1
+            };
+            pos = subsection_start + header_line.len() as u64 + line_ending_len as u64;
             continue;
         }
 
@@ -400,6 +419,7 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
                     subsection_start,
                     format!("Invalid subsection start: {}", header_parts[0]),
                 ));
+                pos = subsection_start + header_line.len() as u64 + 1;
                 continue;
             }
         };
@@ -412,9 +432,26 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
                     subsection_start,
                     format!("Invalid subsection count: {}", header_parts[1]),
                 ));
+                pos = subsection_start + header_line.len() as u64 + 1;
                 continue;
             }
         };
+
+        // Position advances past the subsection header line (including line ending)
+        // Find the line ending length
+        let line_bytes = source.read_at(subsection_start, header_line.len() + 2).ok();
+        let line_ending_len = if let Some(chunk) = line_bytes {
+            if chunk.get(header_line.len()) == Some(&b'\r') {
+                if chunk.get(header_line.len() + 1) == Some(&b'\n') { 2 } else { 1 }
+            } else if chunk.get(header_line.len()) == Some(&b'\n') {
+                1
+            } else {
+                1 // assume at least 1 byte for line ending
+            }
+        } else {
+            1
+        };
+        pos = subsection_start + header_line.len() as u64 + line_ending_len as u64;
 
         // Parse subsection entries
         // We need to detect stride (20 vs 19 bytes) by trying the first entry
@@ -468,10 +505,9 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
                             ));
                         }
                     }
-                    // Only add in-use entries (free entries are ignored per task description)
-                    if let XrefEntry::InUse { .. } = entry {
-                        result.add_entry(obj_nr, entry);
-                    }
+                    // Add all entries (both in-use and free)
+                    // Free entries are needed for the complete xref map
+                    result.add_entry(obj_nr, entry);
                     pos += stride as u64;
                     entries_parsed += 1;
                 }
@@ -569,31 +605,16 @@ fn parse_xref_entry(
     }
 }
 
-/// Read a line from the source, updating the position.
+/// Read a line from the source at a specific position (without updating position).
 ///
 /// Returns None on EOF or error.
-fn read_line(
-    source: &dyn PdfSource,
-    pos: &mut u64,
-    diagnostics: &mut Vec<XrefDiagnostic>,
-) -> Option<String> {
+fn read_line_at(source: &dyn PdfSource, mut pos: u64) -> Option<String> {
     let mut result = String::new();
     let mut chunk_pos = 0;
     let chunk_size = 256;
 
     loop {
-        let chunk = match source.read_at(*pos + chunk_pos, chunk_size) {
-            Ok(bytes) => bytes,
-            Err(_) => {
-                diagnostics.push(XrefDiagnostic::with_static(
-                    XrefDiagCode::XrefTruncated,
-                    *pos,
-                    "I/O error reading line",
-                ));
-                return None;
-            }
-        };
-
+        let chunk = source.read_at(pos + chunk_pos, chunk_size).ok()?;
         if chunk.is_empty() {
             break;
         }
@@ -604,18 +625,15 @@ fn read_line(
                 // Check for CRLF
                 if i + 1 < chunk.len() && chunk[i + 1] == b'\n' {
                     result.push_str(std::str::from_utf8(&chunk[..i]).ok()?);
-                    *pos += chunk_pos + i as u64 + 2;
                     return Some(result);
                 }
                 // Single CR
                 result.push_str(std::str::from_utf8(&chunk[..i]).ok()?);
-                *pos += chunk_pos + i as u64 + 1;
                 return Some(result);
             }
             if byte == b'\n' {
                 // Single LF
                 result.push_str(std::str::from_utf8(&chunk[..i]).ok()?);
-                *pos += chunk_pos + i as u64 + 1;
                 return Some(result);
             }
         }
@@ -633,9 +651,35 @@ fn read_line(
     if result.is_empty() {
         None
     } else {
-        *pos += chunk_pos;
         Some(result)
     }
+}
+
+/// Read a line from the source, updating the position.
+///
+/// Returns None on EOF or error.
+fn read_line(
+    source: &dyn PdfSource,
+    pos: &mut u64,
+    diagnostics: &mut Vec<XrefDiagnostic>,
+) -> Option<String> {
+    let line = read_line_at(source, *pos)?;
+    // Advance position past the line (including line ending)
+    // We need to find the actual line ending length
+    let chunk = source.read_at(*pos, line.len() + 2).ok()?;
+    let line_ending_len = if chunk.get(line.len()) == Some(&b'\r') {
+        if chunk.get(line.len() + 1) == Some(&b'\n') {
+            2 // CRLF
+        } else {
+            1 // CR alone
+        }
+    } else if chunk.get(line.len()) == Some(&b'\n') {
+        1 // LF alone
+    } else {
+        0 // No line ending found (shouldn't happen)
+    };
+    *pos += line.len() as u64 + line_ending_len as u64;
+    Some(line)
 }
 
 /// Parse the trailer dictionary.
