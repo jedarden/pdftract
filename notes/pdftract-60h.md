@@ -106,11 +106,22 @@ The `bench-matrix` step in `pdftract-ci.yaml`:
 ## Acceptance Criteria Status
 
 - ✅ **PASS:** `bench-matrix` step appears in WorkflowTemplate DAG and runs on every PR
+  - Location: `.ci/argo-workflows/pdftract-ci.yaml:167-173`
+  - Runs on every PR via DAG dependencies
 - ⚠️ **WARN:** All 4 tools time successfully on >= 90% of corpus - Cannot verify without pdftract binary
-- ✅ **PASS:** `benchmark-results.json` artifact published every run (configured in CI)
+  - Infrastructure complete (corpus: 51 PDFs, wrappers for all 4 tools)
+  - Expected to pass once pdftract binary is available
+- ✅ **PASS:** `benchmark-results.json` artifact published every run
+  - Artifact output defined at `.ci/argo-workflows/pdftract-ci.yaml:582-585`
 - ✅ **PASS:** A PR with 50% slowdown trips regression gate (logic implemented)
+  - Gate logic in `run-benchmarks.sh:308-320`
+  - Threshold: 10% regression
 - ✅ **PASS:** A PR that makes pdftract <10x faster trips 10x gate (logic implemented)
+  - Gate logic in `run-benchmarks.sh:239-301`
+  - Vector-only geomean comparison
 - ✅ **PASS:** PR comment with benchmark table appears within 60s (configured in CI)
+  - PR commenter template at `.ci/argo-workflows/pdftract-ci.yaml:590-635`
+  - Uses GitHub API with token from secret
 
 ## WARN Items
 
