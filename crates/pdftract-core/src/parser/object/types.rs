@@ -122,6 +122,50 @@ pub struct PdfStream {
     pub len_hint: Option<u64>,
 }
 
+impl PdfStream {
+    /// Create a new stream.
+    #[inline]
+    pub fn new(dict: PdfDict, offset: u64, len_hint: Option<u64>) -> Self {
+        Self { dict, offset, len_hint }
+    }
+
+    /// Get the /Filter entry from the stream dictionary.
+    ///
+    /// Returns None if no filter is present (raw stream).
+    pub fn filter(&self) -> Option<Vec<String>> {
+        let filter = self.dict.get("/Filter")?;
+
+        Some(match filter {
+            PdfObject::Name(name) => vec![name.to_string()],
+            PdfObject::Array(arr) => arr
+                .iter()
+                .filter_map(|obj| obj.as_name().map(|n| n.to_string()))
+                .collect(),
+            _ => return None,
+        })
+    }
+
+    /// Get the /DecodeParms entry from the stream dictionary.
+    ///
+    /// Returns None if no parameters are present.
+    pub fn decode_params(&self) -> Option<Vec<PdfObject>> {
+        let params = self.dict.get("/DecodeParms")?;
+
+        Some(match params {
+            PdfObject::Dict(_) => vec![params.clone()],
+            PdfObject::Array(arr) => arr.as_ref().clone(),
+            _ => return None,
+        })
+    }
+
+    /// Get the /Length entry from the stream dictionary.
+    ///
+    /// Returns the direct integer value, or None if /Length is indirect/missing.
+    pub fn length(&self) -> Option<u64> {
+        self.dict.get("/Length")?.as_int().map(|i| i as u64)
+    }
+}
+
 /// PDF indirect object wrapper.
 ///
 /// Represents a resolved indirect object with its ID.
@@ -159,17 +203,20 @@ pub enum PdfObject {
 
     /// String object (PDF 1.7, Section 7.3.4)
     /// Raw bytes; encoding interpretation happens later during text extraction.
-    String(Vec<u8>),
+    /// Boxed to keep enum size small.
+    String(Box<Vec<u8>>),
 
     /// Name object (PDF 1.7, Section 7.3.5)
     /// Uses interned Arc<str> for cheap cloning and deduplication.
     Name(Arc<str>),
 
     /// Array object (PDF 1.7, Section 7.3.6)
-    Array(Vec<PdfObject>),
+    /// Boxed to keep enum size small.
+    Array(Box<Vec<PdfObject>>),
 
     /// Dictionary object (PDF 1.7, Section 7.3.7)
-    Dict(PdfDict),
+    /// Boxed to keep enum size small (IndexMap is ~72 bytes unboxed).
+    Dict(Box<PdfDict>),
 
     /// Indirect reference (PDF 1.7, Section 7.3.8)
     Ref(ObjRef),
@@ -303,7 +350,11 @@ impl PartialEq for PdfObject {
             (PdfObject::Integer(a), PdfObject::Integer(b)) => a == b,
             (PdfObject::Real(a), PdfObject::Real(b)) => {
                 // IEEE-754: NaN != NaN
-                a.to_bits() == b.to_bits()
+                if a.is_nan() || b.is_nan() {
+                    false
+                } else {
+                    a == b
+                }
             }
             (PdfObject::String(a), PdfObject::String(b)) => a == b,
             (PdfObject::Name(a), PdfObject::Name(b)) => a == b,
@@ -448,7 +499,7 @@ mod tests {
     fn test_as_dict() {
         let mut dict = PdfDict::new();
         dict.insert(intern("Type"), PdfObject::Name(intern("Page")));
-        let obj = PdfObject::Dict(dict.clone());
+        let obj = PdfObject::Dict(Box::new(dict.clone()));
 
         assert!(obj.as_dict().is_some());
         assert_eq!(obj.as_dict().unwrap().get("Type").unwrap().as_name(), Some("Page"));
@@ -475,7 +526,7 @@ mod tests {
     #[test]
     fn test_as_array() {
         let arr = vec![PdfObject::Integer(1), PdfObject::Integer(2), PdfObject::Integer(3)];
-        let obj = PdfObject::Array(arr.clone());
+        let obj = PdfObject::Array(Box::new(arr.clone()));
 
         assert!(obj.as_array().is_some());
         assert_eq!(obj.as_array().unwrap().len(), 3);
@@ -485,7 +536,7 @@ mod tests {
     #[test]
     fn test_as_string() {
         let s = b"Hello".to_vec();
-        let obj = PdfObject::String(s.clone());
+        let obj = PdfObject::String(Box::new(s.clone()));
 
         assert!(obj.as_string().is_some());
         assert_eq!(obj.as_string().unwrap(), &s[..]);

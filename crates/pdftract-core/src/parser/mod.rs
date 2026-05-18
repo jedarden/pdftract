@@ -11,7 +11,7 @@ pub mod stream;
 
 pub use diagnostic::{Diagnostic, Severity};
 pub use object::{ObjRef, PdfObject};
-pub use xref::{XrefResolver, XrefEntry, ResolveError, ResolveResult};
+pub use xref::{XrefResolver, XrefEntry, ResolveError, ResolveResult, XrefSection, XrefDiagnostic, XrefDiagCode, parse_traditional_xref};
 pub use catalog::{Catalog, MarkInfo, PageLabel, PageLabelsTree, PageLabelStyle, OcProperties, parse_catalog};
 pub use stream::{
     StreamDecoder, FlateDecoder, ASCII85Decoder, ASCIIHexDecoder, PassthroughDecoder,
