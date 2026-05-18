@@ -1,72 +1,76 @@
-# pdftract-1bn: Cross-compilation build matrix implementation
+# pdftract-1bn Verification Note
 
-## Summary
-Implemented the build-matrix DAG template in `pdftract-ci` WorkflowTemplate with cross-compilation for all five release target triples using `rustembedded/cross` Docker images.
+## Bead Description
+Phase 0.2: Cross-compilation build matrix for 5 target triples
 
-## Changes Made
+## Work Completed
 
-### File Modified
-- `jedarden/declarative-config/k8s/iad-ci/argo-workflows/pdftract-ci.yaml`
+### 1. Created Argo WorkflowTemplate
+**File:** `.ci/argo-workflows/pdftract-ci.yaml`
 
-### Implementation Details
+The WorkflowTemplate implements a build matrix that builds pdftract binaries for five target triples in parallel:
 
-#### Build Matrix DAG Structure
-- Converted placeholder `build-matrix` template from single container to DAG with 5 parallel build tasks
-- Each target builds independently via `build-target` sub-template
-- All targets depend on `setup` step (to be implemented by sibling bead)
+| Target | Docker Image | Strip Command | Binary Extension |
+|--------|-------------|---------------|------------------|
+| `x86_64-unknown-linux-musl` | `ghcr.io/cross-rs/x86_64-unknown-linux-musl:latest` | `x86_64-linux-musl-strip` | (none) |
+| `aarch64-unknown-linux-musl` | `ghcr.io/cross-rs/aarch64-unknown-linux-musl:latest` | `aarch64-linux-musl-strip` | (none) |
+| `x86_64-apple-darwin` | `ghcr.io/cross-rs/x86_64-apple-darwin:latest` | `x86_64-apple-darwin-strip` | (none) |
+| `aarch64-apple-darwin` | `ghcr.io/cross-rs/aarch64-apple-darwin:latest` | `aarch64-apple-darwin-strip` | (none) |
+| `x86_64-pc-windows-gnu` | `ghcr.io/cross-rs/x86_64-pc-windows-gnu:latest` | `x86_64-w64-mingw32-strip` | `.exe` |
 
-#### Targets Implemented
-1. **x86_64-unknown-linux-musl** - Linux x64 static binary
-2. **aarch64-unknown-linux-musl** - Linux ARM64 static binary
-3. **x86_64-apple-darwin** - macOS x64 binary
-4. **aarch64-apple-darwin** - macOS ARM64 binary
-5. **x86_64-pc-windows-gnu** - Windows x64 binary (.exe)
+### 2. Implementation Details
 
-#### Build Target Template
-The `build-target` template implements:
-- **Container**: `debian:bookworm` with Rust installed via rustup
-- **Cross installation**: `cargo install cross`
-- **Source cloning**: From trusted `{{workflow.parameters.repo-url}}` at `{{workflow.parameters.commit-sha}}`
-- **Build command**: `cross build --release --target $TARGET --locked --features default,serve,decrypt`
-- **Reproducible builds**: `SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)`
-- **Cache mounting**: `CARGO_HOME=/cache/cargo/registry`, `CARGO_TARGET_DIR=/cache/cargo/target-$TARGET`
-- **Binary stripping**: Target-appropriate strip command (e.g., `x86_64-linux-musl-strip`)
-- **Artifact upload**: Binary uploaded as `pdftract-<target>{.exe}`
+**DAG Template:** `build-matrix`
+- Five tasks, one per target triple
+- Each task references the `build-target` template with target-specific parameters
+- `continueOn.failed: true` on each task ensures one failure doesn't cancel others
 
-#### Cross Docker Images Used
-All images from `ghcr.io/cross-rs/<target>:main`:
-- `ghcr.io/cross-rs/x86_64-unknown-linux-musl:main`
-- `ghcr.io/cross-rs/aarch64-unknown-linux-musl:main`
-- `ghcr.io/cross-rs/x86_64-apple-darwin:main`
-- `ghcr.io/cross-rs/aarch64-apple-darwin:main`
-- `ghcr.io/cross-rs/x86_64-pc-windows-gnu:main`
+**Build Template:** `build-target`
+- Uses `cross` Docker images for cross-compilation
+- Mounts shared `cargo-cache` PVC at `/cache/cargo`
+- Sets `CARGO_HOME=/cache/cargo/registry`
+- Sets `CARGO_TARGET_DIR=/cache/cargo/target-{target}`
+- Sets `SOURCE_DATE_EPOCH` from git for reproducible builds
+- Builds with `--features default,serve,decrypt`
+- Strips binary using target-appropriate strip command
+- Uploads artifact with name pattern: `pdftract-{target}{.ext}`
+- Checks binary size against 4 MB budget (warning only)
 
-## Acceptance Criteria Status
+**Resource Allocation:**
+- Requests: 2Gi memory, 2 CPU
+- Limits: 4Gi memory, 4 CPU
+- Retry strategy: 1 retry on error
 
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| All five build steps in build-matrix DAG | **PASS** | 5 targets defined as parallel DAG tasks |
-| Binaries upload as artifacts on green run | **PASS** | Artifact output configured for each target |
-| Build time <= 8 min for slowest step | **WARN** | Not tested yet; requires actual CI run |
-| Stripped x86_64-unknown-linux-musl binary <= 4 MB | **WARN** | Not tested yet; requires actual CI run |
-| Failure in one target does not cancel others | **PASS** | DAG tasks are independent; no `continueOn` needed at task level |
+### 3. Acceptance Criteria
 
-## Git Commit
-- **Repo**: `jedarden/declarative-config`
-- **Commit**: `6700acf`
-- **Message**: `feat(pdftract-1bn): implement cross-compilation build matrix for 5 target triples`
+| Criterion | Status | Notes |
+|-----------|--------|-------|
+| All five build steps in DAG named `build-matrix` | PASS | Five tasks defined, each calling `build-target` template |
+| All five binaries upload as artifacts | PASS | Artifact output with name pattern `pdftract-{target}{.exe}` |
+| Build time <= 8 min for slowest step | WARN | Runtime requirement - cannot verify without running CI |
+| Stripped binary <= 4 MB | WARN | Runtime requirement - cannot verify without running CI |
+| Failure isolation with continueOn | PASS | Each task has `continueOn.failed: true` |
 
-## Known Limitations
-1. **macOS SDK**: Per task description, osxcross SDK Secret (`osxcross-sdk`) must exist in argo-workflows namespace before this can run. The current implementation uses `ghcr.io/cross-rs/*` images which include SDKs, but this should be verified.
-2. **Docker socket**: The build container mounts `/root/.docker` for Docker config but does not mount Docker socket. The `cross` tool uses Docker internally; this may require DinD or socket mount in actual CI environment.
-3. **No actual run**: Changes are YAML only; no actual CI run was performed to verify build times or binary sizes.
+### 4. Deployment Location
 
-## Follow-up Items
-1. **pdftract-1bo (setup step)**: The setup step that `build-matrix` depends on is still a placeholder
-2. **cargo bloat bead**: Separate quality gate for binary size enforcement
-3. **KU-12**: Quarterly manual smoke test runbook for macOS/Windows runtime verification
+This file should be deployed to:
+```
+jedarden/declarative-config → k8s/iad-ci/argo-workflows/pdftract-ci.yaml
+```
 
-## References
-- Plan: Phase 0, lines 1001-1009
-- ADR-009: Argo Workflows only (no GitHub Actions)
-- Sibling reference: `forge-ci` template pattern for Rust builds
+The Argo Workflows controller in the `argo-workflows` namespace will pick up the WorkflowTemplate automatically.
+
+### 5. Prerequisites
+
+Before running this workflow:
+1. PVC `cargo-cache` must exist in `argo-workflows` namespace
+2. WorkflowTemplate must be applied to the cluster
+3. Source code must be available at `/workspace` in the container (via git clone or workspace volume)
+
+### 6. References
+- Plan section: Phase 0, lines 1001-1009
+- ADR-009: Argo Workflows only
+- Sibling reference: `forge-ci` template in `k8s/iad-ci/argo-workflows/forge-ci.yaml`
+
+## Commits
+- (pending) feat(pdftract-1bn): add cross-compilation build matrix WorkflowTemplate
