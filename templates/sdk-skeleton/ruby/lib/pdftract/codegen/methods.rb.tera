@@ -63,7 +63,7 @@ module Pdftract
           end
         end
       end
-      {% elsif method.name == 'search' %}
+      {% elif method.name == 'search' %}
       def {{ method.snake_name }}(source, pattern, options = nil)
         args = ["grep", pattern, *source.to_args]
         args.concat(options.to_args) if options
@@ -83,7 +83,7 @@ module Pdftract
           end
         end
       end
-      {% elsif method.name == 'verify_receipt' %}
+      {% elif method.name == 'verify_receipt' %}
       def {{ method.snake_name }}(path, receipt)
         output = exec("{{ method.cli_flag }}", path, receipt)
         output.strip == "true"
@@ -98,9 +98,9 @@ module Pdftract
 
         {% if method.name == 'extract_text' %}
         args << "--text"
-        {% elsif method.name == 'extract_markdown' %}
+        {% elif method.name == 'extract_markdown' %}
         args << "--md"
-        {% elsif method.name == 'get_metadata' %}
+        {% elif method.name == 'get_metadata' %}
         args << "--metadata-only"
         {% endif %}
 

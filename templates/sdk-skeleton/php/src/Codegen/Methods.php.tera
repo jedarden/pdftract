@@ -104,7 +104,7 @@ class Client
             throw $this->mapError($stderr, $exitCode);
         }
     }
-    {% elsif method.name == 'search' %}
+    {% elif method.name == 'search' %}
     /**
      * {{ method.description }}
      *
@@ -159,14 +159,14 @@ class Client
             throw $this->mapError($stderr, $exitCode);
         }
     }
-    {% elsif method.name == 'verify_receipt' %}
+    {% elif method.name == 'verify_receipt' %}
     public function {{ method.camel_name }}(string $path, string $receipt): bool
     {
         $output = $this->exec(['{{ method.cli_flag }}', $path, $receipt]);
         return trim($output) === 'true';
     }
     {% else %}
-    public function {{ method.camel_name }}(Source $source{% if method.has_options %}, ?{{ method.options_type }} $options = null{% endif %}): {{ method.return_type == 'string' ? 'string' : 'array' }}
+    public function {{ method.camel_name }}(Source $source{% if method.has_options %}, ?{{ method.options_type }} $options = null{% endif %}): {% if method.return_type == 'string' %}string{% else %}array{% endif %}
     {
         $args = array_merge(['{{ method.cli_flag }}'], $source->toArgs());
 
@@ -178,9 +178,9 @@ class Client
 
         {% if method.name == 'extract_text' %}
         $args[] = '--text';
-        {% elseif method.name == 'extract_markdown' %}
+        {% elif method.name == 'extract_markdown' %}
         $args[] = '--md';
-        {% elseif method.name == 'get_metadata' %}
+        {% elif method.name == 'get_metadata' %}
         $args[] = '--metadata-only';
         {% endif %}
 

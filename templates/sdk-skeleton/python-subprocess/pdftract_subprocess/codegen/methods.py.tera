@@ -76,7 +76,7 @@ class Client:
         if process.returncode != 0:
             stderr = process.stderr.read()
             raise self._map_error(stderr, process.returncode)
-    {% elsif method.name == 'search' %}
+    {% elif method.name == 'search' %}
     def {{ method.snake_name }}(
         self, source: Source, pattern: str, options=None
     ) -> Iterator[dict]:
@@ -107,7 +107,7 @@ class Client:
         if process.returncode != 0:
             stderr = process.stderr.read()
             raise self._map_error(stderr, process.returncode)
-    {% elsif method.name == 'verify_receipt' %}
+    {% elif method.name == 'verify_receipt' %}
     def {{ method.snake_name }}(self, path: str, receipt: str) -> bool:
         """{{ method.description }}"""
         output = self._exec("{{ method.cli_flag }}", path, receipt)
@@ -115,7 +115,7 @@ class Client:
     {% else %}
     def {{ method.snake_name }}(
         self, source: Source{% if method.has_options %}, options=None{% endif %}
-    ) -> {{ 'str' if method.returns_string else 'dict' }}:
+    ){% if method.returns_string %} -> str:{% else %} -> dict:{% endif %}
         """{{ method.description }}"""
         args = ["{{ method.cli_flag }}", *source.to_args()]
 

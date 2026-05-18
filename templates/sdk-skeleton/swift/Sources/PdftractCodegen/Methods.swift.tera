@@ -108,7 +108,7 @@ public class Pdftract {
             }
         }
     }
-    {% elsif method.name == 'search' %}
+    {% elif method.name == 'search' %}
     public func {{ method.camel_name }}(_ source: Source, _ pattern: String, options: {{ method.options_type }}? = nil) -> AsyncStream<{{ method.return_type }}> {
         return AsyncStream { continuation in
             var args = ["grep", pattern]
@@ -160,13 +160,13 @@ public class Pdftract {
             }
         }
     }
-    {% elsif method.name == 'verify_receipt' %}
+    {% elif method.name == 'verify_receipt' %}
     public func {{ method.camel_name }}(_ path: String, _ receipt: String) throws -> Bool {
         let output = try exec(["{{ method.cli_flag }}", path, receipt])
         return output.trimmingCharacters(in: .whitespacesAndNewlines) == "true"
     }
     {% else %}
-    public func {{ method.camel_name }}(_ source: Source{% if method.has_options %}, options: {{ method.options_type }}? = nil{% endif %}) throws -> {{ method.return_type == 'string' ? 'String' : method.return_type }} {
+    public func {{ method.camel_name }}(_ source: Source{% if method.has_options %}, options: {{ method.options_type }}? = nil{% endif %}) throws -> {% if method.return_type == 'string' %}String{% else %}{{ method.return_type }}{% endif %} {
         var args = ["{{ method.cli_flag }}"]
         args.append(contentsOf: source.toArgs())
 
