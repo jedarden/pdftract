@@ -1,0 +1,60 @@
+description: Court filing with case number, court, parties, filing date, docket
+priority: 38
+match:
+  any:
+    - text_patterns:
+        - "(?i)case\\s*#?\\s*:.*?\\d{2,}"
+        - "(?i)docket\\s*#?\\s*:.*?\\d{2,}"
+        - "(?i)court\\s+of"
+        - "(?i)superior\\s+court"
+        - "(?i)district\\s+court"
+    - text_patterns:
+        - "(?i)plaintiff\\s*:?"
+        - "(?i)defendant\\s*:?"
+        - "(?i)petitioner\\s*:?"
+        - "(?i)respondent\\s*:?"
+        - "(?i)v\\."
+    - structural:
+        - has_court_header: true
+        - has_page_numbers: true
+  page_count_hint: 1-100
+profile_fields:
+  case_number:
+    type: string
+    extraction:
+      patterns:
+        - "(?i)case\\s*(?:number|#|no)?\\s*:?,?\\s*([A-Z0-9-]+)"
+        - "(?i)docket\\s*(?:number|#|no)?\\s*:?,?\\s*([A-Z0-9-]+)"
+        - "(?i)civil\\s+action\\s+no\\.\\s+([0-9-]+)"
+      fallback: null
+  court:
+    type: string
+    extraction:
+      region_hint: "first_page_top"
+      patterns:
+        - "(?i)(?:superior|district|circuit|court\\s+of\\s+appeals?|united\\s+states\\s+district\\s+court)\\s+(?:court\\s+)?(?:for|of)\\s+([A-Za-z\\s]+)"
+      fallback: null
+  parties:
+    type: array
+    extraction:
+      patterns:
+        - "([A-Z][A-Za-z0-9\\s&]+)\\s*,\\s*(?:plaintiff|petitioner|appellant)"
+        - "([A-Z][A-Za-z0-9\\s&]+)\\s*,\\s*(?:defendant|respondent|appellee)"
+        - "([A-Z][A-Za-z0-9\\s&]+)\\s+v\\.\\s+([A-Z][A-Za-z0-9\\s&]+)"
+      fallback: []
+  filing_date:
+    type: date
+    extraction:
+      patterns:
+        - "(?i)(?:filed|submitted|entered)\\s*:?.*?([A-Za-z]+\\s+[0-9]{1,2},?\\s+[0-9]{4})"
+        - "(?i)date\\s*filed\\s*:?.*?([0-9]{1,2}[/-][0-9]{1,2}[/-][0-9]{2,4})"
+      fallback: null
+  docket_entries:
+    type: array
+    extraction:
+      region_hint: "after_docket_heading"
+      patterns:
+        - "\\[\\d+\\]\\s+.+"
+      fallback: []
+reading_order: line_dominant
+zone_filtering: exclude_headers_footers_page_numbers

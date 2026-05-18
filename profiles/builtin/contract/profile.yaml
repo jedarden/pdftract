@@ -1,0 +1,57 @@
+description: Legal contract with parties, effective date, term, signatures
+priority: 40
+match:
+  any:
+    - text_patterns:
+        - "(?i)agreement\\s+is\\s+made"
+        - "(?i)contract\\s+agreement"
+        - "(?i)this\\s+agreement"
+        - "(?i)terms\\s+and\\s+conditions"
+        - "(?i)memorandum\\s+of\\s+understanding"
+    - text_patterns:
+        - "(?i)effective\\s+date"
+        - "(?i)governing\\s+law"
+        - "(?i)termination\\s+notice"
+        - "(?i)indemnification"
+    - structural:
+        - has_signature_blocks: true
+        - page_count_gte: 2
+  page_count_hint: 2-50
+profile_fields:
+  parties:
+    type: array
+    extraction:
+      patterns:
+        - "(?i)between\\s+([A-Z][A-Za-z0-9\\s&]+)\\s+and\\s+([A-Z][A-Za-z0-9\\s&]+)"
+        - "(?i)party\\s+[A-Z]\\s*:.*?([A-Z][A-Za-z0-9\\s&]+)"
+      fallback: []
+  effective_date:
+    type: date
+    extraction:
+      patterns:
+        - "(?i)effective\\s+date\\s*(?:as\\s+of|:)?\\s*([A-Za-z]+\\s+[0-9]{1,2},?\\s+[0-9]{4})"
+        - "(?i)effective\\s+date\\s*(?:as\\s+of|:)?\\s*([0-9]{1,2}[/-][0-9]{1,2}[/-][0-9]{2,4})"
+      fallback: null
+  term:
+    type: string
+    extraction:
+      patterns:
+        - "(?i)term\\s*(?:of\\s*this\\s+agreement)?\\s*:?.*?([0-9]+\\s+(?:months?|years?))"
+        - "(?i)shall\\s+continue\\s+for.*?([0-9]+\\s+(?:months?|years?))"
+      fallback: null
+  governing_law:
+    type: string
+    extraction:
+      patterns:
+        - "(?i)governing\\s+law\\s*(?:of|:)?\\s*([A-Za-z\\s]+?)(?=\\n|\\r|\\.)"
+      fallback: null
+  signatures:
+    type: array
+    extraction:
+      region_hint: "bottom_20_percent"
+      patterns:
+        - "(?i)signature\\s*:.*?([A-Z][A-Za-z\\s]+)"
+        - "(?i)signed\\s*:.*?([A-Z][A-Za-z\\s]+)"
+      fallback: []
+reading_order: line_dominant
+zone_filtering: exclude_headers_footers

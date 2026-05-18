@@ -1,0 +1,46 @@
+description: Book chapter with title, chapter number, author, section headings
+priority: 32
+match:
+  any:
+    - text_patterns:
+        - "(?i)chapter\\s+[IVXLCDM0-9]+"
+        - "(?i)section\\s+[0-9]+\\.?[0-9]*"
+        - "(?i)^\\d+\\.\\s+[A-Z]"
+    - structural:
+        - has_running_headers: true
+        - has_chapter_headings: true
+        - page_count_gte: 5
+  page_count_hint: 5-50
+profile_fields:
+  title:
+    type: string
+    extraction:
+      region_hint: "first_page_top"
+      patterns:
+        - "^(.+)$"
+      fallback: null
+  chapter_number:
+    type: string
+    extraction:
+      region_hint: "first_page_top"
+      patterns:
+        - "(?i)chapter\\s+([IVXLCDM0-9]+)"
+        - "^([0-9]+)\\.\\s+[A-Z]"
+      fallback: null
+  author:
+    type: string
+    extraction:
+      patterns:
+        - "(?i)(?:by|author)\\s*:?.*?([A-Z][a-z]+\\s+[A-Z][a-z]+)"
+        - "([A-Z][a-z]+\\s+[A-Z][a-z]+)\\s+(?:is\\s+the\\s+author)"
+      fallback: null
+  sections:
+    type: array
+    extraction:
+      per_page: false
+      region_hint: "headings"
+      patterns:
+        - "^(?:[0-9]+\\.\\s*)?[A-Z][A-Za-z0-9\\s\\-:]+$"
+      fallback: []
+reading_order: line_dominant
+zone_filtering: exclude_headers_footers_page_numbers

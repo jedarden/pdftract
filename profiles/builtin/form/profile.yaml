@@ -1,0 +1,18 @@
+description: Fillable form with fields; uses line_dominant reading order and form_fields from Phase 7.4
+priority: 30
+match:
+  any:
+    - text_patterns:
+        - "(?i)form\\s*[0-9A-Z-]+"
+        - "(?i)application\\s+form"
+        - "(?i)questionnaire"
+        - "(?i)please\\s+fill\\s+out"
+        - "(?i)required\\s+fields?"
+    - structural:
+        - has_form_field_layout: true
+        - has_blank_lines_with_colons: true
+  page_count_hint: 1-10
+profile_fields: {}
+reading_order: line_dominant
+zone_filtering: none
+form_fields_integration: true

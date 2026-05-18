@@ -1,0 +1,68 @@
+description: Academic paper with title, authors, abstract, DOI, references
+priority: 55
+match:
+  any:
+    - text_patterns:
+        - "(?i)abstract"
+        - "(?i)introduction"
+        - "(?i)keywords\\s*[:\\.]"
+        - "(?i)doi\\s*10\\."
+    - text_patterns:
+        - "(?i)references\\s*[1-9]"
+        - "(?i)bibliography"
+        - "(?i)acknowledgments?"
+    - structural:
+        - has_two_column_layout: true
+        - has_bibliography_section: true
+  page_count_hint: 4-30
+profile_fields:
+  title:
+    type: string
+    extraction:
+      region_hint: "first_page_top"
+      patterns:
+        - "^(.+)$"
+      fallback: null
+  authors:
+    type: array
+    extraction:
+      region_hint: "first_page_top_below_title"
+      patterns:
+        - "([A-Z][a-z]+\\s+[A-Z][a-z]+,?\\s+(?:et\\s+al\\.?|and\\s+[A-Z][a-z]+)*)"
+      fallback: []
+  abstract:
+    type: string
+    extraction:
+      region_hint: "after_abstract_heading"
+      patterns:
+        - "(?i)abstract\\s*[:\\.]?\\s*(.+?)(?=\\n\\n|keywords|introduction|$)"
+      fallback: null
+  doi:
+    type: string
+    extraction:
+      patterns:
+        - "(?i)doi\\s*:?\\s*(10\\.[0-9]{4,9}/[-._;()/:A-Z0-9]+)"
+        - "(?i)https?://doi\\.org/(10\\.[0-9]{4,9}/[-._;()/:A-Z0-9]+)"
+      fallback: null
+  journal:
+    type: string
+    extraction:
+      patterns:
+        - "(?i)(?:published\\s+in|journal|proceedings)\\s*:.*?([A-Z][A-Za-z\\s]+?)(?=,|\\.|\\n)"
+      fallback: null
+  publication_date:
+    type: date
+    extraction:
+      patterns:
+        - "(?i)(?:received|accepted|published|revised)\\s*:.*?([A-Za-z]+\\s+[0-9]{4})"
+        - "©\\s*([0-9]{4})"
+      fallback: null
+  references:
+    type: array
+    extraction:
+      region_hint: "after_references_heading"
+      patterns:
+        - "\\[\\d+\\]\\s+.+"
+      fallback: []
+reading_order: column_aware
+zone_filtering: exclude_headers_footers_page_numbers

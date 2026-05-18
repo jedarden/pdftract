@@ -1,0 +1,68 @@
+description: Point-of-sale or purchase receipt with items, payment method
+priority: 45
+match:
+  any:
+    - text_patterns:
+        - "(?i)receipt"
+        - "(?i)store receipt"
+        - "(?i)register receipt"
+        - "(?i)transaction receipt"
+    - text_patterns:
+        - "(?i)total.*sold"
+        - "(?i)change.*due"
+        - "(?i)cash.*credit"
+        - "(?i)card.*payment"
+    - structural:
+        - has_monetary_columnar_layout: true
+        - page_aspect_ratio: "narrow_or_square"
+  page_count_hint: 1
+profile_fields:
+  merchant:
+    type: string
+    extraction:
+      patterns:
+        - "(?i)^([A-Z][A-Za-z0-9\\s&']+)$"
+        - "(?i)(?:store|merchant|retailer)\\s*:?\\s*([A-Z][A-Za-z0-9\\s&']+)"
+      fallback: null
+  date:
+    type: date
+    extraction:
+      patterns:
+        - "(?i)date\\s*:?\\s*([0-9]{1,2}[/-][0-9]{1,2}[/-][0-9]{2,4})"
+        - "([0-9]{1,2}[/-][0-9]{1,2}[/-][0-9]{2,4})\\s+([0-9]{1,2}:[0-9]{2})"
+      fallback: null
+  total:
+    type: decimal
+    extraction:
+      patterns:
+        - "(?i)total\\s*[:=]?\\s*[\\$€£¥]?\\s*([0-9,]+\\.?[0-9]*)"
+      fallback: null
+  tax:
+    type: decimal
+    extraction:
+      patterns:
+        - "(?i)tax\\s*[:=]?\\s*[\\$€£¥]?\\s*([0-9,]+\\.?[0-9]*)"
+      fallback: null
+  items:
+    type: array
+    extraction:
+      columnar_regions: "monetary_columns"
+      schema:
+        - name: name
+          type: string
+          required: true
+        - name: quantity
+          type: decimal
+          required: false
+        - name: price
+          type: decimal
+          required: false
+      fallback: []
+  payment_method:
+    type: string
+    extraction:
+      patterns:
+        - "(?i)(cash|credit|debit|visa|mastercard|amex|discover|check|cheque)"
+      fallback: null
+reading_order: line_dominant
+zone_filtering: exclude_headers_footers
