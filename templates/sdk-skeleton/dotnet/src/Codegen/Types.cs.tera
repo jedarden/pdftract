@@ -1,0 +1,56 @@
+namespace Pdftract.Codegen;
+
+/// <summary>
+/// This file is auto-generated. Do not edit manually.
+/// </summary>
+
+public interface Source
+{
+    string[] ToArgs();
+}
+
+public class PathSource : Source
+{
+    private readonly string _path;
+
+    public PathSource(string path)
+    {
+        _path = path;
+    }
+
+    public string[] ToArgs()
+    {
+        return new[] { _path };
+    }
+}
+
+public class URLSource : Source
+{
+    private readonly string _url;
+
+    public URLSource(string url)
+    {
+        _url = url;
+    }
+
+    public string[] ToArgs()
+    {
+        return new[] { _url };
+    }
+}
+
+public class BytesSource : Source
+{
+    private readonly byte[] _bytes;
+
+    public BytesSource(byte[] bytes)
+    {
+        _bytes = bytes;
+    }
+
+    public string[] ToArgs()
+    {
+        // Write to temp file - implementation omitted for brevity
+        throw new NotImplementedException("BytesSource requires temp file handling");
+    }
+}

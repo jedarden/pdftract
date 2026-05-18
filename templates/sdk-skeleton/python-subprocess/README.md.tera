@@ -1,0 +1,71 @@
+# pdftract-subprocess
+
+Python SDK for pdftract - PDF extraction and conformance testing (subprocess fallback).
+
+This package provides a subprocess-based fallback when the native PyO3 module fails to load. It is slower but provides full functionality.
+
+## Installation
+
+```bash
+pip install pdftract-subprocess=={{ version }}
+```
+
+## Usage
+
+### Basic extract
+
+```python
+from pdftract_subprocess import Client, PathSource
+
+client = Client()
+doc = client.extract(PathSource('document.pdf'))
+print(f"Pages: {len(doc['pages'])}")
+```
+
+### Extract with OCR
+
+```python
+from pdftract_subprocess import Client, PathSource
+
+client = Client()
+doc = client.extract(PathSource('scanned.pdf'), options={
+    'ocr_language': 'eng',
+    'ocr_threshold': 0.7
+})
+```
+
+### Search
+
+```python
+from pdftract_subprocess import Client, PathSource
+
+client = Client()
+for match in client.search(PathSource('document.pdf'), 'invoice'):
+    print(f"Found on page {match['page']}: {match['text']}")
+```
+
+### Stream extraction
+
+```python
+from pdftract_subprocess import Client, PathSource
+
+client = Client()
+for page in client.extract_stream(PathSource('large.pdf')):
+    print(f"Page {page['page']}: {len(page.get('blocks', []))} blocks")
+```
+
+## Binary version compatibility
+
+This SDK requires pdftract {{ version }}. Download from:
+https://github.com/jedarden/pdftract/releases/tag/v{{ version }}
+
+## Troubleshooting
+
+### Binary not found
+Ensure `pdftract` is on your PATH. The SDK probes PATH for the executable.
+
+### Version mismatch
+The SDK will refuse to invoke mismatched binary versions. Install the correct version.
+
+### Network failure
+For remote URLs, check your network connection and TLS certificate chain.

@@ -1,0 +1,46 @@
+"""
+Type definitions for pdftract subprocess SDK.
+Auto-generated - do not edit manually.
+"""
+
+from abc import ABC, abstractmethod
+
+
+class Source(ABC):
+    """Base class for PDF sources."""
+
+    @abstractmethod
+    def to_args(self) -> list[str]:
+        """Convert source to command-line arguments."""
+        pass
+
+
+class PathSource(Source):
+    """Source for local file paths."""
+
+    def __init__(self, path: str):
+        self.path = path
+
+    def to_args(self) -> list[str]:
+        return [self.path]
+
+
+class URLSource(Source):
+    """Source for remote URLs."""
+
+    def __init__(self, url: str):
+        self.url = url
+
+    def to_args(self) -> list[str]:
+        return [self.url]
+
+
+class BytesSource(Source):
+    """Source for in-memory bytes."""
+
+    def __init__(self, bytes: bytes):
+        self.bytes = bytes
+
+    def to_args(self) -> list[str]:
+        # Write to temp file - implementation omitted for brevity
+        raise NotImplementedError("BytesSource requires temp file handling")

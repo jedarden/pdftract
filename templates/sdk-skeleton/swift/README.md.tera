@@ -1,0 +1,67 @@
+# pdftract-swift
+
+Swift SDK for pdftract - PDF extraction and conformance testing.
+
+## Installation
+
+Add to your `Package.swift`:
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/jedarden/pdftract-swift", from: "{{ version }}")
+]
+```
+
+## Usage
+
+### Basic extract
+
+```swift
+import Pdftract
+
+let client = Pdftract()
+let doc = try client.extract(PathSource("document.pdf"))
+print("Pages: \(doc.pages.count)")
+```
+
+### Extract with OCR
+
+```swift
+let options = ExtractOptions()
+options.ocrLanguage = "eng"
+options.ocrThreshold = 0.7
+
+let doc = try client.extract(PathSource("scanned.pdf"), options: options)
+```
+
+### Search
+
+```swift
+for await match in client.search(PathSource("document.pdf"), "invoice") {
+    print("Found on page \(match.page): \(match.text)")
+}
+```
+
+### Stream extraction
+
+```swift
+for await page in client.extractStream(PathSource("large.pdf")) {
+    print("Page \(page.page): \(page.blocks.count) blocks")
+}
+```
+
+## Binary version compatibility
+
+This SDK requires pdftract {{ version }}. Download from:
+https://github.com/jedarden/pdftract/releases/tag/v{{ version }}
+
+## Troubleshooting
+
+### Binary not found
+Ensure `pdftract` is on your PATH. The SDK probes PATH for the executable.
+
+### Version mismatch
+The SDK will refuse to invoke mismatched binary versions. Install the correct version.
+
+### Network failure
+For remote URLs, check your network connection and TLS certificate chain.

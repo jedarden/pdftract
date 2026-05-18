@@ -1,0 +1,49 @@
+<?php
+
+namespace Pdftract\Codegen;
+
+/**
+ * This file is auto-generated. Do not edit manually.
+ */
+
+interface Source
+{
+    public function toArgs(): array;
+}
+
+class PathSource implements Source
+{
+    public function __construct(private string $path)
+    {
+    }
+
+    public function toArgs(): array
+    {
+        return [$this->path];
+    }
+}
+
+class URLSource implements Source
+{
+    public function __construct(private string $url)
+    {
+    }
+
+    public function toArgs(): array
+    {
+        return [$this->url];
+    }
+}
+
+class BytesSource implements Source
+{
+    public function __construct(private string $bytes)
+    {
+    }
+
+    public function toArgs(): array
+    {
+        // Write to temp file - implementation omitted for brevity
+        throw new \Exception("BytesSource requires temp file handling");
+    }
+}

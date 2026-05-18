@@ -1,0 +1,15 @@
+# frozen_string_literal: true
+
+require_relative "codegen/methods"
+require_relative "codegen/errors"
+require_relative "codegen/types"
+
+module Pdftract
+  VERSION = "{{ version }}"
+
+  class << self
+    def client(binary_path = "pdftract")
+      Codegen::Client.new(binary_path)
+    end
+  end
+end

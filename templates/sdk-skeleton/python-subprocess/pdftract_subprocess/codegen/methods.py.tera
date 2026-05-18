@@ -1,0 +1,143 @@
+"""
+Client implementation for pdftract subprocess SDK.
+Auto-generated - do not edit manually.
+"""
+
+import subprocess
+import json
+from typing import AsyncIterator, Iterator
+
+from .types import Source
+from .errors import PdftractError
+
+
+class Client:
+    """PDFtract subprocess client."""
+
+    def __init__(self, binary_path: str = "pdftract"):
+        self.binary_path = binary_path
+        self.version = "{{ version }}"
+
+    def _exec(self, *args: str) -> str:
+        """Execute pdftract and return stdout."""
+        result = subprocess.run(
+            [self.binary_path, *args],
+            capture_output=True,
+            text=True,
+        )
+
+        if result.returncode != 0:
+            raise self._map_error(result.stderr, result.returncode)
+
+        return result.stdout
+
+    def _map_error(self, stderr: str, exit_code: int) -> PdftractError:
+        """Map exit code to exception."""
+        error_map = {
+            {% for error in errors %}
+            {% if error.exit_code != 0 %}
+            {{ error.exit_code }}: {{ error.exception_name }},
+            {% endif %}
+            {% endfor %}
+        }
+
+        error_class = error_map.get(exit_code, PdftractError)
+        return error_class(stderr, exit_code)
+
+    {% for method in methods %}
+    {% if method.name == 'extract_stream' %}
+    def {{ method.snake_name }}(
+        self, source: Source, options=None
+    ) -> Iterator[dict]:
+        """
+        {{ method.description }}
+
+        Yields JSON objects for each page.
+        """
+        args = ["{{ method.cli_flag }}", *source.to_args()]
+
+        if options:
+            args.extend(options.to_args())
+
+        process = subprocess.Popen(
+            [self.binary_path, *args],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        for line in process.stdout:
+            line = line.strip()
+            if line:
+                yield json.loads(line)
+
+        process.wait()
+
+        if process.returncode != 0:
+            stderr = process.stderr.read()
+            raise self._map_error(stderr, process.returncode)
+    {% elsif method.name == 'search' %}
+    def {{ method.snake_name }}(
+        self, source: Source, pattern: str, options=None
+    ) -> Iterator[dict]:
+        """
+        {{ method.description }}
+
+        Yields JSON objects for each match.
+        """
+        args = ["grep", pattern, *source.to_args()]
+
+        if options:
+            args.extend(options.to_args())
+
+        process = subprocess.Popen(
+            [self.binary_path, *args],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        for line in process.stdout:
+            line = line.strip()
+            if line:
+                yield json.loads(line)
+
+        process.wait()
+
+        if process.returncode != 0:
+            stderr = process.stderr.read()
+            raise self._map_error(stderr, process.returncode)
+    {% elsif method.name == 'verify_receipt' %}
+    def {{ method.snake_name }}(self, path: str, receipt: str) -> bool:
+        """{{ method.description }}"""
+        output = self._exec("{{ method.cli_flag }}", path, receipt)
+        return output.strip() == "true"
+    {% else %}
+    def {{ method.snake_name }}(
+        self, source: Source{% if method.has_options %}, options=None{% endif %}
+    ) -> {{ 'str' if method.returns_string else 'dict' }}:
+        """{{ method.description }}"""
+        args = ["{{ method.cli_flag }}", *source.to_args()]
+
+        {% if method.has_options %}
+        if options:
+            args.extend(options.to_args())
+        {% endif %}
+
+        {% if method.name == 'extract_text' %}
+        args.append("--text")
+        {% elif method.name == 'extract_markdown' %}
+        args.append("--md")
+        {% elif method.name == 'get_metadata' %}
+        args.append("--metadata-only")
+        {% endif %}
+
+        output = self._exec(*args)
+
+        {% if method.returns_string %}
+        return output
+        {% else %}
+        return json.loads(output)
+        {% endif %}
+    {% endif %}
+    {% endfor %}

@@ -1,0 +1,44 @@
+# frozen_string_literal: true
+
+module Pdftract
+  module Codegen
+    #
+    # This file is auto-generated. Do not edit manually.
+    #
+
+    class PdftractError < StandardError
+      attr_reader :exit_code
+
+      def initialize(message, exit_code)
+        @exit_code = exit_code
+        super(message)
+      end
+    end
+
+    {% for error in errors %}
+    {% if error.exit_code != 0 and error.exit_code != 10 %}
+    #
+    # {{ error.description }}
+    #
+    class {{ error.exception_name }} < PdftractError
+      def initialize(message, exit_code)
+        super(message, exit_code)
+      end
+    end
+    {% endif %}
+    {% endfor %}
+
+    {% for error in errors %}
+    {% if error.exit_code == 10 %}
+    #
+    # {{ error.description }}
+    #
+    class {{ error.exception_name }} < PdftractError
+      def initialize(message, exit_code)
+        super(message, exit_code)
+      end
+    end
+    {% endif %}
+    {% endfor %}
+  end
+end

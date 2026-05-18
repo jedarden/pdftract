@@ -1,0 +1,22 @@
+// swift-tools-version: 5.9
+import PackageDescription
+
+let package = Package(
+    name: "pdftract-swift",
+    platforms: [.macOS(.v13), .linux(.v4)],
+    products: [
+        .library(
+            name: "Pdftract",
+            targets: ["Pdftract"])
+    ],
+    dependencies: [
+    ],
+    targets: [
+        .target(
+            name: "Pdftract",
+            dependencies: []),
+        .testTarget(
+            name: "PdftractTests",
+            dependencies: ["Pdftract"]),
+    ]
+)

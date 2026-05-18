@@ -1,0 +1,57 @@
+package com.jedarden.pdftract.codegen;
+
+/**
+ * This file is auto-generated. Do not edit manually.
+ */
+
+public class PdftractException extends Exception {
+    private final int exitCode;
+
+    public PdftractException(String message, int exitCode) {
+        super(message);
+        this.exitCode = exitCode;
+    }
+
+    public PdftractException(String message, int exitCode, String stderr) {
+        super(message + (stderr != null ? ": " + stderr : ""));
+        this.exitCode = exitCode;
+    }
+
+    public int getExitCode() {
+        return exitCode;
+    }
+}
+
+{% for error in errors %}
+{% if error.exit_code != 0 and error.exit_code != 10 %}
+/**
+ * {{ error.description }}
+ */
+public class {{ error.exception_name }} extends PdftractException {
+    public {{ error.exception_name }}(String message, int exitCode) {
+        super(message, exitCode);
+    }
+
+    public {{ error.exception_name }}(String message, int exitCode, String stderr) {
+        super(message, exitCode, stderr);
+    }
+}
+{% endif %}
+{% endfor %}
+
+{% for error in errors %}
+{% if error.exit_code == 10 %}
+/**
+ * {{ error.description }}
+ */
+public class {{ error.exception_name }} extends PdftractException {
+    public {{ error.exception_name }}(String message, int exitCode) {
+        super(message, exitCode);
+    }
+
+    public {{ error.exception_name }}(String message, int exitCode, String stderr) {
+        super(message, exitCode, stderr);
+    }
+}
+{% endif %}
+{% endfor %}

@@ -1,0 +1,201 @@
+<?php
+
+namespace Pdftract\Codegen;
+
+/**
+ * This file is auto-generated. Do not edit manually.
+ */
+
+class Client
+{
+    private string $binaryPath;
+    private string $version;
+
+    public function __construct(string $binaryPath = 'pdftract')
+    {
+        $this->binaryPath = $binaryPath;
+        $this->version = '{{ version }}';
+    }
+
+    private function exec(array $args): string
+    {
+        $cmd = escapeshellcmd($this->binaryPath);
+        foreach ($args as $arg) {
+            $cmd .= ' ' . escapeshellarg($arg);
+        }
+
+        $output = [];
+        $exitCode = 0;
+
+        exec($cmd . ' 2>&1', $output, $exitCode);
+
+        if ($exitCode !== 0) {
+            throw $this->mapError(implode("\n", $output), $exitCode);
+        }
+
+        return implode("\n", $output);
+    }
+
+    private function mapError(string $stderr, int $exitCode): PdftractException
+    {
+        return match ($exitCode) {
+            {% for error in errors %}
+            {% if error.exit_code != 0 %}
+            {{ error.exit_code }} => new {{ error.exception_name }}($stderr, $exitCode),
+            {% endif %}
+            {% endfor %}
+            default => new PdftractException($stderr, $exitCode),
+        };
+    }
+
+    {% for method in methods %}
+    {% if method.name == 'extract_stream' %}
+    /**
+     * {{ method.description }}
+     *
+     * @return \Generator<{{ method.return_type }}>
+     */
+    public function {{ method.camel_name }}(Source $source, ?{{ method.options_type }} $options = null): \Generator
+    {
+        $args = array_merge(['{{ method.cli_flag }}'], $source->toArgs());
+
+        if ($options !== null) {
+            $args = array_merge($args, $options->toArgs());
+        }
+
+        $cmd = escapeshellcmd($this->binaryPath);
+        foreach ($args as $arg) {
+            $cmd .= ' ' . escapeshellarg($arg);
+        }
+
+        $descriptorspec = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+
+        $process = proc_open($cmd, $descriptorspec, $pipes);
+
+        if (!is_resource($process)) {
+            throw new PdftractException('Failed to start process', -1);
+        }
+
+        fclose($pipes[0]);
+
+        while (!feof($pipes[1])) {
+            $line = fgets($pipes[1]);
+            if ($line === false || trim($line) === '') {
+                continue;
+            }
+
+            $data = json_decode($line, true);
+            if ($data !== null) {
+                yield $data;
+            }
+        }
+
+        $stderr = stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+
+        $exitCode = proc_close($process);
+
+        if ($exitCode !== 0) {
+            throw $this->mapError($stderr, $exitCode);
+        }
+    }
+    {% elsif method.name == 'search' %}
+    /**
+     * {{ method.description }}
+     *
+     * @return \Generator<{{ method.return_type }}>
+     */
+    public function {{ method.camel_name }}(Source $source, string $pattern, ?{{ method.options_type }} $options = null): \Generator
+    {
+        $args = array_merge(['grep', $pattern], $source->toArgs());
+
+        if ($options !== null) {
+            $args = array_merge($args, $options->toArgs());
+        }
+
+        $cmd = escapeshellcmd($this->binaryPath);
+        foreach ($args as $arg) {
+            $cmd .= ' ' . escapeshellarg($arg);
+        }
+
+        $descriptorspec = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+
+        $process = proc_open($cmd, $descriptorspec, $pipes);
+
+        if (!is_resource($process)) {
+            throw new PdftractException('Failed to start process', -1);
+        }
+
+        fclose($pipes[0]);
+
+        while (!feof($pipes[1])) {
+            $line = fgets($pipes[1]);
+            if ($line === false || trim($line) === '') {
+                continue;
+            }
+
+            $data = json_decode($line, true);
+            if ($data !== null) {
+                yield $data;
+            }
+        }
+
+        $stderr = stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+
+        $exitCode = proc_close($process);
+
+        if ($exitCode !== 0) {
+            throw $this->mapError($stderr, $exitCode);
+        }
+    }
+    {% elsif method.name == 'verify_receipt' %}
+    public function {{ method.camel_name }}(string $path, string $receipt): bool
+    {
+        $output = $this->exec(['{{ method.cli_flag }}', $path, $receipt]);
+        return trim($output) === 'true';
+    }
+    {% else %}
+    public function {{ method.camel_name }}(Source $source{% if method.has_options %}, ?{{ method.options_type }} $options = null{% endif %}): {{ method.return_type == 'string' ? 'string' : 'array' }}
+    {
+        $args = array_merge(['{{ method.cli_flag }}'], $source->toArgs());
+
+        {% if method.has_options %}
+        if ($options !== null) {
+            $args = array_merge($args, $options->toArgs());
+        }
+        {% endif %}
+
+        {% if method.name == 'extract_text' %}
+        $args[] = '--text';
+        {% elseif method.name == 'extract_markdown' %}
+        $args[] = '--md';
+        {% elseif method.name == 'get_metadata' %}
+        $args[] = '--metadata-only';
+        {% endif %}
+
+        $output = $this->exec($args);
+
+        {% if method.returns_string %}
+        return $output;
+        {% else %}
+        $result = json_decode($output, true);
+        if ($result === null) {
+            throw new PdftractException('Failed to decode JSON output', -1);
+        }
+        return $result;
+        {% endif %}
+    }
+    {% endif %}
+    {% endfor %}
+}

@@ -1,0 +1,261 @@
+/**
+ * This file is auto-generated. Do not edit manually.
+ */
+
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import type {
+  Source,
+  PathSource,
+  URLSource,
+  BytesSource,
+  Document,
+  Page,
+  Match,
+  Fingerprint,
+  Classification,
+  Metadata,
+  ExtractOptions,
+  SearchOptions,
+  BaseOptions
+} from './types.js';
+
+const execFileAsync = promisify(execFile);
+
+export class PdftractError extends Error {
+  constructor(
+    message: string,
+    public readonly exitCode: number,
+    public readonly stderr: string
+  ) {
+    super(message);
+    this.name = 'PdftractError';
+  }
+}
+
+{% for error in errors %}
+{% if error.exit_code != 0 and error.exit_code != 10 %}
+export class {{ error.exception_name }} extends PdftractError {
+  constructor(message: string, exitCode: number, stderr: string) {
+    super(message, exitCode, stderr);
+    this.name = '{{ error.exception_name }}';
+  }
+}
+{% endif %}
+{% endfor %}
+
+export class Client {
+  private binaryPath: string;
+  private version: string;
+
+  constructor(binaryPath: string = 'pdftract') {
+    this.binaryPath = binaryPath;
+    this.version = '{{ version }}';
+  }
+
+  private mapError(stderr: string, exitCode: number): PdftractError {
+    switch (exitCode) {
+      {% for error in errors %}
+      {% if error.exit_code != 0 %}
+      case {{ error.exit_code }}:
+        return new {{ error.exception_name }}(stderr, exitCode, stderr);
+      {% endif %}
+      {% endfor %}
+      default:
+        return new PdftractError(stderr, exitCode, stderr);
+    }
+  }
+
+  private async exec(args: string[]): Promise<string> {
+    try {
+      const { stdout } = await execFileAsync(this.binaryPath, args);
+      return stdout;
+    } catch (error: any) {
+      throw this.mapError(error.stderr || error.message, error.exitCode || 1);
+    }
+  }
+
+  {% for method in methods %}
+  {% if method.name == 'extract_stream' %}
+  async {{ method.camel_name }}(
+    source: Source,
+    options?: {{ method.options_type }}
+  ): AsyncIterable<{{ method.return_type }}>> {
+    const args = ['{{ method.cli_flag }}', ...(await this.sourceArgs(source))];
+    if (options) {
+      args.push(...this.optionsArgs(options));
+    }
+
+    const child = spawn(this.binaryPath, args);
+    const errorChunks: Buffer[] = [];
+
+    child.stderr?.on('data', (chunk) => errorChunks.push(chunk));
+
+    return (async function* () {
+      try {
+        let buffer = '';
+        for await (const chunk of child.stdout!) {
+          buffer += chunk.toString();
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.trim()) {
+              yield JSON.parse(line) as {{ method.return_type }};
+            }
+          }
+        }
+
+        if (buffer.trim()) {
+          yield JSON.parse(buffer) as {{ method.return_type }};
+        }
+
+        const exitCode = await new Promise<number>((resolve) => {
+          child.on('close', resolve);
+        });
+
+        if (exitCode !== 0) {
+          const stderr = Buffer.concat(errorChunks).toString();
+          throw this.mapError(stderr, exitCode);
+        }
+      } catch (error) {
+        child.kill();
+        throw error;
+      }
+    })();
+  }
+  {% elif method.name == 'search' %}
+  async *{{ method.camel_name }}(
+    source: Source,
+    pattern: string,
+    options?: {{ method.options_type }}
+  ): AsyncIterable<{{ method.return_type }}>> {
+    const args = ['grep', pattern, ...(await this.sourceArgs(source))];
+    if (options) {
+      args.push(...this.optionsArgs(options));
+    }
+
+    const child = spawn(this.binaryPath, args);
+    const errorChunks: Buffer[] = [];
+
+    child.stderr?.on('data', (chunk) => errorChunks.push(chunk));
+
+    let buffer = '';
+    for await (const chunk of child.stdout!) {
+      buffer += chunk.toString();
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.trim()) {
+          yield JSON.parse(line) as {{ method.return_type }};
+        }
+      }
+    }
+
+    if (buffer.trim()) {
+      yield JSON.parse(buffer) as {{ method.return_type }};
+    }
+
+    const exitCode = await new Promise<number>((resolve) => {
+      child.on('close', resolve);
+    });
+
+    if (exitCode !== 0) {
+      const stderr = Buffer.concat(errorChunks).toString();
+      throw this.mapError(stderr, exitCode);
+    }
+  }
+  {% elif method.name == 'verify_receipt' %}
+  async {{ method.camel_name }}(path: string, receipt: string): Promise<boolean> {
+    const output = await this.exec(['{{ method.cli_flag }}', path, receipt]);
+    return output.trim() === 'true';
+  }
+  {% else %}
+  async {{ method.camel_name }}(
+    source: Source{% if method.has_options %},
+    options?: {{ method.options_type }}{% endif %}
+  ): Promise<{{ method.return_type }}>> {
+    const args = ['{{ method.cli_flag }}', ...(await this.sourceArgs(source))];
+
+    {% if method.has_options %}
+    if (options) {
+      args.push(...this.optionsArgs(options));
+    }
+    {% endif %}
+
+    {% if method.name == 'extract_text' %}
+    args.push('--text');
+    {% elif method.name == 'extract_markdown' %}
+    args.push('--md');
+    {% elif method.name == 'get_metadata' %}
+    args.push('--metadata-only');
+    {% endif %}
+
+    const output = await this.exec(args);
+
+    {% if method.returns_string %}
+    return output;
+    {% else %}
+    return JSON.parse(output) as {{ method.return_type }};
+    {% endif %}
+  }
+  {% endif %}
+  {% endfor %}
+
+  private async sourceArgs(source: Source): Promise<string[]> {
+    return source.toArgs();
+  }
+
+  private optionsArgs(options: ExtractOptions | SearchOptions | BaseOptions): string[] {
+    const args: string[] = [];
+
+    if ('ocrLanguage' in options && options.ocrLanguage) {
+      args.push('--ocr-language', options.ocrLanguage);
+    }
+    if ('ocrThreshold' in options && options.ocrThreshold !== undefined) {
+      args.push('--ocr-threshold', String(options.ocrThreshold));
+    }
+    if ('preserveLayout' in options && options.preserveLayout) {
+      args.push('--preserve-layout');
+    }
+    if ('extractImages' in options && options.extractImages) {
+      args.push('--extract-images');
+    }
+    if ('imageFormat' in options && options.imageFormat) {
+      args.push('--image-format', options.imageFormat);
+    }
+    if ('minImageSize' in options && options.minImageSize !== undefined) {
+      args.push('--min-image-size', String(options.minImageSize));
+    }
+    if ('caseInsensitive' in options && options.caseInsensitive) {
+      args.push('--case-insensitive');
+    }
+    if ('regex' in options && options.regex) {
+      args.push('--regex');
+    }
+    if ('wholeWord' in options && options.wholeWord) {
+      args.push('--whole-word');
+    }
+    if ('maxResults' in options && options.maxResults !== undefined) {
+      args.push('--max-results', String(options.maxResults));
+    }
+    if ('timeout' in options && options.timeout !== undefined) {
+      args.push('--timeout', String(options.timeout));
+    }
+
+    return args;
+  }
+}
+
+export function path(path: string): PathSource {
+  return new PathSource(path);
+}
+
+export function url(url: string): URLSource {
+  return new URLSource(url);
+}
+
+export function bytes(bytes: Uint8Array): BytesSource {
+  return new BytesSource(bytes);
+}

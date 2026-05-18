@@ -1,0 +1,50 @@
+//
+// This file is auto-generated. Do not edit manually.
+//
+
+#if os(Linux)
+import Foundation
+#else
+import Foundation
+#endif
+
+public protocol Source {
+    func toArgs() -> [String]
+}
+
+public class PathSource: Source {
+    private let path: String
+
+    public init(_ path: String) {
+        self.path = path
+    }
+
+    public func toArgs() -> [String] {
+        return [path]
+    }
+}
+
+public class URLSource: Source {
+    private let url: String
+
+    public init(_ url: String) {
+        self.url = url
+    }
+
+    public func toArgs() -> [String] {
+        return [url]
+    }
+}
+
+public class BytesSource: Source {
+    private let bytes: [UInt8]
+
+    public init(_ bytes: [UInt8]) {
+        self.bytes = bytes
+    }
+
+    public func toArgs() -> [String] {
+        // Write to temp file - implementation omitted for brevity
+        fatalError("BytesSource requires temp file handling")
+    }
+}

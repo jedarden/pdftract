@@ -1,0 +1,207 @@
+package com.jedarden.pdftract.codeg
+
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.Flow;
+import java.util.concurrent.SubmissionPublisher;
+import java.util.stream.Stream;
+
+/**
+ * This file is auto-generated. Do not edit manually.
+ */
+
+public class Pdftract implements AutoCloseable {
+    private final String binaryPath;
+    private final String version;
+    private final Gson gson;
+
+    public Pdftract() {
+        this("pdftract");
+    }
+
+    public Pdftract(String binaryPath) {
+        this.binaryPath = binaryPath;
+        this.version = "{{ version }}";
+        this.gson = new Gson();
+    }
+
+    private ProcessResult exec(String... args) throws PdftractException {
+        try {
+            ProcessBuilder pb = new ProcessBuilder(binaryPath);
+            pb.command().addAll(List.of(args));
+            pb.redirectErrorStream(true);
+
+            Process process = pb.start();
+
+            StringBuilder stdout = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    stdout.append(line).append("\n");
+                }
+            }
+
+            int exitCode = process.waitFor();
+            String output = stdout.toString();
+
+            if (exitCode != 0) {
+                throw mapError(output, exitCode);
+            }
+
+            return new ProcessResult(output, exitCode);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new PdftractException("Interrupted", -1, e.getMessage());
+        } catch (IOException e) {
+            throw new PdftractException("IO error", -1, e.getMessage());
+        }
+    }
+
+    private PdftractException mapError(String stderr, int exitCode) {
+        return switch (exitCode) {
+            {% for error in errors %}
+            {% if error.exit_code != 0 %}
+            case {{ error.exit_code }} -> new {{ error.exception_name }}(stderr, exitCode);
+            {% endif %}
+            {% endfor %}
+            default -> new PdftractException(stderr, exitCode);
+        };
+    }
+
+    {% for method in methods %}
+    {% if method.name == 'extract_stream' %}
+    public Flow.Publisher<{{ method.return_type }}> {{ method.camel_name }}(Source source, {{ method.options_type }} options) throws PdftractException {
+        SubmissionPublisher<{{ method.return_type }}> publisher = new SubmissionPublisher<>();
+
+        new Thread(() -> {
+            try {
+                List<String> args = new ArrayList<>();
+                args.add("{{ method.cli_flag }}");
+                args.addAll(source.toArgs());
+
+                if (options != null) {
+                    args.addAll(options.toArgs());
+                }
+
+                ProcessBuilder pb = new ProcessBuilder(binaryPath);
+                pb.command(args);
+                pb.redirectErrorStream(true);
+
+                Process process = pb.start();
+
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        {{ method.return_type }} result = gson.fromJson(line, {{ method.return_type }}.class);
+                        publisher.submit(result);
+                    }
+                }
+
+                int exitCode = process.waitFor();
+                if (exitCode != 0) {
+                    throw mapError("", exitCode);
+                }
+
+                publisher.close();
+            } catch (Exception e) {
+                publisher.closeException(e);
+            }
+        }).start();
+
+        return publisher;
+    }
+    {% elif method.name == 'search' %}
+    public Flow.Publisher<{{ method.return_type }}> {{ method.camel_name }}(Source source, String pattern, {{ method.options_type }} options) throws PdftractException {
+        SubmissionPublisher<{{ method.return_type }}> publisher = new SubmissionPublisher<>();
+
+        new Thread(() -> {
+            try {
+                List<String> args = new ArrayList<>();
+                args.add("grep");
+                args.add(pattern);
+                args.addAll(source.toArgs());
+
+                if (options != null) {
+                    args.addAll(options.toArgs());
+                }
+
+                ProcessBuilder pb = new ProcessBuilder(binaryPath);
+                pb.command(args);
+                pb.redirectErrorStream(true);
+
+                Process process = pb.start();
+
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        {{ method.return_type }} result = gson.fromJson(line, {{ method.return_type }}.class);
+                        publisher.submit(result);
+                    }
+                }
+
+                int exitCode = process.waitFor();
+                if (exitCode != 0) {
+                    throw mapError("", exitCode);
+                }
+
+                publisher.close();
+            } catch (Exception e) {
+                publisher.closeException(e);
+            }
+        }).start();
+
+        return publisher;
+    }
+    {% elif method.name == 'verify_receipt' %}
+    public boolean {{ method.camel_name }}(String path, String receipt) throws PdftractException {
+        ProcessResult result = exec("{{ method.cli_flag }}", path, receipt);
+        return Boolean.parseBoolean(result.stdout.trim());
+    }
+    {% else %}
+    public {{ method.return_type }} {{ method.camel_name }}(Source source{% if method.has_options %}, {{ method.options_type }} options{% endif %}) throws PdftractException {
+        List<String> args = new ArrayList<>();
+        args.add("{{ method.cli_flag }}");
+        args.addAll(source.toArgs());
+
+        {% if method.has_options %}
+        if (options != null) {
+            args.addAll(options.toArgs());
+        }
+        {% endif %}
+
+        {% if method.name == 'extract_text' %}
+        args.add("--text");
+        {% elif method.name == 'extract_markdown' %}
+        args.add("--md");
+        {% elif method.name == 'get_metadata' %}
+        args.add("--metadata-only");
+        {% endif %}
+
+        ProcessResult result = exec(args.toArray(new String[0]));
+
+        {% if method.returns_string %}
+        return result.stdout;
+        {% else %}
+        return gson.fromJson(result.stdout, {{ method.return_type }}.class);
+        {% endif %}
+    }
+    {% endif %}
+    {% endfor %}
+
+    @Override
+    public void close() {
+        // No resources to clean up
+    }
+
+    private record ProcessResult(String stdout, int exitCode) {
+    }
+}

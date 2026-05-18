@@ -1,0 +1,52 @@
+package com.jedarden.pdftract.codegen;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * This file is auto-generated. Do not edit manually.
+ */
+
+public interface Source {
+    List<String> toArgs();
+}
+
+public class PathSource implements Source {
+    private final String path;
+
+    public PathSource(String path) {
+        this.path = path;
+    }
+
+    @Override
+    public List<String> toArgs() {
+        return List.of(path);
+    }
+}
+
+public class URLSource implements Source {
+    private final String url;
+
+    public URLSource(String url) {
+        this.url = url;
+    }
+
+    @Override
+    public List<String> toArgs() {
+        return List.of(url);
+    }
+}
+
+public class BytesSource implements Source {
+    private final byte[] bytes;
+
+    public BytesSource(byte[] bytes) {
+        this.bytes = bytes;
+    }
+
+    @Override
+    public List<String> toArgs() {
+        // Write to temp file - implementation omitted for brevity
+        throw new UnsupportedOperationException("BytesSource requires temp file handling");
+    }
+}

@@ -1,0 +1,139 @@
+"""
+Conformance test suite for pdftract Python subprocess SDK.
+Auto-generated - do not edit manually.
+"""
+
+import json
+import os
+import unittest
+from pathlib import Path
+
+from pdftract_subprocess import Client, PathSource
+
+
+class ConformanceTest(unittest.TestCase):
+    """Test suite for SDK conformance."""
+
+    def setUp(self):
+        """Set up test client."""
+        self.client = Client()
+        self.suite_path = os.getenv(
+            'CONFORMANCE_SUITE', 'tests/sdk-conformance/cases.json'
+        )
+
+        if os.path.exists(self.suite_path):
+            with open(self.suite_path) as f:
+                self.suite = json.load(f)
+        else:
+            self.suite = None
+
+    def test_binary_available(self):
+        """Test that pdftract binary is available on PATH."""
+        import subprocess
+
+        result = subprocess.run(
+            ['pdftract', '--version'],
+            capture_output=True,
+        )
+        self.assertEqual(
+            0, result.returncode, 'pdftract binary not found on PATH'
+        )
+
+    def test_conformance(self):
+        """Run all conformance test cases."""
+        if not self.suite:
+            self.skipTest('Conformance suite not available')
+
+        for tc in self.suite.get('cases', []):
+            with self.subTest(tc_id=tc['id'], method=tc['method']):
+                fixture_path = f"fixtures/{tc['fixture']}"
+                self._run_test_case(tc, fixture_path)
+
+    def _run_test_case(self, test_case, fixture_path):
+        """Run a single test case."""
+        method = test_case['method']
+        assertions = test_case.get('assertions')
+
+        if method == 'extract':
+            self._test_extract(fixture_path, assertions)
+        elif method == 'extract_text':
+            self._test_extract_text(fixture_path, assertions)
+        elif method == 'extract_markdown':
+            self._test_extract_markdown(fixture_path, assertions)
+        elif method == 'get_metadata':
+            self._test_get_metadata(fixture_path, assertions)
+        elif method == 'hash':
+            self._test_hash(fixture_path, assertions)
+        elif method == 'classify':
+            self._test_classify(fixture_path, assertions)
+        elif method == 'verify_receipt':
+            self._test_verify_receipt(fixture_path, assertions)
+        else:
+            self.skipTest(f"Method not yet implemented: {method}")
+
+    def _test_extract(self, fixture_path, assertions):
+        """Test extract method."""
+        doc = self.client.extract(PathSource(fixture_path))
+
+        if assertions and 'page_count' in assertions:
+            self.assertEqual(assertions['page_count'], len(doc['pages']))
+
+        if assertions and assertions.get('has_title'):
+            self.assertTrue(doc['metadata'].get('title'))
+
+    def _test_extract_text(self, fixture_path, assertions):
+        """Test extract_text method."""
+        text = self.client.extract_text(PathSource(fixture_path))
+
+        if assertions and 'min_length' in assertions:
+            self.assertGreaterEqual(len(text), assertions['min_length'])
+
+        if assertions and 'contains' in assertions:
+            for substr in assertions['contains']:
+                self.assertIn(substr, text)
+
+    def _test_extract_markdown(self, fixture_path, assertions):
+        """Test extract_markdown method."""
+        md = self.client.extract_markdown(PathSource(fixture_path))
+
+        if assertions and 'min_length' in assertions:
+            self.assertGreaterEqual(len(md), assertions['min_length'])
+
+    def _test_get_metadata(self, fixture_path, assertions):
+        """Test get_metadata method."""
+        metadata = self.client.get_metadata(PathSource(fixture_path))
+
+        if assertions and 'page_count' in assertions:
+            self.assertEqual(assertions['page_count'], metadata['page_count'])
+
+    def _test_hash(self, fixture_path, assertions):
+        """Test hash method."""
+        fingerprint = self.client.hash(PathSource(fixture_path))
+
+        self.assertEqual(64, len(fingerprint['hash']))
+        self.assertEqual(64, len(fingerprint['fast_hash']))
+
+        if assertions and 'page_count' in assertions:
+            self.assertEqual(assertions['page_count'], fingerprint['page_count'])
+
+    def _test_classify(self, fixture_path, assertions):
+        """Test classify method."""
+        classification = self.client.classify(PathSource(fixture_path))
+
+        self.assertTrue(classification['category'])
+        self.assertGreaterEqual(classification['confidence'], 0)
+        self.assertLessEqual(classification['confidence'], 1)
+
+    def _test_verify_receipt(self, fixture_path, assertions):
+        """Test verify_receipt method."""
+        if not assertions or 'receipt' not in assertions:
+            self.skipTest('Receipt not provided in assertions')
+
+        valid = self.client.verify_receipt(fixture_path, assertions['receipt'])
+
+        if 'valid' in assertions:
+            self.assertEqual(assertions['valid'], valid)
+
+
+if __name__ == '__main__':
+    unittest.main()

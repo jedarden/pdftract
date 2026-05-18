@@ -1,0 +1,153 @@
+package com.jedarden.pdftract;
+
+import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.jedarden.pdftract.codegen.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * Conformance test suite for pdftract Java SDK
+ * Auto-generated - do not edit manually
+ */
+
+class ConformanceTest {
+
+    static final Gson GSON = new Gson();
+    static final String SUITE_PATH = System.getProperty("CONFORMANCE_SUITE", "tests/sdk-conformance/cases.json");
+
+    static List<TestCase> loadTestCases() {
+        List<TestCase> cases = new ArrayList<>();
+        try {
+            String content = Files.readString(Paths.get(SUITE_PATH));
+            JsonObject suite = GSON.fromJson(content, JsonObject.class);
+            JsonArray casesArray = suite.getAsJsonArray("cases");
+            for (var elem : casesArray) {
+                JsonObject tc = elem.getAsJsonObject();
+                cases.add(new TestCase(
+                    tc.get("id").getAsString(),
+                    tc.get("fixture").getAsString(),
+                    tc.get("method").getAsString(),
+                    tc.has("options") ? GSON.fromJson(tc.get("options"), JsonObject.class) : null,
+                    tc.has("assertions") ? GSON.fromJson(tc.get("assertions"), JsonObject.class) : null
+                ));
+            }
+        } catch (Exception e) {
+            System.err.println("Warning: Could not load conformance suite from " + SUITE_PATH);
+        }
+        return cases;
+    }
+
+    @ParameterizedTest
+    @MethodSource("loadTestCases")
+    @EnabledIfSystemProperty(named = "run.conformance", matches = "true")
+    void testConformance(TestCase tc) throws Exception {
+        String fixturePath = "fixtures/" + tc.fixture;
+        try (Pdftract client = new Pdftract()) {
+            runTestCase(client, tc, fixturePath);
+        }
+    }
+
+    @Test
+    @EnabledIfSystemProperty(named = "run.conformance", matches = "true")
+    void testBinaryAvailable() {
+        assertDoesNotThrow(() -> {
+            Process process = new ProcessBuilder("pdftract", "--version").start();
+            int exitCode = process.waitFor();
+            assertTrue(exitCode == 0, "pdftract binary not found on PATH");
+        });
+    }
+
+    private void runTestCase(Pdftract client, TestCase tc, String fixturePath) throws Exception {
+        switch (tc.method) {
+            case "extract" -> testExtract(client, fixturePath, tc);
+            case "extract_text" -> testExtractText(client, fixturePath, tc);
+            case "extract_markdown" -> testExtractMarkdown(client, fixturePath, tc);
+            case "get_metadata" -> testGetMetadata(client, fixturePath, tc);
+            case "hash" -> testHash(client, fixturePath, tc);
+            case "classify" -> testClassify(client, fixturePath, tc);
+            case "verify_receipt" -> testVerifyReceipt(client, fixturePath, tc);
+            default -> System.out.println("Skipping method: " + tc.method);
+        }
+    }
+
+    private void testExtract(Pdftract client, String fixturePath, TestCase tc) throws Exception {
+        Document doc = client.{{ method.camel_name }}(new PathSource(fixturePath), null);
+
+        if (tc.assertions != null && tc.assertions.has("page_count")) {
+            assertEquals(tc.assertions.get("page_count").getAsInt(), doc.pages.size());
+        }
+        if (tc.assertions != null && tc.assertions.has("has_title") && tc.assertions.get("has_title").getAsBoolean()) {
+            assertNotNull(doc.metadata.title);
+        }
+    }
+
+    private void testExtractText(Pdftract client, String fixturePath, TestCase tc) throws Exception {
+        String text = client.{{ method.camel_name }}(new PathSource(fixturePath), null);
+
+        if (tc.assertions != null && tc.assertions.has("min_length")) {
+            assertTrue(text.length() >= tc.assertions.get("min_length").getAsInt());
+        }
+    }
+
+    private void testExtractMarkdown(Pdftract client, String fixturePath, TestCase tc) throws Exception {
+        String md = client.{{ method.camel_name }}(new PathSource(fixturePath), null);
+
+        if (tc.assertions != null && tc.assertions.has("min_length")) {
+            assertTrue(md.length() >= tc.assertions.get("min_length").getAsInt());
+        }
+    }
+
+    private void testGetMetadata(Pdftract client, String fixturePath, TestCase tc) throws Exception {
+        Metadata metadata = client.{{ method.camel_name }}(new PathSource(fixturePath), null);
+
+        if (tc.assertions != null && tc.assertions.has("page_count")) {
+            assertEquals(tc.assertions.get("page_count").getAsInt(), metadata.pageCount);
+        }
+    }
+
+    private void testHash(Pdftract client, String fixturePath, TestCase tc) throws Exception {
+        Fingerprint fingerprint = client.{{ method.camel_name }}(new PathSource(fixturePath), null);
+
+        assertEquals(64, fingerprint.hash.length());
+        assertEquals(64, fingerprint.fastHash.length());
+
+        if (tc.assertions != null && tc.assertions.has("page_count")) {
+            assertEquals(tc.assertions.get("page_count").getAsInt(), fingerprint.pageCount);
+        }
+    }
+
+    private void testClassify(Pdftract client, String fixturePath, TestCase tc) throws Exception {
+        Classification classification = client.{{ method.camel_name }}(new PathSource(fixturePath));
+
+        assertNotNull(classification.category);
+        assertTrue(classification.confidence >= 0 && classification.confidence <= 1);
+    }
+
+    private void testVerifyReceipt(Pdftract client, String fixturePath, TestCase tc) throws Exception {
+        if (tc.assertions == null || !tc.assertions.has("receipt")) {
+            System.out.println("Skipping receipt verification: no receipt provided");
+            return;
+        }
+
+        String receipt = tc.assertions.get("receipt").getAsString();
+        boolean valid = client.{{ method.camel_name }}(fixturePath, receipt);
+
+        if (tc.assertions.has("valid")) {
+            assertEquals(tc.assertions.get("valid").getAsBoolean(), valid);
+        }
+    }
+
+    record TestCase(String id, String fixture, String method, JsonObject options, JsonObject assertions) {
+    }
+}

@@ -1,0 +1,59 @@
+namespace Pdftract.Codegen;
+
+/// <summary>
+/// This file is auto-generated. Do not edit manually.
+/// </summary>
+
+public class PdftractException : Exception
+{
+    public int ExitCode { get; }
+
+    public PdftractException(string message, int exitCode) : base(message)
+    {
+        ExitCode = exitCode;
+    }
+
+    public PdftractException(string message, int exitCode, string? stderr)
+        : base(message + (stderr != null ? $": {stderr}" : ""))
+    {
+        ExitCode = exitCode;
+    }
+}
+
+{% for error in errors %}
+{% if error.exit_code != 0 and error.exit_code != 10 %}
+/// <summary>
+/// {{ error.description }}
+/// </summary>
+public class {{ error.exception_name }} : PdftractException
+{
+    public {{ error.exception_name }}(string message, int exitCode) : base(message, exitCode)
+    {
+    }
+
+    public {{ error.exception_name }}(string message, int exitCode, string? stderr)
+        : base(message, exitCode, stderr)
+    {
+    }
+}
+{% endif %}
+{% endfor %}
+
+{% for error in errors %}
+{% if error.exit_code == 10 %}
+/// <summary>
+/// {{ error.description }}
+/// </summary>
+public class {{ error.exception_name }} : PdftractException
+{
+    public {{ error.exception_name }}(string message, int exitCode) : base(message, exitCode)
+    {
+    }
+
+    public {{ error.exception_name }}(string message, int exitCode, string? stderr)
+        : base(message, exitCode, stderr)
+    {
+    }
+}
+{% endif %}
+{% endfor %}

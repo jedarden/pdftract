@@ -1,0 +1,119 @@
+# frozen_string_literal: true
+
+require "open3"
+require "json"
+
+module Pdftract
+  module Codegen
+    #
+    # This file is auto-generated. Do not edit manually.
+    #
+
+    class Client
+      attr_reader :binary_path, :version
+
+      def initialize(binary_path = "pdftract")
+        @binary_path = binary_path
+        @version = "{{ version }}"
+      end
+
+      private
+
+      def exec(*args)
+        stdout, stderr, status = Open3.capture3(@binary_path, *args)
+
+        unless status.success?
+          raise map_error(stderr, status.exitstatus)
+        end
+
+        stdout
+      end
+
+      def map_error(stderr, exit_code)
+        case exit_code
+        {% for error in errors %}
+        {% if error.exit_code != 0 %}
+        when {{ error.exit_code }}
+          {{ error.exception_name }}.new(stderr, exit_code)
+        {% endif %}
+        {% endfor %}
+        else
+          PdftractError.new(stderr, exit_code)
+        end
+      end
+
+      {% for method in methods %}
+      {% if method.name == 'extract_stream' %}
+      def {{ method.snake_name }}(source, options = nil)
+        args = ["{{ method.cli_flag }}", *source.to_args]
+        args.concat(options.to_args) if options
+
+        Open3.popen3(@binary_path, *args) do |stdin, stdout, stderr, wait_thr|
+          return Enumerator.new do |yielder|
+            stdout.each_line do |line|
+              next if line.strip.empty?
+
+              result = JSON.parse(line, object_class: OpenStruct)
+              yielder << result
+            end
+
+            unless wait_thr.value.success?
+              raise map_error(stderr.read, wait_thr.value.exitstatus)
+            end
+          end
+        end
+      end
+      {% elsif method.name == 'search' %}
+      def {{ method.snake_name }}(source, pattern, options = nil)
+        args = ["grep", pattern, *source.to_args]
+        args.concat(options.to_args) if options
+
+        Open3.popen3(@binary_path, *args) do |stdin, stdout, stderr, wait_thr|
+          return Enumerator.new do |yielder|
+            stdout.each_line do |line|
+              next if line.strip.empty?
+
+              result = JSON.parse(line, object_class: OpenStruct)
+              yielder << result
+            end
+
+            unless wait_thr.value.success?
+              raise map_error(stderr.read, wait_thr.value.exitstatus)
+            end
+          end
+        end
+      end
+      {% elsif method.name == 'verify_receipt' %}
+      def {{ method.snake_name }}(path, receipt)
+        output = exec("{{ method.cli_flag }}", path, receipt)
+        output.strip == "true"
+      end
+      {% else %}
+      def {{ method.snake_name }}(source{% if method.has_options %}, options = nil{% endif %})
+        args = ["{{ method.cli_flag }}", *source.to_args]
+
+        {% if method.has_options %}
+        args.concat(options.to_args) if options
+        {% endif %}
+
+        {% if method.name == 'extract_text' %}
+        args << "--text"
+        {% elsif method.name == 'extract_markdown' %}
+        args << "--md"
+        {% elsif method.name == 'get_metadata' %}
+        args << "--metadata-only"
+        {% endif %}
+
+        output = exec(*args)
+
+        {% if method.returns_string %}
+        output
+        {% else %}
+        JSON.parse(output, object_class: OpenStruct)
+        {% endif %}
+      end
+      {% endif %}
+      {% endfor %}
+    end
+  end
+end

@@ -1,0 +1,145 @@
+//
+// Conformance test suite for pdftract Swift SDK
+// Auto-generated - do not edit manually
+//
+
+import XCTest
+@testable import Pdftract
+
+final class ConformanceTests: XCTestCase {
+    var client: Pdftract!
+    var suite: [String: Any]?
+
+    override func setUp() {
+        client = Pdftract()
+
+        let suitePath = ProcessInfo.processInfo.environment["CONFORMANCE_SUITE"] ?? "tests/sdk-conformance/cases.json"
+
+        if let data = try? Data(contentsOf: URL(fileURLWithPath: suitePath)),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            suite = json
+        }
+    }
+
+    func testBinaryAvailable() throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["pdftract", "--version"]
+
+        try process.run()
+        process.waitUntilExit()
+
+        XCTAssertEqual(process.terminationStatus, 0, "pdftract binary not found on PATH")
+    }
+
+    func testConformance() throws {
+        guard let suite = suite,
+              let cases = suite["cases"] as? [[String: Any]] else {
+            throw XCTSkip("No conformance suite loaded")
+        }
+
+        for testCase in cases {
+            let id = testCase["id"] as? String ?? "unknown"
+            let method = testCase["method"] as? String ?? "unknown"
+
+            try runTestCase(testCase, fixturePath: "fixtures/\(testCase["fixture"] as? String ?? "")")
+        }
+    }
+
+    private func runTestCase(_ testCase: [String: Any], fixturePath: String) throws {
+        guard let method = testCase["method"] as? String else {
+            throw XCTSkip("No method specified")
+        }
+
+        switch method {
+        case "extract":
+            try testExtract(fixturePath, assertions: testCase["assertions"] as? [String: Any])
+        case "extract_text":
+            try testExtractText(fixturePath, assertions: testCase["assertions"] as? [String: Any])
+        case "extract_markdown":
+            try testExtractMarkdown(fixturePath, assertions: testCase["assertions"] as? [String: Any])
+        case "get_metadata":
+            try testGetMetadata(fixturePath, assertions: testCase["assertions"] as? [String: Any])
+        case "hash":
+            try testHash(fixturePath, assertions: testCase["assertions"] as? [String: Any])
+        case "classify":
+            try testClassify(fixturePath, assertions: testCase["assertions"] as? [String: Any])
+        case "verify_receipt":
+            try testVerifyReceipt(fixturePath, assertions: testCase["assertions"] as? [String: Any])
+        default:
+            throw XCTSkip("Method not yet implemented: \(method)")
+        }
+    }
+
+    private func testExtract(_ fixturePath: String, assertions: [String: Any]?) throws {
+        let doc = try client.extract(PathSource(fixturePath))
+
+        if let pageCount = assertions?["page_count"] as? Int {
+            XCTAssertEqual(doc.pages.count, pageCount)
+        }
+
+        if let hasTitle = assertions?["has_title"] as? Bool, hasTitle {
+            XCTAssertNotNil(doc.metadata.title)
+        }
+    }
+
+    private func testExtractText(_ fixturePath: String, assertions: [String: Any]?) throws {
+        let text = try client.extractText(PathSource(fixturePath))
+
+        if let minLen = assertions?["min_length"] as? Int {
+            XCTAssertGreaterThanOrEqual(text.count, minLen)
+        }
+
+        if let contains = assertions?["contains"] as? [String] {
+            for substr in contains {
+                XCTAssertTrue(text.contains(substr), "Expected text to contain: \(substr)")
+            }
+        }
+    }
+
+    private func testExtractMarkdown(_ fixturePath: String, assertions: [String: Any]?) throws {
+        let md = try client.extractMarkdown(PathSource(fixturePath))
+
+        if let minLen = assertions?["min_length"] as? Int {
+            XCTAssertGreaterThanOrEqual(md.count, minLen)
+        }
+    }
+
+    private func testGetMetadata(_ fixturePath: String, assertions: [String: Any]?) throws {
+        let metadata = try client.getMetadata(PathSource(fixturePath))
+
+        if let pageCount = assertions?["page_count"] as? Int {
+            XCTAssertEqual(metadata.pageCount, pageCount)
+        }
+    }
+
+    private func testHash(_ fixturePath: String, assertions: [String: Any]?) throws {
+        let fingerprint = try client.hash(PathSource(fixturePath))
+
+        XCTAssertEqual(fingerprint.hash.count, 64)
+        XCTAssertEqual(fingerprint.fastHash.count, 64)
+
+        if let pageCount = assertions?["page_count"] as? Int {
+            XCTAssertEqual(fingerprint.pageCount, pageCount)
+        }
+    }
+
+    private func testClassify(_ fixturePath: String, assertions: [String: Any]?) throws {
+        let classification = try client.classify(PathSource(fixturePath))
+
+        XCTAssertFalse(classification.category.isEmpty)
+        XCTAssertTrue(classification.confidence >= 0 && classification.confidence <= 1)
+    }
+
+    private func testVerifyReceipt(_ fixturePath: String, assertions: [String: Any]?) throws {
+        guard let receipt = assertions?["receipt"] as? String else {
+            throw XCTSkip("Receipt not provided in assertions")
+        }
+
+        let valid = try client.verifyReceipt(fixturePath, receipt)
+
+        if let expectedValid = assertions?["valid"] as? Bool {
+            XCTAssertEqual(valid, expectedValid)
+        }
+    }
+}

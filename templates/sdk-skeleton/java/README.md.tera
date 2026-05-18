@@ -1,0 +1,73 @@
+# pdftract-java
+
+Java SDK for pdftract - PDF extraction and conformance testing.
+
+## Installation
+
+```xml
+<dependency>
+    <groupId>com.jedarden</groupId>
+    <artifactId>pdftract</artifactId>
+    <version>{{ version }}</version>
+</dependency>
+```
+
+## Usage
+
+### Basic extract
+
+```java
+import com.jedarden.pdftract.Pdftract;
+import com.jedarden.pdftract.codegen.PathSource;
+
+try (Pdftract client = new Pdftract()) {
+    Document doc = client.extract(new PathSource("document.pdf"));
+    System.out.println("Pages: " + doc.pages().size());
+}
+```
+
+### Extract with OCR
+
+```java
+ExtractOptions options = new ExtractOptions();
+options.setOcrLanguage("eng");
+options.setOcrThreshold(0.7);
+
+Document doc = client.extract(new PathSource("scanned.pdf"), options);
+```
+
+### Search
+
+```java
+import java.util.concurrent.Flow;
+
+client.search(new PathSource("document.pdf"), "invoice", null)
+    .subscribe(match -> {
+        System.out.println("Found on page " + match.page() + ": " + match.text());
+    });
+```
+
+### Stream extraction
+
+```java
+client.extractStream(new PathSource("large.pdf"), null)
+    .subscribe(page -> {
+        System.out.println("Page " + page.page() + ": " + page.blocks().size() + " blocks");
+    });
+```
+
+## Binary version compatibility
+
+This SDK requires pdftract {{ version }}. Download from:
+https://github.com/jedarden/pdftract/releases/tag/v{{ version }}
+
+## Troubleshooting
+
+### Binary not found
+Ensure `pdftract` is on your PATH. The SDK probes PATH for the executable.
+
+### Version mismatch
+The SDK will refuse to invoke mismatched binary versions. Install the correct version.
+
+### Network failure
+For remote URLs, check your network connection and TLS certificate chain.

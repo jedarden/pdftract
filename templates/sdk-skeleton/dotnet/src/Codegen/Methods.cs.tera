@@ -1,0 +1,221 @@
+using System.Diagnostics;
+using System.Text;
+using System.Text.Json;
+
+namespace Pdftract.Codegen;
+
+/// <summary>
+/// This file is auto-generated. Do not edit manually.
+/// </summary>
+
+public class Pdftract : IDisposable
+{
+    private readonly string _binaryPath;
+    private readonly string _version = "{{ version }}";
+
+    public Pdftract() : this("pdftract")
+    {
+    }
+
+    public Pdftract(string binaryPath)
+    {
+        _binaryPath = binaryPath;
+    }
+
+    private ProcessResult Execute(string[] args)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = _binaryPath,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+
+        foreach (var arg in args)
+        {
+            psi.ArgumentList.Add(arg);
+        }
+
+        using var process = Process.Start(psi);
+        if (process == null)
+        {
+            throw new PdftractException("Failed to start process", -1);
+        }
+
+        var stdout = process.StandardOutput.ReadToEnd();
+        var stderr = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        if (process.ExitCode != 0)
+        {
+            throw MapError(stderr, process.ExitCode);
+        }
+
+        return new ProcessResult(stdout, process.ExitCode);
+    }
+
+    private PdftractException MapError(string stderr, int exitCode)
+    {
+        return exitCode switch
+        {
+            {% for error in errors %}
+            {% if error.exit_code != 0 %}
+            {{ error.exit_code }} => new {{ error.exception_name }}(stderr, exitCode),
+            {% endif %}
+            {% endfor %}
+            _ => new PdftractException(stderr, exitCode)
+        };
+    }
+
+    {% for method in methods %}
+    {% if method.name == 'extract_stream' %}
+    public async IAsyncEnumerable<{{ method.return_type }}> {{ method.camel_name }}(Source source, {{ method.options_type }}? options)
+    {
+        var args = new List<string> { "{{ method.cli_flag }}" };
+        args.AddRange(source.ToArgs());
+
+        if (options != null)
+        {
+            args.AddRange(options.ToArgs());
+        }
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = _binaryPath,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+
+        foreach (var arg in args)
+        {
+            psi.ArgumentList.Add(arg);
+        }
+
+        using var process = Process.Start(psi);
+        if (process == null)
+        {
+            throw new PdftractException("Failed to start process", -1);
+        }
+
+        using var reader = process.StandardOutput;
+
+        while (!reader.EndOfStream)
+        {
+            var line = await reader.ReadLineAsync();
+            if (string.IsNullOrWhiteSpace(line)) continue;
+
+            var result = JsonSerializer.Deserialize<{{ method.return_type }}>(line);
+            if (result != null)
+            {
+                yield return result;
+            }
+        }
+
+        await process.WaitForExitAsync();
+
+        if (process.ExitCode != 0)
+        {
+            var stderr = await process.StandardError.ReadToEndAsync();
+            throw MapError(stderr, process.ExitCode);
+        }
+    }
+    {% elif method.name == 'search' %}
+    public async IAsyncEnumerable<{{ method.return_type }}> {{ method.camel_name }}(Source source, string pattern, {{ method.options_type }}? options)
+    {
+        var args = new List<string> { "grep", pattern };
+        args.AddRange(source.ToArgs());
+
+        if (options != null)
+        {
+            args.AddRange(options.ToArgs());
+        }
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = _binaryPath,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+
+        foreach (var arg in args)
+        {
+            psi.ArgumentList.Add(arg);
+        }
+
+        using var process = Process.Start(psi);
+        if (process == null)
+        {
+            throw new PdftractException("Failed to start process", -1);
+        }
+
+        using var reader = process.StandardOutput;
+
+        while (!reader.EndOfStream)
+        {
+            var line = await reader.ReadLineAsync();
+            if (string.IsNullOrWhiteSpace(line)) continue;
+
+            var result = JsonSerializer.Deserialize<{{ method.return_type }}>(line);
+            if (result != null)
+            {
+                yield return result;
+            }
+        }
+
+        await process.WaitForExitAsync();
+
+        if (process.ExitCode != 0)
+        {
+            var stderr = await process.StandardError.ReadToEndAsync();
+            throw MapError(stderr, process.ExitCode);
+        }
+    }
+    {% elif method.name == 'verify_receipt' %}
+    public bool {{ method.camel_name }}(string path, string receipt)
+    {
+        var result = Execute(new[] { "{{ method.cli_flag }}", path, receipt });
+        return bool.Parse(result.Stdout.Trim());
+    }
+    {% else %}
+    public {{ method.return_type }} {{ method.camel_name }}(Source source{% if method.has_options %}, {{ method.options_type }}? options{% endif %})
+    {
+        var args = new List<string> { "{{ method.cli_flag }}" };
+        args.AddRange(source.ToArgs());
+
+        {% if method.has_options %}
+        if (options != null)
+        {
+            args.AddRange(options.ToArgs());
+        }
+        {% endif %}
+
+        {% if method.name == 'extract_text' %}
+        args.Add("--text");
+        {% elif method.name == 'extract_markdown' %}
+        args.Add("--md");
+        {% elif method.name == 'get_metadata' %}
+        args.Add("--metadata-only");
+        {% endif %}
+
+        var result = Execute(args.ToArray());
+
+        {% if method.returns_string %}
+        return result.Stdout;
+        {% else %}
+        return JsonSerializer.Deserialize<{{ method.return_type }}>(result.Stdout)
+            ?? throw new PdftractException("Failed to deserialize result", -1);
+        {% endif %}
+    }
+    {% endif %}
+    {% endfor %}
+
+    public void Dispose()
+    {
+        // No resources to clean up
+    }
+
+    private record ProcessResult(string Stdout, int ExitCode);
+}

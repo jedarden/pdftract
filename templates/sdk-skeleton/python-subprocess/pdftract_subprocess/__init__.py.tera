@@ -1,0 +1,21 @@
+"""
+PDFtract subprocess fallback SDK.
+Auto-generated - do not edit manually.
+
+This module provides a subprocess-based fallback when the native PyO3 module
+fails to load. It is slower but provides full functionality.
+"""
+
+from .codegen.methods import Client
+from .codegen.types import PathSource, URLSource, BytesSource
+from .codegen.errors import PdftractError
+
+__version__ = "{{ version }}"
+
+__all__ = [
+    "Client",
+    "PathSource",
+    "URLSource",
+    "BytesSource",
+    "PdftractError",
+]

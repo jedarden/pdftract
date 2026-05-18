@@ -1,0 +1,186 @@
+using System.Text.Json;
+using Pdftract.Codegen;
+
+namespace Pdftract.Tests;
+
+/// <summary>
+/// Conformance test suite for pdftract .NET SDK
+/// Auto-generated - do not edit manually
+/// </summary>
+
+public class ConformanceTests
+{
+    private const string SuitePath = "tests/sdk-conformance/cases.json";
+
+    [Fact]
+    public void BinaryAvailable()
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = "pdftract",
+            Arguments = "--version",
+            RedirectStandardOutput = true,
+            UseShellExecute = false
+        };
+
+        using var process = Process.Start(psi);
+        Assert.NotNull(process);
+        process.WaitForExit();
+
+        Assert.Equal(0, process.ExitCode);
+    }
+
+    [SkippableFact]
+    public async Task RunConformanceSuite()
+    {
+        if (!File.Exists(SuitePath))
+        {
+            throw new SkipException($"Conformance suite not found at {SuitePath}");
+        }
+
+        var json = await File.ReadAllTextAsync(SuitePath);
+        var suite = JsonSerializer.Deserialize<ConformanceSuite>(json);
+
+        Assert.NotNull(suite);
+
+        using var client = new Pdftract();
+
+        foreach (var testCase in suite.Cases)
+        {
+            await RunTestCase(client, testCase);
+        }
+    }
+
+    private async Task RunTestCase(Pdftract client, TestCase testCase)
+    {
+        var fixturePath = $"fixtures/{testCase.Fixture}";
+
+        switch (testCase.Method)
+        {
+            case "extract":
+                await TestExtract(client, fixturePath, testCase);
+                break;
+            case "extract_text":
+                await TestExtractText(client, fixturePath, testCase);
+                break;
+            case "extract_markdown":
+                await TestExtractMarkdown(client, fixturePath, testCase);
+                break;
+            case "get_metadata":
+                await TestGetMetadata(client, fixturePath, testCase);
+                break;
+            case "hash":
+                await TestHash(client, fixturePath, testCase);
+                break;
+            case "classify":
+                await TestClassify(client, fixturePath, testCase);
+                break;
+            case "verify_receipt":
+                await TestVerifyReceipt(client, fixturePath, testCase);
+                break;
+            default:
+                Console.WriteLine($"Skipping method: {testCase.Method}");
+                break;
+        }
+    }
+
+    private async Task TestExtract(Pdftract client, string fixturePath, TestCase testCase)
+    {
+        var doc = await client.ExtractAsync(new PathSource(fixturePath));
+
+        if (testCase.Assertions?.TryGetValue("page_count", out var pageCount) == true)
+        {
+            var expected = pageCount.GetInt32();
+            Assert.Equal(expected, doc.Pages.Count);
+        }
+
+        if (testCase.Assertions?.TryGetValue("has_title", out var hasTitle) == true && hasTitle.GetBoolean())
+        {
+            Assert.NotNull(doc.Metadata.Title);
+        }
+    }
+
+    private async Task TestExtractText(Pdftract client, string fixturePath, TestCase testCase)
+    {
+        var text = await client.ExtractTextAsync(new PathSource(fixturePath));
+
+        if (testCase.Assertions?.TryGetValue("min_length", out var minLen) == true)
+        {
+            var expected = minLen.GetInt32();
+            Assert.True(text.Length >= expected);
+        }
+    }
+
+    private async Task TestExtractMarkdown(Pdftract client, string fixturePath, TestCase testCase)
+    {
+        var md = await client.ExtractMarkdownAsync(new PathSource(fixturePath));
+
+        if (testCase.Assertions?.TryGetValue("min_length", out var minLen) == true)
+        {
+            var expected = minLen.GetInt32();
+            Assert.True(md.Length >= expected);
+        }
+    }
+
+    private async Task TestGetMetadata(Pdftract client, string fixturePath, TestCase testCase)
+    {
+        var metadata = await client.GetMetadataAsync(new PathSource(fixturePath));
+
+        if (testCase.Assertions?.TryGetValue("page_count", out var pageCount) == true)
+        {
+            var expected = pageCount.GetInt32();
+            Assert.Equal(expected, metadata.PageCount);
+        }
+    }
+
+    private async Task TestHash(Pdftract client, string fixturePath, TestCase testCase)
+    {
+        var fingerprint = await client.HashAsync(new PathSource(fixturePath));
+
+        Assert.Equal(64, fingerprint.Hash.Length);
+        Assert.Equal(64, fingerprint.FastHash.Length);
+
+        if (testCase.Assertions?.TryGetValue("page_count", out var pageCount) == true)
+        {
+            var expected = pageCount.GetInt32();
+            Assert.Equal(expected, fingerprint.PageCount);
+        }
+    }
+
+    private async Task TestClassify(Pdftract client, string fixturePath, TestCase testCase)
+    {
+        var classification = await client.ClassifyAsync(new PathSource(fixturePath));
+
+        Assert.NotNull(classification.Category);
+        Assert.InRange(classification.Confidence, 0, 1);
+    }
+
+    private async Task TestVerifyReceipt(Pdftract client, string fixturePath, TestCase testCase)
+    {
+        if (testCase.Assertions == null || !testCase.Assertions.TryGetValue("receipt", out var receipt))
+        {
+            Console.WriteLine("Skipping receipt verification: no receipt provided");
+            return;
+        }
+
+        var receiptStr = receipt.GetString();
+        var valid = await client.VerifyReceiptAsync(fixturePath, receiptStr);
+
+        if (testCase.Assertions.TryGetValue("valid", out var validExpected))
+        {
+            Assert.Equal(validExpected.GetBoolean(), valid);
+        }
+    }
+}
+
+// Supporting types for JSON deserialization
+
+internal record ConformanceSuite(List<TestCase> Cases);
+
+internal record TestCase(
+    string Id,
+    string Fixture,
+    string Method,
+    JsonElement? Options,
+    JsonElement? Assertions
+);

@@ -1,0 +1,40 @@
+"""
+Error classes for pdftract subprocess SDK.
+Auto-generated - do not edit manually.
+"""
+
+
+class PdftractError(Exception):
+    """Base error class for all pdftract errors."""
+
+    def __init__(self, message: str, exit_code: int):
+        self.exit_code = exit_code
+        super().__init__(message)
+
+
+{% for error in errors %}
+{% if error.exit_code != 0 and error.exit_code != 10 %}
+class {{ error.exception_name }}(PdftractError):
+    """
+    {{ error.description }}
+    """
+
+    def __init__(self, message: str, exit_code: int):
+        super().__init__(message, exit_code)
+
+
+{% endif %}
+{% endfor %}
+{% for error in errors %}
+{% if error.exit_code == 10 %}
+class {{ error.exception_name }}(PdftractError):
+    """
+    {{ error.description }}
+    """
+
+    def __init__(self, message: str, exit_code: int):
+        super().__init__(message, exit_code)
+
+
+{% endif %}
+{% endfor %}

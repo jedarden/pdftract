@@ -1,0 +1,48 @@
+<?php
+
+namespace Pdftract\Codegen;
+
+/**
+ * This file is auto-generated. Do not edit manually.
+ */
+
+class PdftractException extends \Exception
+{
+    public int $exitCode;
+
+    public function __construct(string $message, int $exitCode)
+    {
+        $this->exitCode = $exitCode;
+        parent::__construct($message, $exitCode);
+    }
+}
+
+{% for error in errors %}
+{% if error.exit_code != 0 and error.exit_code != 10 %}
+/**
+ * {{ error.description }}
+ */
+class {{ error.exception_name }} extends PdftractException
+{
+    public function __construct(string $message, int $exitCode)
+    {
+        parent::__construct($message, $exitCode);
+    }
+}
+{% endif %}
+{% endfor %}
+
+{% for error in errors %}
+{% if error.exit_code == 10 %}
+/**
+ * {{ error.description }}
+ */
+class {{ error.exception_name }} extends PdftractException
+{
+    public function __construct(string $message, int $exitCode)
+    {
+        parent::__construct($message, $exitCode);
+    }
+}
+{% endif %}
+{% endfor %}

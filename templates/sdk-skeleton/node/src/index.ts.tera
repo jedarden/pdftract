@@ -1,0 +1,35 @@
+/**
+ * pdftract Node.js SDK
+ * Auto-generated - do not edit manually
+ */
+
+export { Client, path, url, bytes } from './codegen/methods.js';
+export type {
+  Source,
+  PathSource,
+  URLSource,
+  BytesSource,
+  Document,
+  Page,
+  Span,
+  Block,
+  Match,
+  Fingerprint,
+  Classification,
+  Metadata,
+  ExtractOptions,
+  SearchOptions,
+  BaseOptions
+} from './codegen/types.js';
+
+export { PdftractError } from './codegen/errors.js';
+{% for error in errors %}
+{% if error.exit_code != 0 and error.exit_code != 10 %}
+export { {{ error.exception_name }} } from './codegen/errors.js';
+{% endif %}
+{% endfor %}
+{% for error in errors %}
+{% if error.exit_code == 10 %}
+export { {{ error.exception_name }} } from './codegen/errors.js';
+{% endif %}
+{% endfor %}

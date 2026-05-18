@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pdftract-subprocess"
+version = "{{ version }}"
+description = "PDFtract SDK - PDF extraction and conformance testing for Python (subprocess fallback)"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "jedarden", email = "jedarden@example.com"}
+]
+
+[project.urls]
+Homepage = "https://github.com/jedarden/pdftract"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pdftract_subprocess*"]

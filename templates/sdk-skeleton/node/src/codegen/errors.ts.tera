@@ -1,0 +1,42 @@
+/**
+ * This file is auto-generated. Do not edit manually.
+ */
+
+export class PdftractError extends Error {
+  constructor(
+    message: string,
+    public readonly exitCode: number,
+    public readonly stderr: string
+  ) {
+    super(message);
+    this.name = 'PdftractError';
+  }
+}
+
+{% for error in errors %}
+{% if error.exit_code != 0 and error.exit_code != 10 %}
+/**
+ * {{ error.description }}
+ */
+export class {{ error.exception_name }} extends PdftractError {
+  constructor(message: string, exitCode: number, stderr: string) {
+    super(message, exitCode, stderr);
+    this.name = '{{ error.exception_name }}';
+  }
+}
+{% endif %}
+{% endfor %}
+
+{% for error in errors %}
+{% if error.exit_code == 10 %}
+/**
+ * {{ error.description }}
+ */
+export class {{ error.exception_name }} extends PdftractError {
+  constructor(message: string, exitCode: number, stderr: string) {
+    super(message, exitCode, stderr);
+    this.name = '{{ error.exception_name }}';
+  }
+}
+{% endif %}
+{% endfor %}

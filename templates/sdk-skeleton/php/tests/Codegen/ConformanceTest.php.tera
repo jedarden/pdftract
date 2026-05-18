@@ -1,0 +1,176 @@
+<?php
+
+namespace Pdftract\Tests\Codegen;
+
+use PHPUnit\Framework\TestCase;
+use Pdftract\Codegen\Client;
+use Pdftract\Codegen\PathSource;
+
+/**
+ * Conformance test suite for pdftract PHP SDK
+ * Auto-generated - do not edit manually
+ */
+class ConformanceTest extends TestCase
+{
+    private Client $client;
+    private ?array $suite = null;
+
+    protected function setUp(): void
+    {
+        $this->client = new Client();
+        $suitePath = getenv('CONFORMANCE_SUITE') ?: 'tests/sdk-conformance/cases.json';
+
+        if (file_exists($suitePath)) {
+            $content = file_get_contents($suitePath);
+            $this->suite = json_decode($content, true);
+        }
+    }
+
+    public function testBinaryAvailable(): void
+    {
+        $result = null;
+        $exitCode = 1;
+
+        exec('pdftract --version 2>&1', $result, $exitCode);
+
+        $this->assertEquals(0, $exitCode, 'pdftract binary not found on PATH');
+    }
+
+    /**
+     * @dataProvider conformanceCases
+     */
+    public function testConformance(array $testCase): void
+    {
+        $fixturePath = 'fixtures/' . $testCase['fixture'];
+        $this->runTestCase($testCase, $fixturePath);
+    }
+
+    public static function conformanceCases(): array
+    {
+        $suitePath = getenv('CONFORMANCE_SUITE') ?: 'tests/sdk-conformance/cases.json';
+
+        if (!file_exists($suitePath)) {
+            return [];
+        }
+
+        $content = file_get_contents($suitePath);
+        $suite = json_decode($content, true);
+
+        $cases = [];
+        foreach ($suite['cases'] as $tc) {
+            $cases[$tc['id'] . ':' . $tc['method']] = [$tc];
+        }
+
+        return $cases;
+    }
+
+    private function runTestCase(array $testCase, string $fixturePath): void
+    {
+        switch ($testCase['method']) {
+            case 'extract':
+                $this->testExtract($fixturePath, $testCase['assertions'] ?? null);
+                break;
+            case 'extract_text':
+                $this->testExtractText($fixturePath, $testCase['assertions'] ?? null);
+                break;
+            case 'extract_markdown':
+                $this->testExtractMarkdown($fixturePath, $testCase['assertions'] ?? null);
+                break;
+            case 'get_metadata':
+                $this->testGetMetadata($fixturePath, $testCase['assertions'] ?? null);
+                break;
+            case 'hash':
+                $this->testHash($fixturePath, $testCase['assertions'] ?? null);
+                break;
+            case 'classify':
+                $this->testClassify($fixturePath, $testCase['assertions'] ?? null);
+                break;
+            case 'verify_receipt':
+                $this->testVerifyReceipt($fixturePath, $testCase['assertions'] ?? null);
+                break;
+            default:
+                $this->markTestSkipped("Method not yet implemented: {$testCase['method']}");
+        }
+    }
+
+    private function testExtract(string $fixturePath, ?array $assertions): void
+    {
+        $doc = $this->client->extract(new PathSource($fixturePath));
+
+        if ($assertions !== null && isset($assertions['page_count'])) {
+            $this->assertEquals($assertions['page_count'], count($doc['pages']));
+        }
+
+        if ($assertions !== null && ($assertions['has_title'] ?? false)) {
+            $this->assertNotEmpty($doc['metadata']['title'] ?? '');
+        }
+    }
+
+    private function testExtractText(string $fixturePath, ?array $assertions): void
+    {
+        $text = $this->client->extractText(new PathSource($fixturePath));
+
+        if ($assertions !== null && isset($assertions['min_length'])) {
+            $this->assertGreaterThanOrEqual($assertions['min_length'], strlen($text));
+        }
+
+        if ($assertions !== null && isset($assertions['contains'])) {
+            foreach ($assertions['contains'] as $substr) {
+                $this->assertStringContainsString($substr, $text);
+            }
+        }
+    }
+
+    private function testExtractMarkdown(string $fixturePath, ?array $assertions): void
+    {
+        $md = $this->client->extractMarkdown(new PathSource($fixturePath));
+
+        if ($assertions !== null && isset($assertions['min_length'])) {
+            $this->assertGreaterThanOrEqual($assertions['min_length'], strlen($md));
+        }
+    }
+
+    private function testGetMetadata(string $fixturePath, ?array $assertions): void
+    {
+        $metadata = $this->client->getMetadata(new PathSource($fixturePath));
+
+        if ($assertions !== null && isset($assertions['page_count'])) {
+            $this->assertEquals($assertions['page_count'], $metadata['page_count']);
+        }
+    }
+
+    private function testHash(string $fixturePath, ?array $assertions): void
+    {
+        $fingerprint = $this->client->hash(new PathSource($fixturePath));
+
+        $this->assertEquals(64, strlen($fingerprint['hash']));
+        $this->assertEquals(64, strlen($fingerprint['fast_hash']));
+
+        if ($assertions !== null && isset($assertions['page_count'])) {
+            $this->assertEquals($assertions['page_count'], $fingerprint['page_count']);
+        }
+    }
+
+    private function testClassify(string $fixturePath, ?array $assertions): void
+    {
+        $classification = $this->client->classify(new PathSource($fixturePath));
+
+        $this->assertNotEmpty($classification['category']);
+        $this->assertGreaterThanOrEqual(0, $classification['confidence']);
+        $this->assertLessThanOrEqual(1, $classification['confidence']);
+    }
+
+    private function testVerifyReceipt(string $fixturePath, ?array $assertions): void
+    {
+        if ($assertions === null || !isset($assertions['receipt'])) {
+            $this->markTestSkipped('Receipt not provided in assertions');
+            return;
+        }
+
+        $valid = $this->client->verifyReceipt($fixturePath, $assertions['receipt']);
+
+        if (isset($assertions['valid'])) {
+            $this->assertEquals($assertions['valid'], $valid);
+        }
+    }
+}

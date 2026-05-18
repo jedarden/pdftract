@@ -1,0 +1,64 @@
+# pdftract-php
+
+PHP SDK for pdftract - PDF extraction and conformance testing.
+
+## Installation
+
+```bash
+composer require jedarden/pdftract:^{{ version }}
+```
+
+## Usage
+
+### Basic extract
+
+```php
+use Pdftract\Codegen\Client;
+use Pdftract\Codegen\PathSource;
+
+$client = new Client();
+$doc = $client->extract(new PathSource('document.pdf'));
+echo "Pages: " . count($doc['pages']) . "\n";
+```
+
+### Extract with OCR
+
+```php
+$options = new ExtractOptions();
+$options->ocrLanguage = 'eng';
+$options->ocrThreshold = 0.7;
+
+$doc = $client->extract(new PathSource('scanned.pdf'), $options);
+```
+
+### Search
+
+```php
+foreach ($client->search(new PathSource('document.pdf'), 'invoice') as $match) {
+    echo "Found on page {$match['page']}: {$match['text']}\n";
+}
+```
+
+### Stream extraction
+
+```php
+foreach ($client->extractStream(new PathSource('large.pdf')) as $page) {
+    echo "Page {$page['page']}: " . count($page['blocks'] ?? []) . " blocks\n";
+}
+```
+
+## Binary version compatibility
+
+This SDK requires pdftract {{ version }}. Download from:
+https://github.com/jedarden/pdftract/releases/tag/v{{ version }}
+
+## Troubleshooting
+
+### Binary not found
+Ensure `pdftract` is on your PATH. The SDK probes PATH for the executable.
+
+### Version mismatch
+The SDK will refuse to invoke mismatched binary versions. Install the correct version.
+
+### Network failure
+For remote URLs, check your network connection and TLS certificate chain.

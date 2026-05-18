@@ -1,0 +1,68 @@
+# Pdftract
+
+.NET SDK for pdftract - PDF extraction and conformance testing.
+
+## Installation
+
+```bash
+dotnet add package Pdftract --version {{ version }}
+```
+
+## Usage
+
+### Basic extract
+
+```csharp
+using Pdftract;
+using Pdftract.Codegen;
+
+using var client = new Pdftract();
+var doc = await client.ExtractAsync(new PathSource("document.pdf"));
+Console.WriteLine($"Pages: {doc.Pages.Count}");
+```
+
+### Extract with OCR
+
+```csharp
+var options = new ExtractOptions
+{
+    OcrLanguage = "eng",
+    OcrThreshold = 0.7
+};
+
+var doc = await client.ExtractAsync(new PathSource("scanned.pdf"), options);
+```
+
+### Search
+
+```csharp
+await foreach (var match in client.SearchAsync(new PathSource("document.pdf"), "invoice"))
+{
+    Console.WriteLine($"Found on page {match.Page}: {match.Text}");
+}
+```
+
+### Stream extraction
+
+```csharp
+await foreach (var page in client.ExtractStreamAsync(new PathSource("large.pdf")))
+{
+    Console.WriteLine($"Page {page.Page}: {page.Blocks.Count} blocks");
+}
+```
+
+## Binary version compatibility
+
+This SDK requires pdftract {{ version }}. Download from:
+https://github.com/jedarden/pdftract/releases/tag/v{{ version }}
+
+## Troubleshooting
+
+### Binary not found
+Ensure `pdftract` is on your PATH. The SDK probes PATH for the executable.
+
+### Version mismatch
+The SDK will refuse to invoke mismatched binary versions. Install the correct version.
+
+### Network failure
+For remote URLs, check your network connection and TLS certificate chain.
