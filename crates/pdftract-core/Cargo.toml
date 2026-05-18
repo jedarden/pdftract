@@ -6,9 +6,19 @@ license = "MIT"
 repository = "https://github.com/jedarden/pdftract"
 
 [dependencies]
+hex = "0.4"
 indexmap = "2.2"
 flate2 = { workspace = true }
+regex = "1.10"
+secrecy = { workspace = true }
+serde = { version = "1.0", features = ["derive"], optional = true }
+sha2 = "0.10"
 thiserror = { workspace = true }
+
+[features]
+default = []
+serde = ["dep:serde"]
 
 [dev-dependencies]
 proptest = "1.4"
+serde_json = "1.0"

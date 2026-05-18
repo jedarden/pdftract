@@ -4,4 +4,5 @@
 //! processing PDF documents, including the lexer, object parser, and
 //! text extraction engines.
 
+pub mod fingerprint;
 pub mod parser;
