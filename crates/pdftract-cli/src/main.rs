@@ -3,6 +3,10 @@ use clap::{Parser, Subcommand};
 use std::fs;
 use std::path::PathBuf;
 
+mod codegen;
+mod password;
+use codegen::Language;
+
 #[derive(Parser)]
 #[command(name = "pdftract")]
 #[command(about = "pdftract CLI - PDF extraction and conformance testing", long_about = None)]
@@ -41,6 +45,53 @@ enum Commands {
         #[arg(short, long, default_value = "conformance-report.json")]
         output: PathBuf,
     },
+    /// SDK code generation commands
+    Sdk {
+        #[command(subcommand)]
+        sdk_command: SdkCommands,
+    },
+    /// Extract text and structure from a PDF file
+    Extract {
+        /// Path to the PDF file (use '-' for stdin)
+        input: PathBuf,
+
+        /// Read password from stdin (one line, terminated by newline)
+        #[arg(long, conflicts_with = "password")]
+        password_stdin: bool,
+
+        /// PDF password (INSECURE: rejected unless PDFTRACT_INSECURE_CLI_PASSWORD=1)
+        #[arg(long, conflicts_with = "password_stdin")]
+        password: Option<String>,
+
+        /// Output format (json, text, markdown)
+        #[arg(short, long, default_value = "json")]
+        format: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum SdkCommands {
+    /// Generate SDK skeleton from templates
+    Codegen {
+        /// Target language
+        #[arg(short, long)]
+        lang: Language,
+        /// Output directory
+        #[arg(short, long)]
+        out: PathBuf,
+        /// Version string (defaults to current pdftract version)
+        #[arg(short, long, default_value = "0.1.0")]
+        version: String,
+    },
+    /// Validate existing SDK against current generator output
+    Validate {
+        /// Target language
+        #[arg(short, long)]
+        lang: Language,
+        /// Path to existing SDK directory
+        #[arg(short, long)]
+        sdk_dir: PathBuf,
+    },
 }
 
 fn main() -> Result<()> {
@@ -63,7 +114,55 @@ fn main() -> Result<()> {
         } => {
             cmd_conformance(suite, &sdk, &version, output)?;
         }
+        Commands::Sdk { sdk_command } => {
+            cmd_sdk(sdk_command)?;
+        }
+        Commands::Extract {
+            input,
+            password_stdin,
+            password,
+            format,
+        } => {
+            if let Err(e) = cmd_extract(input, password_stdin, password, &format) {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
     }
+
+    Ok(())
+}
+
+fn cmd_extract(
+    input: PathBuf,
+    password_stdin: bool,
+    password: Option<String>,
+    format: &str,
+) -> Result<()> {
+    // Resolve password using the priority order defined in TH-07
+    let resolved_password = match password::resolve_password(password_stdin, password) {
+        Ok(pwd) => pwd,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(password::EXIT_USAGE_ERROR as i32);
+        }
+    };
+
+    // Report password status (never the value itself)
+    if resolved_password.is_some() {
+        eprintln!("Password provided via secure channel");
+    }
+
+    // Stub: For now, just report what would be extracted
+    // Full extraction implementation is in separate beads
+    eprintln!("Extract command invoked");
+    eprintln!("  Input: {:?}", input);
+    eprintln!("  Format: {}", format);
+    eprintln!("  Password: {}", if resolved_password.is_some() { "yes" } else { "no" });
+
+    // TODO: Implement actual PDF extraction
+    // This will be done in the extraction implementation beads
+    eprintln!("NOTE: Full extraction implementation is pending (see plan for extraction beads)");
 
     Ok(())
 }
@@ -100,6 +199,43 @@ fn cmd_compare(actual: PathBuf, expected: PathBuf, tolerances: Option<PathBuf>, 
         }
     }
 
+    Ok(())
+}
+
+fn cmd_sdk(command: SdkCommands) -> Result<()> {
+    match command {
+        SdkCommands::Codegen { lang, out, version } => {
+            let template_dir = PathBuf::from("templates/sdk-skeleton");
+            let mut generator = codegen::CodeGenerator::new(&template_dir, version)?;
+            generator.generate(lang, &out)?;
+            println!("\nSDK generated successfully to: {}", out.display());
+        }
+        SdkCommands::Validate { lang, sdk_dir } => {
+            let template_dir = PathBuf::from("templates/sdk-skeleton");
+            let mut generator = codegen::CodeGenerator::new(&template_dir, "0.1.0".to_string())?;
+            let result = generator.validate(lang, &sdk_dir)?;
+
+            if result.differences.is_empty() {
+                println!("SDK is up to date with current generator output.");
+            } else {
+                println!("Found {} differences:", result.differences.len());
+                for diff in &result.differences {
+                    match diff.kind {
+                        codegen::DifferenceKind::MissingInSdk => {
+                            println!("  MISSING: {}", diff.path);
+                        }
+                        codegen::DifferenceKind::ExtraInSdk => {
+                            println!("  EXTRA: {}", diff.path);
+                        }
+                        codegen::DifferenceKind::ContentDiff => {
+                            println!("  MODIFIED: {}", diff.path);
+                        }
+                    }
+                }
+                std::process::exit(1);
+            }
+        }
+    }
     Ok(())
 }
 
@@ -215,7 +351,7 @@ fn compare_recursive(
         }
         // String constraints
         (serde_json::Value::String(act), serde_json::Value::Object(exp)) => {
-            if let Some(min_len) = exp.get("min_length").and_then(|v| v.as_usize()) {
+            if let Some(min_len) = exp.get("min_length").and_then(|v| v.as_u64()).map(|v| v as usize) {
                 if act.len() < min_len {
                     results.insert(
                         path.to_string(),
@@ -249,7 +385,7 @@ fn compare_recursive(
         }
         // Array length constraints
         (serde_json::Value::Array(act), serde_json::Value::Object(exp)) => {
-            if let Some(min_len) = exp.get("min").and_then(|v| v.as_usize()) {
+            if let Some(min_len) = exp.get("min").and_then(|v| v.as_u64()).map(|v| v as usize) {
                 if act.len() < min_len {
                     results.insert(
                         path.to_string(),
@@ -264,7 +400,7 @@ fn compare_recursive(
                     return;
                 }
             }
-            if let Some(max_len) = exp.get("max").and_then(|v| v.as_usize()) {
+            if let Some(max_len) = exp.get("max").and_then(|v| v.as_u64()).map(|v| v as usize) {
                 if act.len() > max_len {
                     results.insert(
                         path.to_string(),
