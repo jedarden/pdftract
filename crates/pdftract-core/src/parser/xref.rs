@@ -186,22 +186,31 @@ impl XrefResolver {
 
     /// Check if a resolution is in progress (for circular reference detection).
     pub fn is_resolving(&self, obj_ref: ObjRef) -> bool {
-        self.resolving.read().unwrap().contains(&obj_ref)
+        self.resolving.read()
+            .map(|guard| guard.contains(&obj_ref))
+            .unwrap_or(false)
     }
 
     /// Mark an object as being resolved.
     pub fn start_resolving(&self, obj_ref: ObjRef) -> bool {
-        let mut resolving = self.resolving.write().unwrap();
-        if resolving.contains(&obj_ref) {
-            return false;
+        match self.resolving.write() {
+            Ok(mut resolving) => {
+                if resolving.contains(&obj_ref) {
+                    return false;
+                }
+                resolving.insert(obj_ref);
+                true
+            }
+            Err(_) => false, // Lock poisoned - treat as failed to start
         }
-        resolving.insert(obj_ref);
-        true
     }
 
     /// Mark an object as finished resolving.
     pub fn finish_resolving(&self, obj_ref: ObjRef) {
-        self.resolving.write().unwrap().remove(&obj_ref);
+        if let Ok(mut resolving) = self.resolving.write() {
+            resolving.remove(&obj_ref);
+        }
+        // If lock is poisoned, ignore - cleanup is optional
     }
 
     /// Resolve an object reference to its value.
@@ -221,10 +230,17 @@ impl XrefResolver {
 
         // Check cache first
         {
-            let cache = self.cache.read().unwrap();
-            if let Some(obj) = cache.get(&obj_ref) {
-                self.finish_resolving(obj_ref);
-                return Ok(obj.clone());
+            match self.cache.read() {
+                Ok(cache) => {
+                    if let Some(obj) = cache.get(&obj_ref) {
+                        self.finish_resolving(obj_ref);
+                        return Ok(obj.clone());
+                    }
+                }
+                Err(_) => {
+                    // Lock poisoned - clear the poisoned state and continue
+                    // The cache is optional, so we can proceed without it
+                }
             }
         }
 
@@ -240,7 +256,10 @@ impl XrefResolver {
 
     /// Cache a resolved object.
     pub fn cache_object(&self, obj_ref: ObjRef, obj: PdfObject) {
-        self.cache.write().unwrap().insert(obj_ref, obj);
+        if let Ok(mut cache) = self.cache.write() {
+            cache.insert(obj_ref, obj);
+        }
+        // If lock is poisoned, ignore - caching is optional
     }
 
     /// Get the number of entries in the xref table.
@@ -308,36 +327,57 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
     };
 
     // Look for xref keyword (case-sensitive per PDF spec)
-    let header_str = std::str::from_utf8(&header_bytes);
-    let xref_start = match header_str {
-        Ok(s) => {
-            // Skip leading whitespace
-            let s = s.trim_start();
-            if s.starts_with("xref") {
-                s.len() - s["xref".len()..].len()
-            } else {
+    // Find it in the raw bytes, accounting for leading whitespace
+    let xref_keyword_pos = loop {
+        let header_str = match std::str::from_utf8(&header_bytes) {
+            Ok(s) => s,
+            Err(_) => {
                 result.diagnostics.push(XrefDiagnostic::with_static(
                     XrefDiagCode::InvalidXrefHeader,
                     pos,
-                    "xref keyword not found",
+                    "Invalid UTF-8 in xref header",
                 ));
                 return result;
             }
-        }
-        Err(_) => {
+        };
+
+        // Skip leading whitespace to find xref
+        let trimmed = header_str.trim_start();
+        let ws_offset = header_str.len() - trimmed.len();
+
+        if trimmed.starts_with("xref") {
+            // Found it! ws_offset is the position of "xref" in header_bytes
+            break ws_offset;
+        } else {
             result.diagnostics.push(XrefDiagnostic::with_static(
                 XrefDiagCode::InvalidXrefHeader,
                 pos,
-                "Invalid UTF-8 in xref header",
+                "xref keyword not found",
             ));
             return result;
         }
     };
 
-    // Advance past "xref" keyword to the byte after it
-    // The keyword is at index xref_start, and we need to move past its 4 bytes
-    let xref_end = xref_start + 4;
-    pos = start_offset + xref_end as u64;
+    // Advance past "xref" keyword (4 bytes) to the byte after it
+    pos += xref_keyword_pos as u64 + 4;
+
+    // Skip the line ending after "xref" (could be \n, \r\n, or \r)
+    let line_end_bytes = source.read_at(pos, 2).ok();
+    if let Some(chunk) = line_end_bytes {
+        if chunk.get(0) == Some(&b'\r') {
+            if chunk.get(1) == Some(&b'\n') {
+                pos += 2; // CRLF
+            } else {
+                pos += 1; // CR alone
+            }
+        } else if chunk.get(0) == Some(&b'\n') {
+            pos += 1; // LF alone
+        }
+        // If no line ending found, continue anyway (might be EOF or next subsection)
+    }
+
+    // Track whether we found the trailer keyword
+    let mut trailer_found = false;
 
     // Parse subsections until we hit "trailer"
     loop {
@@ -367,6 +407,7 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
 
         // Check for trailer keyword
         if trimmed.starts_with("trailer") {
+            trailer_found = true;
             pos += ws_offset as u64 + 7; // Skip "trailer"
             result.trailer = parse_trailer_dict(source, &mut pos, &mut result.diagnostics);
             break;
@@ -505,9 +546,11 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
                             ));
                         }
                     }
-                    // Add all entries (both in-use and free)
-                    // Free entries are needed for the complete xref map
-                    result.add_entry(obj_nr, entry);
+                    // Only add in-use entries to the result
+                    // Free entries are ignored per pdftract spec (they don't resolve to objects)
+                    if matches!(entry, XrefEntry::InUse { .. }) {
+                        result.add_entry(obj_nr, entry);
+                    }
                     pos += stride as u64;
                     entries_parsed += 1;
                 }
@@ -523,6 +566,15 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
                 }
             }
         }
+    }
+
+    // If we exited the loop without finding a trailer, emit a diagnostic
+    if !trailer_found {
+        result.diagnostics.push(XrefDiagnostic::with_static(
+            XrefDiagCode::TrailerNotFound,
+            pos,
+            "Trailer dictionary not found (xref table may be truncated)",
+        ));
     }
 
     result
@@ -944,8 +996,8 @@ trailer\n<< /Size 6 >>\n";
         let source = MemorySource::new(xref_data.to_vec());
         let result = parse_traditional_xref(&source, 0);
 
-        // Should have parsed 5 in-use entries (object 0 is free and ignored)
-        assert_eq!(result.len(), 5);
+        // Should have parsed 4 in-use entries (objects 0 and 3 are free and ignored)
+        assert_eq!(result.len(), 4);
 
         // Check specific entries
         assert_eq!(result.entries.get(&1), Some(&XrefEntry::InUse { offset: 17, gen_nr: 0 }));
@@ -1126,16 +1178,17 @@ trailer\n<< /Size 3 >>\n";
 
     #[test]
     fn test_parse_xref_entry_malformed() {
-        let entry = b"BAD_ENTRY_BAD n \n";
+        // 19-byte malformed entry (invalid offset format)
+        let entry = b"BADENTRIES 00000 n\n";
         let diagnostics = &mut Vec::new();
 
-        let result = parse_xref_entry(entry, 1, 100, 20, diagnostics);
+        // Test with 19-byte stride to match the actual length
+        let result = parse_xref_entry(entry, 1, 100, 19, diagnostics);
         assert!(result.is_none());
         assert!(!diagnostics.is_empty());
     }
 
     // proptest for random byte sequences - never panic
-    #[cfg(feature = "proptest")]
     mod proptest_tests {
         use super::*;
         use proptest::prelude::*;
