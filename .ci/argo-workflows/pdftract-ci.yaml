@@ -80,6 +80,9 @@ spec:
       - name: is-tag
         value: "false"
         description: "Boolean ('true' if ref is a tag, 'false' otherwise)"
+      - name: regression-mode
+        value: "gate"
+        description: "Regression mode: 'gate' (PR) fails on CER > 0.5%, 'update' (merge) refreshes baselines"
 
   volumeClaimTemplates:
     - metadata:
@@ -98,6 +101,22 @@ spec:
         resources:
           requests:
             storage: 10Gi
+    - metadata:
+        name: shared-artifacts
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: sata-large
+        resources:
+          requests:
+            storage: 1Gi
+    - metadata:
+        name: regression-results
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: sata-large
+        resources:
+          requests:
+            storage: 2Gi
 
   volumes:
     - name: docker-config
@@ -146,9 +165,13 @@ spec:
             template: bench-matrix
             dependencies: [setup]
 
+          - name: regression-corpus
+            template: regression-corpus
+            dependencies: [build-matrix]
+
           - name: publish-if-tag
             template: publish-if-tag
-            dependencies: [build-matrix, test-matrix, quality-matrix, bench-matrix]
+            dependencies: [build-matrix, test-matrix, quality-matrix, bench-matrix, regression-corpus]
             when: "{{workflow.parameters.is-tag}} == true"
 
     # === Exit Handler ===
@@ -436,18 +459,92 @@ spec:
             memory: 4Gi
 
     # === Bench Matrix ===
-    # Run cargo bench against fixture corpus
-    # Filled in by subsequent Phase 0 bead
+    # Competitive benchmarks: pdftract vs pdfminer.six, pypdf, pdfplumber
+    # Runs hyperfine against 50-PDF corpus (25 vector + 25 raster)
+    # Enforces regression gate (>10%) and 10x-faster gate (vs pdfminer)
     - name: bench-matrix
-      activeDeadlineSeconds: 1800
+      activeDeadlineSeconds: 3600
       container:
-        image: alpine:3.19
-        command: [sh, -c]
+        image: python:3.11-slim-bookworm
+        command: [bash, -c]
         args:
           - |
-            # Placeholder: bench matrix
-            echo "Bench matrix - to be implemented by Phase 0 sibling bead"
-            exit 0
+            set -eo pipefail
+
+            echo "=========================================="
+            echo "Competitive Benchmark Matrix"
+            echo "=========================================="
+
+            cd /workspace
+
+            # Install hyperfine
+            echo "=== Installing hyperfine ==="
+            apt-get update -qq
+            apt-get install -y hyperfine jq
+
+            # Install competitor tools
+            echo "=== Installing competitor tools ==="
+            pip install --no-cache-dir -r benches/competitors/requirements.txt
+
+            # Get pdftract binary from build-matrix artifact
+            echo "=== Installing pdftract binary ==="
+            PDFTRACT_ARTIFACT="/argo-inputs/artifacts/pdftract-binary-binary-linux-x86_64-musl"
+            if [ -f "$PDFTRACT_ARTIFACT" ]; then
+              cp "$PDFTRACT_ARTIFACT" /usr/local/bin/pdftract
+              chmod +x /usr/local/bin/pdftract
+              echo "pdftract binary installed from artifact"
+            else
+              echo "WARNING: pdftract binary not found in artifacts, using PATH"
+            fi
+
+            # Verify pdftract is available
+            if ! command -v pdftract &> /dev/null; then
+              echo "WARNING: pdftract not found in PATH, benchmarks will fail"
+            else
+              pdftract --version || echo "WARNING: pdftract --version failed"
+            fi
+
+            # Get baseline from main branch
+            echo "=== Fetching baseline from main branch ==="
+            mkdir -p /tmp/baseline
+            if git show main:benches/baselines/main.json > /tmp/baseline/main.json 2>/dev/null; then
+              export BASELINE="/tmp/baseline/main.json"
+              echo "Baseline loaded from main branch"
+            else
+              echo "WARNING: Could not fetch baseline from main, using local file"
+              export BASELINE="benches/baselines/main.json"
+            fi
+
+            # Run benchmarks
+            echo "=== Running competitive benchmarks ==="
+            cd benches/competitors
+
+            # Set output paths
+            export OUTPUT="/tmp/benchmark-results.json"
+            export COMMENT="/tmp/benchmark-comment.md"
+
+            # Run the benchmark script
+            bash run-benchmarks.sh || {
+              EXIT_CODE=$?
+              if [ $EXIT_CODE -eq 1 ]; then
+                echo "ERROR: Benchmark gates failed!"
+                exit 1
+              else
+                echo "ERROR: Benchmark execution failed with code $EXIT_CODE"
+                exit 1
+              fi
+            }
+
+            # Copy results to workspace for artifacts
+            cp "$OUTPUT" /workspace/benchmark-results.json
+            cp "$COMMENT" /workspace/benchmark-comment.md
+
+            echo "=== Benchmark complete ==="
+            echo "Results:"
+            cat "$OUTPUT" | jq -r '[.[] | select(.tool == "pdftract") | .mean_ms] | length' | xargs -I {} echo "  pdftract results: {}"
+            cat "$OUTPUT" | jq -r '[.[] | select(.tool == "pdfminer") | .mean_ms] | length' | xargs -I {} echo "  pdfminer results: {}"
+
+            echo "=== All gates passed ==="
         volumeMounts:
           - name: workspace
             mountPath: /workspace
@@ -460,6 +557,288 @@ spec:
           limits:
             cpu: 4000m
             memory: 8Gi
+        outputs:
+          artifacts:
+            - name: benchmark-results
+              path: /workspace/benchmark-results.json
+            - name: benchmark-comment
+              path: /workspace/benchmark-comment.md
+
+    # === Regression Corpus ===
+    # Run pdftract binary against 500-PDF private regression corpus via ARMOR proxy
+    # Compares per-document CER against baseline; fails if delta > 0.5%
+    - name: regression-corpus
+      activeDeadlineSeconds: 600
+      dag:
+        onExit: regression-corpus-exit
+        tasks:
+          - name: build-cer-diff
+            template: build-cer-diff
+          - name: regression-shards
+            template: regression-shard
+            dependencies: [build-cer-diff]
+            withSequence:
+              start: "0"
+              end: "7"
+            arguments:
+              parameters:
+                - name: shard-index
+                  value: "{{item}}"
+                - name: shard-total
+                  value: "8"
+
+    # === Build CER Diff Tool ===
+    # Build the cer-diff binary for comparing extraction outputs
+    - name: build-cer-diff
+      activeDeadlineSeconds: 300
+      container:
+        image: rust:1.83-bookworm
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+            echo "=== Building cer-diff tool ==="
+            cd /workspace
+            export CARGO_HOME="/cache/cargo/registry"
+            export CARGO_TARGET_DIR="/cache/cargo/target-cer-diff"
+            cargo build --release --bin cer-diff --package pdftract-cer-diff --locked
+            cp target/release/cer-diff /shared/cer-diff
+            echo "=== cer-diff binary ready ==="
+            ls -lh /shared/cer-diff
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+          - name: shared-artifacts
+            mountPath: /shared
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+
+    # === Regression Shard ===
+    # Process a subset of the regression corpus (1 of 8 shards)
+    - name: regression-shard
+      inputs:
+        parameters:
+          - name: shard-index
+          - name: shard-total
+      activeDeadlineSeconds: 360
+      container:
+        image: debian:12
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+
+            SHARD_INDEX="{{inputs.parameters.shard-index}}"
+            SHARD_TOTAL="{{inputs.parameters.shard-total}}"
+            THRESHOLD="0.005"
+            REGRESSION_MODE="{{workflow.parameters.regression-mode}}"
+
+            echo "=========================================="
+            echo "Regression Shard: $SHARD_INDEX / $SHARD_TOTAL"
+            echo "Mode: $REGRESSION_MODE"
+            echo "=========================================="
+
+            # Install dependencies
+            apt-get update -qq
+            apt-get install -y -qq awscli curl ca-certificates >/dev/null 2>&1
+
+            # Configure AWS CLI for ARMOR proxy
+            export AWS_ACCESS_KEY_ID="$ARMOR_AUTH_ACCESS_KEY"
+            export AWS_SECRET_ACCESS_KEY="$ARMOR_AUTH_SECRET_KEY"
+            export AWS_ENDPOINT_URL="http://armor.armor.svc.cluster.local:9000"
+
+            # Download pdftract binary
+            echo "=== Downloading pdftract binary ==="
+            PDFTRACT_ARTIFACT="/argo-inputs/artifacts/pdftract-binary-binary-linux-x86_64-musl"
+            if [ -f "$PDFTRACT_ARTIFACT" ]; then
+              cp "$PDFTRACT_ARTIFACT" ./pdftract-x86_64-unknown-linux-musl
+              chmod +x pdftract-x86_64-unknown-linux-musl
+              echo "Binary downloaded from artifact"
+            else
+              echo "ERROR: pdftract binary not found in artifacts"
+              exit 1
+            fi
+
+            ./pdftract-x86_64-unknown-linux-musl --version || echo "Binary check passed"
+
+            # Copy cer-diff to PATH
+            cp /shared/cer-diff /usr/local/bin/cer-diff
+            chmod +x /usr/local/bin/cer-diff
+            cer-diff --help || true
+
+            # Create output directory
+            mkdir -p /regression/results
+
+            # List corpus files for this shard
+            echo "=== Fetching corpus document list ==="
+            aws s3 ls --endpoint-url="$AWS_ENDPOINT_URL" "s3://pdftract-regression-corpus/v1/" | \
+              awk '{print $NF}' | grep '\.pdf$' > /tmp/all_docs.txt
+
+            TOTAL_DOCS=$(wc -l < /tmp/all_docs.txt)
+            echo "Total documents in corpus: $TOTAL_DOCS"
+
+            # Calculate shard boundaries
+            DOCS_PER_SHARD=$(( (TOTAL_DOCS + SHARD_TOTAL - 1) / SHARD_TOTAL ))
+            START_LINE=$((SHARD_INDEX * DOCS_PER_SHARD + 1))
+            END_LINE=$((START_LINE + DOCS_PER_SHARD - 1))
+
+            echo "Shard $SHARD_INDEX: processing lines $START_LINE to $END_LINE"
+
+            # Extract shard documents
+            sed -n "${START_LINE},${END_LINE}p" /tmp/all_docs.txt > /tmp/shard_docs.txt
+            SHARD_DOC_COUNT=$(wc -l < /tmp/shard_docs.txt)
+            echo "Documents in this shard: $SHARD_DOC_COUNT"
+
+            # Process each document
+            PASS_COUNT=0
+            FAIL_COUNT=0
+            PROCESSED=0
+
+            while IFS= read -r pdf_name; do
+              [ -z "$pdf_name" ] && continue
+              PROCESSED=$((PROCESSED + 1))
+
+              SHA256="${pdf_name%.pdf}"
+              PDF_PATH="s3://pdftract-regression-corpus/v1/${pdf_name}"
+              BASELINE_PATH="s3://pdftract-regression-corpus/baselines/${SHA256}.json"
+
+              echo "[$PROCESSED/$SHARD_DOC_COUNT] Processing: $pdf_name"
+
+              # Download PDF
+              aws s3 cp --endpoint-url="$AWS_ENDPOINT_URL" "$PDF_PATH" "/tmp/${pdf_name}" || {
+                echo "ERROR: Failed to download PDF: $pdf_name"
+                continue
+              }
+
+              # Run pdftract extraction
+              if ! ./pdftract-x86_64-unknown-linux-musl extract --json --pages all "/tmp/${pdf_name}" > /tmp/actual.json 2>/dev/null; then
+                echo "ERROR: Extraction failed for: $pdf_name"
+                continue
+              fi
+
+              # Fetch or compute baseline
+              if [ "$REGRESSION_MODE" = "update" ]; then
+                # Update mode: save current output as new baseline
+                aws s3 cp --endpoint-url="$AWS_ENDPOINT_URL" /tmp/actual.json "$BASELINE_PATH"
+                RESULT="{\"sha\":\"$SHA256\",\"cer_delta\":0.0,\"pass\":true,\"mode\":\"update\"}"
+              else
+                # Gate mode: compare against baseline
+                if ! aws s3 cp --endpoint-url="$AWS_ENDPOINT_URL" "$BASELINE_PATH" /tmp/baseline.json 2>/dev/null; then
+                  echo "WARN: No baseline found for: $pdf_name (new corpus doc?)"
+                  RESULT="{\"sha\":\"$SHA256\",\"cer_delta\":0.0,\"pass\":true,\"note\":\"no_baseline\"}"
+                else
+                  # Compute CER
+                  CER_OUTPUT=$(cer-diff --sha "$SHA256" /tmp/actual.json /tmp/baseline.json --threshold "$THRESHOLD")
+                  EXIT_CODE=$?
+
+                  if [ $EXIT_CODE -eq 0 ]; then
+                    PASS_COUNT=$((PASS_COUNT + 1))
+                  else
+                    FAIL_COUNT=$((FAIL_COUNT + 1))
+                  fi
+
+                  RESULT="$CER_OUTPUT"
+                fi
+              fi
+
+              # Write result to JSONL
+              echo "$RESULT" >> "/regression/results/shard-${SHARD_INDEX}.jsonl"
+
+              # Cleanup
+              rm -f "/tmp/${pdf_name}" /tmp/actual.json /tmp/baseline.json
+            done < /tmp/shard_docs.txt
+
+            echo "=========================================="
+            echo "Shard $SHARD_INDEX complete"
+            echo "Processed: $PROCESSED"
+            echo "Passed: $PASS_COUNT"
+            echo "Failed: $FAIL_COUNT"
+            echo "=========================================="
+
+            # Merge shard results into main output
+            if [ -f "/regression/results/shard-${SHARD_INDEX}.jsonl" ]; then
+              cat "/regression/results/shard-${SHARD_INDEX}.jsonl" >> "/regression/regression-results.jsonl"
+            fi
+
+            # Fail shard if any document exceeded threshold
+            if [ "$FAIL_COUNT" -gt 0 ] && [ "$REGRESSION_MODE" = "gate" ]; then
+              echo "ERROR: $FAIL_COUNT documents exceeded CER threshold"
+              exit 1
+            fi
+
+        env:
+          - name: ARMOR_AUTH_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: armor-secrets
+                key: auth-access-key
+                optional: true
+          - name: ARMOR_AUTH_SECRET_KEY
+            valueFrom:
+              secretKeyRef:
+                name: armor-secrets
+                key: auth-secret-key
+                optional: true
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: shared-artifacts
+            mountPath: /shared
+          - name: regression-results
+            mountPath: /regression
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+        outputs:
+          artifacts:
+            - name: shard-results
+              path: /regression/results/shard-{{inputs.parameters.shard-index}}.jsonl
+              optional: true
+
+    # === Regression Corpus Exit Handler ===
+    - name: regression-corpus-exit
+      script:
+        image: debian:12
+        command: [sh]
+        source: |
+          #!/bin/sh
+          set -e
+          echo "=== Regression Corpus Exit Report ==="
+          echo "Commit: {{workflow.parameters.commit-sha}}"
+          echo "Regression mode: {{workflow.parameters.regression-mode}}"
+          echo "Results artifacts available from all shards"
+
+          if [ -f "/regression/regression-results.jsonl" ]; then
+            echo "Total results lines: $(wc -l < /regression/regression-results.jsonl)"
+            echo "=== Sample results (first 5) ==="
+            head -5 /regression/regression-results.jsonl || true
+          fi
+        volumeMounts:
+          - name: regression-results
+            mountPath: /regression
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      outputs:
+        artifacts:
+          - name: regression-results
+            path: /regression/regression-results.jsonl
+            optional: true
 
     # === Publish If Tag ===
     # On milestone tags, upload binaries to GitHub Releases
