@@ -656,18 +656,106 @@ impl<'a> Lexer<'a> {
     }
 
     fn lex_name(&mut self) -> Option<Token> {
-        // Skip the /
-        self.advance(1);
+        let start = self.pos;
+        self.advance(1); // consume the leading /
 
-        // Consume name characters
-        while let Some(&b) = self.bytes.first() {
+        let mut out = Vec::with_capacity(64);
+        let mut raw_consumed: usize = 0;
+        const MAX_RAW_BYTES: usize = 127;
+
+        // Loop until whitespace, delimiter, or length limit
+        while raw_consumed < MAX_RAW_BYTES {
+            let Some(&b) = self.bytes.first() else {
+                break;
+            };
+
+            // Special check for NUL byte: it's whitespace per spec, but invalid in names
+            if b == 0x00 {
+                self.diagnostics.push(Diagnostic::with_static(
+                    DiagCode::StructInvalidName,
+                    self.pos as u64,
+                    "NUL byte in name is invalid per PDF spec",
+                ));
+                break;
+            }
+
+            // Check for termination: whitespace or delimiter
             if Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b) {
                 break;
             }
-            self.advance(1);
+
+            // Handle #XX hex escape
+            if b == b'#' {
+                // Check if adding a hex escape (3 raw bytes) would exceed the limit
+                if raw_consumed + 3 > MAX_RAW_BYTES {
+                    // Truncate before the # to avoid a half-decoded escape
+                    break;
+                }
+
+                // Need at least 2 more bytes for hex digits
+                if self.bytes.len() >= 3 {
+                    let hi = self.bytes[1];
+                    let lo = self.bytes[2];
+
+                    match (Self::hex_digit_to_nibble(hi), Self::hex_digit_to_nibble(lo)) {
+                        (Some(h), Some(l)) => {
+                            // Valid hex escape: decode to single byte
+                            let decoded = (h << 4) | l;
+                            // Check if decoded byte is NUL
+                            if decoded == 0 {
+                                self.diagnostics.push(Diagnostic::with_static(
+                                    DiagCode::StructInvalidName,
+                                    self.pos as u64,
+                                    "NUL byte in name is invalid per PDF spec",
+                                ));
+                                self.advance(3); // consume the #XX
+                                break;
+                            }
+                            out.push(decoded);
+                            self.advance(3);
+                            raw_consumed += 3;
+                        }
+                        _ => {
+                            // Invalid hex: emit diagnostic and treat # as literal
+                            self.diagnostics.push(Diagnostic::with_static(
+                                DiagCode::StructInvalidName,
+                                self.pos as u64,
+                                "Invalid hex escape sequence in name",
+                            ));
+                            out.push(b'#');
+                            self.advance(1);
+                            raw_consumed += 1;
+                        }
+                    }
+                } else {
+                    // EOF before complete hex escape: treat # as literal
+                    out.push(b'#');
+                    self.advance(1);
+                    raw_consumed += 1;
+                }
+            } else {
+                // Regular byte: push as-is
+                out.push(b);
+                self.advance(1);
+                raw_consumed += 1;
+            }
         }
 
-        Some(Token::Name(Vec::new()))
+        // Emit diagnostic if we stopped due to length limit (not termination)
+        // Check if there's more input that we didn't consume
+        if raw_consumed >= MAX_RAW_BYTES {
+            if let Some(&b) = self.bytes.first() {
+                if !Self::is_pdf_whitespace(b) && !Self::is_pdf_delimiter(b) {
+                    self.diagnostics.push(Diagnostic::with_static(
+                        DiagCode::StructInvalidName,
+                        start as u64,
+                        "Name exceeds 127-byte length limit",
+                    ));
+                }
+            }
+        }
+
+        Some(Token::Name(out))
     }
 
     fn lex_angle_bracket(&mut self) -> Option<Token> {
@@ -1370,6 +1458,285 @@ mod tests {
             } else {
                 // Should always get a String token for well-formed input
                 prop_assert!(false, "Expected String token, got {:?}", lexer.next_token());
+            }
+        });
+    }
+
+    // Name object tests
+
+    #[test]
+    fn name_simple() {
+        let mut lexer = Lexer::new(b"/Foo");
+        assert_eq!(lexer.next_token(), Some(Token::Name(b"Foo".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn name_with_hex_escape_space() {
+        let mut lexer = Lexer::new(b"/Foo#20Bar");
+        // #20 = 0x20 = space
+        assert_eq!(lexer.next_token(), Some(Token::Name(b"Foo Bar".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn name_hex_escape_decodes_to_hash() {
+        let mut lexer = Lexer::new(b"/#23#23");
+        // #23 = 0x23 = #
+        assert_eq!(lexer.next_token(), Some(Token::Name(b"##".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn name_empty() {
+        let mut lexer = Lexer::new(b"/ ");
+        // Empty name is valid per spec
+        assert_eq!(lexer.next_token(), Some(Token::Name(b"".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn name_empty_followed_by_delimiter() {
+        let mut lexer = Lexer::new(b"/[");
+        // Empty name followed by [ delimiter (array start)
+        assert_eq!(lexer.next_token(), Some(Token::Name(b"".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::ArrayStart));
+    }
+
+    #[test]
+    fn name_nul_byte_rejected() {
+        let mut lexer = Lexer::new(b"/Foo#00Bar");
+        let token = lexer.next_token();
+        assert_eq!(token, Some(Token::Name(b"Foo".to_vec())));
+        let diags = lexer.take_diagnostics();
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].code, DiagCode::StructInvalidName);
+        assert!(diags[0].msg.contains("NUL"));
+    }
+
+    #[test]
+    fn name_literal_nul_byte_rejected() {
+        let mut lexer = Lexer::new(b"/Foo\x00Bar");
+        let token = lexer.next_token();
+        assert_eq!(token, Some(Token::Name(b"Foo".to_vec())));
+        let diags = lexer.take_diagnostics();
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].code, DiagCode::StructInvalidName);
+    }
+
+    #[test]
+    fn name_length_limit_127_bytes() {
+        // 128 A's - should truncate to 127 and emit diagnostic
+        let mut input = vec![b'/'];
+        input.extend(std::iter::repeat(b'A').take(128));
+        let mut lexer = Lexer::new(&input);
+        let token = lexer.next_token();
+        if let Some(Token::Name(name)) = token {
+            assert_eq!(name.len(), 127);
+            assert!(name.iter().all(|&b| b == b'A'));
+        } else {
+            panic!("Expected Name token");
+        }
+        let diags = lexer.take_diagnostics();
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].code, DiagCode::StructInvalidName);
+        assert!(diags[0].msg.contains("127"));
+    }
+
+    #[test]
+    fn name_length_limit_exact_127_bytes_valid() {
+        // Exactly 127 A's - should be valid
+        let mut input = vec![b'/'];
+        input.extend(std::iter::repeat(b'A').take(127));
+        input.push(b' '); // delimiter
+        let mut lexer = Lexer::new(&input);
+        let token = lexer.next_token();
+        if let Some(Token::Name(name)) = token {
+            assert_eq!(name.len(), 127);
+            assert!(name.iter().all(|&b| b == b'A'));
+        } else {
+            panic!("Expected Name token");
+        }
+        let diags = lexer.take_diagnostics();
+        assert!(diags.is_empty(), "Expected no diagnostics for exactly 127 bytes");
+    }
+
+    #[test]
+    fn name_length_limit_counts_raw_bytes_before_expansion() {
+        // 124 A's + #41 (which expands to A) = 127 raw bytes, valid
+        let mut input = vec![b'/'];
+        input.extend(std::iter::repeat(b'A').take(124));
+        input.extend_from_slice(b"#41");
+        input.push(b' '); // delimiter
+        let mut lexer = Lexer::new(&input);
+        let token = lexer.next_token();
+        if let Some(Token::Name(name)) = token {
+            // 124 A's + 1 decoded A = 125 bytes
+            assert_eq!(name.len(), 125);
+            assert!(name.iter().all(|&b| b == b'A'));
+        } else {
+            panic!("Expected Name token");
+        }
+        let diags = lexer.take_diagnostics();
+        assert!(diags.is_empty(), "Expected no diagnostics: 124 A's + #41 = 127 raw bytes");
+    }
+
+    #[test]
+    fn name_truncation_before_incomplete_escape() {
+        // 125 A's + # + 2 more chars = 128 raw bytes
+        // Should truncate at 125, NOT include the #
+        let mut input = vec![b'/'];
+        input.extend(std::iter::repeat(b'A').take(125));
+        input.push(b'#');
+        input.push(b'4');
+        input.push(b'1');
+        let mut lexer = Lexer::new(&input);
+        let token = lexer.next_token();
+        if let Some(Token::Name(name)) = token {
+            // Should be exactly 125 A's, truncated before the #
+            assert_eq!(name.len(), 125);
+            assert!(name.iter().all(|&b| b == b'A'));
+        } else {
+            panic!("Expected Name token");
+        }
+        let diags = lexer.take_diagnostics();
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].code, DiagCode::StructInvalidName);
+    }
+
+    #[test]
+    fn name_invalid_hex_escape_keeps_hash_literal() {
+        let mut lexer = Lexer::new(b"/Foo#GZ");
+        let token = lexer.next_token();
+        assert_eq!(token, Some(Token::Name(b"Foo#GZ".to_vec())));
+        let diags = lexer.take_diagnostics();
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].code, DiagCode::StructInvalidName);
+        assert!(diags[0].msg.contains("hex"));
+    }
+
+    #[test]
+    fn name_invalid_hex_escape_single_digit() {
+        let mut lexer = Lexer::new(b"/Foo#4");
+        // EOF before second hex digit - treat # as literal
+        let token = lexer.next_token();
+        assert_eq!(token, Some(Token::Name(b"Foo#4".to_vec())));
+        // No diagnostic - this is a valid (if odd) name
+        let diags = lexer.take_diagnostics();
+        assert!(diags.is_empty());
+    }
+
+    #[test]
+    fn name_hex_escape_mixed_case() {
+        let mut lexer = Lexer::new(b"/#aB#cD#eF");
+        // #aB = 0xAB, #cD = 0xCD, #eF = 0xEF
+        assert_eq!(
+            lexer.next_token(),
+            Some(Token::Name(b"\xAB\xCD\xEF".to_vec()))
+        );
+    }
+
+    #[test]
+    fn name_case_sensitive() {
+        let mut lexer = Lexer::new(b"/FooBar");
+        assert_eq!(lexer.next_token(), Some(Token::Name(b"FooBar".to_vec())));
+        // Names are case-sensitive - don't lowercase
+        let mut lexer2 = Lexer::new(b"/foobar");
+        assert_eq!(lexer2.next_token(), Some(Token::Name(b"foobar".to_vec())));
+    }
+
+    #[test]
+    fn name_with_slash_delimiter() {
+        let mut lexer = Lexer::new(b"/Foo/Bar");
+        assert_eq!(lexer.next_token(), Some(Token::Name(b"Foo".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Name(b"Bar".to_vec())));
+    }
+
+    #[test]
+    fn name_with_all_delimiters() {
+        let mut lexer = Lexer::new(b"/Foo(Bar)");
+        assert_eq!(lexer.next_token(), Some(Token::Name(b"Foo".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::ArrayStart));
+        // Next token should be a name "Bar)"
+        assert_eq!(lexer.next_token(), Some(Token::Name(b"Bar)".to_vec())));
+    }
+
+    #[test]
+    fn name_with_bytes_preserved() {
+        let mut lexer = Lexer::new(b"/\xFF\xFE\xFD");
+        assert_eq!(
+            lexer.next_token(),
+            Some(Token::Name(b"\xFF\xFE\xFD".to_vec()))
+        );
+    }
+
+    #[test]
+    fn name_zero_byte_not_confused_with_nul() {
+        let mut lexer = Lexer::new(b"/#30#30");
+        // #30 = 0x30 = '0', not NUL
+        assert_eq!(lexer.next_token(), Some(Token::Name(b"00".to_vec())));
+        let diags = lexer.take_diagnostics();
+        assert!(diags.is_empty());
+    }
+
+    #[test]
+    fn name_hex_escape_zero_zero_is_nul() {
+        let mut lexer = Lexer::new(b"/#00");
+        let token = lexer.next_token();
+        assert_eq!(token, Some(Token::Name(b"".to_vec())));
+        let diags = lexer.take_diagnostics();
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].code, DiagCode::StructInvalidName);
+    }
+
+    #[test]
+    fn name_multiple_invalid_hex_escapes() {
+        let mut lexer = Lexer::new(b"/Foo#GZ#QX");
+        let token = lexer.next_token();
+        assert_eq!(token, Some(Token::Name(b"Foo#GZ#QX".to_vec())));
+        let diags = lexer.take_diagnostics();
+        // Should have 2 diagnostics, one for each invalid escape
+        assert_eq!(diags.len(), 2);
+        for diag in &diags {
+            assert_eq!(diag.code, DiagCode::StructInvalidName);
+        }
+    }
+
+    #[test]
+    fn name_proptest_never_panics_on_random_bytes() {
+        use proptest::prelude::*;
+
+        let test_strategy = prop::collection::vec(prop::num::u8::ANY, 0..1000).prop_map(|mut bytes| {
+            // Ensure the input starts with '/' to trigger name lexing
+            bytes.insert(0, b'/');
+            bytes
+        });
+
+        proptest!(|(bytes in test_strategy)| {
+            // This should never panic
+            let mut lexer = Lexer::new(&bytes);
+            let _ = lexer.next_token();
+        });
+    }
+
+    #[test]
+    fn name_proptest_always_produces_valid_token() {
+        use proptest::prelude::*;
+
+        let test_strategy = prop::collection::vec(prop::num::u8::ANY, 0..1000).prop_map(|mut bytes| {
+            bytes.insert(0, b'/');
+            bytes
+        });
+
+        proptest!(|(bytes in test_strategy)| {
+            let mut lexer = Lexer::new(&bytes);
+            if let Some(Token::Name(name)) = lexer.next_token() {
+                // Name should never exceed 127 bytes (raw input length)
+                // The decoded name may be shorter due to hex expansion
+                prop_assert!(name.len() <= 127, "Name length {} exceeds 127", name.len());
+            } else {
+                // Should always get a Name token for input starting with /
+                prop_assert!(false, "Expected Name token, got {:?}", lexer.next_token());
             }
         });
     }
