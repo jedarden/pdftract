@@ -4,41 +4,34 @@ Academic paper with title, authors, abstract, DOI, references
 
 ## Match Criteria Summary
 
-This profile matches academic papers, journal articles, and conference proceedings. Documents typically contain:
-
-- **Section headings**: "Abstract", "Introduction", "Keywords:"
-- **Bibliography markers**: "References", "Bibliography", "Acknowledgments"
-- **Two-column layout**: Most academic papers use two-column formatting
-- **Metadata patterns**: DOI numbers (10.xxxx/...), copyright notices, journal names
-
-Papers are typically 4-30 pages. The profile expects standard academic formatting with sections and citations.
+A document matches this profile when it displays the characteristic structure of an academic or scientific paper. The classifier identifies section headings like "abstract", "introduction", "keywords", and "references". Structurally, scientific papers are recognized by their two-column layout (common in journal publications) and the presence of a bibliography or references section. DOI identifiers are strong matching signals when present. Page counts typically range from 4-30 pages for conference papers and journal articles. The combination of author affiliations, abstract text, and structured sections distinguishes this profile from other document types.
 
 ## Extracted Fields
 
 | Field | Type | Description | Example Value | Source Hint |
 |-------|------|-------------|----------------|-------------|
-| title | string | Full title of the paper | "A Novel Approach to Machine Learning" | regex patterns, region: first_page_top |
-| authors | array | List of author names | ["Jane Doe", "John Smith"] | regex patterns, region: first_page_top_below_title |
-| abstract | string | Abstract paragraph text | "This paper presents a novel method..." | regex patterns, region: after_abstract_heading |
-| doi | string | Digital Object Identifier | "10.1234/example.2024.001" | regex patterns |
-| journal | string | Name of the journal or conference | "Journal of Computer Science" | regex patterns |
-| publication_date | date | Publication or copyright date | 2024-01-15 | regex patterns |
-| references | array | Bibliography entries | ["[1] Author et al., Title..."] | regex patterns, region: after_references_heading |
+| title | string | Extracted from page text using pattern matching | "example value" | regex patterns, region: first_page_top |
+| authors | array | Extracted from page text using pattern matching | [...] | regex patterns, region: first_page_top_below_title |
+| abstract | string | Extracted from page text using pattern matching | "example value" | regex patterns, region: after_abstract_heading |
+| doi | string | Extracted from page text using pattern matching | "example value" | regex patterns |
+| journal | string | Extracted from page text using pattern matching | "example value" | regex patterns |
+| publication_date | date | Extracted from page text using pattern matching | 2024-01-15 | regex patterns |
+| references | array | Extracted from page text using pattern matching | [...] | region: after_references_heading |
 
 ## Known Limitations
 
-- **DOIs in footnotes**: Only first-page DOIs are picked up; DOIs in footnotes or first-page footers are not extracted
-- **Multi-page abstracts**: Abstract extraction stops at double newline or "Keywords"; multi-paragraph abstracts are truncated
-- **Complex author lists**: "et al." is captured literally; full author lists with affiliations are not parsed
-- **Reference parsing**: Only captures bracketed references ([1], [2]); numbered formats without brackets are missed
-- **Single-column papers**: Papers without two-column layout may still match but extraction quality is lower
-- **Non-English papers**: Pattern matching is optimized for English section headings
-- **Supplementary materials**: Attached supplementary data files are not analyzed
-- **ArXiv preprints**: Preprints without journal metadata may have incomplete extraction
+- DOIs in footnotes or page headers are not extracted; only first-page DOIs are picked up
+- Papers with non-standard author formats (e.g., very long author lists, "et al." handling) may truncate author lists
+- Abstract extraction may include section heading text if abstract boundaries are ambiguous
+- Two-column layout detection may fail for single-column format papers (e.g., some arXiv preprints)
+- References extraction captures numbered citations but may not handle unstructured reference formats
+- Non-English papers may not match due to English-only section heading patterns
+- Papers with complex figure/table layouts interrupting text flow may have extraction errors
+- Conference proceedings vs. journal distinctions are not made; both match this profile
 
 ## Sample Input
 
-Example fixtures demonstrating this profile are available in `tests/fixtures/classifier/scientific_paper/` (50+ representative papers).
+Example fixtures demonstrating this profile are available in `tests/fixtures/profiles/scientific_paper/`.
 
 *See the classifier corpus for representative documents.*
 
@@ -51,6 +44,8 @@ pdftract profiles export scientific_paper > my-profile.yaml
 # Edit my-profile.yaml to customize match criteria, fields, or extraction patterns
 pdftract extract --profile my-profile.yaml document.pdf
 ```
+
+For papers from specific venues (e.g., ACM, IEEE), consider adding venue-specific patterns to the `journal` field extraction. For preprints or conference papers, you may want to adjust the `match.structural` signals to not require two-column layout.
 
 ---
 

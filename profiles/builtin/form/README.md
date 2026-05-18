@@ -4,13 +4,7 @@ Fillable form with fields; uses line_dominant reading order and form_fields from
 
 ## Match Criteria Summary
 
-This profile matches fillable forms and questionnaires. Documents typically contain:
-
-- **Explicit form markers**: "Form 1234", "Application form", "Questionnaire", "Please fill out", "Required fields"
-- **Field layout**: Repeated label-value pairs with colons or underscores (e.g., "Name: ______", "Date: __/__/__")
-- **Blank input areas**: Lines, boxes, or underscored areas for user input
-
-This is a degenerate profile with **no field extractors** — it only identifies documents as forms and relies on the `form_fields` integration from Phase 7.4 for field extraction. Forms are typically 1-10 pages.
+A document matches this profile when it exhibits the structure of a fillable form or questionnaire. The classifier identifies form-specific terminology like "form" with alphanumeric identifiers, "application form", "questionnaire", and instructions like "please fill out" or "required fields". Structurally, forms are recognized by their field layout (labels followed by blank spaces or boxes) and the presence of colon-terminated field labels. Forms typically range from 1-10 pages and may include checkboxes, radio buttons, and lined or boxed areas for handwritten responses. This profile is a degenerate case: it has no profile field extractors, instead relying on the form_fields extraction from Phase 7.4.
 
 ## Extracted Fields
 
@@ -18,19 +12,22 @@ This is a degenerate profile with **no field extractors** — it only identifies
 |-------|------|-------------|----------------|-------------|
 | *(none)* | - | *This profile has no field extractors* | - | - |
 
+**Note:** This profile does not define extracted fields in `profile_fields`. Instead, it uses `form_fields_integration: true` to leverage the generic form field extraction from Phase 7.4. Field names and values are extracted dynamically based on the form's layout (label-value pairs, checkboxes, etc.).
+
 ## Known Limitations
 
-*This section documents known edge cases and failure modes. Contributions to improve extraction quality are welcome.*
-
-- **No field extraction**: This profile only classifies documents as forms; actual field extraction is handled by the `form_fields` integration (Phase 7.4), which must be run separately
-- **Pre-filled forms**: Forms with already-filled handwritten or typed responses may confuse the classifier's field layout detection
-- **Complex layouts**: Forms with non-standard layouts (e.g., grids, nested tables, multi-column designs) may not be recognized
-- **Scanned forms**: Poor scan quality may cause field labels to be missed or misclassified
-- **Non-English forms**: Pattern matching is optimized for English terminology like "form", "application", "questionnaire"
+- Form field extraction depends on clear label-value relationships; poorly aligned forms may fail
+- Handwritten responses are not transcribed; only field labels and pre-filled values are captured
+- Forms with complex layouts (nested sections, conditional fields) may extract fields incorrectly
+- Forms without colons or clear field delimiters may not be recognized as forms
+- Multi-page forms with page continuations may have broken field extraction across page boundaries
+- Checkboxes and radio buttons are detected but their checked/unchecked state may not be reliable
+- Forms with tables or grids for data entry may not extract individual cell values correctly
+- Non-English forms may not match due to English-only text patterns in match criteria
 
 ## Sample Input
 
-Example fixtures demonstrating this profile are available in `tests/fixtures/classifier/misc/` (form samples: 09-16.pdf).
+Example fixtures demonstrating this profile are available in `tests/fixtures/profiles/form/`.
 
 *See the classifier corpus for representative documents.*
 
@@ -43,6 +40,8 @@ pdftract profiles export form > my-profile.yaml
 # Edit my-profile.yaml to customize match criteria, fields, or extraction patterns
 pdftract extract --profile my-profile.yaml document.pdf
 ```
+
+For specific form types (e.g., tax forms, government applications), consider creating a dedicated profile with form-specific `profile_fields` instead of using this generic form profile. The form_fields integration can be combined with custom field extractors for hybrid approaches.
 
 ---
 
