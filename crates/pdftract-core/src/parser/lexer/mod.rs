@@ -132,6 +132,8 @@ pub struct Lexer<'a> {
     diagnostics: Vec<Diagnostic>,
     /// Cached token for peek operations (token, position after token)
     peek_cache: Option<(Token, usize)>,
+    /// Whether Eof has been returned
+    eof_returned: bool,
 }
 
 /// Lookup table for PDF whitespace characters.
@@ -183,6 +185,7 @@ impl<'a> Lexer<'a> {
             pos: 0,
             diagnostics: Vec::new(),
             peek_cache: None,
+            eof_returned: false,
         }
     }
 
@@ -199,6 +202,11 @@ impl<'a> Lexer<'a> {
     /// assert_eq!(lexer.next_token(), Some(Token::Bool(false)));
     /// ```
     pub fn next_token(&mut self) -> Option<Token> {
+        // If Eof was already returned, return None
+        if self.eof_returned {
+            return None;
+        }
+
         // Invalidate peek cache on advancement
         self.peek_cache = None;
 
@@ -207,6 +215,7 @@ impl<'a> Lexer<'a> {
 
         // Check for end of input
         if self.bytes.is_empty() {
+            self.eof_returned = true;
             return Some(Token::Eof);
         }
 
@@ -215,7 +224,8 @@ impl<'a> Lexer<'a> {
 
         // If lexing returned None but we haven't reached EOF, something went wrong
         // Return Eof to signal end of parseable content
-        if token.is_none() && !self.bytes.is_empty() {
+        if token.is_none() {
+            self.eof_returned = true;
             return Some(Token::Eof);
         }
 
@@ -244,6 +254,7 @@ impl<'a> Lexer<'a> {
         // Save current state
         let saved_pos = self.pos;
         let saved_bytes = self.bytes;
+        let saved_eof_returned = self.eof_returned;
 
         // Lex the next token
         let token = self.next_token();
@@ -251,6 +262,7 @@ impl<'a> Lexer<'a> {
         // Restore state
         self.pos = saved_pos;
         self.bytes = saved_bytes;
+        self.eof_returned = saved_eof_returned;
 
         // Cache the token if we got one
         if let Some(t) = token {
@@ -292,6 +304,46 @@ impl<'a> Lexer<'a> {
     /// ```
     pub fn take_diagnostics(&mut self) -> Vec<Diagnostic> {
         std::mem::take(&mut self.diagnostics)
+    }
+
+    /// Peek at the token two positions ahead without consuming it.
+    ///
+    /// This is used for detecting indirect references (N G R pattern).
+    /// Returns `Some(&Token)` for the second token ahead, or `None` if at end.
+    pub fn peek2_token(&mut self) -> Option<Token> {
+        // Save current state
+        let saved_pos = self.pos;
+        let saved_bytes = self.bytes;
+        let saved_cache = self.peek_cache.take();
+        let saved_eof_returned = self.eof_returned;
+
+        // Consume first token
+        let _first = self.next_token();
+
+        // Peek at second token (clone it to avoid borrow issues)
+        let second = self.peek_token().cloned();
+
+        // Restore state
+        self.pos = saved_pos;
+        self.bytes = saved_bytes;
+        self.peek_cache = saved_cache;
+        self.eof_returned = saved_eof_returned;
+
+        second
+    }
+
+    /// Skip n bytes in the input.
+    ///
+    /// This is used for recovery when we know how many bytes to skip.
+    pub fn skip_bytes(&mut self, n: u64) -> usize {
+        let to_skip = n.min(self.bytes.len() as u64) as usize;
+        self.advance(to_skip);
+        to_skip
+    }
+
+    /// Get the remaining bytes in the input.
+    pub fn remaining_bytes(&self) -> &[u8] {
+        self.bytes
     }
 
     /// Internal: Dispatch to the appropriate lexer based on the next byte.
@@ -355,10 +407,17 @@ impl<'a> Lexer<'a> {
             // Skip the %
             self.advance(1);
 
-            // Skip until end of line
+            // Skip until end of line (including the line ending character)
             while let Some(&b) = self.bytes.first() {
                 self.advance(1);
-                if b == b'\n' || b == b'\r' {
+                if b == b'\n' {
+                    break;
+                }
+                if b == b'\r' {
+                    // Also consume following \n if present (CRLF)
+                    if let Some(&b'\n') = self.bytes.first() {
+                        self.advance(1);
+                    }
                     break;
                 }
             }
@@ -368,10 +427,19 @@ impl<'a> Lexer<'a> {
     /// Internal: Skip whitespace and comments.
     fn skip_whitespace_and_comments(&mut self) {
         loop {
+            let had_whitespace = self.bytes.first().map_or(false, |&b| Self::is_pdf_whitespace(b));
+            let had_comment = self.bytes.first() == Some(&b'%');
+
             self.consume_whitespace();
             self.consume_comment();
+
+            // Continue looping if we had whitespace or a comment, and there's more input
+            if !had_whitespace && !had_comment {
+                break;
+            }
             // If we consumed a comment, there might be more whitespace after it
-            if !self.bytes.first().map_or(false, |&b| b == b'%') {
+            // If we consumed whitespace, there might be a comment after it
+            if self.bytes.first().map_or(true, |&b| !Self::is_pdf_whitespace(b) && b != b'%') {
                 break;
             }
         }
@@ -404,9 +472,14 @@ impl<'a> Lexer<'a> {
         let start = self.pos;
         let mut has_dot = false;
         let mut has_digit = false;
+        let mut value: i64 = 0;
+        let mut sign: i64 = 1;
 
         // Handle leading sign
         if let Some(&b'-' | &b'+') = self.bytes.first() {
+            if self.bytes.first() == Some(&b'-') {
+                sign = -1;
+            }
             self.advance(1);
         }
 
@@ -414,6 +487,18 @@ impl<'a> Lexer<'a> {
         while let Some(&b) = self.bytes.first() {
             if b.is_ascii_digit() {
                 has_digit = true;
+                // Check for overflow
+                if let Some(new_value) = value.checked_mul(10) {
+                    if let Some(with_digit) = new_value.checked_add((b - b'0') as i64) {
+                        value = with_digit;
+                    } else {
+                        // Overflow - clamp to max value
+                        value = i64::MAX;
+                    }
+                } else {
+                    // Overflow - clamp to max value
+                    value = i64::MAX;
+                }
                 self.advance(1);
             } else if b == b'.' && !has_dot {
                 has_dot = true;
@@ -433,41 +518,131 @@ impl<'a> Lexer<'a> {
             return Some(Token::Null);
         }
 
+        // Apply sign
+        value = value * sign;
+
         // Determine if integer or real
         if has_dot {
-            // Real number - for now just return 0.0 as placeholder
-            // Full implementation will parse the actual value
-            Some(Token::Real(0.0))
+            // Real number - parse as f64 by reconstructing the string
+            // For now, just return the integer part as a real
+            Some(Token::Real(value as f64))
         } else {
-            // Integer - for now just return 0 as placeholder
-            // Full implementation will parse the actual value
-            Some(Token::Integer(0))
+            // Integer
+            Some(Token::Integer(value))
         }
     }
 
     fn lex_literal_string(&mut self) -> Option<Token> {
-        // Placeholder - just consume to closing paren or EOF
         let start = self.pos;
         self.advance(1); // consume opening (
         let mut depth = 1;
+        let mut result = Vec::with_capacity(64);
 
         while let Some(&b) = self.bytes.first() {
-            self.advance(1);
             match b {
-                b'(' => depth += 1,
+                b'(' => {
+                    self.advance(1);
+                    depth += 1;
+                    result.push(b'(');
+                }
                 b')' => {
+                    self.advance(1);
                     depth -= 1;
                     if depth == 0 {
-                        return Some(Token::String(Vec::new()));
+                        return Some(Token::String(result));
                     }
+                    result.push(b')');
                 }
                 b'\\' => {
-                    // Skip escaped character
-                    if let Some(_) = self.bytes.first() {
-                        self.advance(1);
+                    self.advance(1); // consume backslash
+                    match self.bytes.first() {
+                        Some(&b'n') => {
+                            self.advance(1);
+                            result.push(b'\n');
+                        }
+                        Some(&b'r') => {
+                            self.advance(1);
+                            result.push(b'\r');
+                        }
+                        Some(&b't') => {
+                            self.advance(1);
+                            result.push(b'\t');
+                        }
+                        Some(&b'b') => {
+                            self.advance(1);
+                            result.push(0x08);
+                        }
+                        Some(&b'f') => {
+                            self.advance(1);
+                            result.push(0x0C);
+                        }
+                        Some(&b'\\') => {
+                            self.advance(1);
+                            result.push(b'\\');
+                        }
+                        Some(&b'(') => {
+                            self.advance(1);
+                            depth += 1;
+                            result.push(b'(');
+                        }
+                        Some(&b')') => {
+                            self.advance(1);
+                            // Emit literal ) without decreasing depth
+                            result.push(b')');
+                        }
+                        Some(&b'\n') => {
+                            // Line continuation: consume the \n, emit nothing
+                            self.advance(1);
+                        }
+                        Some(&b'\r') => {
+                            self.advance(1);
+                            // Check for \r\n sequence
+                            if let Some(&b'\n') = self.bytes.first() {
+                                self.advance(1);
+                            }
+                            // Line continuation: emit nothing
+                        }
+                        Some(&d @ b'0'..=b'7') => {
+                            // Octal escape: consume 1-3 octal digits
+                            let mut value = (d - b'0') as u32;
+                            self.advance(1);
+                            let mut count = 1;
+
+                            while count < 3 {
+                                if let Some(&d @ b'0'..=b'7') = self.bytes.first() {
+                                    value = value * 8 + (d - b'0') as u32;
+                                    self.advance(1);
+                                    count += 1;
+                                } else {
+                                    break;
+                                }
+                            }
+
+                            if value > 255 {
+                                self.diagnostics.push(Diagnostic::with_dynamic(
+                                    DiagCode::InvalidOctal,
+                                    self.pos as u64,
+                                    format!("Octal escape \\{:03o} exceeds 255, truncated", value),
+                                ));
+                                result.push((value & 0xFF) as u8);
+                            } else {
+                                result.push(value as u8);
+                            }
+                        }
+                        Some(&other) => {
+                            // Unknown escape: emit the character literally per PDF spec
+                            self.advance(1);
+                            result.push(other);
+                        }
+                        None => {
+                            // Backslash at EOF - emit nothing and continue
+                        }
                     }
                 }
-                _ => {}
+                _ => {
+                    self.advance(1);
+                    result.push(b);
+                }
             }
         }
 
@@ -477,7 +652,7 @@ impl<'a> Lexer<'a> {
             start as u64,
             "Unterminated literal string",
         ));
-        Some(Token::Null)
+        Some(Token::String(result))
     }
 
     fn lex_name(&mut self) -> Option<Token> {
@@ -501,9 +676,83 @@ impl<'a> Lexer<'a> {
             self.advance(2);
             Some(Token::DictStart)
         } else {
-            self.advance(1);
-            // Placeholder for hex string
-            Some(Token::String(Vec::new()))
+            self.lex_hex_string()
+        }
+    }
+
+    /// Parse a hex string of the form `<...>`.
+    ///
+    /// Hex strings contain pairs of hex digits that are decoded into bytes.
+    /// Whitespace is ignored between hex digit pairs.
+    /// If an odd number of hex digits is present, the final unpaired nibble
+    /// is treated as the HIGH nibble of a final byte with LOW nibble 0.
+    /// Example: `<4>` -> `\x40` (NOT `\x04`).
+    fn lex_hex_string(&mut self) -> Option<Token> {
+        let start = self.pos;
+        self.advance(1); // consume opening <
+
+        let mut out = Vec::with_capacity(32);
+        let mut current_nibble: Option<u8> = None;
+
+        while let Some(&b) = self.bytes.first() {
+            if b == b'>' {
+                // Terminating >
+                self.advance(1);
+                // If we have a dangling nibble, pad with low nibble 0
+                if let Some(hi) = current_nibble {
+                    out.push(hi << 4);
+                }
+                return Some(Token::String(out));
+            }
+
+            // Check for hex digit
+            if let Some(nibble) = Self::hex_digit_to_nibble(b) {
+                if let Some(hi) = current_nibble {
+                    out.push(hi << 4 | nibble);
+                    current_nibble = None;
+                } else {
+                    current_nibble = Some(nibble);
+                }
+                self.advance(1);
+            } else if Self::is_pdf_whitespace(b) {
+                // Whitespace is ignored
+                self.advance(1);
+            } else {
+                // Invalid character - flush dangling nibble if present
+                if let Some(hi) = current_nibble {
+                    out.push(hi << 4);
+                    current_nibble = None;
+                }
+                self.diagnostics.push(Diagnostic::with_dynamic(
+                    DiagCode::InvalidHex,
+                    self.pos as u64,
+                    format!("Invalid hex character '{}' (0x{:02x})", b as char, b),
+                ));
+                self.advance(1);
+            }
+        }
+
+        // EOF before >
+        self.diagnostics.push(Diagnostic::with_static(
+            DiagCode::UnterminatedString,
+            start as u64,
+            "Unterminated hex string",
+        ));
+        // Pad dangling nibble if present
+        if let Some(hi) = current_nibble {
+            out.push(hi << 4);
+        }
+        Some(Token::String(out))
+    }
+
+    /// Convert a hex digit character to its 4-bit value (0-15).
+    /// Returns None if the character is not a valid hex digit.
+    fn hex_digit_to_nibble(b: u8) -> Option<u8> {
+        match b {
+            b'0'..=b'9' => Some(b - b'0'),
+            b'a'..=b'f' => Some(b - b'a' + 10),
+            b'A'..=b'F' => Some(b - b'A' + 10),
+            _ => None,
         }
     }
 
@@ -713,5 +962,341 @@ mod tests {
         let diags1 = lexer.take_diagnostics();
         let diags2 = lexer.take_diagnostics();
         assert_eq!(diags1.len(), diags2.len());
+    }
+
+    // Literal string tests
+
+    #[test]
+    fn string_literal_balanced_parens() {
+        let mut lexer = Lexer::new(b"(foo (bar) baz)");
+        assert_eq!(
+            lexer.next_token(),
+            Some(Token::String(b"foo (bar) baz".to_vec()))
+        );
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn string_literal_empty() {
+        let mut lexer = Lexer::new(b"()");
+        assert_eq!(lexer.next_token(), Some(Token::String(b"".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn string_literal_simple_text() {
+        let mut lexer = Lexer::new(b"(Hello World)");
+        assert_eq!(lexer.next_token(), Some(Token::String(b"Hello World".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn string_literal_escape_newline() {
+        let mut lexer = Lexer::new(b"(line1\\nline2)");
+        assert_eq!(
+            lexer.next_token(),
+            Some(Token::String(b"line1\nline2".to_vec()))
+        );
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn string_literal_escape_carriage_return() {
+        let mut lexer = Lexer::new(b"(line1\\rline2)");
+        assert_eq!(
+            lexer.next_token(),
+            Some(Token::String(b"line1\rline2".to_vec()))
+        );
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn string_literal_escape_tab() {
+        let mut lexer = Lexer::new(b"(col1\\tcol2)");
+        assert_eq!(lexer.next_token(), Some(Token::String(b"col1\tcol2".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn string_literal_escape_backspace() {
+        let mut lexer = Lexer::new(b"(abc\\bdef)");
+        assert_eq!(lexer.next_token(), Some(Token::String(b"abc\x08def".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn string_literal_escape_form_feed() {
+        let mut lexer = Lexer::new(b"(page1\\fpage2)");
+        assert_eq!(
+            lexer.next_token(),
+            Some(Token::String(b"page1\x0Cpage2".to_vec()))
+        );
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn string_literal_escape_backslash() {
+        let mut lexer = Lexer::new(b"(path\\\\file)");
+        assert_eq!(lexer.next_token(), Some(Token::String(b"path\\file".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn string_literal_escape_left_paren() {
+        let mut lexer = Lexer::new(b"(\\(nested))");
+        assert_eq!(lexer.next_token(), Some(Token::String(b"(nested)".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn string_literal_escape_right_paren() {
+        let mut lexer = Lexer::new(b"(\\)not_end)");
+        assert_eq!(lexer.next_token(), Some(Token::String(b")not_end".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn string_literal_octal_escape_single_digit() {
+        let mut lexer = Lexer::new(b"(abc\\10)");
+        assert_eq!(lexer.next_token(), Some(Token::String(b"abc\x08".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn string_literal_octal_escape_two_digits() {
+        let mut lexer = Lexer::new(b"(abc\\101)");
+        assert_eq!(lexer.next_token(), Some(Token::String(b"abcA".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn string_literal_octal_escape_three_digits() {
+        let mut lexer = Lexer::new(b"(abc\\101\\102\\103)");
+        assert_eq!(lexer.next_token(), Some(Token::String(b"abcABC".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn string_literal_octal_escape_non_octal_following() {
+        let mut lexer = Lexer::new(b"(abc\\10A)");
+        assert_eq!(lexer.next_token(), Some(Token::String(b"abc\x08A".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn string_literal_octal_escape_out_of_range_emits_diagnostic() {
+        let mut lexer = Lexer::new(b"(abc\\401)");
+        // Octal 401 = decimal 257, truncated to 1
+        let token = lexer.next_token();
+        assert_eq!(token, Some(Token::String(b"abc\x01".to_vec())));
+        let diags = lexer.take_diagnostics();
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].code, DiagCode::InvalidOctal);
+        assert!(diags[0].msg.contains("401"));
+    }
+
+    #[test]
+    fn string_literal_line_continuation_lf() {
+        let mut lexer = Lexer::new(b"(abc\\\ndef)");
+        assert_eq!(lexer.next_token(), Some(Token::String(b"abcdef".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn string_literal_line_continuation_cr() {
+        let mut lexer = Lexer::new(b"(abc\\\rdef)");
+        assert_eq!(lexer.next_token(), Some(Token::String(b"abcdef".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn string_literal_line_continuation_crlf() {
+        let mut lexer = Lexer::new(b"(abc\\\r\ndef)");
+        assert_eq!(lexer.next_token(), Some(Token::String(b"abcdef".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn string_literal_unknown_escape_emits_literal() {
+        let mut lexer = Lexer::new(b"(abc\\qdef)");
+        assert_eq!(lexer.next_token(), Some(Token::String(b"abcqdef".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn string_literal_unterminated_emits_diagnostic() {
+        let mut lexer = Lexer::new(b"(unterminated");
+        let token = lexer.next_token();
+        assert_eq!(token, Some(Token::String(b"unterminated".to_vec())));
+        let diags = lexer.take_diagnostics();
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].code, DiagCode::UnterminatedString);
+    }
+
+    #[test]
+    fn string_literal_unterminated_with_escape() {
+        let mut lexer = Lexer::new(b"(abc\\101");
+        let token = lexer.next_token();
+        assert_eq!(token, Some(Token::String(b"abcA".to_vec())));
+        let diags = lexer.take_diagnostics();
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].code, DiagCode::UnterminatedString);
+    }
+
+    #[test]
+    fn string_literal_deeply_nested_parens() {
+        let mut lexer = Lexer::new(b"(((((x)))))");
+        assert_eq!(
+            lexer.next_token(),
+            Some(Token::String(b"((((x))))".to_vec()))
+        );
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+    // Hex string tests
+
+    #[test]
+    fn hex_string_empty() {
+        let mut lexer = Lexer::new(b"<>");
+        assert_eq!(lexer.next_token(), Some(Token::String(b"".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn hex_string_odd_length_single_nibble() {
+        let mut lexer = Lexer::new(b"<4>");
+        // Critical test: <4> -> \x40 (NOT \x04)
+        // The trailing zero nibble is LOW, not HIGH
+        assert_eq!(lexer.next_token(), Some(Token::String(b"\x40".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn hex_string_hello_world() {
+        let mut lexer = Lexer::new(b"<48656C6C6F>");
+        // 48=H, 65=e, 6C=l, 6C=l, 6F=o
+        assert_eq!(lexer.next_token(), Some(Token::String(b"Hello".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn hex_string_mixed_case() {
+        let mut lexer = Lexer::new(b"<aBcD>");
+        // aB=0xAB, cD=0xCD
+        assert_eq!(lexer.next_token(), Some(Token::String(b"\xAB\xCD".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn hex_string_with_whitespace() {
+        let mut lexer = Lexer::new(b"<48 65 6C\n6C 6F>");
+        // Whitespace is ignored
+        assert_eq!(lexer.next_token(), Some(Token::String(b"Hello".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn hex_string_odd_length_multiple_nibbles() {
+        let mut lexer = Lexer::new(b"<48657>");
+        // 48=0x48, 65=0x65, 7=0x70 (dangling nibble becomes HIGH nibble with LOW nibble 0)
+        assert_eq!(lexer.next_token(), Some(Token::String(b"\x48\x65\x70".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn hex_string_invalid_char_emits_diagnostic() {
+        let mut lexer = Lexer::new(b"<48Z65>");
+        let token = lexer.next_token();
+        assert_eq!(token, Some(Token::String(b"\x48\x65".to_vec())));
+        let diags = lexer.take_diagnostics();
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].code, DiagCode::InvalidHex);
+        // Debug: print actual message
+        eprintln!("Actual diagnostic message: {}", diags[0].msg);
+        assert!(diags[0].msg.contains("Z"));
+    }
+
+    #[test]
+    fn hex_string_unterminated_emits_diagnostic() {
+        let mut lexer = Lexer::new(b"<4865");
+        let token = lexer.next_token();
+        assert_eq!(token, Some(Token::String(b"\x48\x65".to_vec())));
+        let diags = lexer.take_diagnostics();
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].code, DiagCode::UnterminatedString);
+        assert!(diags[0].msg.contains("hex string"));
+    }
+
+    #[test]
+    fn hex_string_unterminated_with_dangling_nibble() {
+        let mut lexer = Lexer::new(b"<48657");
+        // 48=0x48, 65=0x65, 7=0x70 (dangling nibble padded)
+        let token = lexer.next_token();
+        assert_eq!(token, Some(Token::String(b"\x48\x65\x70".to_vec())));
+        let diags = lexer.take_diagnostics();
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].code, DiagCode::UnterminatedString);
+    }
+
+    #[test]
+    fn hex_string_all_zero_bytes() {
+        let mut lexer = Lexer::new(b"<000000>");
+        assert_eq!(lexer.next_token(), Some(Token::String(b"\x00\x00\x00".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn hex_string_max_byte_value() {
+        let mut lexer = Lexer::new(b"<FF>");
+        assert_eq!(lexer.next_token(), Some(Token::String(b"\xFF".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn hex_string_lower_case_max_byte() {
+        let mut lexer = Lexer::new(b"<ff>");
+        assert_eq!(lexer.next_token(), Some(Token::String(b"\xFF".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn hex_string_multiple_invalid_chars() {
+        let mut lexer = Lexer::new(b"<4X8Y>");
+        let token = lexer.next_token();
+        // X and Y are invalid, only 4 and 8 remain
+        // 4 becomes 0x40, 8 becomes 0x80
+        assert_eq!(token, Some(Token::String(b"\x40\x80".to_vec())));
+        let diags = lexer.take_diagnostics();
+        assert_eq!(diags.len(), 2);
+        for diag in &diags {
+            assert_eq!(diag.code, DiagCode::InvalidHex);
+        }
+    }
+
+    #[test]
+    fn hex_string_with_tab_whitespace() {
+        let mut lexer = Lexer::new(b"<4\t8>");
+        assert_eq!(lexer.next_token(), Some(Token::String(b"\x48".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn hex_string_dict_not_confused() {
+        let mut lexer = Lexer::new(b"<<>>");
+        // This is dict start/end, not a hex string
+        assert_eq!(lexer.next_token(), Some(Token::DictStart));
+        assert_eq!(lexer.next_token(), Some(Token::DictEnd));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn hex_string_vs_dict_start() {
+        let mut lexer = Lexer::new(b"<<>");
+        // << is dict start, > is stray
+        assert_eq!(lexer.next_token(), Some(Token::DictStart));
+        let token = lexer.next_token();
+        // The stray > should produce a diagnostic
+        assert!(matches!(token, Some(Token::Null)));
+        let diags = lexer.take_diagnostics();
+        assert!(!diags.is_empty());
     }
 }

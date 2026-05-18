@@ -1,0 +1,68 @@
+# pdftract-go
+
+Go SDK for pdftract - PDF extraction and conformance testing.
+
+## Installation
+
+```bash
+go get github.com/jedarden/pdftract-go@{{ version }}
+```
+
+## Usage
+
+### Basic extract
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/jedarden/pdftract-go"
+)
+
+func main() {
+    client := pdftract.NewClient()
+    doc, err := client.Extract("document.pdf", nil)
+    if err != nil {
+        panic(err)
+    }
+    fmt.Printf("Pages: %d\n", len(doc.Pages))
+}
+```
+
+### Extract with OCR
+
+```go
+options := &pdftract.ExtractOptions{
+    OCRLanguage: "eng",
+    OCRThreshold: 0.7,
+}
+doc, err := client.Extract("scanned.pdf", options)
+```
+
+### Search
+
+```go
+matches, err := client.Search("document.pdf", "invoice", &pdftract.SearchOptions{
+    CaseInsensitive: true,
+})
+for match := range matches {
+    fmt.Printf("Found on page %d: %s\n", match.Page, match.Text)
+}
+```
+
+## Binary version compatibility
+
+This SDK requires pdftract {{ version }}. Download from:
+https://github.com/jedarden/pdftract/releases/tag/v{{ version }}
+
+## Troubleshooting
+
+### Binary not found
+Ensure `pdftract` is on your PATH. The SDK probes PATH for the executable.
+
+### Version mismatch
+The SDK will refuse to invoke mismatched binary versions. Install the correct version.
+
+### Network failure
+For remote URLs, check your network connection and TLS certificate chain.

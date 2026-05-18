@@ -1,0 +1,212 @@
+package pdftract_test
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"testing"
+
+	"github.com/jedarden/pdftract-go"
+)
+
+// TestConformance runs the SDK conformance test suite.
+func TestConformance(t *testing.T) {
+	suitePath := os.Getenv("CONFORMANCE_SUITE")
+	if suitePath == "" {
+		suitePath = "tests/sdk-conformance/cases.json"
+	}
+
+	suiteData, err := os.ReadFile(suitePath)
+	if err != nil {
+		t.Fatalf("Failed to read conformance suite: %v", err)
+	}
+
+	var suite struct {
+		Version string `json:"version"`
+		Cases   []struct {
+			ID        string                 `json:"id"`
+			Fixture   string                 `json:"fixture"`
+			Method    string                 `json:"method"`
+			Options   map[string]interface{} `json:"options"`
+			Assertions map[string]interface{} `json:"assertions"`
+		} `json:"cases"`
+	}
+
+	if err := json.Unmarshal(suiteData, &suite); err != nil {
+		t.Fatalf("Failed to parse conformance suite: %v", err)
+	}
+
+	client := pdftract.NewClient()
+
+	for _, tc := range suite.Cases {
+		t.Run(tc.ID, func(t *testing.T) {
+			testCase(t, client, tc)
+		})
+	}
+}
+
+func testCase(t *testing.T, client *pdftract.Client, tc struct {
+	ID        string
+	Fixture   string
+	Method    string
+	Options   map[string]interface{}
+	Assertions map[string]interface{}
+}) {
+	fixturePath := filepath.Join("fixtures", tc.Fixture)
+	if _, err := os.Stat(fixturePath); os.IsNotExist(err) {
+		t.Skipf("Fixture not found: %s", fixturePath)
+		return
+	}
+
+	switch tc.Method {
+	case "extract":
+		testExtract(t, client, fixturePath, tc.Options, tc.Assertions)
+	case "extract_text":
+		testExtractText(t, client, fixturePath, tc.Options, tc.Assertions)
+	case "extract_markdown":
+		testExtractMarkdown(t, client, fixturePath, tc.Options, tc.Assertions)
+	case "get_metadata":
+		testGetMetadata(t, client, fixturePath, tc.Options, tc.Assertions)
+	case "hash":
+		testHash(t, client, fixturePath, tc.Options, tc.Assertions)
+	case "classify":
+		testClassify(t, client, fixturePath, tc.Assertions)
+	default:
+		t.Skipf("Method not yet implemented: %s", tc.Method)
+	}
+}
+
+func testExtract(t *testing.T, client *pdftract.Client, fixturePath string, options map[string]interface{}, assertions map[string]interface{}) {
+	doc, err := client.Extract(pdftract.Path(fixturePath), nil)
+	if err != nil {
+		t.Fatalf("Extract failed: %v", err)
+	}
+
+	if pageCount, ok := assertions["page_count"].(float64); ok {
+		if got := len(doc.Pages); got != int(pageCount) {
+			t.Errorf("Expected %d pages, got %d", int(pageCount), got)
+		}
+	}
+
+	if _, ok := assertions["has_title"].(bool); ok {
+		if doc.Metadata.Title == "" {
+			t.Error("Expected title to be present")
+		}
+	}
+
+	if _, ok := assertions["has_blocks"].(bool); ok {
+		hasBlocks := false
+		for _, page := range doc.Pages {
+			if len(page.Blocks) > 0 {
+				hasBlocks = true
+				break
+			}
+		}
+		if !hasBlocks {
+			t.Error("Expected document to have blocks")
+		}
+	}
+}
+
+func testExtractText(t *testing.T, client *pdftract.Client, fixturePath string, options map[string]interface{}, assertions map[string]interface{}) {
+	text, err := client.ExtractText(pdftract.Path(fixturePath), nil)
+	if err != nil {
+		t.Fatalf("ExtractText failed: %v", err)
+	}
+
+	if minLen, ok := assertions["min_length"].(float64); ok {
+		if got := len(text); got < int(minLen) {
+			t.Errorf("Expected text length >= %d, got %d", int(minLen), got)
+		}
+	}
+
+	if contains, ok := assertions["contains"].([]interface{}); ok {
+		for _, c := range contains {
+			if substr, ok := c.(string); ok {
+				if !containsString(text, substr) {
+					t.Errorf("Expected text to contain: %s", substr)
+				}
+			}
+		}
+	}
+}
+
+func testExtractMarkdown(t *testing.T, client *pdftract.Client, fixturePath string, options map[string]interface{}, assertions map[string]interface{}) {
+	md, err := client.ExtractMarkdown(pdftract.Path(fixturePath), nil)
+	if err != nil {
+		t.Fatalf("ExtractMarkdown failed: %v", err)
+	}
+
+	if minLen, ok := assertions["min_length"].(float64); ok {
+		if got := len(md); got < int(minLen) {
+			t.Errorf("Expected markdown length >= %d, got %d", int(minLen), got)
+		}
+	}
+}
+
+func testGetMetadata(t *testing.T, client *pdftract.Client, fixturePath string, options map[string]interface{}, assertions map[string]interface{}) {
+	metadata, err := client.GetMetadata(pdftract.Path(fixturePath), nil)
+	if err != nil {
+		t.Fatalf("GetMetadata failed: %v", err)
+	}
+
+	if pageCount, ok := assertions["page_count"].(float64); ok {
+		if got := metadata.PageCount; got != int(pageCount) {
+			t.Errorf("Expected %d pages, got %d", int(pageCount), got)
+		}
+	}
+}
+
+func testHash(t *testing.T, client *pdftract.Client, fixturePath string, options map[string]interface{}, assertions map[string]interface{}) {
+	fingerprint, err := client.Hash(pdftract.Path(fixturePath), nil)
+	if err != nil {
+		t.Fatalf("Hash failed: %v", err)
+	}
+
+	if len(fingerprint.Hash) != 64 {
+		t.Errorf("Expected SHA-256 hash (64 hex chars), got length %d", len(fingerprint.Hash))
+	}
+
+	if len(fingerprint.FastHash) != 64 {
+		t.Errorf("Expected BLAKE3 hash (64 hex chars), got length %d", len(fingerprint.FastHash))
+	}
+
+	if pageCount, ok := assertions["page_count"].(float64); ok {
+		if got := fingerprint.PageCount; got != int(pageCount) {
+			t.Errorf("Expected %d pages, got %d", int(pageCount), got)
+		}
+	}
+}
+
+func testClassify(t *testing.T, client *pdftract.Client, fixturePath string, assertions map[string]interface{}) {
+	classification, err := client.Classify(pdftract.Path(fixturePath))
+	if err != nil {
+		t.Fatalf("Classify failed: %v", err)
+	}
+
+	if classification.Category == "" {
+		t.Error("Expected category to be set")
+	}
+
+	if classification.Confidence < 0 || classification.Confidence > 1 {
+		t.Errorf("Expected confidence in [0,1], got %f", classification.Confidence)
+	}
+}
+
+func containsString(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && containsString(s[1:], substr))
+}
+
+// TestBinaryAvailable checks if the pdftract binary is available.
+func TestBinaryAvailable(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping binary availability check in short mode")
+	}
+
+	_, err := exec.LookPath("pdftract")
+	if err != nil {
+		t.Skip("pdftract binary not found on PATH")
+	}
+}

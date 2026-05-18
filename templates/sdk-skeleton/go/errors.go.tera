@@ -1,0 +1,54 @@
+package pdftract
+
+import "fmt"
+
+// PdftractError is the base error type for all pdftract errors.
+type PdftractError struct {
+	Message  string
+	Stderr   string
+	ExitCode int
+}
+
+func (e *PdftractError) Error() string {
+	if e.Stderr != "" {
+		return fmt.Sprintf("pdftract error (exit %d): %s", e.ExitCode, e.Stderr)
+	}
+	return e.Message
+}
+
+{% for error in errors %}
+{% if error.exit_code != 0 and error.exit_code != 10 %}
+// {{ error.exception_name }} represents {{ error.description }}.
+type {{ error.exception_name }} struct {
+	Message  string
+	Stderr   string
+	ExitCode int
+}
+
+func (e *{{ error.exception_name }}) Error() string {
+	if e.Stderr != "" {
+		return fmt.Sprintf("{{ error.description }} (exit %d): %s", e.ExitCode, e.Stderr)
+	}
+	return e.Message
+}
+
+{% endif %}
+{% endfor %}
+{% for error in errors %}
+{% if error.exit_code == 10 %}
+// {{ error.exception_name }} represents {{ error.description }}.
+type {{ error.exception_name }} struct {
+	Message  string
+	Stderr   string
+	ExitCode int
+}
+
+func (e *{{ error.exception_name }}) Error() string {
+	if e.Stderr != "" {
+		return fmt.Sprintf("{{ error.description }} (exit %d): %s", e.ExitCode, e.Stderr)
+	}
+	return e.Message
+}
+
+{% endif %}
+{% endfor %}

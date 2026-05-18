@@ -1,0 +1,231 @@
+package pdftract
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"strconv"
+	"strings"
+)
+
+// Client represents a pdftract SDK client.
+type Client struct {
+	binaryPath string
+	version    string
+}
+
+// NewClient creates a new Client instance.
+func NewClient() *Client {
+	return &Client{
+		binaryPath: "pdftract",
+		version:    "{{ version }}",
+	}
+}
+
+// NewClientWithPath creates a new Client with a specific binary path.
+func NewClientWithPath(binaryPath string) *Client {
+	return &Client{
+		binaryPath: binaryPath,
+		version:    "{{ version }}",
+	}
+}
+
+// Source represents a PDF source (path, URL, or bytes).
+type Source interface {
+	source() []string
+}
+
+// pathSource implements Source for local file paths.
+type pathSource string
+
+func (p pathSource) source() []string {
+	return []string{string(p)}
+}
+
+// Path creates a Source from a local file path.
+func Path(p string) Source {
+	return pathSource(p)
+}
+
+// urlSource implements Source for remote URLs.
+type urlSource string
+
+func (u urlSource) source() []string {
+	return []string{string(u)}
+}
+
+// URL creates a Source from a remote URL.
+func URL(u string) Source {
+	return urlSource(u)
+}
+
+// bytesSource implements Source for in-memory bytes.
+type bytesSource []byte
+
+func (b bytesSource) source() []string {
+	// Create a temporary file
+	tmpFile, err := os.CreateTemp("", "pdftract-*.pdf")
+	if err != nil {
+		// This will be handled in the invoke function
+		return []string{"-", string(b)}
+	}
+	defer tmpFile.Close()
+
+	if _, err := tmpFile.Write(b); err != nil {
+		return []string{"-", string(b)}
+	}
+
+	return []string{tmpFile.Name()}
+}
+
+// Bytes creates a Source from in-memory bytes.
+func Bytes(b []byte) Source {
+	return bytesSource(b)
+}
+
+{% for method in methods %}
+// {{ method.description }}
+{% if method.name == "extract_stream" %}
+func (c *Client) {{ method.camel_name }}(source Source, options *{{ method.options_type }}) (<-chan {{ method.return_type }}, <-chan error) {
+	resultChan := make(chan {{ method.return_type }})
+	errChan := make(chan error)
+
+	go func() {
+		defer close(resultChan)
+		defer close(errChan)
+
+		args := []string{"{{ method.cli_flag }}"}
+		args = append(args, source.source()...)
+
+		if options != nil {
+			args = append(args, options.toArgs()...)
+		}
+
+		cmd := exec.Command(c.binaryPath, args...)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			errChan <- c.mapError(err, output)
+			return
+		}
+
+		// Stream JSONL results
+		decoder := json.NewDecoder(bytes.NewReader(output))
+		for {
+			var result {{ method.return_type }}
+			if err := decoder.Decode(&result); err != nil {
+				if err == io.EOF {
+					break
+				}
+				errChan <- &PdftractError{Message: err.Error()}
+				return
+			}
+			resultChan <- result
+		}
+	}()
+
+	return resultChan, errChan
+}
+{% elif method.name == "search" %}
+func (c *Client) {{ method.camel_name }}(source Source, pattern string, options *{{ method.options_type }}) (<-chan {{ method.return_type }}, <-chan error) {
+	resultChan := make(chan {{ method.return_type }})
+	errChan := make(chan error)
+
+	go func() {
+		defer close(resultChan)
+		defer close(errChan)
+
+		args := []string{"grep", pattern}
+		args = append(args, source.source()...)
+
+		if options != nil {
+			args = append(args, options.toArgs()...)
+		}
+
+		cmd := exec.Command(c.binaryPath, args...)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			errChan <- c.mapError(err, output)
+			return
+		}
+
+		// Stream JSONL results
+		decoder := json.NewDecoder(bytes.NewReader(output))
+		for {
+			var result {{ method.return_type }}
+			if err := decoder.Decode(&result); err != nil {
+				if err == io.EOF {
+					break
+				}
+				errChan <- &PdftractError{Message: err.Error()}
+				return
+			}
+			resultChan <- result
+		}
+	}()
+
+	return resultChan, errChan
+}
+{% else %}
+func (c *Client) {{ method.camel_name }}(source Source{% if method.has_options %}, options *{{ method.options_type }}{% endif %}) ({{ method.return_type }}, error) {
+	args := []string{"{{ method.cli_flag }}"}
+	args = append(args, source.source()...)
+
+	{% if method.has_options %}
+	if options != nil {
+		args = append(args, options.toArgs()...)
+	}
+	{% endif %}
+
+	{% if method.name == "extract_text" %}
+	args = append(args, "--text")
+	{% elif method.name == "extract_markdown" %}
+	args = append(args, "--md")
+	{% elif method.name == "get_metadata" %}
+	args = append(args, "--metadata-only")
+	{% endif %}
+
+	cmd := exec.Command(c.binaryPath, args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return *new({{ method.return_type }}), c.mapError(err, output)
+	}
+
+	{% if method.returns_string %}
+	return string(output), nil
+	{% else %}
+	var result {{ method.return_type }}
+	if err := json.Unmarshal(output, &result); err != nil {
+		return *new({{ method.return_type }}), &PdftractError{Message: fmt.Sprintf("failed to parse output: %v", err)}
+	}
+	return result, nil
+	{% endif %}
+}
+{% endif %}
+{% endfor %}
+
+// mapError converts CLI exit codes to language-native exceptions.
+func (c *Client) mapError(err error, output []byte) error {
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		exitCode := exitErr.ExitCode()
+		stderr := strings.TrimSpace(string(output))
+
+		{% for error in errors %}
+		{% if error.exit_code != 0 %}
+		{% if error.exit_code != 10 %}
+		if exitCode == {{ error.exit_code }} {
+			return &{{ error.exception_name }}{Message: stderr, Stderr: stderr, ExitCode: {{ error.exit_code }}}
+		}
+		{% else %}
+		if exitCode == {{ error.exit_code }} {
+			return &{{ error.exception_name }}{Message: stderr, Stderr: stderr, ExitCode: {{ error.exit_code }}}
+		}
+		{% endif %}
+		{% endif %}
+		{% endfor %}
+		return &PdftractError{Message: stderr, Stderr: stderr, ExitCode: exitCode}
+	}
+	return &PdftractError{Message: err.Error()}
+}
