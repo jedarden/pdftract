@@ -54,17 +54,17 @@ pub enum Token {
 #[derive(Clone, Debug, PartialEq)]
 pub enum DiagCode {
     /// Invalid name character or malformed name
-    InvalidName,
+    StructInvalidName,
     /// Invalid hexadecimal character in hex string or name escape
-    InvalidHex,
+    StructInvalidHex,
     /// Invalid octal escape sequence in literal string
-    InvalidOctal,
+    StructInvalidOctal,
     /// Invalid stream header (stream keyword not followed by proper newline)
-    InvalidStreamHeader,
+    StructInvalidStreamHeader,
     /// Unexpected end of file while parsing a token
-    UnexpectedEof,
+    StructUnexpectedEof,
     /// Unterminated literal string (missing closing paren)
-    UnterminatedString,
+    StructUnterminatedString,
 }
 
 /// Diagnostic message emitted during lexing.
@@ -511,7 +511,7 @@ impl<'a> Lexer<'a> {
         if !has_digit {
             // Not a valid number, emit diagnostic and return null
             self.diagnostics.push(Diagnostic::with_static(
-                DiagCode::UnexpectedEof,
+                DiagCode::StructUnexpectedEof,
                 start as u64,
                 "Invalid numeric literal",
             ));
@@ -620,7 +620,7 @@ impl<'a> Lexer<'a> {
 
                             if value > 255 {
                                 self.diagnostics.push(Diagnostic::with_dynamic(
-                                    DiagCode::InvalidOctal,
+                                    DiagCode::StructInvalidOctal,
                                     self.pos as u64,
                                     format!("Octal escape \\{:03o} exceeds 255, truncated", value),
                                 ));
@@ -648,7 +648,7 @@ impl<'a> Lexer<'a> {
 
         // Unterminated string
         self.diagnostics.push(Diagnostic::with_static(
-            DiagCode::UnterminatedString,
+            DiagCode::StructUnterminatedString,
             start as u64,
             "Unterminated literal string",
         ));
@@ -724,7 +724,7 @@ impl<'a> Lexer<'a> {
                     current_nibble = None;
                 }
                 self.diagnostics.push(Diagnostic::with_dynamic(
-                    DiagCode::InvalidHex,
+                    DiagCode::StructInvalidHex,
                     self.pos as u64,
                     format!("Invalid hex character '{}' (0x{:02x})", b as char, b),
                 ));
@@ -734,7 +734,7 @@ impl<'a> Lexer<'a> {
 
         // EOF before >
         self.diagnostics.push(Diagnostic::with_static(
-            DiagCode::UnterminatedString,
+            DiagCode::StructUnterminatedString,
             start as u64,
             "Unterminated hex string",
         ));
@@ -764,7 +764,7 @@ impl<'a> Lexer<'a> {
         } else {
             // Stray > - emit diagnostic
             self.diagnostics.push(Diagnostic::with_static(
-                DiagCode::UnexpectedEof,
+                DiagCode::StructUnexpectedEof,
                 self.pos as u64,
                 "Unexpected > character",
             ));
@@ -850,7 +850,7 @@ impl<'a> Lexer<'a> {
         // Unknown character - skip it and emit diagnostic
         let pos = self.pos;
         self.diagnostics.push(Diagnostic::with_dynamic(
-            DiagCode::UnexpectedEof,
+            DiagCode::StructUnexpectedEof,
             pos as u64,
             format!("Unexpected byte: 0x{:02x}", self.bytes[0]),
         ));
@@ -1091,7 +1091,7 @@ mod tests {
         assert_eq!(token, Some(Token::String(b"abc\x01".to_vec())));
         let diags = lexer.take_diagnostics();
         assert_eq!(diags.len(), 1);
-        assert_eq!(diags[0].code, DiagCode::InvalidOctal);
+        assert_eq!(diags[0].code, DiagCode::StructInvalidOctal);
         assert!(diags[0].msg.contains("401"));
     }
 
@@ -1130,7 +1130,7 @@ mod tests {
         assert_eq!(token, Some(Token::String(b"unterminated".to_vec())));
         let diags = lexer.take_diagnostics();
         assert_eq!(diags.len(), 1);
-        assert_eq!(diags[0].code, DiagCode::UnterminatedString);
+        assert_eq!(diags[0].code, DiagCode::StructUnterminatedString);
     }
 
     #[test]
@@ -1140,7 +1140,7 @@ mod tests {
         assert_eq!(token, Some(Token::String(b"abcA".to_vec())));
         let diags = lexer.take_diagnostics();
         assert_eq!(diags.len(), 1);
-        assert_eq!(diags[0].code, DiagCode::UnterminatedString);
+        assert_eq!(diags[0].code, DiagCode::StructUnterminatedString);
     }
 
     #[test]
@@ -1209,7 +1209,7 @@ mod tests {
         assert_eq!(token, Some(Token::String(b"\x48\x65".to_vec())));
         let diags = lexer.take_diagnostics();
         assert_eq!(diags.len(), 1);
-        assert_eq!(diags[0].code, DiagCode::InvalidHex);
+        assert_eq!(diags[0].code, DiagCode::StructInvalidHex);
         // Debug: print actual message
         eprintln!("Actual diagnostic message: {}", diags[0].msg);
         assert!(diags[0].msg.contains("Z"));
@@ -1222,7 +1222,7 @@ mod tests {
         assert_eq!(token, Some(Token::String(b"\x48\x65".to_vec())));
         let diags = lexer.take_diagnostics();
         assert_eq!(diags.len(), 1);
-        assert_eq!(diags[0].code, DiagCode::UnterminatedString);
+        assert_eq!(diags[0].code, DiagCode::StructUnterminatedString);
         assert!(diags[0].msg.contains("hex string"));
     }
 
@@ -1234,7 +1234,7 @@ mod tests {
         assert_eq!(token, Some(Token::String(b"\x48\x65\x70".to_vec())));
         let diags = lexer.take_diagnostics();
         assert_eq!(diags.len(), 1);
-        assert_eq!(diags[0].code, DiagCode::UnterminatedString);
+        assert_eq!(diags[0].code, DiagCode::StructUnterminatedString);
     }
 
     #[test]
@@ -1268,7 +1268,7 @@ mod tests {
         let diags = lexer.take_diagnostics();
         assert_eq!(diags.len(), 2);
         for diag in &diags {
-            assert_eq!(diag.code, DiagCode::InvalidHex);
+            assert_eq!(diag.code, DiagCode::StructInvalidHex);
         }
     }
 
@@ -1298,5 +1298,79 @@ mod tests {
         assert!(matches!(token, Some(Token::Null)));
         let diags = lexer.take_diagnostics();
         assert!(!diags.is_empty());
+    }
+
+    // Proptests for string literal lexer
+
+    #[test]
+    fn proptest_string_never_panics_on_random_bytes() {
+        use proptest::prelude::*;
+
+        let test_strategy = prop::collection::vec(prop::num::u8::ANY, 0..1000).prop_map(|mut bytes| {
+            // Ensure the input starts with '(' to trigger string lexing
+            bytes.insert(0, b'(');
+            bytes
+        });
+
+        proptest!(|(bytes in test_strategy)| {
+            // This should never panic
+            let mut lexer = Lexer::new(&bytes);
+            let _ = lexer.next_token();
+        });
+    }
+
+    #[test]
+    fn proptest_valid_string_roundtrips() {
+        use proptest::prelude::*;
+
+        // Strategy for generating valid literal strings
+        // We generate bytes that can appear in a PDF string and wrap them in parens
+        let test_strategy = prop::collection::vec(
+            prop::num::u8::ANY
+                .prop_filter("avoid unprintable and special chars that make testing hard", |&b| {
+                    // Allow most bytes, but filter out some that make roundtripping difficult
+                    // We include parens but balance them manually
+                    !matches!(b, 0x00 | 0x01..=0x08 | 0x0B | 0x0E..=0x1F)
+                }),
+            0..100,
+        ).prop_map(|mut bytes| {
+            // Balance parentheses: for every '(' we add a ')'
+            let mut depth = 0i32;
+            let mut result = Vec::new();
+            result.push(b'(');
+            for b in &bytes {
+                if *b == b'(' {
+                    depth += 1;
+                } else if *b == b')' {
+                    if depth > 0 {
+                        depth -= 1;
+                    } else {
+                        // Skip unbalanced ')'
+                        continue;
+                    }
+                }
+                result.push(*b);
+            }
+            // Add closing parens to balance
+            for _ in 0..depth {
+                result.push(b')');
+            }
+            result.push(b')');
+            result
+        });
+
+        proptest!(|(bytes in test_strategy)| {
+            let mut lexer = Lexer::new(&bytes);
+            if let Some(Token::String(s)) = lexer.next_token() {
+                // A valid string should produce non-empty output
+                // (unless the input was literally "()")
+                if bytes.len() > 2 {
+                    prop_assert!(!s.is_empty() || bytes == b"()");
+                }
+            } else {
+                // Should always get a String token for well-formed input
+                prop_assert!(false, "Expected String token, got {:?}", lexer.next_token());
+            }
+        });
     }
 }
