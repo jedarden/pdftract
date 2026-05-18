@@ -39,7 +39,7 @@ The classifier looks for academic paper terminology combined with two-column lay
 
 ## Sample Input
 
-Example fixtures demonstrating this profile are available in `tests/fixtures/classifier/scific_paper/`.
+Example fixtures demonstrating this profile are available in `tests/fixtures/classifier/scientific_paper/`.
 
 The corpus includes 50 scientific paper documents covering various journals and layouts.
 

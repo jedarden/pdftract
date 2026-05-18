@@ -58,8 +58,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             generate_profile_readme(&args[2])?;
         }
         "doc-profiles" => {
-            let profiles_dir = Path::new("profiles/builtin");
-            for entry in fs::read_dir(profiles_dir)? {
+            let profiles_dir = Path::new("..").join("profiles/builtin");
+            for entry in fs::read_dir(&profiles_dir)? {
                 let entry = entry?;
                 if entry.path().is_dir() {
                     let profile_name = entry.file_name().to_string_lossy().to_string();
@@ -79,8 +79,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn generate_profile_readme(profile_name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let profile_path = Path::new("profiles/builtin").join(profile_name).join("profile.yaml");
-    let readme_path = Path::new("profiles/builtin").join(profile_name).join("README.md");
+    // Find the workspace root by looking for the parent directory's Cargo.toml
+    let workspace_root = Path::new("..");
+    let profile_path = workspace_root.join("profiles/builtin").join(profile_name).join("profile.yaml");
+    let readme_path = workspace_root.join("profiles/builtin").join(profile_name).join("README.md");
 
     if !profile_path.exists() {
         return Err(format!("Profile YAML not found: {}", profile_path.display()).into());
@@ -171,7 +173,7 @@ fn generate_profile_readme(profile_name: &str) -> Result<(), Box<dyn std::error:
     readme.push_str("```bash\n");
     readme.push_str(&format!("pdftract profiles export {} > my-profile.yaml\n", profile_name));
     readme.push_str("# Edit my-profile.yaml to customize match criteria, fields, or extraction patterns\n");
-    readme.push_str(&format!("pdftract extract --profile my-profile.yaml document.pdf\n", profile_name));
+    readme.push_str("pdftract extract --profile my-profile.yaml document.pdf\n");
     readme.push_str("```\n\n");
 
     // Footer
