@@ -40,6 +40,14 @@ The hex string lexer (`lex_hex_string()`) was already implemented with:
 
 - `crates/pdftract-core/src/parser/lexer/mod.rs`: Renamed 6 `DiagCode` enum variants and updated all references; added two hex string proptests
 
+### 5. Compilation Fixes (2025-05-18)
+
+Fixed compilation errors that were preventing the tests from running:
+
+- `crates/pdftract-core/src/parser/object/mod.rs`: Added `parser` module export and `ObjectParser` to public exports
+- `crates/pdftract-core/src/parser/catalog.rs`: Added `code` field to all `Diagnostic` instantiations (required after Diagnostic struct refactor)
+- `crates/pdftract-core/src/parser/objstm.rs`: Fixed mutability of `diags` in `take_diagnostics()` method
+
 ## Acceptance Criteria Status
 
 | Criterion | Status | Notes |

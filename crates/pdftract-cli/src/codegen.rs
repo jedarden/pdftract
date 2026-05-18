@@ -67,6 +67,7 @@ pub struct SdkContract {
 pub struct Method {
     pub name: String,
     pub camel_name: String,
+    pub snake_name: String,
     pub description: String,
     pub cli_flag: String,
     pub returns_string: bool,
@@ -77,6 +78,13 @@ pub struct Method {
     pub uses_string_params: bool,
     /// Number of string parameters if uses_string_params is true
     pub string_param_count: usize,
+}
+
+impl Method {
+    /// Returns the snake_case name for Python/Ruby SDKs.
+    pub fn snake_name(&self) -> &str {
+        &self.snake_name
+    }
 }
 
 /// SDK error definition.
@@ -162,21 +170,22 @@ impl CodeGenerator {
 
         // Method definitions with their details
         let method_patterns = [
-            ("extract", "Extract", "extract", "Document", "ExtractOptions", "Extract structured data from a PDF", false, false, 0),
-            ("extract_text", "ExtractText", "extract", "string", "ExtractOptions", "Extract plain text from a PDF", true, false, 0),
-            ("extract_markdown", "ExtractMarkdown", "extract", "string", "ExtractOptions", "Extract Markdown-formatted text from a PDF", true, false, 0),
-            ("extract_stream", "ExtractStream", "extract", "Page", "ExtractOptions", "Extract pages from a PDF as a stream", false, false, 0),
-            ("search", "Search", "grep", "Match", "SearchOptions", "Search for text in a PDF", false, false, 0),
-            ("get_metadata", "GetMetadata", "extract", "Metadata", "BaseOptions", "Get metadata from a PDF", false, false, 0),
-            ("hash", "Hash", "hash", "Fingerprint", "BaseOptions", "Compute hash fingerprint of a PDF", false, false, 0),
-            ("classify", "Classify", "classify", "Classification", "", "Classify a PDF document", false, false, 0),
-            ("verify_receipt", "VerifyReceipt", "verify-receipt", "bool", "", "Verify a receipt", false, true, 2),
+            ("extract", "Extract", "extract", "extract", "Document", "ExtractOptions", "Extract structured data from a PDF", false, false, 0),
+            ("extract_text", "ExtractText", "extract_text", "extract", "string", "ExtractOptions", "Extract plain text from a PDF", true, false, 0),
+            ("extract_markdown", "ExtractMarkdown", "extract_markdown", "extract", "string", "ExtractOptions", "Extract Markdown-formatted text from a PDF", true, false, 0),
+            ("extract_stream", "ExtractStream", "extract_stream", "extract", "Page", "ExtractOptions", "Extract pages from a PDF as a stream", false, false, 0),
+            ("search", "Search", "search", "grep", "Match", "SearchOptions", "Search for text in a PDF", false, false, 0),
+            ("get_metadata", "GetMetadata", "get_metadata", "extract", "Metadata", "BaseOptions", "Get metadata from a PDF", false, false, 0),
+            ("hash", "Hash", "hash", "hash", "Fingerprint", "BaseOptions", "Compute hash fingerprint of a PDF", false, false, 0),
+            ("classify", "Classify", "classify", "classify", "Classification", "", "Classify a PDF document", false, false, 0),
+            ("verify_receipt", "VerifyReceipt", "verify_receipt", "verify-receipt", "bool", "", "Verify a receipt", false, true, 2),
         ];
 
-        for (name, camel_name, cli_flag, return_type, options_type, description, returns_string, uses_string_params, string_param_count) in method_patterns {
+        for (name, camel_name, snake_name, cli_flag, return_type, options_type, description, returns_string, uses_string_params, string_param_count) in method_patterns {
             methods.push(Method {
                 name: name.to_string(),
                 camel_name: camel_name.to_string(),
+                snake_name: snake_name.to_string(),
                 description: description.to_string(),
                 cli_flag: cli_flag.to_string(),
                 returns_string,
@@ -229,6 +238,7 @@ impl CodeGenerator {
                 Method {
                     name: "extract".to_string(),
                     camel_name: "Extract".to_string(),
+                    snake_name: "extract".to_string(),
                     description: "Extract structured data from a PDF".to_string(),
                     cli_flag: "extract".to_string(),
                     returns_string: false,
@@ -241,6 +251,7 @@ impl CodeGenerator {
                 Method {
                     name: "extract_text".to_string(),
                     camel_name: "ExtractText".to_string(),
+                    snake_name: "extract_text".to_string(),
                     description: "Extract plain text from a PDF".to_string(),
                     cli_flag: "extract".to_string(),
                     returns_string: true,
@@ -253,6 +264,7 @@ impl CodeGenerator {
                 Method {
                     name: "extract_markdown".to_string(),
                     camel_name: "ExtractMarkdown".to_string(),
+                    snake_name: "extract_markdown".to_string(),
                     description: "Extract Markdown-formatted text from a PDF".to_string(),
                     cli_flag: "extract".to_string(),
                     returns_string: true,
@@ -265,6 +277,7 @@ impl CodeGenerator {
                 Method {
                     name: "extract_stream".to_string(),
                     camel_name: "ExtractStream".to_string(),
+                    snake_name: "extract_stream".to_string(),
                     description: "Extract pages from a PDF as a stream".to_string(),
                     cli_flag: "extract".to_string(),
                     returns_string: false,
@@ -277,6 +290,7 @@ impl CodeGenerator {
                 Method {
                     name: "search".to_string(),
                     camel_name: "Search".to_string(),
+                    snake_name: "search".to_string(),
                     description: "Search for text in a PDF".to_string(),
                     cli_flag: "grep".to_string(),
                     returns_string: false,
@@ -289,6 +303,7 @@ impl CodeGenerator {
                 Method {
                     name: "get_metadata".to_string(),
                     camel_name: "GetMetadata".to_string(),
+                    snake_name: "get_metadata".to_string(),
                     description: "Get metadata from a PDF".to_string(),
                     cli_flag: "extract".to_string(),
                     returns_string: false,
@@ -301,6 +316,7 @@ impl CodeGenerator {
                 Method {
                     name: "hash".to_string(),
                     camel_name: "Hash".to_string(),
+                    snake_name: "hash".to_string(),
                     description: "Compute hash fingerprint of a PDF".to_string(),
                     cli_flag: "hash".to_string(),
                     returns_string: false,
@@ -313,6 +329,7 @@ impl CodeGenerator {
                 Method {
                     name: "classify".to_string(),
                     camel_name: "Classify".to_string(),
+                    snake_name: "classify".to_string(),
                     description: "Classify a PDF document".to_string(),
                     cli_flag: "classify".to_string(),
                     returns_string: false,
@@ -325,6 +342,7 @@ impl CodeGenerator {
                 Method {
                     name: "verify_receipt".to_string(),
                     camel_name: "VerifyReceipt".to_string(),
+                    snake_name: "verify_receipt".to_string(),
                     description: "Verify a receipt".to_string(),
                     cli_flag: "verify-receipt".to_string(),
                     returns_string: false,

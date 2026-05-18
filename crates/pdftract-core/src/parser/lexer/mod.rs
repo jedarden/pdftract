@@ -469,7 +469,7 @@ impl<'a> Lexer<'a> {
             let next_after = self.bytes.get(7);
             if next_after.map_or(true, |&b| Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)) {
                 self.advance(7);
-                return Some(Token::Keyword("trailer"));
+                return Some(Token::Keyword(b"trailer".to_vec()));
             }
         }
         // Not "true" or "trailer", treat as keyword
@@ -495,7 +495,7 @@ impl<'a> Lexer<'a> {
             let next_after = self.bytes.get(4);
             if next_after.map_or(true, |&b| Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)) {
                 self.advance(4);
-                return Some(Token::Keyword("xref"));
+                return Some(Token::Keyword(b"xref".to_vec()));
             }
         }
         // Not "xref", treat as keyword
@@ -508,7 +508,7 @@ impl<'a> Lexer<'a> {
             let next_after = self.bytes.get(5);
             if next_after.map_or(true, |&b| Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)) {
                 self.advance(5);
-                return Some(Token::Keyword("%%EOF"));
+                return Some(Token::Keyword(b"%%EOF".to_vec()));
             }
         }
         // Not "%%EOF", skip as a regular comment
@@ -525,37 +525,28 @@ impl<'a> Lexer<'a> {
     fn lex_keyword(&mut self) -> Option<Token> {
         // Consume bytes until we hit a delimiter or whitespace
         let start = self.pos;
-        let mut bytes_consumed = 0;
+        let mut keyword_bytes = Vec::with_capacity(16);
 
         while let Some(&b) = self.bytes.first() {
             if Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b) {
                 break;
             }
+            keyword_bytes.push(b);
             self.advance(1);
-            bytes_consumed += 1;
         }
 
-        // Convert consumed bytes to a static string if possible, otherwise use a generic keyword
-        // For unknown keywords, we return Token::Keyword with the bytes we consumed
-        // Since we can't return borrowed data from the input, we need to match against known keywords
-        // or return a generic error token
-
-        // For now, return Token::Keyword with a static string based on what we consumed
-        // This is a simplified version - the full version would need to handle the bytes properly
-        if bytes_consumed == 0 {
+        if keyword_bytes.is_empty() {
             return Some(Token::Null);
         }
 
-        // Reconstruct the keyword from the original input using the position
-        // We can't do this easily without storing the original input
-        // For now, emit a diagnostic and return Null
+        // Emit a diagnostic for unknown keywords
         self.diagnostics.push(Diagnostic::with_dynamic(
             DiagCode::StructUnexpectedByte,
             start as u64,
-            format!("Unknown keyword at offset {}", start),
+            format!("Unknown keyword: {}", String::from_utf8_lossy(&keyword_bytes)),
         ));
 
-        Some(Token::Null)
+        Some(Token::Keyword(keyword_bytes))
     }
 
     fn lex_numeric(&mut self) -> Option<Token> {
@@ -969,16 +960,14 @@ impl<'a> Lexer<'a> {
                 // PDF spec 7.3.8.1: stream keyword must be followed by \n or \r\n
                 // A lone \r is INVALID
                 let start_pos = self.pos;
-                let has_valid_line_ending = if let Some(&b'\n') = self.bytes.first() {
+                if let Some(&b'\n') = self.bytes.first() {
                     // \n is valid
                     self.advance(1); // consume the \n
-                    true
                 } else if let Some(&b'\r') = self.bytes.first() {
                     // \r\n is valid, lone \r is invalid
                     self.advance(1); // consume the \r
                     if let Some(&b'\n') = self.bytes.first() {
                         self.advance(1); // consume the \n
-                        true
                     } else {
                         // Lone \r - invalid
                         self.diagnostics.push(Diagnostic::with_static(
@@ -986,7 +975,6 @@ impl<'a> Lexer<'a> {
                             start_pos as u64,
                             "stream keyword must be followed by \\n or \\r\\n, not lone \\r",
                         ));
-                        false
                     }
                 } else {
                     // No line ending at all - invalid
@@ -995,8 +983,7 @@ impl<'a> Lexer<'a> {
                         start_pos as u64,
                         "stream keyword must be followed by \\n or \\r\\n",
                     ));
-                    false
-                };
+                }
 
                 return Some(Token::Stream);
             }
@@ -1006,7 +993,7 @@ impl<'a> Lexer<'a> {
             let next_after = self.bytes.get(10);
             if next_after.map_or(true, |&b| Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)) {
                 self.advance(10);
-                return Some(Token::Keyword("startxref"));
+                return Some(Token::Keyword(b"startxref".to_vec()));
             }
         }
         // Not "stream" or "startxref", treat as keyword or name
@@ -1171,6 +1158,42 @@ mod tests {
         assert_eq!(lexer.next_token(), Some(Token::Stream));
         assert_eq!(lexer.next_token(), Some(Token::EndStream));
         assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn stream_header_valid_line_endings() {
+        // Test \n (valid)
+        let mut lexer = Lexer::new(b"stream\nbody");
+        assert_eq!(lexer.next_token(), Some(Token::Stream));
+        let diags = lexer.take_diagnostics();
+        assert!(diags.is_empty(), "No diagnostics for stream\\n");
+
+        // Test \r\n (valid)
+        let mut lexer = Lexer::new(b"stream\r\nbody");
+        assert_eq!(lexer.next_token(), Some(Token::Stream));
+        let diags = lexer.take_diagnostics();
+        assert!(diags.is_empty(), "No diagnostics for stream\\r\\n");
+    }
+
+    #[test]
+    fn stream_header_lone_cr_emits_diagnostic() {
+        // Lone \r is invalid per PDF spec 7.3.8.1
+        let mut lexer = Lexer::new(b"stream\rbody");
+        assert_eq!(lexer.next_token(), Some(Token::Stream));
+        let diags = lexer.take_diagnostics();
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].code, DiagCode::StructInvalidStreamHeader);
+        assert!(diags[0].msg.contains("lone \\r"));
+    }
+
+    #[test]
+    fn stream_header_no_line_ending_emits_diagnostic() {
+        // Stream keyword followed by space (not a line ending) is invalid
+        let mut lexer = Lexer::new(b"stream body");
+        assert_eq!(lexer.next_token(), Some(Token::Stream));
+        let diags = lexer.take_diagnostics();
+        assert!(!diags.is_empty(), "Should emit diagnostic for stream without proper line ending");
+        assert!(diags.iter().any(|d| d.code == DiagCode::StructInvalidStreamHeader));
     }
 
     #[test]
@@ -1866,12 +1889,9 @@ mod tests {
         let mut lexer = Lexer::new(b"/Foo[Bar]");
         assert_eq!(lexer.next_token(), Some(Token::Name(b"Foo".to_vec())));
         assert_eq!(lexer.next_token(), Some(Token::ArrayStart));
-        // Bar is not a name (doesn't start with /), so it's handled as unknown tokens
-        // B -> lex_unknown -> Token::Null (for each character)
-        // The parser at a higher level handles array content differently
-        assert_eq!(lexer.next_token(), Some(Token::Null)); // B
-        assert_eq!(lexer.next_token(), Some(Token::Null)); // a
-        assert_eq!(lexer.next_token(), Some(Token::Null)); // r
+        // Bar is not a name (doesn't start with /), so it's handled as a keyword
+        // The object parser will reject unknown keywords
+        assert_eq!(lexer.next_token(), Some(Token::Keyword(b"Bar".to_vec())));
         assert_eq!(lexer.next_token(), Some(Token::ArrayEnd));
     }
 

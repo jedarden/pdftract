@@ -373,6 +373,7 @@ impl Catalog {
     /// Add a diagnostic to the catalog.
     fn emit_diagnostic(&mut self, severity: Severity, message: String) {
         self.diagnostics.push(Diagnostic {
+            code: crate::parser::diagnostic::DiagCode::StructUnexpectedEof,
             severity,
             phase: "1.4".to_string(),
             message,
@@ -424,6 +425,7 @@ pub fn parse_catalog(resolver: &XrefResolver, root_ref: ObjRef) -> Result<Catalo
         Ok(obj) => obj,
         Err(e) => {
             diagnostics.push(Diagnostic {
+                code: crate::parser::diagnostic::DiagCode::StructUnexpectedEof,
                 severity: Severity::Error,
                 phase: "1.4".to_string(),
                 message: format!("Failed to resolve /Root: {}", e),
@@ -437,6 +439,7 @@ pub fn parse_catalog(resolver: &XrefResolver, root_ref: ObjRef) -> Result<Catalo
         Some(d) => d,
         None => {
             diagnostics.push(Diagnostic {
+                code: crate::parser::diagnostic::DiagCode::StructUnexpectedEof,
                 severity: Severity::Error,
                 phase: "1.4".to_string(),
                 message: format!("/Root is not a dictionary (type: {})", root_obj.type_name()),
@@ -451,6 +454,7 @@ pub fn parse_catalog(resolver: &XrefResolver, root_ref: ObjRef) -> Result<Catalo
         Some(other) => {
             // Emit STRUCT_MISSING_KEY diagnostic and return empty catalog
             diagnostics.push(Diagnostic {
+                code: crate::parser::diagnostic::DiagCode::MissingKey,
                 severity: Severity::Error,
                 phase: "1.4".to_string(),
                 message: format!("STRUCT_MISSING_KEY: /Pages is not a reference (type: {})", other.type_name()),
@@ -461,6 +465,7 @@ pub fn parse_catalog(resolver: &XrefResolver, root_ref: ObjRef) -> Result<Catalo
         None => {
             // Emit STRUCT_MISSING_KEY diagnostic and return empty catalog
             diagnostics.push(Diagnostic {
+                code: crate::parser::diagnostic::DiagCode::MissingKey,
                 severity: Severity::Error,
                 phase: "1.4".to_string(),
                 message: "STRUCT_MISSING_KEY: /Pages key missing from catalog".to_string(),

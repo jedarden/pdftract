@@ -82,7 +82,7 @@ class ConformanceTest {
     }
 
     private void testExtract(Pdftract client, String fixturePath, TestCase tc) throws Exception {
-        Document doc = client.{{ method.camel_name }}(new PathSource(fixturePath), null);
+        Document doc = client.extract(new PathSource(fixturePath), null);
 
         if (tc.assertions != null && tc.assertions.has("page_count")) {
             assertEquals(tc.assertions.get("page_count").getAsInt(), doc.pages.size());
@@ -93,7 +93,7 @@ class ConformanceTest {
     }
 
     private void testExtractText(Pdftract client, String fixturePath, TestCase tc) throws Exception {
-        String text = client.{{ method.camel_name }}(new PathSource(fixturePath), null);
+        String text = client.extractText(new PathSource(fixturePath), null);
 
         if (tc.assertions != null && tc.assertions.has("min_length")) {
             assertTrue(text.length() >= tc.assertions.get("min_length").getAsInt());
@@ -101,7 +101,7 @@ class ConformanceTest {
     }
 
     private void testExtractMarkdown(Pdftract client, String fixturePath, TestCase tc) throws Exception {
-        String md = client.{{ method.camel_name }}(new PathSource(fixturePath), null);
+        String md = client.extractMarkdown(new PathSource(fixturePath), null);
 
         if (tc.assertions != null && tc.assertions.has("min_length")) {
             assertTrue(md.length() >= tc.assertions.get("min_length").getAsInt());
@@ -109,7 +109,7 @@ class ConformanceTest {
     }
 
     private void testGetMetadata(Pdftract client, String fixturePath, TestCase tc) throws Exception {
-        Metadata metadata = client.{{ method.camel_name }}(new PathSource(fixturePath), null);
+        Metadata metadata = client.getMetadata(new PathSource(fixturePath), null);
 
         if (tc.assertions != null && tc.assertions.has("page_count")) {
             assertEquals(tc.assertions.get("page_count").getAsInt(), metadata.pageCount);
@@ -117,7 +117,7 @@ class ConformanceTest {
     }
 
     private void testHash(Pdftract client, String fixturePath, TestCase tc) throws Exception {
-        Fingerprint fingerprint = client.{{ method.camel_name }}(new PathSource(fixturePath), null);
+        Fingerprint fingerprint = client.hash(new PathSource(fixturePath), null);
 
         assertEquals(64, fingerprint.hash.length());
         assertEquals(64, fingerprint.fastHash.length());
@@ -128,7 +128,7 @@ class ConformanceTest {
     }
 
     private void testClassify(Pdftract client, String fixturePath, TestCase tc) throws Exception {
-        Classification classification = client.{{ method.camel_name }}(new PathSource(fixturePath));
+        Classification classification = client.classify(new PathSource(fixturePath));
 
         assertNotNull(classification.category);
         assertTrue(classification.confidence >= 0 && classification.confidence <= 1);
@@ -141,7 +141,7 @@ class ConformanceTest {
         }
 
         String receipt = tc.assertions.get("receipt").getAsString();
-        boolean valid = client.{{ method.camel_name }}(fixturePath, receipt);
+        boolean valid = client.verifyReceipt(fixturePath, receipt);
 
         if (tc.assertions.has("valid")) {
             assertEquals(tc.assertions.get("valid").getAsBoolean(), valid);
