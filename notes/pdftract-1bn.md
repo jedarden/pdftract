@@ -1,76 +1,82 @@
-# pdftract-1bn Verification Note
+# pdftract-1bn: Cross-compilation build matrix implementation
 
-## Bead Description
-Phase 0.2: Cross-compilation build matrix for 5 target triples
+## Summary
 
-## Work Completed
+Implemented the cross-compilation build matrix for all 5 release target triples in the `pdftract-ci` WorkflowTemplate. Each target produces a stripped release binary uploaded as an Argo artifact.
 
-### 1. Created Argo WorkflowTemplate
-**File:** `.ci/argo-workflows/pdftract-ci.yaml`
+## Changes Made
 
-The WorkflowTemplate implements a build matrix that builds pdftract binaries for five target triples in parallel:
+### File: `/home/coding/declarative-config/k8s/iad-ci/argo-workflows/pdftract-ci.yaml`
 
-| Target | Docker Image | Strip Command | Binary Extension |
-|--------|-------------|---------------|------------------|
-| `x86_64-unknown-linux-musl` | `ghcr.io/cross-rs/x86_64-unknown-linux-musl:latest` | `x86_64-linux-musl-strip` | (none) |
-| `aarch64-unknown-linux-musl` | `ghcr.io/cross-rs/aarch64-unknown-linux-musl:latest` | `aarch64-linux-musl-strip` | (none) |
-| `x86_64-apple-darwin` | `ghcr.io/cross-rs/x86_64-apple-darwin:latest` | `x86_64-apple-darwin-strip` | (none) |
-| `aarch64-apple-darwin` | `ghcr.io/cross-rs/aarch64-apple-darwin:latest` | `aarch64-apple-darwin-strip` | (none) |
-| `x86_64-pc-windows-gnu` | `ghcr.io/cross-rs/x86_64-pc-windows-gnu:latest` | `x86_64-w64-mingw32-strip` | `.exe` |
+1. **Added workspace volumeClaimTemplate** (10Gi) to share cloned repo between setup and all build steps
+2. **Implemented build-matrix DAG** with 5 target build tasks:
+   - `x86_64-unknown-linux-musl` (Linux x86_64 musl)
+   - `aarch64-unknown-linux-musl` (Linux ARM64 musl)
+   - `x86_64-apple-darwin` (macOS x86_64)
+   - `aarch64-apple-darwin` (macOS ARM64)
+   - `x86_64-pc-windows-gnu` (Windows x86_64)
+3. **Added `continueOn: failed`** to each build task for fault tolerance (one failure doesn't cancel others)
+4. **Implemented build-target template** using `ghcr.io/cross-rs/<target>:main` images directly
+5. **Configured cargo-cache volume mount** at `/cache/cargo` with `CARGO_HOME` and `CARGO_TARGET_DIR` environment variables
+6. **Added SOURCE_DATE_EPOCH** for reproducible builds
+7. **Added `--locked` flag** to cargo build for reproducible builds
+8. **Added binary stripping** using target-appropriate strip commands
+9. **Added artifact upload** with pattern `pdftract-<target>{.exe}`
+10. **Updated setup placeholder** to include workspace volume mount
 
-### 2. Implementation Details
+### File: `/home/coding/pdftract/.ci/argo-workflows/pdftract-ci.yaml`
 
-**DAG Template:** `build-matrix`
-- Five tasks, one per target triple
-- Each task references the `build-target` template with target-specific parameters
-- `continueOn.failed: true` on each task ensures one failure doesn't cancel others
+Synced all changes from declarative-config to keep the local copy in sync.
 
-**Build Template:** `build-target`
-- Uses `cross` Docker images for cross-compilation
-- Mounts shared `cargo-cache` PVC at `/cache/cargo`
-- Sets `CARGO_HOME=/cache/cargo/registry`
-- Sets `CARGO_TARGET_DIR=/cache/cargo/target-{target}`
-- Sets `SOURCE_DATE_EPOCH` from git for reproducible builds
-- Builds with `--features default,serve,decrypt`
-- Strips binary using target-appropriate strip command
-- Uploads artifact with name pattern: `pdftract-{target}{.ext}`
-- Checks binary size against 4 MB budget (warning only)
+## Acceptance Criteria Status
 
-**Resource Allocation:**
-- Requests: 2Gi memory, 2 CPU
-- Limits: 4Gi memory, 4 CPU
-- Retry strategy: 1 retry on error
+| Criteria | Status | Notes |
+|----------|--------|-------|
+| All five build steps in build-matrix DAG | PASS | All 5 targets implemented |
+| Binaries upload as artifacts with correct pattern | PASS | Artifact name: `pdftract-<target>{.exe}` |
+| Build time <= 8 min for slowest step | WARN | Cannot verify without running pipeline |
+| Stripped binary <= 4 MB | WARN | Cannot verify without running pipeline |
+| Failure isolation (continueOn) | PASS | Added `continueOn: failed` to all 5 tasks |
 
-### 3. Acceptance Criteria
+## Technical Details
 
-| Criterion | Status | Notes |
-|-----------|--------|-------|
-| All five build steps in DAG named `build-matrix` | PASS | Five tasks defined, each calling `build-target` template |
-| All five binaries upload as artifacts | PASS | Artifact output with name pattern `pdftract-{target}{.exe}` |
-| Build time <= 8 min for slowest step | WARN | Runtime requirement - cannot verify without running CI |
-| Stripped binary <= 4 MB | WARN | Runtime requirement - cannot verify without running CI |
-| Failure isolation with continueOn | PASS | Each task has `continueOn.failed: true` |
-
-### 4. Deployment Location
-
-This file should be deployed to:
+### Build Matrix Structure
 ```
-jedarden/declarative-config → k8s/iad-ci/argo-workflows/pdftract-ci.yaml
+build-matrix (DAG)
+├── build-linux-x86_64-musl (continueOn: failed)
+├── build-linux-aarch64-musl (continueOn: failed)
+├── build-darwin-x86_64 (continueOn: failed)
+├── build-darwin-aarch64 (continueOn: failed)
+└── build-windows-x86_64-gnu (continueOn: failed)
 ```
 
-The Argo Workflows controller in the `argo-workflows` namespace will pick up the WorkflowTemplate automatically.
+### Docker Images Used
+- Linux: `ghcr.io/cross-rs/x86_64-unknown-linux-musl:main`
+- Linux ARM64: `ghcr.io/cross-rs/aarch64-unknown-linux-musl:main`
+- macOS x64: `ghcr.io/cross-rs/x86_64-apple-darwin:main`
+- macOS ARM64: `ghcr.io/cross-rs/aarch64-apple-darwin:main`
+- Windows: `ghcr.io/cross-rs/x86_64-pc-windows-gnu:main`
 
-### 5. Prerequisites
+### Build Features
+Default feature set: `default,serve,decrypt` (OCR feature excluded per plan)
 
-Before running this workflow:
-1. PVC `cargo-cache` must exist in `argo-workflows` namespace
-2. WorkflowTemplate must be applied to the cluster
-3. Source code must be available at `/workspace` in the container (via git clone or workspace volume)
+### Resource Limits
+- Requests: 2 CPU, 4Gi memory
+- Limits: 4 CPU, 8Gi memory
+- Active deadline: 3600s (1 hour)
 
-### 6. References
+## Known Limitations
+
+1. **Setup step is placeholder**: The workspace clone and cargo cache warming logic will be implemented by a sibling Phase 0 bead. Currently, the build-target template expects `/workspace` to contain the cloned repo.
+
+2. **Cannot verify build time**: The 8-minute wall-clock requirement for the slowest step cannot be verified without running the pipeline on iad-ci.
+
+3. **Cannot verify binary size**: The 4 MB budget for stripped binaries cannot be verified without running the pipeline.
+
+4. **macOS/Windows runtime verification**: Per KU-12, these binaries are built but never run in CI. Manual quarterly smoke tests are the verification path (out of scope for this bead).
+
+## References
+
 - Plan section: Phase 0, lines 1001-1009
-- ADR-009: Argo Workflows only
-- Sibling reference: `forge-ci` template in `k8s/iad-ci/argo-workflows/forge-ci.yaml`
-
-## Commits
-- (pending) feat(pdftract-1bn): add cross-compilation build matrix WorkflowTemplate
+- ADR-009 (Argo Workflows only)
+- Bead ID: pdftract-1bn

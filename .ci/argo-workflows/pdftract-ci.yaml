@@ -1,135 +1,326 @@
+# pdftract-ci WorkflowTemplate
+#
+# This template orchestrates the CI/CD pipeline for pdftract, a Rust PDF text extraction
+# library with PyO3 Python bindings and a CLI binary. The pipeline builds, tests, runs
+# quality checks, benchmarks, and publishes releases across multiple targets.
+#
+# === Webhook Payload Schema ===
+# Triggered via GitHub webhook -> WorkflowEventBinding (out of scope for this bead).
+# Expected webhook payload schema:
+#
+#   {
+#     "ref": "refs/heads/main" | "refs/tags/v0.1.0",
+#     "repository": {
+#       "full_name": "jedarden/pdftract",
+#       "html_url": "https://github.com/jedarden/pdftract"
+#     },
+#     "head_commit": {
+#       "id": "abc123...",
+#       "message": "Commit message"
+#     },
+#     "sender": {
+#       "login": "username"
+#     }
+#   }
+#
+# === Parameter Reference ===
+# - commit-sha: Full Git commit SHA (40 hex chars)
+# - ref: Git ref (branch: "refs/heads/*", tag: "refs/tags/v*")
+# - repo-url: GitHub repository URL
+# - is-tag: Boolean ("true" if ref is a tag, "false" otherwise)
+#
+# === DAG Structure ===
+# setup -> [parallel: build-matrix, test-matrix, quality-matrix, bench-matrix] -> publish-if-tag
+#
+# - setup: Clone repo, fetch dependencies, warm cargo cache
+# - build-matrix: Cross-compile for 5 targets (x86_64/aarch64 Linux musl, macOS x64/ARM64, Windows x64)
+# - test-matrix: Run unit tests across feature combinations (default, full, with OCR)
+# - quality-matrix: Linting (clippy, fmt), security audit (cargo-audit), dependency review
+# - bench-matrix: Performance benchmarks (cargo bench) against fixture corpus
+# - publish-if-tag: On tags only, upload binaries to GitHub Releases
+#
+# === Subsequent Phase 0 Beads ===
+# Each bead fills in a distinct set of templates without colliding:
+# - pdftract-xxxx: setup step, volume mount points, cache warming logic
+# - pdftract-yyyy: build-matrix templates (5 target builds with cross)
+# - pdftract-zzzz: test-matrix templates (feature combinations)
+# - pdftract-wwww: quality-matrix templates (clippy, fmt, audit)
+# - pdftract-vvvv: bench-matrix templates (cargo bench)
+# - pdftract-uuuu: publish-if-tag template (gh release create)
+#
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
   name: pdftract-ci
   namespace: argo-workflows
-  annotations:
-    workflows.argoproj.io/description: "pdftract CI pipeline with cross-compilation build matrix"
-    workflows.argoproj.io/version: "0.1.0"
+  labels:
+    app.kubernetes.io/name: pdftract-ci
+    app.kubernetes.io/component: ci
+    app.kubernetes.io/part-of: pdftract
 spec:
-  entrypoint: build-matrix
+  entrypoint: pipeline
+  serviceAccountName: argo-workflow
+
+  podGC: OnPodCompletion
+  ttlSecondsAfterFinished:
+    success: 1800
+    failure: 7200
+
+  arguments:
+    parameters:
+      - name: commit-sha
+        value: ""
+        description: "Full Git commit SHA (40 hex chars)"
+      - name: ref
+        value: "refs/heads/main"
+        description: "Git ref (branch: 'refs/heads/*', tag: 'refs/tags/v*')"
+      - name: repo-url
+        value: "https://github.com/jedarden/pdftract.git"
+        description: "GitHub repository URL"
+      - name: is-tag
+        value: "false"
+        description: "Boolean ('true' if ref is a tag, 'false' otherwise)"
+
+  volumeClaimTemplates:
+    - metadata:
+        name: cargo-cache
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: sata-large
+        resources:
+          requests:
+            storage: 50Gi
+    - metadata:
+        name: workspace
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: sata-large
+        resources:
+          requests:
+            storage: 10Gi
+
+  volumes:
+    - name: docker-config
+      secret:
+        secretName: docker-hub-registry
+        items:
+          - key: .dockerconfigjson
+            path: config.json
+
+  podMetadata:
+    labels:
+      app.kubernetes.io/name: pdftract-ci
+      commit-sha: "{{workflow.parameters.commit-sha}}"
+
+  podSpecPatch: |
+    imagePullSecrets:
+      - name: docker-hub-registry
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      fsGroup: 1000
+
   templates:
-    - name: build-matrix
+    # === Top-level DAG ===
+    # Setup runs first, then all matrices run in parallel, then publish if tagged
+    - name: pipeline
       dag:
+        onExit: on-exit
         tasks:
-          - name: build-x86_64-linux-musl
+          - name: setup
+            template: setup
+
+          - name: build-matrix
+            template: build-matrix
+            dependencies: [setup]
+
+          - name: test-matrix
+            template: test-matrix
+            dependencies: [setup]
+
+          - name: quality-matrix
+            template: quality-matrix
+            dependencies: [setup]
+
+          - name: bench-matrix
+            template: bench-matrix
+            dependencies: [setup]
+
+          - name: publish-if-tag
+            template: publish-if-tag
+            dependencies: [build-matrix, test-matrix, quality-matrix, bench-matrix]
+            when: "{{workflow.parameters.is-tag}} == true"
+
+    # === Exit Handler ===
+    # Reports workflow status (success/failure) with details
+    - name: on-exit
+      script:
+        image: alpine:3.19
+        command: [sh]
+        source: |
+          #!/bin/sh
+          set -e
+          echo "=== Workflow Exit Report ==="
+          echo "Workflow: {{workflow.name}}"
+          echo "Commit: {{workflow.parameters.commit-sha}}"
+          echo "Ref: {{workflow.parameters.ref}}"
+          echo "Status available in workflow metadata"
+      activeDeadlineSeconds: 60
+
+    # === Setup Step ===
+    # Clones repo, fetches dependencies, warms cargo cache
+    # Filled in by subsequent Phase 0 bead
+    - name: setup
+      activeDeadlineSeconds: 600
+      container:
+        image: alpine:3.19
+        command: [sh, -c]
+        args:
+          - |
+            # Placeholder: clone repo to /workspace, warm cargo cache
+            echo "Setup step - to be implemented by Phase 0 sibling bead"
+            echo "Should clone {{workflow.parameters.repo-url}} to /workspace"
+            echo "Should checkout {{workflow.parameters.commit-sha}}"
+            exit 0
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+
+    # === Build Matrix ===
+    # Cross-compile for 5 targets using cross (Docker-based)
+    # Targets: x86_64-unknown-linux-musl, aarch64-unknown-linux-musl,
+    #          x86_64-apple-darwin, aarch64-apple-darwin, x86_64-pc-windows-gnu
+    - name: build-matrix
+      activeDeadlineSeconds: 3600
+      dag:
+        onExit: build-matrix-exit
+        tasks:
+          - name: build-linux-x86_64-musl
             template: build-target
             arguments:
               parameters:
                 - name: target
                   value: "x86_64-unknown-linux-musl"
-                - name: docker-image
-                  value: "ghcr.io/cross-rs/x86_64-unknown-linux-musl:latest"
+                - name: cross-image
+                  value: "ghcr.io/cross-rs/x86_64-unknown-linux-musl:main"
                 - name: strip-cmd
                   value: "x86_64-linux-musl-strip"
-                - name: binary-ext
+                - name: ext
                   value: ""
             continueOn:
               failed: true
-
-          - name: build-aarch64-linux-musl
+          - name: build-linux-aarch64-musl
             template: build-target
             arguments:
               parameters:
                 - name: target
                   value: "aarch64-unknown-linux-musl"
-                - name: docker-image
-                  value: "ghcr.io/cross-rs/aarch64-unknown-linux-musl:latest"
+                - name: cross-image
+                  value: "ghcr.io/cross-rs/aarch64-unknown-linux-musl:main"
                 - name: strip-cmd
                   value: "aarch64-linux-musl-strip"
-                - name: binary-ext
+                - name: ext
                   value: ""
             continueOn:
               failed: true
-
-          - name: build-x86_64-apple-darwin
+          - name: build-darwin-x86_64
             template: build-target
             arguments:
               parameters:
                 - name: target
                   value: "x86_64-apple-darwin"
-                - name: docker-image
-                  value: "ghcr.io/cross-rs/x86_64-apple-darwin:latest"
+                - name: cross-image
+                  value: "ghcr.io/cross-rs/x86_64-apple-darwin:main"
                 - name: strip-cmd
                   value: "x86_64-apple-darwin-strip"
-                - name: binary-ext
+                - name: ext
                   value: ""
             continueOn:
               failed: true
-
-          - name: build-aarch64-apple-darwin
+          - name: build-darwin-aarch64
             template: build-target
             arguments:
               parameters:
                 - name: target
                   value: "aarch64-apple-darwin"
-                - name: docker-image
-                  value: "ghcr.io/cross-rs/aarch64-apple-darwin:latest"
+                - name: cross-image
+                  value: "ghcr.io/cross-rs/aarch64-apple-darwin:main"
                 - name: strip-cmd
                   value: "aarch64-apple-darwin-strip"
-                - name: binary-ext
+                - name: ext
                   value: ""
             continueOn:
               failed: true
-
-          - name: build-x86_64-windows-gnu
+          - name: build-windows-x86_64-gnu
             template: build-target
             arguments:
               parameters:
                 - name: target
                   value: "x86_64-pc-windows-gnu"
-                - name: docker-image
-                  value: "ghcr.io/cross-rs/x86_64-pc-windows-gnu:latest"
+                - name: cross-image
+                  value: "ghcr.io/cross-rs/x86_64-pc-windows-gnu:main"
                 - name: strip-cmd
                   value: "x86_64-w64-mingw32-strip"
-                - name: binary-ext
+                - name: ext
                   value: ".exe"
             continueOn:
               failed: true
 
+    # === Build Target Template ===
+    # Single target build using cross (Docker-based)
+    # Uses ghcr.io/cross-rs/<target>:main images which have cross pre-installed
     - name: build-target
       inputs:
         parameters:
           - name: target
-          - name: docker-image
+          - name: cross-image
           - name: strip-cmd
-          - name: binary-ext
-      outputs:
-        artifacts:
-          - name: binary
-            path: "/tmp/artifacts/pdftract-{{inputs.parameters.target}}{{inputs.parameters.binary-ext}}"
-            archiveNone: true
-      volumes:
-        - name: cargo-cache
-          persistentVolumeClaim:
-            claimName: cargo-cache
+          - name: ext
+      activeDeadlineSeconds: 3600
       container:
-        image: "{{inputs.parameters.docker-image}}"
-        command: [sh, -c]
+        image: "{{inputs.parameters.cross-image}}"
+        command: [bash, -c]
         args:
           - |
-            set -e
+            set -eo pipefail
+
+            TARGET="{{inputs.parameters.target}}"
+            STRIP_CMD="{{inputs.parameters.strip-cmd}}"
+            EXT="{{inputs.parameters.ext}}"
+
             echo "=========================================="
-            echo "Building for target: {{inputs.parameters.target}}"
+            echo "Building pdftract for target: $TARGET"
             echo "=========================================="
 
-            export CARGO_HOME=/cache/cargo/registry
-            export CARGO_TARGET_DIR=/cache/cargo/target-{{inputs.parameters.target}}
+            cd /workspace
+
+            # Set reproducible build timestamp
             export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct 2>/dev/null || echo 0)
+            export CARGO_HOME="/cache/cargo/registry"
+            export CARGO_TARGET_DIR="/cache/cargo/target-$TARGET"
 
             echo "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH"
             echo "CARGO_HOME=$CARGO_HOME"
             echo "CARGO_TARGET_DIR=$CARGO_TARGET_DIR"
 
-            echo "=== Running cargo build ==="
-            cargo build --release --target {{inputs.parameters.target}} --features default,serve,decrypt --locked
+            echo "=== Running cargo build with cross ==="
+            cross build --release --target "$TARGET" --locked --features default,serve,decrypt
 
-            BINARY_PATH="/workspace/target/{{inputs.parameters.target}}/release/pdftract{{inputs.parameters.binary-ext}}"
+            BINARY_PATH="target/$TARGET/release/pdftract$EXT"
 
             if [ ! -f "$BINARY_PATH" ]; then
               echo "ERROR: Binary not found at $BINARY_PATH" >&2
               echo "Contents of target directory:"
-              ls -la "/workspace/target/{{inputs.parameters.target}}/release/" || true
+              ls -la "target/$TARGET/release/" || true
               exit 1
             fi
 
@@ -137,20 +328,20 @@ spec:
             ls -lh "$BINARY_PATH"
 
             echo "=== Stripping binary ==="
-            {{inputs.parameters.strip-cmd}} "$BINARY_PATH" || {
+            "$STRIP_CMD" "$BINARY_PATH" || {
               echo "WARNING: Strip command failed, continuing with unstripped binary" >&2
             }
 
             echo "=== Binary size after strip ==="
             ls -lh "$BINARY_PATH"
 
-            mkdir -p /tmp/artifacts
-            cp "$BINARY_PATH" "/tmp/artifacts/pdftract-{{inputs.parameters.target}}{{inputs.parameters.binary-ext}}"
+            mkdir -p /artifacts
+            cp "$BINARY_PATH" "/artifacts/pdftract-$TARGET$EXT"
 
             echo "=== Final artifact ==="
-            ls -lh /tmp/artifacts/
+            ls -lh /artifacts/
 
-            SIZE=$(stat -c%s "/tmp/artifacts/pdftract-{{inputs.parameters.target}}{{inputs.parameters.binary-ext}}" 2>/dev/null || stat -f%z "/tmp/artifacts/pdftract-{{inputs.parameters.target}}{{inputs.parameters.binary-ext}}")
+            SIZE=$(stat -c%s "/artifacts/pdftract-$TARGET$EXT" 2>/dev/null || stat -f%z "/artifacts/pdftract-$TARGET$EXT")
             echo "Binary size: $SIZE bytes"
 
             if [ "$SIZE" -gt 4194304 ]; then
@@ -161,15 +352,143 @@ spec:
 
             echo "=== Build complete ==="
         volumeMounts:
+          - name: workspace
+            mountPath: /workspace
           - name: cargo-cache
-            mountPath: "/cache/cargo"
+            mountPath: /cache/cargo
+          - name: docker-config
+            mountPath: /root/.docker
         resources:
           requests:
-            memory: "2Gi"
-            cpu: "2"
+            cpu: 2000m
+            memory: 4Gi
           limits:
-            memory: "4Gi"
-            cpu: "4"
-        retryStrategy:
-          limit: 1
-          retryPolicy: "OnError"
+            cpu: 4000m
+            memory: 8Gi
+      outputs:
+        artifacts:
+          - name: pdftract-binary
+            path: /artifacts/pdftract-{{inputs.parameters.target}}{{inputs.parameters.ext}}
+
+    # === Build Matrix Exit Handler ===
+    - name: build-matrix-exit
+      script:
+        image: alpine:3.19
+        command: [sh]
+        source: |
+          #!/bin/sh
+          echo "=== Build Matrix Exit Report ==="
+          echo "Commit: {{workflow.parameters.commit-sha}}"
+          echo "All binaries available as artifacts"
+
+    # === Test Matrix ===
+    # Run cargo test across feature combinations
+    # - default features on x86_64-unknown-linux-musl
+    # - all features on x86_64-unknown-linux-gnu (with OCR system libs)
+    # Filled in by subsequent Phase 0 bead
+    - name: test-matrix
+      activeDeadlineSeconds: 1800
+      container:
+        image: alpine:3.19
+        command: [sh, -c]
+        args:
+          - |
+            # Placeholder: test matrix
+            echo "Test matrix - to be implemented by Phase 0 sibling bead"
+            exit 0
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+        resources:
+          requests:
+            cpu: 2000m
+            memory: 4Gi
+          limits:
+            cpu: 4000m
+            memory: 8Gi
+
+    # === Quality Matrix ===
+    # Run linting (clippy, fmt), security audit (cargo-audit), dependency review
+    # Filled in by subsequent Phase 0 bead
+    - name: quality-matrix
+      activeDeadlineSeconds: 900
+      container:
+        image: alpine:3.19
+        command: [sh, -c]
+        args:
+          - |
+            # Placeholder: quality matrix
+            echo "Quality matrix - to be implemented by Phase 0 sibling bead"
+            exit 0
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+
+    # === Bench Matrix ===
+    # Run cargo bench against fixture corpus
+    # Filled in by subsequent Phase 0 bead
+    - name: bench-matrix
+      activeDeadlineSeconds: 1800
+      container:
+        image: alpine:3.19
+        command: [sh, -c]
+        args:
+          - |
+            # Placeholder: bench matrix
+            echo "Bench matrix - to be implemented by Phase 0 sibling bead"
+            exit 0
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+        resources:
+          requests:
+            cpu: 2000m
+            memory: 4Gi
+          limits:
+            cpu: 4000m
+            memory: 8Gi
+
+    # === Publish If Tag ===
+    # On milestone tags, upload binaries to GitHub Releases
+    # Filled in by subsequent Phase 0 bead
+    - name: publish-if-tag
+      activeDeadlineSeconds: 600
+      container:
+        image: alpine:3.19
+        command: [sh, -c]
+        args:
+          - |
+            # Placeholder: publish step
+            echo "Publish step - to be implemented by Phase 0 sibling bead"
+            exit 0
+        env:
+          - name: GH_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: github-webhook-secret
+                key: token
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
