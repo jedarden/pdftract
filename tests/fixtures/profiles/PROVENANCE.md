@@ -2,6 +2,26 @@
 
 This manifest tracks the origin and licensing of every fixture file in `tests/fixtures/`.
 
+## Validation
+
+A pre-commit hook automatically validates this manifest before each commit:
+
+```bash
+# Install the hook (one-time setup)
+ln -s ../../.git-hooks/pre-commit .git/hooks/pre-commit
+```
+
+The hook runs `scripts/check-provenance.sh` to ensure:
+- Every fixture file has a corresponding entry in this manifest
+- SHA256 hashes match the actual file content
+- All licenses are from the approved list
+
+To manually validate the manifest:
+
+```bash
+bash scripts/check-provenance.sh
+```
+
 ## Format
 
 | Path | Source URL | License | Downloaded Date | SHA256 | Notes |

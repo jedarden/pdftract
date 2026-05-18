@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Pre-commit hook: Validate fixture provenance before allowing commits.
+# This ensures every fixture file has a corresponding PROVENANCE.md entry.
+#
+# To install this hook:
+#   ln -s ../../.git-hooks/pre-commit .git/hooks/pre-commit
+# Or run: make install-hooks (if Makefile exists)
+
+set -e
+
+# Run the provenance validation script
+bash scripts/check-provenance.sh
+
+exit 0
