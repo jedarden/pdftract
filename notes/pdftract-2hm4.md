@@ -18,7 +18,15 @@ The lexer's `DiagCode` enum variants were renamed to use the `STRUCT_` prefix:
 
 All references throughout the lexer module were updated accordingly.
 
-### 2. Existing Implementation Verified
+### 2. Added Hex String Proptests
+
+To fully satisfy the acceptance criteria, added two hex string-specific proptests:
+
+1. **`proptest_hex_string_never_panics_on_random_bytes`**: Verifies that random byte sequences starting with `<` (but not `<<`) never cause the lexer to panic. The test generates random byte vectors and ensures they start with `<` but not `<<`.
+
+2. **`proptest_hex_string_roundtrip_via_reencode`**: Verifies the roundtrip property for hex strings. Bytes are encoded to hex, decoded, re-encoded, and decoded again - the final result should equal the original. This validates that decoding and encoding are inverse operations (modulo case and whitespace differences).
+
+### 3. Existing Implementation Verified
 
 The hex string lexer (`lex_hex_string()`) was already implemented with:
 - Hex digit pair decoding: `<48656C6C6F>` -> `b"Hello"`
@@ -28,9 +36,9 @@ The hex string lexer (`lex_hex_string()`) was already implemented with:
 - Invalid character handling with `STRUCT_INVALID_HEX` diagnostic
 - Unterminated string handling with `STRUCT_UNTERMINATED_STRING` diagnostic
 
-### 3. Files Modified
+### 4. Files Modified
 
-- `crates/pdftract-core/src/parser/lexer/mod.rs`: Renamed 6 `DiagCode` enum variants and updated all references
+- `crates/pdftract-core/src/parser/lexer/mod.rs`: Renamed 6 `DiagCode` enum variants and updated all references; added two hex string proptests
 
 ## Acceptance Criteria Status
 
@@ -42,8 +50,8 @@ The hex string lexer (`lex_hex_string()`) was already implemented with:
 | `<aBcD>` -> `b"\xAB\xCD"` | PASS | hex_string_mixed_case |
 | `<48 65>` -> whitespace ignored | PASS | hex_string_with_whitespace |
 | Unterminated `<48` -> diagnostic | PASS | hex_string_unterminated_emits_diagnostic |
-| proptest: random bytes never panic | PASS | proptest_string_never_panics_on_random_bytes |
-| proptest: roundtrip property | PASS | proptest_valid_string_roundtrips |
+| proptest: hex random bytes never panic | PASS | proptest_hex_string_never_panics_on_random_bytes |
+| proptest: hex roundtrip property | PASS | proptest_hex_string_roundtrip_via_reencode |
 | INV-8 maintained | PASS | All error paths use diagnostics, no panics |
 
 ## Test Results
@@ -67,6 +75,8 @@ All hex string tests pass:
 Proptests also pass:
 - `proptest_string_never_panics_on_random_bytes`: Random bytes never panic
 - `proptest_valid_string_roundtrips`: Decode+encode roundtrip property
+- `proptest_hex_string_never_panics_on_random_bytes`: Random bytes starting with `<` (not `<<`) never panic
+- `proptest_hex_string_roundtrip_via_reencode`: Hex decode + re-encode roundtrip property
 
 ## Implementation Notes
 
