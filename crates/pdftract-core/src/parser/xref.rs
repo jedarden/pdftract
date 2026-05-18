@@ -11,6 +11,9 @@ use std::borrow::Cow;
 use crate::parser::object::{ObjRef, PdfObject, PdfDict};
 use crate::parser::stream::{PdfSource, MemorySource};
 
+// Use memchr for SIMD-accelerated byte searching in forward_scan_xref
+use memchr::{memchr, memchr_iter};
+
 /// Error type for xref resolution.
 #[derive(Debug, Clone)]
 pub enum ResolveError {
@@ -900,53 +903,52 @@ pub fn forward_scan_xref(source: &dyn PdfSource, is_linearized: bool) -> XrefSec
         }
     };
 
-    // Use memchr to efficiently find all occurrences of " obj"
-    // The pattern we're looking for is: <digits> <space> <digits> <space> obj <whitespace>
-    // We search for " obj" first, then verify the preceding pattern
-    let obj_pattern = b" obj";
-    let mut pos = 0u64;
-    let mut entries_found = 0u64;
+    // For large files, use memchr for efficient scanning
+    // For smaller files, read entirely into memory for faster processing
+    const SMALL_FILE_THRESHOLD: u64 = 1024 * 1024; // 1 MB
 
-    // Read in chunks to avoid loading the entire file into memory
+    if source_len <= SMALL_FILE_THRESHOLD {
+        // Small file: read entirely and scan in memory
+        if let Ok(full_data) = source.read_at(0, source_len as usize) {
+            return forward_scan_memory(&full_data, source_len);
+        }
+    }
+
+    // Large file: scan in chunks using memchr for efficient space searching
+    let mut entries_found = 0u64;
     const CHUNK_SIZE: usize = 256 * 1024; // 256 KB chunks
-    let mut buffer = Vec::with_capacity(CHUNK_SIZE + obj_pattern.len());
+
+    // We search for the pattern " obj" (space followed by "obj")
+    // First, find all space positions, then verify if "obj" follows
+    let mut pos = 0u64;
 
     while pos < source_len {
         let to_read = CHUNK_SIZE.min((source_len - pos) as usize);
+
         match source.read_at(pos, to_read) {
             Ok(chunk) if !chunk.is_empty() => {
-                buffer.clear();
-                buffer.extend_from_slice(&chunk);
+                // Use memchr_iter for SIMD-accelerated space search
+                let chunk_offset = pos;
+                for space_idx in memchr_iter(b' ', &chunk) {
+                    let abs_space_idx = space_idx as u64;
 
-                // Search for " obj" in this chunk
-                let mut search_start = 0;
-                while let Some(idx) = buffer[search_start..].iter().position(|&b| b == b' ') {
-                    let abs_space_idx = search_start + idx;
-
-                    // Check if this is followed by "obj"
-                    if abs_space_idx + obj_pattern.len() <= buffer.len() {
-                        let after_space = &buffer[abs_space_idx..];
-                        if after_space.starts_with(obj_pattern) {
-                            // Found " obj" - now verify preceding bytes match "\d+ \d+ "
-                            let obj_offset = pos + abs_space_idx as u64;
-
-                            // Verify whitespace after "obj"
-                            let obj_end = abs_space_idx + obj_pattern.len();
-                            let has_trailing_whitespace = if obj_end < buffer.len() {
-                                let next_byte = buffer[obj_end];
-                                next_byte == b'\n' || next_byte == b'\r' || next_byte == b' ' || next_byte == b'\t'
+                    // Check if "obj" follows this space
+                    if space_idx + 4 <= chunk.len() {
+                        let after_space = &chunk[space_idx..];
+                        if after_space.starts_with(b"obj") {
+                            // Found " obj" - verify whitespace after "obj"
+                            let obj_end = space_idx + 3;
+                            let has_trailing_ws = if obj_end < chunk.len() {
+                                let next = chunk[obj_end];
+                                next == b'\n' || next == b'\r' || next == b' ' || next == b'\t'
                             } else {
-                                // At chunk boundary - need to check next chunk
-                                // For simplicity, assume it's valid (rare edge case)
-                                true
+                                // At chunk boundary - check next chunk for this rare case
+                                check_trailing_whitespace(source, chunk_offset + abs_space_idx + 3, source_len)
                             };
 
-                            if has_trailing_whitespace {
-                                // Look backwards for "\d+ \d+ " pattern
+                            if has_trailing_ws {
+                                let obj_offset = chunk_offset + abs_space_idx;
                                 if let Some((obj_num, gen_num)) = parse_obj_header_at(source, obj_offset) {
-                                    // Record the entry
-                                    // Use insert to overwrite any previous entry for this object
-                                    // (last occurrence wins per multi-revision handling)
                                     result.entries.insert(obj_num, XrefEntry::InUse {
                                         offset: obj_offset,
                                         gen_nr: gen_num,
@@ -956,27 +958,87 @@ pub fn forward_scan_xref(source: &dyn PdfSource, is_linearized: bool) -> XrefSec
                             }
                         }
                     }
-
-                    // Move past this space to find next candidate
-                    search_start = abs_space_idx + 1;
                 }
 
                 pos += to_read as u64;
-                // Slide back by obj_pattern.len() - 1 to catch matches spanning chunk boundaries
-                if pos > 0 {
-                    pos = pos.saturating_sub((obj_pattern.len() - 1) as u64);
-                }
+                // Slide back to catch " obj" spanning chunk boundaries
+                pos = pos.saturating_sub(3);
             }
-            Err(_) | Ok(_) => {
-                // Error or empty chunk - stop scanning
-                break;
-            }
+            Err(_) => break,
+            Ok(_) => break, // Empty chunk
         }
     }
 
     // Forward-scan for the trailer dictionary
     if let Some(trailer) = forward_scan_trailer(source) {
         result.trailer = Some(trailer);
+    }
+
+    // Emit XREF_REPAIRED diagnostic with count
+    result.diagnostics.push(XrefDiagnostic::with_dynamic(
+        XrefDiagCode::XrefRepaired,
+        0,
+        format!("Forward scan recovered {} object entries", entries_found),
+    ));
+
+    result
+}
+
+/// Check for trailing whitespace after "obj" at the given offset.
+///
+/// This is used when "obj" appears at a chunk boundary and we need to
+/// verify the next byte in the file.
+fn check_trailing_whitespace(source: &dyn PdfSource, offset: u64, source_len: u64) -> bool {
+    if offset >= source_len {
+        return false;
+    }
+    match source.read_at(offset, 1) {
+        Ok(bytes) if !bytes.is_empty() => {
+            let next = bytes[0];
+            next == b'\n' || next == b'\r' || next == b' ' || next == b'\t'
+        }
+        _ => false,
+    }
+}
+
+/// Forward-scan a memory buffer for xref entries.
+///
+/// This is a specialized version for small files that can be entirely
+/// loaded into memory. Uses memchr for efficient scanning.
+fn forward_scan_memory(data: &[u8], source_len: u64) -> XrefSection {
+    let mut result = XrefSection::new();
+    let mut entries_found = 0u64;
+
+    // Use memchr_iter for SIMD-accelerated space search
+    for space_idx in memchr_iter(b' ', data) {
+        let abs_space_idx = space_idx as u64;
+
+        // Check if "obj" follows this space
+        if space_idx + 4 <= data.len() {
+            let after_space = &data[space_idx..];
+            if after_space.starts_with(b"obj") {
+                // Verify whitespace after "obj"
+                let obj_end = space_idx + 3;
+                let has_trailing_ws = if obj_end < data.len() {
+                    let next = data[obj_end];
+                    next == b'\n' || next == b'\r' || next == b' ' || next == b'\t'
+                } else {
+                    // At EOF - still valid
+                    true
+                };
+
+                if has_trailing_ws {
+                    let obj_offset = abs_space_idx;
+                    if let Some((obj_num, gen_num)) = parse_obj_header_at_memory(data, obj_offset) {
+                        result.entries.insert(obj_num, XrefEntry::InUse {
+                            offset: obj_offset,
+                            gen_nr: gen_num,
+                        });
+                        entries_found += 1;
+                    }
+                }
+            }
+        }
     }
 
     // Emit XREF_REPAIRED diagnostic with count
@@ -1004,6 +1066,75 @@ fn parse_obj_header_at(source: &dyn PdfSource, obj_offset: u64) -> Option<(u32, 
     let lookback_len = (obj_offset - lookback_start) as usize;
 
     let chunk = source.read_at(lookback_start, lookback_len).ok()?;
+
+    // We're looking for: <digits> <space> <digits> <space> obj
+    // Work backwards from the end
+    let mut idx = chunk.len();
+
+    // Skip trailing space (the one before "obj")
+    if idx == 0 || chunk[idx - 1] != b' ' {
+        return None;
+    }
+    idx -= 1;
+
+    // Parse generation number (digits going backwards)
+    let gen_end = idx;
+    while idx > 0 && chunk[idx - 1].is_ascii_digit() {
+        idx -= 1;
+    }
+    if idx == gen_end {
+        return None; // No digits found
+    }
+    let gen_str = std::str::from_utf8(&chunk[idx..gen_end]).ok()?;
+    let gen_num: u16 = gen_str.parse().ok()?;
+
+    // Check for space before generation number
+    if idx == 0 || chunk[idx - 1] != b' ' {
+        return None;
+    }
+    idx -= 1;
+
+    // Parse object number (digits going backwards)
+    let obj_end = idx;
+    while idx > 0 && chunk[idx - 1].is_ascii_digit() {
+        idx -= 1;
+    }
+    if idx == obj_end {
+        return None; // No digits found
+    }
+    let obj_str = std::str::from_utf8(&chunk[idx..obj_end]).ok()?;
+    let obj_num: u32 = obj_str.parse().ok()?;
+
+    // Validate: object number should be preceded by start-of-buffer or whitespace
+    if idx > 0 {
+        let prev = chunk[idx - 1];
+        if !prev.is_ascii_whitespace() && prev != b'%' && prev != b'(' && prev != b'<' {
+            // Not a valid token boundary
+            return None;
+        }
+    }
+
+    Some((obj_num, gen_num))
+}
+
+/// Parse the object number and generation number from a memory buffer.
+///
+/// This is a variant of `parse_obj_header_at` that works directly with
+/// a byte slice instead of a PdfSource, for use with memory-mapped data.
+///
+/// Scans backwards from the given offset (which points to the space before "obj")
+/// to find the pattern `\d+ \d+ ` (digits space digits space).
+///
+/// Returns Some((object_number, generation_number)) if found, None otherwise.
+fn parse_obj_header_at_memory(data: &[u8], obj_offset: u64) -> Option<(u32, u16)> {
+    // Scan backwards to find the start of the pattern
+    // Max lookback: 20 bytes for "9999999999 65535 " (max valid per spec)
+    const MAX_LOOKBACK: usize = 30;
+
+    let lookback_start = obj_offset.saturating_sub(MAX_LOOKBACK as u64) as usize;
+    let lookback_len = (obj_offset as usize).saturating_sub(lookback_start);
+
+    let chunk = data.get(lookback_start..(lookback_start + lookback_len))?;
 
     // We're looking for: <digits> <space> <digits> <space> obj
     // Work backwards from the end
