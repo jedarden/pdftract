@@ -30,7 +30,7 @@ This is a degenerate profile with **no field extractors** — it only identifies
 
 ## Sample Input
 
-Example fixtures demonstrating this profile are available in `tests/fixtures/profiles/form/`.
+Example fixtures demonstrating this profile are available in `tests/fixtures/classifier/misc/` (form samples: 09-16.pdf).
 
 *See the classifier corpus for representative documents.*
 

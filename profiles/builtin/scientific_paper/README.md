@@ -4,60 +4,54 @@ Academic paper with title, authors, abstract, DOI, references
 
 ## Match Criteria Summary
 
-Documents matching this profile typically contain:
+This profile matches academic papers, journal articles, and conference proceedings. Documents typically contain:
 
-- **Strong text signals**: Words like "abstract", "introduction", "keywords:", "doi 10.", "references", "bibliography", "acknowledgments"
-- **Structural signals**: Two-column layout (common in academic papers), bibliography section at end
-- **Page count**: Usually 4-30 pages (academic papers have length constraints)
-- **Layout patterns**: Title centered at top, authors below, abstract early, numbered sections, references at end
+- **Section headings**: "Abstract", "Introduction", "Keywords:"
+- **Bibliography markers**: "References", "Bibliography", "Acknowledgments"
+- **Two-column layout**: Most academic papers use two-column formatting
+- **Metadata patterns**: DOI numbers (10.xxxx/...), copyright notices, journal names
 
-The classifier looks for academic paper terminology combined with two-column layout. Papers with "abstract" AND "references" AND two-column layout match with highest confidence.
+Papers are typically 4-30 pages. The profile expects standard academic formatting with sections and citations.
 
 ## Extracted Fields
 
 | Field | Type | Description | Example Value | Source Hint |
 |-------|------|-------------|----------------|-------------|
-| title | string | Paper title | "Machine Learning for Protein Folding" | First page, top, large font |
-| authors | array | Author names | `["J. Smith", "A. Jones", "et al."]` | First page, below title |
-| abstract | string | Abstract text | "We present a novel approach..." | After "abstract" heading |
-| doi | string | Digital Object Identifier | "10.1234/example.5678" | "doi:" pattern or URL |
-| journal | string | Journal name | "Nature" | "published in", "journal", or "proceedings" fields |
-| publication_date | date | Publication date | 2024-01-15 | "received", "accepted", "published", or copyright date |
-| references | array | Bibliographic references | `["[1] Smith et al..."]` | After "references" heading, numbered list |
+| title | string | Full title of the paper | "A Novel Approach to Machine Learning" | regex patterns, region: first_page_top |
+| authors | array | List of author names | ["Jane Doe", "John Smith"] | regex patterns, region: first_page_top_below_title |
+| abstract | string | Abstract paragraph text | "This paper presents a novel method..." | regex patterns, region: after_abstract_heading |
+| doi | string | Digital Object Identifier | "10.1234/example.2024.001" | regex patterns |
+| journal | string | Name of the journal or conference | "Journal of Computer Science" | regex patterns |
+| publication_date | date | Publication or copyright date | 2024-01-15 | regex patterns |
+| references | array | Bibliography entries | ["[1] Author et al., Title..."] | regex patterns, region: after_references_heading |
 
 ## Known Limitations
 
-- **DOI location**: Only DOIs on the first page are extracted; DOIs in footnotes or headers may be missed
-- **Multi-page abstracts**: Abstracts spanning multiple columns or pages may be truncated
-- **Complex author lists**: Papers with dozens of authors (e.g., high-energy physics) may truncate or miss some authors
-- **Non-standard layouts**: Single-column journals or arXiv preprints may not match two-column heuristics
-- **References**: Only numbered reference formats ([1], [2]) are detected; author-year formats may be missed
-- **Supplementary materials**: Supplementary sections are not distinguished from main content
-- **Non-English papers**: Papers in languages other than English may not match pattern lists
-- **Hybrid layouts**: Papers with mixed one- and two-column sections may confuse the column-aware reading order
-- **Figure captions**: Captions are extracted as body text; no separate figure extraction is performed
+- **DOIs in footnotes**: Only first-page DOIs are picked up; DOIs in footnotes or first-page footers are not extracted
+- **Multi-page abstracts**: Abstract extraction stops at double newline or "Keywords"; multi-paragraph abstracts are truncated
+- **Complex author lists**: "et al." is captured literally; full author lists with affiliations are not parsed
+- **Reference parsing**: Only captures bracketed references ([1], [2]); numbered formats without brackets are missed
+- **Single-column papers**: Papers without two-column layout may still match but extraction quality is lower
+- **Non-English papers**: Pattern matching is optimized for English section headings
+- **Supplementary materials**: Attached supplementary data files are not analyzed
+- **ArXiv preprints**: Preprints without journal metadata may have incomplete extraction
 
 ## Sample Input
 
-Example fixtures demonstrating this profile are available in `tests/fixtures/classifier/scientific_paper/`.
+Example fixtures demonstrating this profile are available in `tests/fixtures/classifier/scientific_paper/` (50+ representative papers).
 
-The corpus includes 50 scientific paper documents covering various journals and layouts.
+*See the classifier corpus for representative documents.*
 
 ## Configuration Tips
 
-To override this profile for custom scientific paper formats:
+To override this profile:
 
 ```bash
-pdftract profiles export scientific_paper > my-paper.yaml
-# Edit my-paper.yaml to customize match criteria, fields, or extraction patterns
-pdftract extract --profile my-paper.yaml document.pdf
+pdftract profiles export scientific_paper > my-profile.yaml
+# Edit my-profile.yaml to customize match criteria, fields, or extraction patterns
+pdftract extract --profile my-profile.yaml document.pdf
 ```
-
-Common customizations:
-- Add field-specific DOI patterns to `doi.extraction.patterns`
-- For author-year reference formats, update `references.extraction.patterns`
-- Adjust `reading_order` for single-column journals: change `column_aware` to `line_dominant`
 
 ---
 
-*This README documents the built-in `scientific_paper` profile. See `docs/research/document-classification-and-zone-labeling.md` for classifier theory.*
+*This README was auto-generated from `profile.yaml`. Update the Match Criteria Summary and Known Limitations sections with profile-specific guidance.*

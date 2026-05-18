@@ -4,60 +4,57 @@ Commercial invoice with line items, vendor/customer, and totals
 
 ## Match Criteria Summary
 
-Documents matching this profile typically contain:
+This profile matches commercial invoices and bills. Documents typically contain:
 
-- **Strong text signals**: Words like "invoice", "bill to", "invoice #", "tax invoice", "due date", "purchase order"
-- **Structural signals**: Presence of a line item table (detected as the largest table or in the bottom half of the first page)
-- **Page count**: Usually 1-5 pages (invoices are rarely longer)
-- **Layout patterns**: Vendor information at top, billing details, line items table, and totals at bottom
+- **Invoice indicators**: "Invoice", "Bill to", "Invoice #", "Tax Invoice", "Invoice Number"
+- **Payment terminology**: "Due date", "Payment terms", "Purchase order", "PO #"
+- **Line item tables**: Tabular layout with items, quantities, unit prices, and amounts
+- **Multi-page structure**: Most invoices are 1-5 pages
 
-The classifier looks for invoice-specific terminology combined with tabular data structures. Documents with both "invoice" terminology AND monetary tables match with highest confidence.
+The profile expects standard invoice formatting with vendor/customer information, line items, and financial totals. It works for service invoices, product invoices, and utility bills.
 
 ## Extracted Fields
 
 | Field | Type | Description | Example Value | Source Hint |
 |-------|------|-------------|----------------|-------------|
-| invoice_number | string | Unique invoice identifier | "INV-2024-0154" | Regex patterns: `invoice\s*[#:]?\s*([A-Z0-9-]+)` |
-| vendor | string | Company issuing the invoice | "Acme Supplies Inc." | Regex patterns: vendor/supplier/company fields |
-| customer | string | Company billed to | "Global Tech Corp." | Regex patterns: "bill to" section |
-| invoice_date | date | Date invoice was issued | 2024-01-15 | Regex patterns: "invoice date" field |
-| due_date | date | Payment deadline | 2024-02-14 | Regex patterns: "due date" or "payment due" fields |
-| total | decimal | Total amount due | 1250.00 | Regex patterns: "total" or "amount due" fields |
-| subtotal | decimal | Amount before tax | 1000.00 | Regex patterns: "subtotal" field |
-| tax | decimal | Tax amount | 250.00 | Regex patterns: "tax", "vat", "gst" fields |
-| line_items | array | Array of line item objects | `[{description: "Widget", quantity: 10, unit_price: 100.00, amount: 1000.00}]` | Table extraction from largest table |
+| invoice_number | string | Unique invoice identifier | "INV-2024-001234" | regex patterns |
+| vendor | string | Name of the company issuing the invoice | "Acme Supplies Inc." | regex patterns |
+| customer | string | Name of the company or person being billed | "Smith Enterprises LLC" | regex patterns |
+| invoice_date | date | Date when the invoice was issued | 2024-01-15 | regex patterns |
+| due_date | date | Date when payment is due | 2024-02-15 | regex patterns |
+| total | decimal | Final amount due | 1250.00 | regex patterns |
+| subtotal | decimal | Sum of line items before tax | 1000.00 | regex patterns |
+| tax | decimal | Tax amount (may include VAT/GST) | 250.00 | regex patterns |
+| line_items | array | Line items with description, quantity, unit_price, amount | [{description: "Office Chair", quantity: 5, unit_price: 200.00, amount: 1000.00}] | table: largest_table_or_bottom_half |
 
 ## Known Limitations
 
-- **Multi-currency invoices**: May extract the wrong total if currency symbols appear in multiple places; the profile matches the first currency symbol near "total"
-- **Complex line items**: Line items spanning multiple rows (e.g., multi-line descriptions) may be split incorrectly; table extraction assumes single-row items
-- **Handwritten or scanned invoices**: OCR errors can cause missed fields; the profile relies on clean text extraction
-- **Non-standard layouts**: Invoices with line items on multiple pages may only extract items from the first page
-- **Multiple invoices in one PDF**: Only the first invoice-like structure is extracted
-- **Discount handling**: Discounts are not explicitly extracted; they may appear as negative line items or be missed entirely
-- **Invoice variations**: Non-English invoices (e.g., "factura", "rechnung") may not match if the pattern list isn't localized
+- **Multi-currency invoices**: May extract the wrong total if currency symbol layout is unusual or if multiple currencies are present
+- **Line item table detection**: Only the largest table or bottom half is analyzed; invoices with multiple tables may miss some line items
+- **Complex tax structures**: Invoices with multiple tax rates (e.g., different VAT rates for different items) may only extract the total tax, not the breakdown
+- **Handwritten modifications**: Notes or changes written on the invoice are not detected
+- **Purchase order matching**: PO numbers are extracted but not validated against external systems
+- **Vendor name extraction**: Assumes vendor name appears near "from:", "vendor:", or "supplier:" markers; alternative layouts may miss this field
+- **Non-English invoices**: Pattern matching is primarily English-language focused
+- **Credit notes**: Treated as invoices; negative amounts may not be handled correctly
+- **Discounts and coupons**: Line-item discounts may not be attributed correctly; discounts are often extracted as separate line items
 
 ## Sample Input
 
-Example fixtures demonstrating this profile are available in `tests/fixtures/classifier/invoice/`.
+Example fixtures demonstrating this profile are available in `tests/fixtures/classifier/invoice/` (50+ representative invoices).
 
-The corpus includes 50 invoice documents covering various formats and layouts.
+*See the classifier corpus for representative documents.*
 
 ## Configuration Tips
 
-To override this profile for custom invoice formats:
+To override this profile:
 
 ```bash
-pdftract profiles export invoice > my-invoice.yaml
-# Edit my-invoice.yaml to customize match criteria, fields, or extraction patterns
-pdftract extract --profile my-invoice.yaml document.pdf
+pdftract profiles export invoice > my-profile.yaml
+# Edit my-profile.yaml to customize match criteria, fields, or extraction patterns
+pdftract extract --profile my-profile.yaml document.pdf
 ```
-
-Common customizations:
-- Add company-specific invoice number patterns to `invoice_number.extraction.patterns`
-- Adjust `line_items.extraction.table_region` if invoices use non-standard table placement
-- Add localized patterns for non-English invoices
 
 ---
 
-*This README documents the built-in `invoice` profile. See `docs/research/document-classification-and-zone-labeling.md` for classifier theory.*
+*This README was auto-generated from `profile.yaml`. Update the Match Criteria Summary and Known Limitations sections with profile-specific guidance.*

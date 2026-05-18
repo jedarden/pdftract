@@ -4,58 +4,51 @@ Legal contract with parties, effective date, term, signatures
 
 ## Match Criteria Summary
 
-Documents matching this profile typically contain:
+This profile matches legal contracts and agreements. Documents typically contain:
 
-- **Strong text signals**: Phrases like "agreement is made", "contract agreement", "this agreement", "terms and conditions", "memorandum of understanding"
-- **Structural signals**: Presence of signature blocks (detected in bottom 20% of pages), multi-page layout (2+ pages)
-- **Page count**: Usually 2-50 pages (contracts are substantive documents)
-- **Layout patterns**: Title at top, parties section, numbered or lettered sections, signature blocks at end
+- **Contract language**: "Agreement is made", "Contract agreement", "Terms and conditions", "Memorandum of understanding"
+- **Legal boilerplate**: "Effective date", "Governing law", "Termination notice", "Indemnification"
+- **Signature blocks**: Signatories at the bottom of pages (usually last page)
+- **Multi-page structure**: Contracts are almost always 2+ pages
 
-The classifier looks for legal agreement terminology combined with multi-page structure and signature blocks. Documents with "agreement" language AND signature blocks match with highest confidence.
+The profile expects formal legal language and signature blocks. It works for NDAs, employment agreements, service contracts, and MOUs.
 
 ## Extracted Fields
 
 | Field | Type | Description | Example Value | Source Hint |
 |-------|------|-------------|----------------|-------------|
-| parties | array | Contract parties (vendors, clients, etc.) | `["Acme Corp.", "Global Services LLC"]` | "between X and Y" patterns, "party X:" labels |
-| effective_date | date | Date agreement takes effect | 2024-01-15 | "effective date" field with date format |
-| term | string | Duration of agreement | "24 months" | "term" patterns with duration |
-| governing_law | string | Jurisdiction governing contract | "California" | "governing law" field |
-| signatures | array | Signatory names | `["John Smith", "Jane Doe"]` | Bottom of page, "signature:" or "signed:" labels |
+| parties | array | Contract parties (vendor/client, employer/employee) | ["Acme Corp Inc.", "John Smith"] | regex patterns |
+| effective_date | date | Date when the contract becomes effective | 2024-01-15 | regex patterns |
+| term | string | Duration of the contract (months or years) | "24 months" | regex patterns |
+| governing_law | string | Jurisdiction governing the contract | "California" | regex patterns |
+| signatures | array | Signatory names from signature blocks | ["Jane Doe", "Bob Johnson"] | regex patterns, region: bottom_20_percent |
 
 ## Known Limitations
 
-- **Amendments and addendums**: May not extract correctly if structure differs from main agreement
-- **Exhibits and schedules**: Attached exhibits may not be processed; only the main agreement body is extracted
-- **Multiple signature pages**: Only signature blocks on the final page are extracted
-- **Complex party structures**: Contracts with many parties (e.g., multi-party agreements) may miss some parties
-- **Non-standard effective dates**: Effective dates conditional on events (e.g., "upon closing") may not be parsed correctly
-- **Redlined documents**: Redlined/track-changes PDFs may confuse the extractor
-- **Scanned contracts**: Poor OCR quality can lead to missed fields, especially in fine print
-- **Non-English contracts**: Contracts in other languages may not match pattern lists
-- **Signature variations**: Electronic signatures, signature stamps, or digital signature images may not be detected
+- **Complex party structures**: Only extracts parties explicitly named in "Between X and Y" or "Party X:" format; complex corporate hierarchies may be missed
+- **Multi-party agreements**: Only captures the first two parties; additional parties are not extracted
+- **Amendments/addenda**: Treated as separate documents; cross-references between documents are not resolved
+- **Handwritten signatures**: Signature blocks are extracted by pattern only; handwritten signatures are not validated
+- **International formats**: Non-US date formats (DD/MM/YYYY) may parse incorrectly
+- **Exhibits and schedules**: Attached exhibits are not analyzed; only the main agreement text is processed
+- **Scanned contracts**: Poor-quality scans of signed contracts may have illegible signature text
 
 ## Sample Input
 
-Example fixtures demonstrating this profile are available in `tests/fixtures/classifier/contract/`.
+Example fixtures demonstrating this profile are available in `tests/fixtures/classifier/contract/` (50+ representative contracts).
 
-The corpus includes contract documents with various agreement types and layouts.
+*See the classifier corpus for representative documents.*
 
 ## Configuration Tips
 
-To override this profile for custom contract formats:
+To override this profile:
 
 ```bash
-pdftract profiles export contract > my-contract.yaml
-# Edit my-contract.yaml to customize match criteria, fields, or extraction patterns
-pdftract extract --profile my-contract.yaml document.pdf
+pdftract profiles export contract > my-profile.yaml
+# Edit my-profile.yaml to customize match criteria, fields, or extraction patterns
+pdftract extract --profile my-profile.yaml document.pdf
 ```
-
-Common customizations:
-- Add jurisdiction-specific patterns to `governing_law.extraction.patterns`
-- For contracts with specific party naming conventions, update `parties.extraction.patterns`
-- Adjust `signatures.extraction.region_hint` if signature blocks are not at the bottom
 
 ---
 
-*This README documents the built-in `contract` profile. See `docs/research/document-classification-and-zone-labeling.md` for classifier theory.*
+*This README was auto-generated from `profile.yaml`. Update the Match Criteria Summary and Known Limitations sections with profile-specific guidance.*

@@ -17,15 +17,13 @@ Bank statements are typically 1-10 pages. The profile expects a tabular transact
 
 | Field | Type | Description | Example Value | Source Hint |
 |-------|------|-------------|----------------|-------------|
-| account_number | string | Extracted from page text using pattern matching | "example value" | regex patterns |
-| closing_balance | decimal | Extracted from page text using pattern matching | 123.45 | regex patterns |
-| opening_balance | decimal | Extracted from page text using pattern matching | 123.45 | regex patterns |
-| statement_period | string | Extracted from page text using pattern matching | "example value" | regex patterns |
-| transactions | array | Extracted from page text using pattern matching | [...] | table: largest_table_or_central_body |
+| account_number | string | Bank account number (often partially masked) | "****1234" | regex patterns |
+| statement_period | string | Date range covered by the statement | "January 1, 2024 through January 31, 2024" | regex patterns |
+| opening_balance | decimal | Account balance at the start of the period | 1500.00 | regex patterns |
+| closing_balance | decimal | Account balance at the end of the period | 1425.50 | regex patterns |
+| transactions | array | Transaction records with date, description, amount, balance | [{date: "2024-01-15", description: "Grocery Store", amount: -85.25, balance: 1415.50}] | table: largest_table_or_central_body |
 
 ## Known Limitations
-
-*This section documents known edge cases and failure modes. Contributions to improve extraction quality are welcome.*
 
 - **Multi-page tables**: Only the largest table region is extracted; continuation tables on subsequent pages may be missed
 - **Credit card statements**: May match incorrectly if they lack "opening/closing balance" terminology
@@ -36,7 +34,7 @@ Bank statements are typically 1-10 pages. The profile expects a tabular transact
 
 ## Sample Input
 
-Example fixtures demonstrating this profile are available in `tests/fixtures/profiles/bank_statement/`.
+Example fixtures demonstrating this profile are available in `tests/fixtures/classifier/misc/` (bank statement samples: 17-23.pdf).
 
 *See the classifier corpus for representative documents.*
 

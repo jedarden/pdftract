@@ -17,10 +17,10 @@ The profile expects formal book formatting with clear chapter/section headings. 
 
 | Field | Type | Description | Example Value | Source Hint |
 |-------|------|-------------|----------------|-------------|
-| author | string | Extracted from page text using pattern matching | "example value" | regex patterns |
-| chapter_number | string | Extracted from page text using pattern matching | "example value" | regex patterns, region: first_page_top |
-| sections | array | Extracted from page text using pattern matching | [...] | regex patterns, region: headings |
-| title | string | Extracted from page text using pattern matching | "example value" | regex patterns, region: first_page_top |
+| title | string | Full title of the chapter | "The Economics of Information" | regex patterns, region: first_page_top |
+| chapter_number | string | Chapter number (Roman or Arabic numeral) | "XIV" or "3" | regex patterns, region: first_page_top |
+| author | string | Author name (if explicitly listed) | "Jane Smith" | regex patterns |
+| sections | array | Section headings within the chapter | ["1.1 Introduction", "1.2 Background", "1.3 Analysis"] | regex patterns, region: headings |
 
 ## Known Limitations
 
@@ -35,7 +35,7 @@ The profile expects formal book formatting with clear chapter/section headings. 
 
 ## Sample Input
 
-Example fixtures demonstrating this profile are available in `tests/fixtures/profiles/book_chapter/`.
+Example fixtures demonstrating this profile are available in `tests/fixtures/classifier/misc/` (book excerpt samples: 38-43.pdf).
 
 *See the classifier corpus for representative documents.*
 

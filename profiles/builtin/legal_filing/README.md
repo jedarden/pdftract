@@ -17,15 +17,13 @@ Court filings range from 1-100 pages. The profile expects formal legal formattin
 
 | Field | Type | Description | Example Value | Source Hint |
 |-------|------|-------------|----------------|-------------|
-| case_number | string | Extracted from page text using pattern matching | "example value" | regex patterns |
-| court | string | Extracted from page text using pattern matching | "example value" | regex patterns, region: first_page_top |
-| docket_entries | array | Extracted from page text using pattern matching | [...] | regex patterns, region: after_docket_heading |
-| filing_date | date | Extracted from page text using pattern matching | 2024-01-15 | regex patterns |
-| parties | array | Extracted from page text using pattern matching | [...] | regex patterns |
+| case_number | string | Court-assigned case or docket number | "CIVIL-2024-001234" | regex patterns |
+| court | string | Name of the court (jurisdiction and level) | "United States District Court for the Northern District of California" | regex patterns, region: first_page_top |
+| parties | array | Plaintiff/petitioner and defendant/respondent names | ["Acme Corp Inc.", "John Doe"] | regex patterns |
+| filing_date | date | Date when the document was filed with the court | 2024-01-15 | regex patterns |
+| docket_entries | array | Docket entries with bracketed numbers | ["[1] Complaint filed", "[2] Motion to dismiss"] | regex patterns, region: after_docket_heading |
 
 ## Known Limitations
-
-*This section documents known edge cases and failure modes. Contributions to improve extraction quality are welcome.*
 
 - **Multi-party cases**: Only captures the first two parties (plaintiff/petitioner and defendant/respondent); additional parties are not extracted
 - **Cross-claims and counterclaims**: Treated as separate parties; complex multi-party litigation may not extract all parties correctly
@@ -36,7 +34,7 @@ Court filings range from 1-100 pages. The profile expects formal legal formattin
 
 ## Sample Input
 
-Example fixtures demonstrating this profile are available in `tests/fixtures/profiles/legal_filing/`.
+Example fixtures demonstrating this profile are available in `tests/fixtures/classifier/misc/` (legal filing samples: 31-37.pdf).
 
 *See the classifier corpus for representative documents.*
 
