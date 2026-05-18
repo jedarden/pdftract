@@ -1,0 +1,18 @@
+# Clippy configuration for pdftract
+#
+# This file configures clippy lints for the pdftract workspace.
+
+# Warn on suspicious patterns that may indicate secret leakage
+warn-on-all-wildcard-imports = true
+
+# Cognitive complexity threshold - helps keep code simple
+cognitive-complexity-threshold = 30
+
+# Type complexity threshold
+type-complexity-threshold = 250
+
+# Literal representation threshold
+literal-representation-threshold = 10
+
+# Enforce documentation for public items
+missing-docs-in-private-items = false

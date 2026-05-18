@@ -281,6 +281,7 @@ fn serialize_token(output: &mut Vec<u8>, token: &crate::parser::lexer::Token) {
         Token::EndObj => output.extend_from_slice(b"endobj"),
         Token::IndirectRef => output.push(b'R'),
         Token::Null => output.extend_from_slice(b"null"),
+        Token::Keyword(bytes) => output.extend_from_slice(bytes),
         Token::Eof => {} // Don't emit anything for EOF
     }
 }

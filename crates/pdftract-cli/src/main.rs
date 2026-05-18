@@ -4,6 +4,7 @@ use std::fs;
 use std::path::PathBuf;
 
 mod codegen;
+mod mcp;
 mod password;
 use codegen::Language;
 
@@ -67,6 +68,20 @@ enum Commands {
         #[arg(short, long, default_value = "json")]
         format: String,
     },
+    /// Start the MCP (Model Context Protocol) server
+    Mcp {
+        /// Bind address for the MCP server (e.g., "127.0.0.1:8080", "[::1]:9000", "0.0.0.0:3000")
+        #[arg(short, long, default_value = "127.0.0.1:8080")]
+        bind: String,
+
+        /// Path to a file containing the bearer token (RECOMMENDED)
+        #[arg(long, conflicts_with = "auth_token")]
+        auth_token_file: Option<PathBuf>,
+
+        /// Bearer token for authentication (INSECURE: rejected unless PDFTRACT_INSECURE_CLI_TOKEN=1)
+        #[arg(long, conflicts_with = "auth_token_file")]
+        auth_token: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -124,6 +139,16 @@ fn main() -> Result<()> {
             format,
         } => {
             if let Err(e) = cmd_extract(input, password_stdin, password, &format) {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Mcp {
+            bind,
+            auth_token_file,
+            auth_token,
+        } => {
+            if let Err(e) = mcp::run(bind, auth_token_file, auth_token) {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }

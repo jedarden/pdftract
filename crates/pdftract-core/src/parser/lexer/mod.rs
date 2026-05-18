@@ -69,6 +69,22 @@ pub enum DiagCode {
     StructUnexpectedEof,
     /// Unterminated literal string (missing closing paren)
     StructUnterminatedString,
+
+    // Object parser codes
+    /// Dictionary nesting depth exceeds limit
+    DepthExceeded,
+    /// Missing required key in dictionary
+    MissingKey,
+
+    // Object stream codes
+    /// Invalid object stream format
+    InvalidObjstm,
+    /// Circular reference in /Extends chain
+    CircularRef,
+    /// Stream decompression failed
+    DecompressionFailed,
+    /// Decompression bomb limit exceeded
+    StreamBomb,
 }
 
 /// Diagnostic message emitted during lexing.
@@ -1115,6 +1131,14 @@ mod tests {
     }
 
     #[test]
+    fn bool_case_sensitive() {
+        // "True" (capital T) is NOT the bool keyword - it's a generic keyword
+        let mut lexer = Lexer::new(b"True");
+        assert_eq!(lexer.next_token(), Some(Token::Keyword(b"True".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
     fn array_delimiters() {
         let mut lexer = Lexer::new(b"[ ]");
         assert_eq!(lexer.next_token(), Some(Token::ArrayStart));
@@ -1546,6 +1570,17 @@ mod tests {
         assert!(matches!(token, Some(Token::Null)));
         let diags = lexer.take_diagnostics();
         assert!(!diags.is_empty());
+    }
+
+    #[test]
+    fn hex_string_dict_start_hex_string_dict_end() {
+        // Tricky case: <<<48>>> should be DictStart + String(b"\x48") + DictEnd
+        // << = dict start, <48> = hex string, >> = dict end
+        let mut lexer = Lexer::new(b"<<<48>>>");
+        assert_eq!(lexer.next_token(), Some(Token::DictStart));
+        assert_eq!(lexer.next_token(), Some(Token::String(b"\x48".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::DictEnd));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
     }
 
     // Proptests for hex string lexer
