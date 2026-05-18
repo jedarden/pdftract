@@ -1,0 +1,11 @@
+{
+  "commit_sha": "main",
+  "timestamp": "2024-01-01T00:00:00Z",
+  "pdftract_geomean": 10.0,
+  "pdfminer_geomean": 100.0,
+  "pypdf_geomean": 120.0,
+  "pdfplumber_geomean": 150.0,
+  "grep_1000_mean_ms": 50.0,
+  "corpus_size": 50,
+  "notes": "Placeholder baseline for Phase 0.7. Will be populated with actual values once pdftract binary is available."
+}

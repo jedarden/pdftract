@@ -1,0 +1,18 @@
+[package]
+name = "pdftract-cli"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/jedarden/pdftract"
+
+[[bin]]
+name = "pdftract"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4.5", features = ["derive"] }
+regex = "1.10"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

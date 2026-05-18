@@ -1,0 +1,12 @@
+# Competitive benchmark dependencies
+# These versions are pinned to ensure baseline stability
+# Updates require a deliberate PR with manual baseline refresh
+
+# pdfminer.six - pure Python PDF parser
+pdfminer.six==20231228
+
+# pypdf - PDF processing library
+pypdf==4.2.0
+
+# pdfplumber - PDF text extraction wrapper around pdfminer.six
+pdfplumber==0.11.0
