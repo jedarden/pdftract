@@ -9,7 +9,7 @@ struct Profile {
     #[serde(default)]
     profile_fields: BTreeMap<String, ProfileField>,
     #[serde(default)]
-    match_config: MatchConfig,
+    r#match: MatchConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -25,17 +25,29 @@ struct ExtractionConfig {
     #[serde(default)]
     patterns: Vec<String>,
     #[serde(default)]
+    region_hint: Option<String>,
+    #[serde(default)]
+    table_region: Option<String>,
+    #[serde(default)]
+    columnar_regions: Option<String>,
+    #[serde(default)]
+    per_page: Option<bool>,
+    #[serde(default)]
     fallback: serde_yaml::Value,
 }
 
 #[derive(Debug, Deserialize, Default)]
 struct MatchConfig {
     #[serde(default)]
+    any: Vec<MatchClause>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct MatchClause {
+    #[serde(default)]
     text_patterns: Vec<String>,
     #[serde(default)]
-    structural: Vec<String>,
-    #[serde(default)]
-    page_count_hint: Option<String>,
+    structural: Vec<serde_yaml::Value>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -101,28 +113,51 @@ fn generate_profile_readme(profile_name: &str) -> Result<(), Box<dyn std::error:
     readme.push_str("## Match Criteria Summary\n\n");
     readme.push_str("*This section describes the characteristics that cause a document to match this profile. The following signals are considered:*\n\n");
 
-    if let Some(hint) = profile.match_config.page_count_hint {
-        readme.push_str(&format!("- **Page count hint**: {}\n", hint));
+    // Collect all text patterns and structural signals from any clause
+    let mut all_patterns: Vec<&String> = Vec::new();
+    let mut all_structural: Vec<String> = Vec::new();
+
+    for clause in &profile.r#match.any {
+        for pattern in &clause.text_patterns {
+            if !all_patterns.contains(&pattern) {
+                all_patterns.push(pattern);
+            }
+        }
+        for signal in &clause.structural {
+            let signal_str = format!("{:?}", signal);
+            if !all_structural.iter().any(|s| s == &signal_str) {
+                all_structural.push(signal_str);
+            }
+        }
     }
 
-    if !profile.match_config.text_patterns.is_empty() {
+    // Show first few patterns as examples
+    if !all_patterns.is_empty() {
+        let show_count = all_patterns.len().min(3);
         readme.push_str("- **Text patterns**: ");
-        for (i, pattern) in profile.match_config.text_patterns.iter().enumerate() {
+        for (i, pattern) in all_patterns.iter().take(show_count).enumerate() {
             if i > 0 {
                 readme.push_str(", ");
             }
             readme.push_str(&format!("`{}`", pattern));
         }
+        if all_patterns.len() > show_count {
+            readme.push_str(&format!(" ({} more)", all_patterns.len() - show_count));
+        }
         readme.push('\n');
     }
 
-    if !profile.match_config.structural.is_empty() {
+    if !all_structural.is_empty() {
+        let show_count = all_structural.len().min(3);
         readme.push_str("- **Structural signals**: ");
-        for (i, signal) in profile.match_config.structural.iter().enumerate() {
+        for (i, signal) in all_structural.iter().take(show_count).enumerate() {
             if i > 0 {
                 readme.push_str(", ");
             }
             readme.push_str(&format!("`{}`", signal));
+        }
+        if all_structural.len() > show_count {
+            readme.push_str(&format!(" ({} more)", all_structural.len() - show_count));
         }
         readme.push('\n');
     }
@@ -144,7 +179,27 @@ fn generate_profile_readme(profile_name: &str) -> Result<(), Box<dyn std::error:
             "array" => "[...]",
             _ => "N/A",
         };
-        let source = "regex patterns in profile YAML";
+        let mut source_parts = Vec::new();
+        if !field.extraction.patterns.is_empty() {
+            source_parts.push("regex patterns".to_string());
+        }
+        if let Some(ref hint) = field.extraction.region_hint {
+            source_parts.push(format!("region: {}", hint));
+        }
+        if let Some(ref table) = field.extraction.table_region {
+            source_parts.push(format!("table: {}", table));
+        }
+        if let Some(ref cols) = field.extraction.columnar_regions {
+            source_parts.push(format!("columns: {}", cols));
+        }
+        if field.extraction.per_page.unwrap_or(false) {
+            source_parts.push("per-page".to_string());
+        }
+        let source = if source_parts.is_empty() {
+            "profile YAML".to_string()
+        } else {
+            source_parts.join(", ")
+        };
         readme.push_str(&format!(
             "| {} | {} | {} | {} | {} |\n",
             field_name, field.field_type, description, example, source
