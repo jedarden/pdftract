@@ -91,7 +91,7 @@ For each bead:
 3. **Implement** — commits go to the appropriate repo (mostly `jedarden/declarative-config` for CI/k8s work; this repo for in-tree code; sibling repos for SDKs)
 4. **Write a verification note** at `notes/<bead-id>.md` summarizing what was done, which acceptance criteria PASS/WARN/FAIL, with file paths, commit hashes, command outputs
 5. **Commit** with a Conventional Commits message: `<type>(<bead-id-tag>): <summary>` — body cites the bead, lists the artifacts produced
-5a. **Push** via `git push github main` — push immediately after committing so Forgejo reflects the work
+5a. **Push** via `git push forgejo main` — push immediately after committing so Forgejo reflects the work
 6. **Close the bead** via `bf batch --json '[{"op":"close","id":"pdftract-XXX","reason":"<cite note + commits + PASS/WARN/FAIL summary>"}]'`
 7. **Flush** via `bf sync --flush-only`
 
