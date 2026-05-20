@@ -502,24 +502,47 @@ spec:
             memory: 8Gi
 
     # === Quality Matrix ===
-    # Run linting (clippy, fmt), security audit (cargo-audit), dependency review
-    # Filled in by subsequent Phase 0 bead
+    # Run linting (clippy, fmt), security audit (cargo-audit), dependency review,
+    # and MSRV check (build with rust:1.78-slim to detect new-Rust feature usage)
     #
     # CRITICAL: All cargo commands MUST use --locked (or --locked --frozen)
-    # Examples:
-    #   - cargo clippy --locked --all-targets --all-features
-    #   - cargo fmt --check
-    #   - cargo audit --locked (if supported)
     - name: quality-matrix
       activeDeadlineSeconds: 900
+      dag:
+        tasks:
+          - name: clippy-fmt
+            template: clippy-fmt
+          - name: msrv-check
+            template: msrv-check
+          - name: cargo-audit
+            template: cargo-audit
+
+    # === Clippy and Fmt Check ===
+    # Runs clippy with MSRV-aware lints and verifies formatting
+    - name: clippy-fmt
+      activeDeadlineSeconds: 600
       container:
-        image: alpine:3.19
-        command: [sh, -c]
+        image: rust:1.83-bookworm
+        command: [bash, -c]
         args:
           - |
-            # Placeholder: quality matrix
-            echo "Quality matrix - to be implemented by Phase 0 sibling bead"
-            exit 0
+            set -eo pipefail
+
+            echo "=========================================="
+            echo "Clippy and Format Check"
+            echo "=========================================="
+
+            cd /workspace
+            export CARGO_HOME="/cache/cargo/registry"
+            export CARGO_TARGET_DIR="/cache/cargo/target-clippy"
+
+            echo "=== Running clippy with MSRV = 1.78 ==="
+            cargo clippy --locked --all-targets --all-features -- -D warnings
+
+            echo "=== Running fmt check ==="
+            cargo fmt --check
+
+            echo "=== Clippy and fmt checks passed ==="
         volumeMounts:
           - name: workspace
             mountPath: /workspace
@@ -532,6 +555,89 @@ spec:
           limits:
             cpu: 2000m
             memory: 4Gi
+
+    # === MSRV Check ===
+    # Builds with rust:1.78-slim to verify no newer Rust features are used.
+    # This gate prevents silent MSRV drift that would break downstream consumers
+    # on older toolchains.
+    - name: msrv-check
+      activeDeadlineSeconds: 600
+      container:
+        image: rust:1.78-slim
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+
+            echo "=========================================="
+            echo "MSRV Check (Rust 1.78)"
+            echo "=========================================="
+
+            cd /workspace
+            export CARGO_HOME="/cache/cargo/registry"
+            export CARGO_TARGET_DIR="/cache/cargo/target-msrv"
+
+            echo "=== Building with Rust 1.78 (MSRV) ==="
+            rustc --version
+
+            # Build workspace with default features to catch MSRV violations
+            cargo build --workspace --features default --locked
+
+            echo "=== MSRV check passed ==="
+            echo "No Rust 1.79+ features detected"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+
+    # === Cargo Audit ===
+    # Runs cargo-audit to check for security vulnerabilities in dependencies
+    - name: cargo-audit
+      activeDeadlineSeconds: 300
+      container:
+        image: rust:1.83-bookworm
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+
+            echo "=========================================="
+            echo "Security Audit (cargo-audit)"
+            echo "=========================================="
+
+            cd /workspace
+            export CARGO_HOME="/cache/cargo/registry"
+
+            # Install cargo-audit if not present
+            if ! command -v cargo-audit &> /dev/null; then
+              echo "Installing cargo-audit..."
+              cargo install cargo-audit --locked
+            fi
+
+            echo "=== Running cargo audit ==="
+            cargo audit --locked
+
+            echo "=== Security audit passed ==="
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
 
     # === Bench Matrix ===
     # Competitive benchmarks: pdftract vs pdfminer.six, pypdf, pdfplumber
