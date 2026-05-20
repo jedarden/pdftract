@@ -1,0 +1,15 @@
+# Cargo config for pdftract workspace
+# Build aliases used by CI workflows and local development
+
+[alias]
+# CI-compatible aliases
+bench-ci = "bench --features benchmark"
+test-ci = "test --workspace"
+
+# Development conveniences
+b = "build"
+br = "build --release"
+c = "check"
+cr = "check --release"
+t = "test"
+tr = "test --release"
