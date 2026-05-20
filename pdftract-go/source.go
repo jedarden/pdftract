@@ -34,10 +34,43 @@ func (u URLSource) source() []string {
 }
 
 // BytesSource represents in-memory PDF bytes.
-type BytesSource []byte
+// The temporary file created for subprocess consumption is cleaned up after use.
+type BytesSource struct {
+	data    []byte
+	tmpPath string
+}
 
-func (b BytesSource) source() []string {
-	return []string{"--bytes-data", string(b)}
+// MemorySource is a convenience constructor that creates a BytesSource from a byte slice.
+func MemorySource(data []byte) Source {
+	return &BytesSource{data: data}
+}
+
+func (b *BytesSource) source() []string {
+	if b.tmpPath != "" {
+		return []string{b.tmpPath}
+	}
+
+	// Write to a temporary file for subprocess consumption
+	tmpFile, err := os.CreateTemp("", "pdftract-*.pdf")
+	if err != nil {
+		panic(fmt.Sprintf("failed to create temp file for BytesSource: %v", err))
+	}
+	defer tmpFile.Close()
+
+	if _, err := tmpFile.Write(b.data); err != nil {
+		panic(fmt.Sprintf("failed to write data to temp file: %v", err))
+	}
+
+	b.tmpPath = tmpFile.Name()
+	return []string{b.tmpPath}
+}
+
+// cleanup removes the temporary file if it was created.
+func (b *BytesSource) cleanup() {
+	if b.tmpPath != "" && !strings.HasPrefix(b.tmpPath, "--error:") {
+		os.Remove(b.tmpPath)
+		b.tmpPath = ""
+	}
 }
 
 // FileSource is a convenience constructor that creates a PathSource from a string.
@@ -53,10 +86,6 @@ func RemoteSource(url string) Source {
 	return URLSource(url)
 }
 
-// MemorySource is a convenience constructor that creates a BytesSource from a byte slice.
-func MemorySource(data []byte) Source {
-	return BytesSource(data)
-}
 
 // ReadFileSource reads a file and returns a BytesSource.
 func ReadFileSource(path string) (Source, error) {
@@ -64,5 +93,5 @@ func ReadFileSource(path string) (Source, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
-	return BytesSource(data), nil
+	return &BytesSource{data: data}, nil
 }

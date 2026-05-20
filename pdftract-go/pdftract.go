@@ -54,7 +54,7 @@ func (c *Client) Extract(ctx context.Context, source Source, opts *ExtractOption
 	}
 
 	var doc Document
-	if err := c.invokeJSON(ctx, args, &doc); err != nil {
+	if err := c.invokeJSON(ctx, args, &doc, source); err != nil {
 		return nil, err
 	}
 
@@ -70,7 +70,7 @@ func (c *Client) ExtractText(ctx context.Context, source Source, opts *ExtractOp
 		args = append(args, opts.toArgs()...)
 	}
 
-	return c.invokeString(ctx, args)
+	return c.invokeString(ctx, args, source)
 }
 
 // ExtractMarkdown extracts markdown-formatted text from a PDF.
@@ -82,7 +82,7 @@ func (c *Client) ExtractMarkdown(ctx context.Context, source Source, opts *Extra
 		args = append(args, opts.toArgs()...)
 	}
 
-	return c.invokeString(ctx, args)
+	return c.invokeString(ctx, args, source)
 }
 
 // ExtractStream extracts pages from a PDF as a stream.
@@ -107,7 +107,7 @@ func (c *Client) GetMetadata(ctx context.Context, source Source, opts *ExtractOp
 	var result struct {
 		Metadata Metadata `json:"metadata"`
 	}
-	if err := c.invokeJSON(ctx, args, &result); err != nil {
+	if err := c.invokeJSON(ctx, args, &result, source); err != nil {
 		return nil, err
 	}
 
@@ -124,7 +124,7 @@ func (c *Client) Hash(ctx context.Context, source Source, opts *HashOptions) (*F
 	}
 
 	var fp Fingerprint
-	if err := c.invokeJSON(ctx, args, &fp); err != nil {
+	if err := c.invokeJSON(ctx, args, &fp, source); err != nil {
 		return nil, err
 	}
 
@@ -137,7 +137,7 @@ func (c *Client) Classify(ctx context.Context, source Source) (*Classification, 
 	args = append(args, source.source()...)
 
 	var cls Classification
-	if err := c.invokeJSON(ctx, args, &cls); err != nil {
+	if err := c.invokeJSON(ctx, args, &cls, source); err != nil {
 		return nil, err
 	}
 

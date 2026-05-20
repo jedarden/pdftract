@@ -18,7 +18,7 @@ type subprocessResult struct {
 
 // invoke executes the pdftract binary with the given arguments and context.
 // It returns the combined stdout/stderr output and any error that occurred.
-func (c *Client) invoke(ctx context.Context, args []string) ([]byte, error) {
+func (c *Client) invoke(ctx context.Context, args []string, source Source) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
 
 	// Set up cancellation to kill the process
@@ -32,6 +32,11 @@ func (c *Client) invoke(ctx context.Context, args []string) ([]byte, error) {
 			})
 			return nil
 		}
+	}
+
+	// Ensure cleanup of BytesSource temp files
+	if bs, ok := source.(*BytesSource); ok {
+		defer bs.cleanup()
 	}
 
 	output, err := cmd.CombinedOutput()
@@ -54,8 +59,8 @@ func (c *Client) invoke(ctx context.Context, args []string) ([]byte, error) {
 }
 
 // invokeJSON executes the pdftract binary and parses the output as JSON.
-func (c *Client) invokeJSON(ctx context.Context, args []string, result interface{}) error {
-	output, err := c.invoke(ctx, args)
+func (c *Client) invokeJSON(ctx context.Context, args []string, result interface{}, source Source) error {
+	output, err := c.invoke(ctx, args, source)
 	if err != nil {
 		return err
 	}
@@ -72,8 +77,8 @@ func (c *Client) invokeJSON(ctx context.Context, args []string, result interface
 }
 
 // invokeString executes the pdftract binary and returns the output as a string.
-func (c *Client) invokeString(ctx context.Context, args []string) (string, error) {
-	output, err := c.invoke(ctx, args)
+func (c *Client) invokeString(ctx context.Context, args []string, source Source) (string, error) {
+	output, err := c.invoke(ctx, args, source)
 	if err != nil {
 		return "", err
 	}
@@ -81,13 +86,18 @@ func (c *Client) invokeString(ctx context.Context, args []string) (string, error
 }
 
 // invokeStream executes the pdftract binary and streams JSONL output to a channel.
-func (c *Client) invokeStream(ctx context.Context, args []string) (<-chan json.RawMessage, <-chan error) {
+func (c *Client) invokeStream(ctx context.Context, args []string, source Source) (<-chan json.RawMessage, <-chan error) {
 	resultChan := make(chan json.RawMessage, 16)
 	errChan := make(chan error, 1)
 
 	go func() {
 		defer close(resultChan)
 		defer close(errChan)
+
+		// Ensure cleanup of BytesSource temp files
+		if bs, ok := source.(*BytesSource); ok {
+			defer bs.cleanup()
+		}
 
 		cmd := exec.CommandContext(ctx, c.binaryPath, args...)
 
