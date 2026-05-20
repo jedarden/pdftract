@@ -2,7 +2,7 @@
 
 ## Summary
 
-Implemented the `github.com/jedarden/pdftract-go` Go module as a subprocess-based SDK for pdftract.
+Implemented the `github.com/jedarden/pdftract-go` Go module as a subprocess-based SDK for pdftract. The SDK spawns the bundled `pdftract` binary via `os/exec`, parses JSON output via `encoding/json.Decoder`, and exposes all 9 contract methods as Go functions accepting `context.Context` for cancellation.
 
 ## Files Created
 
@@ -51,3 +51,25 @@ go test ./...
 ```
 
 Note: Requires the `pdftract` binary to be installed and available in PATH.
+
+## Bug Fixes (Committed 2026-05-20)
+
+Fixed critical bug where `BytesSource` temporary files were not being cleaned up after subprocess execution:
+- **Commit**: `5781d67` - "fix(pdftract-2pyln): add source parameter to invoke methods for BytesSource cleanup"
+- Added `source Source` parameter to `invoke()`, `invokeJSON()`, `invokeString()`, `invokeStream()`
+- Changed `BytesSource` from `[]byte` type to struct with `data []byte` and `tmpPath string` fields
+- Added `cleanup()` method called via defer in invoke functions
+- Ensures temp files are removed after subprocess execution, preventing file descriptor leaks
+
+## Error Kinds Clarification
+
+The SDK contract defines **7 error kinds** (not 8 as initially stated in the task description):
+1. `CorruptPdfError` (exit code 2)
+2. `EncryptionError` (exit code 3)
+3. `SourceUnreachableError` (exit code 4)
+4. `RemoteFetchInterruptedError` (exit code 5)
+5. `TlsError` (exit code 6)
+6. `ReceiptVerifyError` (exit code 10)
+7. `PdftractError` (base, for any other non-zero exit code)
+
+All 7 error kinds are correctly implemented with `errors.Is` and `errors.As` support.
