@@ -7,6 +7,7 @@
 use crate::parser::object::{ObjRef, PdfObject, intern};
 use crate::parser::xref::XrefResolver;
 use crate::parser::{Diagnostic, Severity};
+use crate::parser::ocg::{parse_oc_properties, OcProperties};
 
 /// Result type for catalog parsing.
 pub type Result<T> = std::result::Result<T, Vec<Diagnostic>>;
@@ -299,23 +300,6 @@ impl PageLabelsTree {
     }
 }
 
-/// Optional Content Properties (stub for OCG bead).
-///
-/// This is a placeholder for the full OCG implementation.
-#[derive(Debug, Clone, Default)]
-pub struct OcProperties {
-    /// Placeholder for future OCG implementation
-    pub _placeholder: (),
-}
-
-impl OcProperties {
-    /// Parse OcProperties from a PdfObject (stub).
-    fn parse(_obj: &PdfObject) -> Self {
-        // Stub: OCG implementation will be in a dedicated bead
-        OcProperties::default()
-    }
-}
-
 /// Document catalog.
 ///
 /// The catalog is the root object of a PDF document, referenced by the
@@ -513,8 +497,10 @@ pub fn parse_catalog(resolver: &XrefResolver, root_ref: ObjRef) -> Result<Catalo
     }
 
     // Extract /OCProperties (optional)
-    if let Some(oc_props_obj) = catalog_dict.get("OCProperties") {
-        catalog.oc_properties = Some(OcProperties::parse(oc_props_obj));
+    if let Some(PdfObject::Ref(oc_props_ref)) = catalog_dict.get("OCProperties") {
+        catalog.oc_properties = Some(parse_oc_properties(resolver, Some(*oc_props_ref)));
+    } else {
+        catalog.oc_properties = Some(parse_oc_properties(resolver, None));
     }
 
     // Extract /OpenAction (optional)

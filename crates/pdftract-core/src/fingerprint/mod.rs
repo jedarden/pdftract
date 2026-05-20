@@ -22,8 +22,11 @@
 //!
 //! The fingerprint is returned as a string: `"pdftract-v1:" + hex(SHA-256)`.
 
+pub mod canonicalize;
+
 use sha2::{Digest, Sha256};
 
+use crate::diagnostics::Diagnostic;
 use crate::parser::lexer::Lexer;
 use crate::parser::object::{ObjRef, PdfDict, PdfObject};
 use crate::parser::xref::XrefResolver;
@@ -404,22 +407,28 @@ fn hash_extgstate(gs_obj: &PdfObject) -> [u8; 32] {
 /// - Each f64 -> i64 via (x * 10000.0).round_ties_even() as i64
 /// - Write 8-byte big-endian per coordinate (32 bytes per box)
 /// - Rotate as 4-byte BE i32
+///
+/// NaN/Inf values are canonicalized to 0 and emit STRUCT_INVALID_GEOMETRY diagnostics.
 fn hash_page_geometry(
     media_box: &[f64; 4],
     crop_box: Option<&[f64; 4]>,
     rotate: i32,
+    diagnostics: &mut Vec<Diagnostic>,
 ) -> [u8; 32] {
     let mut hasher = Sha256::new();
+    let mut diag_opt = Some(diagnostics);
 
     // MediaBox: 4 coordinates, 8 bytes each = 32 bytes
     for coord in media_box {
-        hasher.update(&round_to_fixed_4dp(*coord).to_be_bytes());
+        let canonical = crate::fingerprint::canonicalize::canonicalize_f64(*coord, &mut diag_opt);
+        hasher.update(&canonical.to_be_bytes());
     }
 
     // CropBox: if present, same format
     if let Some(crop) = crop_box {
         for coord in crop {
-            hasher.update(&round_to_fixed_4dp(*coord).to_be_bytes());
+            let canonical = crate::fingerprint::canonicalize::canonicalize_f64(*coord, &mut diag_opt);
+            hasher.update(&canonical.to_be_bytes());
         }
     }
 
@@ -437,6 +446,31 @@ fn round_to_fixed_4dp(x: f64) -> i64 {
     // Scale by 10000 (4 decimal places) and round ties to even
     let scaled = x * 10000.0;
     scaled.round_ties_even() as i64
+}
+
+/// Canonicalize a float to 4 decimal places using banker's rounding.
+///
+/// Returns (canonicalized_value, has_invalid_geometry) where:
+/// - canonicalized_value is the fixed-point representation
+/// - has_invalid_geometry is true if the input was NaN or Inf (canonicalized to 0)
+///
+/// This function is used for geometry canonicalization in fingerprint computation.
+/// Per INV-8, NaN/Inf are handled gracefully without panicking.
+///
+/// # Examples
+/// ```ignore
+/// assert_eq!(canonicalize_f64(0.00005), (0, false));  // 0.5 rounds to even (0)
+/// assert_eq!(canonicalize_f64(0.00015), (2, false));  // 1.5 rounds to even (2)
+/// assert_eq!(canonicalize_f64(f64::NAN), (0, true));  // NaN -> 0, invalid
+/// assert_eq!(canonicalize_f64(f64::INFINITY), (0, true));  // Inf -> 0, invalid
+/// ```
+pub fn canonicalize_f64(x: f64) -> (i64, bool) {
+    if !x.is_finite() {
+        // NaN or Inf: canonicalize to 0 and signal invalid geometry
+        (0, true)
+    } else {
+        (round_to_fixed_4dp(x), false)
+    }
 }
 
 /// Hash the structure tree.

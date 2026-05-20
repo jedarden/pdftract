@@ -1,52 +1,323 @@
 package com.jedarden.pdftract.codegen;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+
+import java.net.URI;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * This file is auto-generated. Do not edit manually.
  */
 
-public interface Source {
-    List<String> toArgs();
+/**
+ * ObjectMapper configured for pdftract JSON output.
+ * Fails on unknown properties to catch schema changes early.
+ */
+public class Json {
+    private static final ObjectMapper mapper = JsonMapper.builder()
+        .findAndCreateModules()
+        .build()
+        .setSerializationInclusion(JsonInclude.Include.NON_NULL);
+
+    public static ObjectMapper mapper() {
+        return mapper;
+    }
 }
 
-public class PathSource implements Source {
-    private final String path;
+/**
+ * Sealed interface for PDF input sources.
+ * Supports file paths, URLs, and raw bytes.
+ */
+public sealed interface Source {
+    /**
+     * Converts this source to CLI arguments.
+     */
+    List<String> toArgs();
 
-    public PathSource(String path) {
-        this.path = path;
+    /**
+     * Creates a Source from a file path.
+     */
+    static PathSource fromPath(Path path) {
+        return new PathSource(path.toString());
     }
 
+    /**
+     * Creates a Source from a file path string.
+     */
+    static PathSource fromPath(String path) {
+        return new PathSource(path);
+    }
+
+    /**
+     * Creates a Source from a URL.
+     */
+    static UrlSource fromUrl(URI url) {
+        return new UrlSource(url.toString());
+    }
+
+    /**
+     * Creates a Source from a URL string.
+     */
+    static UrlSource fromUrl(String url) {
+        return new UrlSource(url);
+    }
+
+    /**
+     * Creates a Source from raw bytes.
+     * Note: Writes bytes to a temporary file.
+     */
+    static BytesSource fromBytes(byte[] bytes) {
+        return new BytesSource(bytes);
+    }
+}
+
+/**
+ * Source from a local file path.
+ */
+public record PathSource(String path) implements Source {
     @Override
     public List<String> toArgs() {
         return List.of(path);
     }
 }
 
-public class URLSource implements Source {
-    private final String url;
-
-    public URLSource(String url) {
-        this.url = url;
-    }
-
+/**
+ * Source from a remote URL.
+ */
+public record UrlSource(String url) implements Source {
     @Override
     public List<String> toArgs() {
         return List.of(url);
     }
 }
 
-public class BytesSource implements Source {
-    private final byte[] bytes;
+/**
+ * Source from raw bytes.
+ * Writes bytes to a temporary file for subprocess execution.
+ */
+public record BytesSource(byte[] bytes) implements Source {
+    @Override
+    public List<String> toArgs() {
+        try {
+            Path tempFile = java.nio.file.Files.createTempFile("pdftract-", ".pdf");
+            java.nio.file.Files.write(tempFile, bytes);
+            tempFile.toFile().deleteOnExit();
+            return List.of(tempFile.toString());
+        } catch (java.io.IOException e) {
+            throw new RuntimeException("Failed to create temp file for bytes source", e);
+        }
+    }
+}
 
-    public BytesSource(byte[] bytes) {
-        this.bytes = bytes;
+// Data records for API responses
+
+public record Document(
+    @JsonProperty("schema_version") String schemaVersion,
+    @JsonProperty("metadata") DocumentMetadata metadata,
+    @JsonProperty("pages") List<Page> pages,
+    @JsonProperty("errors") List<ProcessingError> errors
+) {
+    public Document {
+        metadata = metadata != null ? metadata : new DocumentMetadata(null, false, null, null, null);
+        pages = pages != null ? pages : List.of();
+        errors = errors != null ? errors : List.of();
+    }
+}
+
+public record DocumentMetadata(
+    @JsonProperty("page_count") Integer pageCount,
+    @JsonProperty("is_encrypted") Boolean isEncrypted,
+    @JsonProperty("title") String title,
+    @JsonProperty("author") String author,
+    @JsonProperty("creator") String creator
+) {}
+
+public record Page(
+    @JsonProperty("page_index") int pageIndex,
+    @JsonProperty("width") double width,
+    @JsonProperty("height") double height,
+    @JsonProperty("rotation") int rotation,
+    @JsonProperty("page_type") String pageType,
+    @JsonProperty("spans") List<Span> spans,
+    @JsonProperty("blocks") List<Block> blocks
+) {
+    public Page {
+        spans = spans != null ? spans : List.of();
+        blocks = blocks != null ? blocks : List.of();
+    }
+}
+
+public record Span(
+    @JsonProperty("text") String text,
+    @JsonProperty("font") String font,
+    @JsonProperty("size") Double size,
+    @JsonProperty("bbox") List<Double> bbox
+) {
+    public Span {
+        bbox = bbox != null ? bbox : List.of();
+    }
+}
+
+public record Block(
+    @JsonProperty("kind") String kind,
+    @JsonProperty("bbox") List<Double> bbox,
+    @JsonProperty("lines") List<Line> lines
+) {
+    public Block {
+        bbox = bbox != null ? bbox : List.of();
+        lines = lines != null ? lines : List.of();
+    }
+}
+
+public record Line(
+    @JsonProperty("spans") List<Integer> spans
+) {
+    public Line {
+        spans = spans != null ? spans : List.of();
+    }
+}
+
+public record Match(
+    @JsonProperty("page") int page,
+    @JsonProperty("text") String text,
+    @JsonProperty("bbox") List<Double> bbox
+) {
+    public Match {
+        bbox = bbox != null ? bbox : List.of();
+    }
+}
+
+public record Metadata(
+    @JsonProperty("page_count") int pageCount,
+    @JsonProperty("title") String title,
+    @JsonProperty("author") String author,
+    @JsonProperty("creator") String creator,
+    @JsonProperty("has_xmp") Boolean hasXmp
+) {}
+
+public record Fingerprint(
+    @JsonProperty("hash") String hash,
+    @JsonProperty("fast_hash") String fastHash,
+    @JsonProperty("page_count") int pageCount,
+    @JsonProperty("is_encrypted") Boolean isEncrypted
+) {}
+
+public record Classification(
+    @JsonProperty("category") String category,
+    @JsonProperty("confidence") double confidence,
+    @JsonProperty("labels") List<String> labels
+) {
+    public Classification {
+        labels = labels != null ? labels : List.of();
+    }
+}
+
+public record ProcessingError(
+    @JsonProperty("severity") String severity,
+    @JsonProperty("code") String code,
+    @JsonProperty("message") String message
+) {}
+
+// Option classes
+
+public class ExtractOptions extends BaseOptions {
+    private String ocrLanguage;
+    private Double ocrThreshold;
+
+    public ExtractOptions setOcrLanguage(String language) {
+        this.ocrLanguage = language;
+        return this;
+    }
+
+    public ExtractOptions setOcrThreshold(Double threshold) {
+        this.ocrThreshold = threshold;
+        return this;
+    }
+
+    public String ocrLanguage() {
+        return ocrLanguage;
+    }
+
+    public Double ocrThreshold() {
+        return ocrThreshold;
     }
 
     @Override
     public List<String> toArgs() {
-        // Write to temp file - implementation omitted for brevity
-        throw new UnsupportedOperationException("BytesSource requires temp file handling");
+        List<String> args = super.toArgs();
+        if (ocrLanguage != null) {
+            args.addAll(List.of("--ocr-language", ocrLanguage));
+        }
+        if (ocrThreshold != null) {
+            args.addAll(List.of("--ocr-threshold", ocrThreshold.toString()));
+        }
+        return args;
     }
 }
+
+public class SearchOptions extends BaseOptions {
+    private Integer maxResults;
+    private Boolean wholeWord;
+
+    public SearchOptions setMaxResults(Integer maxResults) {
+        this.maxResults = maxResults;
+        return this;
+    }
+
+    public SearchOptions setWholeWord(Boolean wholeWord) {
+        this.wholeWord = wholeWord;
+        return this;
+    }
+
+    public Integer maxResults() {
+        return maxResults;
+    }
+
+    public Boolean wholeWord() {
+        return wholeWord;
+    }
+
+    @Override
+    public List<String> toArgs() {
+        List<String> args = super.toArgs();
+        if (maxResults != null) {
+            args.addAll(List.of("--max-results", maxResults.toString()));
+        }
+        if (wholeWord != null && wholeWord) {
+            args.add("--whole-word");
+        }
+        return args;
+    }
+}
+
+public class BaseOptions {
+    private String password;
+
+    public BaseOptions setPassword(String password) {
+        this.password = password;
+        return this;
+    }
+
+    public String password() {
+        return password;
+    }
+
+    public List<String> toArgs() {
+        List<String> args = new java.util.ArrayList<>();
+        if (password != null) {
+            args.addAll(List.of("--password", password));
+        }
+        return args;
+    }
+}
+
+public record Receipt(
+    @JsonProperty("fingerprint") String fingerprint,
+    @JsonProperty("signature") String signature
+) {}

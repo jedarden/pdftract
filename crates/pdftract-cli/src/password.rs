@@ -7,7 +7,6 @@
 
 use anyhow::{bail, Context, Result};
 use std::io::{self, Read};
-use std::process::ExitCode;
 
 /// Exit code for usage errors (rejected --password VALUE without opt-in).
 pub const EXIT_USAGE_ERROR: u8 = 64;
@@ -106,7 +105,7 @@ fn read_password_from_stdin() -> Result<Option<secrecy::SecretString>> {
         return Ok(None);
     }
 
-    Ok(Some(secrecy::SecretString::new(password.to_string().into())))
+    Ok(Some(secrecy::SecretString::new(password.to_string())))
 }
 
 #[cfg(test)]

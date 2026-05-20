@@ -1,0 +1,36 @@
+[package]
+name = "pdftract-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+pdftract-core = { path = "../crates/pdftract-core" }
+libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
+
+# Prevent this from interfering with the workspace library
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "lexer"
+path = "fuzz_targets/lexer.rs"
+
+[[bin]]
+name = "object_parser"
+path = "fuzz_targets/object_parser.rs"
+
+[[bin]]
+name = "xref"
+path = "fuzz_targets/xref.rs"
+
+[[bin]]
+name = "stream_decoder"
+path = "fuzz_targets/stream_decoder.rs"
+
+[[bin]]
+name = "cmap_parser"
+path = "fuzz_targets/cmap_parser.rs"

@@ -1,21 +1,25 @@
 [package]
 name = "pdftract-cli"
-version = "0.1.0"
-edition = "2021"
-license = "MIT"
-repository = "https://github.com/jedarden/pdftract"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = true
 
 [[bin]]
 name = "pdftract"
 path = "src/main.rs"
 
+default-run = "pdftract"
+
 [dependencies]
-anyhow = "1.0"
+anyhow = { workspace = true }
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.5", features = ["derive"] }
 regex = "1.10"
 secrecy = { workspace = true }
-serde = { version = "1.0", features = ["derive"] }
+serde = { workspace = true, features = ["derive"] }
 serde_json = "1.0"
 tempfile = "3"
 tera = "1"

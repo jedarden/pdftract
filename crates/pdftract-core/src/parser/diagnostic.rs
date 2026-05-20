@@ -55,12 +55,22 @@ pub enum DiagCode {
     DecompressionFailed,
     /// Decompression bomb limit exceeded
     StreamBomb,
+    /// Unsupported encryption (custom crypt filter, unknown encryption handler)
+    EncryptionUnsupported,
 
     // Page tree codes
     /// Invalid page count
     InvalidPageCount,
     /// Invalid rotate value (not multiple of 90)
     InvalidRotate,
+
+    // Outline codes
+    /// Invalid UTF-16BE encoding in string
+    StructInvalidUtf16,
+    /// Named destination cannot be resolved (requires /Names /Dests lookup)
+    StructUnresolvedDestination,
+    /// Outline action is not a GoTo action (e.g., URI action)
+    StructNonGotoOutline,
 }
 
 /// A diagnostic message emitted during PDF parsing.

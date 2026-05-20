@@ -14,7 +14,9 @@ use crate::parser::object::{ObjRef, PdfObject, PdfDict, intern};
 use crate::parser::xref::XrefResolver;
 use crate::parser::{Diagnostic, Severity};
 use crate::parser::diagnostic::DiagCode;
+use crate::parser::resources::{ResourceDict, merge_resources, extract_resources};
 use std::collections::HashSet;
+use std::sync::Arc;
 
 /// Default MediaBox when none is specified (US Letter: 612 x 792 points).
 ///
@@ -48,8 +50,9 @@ pub struct PageDict {
     pub art_box: Option<[f64; 4]>,
     /// Page rotation in degrees; must be a multiple of 90 (0, 90, 180, 270)
     pub rotate: i32,
-    /// Merged resource dict reference (built by resource inheritance phase)
-    pub resources_ref: Option<ObjRef>,
+    /// Merged resource dict containing all inherited resources
+    /// Wrapped in Arc for memory efficiency when multiple pages share the same resources
+    pub resources: Arc<ResourceDict>,
     /// List of content stream references (in order)
     pub contents: Vec<ObjRef>,
     /// Annotation array references
@@ -73,8 +76,8 @@ struct InheritedAttrs {
     media_box: Option<[f64; 4]>,
     /// Inherited CropBox (optional)
     crop_box: Option<[f64; 4]>,
-    /// Inherited Resources reference (optional)
-    resources_ref: Option<ObjRef>,
+    /// Inherited merged resources (accumulated from all ancestors)
+    resources: Arc<ResourceDict>,
     /// Inherited Rotate value (defaults to 0)
     rotate: i32,
 }
@@ -84,7 +87,7 @@ impl Default for InheritedAttrs {
         InheritedAttrs {
             media_box: None,
             crop_box: None,
-            resources_ref: None,
+            resources: Arc::new(ResourceDict::new()),
             rotate: 0,
         }
     }
@@ -339,9 +342,10 @@ fn merge_inherited_attrs(dict: &PdfDict, inherited: &mut InheritedAttrs, diagnos
         inherited.crop_box = Some(cb);
     }
 
-    // Resources (inheritable)
-    if let Some(PdfObject::Ref(ref_)) = dict.get("Resources") {
-        inherited.resources_ref = Some(*ref_);
+    // Resources (inheritable) - merge with existing resources
+    if let Some(resources_obj) = dict.get("Resources") {
+        let merged = merge_resources(&inherited.resources, resources_obj);
+        inherited.resources = Arc::new(merged);
     }
 
     // Rotate (inheritable)
@@ -378,7 +382,7 @@ fn build_page_dict(page_obj: &PdfObject, inherited: &InheritedAttrs, diagnostics
                 trim_box: None,
                 art_box: None,
                 rotate: inherited.rotate,
-                resources_ref: inherited.resources_ref,
+                resources: Arc::clone(&inherited.resources),
                 contents: Vec::new(),
                 annots: Vec::new(),
                 actual_text: None,
@@ -440,11 +444,13 @@ fn build_page_dict(page_obj: &PdfObject, inherited: &InheritedAttrs, diagnostics
         }
     }
 
-    // Resources: use page's own or inherited
-    let resources_ref = if let Some(PdfObject::Ref(ref_)) = dict.get("Resources") {
-        Some(*ref_)
+    // Resources: merge page's own resources with inherited resources
+    let resources = if let Some(resources_obj) = dict.get("Resources") {
+        let merged = merge_resources(&inherited.resources, resources_obj);
+        Arc::new(merged)
     } else {
-        inherited.resources_ref
+        // No resources on this page - use inherited resources as-is
+        Arc::clone(&inherited.resources)
     };
 
     // Contents: normalize to Vec<ObjRef>
@@ -480,7 +486,7 @@ fn build_page_dict(page_obj: &PdfObject, inherited: &InheritedAttrs, diagnostics
         trim_box,
         art_box,
         rotate,
-        resources_ref,
+        resources,
         contents,
         annots,
         actual_text,
@@ -866,6 +872,189 @@ mod tests {
         // We should get exactly 1 page (the valid one before the cycle)
         assert_eq!(pages_vec.len(), 1);
         assert_eq!(pages_vec[0].media_box, DEFAULT_MEDIABOX);
+    }
+
+    #[test]
+    fn test_resource_inheritance_three_level() {
+        // Critical test: 3-level resource inheritance
+        let resolver = XrefResolver::new();
+
+        // Grandparent /Pages with resources /F1 and /Im1
+        let grandparent_ref = ObjRef::new(1, 0);
+        let mut grandparent_resources = PdfDict::new();
+        let mut gp_fonts = PdfDict::new();
+        gp_fonts.insert(intern("F1"), PdfObject::Ref(ObjRef::new(10, 0)));
+        let mut gp_xobj = PdfDict::new();
+        gp_xobj.insert(intern("Im1"), PdfObject::Ref(ObjRef::new(20, 0)));
+        grandparent_resources.insert(intern("Font"), PdfObject::Dict(Box::new(gp_fonts)));
+        grandparent_resources.insert(intern("XObject"), PdfObject::Dict(Box::new(gp_xobj)));
+
+        let mut grandparent = PdfDict::new();
+        grandparent.insert(intern("Type"), PdfObject::Name(intern("Pages")));
+        grandparent.insert(intern("Kids"), PdfObject::Array(Box::new(vec![])));
+        grandparent.insert(intern("Count"), PdfObject::Integer(2));
+        grandparent.insert(intern("Resources"), PdfObject::Dict(Box::new(grandparent_resources)));
+        grandparent.insert(intern("MediaBox"), make_rect_array(DEFAULT_MEDIABOX));
+
+        // Parent /Pages adds /F2
+        let parent_ref = ObjRef::new(2, 0);
+        let mut parent_resources = PdfDict::new();
+        let mut p_fonts = PdfDict::new();
+        p_fonts.insert(intern("F2"), PdfObject::Ref(ObjRef::new(11, 0)));
+        parent_resources.insert(intern("Font"), PdfObject::Dict(Box::new(p_fonts)));
+
+        let mut parent = PdfDict::new();
+        parent.insert(intern("Type"), PdfObject::Name(intern("Pages")));
+        parent.insert(intern("Kids"), PdfObject::Array(Box::new(vec![])));
+        parent.insert(intern("Count"), PdfObject::Integer(2));
+        parent.insert(intern("Resources"), PdfObject::Dict(Box::new(parent_resources)));
+
+        // Page 1 adds /F3 and overrides /F1
+        let page1_ref = ObjRef::new(3, 0);
+        let mut page1_resources = PdfDict::new();
+        let mut page1_fonts = PdfDict::new();
+        page1_fonts.insert(intern("F1"), PdfObject::Ref(ObjRef::new(15, 0))); // Override
+        page1_fonts.insert(intern("F3"), PdfObject::Ref(ObjRef::new(12, 0))); // New
+        page1_resources.insert(intern("Font"), PdfObject::Dict(Box::new(page1_fonts)));
+
+        let mut page1 = PdfDict::new();
+        page1.insert(intern("Type"), PdfObject::Name(intern("Page")));
+        page1.insert(intern("MediaBox"), make_rect_array(DEFAULT_MEDIABOX));
+        page1.insert(intern("Resources"), PdfObject::Dict(Box::new(page1_resources)));
+
+        // Page 2 has no resources (should inherit all)
+        let page2_ref = ObjRef::new(4, 0);
+        let mut page2 = PdfDict::new();
+        page2.insert(intern("Type"), PdfObject::Name(intern("Page")));
+        page2.insert(intern("MediaBox"), make_rect_array(DEFAULT_MEDIABOX));
+
+        // Wire up the tree: grandparent -> parent -> [page1, page2]
+        let mut grandparent_dict = grandparent.as_dict().unwrap().clone();
+        grandparent_dict.insert(
+            intern("Kids"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(parent_ref)]))
+        );
+
+        let mut parent_dict = parent.as_dict().unwrap().clone();
+        parent_dict.insert(
+            intern("Kids"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(page1_ref), PdfObject::Ref(page2_ref)]))
+        );
+
+        resolver.cache_object(grandparent_ref, PdfObject::Dict(Box::new(grandparent_dict)));
+        resolver.cache_object(parent_ref, PdfObject::Dict(Box::new(parent_dict)));
+        resolver.cache_object(page1_ref, PdfObject::Dict(Box::new(page1)));
+        resolver.cache_object(page2_ref, PdfObject::Dict(Box::new(page2)));
+
+        let result = flatten_page_tree(&resolver, grandparent_ref);
+        assert!(result.is_ok());
+        let pages_vec = result.unwrap();
+        assert_eq!(pages_vec.len(), 2);
+
+        // Page 1: should have F1 (overridden), F2 (inherited), F3 (new), Im1 (inherited)
+        assert_eq!(pages_vec[0].resources.fonts.len(), 3);
+        assert_eq!(pages_vec[0].resources.fonts.get(&intern("F1")), Some(&ObjRef::new(15, 0))); // Overridden
+        assert_eq!(pages_vec[0].resources.fonts.get(&intern("F2")), Some(&ObjRef::new(11, 0))); // Inherited from parent
+        assert_eq!(pages_vec[0].resources.fonts.get(&intern("F3")), Some(&ObjRef::new(12, 0))); // New on page
+        assert_eq!(pages_vec[0].resources.xobjects.len(), 1);
+        assert_eq!(pages_vec[0].resources.xobjects.get(&intern("Im1")), Some(&ObjRef::new(20, 0))); // Inherited from grandparent
+
+        // Page 2: should have all inherited resources (F1, F2, Im1)
+        assert_eq!(pages_vec[1].resources.fonts.len(), 2);
+        assert_eq!(pages_vec[1].resources.fonts.get(&intern("F1")), Some(&ObjRef::new(10, 0))); // From grandparent
+        assert_eq!(pages_vec[1].resources.fonts.get(&intern("F2")), Some(&ObjRef::new(11, 0))); // From parent
+        assert_eq!(pages_vec[1].resources.xobjects.len(), 1);
+        assert_eq!(pages_vec[1].resources.xobjects.get(&intern("Im1")), Some(&ObjRef::new(20, 0))); // From grandparent
+    }
+
+    #[test]
+    fn test_resource_inheritance_page_without_resources() {
+        // Test that a page without /Resources inherits parent's resources
+        let resolver = XrefResolver::new();
+
+        // Parent /Pages with resources
+        let parent_ref = ObjRef::new(1, 0);
+        let mut parent_resources = PdfDict::new();
+        let mut parent_fonts = PdfDict::new();
+        parent_fonts.insert(intern("F1"), PdfObject::Ref(ObjRef::new(10, 0)));
+        parent_resources.insert(intern("Font"), PdfObject::Dict(Box::new(parent_fonts)));
+
+        let mut parent = PdfDict::new();
+        parent.insert(intern("Type"), PdfObject::Name(intern("Pages")));
+        parent.insert(intern("Kids"), PdfObject::Array(Box::new(vec![])));
+        parent.insert(intern("Count"), PdfObject::Integer(1));
+        parent.insert(intern("Resources"), PdfObject::Dict(Box::new(parent_resources)));
+        parent.insert(intern("MediaBox"), make_rect_array(DEFAULT_MEDIABOX));
+
+        // Page without /Resources
+        let page_ref = ObjRef::new(2, 0);
+        let mut page = PdfDict::new();
+        page.insert(intern("Type"), PdfObject::Name(intern("Page")));
+        page.insert(intern("MediaBox"), make_rect_array(DEFAULT_MEDIABOX));
+
+        // Wire up the tree
+        let mut parent_dict = parent.clone();
+        parent_dict.insert(
+            intern("Kids"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(page_ref)]))
+        );
+
+        resolver.cache_object(parent_ref, PdfObject::Dict(Box::new(parent_dict)));
+        resolver.cache_object(page_ref, PdfObject::Dict(Box::new(page)));
+
+        let result = flatten_page_tree(&resolver, parent_ref);
+        assert!(result.is_ok());
+        let pages_vec = result.unwrap();
+        assert_eq!(pages_vec.len(), 1);
+
+        // Page should have inherited F1 from parent
+        assert_eq!(pages_vec[0].resources.fonts.len(), 1);
+        assert_eq!(pages_vec[0].resources.fonts.get(&intern("F1")), Some(&ObjRef::new(10, 0)));
+
+        // Verify Arc pointer sharing: when page has no resources,
+        // it should share the same Arc as the parent (memory efficiency)
+        // We can't test this directly without exposing the parent's resources,
+        // but we can verify the resources are present
+    }
+
+    #[test]
+    fn test_resource_inheritance_empty_root() {
+        // Test that empty /Resources at root propagates correctly
+        let resolver = XrefResolver::new();
+
+        // Root /Pages with empty /Resources
+        let root_ref = ObjRef::new(1, 0);
+        let mut root_resources = PdfDict::new(); // Empty resources dict
+        let mut root = PdfDict::new();
+        root.insert(intern("Type"), PdfObject::Name(intern("Pages")));
+        root.insert(intern("Kids"), PdfObject::Array(Box::new(vec![])));
+        root.insert(intern("Count"), PdfObject::Integer(1));
+        root.insert(intern("Resources"), PdfObject::Dict(Box::new(root_resources)));
+        root.insert(intern("MediaBox"), make_rect_array(DEFAULT_MEDIABOX));
+
+        // Page without /Resources
+        let page_ref = ObjRef::new(2, 0);
+        let mut page = PdfDict::new();
+        page.insert(intern("Type"), PdfObject::Name(intern("Page")));
+        page.insert(intern("MediaBox"), make_rect_array(DEFAULT_MEDIABOX));
+
+        // Wire up the tree
+        let mut root_dict = root.clone();
+        root_dict.insert(
+            intern("Kids"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(page_ref)]))
+        );
+
+        resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
+        resolver.cache_object(page_ref, PdfObject::Dict(Box::new(page)));
+
+        let result = flatten_page_tree(&resolver, root_ref);
+        assert!(result.is_ok());
+        let pages_vec = result.unwrap();
+        assert_eq!(pages_vec.len(), 1);
+
+        // Page should have empty resources
+        assert!(pages_vec[0].resources.is_empty());
     }
 }
 

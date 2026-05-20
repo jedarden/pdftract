@@ -16,7 +16,7 @@ use std::path::Path;
 use flate2::read::ZlibDecoder;
 use secrecy::SecretString;
 
-use crate::parser::diagnostic::{Diagnostic};
+use crate::parser::diagnostic::{Diagnostic, DiagCode};
 use crate::parser::object::{PdfObject, PdfStream};
 
 /// Maximum number of filters allowed in a single stream's pipeline.
@@ -40,6 +40,8 @@ pub enum FilterError {
     UnknownFilter(String),
     /// Invalid filter parameters (wrong type, missing required key)
     InvalidParams(String),
+    /// Unsupported encryption (custom crypt filter, not /Identity)
+    EncryptionUnsupported,
 }
 
 impl std::fmt::Display for FilterError {
@@ -47,6 +49,7 @@ impl std::fmt::Display for FilterError {
         match self {
             FilterError::UnknownFilter(name) => write!(f, "unknown filter: {}", name),
             FilterError::InvalidParams(msg) => write!(f, "invalid filter parameters: {}", msg),
+            FilterError::EncryptionUnsupported => write!(f, "unsupported encryption: custom crypt filter"),
         }
     }
 }
@@ -655,6 +658,101 @@ impl StreamDecoder for ASCIIHexDecoder {
     }
 }
 
+/// Crypt filter (PDF spec 7.4.10).
+///
+/// The Crypt filter controls per-stream decryption in PDFs with V=4 / V=5 encryption.
+/// This implementation:
+/// - /Identity (or missing /Name): pass through unchanged (no-op)
+/// - Custom crypt filter: return FilterError::EncryptionUnsupported
+///
+/// Per PDF spec, the Crypt filter is a marker that indicates whether the stream
+/// should be decrypted with a specific algorithm. The actual decryption happens
+/// in the encryption handler (Phase 1.4), not in this filter. This filter is just
+/// a no-op/reject marker.
+#[derive(Debug, Clone, Copy)]
+pub struct CryptDecoder;
+
+impl CryptDecoder {
+    /// Decode with crypt filter parameter checking.
+    fn decode_with_params(
+        &self,
+        input: &[u8],
+        params: Option<&PdfObject>,
+        doc_counter: &mut u64,
+        max_bytes: u64,
+    ) -> Result<Vec<u8>, FilterError> {
+        // Extract /DecodeParms to check /Name
+        let decode_parms = match params {
+            Some(PdfObject::Dict(d)) => d.as_ref(),
+            Some(_) => {
+                // Invalid /DecodeParms type - treat as missing (default to /Identity)
+                return Self::pass_through(input, doc_counter, max_bytes);
+            }
+            None => {
+                // No /DecodeParms - default to /Identity per spec
+                return Self::pass_through(input, doc_counter, max_bytes);
+            }
+        };
+
+        // Check for /Type /CryptFilterDecodeParms (optional per spec)
+        if let Some(PdfObject::Name(type_name)) = decode_parms.get("/Type") {
+            if type_name.as_ref() != "CryptFilterDecodeParms" {
+                // Wrong type - treat as missing (default to /Identity)
+                return Self::pass_through(input, doc_counter, max_bytes);
+            }
+        }
+
+        // Check /Name parameter
+        let crypt_name = match decode_parms.get("/Name") {
+            Some(PdfObject::Name(n)) => n.as_ref(),
+            Some(_) => {
+                // /Name is not a name object - treat as missing (default to /Identity)
+                return Self::pass_through(input, doc_counter, max_bytes);
+            }
+            None => {
+                // /Name missing - default to /Identity per spec
+                return Self::pass_through(input, doc_counter, max_bytes);
+            }
+        };
+
+        // Check if /Name is /Identity
+        if crypt_name == "Identity" {
+            Self::pass_through(input, doc_counter, max_bytes)
+        } else {
+            // Custom crypt filter - not supported
+            Err(FilterError::EncryptionUnsupported)
+        }
+    }
+
+    /// Pass input through unchanged, enforcing bomb limit.
+    fn pass_through(input: &[u8], doc_counter: &mut u64, max_bytes: u64) -> Result<Vec<u8>, FilterError> {
+        let len = input.len() as u64;
+        *doc_counter += len;
+        if *doc_counter > max_bytes {
+            // Truncate to stay within limit
+            let remaining = max_bytes.saturating_sub(*doc_counter - len);
+            return Ok(input[..remaining.min(len) as usize].to_vec());
+        }
+        Ok(input.to_vec())
+    }
+}
+
+impl StreamDecoder for CryptDecoder {
+    fn decode(
+        &self,
+        input: &[u8],
+        params: Option<&PdfObject>,
+        doc_counter: &mut u64,
+        max_bytes: u64,
+    ) -> Result<Vec<u8>, FilterError> {
+        self.decode_with_params(input, params, doc_counter, max_bytes)
+    }
+
+    fn name(&self) -> &'static str {
+        "Crypt"
+    }
+}
+
 /// Passthrough decoder for filters we don't decode (DCTDecode, JBIG2Decode, etc.).
 ///
 /// Returns the raw bytes unchanged. Used for:
@@ -728,13 +826,13 @@ pub fn get_decoder(name: &str) -> Option<Box<dyn StreamDecoder>> {
         "FlateDecode" => Some(Box::new(FlateDecoder)),
         "ASCII85Decode" => Some(Box::new(ASCII85Decoder)),
         "ASCIIHexDecode" => Some(Box::new(ASCIIHexDecoder)),
+        "Crypt" => Some(Box::new(CryptDecoder)),
         "DCTDecode" => Some(Box::new(PassthroughDecoder::new("DCTDecode"))),
         "JBIG2Decode" => Some(Box::new(PassthroughDecoder::new("JBIG2Decode"))),
         "JPXDecode" => Some(Box::new(PassthroughDecoder::new("JPXDecode"))),
         "CCITTFaxDecode" => Some(Box::new(PassthroughDecoder::new("CCITTFaxDecode"))),
         "LZWDecode" => Some(Box::new(PassthroughDecoder::new("LZWDecode"))), // TODO: implement LZW
         "RunLengthDecode" => Some(Box::new(PassthroughDecoder::new("RunLengthDecode"))), // TODO: implement RunLength
-        "Crypt" => Some(Box::new(PassthroughDecoder::new("Crypt"))), // TODO: handle /Name != Identity
         _ => None,
     }
 }
@@ -1227,6 +1325,19 @@ fn decode_stream_impl(
                             bomb_limit_hit = true;
                         }
                         current_bytes = decoded;
+                    }
+                    Err(FilterError::EncryptionUnsupported) => {
+                        // Crypt filter with custom /Name - emit ENCRYPTION_UNSUPPORTED
+                        // and return empty bytes (stream is undecryptable)
+                        diagnostics.push(Diagnostic::error_with_code(
+                            DiagCode::EncryptionUnsupported,
+                            "1.5",
+                            "Crypt filter with custom /Name parameter is not supported",
+                        ));
+                        return DecodeResult {
+                            bytes: Vec::new(),
+                            diagnostics,
+                        };
                     }
                     Err(_) => {
                         // Hard error - return raw bytes for this filter
@@ -2324,6 +2435,247 @@ mod predictor_tests {
     }
 }
 
+/// Unit tests for Crypt filter functionality.
+#[cfg(test)]
+mod crypt_tests {
+    use super::*;
+    use indexmap::IndexMap;
+
+    /// Test: /Crypt with /Name /Identity passes input through unchanged.
+    ///
+    /// Per acceptance criteria: "/Crypt with /Name /Identity: input passes through unchanged"
+    #[test]
+    fn test_crypt_decode_identity() {
+        let input = b"test data that should pass through";
+        let source = MemorySource::new(input.to_vec());
+
+        let mut decode_parms = IndexMap::new();
+        decode_parms.insert("/Type".into(), PdfObject::Name("CryptFilterDecodeParms".into()));
+        decode_parms.insert("/Name".into(), PdfObject::Name("Identity".into()));
+
+        let mut dict = IndexMap::new();
+        dict.insert("/Filter".into(), PdfObject::Name("Crypt".into()));
+        dict.insert("/DecodeParms".into(), PdfObject::Dict(Box::new(decode_parms)));
+        dict.insert("/Length".into(), PdfObject::Integer(input.len() as i64));
+        let stream = PdfStream::new(dict, 0, Some(input.len() as u64));
+
+        let opts = ExtractionOptions::default();
+        let mut counter = 0;
+        let decoded = decode_stream(&stream, &source, &opts, &mut counter);
+
+        assert_eq!(decoded, input);
+    }
+
+    /// Test: /Crypt with /Name /MyCustom returns EncryptionUnsupported error.
+    ///
+    /// Per acceptance criteria: "/Crypt with /Name /MyCustom: ENCRYPTION_UNSUPPORTED diagnostic;
+    /// FilterError::EncryptionUnsupported returned; orchestrator marks stream as empty"
+    #[test]
+    fn test_crypt_decode_custom_rejected() {
+        let input = b"encrypted data";
+        let source = MemorySource::new(input.to_vec());
+
+        let mut decode_parms = IndexMap::new();
+        decode_parms.insert("/Type".into(), PdfObject::Name("CryptFilterDecodeParms".into()));
+        decode_parms.insert("/Name".into(), PdfObject::Name("MyCustom".into()));
+
+        let mut dict = IndexMap::new();
+        dict.insert("/Filter".into(), PdfObject::Name("Crypt".into()));
+        dict.insert("/DecodeParms".into(), PdfObject::Dict(Box::new(decode_parms)));
+        dict.insert("/Length".into(), PdfObject::Integer(input.len() as i64));
+        let stream = PdfStream::new(dict, 0, Some(input.len() as u64));
+
+        let opts = ExtractionOptions::default();
+        let mut counter = 0;
+        let decoded = decode_stream(&stream, &source, &opts, &mut counter);
+
+        // Stream should be empty when EncryptionUnsupported is returned
+        assert!(decoded.is_empty());
+        assert_eq!(counter, 0); // No bytes counted
+    }
+
+    /// Test: /Crypt with no /DecodeParms defaults to /Identity.
+    ///
+    /// Per acceptance criteria: "/Crypt with no /DecodeParms (missing /Name): treat as /Identity per spec default"
+    #[test]
+    fn test_crypt_decode_no_params() {
+        let input = b"no decode params means identity";
+        let source = MemorySource::new(input.to_vec());
+
+        let mut dict = IndexMap::new();
+        dict.insert("/Filter".into(), PdfObject::Name("Crypt".into()));
+        dict.insert("/Length".into(), PdfObject::Integer(input.len() as i64));
+        let stream = PdfStream::new(dict, 0, Some(input.len() as u64));
+
+        let opts = ExtractionOptions::default();
+        let mut counter = 0;
+        let decoded = decode_stream(&stream, &source, &opts, &mut counter);
+
+        assert_eq!(decoded, input);
+    }
+
+    /// Test: /Crypt with /Name missing defaults to /Identity.
+    ///
+    /// Per acceptance criteria: "/Crypt with no /DecodeParms (missing /Name): treat as /Identity per spec default"
+    #[test]
+    fn test_crypt_decode_missing_name() {
+        let input = b"missing name means identity";
+        let source = MemorySource::new(input.to_vec());
+
+        let mut decode_parms = IndexMap::new();
+        decode_parms.insert("/Type".into(), PdfObject::Name("CryptFilterDecodeParms".into()));
+        // /Name is intentionally missing
+
+        let mut dict = IndexMap::new();
+        dict.insert("/Filter".into(), PdfObject::Name("Crypt".into()));
+        dict.insert("/DecodeParms".into(), PdfObject::Dict(Box::new(decode_parms)));
+        dict.insert("/Length".into(), PdfObject::Integer(input.len() as i64));
+        let stream = PdfStream::new(dict, 0, Some(input.len() as u64));
+
+        let opts = ExtractionOptions::default();
+        let mut counter = 0;
+        let decoded = decode_stream(&stream, &source, &opts, &mut counter);
+
+        assert_eq!(decoded, input);
+    }
+
+    /// Test: /Crypt with /Identity followed by /FlateDecode processes correctly.
+    ///
+    /// Per acceptance criteria: "Fixture test: a PDF with /Filter [/Crypt /FlateDecode] and
+    /// /Identity crypt -> falls through to FlateDecode normally"
+    #[test]
+    fn test_crypt_identity_then_flate() {
+        // "hello" compressed with flate
+        let original = b"hello";
+        let compressed = b"\x78\x9c\xcbH\xcd\xc9\xc9\x07\x00\x06,\x02\x15";
+        let source = MemorySource::new(compressed.to_vec());
+
+        let mut decode_parms = IndexMap::new();
+        decode_parms.insert("/Type".into(), PdfObject::Name("CryptFilterDecodeParms".into()));
+        decode_parms.insert("/Name".into(), PdfObject::Name("Identity".into()));
+
+        let mut dict = IndexMap::new();
+        dict.insert("/Filter".into(), PdfObject::Array(Box::new(vec![
+            PdfObject::Name("Crypt".into()),
+            PdfObject::Name("FlateDecode".into()),
+        ])));
+        dict.insert("/DecodeParms".into(), PdfObject::Array(Box::new(vec![
+            PdfObject::Dict(Box::new(decode_parms)),
+        ])));
+        dict.insert("/Length".into(), PdfObject::Integer(compressed.len() as i64));
+        let stream = PdfStream::new(dict, 0, Some(compressed.len() as u64));
+
+        let opts = ExtractionOptions::default();
+        let mut counter = 0;
+        let decoded = decode_stream(&stream, &source, &opts, &mut counter);
+
+        // Crypt /Identity is a no-op, FlateDecode should decompress
+        assert_eq!(decoded, original);
+    }
+
+    /// Test: Crypt decoder directly with various parameter types.
+    #[test]
+    fn test_crypt_decoder_invalid_params() {
+        let input = b"test data";
+
+        // Invalid /DecodeParms type (not a dict) - should treat as /Identity
+        let mut counter = 0;
+        let result = CryptDecoder.decode(
+            input,
+            Some(&PdfObject::Integer(42)),
+            &mut counter,
+            DEFAULT_MAX_DECOMPRESS_BYTES,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), input);
+
+        // /Name not a Name object - should treat as /Identity
+        let mut decode_parms = IndexMap::new();
+        decode_parms.insert("/Name".into(), PdfObject::Integer(42));
+
+        let mut counter2 = 0;
+        let result2 = CryptDecoder.decode(
+            input,
+            Some(&PdfObject::Dict(Box::new(decode_parms))),
+            &mut counter2,
+            DEFAULT_MAX_DECOMPRESS_BYTES,
+        );
+        assert!(result2.is_ok());
+        assert_eq!(result2.unwrap(), input);
+
+        // Wrong /Type - should treat as /Identity
+        let mut decode_parms3 = IndexMap::new();
+        decode_parms3.insert("/Type".into(), PdfObject::Name("WrongType".into()));
+        decode_parms3.insert("/Name".into(), PdfObject::Name("Identity".into()));
+
+        let mut counter3 = 0;
+        let result3 = CryptDecoder.decode(
+            input,
+            Some(&PdfObject::Dict(Box::new(decode_parms3))),
+            &mut counter3,
+            DEFAULT_MAX_DECOMPRESS_BYTES,
+        );
+        assert!(result3.is_ok());
+        assert_eq!(result3.unwrap(), input);
+    }
+
+    /// Test: Crypt decoder enforces bomb limit.
+    #[test]
+    fn test_crypt_decode_bomb_limit() {
+        let input = b"test data that exceeds limit";
+        let bomb_limit: u64 = 5;
+
+        let mut decode_parms = IndexMap::new();
+        decode_parms.insert("/Name".into(), PdfObject::Name("Identity".into()));
+
+        let mut counter = 0;
+        let result = CryptDecoder.decode(
+            input,
+            Some(&PdfObject::Dict(Box::new(decode_parms))),
+            &mut counter,
+            bomb_limit,
+        );
+
+        assert!(result.is_ok());
+        let decoded = result.unwrap();
+        // Should truncate to bomb limit
+        assert!(decoded.len() <= bomb_limit as usize);
+    }
+
+    /// Test: Crypt decoder name method.
+    #[test]
+    fn test_crypt_decoder_name() {
+        assert_eq!(CryptDecoder.name(), "Crypt");
+    }
+
+    /// Test: Custom crypt filter names are rejected.
+    #[test]
+    fn test_crypt_custom_names_rejected() {
+        let input = b"encrypted data";
+
+        // Test various custom filter names that should all be rejected
+        let custom_names = vec![
+            "V2", "AESV2", "AESV3", "MyCrypt", "Unknown",
+        ];
+
+        for name in custom_names {
+            let mut decode_parms = IndexMap::new();
+            decode_parms.insert("/Name".into(), PdfObject::Name(name.to_string().into()));
+
+            let mut counter = 0;
+            let result = CryptDecoder.decode(
+                input,
+                Some(&PdfObject::Dict(Box::new(decode_parms))),
+                &mut counter,
+                DEFAULT_MAX_DECOMPRESS_BYTES,
+            );
+
+            assert!(matches!(result, Err(FilterError::EncryptionUnsupported)),
+                "Custom filter '{}' should return EncryptionUnsupported", name);
+        }
+    }
+}
+
 /// proptest property tests for FlateDecode.
 ///
 /// Per acceptance criteria: "proptest: random byte sequences fed to
@@ -2383,6 +2735,74 @@ mod proptest_tests {
 
             // This should never panic, even when hitting bomb limit
             let _ = FlateDecoder.decode(&data, None, &mut counter, bomb_limit);
+        }
+
+        /// Random byte sequences with Crypt filter never panic.
+        ///
+        /// Per acceptance criteria: "proptest: random bytes / params combinations never panic"
+        ///
+        /// This test generates random byte sequences and feeds them to
+        /// CryptDecoder. The decoder must never panic, even for invalid
+        /// parameters or data.
+        #[test]
+        fn proptest_crypt_decode_no_panic(data in any::<Vec<u8>>()) {
+            let mut counter = 0;
+            // No params (defaults to /Identity) - should never panic
+            let _ = CryptDecoder.decode(&data, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        }
+
+        /// Random byte sequences with random Crypt filter parameters never panic.
+        ///
+        /// Per acceptance criteria: "proptest: random bytes / params combinations never panic"
+        ///
+        /// This test combines random data with random crypt filter parameters
+        /// to ensure the decoder never panics.
+        #[test]
+        fn proptest_crypt_decode_with_params_no_panic(
+            data in any::<Vec<u8>>(),
+            name_filter in 0u8..4  // 0=None, 1=Identity, 2=Custom, 3=Invalid type
+        ) {
+            let mut decode_parms = indexmap::IndexMap::new();
+            decode_parms.insert("/Type".into(), PdfObject::Name("CryptFilterDecodeParms".into()));
+
+            let params = match name_filter {
+                0 => None,  // No /Name -> defaults to /Identity
+                1 => {
+                    decode_parms.insert("/Name".into(), PdfObject::Name("Identity".into()));
+                    Some(PdfObject::Dict(Box::new(decode_parms)))
+                }
+                2 => {
+                    decode_parms.insert("/Name".into(), PdfObject::Name("CustomCrypt".into()));
+                    Some(PdfObject::Dict(Box::new(decode_parms)))
+                }
+                _ => {
+                    // /Name is not a Name object -> defaults to /Identity
+                    decode_parms.insert("/Name".into(), PdfObject::Integer(42));
+                    Some(PdfObject::Dict(Box::new(decode_parms)))
+                }
+            };
+
+            let mut counter = 0;
+            // This should never panic
+            let _ = CryptDecoder.decode(&data, params.as_ref(), &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        }
+
+        /// Random byte sequences with Crypt filter bomb limits never panic.
+        ///
+        /// This test verifies that hitting the bomb limit doesn't cause
+        /// a panic with the Crypt filter.
+        #[test]
+        fn proptest_crypt_decode_bomb_limit_no_panic(data in any::<Vec<u8>>()) {
+            let mut counter = 0;
+            // Very low bomb limit - most data should trigger it
+            let bomb_limit: u64 = 100;
+
+            let mut decode_parms = indexmap::IndexMap::new();
+            decode_parms.insert("/Name".into(), PdfObject::Name("Identity".into()));
+            let params = Some(PdfObject::Dict(Box::new(decode_parms)));
+
+            // This should never panic, even when hitting bomb limit
+            let _ = CryptDecoder.decode(&data, params.as_ref(), &mut counter, bomb_limit);
         }
     }
 }

@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use secrecy::{Secret, SecretString};
+use secrecy::SecretString;
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -31,14 +31,14 @@ pub fn resolve_token(
             .with_context(|| format!("Failed to read token file: {}", path.display()))?;
         let token = token_content.trim_end().to_string();
         check_token_length(&token);
-        return Ok(Some(Secret::new(token)));
+        return Ok(Some(SecretString::new(token.into())));
     }
 
     // Priority 2: PDFTRACT_MCP_TOKEN env var
     if let Some(token) = env_token {
         if !token.is_empty() {
             check_token_length(&token);
-            return Ok(Some(Secret::new(token)));
+            return Ok(Some(SecretString::new(token.into())));
         }
     }
 
@@ -62,7 +62,7 @@ pub fn resolve_token(
              Recommended: Use --auth-token-file PATH or PDFTRACT_MCP_TOKEN env var."
         );
         check_token_length(&token);
-        return Ok(Some(Secret::new(token)));
+        return Ok(Some(SecretString::new(token.into())));
     }
 
     // No token provided

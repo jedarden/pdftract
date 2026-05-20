@@ -1,0 +1,36 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:base"
+  ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["every weekday"],
+    "automerge": false,
+    "commitMessageAction": "Lockfile maintenance",
+    "commitMessageTopic": "{{{groupName}}}",
+    "labels": ["dependencies", "lockfile-only"]
+  },
+  "cargo": {
+    "lockFileMaintenance": {
+      "commitMessageExtra": "(weekly lockfile refresh)"
+    }
+  },
+  "packageRules": [
+    {
+      "description": "Separate lockfile-only PRs from dependency updates",
+      "matchUpdateTypes": ["lockFileMaintenance", "pin", "digest"],
+      "commitMessagePrefix": "chore(lockfile):",
+      "labels": ["lockfile-only"],
+      "automerge": false
+    },
+    {
+      "description": "Group Rust dependencies by update type",
+      "matchManagers": ["cargo"],
+      "groupName": "Rust dependencies",
+      "separateMinorPatch": true
+    }
+  ],
+  "prConcurrentLimit": 2,
+  "prHourlyLimit": 1
+}

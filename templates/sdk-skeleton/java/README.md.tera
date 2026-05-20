@@ -12,62 +12,187 @@ Java SDK for pdftract - PDF extraction and conformance testing.
 </dependency>
 ```
 
+## Requirements
+
+- **Java 17 or higher** - The SDK uses records, sealed interfaces, and switch expressions
+- **pdftract binary** - Install from [releases](https://github.com/jedarden/pdftract/releases/tag/v{{ version }})
+
 ## Usage
 
-### Basic extract
+### Java - Basic extract
 
 ```java
 import com.jedarden.pdftract.Pdftract;
-import com.jedarden.pdftract.codegen.PathSource;
+import com.jedarden.pdftract.codegen.Source;
+import com.jedarden.pdftract.codegen.Document;
 
 try (Pdftract client = new Pdftract()) {
-    Document doc = client.extract(new PathSource("document.pdf"));
+    Document doc = client.extract(Source.fromPath("document.pdf"), null);
     System.out.println("Pages: " + doc.pages().size());
 }
 ```
 
-### Extract with OCR
+### Java - Extract with options
 
 ```java
-ExtractOptions options = new ExtractOptions();
-options.setOcrLanguage("eng");
-options.setOcrThreshold(0.7);
+import com.jedarden.pdftract.codegen.ExtractOptions;
 
-Document doc = client.extract(new PathSource("scanned.pdf"), options);
+ExtractOptions options = new ExtractOptions()
+    .setOcrLanguage("eng")
+    .setOcrThreshold(0.7)
+    .setPassword("secret");
+
+Document doc = client.extract(Source.fromPath("scanned.pdf"), options);
 ```
 
-### Search
+### Java - Search
 
 ```java
-import java.util.concurrent.Flow;
+import java.util.stream.Stream;
+import com.jedarden.pdftract.codegen.Match;
 
-client.search(new PathSource("document.pdf"), "invoice", null)
-    .subscribe(match -> {
+try (Stream<Match> matches = client.search(
+        Source.fromPath("document.pdf"),
+        "invoice",
+        null)) {
+    matches.forEach(match -> {
         System.out.println("Found on page " + match.page() + ": " + match.text());
     });
+}
 ```
 
-### Stream extraction
+### Java - Stream extraction
 
 ```java
-client.extractStream(new PathSource("large.pdf"), null)
-    .subscribe(page -> {
-        System.out.println("Page " + page.page() + ": " + page.blocks().size() + " blocks");
+import java.util.stream.Stream;
+import com.jedarden.pdftract.codegen.Page;
+
+try (Stream<Page> pages = client.extractStream(
+        Source.fromPath("large.pdf"),
+        null)) {
+    pages.forEach(page -> {
+        System.out.println("Page " + page.pageIndex() + ": " + page.blocks().size() + " blocks");
     });
+}
 ```
 
-## Binary version compatibility
+### Kotlin - Idiomatic syntax
 
-This SDK requires pdftract {{ version }}. Download from:
-https://github.com/jedarden/pdftract/releases/tag/v{{ version }}
+The same JAR includes Kotlin extension functions for idiomatic usage:
+
+```kotlin
+import com.jedarden.pdftract.*
+import com.jedarden.pdftract.codegen.extractOptions
+
+pdftract {
+    val doc = extract(Paths.get("document.pdf")) {
+        ocrLanguage = "eng"
+        ocrThreshold = 0.7
+    }
+    println("Pages: ${doc.pages.size}")
+}
+```
+
+### Kotlin - Search with Sequence
+
+```kotlin
+pdftract {
+    search(Paths.get("document.pdf"), "invoice") {
+        maxResults = 10
+        wholeWord = true
+    }.forEach { match ->
+        println("Found on page ${match.page}: ${match.text}")
+    }
+}
+```
+
+## Error handling
+
+All SDK methods throw `PdftractException` or its subclasses:
+
+```java
+try (Pdftract client = new Pdftract()) {
+    Document doc = client.extract(source, null);
+} catch (CorruptPdfException e) {
+    // PDF is corrupt (exit code 2)
+    System.err.println("Corrupt PDF: " + e.getMessage());
+} catch (EncryptionException e) {
+    // PDF is encrypted (exit code 3)
+    System.err.println("Encryption error: " + e.getMessage());
+} catch (SourceUnreachableException e) {
+    // File or URL unreadable (exit code 4)
+    System.err.println("Source unreachable: " + e.getMessage());
+} catch (PdftractException e) {
+    // Other errors
+    System.err.println("Error (exit code " + e.getExitCode() + "): " + e.getMessage());
+}
+```
+
+## Exception mapping
+
+| Exit code | Exception | Description |
+|-----------|-----------|-------------|
+| 0 | Success | No error |
+| 2 | CorruptPdfException | PDF is corrupt or invalid |
+| 3 | EncryptionException | PDF encrypted, password missing/wrong |
+| 4 | SourceUnreachableException | File or URL unreadable |
+| 5 | RemoteFetchInterruptedException | Network interrupted during fetch |
+| 6 | TlsException | TLS certificate validation failed |
+| 10 | ReceiptVerifyException | Receipt verification failed |
+
+## Source types
+
+```java
+// From file path
+Source.fromPath(Paths.get("document.pdf"));
+Source.fromPath("document.pdf");
+
+// From URL
+Source.fromUrl(URI.create("https://example.com/doc.pdf"));
+Source.fromUrl("https://example.com/doc.pdf");
+
+// From bytes
+Source.fromBytes(Files.readAllBytes(Paths.get("document.pdf")));
+```
+
+## Binary discovery
+
+The SDK looks for the `pdftract` binary on your PATH. To use a custom path:
+
+```java
+try (Pdftract client = new Pdftract("/custom/path/to/pdftract")) {
+    // ...
+}
+```
 
 ## Troubleshooting
 
 ### Binary not found
-Ensure `pdftract` is on your PATH. The SDK probes PATH for the executable.
+
+Ensure `pdftract` is on your PATH. Verify with:
+
+```bash
+pdftract --version
+```
 
 ### Version mismatch
-The SDK will refuse to invoke mismatched binary versions. Install the correct version.
+
+The SDK expects pdftract {{ version }}. Install the matching version from releases.
 
 ### Network failure
+
 For remote URLs, check your network connection and TLS certificate chain.
+
+### AutoCloseable
+
+Always use try-with-resources or call `close()` to ensure clean subprocess termination:
+
+```java
+try (Pdftract client = new Pdftract()) {
+    // work with client
+} // automatically calls close()
+```
+
+## License
+
+MIT

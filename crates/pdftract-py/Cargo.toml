@@ -1,0 +1,18 @@
+[package]
+name = "pdftract-py"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "pdftract"
+crate-type = ["cdylib"]
+
+[dependencies]
+pdftract-core = { path = "../pdftract-core" }
+pyo3 = { version = "0.20", features = ["extension-module"] }
+
+[features]
+default = ["pyo3/extension-module"]
