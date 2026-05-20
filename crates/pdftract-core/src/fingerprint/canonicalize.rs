@@ -402,7 +402,7 @@ mod tests {
     }
 
     #[test]
-    fn test_canonicalize_f64_banker's_rounding() {
+    fn test_canonicalize_f64_bankers_rounding() {
         let mut diags = None;
 
         // Banker's rounding: ties to even
