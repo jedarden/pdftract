@@ -1079,32 +1079,156 @@ spec:
 
     # === Publish If Tag ===
     # On milestone tags, upload binaries to GitHub Releases
-    # Filled in by subsequent Phase 0 bead
     #
-    # CRITICAL: All cargo commands MUST use --locked (or --locked --frozen)
-    # The build step already uses --locked, so artifacts are reproducible.
-    # This step only uploads pre-built binaries to GitHub Releases.
+    # This step activates only when the workflow's ref parameter is a version tag
+    # matching v*.*.* (e.g., v0.1.0, v1.2.3). Pre-release tags (v0.1.0-rc1) are
+    # uploaded with the --prerelease flag.
+    #
+    # The step:
+    # 1. Downloads all five build artifacts from build-matrix
+    # 2. Generates SHA256SUMS checksums
+    # 3. Extracts release notes from CHANGELOG.md
+    # 4. Creates or updates the GitHub Release with all assets
+    #
+    # Uses Chainguard's minimal gh CLI image with jq for JSON processing.
+    #
+    # CRITICAL: Uses --clobber flag for idempotency - re-running the workflow
+    # on the same tag overwrites assets rather than failing.
     - name: publish-if-tag
+      inputs:
+        artifacts:
+          - name: pdftract-linux-x86_64-musl
+            from: "{{tasks.build-matrix.tasks.build-linux-x86_64-musl.outputs.artifacts.pdftract-binary}}"
+            path: /artifacts/pdftract-x86_64-unknown-linux-musl
+          - name: pdftract-linux-aarch64-musl
+            from: "{{tasks.build-matrix.tasks.build-linux-aarch64-musl.outputs.artifacts.pdftract-binary}}"
+            path: /artifacts/pdftract-aarch64-unknown-linux-musl
+          - name: pdftract-darwin-x86_64
+            from: "{{tasks.build-matrix.tasks.build-darwin-x86_64.outputs.artifacts.pdftract-binary}}"
+            path: /artifacts/pdftract-x86_64-apple-darwin
+          - name: pdftract-darwin-aarch64
+            from: "{{tasks.build-matrix.tasks.build-darwin-aarch64.outputs.artifacts.pdftract-binary}}"
+            path: /artifacts/pdftract-aarch64-apple-darwin
+          - name: pdftract-windows-x86_64-gnu
+            from: "{{tasks.build-matrix.tasks.build-windows-x86_64-gnu.outputs.artifacts.pdftract-binary}}"
+            path: /artifacts/pdftract-x86_64-pc-windows-gnu.exe
       activeDeadlineSeconds: 600
       container:
-        image: alpine:3.19
-        command: [sh, -c]
+        image: cgr.dev/chainguard/gh:latest
+        command: [bash, -c]
         args:
           - |
-            # Placeholder: publish step
-            echo "Publish step - to be implemented by Phase 0 sibling bead"
-            exit 0
+            set -eo pipefail
+
+            echo "=========================================="
+            echo "Publishing GitHub Release"
+            echo "=========================================="
+
+            REF="{{workflow.parameters.ref}}"
+            TAG="${REF#refs/tags/}"
+            REPO="{{workflow.parameters.repo-url%.git}}"
+            ARTIFACTS_DIR="/artifacts"
+            RELEASE_NOTES_FILE="/tmp/release-notes.md"
+            SHA256SUMS_FILE="/tmp/SHA256SUMS"
+
+            echo "Tag: $TAG"
+            echo "Repository: $REPO"
+
+            # Verify all artifacts are present
+            echo "=== Verifying build artifacts ==="
+            EXPECTED_ARTIFACTS=(
+              "pdftract-x86_64-unknown-linux-musl"
+              "pdftract-aarch64-unknown-linux-musl"
+              "pdftract-x86_64-apple-darwin"
+              "pdftract-aarch64-apple-darwin"
+              "pdftract-x86_64-pc-windows-gnu.exe"
+            )
+
+            MISSING=0
+            for artifact in "${EXPECTED_ARTIFACTS[@]}"; do
+              if [ ! -f "$ARTIFACTS_DIR/$artifact" ]; then
+                echo "ERROR: Missing artifact: $artifact" >&2
+                MISSING=$((MISSING + 1))
+              else
+                echo "  Found: $artifact"
+              fi
+            done
+
+            if [ "$MISSING" -gt 0 ]; then
+              echo "ERROR: $MISSING artifacts missing, cannot publish release" >&2
+              exit 1
+            fi
+
+            # Generate SHA256SUMS
+            echo "=== Generating SHA256SUMS ==="
+            cd "$ARTIFACTS_DIR"
+            for artifact in "${EXPECTED_ARTIFACTS[@]}"; do
+              sha256sum "$artifact" >> "$SHA256SUMS_FILE"
+            done
+            cat "$SHA256SUMS_FILE"
+
+            # Extract release notes from CHANGELOG
+            echo "=== Extracting release notes ==="
+            if [ -f "/workspace/tools/extract-release-notes.sh" ]; then
+              /workspace/tools/extract-release-notes.sh "$TAG" "/workspace/CHANGELOG.md" > "$RELEASE_NOTES_FILE"
+            else
+              # Fallback if script not found
+              cat > "$RELEASE_NOTES_FILE" <<EOF
+              ## Release $TAG
+
+              See [PR history](https://github.com/jedarden/pdftract/commits/$TAG) for detailed changes.
+              EOF
+            fi
+            echo "Release notes:"
+            cat "$RELEASE_NOTES_FILE"
+
+            # Detect pre-release tags (e.g., v0.1.0-rc1, v0.1.0-alpha.1)
+            PRERELEASE_FLAG=""
+            if [[ "$TAG" =~ -[a-zA-Z] ]]; then
+              PRERELEASE_FLAG="--prerelease"
+              echo "Pre-release tag detected, will mark as pre-release"
+            fi
+
+            # Configure git for gh auth
+            git config --global credential.helper store
+            echo "https://x-access-token:${GH_TOKEN}@github.com" > ~/.git-credentials
+
+            # Create or update release
+            echo "=== Creating/updating GitHub release ==="
+            if gh release view "$TAG" --repo "$REPO" &>/dev/null; then
+              echo "Release $TAG already exists, updating assets"
+              gh release upload "$TAG" "$SHA256SUMS_FILE" ${EXPECTED_ARTIFACTS[@]/#/$ARTIFACTS_DIR\/} --repo "$REPO" --clobber
+            else
+              echo "Creating new release $TAG"
+              gh release create "$TAG" \
+                --repo "$REPO" \
+                --title "$TAG" \
+                --notes-file "$RELEASE_NOTES_FILE" \
+                $PRERELEASE_FLAG
+
+              # Upload assets to the newly created release
+              echo "=== Uploading release assets ==="
+              gh release upload "$TAG" "$SHA256SUMS_FILE" ${EXPECTED_ARTIFACTS[@]/#/$ARTIFACTS_DIR\/} --repo "$REPO"
+            fi
+
+            # Verify release
+            echo "=== Verifying release ==="
+            gh release view "$TAG" --repo "$REPO"
+
+            echo "=========================================="
+            echo "Release published successfully"
+            echo "URL: https://github.com/jedarden/pdftract/releases/tag/$TAG"
+            echo "=========================================="
         env:
           - name: GH_TOKEN
             valueFrom:
               secretKeyRef:
-                name: github-webhook-secret
-                key: token
+                name: github-pdftract-release
+                key: GH_TOKEN
+                optional: true
         volumeMounts:
           - name: workspace
             mountPath: /workspace
-          - name: cargo-cache
-            mountPath: /cache/cargo
         resources:
           requests:
             cpu: 500m
