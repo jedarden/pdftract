@@ -61,5 +61,6 @@ The following are deferred to future Phase 0 beads as noted in the workflow temp
 
 ## Git Commits
 
-1. `1711dc3` - `chore(pdftract-49f8): commit updated Cargo.lock` (pdftract repo)
-2. Pending - Argo workflow changes and documentation (declarative-config repo)
+1. `b2301e2` - `chore(pdftract-49f8): commit updated Cargo.lock` (pdftract repo)
+2. `9aa26a4` - `docs(pdftract-49f8): establish Cargo.lock policy and documentation` (pdftract repo)
+3. Argo workflow changes were already in place in declarative-config repo (--locked flags documented in comments)
