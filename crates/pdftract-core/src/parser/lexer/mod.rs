@@ -2009,4 +2009,88 @@ mod tests {
             }
         });
     }
+
+    // Acceptance criteria tests for pdftract-5upi
+
+    #[test]
+    fn array_with_integers() {
+        // Acceptance: [1 2 3] -> ArrayStart, Integer(1), Integer(2), Integer(3), ArrayEnd, Eof
+        let mut lexer = Lexer::new(b"[1 2 3]");
+        assert_eq!(lexer.next_token(), Some(Token::ArrayStart));
+        assert_eq!(lexer.next_token(), Some(Token::Integer(1)));
+        assert_eq!(lexer.next_token(), Some(Token::Integer(2)));
+        assert_eq!(lexer.next_token(), Some(Token::Integer(3)));
+        assert_eq!(lexer.next_token(), Some(Token::ArrayEnd));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn dict_with_name_and_integer() {
+        // Acceptance: << /A 1 >> -> DictStart, Name(b"A"), Integer(1), DictEnd, Eof
+        let mut lexer = Lexer::new(b"<< /A 1 >>");
+        assert_eq!(lexer.next_token(), Some(Token::DictStart));
+        assert_eq!(lexer.next_token(), Some(Token::Name(b"A".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Integer(1)));
+        assert_eq!(lexer.next_token(), Some(Token::DictEnd));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn indirect_object_header_and_null() {
+        // Acceptance: 12 0 obj null endobj -> Integer(12), Integer(0), Obj, Null, EndObj, Eof
+        let mut lexer = Lexer::new(b"12 0 obj null endobj");
+        assert_eq!(lexer.next_token(), Some(Token::Integer(12)));
+        assert_eq!(lexer.next_token(), Some(Token::Integer(0)));
+        assert_eq!(lexer.next_token(), Some(Token::Obj));
+        assert_eq!(lexer.next_token(), Some(Token::Null));
+        assert_eq!(lexer.next_token(), Some(Token::EndObj));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn indirect_reference_pattern() {
+        // Acceptance: 5 0 R -> Integer(5), Integer(0), IndirectRef, Eof
+        let mut lexer = Lexer::new(b"5 0 R");
+        assert_eq!(lexer.next_token(), Some(Token::Integer(5)));
+        assert_eq!(lexer.next_token(), Some(Token::Integer(0)));
+        assert_eq!(lexer.next_token(), Some(Token::IndirectRef));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn bool_and_null_sequence() {
+        // Acceptance: true false null -> Bool(true), Bool(false), Null, Eof
+        let mut lexer = Lexer::new(b"true false null");
+        assert_eq!(lexer.next_token(), Some(Token::Bool(true)));
+        assert_eq!(lexer.next_token(), Some(Token::Bool(false)));
+        assert_eq!(lexer.next_token(), Some(Token::Null));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn proptest_random_bytes_never_panics() {
+        use proptest::prelude::*;
+
+        // Generate random byte sequences and verify they never panic
+        let test_strategy = prop::collection::vec(prop::num::u8::ANY, 0..1000);
+
+        proptest!(|(bytes in test_strategy)| {
+            // This should never panic
+            let mut lexer = Lexer::new(&bytes);
+
+            // Consume all tokens until Eof
+            let mut token_count = 0;
+            let max_tokens = 10000; // Safety limit to prevent infinite loops
+
+            while token_count < max_tokens {
+                match lexer.next_token() {
+                    Some(Token::Eof) | None => break,
+                    Some(_) => token_count += 1,
+                }
+            }
+
+            // Should always terminate with Eof
+            prop_assert!(token_count < max_tokens, "Token stream did not terminate");
+        });
+    }
 }
