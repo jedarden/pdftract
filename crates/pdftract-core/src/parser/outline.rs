@@ -803,7 +803,9 @@ pub fn parse_outlines(
 mod tests {
     use super::*;
     use crate::parser::object::intern;
+    use crate::parser::resources::ResourceDict;
     use indexmap::IndexMap;
+    use std::sync::Arc;
 
     fn make_test_pages() -> Vec<PageDict> {
         vec![
