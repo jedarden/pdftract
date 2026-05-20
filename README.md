@@ -1,5 +1,7 @@
 # pdftract
 
+[![MSRV](https://img.shields.io/badge/MSRV-1.78-orange)](https://github.com/rust-lang/rust/releases/tag/1.78.0)
+
 A PDF text extraction library that gets the hard parts right.
 
 ## What it does

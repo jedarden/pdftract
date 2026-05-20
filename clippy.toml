@@ -2,6 +2,10 @@
 #
 # This file configures clippy lints for the pdftract workspace.
 
+# Minimum Supported Rust Version
+# Enables MSRV-aware lints that warn about using APIs newer than our MSRV
+msrv = "1.78"
+
 # Warn on suspicious patterns that may indicate secret leakage
 warn-on-all-wildcard-imports = true
 

@@ -2,6 +2,36 @@
 
 Thank you for your interest in contributing to pdftract! This document covers the essential workflows for contributors.
 
+## Minimum Supported Rust Version (MSRV)
+
+The **Minimum Supported Rust Version (MSRV)** for pdftract is **1.78**. This is the oldest Rust version that can successfully build the project. The MSRV is declared in `Cargo.toml` via the `rust-version` field and enforced in CI.
+
+### MSRV Policy
+
+- **MSRV is 1.78** for the public crates (`pdftract-core`, `pdftract-cli`)
+- **Bumping MSRV is a MINOR version event** — it requires at least one release of warning in the changelog
+- **Never bump MSRV in a PATCH release** — this breaks downstream consumers without notice
+- **CI enforces MSRV** — the `msrv-check` step builds with `rust:1.78-slim` and fails if newer Rust features are used
+
+### When bumping MSRV
+
+If you need to use a Rust feature newer than 1.78:
+
+1. **Open an issue or ADR** documenting the required feature and why it's necessary
+2. **Update all locations**:
+   - Root `Cargo.toml`: `[workspace.package] rust-version`
+   - CI workflow: `rust:` image tag in the `msrv-check` step
+   - README: MSRV badge
+   - `clippy.toml`: `msrv` setting
+3. **Add a CHANGELOG entry** announcing the bump with at least one release of warning
+4. **Wait for the next MINOR release** — never include in a PATCH
+
+### Code review guidelines
+
+- **New dependencies** whose declared MSRV exceeds 1.78 are rejected at code-review time
+- The `msrv-check` CI step catches most MSRV violations automatically
+- Reviewers should verify that new code doesn't use Rust 1.79+ features (e.g., `core::error::Error` in stable, `let-else`, certain async-fn-in-trait features)
+
 ## Lockfile Policy
 
 pdftract uses a workspace-level `Cargo.lock` file that is **checked into version control**. This is intentional: release reproducibility requires that every build from the same commit produces byte-identical artifacts. All CI steps run with `--locked --frozen` to enforce this.

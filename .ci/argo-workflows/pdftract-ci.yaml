@@ -86,6 +86,12 @@ spec:
       - name: pr-number
         value: ""
         description: "Pull request number for posting benchmark comments (empty skips commenting)"
+      - name: proptest-seed
+        value: ""
+        description: "Proptest seed for reproducibility (empty = auto-generate)"
+      - name: proptest-cases
+        value: "10000"
+        description: "Number of proptest cases per module (default: 10000)"
 
   volumeClaimTemplates:
     - metadata:
@@ -424,23 +430,64 @@ spec:
           echo "All binaries available as artifacts"
 
     # === Test Matrix ===
-    # Run cargo test across feature combinations
-    # - default features on x86_64-unknown-linux-musl
-    # - all features on x86_64-unknown-linux-gnu (with OCR system libs)
-    # Filled in by subsequent Phase 0 bead
+    # Run cargo test across feature combinations and proptest
+    # - default features unit tests
+    # - all features unit tests
+    # - proptest property tests (10,000 cases per module)
     #
     # CRITICAL: All cargo commands MUST use --locked (or --locked --frozen)
-    # Example: cargo test --locked --all-features
     - name: test-matrix
-      activeDeadlineSeconds: 1800
+      activeDeadlineSeconds: 3600
       container:
-        image: alpine:3.19
-        command: [sh, -c]
+        image: rust:1.83-bookworm
+        command: [bash, -c]
         args:
           - |
-            # Placeholder: test matrix
-            echo "Test matrix - to be implemented by Phase 0 sibling bead"
-            exit 0
+            set -eo pipefail
+
+            echo "=========================================="
+            echo "Test Matrix"
+            echo "=========================================="
+
+            cd /workspace
+            export CARGO_HOME="/cache/cargo/registry"
+            export CARGO_TARGET_DIR="/cache/cargo/target-test"
+
+            # Set proptest seed for reproducibility
+            SEED="{{workflow.parameters.proptest-seed}}"
+            if [ -z "$SEED" ]; then
+              SEED=$(date +%s%N | sha256sum | head -c 16)
+              echo "Generated proptest seed: $SEED"
+            else
+              echo "Using provided proptest seed: $SEED"
+            fi
+            export PROPTEST_SEED="$SEED"
+
+            # Set proptest case count
+            CASES="{{workflow.parameters.proptest-cases}}"
+            echo "Proptest cases per module: $CASES"
+            export PROPTEST_CASES="$CASES"
+
+            echo "=== Running unit tests (default features) ==="
+            cargo test --locked --lib --bins
+
+            echo "=== Running unit tests (all features) ==="
+            cargo test --locked --all-features --lib --bins
+
+            echo "=== Running property tests (proptest) ==="
+            echo "Seed: $PROPTEST_SEED | Cases: $PROPTEST_CASES"
+            cargo nextest run --features proptest --proptest --profile=ci-proptest || {
+              EXIT_CODE=$?
+              if [ $EXIT_CODE -ne 0 ]; then
+                echo "ERROR: Property tests failed!"
+                echo "Check proptest-regressions/ for new minimal counterexamples"
+                exit $EXIT_CODE
+              fi
+            }
+
+            echo "=== All tests passed ==="
+            echo "Unit tests: PASS"
+            echo "Property tests: PASS ($CASES cases per module)"
         volumeMounts:
           - name: workspace
             mountPath: /workspace
