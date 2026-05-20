@@ -413,21 +413,20 @@ fn hash_page_geometry(
     media_box: &[f64; 4],
     crop_box: Option<&[f64; 4]>,
     rotate: i32,
-    diagnostics: &mut Vec<Diagnostic>,
 ) -> [u8; 32] {
     let mut hasher = Sha256::new();
-    let mut diag_opt = Some(diagnostics);
+    let mut diagnostics: Option<Vec<Diagnostic>> = None;
 
     // MediaBox: 4 coordinates, 8 bytes each = 32 bytes
     for coord in media_box {
-        let canonical = crate::fingerprint::canonicalize::canonicalize_f64(*coord, &mut diag_opt);
+        let canonical = crate::fingerprint::canonicalize::canonicalize_f64(*coord, &mut diagnostics);
         hasher.update(&canonical.to_be_bytes());
     }
 
     // CropBox: if present, same format
     if let Some(crop) = crop_box {
         for coord in crop {
-            let canonical = crate::fingerprint::canonicalize::canonicalize_f64(*coord, &mut diag_opt);
+            let canonical = crate::fingerprint::canonicalize::canonicalize_f64(*coord, &mut diagnostics);
             hasher.update(&canonical.to_be_bytes());
         }
     }
