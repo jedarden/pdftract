@@ -209,6 +209,9 @@ spec:
     # === Setup Step ===
     # Clones repo, fetches dependencies, warms cargo cache
     # Filled in by subsequent Phase 0 bead
+    #
+    # CRITICAL: All cargo commands in this workflow MUST use --locked (or --locked --frozen)
+    # to enforce the workspace Cargo.lock policy. See CONTRIBUTING.md for details.
     - name: setup
       activeDeadlineSeconds: 600
       container:
@@ -425,6 +428,9 @@ spec:
     # - default features on x86_64-unknown-linux-musl
     # - all features on x86_64-unknown-linux-gnu (with OCR system libs)
     # Filled in by subsequent Phase 0 bead
+    #
+    # CRITICAL: All cargo commands MUST use --locked (or --locked --frozen)
+    # Example: cargo test --locked --all-features
     - name: test-matrix
       activeDeadlineSeconds: 1800
       container:
@@ -451,6 +457,12 @@ spec:
     # === Quality Matrix ===
     # Run linting (clippy, fmt), security audit (cargo-audit), dependency review
     # Filled in by subsequent Phase 0 bead
+    #
+    # CRITICAL: All cargo commands MUST use --locked (or --locked --frozen)
+    # Examples:
+    #   - cargo clippy --locked --all-targets --all-features
+    #   - cargo fmt --check
+    #   - cargo audit --locked (if supported)
     - name: quality-matrix
       activeDeadlineSeconds: 900
       container:
@@ -915,6 +927,10 @@ spec:
     # === Publish If Tag ===
     # On milestone tags, upload binaries to GitHub Releases
     # Filled in by subsequent Phase 0 bead
+    #
+    # CRITICAL: All cargo commands MUST use --locked (or --locked --frozen)
+    # The build step already uses --locked, so artifacts are reproducible.
+    # This step only uploads pre-built binaries to GitHub Releases.
     - name: publish-if-tag
       activeDeadlineSeconds: 600
       container:

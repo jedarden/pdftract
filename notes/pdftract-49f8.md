@@ -12,12 +12,13 @@ Established and enforced the Cargo.lock policy for reproducible builds across al
 - **Status:** Tracked by git, not excluded by .gitignore
 
 ### 2. Argo Workflow Updates
-- **File:** `/home/coding/declarative-config/k8s/iad-ci/argo-workflows/pdftract-ci.yaml`
+- **File:** `/home/coding/pdftract/.ci/argo-workflows/pdftract-ci.yaml`
 - **Changes:**
+  - Added CRITICAL comments to `setup` template specifying `--locked` / `--frozen` requirements
   - Added CRITICAL comments to `test-matrix` template specifying `--locked` / `--frozen` requirements
   - Added CRITICAL comments to `quality-matrix` template specifying `--locked` / `--frozen` requirements
-  - Added CRITICAL comments to `bench-matrix` template specifying `--locked` / `--frozen` requirements
-  - Existing `build-target` template already had `--locked` at line 316
+  - Added CRITICAL comments to `publish-if-tag` template specifying `--locked` / `--frozen` requirements
+  - Existing `build-target` template already had `--locked` at line 355
 
 ### 3. CONTRIBUTING.md Created
 - **File:** `/home/coding/pdftract/CONTRIBUTING.md`
@@ -30,10 +31,11 @@ Established and enforced the Cargo.lock policy for reproducible builds across al
 ### 4. Renovate Config Created
 - **File:** `/home/coding/pdftract/.renovaterc.json`
 - **Configuration:**
-  - Weekly lockfile maintenance PRs (weekdays)
+  - Weekly lockfile maintenance PRs (before 6am on Monday)
   - Human-gated automerge (false)
   - Separate lockfile-only PRs from dependency updates
   - `labels: ["lockfile-only"]` for easy identification
+- **Update:** Changed schedule from `"every weekday"` to `"before 6am on Monday"` to meet bead requirement for weekly PRs
 
 ### 5. crates/pdftract-core/README.md Created
 - **File:** `/home/coding/pdftract/crates/pdftract-core/README.md`

@@ -5,7 +5,7 @@
   ],
   "lockFileMaintenance": {
     "enabled": true,
-    "schedule": ["every weekday"],
+    "schedule": ["before 6am on Monday"],
     "automerge": false,
     "commitMessageAction": "Lockfile maintenance",
     "commitMessageTopic": "{{{groupName}}}",
