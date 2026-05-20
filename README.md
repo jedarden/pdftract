@@ -47,6 +47,76 @@ Rust core with PyO3 Python bindings and a CLI binary. The same binary runs as a 
 
 See `docs/research/` for technical deep-dives into the PDF specification, font encoding, glyph Unicode recovery, and tagged PDF structure. See `docs/notes/` for SDK invocation examples in Python, Node.js, Go, Ruby, Java, Rust, and Bash.
 
+## Verifying Releases
+
+All releases are signed using [Sigstore](https://sigstore.dev/) keyless signing with OIDC from the iad-ci cluster. This provides cryptographic proof that artifacts were produced by the official CI/CD pipeline and haven't been tampered with.
+
+### Verify Binary Archives
+
+To verify downloaded binary archives:
+
+```bash
+# Download release artifacts
+gh release download vX.Y.Z --dir /tmp/pdftract-release
+
+# Verify the SHA256SUMS signature
+cosign verify-blob \
+  --certificate-identity-regexp 'https://iad-ci-oidc.ardenone.com.*' \
+  --certificate-oidc-issuer 'https://iad-ci-oidc.ardenone.com' \
+  --signature SHA256SUMS.sig \
+  --certificate SHA256SUMS.pem \
+  SHA256SUMS
+
+# Verify individual artifacts against checksums
+sha256sum -c SHA256SUMS
+```
+
+### Verify Docker Images
+
+To verify Docker images before running them:
+
+```bash
+# Verify the main image
+cosign verify \
+  --certificate-identity-regexp 'https://iad-ci-oidc.ardenone.com.*' \
+  --certificate-oidc-issuer 'https://iad-ci-oidc.ardenone.com' \
+  ghcr.io/jedarden/pdftract:X.Y.Z
+
+# Verify the OCR variant
+cosign verify \
+  --certificate-identity-regexp 'https://iad-ci-oidc.ardenone.com.*' \
+  --certificate-oidc-issuer 'https://iad-ci-oidc.ardenone.com' \
+  ghcr.io/jedarden/pdftract:ocr-X.Y.Z
+
+# Verify the full variant
+cosign verify \
+  --certificate-identity-regexp 'https://iad-ci-oidc.ardenone.com.*' \
+  --certificate-oidc-issuer 'https://iad-ci-oidc.ardenone.com' \
+  ghcr.io/jedarden/pdftract:full-X.Y.Z
+```
+
+### View SLSA Provenance
+
+Each Docker image includes SLSA provenance attestation:
+
+```bash
+cosign verify-attestation \
+  --certificate-identity-regexp 'https://iad-ci-oidc.ardenone.com.*' \
+  --certificate-oidc-issuer 'https://iad-ci-oidc.ardenone.com' \
+  --type slsaprovenance \
+  ghcr.io/jedarden/pdftract:X.Y.Z
+```
+
+The provenance includes the build configuration, source commit, and builder identity.
+
+## Security
+
+For responsible disclosure of security vulnerabilities, please email [security@jedarden.com](mailto:security@jedarden.com). See [`SECURITY.md`](SECURITY.md) for our disclosure policy, supported versions, and PGP key for encrypted reports.
+
+**PGP Key:** The public key for `security@jedarden.com` is available at [`docs/security/pgp-public-key.asc`](docs/security/pgp-public-key.asc).
+
+> **NOTE:** The PGP key is currently a placeholder. The security contact must generate and publish a 4096-bit RSA key for `security@jedarden.com`. See `docs/security/pgp-public-key.asc` for generation instructions.
+
 ## Status
 
 Early development. See `docs/plan/` for the implementation roadmap.

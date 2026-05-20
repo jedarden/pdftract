@@ -94,4 +94,23 @@ cargo fmt --check
 
 ## Security
 
+### Responsible Disclosure
+
+If you discover a security vulnerability, please do **NOT** open a public issue or pull request. Instead, report it privately:
+
+1. **Email (preferred):** [security@jedarden.com](mailto:security@jedarden.com)
+   - PGP-encrypted emails are strongly encouraged
+   - PGP key: [`docs/security/pgp-public-key.asc`](docs/security/pgp-public-key.asc)
+
+2. **GitHub Private Vulnerability Reporting:**
+   - Use the [Security tab](https://github.com/jedarden/pdftract/security/advisories)
+
+See [`SECURITY.md`](SECURITY.md) for our full disclosure policy, including:
+- Supported versions and security fix timeline
+- 90-day disclosure window
+- CVE assignment process
+- Safe harbor for good-faith researchers
+
+### Supply-Chain Security
+
 This project uses `cargo-audit` and `cargo-deny` for supply-chain security. New direct dependencies require an ADR or written justification in the PR description.
