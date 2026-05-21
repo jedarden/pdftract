@@ -71,6 +71,21 @@ The structural token lexer was already fully implemented. This fix only correcte
 - All lexer branches handle EOF gracefully
 - Unknown keywords emit `Token::Keyword(bytes)` instead of panicking
 
+## Additional Bug Fix (2026-05-20)
+
+### Commit: `7818f22` - `fix(pdftract-5upi): remove diagnostic emission for unknown keywords`
+
+**Issue**: The `lex_keyword()` function was incorrectly emitting `StructUnexpectedByte` diagnostics for unknown keywords.
+
+**Fix**: Removed diagnostic emission from `lex_keyword()` function (lines 540-564).
+
+**Rationale**:
+1. Many valid keywords (trailer, xref, etc.) are not in the initial dispatch table
+2. The object parser is responsible for validating keywords against known operators
+3. Emitting diagnostics here causes false positives for valid PDF constructs
+
+This change aligns with the task requirement that unknown keywords emit `Token::Keyword` without a diagnostic, letting the object parser handle `STRUCT_UNKNOWN_KEYWORD` if needed.
+
 ## Notes
 
 The lexer module compiles successfully. Full integration tests cannot run due to unrelated pre-existing compilation errors in other modules (missing `LZWDecoder`, `Diagnostic` type mismatches in catalog.rs, pages.rs, ocg.rs). These errors are not caused by this change.
