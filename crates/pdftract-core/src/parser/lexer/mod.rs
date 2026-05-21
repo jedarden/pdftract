@@ -1033,8 +1033,8 @@ impl<'a> Lexer<'a> {
                 return Some(Token::EndObj);
             }
         }
-        // Not a recognized keyword, treat as name
-        self.lex_name()
+        // Not a recognized keyword, treat as generic keyword
+        self.lex_keyword()
     }
 
     fn lex_o_keyword(&mut self) -> Option<Token> {
@@ -1046,8 +1046,8 @@ impl<'a> Lexer<'a> {
                 return Some(Token::Obj);
             }
         }
-        // Not "obj", treat as name
-        self.lex_name()
+        // Not "obj", treat as generic keyword
+        self.lex_keyword()
     }
 
     fn lex_r_keyword(&mut self) -> Option<Token> {
@@ -1057,7 +1057,7 @@ impl<'a> Lexer<'a> {
             self.advance(1);
             Some(Token::IndirectRef)
         } else {
-            self.lex_name()
+            self.lex_keyword()
         }
     }
 
@@ -1070,8 +1070,8 @@ impl<'a> Lexer<'a> {
                 return Some(Token::Null);
             }
         }
-        // Not "null", treat as name
-        self.lex_name()
+        // Not "null", treat as generic keyword
+        self.lex_keyword()
     }
 
     fn lex_unknown(&mut self) -> Option<Token> {
