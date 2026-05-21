@@ -540,7 +540,6 @@ impl<'a> Lexer<'a> {
 
     fn lex_keyword(&mut self) -> Option<Token> {
         // Consume bytes until we hit a delimiter or whitespace
-        let start = self.pos;
         let mut keyword_bytes = Vec::with_capacity(16);
 
         while let Some(&b) = self.bytes.first() {
@@ -555,13 +554,8 @@ impl<'a> Lexer<'a> {
             return Some(Token::Null);
         }
 
-        // Emit a diagnostic for unknown keywords
-        self.diagnostics.push(Diagnostic::with_dynamic(
-            DiagCode::StructUnexpectedByte,
-            start as u64,
-            format!("Unknown keyword: {}", String::from_utf8_lossy(&keyword_bytes)),
-        ));
-
+        // Unknown keywords emit Token::Keyword without a diagnostic
+        // The object parser will validate against known operators and emit STRUCT_UNKNOWN_KEYWORD if needed
         Some(Token::Keyword(keyword_bytes))
     }
 
