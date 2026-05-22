@@ -80,6 +80,12 @@ pub enum XrefDiagCode {
     XrefStreamDecompressionFailed,
     /// Hybrid xref conflict: traditional table and stream disagree on object state
     StructHybridConflict,
+    /// Circular /Prev reference detected (incremental update cycle)
+    StructCircularRef,
+    /// /Prev chain depth exceeded (adversarial input or corrupted file)
+    StructDepthExceeded,
+    /// /Prev offset points beyond file size
+    StructInvalidPrevOffset,
 }
 
 /// A diagnostic message emitted during xref parsing.
@@ -1789,13 +1795,35 @@ pub fn detect_linearization(source: &dyn PdfSource) -> Option<LinearizationInfo>
 
     // Helper to extract a number after a key
     // Handles both "/Key 123" and "/Key 123.456" formats
+    // Returns None if the key is a substring of another key (e.g., /L in /Linearized)
     let extract_number = |key: &str| -> Option<i64> {
-        let key_pos = dict_section.find(key)?;
-        let after_key = &dict_section[key_pos + key.len()..];
-        let number_str = after_key.split_whitespace().next()?;
-        // Parse as float first, then convert to i64
-        let float_val: f64 = number_str.parse().ok()?;
-        Some(float_val as i64)
+        let mut search_start = 0;
+        loop {
+            let key_pos = dict_section[search_start..].find(key)?;
+            let absolute_pos = search_start + key_pos;
+
+            // Check that the key is not a substring of another key
+            // The character after the key must be whitespace, delimiter, or end of string
+            let after_key = &dict_section[absolute_pos + key.len()..];
+            let next_char = after_key.chars().next();
+
+            // If the next character is a letter or digit, this is a substring match
+            // (e.g., "/L" found in "/Linearized")
+            if matches!(next_char, Some(c) if c.is_alphanumeric()) {
+                // Skip past this match and continue searching
+                search_start = absolute_pos + key.len();
+                if search_start >= dict_section.len() {
+                    return None;
+                }
+                continue;
+            }
+
+            // Found a standalone key - extract the number
+            let number_str = after_key.split_whitespace().next()?;
+            // Parse as float first, then convert to i64
+            let float_val: f64 = number_str.parse().ok()?;
+            return Some(float_val as i64);
+        }
     };
 
     // Extract required fields
@@ -1806,38 +1834,68 @@ pub fn detect_linearization(source: &dyn PdfSource) -> Option<LinearizationInfo>
     let first_page_object_number = extract_number("/O")? as u32;
 
     // Extract optional /H entry (array of two numbers: [offset length])
-    let (hint_stream_offset, hint_stream_length) = if let Some(h_pos) = dict_section.find("/H") {
-        let after_h = &dict_section[h_pos + 2..];
-        // /H can be followed by an array [offset length] or two numbers
-        // Try to parse as array first
-        if let Some(bracket_start) = after_h.find('[') {
-            let bracket_content = &after_h[bracket_start + 1..];
-            if let Some(bracket_end) = bracket_content.find(']') {
-                let array_content = &bracket_content[..bracket_end];
-                let numbers: Vec<&str> = array_content.split_whitespace().collect();
-                if numbers.len() >= 2 {
-                    let offset = numbers[0].parse::<u64>().ok()?;
-                    let length = numbers[1].parse::<u64>().ok()?;
-                    (Some(offset), Some(length))
+    // Same logic as extract_number to avoid substring matches
+    let (hint_stream_offset, hint_stream_length) = {
+        let mut search_start = 0;
+        let mut found_h = None;
+
+        loop {
+            if let Some(h_pos) = dict_section[search_start..].find("/H") {
+                let absolute_pos = search_start + h_pos;
+
+                // Check that /H is not a substring of another key
+                let after_h = &dict_section[absolute_pos + 2..];
+                let next_char = after_h.chars().next();
+
+                if matches!(next_char, Some(c) if c.is_alphanumeric()) {
+                    // Substring match, skip and continue
+                    search_start = absolute_pos + 2;
+                    if search_start >= dict_section.len() {
+                        break;
+                    }
+                    continue;
+                }
+
+                // Found standalone /H - try to parse the value
+                found_h = Some(after_h);
+                break;
+            } else {
+                break;
+            }
+        }
+
+        if let Some(after_h) = found_h {
+            // /H can be followed by an array [offset length] or two numbers
+            // Try to parse as array first
+            if let Some(bracket_start) = after_h.find('[') {
+                let bracket_content = &after_h[bracket_start + 1..];
+                if let Some(bracket_end) = bracket_content.find(']') {
+                    let array_content = &bracket_content[..bracket_end];
+                    let numbers: Vec<&str> = array_content.split_whitespace().collect();
+                    if numbers.len() >= 2 {
+                        let offset = numbers[0].parse::<u64>().ok()?;
+                        let length = numbers[1].parse::<u64>().ok()?;
+                        (Some(offset), Some(length))
+                    } else {
+                        (None, None)
+                    }
                 } else {
                     (None, None)
                 }
             } else {
-                (None, None)
+                // Try parsing as two consecutive numbers
+                let h_numbers: Vec<&str> = after_h.split_whitespace().collect();
+                if h_numbers.len() >= 2 {
+                    let offset = h_numbers[0].parse::<u64>().ok()?;
+                    let length = h_numbers[1].parse::<u64>().ok()?;
+                    (Some(offset), Some(length))
+                } else {
+                    (None, None)
+                }
             }
         } else {
-            // Try parsing as two consecutive numbers
-            let h_numbers: Vec<&str> = after_h.split_whitespace().collect();
-            if h_numbers.len() >= 2 {
-                let offset = h_numbers[0].parse::<u64>().ok()?;
-                let length = h_numbers[1].parse::<u64>().ok()?;
-                (Some(offset), Some(length))
-            } else {
-                (None, None)
-            }
+            (None, None)
         }
-    } else {
-        (None, None)
     };
 
     // Validate that /L matches the actual file size
@@ -1993,6 +2051,165 @@ fn load_single_xref(source: &dyn PdfSource, offset: u64) -> XrefSection {
     let stream = parse_xref_stream(source, offset);
 
     stream
+}
+
+/// Maximum depth for /Prev chain traversal.
+///
+/// Per PDF spec, incremental updates create a chain of xref tables.
+/// This limit prevents adversarial inputs from causing stack overflow.
+const MAX_PREV_DEPTH: u32 = 32;
+
+/// Load xref with /Prev chain traversal for incremental updates.
+///
+/// When a PDF is edited incrementally, each edit appends a new xref + trailer
+/// at the end of the file. The new trailer's `/Prev` key points to the previous
+/// xref's offset. This function walks the chain and merges all revisions.
+///
+/// # Parameters
+/// - `source`: PDF data source
+/// - `start_offset`: Offset to start loading from (typically from `startxref`)
+///
+/// # Returns
+/// A merged `XrefSection` where:
+/// - All entries from all revisions are present
+/// - For each object number, the LATEST revision's entry wins (override semantics)
+/// - The trailer is the LATEST revision's trailer (newest /Root, /Info, /ID)
+/// - `is_hybrid` is true if ANY revision in the chain is hybrid
+///
+/// # Chain traversal
+/// 1. Load xref at `start_offset` (auto-detects traditional vs stream vs hybrid)
+/// 2. If trailer has `/Prev`, recursively load from that offset
+/// 3. Merge: start with older revisions, overwrite with newer entries
+/// 4. Stop when trailer has no `/Prev` (original/baseline revision)
+///
+/// # Error handling
+/// - `/Prev` offset of 0 or negative: treated as "no previous revision"
+/// - `/Prev` offset > file size: emit `STRUCT_INVALID_PREV_OFFSET`, ignore /Prev
+/// - Cycle detection: `HashSet<u64>` of visited offsets; emit `STRUCT_CIRCULAR_REF`
+/// - Depth limit: 32 revisions max; emit `STRUCT_DEPTH_EXCEEDED` on deeper chains
+///
+/// # Example
+/// ```rust,no_run
+/// let merged = load_xref_with_prev_chain(&source, startxref_offset);
+/// // merged.entries contains objects from all 3 revisions
+/// // merged.trailer is from revision 3 (latest)
+/// ```
+///
+/// # References
+/// - Plan section: Phase 1.3 line 1093 (/Prev chain)
+/// - PDF spec 7.5.6 (Incremental Updates)
+pub fn load_xref_with_prev_chain(source: &dyn PdfSource, start_offset: u64) -> XrefSection {
+    // Inner recursive function with visited set and depth counter
+    fn walk_chain(
+        source: &dyn PdfSource,
+        offset: u64,
+        visited: &mut HashSet<u64>,
+        depth: u32,
+        diagnostics: &mut Vec<XrefDiagnostic>,
+    ) -> XrefSection {
+        // Cycle detection
+        if visited.contains(&offset) {
+            diagnostics.push(XrefDiagnostic::with_static(
+                XrefDiagCode::StructCircularRef,
+                offset,
+                "Circular /Prev reference detected; stopping chain traversal",
+            ));
+            // Return empty section to break the cycle
+            return XrefSection::new();
+        }
+        visited.insert(offset);
+
+        // Depth limit check
+        if depth >= MAX_PREV_DEPTH {
+            diagnostics.push(XrefDiagnostic::with_dynamic(
+                XrefDiagCode::StructDepthExceeded,
+                offset,
+                format!("/Prev chain depth exceeded maximum of {}", MAX_PREV_DEPTH).into(),
+            ));
+            // Return empty section to stop the chain
+            return XrefSection::new();
+        }
+
+        // Load xref at current offset
+        let mut current = load_single_xref(source, offset);
+
+        // Extract /Prev offset from trailer
+        let prev_offset = current.trailer.as_ref().and_then(|trailer| {
+            trailer.get("Prev").and_then(|obj| {
+                match obj {
+                    PdfObject::Integer(n) if *n > 0 => Some(*n as u64),
+                    _ => None,
+                }
+            })
+        });
+
+        // Validate /Prev offset if present
+        let mut should_follow_prev = false;
+        if let Some(prev) = prev_offset {
+            match source.len() {
+                Ok(file_size) if prev > file_size => {
+                    // /Prev points beyond file size - invalid
+                    diagnostics.push(XrefDiagnostic::with_dynamic(
+                        XrefDiagCode::StructInvalidPrevOffset,
+                        offset,
+                        format!("/Prev offset {} exceeds file size {}; ignoring /Prev key", prev, file_size).into(),
+                    ));
+                    // Remove the invalid /Prev key from trailer
+                    if let Some(ref mut trailer) = current.trailer {
+                        trailer.shift_remove("Prev");
+                    }
+                }
+                Ok(_) => {
+                    // Valid /Prev offset
+                    should_follow_prev = true;
+                }
+                Err(_) => {
+                    // Can't determine file size - be conservative and don't follow
+                    diagnostics.push(XrefDiagnostic::with_static(
+                        XrefDiagCode::StructInvalidPrevOffset,
+                        offset,
+                        "Cannot determine file size; ignoring /Prev key",
+                    ));
+                }
+            }
+        }
+
+        // Recursively load previous revision if /Prev exists
+        if should_follow_prev {
+            let prev = prev_offset.unwrap(); // Safe because we checked should_follow_prev
+            let mut older = walk_chain(source, prev, visited, depth + 1, diagnostics);
+
+            // Merge: older entries first, then current (newer) entries override
+            // This is the opposite of hybrid merge (where first parameter wins)
+            for (obj_nr, entry) in current.entries {
+                older.entries.insert(obj_nr, entry);
+            }
+
+            // Preserve current (latest) trailer
+            older.trailer = current.trailer;
+
+            // Merge diagnostics from current revision
+            older.diagnostics.extend(current.diagnostics);
+
+            // Mark as hybrid if current revision is hybrid
+            if current.is_hybrid {
+                older.is_hybrid = true;
+            }
+
+            // Add current's diagnostics to the merged result
+            older.diagnostics.extend(diagnostics.drain(..));
+
+            older
+        } else {
+            // No /Prev - this is the baseline (original) revision
+            // Return current as-is
+            current
+        }
+    }
+
+    let mut visited = HashSet::new();
+    let mut diagnostics = Vec::new();
+    walk_chain(source, start_offset, &mut visited, 0, &mut diagnostics)
 }
 
 #[cfg(test)]
@@ -3422,10 +3639,10 @@ trailer\n<< /Size 3 >>\n";
     fn test_detect_linearization_no_hint_stream() {
         // Linearized PDF without optional /H entry
         // /L must match the actual file size for the validation to pass
-        let pdf_data = b"%PDF-1.4\n1 0 obj\n<< /Linearized 1.0\n/L 110\n/E 100\n/N 10\n/T 200\n/O 5 >>\nendobj\n";
+        let pdf_data = b"%PDF-1.4\n1 0 obj\n<< /Linearized 1.0\n/L 77\n/E 100\n/N 10\n/T 200\n/O 5 >>\nendobj\n";
 
         // Verify the /L value matches actual length
-        assert_eq!(pdf_data.len() as u64, 110, "Test data /L value should match actual length");
+        assert_eq!(pdf_data.len() as u64, 77, "Test data /L value should match actual length");
 
         let source = MemorySource::new(pdf_data.to_vec());
 
@@ -3537,5 +3754,519 @@ trailer\n<< /Size 3 >>\n";
         let result = detect_linearization(&source);
         // Should return None because /L (300) != actual size
         assert!(result.is_none(), "Incrementally updated linearized PDF should fall through");
+    }
+
+    // /Prev chain tests
+
+    /// Test 3-revision /Prev chain - latest value wins.
+    ///
+    /// This is the critical test from the plan: verify that when an object
+    /// appears in multiple revisions, the LATEST revision's value wins.
+    #[test]
+    fn test_prev_chain_three_revisions_latest_wins() {
+        // Build a minimal PDF with 3 incremental revisions
+        // Each revision is a complete xref table with a /Prev pointer
+
+        // Start with fixed offsets for predictability
+        let rev1_offset = 1000u64;
+        let rev2_offset = 2000u64;
+        let rev3_offset = 3000u64;
+
+        // Revision 1 (baseline): objects 1, 2, 3
+        let rev1 = format!(
+            "xref\n0 4\n\
+            0000000000 65535 f \n\
+            0000000100 00000 n \n\
+            0000000200 00000 n \n\
+            0000000300 00000 n \n\
+            trailer\n<< /Size 4 >>\n"
+        );
+
+        // Revision 2: updates object 2, adds object 4
+        let rev2 = format!(
+            "xref\n2 1\n\
+            0000000250 00001 n \n\
+            4 1\n\
+            0000000400 00000 n \n\
+            trailer\n<< /Size 5 /Prev {} >>\n",
+            rev1_offset
+        );
+
+        // Revision 3 (latest): updates object 3, adds object 5
+        let rev3 = format!(
+            "xref\n3 1\n\
+            0000000350 00002 n \n\
+            5 1\n\
+            0000000500 00000 n \n\
+            trailer\n<< /Size 6 /Prev {} >>\n",
+            rev2_offset
+        );
+
+        // Build file data with padding at exact offsets
+        let mut file_data = Vec::new();
+        file_data.extend_from_slice(b"%PDF-1.4\n");
+
+        // Pad to rev1_offset
+        while file_data.len() < rev1_offset as usize {
+            file_data.push(b' ');
+        }
+        file_data.extend_from_slice(rev1.as_bytes());
+
+        // Pad to rev2_offset
+        while file_data.len() < rev2_offset as usize {
+            file_data.push(b' ');
+        }
+        file_data.extend_from_slice(rev2.as_bytes());
+
+        // Pad to rev3_offset
+        while file_data.len() < rev3_offset as usize {
+            file_data.push(b' ');
+        }
+        file_data.extend_from_slice(rev3.as_bytes());
+
+        let source = MemorySource::new(file_data);
+
+        // Load from the latest revision
+        let result = load_xref_with_prev_chain(&source, rev3_offset);
+
+        // Verify all 5 objects are present
+        assert_eq!(result.len(), 5, "Should have entries for objects 1-5, got {}", result.len());
+
+        // Verify LATEST values win:
+        // Object 1: unchanged from rev1 (offset 100)
+        assert_eq!(result.entries.get(&1), Some(&XrefEntry::InUse { offset: 100, gen_nr: 0 }));
+        // Object 2: rev2 value (offset 250) overrides rev1 (offset 200)
+        assert_eq!(result.entries.get(&2), Some(&XrefEntry::InUse { offset: 250, gen_nr: 1 }));
+        // Object 3: rev3 value (offset 350) overrides rev1 (offset 300)
+        assert_eq!(result.entries.get(&3), Some(&XrefEntry::InUse { offset: 350, gen_nr: 2 }));
+        // Object 4: added in rev2 (offset 400)
+        assert_eq!(result.entries.get(&4), Some(&XrefEntry::InUse { offset: 400, gen_nr: 0 }));
+        // Object 5: added in rev3 (offset 500)
+        assert_eq!(result.entries.get(&5), Some(&XrefEntry::InUse { offset: 500, gen_nr: 0 }));
+
+        // Trailer should be from rev3 (latest)
+        assert!(result.trailer.is_some());
+    }
+
+    /// Test object lifecycle: added in rev2, modified in rev3, freed in rev4.
+    #[test]
+    fn test_prev_chain_object_add_modify_free() {
+        // Build a PDF with 4 revisions tracking object 7's lifecycle
+        // Rev1: object 7 doesn't exist
+        let rev1 = b"xref\n0 2\n\
+            0000000000 65535 f \n\
+            0000000100 00000 n \n\
+            trailer\n<< /Size 2 >>\n";
+
+        // Rev2: add object 7 as InUse
+        let rev2 = b"xref\n7 1\n\
+            0000000700 00000 n \n\
+            trailer\n<< /Size 8 /Prev 0 >>\n";
+
+        // Rev3: modify object 7 (new generation)
+        let rev3 = b"xref\n7 1\n\
+            0000000750 00001 n \n\
+            trailer\n<< /Size 8 /Prev 0 >>\n";
+
+        // Rev4: free object 7
+        let rev4 = b"xref\n7 1\n\
+            0000000000 00002 f \n\
+            trailer\n<< /Size 8 /Prev 0 >>\n";
+
+        let mut file_data = Vec::new();
+        file_data.extend_from_slice(b"%PDF-1.4\n");
+        file_data.extend_from_slice(&vec![b' '; 100]);
+
+        // Revision 1
+        let rev1_offset = file_data.len() as u64;
+        file_data.extend_from_slice(rev1);
+
+        // Revision 2
+        let rev2_offset = file_data.len() as u64;
+        let mut rev2_with_prev = rev2.to_vec();
+        let rev2_str = String::from_utf8_lossy(&rev2_with_prev);
+        let rev2_str = rev2_str.replace("/Prev 0", &format!("/Prev {}", rev1_offset));
+        file_data.extend_from_slice(rev2_str.as_bytes());
+
+        // Revision 3
+        let rev3_offset = file_data.len() as u64;
+        let mut rev3_with_prev = rev3.to_vec();
+        let rev3_str = String::from_utf8_lossy(&rev3_with_prev);
+        let rev3_str = rev3_str.replace("/Prev 0", &format!("/Prev {}", rev2_offset));
+        file_data.extend_from_slice(rev3_str.as_bytes());
+
+        // Revision 4 (latest)
+        let rev4_offset = file_data.len() as u64;
+        let mut rev4_with_prev = rev4.to_vec();
+        let rev4_str = String::from_utf8_lossy(&rev4_with_prev);
+        let rev4_str = rev4_str.replace("/Prev 0", &format!("/Prev {}", rev3_offset));
+        file_data.extend_from_slice(rev4_str.as_bytes());
+
+        let source = MemorySource::new(file_data);
+        let result = load_xref_with_prev_chain(&source, rev4_offset);
+
+        // Object 7 should be Free (freed in rev4)
+        assert_eq!(result.entries.get(&7), Some(&XrefEntry::Free { next_free: 0, gen_nr: 2 }));
+    }
+
+    /// Test object added only in latest revision.
+    #[test]
+    fn test_prev_chain_object_added_only_in_latest() {
+        // Rev1: baseline
+        let rev1 = b"xref\n0 2\n\
+            0000000000 65535 f \n\
+            0000000100 00000 n \n\
+            trailer\n<< /Size 2 >>\n";
+
+        // Rev2 (latest): add object 99
+        let rev2 = b"xref\n99 1\n\
+            0000009900 00000 n \n\
+            trailer\n<< /Size 100 /Prev 0 >>\n";
+
+        let mut file_data = Vec::new();
+        file_data.extend_from_slice(b"%PDF-1.4\n");
+        file_data.extend_from_slice(&vec![b' '; 100]);
+
+        let rev1_offset = file_data.len() as u64;
+        file_data.extend_from_slice(rev1);
+
+        let rev2_offset = file_data.len() as u64;
+        let mut rev2_with_prev = rev2.to_vec();
+        let rev2_str = String::from_utf8_lossy(&rev2_with_prev);
+        let rev2_str = rev2_str.replace("/Prev 0", &format!("/Prev {}", rev1_offset));
+        file_data.extend_from_slice(rev2_str.as_bytes());
+
+        let source = MemorySource::new(file_data);
+        let result = load_xref_with_prev_chain(&source, rev2_offset);
+
+        // Object 99 should be present (added in rev2)
+        assert_eq!(result.entries.get(&99), Some(&XrefEntry::InUse { offset: 9900, gen_nr: 0 }));
+    }
+
+    /// Test that trailer is from latest revision.
+    #[test]
+    fn test_prev_chain_trailer_from_latest() {
+        // Rev1: trailer with /Root 1 0 R
+        let rev1 = b"xref\n0 1\n\
+            0000000000 65535 f \n\
+            trailer\n<< /Size 1 /Root 1 0 R >>\n";
+
+        // Rev2 (latest): trailer with /Root 2 0 R and /Info
+        let rev2 = b"xref\n0 1\n\
+            0000000000 65535 f \n\
+            trailer\n<< /Size 2 /Root 2 0 R /Info 3 0 R /Prev 0 >>\n";
+
+        let mut file_data = Vec::new();
+        file_data.extend_from_slice(b"%PDF-1.4\n");
+        file_data.extend_from_slice(&vec![b' '; 100]);
+
+        let rev1_offset = file_data.len() as u64;
+        file_data.extend_from_slice(rev1);
+
+        let rev2_offset = file_data.len() as u64;
+        let mut rev2_with_prev = rev2.to_vec();
+        let rev2_str = String::from_utf8_lossy(&rev2_with_prev);
+        let rev2_str = rev2_str.replace("/Prev 0", &format!("/Prev {}", rev1_offset));
+        file_data.extend_from_slice(rev2_str.as_bytes());
+
+        let source = MemorySource::new(file_data);
+        let result = load_xref_with_prev_chain(&source, rev2_offset);
+
+        // Trailer should be from rev2 (latest)
+        assert!(result.trailer.is_some());
+        let trailer = result.trailer.as_ref().unwrap();
+
+        // Should have /Root from rev2 (2 0 R), not rev1 (1 0 R)
+        let root = trailer.get("Root");
+        assert!(root.is_some());
+        match root {
+            Some(PdfObject::Array(ref arr)) if arr.len() == 3 => {
+                // [2, 0, R] - object number 2
+                assert_eq!(arr[0], PdfObject::Integer(2));
+            }
+            _ => panic!("Expected /Root to be an array [2 0 R]"),
+        }
+
+        // Should have /Info from rev2
+        assert!(trailer.contains_key("Info"));
+    }
+
+    /// Test /Prev cycle detection.
+    #[test]
+    fn test_prev_chain_cycle_detection() {
+        // Create a cycle: rev3 -> rev2 -> rev1 -> rev3
+        let rev_base = b"xref\n0 1\n\
+            0000000000 65535 f \n\
+            trailer\n<< /Size 1 >>\n";
+
+        let mut file_data = Vec::new();
+        file_data.extend_from_slice(b"%PDF-1.4\n");
+        file_data.extend_from_slice(&vec![b' '; 100]);
+
+        // Three revisions at offsets 200, 300, 400
+        let rev1_offset = 200u64;
+        let rev2_offset = 300u64;
+        let rev3_offset = 400u64;
+
+        // Rev1: /Prev points to rev3 (creating cycle)
+        let rev1 = format!("xref\n0 1\n\
+            0000000000 65535 f \n\
+            trailer\n<< /Size 1 /Prev {} >>\n", rev3_offset);
+
+        // Rev2: /Prev points to rev1
+        let rev2 = format!("xref\n0 1\n\
+            0000000000 65535 f \n\
+            trailer\n<< /Size 1 /Prev {} >>\n", rev1_offset);
+
+        // Rev3 (start): /Prev points to rev2
+        let rev3 = format!("xref\n0 1\n\
+            0000000000 65535 f \n\
+            trailer\n<< /Size 1 /Prev {} >>\n", rev2_offset);
+
+        // Pad file to rev1_offset
+        while file_data.len() < rev1_offset as usize {
+            file_data.push(b' ');
+        }
+        file_data.extend_from_slice(rev1.as_bytes());
+
+        while file_data.len() < rev2_offset as usize {
+            file_data.push(b' ');
+        }
+        file_data.extend_from_slice(rev2.as_bytes());
+
+        while file_data.len() < rev3_offset as usize {
+            file_data.push(b' ');
+        }
+        file_data.extend_from_slice(rev3.as_bytes());
+
+        let source = MemorySource::new(file_data);
+        let result = load_xref_with_prev_chain(&source, rev3_offset);
+
+        // Should emit STRUCT_CIRCULAR_REF diagnostic
+        assert!(result.diagnostics.iter().any(|d| d.code == XrefDiagCode::StructCircularRef));
+    }
+
+    /// Test depth limit enforcement.
+    #[test]
+    fn test_prev_chain_depth_limit() {
+        let base_xref = b"xref\n0 1\n\
+            0000000000 65535 f \n\
+            trailer\n<< /Size 1 /Prev {prev} >>\n";
+
+        let mut file_data = Vec::new();
+        file_data.extend_from_slice(b"%PDF-1.4\n");
+
+        // Create 50 revisions in a chain (exceeds MAX_PREV_DEPTH of 32)
+        let mut offsets = Vec::new();
+        for i in 0..50 {
+            let offset = 1000 + (i * 200);
+            offsets.push(offset);
+        }
+
+        // Build the chain from oldest to newest
+        for (i, &offset) in offsets.iter().enumerate() {
+            // Pad to offset
+            while file_data.len() < offset as usize {
+                file_data.push(b' ');
+            }
+
+            let prev_offset = if i > 0 { offsets[i - 1] } else { 0 };
+            let rev = String::from_utf8_lossy(base_xref).replace("{prev}", &prev_offset.to_string());
+            file_data.extend_from_slice(rev.as_bytes());
+        }
+
+        let source = MemorySource::new(file_data);
+        let start_offset = *offsets.last().unwrap();
+
+        let result = load_xref_with_prev_chain(&source, start_offset);
+
+        // Should emit STRUCT_DEPTH_EXCEEDED diagnostic
+        assert!(result.diagnostics.iter().any(|d| d.code == XrefDiagCode::StructDepthExceeded));
+    }
+
+    /// Test /Prev offset pointing beyond file size.
+    #[test]
+    fn test_prev_chain_invalid_offset() {
+        let rev1 = b"xref\n0 1\n\
+            0000000000 65535 f \n\
+            trailer\n<< /Size 1 >>\n";
+
+        let rev2 = b"xref\n0 1\n\
+            0000000000 65535 f \n\
+            trailer\n<< /Size 1 /Prev 999999 >>\n"; // Points beyond file
+
+        let mut file_data = Vec::new();
+        file_data.extend_from_slice(b"%PDF-1.4\n");
+        file_data.extend_from_slice(&vec![b' '; 100]);
+
+        let rev1_offset = file_data.len() as u64;
+        file_data.extend_from_slice(rev1);
+
+        let rev2_offset = file_data.len() as u64;
+        file_data.extend_from_slice(rev2);
+
+        let source = MemorySource::new(file_data);
+        let result = load_xref_with_prev_chain(&source, rev2_offset);
+
+        // Should emit STRUCT_INVALID_PREV_OFFSET diagnostic
+        assert!(result.diagnostics.iter().any(|d| d.code == XrefDiagCode::StructInvalidPrevOffset));
+
+        // /Prev should be removed from trailer
+        let trailer = result.trailer.as_ref().unwrap();
+        assert!(!trailer.contains_key("Prev"));
+    }
+
+    /// Test /Prev of 0 treated as "no previous revision".
+    #[test]
+    fn test_prev_chain_zero_prev_is_absent() {
+        let rev = b"xref\n0 1\n\
+            0000000000 65535 f \n\
+            trailer\n<< /Size 1 /Prev 0 >>\n"; // /Prev 0 means "no previous"
+
+        let mut file_data = Vec::new();
+        file_data.extend_from_slice(b"%PDF-1.4\n");
+        file_data.extend_from_slice(&vec![b' '; 100]);
+
+        let offset = file_data.len() as u64;
+        file_data.extend_from_slice(rev);
+
+        let source = MemorySource::new(file_data);
+        let result = load_xref_with_prev_chain(&source, offset);
+
+        // Should not follow /Prev 0, should just return this single revision
+        assert!(!result.diagnostics.iter().any(|d| d.code == XrefDiagCode::StructInvalidPrevOffset));
+    }
+
+    /// Test negative /Prev treated as "no previous revision".
+    #[test]
+    fn test_prev_chain_negative_prev_is_absent() {
+        let rev = b"xref\n0 1\n\
+            0000000000 65535 f \n\
+            trailer\n<< /Size 1 /Prev -5 >>\n"; // Negative /Prev
+
+        let mut file_data = Vec::new();
+        file_data.extend_from_slice(b"%PDF-1.4\n");
+        file_data.extend_from_slice(&vec![b' '; 100]);
+
+        let offset = file_data.len() as u64;
+        file_data.extend_from_slice(rev);
+
+        let source = MemorySource::new(file_data);
+        let result = load_xref_with_prev_chain(&source, offset);
+
+        // Should not follow negative /Prev
+        assert!(!result.diagnostics.iter().any(|d| d.code == XrefDiagCode::StructInvalidPrevOffset));
+    }
+
+    /// Test hybrid file in /Prev chain.
+    #[test]
+    fn test_prev_chain_hybrid_file() {
+        // Rev1: traditional xref
+        let rev1 = b"xref\n0 2\n\
+            0000000000 65535 f \n\
+            0000000100 00000 n \n\
+            trailer\n<< /Size 2 >>\n";
+
+        // Rev2: hybrid (traditional + /XRefStm)
+        let rev2_trad = b"xref\n0 2\n\
+            0000000000 65535 f \n\
+            0000000200 00001 n \n\
+            trailer\n<< /Size 2 /XRefStm 500 /Prev 0 >>\n";
+
+        let mut file_data = Vec::new();
+        file_data.extend_from_slice(b"%PDF-1.4\n");
+        file_data.extend_from_slice(&vec![b' '; 100]);
+
+        let rev1_offset = file_data.len() as u64;
+        file_data.extend_from_slice(rev1);
+
+        let rev2_offset = file_data.len() as u64;
+        let mut rev2_with_prev = rev2_trad.to_vec();
+        let rev2_str = String::from_utf8_lossy(&rev2_with_prev);
+        let rev2_str = rev2_str.replace("/Prev 0", &format!("/Prev {}", rev1_offset));
+        file_data.extend_from_slice(rev2_str.as_bytes());
+
+        // Add a dummy xref stream at offset 500
+        while file_data.len() < 500 {
+            file_data.push(b' ');
+        }
+        // Minimal xref stream (won't parse correctly but tests hybrid detection)
+        file_data.extend_from_slice(b"1 0 obj\n<< /Type /XRef /Size 2 /W [1 1 1] >>\nstream\n\x00\x00\x00\nendstream\nendobj\n");
+
+        let source = MemorySource::new(file_data);
+        let result = load_xref_with_prev_chain(&source, rev2_offset);
+
+        // Should be marked as hybrid
+        assert!(result.is_hybrid);
+    }
+
+    // proptest for /Prev chain
+    mod proptest_prev_chain_tests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// Property: /Prev chain with random configurations never panics.
+            #[test]
+            fn prop_prev_chain_random_no_panic(
+                revisions in prop::collection::vec(
+                    (0u32..20u32, 0u64..1000u64, 0u16..10u16, any::<bool>()),
+                    0..10
+                )
+            ) {
+                // Build a minimal /Prev chain from the random data
+                // Each tuple: (obj_num, offset, gen_nr, has_prev)
+                let mut file_data = Vec::new();
+                file_data.extend_from_slice(b"%PDF-1.4\n");
+
+                let mut offsets = Vec::new();
+                for (i, (obj_num, offset, gen_nr, has_prev)) in revisions.iter().enumerate() {
+                    let pos = 1000u64 + (i as u64 * 500);
+                    offsets.push(pos);
+
+                    // Pad to position
+                    while file_data.len() < pos as usize {
+                        file_data.push(b' ');
+                    }
+
+                    // Create xref for this object
+                    let xref = format!(
+                        "xref\n{} 1\n\
+                        {:010} {:05} n \n\
+                        trailer\n<< /Size {} >>\n",
+                        obj_num, offset, gen_nr, obj_num + 1
+                    );
+
+                    file_data.extend_from_slice(xref.as_bytes());
+                }
+
+                let source = MemorySource::new(file_data);
+
+                // Loading from any offset should not panic
+                if let Some(&start_offset) = offsets.last() {
+                    let _ = load_xref_with_prev_chain(&source, start_offset);
+                }
+            }
+
+            /// Property: Random /Prev offsets never panic.
+            #[test]
+            fn prop_prev_chain_random_offsets_no_panic(
+                offsets in prop::collection::vec(0u64..10000u64, 0..20)
+            ) {
+                let mut file_data = Vec::new();
+                file_data.extend_from_slice(b"%PDF-1.4\n");
+                file_data.extend_from_slice(&vec![b' '; 10000]);
+
+                // Add a base xref
+                file_data.extend_from_slice(b"xref\n0 1\n0000000000 65535 f \ntrailer\n<< /Size 1 >>\n");
+
+                let source = MemorySource::new(file_data);
+
+                // Loading from any random offset should not panic
+                for offset in offsets {
+                    let _ = load_xref_with_prev_chain(&source, offset);
+                }
+            }
+        }
     }
 }
