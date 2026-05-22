@@ -1698,6 +1698,278 @@ fn read_big_endian_field(bytes: &[u8]) -> u64 {
     result
 }
 
+// ============================================================================
+// Linearized PDF Detection and Xref Merging
+// ============================================================================
+
+/// Information about a linearized PDF file.
+///
+/// Linearized PDFs (PDF 1.2+ "Optimized for Web View") have a special structure
+/// with TWO xref tables: one at the beginning (covering only the first page)
+/// and one at the end (the complete xref). This struct captures the metadata
+/// needed to load and merge both xrefs.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LinearizationInfo {
+    /// Total file length from the /L entry
+    pub file_length: u64,
+    /// Offset of the first-page xref from the /T entry
+    pub first_page_xref_offset: u64,
+    /// Offset of the hint stream from the first /H entry (optional)
+    pub hint_stream_offset: Option<u64>,
+    /// Length of the hint stream from the second /H entry (optional)
+    pub hint_stream_length: Option<u64>,
+    /// Number of pages in the document from /N
+    pub page_count: u32,
+    /// Offset of the end of the first page from /E
+    pub first_page_end_offset: u64,
+    /// The object number of the first page from /O
+    pub first_page_object_number: u32,
+}
+
+/// Detect if a PDF is linearized and extract the linearization dictionary info.
+///
+/// Linearized PDFs have a special object as the first indirect object in the file
+/// (right after the `%PDF-X.Y` header). This object is a dictionary with the
+/// `/Linearized` key.
+///
+/// # Parameters
+/// - `source`: The PDF source to read from
+///
+/// # Returns
+/// - `Some(LinearizationInfo)` if the file is linearized and valid
+/// - `None` if the file is not linearized or the linearization dict is invalid
+///
+/// # Algorithm
+/// 1. Read the first ~2 KB of the file
+/// 2. Skip the `%PDF-X.Y\n` header (~10 bytes)
+/// 3. Look for the `obj` keyword to find the first indirect object
+/// 4. Parse the object and check if it's a dict with `/Linearized`
+/// 5. Extract the required fields: /L, /T, /H, /E, /N, /O
+/// 6. Validate that /L matches the actual file size
+///
+/// # References
+/// - PDF spec Annex F (Linearized PDF)
+/// - Plan section: Phase 1.3 line 1113
+pub fn detect_linearization(source: &dyn PdfSource) -> Option<LinearizationInfo> {
+    // Read the first 2 KB to find the linearization dict
+    let header_bytes = source.read_at(0, 2048).ok()?;
+
+    // Convert to UTF-8 for string operations
+    let header_str = std::str::from_utf8(&header_bytes).ok()?;
+
+    // Skip the PDF header (e.g., "%PDF-1.4\n")
+    // Find the end of the first line (after the header)
+    let header_end = header_str.find('\n').or_else(|| header_str.find('\r'))?;
+    let after_header = &header_str[header_end + 1..];
+
+    // Look for the first indirect object declaration (e.g., "1 0 obj")
+    // The linearization dict is typically object 1 or a low number
+    let obj_pos = after_header.find(" obj")?;
+    let before_obj = &after_header[..obj_pos];
+
+    // Parse the object number (e.g., "1 0")
+    let parts: Vec<&str> = before_obj.split_whitespace().collect();
+    if parts.len() < 2 {
+        return None;
+    }
+
+    let _obj_num: u32 = parts.get(0)?.parse().ok()?;
+    let _gen_num: u16 = parts.get(1)?.parse().ok()?;
+
+    // Now we need to find and parse the dictionary
+    // Find the start of the dict ("<<" or "<< /")
+    let dict_start = after_header[after_header.find("<<")?..].find("<<")?;
+    let dict_section = &after_header[obj_pos + dict_start..];
+
+    // Parse the /Linearized key
+    // The dict should have "/Linearized" followed by a number (typically 1.0)
+    if !dict_section.contains("/Linearized") {
+        return None;
+    }
+
+    // Helper to extract a number after a key
+    // Handles both "/Key 123" and "/Key 123.456" formats
+    let extract_number = |key: &str| -> Option<i64> {
+        let key_pos = dict_section.find(key)?;
+        let after_key = &dict_section[key_pos + key.len()..];
+        let number_str = after_key.split_whitespace().next()?;
+        // Parse as float first, then convert to i64
+        let float_val: f64 = number_str.parse().ok()?;
+        Some(float_val as i64)
+    };
+
+    // Extract required fields
+    let file_length = extract_number("/L")? as u64;
+    let first_page_xref_offset = extract_number("/T")? as u64;
+    let page_count = extract_number("/N")? as u32;
+    let first_page_end_offset = extract_number("/E")? as u64;
+    let first_page_object_number = extract_number("/O")? as u32;
+
+    // Extract optional /H entry (array of two numbers: [offset length])
+    let (hint_stream_offset, hint_stream_length) = if let Some(h_pos) = dict_section.find("/H") {
+        let after_h = &dict_section[h_pos + 2..];
+        // /H can be followed by an array [offset length] or two numbers
+        // Try to parse as array first
+        if let Some(bracket_start) = after_h.find('[') {
+            let bracket_content = &after_h[bracket_start + 1..];
+            if let Some(bracket_end) = bracket_content.find(']') {
+                let array_content = &bracket_content[..bracket_end];
+                let numbers: Vec<&str> = array_content.split_whitespace().collect();
+                if numbers.len() >= 2 {
+                    let offset = numbers[0].parse::<u64>().ok()?;
+                    let length = numbers[1].parse::<u64>().ok()?;
+                    (Some(offset), Some(length))
+                } else {
+                    (None, None)
+                }
+            } else {
+                (None, None)
+            }
+        } else {
+            // Try parsing as two consecutive numbers
+            let h_numbers: Vec<&str> = after_h.split_whitespace().collect();
+            if h_numbers.len() >= 2 {
+                let offset = h_numbers[0].parse::<u64>().ok()?;
+                let length = h_numbers[1].parse::<u64>().ok()?;
+                (Some(offset), Some(length))
+            } else {
+                (None, None)
+            }
+        }
+    } else {
+        (None, None)
+    };
+
+    // Validate that /L matches the actual file size
+    let actual_file_length = source.len().ok()?;
+    if file_length != actual_file_length {
+        // File was modified after linearization (incremental update)
+        // Linearization is invalid, fall through to non-linearized path
+        return None;
+    }
+
+    Some(LinearizationInfo {
+        file_length,
+        first_page_xref_offset,
+        hint_stream_offset,
+        hint_stream_length,
+        page_count,
+        first_page_end_offset,
+        first_page_object_number,
+    })
+}
+
+/// Merge two xref sections with the full xref taking precedence.
+///
+/// For linearized PDFs, we have two xref tables:
+/// - First-page xref: covers only objects needed to render the first page
+/// - Full xref: covers all objects in the document
+///
+/// The merge semantics are: for any object number present in BOTH xrefs,
+/// the FULL xref's entry wins. This is because the full xref is authoritative
+/// for the entire document.
+///
+/// # Parameters
+/// - `first_page_xref`: Xref section from the first-page xref (at /T offset)
+/// - `full_xref`: Xref section from the full xref (at EOF startxref)
+///
+/// # Returns
+/// A merged XrefSection where:
+/// - All entries from `first_page_xref` are included
+/// - Entries from `full_xref` OVERLAP and replace any conflicting entries
+/// - The merged trailer is the full xref's trailer
+/// - Diagnostics from both sections are combined
+///
+/// # Priority semantics
+/// For overlapping object numbers:
+/// - First-page InUse + Full InUse → Full wins (same offset expected)
+/// - First-page InUse + Full Free → Full wins (object was deleted)
+/// - First-page Free + Full InUse → Full wins (object was added)
+/// - First-page <absent> + Full InUse → Full wins (gap filled)
+///
+/// # References
+/// - Plan section: Phase 1.3 line 1113
+pub fn merge_linearized_xrefs(first_page_xref: XrefSection, full_xref: XrefSection) -> XrefSection {
+    let mut result = XrefSection::new();
+
+    // Start with all first-page entries
+    result.entries = first_page_xref.entries;
+
+    // Overlay full xref entries (full wins for conflicts)
+    for (obj_nr, entry) in full_xref.entries {
+        result.entries.insert(obj_nr, entry);
+    }
+
+    // Use the full xref's trailer (it's authoritative)
+    result.trailer = full_xref.trailer;
+
+    // Combine diagnostics from both sections
+    result.diagnostics = first_page_xref.diagnostics;
+    result.diagnostics.extend(full_xref.diagnostics);
+
+    // Note: is_hybrid is NOT set here - linearized is a separate concept from hybrid
+
+    result
+}
+
+/// Load the complete xref table for a linearized PDF.
+///
+/// This function:
+/// 1. Loads the first-page xref from the offset specified in /T
+/// 2. Loads the full xref from the EOF startxref
+/// 3. Merges them with full xref taking precedence
+///
+/// # Parameters
+/// - `source`: The PDF source to read from
+/// - `lin_info`: Linearization info from `detect_linearization`
+/// - `startxref_offset`: The offset of the full xref (from EOF startxref)
+///
+/// # Returns
+/// A merged XrefSection containing entries from both xrefs.
+///
+/// # Strategy
+/// The function tries both traditional and xref stream parsers for each xref,
+/// in order:
+/// 1. Try traditional parser
+/// 2. If that fails, try xref stream parser
+/// 3. If both fail, return empty section with diagnostics
+///
+/// # References
+/// - Plan section: Phase 1.3 line 1113
+pub fn load_xref_linearized(
+    source: &dyn PdfSource,
+    lin_info: &LinearizationInfo,
+    startxref_offset: u64,
+) -> XrefSection {
+    // Load first-page xref from /T offset
+    let first_page_xref = load_single_xref(source, lin_info.first_page_xref_offset);
+
+    // Load full xref from EOF startxref
+    let full_xref = load_single_xref(source, startxref_offset);
+
+    // Merge with full xref taking precedence
+    merge_linearized_xrefs(first_page_xref, full_xref)
+}
+
+/// Load a single xref section from a given offset.
+///
+/// Tries traditional parser first, then xref stream parser.
+fn load_single_xref(source: &dyn PdfSource, offset: u64) -> XrefSection {
+    // Try traditional xref table first
+    let traditional = parse_traditional_xref(source, offset);
+
+    // If traditional parsing succeeded (found at least one entry), return it
+    if !traditional.entries.is_empty() || traditional.trailer.is_some() {
+        return traditional;
+    }
+
+    // Otherwise, try xref stream
+    // For xref streams, the offset points to the indirect object containing the stream
+    let stream = parse_xref_stream(source, offset);
+
+    stream
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3025,5 +3297,202 @@ trailer\n<< /Size 3 >>\n";
             assert!(merged.is_hybrid);
             assert_eq!(merged.len(), 2);
         }
+    }
+
+    // ========================================================================
+    // Linearized PDF Detection Tests
+    // ========================================================================
+
+    #[test]
+    fn test_detect_linearization_non_linearized_pdf() {
+        // A regular PDF without linearization should return None
+        let pdf_data = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n";
+        let source = MemorySource::new(pdf_data.to_vec());
+
+        let result = detect_linearization(&source);
+        assert!(result.is_none(), "Non-linearized PDF should return None");
+    }
+
+    #[test]
+    fn test_detect_linearization_with_valid_dict() {
+        // A minimal linearized PDF with the required fields
+        let pdf_data = b"%PDF-1.4\n\
+            1 0 obj\n\
+            << /Linearized 1.0\n\
+               /L 500\n\
+               /H [1234 56]\n\
+               /E 100\n\
+               /N 10\n\
+               /T 200\n\
+               /O 5 >>\n\
+            endobj\n\
+            xref\n\
+            0 1\n\
+            0000000000 65535 f\n\
+            trailer\n\
+            << /Size 2 >>\n\
+            startxref\n\
+            300\n\
+            %%%%EOF";
+
+        let source = MemorySource::new(pdf_data.to_vec());
+
+        let result = detect_linearization(&source);
+        assert!(result.is_some(), "Valid linearized PDF should be detected");
+
+        let lin_info = result.unwrap();
+        assert_eq!(lin_info.file_length, 500);
+        assert_eq!(lin_info.first_page_xref_offset, 200);
+        assert_eq!(lin_info.hint_stream_offset, Some(1234));
+        assert_eq!(lin_info.hint_stream_length, Some(56));
+        assert_eq!(lin_info.page_count, 10);
+        assert_eq!(lin_info.first_page_end_offset, 100);
+        assert_eq!(lin_info.first_page_object_number, 5);
+    }
+
+    #[test]
+    fn test_detect_linearization_file_size_mismatch() {
+        // Linearized PDF where /L doesn't match actual file size
+        // (incremental update scenario)
+        let pdf_data = b"%PDF-1.4\n\
+            1 0 obj\n\
+            << /Linearized 1.0\n\
+               /L 999999\n\
+               /H [1234 56]\n\
+               /E 100\n\
+               /N 10\n\
+               /T 200\n\
+               /O 5 >>\n\
+            endobj\n";
+
+        let source = MemorySource::new(pdf_data.to_vec());
+
+        let result = detect_linearization(&source);
+        assert!(result.is_none(), "Linearized PDF with size mismatch should return None");
+    }
+
+    #[test]
+    fn test_detect_linearization_no_hint_stream() {
+        // Linearized PDF without optional /H entry
+        let pdf_data = b"%PDF-1.4\n\
+            1 0 obj\n\
+            << /Linearized 1.0\n\
+               /L 500\n\
+               /E 100\n\
+               /N 10\n\
+               /T 200\n\
+               /O 5 >>\n\
+            endobj\n";
+
+        let source = MemorySource::new(pdf_data.to_vec());
+
+        let result = detect_linearization(&source);
+        assert!(result.is_some(), "Linearized PDF without /H should be detected");
+
+        let lin_info = result.unwrap();
+        assert_eq!(lin_info.hint_stream_offset, None);
+        assert_eq!(lin_info.hint_stream_length, None);
+    }
+
+    #[test]
+    fn test_merge_linearized_xrefs() {
+        // Test merging first-page and full xrefs
+        let mut first_page = XrefSection::new();
+        first_page.add_entry(1, XrefEntry::InUse { offset: 100, gen_nr: 0 });
+        first_page.add_entry(5, XrefEntry::InUse { offset: 500, gen_nr: 0 });
+
+        let mut full = XrefSection::new();
+        // Same entry - full should win
+        full.add_entry(1, XrefEntry::InUse { offset: 150, gen_nr: 0 }); // Different offset
+        // New entry only in full
+        full.add_entry(2, XrefEntry::InUse { offset: 200, gen_nr: 0 });
+        full.add_entry(3, XrefEntry::InUse { offset: 300, gen_nr: 0 });
+
+        let merged = merge_linearized_xrefs(first_page, full);
+
+        assert_eq!(merged.len(), 4);
+        // Full xref's entry for object 1 should win (offset 150, not 100)
+        assert_eq!(merged.entries.get(&1), Some(&XrefEntry::InUse { offset: 150, gen_nr: 0 }));
+        assert_eq!(merged.entries.get(&2), Some(&XrefEntry::InUse { offset: 200, gen_nr: 0 }));
+        assert_eq!(merged.entries.get(&3), Some(&XrefEntry::InUse { offset: 300, gen_nr: 0 }));
+        assert_eq!(merged.entries.get(&5), Some(&XrefEntry::InUse { offset: 500, gen_nr: 0 }));
+    }
+
+    #[test]
+    fn test_merge_linearized_xrefs_conflict_free_vs_inuse() {
+        // Test merging where first-page has Free and full has InUse
+        let mut first_page = XrefSection::new();
+        first_page.add_entry(1, XrefEntry::Free { next_free: 2, gen_nr: 0 });
+
+        let mut full = XrefSection::new();
+        full.add_entry(1, XrefEntry::InUse { offset: 100, gen_nr: 0 });
+
+        let merged = merge_linearized_xrefs(first_page, full);
+
+        assert_eq!(merged.len(), 1);
+        // Full xref's InUse should win over first-page's Free
+        assert_eq!(merged.entries.get(&1), Some(&XrefEntry::InUse { offset: 100, gen_nr: 0 }));
+    }
+
+    #[test]
+    fn test_merge_linearized_xrefs_empty_first_page() {
+        // Test merging where first-page is empty
+        let first_page = XrefSection::new();
+
+        let mut full = XrefSection::new();
+        full.add_entry(1, XrefEntry::InUse { offset: 100, gen_nr: 0 });
+        full.add_entry(2, XrefEntry::InUse { offset: 200, gen_nr: 0 });
+
+        let merged = merge_linearized_xrefs(first_page, full);
+
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged.entries.get(&1), Some(&XrefEntry::InUse { offset: 100, gen_nr: 0 }));
+        assert_eq!(merged.entries.get(&2), Some(&XrefEntry::InUse { offset: 200, gen_nr: 0 }));
+    }
+
+    #[test]
+    fn test_detect_linearization_proptest_random_bytes() {
+        // Proptest-style: verify detect_linearization never panics on random input
+        for seed in 0u32..100 {
+            let mut data = Vec::new();
+
+            // Use deterministic PRNG based on seed (Java Random algorithm with u64 state)
+            let mut state: u64 = (seed as u64).wrapping_mul(0x5DEECE66D).wrapping_add(0xB);
+            for _ in 0..2048 {
+                state = state.wrapping_mul(0x5DEECE66D).wrapping_add(0xB);
+                data.push(((state >> 16) & 0xFF) as u8);
+            }
+
+            let source = MemorySource::new(data);
+
+            // Should never panic, may return None or Some
+            let _ = detect_linearization(&source);
+        }
+    }
+
+    #[test]
+    fn test_detect_linearization_with_incremental_update() {
+        // A PDF that was linearized then incrementally updated
+        // The /L field will not match the current file size
+        let original_data = b"%PDF-1.4\n\
+            1 0 obj\n\
+            << /Linearized 1.0\n\
+               /L 300\n\
+               /E 100\n\
+               /N 10\n\
+               /T 200\n\
+               /O 5 >>\n\
+            endobj\n\
+            %%EOF";
+
+        // Simulate incremental update by appending data
+        let mut updated_data = original_data.to_vec();
+        updated_data.extend_from_slice(b"\n% Incremental update\n2 0 obj\n123\nendobj\n");
+
+        let source = MemorySource::new(updated_data);
+
+        let result = detect_linearization(&source);
+        // Should return None because /L (300) != actual size
+        assert!(result.is_none(), "Incrementally updated linearized PDF should fall through");
     }
 }

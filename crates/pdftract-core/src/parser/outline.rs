@@ -12,8 +12,7 @@
 use crate::parser::object::{ObjRef, PdfObject};
 use crate::parser::pages::PageDict;
 use crate::parser::xref::XrefResolver;
-use crate::parser::{Diagnostic, Severity};
-use crate::parser::diagnostic::DiagCode;
+use crate::diagnostics::{Diagnostic, DiagCode};
 use std::collections::HashSet;
 
 /// Maximum depth of outline nesting to prevent stack overflow.
@@ -175,9 +174,8 @@ fn decode_pdf_string(bytes: &[u8]) -> Result<String> {
 fn decode_utf16be_bom(bytes: &[u8]) -> Result<String> {
     if bytes.len() % 2 != 0 {
         return Err(vec![
-            Diagnostic::error_with_code(
+            Diagnostic::with_static_no_offset(
                 DiagCode::StructInvalidUtf16,
-                "1.4",
                 "STRUCT_INVALID_UTF16: UTF-16BE string has odd length",
             )
         ]);
@@ -190,9 +188,8 @@ fn decode_utf16be_bom(bytes: &[u8]) -> Result<String> {
 
     String::from_utf16(&utf16_chars).map_err(|_| {
         vec![
-            Diagnostic::error_with_code(
+            Diagnostic::with_static_no_offset(
                 DiagCode::StructInvalidUtf16,
-                "1.4",
                 "STRUCT_INVALID_UTF16: Invalid UTF-16BE sequence",
             )
         ]
@@ -535,10 +532,9 @@ fn resolve_destination(
             Some(ref_) => ref_,
             None => {
                 // Named destination - emit diagnostic and return None
-                diagnostics.push(Diagnostic::error_with_code(
+                diagnostics.push(Diagnostic::with_static_no_offset(
                     DiagCode::StructUnresolvedDestination,
-                    "1.4",
-                    format!("STRUCT_UNRESOLVED_DESTINATION: Named destination not supported"),
+                    "STRUCT_UNRESOLVED_DESTINATION: Named destination not supported",
                 ));
                 return (None, None);
             }
@@ -563,10 +559,9 @@ fn resolve_destination(
                 }
             } else if &**action_type == "URI" {
                 // URI action - not a GoTo, so no page destination
-                diagnostics.push(Diagnostic::error_with_code(
+                diagnostics.push(Diagnostic::with_static_no_offset(
                     DiagCode::StructNonGotoOutline,
-                    "1.4",
-                    format!("STRUCT_NON_GOTO_OUTLINE: URI action not supported for outline destination"),
+                    "STRUCT_NON_GOTO_OUTLINE: URI action not supported for outline destination",
                 ));
                 return (None, None);
             }
@@ -592,9 +587,8 @@ fn parse_outline_recursive(
 ) -> Option<Outline> {
     // Cycle detection
     if !visited.insert(node_ref) {
-        diagnostics.push(Diagnostic::error_with_code(
-            DiagCode::CircularRef,
-            "1.4",
+        diagnostics.push(Diagnostic::with_dynamic_no_offset(
+            DiagCode::StructCircularRef,
             format!("STRUCT_CIRCULAR_REF: Cycle detected at outline node {}", node_ref),
         ));
         return None;
@@ -602,9 +596,8 @@ fn parse_outline_recursive(
 
     // Depth limit check
     if depth >= MAX_OUTLINE_DEPTH {
-        diagnostics.push(Diagnostic::error_with_code(
-            DiagCode::DepthExceeded,
-            "1.4",
+        diagnostics.push(Diagnostic::with_dynamic_no_offset(
+            DiagCode::StructDepthExceeded,
             format!("STRUCT_DEPTH_EXCEEDED: Outline depth exceeds limit of {}", MAX_OUTLINE_DEPTH),
         ));
         return None;
@@ -614,9 +607,8 @@ fn parse_outline_recursive(
     let node_obj = match resolver.resolve(node_ref) {
         Ok(obj) => obj,
         Err(e) => {
-            diagnostics.push(Diagnostic::error_with_code(
+            diagnostics.push(Diagnostic::with_dynamic_no_offset(
                 DiagCode::StructUnexpectedEof,
-                "1.4",
                 format!("Failed to resolve outline node {}: {}", node_ref, e),
             ));
             return None;
@@ -626,9 +618,8 @@ fn parse_outline_recursive(
     let node_dict = match node_obj.as_dict() {
         Some(d) => d,
         None => {
-            diagnostics.push(Diagnostic::error_with_code(
+            diagnostics.push(Diagnostic::with_dynamic_no_offset(
                 DiagCode::StructUnexpectedEof,
-                "1.4",
                 format!("Outline node {} is not a dictionary", node_ref),
             ));
             return None;
@@ -645,9 +636,8 @@ fn parse_outline_recursive(
             }
         },
         None => {
-            diagnostics.push(Diagnostic::error_with_code(
-                DiagCode::MissingKey,
-                "1.4",
+            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructMissingKey,
                 format!("STRUCT_MISSING_KEY: Outline node {} missing /Title", node_ref),
             ));
             String::from("<missing title>")
@@ -740,9 +730,8 @@ pub fn parse_outlines(
     let root_obj = match resolver.resolve(outlines_root_ref) {
         Ok(obj) => obj,
         Err(e) => {
-            diagnostics.push(Diagnostic::error_with_code(
+            diagnostics.push(Diagnostic::with_dynamic_no_offset(
                 DiagCode::StructUnexpectedEof,
-                "1.4",
                 format!("Failed to resolve /Outlines root: {}", e),
             ));
             return (outlines, diagnostics);
@@ -752,10 +741,9 @@ pub fn parse_outlines(
     let root_dict = match root_obj.as_dict() {
         Some(d) => d,
         None => {
-            diagnostics.push(Diagnostic::error_with_code(
+            diagnostics.push(Diagnostic::with_static_no_offset(
                 DiagCode::StructUnexpectedEof,
-                "1.4",
-                format!("/Outlines root is not a dictionary"),
+                "/Outlines root is not a dictionary",
             ));
             return (outlines, diagnostics);
         }

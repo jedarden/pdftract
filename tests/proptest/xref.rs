@@ -3,7 +3,7 @@
 //! These tests verify that the xref parser and resolver maintain their core
 //! invariants across all possible inputs, following INV-8 (no panic at public boundary).
 
-use pdftract_core::parser::xref::{XrefResolver, XrefEntry, parse_traditional_xref, forward_scan_xref};
+use pdftract_core::parser::xref::{XrefResolver, XrefEntry, XrefSection, parse_traditional_xref, forward_scan_xref, merge_hybrid};
 use pdftract_core::parser::stream::MemorySource;
 
 /// Property: XrefResolver never panics on any entry.
@@ -299,5 +299,34 @@ proptest::proptest! {
         let source = MemorySource::new(xref_data.into_bytes());
         // Should not panic with any number of subsections
         let _ = parse_traditional_xref(&source, 0);
+    }
+
+    /// Property: merge_hybrid never panics on random xref sections.
+    #[test]
+    fn prop_merge_hybrid_never_panics(
+        trad_entries in proptest::collection::vec(
+            (0u32..1000u32, 0u64..1_000_000u64, 0u16..1000u16),
+            0..50
+        ),
+        stream_entries in proptest::collection::vec(
+            (0u32..1000u32, 0u32..1000u32, 0u32..1000u32),
+            0..50
+        ),
+    ) {
+        use pdftract_core::parser::xref::{XrefSection, XrefEntry, merge_hybrid};
+
+        let mut traditional = XrefSection::new();
+        for (obj_num, offset, gen_nr) in trad_entries {
+            traditional.add_entry(obj_num, XrefEntry::InUse { offset, gen_nr });
+        }
+
+        let mut stream = XrefSection::new();
+        for (obj_num, obj_stm_nr, index) in stream_entries {
+            stream.add_entry(obj_num, XrefEntry::Compressed { obj_stm_nr, index });
+        }
+
+        // Should never panic on any combination of sections
+        let merged = merge_hybrid(traditional, stream);
+        prop_assert!(merged.is_hybrid);
     }
 }

@@ -2,6 +2,6 @@ use pyo3::prelude::*;
 
 /// Python bindings for pdftract-core.
 #[pymodule]
-fn pdftract(_m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn pdftract(_py: Python, _m: &PyModule) -> PyResult<()> {
     Ok(())
 }

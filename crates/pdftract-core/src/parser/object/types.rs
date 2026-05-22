@@ -132,14 +132,33 @@ impl PdfStream {
     /// Get the /Filter entry from the stream dictionary.
     ///
     /// Returns None if no filter is present (raw stream).
+    /// Filter names are returned without the leading slash (e.g., "FlateDecode", not "/FlateDecode").
     pub fn filter(&self) -> Option<Vec<String>> {
-        let filter = self.dict.get("/Filter")?;
+        let filter = self.dict.get("Filter")?;
 
         Some(match filter {
-            PdfObject::Name(name) => vec![name.to_string()],
+            PdfObject::Name(name) => {
+                // Strip leading slash from filter name for normalization
+                let name_str: &str = name.as_ref();
+                let stripped = if name_str.starts_with('/') {
+                    &name_str[1..]
+                } else {
+                    name_str
+                };
+                vec![stripped.to_string()]
+            }
             PdfObject::Array(arr) => arr
                 .iter()
-                .filter_map(|obj| obj.as_name().map(|n| n.to_string()))
+                .filter_map(|obj| obj.as_name().map(|n| {
+                    // Strip leading slash from filter name for normalization
+                    let name_str: &str = n.as_ref();
+                    let stripped = if name_str.starts_with('/') {
+                        &name_str[1..]
+                    } else {
+                        name_str
+                    };
+                    stripped.to_string()
+                }))
                 .collect(),
             _ => return None,
         })
@@ -149,7 +168,7 @@ impl PdfStream {
     ///
     /// Returns None if no parameters are present.
     pub fn decode_params(&self) -> Option<Vec<PdfObject>> {
-        let params = self.dict.get("/DecodeParms")?;
+        let params = self.dict.get("DecodeParms")?;
 
         Some(match params {
             PdfObject::Dict(_) => vec![params.clone()],
@@ -162,7 +181,7 @@ impl PdfStream {
     ///
     /// Returns the direct integer value, or None if /Length is indirect/missing.
     pub fn length(&self) -> Option<u64> {
-        self.dict.get("/Length")?.as_int().map(|i| i as u64)
+        self.dict.get("Length")?.as_int().map(|i| i as u64)
     }
 }
 

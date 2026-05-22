@@ -105,7 +105,7 @@ fn read_password_from_stdin() -> Result<Option<secrecy::SecretString>> {
         return Ok(None);
     }
 
-    Ok(Some(secrecy::SecretString::new(password.to_string())))
+    Ok(Some(secrecy::SecretString::new(password.to_string().into_boxed_str())))
 }
 
 #[cfg(test)]

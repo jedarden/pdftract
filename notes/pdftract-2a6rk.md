@@ -93,6 +93,13 @@ Phase 3 content stream processing will use these methods to suppress glyphs insi
 - Catalog integration: `crates/pdftract-core/src/parser/catalog.rs` (lines 10, 326, 486-491)
 - Tests: inline in `ocg.rs` (lines 424-908)
 
+## Changes made
+
+Fixed compilation error in `crates/pdftract-core/src/parser/xref.rs:3460`:
+- Issue: u64 literal `0x5DEECE66D` used with u32 state caused overflow
+- Fix: Changed `state` to u64 for proper Java Random algorithm behavior
+- This was blocking the test suite from running
+
 ## Retrospective
 
 - **What worked:** The implementation was already complete and well-tested

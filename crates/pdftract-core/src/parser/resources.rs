@@ -282,9 +282,9 @@ mod tests {
         let merged = merge_resources(&ancestor, &child_obj);
 
         assert_eq!(merged.fonts.len(), 3);
-        assert_eq!(merged.fonts.get(intern("F1")), Some(&ObjRef::new(10, 0))); // Overridden
-        assert_eq!(merged.fonts.get(intern("F2")), Some(&ObjRef::new(2, 0)));  // Inherited
-        assert_eq!(merged.fonts.get(intern("F3")), Some(&ObjRef::new(3, 0)));  // New
+        assert_eq!(merged.fonts.get(&intern("F1")), Some(&ObjRef::new(10, 0))); // Overridden
+        assert_eq!(merged.fonts.get(&intern("F2")), Some(&ObjRef::new(2, 0)));  // Inherited
+        assert_eq!(merged.fonts.get(&intern("F3")), Some(&ObjRef::new(3, 0)));  // New
     }
 
     #[test]
@@ -300,8 +300,8 @@ mod tests {
         let merged = merge_resources(&ancestor, &PdfObject::Dict(Box::new(child_resources)));
 
         assert_eq!(merged.xobjects.len(), 2);
-        assert_eq!(merged.xobjects.get(intern("Im1")), Some(&ObjRef::new(5, 0)));
-        assert_eq!(merged.xobjects.get(intern("Im2")), Some(&ObjRef::new(6, 0)));
+        assert_eq!(merged.xobjects.get(&intern("Im1")), Some(&ObjRef::new(5, 0)));
+        assert_eq!(merged.xobjects.get(&intern("Im2")), Some(&ObjRef::new(6, 0)));
     }
 
     #[test]
@@ -333,7 +333,7 @@ mod tests {
         let merged = merge_resources(&ancestor, &PdfObject::Dict(Box::new(child_resources)));
 
         assert_eq!(merged.color_spaces.len(), 1);
-        let cs1 = merged.color_spaces.get(intern("CS1")).unwrap();
+        let cs1 = merged.color_spaces.get(&intern("CS1")).unwrap();
         assert!(cs1.as_array().is_some());
     }
 
@@ -366,7 +366,7 @@ mod tests {
         let merged = merge_resources(&ancestor, &PdfObject::Null);
 
         assert_eq!(merged.fonts.len(), 1);
-        assert_eq!(merged.fonts.get(intern("F1")), Some(&ObjRef::new(1, 0)));
+        assert_eq!(merged.fonts.get(&intern("F1")), Some(&ObjRef::new(1, 0)));
     }
 
     #[test]
@@ -393,9 +393,9 @@ mod tests {
 
         // All three fonts should be present
         assert_eq!(page.fonts.len(), 3);
-        assert_eq!(page.fonts.get(intern("F1")), Some(&ObjRef::new(1, 0)));
-        assert_eq!(page.fonts.get(intern("F2")), Some(&ObjRef::new(2, 0)));
-        assert_eq!(page.fonts.get(intern("F3")), Some(&ObjRef::new(3, 0)));
+        assert_eq!(page.fonts.get(&intern("F1")), Some(&ObjRef::new(1, 0)));
+        assert_eq!(page.fonts.get(&intern("F2")), Some(&ObjRef::new(2, 0)));
+        assert_eq!(page.fonts.get(&intern("F3")), Some(&ObjRef::new(3, 0)));
     }
 
     #[test]

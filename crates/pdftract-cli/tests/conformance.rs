@@ -17,6 +17,27 @@ const SUITE_PATH: &str = "tests/sdk-conformance/cases.json";
 const SDK_NAME: &str = "pdftract-rust";
 const SDK_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// Simple semver comparison - returns Less if v1 < v2
+fn compare_versions(v1: &str, v2: &str) -> std::cmp::Ordering {
+    let v1_parts: Vec<u32> = v1
+        .split('.')
+        .filter_map(|s| s.parse().ok())
+        .collect();
+    let v2_parts: Vec<u32> = v2
+        .split('.')
+        .filter_map(|s| s.parse().ok())
+        .collect();
+
+    for (a, b) in v1_parts.iter().zip(v2_parts.iter()) {
+        match a.cmp(b) {
+            std::cmp::Ordering::Equal => continue,
+            ord => return ord,
+        }
+    }
+
+    v1_parts.len().cmp(&v2_parts.len())
+}
+
 #[derive(Debug, Clone)]
 enum TestStatus {
     Pass,
@@ -128,6 +149,9 @@ fn run_conformance(suite_path: &str, output_path: &str) -> Result<()> {
     let summary = calculate_summary(&results, duration_ms);
     print_summary(&summary);
 
+    // Check exit conditions before moving summary into report
+    let should_fail = summary.failed > 0 || summary.errors > 0;
+
     let report = ConformanceReport {
         sdk: SDK_NAME.to_string(),
         sdk_version: SDK_VERSION.to_string(),
@@ -149,7 +173,7 @@ fn run_conformance(suite_path: &str, output_path: &str) -> Result<()> {
     println!();
     println!("Report written to: {}", output_path);
 
-    if summary.failed > 0 || summary.errors > 0 {
+    if should_fail {
         std::process::exit(1);
     }
 
@@ -170,9 +194,7 @@ fn run_test_case(case: &Value, schema_version: &str) -> Result<TestResult> {
     let min_schema = case.get("min_schema_version").and_then(|v| v.as_str());
 
     if let Some(min_ver) = min_schema {
-        if version_compare::compare(schema_version, min_ver)
-            .map_or(true, |ord| ord == std::cmp::Ordering::Less)
-        {
+        if compare_versions(schema_version, min_ver) == std::cmp::Ordering::Less {
             return Ok(TestResult {
                 id,
                 status: TestStatus::Skip,
@@ -324,7 +346,7 @@ fn compare_recursive(
             }
         }
         (Value::String(act), Value::Object(exp)) => {
-            if let Some(min_len) = exp.get("min_length").and_then(|v| v.as_usize()) {
+            if let Some(min_len) = exp.get("min_length").and_then(|v| v.as_u64().map(|v| v as usize)) {
                 if act.len() < min_len {
                     return Err(format!(
                         "[{}]: string length {} is less than minimum {}",
@@ -345,7 +367,7 @@ fn compare_recursive(
             }
         }
         (Value::Array(act), Value::Object(exp)) => {
-            if let Some(min_len) = exp.get("min").and_then(|v| v.as_usize()) {
+            if let Some(min_len) = exp.get("min").and_then(|v| v.as_u64().map(|v| v as usize)) {
                 if act.len() < min_len {
                     return Err(format!(
                         "[{}]: array length {} is less than minimum {}",
@@ -355,7 +377,7 @@ fn compare_recursive(
                     ));
                 }
             }
-            if let Some(max_len) = exp.get("max").and_then(|v| v.as_usize()) {
+            if let Some(max_len) = exp.get("max").and_then(|v| v.as_u64().map(|v| v as usize)) {
                 if act.len() > max_len {
                     return Err(format!(
                         "[{}]: array length {} is greater than maximum {}",
@@ -367,7 +389,7 @@ fn compare_recursive(
             }
         }
         (Value::Object(act), Value::Object(exp)) => {
-            for (key, exp_val) in exp.as_object().unwrap() {
+            for (key, exp_val) in exp {
                 let new_path = if path.is_empty() {
                     key.clone()
                 } else {

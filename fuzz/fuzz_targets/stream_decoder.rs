@@ -3,7 +3,7 @@
 //! This target tests INV-8 (no panic at public boundary) for the stream decoder.
 //! Any panic indicates a stream decoder bug that must be fixed.
 //!
-//! This also tests EC-10 (decompression bomb) - the 2 GB limit must hold
+//! This also tests EC-10 (decompression bomb) - the 512 MB limit must hold
 //! under random predictor inputs.
 
 #![no_main]

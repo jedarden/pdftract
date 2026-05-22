@@ -305,6 +305,15 @@ pub enum DiagCode {
     /// Phase origin: 1.7
     StructInvalidGeometry,
 
+    /// Hybrid xref conflict: traditional table and stream disagree on object state
+    ///
+    /// Emitted when merging a hybrid file's xref sections and the traditional
+    /// table marks an object as Free while the stream marks it as InUse.
+    /// Per PDF spec, the traditional entry wins (object is Free).
+    ///
+    /// Phase origin: 1.3
+    StructHybridConflict,
+
     // === XREF_* codes ===
 
     /// Invalid xref keyword or header
@@ -387,7 +396,7 @@ pub enum DiagCode {
     /// Decompression bomb limit exceeded
     ///
     /// Emitted when a stream's decompressed size would exceed `max_decompress_bytes`
-    /// (default: 2 GB). The stream is truncated at the limit. Increase the limit via
+    /// (default: 512 MiB). The stream is truncated at the limit. Increase the limit via
     /// `--max-decompress-gb` if the PDF is trusted.
     ///
     /// Phase origin: 1.5
@@ -662,7 +671,12 @@ impl DiagCode {
             | DiagCode::StructInvalidIndirectHeader
             | DiagCode::StructIntegerOverflow
             | DiagCode::StructInvalidObjstm
-            | DiagCode::StructInvalidGeometry => "STRUCT",
+            | DiagCode::StructInvalidGeometry
+            | DiagCode::StructInvalidUtf16
+            | DiagCode::StructUnresolvedDestination
+            | DiagCode::StructNonGotoOutline
+            | DiagCode::StructInvalidPdfDocEncoding
+            | DiagCode::StructHybridConflict => "STRUCT",
 
             // XREF_*
             DiagCode::XrefInvalidHeader
@@ -746,6 +760,11 @@ impl DiagCode {
             DiagCode::StructIntegerOverflow => "STRUCT_INTEGER_OVERFLOW",
             DiagCode::StructInvalidObjstm => "STRUCT_INVALID_OBJSTM",
             DiagCode::StructInvalidGeometry => "STRUCT_INVALID_GEOMETRY",
+            DiagCode::StructInvalidUtf16 => "STRUCT_INVALID_UTF16",
+            DiagCode::StructUnresolvedDestination => "STRUCT_UNRESOLVED_DESTINATION",
+            DiagCode::StructNonGotoOutline => "STRUCT_NON_GOTO_OUTLINE",
+            DiagCode::StructInvalidPdfDocEncoding => "STRUCT_INVALID_PDFDOC_ENCODING",
+            DiagCode::StructHybridConflict => "STRUCT_HYBRID_CONFLICT",
             DiagCode::XrefInvalidHeader => "XREF_INVALID_HEADER",
             DiagCode::XrefInvalidEntry => "XREF_INVALID_ENTRY",
             DiagCode::XrefInvalidSubsectionHeader => "XREF_INVALID_SUBSECTION_HEADER",
@@ -812,6 +831,11 @@ impl DiagCode {
             | DiagCode::StructIntegerOverflow
             | DiagCode::StructInvalidObjstm
             | DiagCode::StructInvalidGeometry
+            | DiagCode::StructInvalidUtf16
+            | DiagCode::StructUnresolvedDestination
+            | DiagCode::StructNonGotoOutline
+            | DiagCode::StructInvalidPdfDocEncoding
+            | DiagCode::StructHybridConflict
             | DiagCode::XrefInvalidHeader
             | DiagCode::XrefInvalidEntry
             | DiagCode::XrefInvalidSubsectionHeader
@@ -1039,6 +1063,14 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         recoverable: true,
         phase: "1.7",
         suggested_action: "NaN or Inf in MediaBox/CropBox/Rotate; canonicalized to 0 for fingerprint computation",
+    },
+    DiagInfo {
+        code: DiagCode::StructHybridConflict,
+        category: "STRUCT",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "1.3",
+        suggested_action: "Traditional table entry takes precedence; object marked as Free per traditional table",
     },
     // === XREF_* codes ===
     DiagInfo {
@@ -1550,30 +1582,19 @@ macro_rules! emit {
 
     // emit!(diagnostics, CODE, offset = <expr>, message = <expr>)
     ($diagnostics:expr, $code:ident, offset = $offset:expr, message = $msg:expr) => {{
-        let msg = $msg;
-        $diagnostics.push(if let Some(static_msg) = {
-            // Try to coerce &'static str
-            let maybe_static: Option<&'static str> = (|| Some(&*msg))();
-            maybe_static
-        } {
-            $crate::diagnostics::Diagnostic::with_static($crate::diagnostics::DiagCode::$code, $offset, static_msg)
-        } else {
-            $crate::diagnostics::Diagnostic::with_dynamic($crate::diagnostics::DiagCode::$code, $offset, msg.into())
-        });
+        $diagnostics.push($crate::diagnostics::Diagnostic::with_dynamic(
+            $crate::diagnostics::DiagCode::$code,
+            $offset,
+            $msg.into(),
+        ));
     }};
 
     // emit!(diagnostics, CODE, message = <expr>)
     ($diagnostics:expr, $code:ident, message = $msg:expr) => {{
-        let msg = $msg;
-        $diagnostics.push(if let Some(static_msg) = {
-            // Try to coerce &'static str
-            let maybe_static: Option<&'static str> = (|| Some(&*msg))();
-            maybe_static
-        } {
-            $crate::diagnostics::Diagnostic::with_static_no_offset($crate::diagnostics::DiagCode::$code, static_msg)
-        } else {
-            $crate::diagnostics::Diagnostic::with_dynamic_no_offset($crate::diagnostics::DiagCode::$code, msg.into())
-        });
+        $diagnostics.push($crate::diagnostics::Diagnostic::with_dynamic_no_offset(
+            $crate::diagnostics::DiagCode::$code,
+            $msg.into(),
+        ));
     }};
 }
 

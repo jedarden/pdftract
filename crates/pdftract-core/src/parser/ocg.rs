@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 
-use crate::parser::{Diagnostic, DiagCode, Severity};
+use crate::parser::{Diagnostic, DiagCode};
 use crate::parser::object::{intern, ObjRef, PdfDict, PdfObject};
 use crate::parser::xref::XrefResolver;
 
@@ -302,12 +302,10 @@ pub fn parse_oc_properties(
     let oc_props_obj = match resolver.resolve(oc_props_ref) {
         Ok(obj) => obj,
         Err(e) => {
-            diagnostics.push(Diagnostic {
-                code: DiagCode::MissingKey,
-                severity: Severity::Warning,
-                phase: "1.4".to_string(),
-                message: format!("Failed to resolve /OCProperties: {}", e),
-            });
+            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructUnexpectedEof,
+                format!("Failed to resolve /OCProperties: {}", e),
+            ));
             oc_properties.diagnostics = diagnostics;
             return oc_properties;
         }
@@ -316,12 +314,10 @@ pub fn parse_oc_properties(
     let oc_props_dict = match oc_props_obj.as_dict() {
         Some(d) => d,
         None => {
-            diagnostics.push(Diagnostic {
-                code: DiagCode::StructUnexpectedEof,
-                severity: Severity::Warning,
-                phase: "1.4".to_string(),
-                message: format!("/OCProperties is not a dictionary (type: {})", oc_props_obj.type_name()),
-            });
+            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructUnexpectedEof,
+                format!("/OCProperties is not a dictionary (type: {})", oc_props_obj.type_name()),
+            ));
             oc_properties.diagnostics = diagnostics;
             return oc_properties;
         }
@@ -334,22 +330,18 @@ pub fn parse_oc_properties(
             .filter_map(|o| o.as_ref())
             .collect(),
         Some(other) => {
-            diagnostics.push(Diagnostic {
-                code: DiagCode::StructUnexpectedEof,
-                severity: Severity::Warning,
-                phase: "1.4".to_string(),
-                message: format!("/OCGs is not an array (type: {})", other.type_name()),
-            });
+            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructUnexpectedEof,
+                format!("/OCGs is not an array (type: {})", other.type_name()),
+            ));
             oc_properties.diagnostics = diagnostics;
             return oc_properties;
         }
         None => {
-            diagnostics.push(Diagnostic {
-                code: DiagCode::MissingKey,
-                severity: Severity::Warning,
-                phase: "1.4".to_string(),
-                message: "/OCGs key missing from /OCProperties".to_string(),
-            });
+            diagnostics.push(Diagnostic::with_static_no_offset(
+                DiagCode::StructMissingKey,
+                "/OCGs key missing from /OCProperties",
+            ));
             oc_properties.diagnostics = diagnostics;
             return oc_properties;
         }
@@ -363,12 +355,10 @@ pub fn parse_oc_properties(
                 oc_properties.groups.insert(ocg_ref, group);
             }
             Err(e) => {
-                diagnostics.push(Diagnostic {
-                    code: DiagCode::StructUnexpectedEof,
-                    severity: Severity::Warning,
-                    phase: "1.4".to_string(),
-                    message: format!("Failed to resolve OCG ref {}: {}", ocg_ref, e),
-                });
+                diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructUnexpectedEof,
+                    format!("Failed to resolve OCG ref {}: {}", ocg_ref, e),
+                ));
             }
         }
     }
@@ -377,22 +367,18 @@ pub fn parse_oc_properties(
     let default_config = match oc_props_dict.get("D") {
         Some(PdfObject::Dict(d)) => &**d,
         Some(other) => {
-            diagnostics.push(Diagnostic {
-                code: DiagCode::StructUnexpectedEof,
-                severity: Severity::Warning,
-                phase: "1.4".to_string(),
-                message: format!("/D is not a dictionary (type: {})", other.type_name()),
-            });
+            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructUnexpectedEof,
+                format!("/D is not a dictionary (type: {})", other.type_name()),
+            ));
             oc_properties.diagnostics = diagnostics;
             return oc_properties;
         }
         None => {
-            diagnostics.push(Diagnostic {
-                code: DiagCode::MissingKey,
-                severity: Severity::Warning,
-                phase: "1.4".to_string(),
-                message: "/D key missing from /OCProperties".to_string(),
-            });
+            diagnostics.push(Diagnostic::with_static_no_offset(
+                DiagCode::StructMissingKey,
+                "/D key missing from /OCProperties",
+            ));
             oc_properties.diagnostics = diagnostics;
             return oc_properties;
         }

@@ -135,7 +135,7 @@ impl Comparator {
                 // Check exact value if present
                 if let Some(val) = exp.get("value") {
                     return Self::compare_with_tolerance_at_path(
-                        act,
+                        &serde_json::Value::Number(act.clone()),
                         val,
                         tolerances,
                         path,
@@ -145,7 +145,7 @@ impl Comparator {
             }
             // String constraints
             (serde_json::Value::String(act), serde_json::Value::Object(exp)) => {
-                if let Some(min_len) = exp.get("min_length").and_then(|v| v.as_usize()) {
+                if let Some(min_len) = exp.get("min_length").and_then(|v| v.as_u64()).map(|v| v as usize) {
                     if act.len() < min_len {
                         return ComparisonResult::Fail(format!(
                             "{}: string length {} is less than minimum {}",
@@ -171,7 +171,7 @@ impl Comparator {
             }
             // Array length constraints
             (serde_json::Value::Array(act), serde_json::Value::Object(exp)) => {
-                if let Some(min_len) = exp.get("min").and_then(|v| v.as_usize()) {
+                if let Some(min_len) = exp.get("min").and_then(|v| v.as_u64()).map(|v| v as usize) {
                     if act.len() < min_len {
                         return ComparisonResult::Fail(format!(
                             "{}: array length {} is less than minimum {}",
@@ -181,7 +181,7 @@ impl Comparator {
                         ));
                     }
                 }
-                if let Some(max_len) = exp.get("max").and_then(|v| v.as_usize()) {
+                if let Some(max_len) = exp.get("max").and_then(|v| v.as_u64()).map(|v| v as usize) {
                     if act.len() > max_len {
                         return ComparisonResult::Fail(format!(
                             "{}: array length {} is greater than maximum {}",

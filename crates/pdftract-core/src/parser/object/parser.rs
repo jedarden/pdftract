@@ -282,7 +282,7 @@ impl<'a> ObjectParser<'a> {
             let offset = self.lexer.position();
 
             // Try to get /Length from the dict
-            let len_hint = dict.get("/Length").and_then(|obj| obj.as_int()).map(|i| i as u64);
+            let len_hint = dict.get("Length").and_then(|obj| obj.as_int()).map(|i| i as u64);
 
             // Skip the stream body
             self.skip_stream_body(len_hint);

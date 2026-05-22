@@ -12,9 +12,8 @@
 
 use crate::parser::object::{ObjRef, PdfObject, PdfDict, intern};
 use crate::parser::xref::XrefResolver;
-use crate::parser::{Diagnostic, Severity};
-use crate::parser::diagnostic::DiagCode;
-use crate::parser::resources::{ResourceDict, merge_resources, extract_resources};
+use crate::diagnostics::{Diagnostic, DiagCode};
+use crate::parser::resources::{ResourceDict, merge_resources};
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -133,12 +132,10 @@ pub fn flatten_page_tree(resolver: &XrefResolver, pages_ref: ObjRef) -> Result<V
     let pages_obj = match resolver.resolve(pages_ref) {
         Ok(obj) => obj,
         Err(e) => {
-            diagnostics.push(Diagnostic {
-                severity: Severity::Error,
-                phase: "1.4".to_string(),
-                code: DiagCode::MissingKey,
-                message: format!("Failed to resolve root /Pages node {}: {}", pages_ref, e),
-            });
+            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructMissingKey,
+                format!("Failed to resolve root /Pages node {}: {}", pages_ref, e),
+            ));
             return Err(diagnostics);
         }
     };
@@ -162,15 +159,13 @@ pub fn flatten_page_tree(resolver: &XrefResolver, pages_ref: ObjRef) -> Result<V
     // Validate page count against /Count
     let actual_count = pages.len() as i64;
     if declared_count > 0 && actual_count != declared_count {
-        diagnostics.push(Diagnostic {
-            severity: Severity::Warning,
-            phase: "1.4".to_string(),
-            code: DiagCode::InvalidPageCount,
-            message: format!(
+        diagnostics.push(Diagnostic::with_dynamic_no_offset(
+            DiagCode::PageInvalidCount,
+            format!(
                 "STRUCT_INVALID_PAGE_COUNT: /Count declares {} pages, but tree contains {} pages",
                 declared_count, actual_count
             ),
-        });
+        ));
     }
 
     if !diagnostics.is_empty() && pages.is_empty() {
@@ -206,12 +201,10 @@ fn walk_page_tree(
 ) -> Vec<PageDict> {
     // Depth limit check
     if depth > MAX_PAGES_DEPTH {
-        diagnostics.push(Diagnostic {
-            severity: Severity::Warning,
-            phase: "1.4".to_string(),
-            code: DiagCode::DepthExceeded,
-            message: format!("STRUCT_DEPTH_EXCEEDED: /Pages nesting exceeds {} levels", MAX_PAGES_DEPTH),
-        });
+        diagnostics.push(Diagnostic::with_dynamic_no_offset(
+            DiagCode::StructDepthExceeded,
+            format!("STRUCT_DEPTH_EXCEEDED: /Pages nesting exceeds {} levels", MAX_PAGES_DEPTH),
+        ));
         return Vec::new();
     }
 
@@ -244,12 +237,10 @@ fn walk_page_tree(
             let kids = match dict.get("Kids") {
                 Some(k) => k,
                 None => {
-                    diagnostics.push(Diagnostic {
-                        severity: Severity::Warning,
-                        phase: "1.4".to_string(),
-                        code: DiagCode::MissingKey,
-                        message: "STRUCT_MISSING_KEY: /Pages node missing /Kids".to_string(),
-                    });
+                    diagnostics.push(Diagnostic::with_static_no_offset(
+                        DiagCode::StructMissingKey,
+                        "STRUCT_MISSING_KEY: /Pages node missing /Kids",
+                    ));
                     return Vec::new();
                 }
             };
@@ -262,6 +253,11 @@ fn walk_page_tree(
                 }
             };
 
+            // For /Pages nodes, all children should start with the same inherited state
+            // (the state after merging this /Pages node's own attributes).
+            // Save this state so we can restore it for each sibling.
+            let pages_parent_inherited = inherited.clone();
+
             let mut pages = Vec::new();
             for kid in kids_array {
                 // Handle both direct (embedded dict) and indirect references
@@ -269,12 +265,10 @@ fn walk_page_tree(
                     PdfObject::Ref(ref_) => {
                         // Check for cycles
                         if visited.contains(ref_) {
-                            diagnostics.push(Diagnostic {
-                                severity: Severity::Warning,
-                                phase: "1.4".to_string(),
-                                code: DiagCode::CircularRef,
-                                message: format!("STRUCT_CIRCULAR_REF: /Pages node {} already visited", ref_),
-                            });
+                            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                                DiagCode::StructCircularRef,
+                                format!("STRUCT_CIRCULAR_REF: /Pages node {} already visited", ref_),
+                            ));
                             continue;
                         }
                         visited.insert(*ref_);
@@ -282,12 +276,10 @@ fn walk_page_tree(
                         match resolver.resolve(*ref_) {
                             Ok(obj) => obj,
                             Err(e) => {
-                                diagnostics.push(Diagnostic {
-                                    severity: Severity::Warning,
-                                    phase: "1.4".to_string(),
-                                    code: DiagCode::MissingKey,
-                                    message: format!("STRUCT_MISSING_KEY: Failed to resolve /Kids entry {}: {}", ref_, e),
-                                });
+                                diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                                    DiagCode::StructMissingKey,
+                                    format!("STRUCT_MISSING_KEY: Failed to resolve /Kids entry {}: {}", ref_, e),
+                                ));
                                 continue;
                             }
                         }
@@ -314,7 +306,7 @@ fn walk_page_tree(
                 pages.extend(child_pages);
 
                 // Restore inherited state for next sibling
-                *inherited = parent_inherited.clone();
+                *inherited = pages_parent_inherited.clone();
             }
 
             pages
@@ -351,12 +343,10 @@ fn merge_inherited_attrs(dict: &PdfDict, inherited: &mut InheritedAttrs, diagnos
     // Rotate (inheritable)
     if let Some(rot) = dict.get("Rotate").and_then(|o| o.as_int()) {
         if rot % 90 != 0 {
-            diagnostics.push(Diagnostic {
-                severity: Severity::Warning,
-                phase: "1.4".to_string(),
-                code: DiagCode::InvalidRotate,
-                message: format!("STRUCT_INVALID_ROTATE: /Rotate value {} is not a multiple of 90", rot),
-            });
+            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                DiagCode::PageInvalidRotate,
+                format!("STRUCT_INVALID_ROTATE: /Rotate value {} is not a multiple of 90", rot),
+            ));
             // Clamp to nearest multiple of 90 (floor toward negative infinity)
             inherited.rotate = ((rot as f64 / 90.0).floor() as i64 * 90) as i32;
         } else {
@@ -405,12 +395,10 @@ fn build_page_dict(page_obj: &PdfObject, inherited: &InheritedAttrs, diagnostics
     } else if let Some(inherited_mb) = inherited.media_box {
         inherited_mb
     } else {
-        diagnostics.push(Diagnostic {
-            severity: Severity::Warning,
-            phase: "1.4".to_string(),
-            code: DiagCode::MissingKey,
-            message: format!("STRUCT_MISSING_KEY: Page {} has no /MediaBox and no inherited /MediaBox; using US Letter default", obj_ref),
-        });
+        diagnostics.push(Diagnostic::with_dynamic_no_offset(
+            DiagCode::StructMissingKey,
+            format!("STRUCT_MISSING_KEY: Page {} has no /MediaBox and no inherited /MediaBox; using US Letter default", obj_ref),
+        ));
         DEFAULT_MEDIABOX
     };
 
@@ -430,12 +418,11 @@ fn build_page_dict(page_obj: &PdfObject, inherited: &InheritedAttrs, diagnostics
     let mut rotate = inherited.rotate;
     if let Some(rot) = dict.get("Rotate").and_then(|o| o.as_int()) {
         if rot % 90 != 0 {
-            diagnostics.push(Diagnostic {
-                severity: Severity::Warning,
-                phase: "1.4".to_string(),
-                code: DiagCode::InvalidRotate,
-                message: format!("STRUCT_INVALID_ROTATE: Page {} has /Rotate value {} (not a multiple of 90)", obj_ref, rot),
-            });
+            diagnostics.push(Diagnostic::with_dynamic(
+                DiagCode::PageInvalidRotate,
+                0,
+                format!("Page {} has /Rotate value {} (not a multiple of 90)", obj_ref, rot),
+            ));
             // Clamp to nearest multiple of 90 (floor toward negative infinity)
             rotate = ((rot as f64 / 90.0).floor() as i64 * 90) as i32;
         } else {
@@ -929,13 +916,13 @@ mod tests {
         page2.insert(intern("MediaBox"), make_rect_array(DEFAULT_MEDIABOX));
 
         // Wire up the tree: grandparent -> parent -> [page1, page2]
-        let mut grandparent_dict = grandparent.as_dict().unwrap().clone();
+        let mut grandparent_dict = grandparent.clone();
         grandparent_dict.insert(
             intern("Kids"),
             PdfObject::Array(Box::new(vec![PdfObject::Ref(parent_ref)]))
         );
 
-        let mut parent_dict = parent.as_dict().unwrap().clone();
+        let mut parent_dict = parent.clone();
         parent_dict.insert(
             intern("Kids"),
             PdfObject::Array(Box::new(vec![PdfObject::Ref(page1_ref), PdfObject::Ref(page2_ref)]))
@@ -970,6 +957,7 @@ mod tests {
     #[test]
     fn test_resource_inheritance_page_without_resources() {
         // Test that a page without /Resources inherits parent's resources
+        // and that multiple pages with no resources share the same Arc instance
         let resolver = XrefResolver::new();
 
         // Parent /Pages with resources
@@ -982,39 +970,46 @@ mod tests {
         let mut parent = PdfDict::new();
         parent.insert(intern("Type"), PdfObject::Name(intern("Pages")));
         parent.insert(intern("Kids"), PdfObject::Array(Box::new(vec![])));
-        parent.insert(intern("Count"), PdfObject::Integer(1));
+        parent.insert(intern("Count"), PdfObject::Integer(2));
         parent.insert(intern("Resources"), PdfObject::Dict(Box::new(parent_resources)));
         parent.insert(intern("MediaBox"), make_rect_array(DEFAULT_MEDIABOX));
 
-        // Page without /Resources
-        let page_ref = ObjRef::new(2, 0);
-        let mut page = PdfDict::new();
-        page.insert(intern("Type"), PdfObject::Name(intern("Page")));
-        page.insert(intern("MediaBox"), make_rect_array(DEFAULT_MEDIABOX));
+        // Two pages without /Resources
+        let page1_ref = ObjRef::new(2, 0);
+        let mut page1 = PdfDict::new();
+        page1.insert(intern("Type"), PdfObject::Name(intern("Page")));
+        page1.insert(intern("MediaBox"), make_rect_array(DEFAULT_MEDIABOX));
+
+        let page2_ref = ObjRef::new(3, 0);
+        let mut page2 = PdfDict::new();
+        page2.insert(intern("Type"), PdfObject::Name(intern("Page")));
+        page2.insert(intern("MediaBox"), make_rect_array(DEFAULT_MEDIABOX));
 
         // Wire up the tree
         let mut parent_dict = parent.clone();
         parent_dict.insert(
             intern("Kids"),
-            PdfObject::Array(Box::new(vec![PdfObject::Ref(page_ref)]))
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(page1_ref), PdfObject::Ref(page2_ref)]))
         );
 
         resolver.cache_object(parent_ref, PdfObject::Dict(Box::new(parent_dict)));
-        resolver.cache_object(page_ref, PdfObject::Dict(Box::new(page)));
+        resolver.cache_object(page1_ref, PdfObject::Dict(Box::new(page1)));
+        resolver.cache_object(page2_ref, PdfObject::Dict(Box::new(page2)));
 
         let result = flatten_page_tree(&resolver, parent_ref);
         assert!(result.is_ok());
         let pages_vec = result.unwrap();
-        assert_eq!(pages_vec.len(), 1);
+        assert_eq!(pages_vec.len(), 2);
 
-        // Page should have inherited F1 from parent
+        // Both pages should have inherited F1 from parent
         assert_eq!(pages_vec[0].resources.fonts.len(), 1);
         assert_eq!(pages_vec[0].resources.fonts.get(&intern("F1")), Some(&ObjRef::new(10, 0)));
+        assert_eq!(pages_vec[1].resources.fonts.len(), 1);
+        assert_eq!(pages_vec[1].resources.fonts.get(&intern("F1")), Some(&ObjRef::new(10, 0)));
 
-        // Verify Arc pointer sharing: when page has no resources,
-        // it should share the same Arc as the parent (memory efficiency)
-        // We can't test this directly without exposing the parent's resources,
-        // but we can verify the resources are present
+        // Verify Arc pointer sharing: when pages have no resources,
+        // they should share the same Arc instance (memory efficiency)
+        assert!(Arc::ptr_eq(&pages_vec[0].resources, &pages_vec[1].resources));
     }
 
     #[test]

@@ -524,7 +524,7 @@ impl ObjectStmParser {
 
 impl Default for ObjectStmParser {
     fn default() -> Self {
-        Self::new(2 * 1024_u64.pow(3)) // 2 GB default
+        Self::new(512 * 1024_u64.pow(2)) // 512 MiB default
     }
 }
 
@@ -558,7 +558,7 @@ mod tests {
     #[test]
     fn test_obj_stm_parser_default() {
         let parser = ObjectStmParser::default();
-        assert_eq!(parser.max_decompress_bytes, 2 * 1024_u64.pow(3));
+        assert_eq!(parser.max_decompress_bytes, 512 * 1024_u64.pow(2));
     }
 
     #[test]
