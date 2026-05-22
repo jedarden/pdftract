@@ -48,11 +48,17 @@ The `flatten_page_tree` function in `pages.rs` calls `merge_resources` during tr
 - `crates/pdftract-core/src/parser/mod.rs`: Added public API exports
 - `notes/pdftract-dejqs.md`: This verification note
 
-## Test Results
+## Test Results (2026-05-22 verification)
 
 All tests pass:
+```
+cargo test --lib -- parser::resources parser::pages
+test result: ok. 33 passed; 0 failed; 0 ignored
+```
+
+Breakdown:
 - 9 tests in `parser::resources::tests`
-- 24 tests in `parser::pages::tests`
+- 20 tests in `parser::pages::tests` (excluding 4 proptests)
 - 4 proptests for INV-8 compliance (no panics on arbitrary input)
 
 ## No Breaking Changes
