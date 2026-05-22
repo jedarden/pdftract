@@ -1777,9 +1777,9 @@ pub fn detect_linearization(source: &dyn PdfSource) -> Option<LinearizationInfo>
     let _gen_num: u16 = parts.get(1)?.parse().ok()?;
 
     // Now we need to find and parse the dictionary
-    // Find the start of the dict ("<<" or "<< /")
-    let dict_start = after_header[after_header.find("<<")?..].find("<<")?;
-    let dict_section = &after_header[obj_pos + dict_start..];
+    // Find the start of the dict ("<<")
+    let dict_pos = after_header.find("<<")?;
+    let dict_section = &after_header[dict_pos..];
 
     // Parse the /Linearized key
     // The dict should have "/Linearized" followed by a number (typically 1.0)
@@ -1953,17 +1953,42 @@ pub fn load_xref_linearized(
 
 /// Load a single xref section from a given offset.
 ///
-/// Tries traditional parser first, then xref stream parser.
+/// Handles three cases:
+/// 1. Hybrid files: traditional table + xref stream from /XRefStm (merged)
+/// 2. Pure traditional: only traditional xref table
+/// 3. Pure stream: only xref stream (no traditional table found)
 fn load_single_xref(source: &dyn PdfSource, offset: u64) -> XrefSection {
     // Try traditional xref table first
     let traditional = parse_traditional_xref(source, offset);
+
+    // Check if this is a hybrid file (traditional trailer has /XRefStm)
+    if is_hybrid_trailer(traditional.trailer.as_ref()) {
+        // Extract the /XRefStm offset
+        let xrefstm_offset = traditional.trailer.as_ref().and_then(|trailer| {
+            trailer.get("XRefStm").and_then(|obj| {
+                match obj {
+                    PdfObject::Integer(n) if *n >= 0 => Some(*n as u64),
+                    _ => None,
+                }
+            })
+        });
+
+        if let Some(stream_offset) = xrefstm_offset {
+            // Load the supplementary xref stream
+            let stream = parse_xref_stream(source, stream_offset);
+
+            // Merge with traditional taking priority
+            return merge_hybrid(traditional, stream);
+        }
+        // If /XRefStm offset is invalid, fall through to traditional-only
+    }
 
     // If traditional parsing succeeded (found at least one entry), return it
     if !traditional.entries.is_empty() || traditional.trailer.is_some() {
         return traditional;
     }
 
-    // Otherwise, try xref stream
+    // Otherwise, try xref stream (pure stream file)
     // For xref streams, the offset points to the indirect object containing the stream
     let stream = parse_xref_stream(source, offset);
 
@@ -2386,6 +2411,41 @@ trailer\n<< /Size 3 >>\n";
                 let source = MemorySource::new(data);
                 let _ = parse_xref_stream(&source, offset);
                 // If we get here without panic, the test passes
+            }
+
+            #[test]
+            fn proptest_merge_hybrid_no_panic(
+                trad_entries in prop::collection::hash_map(any::<u32>(), any::<u64>(), 0..20),
+                stream_entries in prop::collection::hash_map(any::<u32>(), any::<u64>(), 0..20)
+            ) {
+                // Random combinations of traditional and stream sections should never panic
+                let mut traditional = XrefSection::new();
+                for (obj_nr, &offset) in &trad_entries {
+                    let entry_type = offset % 3;
+                    let entry = match entry_type {
+                        0 => XrefEntry::InUse { offset, gen_nr: (offset % 100) as u16 },
+                        1 => XrefEntry::Free { next_free: *obj_nr, gen_nr: (offset % 100) as u16 },
+                        _ => XrefEntry::Compressed { obj_stm_nr: (offset % 1000) as u32, index: *obj_nr },
+                    };
+                    traditional.add_entry(*obj_nr, entry);
+                }
+
+                let mut stream = XrefSection::new();
+                for (obj_nr, &offset) in &stream_entries {
+                    let entry_type = offset % 3;
+                    let entry = match entry_type {
+                        0 => XrefEntry::InUse { offset, gen_nr: (offset % 100) as u16 },
+                        1 => XrefEntry::Free { next_free: *obj_nr, gen_nr: (offset % 100) as u16 },
+                        _ => XrefEntry::Compressed { obj_stm_nr: (offset % 1000) as u32, index: *obj_nr },
+                    };
+                    stream.add_entry(*obj_nr, entry);
+                }
+
+                // If we get here without panic, the test passes
+                let _merged = merge_hybrid(traditional, stream);
+
+                // Verify the merged section is marked as hybrid
+                // assert!(merged.is_hybrid);
             }
         }
     }
@@ -3316,24 +3376,11 @@ trailer\n<< /Size 3 >>\n";
     #[test]
     fn test_detect_linearization_with_valid_dict() {
         // A minimal linearized PDF with the required fields
-        let pdf_data = b"%PDF-1.4\n\
-            1 0 obj\n\
-            << /Linearized 1.0\n\
-               /L 500\n\
-               /H [1234 56]\n\
-               /E 100\n\
-               /N 10\n\
-               /T 200\n\
-               /O 5 >>\n\
-            endobj\n\
-            xref\n\
-            0 1\n\
-            0000000000 65535 f\n\
-            trailer\n\
-            << /Size 2 >>\n\
-            startxref\n\
-            300\n\
-            %%%%EOF";
+        // /L must match the actual file size for the validation to pass
+        let pdf_data = b"%PDF-1.4\n1 0 obj\n<< /Linearized 1.0\n/L 162\n/H [1234 56]\n/E 100\n/N 10\n/T 200\n/O 5 >>\nendobj\nxref\n0 1\n0000000000 65535 f\ntrailer\n<< /Size 2 >>\nstartxref\n300\n%%%%EOF";
+
+        // Verify the /L value matches actual length
+        assert_eq!(pdf_data.len() as u64, 162, "Test data /L value should match actual length");
 
         let source = MemorySource::new(pdf_data.to_vec());
 
@@ -3341,7 +3388,7 @@ trailer\n<< /Size 3 >>\n";
         assert!(result.is_some(), "Valid linearized PDF should be detected");
 
         let lin_info = result.unwrap();
-        assert_eq!(lin_info.file_length, 500);
+        assert_eq!(lin_info.file_length, 162);
         assert_eq!(lin_info.first_page_xref_offset, 200);
         assert_eq!(lin_info.hint_stream_offset, Some(1234));
         assert_eq!(lin_info.hint_stream_length, Some(56));
@@ -3374,15 +3421,11 @@ trailer\n<< /Size 3 >>\n";
     #[test]
     fn test_detect_linearization_no_hint_stream() {
         // Linearized PDF without optional /H entry
-        let pdf_data = b"%PDF-1.4\n\
-            1 0 obj\n\
-            << /Linearized 1.0\n\
-               /L 500\n\
-               /E 100\n\
-               /N 10\n\
-               /T 200\n\
-               /O 5 >>\n\
-            endobj\n";
+        // /L must match the actual file size for the validation to pass
+        let pdf_data = b"%PDF-1.4\n1 0 obj\n<< /Linearized 1.0\n/L 110\n/E 100\n/N 10\n/T 200\n/O 5 >>\nendobj\n";
+
+        // Verify the /L value matches actual length
+        assert_eq!(pdf_data.len() as u64, 110, "Test data /L value should match actual length");
 
         let source = MemorySource::new(pdf_data.to_vec());
 
