@@ -3471,6 +3471,10 @@ Because CI runs on the private `iad-ci` cluster, external contributors cannot tr
 
 The CLI binary's JSON output schema (`schema_version: 1.0`) IS the API. Every SDK in every language exposes the same method surface — `extract`, `extract_text`, `extract_markdown`, `extract_stream`, `search`, `get_metadata`, `hash`, `classify`, `verify_receipt` — and chooses the transport that fits the language ecosystem.
 
+### Repository Layout (monorepo)
+
+All SDK source is vendored in **this monorepo** at root-level `pdftract-<lang>/` directories (`pdftract-go/`, `pdftract-dotnet/`, `pdftract-java/`, `pdftract-node/`, …) — a single source of truth, versioned and CI-tested alongside the CLI/core they wrap. SDKs are NOT maintained as separate repositories. The `pdftract sdk codegen --lang <L>` generator emits/refreshes the in-repo `pdftract-<L>/` directory (its `--out` defaults to the monorepo path, not a sibling). Each SDK is still **published** to its language registry (PyPI, npm, crates.io, Maven Central, NuGet, pkg.go.dev, …) from the monorepo by the release pipeline; the registry/package names in "The Ten SDKs" below are publish targets, not separate source repos. (Go note: the module path is served from the `pdftract-go/` subdirectory; the legacy standalone `github.com/jedarden/pdftract-<lang>` repos are retired/archived in favor of the monorepo.)
+
 ### Integration Patterns
 
 | Pattern | When to use | Pros | Cons |
@@ -3572,7 +3576,7 @@ The C/`libpdftract` binding is hand-maintained (cbindgen output + a `cdylib` Car
 
 The 8 subprocess SDKs share:
 - A single Tera template (`templates/sdk-skeleton/<lang>/`)
-- A generator subcommand: `pdftract sdk codegen --lang go --out ../pdftract-go`
+- A generator subcommand: `pdftract sdk codegen --lang go --out pdftract-go`
 - The shared conformance suite
 
 The generator emits the package skeleton, method stubs, the conformance-test runner, and the language-native error hierarchy. Hand-written content is limited to: idiomatic ergonomics on top of the stubs, async wrappers where the language prefers async, the language's package metadata file (`package.json`, `go.mod`, `pom.xml`, etc.). Typical SDK after generation: ~300 LOC, ~150 LOC hand-written.
