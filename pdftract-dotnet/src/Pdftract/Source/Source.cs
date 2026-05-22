@@ -21,9 +21,14 @@ public abstract class Source
     public static Source FromPath(string path) => new PathSource(path);
 
     /// <summary>
-    /// Creates a Source from a URL.
+    /// Creates a Source from a URL string.
     /// </summary>
     public static Source FromUrl(string url) => new UrlSource(url);
+
+    /// <summary>
+    /// Creates a Source from a URI.
+    /// </summary>
+    public static Source FromUri(Uri uri) => new UrlSource(uri.ToString());
 
     /// <summary>
     /// Creates a Source from a byte array.

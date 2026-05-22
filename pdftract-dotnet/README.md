@@ -57,8 +57,12 @@ Console.WriteLine($"Title: {metadata.Title}");
 // From file path
 var source = Source.FromPath("document.pdf");
 
-// From URL
+// From URL string
 var source = Source.FromUrl("https://example.com/document.pdf");
+
+// From URI
+var uri = new Uri("https://example.com/document.pdf");
+var source = Source.FromUri(uri);
 
 // From bytes
 var data = await File.ReadAllBytesAsync("document.pdf");

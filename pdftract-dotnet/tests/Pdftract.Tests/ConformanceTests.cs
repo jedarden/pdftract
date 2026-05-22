@@ -212,6 +212,14 @@ public class ConformanceTests : IAsyncLifetime
     }
 
     [Fact]
+    public void SourceFromUri()
+    {
+        var uri = new Uri("https://example.com/doc.pdf");
+        var source = Source.FromUri(uri);
+        Assert.NotNull(source);
+    }
+
+    [Fact]
     public void SourceFromBytes()
     {
         var data = new byte[] { 0x25, 0x50, 0x44, 0x46 }; // %PDF

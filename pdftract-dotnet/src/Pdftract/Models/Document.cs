@@ -5,10 +5,6 @@ namespace Pdftract.Models;
 /// <summary>
 /// Represents a PDF document with pages and metadata.
 /// </summary>
-[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower)]
-[JsonSerializable(typeof(Document))]
-public partial class DocumentContext : JsonSerializerContext;
-
 public record Document
 {
     [JsonPropertyName("schema_version")]

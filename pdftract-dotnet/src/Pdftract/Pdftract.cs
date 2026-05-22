@@ -20,11 +20,7 @@ public sealed partial class Pdftract : IAsyncDisposable, IDisposable
     public Pdftract(string? binaryPath = null)
     {
         _binaryPath = FindBinary(binaryPath);
-        _jsonOptions = new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
-            PropertyNameCaseInsensitive = true
-        };
+        _jsonOptions = PdftractJsonContext.Default.Options;
     }
 
     /// <summary>
@@ -37,7 +33,7 @@ public sealed partial class Pdftract : IAsyncDisposable, IDisposable
     {
         var args = BuildArgs("extract", "--json", source, options);
         var json = await InvokeAsync(source, args, cancellationToken);
-        return JsonSerializer.Deserialize<Document>(json, _jsonOptions)
+        return JsonSerializer.Deserialize(json, PdftractJsonContext.Default.Document)
             ?? throw new JsonException("Failed to deserialize Document");
     }
 
@@ -76,7 +72,7 @@ public sealed partial class Pdftract : IAsyncDisposable, IDisposable
         var args = BuildArgs("extract", "--ndjson", source, options);
         await foreach (var line in InvokeStreamAsync(source, args, cancellationToken))
         {
-            var page = JsonSerializer.Deserialize<Page>(line, _jsonOptions)
+            var page = JsonSerializer.Deserialize(line, PdftractJsonContext.Default.Page)
                 ?? throw new JsonException("Failed to deserialize Page");
             yield return page;
         }
@@ -94,7 +90,7 @@ public sealed partial class Pdftract : IAsyncDisposable, IDisposable
         var args = BuildArgs("grep", pattern, source, options);
         await foreach (var line in InvokeStreamAsync(source, args, cancellationToken))
         {
-            var match = JsonSerializer.Deserialize<Match>(line, _jsonOptions)
+            var match = JsonSerializer.Deserialize(line, PdftractJsonContext.Default.Match)
                 ?? throw new JsonException("Failed to deserialize Match");
             yield return match;
         }
@@ -111,10 +107,9 @@ public sealed partial class Pdftract : IAsyncDisposable, IDisposable
         var args = BuildArgs("extract", "--metadata-only", source, options);
         var json = await InvokeAsync(source, args, cancellationToken);
 
-        var result = JsonSerializer.Deserialize<JsonElement>(json, _jsonOptions);
-        var metadataElem = result.GetProperty("metadata");
-        return JsonSerializer.Deserialize<Metadata>(metadataElem.GetRawText(), _jsonOptions)
-            ?? throw new JsonException("Failed to deserialize Metadata");
+        var result = JsonSerializer.Deserialize(json, PdftractJsonContext.Default.Document);
+        if (result is null) throw new JsonException("Failed to deserialize Document");
+        return result.Metadata;
     }
 
     /// <summary>
@@ -133,7 +128,7 @@ public sealed partial class Pdftract : IAsyncDisposable, IDisposable
         }
 
         var json = await InvokeAsync(source, args, cancellationToken);
-        return JsonSerializer.Deserialize<Fingerprint>(json, _jsonOptions)
+        return JsonSerializer.Deserialize(json, PdftractJsonContext.Default.Fingerprint)
             ?? throw new JsonException("Failed to deserialize Fingerprint");
     }
 
@@ -148,7 +143,7 @@ public sealed partial class Pdftract : IAsyncDisposable, IDisposable
         args.AddRange(source.ToArgs());
 
         var json = await InvokeAsync(source, args, cancellationToken);
-        return JsonSerializer.Deserialize<Classification>(json, _jsonOptions)
+        return JsonSerializer.Deserialize(json, PdftractJsonContext.Default.Classification)
             ?? throw new JsonException("Failed to deserialize Classification");
     }
 
@@ -161,7 +156,7 @@ public sealed partial class Pdftract : IAsyncDisposable, IDisposable
         CancellationToken cancellationToken = default)
     {
         var receiptPath = path + ".receipt.json";
-        var receiptJson = JsonSerializer.Serialize(receipt, _jsonOptions);
+        var receiptJson = JsonSerializer.Serialize(receipt, PdftractJsonContext.Default.Receipt);
         await File.WriteAllTextAsync(receiptPath, receiptJson, cancellationToken);
 
         try
@@ -173,6 +168,20 @@ public sealed partial class Pdftract : IAsyncDisposable, IDisposable
         catch (ReceiptVerifyException)
         {
             return false;
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(receiptPath))
+                {
+                    File.Delete(receiptPath);
+                }
+            }
+            catch
+            {
+                // Ignore cleanup errors
+            }
         }
     }
 
@@ -229,17 +238,20 @@ public sealed partial class Pdftract : IAsyncDisposable, IDisposable
         process.StartInfo = new ProcessStartInfo
         {
             FileName = _binaryPath,
-            ArgumentList = { args },
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false
         };
+        foreach (var arg in args)
+        {
+            process.StartInfo.ArgumentList.Add(arg);
+        }
 
         var output = new StringBuilder();
         var error = new StringBuilder();
 
-        process.OutputDataReceived += (_, e) => { if (e.Data != null) output.Append(e.Data); };
-        process.ErrorDataReceived += (_, e) => { if (e.Data != null) error.Append(e.Data); };
+        process.OutputDataReceived += (_, e) => { if (e.Data != null) { output.AppendLine(e.Data); } };
+        process.ErrorDataReceived += (_, e) => { if (e.Data != null) { error.AppendLine(e.Data); } };
 
         var tcs = new TaskCompletionSource<string>();
 
@@ -281,16 +293,26 @@ public sealed partial class Pdftract : IAsyncDisposable, IDisposable
             }
         };
 
+        process.EnableRaisingEvents = true;
+
         if (!process.Start())
         {
+            source?.Dispose();
             throw new InvalidOperationException("Failed to start pdftract process");
         }
 
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 
-        var result = await tcs.Task;
-        return result;
+        try
+        {
+            var result = await tcs.Task;
+            return result;
+        }
+        finally
+        {
+            source?.Dispose();
+        }
     }
 
     private async IAsyncEnumerable<string> InvokeStreamAsync(
@@ -302,18 +324,20 @@ public sealed partial class Pdftract : IAsyncDisposable, IDisposable
         process.StartInfo = new ProcessStartInfo
         {
             FileName = _binaryPath,
-            ArgumentList = { args },
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false
         };
+        foreach (var arg in args)
+        {
+            process.StartInfo.ArgumentList.Add(arg);
+        }
 
         var error = new StringBuilder();
-        var outputLines = new System.Collections.Concurrent.ConcurrentQueue<string>();
-        var streamComplete = new TaskCompletionSource<bool>();
         var processExitCode = 0;
+        var processExited = false;
 
-        process.ErrorDataReceived += (_, e) => { if (e.Data != null) error.Append(e.Data); };
+        process.ErrorDataReceived += (_, e) => { if (e.Data != null) { error.AppendLine(e.Data); } };
 
         cancellationToken.Register(() =>
         {
@@ -330,37 +354,46 @@ public sealed partial class Pdftract : IAsyncDisposable, IDisposable
         process.Exited += (_, _) =>
         {
             processExitCode = process.ExitCode;
-            streamComplete.TrySetResult(true);
+            processExited = true;
         };
+
+        process.EnableRaisingEvents = true;
 
         if (!process.Start())
         {
+            source.Dispose();
             throw new InvalidOperationException("Failed to start pdftract process");
         }
 
-        using var reader = process.StandardOutput;
-        process.BeginErrorReadLine();
-
-        string? line;
-        while ((line = await reader.ReadLineAsync(cancellationToken)) != null)
+        try
         {
-            if (!string.IsNullOrWhiteSpace(line))
+            using var reader = process.StandardOutput;
+            process.BeginErrorReadLine();
+
+            string? line;
+            while ((line = await reader.ReadLineAsync(cancellationToken)) != null)
             {
-                outputLines.Enqueue(line);
-                yield return line;
+                if (!string.IsNullOrWhiteSpace(line))
+                {
+                    yield return line;
+                }
+            }
+
+            process.WaitForExit();
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw new OperationCanceledException("pdftract cancelled", cancellationToken);
+            }
+
+            if (processExitCode != 0)
+            {
+                throw PdftractException.FromExitCode(processExitCode, error.ToString());
             }
         }
-
-        process.WaitForExit();
-
-        if (cancellationToken.IsCancellationRequested)
+        finally
         {
-            throw new OperationCanceledException("pdftract cancelled", cancellationToken);
-        }
-
-        if (processExitCode != 0)
-        {
-            throw PdftractException.FromExitCode(processExitCode, error.ToString());
+            source.Dispose();
         }
     }
 
