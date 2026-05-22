@@ -63,6 +63,24 @@ pdftract must be the **most accurate, fastest, and lightest-weight** PDF text ex
 
 Decisions that violate any target require explicit justification and a waiver comment in the relevant section below.
 
+### Memory targets (acceptance criteria — CI-gated)
+
+The fourth leg of "lightest-weight" is **runtime memory, not just binary size**. Binding invariant: pdftract MUST process any single document — including adversarial inputs — within a bounded peak-RSS ceiling that does **not** scale with input size, page count, or attack payload. A PDF that is small on disk must never be able to force multi-GB residency. This is a deployment-scalability requirement: hosts and serverless/worker runtimes budget on the order of a few hundred MB to ~1–2 GB per worker, so any single document needing > ~1 GB is a defect and > 4 GB is a release blocker.
+
+| Metric | Target | Measurement |
+|---|---|---|
+| Peak RSS, 100-page vector PDF (buffered mode) | < 512 MB | `tests/fixtures/perf/`; RSS sampled at 10 ms by the memory-ceiling harness |
+| Peak RSS, streaming/NDJSON mode (any page count, incl. 10,000-page EC-03) | < 256 MB, **constant in page count** | `tests/fixtures/perf/10k-page.pdf`; RSS must stay flat as page count grows |
+| Peak RSS, any adversarial fixture (bomb, deep nesting, huge xref, predictor abuse) | < 1 GB hard ceiling; must not scale with payload | `tests/security/` + `tests/fixtures/malformed/`, run under a cgroup `MemoryMax` cap in CI |
+| `ExtractionOptions.max_decompress_bytes` default (document-cumulative) | **512 MB** (was 2 GB) | Per `docs/research/adversarial-inputs-and-parser-security.md`; enforced incrementally in Phase 1.5 |
+| Buffer pre-allocation discipline | No buffer pre-sized to a claimed or decompressed length before bytes are read | Clippy lint + review; predictor/filter stages bounded to 2 × stride, row-by-row (per `image-and-figure-extraction.md`) |
+| Concurrency budget (rayon page parallelism) | Document-wide peak ≤ the ceiling above; per-page budget = ceiling ÷ max in-flight pages | The page-parallel scheduler caps simultaneously-resident pages so the ceiling holds regardless of core count |
+| Serve mode (Phase 6.4) per-request residency | Bounded per request; one pathological document cannot exhaust the host | Per-request `max_decompress_bytes` + worker isolation; OOM of one request returns 5xx, never crashes the host |
+
+CI memory-ceiling gate (analogous to the `cargo bloat` size gate): a harness samples peak RSS while extracting the perf and malformed corpora and fails the build if any document exceeds its budget. The full test and fuzz suites run under a cgroup `MemoryMax` cap so a memory regression surfaces as a clean test failure, never an OOM that takes down the runner.
+
+> **Supersedes legacy default.** The 512 MB `max_decompress_bytes` default above supersedes the 2 GB value previously referenced in the Edge Case Catalog (EC-10), Failure Mode Taxonomy, Threat Model (TH-01), and Anti-Patterns (now reconciled to 512 MB). The 2 GB default was the root cause of an observed multi-GB OOM: a 2 GB decompress plus a full second copy in the PNG-predictor stage (`apply_png_predictors` pre-allocates `num_rows * row_size` and is outside the `max_bytes` budget), multiplied across rayon page parallelism.
+
 ### Adoption Targets (informational, not CI-gated)
 
 The targets below are tracked publicly to gauge real-world traction. They are NOT CI-gated and missing them does not block any release; they exist to inform planning for subsequent versions and to surface positioning gaps early.
@@ -84,7 +102,7 @@ Not every target above carries the same weight. The Accuracy / Speed / Weight ta
 
 | Tier | Definition | Targets in this tier | Failure consequence |
 |---|---|---|---|
-| **Tier 1 — HARD GATES** (block release) | Numerical commitments whose miss would compromise the product's stated core promise. CI failure = release blocked. | Accuracy: CER < 0.5% on vector; reading order > 95%; Unicode recovery > 90%; regression Δ < 0.5%; readability > 0.85. Speed: 100-page vector < 3 s; OCR speed target (10-page in < 30 s) from v0.2.0 onward. Weight: < 4 MB default binary; < 14 MB `full`; INV-11 schema validity. | Release blocked at the failing milestone; no override available. |
+| **Tier 1 — HARD GATES** (block release) | Numerical commitments whose miss would compromise the product's stated core promise. CI failure = release blocked. | Accuracy: CER < 0.5% on vector; reading order > 95%; Unicode recovery > 90%; regression Δ < 0.5%; readability > 0.85. Speed: 100-page vector < 3 s; OCR speed target (10-page in < 30 s) from v0.2.0 onward. Weight: < 4 MB default binary; < 14 MB `full`; INV-11 schema validity. Memory: adversarial-input peak RSS < 1 GB hard ceiling (OOM safety). | Release blocked at the failing milestone; no override available. |
 | **Tier 2 — SHOULD HIT** (block release after one warning) | Numerical commitments where a one-time miss is tolerable provided the trend is corrected by the next minor release. | Speed: grep ≥ 50 MB/s; serve p99 < 150 ms; cache-hit < 20 ms p99. Weight: multi-output overhead ≤ 1.1×; cache-hit latency; remote bytes < 5 MB single-page; benchmark ratios ≥ 10× pdfminer.six and ≥ 5× pypdf. | First miss: stderr warning at build time + tracked deviation in `benches/results/`. Subsequent miss: release blocked. |
 | **Tier 3 — ASPIRATIONAL** (track but never block) | Targets that depend on factors outside the engineering team's control (competitor evolution, user adoption, ecosystem maturity). | All Adoption Targets above; "≥ 10× pdfminer.six" if pdfminer.six materially improves before v1.0; community-contributed profile count; external-contributor corpus PDFs. | Recorded in quarterly review. Material miss triggers a planning retrospective; never a release block. |
 
@@ -670,7 +688,7 @@ The following 26 edge cases are exercised by integration tests in `tests/fixture
 | EC-07 | Corrupt xref | xref offset off by one (common real-world corruption) | Phase 1.3 strategy 4 (forward scan fallback) recovers; `XREF_REPAIRED` diagnostic emitted |
 | EC-08 | Circular object references | Object A → B → A | Phase 1.2 per-thread resolution stack detects; `STRUCT_CIRCULAR_REF` diagnostic; PdfNull returned for the cycle |
 | EC-09 | Missing `/MediaBox` | Page with no MediaBox and no inherited MediaBox | Phase 1.4 substitutes US Letter (612×792); `STRUCT_MISSING_KEY` diagnostic per page |
-| EC-10 | FlateDecode bomb | A small compressed stream that expands to > 2 GB | Phase 1.5 enforces `max_decompress_bytes` (2 GB default); emits `STREAM_BOMB`; returns partial bytes |
+| EC-10 | FlateDecode bomb | A small compressed stream that expands to > 2 GB | Phase 1.5 enforces `max_decompress_bytes` (512 MB default); emits `STREAM_BOMB`; returns partial bytes |
 | EC-11 | JBIG2 without `full-render` | JBIG2-encoded image needing OCR | Phase 5.2 emits `OCR_JBIG2_UNSUPPORTED`; page skipped from OCR |
 | EC-12 | JPX without `full-render` | JPEG 2000-encoded image needing OCR | Phase 5.2 emits `OCR_JPX_UNSUPPORTED`; page skipped from OCR |
 | EC-13 | CCITT without libtiff or `full-render` | CCITT fax-encoded image needing OCR | Phase 5.2 emits `OCR_CCITT_UNSUPPORTED`; page skipped from OCR |
@@ -869,7 +887,7 @@ The matrix below lists the threats covered by mitigations in this plan. Every ro
 
 | Threat ID | Attacker | Vector | Mitigation | Test |
 |---|---|---|---|---|
-| TH-01 | A1 | Decompression bomb: 10 KB FlateDecode stream expands to multi-GB | `ExtractionOptions.max_decompress_bytes` (default 2 GB); Phase 1.5 enforces the cap; abort emits `STREAM_BOMB` diagnostic per Diagnostic Code Catalog | `tests/security/TH-01-stream-bomb.rs` against `tests/fixtures/malformed/bomb-10k-2g.pdf` |
+| TH-01 | A1 | Decompression bomb: 10 KB FlateDecode stream expands to multi-GB | `ExtractionOptions.max_decompress_bytes` (default 512 MB); Phase 1.5 enforces the cap; abort emits `STREAM_BOMB` diagnostic per Diagnostic Code Catalog | `tests/security/TH-01-stream-bomb.rs` against `tests/fixtures/malformed/bomb-10k-2g.pdf` |
 | TH-02 | A3 | Path traversal: MCP client requests `../../etc/passwd` via a tool that accepts a path parameter | `pdftract mcp` MUST NOT accept file-path parameters (per INV-10); `--root DIR` (when introduced) canonicalises and rejects paths outside `DIR` with `PATH_OUTSIDE_ROOT` diagnostic | `tests/security/TH-02-path-traversal.rs` exercising 10 traversal payloads |
 | TH-03 | A5 | Unauthenticated MCP bind on a public interface | `pdftract mcp --bind` MUST require `--auth-token` (or `PDFTRACT_MCP_TOKEN`) unless the bind address resolves to `127.0.0.1`/`::1`; startup aborts otherwise with exit code 78 | `tests/security/TH-03-mcp-no-auth.rs`: spawn `mcp --bind 0.0.0.0:0` with no token, assert startup failure |
 | TH-04 | A1 | JavaScript embedded in `/AA`, `/OpenAction`, or `/JS` entries triggers execution | pdftract NEVER executes embedded JavaScript; presence is flagged as a `JAVASCRIPT_PRESENT` diagnostic (info-level) and surfaced in the JSON output as `metadata.javascript_actions[]` for downstream review | `tests/security/TH-04-js-presence.rs` against `tests/fixtures/security/embedded-js.pdf` |
@@ -976,7 +994,7 @@ The following patterns are NEVER acceptable in pdftract code. PR reviews block o
 | Holding the Python GIL across rayon work | Acquiring the GIL inside a rayon job serialises all parallel work behind the GIL, defeating rayon entirely. | Phase 6.3 releases the GIL via `py.allow_threads(...)` before the rayon-driven extraction starts; reacquires only to construct the Python return value. |
 | Loading the whole PDF into memory when memmap2 / range-read would suffice | A 5 GB PDF should NOT consume 5 GB of RSS. mmap relies on the OS page cache for on-demand paging; HTTP range reads fetch only what the extraction touches. | All file I/O goes through the Phase 1.8 `PdfSource` trait. Code that does `fs::read(path)?` of an unbounded file is rejected at code review. |
 | Re-initialising the Tesseract `TessBaseAPI` per page | Tesseract initialisation is ~200 ms (parses language data, loads neural-net weights). Doing this per page adds 100× more startup cost than the OCR itself. | One `TessBaseAPI` per worker thread, stored in `thread_local!`. The Phase 5.4 spec mandates this. |
-| Inflating an unbounded zlib stream without `max_decompress_bytes` | A 10 KB zlib stream can expand to multi-GB (compression bomb). Unbounded decompression is a DoS vector for any service accepting PDF uploads. | Phase 1.5 enforces `ExtractionOptions.max_decompress_bytes` (default 2 GB). New decoder paths MUST check this limit. |
+| Inflating an unbounded zlib stream without `max_decompress_bytes` | A 10 KB zlib stream can expand to multi-GB (compression bomb). Unbounded decompression is a DoS vector for any service accepting PDF uploads. | Phase 1.5 enforces `ExtractionOptions.max_decompress_bytes` (default 512 MB). New decoder paths MUST check this limit. |
 | Following `/Prev` xref chains without cycle detection | A malicious or corrupt PDF can craft an xref `/Prev` cycle that loops forever. | Phase 1.3 tracks visited xref offsets; the second visit terminates the chain with an `XREF_REPAIRED` diagnostic. |
 | Calling out to external commands without `--no-interactive` / non-interactive bypass | A subprocess that prompts for input (passwords, "are you sure?") hangs the extraction. | pdftract does not shell out for extraction work. The only subprocess is the OS browser launcher in Phase 7.9, which is opt-out via `--no-open`. |
 | Writing to stdout from a `serve` handler | The serve handler returns HTTP responses; stdout is a server-process log channel. Writes to stdout interleave with axum's response writes if the framework is configured to log there. | All operational messages go through the `log` macros, which route to stderr. The HTTP response is the sole stdout consumer in non-MCP modes; in MCP stdio mode, JSON-RPC frames are the sole consumer. |
@@ -1151,7 +1169,7 @@ Decode stream data through its filter pipeline. Called lazily when stream conten
 
 **Filter pipeline:** `/Filter` is a name or array; `/DecodeParms` is aligned or absent. Apply decoders in order. Mismatched lengths: apply defaults, log diagnostic.
 
-**Error recovery:** zlib decompression error mid-stream: return bytes decoded so far, emit `STREAM_DECODE_ERROR` diagnostic. Never abort the page. **Decompression limit:** The stream decoder enforces `ExtractionOptions.max_decompress_bytes` (default: `2 * 1024^3` = 2 GB per document). Any single stream or cumulative document total that exceeds this limit triggers a `STREAM_BOMB` diagnostic and returns the bytes decoded so far. This limit applies to all modes (CLI, Python, HTTP serve).
+**Error recovery:** zlib decompression error mid-stream: return bytes decoded so far, emit `STREAM_DECODE_ERROR` diagnostic. Never abort the page. **Decompression limit:** The stream decoder enforces `ExtractionOptions.max_decompress_bytes` (default: `512 * 1024^2` = 512 MB per document; see Memory targets). Any single stream or cumulative document total that exceeds this limit triggers a `STREAM_BOMB` diagnostic and returns the bytes decoded so far. This limit applies to all modes (CLI, Python, HTTP serve).
 
 **Crates:** `flate2`, `lzw`, `image` (JPX/CCITT raster decode for OCR path) — DCTDecode SOI/EOI marker validation is a 4-byte inline check; no external crate needed
 
