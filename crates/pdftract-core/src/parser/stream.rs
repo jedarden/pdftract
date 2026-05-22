@@ -26,8 +26,13 @@ const MAX_FILTERS: usize = 16;
 /// Chunk size for checking decompression limits during decoding.
 const BOMB_CHECK_CHUNK: usize = 64 * 1024; // 64 KB
 
-/// Default maximum decompressed bytes per document (2 GB).
-pub const DEFAULT_MAX_DECOMPRESS_BYTES: u64 = 2 * 1024_u64.pow(3);
+/// Maximum bytes per row for predictor decoding.
+/// Prevents OOM from malicious columns/colors/bits_per_component values.
+/// Bound matches BOMB_CHECK_CHUNK to keep peak memory at 2x stride (prev_row + current_row).
+const MAX_ROW_BYTES: usize = 64 * 1024; // 64 KB
+
+/// Default maximum decompressed bytes per document (512 MiB).
+pub const DEFAULT_MAX_DECOMPRESS_BYTES: u64 = 512 * 1024_u64.pow(2);
 
 /// Errors that can occur during stream decoding.
 ///
@@ -183,10 +188,25 @@ impl PredictorParams {
     }
 
     /// Calculate bytes per row (before PNG predictor selector).
+    ///
+    /// Returns a bounded value to prevent OOM from malicious PDF parameters.
+    /// Per docs/research/image-and-figure-extraction.md, peak memory should be
+    /// bounded to 2 × stride_bytes regardless of image height.
     #[inline]
     pub fn bytes_per_row(&self) -> usize {
         // bytes_per_row = ceil(columns * colors * bits_per_component / 8)
-        ((self.columns * self.colors * self.bits_per_component) + 7) as usize / 8
+        let raw = ((self.columns * self.colors * self.bits_per_component) + 7) as usize / 8;
+        raw.min(MAX_ROW_BYTES)
+    }
+
+    /// Check if predictor parameters are suspicious (potentially malicious).
+    ///
+    /// Returns true if the calculated row_size was clamped, indicating
+    /// that the PDF parameters claim an unrealistically large row size.
+    #[inline]
+    pub fn is_row_size_clamped(&self) -> bool {
+        let raw = ((self.columns * self.colors * self.bits_per_component) + 7) as usize / 8;
+        raw > MAX_ROW_BYTES
     }
 
     /// Calculate bytes per row including PNG predictor selector byte.
@@ -204,17 +224,18 @@ impl PredictorParams {
 /// # Parameters
 /// - `data`: The decoded (but still predicted) data
 /// - `params`: Predictor parameters
+/// - `max_output`: Maximum number of output bytes to produce (for bomb protection)
 ///
 /// # Returns
 /// The unpredicted data, or the original data if predictor is 1 or params are invalid
-pub fn apply_predictor(data: &[u8], params: &PredictorParams) -> Vec<u8> {
+pub fn apply_predictor(data: &[u8], params: &PredictorParams, max_output: u64) -> Vec<u8> {
     if data.is_empty() || params.predictor == 1 {
         return data.to_vec();
     }
 
     match params.predictor {
-        2 => apply_tiff_predictor_2(data, params),
-        10..=15 => apply_png_predictors(data, params),
+        2 => apply_tiff_predictor_2(data, params, max_output),
+        10..=15 => apply_png_predictors(data, params, max_output),
         _ => data.to_vec(),  // Unknown predictor - return as-is
     }
 }
@@ -225,8 +246,8 @@ pub fn apply_predictor(data: &[u8], params: &PredictorParams) -> Vec<u8> {
 /// For multi-byte pixels (e.g., 16-bit), the differencing is per-component.
 ///
 /// Formula: output[j] = (input[j] + output[j-1]) % 256
-fn apply_tiff_predictor_2(data: &[u8], params: &PredictorParams) -> Vec<u8> {
-    let mut output = Vec::with_capacity(data.len());
+fn apply_tiff_predictor_2(data: &[u8], params: &PredictorParams, max_output: u64) -> Vec<u8> {
+    let mut output = Vec::new();  // Don't pre-allocate - grow row-by-row
     let row_size = params.bytes_per_row();
     let bpp = params.bytes_per_pixel();
 
@@ -235,7 +256,18 @@ fn apply_tiff_predictor_2(data: &[u8], params: &PredictorParams) -> Vec<u8> {
         return data.to_vec();
     }
 
+    // If row_size was clamped, the PDF parameters are suspicious.
+    // Return data as-is rather than risking incorrect decoding.
+    if params.is_row_size_clamped() {
+        return data.to_vec();
+    }
+
     for chunk in data.chunks_exact(row_size) {
+        // Check budget before processing this row
+        if output.len() as u64 + row_size as u64 > max_output {
+            break;  // Budget exceeded - return partial data
+        }
+
         // First byte of each row is copied as-is
         output.push(chunk[0]);
 
@@ -265,7 +297,7 @@ fn apply_tiff_predictor_2(data: &[u8], params: &PredictorParams) -> Vec<u8> {
 /// - 13 (Average): output[j] = input[j] + (output[j - bpp] + prev_row[j]) / 2
 /// - 14 (Paeth): output[j] = input[j] + paeth(output[j - bpp], prev_row[j], prev_row[j - bpp])
 /// - 15 (Optimum): Selector byte chooses one of 10-14 per-row
-fn apply_png_predictors(data: &[u8], params: &PredictorParams) -> Vec<u8> {
+fn apply_png_predictors(data: &[u8], params: &PredictorParams, max_output: u64) -> Vec<u8> {
     let row_size_with_selector = params.bytes_per_row_with_selector();
     let row_size = params.bytes_per_row();
     let bpp = params.bytes_per_pixel();
@@ -274,12 +306,18 @@ fn apply_png_predictors(data: &[u8], params: &PredictorParams) -> Vec<u8> {
         return data.to_vec();
     }
 
+    // If row_size was clamped, the PDF parameters are suspicious.
+    // Return data as-is rather than risking incorrect decoding.
+    if params.is_row_size_clamped() {
+        return data.to_vec();
+    }
+
     let num_rows = data.len() / row_size_with_selector;
     if num_rows == 0 {
         return data.to_vec();
     }
 
-    let mut output = Vec::with_capacity(num_rows * row_size);
+    let mut output = Vec::new();  // Don't pre-allocate - grow row-by-row
     let mut prev_row: Vec<u8> = vec![0; row_size];
 
     for row_idx in 0..num_rows {
@@ -296,8 +334,16 @@ fn apply_png_predictors(data: &[u8], params: &PredictorParams) -> Vec<u8> {
 
         if filtered.len() != row_size {
             // Row size mismatch - copy as-is
+            if output.len() as u64 + filtered.len() as u64 > max_output {
+                break;  // Budget exceeded
+            }
             output.extend_from_slice(filtered);
             continue;
+        }
+
+        // Check budget before processing this row
+        if output.len() as u64 + row_size as u64 > max_output {
+            break;  // Budget exceeded - return partial data
         }
 
         let mut current_row = vec![0u8; row_size];
@@ -415,21 +461,27 @@ impl FlateDecoder {
         let mut decoder = ZlibDecoder::new(input);
         let mut output = Vec::new();
         let mut chunk = vec![0u8; BOMB_CHECK_CHUNK];
+        // Track flate output separately - we'll count the final predictor output against doc_counter
+        let mut flate_bytes = 0u64;
 
         loop {
             match decoder.read(&mut chunk) {
                 Ok(0) => break,
                 Ok(n) => {
                     // Check bomb limit BEFORE adding bytes to output
-                    if *doc_counter + n as u64 > max_bytes {
+                    if *doc_counter + flate_bytes + n as u64 > max_bytes {
                         // Bomb limit exceeded - return partial bytes
-                        let remaining = (max_bytes - *doc_counter) as usize;
+                        let remaining = (max_bytes - *doc_counter - flate_bytes) as usize;
                         let to_add = remaining.min(n);
                         output.extend_from_slice(&chunk[..to_add]);
-                        *doc_counter += to_add as u64;
-                        return Ok(apply_predictor(&output, &pred_params));
+                        // Pass remaining budget to predictor
+                        let predictor_budget = max_bytes.saturating_sub(*doc_counter);
+                        let predicted = apply_predictor(&output, &pred_params, predictor_budget);
+                        // Update doc_counter with actual predictor output size
+                        *doc_counter += predicted.len() as u64;
+                        return Ok(predicted);
                     }
-                    *doc_counter += n as u64;
+                    flate_bytes += n as u64;
                     output.extend_from_slice(&chunk[..n]);
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
@@ -443,7 +495,12 @@ impl FlateDecoder {
             }
         }
 
-        Ok(apply_predictor(&output, &pred_params))
+        // Pass remaining budget to predictor
+        let predictor_budget = max_bytes.saturating_sub(*doc_counter);
+        let predicted = apply_predictor(&output, &pred_params, predictor_budget);
+        // Update doc_counter with actual predictor output size
+        *doc_counter += predicted.len() as u64;
+        Ok(predicted)
     }
 }
 
@@ -949,7 +1006,7 @@ mod tests {
 /// ```
 #[derive(Clone)]
 pub struct ExtractionOptions {
-    /// Maximum decompressed bytes per document (default: 2 GB).
+    /// Maximum decompressed bytes per document (default: 512 MiB).
     pub max_decompress_bytes: u64,
     /// PDF password for encrypted documents.
     ///
@@ -1912,7 +1969,7 @@ mod predictor_tests {
     fn test_apply_predictor_no_predictor() {
         let data = b"hello world";
         let params = PredictorParams::default();
-        let result = apply_predictor(data, &params);
+        let result = apply_predictor(data, &params, 10000);
         assert_eq!(result, data);
     }
 
@@ -1920,7 +1977,7 @@ mod predictor_tests {
     fn test_apply_predictor_empty_data() {
         let data = b"";
         let params = PredictorParams::default();
-        let result = apply_predictor(data, &params);
+        let result = apply_predictor(data, &params, 10000);
         assert!(result.is_empty());
     }
 
@@ -1933,7 +1990,7 @@ mod predictor_tests {
             colors: 1,
             bits_per_component: 8,
         };
-        let result = apply_predictor(&predicted, &params);
+        let result = apply_predictor(&predicted, &params, 10000);
         assert_eq!(result, vec![0, 10, 20, 30]);
     }
 
@@ -1946,7 +2003,7 @@ mod predictor_tests {
             colors: 3,
             bits_per_component: 8,
         };
-        let result = apply_predictor(&predicted, &params);
+        let result = apply_predictor(&predicted, &params, 10000);
         assert_eq!(result, vec![255, 0, 0, 0, 255, 0, 0, 0, 255]);
     }
 
@@ -1960,7 +2017,7 @@ mod predictor_tests {
             colors: 1,
             bits_per_component: 8,
         };
-        let result = apply_predictor(&data, &params);
+        let result = apply_predictor(&data, &params, 10000);
         assert_eq!(result, b"hello");
     }
 
@@ -1974,7 +2031,7 @@ mod predictor_tests {
             colors: 1,
             bits_per_component: 8,
         };
-        let result = apply_predictor(&data, &params);
+        let result = apply_predictor(&data, &params, 10000);
         assert_eq!(result, vec![10, 20, 30, 40, 50]);
     }
 
@@ -1992,7 +2049,7 @@ mod predictor_tests {
             colors: 1,
             bits_per_component: 8,
         };
-        let result = apply_predictor(&data, &params);
+        let result = apply_predictor(&data, &params, 10000);
         assert_eq!(result, vec![10, 20, 30, 15, 30, 45]);
     }
 
@@ -2006,7 +2063,7 @@ mod predictor_tests {
             colors: 1,
             bits_per_component: 8,
         };
-        let result = apply_predictor(&data, &params);
+        let result = apply_predictor(&data, &params, 10000);
         assert_eq!(result, vec![10, 20, 30]);
     }
 
@@ -2020,7 +2077,7 @@ mod predictor_tests {
             colors: 1,
             bits_per_component: 8,
         };
-        let result = apply_predictor(&data, &params);
+        let result = apply_predictor(&data, &params, 10000);
         assert_eq!(result, vec![10, 30, 60]);
     }
 
@@ -2050,7 +2107,7 @@ mod predictor_tests {
             colors: 1,
             bits_per_component: 8,
         };
-        let result = apply_predictor(&data, &params);
+        let result = apply_predictor(&data, &params, 10000);
 
         assert_eq!(result, vec![
             1, 2, 3,
@@ -2071,7 +2128,7 @@ mod predictor_tests {
             colors: 3,
             bits_per_component: 8,
         };
-        let result = apply_predictor(&data, &params);
+        let result = apply_predictor(&data, &params, 10000);
         assert_eq!(result, vec![255, 0, 0, 0, 255, 0, 0, 0, 255]);
     }
 
@@ -2089,7 +2146,7 @@ mod predictor_tests {
             colors: 4,
             bits_per_component: 8,
         };
-        let result = apply_predictor(&data, &params);
+        let result = apply_predictor(&data, &params, 10000);
         assert_eq!(result, vec![
             10, 20, 30, 40, 50, 60, 70, 80,
             15, 30, 45, 60, 75, 90, 105, 120,
@@ -2106,7 +2163,7 @@ mod predictor_tests {
             colors: 1,
             bits_per_component: 8,
         };
-        let result = apply_predictor(&data, &params);
+        let result = apply_predictor(&data, &params, 10000);
         assert_eq!(result, vec![1, 2, 3]);
     }
 
@@ -2224,7 +2281,7 @@ mod predictor_tests {
             colors: 1,
             bits_per_component: 8,
         };
-        let result = apply_predictor(&predicted, &params);
+        let result = apply_predictor(&predicted, &params, 10000);
         assert_eq!(result, vec![0, 10, 20, 30, 5, 10, 15, 20]);
     }
 
@@ -2238,7 +2295,7 @@ mod predictor_tests {
             colors: 1,
             bits_per_component: 8,
         };
-        let result = apply_predictor(&data, &params);
+        let result = apply_predictor(&data, &params, 10000);
         assert_eq!(result, vec![1, 2, 3]);
     }
 
@@ -2252,7 +2309,7 @@ mod predictor_tests {
             colors: 1,
             bits_per_component: 8,
         };
-        let result = apply_predictor(&data, &params);
+        let result = apply_predictor(&data, &params, 10000);
         assert_eq!(result, vec![10, 20, 30]);
     }
 
@@ -2263,10 +2320,10 @@ mod predictor_tests {
         use serde_json;
 
         // Test deserialization with password
-        let json = r#"{"max_decompress_bytes": 2147483648, "password": "test123"}"#;
+        let json = r#"{"max_decompress_bytes": 536870912, "password": "test123"}"#;
         let opts: ExtractionOptions = serde_json::from_str(json).unwrap();
 
-        assert_eq!(opts.max_decompress_bytes, 2147483648);
+        assert_eq!(opts.max_decompress_bytes, 536870912);
         assert!(opts.password.is_some());
         // Verify we can access the secret value
         assert_eq!(opts.password.as_ref().map(|p| p.expose_secret().as_str()), Some("test123"));
@@ -2336,7 +2393,7 @@ mod predictor_tests {
             bits_per_component: 8,
         };
 
-        let result = apply_predictor(&data, &params);
+        let result = apply_predictor(&data, &params, 10000);
 
         // First row: no prev row, so up=0, up_left=0
         // Pixel 0, R: paeth(0, 0, 0) = 0 -> 10 + 0 = 10
