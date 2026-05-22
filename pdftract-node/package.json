@@ -1,0 +1,52 @@
+{
+  "name": "@pdftract/sdk",
+  "version": "1.0.0",
+  "description": "PDFtract SDK - PDF extraction and document processing for Node.js",
+  "type": "module",
+  "main": "./dist/cjs/index.cjs",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/types/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/types/index.d.cts",
+        "default": "./dist/cjs/index.cjs"
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest",
+    "test:conformance": "vitest run test/conformance.test.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "pdf",
+    "extraction",
+    "ocr",
+    "document-processing",
+    "pdftract"
+  ],
+  "author": "jedarden",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "tsup": "^8.0.0",
+    "vitest": "^1.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ]
+}

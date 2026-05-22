@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net9.0;net8.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>CS1591</NoWarn>
+    <Version>1.0.0</Version>
+    <Authors>Jedarden</Authors>
+    <Description>pdftract SDK for .NET — subprocess wrapper around the pdftract binary for PDF text extraction, OCR, search, and metadata.</Description>
+    <PackageTags>pdf;extract;ocr;text;search;metadata</PackageTags>
+    <PackageProjectUrl>https://github.com/jedarden/pdftract</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/jedarden/pdftract-dotnet</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <LicenseExpression>MIT</LicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageReleaseNotes>
+      See https://github.com/jedarden/pdftract-dotnet/releases
+    </PackageReleaseNotes>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <IsAotCompatible>true</IsAotCompatible>
+    <EnableAOTCompilerAnalyzer>true</EnableAOTCompilerAnalyzer>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../../README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>
