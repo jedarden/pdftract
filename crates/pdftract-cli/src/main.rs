@@ -8,6 +8,7 @@ mod mcp;
 mod password;
 mod verify_receipt;
 use codegen::Language;
+use pdftract_core::options::{ReceiptsMode, ExtractionOptions};
 
 // Re-export diagnostics for the --list-diagnostics and --explain-diagnostic commands
 pub use pdftract_core::diagnostics::{DiagCode, DiagInfo, DIAGNOSTIC_CATALOG};
@@ -78,6 +79,10 @@ enum Commands {
         /// Output format (json, text, markdown)
         #[arg(short, long, default_value = "json")]
         format: String,
+
+        /// Receipt mode: off (default), lite, or svg
+        #[arg(long, value_name = "MODE", default_value = "off", value_parser = ["off", "lite", "svg"])]
+        receipts: String,
     },
     /// Verify a receipt against a PDF file
     VerifyReceipt(verify_receipt::VerifyReceiptCommand),
@@ -181,8 +186,9 @@ fn main() -> Result<()> {
             password_stdin,
             password,
             format,
+            receipts,
         } => {
-            if let Err(e) = cmd_extract(input, password_stdin, password, &format) {
+            if let Err(e) = cmd_extract(input, password_stdin, password, &format, &receipts) {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
@@ -251,7 +257,27 @@ fn cmd_extract(
     password_stdin: bool,
     password: Option<String>,
     format: &str,
+    receipts: &str,
 ) -> Result<()> {
+    // Validate receipts mode
+    let receipts_mode = match ReceiptsMode::from_str(receipts) {
+        Ok(mode) => mode,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(2);
+        }
+    };
+
+    // Check if SVG mode is requested but feature is not available
+    if receipts_mode == ReceiptsMode::SvgClip {
+        #[cfg(not(feature = "receipts"))]
+        {
+            eprintln!("Error: --receipts=svg requires the 'receipts' feature to be enabled");
+            eprintln!("Build pdftract with: --features receipts");
+            std::process::exit(2);
+        }
+    }
+
     // Resolve password using the priority order defined in TH-07
     let resolved_password = match password::resolve_password(password_stdin, password) {
         Ok(pwd) => pwd,
@@ -266,12 +292,16 @@ fn cmd_extract(
         eprintln!("Password provided via secure channel");
     }
 
+    // Build extraction options
+    let options = ExtractionOptions::with_receipts(receipts_mode);
+
     // Stub: For now, just report what would be extracted
     // Full extraction implementation is in separate beads
     eprintln!("Extract command invoked");
     eprintln!("  Input: {:?}", input);
     eprintln!("  Format: {}", format);
     eprintln!("  Password: {}", if resolved_password.is_some() { "yes" } else { "no" });
+    eprintln!("  Receipts: {}", options.receipts.as_str());
 
     // TODO: Implement actual PDF extraction
     // This will be done in the extraction implementation beads

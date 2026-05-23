@@ -64,6 +64,10 @@ pub struct ExtractTextArgs {
     /// PDF password for encrypted documents
     #[serde(default)]
     pub password: Option<String>,
+
+    /// Receipt mode: "off", "lite", or "svg"
+    #[serde(default)]
+    pub receipts: Option<String>,
 }
 
 /// Arguments for the extract_markdown tool.
@@ -88,6 +92,10 @@ pub struct ExtractMarkdownArgs {
     /// PDF password for encrypted documents
     #[serde(default)]
     pub password: Option<String>,
+
+    /// Receipt mode: "off", "lite", or "svg"
+    #[serde(default)]
+    pub receipts: Option<String>,
 }
 
 /// Arguments for the search tool.

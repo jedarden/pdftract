@@ -7,6 +7,7 @@
 pub mod diagnostics;
 pub mod document;
 pub mod fingerprint;
+pub mod options;
 pub mod parser;
 pub mod receipts;
 pub mod schema;
