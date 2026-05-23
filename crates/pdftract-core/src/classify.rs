@@ -15,13 +15,449 @@
 //! If ≥ 10 cells (≥ 15%) are vector AND ≥ 10 cells are scanned, the page
 //! is classified as Hybrid. The set of scanned cell indexes is returned for
 //! downstream OCR-only-on-cells routing in Phase 5.2.
+//!
+//! ## PageClassifier Engine (Phase 5.1.4)
+//!
+//! The PageClassifier wires signal evaluators + Hybrid evaluator together:
+//! 1. Run Hybrid evaluator first; if it triggers, return immediately
+//! 2. Walk signal evaluators in declared order; accumulate votes
+//! 3. Apply short-circuit: as soon as any signal has strength > 0.95, return
+//! 4. After all signals run: tally votes weighted by strength; pick highest-weight class
+//! 5. If no signal voted, default to Vector with confidence 0.5
 
 use std::collections::BTreeSet;
+
+/// Page context containing all metrics needed for classification.
+///
+/// This struct is populated by content stream analysis and contains
+/// the raw data that signal evaluators use to make classification decisions.
+#[derive(Debug, Clone, Default)]
+pub struct PageContext {
+    /// Number of text operators in the content stream.
+    pub text_op_count: u32,
+
+    /// Number of text operators with rendering mode Tr=3 (invisible).
+    pub invisible_text_count: u32,
+
+    /// Total number of characters extracted (before ToUnicode mapping).
+    pub raw_char_count: u32,
+
+    /// Number of characters that successfully decoded to valid Unicode.
+    pub valid_char_count: u32,
+
+    /// Number of characters that decoded to U+FFFD (replacement).
+    pub replacement_char_count: u32,
+
+    /// Image coverage fraction [0.0, 1.0] - fraction of page area covered by images.
+    pub image_coverage: f32,
+
+    /// Whether at least one full-page image is present.
+    pub has_full_page_image: bool,
+
+    /// Whether any text rendering mode other than Tr=3 was used.
+    pub has_visible_text: bool,
+
+    /// Character density ratio: extracted_char_count / expected_char_count.
+    pub density_ratio: f32,
+
+    /// Page width in PDF user space units (after rotation).
+    pub width: f64,
+
+    /// Page height in PDF user space units (after rotation).
+    pub height: f64,
+
+    /// Page rotation in degrees (0, 90, 180, 270).
+    pub rotation: i32,
+
+    /// Optional: GridClassifier cell data for hybrid detection.
+    /// Populated if grid-based analysis was performed.
+    pub grid_cells: Option<[CellData; 64]>,
+}
+
+impl PageContext {
+    /// Create a new empty page context.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Compute character validity rate.
+    ///
+    /// Returns fraction of characters that decoded to valid Unicode.
+    pub fn char_validity_rate(&self) -> f32 {
+        if self.raw_char_count == 0 {
+            return 1.0; // No text = validity is vacuously true
+        }
+        self.valid_char_count as f32 / self.raw_char_count as f32
+    }
+
+    /// Check if page has any text operators.
+    pub fn has_text(&self) -> bool {
+        self.text_op_count > 0
+    }
+
+    /// Check if page has any images.
+    pub fn has_images(&self) -> bool {
+        self.image_coverage > 0.0
+    }
+
+    /// Check if all text is invisible (Tr=3).
+    pub fn is_all_invisible_text(&self) -> bool {
+        self.text_op_count > 0 && self.invisible_text_count == self.text_op_count
+    }
+
+    /// Check if this is a blank page (no text, no images).
+    pub fn is_blank(&self) -> bool {
+        !self.has_text() && !self.has_images()
+    }
+
+    /// Check if this is an image-only page (no text).
+    pub fn is_image_only(&self) -> bool {
+        !self.has_text() && self.has_images()
+    }
+}
+
+/// Classification vote with strength.
+///
+/// Each signal evaluator returns a vote for a PageClass with an associated
+/// strength [0.0, 1.0] indicating confidence in that vote.
+#[derive(Debug, Clone, Copy)]
+struct Vote {
+    /// The class being voted for.
+    class: PageClass,
+    /// Confidence strength [0.0, 1.0].
+    strength: f32,
+}
+
+impl Vote {
+    /// Create a new vote.
+    fn new(class: PageClass, strength: f32) -> Self {
+        Self { class, strength }
+    }
+
+    /// Create a vote for Vector class.
+    fn vector(strength: f32) -> Self {
+        Self::new(PageClass::Vector, strength)
+    }
+
+    /// Create a vote for Scanned class.
+    fn scanned(strength: f32) -> Self {
+        Self::new(PageClass::Scanned, strength)
+    }
+
+    /// Create a vote for BrokenVector class.
+    fn broken_vector(strength: f32) -> Self {
+        Self::new(PageClass::BrokenVector, strength)
+    }
+}
+
+/// Signal evaluator trait.
+///
+/// Signal evaluators examine the PageContext and produce classification votes.
+trait SignalEvaluator: Send + Sync {
+    /// Evaluate the signal and return a vote.
+    ///
+    /// Returns None if the signal does not apply to this page.
+    fn evaluate(&self, ctx: &PageContext) -> Option<Vote>;
+
+    /// Get the name of this signal (for debugging/diagnostics).
+    fn name(&self) -> &'static str;
+}
+
+/// Signal: No text operators in content stream → Scanned.
+struct NoTextOperatorsSignal;
+
+impl SignalEvaluator for NoTextOperatorsSignal {
+    fn evaluate(&self, ctx: &PageContext) -> Option<Vote> {
+        if ctx.text_op_count == 0 {
+            // Strong signal for Scanned if images present
+            // If no images either, this is a blank page (handled elsewhere)
+            if ctx.has_images() {
+                return Some(Vote::scanned(0.95));
+            }
+        }
+        None
+    }
+
+    fn name(&self) -> &'static str {
+        "no_text_operators"
+    }
+}
+
+/// Signal: All text Tr=3 + full-page image → BrokenVector.
+struct InvisibleTextWithImageSignal;
+
+impl SignalEvaluator for InvisibleTextWithImageSignal {
+    fn evaluate(&self, ctx: &PageContext) -> Option<Vote> {
+        // All text is invisible (Tr=3) AND has full-page image
+        if ctx.is_all_invisible_text() && ctx.has_full_page_image {
+            // This is a BrokenVector pattern (OCR overlay over scan)
+            return Some(Vote::broken_vector(0.97));
+        }
+        None
+    }
+
+    fn name(&self) -> &'static str {
+        "invisible_text_with_image"
+    }
+}
+
+/// Signal: Image coverage fraction > 0.85 → Scanned.
+struct HighImageCoverageSignal;
+
+impl SignalEvaluator for HighImageCoverageSignal {
+    fn evaluate(&self, ctx: &PageContext) -> Option<Vote> {
+        if ctx.image_coverage > 0.85 {
+            // Strong signal for Scanned
+            return Some(Vote::scanned(0.90));
+        }
+        None
+    }
+
+    fn name(&self) -> &'static str {
+        "high_image_coverage"
+    }
+}
+
+/// Signal: Character validity rate < 0.4 → BrokenVector.
+struct LowCharValiditySignal;
+
+impl SignalEvaluator for LowCharValiditySignal {
+    fn evaluate(&self, ctx: &PageContext) -> Option<Vote> {
+        if ctx.has_text() {
+            let validity = ctx.char_validity_rate();
+            if validity < 0.4 {
+                // Very low validity = broken encoding
+                return Some(Vote::broken_vector(0.92));
+            }
+        }
+        None
+    }
+
+    fn name(&self) -> &'static str {
+        "low_char_validity"
+    }
+}
+
+/// Signal: Character validity rate > 0.85 → Vector.
+struct HighCharValiditySignal;
+
+impl SignalEvaluator for HighCharValiditySignal {
+    fn evaluate(&self, ctx: &PageContext) -> Option<Vote> {
+        if ctx.has_text() {
+            let validity = ctx.char_validity_rate();
+            if validity > 0.85 {
+                // High validity = good vector text
+                return Some(Vote::vector(0.93));
+            }
+        }
+        None
+    }
+
+    fn name(&self) -> &'static str {
+        "high_char_validity"
+    }
+}
+
+/// Signal: Character density ratio < 0.03 → Scanned.
+///
+/// Low density despite text operators indicates broken encoding
+/// (font is present but few characters decode successfully).
+struct LowDensitySignal;
+
+impl SignalEvaluator for LowDensitySignal {
+    fn evaluate(&self, ctx: &PageContext) -> Option<Vote> {
+        if ctx.has_text() && ctx.density_ratio < 0.03 {
+            // Very low density = likely scanned or broken vector
+            // Use high strength to short-circuit before HighCharValiditySignal
+            return Some(Vote::scanned(0.95));
+        }
+        None
+    }
+
+    fn name(&self) -> &'static str {
+        "low_density"
+    }
+}
+
+/// Page classifier that runs all signal evaluators and produces a decision.
+///
+/// The classifier implements the following pipeline:
+/// 1. Check for special cases (blank, image-only)
+/// 2. Run Hybrid evaluator first (if grid data available)
+/// 3. Walk signal evaluators in order, applying short-circuit at >= 0.95
+/// 4. Tally remaining votes weighted by strength
+/// 5. Default to Vector with confidence 0.5 if no votes
+pub struct PageClassifier {
+    /// Signal evaluators in declaration order.
+    signals: Vec<Box<dyn SignalEvaluator>>,
+}
+
+impl PageClassifier {
+    /// Create a new PageClassifier with default signal evaluators.
+    ///
+    /// Signals are evaluated in this order:
+    /// 1. No text operators → Scanned
+    /// 2. Invisible text with image → BrokenVector
+    /// 3. High image coverage → Scanned
+    /// 4. Low char validity → BrokenVector
+    /// 5. Low density → Scanned
+    /// 6. High char validity → Vector
+    ///
+    /// NOTE: Low density is evaluated before high validity to ensure that
+    /// sparse/broken text pages are correctly classified as Scanned even when
+    /// character validity happens to be high (which can occur with minimal text).
+    pub fn new() -> Self {
+        Self {
+            signals: vec![
+                Box::new(NoTextOperatorsSignal),
+                Box::new(InvisibleTextWithImageSignal),
+                Box::new(HighImageCoverageSignal),
+                Box::new(LowCharValiditySignal),
+                Box::new(LowDensitySignal),
+                Box::new(HighCharValiditySignal),
+            ],
+        }
+    }
+
+    /// Classify a page based on its context.
+    ///
+    /// This is the main entry point for page classification.
+    pub fn classify(&self, ctx: &PageContext) -> PageClassification {
+        // Special case: blank page (no text, no images)
+        if ctx.is_blank() {
+            // Return Vector with 0.0 confidence as a sentinel
+            // The mapping layer will convert this to "blank" page_type
+            return PageClassification::new(PageClass::Vector, 0.0);
+        }
+
+        // Step 1: Run Hybrid evaluator first (if grid data available)
+        if let Some(cells) = &ctx.grid_cells {
+            let hybrid_result = self.classify_hybrid(ctx, cells);
+            if hybrid_result.class == PageClass::Hybrid {
+                // Hybrid takes precedence - return immediately
+                return hybrid_result;
+            }
+        }
+
+        // Step 2: Walk signal evaluators in order, checking for short-circuit
+        let mut votes: Vec<Vote> = Vec::new();
+
+        for signal in &self.signals {
+            if let Some(vote) = signal.evaluate(ctx) {
+                // Short-circuit: very high confidence (>= 0.95)
+                if vote.strength >= 0.95 {
+                    return PageClassification::new(vote.class, vote.strength);
+                }
+                votes.push(vote);
+            }
+        }
+
+        // Step 3: Tally votes weighted by strength
+        if votes.is_empty() {
+            // No signals fired - default to Vector with low confidence
+            return PageClassification::new(PageClass::Vector, 0.5);
+        }
+
+        // Weight each class by sum of strengths
+        let mut class_weights: std::collections::HashMap<PageClass, f32> = std::collections::HashMap::new();
+        let mut total_weight = 0.0;
+
+        for vote in &votes {
+            *class_weights.entry(vote.class).or_insert(0.0) += vote.strength;
+            total_weight += vote.strength;
+        }
+
+        // Find the class with highest weight
+        let mut best_class = PageClass::Vector;
+        let mut best_weight = 0.0;
+
+        for (class, weight) in &class_weights {
+            if *weight > best_weight {
+                best_weight = *weight;
+                best_class = *class;
+            }
+        }
+
+        // Confidence is the winning weight divided by total weight
+        let confidence = if total_weight > 0.0 {
+            best_weight / total_weight
+        } else {
+            0.5
+        };
+
+        PageClassification::new(best_class, confidence)
+    }
+
+    /// Run the Hybrid evaluator on grid cell data.
+    ///
+    /// Returns Hybrid classification if the ≥15% rule is met,
+    /// otherwise returns a non-Hybrid classification based on cell counts.
+    fn classify_hybrid(&self, ctx: &PageContext, cells: &[CellData; 64]) -> PageClassification {
+        let mut vector_count = 0u32;
+        let mut scanned_count = 0u32;
+        let mut scanned_cells = BTreeSet::new();
+
+        for (i, cell) in cells.iter().enumerate() {
+            match cell.classify() {
+                CellClass::Vector => vector_count += 1,
+                CellClass::Scanned => {
+                    scanned_count += 1;
+                    scanned_cells.insert(i);
+                }
+                CellClass::Mixed => {}
+            }
+        }
+
+        // Hybrid detection: ≥ 10 cells of each type (≥ 15% of 64)
+        if vector_count >= 10 && scanned_count >= 10 {
+            let vector_ratio = vector_count as f32 / 64.0;
+            let scanned_ratio = scanned_count as f32 / 64.0;
+            let confidence = vector_ratio.min(scanned_ratio);
+
+            return PageClassification::hybrid(confidence, scanned_cells);
+        }
+
+        // Not hybrid - classify based on dominant signal
+        // This result will be considered along with other signal evaluators
+        if vector_count > scanned_count {
+            PageClassification::new(PageClass::Vector, vector_count as f32 / 64.0)
+        } else if scanned_count > 0 {
+            PageClassification::new(PageClass::Scanned, scanned_count as f32 / 64.0)
+        } else {
+            // No clear signal - let other evaluators decide
+            PageClassification::new(PageClass::Vector, 0.0)
+        }
+    }
+}
+
+impl Default for PageClassifier {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Classify a single page using the default classifier.
+///
+/// This is the primary entry point for page classification used by
+/// the extraction pipeline.
+///
+/// # Arguments
+///
+/// * `ctx` - The page context containing all classification metrics
+///
+/// # Returns
+///
+/// A `PageClassification` containing the class, confidence, and
+/// optionally the set of hybrid cell indexes for Hybrid pages.
+pub fn classify_page(ctx: &PageContext) -> PageClassification {
+    let classifier = PageClassifier::new();
+    classifier.classify(ctx)
+}
 
 /// Page classification result.
 ///
 /// Represents the extraction path that should be used for this page.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PageClass {
     /// Vector (text-based) page - use Phase 3 content stream extraction.
     Vector,
@@ -700,5 +1136,377 @@ mod tests {
         assert_eq!(result.class, PageClass::Vector);
         assert_eq!(result.confidence, 0.0);
         assert!(result.hybrid_cells.is_none());
+    }
+
+    // ============ PageClassifier Tests (Phase 5.1.4) ============
+
+    #[test]
+    fn test_page_context_blank_page() {
+        let ctx = PageContext::new();
+        assert!(ctx.is_blank());
+        assert!(!ctx.is_image_only());
+        assert!(!ctx.has_text());
+        assert!(!ctx.has_images());
+    }
+
+    #[test]
+    fn test_page_context_image_only() {
+        let mut ctx = PageContext::new();
+        ctx.image_coverage = 0.95;
+        assert!(!ctx.is_blank());
+        assert!(ctx.is_image_only());
+        assert!(!ctx.has_text());
+        assert!(ctx.has_images());
+    }
+
+    #[test]
+    fn test_page_context_char_validity_rate() {
+        let mut ctx = PageContext::new();
+        ctx.raw_char_count = 1000;
+        ctx.valid_char_count = 850;
+        assert_eq!(ctx.char_validity_rate(), 0.85);
+
+        // No text = vacuously valid
+        let ctx2 = PageContext::new();
+        assert_eq!(ctx2.char_validity_rate(), 1.0);
+    }
+
+    #[test]
+    fn test_page_context_all_invisible_text() {
+        let mut ctx = PageContext::new();
+        ctx.text_op_count = 100;
+        ctx.invisible_text_count = 100;
+        assert!(ctx.is_all_invisible_text());
+
+        ctx.invisible_text_count = 99;
+        assert!(!ctx.is_all_invisible_text());
+    }
+
+    #[test]
+    fn test_page_classifier_vector_pure_text() {
+        // Critical test: pure vector PDF (born-digital text)
+        let mut ctx = PageContext::new();
+        ctx.text_op_count = 500;
+        ctx.raw_char_count = 3000;
+        ctx.valid_char_count = 2900; // 97% validity
+        ctx.invisible_text_count = 0;
+        ctx.image_coverage = 0.0;
+        ctx.has_visible_text = true;
+        ctx.density_ratio = 0.85;
+
+        let result = classify_page(&ctx);
+
+        // High validity + no images = Vector with high confidence
+        assert_eq!(result.class, PageClass::Vector);
+        assert!(result.confidence > 0.90);
+        assert!(result.hybrid_cells.is_none());
+    }
+
+    #[test]
+    fn test_page_classifier_scanned_image_only() {
+        // Critical test: scanned single-page PDF (image only)
+        let mut ctx = PageContext::new();
+        ctx.text_op_count = 0;
+        ctx.raw_char_count = 0;
+        ctx.valid_char_count = 0;
+        ctx.image_coverage = 0.95;
+        ctx.has_full_page_image = true;
+        ctx.density_ratio = 0.0;
+
+        let result = classify_page(&ctx);
+
+        // No text + high image coverage = Scanned
+        assert_eq!(result.class, PageClass::Scanned);
+        assert!(result.confidence > 0.90);
+        assert!(result.hybrid_cells.is_none());
+    }
+
+    #[test]
+    fn test_page_classifier_broken_vector() {
+        // Critical test: PDF/A with invisible text layer over scanned image
+        let mut ctx = PageContext::new();
+        ctx.text_op_count = 100;
+        ctx.invisible_text_count = 100; // All text is Tr=3
+        ctx.raw_char_count = 1000;
+        ctx.valid_char_count = 1000; // Text decodes but is invisible
+        ctx.image_coverage = 0.95;
+        ctx.has_full_page_image = true;
+        ctx.density_ratio = 0.30;
+
+        let result = classify_page(&ctx);
+
+        // Invisible text + full-page image = BrokenVector
+        assert_eq!(result.class, PageClass::BrokenVector);
+        assert!(result.confidence > 0.95);
+        assert!(result.hybrid_cells.is_none());
+    }
+
+    #[test]
+    fn test_page_classifier_hybrid_with_grid() {
+        // Critical test: hybrid page with text header and scanned body
+        let mut ctx = PageContext::new();
+        ctx.text_op_count = 200;
+        ctx.raw_char_count = 1500;
+        ctx.valid_char_count = 1400;
+        ctx.image_coverage = 0.70;
+        ctx.density_ratio = 0.50;
+        ctx.width = 612.0;
+        ctx.height = 792.0;
+        ctx.rotation = 0;
+
+        // Set up grid cells: top 2 rows vector, bottom 6 rows scanned
+        let mut cells = std::array::from_fn(|_| CellData::empty());
+        for row in 0..8 {
+            for col in 0..8 {
+                let idx = row * 8 + col;
+                if row < 2 {
+                    // Vector cells (text header)
+                    cells[idx] = CellData {
+                        text_op_count: 15,
+                        image_coverage: 0.05,
+                        char_validity: 0.95,
+                    };
+                } else {
+                    // Scanned cells (body)
+                    cells[idx] = CellData {
+                        text_op_count: 0,
+                        image_coverage: 0.90,
+                        char_validity: 0.0,
+                    };
+                }
+            }
+        }
+        ctx.grid_cells = Some(cells);
+
+        let result = classify_page(&ctx);
+
+        // Hybrid detection should trigger
+        assert_eq!(result.class, PageClass::Hybrid);
+        assert!(result.hybrid_cells.is_some());
+        assert_eq!(result.hybrid_cells.as_ref().unwrap().len(), 48); // 6 rows * 8 cols
+    }
+
+    #[test]
+    fn test_page_classifier_blank_page() {
+        // Edge case: blank page (no text, no images)
+        let ctx = PageContext::new();
+
+        let result = classify_page(&ctx);
+
+        // Blank pages return Vector with 0.0 confidence as a sentinel
+        assert_eq!(result.class, PageClass::Vector);
+        assert_eq!(result.confidence, 0.0);
+        assert!(result.hybrid_cells.is_none());
+    }
+
+    #[test]
+    fn test_page_classifier_image_only_figure() {
+        // Edge case: full-page image with no text (scanned page)
+        // Note: This is classified as Scanned, not "figure_only"
+        // The mapping layer can convert to "figure_only" based on additional context
+        let mut ctx = PageContext::new();
+        ctx.text_op_count = 0;
+        ctx.image_coverage = 0.95;
+        ctx.has_full_page_image = true;
+
+        let result = classify_page(&ctx);
+
+        // No text + images = Scanned (will route to OCR)
+        assert_eq!(result.class, PageClass::Scanned);
+        assert!(result.confidence > 0.90);
+        assert!(result.hybrid_cells.is_none());
+    }
+
+    #[test]
+    fn test_page_classifier_short_circuit_no_text() {
+        // Short-circuit test: no text operators with images
+        let mut ctx = PageContext::new();
+        ctx.text_op_count = 0;
+        ctx.image_coverage = 0.50;
+
+        let result = classify_page(&ctx);
+
+        // Should short-circuit to Scanned with >=0.95 confidence
+        assert_eq!(result.class, PageClass::Scanned);
+        assert!(result.confidence >= 0.95);
+    }
+
+    #[test]
+    fn test_page_classifier_short_circuit_invisible_with_image() {
+        // Short-circuit test: all invisible text with full-page image
+        let mut ctx = PageContext::new();
+        ctx.text_op_count = 50;
+        ctx.invisible_text_count = 50;
+        ctx.has_full_page_image = true;
+        ctx.image_coverage = 0.90;
+
+        let result = classify_page(&ctx);
+
+        // Should short-circuit to BrokenVector with >0.95 confidence
+        assert_eq!(result.class, PageClass::BrokenVector);
+        assert!(result.confidence > 0.95);
+    }
+
+    #[test]
+    fn test_page_classifier_low_char_validity() {
+        // Low character validity indicates broken encoding
+        let mut ctx = PageContext::new();
+        ctx.text_op_count = 200;
+        ctx.raw_char_count = 1000;
+        ctx.valid_char_count = 200; // 20% validity
+        ctx.replacement_char_count = 800;
+        ctx.image_coverage = 0.10;
+        ctx.density_ratio = 0.25;
+
+        let result = classify_page(&ctx);
+
+        // Low validity should push toward BrokenVector
+        assert_eq!(result.class, PageClass::BrokenVector);
+        assert!(result.confidence > 0.90);
+    }
+
+    #[test]
+    fn test_page_classifier_high_image_coverage() {
+        // High image coverage (> 0.85) pushes toward Scanned
+        let mut ctx = PageContext::new();
+        ctx.text_op_count = 100;
+        ctx.raw_char_count = 500;
+        ctx.valid_char_count = 400; // 80% validity (not high enough for Vector)
+        ctx.image_coverage = 0.90;
+        ctx.density_ratio = 0.20;
+
+        let result = classify_page(&ctx);
+
+        // High image coverage should push toward Scanned
+        assert_eq!(result.class, PageClass::Scanned);
+        assert!(result.confidence > 0.85);
+    }
+
+    #[test]
+    fn test_page_classifier_low_density() {
+        // Low density ratio (< 0.03) indicates sparse or broken text
+        let mut ctx = PageContext::new();
+        ctx.text_op_count = 50;
+        ctx.raw_char_count = 50;
+        ctx.valid_char_count = 50;
+        ctx.image_coverage = 0.10;
+        ctx.density_ratio = 0.02; // Below threshold
+
+        let result = classify_page(&ctx);
+
+        // Low density should push toward Scanned
+        assert_eq!(result.class, PageClass::Scanned);
+        assert!(result.confidence > 0.70);
+    }
+
+    #[test]
+    fn test_page_classifier_default_vector() {
+        // No strong signals - should default to Vector
+        let mut ctx = PageContext::new();
+        ctx.text_op_count = 100;
+        ctx.raw_char_count = 500;
+        ctx.valid_char_count = 350; // 70% validity (ambiguous)
+        ctx.image_coverage = 0.30;
+        ctx.density_ratio = 0.20;
+
+        let result = classify_page(&ctx);
+
+        // Default to Vector with 0.5 confidence
+        assert_eq!(result.class, PageClass::Vector);
+        assert!(result.confidence > 0.4 && result.confidence < 0.7);
+    }
+
+    #[test]
+    fn test_page_classifier_determinism() {
+        // Verify that classifying the same context twice produces identical results
+        let mut ctx = PageContext::new();
+        ctx.text_op_count = 250;
+        ctx.raw_char_count = 2000;
+        ctx.valid_char_count = 1800;
+        ctx.image_coverage = 0.15;
+        ctx.density_ratio = 0.60;
+
+        let result1 = classify_page(&ctx);
+        let result2 = classify_page(&ctx);
+
+        assert_eq!(result1.class, result2.class);
+        assert_eq!(result1.confidence, result2.confidence);
+        assert_eq!(result1.hybrid_cells.is_some(), result2.hybrid_cells.is_some());
+    }
+
+    #[test]
+    fn test_page_classifier_confidence_in_range() {
+        // Verify all confidence values are in [0.0, 1.0]
+        let test_cases = vec![
+            // (text_ops, raw_chars, valid_chars, image_cov, density)
+            (0, 0, 0, 0.0, 0.0),      // blank
+            (0, 0, 0, 0.95, 0.0),     // scanned
+            (100, 1000, 100, 0.1, 0.1), // low validity
+            (500, 3000, 2900, 0.0, 0.9), // high validity vector
+            (200, 1500, 1400, 0.7, 0.5), // ambiguous
+        ];
+
+        for (text_ops, raw, valid, img_cov, density) in test_cases {
+            let mut ctx = PageContext::new();
+            ctx.text_op_count = text_ops;
+            ctx.raw_char_count = raw;
+            ctx.valid_char_count = valid;
+            ctx.image_coverage = img_cov;
+            ctx.density_ratio = density;
+
+            let result = classify_page(&ctx);
+            assert!(
+                result.confidence >= 0.0 && result.confidence <= 1.0,
+                "confidence {} out of range for case ({}, {}, {}, {}, {})",
+                result.confidence, text_ops, raw, valid, img_cov, density
+            );
+        }
+    }
+
+    #[test]
+    fn test_page_classifier_entry_point() {
+        // Test the classify_page entry point directly
+        let mut ctx = PageContext::new();
+        ctx.text_op_count = 300;
+        ctx.raw_char_count = 2500;
+        ctx.valid_char_count = 2400;
+        ctx.image_coverage = 0.05;
+        ctx.density_ratio = 0.75;
+
+        // This should use the default PageClassifier
+        let result = classify_page(&ctx);
+
+        assert_eq!(result.class, PageClass::Vector);
+        assert!(result.confidence > 0.85);
+    }
+
+    #[test]
+    fn test_vote_helpers() {
+        // Test Vote helper methods
+        let v1 = Vote::vector(0.9);
+        assert_eq!(v1.class, PageClass::Vector);
+        assert_eq!(v1.strength, 0.9);
+
+        let v2 = Vote::scanned(0.8);
+        assert_eq!(v2.class, PageClass::Scanned);
+        assert_eq!(v2.strength, 0.8);
+
+        let v3 = Vote::broken_vector(0.95);
+        assert_eq!(v3.class, PageClass::BrokenVector);
+        assert_eq!(v3.strength, 0.95);
+    }
+
+    #[test]
+    fn test_page_classifier_default_impl() {
+        // Test PageClassifier default implementation
+        let classifier = PageClassifier::default();
+        let mut ctx = PageContext::new();
+        ctx.text_op_count = 100;
+        ctx.raw_char_count = 800;
+        ctx.valid_char_count = 700;
+        ctx.density_ratio = 0.7; // Set a reasonable density ratio
+
+        let result = classifier.classify(&ctx);
+        assert_eq!(result.class, PageClass::Vector);
     }
 }
