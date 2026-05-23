@@ -67,9 +67,9 @@ libc = "0.2"
 [features]
 default = []
 # OCR support via Tesseract
-ocr = []
+ocr = ["pdftract-core/ocr"]
 # Full rendering via PDFium (JBIG2, JPEG2000, CCITT decoding)
-full-render = ["dep:libloading"]
+full-render = ["dep:libloading", "pdftract-core/full-render"]
 # Remote HTTP source support
 remote = ["dep:ureq"]
 # Document profiles

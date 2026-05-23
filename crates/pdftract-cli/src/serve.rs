@@ -109,6 +109,9 @@ struct ExtractParams {
     /// Disable cache for this request
     #[serde(default)]
     no_cache: bool,
+    /// Enable full-render path using PDFium
+    #[serde(default)]
+    full_render: bool,
 }
 
 /// Run the HTTP serve mode.
@@ -183,7 +186,7 @@ async fn extract_handler(
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, AxumError> {
     let (pdf_file, params) = receive_pdf(&mut multipart).await?;
-    let options = build_options(&params);
+    let options = build_options(&params)?;
 
     // Get cache configuration
     let cache_state = state.cache.lock().await;
@@ -226,7 +229,7 @@ async fn extract_text_handler(
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, AxumError> {
     let (pdf_file, params) = receive_pdf(&mut multipart).await?;
-    let options = build_options(&params);
+    let options = build_options(&params)?;
 
     // Get cache configuration
     let cache_state = state.cache.lock().await;
@@ -267,7 +270,7 @@ async fn extract_stream_handler(
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, AxumError> {
     let (pdf_file, params) = receive_pdf(&mut multipart).await?;
-    let options = build_options(&params);
+    let options = build_options(&params)?;
 
     // Get cache configuration
     let cache_state = state.cache.lock().await;
@@ -313,6 +316,7 @@ async fn receive_pdf(multipart: &mut Multipart) -> Result<(PathBuf, ExtractParam
     let mut params = ExtractParams {
         receipts: "off".to_string(),
         no_cache: false,
+        full_render: false,
     };
 
     while let Some(field) = multipart.next_field().await
@@ -336,6 +340,15 @@ async fn receive_pdf(multipart: &mut Multipart) -> Result<(PathBuf, ExtractParam
             }
         } else if name == "no_cache" {
             params.no_cache = true;
+        } else if name == "full_render" {
+            // Check if full_render is requested
+            if let Ok(value) = field.text().await {
+                params.full_render = value == "true" || value == "1";
+            }
+            // Checkbox without value also means true
+            if params.full_render == false {
+                params.full_render = true;
+            }
         }
     }
 
@@ -345,15 +358,46 @@ async fn receive_pdf(multipart: &mut Multipart) -> Result<(PathBuf, ExtractParam
 }
 
 /// Build extraction options from parameters.
-
-/// Build extraction options from parameters.
-fn build_options(params: &ExtractParams) -> ExtractionOptions {
+///
+/// Validates that full_render is only used when the feature is available.
+/// If full_render is requested but the feature is not compiled in,
+/// the request still succeeds but falls back to direct compositing.
+fn build_options(params: &ExtractParams) -> Result<ExtractionOptions, AxumError> {
     let receipts_mode = match params.receipts.as_str() {
         "lite" => ReceiptsMode::Lite,
         "svg" => ReceiptsMode::SvgClip,
         _ => ReceiptsMode::Off,
     };
-    ExtractionOptions::with_receipts(receipts_mode)
+
+    // Check if full_render is requested
+    if params.full_render {
+        // Validate that full_render is available at runtime
+        #[cfg(all(feature = "ocr", feature = "full-render"))]
+        {
+            use pdftract_core::render::pdfium_path::has_full_render;
+            if !has_full_render() {
+                return Err(AxumError::BadRequest(
+                    "full_render requested but PDFium is not available at runtime. \
+                    Ensure the PDFium native library is installed.".to_string()
+                ));
+            }
+        }
+
+        #[cfg(not(all(feature = "ocr", feature = "full-render")))]
+        {
+            // Feature not compiled in - fall back to direct compositing
+            // Log a debug message but don't fail the request
+            tracing::debug!(
+                "full_render requested but full-render feature not compiled; using direct compositing path"
+            );
+        }
+    }
+
+    Ok(ExtractionOptions {
+        receipts: receipts_mode,
+        full_render: params.full_render,
+        ..Default::default()
+    })
 }
 
 /// Error types for the HTTP server.
