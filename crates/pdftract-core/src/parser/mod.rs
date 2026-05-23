@@ -32,7 +32,8 @@ pub use resources::{ResourceDict, merge_resources, extract_resources};
 pub use pages::{PageDict, flatten_page_tree, DEFAULT_MEDIABOX};
 pub use struct_tree::{
     StructureType, StructElemNode, StructTreeRoot, RoleMap, Kid,
-    parse_struct_tree,
+    BlockKind, MappingResult,
+    parse_struct_tree, structure_type_to_block_kind, map_element_to_block, is_artifact,
 };
 pub use stream::{
     StreamDecoder, FlateDecoder, ASCII85Decoder, ASCIIHexDecoder, CryptDecoder, PassthroughDecoder,

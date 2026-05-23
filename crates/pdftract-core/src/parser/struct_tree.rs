@@ -783,6 +783,306 @@ fn parse_struct_elem(
     Some(node)
 }
 
+/// Block kind classification for Phase 4 output.
+///
+/// This enum represents the taxonomy of block kinds used in the extraction
+/// output. It maps from PDF standard structure types to output block kinds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlockKind {
+    /// Paragraph text
+    Paragraph,
+    /// Heading with level 1-6
+    Heading { level: u8 },
+    /// Table structure
+    Table,
+    /// List container
+    List,
+    /// List item
+    ListItem,
+    /// List label (e.g., bullet or number)
+    ListLabel,
+    /// List body content
+    ListBody,
+    /// Figure/image
+    Figure,
+    /// Caption (for figures, tables, etc.)
+    Caption,
+    /// Code block
+    Code,
+    /// Block quotation
+    BlockQuote,
+    /// Table of contents
+    Toc,
+    /// Formula/math
+    Formula,
+    /// Reference/citation
+    Reference,
+    /// Note/footnote
+    Note,
+    /// Form field structure
+    FormFieldStruct,
+    /// Inline element (no block emitted)
+    Inline,
+    /// Structural container (descend without emitting block)
+    StructuralContainer,
+    /// Artifact (suppressed - not emitted in output)
+    Artifact,
+    /// Unknown type (fallback to paragraph with diagnostic)
+    Unknown,
+}
+
+impl BlockKind {
+    /// Get the string representation of this block kind for JSON output.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            BlockKind::Paragraph => "paragraph",
+            BlockKind::Heading { .. } => "heading",
+            BlockKind::Table => "table",
+            BlockKind::List => "list",
+            BlockKind::ListItem => "list_item",
+            BlockKind::ListLabel => "list_label",
+            BlockKind::ListBody => "list_body",
+            BlockKind::Figure => "figure",
+            BlockKind::Caption => "caption",
+            BlockKind::Code => "code",
+            BlockKind::BlockQuote => "block_quote",
+            BlockKind::Toc => "toc",
+            BlockKind::Formula => "formula",
+            BlockKind::Reference => "reference",
+            BlockKind::Note => "note",
+            BlockKind::FormFieldStruct => "form_field_struct",
+            BlockKind::Inline => "inline",
+            BlockKind::StructuralContainer => "structural_container",
+            BlockKind::Artifact => "artifact",
+            BlockKind::Unknown => "paragraph", // Unknown types fall back to paragraph in output
+        }
+    }
+
+    /// Check if this block kind should be emitted in output.
+    ///
+    /// Returns `false` for inline elements, structural containers, and artifacts,
+    /// which are handled specially (inline within parent blocks, descended without
+    /// emitting, or suppressed entirely).
+    pub fn is_emitted(&self) -> bool {
+        !matches!(self,
+            BlockKind::Inline
+            | BlockKind::StructuralContainer
+            | BlockKind::Artifact
+        )
+    }
+
+    /// Get the heading level for heading block kinds.
+    pub fn heading_level(&self) -> Option<u8> {
+        match self {
+            BlockKind::Heading { level } => Some(*level),
+            _ => None,
+        }
+    }
+}
+
+/// Map a structure type to its corresponding block kind.
+///
+/// This function implements the element-type to block-kind mapping table
+/// specified in Phase 7.1.2. It determines how each PDF standard structure
+/// type should be represented in the extraction output.
+///
+/// # Mapping rules
+///
+/// - **Block-level elements** (P, H, H1..H6, Table, L, LI, Figure, etc.) map to
+///   corresponding block kinds that are emitted in output.
+///
+/// - **Inline elements** (Span, Quote) map to `BlockKind::Inline`, indicating
+///   they should be handled within their parent block's content, not as
+///   separate blocks.
+///
+/// - **Structural containers** (Document, Part, Art, Sect, Div, NonStruct, Private)
+///   map to `BlockKind::StructuralContainer`, indicating the walker should
+///   descend into their children without emitting a block for the container itself.
+///
+/// - **Artifact** maps to `BlockKind::Artifact`, indicating suppression - neither
+///   the element nor its content reaches output.
+///
+/// - **Unknown types** (after RoleMap resolution) map to `BlockKind::Unknown`,
+///   which falls back to paragraph in output but emits a diagnostic.
+///
+/// # Arguments
+///
+/// * `std_type` - The resolved standard structure type
+///
+/// # Returns
+///
+/// The corresponding `BlockKind` for this structure type.
+pub fn structure_type_to_block_kind(std_type: StructureType) -> BlockKind {
+    match std_type {
+        // Block-level elements
+        StructureType::P => BlockKind::Paragraph,
+        StructureType::H => BlockKind::Heading { level: 1 },
+        StructureType::H1 => BlockKind::Heading { level: 1 },
+        StructureType::H2 => BlockKind::Heading { level: 2 },
+        StructureType::H3 => BlockKind::Heading { level: 3 },
+        StructureType::H4 => BlockKind::Heading { level: 4 },
+        StructureType::H5 => BlockKind::Heading { level: 5 },
+        StructureType::H6 => BlockKind::Heading { level: 6 },
+        StructureType::Table => BlockKind::Table,
+        StructureType::L => BlockKind::List,
+        StructureType::LI => BlockKind::ListItem,
+        StructureType::Lbl => BlockKind::ListLabel,
+        StructureType::LBody => BlockKind::ListBody,
+        StructureType::Figure => BlockKind::Figure,
+        StructureType::Caption => BlockKind::Caption,
+        StructureType::Code => BlockKind::Code,
+        StructureType::BlockQuote => BlockKind::BlockQuote,
+        StructureType::Toc => BlockKind::Toc,
+        StructureType::Toci => BlockKind::Toc,
+        StructureType::Formula => BlockKind::Formula,
+        StructureType::Reference => BlockKind::Reference,
+        StructureType::Note => BlockKind::Note,
+        StructureType::Form => BlockKind::FormFieldStruct,
+
+        // Inline elements (no block emitted - handled within parent)
+        StructureType::Span => BlockKind::Inline,
+        StructureType::Quote => BlockKind::Inline,
+
+        // Structural containers (descend without emitting block)
+        StructureType::Document => BlockKind::StructuralContainer,
+        StructureType::Part => BlockKind::StructuralContainer,
+        StructureType::Art => BlockKind::StructuralContainer,
+        StructureType::Sect => BlockKind::StructuralContainer,
+        StructureType::Div => BlockKind::StructuralContainer,
+        StructureType::NonStruct => BlockKind::StructuralContainer,
+        StructureType::Private => BlockKind::StructuralContainer,
+        StructureType::Index => BlockKind::StructuralContainer,
+        StructureType::TR => BlockKind::StructuralContainer,   // Table row - container
+        StructureType::TH => BlockKind::StructuralContainer,   // Table header cell
+        StructureType::TD => BlockKind::StructuralContainer,   // Table data cell
+        StructureType::THead => BlockKind::StructuralContainer, // Table head group
+        StructureType::TBody => BlockKind::StructuralContainer, // Table body group
+        StructureType::TFoot => BlockKind::StructuralContainer, // Table foot group
+
+        // Other inline elements - treat as inline
+        StructureType::BibEntry => BlockKind::Inline,
+        StructureType::Link => BlockKind::Inline,
+        StructureType::Annot => BlockKind::Inline,
+        StructureType::Ruby => BlockKind::Inline,
+        StructureType::RB => BlockKind::Inline,
+        StructureType::RT => BlockKind::Inline,
+        StructureType::RP => BlockKind::Inline,
+        StructureType::Warichu => BlockKind::Inline,
+        StructureType::WT => BlockKind::Inline,
+        StructureType::WP => BlockKind::Inline,
+
+        // Unknown type (after RoleMap resolution) - fall back to paragraph
+        StructureType::Unknown => BlockKind::Unknown,
+    }
+}
+
+/// Check if a structure type should be suppressed as an artifact.
+///
+/// This function handles both:
+/// 1. Structure elements with type "Artifact"
+/// 2. MCIDs inside Artifact marked-content sequences (from Phase 3.4)
+///
+/// # Arguments
+///
+/// * `std_type` - The resolved standard structure type
+///
+/// # Returns
+///
+/// `true` if this is an artifact that should be suppressed.
+pub fn is_artifact(std_type: StructureType) -> bool {
+    // Note: StructureType doesn't have an Artifact variant because Artifact
+    // is handled as a marked-content tag, not a structure type.
+    // This function is a placeholder for future Artifact marked-content integration.
+    // When Phase 3.4 marked-content tagger is integrated, it will track
+    // which MCIDs are inside Artifact sequences, and this function will
+    // check that mapping.
+    false
+}
+
+/// Mapping result for a structure element.
+///
+/// This type represents the result of mapping a structure element to
+/// its block kind, including information about whether it should be
+/// emitted and any diagnostic for unknown types.
+#[derive(Debug, Clone)]
+pub struct MappingResult {
+    /// The block kind for this element
+    pub block_kind: BlockKind,
+    /// Whether this element should be emitted in output
+    pub is_emitted: bool,
+    /// Optional diagnostic for unknown types
+    pub diagnostic: Option<Diagnostic>,
+}
+
+impl MappingResult {
+    /// Create a new mapping result.
+    fn new(block_kind: BlockKind) -> Self {
+        let is_emitted = block_kind.is_emitted();
+        let diagnostic = if matches!(block_kind, BlockKind::Unknown) {
+            Some(Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructInvalidType,
+                "Unknown structure type after RoleMap resolution, falling back to paragraph".to_string(),
+            ))
+        } else {
+            None
+        };
+        MappingResult {
+            block_kind,
+            is_emitted,
+            diagnostic,
+        }
+    }
+
+    /// Create a mapping result for an artifact (suppressed).
+    fn artifact() -> Self {
+        MappingResult {
+            block_kind: BlockKind::Artifact,
+            is_emitted: false,
+            diagnostic: None,
+        }
+    }
+}
+
+/// Map a structure element node to its block kind with full context.
+///
+/// This is the primary mapping function used by the Phase 7.1 walker.
+/// It takes a `StructElemNode` and returns a `MappingResult` indicating
+/// how the element should be handled in the output.
+///
+/// # Arguments
+///
+/// * `node` - The structure element node to map
+///
+/// # Returns
+///
+/// A `MappingResult` containing the block kind, whether it should be emitted,
+/// and an optional diagnostic for unknown types.
+///
+/// # Example
+///
+/// ```ignore
+/// let result = map_element_to_block(&node);
+/// if result.is_emitted {
+///     // Emit a block with kind = result.block_kind.as_str()
+///     if let Some(level) = result.block_kind.heading_level() {
+///         // Include level in heading block
+///     }
+/// }
+/// if let Some(diag) = result.diagnostic {
+///     diagnostics.push(diag);
+/// }
+/// ```
+pub fn map_element_to_block(node: &StructElemNode) -> MappingResult {
+    // Check if this is an artifact (type "Artifact" or inside Artifact marked-content)
+    if is_artifact(node.std_type) {
+        return MappingResult::artifact();
+    }
+
+    // Map the structure type to a block kind
+    let block_kind = structure_type_to_block_kind(node.std_type);
+    MappingResult::new(block_kind)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1210,5 +1510,355 @@ mod tests {
             }
             _ => panic!("Expected Mcid kid"),
         }
+    }
+
+    // BlockKind mapping tests (Phase 7.1.2)
+
+    #[test]
+    fn test_block_kind_paragraph() {
+        let kind = structure_type_to_block_kind(StructureType::P);
+        assert_eq!(kind, BlockKind::Paragraph);
+        assert_eq!(kind.as_str(), "paragraph");
+        assert!(kind.is_emitted());
+        assert!(kind.heading_level().is_none());
+    }
+
+    #[test]
+    fn test_block_kind_heading_h() {
+        // H (no explicit level) defaults to level 1
+        let kind = structure_type_to_block_kind(StructureType::H);
+        assert_eq!(kind, BlockKind::Heading { level: 1 });
+        assert_eq!(kind.as_str(), "heading");
+        assert!(kind.is_emitted());
+        assert_eq!(kind.heading_level(), Some(1));
+    }
+
+    #[test]
+    fn test_block_kind_heading_h1() {
+        let kind = structure_type_to_block_kind(StructureType::H1);
+        assert_eq!(kind, BlockKind::Heading { level: 1 });
+        assert_eq!(kind.as_str(), "heading");
+        assert_eq!(kind.heading_level(), Some(1));
+    }
+
+    #[test]
+    fn test_block_kind_heading_h2() {
+        let kind = structure_type_to_block_kind(StructureType::H2);
+        assert_eq!(kind, BlockKind::Heading { level: 2 });
+        assert_eq!(kind.as_str(), "heading");
+        assert_eq!(kind.heading_level(), Some(2));
+    }
+
+    #[test]
+    fn test_block_kind_heading_all_levels() {
+        // Test all heading levels 1-6
+        assert_eq!(structure_type_to_block_kind(StructureType::H1), BlockKind::Heading { level: 1 });
+        assert_eq!(structure_type_to_block_kind(StructureType::H2), BlockKind::Heading { level: 2 });
+        assert_eq!(structure_type_to_block_kind(StructureType::H3), BlockKind::Heading { level: 3 });
+        assert_eq!(structure_type_to_block_kind(StructureType::H4), BlockKind::Heading { level: 4 });
+        assert_eq!(structure_type_to_block_kind(StructureType::H5), BlockKind::Heading { level: 5 });
+        assert_eq!(structure_type_to_block_kind(StructureType::H6), BlockKind::Heading { level: 6 });
+    }
+
+    #[test]
+    fn test_block_kind_table() {
+        let kind = structure_type_to_block_kind(StructureType::Table);
+        assert_eq!(kind, BlockKind::Table);
+        assert_eq!(kind.as_str(), "table");
+        assert!(kind.is_emitted());
+    }
+
+    #[test]
+    fn test_block_kind_list() {
+        // L -> list
+        let kind = structure_type_to_block_kind(StructureType::L);
+        assert_eq!(kind, BlockKind::List);
+        assert_eq!(kind.as_str(), "list");
+        assert!(kind.is_emitted());
+    }
+
+    #[test]
+    fn test_block_kind_list_item() {
+        let kind = structure_type_to_block_kind(StructureType::LI);
+        assert_eq!(kind, BlockKind::ListItem);
+        assert_eq!(kind.as_str(), "list_item");
+        assert!(kind.is_emitted());
+    }
+
+    #[test]
+    fn test_block_kind_list_label() {
+        let kind = structure_type_to_block_kind(StructureType::Lbl);
+        assert_eq!(kind, BlockKind::ListLabel);
+        assert_eq!(kind.as_str(), "list_label");
+        assert!(kind.is_emitted());
+    }
+
+    #[test]
+    fn test_block_kind_list_body() {
+        let kind = structure_type_to_block_kind(StructureType::LBody);
+        assert_eq!(kind, BlockKind::ListBody);
+        assert_eq!(kind.as_str(), "list_body");
+        assert!(kind.is_emitted());
+    }
+
+    #[test]
+    fn test_block_kind_figure() {
+        let kind = structure_type_to_block_kind(StructureType::Figure);
+        assert_eq!(kind, BlockKind::Figure);
+        assert_eq!(kind.as_str(), "figure");
+        assert!(kind.is_emitted());
+    }
+
+    #[test]
+    fn test_block_kind_caption() {
+        let kind = structure_type_to_block_kind(StructureType::Caption);
+        assert_eq!(kind, BlockKind::Caption);
+        assert_eq!(kind.as_str(), "caption");
+        assert!(kind.is_emitted());
+    }
+
+    #[test]
+    fn test_block_kind_code() {
+        let kind = structure_type_to_block_kind(StructureType::Code);
+        assert_eq!(kind, BlockKind::Code);
+        assert_eq!(kind.as_str(), "code");
+        assert!(kind.is_emitted());
+    }
+
+    #[test]
+    fn test_block_kind_block_quote() {
+        let kind = structure_type_to_block_kind(StructureType::BlockQuote);
+        assert_eq!(kind, BlockKind::BlockQuote);
+        assert_eq!(kind.as_str(), "block_quote");
+        assert!(kind.is_emitted());
+    }
+
+    #[test]
+    fn test_block_kind_toc() {
+        // TOC -> toc
+        let kind = structure_type_to_block_kind(StructureType::Toc);
+        assert_eq!(kind, BlockKind::Toc);
+        assert_eq!(kind.as_str(), "toc");
+
+        // TOCI also maps to toc
+        let kind = structure_type_to_block_kind(StructureType::Toci);
+        assert_eq!(kind, BlockKind::Toc);
+    }
+
+    #[test]
+    fn test_block_kind_formula() {
+        let kind = structure_type_to_block_kind(StructureType::Formula);
+        assert_eq!(kind, BlockKind::Formula);
+        assert_eq!(kind.as_str(), "formula");
+        assert!(kind.is_emitted());
+    }
+
+    #[test]
+    fn test_block_kind_reference() {
+        let kind = structure_type_to_block_kind(StructureType::Reference);
+        assert_eq!(kind, BlockKind::Reference);
+        assert_eq!(kind.as_str(), "reference");
+        assert!(kind.is_emitted());
+    }
+
+    #[test]
+    fn test_block_kind_note() {
+        let kind = structure_type_to_block_kind(StructureType::Note);
+        assert_eq!(kind, BlockKind::Note);
+        assert_eq!(kind.as_str(), "note");
+        assert!(kind.is_emitted());
+    }
+
+    #[test]
+    fn test_block_kind_form() {
+        let kind = structure_type_to_block_kind(StructureType::Form);
+        assert_eq!(kind, BlockKind::FormFieldStruct);
+        assert_eq!(kind.as_str(), "form_field_struct");
+        assert!(kind.is_emitted());
+    }
+
+    #[test]
+    fn test_block_kind_inline_span() {
+        let kind = structure_type_to_block_kind(StructureType::Span);
+        assert_eq!(kind, BlockKind::Inline);
+        assert_eq!(kind.as_str(), "inline");
+        assert!(!kind.is_emitted()); // Inline elements are NOT emitted as blocks
+    }
+
+    #[test]
+    fn test_block_kind_inline_quote() {
+        let kind = structure_type_to_block_kind(StructureType::Quote);
+        assert_eq!(kind, BlockKind::Inline);
+        assert!(!kind.is_emitted());
+    }
+
+    #[test]
+    fn test_block_kind_structural_container() {
+        // Test all structural container types
+        let containers = vec![
+            StructureType::Document,
+            StructureType::Part,
+            StructureType::Art,
+            StructureType::Sect,
+            StructureType::Div,
+            StructureType::NonStruct,
+            StructureType::Private,
+            StructureType::Index,
+            StructureType::TR,
+            StructureType::TH,
+            StructureType::TD,
+            StructureType::THead,
+            StructureType::TBody,
+            StructureType::TFoot,
+        ];
+
+        for std_type in containers {
+            let kind = structure_type_to_block_kind(std_type);
+            assert_eq!(kind, BlockKind::StructuralContainer);
+            assert!(!kind.is_emitted()); // Structural containers are NOT emitted as blocks
+        }
+    }
+
+    #[test]
+    fn test_block_kind_unknown() {
+        let kind = structure_type_to_block_kind(StructureType::Unknown);
+        assert_eq!(kind, BlockKind::Unknown);
+        assert_eq!(kind.as_str(), "paragraph"); // Unknown falls back to "paragraph" string
+        assert!(kind.is_emitted()); // Unknown IS emitted (as paragraph fallback)
+    }
+
+    #[test]
+    fn test_mapping_result_for_paragraph() {
+        let node = StructElemNode::new("P".to_string(), StructureType::P);
+        let result = map_element_to_block(&node);
+
+        assert_eq!(result.block_kind, BlockKind::Paragraph);
+        assert!(result.is_emitted);
+        assert!(result.diagnostic.is_none()); // No diagnostic for known types
+    }
+
+    #[test]
+    fn test_mapping_result_for_heading_with_level() {
+        let node = StructElemNode::new("H2".to_string(), StructureType::H2);
+        let result = map_element_to_block(&node);
+
+        assert_eq!(result.block_kind, BlockKind::Heading { level: 2 });
+        assert!(result.is_emitted);
+        assert_eq!(result.block_kind.heading_level(), Some(2));
+        assert!(result.diagnostic.is_none());
+    }
+
+    #[test]
+    fn test_mapping_result_for_unknown_type() {
+        let node = StructElemNode::new("CustomType".to_string(), StructureType::Unknown);
+        let result = map_element_to_block(&node);
+
+        assert_eq!(result.block_kind, BlockKind::Unknown);
+        assert!(result.is_emitted); // Unknown types ARE emitted (as paragraph)
+        assert!(result.diagnostic.is_some()); // Should have diagnostic
+        assert!(result.diagnostic.unwrap().message.contains("Unknown structure type"));
+    }
+
+    #[test]
+    fn test_mapping_result_for_inline_element() {
+        let node = StructElemNode::new("Span".to_string(), StructureType::Span);
+        let result = map_element_to_block(&node);
+
+        assert_eq!(result.block_kind, BlockKind::Inline);
+        assert!(!result.is_emitted); // Inline NOT emitted as separate block
+        assert!(result.diagnostic.is_none());
+    }
+
+    #[test]
+    fn test_mapping_result_for_structural_container() {
+        let node = StructElemNode::new("Div".to_string(), StructureType::Div);
+        let result = map_element_to_block(&node);
+
+        assert_eq!(result.block_kind, BlockKind::StructuralContainer);
+        assert!(!result.is_emitted); // Structural container NOT emitted as block
+        assert!(result.diagnostic.is_none());
+    }
+
+    #[test]
+    fn test_list_nesting_mapping() {
+        // Test that list elements map correctly for nested structures
+        let list_kind = structure_type_to_block_kind(StructureType::L);
+        let item_kind = structure_type_to_block_kind(StructureType::LI);
+        let label_kind = structure_type_to_block_kind(StructureType::Lbl);
+        let body_kind = structure_type_to_block_kind(StructureType::LBody);
+
+        assert_eq!(list_kind, BlockKind::List);
+        assert_eq!(item_kind, BlockKind::ListItem);
+        assert_eq!(label_kind, BlockKind::ListLabel);
+        assert_eq!(body_kind, BlockKind::ListBody);
+
+        // All should be emitted
+        assert!(list_kind.is_emitted());
+        assert!(item_kind.is_emitted());
+        assert!(label_kind.is_emitted());
+        assert!(body_kind.is_emitted());
+    }
+
+    #[test]
+    fn test_table_grouping_mapping() {
+        // Test that table row/cell types map to structural containers
+        let tr_kind = structure_type_to_block_kind(StructureType::TR);
+        let th_kind = structure_type_to_block_kind(StructureType::TH);
+        let td_kind = structure_type_to_block_kind(StructureType::TD);
+        let thead_kind = structure_type_to_block_kind(StructureType::THead);
+        let tbody_kind = structure_type_to_block_kind(StructureType::TBody);
+        let tfoot_kind = structure_type_to_block_kind(StructureType::TFoot);
+
+        // All should map to structural container (descend without emitting block)
+        assert_eq!(tr_kind, BlockKind::StructuralContainer);
+        assert_eq!(th_kind, BlockKind::StructuralContainer);
+        assert_eq!(td_kind, BlockKind::StructuralContainer);
+        assert_eq!(thead_kind, BlockKind::StructuralContainer);
+        assert_eq!(tbody_kind, BlockKind::StructuralContainer);
+        assert_eq!(tfoot_kind, BlockKind::StructuralContainer);
+
+        // None should be emitted
+        assert!(!tr_kind.is_emitted());
+        assert!(!th_kind.is_emitted());
+        assert!(!td_kind.is_emitted());
+        assert!(!thead_kind.is_emitted());
+        assert!(!tbody_kind.is_emitted());
+        assert!(!tfoot_kind.is_emitted());
+    }
+
+    #[test]
+    fn test_span_passthrough() {
+        // Test that inline elements like Span are not emitted as blocks
+        let inline_types = vec![
+            StructureType::Span,
+            StructureType::Quote,
+            StructureType::BibEntry,
+            StructureType::Link,
+            StructureType::Annot,
+            StructureType::Ruby,
+            StructureType::RB,
+            StructureType::RT,
+            StructureType::RP,
+            StructureType::Warichu,
+            StructureType::WT,
+            StructureType::WP,
+        ];
+
+        for std_type in inline_types {
+            let kind = structure_type_to_block_kind(std_type);
+            assert!(!kind.is_emitted(), "Type {:?} should not be emitted", std_type);
+        }
+    }
+
+    #[test]
+    fn test_heading_level_not_auto_incremented() {
+        // Test that nested H elements do NOT auto-increment level
+        // (spec leaves this to the producer)
+        let h_kind = structure_type_to_block_kind(StructureType::H);
+        let h1_kind = structure_type_to_block_kind(StructureType::H1);
+
+        // Both H and H1 have level 1 - no auto-increment
+        assert_eq!(h_kind.heading_level(), Some(1));
+        assert_eq!(h1_kind.heading_level(), Some(1));
     }
 }
