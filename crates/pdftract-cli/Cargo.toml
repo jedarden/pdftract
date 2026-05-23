@@ -10,6 +10,7 @@ publish = true
 [[bin]]
 name = "pdftract"
 path = "src/main.rs"
+test = true
 
 [[bin]]
 name = "generate_lzw_fixtures"
@@ -31,3 +32,6 @@ tempfile = "3"
 tera = "1"
 tokio = { version = "1", features = ["full"] }
 walkdir = "2"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

@@ -80,6 +80,10 @@ enum Commands {
     },
     /// Start the MCP (Model Context Protocol) server
     Mcp {
+        /// Use stdio transport (for Claude Desktop, Claude Code, Continue, Cursor)
+        #[arg(long, conflicts_with = "bind")]
+        stdio: bool,
+
         /// Bind address for the MCP server (e.g., "127.0.0.1:8080", "[::1]:9000", "0.0.0.0:3000")
         #[arg(short, long, default_value = "127.0.0.1:8080")]
         bind: String,
@@ -160,13 +164,23 @@ fn main() -> Result<()> {
             }
         }
         Commands::Mcp {
+            stdio,
             bind,
             auth_token_file,
             auth_token,
         } => {
-            if let Err(e) = mcp::run(bind, auth_token_file, auth_token) {
-                eprintln!("Error: {}", e);
-                std::process::exit(1);
+            if stdio {
+                // stdio mode (default for Claude Desktop, Claude Code, etc.)
+                if let Err(e) = mcp::run_stdio() {
+                    eprintln!("Error: {}", e);
+                    std::process::exit(1);
+                }
+            } else {
+                // HTTP mode
+                if let Err(e) = mcp::run(bind, auth_token_file, auth_token) {
+                    eprintln!("Error: {}", e);
+                    std::process::exit(1);
+                }
             }
         }
     }

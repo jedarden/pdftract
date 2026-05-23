@@ -737,6 +737,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "libc",
  "lzw",
  "pdftract-core",
  "regex",

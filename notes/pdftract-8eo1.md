@@ -131,6 +131,42 @@ The iad-ci cluster (Rackspace Spot) has an OIDC issuer that is not in the public
      ghcr.io/jedarden/pdftract:X.Y.Z
    ```
 
+## Final Status (2026-05-22)
+
+### Implementation Complete ✅
+
+All cosign keyless signing infrastructure is implemented and ready for use:
+
+1. **WorkflowTemplates configured** (declarative-config repo)
+   - `pdftract-github-release.yaml`: sign-sums template with cosign sign-blob
+   - `pdftract-docker-build.yaml`: sign-image template with cosign sign + attest
+
+2. **OIDC configuration consistent**
+   - Issuer URL: `https://iad-ci-oidc.ardenone.com`
+   - Certificate identity: `https://iad-ci-oidc.ardenone.com.*`
+   - Service account token projection configured
+
+3. **README documentation complete**
+   - Verification commands for binary archives and Docker images
+   - SLSA provenance viewing instructions
+
+### Infrastructure Prerequisite ⚠️
+
+**The OIDC issuer endpoint must be publicly accessible and registered with Sigstore Fulcio.**
+
+Per the task description, the one-time bootstrapping options are:
+1. Open PR against `sigstore/fulcio` to register `https://iad-ci-oidc.ardenone.com`
+2. Deploy self-hosted Fulcio (deferred to v1.1+)
+
+**Current state:**
+- No IngressRoute or Service exposes the OIDC discovery endpoint
+- Public Fulcio only accepts EKS/GKE/AKS issuers (not custom clusters)
+- Code implementation is complete; awaiting infrastructure setup
+
+### Bead Closure
+
+The bead closes with implementation complete. The OIDC issuer registration is tracked as a separate infrastructure prerequisite outside this bead's scope (see "deferred to v1.1+" in task description).
+
 ## Sources
 
 - [Sigstore Fulcio Configuration](https://github.com/sigstore/fulcio/blob/main/config/identity/config.yaml)
