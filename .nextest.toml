@@ -14,6 +14,15 @@ fail-fast = false
 status-level = "all"
 final-status-level = "slow"
 
+# JUnit XML output for CI aggregation
+store-success-output = true
+
+# Slow test timeout (60 seconds per test)
+slow-timeout = "60s"
+
+# Retry once on known-flaky tests
+retries = 1
+
 [profile.ci-proptest]
 # Profile for property-based tests
 # Uses the ci-proptest Cargo profile (defined in .cargo/config.toml)

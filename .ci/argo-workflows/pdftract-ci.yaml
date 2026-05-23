@@ -444,13 +444,30 @@ spec:
           echo "All binaries available as artifacts"
 
     # === Test Matrix ===
-    # Run cargo test across feature combinations and proptest
-    # - default features unit tests
-    # - all features unit tests
-    # - proptest property tests (10,000 cases per module)
+    # Run cargo test across feature combinations and targets
+    # - glibc: All features including OCR (tesseract available on Debian)
+    # - musl: Production binary feature set (no OCR, unavailable on Alpine/musl)
+    # - proptest: Property tests (10,000 cases per module)
     #
     # CRITICAL: All cargo commands MUST use --locked (or --locked --frozen)
+    #
+    # Bead: pdftract-5gtcj (musl leg)
+    # Plan section: Phase 0.3
     - name: test-matrix
+      activeDeadlineSeconds: 3600
+      dag:
+        tasks:
+          - name: test-glibc
+            template: test-glibc
+          - name: test-musl
+            template: test-musl
+
+    # === Test GLIBC ===
+    # Run full test suite on x86_64-unknown-linux-gnu with all features including OCR
+    # Uses standard Debian-based Rust image with tesseract available
+    #
+    # Features tested: default, all (including ocr, serve, decrypt, python)
+    - name: test-glibc
       activeDeadlineSeconds: 3600
       container:
         image: rust:1.83-bookworm
@@ -460,12 +477,12 @@ spec:
             set -eo pipefail
 
             echo "=========================================="
-            echo "Test Matrix"
+            echo "Test GLIBC (x86_64-unknown-linux-gnu)"
             echo "=========================================="
 
             cd /workspace
             export CARGO_HOME="/cache/cargo/registry"
-            export CARGO_TARGET_DIR="/cache/cargo/target-test"
+            export CARGO_TARGET_DIR="/cache/cargo/target-test-glibc"
 
             # Set proptest seed for reproducibility
             SEED="{{workflow.parameters.proptest-seed}}"
@@ -485,7 +502,7 @@ spec:
             echo "=== Running unit tests (default features) ==="
             cargo test --locked --lib --bins
 
-            echo "=== Running unit tests (all features) ==="
+            echo "=== Running unit tests (all features including OCR) ==="
             cargo test --locked --all-features --lib --bins
 
             echo "=== Running property tests (proptest) ==="
@@ -499,7 +516,7 @@ spec:
               fi
             }
 
-            echo "=== All tests passed ==="
+            echo "=== All glibc tests passed ==="
             echo "Unit tests: PASS"
             echo "Property tests: PASS ($CASES cases per module)"
         volumeMounts:
@@ -514,6 +531,105 @@ spec:
           limits:
             cpu: 4000m
             memory: 8Gi
+      outputs:
+        artifacts:
+          - name: test-results-glibc
+            path: /workspace/test-results-glibc.xml
+            optional: true
+
+    # === Test MUSL ===
+    # Run test suite on x86_64-unknown-linux-musl with production binary feature set
+    # Uses cross for static-libc compilation; OCR excluded (tesseract unavailable on Alpine)
+    #
+    # Features tested: default,serve,decrypt (production binary feature set, no OCR)
+    #
+    # Bead: pdftract-5gtcj
+    # Plan section: Phase 0.3
+    - name: test-musl
+      activeDeadlineSeconds: 3600
+      container:
+        image: ghcr.io/cross-rs/x86_64-unknown-linux-musl:main
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+
+            echo "=========================================="
+            echo "Test MUSL (x86_64-unknown-linux-musl)"
+            echo "=========================================="
+
+            cd /workspace
+            export CARGO_HOME="/cache/cargo/registry"
+            export CARGO_TARGET_DIR="/cache/cargo/target-test-musl"
+
+            echo "=== Installing cross ==="
+            if ! command -v cross &> /dev/null; then
+              echo "cross not found in image, installing..."
+              cargo install --locked cross || {
+                echo "ERROR: Failed to install cross" >&2
+                exit 1
+              }
+            fi
+            cross --version || echo "cross version check failed"
+
+            echo "=== Running musl tests (features: default,serve,decrypt) ==="
+            echo "Note: OCR excluded (tesseract unavailable on Alpine/musl)"
+            echo "Test threads: 4"
+
+            cross test --release --target x86_64-unknown-linux-musl \
+              --features default,serve,decrypt \
+              --locked -- \
+              --test-threads=4 \
+              -Z unstable-options \
+              --format json \
+              2>&1 | tee /tmp/test-output.json || {
+              EXIT_CODE=$?
+              echo "ERROR: musl tests failed with exit code $EXIT_CODE"
+              cat /tmp/test-output.json
+              exit $EXIT_CODE
+            }
+
+            echo "=== Converting test output to JUnit XML ==="
+            if command -v jq &> /dev/null; then
+              # Convert cargo test JSON output to JUnit XML format
+              # This is a simplified conversion - for full JUnit support, use cargo-nextest
+              jq -r '
+                select(.type == "test") |
+                "<testcase name=\(.name | @sh) classname=\(.crate | @sh) time=\(.exec_time // 0)>" +
+                if .status == "ok" then
+                  "</testcase>"
+                else
+                  "<failure message=\(.message | @sh)>\(.stdout // "" | @sh)</failure></testcase>"
+                end
+              ' /tmp/test-output.json > /workspace/test-results-musl.xml || {
+                echo "WARN: JUnit XML generation failed, creating minimal report"
+                echo '<?xml version="1.0" encoding="UTF-8"?><testsuites name="musl"><testsuite tests="1"><testcase name="musl-tests" classname="pdftract"/></testsuite></testsuites>' > /workspace/test-results-musl.xml
+              }
+            else
+              echo '<?xml version="1.0" encoding="UTF-8"?><testsuites name="musl"><testsuite tests="1"><testcase name="musl-tests" classname="pdftract"/></testsuite></testsuites>' > /workspace/test-results-musl.xml
+            fi
+
+            echo "=== All musl tests passed ==="
+            echo "Feature set: default,serve,decrypt (no OCR)"
+            echo "JUnit XML: test-results-musl.xml"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+          - name: docker-config
+            mountPath: /root/.docker
+        resources:
+          requests:
+            cpu: 2000m
+            memory: 4Gi
+          limits:
+            cpu: 4000m
+            memory: 8Gi
+      outputs:
+        artifacts:
+          - name: test-results-musl
+            path: /workspace/test-results-musl.xml
 
     # === Quality Matrix ===
     # Run linting (clippy, fmt), security audit (cargo-audit), dependency review,

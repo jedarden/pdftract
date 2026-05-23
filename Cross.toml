@@ -1,0 +1,24 @@
+# Cross configuration for pdftract
+#
+# This configures the cross toolchain for compiling and testing against
+# musl targets (static libc). Cross uses Docker images with pre-installed
+# toolchains for each target triple.
+#
+# See https://github.com/cross-rs/cross for configuration options.
+
+[build]
+# Default to cross's built-in images
+xargo = false
+default-target = "x86_64-unknown-linux-musl"
+
+[target.x86_64-unknown-linux-musl]
+# Use the official cross image for musl testing
+# Image: ghcr.io/cross-rs/x86_64-unknown-linux-musl:main
+image = "ghcr.io/cross-rs/x86_64-unknown-linux-musl:main"
+
+[build.env]
+passthrough = [
+  "RUSTFLAGS",
+  "CARGO_HOME",
+  "CARGO_TARGET_DIR",
+]
