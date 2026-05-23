@@ -22,6 +22,7 @@
 //! - /health endpoint is exempt from auth (always returns 200)
 
 use crate::mcp::framing::{BatchMessage, ErrorObject, Id, Notification, Request, Response};
+use crate::mcp::tools;
 use anyhow::{anyhow, Context, Result};
 use axum::{
     body::Body,
@@ -32,7 +33,7 @@ use axum::{
     Router,
 };
 use secrecy::{ExposeSecret, SecretString};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -62,6 +63,9 @@ pub struct McpServerState {
 
     /// Active SSE client count (for diagnostics)
     client_count: Arc<AtomicUsize>,
+
+    /// Tool registry for tools/list and tools/call
+    tool_registry: Arc<tools::ToolRegistry>,
 }
 
 impl McpServerState {
@@ -75,6 +79,7 @@ impl McpServerState {
             notify_tx,
             max_body_bytes,
             client_count: Arc::new(AtomicUsize::new(0)),
+            tool_registry: Arc::new(tools::all_tools()),
         }
     }
 
@@ -202,9 +207,10 @@ async fn handle_post_request(
     // Process each request and collect responses
     let requests = batch.into_requests();
     let mut responses = Vec::with_capacity(requests.len());
+    let registry = state.tool_registry.as_ref();
 
     for request in requests {
-        let response = handle_request(request);
+        let response = handle_request(request, registry);
         responses.push(response);
     }
 
@@ -367,38 +373,12 @@ fn check_auth(
 }
 
 /// Handle a single JSON-RPC request and return a response.
-fn handle_request(request: Request) -> Response {
+fn handle_request(request: Request, registry: &tools::ToolRegistry) -> Response {
     let id = request.request_id();
 
     match request.method.as_str() {
         "tools/list" => {
-            let tools = serde_json::json!({
-                "tools": [
-                    {
-                        "name": "extract",
-                        "description": "Extract text and structure from a PDF file",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "path": {
-                                    "type": "string",
-                                    "description": "Path to the PDF file"
-                                },
-                                "pages": {
-                                    "type": "string",
-                                    "description": "Page range (e.g., '1-5,7')"
-                                },
-                                "formats": {
-                                    "type": "array",
-                                    "items": { "type": "string" },
-                                    "description": "Output formats"
-                                }
-                            },
-                            "required": ["path"]
-                        }
-                    }
-                ]
-            });
+            let tools = registry.tools_list();
             Response::success(id, tools)
         }
         "initialize" => {
@@ -415,6 +395,65 @@ fn handle_request(request: Request) -> Response {
                 }
             });
             Response::success(id, result)
+        }
+        "tools/call" => {
+            // Extract tool name and arguments from params
+            let params = match request.params {
+                Some(p) => p,
+                None => {
+                    return Response::error(id, ErrorObject::invalid_params()
+                        .with_data(json!({"reason": "Missing params"})));
+                }
+            };
+
+            let tool_name = match params.get("name").and_then(|v| v.as_str()) {
+                Some(name) => name,
+                None => {
+                    return Response::error(id, ErrorObject::invalid_params()
+                        .with_data(json!({"reason": "Missing or invalid 'name' field"})));
+                }
+            };
+
+            let arguments = params.get("arguments").cloned().unwrap_or(Value::Object(serde_json::Map::new()));
+
+            // Look up the tool in the registry
+            let tool = match registry.get(tool_name) {
+                Some(t) => t,
+                None => {
+                    return Response::error(id, ErrorObject::method_not_found(tool_name));
+                }
+            };
+
+            // Execute the tool with observability logging
+            let start = std::time::Instant::now();
+            let log_path = arguments.get("path").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+            let result = tool.execute(arguments, log_path.as_deref());
+
+            let duration_ms = start.elapsed().as_millis();
+            let response_size = result.as_ref().ok()
+                .map(|v| serde_json::to_vec(v).unwrap_or_default().len())
+                .unwrap_or(0);
+
+            // Emit structured log line to stderr
+            // Format: timestamp, tool_name, path (or hash), duration_ms, response_size_bytes, error_code
+            let timestamp = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+            let path_or_hash = log_path.unwrap_or_else(|| "<unknown>".to_string());
+            let error_code = result.as_ref().err().map(|e| e.code.to_string());
+
+            eprintln!("{} tool={} path={} duration_ms={} response_size_bytes={} error_code={:?}",
+                timestamp,
+                tool_name,
+                path_or_hash,
+                duration_ms,
+                response_size,
+                error_code,
+            );
+
+            match result {
+                Ok(value) => Response::success(id, value),
+                Err(error) => Response::error(id, error),
+            }
         }
         _ => {
             tracing::warn!("Unknown MCP method: {}", request.method);
@@ -499,8 +538,9 @@ mod tests {
 
     #[test]
     fn test_handle_request_tools_list() {
+        let registry = tools::all_tools();
         let request = Request::new("tools/list", None, Some(Id::Number(1)));
-        let response = handle_request(request);
+        let response = handle_request(request, &registry);
 
         assert!(response.is_success());
         assert!(response.get_result().is_some());
@@ -508,8 +548,9 @@ mod tests {
 
     #[test]
     fn test_handle_request_initialize() {
+        let registry = tools::all_tools();
         let request = Request::new("initialize", None, Some(Id::Number(1)));
-        let response = handle_request(request);
+        let response = handle_request(request, &registry);
 
         assert!(response.is_success());
         let result = response.get_result().unwrap();
@@ -519,8 +560,9 @@ mod tests {
 
     #[test]
     fn test_handle_request_unknown_method() {
+        let registry = tools::all_tools();
         let request = Request::new("unknown/method", None, Some(Id::Number(1)));
-        let response = handle_request(request);
+        let response = handle_request(request, &registry);
 
         assert!(response.is_error());
         let error = response.get_error().unwrap();

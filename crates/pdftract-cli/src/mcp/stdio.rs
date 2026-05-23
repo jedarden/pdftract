@@ -12,11 +12,14 @@
 //! - Using a single BufWriter<Stdout> protected by a Mutex for all JSON-RPC output
 
 use crate::mcp::framing::{ErrorObject, Id, Request, Response};
+use crate::mcp::tools;
 use anyhow::{anyhow, Context, Result};
+use serde_json::json;
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Stdin, Stdout, Write};
 use std::panic::Location;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::time::Instant;
 
 /// Global flag indicating whether we should keep running.
 ///
@@ -239,20 +242,86 @@ fn read_message(stdin: &mut BufReader<Stdin>) -> Result<Option<Request>> {
 }
 
 /// Handle a JSON-RPC request and return a response.
-///
-/// This is a placeholder implementation. The full handler will be
-/// implemented in a separate bead (see plan for MCP server beads).
-fn handle_request(request: Request) -> Response {
+fn handle_request(request: Request, registry: &tools::ToolRegistry) -> Response {
     let id = request.request_id();
 
-    // For now, we only support tools/list
     match request.method.as_str() {
         "tools/list" => {
-            // Return a placeholder tools list
-            let tools = serde_json::json!({
-                "tools": []
-            });
+            let tools = registry.tools_list();
             Response::success(id, tools)
+        }
+        "initialize" => {
+            let result = json!({
+                "protocolVersion": "2024-11-05",
+                "capabilities": {
+                    "tools": {},
+                    "resources": {},
+                    "prompts": {}
+                },
+                "serverInfo": {
+                    "name": "pdftract",
+                    "version": env!("CARGO_PKG_VERSION")
+                }
+            });
+            Response::success(id, result)
+        }
+        "tools/call" => {
+            // Extract tool name and arguments from params
+            let params = match request.params {
+                Some(p) => p,
+                None => {
+                    return Response::error(id, ErrorObject::invalid_params()
+                        .with_data(json!({"reason": "Missing params"})));
+                }
+            };
+
+            let tool_name = match params.get("name").and_then(|v| v.as_str()) {
+                Some(name) => name,
+                None => {
+                    return Response::error(id, ErrorObject::invalid_params()
+                        .with_data(json!({"reason": "Missing or invalid 'name' field"})));
+                }
+            };
+
+            let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
+
+            // Look up the tool in the registry
+            let tool = match registry.get(tool_name) {
+                Some(t) => t,
+                None => {
+                    return Response::error(id, ErrorObject::method_not_found(tool_name));
+                }
+            };
+
+            // Execute the tool with observability logging
+            let start = Instant::now();
+            let log_path = arguments.get("path").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+            let result = tool.execute(arguments, log_path.as_deref());
+
+            let duration_ms = start.elapsed().as_millis();
+            let response_size = result.as_ref().ok()
+                .map(|v| serde_json::to_vec(v).unwrap_or_default().len())
+                .unwrap_or(0);
+
+            // Emit structured log line to stderr
+            let timestamp = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+            let path_or_hash = log_path.as_deref().unwrap_or("<unknown>");
+            let error_code = result.as_ref().err().map(|e| e.code.to_string());
+
+            eprintln!("{} tool={} path={} duration_ms={} response_size_bytes={} error_code={:?}",
+                timestamp,
+                tool_name,
+                path_or_hash,
+                duration_ms,
+                response_size,
+                error_code,
+            );
+
+            match result {
+                Ok(value) => Response::success(id, value),
+                Err(error) => Response::error(id, error),
+            }
         }
         _ => {
             eprintln!("Unknown method: {}", request.method);
@@ -267,10 +336,11 @@ fn handle_request(request: Request) -> Response {
 /// 1. Sets up the panic hook to write to stderr
 /// 2. Sets up signal handlers for SIGTERM/SIGINT
 /// 3. Initializes the stdout writer
-/// 4. Reads JSON-RPC requests from stdin
-/// 5. Dispatches to handlers
-/// 6. Writes responses to stdout
-/// 7. Exits cleanly on EOF or SIGTERM
+/// 4. Creates the tool registry
+/// 5. Reads JSON-RPC requests from stdin
+/// 6. Dispatches to handlers
+/// 7. Writes responses to stdout
+/// 8. Exits cleanly on EOF or SIGTERM
 ///
 /// # Signal handling
 ///
@@ -293,10 +363,14 @@ pub fn run() -> Result<()> {
     // Initialize stdout writer (only way to write to stdout in stdio mode)
     init_stdout();
 
+    // Create the tool registry
+    let registry = tools::all_tools();
+
     // Print startup banner to stderr (not stdout!)
     eprintln!("pdftract MCP server (stdio mode) starting...");
     eprintln!("Version: {}", env!("CARGO_PKG_VERSION"));
     eprintln!("Protocol: JSON-RPC 2.0 over stdio");
+    eprintln!("Tools: {}", registry.tools_list()["tools"].as_array().map(|v| v.len()).unwrap_or(0));
     eprintln!();
 
     // Create buffered stdin reader
@@ -308,7 +382,7 @@ pub fn run() -> Result<()> {
         match read_message(&mut stdin) {
             Ok(Some(request)) => {
                 // Handle the request
-                let response = handle_request(request);
+                let response = handle_request(request, &registry);
 
                 // Write the response
                 if let Err(e) = write_response(&response) {
@@ -383,13 +457,14 @@ mod tests {
     /// Test that unknown methods return method_not_found error.
     #[test]
     fn test_handle_unknown_method() {
+        let registry = tools::all_tools();
         let request = Request::new(
             "unknown/method",
             None,
             Some(Id::Number(1)),
         );
 
-        let response = handle_request(request);
+        let response = handle_request(request, &registry);
 
         assert!(response.is_error());
         assert_eq!(response.get_error().unwrap().code, -32601);
@@ -398,13 +473,14 @@ mod tests {
     /// Test that tools/list returns success.
     #[test]
     fn test_handle_tools_list() {
+        let registry = tools::all_tools();
         let request = Request::new(
             "tools/list",
             None,
             Some(Id::Number(1)),
         );
 
-        let response = handle_request(request);
+        let response = handle_request(request, &registry);
 
         assert!(response.is_success());
         assert!(response.get_result().is_some());
@@ -474,7 +550,8 @@ mod tests {
         let request = Request::new("tools/list", None, Some(Id::Number(1)));
 
         // Handle it
-        let response = handle_request(request);
+        let registry = tools::all_tools();
+        let response = handle_request(request, &registry);
 
         // Verify it's a success response
         assert!(response.is_success());

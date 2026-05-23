@@ -4,6 +4,7 @@ pub mod framing;
 pub mod http;
 pub mod server;
 pub mod stdio;
+pub mod tools;
 
 pub use auth::{resolve_token, EXIT_USAGE_ERROR};
 pub use bind::{check_bind_security, EXIT_CONFIG_ERROR};
