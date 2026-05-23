@@ -17,6 +17,10 @@ pub mod parser;
 pub mod receipts;
 #[cfg(feature = "ocr")]
 pub mod render;
+
+// Re-export has_full_render for runtime feature detection
+#[cfg(all(feature = "ocr", feature = "full-render"))]
+pub use render::pdfium_path::has_full_render;
 pub mod schema;
 pub mod semaphore;
 

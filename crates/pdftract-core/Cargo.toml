@@ -11,6 +11,7 @@ publish = true
 anyhow = { workspace = true }
 hex = "0.4"
 image = { version = "0.25", optional = true }
+pdfium-render = { version = "0.9", optional = true }
 indexmap = "2.2"
 flate2 = { workspace = true }
 lzw = { workspace = true }
@@ -27,12 +28,14 @@ owned_ttf_parser = "0.21"
 zstd = "0.13"
 rayon = "1.10"
 phf = "0.11"
+tracing = { workspace = true }
 
 [features]
 default = ["serde"]
 serde = ["dep:serde", "dep:serde_json"]
 receipts = []  # Enable visual citation receipts (SVG clip generation)
 ocr = ["dep:image"]  # Enable OCR path (image compositing)
+full-render = ["dep:pdfium-render", "ocr"]  # Enable PDFium-based rendering (requires ocr)
 proptest = []
 fuzzing = []  # Enable cfg(fuzzing) for fuzz harnesses
 

@@ -87,6 +87,21 @@ pub struct ExtractionOptions {
     ///
     /// Default: 512 MB (matches the plan's Tier 1 target for 100-page PDFs)
     pub memory_budget_mb: usize,
+    /// Enable full-render path using PDFium for complex page rendering.
+    ///
+    /// When true, pages are rendered using PDFium which correctly handles
+    /// overlapping images, soft masks, blend modes, and other complex geometry.
+    /// When false or when the `full-render` feature is not compiled in,
+    /// the direct compositing path is used (which handles >90% of scanned PDFs).
+    ///
+    /// Default: false (direct compositing path)
+    ///
+    /// # Feature Gate
+    ///
+    /// This option has no effect unless the `full-render` feature is enabled.
+    /// When the feature is absent, this field is silently ignored and the
+    /// direct compositing path is always used.
+    pub full_render: bool,
 }
 
 impl Default for ExtractionOptions {
@@ -95,6 +110,7 @@ impl Default for ExtractionOptions {
             receipts: ReceiptsMode::default(),
             max_parallel_pages: Self::default_max_parallel_pages(),
             memory_budget_mb: Self::default_memory_budget_mb(),
+            full_render: false,
         }
     }
 }
@@ -126,6 +142,7 @@ impl ExtractionOptions {
     pub fn with_receipts(receipts: ReceiptsMode) -> Self {
         Self {
             receipts,
+            full_render: false,
             ..Default::default()
         }
     }
@@ -134,6 +151,7 @@ impl ExtractionOptions {
     pub fn with_receipts_str(receipts: &str) -> Result<Self, String> {
         Ok(Self {
             receipts: ReceiptsMode::from_str(receipts)?,
+            full_render: false,
             ..Default::default()
         })
     }
@@ -151,6 +169,7 @@ impl ExtractionOptions {
         Self {
             max_parallel_pages: max_parallel_pages.max(1),
             memory_budget_mb: memory_budget_mb.max(64),
+            full_render: false,
             ..Default::default()
         }
     }

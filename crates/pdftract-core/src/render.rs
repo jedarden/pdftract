@@ -17,6 +17,10 @@
 //! This module is only available when the `ocr` feature is enabled.
 #![cfg(feature = "ocr")]
 
+// PDFium rendering path (Phase 5.2.2) - only available with full-render feature
+#[cfg(all(feature = "ocr", feature = "full-render"))]
+pub mod pdfium_path;
+
 use crate::graphics_state::{Matrix3x3, GraphicsStateStack, GraphicsState};
 use crate::parser::lexer::Lexer;
 use crate::parser::lexer::Token;
