@@ -95,6 +95,10 @@ enum Commands {
         /// Bearer token for authentication (INSECURE: rejected unless PDFTRACT_INSECURE_CLI_TOKEN=1)
         #[arg(long, conflicts_with = "auth_token_file")]
         auth_token: Option<String>,
+
+        /// Maximum request body size in MB (default: 256)
+        #[arg(long, default_value = "256")]
+        max_upload_mb: usize,
     },
 }
 
@@ -168,6 +172,7 @@ fn main() -> Result<()> {
             bind,
             auth_token_file,
             auth_token,
+            max_upload_mb,
         } => {
             if stdio {
                 // stdio mode (default for Claude Desktop, Claude Code, etc.)
@@ -177,7 +182,7 @@ fn main() -> Result<()> {
                 }
             } else {
                 // HTTP mode
-                if let Err(e) = mcp::run(bind, auth_token_file, auth_token) {
+                if let Err(e) = mcp::run(bind, auth_token_file, auth_token, Some(max_upload_mb)) {
                     eprintln!("Error: {}", e);
                     std::process::exit(1);
                 }

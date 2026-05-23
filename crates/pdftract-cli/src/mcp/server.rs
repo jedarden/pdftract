@@ -1,5 +1,5 @@
-use crate::mcp::{auth, bind};
-use anyhow::Result;
+use crate::mcp::{auth, bind, http};
+use anyhow::{Context, Result};
 use secrecy::SecretString;
 use std::env;
 
@@ -14,6 +14,7 @@ use std::env;
 /// * `bind_addr` - The bind address string (e.g., "127.0.0.1:8080", "0.0.0.0:3000")
 /// * `auth_token_file` - Optional path to a file containing the bearer token
 /// * `auth_token` - Optional bearer token value (deprecated, requires PDFTRACT_INSECURE_CLI_TOKEN=1)
+/// * `max_upload_mb` - Optional maximum request body size in MB (default 256)
 ///
 /// # Returns
 /// * Ok(()) if the server started successfully
@@ -22,6 +23,7 @@ pub fn run(
     bind_addr: String,
     auth_token_file: Option<std::path::PathBuf>,
     auth_token: Option<String>,
+    max_upload_mb: Option<usize>,
 ) -> Result<()> {
     // Resolve the bearer token
     let token: Option<SecretString> = match auth::resolve_token(
@@ -51,40 +53,15 @@ pub fn run(
     }
     eprintln!("Bind address: {}", bind_addr);
 
-    // Start the MCP server
-    start_server(bind_addr, token)?;
+    // Start the HTTP+SSE server (this blocks until shutdown)
+    let runtime = tokio::runtime::Runtime::new()
+        .context("Failed to create tokio runtime")?;
+
+    runtime.block_on(http::run_server(
+        bind_addr,
+        token,
+        max_upload_mb,
+    ))?;
 
     Ok(())
-}
-
-/// Starts the actual MCP server.
-///
-/// This is a stub implementation. The full MCP server implementation
-/// will be done in a separate bead (see plan for MCP server beads).
-fn start_server(bind_addr: String, _token: Option<SecretString>) -> Result<()> {
-    eprintln!("Starting MCP server on {}...", bind_addr);
-    eprintln!("NOTE: Full MCP server implementation is pending (see plan for MCP server beads)");
-
-    // TODO: Implement actual MCP server
-    // This will be done in the MCP server implementation beads
-    // For now, just sleep to simulate a running server
-    eprintln!("Press Ctrl+C to stop the server");
-
-    #[cfg(unix)]
-    {
-        use std::thread;
-        use std::time::Duration;
-        loop {
-            thread::sleep(Duration::from_secs(1));
-        }
-    }
-
-    #[cfg(not(unix))]
-    {
-        use std::thread;
-        use std::time::Duration;
-        loop {
-            thread::sleep(Duration::from_secs(1));
-        }
-    }
 }

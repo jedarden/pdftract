@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod bind;
 pub mod framing;
+pub mod http;
 pub mod server;
 pub mod stdio;
 
