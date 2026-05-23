@@ -1,0 +1,11 @@
+language = "C"
+header = "/* Copyright 2026 Jed Cabanino. MIT OR Apache-2.0 */"
+include_guard = "PDFTRACT_H"
+no_includes = false
+pragma_once = true
+cpp_compat = true
+documentation = true
+style = "both"
+
+[export]
+prefix = "pdftract_"
