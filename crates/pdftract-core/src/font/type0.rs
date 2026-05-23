@@ -62,7 +62,7 @@ pub enum CIDToGIDMap {
     /// Identity mapping: GID == CID (most common for CIDFontType2).
     Identity,
     /// Custom mapping from a stream (2-byte big-endian GID values).
-    Custom(Vec<u8>),
+    Array(Box<[u16]>),
 }
 
 impl CIDToGIDMap {
@@ -77,16 +77,10 @@ impl CIDToGIDMap {
                     None
                 }
             }
-            CIDToGIDMap::Custom(data) => {
-                // Data is a flat array of 2-byte big-endian GID values
-                // Indexed by CID: data[CID*2 .. CID*2+2]
-                let idx = (cid as usize) * 2;
-                if idx + 2 <= data.len() {
-                    let gid = u16::from_be_bytes([data[idx], data[idx + 1]]);
-                    Some(gid)
-                } else {
-                    None
-                }
+            CIDToGIDMap::Array(arr) => {
+                // Direct index into the pre-parsed u16 array
+                // GID 0 is the .notdef glyph by convention
+                arr.get(cid as usize).copied().or(Some(0))
             }
         }
     }
@@ -236,7 +230,7 @@ impl Type0Font {
 
         // Load CIDToGIDMap for CIDFontType2
         let cid_to_gid_map = if subtype == FontKind::CIDFontType2 {
-            Some(Self::load_cid_to_gid_map(cidfont_dict, source, opts, doc_counter)?)
+            Some(Self::load_cid_to_gid_map(cidfont_dict, source, opts, doc_counter, &mut diagnostics)?)
         } else {
             None
         };
@@ -359,11 +353,14 @@ impl Type0Font {
     /// Load the CIDToGIDMap from a CIDFontType2 dictionary.
     ///
     /// Returns the appropriate CIDToGIDMap variant.
+    ///
+    /// Emits `CIDTOGIDMAP_TRUNCATED` diagnostic if the stream has an odd byte count.
     fn load_cid_to_gid_map(
         cidfont_dict: &PdfDict,
         source: &dyn crate::parser::stream::PdfSource,
         opts: &ExtractionOptions,
         doc_counter: &mut u64,
+        diagnostics: &mut Vec<Diagnostic>,
     ) -> Type0Result<CIDToGIDMap> {
         match cidfont_dict.get("/CIDToGIDMap") {
             Some(PdfObject::Name(name)) => {
@@ -387,7 +384,23 @@ impl Type0Font {
                 if data.is_empty() {
                     Ok(CIDToGIDMap::Identity)
                 } else {
-                    Ok(CIDToGIDMap::Custom(data))
+                    // Check for odd byte count
+                    let truncated = data.len() % 2 != 0;
+                    if truncated {
+                        diagnostics.push(Diagnostic::with_static_no_offset(
+                            DiagCode::FontCidtogidmapTruncated,
+                            "CIDToGIDMap stream has odd byte count; trailing byte discarded",
+                        ));
+                    }
+
+                    // Parse into u16 array (big-endian)
+                    let len = data.len() / 2;
+                    let mut arr = Vec::with_capacity(len);
+                    for i in 0..len {
+                        let gid = u16::from_be_bytes([data[i * 2], data[i * 2 + 1]]);
+                        arr.push(gid);
+                    }
+                    Ok(CIDToGIDMap::Array(arr.into_boxed_slice()))
                 }
             }
             Some(PdfObject::Ref(_)) => {
@@ -496,26 +509,26 @@ mod tests {
     }
 
     #[test]
-    fn test_cid_to_gid_map_custom() {
-        // Create a simple custom map: [0x0000, 0x0001, 0x0002, 0x0003]
+    fn test_cid_to_gid_map_array() {
+        // Create a simple custom map: [0, 1, 2, 3]
         // Maps CID 0 -> GID 0, CID 1 -> GID 1, etc.
-        let data = vec![0x00, 0x00, 0x00, 0x01, 0x00, 0x02, 0x00, 0x03];
-        let map = CIDToGIDMap::Custom(data);
+        let arr = vec![0u16, 1, 2, 3].into_boxed_slice();
+        let map = CIDToGIDMap::Array(arr);
 
         assert_eq!(map.get(0), Some(0));
         assert_eq!(map.get(1), Some(1));
         assert_eq!(map.get(2), Some(2));
         assert_eq!(map.get(3), Some(3));
-        assert_eq!(map.get(4), None); // Out of range
+        // Out of range returns GID 0 (notdef), not None
+        assert_eq!(map.get(4), Some(0));
     }
 
     #[test]
-    fn test_cid_to_gid_map_custom_big_endian() {
-        // Test big-endian decoding: CID 5 should map to GID 0x1234
-        let mut data = vec![0u8; 12]; // Room for 6 GIDs
-        data[10] = 0x12;
-        data[11] = 0x34;
-        let map = CIDToGIDMap::Custom(data);
+    fn test_cid_to_gid_map_array_big_endian() {
+        // Test that parsed values are correct: CID 5 should map to GID 0x1234
+        let mut arr = vec![0u16; 6];
+        arr[5] = 0x1234;
+        let map = CIDToGIDMap::Array(arr.into_boxed_slice());
 
         assert_eq!(map.get(5), Some(0x1234));
     }
@@ -956,9 +969,9 @@ mod tests {
     #[test]
     fn test_cid_to_gid_map_from_stream() {
         // Test loading CIDToGIDMap from a stream
-        // The stream data: [0x00, 0x00, 0x00, 0x01, 0x00, 0x02]
-        // Maps: CID 0 -> GID 0, CID 1 -> GID 1, CID 2 -> GID 2
-        let stream_data = vec![0x00u8, 0x00, 0x00, 0x01, 0x00, 0x02];
+        // The stream data: [0x00, 0x00, 0x00, 0x05, 0x00, 0x0A]
+        // Maps: CID 0 -> GID 0, CID 1 -> GID 5, CID 2 -> GID 10
+        let stream_data = vec![0x00u8, 0x00, 0x00, 0x05, 0x00, 0x0A];
 
         // Create a MemorySource with the stream data at offset 0
         let mut full_data = vec![0u8; 1000]; // Reserve space for PDF-like structure
@@ -996,17 +1009,95 @@ mod tests {
         // The load should succeed (even if FontDescriptor is missing, we handle it gracefully)
         assert!(result.is_ok());
         let font = result.unwrap();
-        // The CIDToGIDMap should be loaded (as Custom since stream decode succeeds)
+        // The CIDToGIDMap should be loaded (as Array since stream decode succeeds)
         assert!(font.descendant.cid_to_gid_map.is_some());
 
-        // Verify the custom map works
-        if let Some(CIDToGIDMap::Custom(data)) = font.descendant.cid_to_gid_map {
-            assert_eq!(data.len(), 6);
-            // Verify the values are correct
-            assert_eq!(u16::from_be_bytes([data[0], data[1]]), 0);
-            assert_eq!(u16::from_be_bytes([data[2], data[3]]), 1);
-            assert_eq!(u16::from_be_bytes([data[4], data[5]]), 2);
+        // Verify the array map works
+        if let Some(CIDToGIDMap::Array(arr)) = &font.descendant.cid_to_gid_map {
+            assert_eq!(arr.len(), 3);
+            // Verify the values are correct: [0, 5, 10]
+            assert_eq!(arr[0], 0);
+            assert_eq!(arr[1], 5);
+            assert_eq!(arr[2], 10);
+
+            // Verify the get method works
+            assert_eq!(font.descendant.get_gid(0), Some(0));
+            assert_eq!(font.descendant.get_gid(1), Some(5));
+            assert_eq!(font.descendant.get_gid(2), Some(10));
         }
+    }
+
+    #[test]
+    fn test_cid_to_gid_map_truncated() {
+        // Test loading CIDToGIDMap from a stream with odd byte count
+        // The stream data: [0x00, 0x00, 0x00, 0x05, 0x00] (5 bytes - odd!)
+        // Should emit CIDTOGIDMAP_TRUNCATED and truncate to 2 GIDs: [0, 5]
+        let stream_data = vec![0x00u8, 0x00, 0x00, 0x05, 0x00];
+
+        // Create a MemorySource with the stream data at offset 0
+        let mut full_data = vec![0u8; 1000];
+        full_data[0..stream_data.len()].copy_from_slice(&stream_data);
+        let source = MemorySource::new(full_data);
+
+        let mut cidfont_dict = PdfDict::new();
+        cidfont_dict.insert(intern("/Subtype"), PdfObject::Name(intern("/CIDFontType2")));
+        cidfont_dict.insert(intern("/BaseFont"), PdfObject::Name(intern("CIDFont")));
+        cidfont_dict.insert(
+            intern("/CIDToGIDMap"),
+            PdfObject::Stream(Box::new(crate::parser::object::types::PdfStream {
+                dict: PdfDict::new(),
+                offset: 0,
+                len_hint: Some(5),
+            })),
+        );
+
+        // Wrap in a Type0 font dict
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(intern("/Subtype"), PdfObject::Name(intern("/Type0")));
+        font_dict.insert(intern("/BaseFont"), PdfObject::Name(intern("Type0Font")));
+        font_dict.insert(
+            intern("/DescendantFonts"),
+            PdfObject::Array(Box::new(vec![PdfObject::Dict(Box::new(
+                cidfont_dict,
+            ))])),
+        );
+
+        let opts = ExtractionOptions::default();
+        let mut counter = 0;
+
+        let result = Type0Font::load(&font_dict, &source, &opts, &mut counter);
+
+        // The load should succeed
+        assert!(result.is_ok());
+        let font = result.unwrap();
+
+        // Check that the CIDTOGIDMAP_TRUNCATED diagnostic was emitted
+        let diagnostics = font.diagnostics();
+        assert!(diagnostics.iter().any(|d| d.code == DiagCode::FontCidtogidmapTruncated));
+
+        // Verify the array has 2 elements (5 bytes / 2 = 2 GIDs, trailing byte discarded)
+        if let Some(CIDToGIDMap::Array(arr)) = &font.descendant.cid_to_gid_map {
+            assert_eq!(arr.len(), 2);
+            assert_eq!(arr[0], 0);
+            assert_eq!(arr[1], 5);
+        }
+    }
+
+    #[test]
+    fn test_cid_to_gid_map_out_of_range() {
+        // Test that out-of-range CID returns GID 0 (notdef), not None
+        let arr = vec![0u16, 5, 10].into_boxed_slice();
+        let map = CIDToGIDMap::Array(arr);
+
+        // Valid CIDs
+        assert_eq!(map.get(0), Some(0));
+        assert_eq!(map.get(1), Some(5));
+        assert_eq!(map.get(2), Some(10));
+
+        // Out of range CID should return GID 0 (notdef), not None
+        assert_eq!(map.get(3), Some(0));
+        assert_eq!(map.get(100), Some(0));
+        assert_eq!(map.get(65535), Some(0));
     }
 
     #[test]

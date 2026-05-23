@@ -527,6 +527,14 @@ pub enum DiagCode {
     /// Phase origin: 2.1
     FontUnsupported,
 
+    /// CIDToGIDMap stream has odd byte count (truncated GID entry)
+    ///
+    /// Emitted when a CIDToGIDMap stream has an odd number of bytes, meaning
+    /// the last GID entry is incomplete. The trailing byte is discarded.
+    ///
+    /// Phase origin: 2.1
+    FontCidtogidmapTruncated,
+
     // === OCR_* codes ===
 
     /// JBIG2 decoder not available
@@ -754,7 +762,8 @@ impl DiagCode {
             | DiagCode::FontNotFound
             | DiagCode::FontInvalidCmap
             | DiagCode::FontParseFailed
-            | DiagCode::FontUnsupported => "FONT",
+            | DiagCode::FontUnsupported
+            | DiagCode::FontCidtogidmapTruncated => "FONT",
 
             // OCR_*
             DiagCode::OcrJbig2Unsupported
@@ -839,6 +848,7 @@ impl DiagCode {
             DiagCode::FontInvalidCmap => "FONT_INVALID_CMAP",
             DiagCode::FontParseFailed => "FONT_PARSE_FAILED",
             DiagCode::FontUnsupported => "FONT_UNSUPPORTED",
+            DiagCode::FontCidtogidmapTruncated => "FONT_CIDTOGIDMAP_TRUNCATED",
             DiagCode::OcrJbig2Unsupported => "OCR_JBIG2_UNSUPPORTED",
             DiagCode::OcrJpxUnsupported => "OCR_JPX_UNSUPPORTED",
             DiagCode::OcrCcittUnsupported => "OCR_CCITT_UNSUPPORTED",
@@ -910,6 +920,7 @@ impl DiagCode {
             | DiagCode::FontInvalidCmap
             | DiagCode::FontParseFailed
             | DiagCode::FontUnsupported
+            | DiagCode::FontCidtogidmapTruncated
             | DiagCode::OcrJbig2Unsupported
             | DiagCode::OcrJpxUnsupported
             | DiagCode::OcrCcittUnsupported
@@ -1326,6 +1337,30 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         recoverable: true,
         phase: "2.2",
         suggested_action: "The CMap stream is malformed; it's treated as empty",
+    },
+    DiagInfo {
+        code: DiagCode::FontParseFailed,
+        category: "FONT",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "2.1",
+        suggested_action: "The embedded font program is corrupt or invalid; the font is treated as having no glyph mappings",
+    },
+    DiagInfo {
+        code: DiagCode::FontUnsupported,
+        category: "FONT",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "2.1",
+        suggested_action: "A font type was encountered that doesn't support embedded font program loading",
+    },
+    DiagInfo {
+        code: DiagCode::FontCidtogidmapTruncated,
+        category: "FONT",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "2.1",
+        suggested_action: "The CIDToGIDMap stream has an odd byte count; the trailing byte was discarded",
     },
     // === OCR_* codes ===
     DiagInfo {
