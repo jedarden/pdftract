@@ -6,9 +6,11 @@
 pub mod std14;
 pub mod embedded;
 pub mod type0;
+pub mod cmap;
 
 pub use embedded::{EmbeddedFont, FontMetrics, EmptyFontMetrics, GlyphBbox};
 pub use type0::{Type0Font, DescendantCIDFont, CIDToGIDMap};
+pub use cmap::{ToUnicodeMap, parse_to_unicode, parse_to_unicode_with_diags};
 
 use crate::parser::object::types::{PdfDict, PdfObject};
 
