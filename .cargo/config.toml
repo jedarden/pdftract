@@ -13,3 +13,12 @@ c = "check"
 cr = "check --release"
 t = "test"
 tr = "test --release"
+
+# Profile for CI property tests (nextest with proptest)
+[profile.ci-proptest]
+inherits = "release"
+opt-level = 2  # Faster builds than full release, still fast execution
+debug = false
+strip = "none"
+lto = "off"
+codegen-units = 256  # Maximum parallelism

@@ -1,0 +1,3 @@
+# This file ensures the proptest-regressions directory is tracked by git
+# even when empty. Minimal counterexamples from proptest failures will be
+# added here as .txt files.

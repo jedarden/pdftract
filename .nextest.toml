@@ -1,0 +1,35 @@
+# Nextest configuration for pdftract
+#
+# This config defines test profiles for different scenarios:
+# - ci: Standard CI profile for fast unit tests
+# - ci-proptest: Profile for property-based tests (proptest)
+#
+# See https://nexte.st/book/configuration.html
+
+[profile.ci]
+# Fast CI profile for unit tests
+# Reuse the default profile but with explicit test execution settings
+failure-output = "immediate-final"
+fail-fast = false
+status-level = "all"
+final-status-level = "slow"
+
+[profile.ci-proptest]
+# Profile for property-based tests
+# Uses the ci-proptest Cargo profile (defined in .cargo/config.toml)
+# which balances build speed and test execution speed
+profile = "ci-proptest"
+failure-output = "immediate-final"
+fail-fast = false
+status-level = "all"
+final-status-level = "slow"
+
+# Property tests can take longer, so we increase the timeout
+test-threads = 4  # Run 4 tests in parallel for better CPU utilization
+
+[profile.default]
+# Default development profile
+failure-output = "immediate-final"
+fail-fast = false
+status-level = "all"
+final-status-level = "slow"

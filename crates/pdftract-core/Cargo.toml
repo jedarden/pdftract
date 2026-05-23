@@ -23,6 +23,7 @@ memchr = { workspace = true }
 default = []
 serde = ["dep:serde"]
 proptest = []
+fuzzing = []  # Enable cfg(fuzzing) for fuzz harnesses
 
 [dev-dependencies]
 chrono = "0.4"

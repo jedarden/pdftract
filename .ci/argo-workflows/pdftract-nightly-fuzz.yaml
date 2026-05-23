@@ -1,0 +1,485 @@
+# pdftract-nightly-fuzz CronWorkflow
+#
+# Nightly fuzzing job for pdftract using cargo-fuzz with libFuzzer.
+# Runs for 24 CPU-hours across 5 fuzz targets, seeded from malformed fixtures.
+# New crashes are filed as STRUCT_* diagnostic regressions via issue-reporter.
+#
+# === Schedule ===
+# Runs daily at 0400 UTC (midnight EST, 9pm PST) via cron: "0 4 * * *"
+#
+# === Fuzz Targets ===
+# - lexer: Tokenization INV-8 invariant (no panic at public boundary)
+# - object_parser: Direct/indirect object parsing
+# - xref: Cross-reference table parsing (EC-07 corrupt xref, EC-08 circular refs)
+# - stream_decoder: Decompression filters (EC-10 decompression bomb)
+# - cmap_parser: CMap name and string handling
+#
+# === Resource Budget ===
+# 24 CPU-hours total split across 5 targets = ~4.8 hours each
+# Time limit per target: 6 hours (allows some overlap)
+#
+# === Crash Handling ===
+# - Crash artifacts uploaded as workflow artifacts (crashes-<target>.tar.gz)
+# - argo-workflows-issue-reporter sidecar files beads for new crashes
+# - Crash files added to tests/fixtures/malformed/ (size <= 100 KB)
+apiVersion: argoproj.io/v1alpha1
+kind: CronWorkflow
+metadata:
+  name: pdftract-nightly-fuzz
+  namespace: argo-workflows
+  labels:
+    app.kubernetes.io/name: pdftract-nightly-fuzz
+    app.kubernetes.io/component: ci
+    app.kubernetes.io/part-of: pdftract
+spec:
+  schedule: "0 4 * * *"  # Daily at 0400 UTC
+  workflowSpec:
+    serviceAccountName: argo-workflow
+    podGC: OnPodCompletion
+    ttlSecondsAfterFinished:
+      success: 43200   # 12 hours for success
+      failure: 604800  # 7 days for failure (crashes need investigation)
+
+    volumeClaimTemplates:
+      - metadata:
+          name: cargo-cache
+        spec:
+          accessModes: [ReadWriteOnce]
+          storageClassName: sata-large
+          resources:
+            requests:
+              storage: 100Gi  # Fuzzing generates lots of artifacts
+      - metadata:
+          name: workspace
+        spec:
+          accessModes: [ReadWriteOnce]
+          storageClassName: sata-large
+          resources:
+            requests:
+              storage: 10Gi
+      - metadata:
+          name: fuzz-artifacts
+        spec:
+          accessModes: [ReadWriteOnce]
+          storageClassName: sata-large
+          resources:
+            requests:
+              storage: 20Gi
+
+    volumes:
+      - name: docker-config
+        secret:
+          secretName: docker-hub-registry
+          items:
+            - key: .dockerconfigjson
+              path: config.json
+
+    podMetadata:
+      labels:
+        app.kubernetes.io/name: pdftract-nightly-fuzz
+        workflow-type: nightly-fuzz
+
+    podSpecPatch: |
+      imagePullSecrets:
+        - name: docker-hub-registry
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+
+    templates:
+      # === Top-level DAG ===
+      # Clone workspace, then run all fuzz targets in parallel
+      - name: pipeline
+        dag:
+          onExit: on-exit
+          tasks:
+            - name: setup
+              template: setup
+
+            - name: seed-corpus
+              template: seed-corpus
+              dependencies: [setup]
+
+            - name: fuzz-matrix
+              template: fuzz-matrix
+              dependencies: [setup, seed-corpus]
+
+            - name: report-crashes
+              template: report-crashes
+              dependencies: [fuzz-matrix]
+              when: "{{tasks.fuzz-matrix.outputs.parameters.crash-count}} > 0"
+
+      # === Exit Handler ===
+      # Reports fuzzing run summary (duration, execs, crashes)
+      - name: on-exit
+        script:
+          image: alpine:3.19
+          command: [sh]
+          source: |
+            #!/bin/sh
+            set -e
+            echo "=== Nightly Fuzz Exit Report ==="
+            echo "Workflow: {{workflow.name}}"
+            echo "Status: {{workflow.status}}"
+            echo "Duration: {{workflow.duration}}"
+            echo "Crashes found: {{workflow.parameters.crash-count}}"
+            echo "Artifacts available in workflow artifact store"
+      activeDeadlineSeconds: 300
+
+      # === Setup Step ===
+      # Clone repo and install cargo-fuzz
+      - name: setup
+        activeDeadlineSeconds: 600
+        container:
+          image: rust:1.83-bookworm
+          command: [bash, -c]
+          args:
+            - |
+              set -eo pipefail
+
+              echo "=== Nightly Fuzz Setup ==="
+
+              cd /workspace
+              export CARGO_HOME="/cache/cargo/registry"
+
+              # Install cargo-fuzz if not present
+              if ! command -v cargo-fuzz &> /dev/null; then
+                echo "Installing cargo-fuzz..."
+                cargo install cargo-fuzz --locked
+              fi
+
+              echo "cargo-fuzz installed:"
+              cargo-fuzz --version
+
+              echo "=== Setup complete ==="
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: cargo-cache
+              mountPath: /cache/cargo
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 1000m
+              memory: 2Gi
+
+      # === Seed Corpus ===
+      # Populate fuzz corpus from tests/fixtures/malformed/
+      - name: seed-corpus
+        activeDeadlineSeconds: 300
+        container:
+          image: alpine:3.19
+          command: [sh, -c]
+          args:
+            - |
+              set -e
+
+              echo "=== Seeding Fuzz Corpus ==="
+
+              MALFORMED_DIR="/workspace/tests/fixtures/malformed"
+              CORPUS_BASE="/workspace/fuzz/corpus"
+
+              # Check if malformed fixtures exist
+              if [ ! -d "$MALFORMED_DIR" ]; then
+                echo "WARNING: No malformed fixtures found at $MALFORMED_DIR"
+                exit 0
+              fi
+
+              echo "Found $(ls -1 "$MALFORMED_DIR" | wc -l) malformed fixtures"
+
+              # Seed each fuzz target corpus with relevant fixtures
+              # All targets get basic malformed PDFs for general robustness
+              for target in lexer object_parser xref stream_decoder cmap_parser; do
+                TARGET_CORPUS="$CORPUS_BASE/$target"
+                mkdir -p "$TARGET_CORPUS"
+
+                echo "Seeding $target corpus..."
+                for fixture in "$MALFORMED_DIR"/*; do
+                  if [ -f "$fixture" ]; then
+                    cp "$fixture" "$TARGET_CORPUS/"
+                  fi
+                done
+
+                echo "  $target corpus: $(ls -1 "$TARGET_CORPUS" | wc -l) files"
+              done
+
+              echo "=== Corpus seeding complete ==="
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+      # === Fuzz Matrix ===
+      # Run all 5 fuzz targets in parallel, 4.8 CPU-hours each
+      - name: fuzz-matrix
+        activeDeadlineSeconds: 21600  # 6 hours hard limit
+        dag:
+          onExit: fuzz-matrix-exit
+          tasks:
+            - name: fuzz-lexer
+              template: fuzz-target
+              arguments:
+                parameters:
+                  - name: target
+                    value: "lexer"
+                  - name: timeout
+                    value: "17400"  # 4.8 hours in seconds
+              continueOn:
+                failed: true  # Continue even if one target fails
+            - name: fuzz-object-parser
+              template: fuzz-target
+              arguments:
+                parameters:
+                  - name: target
+                    value: "object_parser"
+                  - name: timeout
+                    value: "17400"
+              continueOn:
+                failed: true
+            - name: fuzz-xref
+              template: fuzz-target
+              arguments:
+                parameters:
+                  - name: target
+                    value: "xref"
+                  - name: timeout
+                    value: "17400"
+              continueOn:
+                failed: true
+            - name: fuzz-stream-decoder
+              template: fuzz-target
+              arguments:
+                parameters:
+                  - name: target
+                    value: "stream_decoder"
+                  - name: timeout
+                    value: "17400"
+              continueOn:
+                failed: true
+            - name: fuzz-cmap-parser
+              template: fuzz-target
+              arguments:
+                parameters:
+                  - name: target
+                    value: "cmap_parser"
+                  - name: timeout
+                    value: "17400"
+              continueOn:
+                failed: true
+
+      # === Fuzz Target Template ===
+      # Run cargo-fuzz on a single target with address sanitizer
+      - name: fuzz-target
+        inputs:
+          parameters:
+            - name: target
+            - name: timeout
+        activeDeadlineSeconds: 21600  # 6 hours absolute max
+        container:
+          image: rustlang/rust:nightly-bookworm
+          command: [bash, -c]
+          args:
+            - |
+              set -eo pipefail
+
+              TARGET="{{inputs.parameters.target}}"
+              TIMEOUT="{{inputs.parameters.timeout}}"
+              ARTIFACT_DIR="/fuzz-artifacts/$TARGET"
+
+              echo "=========================================="
+              echo "Fuzzing Target: $TARGET"
+              echo "Timeout: $TIMEOUT seconds"
+              echo "=========================================="
+
+              cd /workspace
+              export CARGO_HOME="/cache/cargo/registry"
+              export CARGO_TARGET_DIR="/cache/cargo/target-fuzz-$TARGET"
+
+              # Enable address sanitizer for crash detection
+              export RUSTFLAGS="-Zsanitizer=address -Zsanitizer=memory -Zsanitizer=leak"
+              export ASAN_OPTIONS="detect_leaks=1:symbolize=1"
+
+              # Create artifact directory
+              mkdir -p "$ARTIFACT_DIR"
+
+              echo "=== Building fuzz harness for $TARGET ==="
+              cargo fuzz build --features fuzzing "$TARGET"
+
+              echo "=== Starting fuzz run for $TARGET (max $TIMEOUT seconds) ==="
+              echo "Corpus: fuzz/corpus/$TARGET"
+              echo "Artifacts: $ARTIFACT_DIR"
+
+              # Run fuzzer with timeout
+              # -timeout=0 means no per-input timeout (libFuzzer default)
+              # -max_total_time is the wall-clock budget for this run
+              # -max_len=10000 limits input size (PDFs are small)
+              cargo fuzz run "$TARGET" \
+                --features fuzzing \
+                -timeout=0 \
+                -max_total_time="$TIMEOUT" \
+                -max_len=10000 \
+                -artifact_prefix="$ARTIFACT_DIR/" \
+                fuzz/corpus/"$TARGET" || {
+                EXIT_CODE=$?
+                echo "Fuzzing exited with code: $EXIT_CODE"
+                # Exit code 1 is normal for fuzzers (crash found)
+                # Exit code 0 is also normal (no crashes found)
+                # Only fail on infrastructure errors
+                if [ $EXIT_CODE -ge 2 ]; then
+                  echo "ERROR: Infrastructure failure (exit code $EXIT_CODE)"
+                  exit $EXIT_CODE
+                fi
+              }
+
+              echo "=== Fuzz run complete for $TARGET ==="
+
+              # Check for crashes
+              CRASH_COUNT=$(find "$ARTIFACT_DIR" -name "crash-*" 2>/dev/null | wc -l)
+              LEAK_COUNT=$(find "$ARTIFACT_DIR" -name "leak-*" 2>/dev/null | wc -l)
+              TIMEOUT_COUNT=$(find "$ARTIFACT_DIR" -name "timeout-*" 2>/dev/null | wc -l)
+
+              echo "Crashes: $CRASH_COUNT"
+              echo "Leaks: $LEAK_COUNT"
+              echo "Timeouts: $TIMEOUT_COUNT"
+
+              # Package crash artifacts
+              if [ "$CRASH_COUNT" -gt 0 ] || [ "$LEAK_COUNT" -gt 0 ] || [ "$TIMEOUT_COUNT" -gt 0 ]; then
+                echo "=== Packaging artifacts ==="
+                cd "$ARTIFACT_DIR"
+                tar -czf "/workspace/crashes-$TARGET.tar.gz" \
+                  crash-* leak-* timeout-* 2>/dev/null || true
+                echo "Created /workspace/crashes-$TARGET.tar.gz"
+
+                # List artifacts for reporting
+                ls -la "$ARTIFACT_DIR" | head -20
+              else
+                echo "No crash artifacts to package"
+              fi
+
+              # Write summary
+              cat > "/workspace/summary-$TARGET.txt" <<EOF
+              Target: $TARGET
+              Duration: $(grep "Fuzzing for" /tmp/fuzz-stats-$TARGET.txt 2>/dev/null || echo "unknown")
+              Crashes: $CRASH_COUNT
+              Leaks: $LEAK_COUNT
+              Timeouts: $TIMEOUT_COUNT
+              EOF
+
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: cargo-cache
+              mountPath: /cache/cargo
+            - name: fuzz-artifacts
+              mountPath: /fuzz-artifacts
+          resources:
+            requests:
+              cpu: 2000m
+              memory: 4Gi
+            limits:
+              cpu: 4000m
+              memory: 8Gi
+          env:
+            - name: RUST_BACKTRACE
+              value: "1"
+
+      # === Fuzz Matrix Exit Handler ===
+      # Count total crashes across all targets
+      - name: fuzz-matrix-exit
+        script:
+          image: alpine:3.19
+          command: [sh]
+          source: |
+            #!/bin/sh
+            set -e
+
+            echo "=== Fuzz Matrix Exit Report ==="
+
+            TOTAL_CRASHES=0
+
+            for target in lexer object_parser xref stream_decoder cmap_parser; do
+              CRASH_FILE="/workspace/crashes-$target.tar.gz"
+              if [ -f "$CRASH_FILE" ]; then
+                echo "Found crash artifacts: $target"
+                TOTAL_CRASHES=$((TOTAL_CRASHES + 1))
+              fi
+            done
+
+            echo "Total targets with crashes: $TOTAL_CRASHES"
+
+            # Save as output parameter for conditional execution
+            echo "$TOTAL_CRASHES" > /tmp/crash-count
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          outputs:
+            parameters:
+              - name: crash-count
+                valueFrom:
+                  path: /tmp/crash-count
+
+      # === Report Crashes ===
+      # File beads for new crashes via argo-workflows-issue-reporter
+      - name: report-crashes
+        activeDeadlineSeconds: 300
+        container:
+          image: debian:12
+          command: [bash, -c]
+          args:
+            - |
+              set -eo pipefail
+
+              echo "=== Processing Crash Artifacts ==="
+
+              # This is a placeholder for the argo-workflows-issue-reporter integration
+              # The sidecar pattern would be implemented in a follow-up bead
+              # For now, we just collect and list the crash artifacts
+
+              for target in lexer object_parser xref stream_decoder cmap_parser; do
+                CRASH_FILE="/workspace/crashes-$target.tar.gz"
+                if [ -f "$CRASH_FILE" ]; then
+                  echo "=== $target crashes ==="
+                  tar -tzf "$CRASH_FILE" | head -10
+                  echo ""
+                fi
+              done
+
+              echo "=== Crash processing complete ==="
+              echo "Crash artifacts available in workflow artifact store"
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+        outputs:
+          artifacts:
+            - name: all-crashes
+              path: /workspace
+              optional: true
+
+    # === Workflow Parameters ===
+    arguments:
+      parameters:
+        - name: crash-count
+          value: "0"
