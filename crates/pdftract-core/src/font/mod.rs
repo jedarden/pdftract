@@ -4,6 +4,9 @@
 //! and handling font subset prefixes.
 
 pub mod std14;
+pub mod embedded;
+
+pub use embedded::{EmbeddedFont, FontMetrics, EmptyFontMetrics, GlyphBbox};
 
 use crate::parser::object::types::{PdfDict, PdfObject};
 

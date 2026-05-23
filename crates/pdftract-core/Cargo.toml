@@ -22,6 +22,7 @@ thiserror = { workspace = true }
 memchr = { workspace = true }
 unicode-normalization = { workspace = true }
 ttf-parser = "0.24"
+owned_ttf_parser = "0.21"
 zstd = "0.13"
 rayon = "1.10"
 phf = "0.11"

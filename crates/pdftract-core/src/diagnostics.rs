@@ -510,6 +510,23 @@ pub enum DiagCode {
     /// Phase origin: 2.2
     FontInvalidCmap,
 
+    /// Font program parsing failed
+    ///
+    /// Emitted when an embedded font program is corrupt or invalid.
+    /// The font is treated as having no glyph mappings and the fallback chain is used.
+    ///
+    /// Phase origin: 2.1
+    FontParseFailed,
+
+    /// Font type not supported for embedded loading
+    ///
+    /// Emitted when a font type is encountered that doesn't support embedded
+    /// font program loading (e.g., Type3, CID fonts without OpenType).
+    /// The font is treated as having no glyph mappings and the fallback chain is used.
+    ///
+    /// Phase origin: 2.1
+    FontUnsupported,
+
     // === OCR_* codes ===
 
     /// JBIG2 decoder not available
@@ -735,7 +752,9 @@ impl DiagCode {
             // FONT_*
             DiagCode::FontGlyphUnmapped
             | DiagCode::FontNotFound
-            | DiagCode::FontInvalidCmap => "FONT",
+            | DiagCode::FontInvalidCmap
+            | DiagCode::FontParseFailed
+            | DiagCode::FontUnsupported => "FONT",
 
             // OCR_*
             DiagCode::OcrJbig2Unsupported
@@ -818,6 +837,8 @@ impl DiagCode {
             DiagCode::FontGlyphUnmapped => "FONT_GLYPH_UNMAPPED",
             DiagCode::FontNotFound => "FONT_NOT_FOUND",
             DiagCode::FontInvalidCmap => "FONT_INVALID_CMAP",
+            DiagCode::FontParseFailed => "FONT_PARSE_FAILED",
+            DiagCode::FontUnsupported => "FONT_UNSUPPORTED",
             DiagCode::OcrJbig2Unsupported => "OCR_JBIG2_UNSUPPORTED",
             DiagCode::OcrJpxUnsupported => "OCR_JPX_UNSUPPORTED",
             DiagCode::OcrCcittUnsupported => "OCR_CCITT_UNSUPPORTED",
@@ -887,6 +908,8 @@ impl DiagCode {
             | DiagCode::FontGlyphUnmapped
             | DiagCode::FontNotFound
             | DiagCode::FontInvalidCmap
+            | DiagCode::FontParseFailed
+            | DiagCode::FontUnsupported
             | DiagCode::OcrJbig2Unsupported
             | DiagCode::OcrJpxUnsupported
             | DiagCode::OcrCcittUnsupported
