@@ -12,7 +12,7 @@ pub mod encoding;
 pub use embedded::{EmbeddedFont, FontMetrics, EmptyFontMetrics, GlyphBbox};
 pub use type0::{Type0Font, DescendantCIDFont, CIDToGIDMap};
 pub use cmap::{ToUnicodeMap, parse_to_unicode, parse_to_unicode_with_diags};
-pub use encoding::{NamedEncoding};
+pub use encoding::{NamedEncoding, DifferencesOverlay, FontEncoding};
 
 use crate::parser::object::types::{PdfDict, PdfObject};
 

@@ -543,6 +543,14 @@ pub enum DiagCode {
     /// Phase origin: 2.1
     FontCidtogidmapTruncated,
 
+    /// Character code in /Differences array exceeds valid range
+    ///
+    /// Emitted when a /Differences array contains an integer code outside the
+    /// valid range for single-byte encodings (0-255). The code is clamped to u8.
+    ///
+    /// Phase origin: 2.2
+    FontEncodingDifferenceOutOfRange,
+
     // === OCR_* codes ===
 
     /// JBIG2 decoder not available
@@ -798,7 +806,8 @@ impl DiagCode {
             | DiagCode::FontInvalidCmap
             | DiagCode::FontParseFailed
             | DiagCode::FontUnsupported
-            | DiagCode::FontCidtogidmapTruncated => "FONT",
+            | DiagCode::FontCidtogidmapTruncated
+            | DiagCode::FontEncodingDifferenceOutOfRange => "FONT",
 
             // OCR_*
             DiagCode::OcrJbig2Unsupported
@@ -889,6 +898,7 @@ impl DiagCode {
             DiagCode::FontParseFailed => "FONT_PARSE_FAILED",
             DiagCode::FontUnsupported => "FONT_UNSUPPORTED",
             DiagCode::FontCidtogidmapTruncated => "FONT_CIDTOGIDMAP_TRUNCATED",
+            DiagCode::FontEncodingDifferenceOutOfRange => "ENCODING_DIFFERENCE_OUT_OF_RANGE",
             DiagCode::OcrJbig2Unsupported => "OCR_JBIG2_UNSUPPORTED",
             DiagCode::OcrJpxUnsupported => "OCR_JPX_UNSUPPORTED",
             DiagCode::OcrCcittUnsupported => "OCR_CCITT_UNSUPPORTED",
@@ -965,6 +975,7 @@ impl DiagCode {
             | DiagCode::FontParseFailed
             | DiagCode::FontUnsupported
             | DiagCode::FontCidtogidmapTruncated
+            | DiagCode::FontEncodingDifferenceOutOfRange
             | DiagCode::OcrJbig2Unsupported
             | DiagCode::OcrJpxUnsupported
             | DiagCode::OcrCcittUnsupported
@@ -1408,6 +1419,14 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         recoverable: true,
         phase: "2.1",
         suggested_action: "The CIDToGIDMap stream has an odd byte count; the trailing byte was discarded",
+    },
+    DiagInfo {
+        code: DiagCode::FontEncodingDifferenceOutOfRange,
+        category: "FONT",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "2.2",
+        suggested_action: "A /Differences array contains a character code outside 0-255; the code was clamped",
     },
     // === OCR_* codes ===
     DiagInfo {
