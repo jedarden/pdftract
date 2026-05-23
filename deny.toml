@@ -1,0 +1,80 @@
+[graph]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+]
+
+[licenses]
+version = 2
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+]
+confidence-threshold = 0.93
+
+# License exceptions for dependencies in the current dependency tree.
+# Each exception has a corresponding ADR documenting the rationale.
+# See docs/adr/ for ADR files.
+exceptions = [
+    # cbindgen (MPL-2.0) - build dependency for C FFI (pdftract-libpdftract)
+    # ADR-001: https://github.com/jedarden/pdftract/blob/main/docs/adr/0001-mpl-2-0-cbindgen-exception.md
+    { name = "cbindgen", allow = ["MPL-2.0"] },
+
+    # option-ext (MPL-2.0) - transitive dependency of dirs (filesystem paths)
+    # ADR-002: https://github.com/jedarden/pdftract/blob/main/docs/adr/0002-mpl-2-0-option-ext-exception.md
+    { name = "option-ext", allow = ["MPL-2.0"] },
+]
+
+[licenses.private]
+ignore = false
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+# Allow wildcards for workspace crates (path dependencies)
+# These are internal crates within the pdftract workspace
+skip-tree = [
+    { name = "pdftract-cli", reason = "workspace path dependency" },
+    { name = "pdftract-libpdftract", reason = "workspace path dependency" },
+    { name = "pdftract-py", reason = "workspace path dependency" },
+]
+
+[advisories]
+yanked = "deny"
+
+# Advisory exceptions for dependencies with no viable alternative.
+# Each exception has a corresponding ADR documenting the rationale.
+# See docs/adr/ for ADR files.
+ignore = [
+    # RUSTSEC-2020-0144: lzw crate is unmaintained, no safe upgrade exists
+    # Used for LZWDecode filter in PDF streams; alternatives (weezl) incompatible with PDF LZW
+    # ADR-003: https://github.com/jedarden/pdftract/blob/main/docs/adr/0003-lzw-advisory-exception.md
+    "RUSTSEC-2020-0144",
+
+    # RUSTSEC-2021-0145: atty has unsound code (potential unaligned read)
+    # Migration to is-terminal is tracked separately
+    "RUSTSEC-2021-0145",
+
+    # RUSTSEC-2024-0375: atty is unmaintained
+    # Migration to is-terminal is tracked separately
+    "RUSTSEC-2024-0375",
+
+    # RUSTSEC-2025-0020: pyo3 0.20.3 has buffer overflow vulnerability
+    # Upgrade to pyo3 >=0.24.1 is tracked separately
+    "RUSTSEC-2025-0020",
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
