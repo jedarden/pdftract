@@ -170,6 +170,9 @@ enum Commands {
         root: Option<PathBuf>,
     },
     /// Check environment health and dependencies
+    ///
+    /// Exit code policy: exits 0 if no checks FAIL (WARN does not affect exit code);
+    /// exits 1 if any check FAILs; exits 2 on argument parse errors.
     Doctor {
         /// Print compiled features and exit
         #[arg(long)]
@@ -183,7 +186,10 @@ enum Commands {
         #[arg(long)]
         no_color: bool,
 
-        /// Exit with code 1 if any check reports FAIL
+        /// Explicit form of the default policy (exit 1 if any check FAILs).
+        ///
+        /// This flag is the default behavior and is provided for CI script
+        /// readability. WARN does not affect exit code regardless of this flag.
         #[arg(long)]
         exit_on_fail: bool,
 

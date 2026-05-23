@@ -184,7 +184,13 @@ pub fn run(opts: DoctorOptions) -> Result<()> {
         })?;
     }
 
-    // Determine exit code
+    // Determine exit code per plan section 6.10 line 2520-2521:
+    // - Exit 0: all checks OK or WARN (no FAIL)
+    // - Exit 1: at least one check is FAIL
+    // - Exit 2: CLI parse error (clap default, unreachable here)
+    // Note: opts.exit_on_fail is unused in the computation because the default policy
+    // already exits 1 on any FAIL. The flag is retained for CI script readability and
+    // forward-compatibility (future --warn-as-fail or --no-exit-on-fall would invert).
     let has_fail = results.iter().any(|r| r.status == CheckStatus::Fail);
     if has_fail {
         std::process::exit(1);
