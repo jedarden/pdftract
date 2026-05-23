@@ -95,6 +95,12 @@ char *pdftract_extract_markdown(const char *source,
  * Returns an opaque handle that can be used with pdftract_stream_next()
  * to iterate through pages one at a time. When done, call pdftract_stream_close().
  *
+ * # Memory Efficiency
+ *
+ * This function does NOT materialize all pages. It creates a PdfExtractor
+ * that will extract each page on-demand when pdftract_stream_next() is called.
+ * This ensures memory usage stays bounded regardless of document size.
+ *
  * # Arguments
  *
  * * `source` - Path to the PDF file (null-terminated UTF-8 string)
@@ -214,6 +220,13 @@ void pdftract_stream_close(void *handle);
 
 /**
  * Get the next page from a streaming extraction session.
+ *
+ * # Memory Efficiency
+ *
+ * This function extracts one page at a time on-demand. The page's
+ * content streams are decoded, the result is serialized to JSON,
+ * and then all page data is dropped before returning. This ensures
+ * memory usage stays bounded.
  *
  * # Arguments
  *

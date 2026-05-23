@@ -5,5 +5,8 @@
 # Fuzzing corpus is generated during CI, not committed
 fuzz/corpus/
 
+# Memory ceiling report is generated during CI
+memory-report.json
+
 # Proptest regressions are committed (minimal counterexamples)
 # but the .gitkeep keeps the directory in git

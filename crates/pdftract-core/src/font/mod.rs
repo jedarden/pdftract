@@ -3,6 +3,8 @@
 //! This module provides utilities for classifying PDF fonts by type
 //! and handling font subset prefixes.
 
+pub mod std14;
+
 use crate::parser::object::types::{PdfDict, PdfObject};
 
 /// Font type classification.

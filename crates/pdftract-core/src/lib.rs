@@ -5,6 +5,7 @@
 //! text extraction engines.
 
 pub mod cache;
+pub mod classify;
 pub mod diagnostics;
 pub mod document;
 pub mod extract;
@@ -19,6 +20,7 @@ pub mod semaphore;
 // Re-export key types for convenience
 pub use document::{PdfExtractor, PageIter, PageExtraction};
 pub use extract::{extract_pdf, extract_pdf_ndjson, ExtractionResult, PageResult, ExtractionMetadata};
+pub use font::std14::{Std14Metrics, NamedEncoding, get_std14_metrics};
 pub use options::{ExtractionOptions, ReceiptsMode};
 pub use parser::pages::{LazyPageIter, PageDict, DEFAULT_MEDIABOX, count_pages_tree};
 pub use schema::{SpanJson, BlockJson};

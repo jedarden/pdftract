@@ -1645,6 +1645,8 @@ dependencies = [
  "indexmap",
  "lzw",
  "memchr",
+ "phf",
+ "phf_codegen",
  "proptest",
  "quick-xml",
  "rayon",
