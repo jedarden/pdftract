@@ -1,0 +1,31 @@
+# cargo-audit configuration for pdftract
+#
+# This file controls which security advisories are intentionally ignored.
+# Each ignored advisory MUST include a note explaining why it is acceptable.
+#
+# See: https://github.com/rustsec/advisory-db
+#
+# Severity gating policy (from Phase 0.4 Quality Targets):
+# - Warnings are denied (non-zero exit code on any warning)
+# - >= medium severity advisories block PR merge
+# - Unmaintained advisories are ignored via --ignore unmaintained flag
+#
+# Format for ignored advisories:
+# [advisories]
+# "RUSTSEC-YYYY-NNNN" = "Justification for why this advisory is acceptable"
+
+[advisories]
+# Example format (uncomment to use):
+# "RUSTSEC-2020-0000" = "Affected crate is used in a non-security-critical path and we have a mitigation plan tracked in issue #XYZ"
+
+[output]
+# Use terse output for CI logs (full report still in artifacts)
+verbose = false
+
+[database]
+# Use the official RustSec advisory database
+path = "~/.cargo/advisory-db"
+
+# Note: The --ignore unmaintained flag is passed in the CI workflow,
+# not configured here. This is because unmaintained warnings are
+# informational and should not block PRs for deprecated dependencies.
