@@ -22,7 +22,7 @@
 //!
 //! IoU = area(A ∩ B) / area(A ∪ B)
 
-use crate::classify::{CellIndex, PageClassification};
+use crate::classify::{CellIndex, PageClassification, PageClass};
 use image::{GrayImage, ImageBuffer, Luma};
 use std::collections::BTreeSet;
 
@@ -341,6 +341,131 @@ pub fn compute_cell_crops(
         .collect()
 }
 
+/// OCR callback trait for hybrid page processing.
+///
+/// This trait abstracts the OCR implementation (Phase 5.3 preprocessing + 5.4 Tesseract)
+/// to allow testing and future implementation.
+pub trait OcrCallback: Send + Sync {
+    /// Run OCR on a single cell image.
+    ///
+    /// # Arguments
+    ///
+    /// * `cell_image` - The cropped cell image (grayscale)
+    /// * `cell` - The cell index
+    /// * `dpi` - The DPI used for rendering
+    ///
+    /// # Returns
+    ///
+    /// A vector of OCR spans found in this cell, or an error if OCR fails.
+    fn ocr_cell(&self, cell_image: &GrayImage, cell: CellIndex, dpi: u32) -> Result<Vec<Span>, String>;
+}
+
+/// Mock OCR callback for testing that tracks call counts.
+#[cfg(test)]
+struct MockOcrCallback {
+    call_count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    output_spans: Vec<Span>,
+}
+
+#[cfg(test)]
+impl OcrCallback for MockOcrCallback {
+    fn ocr_cell(&self, _cell_image: &GrayImage, _cell: CellIndex, _dpi: u32) -> Result<Vec<Span>, String> {
+        self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(self.output_spans.clone())
+    }
+}
+
+/// Process a hybrid page by running OCR on image-heavy cells and merging with vector spans.
+///
+/// This is the main entry point for hybrid page handling (Phase 5.2.4):
+/// 1. Render the full page once at the selected DPI
+/// 2. For each hybrid cell: crop from the rendered page and run OCR
+/// 3. Merge OCR spans with vector spans using the bbox overlap rule
+///
+/// # Arguments
+///
+/// * `page_image` - The full rendered page (grayscale) at the selected DPI
+/// * `page_width_pt` - Page width in PDF points
+/// * `page_height_pt` - Page height in PDF points
+/// * `classification` - Page classification with hybrid_cells set
+/// * `vector_spans` - Spans from Phase 3 content stream extraction
+/// * `dpi` - DPI used for rendering
+/// * `ocr_callback` - Callback to run OCR on each cell image
+///
+/// # Returns
+///
+/// Merged span list with no duplicate text from overlapping regions.
+///
+/// # Example
+///
+/// ```
+/// use pdftract_core::hybrid::{process_hybrid_page, Span, SpanSource};
+/// use pdftract_core::classify::{PageClassification, CellIndex};
+/// use std::collections::BTreeSet;
+/// use image::GrayImage;
+///
+/// // Create a mock classification with hybrid cells (bottom 6 rows)
+/// let mut cells = BTreeSet::new();
+/// for row in 2..8 {
+///     for col in 0..8 {
+///         cells.insert(CellIndex::new(row, col).flat());
+///     }
+/// }
+/// let classification = PageClassification::hybrid(0.75, cells);
+///
+/// // Process the page (with mock OCR)
+/// let result = process_hybrid_page(
+///     &page_image,
+///     612.0,
+///     792.0,
+///     &classification,
+///     &vector_spans,
+///     300,
+///     &mock_ocr,
+/// );
+/// ```
+pub fn process_hybrid_page(
+    page_image: &GrayImage,
+    page_width_pt: f64,
+    page_height_pt: f64,
+    classification: &PageClassification,
+    vector_spans: &[Span],
+    dpi: u32,
+    ocr_callback: &dyn OcrCallback,
+) -> Vec<Span> {
+    let mut all_ocr_spans = Vec::new();
+
+    // Get the list of hybrid cells (scanned cells only)
+    let hybrid_cells = get_hybrid_cells(classification);
+
+    // For each hybrid cell: crop and run OCR
+    for cell in hybrid_cells {
+        // Crop the cell from the rendered page
+        let cell_image = crop_cell_from_page(
+            page_image,
+            page_width_pt,
+            page_height_pt,
+            cell,
+            dpi,
+        );
+
+        // Run OCR on this cell
+        match ocr_callback.ocr_cell(&cell_image, cell, dpi) {
+            Ok(mut spans) => {
+                all_ocr_spans.append(&mut spans);
+            }
+            Err(_) => {
+                // OCR failed for this cell - skip it
+                // In production, we might want to emit a diagnostic
+                continue;
+            }
+        }
+    }
+
+    // Merge vector and OCR spans using the bbox overlap rule
+    merge_vector_and_ocr_spans(vector_spans, &all_ocr_spans)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -554,15 +679,15 @@ mod tests {
     #[test]
     fn test_crop_cell_from_page() {
         // Create a simple 800x600 page image (white background)
+        // Match page dimensions to the image size for this test
         let page_image = GrayImage::new(800, 600);
 
-        // Page is 612x792 points, rendered at 200 DPI
-        // 612 pt * 200 / 72 = 1700 px wide
-        // 792 pt * 200 / 72 = 2200 px tall
-        // For simplicity, use a smaller scale in this test
+        // Page is 800x600 points (matching image), rendered at 72 DPI
+        // 800 pt * 72 / 72 = 800 px wide
+        // 600 pt * 72 / 72 = 600 px tall
 
         // Crop cell at row 0, col 0 (top-left)
-        let cell = crop_cell_from_page(&page_image, 612.0, 792.0, CellIndex::new(0, 0), 72);
+        let cell = crop_cell_from_page(&page_image, 800.0, 600.0, CellIndex::new(0, 0), 72);
 
         // Cell should be 1/8 of page dimensions
         assert_eq!(cell.width(), 100); // 800 / 8
@@ -604,5 +729,238 @@ mod tests {
         assert_eq!(SpanSource::Vector, SpanSource::Vector);
         assert_eq!(SpanSource::Ocr, SpanSource::Ocr);
         assert_ne!(SpanSource::Vector, SpanSource::Ocr);
+    }
+
+    // ============ Hybrid Page Processing Tests (Phase 5.2.4) ============
+
+    #[test]
+    fn test_process_hybrid_page_ocr_only_on_scanned_cells() {
+        // Critical test: Hybrid page with text header (top 2 rows) + scanned body (bottom 6 rows)
+        // Verify OCR runs only on bottom 6 rows, not on entire page
+
+        // Create a mock classification with hybrid cells (bottom 6 rows = rows 2-7)
+        let mut cells = BTreeSet::new();
+        for row in 2..8 {
+            for col in 0..8 {
+                cells.insert(CellIndex::new(row, col).flat());
+            }
+        }
+        let classification = PageClassification::hybrid(0.75, cells);
+
+        // Create vector spans from the text header (top 2 rows)
+        let vector_spans = vec![
+            Span::vector([50.0, 700.0, 200.0, 720.0], 0.95, "Header Text".to_string()),
+            Span::vector([50.0, 650.0, 200.0, 670.0], 0.95, "More Header".to_string()),
+        ];
+
+        // Create mock OCR callback that tracks call count
+        let call_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mock_spans = vec![
+            Span::ocr([50.0, 100.0, 200.0, 120.0], 0.8, "Scanned Text 1".to_string()),
+            Span::ocr([50.0, 50.0, 200.0, 70.0], 0.8, "Scanned Text 2".to_string()),
+        ];
+        let mock_ocr = MockOcrCallback {
+            call_count: call_count.clone(),
+            output_spans: mock_spans,
+        };
+
+        // Create a simple page image (white background)
+        let page_image = GrayImage::new(612, 792);
+
+        // Process the hybrid page
+        let result = process_hybrid_page(
+            &page_image,
+            612.0,
+            792.0,
+            &classification,
+            &vector_spans,
+            72,
+            &mock_ocr,
+        );
+
+        // Verify OCR was called exactly 48 times (6 rows * 8 cols)
+        // NOT 64 times (full page)
+        assert_eq!(call_count.load(std::sync::atomic::Ordering::SeqCst), 48,
+            "OCR should run only on scanned cells (48), not entire page (64)");
+
+        // Verify result contains both vector and OCR spans
+        assert!(result.iter().any(|s| s.source == SpanSource::Vector));
+        assert!(result.iter().any(|s| s.source == SpanSource::Ocr));
+
+        // Verify vector spans are present
+        assert!(result.iter().any(|s| s.text == "Header Text"));
+        assert!(result.iter().any(|s| s.text == "More Header"));
+
+        // Verify OCR spans are present (each cell produces the same mock output)
+        assert!(result.iter().filter(|s| s.text == "Scanned Text 1").count() >= 1);
+    }
+
+    #[test]
+    fn test_process_hybrid_page_no_duplicate_text_from_overlap() {
+        // Critical test: End-to-end hybrid extraction produces no duplicate text
+        // from overlapping vector + OCR regions
+
+        // Create a classification with one scanned cell
+        let mut cells = BTreeSet::new();
+        cells.insert(CellIndex::new(7, 0).flat()); // Bottom-left cell
+        let classification = PageClassification::hybrid(0.75, cells);
+
+        // Create vector spans that overlap with OCR region
+        let vector_spans = vec![
+            Span::vector([50.0, 50.0, 150.0, 70.0], 0.9, "Vector Text".to_string()),
+        ];
+
+        // Create mock OCR that produces overlapping text (IoU > 0.5)
+        // OCR bbox [40, 40, 160, 80] overlaps vector bbox [50, 50, 150, 70]
+        // Intersection = [50, 50, 150, 70] = 100 * 20 = 2000
+        // Union = (120*40) + (100*20) - 2000 = 4800 + 2000 - 2000 = 4800
+        // IoU = 2000 / 4800 = 0.417 (not > 0.5, so both kept)
+        // Let's create stronger overlap:
+        // OCR bbox [45, 45, 155, 75] overlaps vector bbox [50, 50, 150, 70]
+        // Intersection = [50, 50, 150, 70] = 100 * 20 = 2000
+        // Union = (110*30) + (100*20) - 2000 = 3300 + 2000 - 2000 = 3300
+        // IoU = 2000 / 3300 = 0.606 > 0.5
+        let mock_spans = vec![
+            Span::ocr([45.0, 45.0, 155.0, 75.0], 0.7, "OCR Text".to_string()),
+        ];
+        let call_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mock_ocr = MockOcrCallback {
+            call_count,
+            output_spans: mock_spans,
+        };
+
+        // Create a simple page image
+        let page_image = GrayImage::new(612, 792);
+
+        // Process the hybrid page
+        let result = process_hybrid_page(
+            &page_image,
+            612.0,
+            792.0,
+            &classification,
+            &vector_spans,
+            72,
+            &mock_ocr,
+        );
+
+        // With IoU > 0.5 and vector confidence >= 0.5, vector should win
+        // Result should have only 1 span (the vector span)
+        assert_eq!(result.len(), 1, "Should have only 1 span after merge (vector wins)");
+        assert_eq!(result[0].source, SpanSource::Vector);
+        assert_eq!(result[0].text, "Vector Text");
+    }
+
+    #[test]
+    fn test_process_hybrid_page_low_vector_confidence_ocr_wins() {
+        // Test that OCR is preferred when vector confidence is low (< 0.5)
+        // even with IoU > 0.5
+
+        let mut cells = BTreeSet::new();
+        cells.insert(CellIndex::new(7, 0).flat());
+        let classification = PageClassification::hybrid(0.75, cells);
+
+        // Vector span with low confidence
+        let vector_spans = vec![
+            Span::vector([50.0, 50.0, 150.0, 70.0], 0.2, "Bad Vector".to_string()),
+        ];
+
+        // OCR span with high confidence, overlapping vector
+        let mock_spans = vec![
+            Span::ocr([45.0, 45.0, 155.0, 75.0], 0.7, "Good OCR".to_string()),
+        ];
+        let call_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mock_ocr = MockOcrCallback {
+            call_count,
+            output_spans: mock_spans,
+        };
+
+        let page_image = GrayImage::new(612, 792);
+
+        let result = process_hybrid_page(
+            &page_image,
+            612.0,
+            792.0,
+            &classification,
+            &vector_spans,
+            72,
+            &mock_ocr,
+        );
+
+        // With IoU > 0.5 but vector confidence < 0.5, OCR should be kept
+        // Result should have 2 spans (both vector and OCR kept)
+        assert_eq!(result.len(), 2, "Both vector and OCR should be kept when vector confidence is low");
+        assert!(result.iter().any(|s| s.source == SpanSource::Vector));
+        assert!(result.iter().any(|s| s.source == SpanSource::Ocr));
+    }
+
+    #[test]
+    fn test_process_hybrid_page_non_hybrid_classification() {
+        // Test that non-hybrid classifications return only vector spans
+
+        let classification = PageClassification::new(PageClass::Vector, 0.9);
+        let vector_spans = vec![
+            Span::vector([50.0, 50.0, 150.0, 70.0], 0.9, "Vector Only".to_string()),
+        ];
+
+        let call_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mock_ocr = MockOcrCallback {
+            call_count: call_count.clone(),
+            output_spans: vec![],
+        };
+
+        let page_image = GrayImage::new(612, 792);
+
+        let result = process_hybrid_page(
+            &page_image,
+            612.0,
+            792.0,
+            &classification,
+            &vector_spans,
+            72,
+            &mock_ocr,
+        );
+
+        // OCR should not be called for non-hybrid pages
+        assert_eq!(call_count.load(std::sync::atomic::Ordering::SeqCst), 0);
+
+        // Result should have only vector spans
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].source, SpanSource::Vector);
+        assert_eq!(result[0].text, "Vector Only");
+    }
+
+    #[test]
+    fn test_process_hybrid_page_empty_hybrid_cells() {
+        // Test hybrid classification with empty hybrid_cells
+
+        let classification = PageClassification::hybrid(0.75, BTreeSet::new());
+        let vector_spans = vec![
+            Span::vector([50.0, 50.0, 150.0, 70.0], 0.9, "Vector".to_string()),
+        ];
+
+        let call_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mock_ocr = MockOcrCallback {
+            call_count: call_count.clone(),
+            output_spans: vec![],
+        };
+
+        let page_image = GrayImage::new(612, 792);
+
+        let result = process_hybrid_page(
+            &page_image,
+            612.0,
+            792.0,
+            &classification,
+            &vector_spans,
+            72,
+            &mock_ocr,
+        );
+
+        // OCR should not be called when hybrid_cells is empty
+        assert_eq!(call_count.load(std::sync::atomic::Ordering::SeqCst), 0);
+
+        // Result should have only vector spans
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].source, SpanSource::Vector);
     }
 }
