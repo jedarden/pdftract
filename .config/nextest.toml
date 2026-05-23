@@ -1,0 +1,39 @@
+# nextest configuration for pdftract
+#
+# Profiles:
+# - ci: CI test runner with JUnit output, 60s slow test timeout, retry on flaky
+# - ci-proptest: Property test profile with higher timeouts and no retries
+#
+# Usage:
+#   cargo nextest run --profile ci
+#   cargo nextest run --profile ci-proptest --features proptest --proptest
+#
+# For JUnit output: cargo nextest run --profile ci --message-format junit
+
+[store]
+# Nextest test data location (default: target/nextest)
+dir = "target"
+
+[profile.ci]
+# CI profile: fast failure, JUnit output, retries for flaky tests
+# Status: "fail-fast" - stop on first failure
+# Retry: 1 retry on known-flaky tests (those marked with [rstest]
+# or identified by nextest as flaky)
+fail-fast = true
+retries = 1
+
+# Test execution timeout (60 seconds for slow tests)
+slow-timeout = "60s"
+
+[profile.ci-proptest]
+# Property test profile: higher timeouts, no retries (proptest failures are deterministic)
+# Status: "fail-fast" - stop on first failure
+# No retries: proptest minimization is deterministic, retries waste CI time
+fail-fast = true
+retries = 0
+
+# Test execution timeout (120 seconds for proptest shrinks)
+slow-timeout = "120s"
+
+# No JUnit output for proptest (use cargo nextest's native output)
+
