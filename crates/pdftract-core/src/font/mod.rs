@@ -5,8 +5,10 @@
 
 pub mod std14;
 pub mod embedded;
+pub mod type0;
 
 pub use embedded::{EmbeddedFont, FontMetrics, EmptyFontMetrics, GlyphBbox};
+pub use type0::{Type0Font, DescendantCIDFont, CIDToGIDMap};
 
 use crate::parser::object::types::{PdfDict, PdfObject};
 
