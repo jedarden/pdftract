@@ -108,6 +108,24 @@ The `resolve_page()` function already checks for `elem_ref.object == 0` as a nul
 - [x] **PASS**: Annotations with /StructParent point INTO the structure tree
 - [x] **PASS**: Malformed ParentTree handling (off-by-one indexing, missing entries) - emits diagnostics without crashing
 
+### Additional Integration Tests Added (2025-05-23)
+
+Added two comprehensive integration tests to fully validate the ParentTree resolver:
+
+1. **`test_parent_tree_annotation_with_struct_parent`**: Full integration test for annotation /StructParent linking
+   - Creates a body paragraph StructElem
+   - Creates ParentTree with page array (MCID 0 -> body, MCID 1 -> orphan/null)
+   - Creates ParentTree with annotation entry (key 100 -> body)
+   - Verifies MCID resolution returns correct map and orphans
+   - Verifies annotation /StructParent resolution returns the body ref
+   - Verifies the referenced StructElem is in the tree
+
+2. **`test_parent_tree_off_by_one_missing_entries`**: Sparse array handling
+   - Creates ParentTree with sparse array (only 3 entries for potentially more MCIDs)
+   - Verifies non-null entries are correctly mapped
+   - Verifies null entries are recorded as orphans
+   - Documents that MCIDs beyond array length would be detected in Phase 7.1.4
+
 ## Files Modified
 
 - `crates/pdftract-core/src/parser/struct_tree.rs`:
@@ -116,11 +134,31 @@ The `resolve_page()` function already checks for `elem_ref.object == 0` as a nul
 
 ## Test Results
 
-All 65 struct_tree tests pass:
+All 67 struct_tree tests pass (18 ParentTree-specific tests):
 ```bash
-$ cargo test -p pdftract-core --lib struct_tree
-test result: ok. 65 passed; 0 failed; 0 ignored; 0 measured; 886 filtered out
+$ cargo test -p pdftract-core parser::struct_tree
+test result: ok. 67 passed; 0 failed; 0 ignored; 0 measured; 886 filtered out
 ```
+
+ParentTree-specific tests:
+- `test_parent_tree_leaf_nums` - Simple leaf number tree with /Nums array
+- `test_parent_tree_single_ref` - Single ref for annotations
+- `test_parent_tree_null_entry` - Null entries in arrays (orphan MCIDs)
+- `test_parent_tree_intermediate_kids` - Intermediate nodes with /Kids + /Limits
+- `test_parent_tree_missing_key` - Missing /StructParents key returns empty
+- `test_parent_tree_no_struct_parents` - No /StructParents on page returns empty
+- `test_parent_tree_annotation_resolution` - Annotation /StructParent lookup
+- `test_parent_tree_annotation_from_array` - Fallback for arrays (incorrect but handled)
+- `test_parent_tree_malformed_nums_non_integer_key` - Diagnostic for non-integer keys
+- `test_parent_tree_malformed_nums_odd_length` - Diagnostic for odd-length arrays
+- `test_parent_tree_malformed_unsupported_value_type` - Diagnostic for unsupported value types
+- `test_parent_tree_no_parent_tree_entry` - Missing /ParentTree is valid
+- `test_parent_tree_invalid_node_type` - Non-dict node diagnostic
+- `test_parent_tree_empty_struct_tree_root` - Integration with parse_struct_tree
+- `test_parent_tree_resolver_new` - Constructor
+- `test_parent_tree_resolver_default` - Default trait
+- `test_parent_tree_annotation_with_struct_parent` - Full integration test (NEW)
+- `test_parent_tree_off_by_one_missing_entries` - Sparse array handling (NEW)
 
 ## Integration Points
 

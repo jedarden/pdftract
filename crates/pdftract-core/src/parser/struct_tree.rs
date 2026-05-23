@@ -2640,4 +2640,137 @@ mod tests {
         assert!(mcid_map.is_empty()); // No struct_elems with that ref
         assert_eq!(orphans, vec![0]); // MCID 0 is an orphan
     }
+
+    #[test]
+    fn test_parent_tree_annotation_with_struct_parent() {
+        // Integration test: tagged PDF with annotation /StructParent linking to body StructElem
+        // This test verifies that an annotation's /StructParent correctly resolves to
+        // a StructElem in the structure tree, as required by PDF 1.7 spec 14.7.4.4
+        let resolver = XrefResolver::new();
+        let root_ref = ObjRef::new(1, 0);
+
+        // Create body paragraph StructElem that the annotation will reference
+        let mut body_dict = PdfDict::new();
+        body_dict.insert(intern("S"), PdfObject::Name(intern("P")));
+        body_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+        ])));
+        let body_ref = ObjRef::new(10, 0);
+        resolver.cache_object(body_ref, PdfObject::Dict(Box::new(body_dict)));
+
+        // Create ParentTree with:
+        // - Key 0: array for page with 2 MCIDs (one null entry for orphan)
+        // - Key 100: single ref for annotation /StructParent
+        let parent_tree_nums = PdfObject::Array(Box::new(vec![
+            // Page 0's ParentTree entry (array of StructElem refs)
+            PdfObject::Integer(0),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Ref(body_ref),  // MCID 0 -> body paragraph
+                PdfObject::Null,             // MCID 1 -> orphan (null entry)
+            ])),
+            // Annotation's ParentTree entry (single StructElem ref)
+            PdfObject::Integer(100),
+            PdfObject::Ref(body_ref),  // Annotation /StructParent=100 -> body paragraph
+        ]));
+
+        let mut parent_tree_dict = PdfDict::new();
+        parent_tree_dict.insert(intern("Nums"), parent_tree_nums);
+
+        // Create StructTreeRoot
+        let mut root_dict = PdfDict::new();
+        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
+            PdfObject::Ref(body_ref),
+        ])));
+        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
+
+        // Parse struct tree
+        let result = parse_struct_tree(&resolver, root_ref);
+        assert!(result.is_ok());
+
+        let tree = result.unwrap();
+
+        // Verify page MCID resolution
+        let (mcid_map, orphans) = tree.parent_tree.resolve_page(Some(0));
+
+        // MCID 0 should map to the body paragraph
+        assert_eq!(mcid_map.len(), 1);
+        let mcid0_node = mcid_map.get(&0).unwrap();
+        assert_eq!(mcid0_node.std_type, StructureType::P);
+
+        // MCID 1 should be an orphan (null entry)
+        assert_eq!(orphans, vec![1]);
+
+        // Verify annotation /StructParent resolution
+        let annot_struct_ref = tree.parent_tree.resolve_annotation(Some(100));
+        assert_eq!(annot_struct_ref, Some(body_ref));
+
+        // Verify the referenced StructElem is actually in the tree
+        assert!(tree.struct_elems.contains_key(&body_ref));
+        assert_eq!(tree.struct_elems.get(&body_ref).unwrap().std_type, StructureType::P);
+    }
+
+    #[test]
+    fn test_parent_tree_off_by_one_missing_entries() {
+        // Test that malformed ParentTree with off-by-one indexing or missing entries
+        // doesn't crash and records orphans appropriately
+        let resolver = XrefResolver::new();
+        let root_ref = ObjRef::new(1, 0);
+
+        // Create two StructElems with /K arrays containing MCIDs
+        let mut elem1_dict = PdfDict::new();
+        elem1_dict.insert(intern("S"), PdfObject::Name(intern("P")));
+        elem1_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+        ])));
+        let elem1_ref = ObjRef::new(10, 0);
+        resolver.cache_object(elem1_ref, PdfObject::Dict(Box::new(elem1_dict)));
+
+        let mut elem2_dict = PdfDict::new();
+        elem2_dict.insert(intern("S"), PdfObject::Name(intern("H1")));
+        elem2_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(2),
+        ])));
+        let elem2_ref = ObjRef::new(11, 0);
+        resolver.cache_object(elem2_ref, PdfObject::Dict(Box::new(elem2_dict)));
+
+        // Create ParentTree with sparse array (missing entries)
+        // Only 3 entries for what might be more MCIDs on the page
+        let parent_tree_nums = PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Ref(elem1_ref),
+                PdfObject::Null,
+                PdfObject::Ref(elem2_ref),
+            ])),
+        ]));
+
+        let mut parent_tree_dict = PdfDict::new();
+        parent_tree_dict.insert(intern("Nums"), parent_tree_nums);
+
+        // Add StructElems to /K array so they get parsed into struct_elems
+        let mut root_dict = PdfDict::new();
+        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
+            PdfObject::Ref(elem1_ref),
+            PdfObject::Ref(elem2_ref),
+        ])));
+        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
+
+        // Parse struct tree
+        let result = parse_struct_tree(&resolver, root_ref);
+        assert!(result.is_ok());
+
+        let tree = result.unwrap();
+
+        // Resolve page - should only map the 2 non-null entries
+        let (mcid_map, orphans) = tree.parent_tree.resolve_page(Some(0));
+        assert_eq!(mcid_map.len(), 2);
+        assert!(mcid_map.get(&0).is_some());
+        assert!(mcid_map.get(&2).is_some());
+        assert_eq!(orphans, vec![1]); // MCID 1 is null
+
+        // If the page has MCIDs beyond the array length, they'd be orphans too
+        // (This would be detected in Phase 7.1.4 coverage check)
+    }
 }
