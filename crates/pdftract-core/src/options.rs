@@ -66,23 +66,62 @@ impl ReceiptsMode {
 /// Options that control PDF extraction behavior.
 ///
 /// This struct is passed through the extraction pipeline and controls
-/// optional features like receipt generation.
+/// optional features like receipt generation and parallelism limits.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ExtractionOptions {
     /// Receipt generation mode.
     pub receipts: ReceiptsMode,
+    /// Maximum number of pages to process in parallel.
+    ///
+    /// This caps the number of simultaneously-resident pages to keep memory
+    /// bounded regardless of core count. The per-page memory budget is:
+    /// `memory_budget_mb / max_parallel_pages`.
+    ///
+    /// Default: 4 (conservative for memory-constrained environments)
+    pub max_parallel_pages: usize,
+    /// Memory budget in MB for the entire document extraction.
+    ///
+    /// This is the target peak RSS for processing the entire document.
+    /// The per-page budget is derived from this divided by max_parallel_pages.
+    ///
+    /// Default: 512 MB (matches the plan's Tier 1 target for 100-page PDFs)
+    pub memory_budget_mb: usize,
 }
 
 impl Default for ExtractionOptions {
     fn default() -> Self {
         Self {
             receipts: ReceiptsMode::default(),
+            max_parallel_pages: Self::default_max_parallel_pages(),
+            memory_budget_mb: Self::default_memory_budget_mb(),
         }
     }
 }
 
 impl ExtractionOptions {
+    /// Get the default max_parallel_pages from environment or use conservative default.
+    ///
+    /// Reads from PDFTRACT_MAX_PARALLEL_PAGES env var, or defaults to 4.
+    fn default_max_parallel_pages() -> usize {
+        std::env::var("PDFTRACT_MAX_PARALLEL_PAGES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .filter(|&n| n > 0)
+            .unwrap_or(4)
+    }
+
+    /// Get the default memory_budget_mb from environment or use plan target.
+    ///
+    /// Reads from PDFTRACT_MEMORY_BUDGET_MB env var, or defaults to 512 MB.
+    fn default_memory_budget_mb() -> usize {
+        std::env::var("PDFTRACT_MEMORY_BUDGET_MB")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .filter(|&n| n >= 64) // Minimum 64 MB
+            .unwrap_or(512)
+    }
+
     /// Create a new ExtractionOptions with the specified receipts mode.
     pub fn with_receipts(receipts: ReceiptsMode) -> Self {
         Self {
@@ -97,6 +136,23 @@ impl ExtractionOptions {
             receipts: ReceiptsMode::from_str(receipts)?,
             ..Default::default()
         })
+    }
+
+    /// Calculate the per-page memory budget in bytes.
+    ///
+    /// This is the memory ceiling divided by max_parallel_pages, representing
+    /// the maximum memory each page extraction should use.
+    pub fn per_page_budget_bytes(&self) -> usize {
+        (self.memory_budget_mb * 1024 * 1024) / self.max_parallel_pages
+    }
+
+    /// Create a new ExtractionOptions with custom parallelism settings.
+    pub fn with_parallelism(max_parallel_pages: usize, memory_budget_mb: usize) -> Self {
+        Self {
+            max_parallel_pages: max_parallel_pages.max(1),
+            memory_budget_mb: memory_budget_mb.max(64),
+            ..Default::default()
+        }
     }
 }
 
@@ -200,5 +256,38 @@ mod tests {
         let json = "{}";
         let opts: ExtractionOptions = serde_json::from_str(json).unwrap();
         assert_eq!(opts.receipts, ReceiptsMode::Off);
+    }
+
+    #[test]
+    fn test_extraction_options_default_parallelism() {
+        let opts = ExtractionOptions::default();
+        assert_eq!(opts.max_parallel_pages, 4);
+        assert_eq!(opts.memory_budget_mb, 512);
+    }
+
+    #[test]
+    fn test_per_page_budget_calculation() {
+        // 512 MB / 4 pages = 128 MB per page
+        let opts = ExtractionOptions::with_parallelism(4, 512);
+        assert_eq!(opts.per_page_budget_bytes(), 128 * 1024 * 1024);
+
+        // 256 MB / 2 pages = 128 MB per page
+        let opts = ExtractionOptions::with_parallelism(2, 256);
+        assert_eq!(opts.per_page_budget_bytes(), 128 * 1024 * 1024);
+
+        // 1024 MB / 8 pages = 128 MB per page
+        let opts = ExtractionOptions::with_parallelism(8, 1024);
+        assert_eq!(opts.per_page_budget_bytes(), 128 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_with_parallelism_clamps_minimums() {
+        // max_parallel_pages should be at least 1
+        let opts = ExtractionOptions::with_parallelism(0, 512);
+        assert_eq!(opts.max_parallel_pages, 1);
+
+        // memory_budget_mb should be at least 64
+        let opts = ExtractionOptions::with_parallelism(4, 0);
+        assert_eq!(opts.memory_budget_mb, 64);
     }
 }

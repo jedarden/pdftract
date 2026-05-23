@@ -23,6 +23,7 @@ memchr = { workspace = true }
 unicode-normalization = { workspace = true }
 ttf-parser = "0.24"
 zstd = "0.13"
+rayon = "1.10"
 
 [features]
 default = ["serde"]

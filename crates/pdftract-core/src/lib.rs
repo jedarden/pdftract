@@ -13,3 +13,4 @@ pub mod options;
 pub mod parser;
 pub mod receipts;
 pub mod schema;
+pub mod semaphore;

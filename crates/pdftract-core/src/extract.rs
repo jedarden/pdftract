@@ -2,14 +2,21 @@
 //!
 //! This module provides the main extraction pipeline that processes PDFs
 //! and generates spans and blocks with optional cryptographic receipts.
+//!
+//! Page extraction runs in parallel using rayon, with the number of
+//! simultaneously-resident pages capped by a semaphore to keep memory
+//! bounded regardless of core count.
 
 use crate::document::parse_pdf_file;
 use crate::options::{ExtractionOptions, ReceiptsMode};
 use crate::receipts::Receipt;
 use crate::schema::{BlockJson, SpanJson};
+use crate::semaphore::{Semaphore, SemaphoreExt};
 use anyhow::{Context, Result};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::sync::Arc;
 
 #[cfg(feature = "receipts")]
 use crate::receipts::svg::GlyphList;
@@ -36,6 +43,9 @@ pub struct PageResult {
     pub spans: Vec<SpanJson>,
     /// Extracted blocks (semantic units like paragraphs, headings).
     pub blocks: Vec<BlockJson>,
+    /// Error message if extraction failed for this page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 /// Metadata about the extraction process.
@@ -53,23 +63,32 @@ pub struct ExtractionMetadata {
     pub cache_status: Option<String>,
     /// Cache entry age in seconds (only present when cache_status == "hit")
     pub cache_age_seconds: Option<u64>,
+    /// Number of pages that failed to extract.
+    pub error_count: usize,
 }
 
 /// Extract text and structure from a PDF file.
 ///
 /// This is the main entry point for PDF extraction. It:
 /// 1. Parses the PDF and computes its fingerprint
-/// 2. Extracts spans and blocks from each page
+/// 2. Extracts spans and blocks from each page in parallel (bounded by semaphore)
 /// 3. Generates receipts if requested
 ///
 /// # Arguments
 ///
 /// * `pdf_path` - Path to the PDF file
-/// * `options` - Extraction options controlling receipt generation
+/// * `options` - Extraction options controlling receipt generation and parallelism
 ///
 /// # Returns
 ///
 /// An `ExtractionResult` containing pages with spans and blocks.
+///
+/// # Memory Bounding
+///
+/// The number of simultaneously-resident pages is capped by `max_parallel_pages`
+/// in the options. This ensures document-wide peak RSS stays under the memory
+/// ceiling regardless of core count. Each page extraction acquires a semaphore
+/// permit before allocating its working buffers and releases it when done.
 pub fn extract_pdf(
     pdf_path: &std::path::Path,
     options: &ExtractionOptions,
@@ -80,21 +99,64 @@ pub fn extract_pdf(
 
     let page_count = pages.len();
 
-    // Extract each page
+    // Create a semaphore to bound the number of in-flight pages
+    let semaphore = Arc::new(Semaphore::new(options.max_parallel_pages));
+
+    // Wrap the pages in an Arc so they can be shared across threads
+    let pages_arc = Arc::new(pages);
+    let fingerprint_arc = Arc::new(fingerprint.clone());
+    let options_arc = Arc::new(options.clone());
+
+    // Extract each page in parallel, bounded by the semaphore
+    let page_results: Vec<std::result::Result<PageResult, String>> =
+        (0..page_count)
+            .into_par_iter()
+            .map(|page_idx| {
+                // Acquire a permit before starting extraction (blocks if at limit)
+                let _permit = semaphore.acquire_guard();
+
+                // Catch panics to isolate errors to individual pages
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    extract_page(
+                        &fingerprint_arc,
+                        page_idx,
+                        &pages_arc[page_idx],
+                        &options_arc,
+                    )
+                }));
+
+                match result {
+                    Ok(Ok(page_result)) => Ok(page_result),
+                    Ok(Err(e)) => Err(e.to_string()),
+                    Err(_) => Err(format!("Page {} extraction panicked", page_idx)),
+                }
+            })
+            .collect();
+
+    // Count successful extractions and build the final result
     let mut extracted_pages = Vec::new();
     let mut total_spans = 0;
     let mut total_blocks = 0;
+    let mut error_count = 0;
 
-    for (page_idx, page) in pages.iter().enumerate() {
-        let page_result = extract_page(
-            &fingerprint,
-            page_idx,
-            page,
-            options,
-        )?;
-        total_spans += page_result.spans.len();
-        total_blocks += page_result.blocks.len();
-        extracted_pages.push(page_result);
+    for page_result in page_results {
+        match page_result {
+            Ok(page) => {
+                total_spans += page.spans.len();
+                total_blocks += page.blocks.len();
+                extracted_pages.push(page);
+            }
+            Err(err) => {
+                error_count += 1;
+                // Add an error page result to preserve page ordering
+                extracted_pages.push(PageResult {
+                    index: extracted_pages.len(),
+                    spans: vec![],
+                    blocks: vec![],
+                    error: Some(err),
+                });
+            }
+        }
     }
 
     Ok(ExtractionResult {
@@ -107,6 +169,7 @@ pub fn extract_pdf(
             block_count: total_blocks,
             cache_status: None,
             cache_age_seconds: None,
+            error_count,
         },
     })
 }
@@ -180,6 +243,7 @@ fn extract_page(
         index: page_index,
         spans: vec![span],
         blocks: vec![block],
+        error: None,
     })
 }
 
