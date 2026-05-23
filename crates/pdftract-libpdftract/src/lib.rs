@@ -10,5 +10,7 @@
 //! - macOS: `target/debug/libpdftract.dylib` (shared), `target/debug/libpdftract.a` (static)
 //! - Windows: `target/debug/pdftract.dll` (shared), `target/debug/pdftract.lib` (static)
 
-// Public API modules will be added here in sibling beads.
-// This scaffold provides the minimal structure for cdylib + staticlib builds.
+pub mod api;
+
+// Re-export the FFI API at the crate root
+pub use api::*;

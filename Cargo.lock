@@ -1657,6 +1657,7 @@ dependencies = [
 name = "pdftract-libpdftract"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "cbindgen",
  "libc",
  "pdftract-core",

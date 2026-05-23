@@ -9,3 +9,21 @@ style = "both"
 
 [export]
 prefix = "pdftract_"
+include = [
+    "pdftract_extract",
+    "pdftract_extract_text",
+    "pdftract_extract_markdown",
+    "pdftract_extract_stream_open",
+    "pdftract_stream_next",
+    "pdftract_stream_close",
+    "pdftract_search",
+    "pdftract_get_metadata",
+    "pdftract_hash",
+    "pdftract_classify",
+    "pdftract_free",
+    "pdftract_version",
+]
+
+[fn]
+args = "Vertical"
+sort_by = "Name"
