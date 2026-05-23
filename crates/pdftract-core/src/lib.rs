@@ -9,6 +9,7 @@ pub mod diagnostics;
 pub mod document;
 pub mod extract;
 pub mod fingerprint;
+pub mod font;
 pub mod options;
 pub mod parser;
 pub mod receipts;
