@@ -1,20 +1,29 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "../include/pdftract.h"
 
 int main() {
-    const char *path = "/home/coding/pdftract/tests/fixtures/valid-minimal.pdf";
-    printf("Testing pdftract_hash with: %s\n", path);
+    printf("Testing pdftract library...\n");
     
-    char *result = pdftract_hash(path);
+    // Test version
+    const char *version = pdftract_version();
+    printf("Version: %s\n", version);
+    
+    // Test ABI version
+    uint32_t abi = pdftract_abi_version();
+    printf("ABI Version: 0x%08x\n", abi);
+    
+    // Test hash
+    char *result = pdftract_hash("valid-test.pdf");
     if (result == NULL) {
         const char *err = pdftract_last_error();
-        printf("pdftract_hash returned NULL\n");
-        printf("last_error: %s\n", err ? err : "(null)");
+        printf("Hash failed (NULL result). Last error: %s\n", err ? err : "none");
         return 1;
     }
     
-    printf("Result: %s\n", result);
+    printf("Hash result: %s\n", result);
     pdftract_free(result);
+    
     return 0;
 }

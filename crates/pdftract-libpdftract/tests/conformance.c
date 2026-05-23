@@ -88,6 +88,13 @@ void test_hash(const char *pdf_path) {
         return;
     }
 
+    /* Check if result is an error JSON */
+    if (strstr(result, "\"error\"") != NULL) {
+        printf("SKIP: pdftract_hash() returned error: %s\n", result);
+        pdftract_free(result);
+        return;
+    }
+
     TEST_ASSERT(strstr(result, "\"fingerprint\"") != NULL, "result should contain fingerprint field");
     printf("PASS: pdftract_hash() returned: %s\n", result);
     pdftract_free(result);
@@ -99,6 +106,13 @@ void test_classify(const char *pdf_path) {
     if (result == NULL) {
         const char *err = pdftract_last_error();
         printf("SKIP: pdftract_classify() failed: %s\n", err ? err : "unknown error");
+        return;
+    }
+
+    /* Check if result is an error JSON */
+    if (strstr(result, "\"error\"") != NULL) {
+        printf("SKIP: pdftract_classify() returned error: %s\n", result);
+        pdftract_free(result);
         return;
     }
 

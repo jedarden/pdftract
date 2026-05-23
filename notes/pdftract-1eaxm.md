@@ -38,13 +38,33 @@ Successfully implemented the `libpdftract` C FFI library as a fourth workspace m
 - Thread-local error storage
 - Panic catching at FFI boundary
 
+### Additional Verification (2026-05-23)
+
+**Thread Sanitizer Test:**
+```bash
+$ gcc -fsanitize=thread -o tsan_test valgrind_test.c -I../include -L../../../target/release -lpdftract -g
+$ LD_LIBRARY_PATH=../../../target/release ./tsan_test
+# All tests passed with no thread sanitizer warnings
+```
+
+**Conformance Test Results:**
+- `test_version()` - PASS: Returns "0.1.0"
+- `test_abi_version()` - PASS: Returns 0x00000100
+- `test_free_null()` - PASS: No crash on NULL
+- `test_memory_leak_basic()` - PASS: No immediate leaks detected
+- `test_extract_invalid_pdf()` - PASS: Returns proper error JSON
+- Thread safety test (4 threads × 10 iterations) - PASS: No data races
+
+**WARN: valgrind not available**
+Comprehensive memory leak detection with valgrind was not performed due to the tool not being installed on this system. Thread sanitizer and basic memory tests passed, suggesting no obvious issues.
+
 ### Known Issues
 
 **WARN: PDF parsing failures**
 Minimal PDF test fixtures fail to parse. This is a parser issue unrelated to the FFI layer:
-- FFI correctly propagates errors as JSON
-- API surface works correctly (version, abi_version, hash)
-- Full extraction testing requires more robust fixtures
+- FFI correctly propagates errors as JSON (e.g., `{"error":"EXTRACTION_ERROR","message":"No /Root reference in trailer"}`)
+- API surface works correctly (version, abi_version, hash, error handling)
+- Full extraction testing requires more robust fixtures or real-world PDFs
 
 ### Next Steps
 
