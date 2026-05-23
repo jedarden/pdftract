@@ -278,6 +278,12 @@ spec:
 
       # === Fuzz Target Template ===
       # Run cargo-fuzz on a single target with address sanitizer
+      #
+      # Memory enforcement (bf-1g1fd):
+      # - Cgroup MemoryMax: 1536 MB (hard ceiling on entire fuzz run)
+      # - Libfuzzer -rss_limit_mb: 1024 MB (per-execution RSS cap)
+      # - Libfuzzer -malloc_limit_mb: 1024 MB (total malloc cap)
+      # This layered approach ensures clean failure mode for regressions.
       - name: fuzz-target
         inputs:
           parameters:
@@ -294,6 +300,7 @@ spec:
               TARGET="{{inputs.parameters.target}}"
               TIMEOUT="{{inputs.parameters.timeout}}"
               ARTIFACT_DIR="/fuzz-artifacts/$TARGET"
+              MEMORY_MAX_MB=1536  # 1.5 GB cgroup cap (allows overhead above libfuzzer limits)
 
               echo "=========================================="
               echo "Fuzzing Target: $TARGET"
@@ -317,28 +324,136 @@ spec:
               echo "=== Starting fuzz run for $TARGET (max $TIMEOUT seconds) ==="
               echo "Corpus: fuzz/corpus/$TARGET"
               echo "Artifacts: $ARTIFACT_DIR"
+              echo "Memory limits (bf-1g1fd memory ceiling gate):"
+              echo "  - Cgroup MemoryMax: ${MEMORY_MAX_MB} MB (hard ceiling)"
+              echo "  - rss_limit_mb=1024 (per-execution RSS cap)"
+              echo "  - malloc_limit_mb=1024 (total malloc cap)"
 
-              # Run fuzzer with timeout
-              # -timeout=0 means no per-input timeout (libFuzzer default)
-              # -max_total_time is the wall-clock budget for this run
-              # -max_len=10000 limits input size (PDFs are small)
-              cargo fuzz run "$TARGET" \
-                --features fuzzing \
-                -timeout=0 \
-                -max_total_time="$TIMEOUT" \
-                -max_len=10000 \
-                -artifact_prefix="$ARTIFACT_DIR/" \
-                fuzz/corpus/"$TARGET" || {
-                EXIT_CODE=$?
-                echo "Fuzzing exited with code: $EXIT_CODE"
-                # Exit code 1 is normal for fuzzers (crash found)
-                # Exit code 0 is also normal (no crashes found)
-                # Only fail on infrastructure errors
-                if [ $EXIT_CODE -ge 2 ]; then
-                  echo "ERROR: Infrastructure failure (exit code $EXIT_CODE)"
-                  exit $EXIT_CODE
-                fi
-              }
+              # Set up cgroup memory enforcement (bf-1g1fd)
+              # Check if cgroup v2 is available (preferred)
+              if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
+                echo "=== Using cgroup v2 for memory enforcement ==="
+
+                # Create a child cgroup for this fuzz run
+                CGROUP_PATH="/sys/fs/cgroup/fuzz-$TARGET"
+                mkdir -p "$CGROUP_PATH"
+
+                # Set memory limit
+                echo "max ${MEMORY_MAX_MB}M" > "$CGROUP_PATH/memory.max"
+
+                # Enable memory controller
+                echo "+memory" > /sys/fs/cgroup/cgroup.subtree_control 2>/dev/null || true
+
+                # Launch the fuzzer in the cgroup
+                (
+                  # Add current process to the cgroup
+                  echo $$ > "$CGROUP_PATH/cgroup.procs"
+
+                  # Run fuzzer with timeout and memory limits
+                  # -timeout=0 means no per-input timeout (libFuzzer default)
+                  # -max_total_time is the wall-clock budget for this run
+                  # -max_len=10000 limits input size (PDFs are small)
+                  # -rss_limit_mb enforces RSS budget per fuzz execution
+                  # -malloc_limit_mb enforces total malloc budget
+                  # These limits implement the memory ceiling gate (bf-1g1fd)
+                  cargo fuzz run "$TARGET" \
+                    --features fuzzing \
+                    -timeout=0 \
+                    -max_total_time="$TIMEOUT" \
+                    -max_len=10000 \
+                    -rss_limit_mb=1024 \
+                    -malloc_limit_mb=1024 \
+                    -artifact_prefix="$ARTIFACT_DIR/" \
+                    fuzz/corpus/"$TARGET"
+                ) || {
+                  EXIT_CODE=$?
+                  # Clean up cgroup
+                  rmdir "$CGROUP_PATH" 2>/dev/null || true
+
+                  echo "Fuzzing exited with code: $EXIT_CODE"
+                  # Exit code 1 is normal for fuzzers (crash found)
+                  # Exit code 0 is also normal (no crashes found)
+                  # Only fail on infrastructure errors
+                  if [ $EXIT_CODE -ge 2 ]; then
+                    echo "ERROR: Infrastructure failure (exit code $EXIT_CODE)"
+                    exit $EXIT_CODE
+                  fi
+                }
+
+                # Clean up cgroup
+                rmdir "$CGROUP_PATH" 2>/dev/null || true
+
+              elif [ -w /sys/fs/cgroup/memory/memory.limit_in_bytes ]; then
+                echo "=== Using cgroup v1 for memory enforcement ==="
+
+                # Create a cgroup for this fuzz run (cgroup v1)
+                CGROUP_PATH="/sys/fs/cgroup/memory/fuzz-$TARGET"
+
+                # Clean up any existing cgroup
+                mkdir -p "$CGROUP_PATH" 2>/dev/null || rmdir "$CGROUP_PATH" 2>/dev/null
+                mkdir -p "$CGROUP_PATH"
+
+                # Set memory limit
+                MEMORY_MAX_BYTES=$((MEMORY_MAX_MB * 1024 * 1024))
+                echo "$MEMORY_MAX_BYTES" > "$CGROUP_PATH/memory.limit_in_bytes"
+
+                # Disable OOM killer (let it fail cleanly)
+                echo 0 > "$CGROUP_PATH/memory.oom_control" 2>/dev/null || true
+
+                # Launch the fuzzer in the cgroup
+                (
+                  # Add current process to the cgroup
+                  echo $$ > "$CGROUP_PATH/tasks"
+
+                  # Run fuzzer with timeout and memory limits
+                  cargo fuzz run "$TARGET" \
+                    --features fuzzing \
+                    -timeout=0 \
+                    -max_total_time="$TIMEOUT" \
+                    -max_len=10000 \
+                    -rss_limit_mb=1024 \
+                    -malloc_limit_mb=1024 \
+                    -artifact_prefix="$ARTIFACT_DIR/" \
+                    fuzz/corpus/"$TARGET"
+                ) || {
+                  EXIT_CODE=$?
+                  # Clean up cgroup
+                  rmdir "$CGROUP_PATH" 2>/dev/null || true
+
+                  echo "Fuzzing exited with code: $EXIT_CODE"
+                  if [ $EXIT_CODE -ge 2 ]; then
+                    echo "ERROR: Infrastructure failure (exit code $EXIT_CODE)"
+                    exit $EXIT_CODE
+                  fi
+                }
+
+                # Clean up cgroup
+                rmdir "$CGROUP_PATH" 2>/dev/null || true
+
+              else
+                echo "=== WARNING: No cgroup memory controller available ==="
+                echo "Running without cgroup MemoryMax enforcement."
+                echo "Libfuzzer RSS/malloc limits will still apply."
+                echo ""
+
+                # Run fuzzer with libfuzzer memory limits only
+                cargo fuzz run "$TARGET" \
+                  --features fuzzing \
+                  -timeout=0 \
+                  -max_total_time="$TIMEOUT" \
+                  -max_len=10000 \
+                  -rss_limit_mb=1024 \
+                  -malloc_limit_mb=1024 \
+                  -artifact_prefix="$ARTIFACT_DIR/" \
+                  fuzz/corpus/"$TARGET" || {
+                  EXIT_CODE=$?
+                  echo "Fuzzing exited with code: $EXIT_CODE"
+                  if [ $EXIT_CODE -ge 2 ]; then
+                    echo "ERROR: Infrastructure failure (exit code $EXIT_CODE)"
+                    exit $EXIT_CODE
+                  fi
+                }
+              fi
 
               echo "=== Fuzz run complete for $TARGET ==="
 

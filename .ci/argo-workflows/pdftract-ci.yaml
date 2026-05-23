@@ -260,11 +260,12 @@ spec:
           add_step "cargo-audit" "$WORKFLOW_PHASE"
           add_step "cargo-deny" "$WORKFLOW_PHASE"
           add_step "cargo-bloat" "$WORKFLOW_PHASE"
+          add_step "memory-ceiling" "$WORKFLOW_PHASE"
           add_step "bench-matrix" "$WORKFLOW_PHASE"
           add_step "regression-corpus" "$WORKFLOW_PHASE"
 
           # Build artifacts list
-          ARTIFACTS='["workflow-metadata.json","bloat-report.json","audit-report.json","deny-report.json","benchmark-results.json","benchmark-comment.md"]'
+          ARTIFACTS='["workflow-metadata.json","bloat-report.json","memory-report.json","audit-report.json","deny-report.json","benchmark-results.json","benchmark-comment.md"]'
 
           # Calculate duration
           START_TIME="{{workflow.creationTimestamp}}"
@@ -644,6 +645,10 @@ spec:
     # Uses standard Debian-based Rust image with tesseract available
     #
     # Features tested: default, all (including ocr, serve, decrypt, python)
+    #
+    # Memory enforcement (bf-1g1fd):
+    # - Cgroup MemoryMax: 6 GB (hard ceiling on entire test run)
+    # This ensures clean failure mode for memory regressions in tests.
     - name: test-glibc
       activeDeadlineSeconds: 3600
       container:
@@ -660,42 +665,180 @@ spec:
             cd /workspace
             export CARGO_HOME="/cache/cargo/registry"
             export CARGO_TARGET_DIR="/cache/cargo/target-test-glibc"
+            MEMORY_MAX_MB=6144  # 6 GB cgroup cap for test suite
 
-            # Set proptest seed for reproducibility
-            SEED="{{workflow.parameters.proptest-seed}}"
-            if [ -z "$SEED" ]; then
-              SEED=$(date +%s%N | sha256sum | head -c 16)
-              echo "Generated proptest seed: $SEED"
-            else
-              echo "Using provided proptest seed: $SEED"
-            fi
-            export PROPTEST_SEED="$SEED"
+            # Check if cgroup v2 is available (preferred)
+            if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
+              echo "=== Using cgroup v2 for memory enforcement (bf-1g1fd) ==="
 
-            # Set proptest case count
-            CASES="{{workflow.parameters.proptest-cases}}"
-            echo "Proptest cases per module: $CASES"
-            export PROPTEST_CASES="$CASES"
+              # Create a child cgroup for this test run
+              CGROUP_PATH="/sys/fs/cgroup/test-glibc"
+              mkdir -p "$CGROUP_PATH"
 
-            echo "=== Running unit tests (default features) ==="
-            cargo test --locked --lib --bins
+              # Set memory limit
+              echo "max ${MEMORY_MAX_MB}M" > "$CGROUP_PATH/memory.max"
 
-            echo "=== Running unit tests (all features including OCR) ==="
-            cargo test --locked --all-features --lib --bins
+              # Enable memory controller
+              echo "+memory" > /sys/fs/cgroup/cgroup.subtree_control 2>/dev/null || true
 
-            echo "=== Running property tests (proptest) ==="
-            echo "Seed: $PROPTEST_SEED | Cases: $PROPTEST_CASES"
-            cargo nextest run --features proptest --proptest --profile=ci-proptest || {
-              EXIT_CODE=$?
-              if [ $EXIT_CODE -ne 0 ]; then
-                echo "ERROR: Property tests failed!"
-                echo "Check proptest-regressions/ for new minimal counterexamples"
+              # Launch the tests in the cgroup
+              (
+                # Add current process to the cgroup
+                echo $$ > "$CGROUP_PATH/cgroup.procs"
+
+                # Set proptest seed for reproducibility
+                SEED="{{workflow.parameters.proptest-seed}}"
+                if [ -z "$SEED" ]; then
+                  SEED=$(date +%s%N | sha256sum | head -c 16)
+                  echo "Generated proptest seed: $SEED"
+                else
+                  echo "Using provided proptest seed: $SEED"
+                fi
+                export PROPTEST_SEED="$SEED"
+
+                # Set proptest case count
+                CASES="{{workflow.parameters.proptest-cases}}"
+                echo "Proptest cases per module: $CASES"
+                export PROPTEST_CASES="$CASES"
+
+                echo "=== Running unit tests (default features) ==="
+                cargo test --locked --lib --bins
+
+                echo "=== Running unit tests (all features including OCR) ==="
+                cargo test --locked --all-features --lib --bins
+
+                echo "=== Running property tests (proptest) ==="
+                echo "Seed: $PROPTEST_SEED | Cases: $PROPTEST_CASES"
+                cargo nextest run --features proptest --proptest --profile=ci-proptest || {
+                  EXIT_CODE=$?
+                  if [ $EXIT_CODE -ne 0 ]; then
+                    echo "ERROR: Property tests failed!"
+                    echo "Check proptest-regressions/ for new minimal counterexamples"
+                    exit $EXIT_CODE
+                  fi
+                }
+
+                echo "=== All glibc tests passed ==="
+                echo "Unit tests: PASS"
+                echo "Property tests: PASS ($CASES cases per module)"
+              ) || {
+                EXIT_CODE=$?
+                # Clean up cgroup
+                rmdir "$CGROUP_PATH" 2>/dev/null || true
                 exit $EXIT_CODE
-              fi
-            }
+              }
 
-            echo "=== All glibc tests passed ==="
-            echo "Unit tests: PASS"
-            echo "Property tests: PASS ($CASES cases per module)"
+              # Clean up cgroup
+              rmdir "$CGROUP_PATH" 2>/dev/null || true
+
+            elif [ -w /sys/fs/cgroup/memory/memory.limit_in_bytes ]; then
+              echo "=== Using cgroup v1 for memory enforcement (bf-1g1fd) ==="
+
+              # Create a cgroup for this test run (cgroup v1)
+              CGROUP_PATH="/sys/fs/cgroup/memory/test-glibc"
+
+              # Clean up any existing cgroup
+              mkdir -p "$CGROUP_PATH" 2>/dev/null || rmdir "$CGROUP_PATH" 2>/dev/null
+              mkdir -p "$CGROUP_PATH"
+
+              # Set memory limit
+              MEMORY_MAX_BYTES=$((MEMORY_MAX_MB * 1024 * 1024))
+              echo "$MEMORY_MAX_BYTES" > "$CGROUP_PATH/memory.limit_in_bytes"
+
+              # Disable OOM killer (let it fail cleanly)
+              echo 0 > "$CGROUP_PATH/memory.oom_control" 2>/dev/null || true
+
+              # Launch the tests in the cgroup
+              (
+                # Add current process to the cgroup
+                echo $$ > "$CGROUP_PATH/tasks"
+
+                # Set proptest seed for reproducibility
+                SEED="{{workflow.parameters.proptest-seed}}"
+                if [ -z "$SEED" ]; then
+                  SEED=$(date +%s%N | sha256sum | head -c 16)
+                  echo "Generated proptest seed: $SEED"
+                else
+                  echo "Using provided proptest seed: $SEED"
+                fi
+                export PROPTEST_SEED="$SEED"
+
+                # Set proptest case count
+                CASES="{{workflow.parameters.proptest-cases}}"
+                echo "Proptest cases per module: $CASES"
+                export PROPTEST_CASES="$CASES"
+
+                echo "=== Running unit tests (default features) ==="
+                cargo test --locked --lib --bins
+
+                echo "=== Running unit tests (all features including OCR) ==="
+                cargo test --locked --all-features --lib --bins
+
+                echo "=== Running property tests (proptest) ==="
+                echo "Seed: $PROPTEST_SEED | Cases: $PROPTEST_CASES"
+                cargo nextest run --features proptest --proptest --profile=ci-proptest || {
+                  EXIT_CODE=$?
+                  if [ $EXIT_CODE -ne 0 ]; then
+                    echo "ERROR: Property tests failed!"
+                    echo "Check proptest-regressions/ for new minimal counterexamples"
+                    exit $EXIT_CODE
+                  fi
+                }
+
+                echo "=== All glibc tests passed ==="
+                echo "Unit tests: PASS"
+                echo "Property tests: PASS ($CASES cases per module)"
+              ) || {
+                EXIT_CODE=$?
+                # Clean up cgroup
+                rmdir "$CGROUP_PATH" 2>/dev/null || true
+                exit $EXIT_CODE
+              }
+
+              # Clean up cgroup
+              rmdir "$CGROUP_PATH" 2>/dev/null || true
+
+            else
+              echo "=== WARNING: No cgroup memory controller available ==="
+              echo "Running without cgroup MemoryMax enforcement (bf-1g1fd)"
+              echo ""
+
+              # Set proptest seed for reproducibility
+              SEED="{{workflow.parameters.proptest-seed}}"
+              if [ -z "$SEED" ]; then
+                SEED=$(date +%s%N | sha256sum | head -c 16)
+                echo "Generated proptest seed: $SEED"
+              else
+                echo "Using provided proptest seed: $SEED"
+              fi
+              export PROPTEST_SEED="$SEED"
+
+              # Set proptest case count
+              CASES="{{workflow.parameters.proptest-cases}}"
+              echo "Proptest cases per module: $CASES"
+              export PROPTEST_CASES="$CASES"
+
+              echo "=== Running unit tests (default features) ==="
+              cargo test --locked --lib --bins
+
+              echo "=== Running unit tests (all features including OCR) ==="
+              cargo test --locked --all-features --lib --bins
+
+              echo "=== Running property tests (proptest) ==="
+              echo "Seed: $PROPTEST_SEED | Cases: $PROPTEST_CASES"
+              cargo nextest run --features proptest --proptest --profile=ci-proptest || {
+                EXIT_CODE=$?
+                if [ $EXIT_CODE -ne 0 ]; then
+                  echo "ERROR: Property tests failed!"
+                  echo "Check proptest-regressions/ for new minimal counterexamples"
+                  exit $EXIT_CODE
+                fi
+              }
+
+              echo "=== All glibc tests passed ==="
+              echo "Unit tests: PASS"
+              echo "Property tests: PASS ($CASES cases per module)"
+            fi
         volumeMounts:
           - name: workspace
             mountPath: /workspace
@@ -722,6 +865,10 @@ spec:
     #
     # Bead: pdftract-5gtcj
     # Plan section: Phase 0.3
+    #
+    # Memory enforcement (bf-1g1fd):
+    # - Cgroup MemoryMax: 4 GB (hard ceiling on entire test run)
+    # This ensures clean failure mode for memory regressions in tests.
     - name: test-musl
       activeDeadlineSeconds: 3600
       container:
@@ -738,57 +885,225 @@ spec:
             cd /workspace
             export CARGO_HOME="/cache/cargo/registry"
             export CARGO_TARGET_DIR="/cache/cargo/target-test-musl"
+            MEMORY_MAX_MB=4096  # 4 GB cgroup cap for test suite
 
-            echo "=== Installing cross ==="
-            if ! command -v cross &> /dev/null; then
-              echo "cross not found in image, installing..."
-              cargo install --locked cross || {
-                echo "ERROR: Failed to install cross" >&2
-                exit 1
-              }
-            fi
-            cross --version || echo "cross version check failed"
+            # Check if cgroup v2 is available (preferred)
+            if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
+              echo "=== Using cgroup v2 for memory enforcement (bf-1g1fd) ==="
 
-            echo "=== Running musl tests (features: default,serve,decrypt) ==="
-            echo "Note: OCR excluded (tesseract unavailable on Alpine/musl)"
-            echo "Test threads: 4"
+              # Create a child cgroup for this test run
+              CGROUP_PATH="/sys/fs/cgroup/test-musl"
+              mkdir -p "$CGROUP_PATH"
 
-            cross test --release --target x86_64-unknown-linux-musl \
-              --features default,serve,decrypt \
-              --locked -- \
-              --test-threads=4 \
-              -Z unstable-options \
-              --format json \
-              2>&1 | tee /tmp/test-output.json || {
-              EXIT_CODE=$?
-              echo "ERROR: musl tests failed with exit code $EXIT_CODE"
-              cat /tmp/test-output.json
-              exit $EXIT_CODE
-            }
+              # Set memory limit
+              echo "max ${MEMORY_MAX_MB}M" > "$CGROUP_PATH/memory.max"
 
-            echo "=== Converting test output to JUnit XML ==="
-            if command -v jq &> /dev/null; then
-              # Convert cargo test JSON output to JUnit XML format
-              # This is a simplified conversion - for full JUnit support, use cargo-nextest
-              jq -r '
-                select(.type == "test") |
-                "<testcase name=\(.name | @sh) classname=\(.crate | @sh) time=\(.exec_time // 0)>" +
-                if .status == "ok" then
-                  "</testcase>"
+              # Enable memory controller
+              echo "+memory" > /sys/fs/cgroup/cgroup.subtree_control 2>/dev/null || true
+
+              # Launch the tests in the cgroup
+              (
+                # Add current process to the cgroup
+                echo $$ > "$CGROUP_PATH/cgroup.procs"
+
+                echo "=== Installing cross ==="
+                if ! command -v cross &> /dev/null; then
+                  echo "cross not found in image, installing..."
+                  cargo install --locked cross || {
+                    echo "ERROR: Failed to install cross" >&2
+                    exit 1
+                  }
+                fi
+                cross --version || echo "cross version check failed"
+
+                echo "=== Running musl tests (features: default,serve,decrypt) ==="
+                echo "Note: OCR excluded (tesseract unavailable on Alpine/musl)"
+                echo "Test threads: 4"
+
+                cross test --release --target x86_64-unknown-linux-musl \
+                  --features default,serve,decrypt \
+                  --locked -- \
+                  --test-threads=4 \
+                  -Z unstable-options \
+                  --format json \
+                  2>&1 | tee /tmp/test-output.json || {
+                  EXIT_CODE=$?
+                  echo "ERROR: musl tests failed with exit code $EXIT_CODE"
+                  cat /tmp/test-output.json
+                  exit $EXIT_CODE
+                }
+
+                echo "=== Converting test output to JUnit XML ==="
+                if command -v jq &> /dev/null; then
+                  # Convert cargo test JSON output to JUnit XML format
+                  # This is a simplified conversion - for full JUnit support, use cargo-nextest
+                  jq -r '
+                    select(.type == "test") |
+                    "<testcase name=\(.name | @sh) classname=\(.crate | @sh) time=\(.exec_time // 0)>" +
+                    if .status == "ok" then
+                      "</testcase>"
+                    else
+                      "<failure message=\(.message | @sh)>\(.stdout // "" | @sh)</failure></testcase>"
+                    end
+                  ' /tmp/test-output.json > /workspace/test-results-musl.xml || {
+                    echo "WARN: JUnit XML generation failed, creating minimal report"
+                    echo '<?xml version="1.0" encoding="UTF-8"?><testsuites name="musl"><testsuite tests="1"><testcase name="musl-tests" classname="pdftract"/></testsuite></testsuites>' > /workspace/test-results-musl.xml
+                  }
                 else
-                  "<failure message=\(.message | @sh)>\(.stdout // "" | @sh)</failure></testcase>"
-                end
-              ' /tmp/test-output.json > /workspace/test-results-musl.xml || {
-                echo "WARN: JUnit XML generation failed, creating minimal report"
-                echo '<?xml version="1.0" encoding="UTF-8"?><testsuites name="musl"><testsuite tests="1"><testcase name="musl-tests" classname="pdftract"/></testsuite></testsuites>' > /workspace/test-results-musl.xml
-              }
-            else
-              echo '<?xml version="1.0" encoding="UTF-8"?><testsuites name="musl"><testsuite tests="1"><testcase name="musl-tests" classname="pdftract"/></testsuite></testsuites>' > /workspace/test-results-musl.xml
-            fi
+                  echo '<?xml version="1.0" encoding="UTF-8"?><testsuites name="musl"><testsuite tests="1"><testcase name="musl-tests" classname="pdftract"/></testsuite></testsuites>' > /workspace/test-results-musl.xml
+                fi
 
-            echo "=== All musl tests passed ==="
-            echo "Feature set: default,serve,decrypt (no OCR)"
-            echo "JUnit XML: test-results-musl.xml"
+                echo "=== All musl tests passed ==="
+                echo "Feature set: default,serve,decrypt (no OCR)"
+                echo "JUnit XML: test-results-musl.xml"
+              ) || {
+                EXIT_CODE=$?
+                # Clean up cgroup
+                rmdir "$CGROUP_PATH" 2>/dev/null || true
+                exit $EXIT_CODE
+              }
+
+              # Clean up cgroup
+              rmdir "$CGROUP_PATH" 2>/dev/null || true
+
+            elif [ -w /sys/fs/cgroup/memory/memory.limit_in_bytes ]; then
+              echo "=== Using cgroup v1 for memory enforcement (bf-1g1fd) ==="
+
+              # Create a cgroup for this test run (cgroup v1)
+              CGROUP_PATH="/sys/fs/cgroup/memory/test-musl"
+
+              # Clean up any existing cgroup
+              mkdir -p "$CGROUP_PATH" 2>/dev/null || rmdir "$CGROUP_PATH" 2>/dev/null
+              mkdir -p "$CGROUP_PATH"
+
+              # Set memory limit
+              MEMORY_MAX_BYTES=$((MEMORY_MAX_MB * 1024 * 1024))
+              echo "$MEMORY_MAX_BYTES" > "$CGROUP_PATH/memory.limit_in_bytes"
+
+              # Disable OOM killer (let it fail cleanly)
+              echo 0 > "$CGROUP_PATH/memory.oom_control" 2>/dev/null || true
+
+              # Launch the tests in the cgroup
+              (
+                # Add current process to the cgroup
+                echo $$ > "$CGROUP_PATH/tasks"
+
+                echo "=== Installing cross ==="
+                if ! command -v cross &> /dev/null; then
+                  echo "cross not found in image, installing..."
+                  cargo install --locked cross || {
+                    echo "ERROR: Failed to install cross" >&2
+                    exit 1
+                  }
+                fi
+                cross --version || echo "cross version check failed"
+
+                echo "=== Running musl tests (features: default,serve,decrypt) ==="
+                echo "Note: OCR excluded (tesseract unavailable on Alpine/musl)"
+                echo "Test threads: 4"
+
+                cross test --release --target x86_64-unknown-linux-musl \
+                  --features default,serve,decrypt \
+                  --locked -- \
+                  --test-threads=4 \
+                  -Z unstable-options \
+                  --format json \
+                  2>&1 | tee /tmp/test-output.json || {
+                  EXIT_CODE=$?
+                  echo "ERROR: musl tests failed with exit code $EXIT_CODE"
+                  cat /tmp/test-output.json
+                  exit $EXIT_CODE
+                }
+
+                echo "=== Converting test output to JUnit XML ==="
+                if command -v jq &> /dev/null; then
+                  # Convert cargo test JSON output to JUnit XML format
+                  # This is a simplified conversion - for full JUnit support, use cargo-nextest
+                  jq -r '
+                    select(.type == "test") |
+                    "<testcase name=\(.name | @sh) classname=\(.crate | @sh) time=\(.exec_time // 0)>" +
+                    if .status == "ok" then
+                      "</testcase>"
+                    else
+                      "<failure message=\(.message | @sh)>\(.stdout // "" | @sh)</failure></testcase>"
+                    end
+                  ' /tmp/test-output.json > /workspace/test-results-musl.xml || {
+                    echo "WARN: JUnit XML generation failed, creating minimal report"
+                    echo '<?xml version="1.0" encoding="UTF-8"?><testsuites name="musl"><testsuite tests="1"><testcase name="musl-tests" classname="pdftract"/></testsuite></testsuites>' > /workspace/test-results-musl.xml
+                  }
+                else
+                  echo '<?xml version="1.0" encoding="UTF-8"?><testsuites name="musl"><testsuite tests="1"><testcase name="musl-tests" classname="pdftract"/></testsuite></testsuites>' > /workspace/test-results-musl.xml
+                fi
+
+                echo "=== All musl tests passed ==="
+                echo "Feature set: default,serve,decrypt (no OCR)"
+                echo "JUnit XML: test-results-musl.xml"
+              ) || {
+                EXIT_CODE=$?
+                # Clean up cgroup
+                rmdir "$CGROUP_PATH" 2>/dev/null || true
+                exit $EXIT_CODE
+              }
+
+              # Clean up cgroup
+              rmdir "$CGROUP_PATH" 2>/dev/null || true
+
+            else
+              echo "=== WARNING: No cgroup memory controller available ==="
+              echo "Running without cgroup MemoryMax enforcement (bf-1g1fd)"
+              echo ""
+
+              echo "=== Installing cross ==="
+              if ! command -v cross &> /dev/null; then
+                echo "cross not found in image, installing..."
+                cargo install --locked cross || {
+                  echo "ERROR: Failed to install cross" >&2
+                  exit 1
+                }
+              fi
+              cross --version || echo "cross version check failed"
+
+              echo "=== Running musl tests (features: default,serve,decrypt) ==="
+              echo "Note: OCR excluded (tesseract unavailable on Alpine/musl)"
+              echo "Test threads: 4"
+
+              cross test --release --target x86_64-unknown-linux-musl \
+                --features default,serve,decrypt \
+                --locked -- \
+                --test-threads=4 \
+                -Z unstable-options \
+                --format json \
+                2>&1 | tee /tmp/test-output.json || {
+                EXIT_CODE=$?
+                echo "ERROR: musl tests failed with exit code $EXIT_CODE"
+                cat /tmp/test-output.json
+                exit $EXIT_CODE
+              }
+
+              echo "=== Converting test output to JUnit XML ==="
+              if command -v jq &> /dev/null; then
+                # Convert cargo test JSON output to JUnit XML format
+                # This is a simplified conversion - for full JUnit support, use cargo-nextest
+                jq -r '
+                  select(.type == "test") |
+                  "<testcase name=\(.name | @sh) classname=\(.crate | @sh) time=\(.exec_time // 0)>" +
+                  if .status == "ok" then
+                    "</testcase>"
+                  else
+                    "<failure message=\(.message | @sh)>\(.stdout // "" | @sh)</failure></testcase>"
+                  end
+                ' /tmp/test-output.json > /workspace/test-results-musl.xml || {
+                  echo "WARN: JUnit XML generation failed, creating minimal report"
+                  echo '<?xml version="1.0" encoding="UTF-8"?><testsuites name="musl"><testsuite tests="1"><testcase name="musl-tests" classname="pdftract"/></testsuite></testsuites>' > /workspace/test-results-musl.xml
+                }
+              else
+                echo '<?xml version="1.0" encoding="UTF-8"?><testsuites name="musl"><testsuite tests="1"><testcase name="musl-tests" classname="pdftract"/></testsuite></testsuites>' > /workspace/test-results-musl.xml
+              fi
+
+              echo "=== All musl tests passed ==="
+              echo "Feature set: default,serve,decrypt (no OCR)"
+              echo "JUnit XML: test-results-musl.xml"
+            fi
         volumeMounts:
           - name: workspace
             mountPath: /workspace
@@ -810,14 +1125,16 @@ spec:
 
     # === Quality Matrix ===
     # Run linting (clippy, fmt), security audit (cargo-audit), dependency review,
-    # license/ban/advisory checks (cargo-deny), MSRV check, and binary size budget.
+    # license/ban/advisory checks (cargo-deny), MSRV check, binary size budget,
+    # and memory ceiling enforcement.
     #
-    # Five parallel Tier 1 quality gates — any failure blocks PR merge:
+    # Six parallel Tier 1 quality gates — any failure blocks PR merge:
     # 1. clippy-fmt: General linting and formatting check with INV-8 unwrap/expect ban
     # 2. msrv-check: Verify no newer Rust features are used (MSRV 1.78)
     # 3. cargo-audit: Security advisory check on dependencies
     # 4. cargo-deny: License and security policy enforcement
     # 5. cargo-bloat: Binary size budget enforcement (<= 4 MB)
+    # 6. memory-ceiling: Memory budget enforcement (analogous to cargo-bloat for RSS)
     #
     # CRITICAL: All cargo commands MUST use --locked (or --locked --frozen)
     - name: quality-matrix
@@ -834,6 +1151,8 @@ spec:
             template: cargo-deny
           - name: cargo-bloat
             template: cargo-bloat
+          - name: memory-ceiling
+            template: memory-ceiling
 
     # === Clippy and Fmt Check ===
     # Runs clippy with warnings denied and INV-8 unwrap/expect enforcement.
@@ -1304,6 +1623,218 @@ spec:
         artifacts:
           - name: bloat-report
             path: /workspace/bloat-report.json
+
+    # === Memory Ceiling ===
+    # Runs memory ceiling tests to enforce RSS budgets.
+    #
+    # This is a Tier 1 hard gate from Quality Targets. Any document exceeding
+    # its memory budget blocks PR merge. Without this gate, memory regressions
+    # silently slip past code review and risk breaking the Memory targets.
+    #
+    # Bead: bf-1g1fd
+    # Plan section: Phase 0.4 Quality Targets - Memory targets
+    #
+    # Enforcement policy:
+    # - Peak RSS, 100-page vector PDF (buffered mode) < 512 MB
+    # - Peak RSS, streaming/NDJSON mode (any page count) < 256 MB
+    # - Peak RSS, adversarial fixtures < 1 GB hard ceiling
+    # - Output is published as memory-report.json artifact for historical tracking
+    # - Tests run under cgroup MemoryMax cap for clean failure mode
+    - name: memory-ceiling
+      activeDeadlineSeconds: 600
+      container:
+        image: pdftract-test-glibc:1.78
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+
+            echo "=========================================="
+            echo "Memory Ceiling Tests"
+            echo "=========================================="
+
+            cd /workspace
+            export CARGO_HOME="/cache/cargo/registry"
+            export CARGO_TARGET_DIR="/cache/cargo/target-memory-ceiling"
+
+            echo "=== Running memory ceiling tests ==="
+            echo "Budgets:"
+            echo "  - Buffered 100-page: 512 MB"
+            echo "  - Streaming mode: 256 MB"
+            echo "  - Adversarial hard cap: 1024 MB"
+            echo ""
+            echo "Cgroup MemoryMax: 1536 MB (1.5 GB cap for clean failure)"
+            echo "  This enforces a hard ceiling on the entire test run."
+            echo "  Individual document budgets are enforced by the harness."
+
+            # Check if cgroup v2 is available (preferred)
+            if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
+              echo "=== Using cgroup v2 for memory enforcement ==="
+
+              # Create a child cgroup for this test run
+              CGROUP_PATH="/sys/fs/cgroup/memory-ceiling-test"
+              mkdir -p "$CGROUP_PATH"
+
+              # Set memory limit (1.5 GB to allow overhead)
+              echo "max 1536M" > "$CGROUP_PATH/memory.max"
+
+              # Enable memory controller
+              echo "+memory" > /sys/fs/cgroup/cgroup.subtree_control 2>/dev/null || true
+
+              # Launch the test in the cgroup
+              # Run xtask memory-ceiling command which:
+              # - Builds pdftract in release mode
+              # - Measures peak RSS while extracting perf and malformed corpora
+              # - Generates memory-report.json with detailed results
+              (
+                # Add current process to the cgroup
+                echo $$ > "$CGROUP_PATH/cgroup.procs"
+
+                cd /workspace/xtask && cargo run --release -- memory-ceiling
+              ) || {
+                EXIT_CODE=$?
+
+                # Clean up cgroup
+                rmdir "$CGROUP_PATH" 2>/dev/null || true
+
+                echo "=========================================="
+                echo "MEMORY CEILING CHECKS FAILED"
+                echo "=========================================="
+                echo ""
+                echo "One or more documents exceeded their memory budget."
+                echo "Review the output above for specific violations."
+                echo ""
+                echo "Memory targets are Tier-1 gates per Phase 0.4 Quality Targets."
+                echo "See plan.md line 72-80 for budget definitions."
+
+                exit $EXIT_CODE
+              }
+
+              # Clean up cgroup
+              rmdir "$CGROUP_PATH" 2>/dev/null || true
+
+            elif [ -w /sys/fs/cgroup/memory/memory.limit_in_bytes ]; then
+              echo "=== Using cgroup v1 for memory enforcement ==="
+
+              # Create a cgroup for this test run (cgroup v1)
+              CGROUP_PATH="/sys/fs/cgroup/memory/memory-ceiling-test"
+
+              # Clean up any existing cgroup
+              mkdir -p "$CGROUP_PATH" 2>/dev/null || rmdir "$CGROUP_PATH" 2>/dev/null
+              mkdir -p "$CGROUP_PATH"
+
+              # Set memory limit (1.5 GB to allow overhead)
+              MEMORY_MAX_BYTES=$((1536 * 1024 * 1024))
+              echo "$MEMORY_MAX_BYTES" > "$CGROUP_PATH/memory.limit_in_bytes"
+
+              # Disable OOM killer (let it fail cleanly)
+              echo 0 > "$CGROUP_PATH/memory.oom_control" 2>/dev/null || true
+
+              # Launch the test in the cgroup
+              (
+                # Add current process to the cgroup
+                echo $$ > "$CGROUP_PATH/tasks"
+
+                cd /workspace/xtask && cargo run --release -- memory-ceiling
+              ) || {
+                EXIT_CODE=$?
+
+                # Clean up cgroup
+                rmdir "$CGROUP_PATH" 2>/dev/null || true
+
+                echo "=========================================="
+                echo "MEMORY CEILING CHECKS FAILED"
+                echo "=========================================="
+                echo ""
+                echo "One or more documents exceeded their memory budget."
+                echo "Review the output above for specific violations."
+                echo ""
+                echo "Memory targets are Tier-1 gates per Phase 0.4 Quality Targets."
+                echo "See plan.md line 72-80 for budget definitions."
+
+                exit $EXIT_CODE
+              }
+
+              # Clean up cgroup
+              rmdir "$CGROUP_PATH" 2>/dev/null || true
+
+            else
+              echo "=== WARNING: No cgroup memory controller available ==="
+              echo "Running without cgroup MemoryMax enforcement."
+              echo "Individual document budgets will still be enforced by the harness."
+              echo ""
+
+              # Run xtask memory-ceiling command
+              cd /workspace/xtask && cargo run --release -- memory-ceiling \
+                || {
+                  EXIT_CODE=$?
+
+                  echo "=========================================="
+                  echo "MEMORY CEILING CHECKS FAILED"
+                  echo "=========================================="
+                  echo ""
+                  echo "One or more documents exceeded their memory budget."
+                  echo "Review the output above for specific violations."
+                  echo ""
+                  echo "Memory targets are Tier-1 gates per Phase 0.4 Quality Targets."
+                  echo "See plan.md line 72-80 for budget definitions."
+
+                  exit $EXIT_CODE
+                }
+            fi
+
+            echo ""
+            echo "=== Memory ceiling checks passed ==="
+            echo "All documents within their RSS budgets"
+
+            # Verify the xtask-generated report exists
+            if [ -f /workspace/memory-report.json ]; then
+              echo "Report generated by xtask: memory-report.json"
+              # Show summary from report
+              if command -v jq &> /dev/null; then
+                echo ""
+                echo "Summary:"
+                jq -r '"\(.summary.passed)/\(.summary.total_tests) tests passed"' /workspace/memory-report.json
+                jq -r '"Budgets: buffered=\(.budgets.buffered_100_page_mb)MB streaming=\(.budgets.streaming_any_mb)MB adversarial=\(.budgets.adversarial_hard_cap_mb)MB"' /workspace/memory-report.json
+              fi
+            else
+              echo "WARNING: xtask did not generate memory-report.json"
+              # Generate minimal report for artifact upload
+              cat > /workspace/memory-report.json <<EOF
+              {
+                "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+                "commit_sha": "{{workflow.parameters.commit-sha}}",
+                "status": "passed",
+                "budgets": {
+                  "buffered_100_page_mb": 512,
+                  "streaming_any_mb": 256,
+                  "adversarial_hard_cap_mb": 1024
+                },
+                "summary": {
+                  "total_tests": 0,
+                  "passed": 0,
+                  "failed": 0,
+                  "all_passed": true
+                }
+              }
+              EOF
+            fi
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+      outputs:
+        artifacts:
+          - name: memory-report
+            path: /workspace/memory-report.json
 
     # === Bench Matrix ===
     # Competitive benchmarks: pdftract vs pdfminer.six, pypdf, pdfplumber
