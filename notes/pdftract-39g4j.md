@@ -33,7 +33,12 @@ Implemented the `--receipts` CLI flag with clap `value_parser` for runtime valid
 - **Performance criterion (<=10% overhead for lite, <=25% for svg)** - Pending benchmark implementation with actual extraction
 
 ### NOTE
-The actual threading of `ExtractionOptions` through the extraction pipeline and the integration of receipt generation in span/block builders is deferred to the extraction implementation beads (Phase 6). This bead focused on the CLI/MCP entry points, which are now properly wired.
+The threading of `ExtractionOptions` through the extraction pipeline is now COMPLETE. The `extract.rs` module has:
+- `extract_pdf()` accepting `ExtractionOptions`
+- `extract_page()` calling `generate_receipt()` for both spans and blocks
+- `generate_receipt()` creating receipts based on mode (Off/Lite/SvgClip)
+
+The extraction pipeline itself is still a placeholder (minimal text extraction), but the receipts threading is fully wired from CLI through to the span/block builders.
 
 ## Files Modified
 - `crates/pdftract-cli/src/main.rs`: Added `value_parser = ["off", "lite", "svg"]` to --receipts flag

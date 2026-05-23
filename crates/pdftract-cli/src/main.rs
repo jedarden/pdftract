@@ -9,6 +9,7 @@ mod password;
 mod verify_receipt;
 use codegen::Language;
 use pdftract_core::options::{ReceiptsMode, ExtractionOptions};
+use pdftract_core::extract::{extract_pdf, result_to_json};
 
 // Re-export diagnostics for the --list-diagnostics and --explain-diagnostic commands
 pub use pdftract_core::diagnostics::{DiagCode, DiagInfo, DIAGNOSTIC_CATALOG};
@@ -295,17 +296,50 @@ fn cmd_extract(
     // Build extraction options
     let options = ExtractionOptions::with_receipts(receipts_mode);
 
-    // Stub: For now, just report what would be extracted
-    // Full extraction implementation is in separate beads
-    eprintln!("Extract command invoked");
-    eprintln!("  Input: {:?}", input);
-    eprintln!("  Format: {}", format);
-    eprintln!("  Password: {}", if resolved_password.is_some() { "yes" } else { "no" });
-    eprintln!("  Receipts: {}", options.receipts.as_str());
+    // Perform the extraction
+    let result = extract_pdf(&input, &options)
+        .context("Failed to extract PDF")?;
 
-    // TODO: Implement actual PDF extraction
-    // This will be done in the extraction implementation beads
-    eprintln!("NOTE: Full extraction implementation is pending (see plan for extraction beads)");
+    // Output based on requested format
+    match format {
+        "json" => {
+            let json_output = result_to_json(&result);
+            println!("{}", serde_json::to_string_pretty(&json_output)?);
+        }
+        "text" => {
+            // Plain text output: concatenate all span texts
+            for page in &result.pages {
+                for span in &page.spans {
+                    println!("{}", span.text);
+                }
+            }
+        }
+        "markdown" => {
+            // Markdown output: simple conversion
+            for page in &result.pages {
+                for block in &page.blocks {
+                    match block.kind.as_str() {
+                        "heading" => {
+                            let level = block.level.unwrap_or(1);
+                            let prefix = "#".repeat(level as usize);
+                            println!("{} {}", prefix, block.text);
+                        }
+                        "paragraph" => {
+                            println!("{}", block.text);
+                        }
+                        _ => {
+                            println!("{}", block.text);
+                        }
+                    }
+                    println!();
+                }
+            }
+        }
+        _ => {
+            eprintln!("Error: Unknown format '{}', expected 'json', 'text', or 'markdown'", format);
+            std::process::exit(2);
+        }
+    }
 
     Ok(())
 }

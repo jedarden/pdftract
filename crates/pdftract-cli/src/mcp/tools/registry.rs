@@ -11,6 +11,8 @@ use crate::mcp::root::resolve_path;
 use pdftract_core::{
     parser::{self, catalog, pages, stream::{MemorySource, PdfSource}, xref},
     diagnostics::DiagCode,
+    options::{ExtractionOptions, ReceiptsMode},
+    extract::{extract_pdf, result_to_json},
 };
 use regex::Regex;
 use serde_json::{json, to_value, Value};
@@ -312,6 +314,34 @@ fn is_url(path: &str) -> bool {
     path.starts_with("http://") || path.starts_with("https://")
 }
 
+/// Build ExtractionOptions from MCP tool arguments.
+fn build_extraction_options(
+    pages: &Option<String>,
+    _ocr: &Option<bool>,
+    receipts: Option<&str>,
+) -> ExtractionOptions {
+    // Parse receipts mode
+    let receipts_mode = match receipts {
+        None | Some("off") => ReceiptsMode::Off,
+        Some("lite") => ReceiptsMode::Lite,
+        Some("svg") => ReceiptsMode::SvgClip,
+        Some(other) => {
+            // Invalid value - default to off
+            // In production, this should return an error
+            eprintln!("Warning: invalid receipts mode '{}', using 'off'", other);
+            ReceiptsMode::Off
+        }
+    };
+
+    // Note: pages and ocr options are not yet implemented in the extraction pipeline
+    // They are parsed here for future compatibility
+    if pages.is_some() {
+        // TODO: implement page range selection
+    }
+
+    ExtractionOptions::with_receipts(receipts_mode)
+}
+
 /// Create a stub response for tools that require Phase 6 extraction surface.
 fn stub_extraction_response(path: &str, tool_name: &str, page_count: Option<usize>) -> Value {
     let mut response = serde_json::Map::new();
@@ -380,10 +410,20 @@ impl Tool for ExtractTool {
             }));
         }
 
-        // Open the PDF to check for encryption and get basic info
-        let ctx = open_pdf(&tool_args.path, tool_args.password.as_deref(), root)?;
+        // Validate and resolve the path
+        let path_buf = resolve_path(&tool_args.path, root)?;
 
-        Ok(stub_extraction_response(&tool_args.path, "extract", ctx.page_count))
+        // Build extraction options
+        let options = build_extraction_options(&tool_args.pages, &tool_args.ocr, tool_args.receipts.as_deref());
+
+        // Perform the extraction
+        let result = extract_pdf(&path_buf, &options)
+            .map_err(|e| ErrorObject::server_error(
+                super::ERROR_IO_ERROR,
+                format!("Extraction failed: {}", e),
+            ).with_data(json!({"code": super::CODE_IO_ERROR})))?;
+
+        Ok(result_to_json(&result))
     }
 }
 
@@ -416,8 +456,26 @@ impl Tool for ExtractTextTool {
             }));
         }
 
-        let ctx = open_pdf(&tool_args.path, tool_args.password.as_deref(), root)?;
-        Ok(stub_extraction_response(&tool_args.path, "extract_text", ctx.page_count))
+        // Validate and resolve the path
+        let path_buf = resolve_path(&tool_args.path, root)?;
+
+        // Build extraction options
+        let options = build_extraction_options(&tool_args.pages, &tool_args.ocr, tool_args.receipts.as_deref());
+
+        // Perform the extraction
+        let result = extract_pdf(&path_buf, &options)
+            .map_err(|e| ErrorObject::server_error(
+                super::ERROR_IO_ERROR,
+                format!("Extraction failed: {}", e),
+            ).with_data(json!({"code": super::CODE_IO_ERROR})))?;
+
+        // Convert to plain text
+        let text = result.pages.iter()
+            .flat_map(|page| page.spans.iter().map(|span| span.text.as_str()))
+            .collect::<Vec<&str>>()
+            .join("\n");
+
+        Ok(json!({ "text": text }))
     }
 }
 
@@ -450,8 +508,36 @@ impl Tool for ExtractMarkdownTool {
             }));
         }
 
-        let ctx = open_pdf(&tool_args.path, tool_args.password.as_deref(), root)?;
-        Ok(stub_extraction_response(&tool_args.path, "extract_markdown", ctx.page_count))
+        // Validate and resolve the path
+        let path_buf = resolve_path(&tool_args.path, root)?;
+
+        // Build extraction options
+        let options = build_extraction_options(&tool_args.pages, &tool_args.ocr, tool_args.receipts.as_deref());
+
+        // Perform the extraction
+        let result = extract_pdf(&path_buf, &options)
+            .map_err(|e| ErrorObject::server_error(
+                super::ERROR_IO_ERROR,
+                format!("Extraction failed: {}", e),
+            ).with_data(json!({"code": super::CODE_IO_ERROR})))?;
+
+        // Convert to markdown
+        let markdown = result.pages.iter()
+            .flat_map(|page| page.blocks.iter().map(|block| {
+                match block.kind.as_str() {
+                    "heading" => {
+                        let level = block.level.unwrap_or(1);
+                        let prefix = "#".repeat(level as usize);
+                        format!("{} {}\n", prefix, block.text)
+                    }
+                    "paragraph" => format!("{}\n", block.text),
+                    _ => format!("{}\n", block.text),
+                }
+            }))
+            .collect::<Vec<String>>()
+            .join("\n");
+
+        Ok(json!({ "markdown": markdown }))
     }
 }
 

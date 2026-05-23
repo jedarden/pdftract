@@ -26,6 +26,7 @@ ttf-parser = "0.24"
 [features]
 default = ["serde"]
 serde = ["dep:serde", "dep:serde_json"]
+receipts = []  # Enable visual citation receipts (SVG clip generation)
 proptest = []
 fuzzing = []  # Enable cfg(fuzzing) for fuzz harnesses
 
