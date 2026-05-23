@@ -1503,6 +1503,7 @@ dependencies = [
  "thiserror 1.0.69",
  "ttf-parser",
  "unicode-normalization",
+ "zstd",
 ]
 
 [[package]]
@@ -1511,6 +1512,7 @@ version = "0.1.0"
 dependencies = [
  "pdftract-core",
  "pyo3",
+ "serde_json",
 ]
 
 [[package]]

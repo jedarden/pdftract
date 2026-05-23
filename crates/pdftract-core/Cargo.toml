@@ -22,6 +22,7 @@ thiserror = { workspace = true }
 memchr = { workspace = true }
 unicode-normalization = { workspace = true }
 ttf-parser = "0.24"
+zstd = "0.13"
 
 [features]
 default = ["serde"]
