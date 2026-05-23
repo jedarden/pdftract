@@ -1968,6 +1968,7 @@ fn decode_stream_impl(
 mod integration_tests {
     use super::*;
     use indexmap::IndexMap;
+    use secrecy::ExposeSecret;
 
     #[test]
     fn test_extraction_options_default() {
@@ -2409,6 +2410,7 @@ mod integration_tests {
 mod predictor_tests {
     use super::*;
     use indexmap::IndexMap;
+    use secrecy::ExposeSecret;
 
     #[test]
     fn test_predictor_params_default() {
@@ -2868,7 +2870,7 @@ mod predictor_tests {
         assert_eq!(opts.max_decompress_bytes, 536870912);
         assert!(opts.password.is_some());
         // Verify we can access the secret value
-        assert_eq!(opts.password.as_ref().map(|p| p.expose_secret().as_str()), Some("test123"));
+        assert_eq!(opts.password.as_ref().map(|p| p.expose_secret().as_ref()), Some("test123"));
 
         // Test deserialization without password
         let json_no_pwd = r#"{"max_decompress_bytes": 1073741824}"#;
