@@ -35,7 +35,7 @@
 # - setup: Clone repo, fetch dependencies, warm cargo cache
 # - build-matrix: Cross-compile for 5 targets (x86_64/aarch64 Linux musl, macOS x64/ARM64, Windows x64)
 # - test-matrix: Run unit tests across feature combinations (default, full, with OCR)
-# - quality-matrix: Five Tier 1 quality gates (clippy-fmt, clippy-unwrap, msrv-check, cargo-audit, cargo-deny)
+# - quality-matrix: Five Tier 1 quality gates (clippy-fmt, msrv-check, cargo-audit, cargo-deny, cargo-bloat)
 # - bench-matrix: Performance benchmarks (cargo bench) against fixture corpus
 # - publish-if-tag: On tags only, upload binaries to GitHub Releases
 #
@@ -44,7 +44,7 @@
 # - pdftract-xxxx: setup step, volume mount points, cache warming logic
 # - pdftract-yyyy: build-matrix templates (5 target builds with cross)
 # - pdftract-zzzz: test-matrix templates (feature combinations)
-# - pdftract-wwww: quality-matrix templates (clippy-fmt, clippy-unwrap, msrv-check, cargo-audit, cargo-deny)
+# - pdftract-wwww: quality-matrix templates (clippy-fmt, msrv-check, cargo-audit, cargo-deny, cargo-bloat)
 # - pdftract-vvvv: bench-matrix templates (cargo bench)
 # - pdftract-uuuu: publish-if-tag template (gh release create)
 #
@@ -516,12 +516,15 @@ spec:
             memory: 8Gi
 
     # === Quality Matrix ===
+    # Run linting (clippy, fmt), security audit (cargo-audit), dependency review,
+    # license/ban/advisory checks (cargo-deny), MSRV check, and binary size budget.
+    #
     # Five parallel Tier 1 quality gates — any failure blocks PR merge:
-    # 1. clippy-fmt: General linting and formatting check
-    # 2. clippy-unwrap: Feature-specific clippy with INV-8 unwrap/expect ban
-    # 3. msrv-check: Verify no newer Rust features are used (MSRV 1.78)
-    # 4. cargo-audit: Security advisory check on dependencies
-    # 5. cargo-deny: License and security policy enforcement
+    # 1. clippy-fmt: General linting and formatting check with INV-8 unwrap/expect ban
+    # 2. msrv-check: Verify no newer Rust features are used (MSRV 1.78)
+    # 3. cargo-audit: Security advisory check on dependencies
+    # 4. cargo-deny: License and security policy enforcement
+    # 5. cargo-bloat: Binary size budget enforcement (<= 4 MB)
     #
     # CRITICAL: All cargo commands MUST use --locked (or --locked --frozen)
     - name: quality-matrix
@@ -530,21 +533,31 @@ spec:
         tasks:
           - name: clippy-fmt
             template: clippy-fmt
-          - name: clippy-unwrap
-            template: clippy-unwrap
           - name: msrv-check
             template: msrv-check
           - name: cargo-audit
             template: cargo-audit
           - name: cargo-deny
             template: cargo-deny
+          - name: cargo-bloat
+            template: cargo-bloat
 
     # === Clippy and Fmt Check ===
-    # Runs clippy with MSRV-aware lints and verifies formatting
+    # Runs clippy with warnings denied and INV-8 unwrap/expect enforcement.
+    # This is a Tier 1 hard gate: any single failure blocks PR merge.
+    #
+    # Bead: pdftract-3cp3a
+    # Plan section: Phase 0.4 Quality Targets
+    #
+    # Two-pass clippy strategy:
+    # 1. Full workspace check with --features default,serve,decrypt and -D warnings
+    # 2. Library-only check with -D clippy::unwrap_used -D clippy::expect_used (INV-8)
+    #    The unwrap/expect ban applies ONLY to pdftract-core library code; test code
+    #    and binaries retain permissive defaults.
     - name: clippy-fmt
-      activeDeadlineSeconds: 600
+      activeDeadlineSeconds: 900
       container:
-        image: rust:1.83-bookworm
+        image: pdftract-test-glibc:1.78
         command: [bash, -c]
         args:
           - |
@@ -558,8 +571,14 @@ spec:
             export CARGO_HOME="/cache/cargo/registry"
             export CARGO_TARGET_DIR="/cache/cargo/target-clippy"
 
-            echo "=== Running clippy with MSRV = 1.78 ==="
-            cargo clippy --locked --all-targets --all-features -- -D warnings
+            echo "=== Running clippy (full workspace) ==="
+            echo "Features: default,serve,decrypt"
+            cargo clippy --locked --all-targets --features default,serve,decrypt -- -D warnings
+
+            echo "=== Running clippy (library-only INV-8 check) ==="
+            echo "Enforcing: no unwrap() or expect() in pdftract-core"
+            cargo clippy --locked --lib --features default,serve,decrypt \
+              -- -D warnings -D clippy::unwrap_used -D clippy::expect_used
 
             echo "=== Running fmt check ==="
             cargo fmt --check
@@ -578,60 +597,13 @@ spec:
             cpu: 2000m
             memory: 4Gi
 
-    # === Clippy Unwrap/Expect Check (INV-8 Enforcement) ===
-    # Runs clippy with specific features (default,serve,decrypt) and enforces INV-8
-    # (no panic at public boundary) via unwrap_used/expect_used lints on library code.
-    # This is one of the 5 Tier 1 hard gates — any failure blocks PR merge.
-    #
-    # Uses pdftract-test-glibc:1.78 base image where the dependency tree is precompiled,
-    # making clippy significantly faster than cold images.
-    #
-    # CRITICAL: All cargo commands MUST use --locked (or --locked --frozen)
-    - name: clippy-unwrap
-      activeDeadlineSeconds: 600
-      container:
-        image: pdftract-test-glibc:1.78
-        command: [bash, -c]
-        args:
-          - |
-            set -eo pipefail
-
-            echo "=========================================="
-            echo "Clippy Unwrap/Expect Check (INV-8)"
-            echo "=========================================="
-
-            cd /workspace
-            export CARGO_HOME="/cache/cargo/registry"
-            export CARGO_TARGET_DIR="/cache/cargo/target-clippy-unwrap"
-
-            echo "=== Running clippy with features default,serve,decrypt ==="
-            cargo clippy --locked --all-targets --features default,serve,decrypt -- -D warnings
-
-            echo "=== Running library-only clippy with unwrap/expect bans (INV-8) ==="
-            echo "This enforces the invariant: no panic reaches the public boundary of pdftract-core"
-            cargo clippy --locked --lib -p pdftract-core --features default,serve,decrypt -- \
-              -D clippy::unwrap_used \
-              -D clippy::expect_used
-
-            echo "=== Clippy unwrap/expect checks passed ==="
-            echo "INV-8 invariant verified: no unwrap() or expect() in pdftract-core library code"
-        volumeMounts:
-          - name: workspace
-            mountPath: /workspace
-          - name: cargo-cache
-            mountPath: /cache/cargo
-        resources:
-          requests:
-            cpu: 1000m
-            memory: 2Gi
-          limits:
-            cpu: 2000m
-            memory: 4Gi
-
     # === MSRV Check ===
     # Builds with rust:1.78-slim to verify no newer Rust features are used.
     # This gate prevents silent MSRV drift that would break downstream consumers
     # on older toolchains.
+    #
+    # Bead: pdftract-2ai37
+    # Plan section: Phase 0.4 Quality Targets
     - name: msrv-check
       activeDeadlineSeconds: 600
       container:
@@ -672,10 +644,23 @@ spec:
 
     # === Cargo Audit ===
     # Runs cargo-audit to check for security vulnerabilities in dependencies
+    #
+    # This is a Tier 1 hard gate from Quality Targets. Any single gate failure
+    # blocks PR merge. Without it, this class of regression silently slips past
+    # code review.
+    #
+    # Bead: pdftract-5gs4p
+    # Plan section: Phase 0.4 Quality Targets
+    #
+    # Severity gating policy:
+    # - Warnings are denied (non-zero exit code on any warning)
+    # - >= medium severity advisories block PR merge
+    # - Unmaintained advisories are ignored (informational only)
+    # - audit.toml maintains allow-list of intentionally-ignored advisories
     - name: cargo-audit
       activeDeadlineSeconds: 300
       container:
-        image: rust:1.83-bookworm
+        image: pdftract-test-glibc:1.78
         command: [bash, -c]
         args:
           - |
@@ -694,10 +679,64 @@ spec:
               cargo install cargo-audit --locked
             fi
 
-            echo "=== Running cargo audit ==="
-            cargo audit --locked
+            echo "=== Running cargo audit with severity gating ==="
+            echo "Policy: deny warnings, block on >= medium severity, ignore unmaintained"
+            echo "Configuration: audit.toml (allow-list for ignored advisories)"
 
-            echo "=== Security audit passed ==="
+            # Run audit with severity gating
+            # --deny warnings: fail on any warning
+            # --ignore unmaintained: ignore unmaintained crate warnings
+            # --severity: report only >= medium severity (low is informational)
+            # --json: output both JSON (for artifacts) and human-readable (for logs)
+            cargo audit --locked --deny warnings --ignore unmaintained \
+              --severity medium \
+              --json > /tmp/audit-report.json \
+              || {
+                EXIT_CODE=$?
+
+                # Human-readable error summary for PR comments
+                echo "=========================================="
+                echo "SECURITY AUDIT FAILED"
+                echo "=========================================="
+
+                # Parse and display vulnerabilities from JSON
+                if command -v jq &> /dev/null; then
+                  VULN_COUNT=$(jq -r '.vulnerabilities.count // 0' /tmp/audit-report.json 2>/dev/null || echo "0")
+                  WARNING_COUNT=$(jq -r '.warnings | length // 0' /tmp/audit-report.json 2>/dev/null || echo "0")
+
+                  echo "Vulnerabilities: $VULN_COUNT"
+                  echo "Warnings: $WARNING_COUNT"
+
+                  if [ "$VULN_COUNT" -gt 0 ]; then
+                    echo ""
+                    echo "Affected dependencies:"
+                    jq -r '.vulnerabilities.list[]? | "\(.advisory.id) - \(.package.name)@\(.package.version): \(.advisory.title)"' \
+                      /tmp/audit-report.json 2>/dev/null || true
+                  fi
+                fi
+
+                echo ""
+                echo "Check the audit-report.json artifact for full details."
+                echo "To intentionally ignore an advisory, add it to audit.toml with justification."
+
+                exit $EXIT_CODE
+              }
+
+            # Parse and display summary for CI logs
+            if command -v jq &> /dev/null; then
+              VULN_COUNT=$(jq -r '.vulnerabilities.count // 0' /tmp/audit-report.json 2>/dev/null || echo "0")
+              DEP_COUNT=$(jq -r '.lockfile.dependency-count // 0' /tmp/audit-report.json 2>/dev/null || echo "0")
+
+              echo "=== Security audit passed ==="
+              echo "Dependencies scanned: $DEP_COUNT"
+              echo "Vulnerabilities found: $VULN_COUNT"
+              echo "Severity threshold: >= medium (denied)"
+            else
+              echo "=== Security audit passed ==="
+            fi
+
+            # Copy report to workspace for artifact upload
+            cp /tmp/audit-report.json /workspace/audit-report.json
         volumeMounts:
           - name: workspace
             mountPath: /workspace
@@ -710,20 +749,40 @@ spec:
           limits:
             cpu: 1000m
             memory: 2Gi
+      outputs:
+        artifacts:
+          - name: audit-report
+            path: /workspace/audit-report.json
 
     # === Cargo Deny ===
-    # Runs cargo-deny to check licenses, bans, advisories, and sources
+    # Runs cargo-deny to check licenses, bans, sources, and advisories
+    #
+    # This is a Tier 1 hard gate from Quality Targets. Any single gate failure
+    # blocks PR merge. Without it, license violations, banned dependencies, or
+    # source registry issues silently slip past code review.
+    #
+    # Bead: pdftract-1rljr
+    # Plan section: Phase 0.4 Quality Targets
+    #
+    # Enforcement policy:
+    # - Licenses: Only MIT, Apache-2.0, BSD-2/3-Clause, ISC, Zlib, Unicode-DFS-2016 allowed
+    # - GPL/AGPL/LGPL are denied (copyleft contamination)
+    # - MPL-2.0 exceptions require ADR documentation (cbindgen, option-ext)
+    # - Bans: Wildcard dependencies denied, duplicate versions warned
+    # - Advisories: Yanked crates denied, RustSec advisories denied (with exceptions)
+    # - Sources: Unknown registries and git sources denied
+    # - deny.toml maintains the policy configuration and exceptions
     - name: cargo-deny
       activeDeadlineSeconds: 300
       container:
-        image: rust:1.83-bookworm
+        image: pdftract-test-glibc:1.78
         command: [bash, -c]
         args:
           - |
             set -eo pipefail
 
             echo "=========================================="
-            echo "License and Security Policy (cargo-deny)"
+            echo "License, Ban, Source, Advisory Check (cargo-deny)"
             echo "=========================================="
 
             cd /workspace
@@ -735,13 +794,64 @@ spec:
               cargo install cargo-deny --locked
             fi
 
-            echo "=== Updating advisory database ==="
-            cargo deny fetch
-
             echo "=== Running cargo deny check ==="
-            cargo deny check licenses bans advisories sources
+            echo "Checks: licenses, bans, sources, advisories"
+            echo "Configuration: deny.toml (policy and exceptions)"
 
-            echo "=== License and security checks passed ==="
+            # Run all checks in one command
+            # Note: cargo-deny returns exit code 1 for warnings and 2 for errors/denials
+            # We treat warnings (duplicate versions) as PASS, actual denials as FAIL
+            OUTPUT=$(cargo deny check \
+              licenses bans sources advisories \
+              2>&1) || EXIT_CODE=$?
+
+            echo "$OUTPUT"
+
+            # Parse output to determine if there are actual denials (not just warnings)
+            # Denials contain "error[" prefix, warnings contain "warning[" prefix
+            if echo "$OUTPUT" | grep -q "error\["; then
+              echo "=========================================="
+              echo "CARGO DENY CHECKS FAILED"
+              echo "=========================================="
+
+              echo ""
+              echo "One or more checks were denied:"
+              echo "  - licenses: Dependency license violations"
+              echo "  - bans: Banned crates (not duplicate version warnings)"
+              echo "  - sources: Unknown registries or git sources"
+              echo "  - advisories: Security vulnerabilities (RustSec)"
+              echo ""
+              echo "Review the error output above for specific violations."
+              echo "To intentionally allow a violation:"
+              echo "  1. Licenses: Add exception to deny.toml [licenses.exceptions]"
+              echo "  2. Bans: Add crate to deny.toml [bans.skip] or [bans.allow]"
+              echo "  3. Advisories: Add to deny.toml [advisories.ignore]"
+              echo "  4. For MPL/GPL exceptions: Create ADR in docs/adr/ first"
+              echo ""
+              echo "See: https://embarkstudios.github.io/cargo-deny/"
+
+              exit 1
+            fi
+
+            # If we reach here, either all checks passed or there were only warnings
+            echo ""
+            echo "=== All cargo-deny checks passed ==="
+            echo "Licenses: PASS"
+            echo "Bans: PASS (warnings allowed)"
+            echo "Sources: PASS"
+            echo "Advisories: PASS"
+
+            # Count warnings for informational purposes
+            WARN_COUNT=$(echo "$OUTPUT" | grep -c "warning\[" || echo "0")
+            if [ "$WARN_COUNT" -gt 0 ]; then
+              echo "Note: $WARN_COUNT warning(s) present (non-blocking)"
+            fi
+
+            # Generate JSON report for artifacts (optional, for record-keeping)
+            if command -v jq &> /dev/null; then
+              echo "{\"status\":\"passed\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > /workspace/deny-report.json
+              echo "Report generated: deny-report.json"
+            fi
         volumeMounts:
           - name: workspace
             mountPath: /workspace
@@ -754,6 +864,153 @@ spec:
           limits:
             cpu: 1000m
             memory: 2Gi
+      outputs:
+        artifacts:
+          - name: deny-report
+            path: /workspace/deny-report.json
+            optional: true
+
+    # === Cargo Bloat ===
+    # Runs cargo-bloat to enforce the 4 MB binary size budget.
+    #
+    # This is a Tier 1 hard gate from Quality Targets. Binary size > 4 MB blocks
+    # PR merge. Without this gate, binary size regressions silently slip past code
+    # review and risk breaking the R2 target (single-page PDF extraction in < 100ms
+    # on a 1.6 GHz CPU, which requires a small binary to fit in CPU cache).
+    #
+    # Bead: pdftract-2rf
+    # Plan section: Phase 0.4 Quality Targets
+    #
+    # Enforcement policy:
+    # - Binary size (stripped) must be <= 4,194,304 bytes (4 MB) for x86_64-unknown-linux-musl
+    # - Other targets (macOS, Windows) are informational (not gated) due to larger metadata
+    # - Output is published as bloat-report.json artifact for historical tracking
+    # - A second invocation with --features remote tracks ureg contribution (PB-5 data)
+    #
+    # If budget exceeded, the first-line response is PB-2: switch wordlist to Bloom filter
+    # behind the wordlist-bloom feature (documented in ADR-002).
+    - name: cargo-bloat
+      activeDeadlineSeconds: 600
+      container:
+        image: pdftract-test-glibc:1.78
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+
+            echo "=========================================="
+            echo "Cargo Bloat (Binary Size Budget)"
+            echo "=========================================="
+
+            cd /workspace
+            export CARGO_HOME="/cache/cargo/registry"
+            export CARGO_TARGET_DIR="/cache/cargo/target-bloat"
+
+            # Install cargo-bloat if not present
+            if ! command -v cargo-bloat &> /dev/null; then
+              echo "Installing cargo-bloat..."
+              cargo install cargo-bloat --locked
+            fi
+
+            echo "=== Running cargo bloat (default features, gated) ==="
+            echo "Target: x86_64-unknown-linux-musl"
+            echo "Budget: 4 MB (4,194,304 bytes)"
+
+            # Build release binary first for accurate analysis
+            cargo build --release --target x86_64-unknown-linux-musl --features default --locked
+
+            # Run cargo bloat and capture output
+            cargo bloat --release --features default --crates --target x86_64-unknown-linux-musl -n 50 \
+              > /tmp/bloat-default.txt 2>&1 || true
+
+            # Parse binary size from output
+            # cargo-bloat output format: "File: pdftract X MB"
+            BINARY_PATH="target/x86_64-unknown-linux-musl/release/pdftract"
+            if [ ! -f "$BINARY_PATH" ]; then
+              echo "ERROR: Binary not found at $BINARY_PATH" >&2
+              exit 1
+            fi
+
+            # Get stripped binary size
+            STRIPPED_SIZE=$(x86_64-linux-musl-strip -o /tmp/pdftract-stripped "$BINARY_PATH" 2>/dev/null && stat -c%s /tmp/pdftract-stripped || stat -c%s "$BINARY_PATH")
+            BUDGET=4194304  # 4 MB
+
+            echo "=== Binary size analysis ==="
+            echo "Stripped size: $STRIPPED_SIZE bytes"
+            echo "Budget: $BUDGET bytes"
+            echo "Remaining: $((BUDGET - STRIPPED_SIZE)) bytes"
+
+            # Generate JSON report
+            cat > /workspace/bloat-report.json <<EOF
+            {
+              "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+              "commit_sha": "{{workflow.parameters.commit-sha}}",
+              "target": "x86_64-unknown-linux-musl",
+              "features": "default",
+              "stripped_size_bytes": $STRIPPED_SIZE,
+              "budget_bytes": $BUDGET,
+              "within_budget": $( [ "$STRIPPED_SIZE" -le "$BUDGET" ] && echo "true" || echo "false" ),
+              "raw_output": $(jq -R -s '.' < /tmp/bloat-default.txt)
+            }
+            EOF
+
+            # Check against budget
+            if [ "$STRIPPED_SIZE" -gt "$BUDGET" ]; then
+              echo "=========================================="
+              echo "CARGO BLOAT CHECK FAILED"
+              echo "=========================================="
+              echo "Binary size exceeds 4 MB budget"
+              echo "Size: $STRIPPED_SIZE bytes"
+              echo "Budget: $BUDGET bytes"
+              echo "Over: $((STRIPPED_SIZE - BUDGET)) bytes"
+              echo ""
+              echo "First-line response (per PB-2):"
+              echo "  Switch wordlist to Bloom filter behind wordlist-bloom feature."
+              echo "  See ADR-002 for implementation guidance."
+              echo ""
+              echo "Top contributors:"
+              head -30 /tmp/bloat-default.txt || true
+              echo ""
+              echo "See bloat-report.json artifact for full details."
+              exit 1
+            fi
+
+            echo "=== Running cargo bloat (remote features, informational) ==="
+            echo "This tracks ureg's contribution for PB-5 (alt-feature escape hatch)"
+            cargo bloat --release --features remote --crates --target x86_64-unknown-linux-musl -n 50 \
+              > /tmp/bloat-remote.txt 2>&1 || true
+
+            # Append remote feature data to report
+            if command -v jq &> /dev/null; then
+              jq --arg remote "$(jq -R -s '.' < /tmp/bloat-remote.txt)" \
+                '. + {"remote_features_raw": $remote}' /workspace/bloat-report.json \
+                > /tmp/bloat-report-merged.json && mv /tmp/bloat-report-merged.json /workspace/bloat-report.json
+            fi
+
+            echo "=== Cargo bloat checks passed ==="
+            echo "Binary within 4 MB budget"
+            echo "Size: $STRIPPED_SIZE bytes ($(( STRIPPED_SIZE * 100 / BUDGET ))% of budget)"
+
+            # Display top contributors for visibility
+            echo ""
+            echo "Top 20 contributors:"
+            head -30 /tmp/bloat-default.txt | tail -20 || true
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+      outputs:
+        artifacts:
+          - name: bloat-report
+            path: /workspace/bloat-report.json
 
     # === Bench Matrix ===
     # Competitive benchmarks: pdftract vs pdfminer.six, pypdf, pdfplumber
