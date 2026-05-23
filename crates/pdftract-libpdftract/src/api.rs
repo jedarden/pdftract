@@ -20,7 +20,7 @@
 use libc::{c_char, c_void};
 use pdftract_core::extract::{extract_pdf, result_to_json};
 use pdftract_core::options::ExtractionOptions;
-use pdftract_core::document::{parse_pdf_file, compute_pdf_fingerprint};
+use pdftract_core::document::{parse_pdf_file, compute_pdf_fingerprint, PdfExtractor};
 use pdftract_core::receipts::{Receipt, verifier::{verify_receipt, SpanData, VerificationResult, exit_code}};
 use std::ffi::{CString, CStr};
 use std::panic::catch_unwind;
@@ -284,15 +284,30 @@ pub extern "C" fn pdftract_extract_markdown(
 }
 
 /// Stream state for iterative page extraction.
+///
+/// This struct holds a PdfExtractor and extracts pages on-demand,
+/// ensuring that we never materialize the entire document in memory.
 struct StreamState {
-    pages: Vec<serde_json::Value>,
+    /// The PDF extractor for lazy page iteration
+    extractor: PdfExtractor,
+    /// Lazy page iterator (created on first call to next())
+    page_iter: Option<pdftract_core::document::PageIter<'static>>,
+    /// Current page index (for tracking progress)
     current_index: usize,
+    /// Extraction options (cached for reuse)
+    options: ExtractionOptions,
 }
 
 /// Open a streaming extraction session.
 ///
 /// Returns an opaque handle that can be used with pdftract_stream_next()
 /// to iterate through pages one at a time. When done, call pdftract_stream_close().
+///
+/// # Memory Efficiency
+///
+/// This function does NOT materialize all pages. It creates a PdfExtractor
+/// that will extract each page on-demand when pdftract_stream_next() is called.
+/// This ensures memory usage stays bounded regardless of document size.
 ///
 /// # Arguments
 ///
@@ -336,29 +351,22 @@ pub extern "C" fn pdftract_extract_stream_open(
         };
 
         let pdf_path = Path::new(&source_path);
-        let extraction_result = match extract_pdf(pdf_path, &options) {
-            Ok(result) => result,
+
+        // Use PdfExtractor for lazy page iteration
+        // This does NOT materialize all pages upfront
+        let extractor = match PdfExtractor::open(pdf_path) {
+            Ok(ex) => ex,
             Err(e) => {
                 set_last_error(anyhow_to_json_error(e));
                 return None;
             }
         };
 
-        // Convert all pages to JSON upfront
-        let pages: Vec<serde_json::Value> = extraction_result.pages
-            .iter()
-            .map(|page| {
-                serde_json::json!({
-                    "index": page.index,
-                    "spans": page.spans,
-                    "blocks": page.blocks,
-                })
-            })
-            .collect();
-
         Some(StreamState {
-            pages,
+            extractor,
+            page_iter: None,
             current_index: 0,
+            options,
         })
     });
 
@@ -373,6 +381,13 @@ pub extern "C" fn pdftract_extract_stream_open(
 }
 
 /// Get the next page from a streaming extraction session.
+///
+/// # Memory Efficiency
+///
+/// This function extracts one page at a time on-demand. The page's
+/// content streams are decoded, the result is serialized to JSON,
+/// and then all page data is dropped before returning. This ensures
+/// memory usage stays bounded.
 ///
 /// # Arguments
 ///
@@ -398,17 +413,45 @@ pub extern "C" fn pdftract_stream_next(handle: *mut c_void) -> *mut c_char {
             // Get a mutable reference to the state
             let state = &mut *(handle as *mut StreamState);
 
-            if state.current_index >= state.pages.len() {
-                // Stream ended - return null pointer
-                return None;
+            // Initialize the lazy iterator on first call
+            if state.page_iter.is_none() {
+                state.page_iter = Some(state.extractor.pages());
             }
 
-            // Clone the page JSON (serde_json::Value is cheap to clone)
-            let page_json = state.pages[state.current_index].clone();
+            // Get the next page from the lazy iterator
+            // This walks the page tree depth-first, materializing only the current path
+            let iter = state.page_iter.as_mut()?;
+            let page_extraction = match iter.next() {
+                Some(Ok(page)) => page,
+                Some(Err(e)) => {
+                    // Return an error page instead of failing
+                    let error_json = serde_json::json!({
+                        "index": state.current_index,
+                        "error": e.to_string(),
+                        "spans": [],
+                        "blocks": [],
+                    });
+                    state.current_index += 1;
+                    return Some(CString::new(serde_json::to_string(&error_json).unwrap()).unwrap().into_raw());
+                }
+                None => {
+                    // Stream ended - return null pointer
+                    return None;
+                }
+            };
+
+            // Convert to JSON
+            let page_json = serde_json::json!({
+                "index": page_extraction.index,
+                "spans": page_extraction.spans,
+                "blocks": page_extraction.blocks,
+            });
 
             // Increment the index for the next call
             state.current_index += 1;
 
+            // Serialize and return
+            // The page_json is dropped after this call, freeing all page data
             Some(CString::new(serde_json::to_string(&page_json).unwrap()).unwrap().into_raw())
         }
     });

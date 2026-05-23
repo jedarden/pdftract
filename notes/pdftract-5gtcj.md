@@ -12,25 +12,16 @@ Implemented the musl test leg in pdftract-ci's test-matrix DAG branch. The test-
 
 ## Changes Made
 
-### 1. `.ci/argo-workflows/pdftract-ci.yaml`
+### 1. `/home/coding/declarative-config/k8s/iad-ci/argo-workflows/pdftract-ci.yaml`
 - Converted `test-matrix` from container template to DAG template
 - Added `test-glibc` template: Full test suite on Debian-based Rust image with all features including OCR
 - Added `test-musl` template: Production binary feature set tests on musl using cross
+- Added `test-matrix-exit` template: Exit handler for DAG completion reporting
 - Musl leg configuration:
-  - Image: `ghcr.io/cross-rs/x86_64-unknown-linux-musl:main`
+  - Image: `rustembedded/cross:x86_64-unknown-linux-musl` (per task spec, matches Phase 0.2 build-matrix musl leg)
   - Test command: `cross test --release --target x86_64-unknown-linux-musl --features default,serve,decrypt -- --test-threads=4`
   - Features: default,serve,decrypt (OMITS ocr)
   - Output: JUnit XML artifact as `test-results-musl.xml`
-
-### 2. `.nextest.toml`
-- Updated `profile.ci` with:
-  - `store-success-output = true` for JUnit XML output support
-  - `slow-timeout = "60s"` for slow test timeout
-  - `retries = 1` for retry on known-flaky tests
-
-### 3. `Cross.toml` (new file)
-- Added cross configuration for musl target
-- Configured to use `ghcr.io/cross-rs/x86_64-unknown-linux-musl:main` image
 
 ## Acceptance Criteria
 
@@ -78,19 +69,12 @@ Implemented the musl test leg in pdftract-ci's test-matrix DAG branch. The test-
 ## Git Diff
 
 ```
-.ci/argo-workflows/pdftract-ci.yaml:
+/home/coding/declarative-config/k8s/iad-ci/argo-workflows/pdftract-ci.yaml:
   - Converted test-matrix to DAG with test-glibc and test-musl branches
   - Added test-glibc template (full suite including OCR)
   - Added test-musl template (production feature set, no OCR)
-  - Added artifact outputs for JUnit XML
-
-.nextest.toml:
-  - Added JUnit XML output settings to profile.ci
-  - Added slow-timeout = 60s
-  - Added retries = 1
-
-Cross.toml (new):
-  - Added cross configuration for musl target
+  - Added test-matrix-exit template (DAG exit handler)
+  - Added artifact outputs for JUnit XML (test-results-glibc.xml, test-results-musl.xml)
 ```
 
 ## Testing
