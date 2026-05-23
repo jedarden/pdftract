@@ -11,9 +11,12 @@ pub mod document;
 pub mod extract;
 pub mod fingerprint;
 pub mod font;
+pub mod graphics_state;
 pub mod options;
 pub mod parser;
 pub mod receipts;
+#[cfg(feature = "ocr")]
+pub mod render;
 pub mod schema;
 pub mod semaphore;
 

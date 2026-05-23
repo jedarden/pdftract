@@ -305,6 +305,14 @@ pub enum DiagCode {
     /// Phase origin: 1.7
     StructInvalidGeometry,
 
+    /// Invalid object type (expected type not found)
+    ///
+    /// Emitted when an object is not the expected type (e.g., expecting a stream
+    /// but finding a dictionary). The object is treated as null.
+    ///
+    /// Phase origin: 5.2.1
+    StructInvalidType,
+
     /// Hybrid xref conflict: traditional table and stream disagree on object state
     ///
     /// Emitted when merging a hybrid file's xref sections and the traditional
@@ -580,6 +588,31 @@ pub enum DiagCode {
     /// Phase origin: 4.7
     OcrBrokenVectorUnavailable,
 
+    /// Image soft mask not supported in direct compositing path
+    ///
+    /// Emitted when an image XObject has a /SMask entry. Direct compositing
+    /// doesn't support soft masks; use `full-render` feature for proper rendering.
+    /// The masked image is skipped.
+    ///
+    /// Phase origin: 5.2.1
+    ImgSoftmaskUnsupported,
+
+    /// Image format not supported
+    ///
+    /// Emitted when an image XObject uses an unsupported format or bits-per-component
+    /// value. The image is skipped.
+    ///
+    /// Phase origin: 5.2.1
+    ImgUnsupportedFormat,
+
+    /// Stream data truncated
+    ///
+    /// Emitted when a stream has less data than expected based on its declared
+    /// dimensions and color space. Partial data is used.
+    ///
+    /// Phase origin: 1.5 / 5.2.1
+    StreamTruncated,
+
     // === REMOTE_* codes ===
 
     /// HTTP fetch interrupted or failed
@@ -721,6 +754,7 @@ impl DiagCode {
             | DiagCode::StructIntegerOverflow
             | DiagCode::StructInvalidObjstm
             | DiagCode::StructInvalidGeometry
+            | DiagCode::StructInvalidType
             | DiagCode::StructInvalidUtf16
             | DiagCode::StructUnresolvedDestination
             | DiagCode::StructNonGotoOutline
@@ -747,7 +781,8 @@ impl DiagCode {
             DiagCode::StreamDecodeError
             | DiagCode::StreamBomb
             | DiagCode::StreamUnknownFilter
-            | DiagCode::StreamInvalidParams => "STREAM",
+            | DiagCode::StreamInvalidParams
+            | DiagCode::StreamTruncated => "STREAM",
 
             // ENCRYPTION_*
             DiagCode::EncryptionUnsupported | DiagCode::EncryptionWrongPassword => "ENCRYPTION",
@@ -771,6 +806,10 @@ impl DiagCode {
             | DiagCode::OcrCcittUnsupported
             | DiagCode::OcrTesseractFailed
             | DiagCode::OcrBrokenVectorUnavailable => "OCR",
+
+            // IMG_*
+            DiagCode::ImgSoftmaskUnsupported
+            | DiagCode::ImgUnsupportedFormat => "IMG",
 
             // REMOTE_*
             DiagCode::RemoteFetchInterrupted
@@ -817,6 +856,7 @@ impl DiagCode {
             DiagCode::StructIntegerOverflow => "STRUCT_INTEGER_OVERFLOW",
             DiagCode::StructInvalidObjstm => "STRUCT_INVALID_OBJSTM",
             DiagCode::StructInvalidGeometry => "STRUCT_INVALID_GEOMETRY",
+            DiagCode::StructInvalidType => "STRUCT_INVALID_TYPE",
             DiagCode::StructInvalidUtf16 => "STRUCT_INVALID_UTF16",
             DiagCode::StructUnresolvedDestination => "STRUCT_UNRESOLVED_DESTINATION",
             DiagCode::StructNonGotoOutline => "STRUCT_NON_GOTO_OUTLINE",
@@ -854,6 +894,9 @@ impl DiagCode {
             DiagCode::OcrCcittUnsupported => "OCR_CCITT_UNSUPPORTED",
             DiagCode::OcrTesseractFailed => "OCR_TESSERACT_FAILED",
             DiagCode::OcrBrokenVectorUnavailable => "OCR_BROKENVECTOR_UNAVAILABLE",
+            DiagCode::ImgSoftmaskUnsupported => "IMG_SOFTMASK_UNSUPPORTED",
+            DiagCode::ImgUnsupportedFormat => "IMG_UNSUPPORTED_FORMAT",
+            DiagCode::StreamTruncated => "STREAM_TRUNCATED",
             DiagCode::RemoteFetchInterrupted => "REMOTE_FETCH_INTERRUPTED",
             DiagCode::RemoteNoRangeSupport => "REMOTE_NO_RANGE_SUPPORT",
             DiagCode::RemoteTlsFailed => "REMOTE_TLS_FAILED",
@@ -894,6 +937,7 @@ impl DiagCode {
             | DiagCode::StructIntegerOverflow
             | DiagCode::StructInvalidObjstm
             | DiagCode::StructInvalidGeometry
+            | DiagCode::StructInvalidType
             | DiagCode::StructInvalidUtf16
             | DiagCode::StructUnresolvedDestination
             | DiagCode::StructNonGotoOutline
@@ -926,6 +970,9 @@ impl DiagCode {
             | DiagCode::OcrCcittUnsupported
             | DiagCode::OcrTesseractFailed
             | DiagCode::OcrBrokenVectorUnavailable
+            | DiagCode::ImgSoftmaskUnsupported
+            | DiagCode::ImgUnsupportedFormat
+            | DiagCode::StreamTruncated
             | DiagCode::RemoteNoRangeSupport
             | DiagCode::GstateStackOverflow
             | DiagCode::GstateStackUnderflow
@@ -1402,6 +1449,31 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         recoverable: true,
         phase: "4.7",
         suggested_action: "Build with --features ocr to enable OCR recovery on broken-vector pages",
+    },
+    // === IMG_* codes ===
+    DiagInfo {
+        code: DiagCode::ImgSoftmaskUnsupported,
+        category: "IMG",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "5.2.1",
+        suggested_action: "Soft-masked images not supported in direct compositing; use --features full-render for proper rendering",
+    },
+    DiagInfo {
+        code: DiagCode::ImgUnsupportedFormat,
+        category: "IMG",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "5.2.1",
+        suggested_action: "Image format or bits-per-component not supported; image is skipped",
+    },
+    DiagInfo {
+        code: DiagCode::StreamTruncated,
+        category: "STREAM",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "1.5 / 5.2.1",
+        suggested_action: "Stream has less data than expected; partial data is used",
     },
     // === REMOTE_* codes ===
     DiagInfo {
