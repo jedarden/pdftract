@@ -191,10 +191,24 @@ spec:
             template: regression-corpus
             dependencies: [build-matrix]
 
+          - name: generate-provenance
+            template: generate-provenance
+            dependencies: [build-matrix]
+            when: "{{workflow.parameters.is-tag}} == true"
+
+          - name: verify-provenance
+            template: verify-provenance
+            dependencies: [generate-provenance]
+            when: "{{workflow.parameters.is-tag}} == true"
+
           - name: publish-if-tag
             template: publish-if-tag
-            dependencies: [build-matrix, test-matrix, quality-matrix, bench-matrix, regression-corpus]
+            dependencies: [build-matrix, test-matrix, quality-matrix, bench-matrix, regression-corpus, verify-provenance]
             when: "{{workflow.parameters.is-tag}} == true"
+            arguments:
+              artifacts:
+                - name: provenance
+                  from: "{{tasks.generate-provenance.outputs.artifacts.provenance}}"
 
     # === Exit Handler ===
     # Reports workflow status (success/failure) with details
@@ -1112,6 +1126,9 @@ spec:
           - name: pdftract-windows-x86_64-gnu
             from: "{{tasks.build-matrix.tasks.build-windows-x86_64-gnu.outputs.artifacts.pdftract-binary}}"
             path: /artifacts/pdftract-x86_64-pc-windows-gnu.exe
+          - name: provenance
+            from: "{{tasks.generate-provenance.outputs.artifacts.provenance}}"
+            path: /tmp/multiple.intoto.jsonl
       activeDeadlineSeconds: 600
       container:
         image: cgr.dev/chainguard/gh:latest
@@ -1195,9 +1212,10 @@ spec:
 
             # Create or update release
             echo "=== Creating/updating GitHub release ==="
+            PROVENANCE_FILE="/tmp/multiple.intoto.jsonl"
             if gh release view "$TAG" --repo "$REPO" &>/dev/null; then
               echo "Release $TAG already exists, updating assets"
-              gh release upload "$TAG" "$SHA256SUMS_FILE" ${EXPECTED_ARTIFACTS[@]/#/$ARTIFACTS_DIR\/} --repo "$REPO" --clobber
+              gh release upload "$TAG" "$SHA256SUMS_FILE" "$PROVENANCE_FILE" ${EXPECTED_ARTIFACTS[@]/#/$ARTIFACTS_DIR\/} --repo "$REPO" --clobber
             else
               echo "Creating new release $TAG"
               gh release create "$TAG" \
@@ -1208,7 +1226,7 @@ spec:
 
               # Upload assets to the newly created release
               echo "=== Uploading release assets ==="
-              gh release upload "$TAG" "$SHA256SUMS_FILE" ${EXPECTED_ARTIFACTS[@]/#/$ARTIFACTS_DIR\/} --repo "$REPO"
+              gh release upload "$TAG" "$SHA256SUMS_FILE" "$PROVENANCE_FILE" ${EXPECTED_ARTIFACTS[@]/#/$ARTIFACTS_DIR\/} --repo "$REPO"
             fi
 
             # Verify release
@@ -1316,11 +1334,13 @@ spec:
               echo "Cargo.lock: $CARGO_LOCK_HASH"
             fi
 
-            # Set reproducible timestamp
-            BUILD_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-            if [ -n "$SOURCE_DATE_EPOCH" ]; then
-              BUILD_TIMESTAMP=$(date -u -d "@$SOURCE_DATE_EPOCH" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "$BUILD_TIMESTAMP")
-            fi
+            # Set reproducible timestamp from git commit (SOURCE_DATE_EPOCH)
+            # This ensures two runs against the same tag produce identical provenance
+            cd /workspace
+            SOURCE_DATE_EPOCH=$(git log -1 --format=%ct "$COMMIT_SHA" 2>/dev/null || echo 0)
+            BUILD_TIMESTAMP=$(date -u -d "@$SOURCE_DATE_EPOCH" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u +"%Y-%m-%dT%H:%M:%SZ")
+            echo "SOURCE_DATE_EPOCH: $SOURCE_DATE_EPOCH"
+            echo "BUILD_TIMESTAMP: $BUILD_TIMESTAMP"
 
             # Build invocation ID (reproducible from commit + tag)
             INVOCATION_ID="sha256-${COMMIT_SHA}-${TAG}"
