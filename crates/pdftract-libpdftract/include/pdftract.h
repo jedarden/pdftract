@@ -15,6 +15,22 @@ extern "C" {
 #endif // __cplusplus
 
 /**
+ * Get the ABI version of the library.
+ *
+ * # Returns
+ *
+ * A 32-bit unsigned integer encoding the ABI version.
+ * Format: MAJOR << 16 | MINOR << 8 | PATCH
+ *
+ * For version 0.1.0, this returns 0x00000100 (256 decimal).
+ * For version 1.2.3, this would return 0x010203 (66051 decimal).
+ *
+ * C callers can use this to verify the loaded library matches their
+ * compiled header's expectations.
+ */
+uint32_t pdftract_abi_version(void);
+
+/**
  * Classify a PDF file by type.
  *
  * # Arguments
@@ -153,6 +169,23 @@ char *pdftract_get_metadata(const char *source,
 char *pdftract_hash(const char *source);
 
 /**
+ * Get the last error message for the current thread.
+ *
+ * # Returns
+ *
+ * A pointer to a null-terminated string containing the last error message,
+ * or NULL if no error has been set. The caller MUST NOT free this string.
+ * The string remains valid until the next API call on this thread.
+ *
+ * # Note
+ *
+ * This function returns a pointer to thread-local storage that is invalidated
+ * by the next API call on the same thread. If you need to retain the error
+ * message, make a copy of it immediately.
+ */
+const char *pdftract_last_error(void);
+
+/**
  * Search for text patterns in a PDF file.
  *
  * # Arguments
@@ -197,6 +230,28 @@ void pdftract_stream_close(void *handle);
  * pdftract_stream_close() when done.
  */
 char *pdftract_stream_next(void *handle);
+
+/**
+ * Verify a visual citation receipt against a PDF file.
+ *
+ * # Arguments
+ *
+ * * `path` - Path to the PDF file (null-terminated UTF-8 string)
+ * * `receipt_json` - JSON string containing the receipt to verify
+ *
+ * # Returns
+ *
+ * An int32_t exit code:
+ * - 0: receipt verifies successfully
+ * - 1: extraction failed (PDF unreadable, encrypted, etc.)
+ * - 10: pdf_fingerprint mismatch
+ * - 11: bbox mismatch (no span meets 90% IoU threshold)
+ * - 12: content_hash mismatch (best-IoU span's text differs)
+ *
+ * On error, use pdftract_last_error() to get a detailed message.
+ */
+int32_t pdftract_verify_receipt(const char *path,
+                                const char *receipt_json);
 
 /**
  * Get the pdftract library version string.

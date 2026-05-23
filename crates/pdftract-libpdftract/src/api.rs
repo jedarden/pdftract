@@ -21,9 +21,12 @@ use libc::{c_char, c_void};
 use pdftract_core::extract::{extract_pdf, result_to_json};
 use pdftract_core::options::ExtractionOptions;
 use pdftract_core::document::{parse_pdf_file, compute_pdf_fingerprint};
+use pdftract_core::receipts::{Receipt, verifier::{verify_receipt, SpanData, VerificationResult, exit_code}};
 use std::ffi::{CString, CStr};
 use std::panic::catch_unwind;
 use std::path::Path;
+use std::sync::Mutex;
+use std::default::Default;
 
 /// Error codes returned in JSON error responses.
 mod error_codes {
@@ -305,26 +308,40 @@ pub extern "C" fn pdftract_extract_stream_open(
     source: *const c_char,
     options_json: *const c_char,
 ) -> *mut c_void {
+    clear_last_error();
+
     let result = catch_unwind(|| unsafe {
         let source_path = match cstr_to_string(source) {
             Ok(s) => s,
-            Err(_) => return Err(()),
+            Err(e) => {
+                set_last_error(json_error(error_codes::NULL_POINTER, "source pointer is null"));
+                return None;
+            }
         };
 
         let options_str = match cstr_to_string(options_json) {
             Ok(s) => s,
-            Err(_) => return Err(()),
+            Err(e) => {
+                set_last_error(json_error(error_codes::NULL_POINTER, "options_json pointer is null"));
+                return None;
+            }
         };
 
         let options: ExtractionOptions = match parse_options_json(&options_str) {
             Ok(opts) => opts,
-            Err(_) => return Err(()),
+            Err(e) => {
+                set_last_error(json_error(error_codes::INVALID_JSON, &e));
+                return None;
+            }
         };
 
         let pdf_path = Path::new(&source_path);
         let extraction_result = match extract_pdf(pdf_path, &options) {
             Ok(result) => result,
-            Err(_) => return Err(()),
+            Err(e) => {
+                set_last_error(anyhow_to_json_error(e));
+                return None;
+            }
         };
 
         // Convert all pages to JSON upfront
@@ -339,15 +356,19 @@ pub extern "C" fn pdftract_extract_stream_open(
             })
             .collect();
 
-        Ok(StreamState {
+        Some(StreamState {
             pages,
             current_index: 0,
         })
     });
 
     match result {
-        Ok(state) => Box::into_raw(Box::new(state)) as *mut c_void,
-        Err(_) => std::ptr::null_mut(),
+        Ok(Some(state)) => Box::into_raw(Box::new(state)) as *mut c_void,
+        Ok(None) => std::ptr::null_mut(),
+        Err(_) => {
+            set_last_error(json_error(error_codes::PANIC, "panic in pdftract_extract_stream_open"));
+            std::ptr::null_mut()
+        }
     }
 }
 
@@ -374,8 +395,8 @@ pub extern "C" fn pdftract_stream_next(handle: *mut c_void) -> *mut c_char {
 
     let result = catch_unwind(|| -> Option<*mut c_char> {
         unsafe {
-            // Get a reference to the state without taking ownership
-            let state = &*(handle as *const StreamState);
+            // Get a mutable reference to the state
+            let state = &mut *(handle as *mut StreamState);
 
             if state.current_index >= state.pages.len() {
                 // Stream ended - return null pointer
@@ -384,6 +405,10 @@ pub extern "C" fn pdftract_stream_next(handle: *mut c_void) -> *mut c_char {
 
             // Clone the page JSON (serde_json::Value is cheap to clone)
             let page_json = state.pages[state.current_index].clone();
+
+            // Increment the index for the next call
+            state.current_index += 1;
+
             Some(CString::new(serde_json::to_string(&page_json).unwrap()).unwrap().into_raw())
         }
     });
@@ -673,9 +698,197 @@ pub extern "C" fn pdftract_free(ptr: *mut c_char) {
 /// A static C string containing the version. Do NOT free this string.
 #[no_mangle]
 pub extern "C" fn pdftract_version() -> *const c_char {
-    // This is a static string, no need to free
-    // Using a literal for cbindgen compatibility
-    "0.1.0\0".as_ptr() as *const c_char
+    // Use a static C string with proper lifetime
+    static VERSION: &[u8] = b"0.1.0\0";
+    VERSION.as_ptr() as *const c_char
+}
+
+/// Thread-local storage for the last error message.
+///
+/// This allows C callers to retrieve detailed error information after
+/// a function returns NULL or an error indicator. Each thread has its
+/// own error storage, making the library thread-safe.
+thread_local! {
+    static LAST_ERROR: Mutex<Option<String>> = Mutex::new(None);
+    static LAST_ERROR_CSTR: Mutex<Option<CString>> = Mutex::new(None);
+}
+
+/// Set the last error message for the current thread.
+fn set_last_error(message: String) {
+    LAST_ERROR.with(|error| {
+        let mut guard = error.lock().unwrap();
+        *guard = Some(message);
+    });
+}
+
+/// Clear the last error message for the current thread.
+fn clear_last_error() {
+    LAST_ERROR.with(|error| {
+        let mut guard = error.lock().unwrap();
+        *guard = None;
+    });
+    LAST_ERROR_CSTR.with(|cstr| {
+        let mut guard = cstr.lock().unwrap();
+        *guard = None;
+    });
+}
+
+/// Get the last error message for the current thread.
+///
+/// # Returns
+///
+/// A pointer to a null-terminated string containing the last error message,
+/// or NULL if no error has been set. The caller MUST NOT free this string.
+/// The string remains valid until the next API call on this thread.
+///
+/// # Note
+///
+/// This function returns a pointer to thread-local storage that is invalidated
+/// by the next API call on the same thread. If you need to retain the error
+/// message, make a copy of it immediately.
+#[no_mangle]
+pub extern "C" fn pdftract_last_error() -> *const c_char {
+    LAST_ERROR_CSTR.with(|cstr| {
+        let mut guard = cstr.lock().unwrap();
+        if let Some(ref c) = *guard {
+            return c.as_ptr();
+        }
+
+        // Try to get the error string and convert it to CString
+        LAST_ERROR.with(|error| {
+            let err_guard = error.lock().unwrap();
+            if let Some(ref msg) = *err_guard {
+                if let Ok(c) = CString::new(msg.as_str()) {
+                    let ptr = c.as_ptr();
+                    *guard = Some(c);
+                    ptr
+                } else {
+                    std::ptr::null()
+                }
+            } else {
+                std::ptr::null()
+            }
+        })
+    })
+}
+
+/// Get the ABI version of the library.
+///
+/// # Returns
+///
+/// A 32-bit unsigned integer encoding the ABI version.
+/// Format: MAJOR << 16 | MINOR << 8 | PATCH
+///
+/// For version 0.1.0, this returns 0x00000100 (256 decimal).
+/// For version 1.2.3, this would return 0x010203 (66051 decimal).
+///
+/// C callers can use this to verify the loaded library matches their
+/// compiled header's expectations.
+#[no_mangle]
+pub extern "C" fn pdftract_abi_version() -> u32 {
+    const MAJOR: u8 = 0;
+    const MINOR: u8 = 1;
+    const PATCH: u8 = 0;
+
+    (MAJOR as u32) << 16 | (MINOR as u32) << 8 | (PATCH as u32)
+}
+
+/// Verify a visual citation receipt against a PDF file.
+///
+/// # Arguments
+///
+/// * `path` - Path to the PDF file (null-terminated UTF-8 string)
+/// * `receipt_json` - JSON string containing the receipt to verify
+///
+/// # Returns
+///
+/// An int32_t exit code:
+/// - 0: receipt verifies successfully
+/// - 1: extraction failed (PDF unreadable, encrypted, etc.)
+/// - 10: pdf_fingerprint mismatch
+/// - 11: bbox mismatch (no span meets 90% IoU threshold)
+/// - 12: content_hash mismatch (best-IoU span's text differs)
+///
+/// On error, use pdftract_last_error() to get a detailed message.
+#[no_mangle]
+pub extern "C" fn pdftract_verify_receipt(
+    path: *const c_char,
+    receipt_json: *const c_char,
+) -> i32 {
+    clear_last_error();
+
+    let result = catch_unwind(|| unsafe {
+        let pdf_path = match cstr_to_string(path) {
+            Ok(s) => s,
+            Err(_) => {
+                set_last_error(json_error(error_codes::NULL_POINTER, "path pointer is null"));
+                return exit_code::EXTRACTION_FAILED;
+            }
+        };
+
+        let receipt_str = match cstr_to_string(receipt_json) {
+            Ok(s) => s,
+            Err(_) => {
+                set_last_error(json_error(error_codes::NULL_POINTER, "receipt_json pointer is null"));
+                return exit_code::EXTRACTION_FAILED;
+            }
+        };
+
+        // Parse the receipt JSON
+        let receipt: Receipt = match serde_json::from_str(&receipt_str) {
+            Ok(r) => r,
+            Err(e) => {
+                set_last_error(json_error(error_codes::INVALID_JSON, &format!("Invalid receipt JSON: {}", e)));
+                return exit_code::EXTRACTION_FAILED;
+            }
+        };
+
+        // Extract the PDF to get spans and fingerprint
+        let pdf_path_obj = Path::new(&pdf_path);
+        let extraction_result = match extract_pdf(pdf_path_obj, &ExtractionOptions::default()) {
+            Ok(result) => result,
+            Err(e) => {
+                set_last_error(anyhow_to_json_error(e));
+                return exit_code::EXTRACTION_FAILED;
+            }
+        };
+
+        // Get the page specified in the receipt
+        let page = if receipt.page_index < extraction_result.pages.len() {
+            &extraction_result.pages[receipt.page_index]
+        } else {
+            set_last_error(json_error(error_codes::EXTRACTION_ERROR,
+                &format!("receipt page_index {} out of bounds (PDF has {} pages)",
+                    receipt.page_index, extraction_result.pages.len())));
+            return exit_code::EXTRACTION_FAILED;
+        };
+
+        // Collect spans from the page
+        let spans: Vec<SpanData> = page.spans.iter()
+            .map(|span| SpanData {
+                text: span.text.clone(),
+                bbox: span.bbox,
+            })
+            .collect();
+
+        // Verify the receipt
+        let verify_result = verify_receipt(&receipt, &spans, &extraction_result.fingerprint);
+
+        match verify_result {
+            VerificationResult::Ok { .. } => exit_code::SUCCESS,
+            VerificationResult::FingerprintMismatch { .. } => exit_code::FINGERPRINT_MISMATCH,
+            VerificationResult::BboxMismatch { .. } => exit_code::BBOX_MISMATCH,
+            VerificationResult::ContentMismatch { .. } => exit_code::CONTENT_MISMATCH,
+        }
+    });
+
+    match result {
+        Ok(code) => code,
+        Err(_) => {
+            set_last_error(json_error(error_codes::PANIC, "panic in pdftract_verify_receipt"));
+            exit_code::EXTRACTION_FAILED
+        }
+    }
 }
 
 #[cfg(test)]

@@ -1,0 +1,46 @@
+# Homebrew formula for pdftract
+# This file is a template - variables are replaced during release
+class Pdftract < Formula
+  release = "{{RELEASE}}"
+  version = release[/(\d+\.\d+\.\d+)/, 1]
+
+  desc "PDF text extraction library with C FFI"
+  homepage "https://github.com/jedarden/pdftract"
+  url "https://github.com/jedarden/pdftract/releases/download/v#{version}/libpdftract-v#{version}-x86_64-unknown-linux-gnu.tar.gz"
+  sha256 "{{LINUX_SHA256}}"
+
+  depends_on "pkg-config"
+
+  def install
+    lib.install "lib/libpdftract.so"
+    lib.install "lib/libpdftract.a"
+    include.install "include/pdftract.h"
+    lib.install "lib/pkgconfig/pdftract.pc"
+
+    # Set the correct prefix in the pkg-config file
+    inreplace lib/"pkgconfig/pdftract.pc", "@PREFIX@", prefix
+  end
+
+  test do
+    (testpath/"test.c").write <<~EOS
+      #include <pdftract.h>
+      #include <stdio.h>
+      #include <assert.h>
+
+      int main(void) {
+        const char* version = pdftract_version();
+        assert(version != NULL);
+        printf("pdftract version: %s\\n", version);
+
+        uint32_t abi = pdftract_abi_version();
+        printf("ABI version: 0x%08x\\n", abi);
+
+        pdftract_free(NULL);  // Should not crash
+        return 0;
+      }
+    EOS
+
+    system ENV.cc, "test.c", "-I#{include}", "-L#{lib}", "-lpdftract", "-o", "test"
+    system "./test"
+  end
+end

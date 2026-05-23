@@ -1,0 +1,29 @@
+# vcpkg portfile for pdftract
+# This file is a template - variables are replaced during release
+
+vcpkg_from_github(
+    OUT_SOURCE_PATH SOURCE_PATH
+    REPO jedarden/pdftract
+    REF "v{{VERSION}}"
+    SHA512 "{{GITHUB_SHA512}}"
+    HEAD_REF main
+)
+
+# The release archive contains pre-built binaries
+# Install directly to the appropriate locations
+
+file(INSTALL "${SOURCE_PATH}/lib/libpdftract.so" DESTINATION "${CURRENT_PACKAGES_DIR}/lib")
+file(INSTALL "${SOURCE_PATH}/lib/libpdftract.a" DESTINATION "${CURRENT_PACKAGES_DIR}/lib")
+file(INSTALL "${SOURCE_PATH}/include/pdftract.h" DESTINATION "${CURRENT_PACKAGES_DIR}/include")
+file(INSTALL "${SOURCE_PATH}/lib/pkgconfig/pdftract.pc" DESTINATION "${CURRENT_PACKAGES_DIR}/lib/pkgconfig")
+
+# Fix the prefix in the pkg-config file
+file(READ "${CURRENT_PACKAGES_DIR}/lib/pkgconfig/pdftract.pc" _pcfile)
+string(REPLACE "@PREFIX@" "${CURRENT_INSTALLED_DIR}" _pcfile "${_pcfile}")
+file(WRITE "${CURRENT_PACKAGES_DIR}/lib/pkgconfig/pdftract.pc" "${_pcfile}")
+
+# Handle copyright
+file(INSTALL "${SOURCE_PATH}/LICENSE-MIT" DESTINATION "${CURRENT_PACKAGES_DIR}/share/${PORT}" RENAME copyright)
+file(INSTALL "${SOURCE_PATH}/LICENSE-APACHE" DESTINATION "${CURRENT_PACKAGES_DIR}/share/${PORT}" RENAME copyright-apache)
+
+vcpkg_install_copyright(FILE_LIST "${SOURCE_PATH}/LICENSE-MIT" "${SOURCE_PATH}/LICENSE-APACHE")

@@ -238,3 +238,4 @@ bash scripts/check-provenance.sh
 | malformed/malformed_stream.pdf | scripts/generate_test_corpus.py | MIT-0 | 2026-05-20 | 1920f2615fe6a366a6ff8b266334fdc373aa909d7316348034814a10957f7ae2 | Synthetic malformed PDF for testing malformed stream handling |
 | malformed/malformed_string.pdf | scripts/generate_test_corpus.py | MIT-0 | 2026-05-20 | aea022c9d186f27ae4800a890da933cd85db73937eccb7511183742fbec4d3d8 | Synthetic malformed PDF for testing malformed string handling |
 | malformed/overflow_numbers.pdf | scripts/generate_test_corpus.py | MIT-0 | 2026-05-20 | 57eb3b34bd7ee864495f849956dc27ba2fa6de875a30b973e45170fb4008046c | Synthetic malformed PDF for testing numeric overflow handling |
+| test-minimal.pdf | tests/conformance.c (create_test_pdf function) | MIT-0 | 2026-05-23 | b136b3d52d1a5b7d009d46a0a6fb66b0105d91813567d1513d0635468ea31dfd | Minimal PDF fixture for C conformance testing |

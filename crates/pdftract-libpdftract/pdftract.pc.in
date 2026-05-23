@@ -1,0 +1,11 @@
+prefix=@PREFIX@
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: pdftract
+Description: PDF text extraction library with C FFI
+Version: @VERSION@
+URL: https://github.com/jedarden/pdftract
+Libs: -L${libdir} -lpdftract
+Cflags: -I${includedir}

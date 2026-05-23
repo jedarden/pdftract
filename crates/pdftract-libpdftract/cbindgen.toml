@@ -22,6 +22,9 @@ include = [
     "pdftract_classify",
     "pdftract_free",
     "pdftract_version",
+    "pdftract_last_error",
+    "pdftract_abi_version",
+    "pdftract_verify_receipt",
 ]
 
 [fn]
