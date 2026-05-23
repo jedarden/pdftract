@@ -7,9 +7,9 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
-use std::borrow::Cow;
-use crate::parser::object::{ObjRef, PdfObject, PdfDict, PdfStream};
+use crate::parser::object::{ObjRef, PdfObject, PdfDict, PdfStream, ObjectParser};
 use crate::parser::stream::{PdfSource, MemorySource};
+use crate::diagnostics::{Diagnostic as Diag, DiagCode};
 
 // Use memchr for SIMD-accelerated byte searching in forward_scan_xref
 use memchr::{memchr, memchr_iter};
@@ -51,74 +51,6 @@ pub enum XrefEntry {
     Compressed { obj_stm_nr: u32, index: u32 },
 }
 
-/// Diagnostic codes for xref parsing.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum XrefDiagCode {
-    /// Invalid xref keyword or header
-    InvalidXrefHeader,
-    /// Malformed xref entry (not 20 bytes, bad format)
-    InvalidXrefEntry,
-    /// Invalid subsection header (not "start count")
-    InvalidSubsectionHeader,
-    /// Object 0 is not free (violates PDF spec)
-    ObjectZeroNotFree,
-    /// Trailer dictionary not found or malformed
-    TrailerNotFound,
-    /// Truncated xref table (unexpected EOF)
-    XrefTruncated,
-    /// Forward scan recovered xref entries (EC-07 recovery)
-    XrefRepaired,
-    /// Forward scan disabled for remote sources (would fetch entire file)
-    RemoteNoForwardScan,
-    /// Forward scan disabled for linearized files (has partial leading xref)
-    LinearizedNoForwardScan,
-    /// Invalid xref stream entry (unknown type, malformed data)
-    InvalidXrefStreamEntry,
-    /// Invalid xref stream format (missing required key, bad /W array)
-    InvalidXrefStreamFormat,
-    /// Xref stream decompression failed
-    XrefStreamDecompressionFailed,
-    /// Hybrid xref conflict: traditional table and stream disagree on object state
-    StructHybridConflict,
-    /// Circular /Prev reference detected (incremental update cycle)
-    StructCircularRef,
-    /// /Prev chain depth exceeded (adversarial input or corrupted file)
-    StructDepthExceeded,
-    /// /Prev offset points beyond file size
-    StructInvalidPrevOffset,
-}
-
-/// A diagnostic message emitted during xref parsing.
-#[derive(Debug, Clone, PartialEq)]
-pub struct XrefDiagnostic {
-    /// The diagnostic code
-    pub code: XrefDiagCode,
-    /// Byte offset in the input where the error occurred
-    pub byte_offset: u64,
-    /// Human-readable error message
-    pub msg: Cow<'static, str>,
-}
-
-impl XrefDiagnostic {
-    /// Create a diagnostic with a static message.
-    fn with_static(code: XrefDiagCode, byte_offset: u64, msg: &'static str) -> Self {
-        XrefDiagnostic {
-            code,
-            byte_offset,
-            msg: Cow::Borrowed(msg),
-        }
-    }
-
-    /// Create a diagnostic with a dynamic message.
-    fn with_dynamic(code: XrefDiagCode, byte_offset: u64, msg: String) -> Self {
-        XrefDiagnostic {
-            code,
-            byte_offset,
-            msg: Cow::Owned(msg),
-        }
-    }
-}
-
 /// Result of parsing a traditional xref table.
 ///
 /// Contains the parsed xref entries and the trailer dictionary.
@@ -129,7 +61,7 @@ pub struct XrefSection {
     /// The trailer dictionary
     pub trailer: Option<PdfDict>,
     /// Diagnostics emitted during parsing
-    pub diagnostics: Vec<XrefDiagnostic>,
+    pub diagnostics: Vec<Diag>,
     /// Whether this xref section is from a hybrid file (traditional + stream merged)
     pub is_hybrid: bool,
 }
@@ -222,8 +154,8 @@ pub fn merge_hybrid(traditional: XrefSection, stream: XrefSection) -> XrefSectio
             let stream_is_inuse = matches!(stream_entry, XrefEntry::InUse { .. } | XrefEntry::Compressed { .. });
 
             if trad_is_free && stream_is_inuse {
-                result.diagnostics.push(XrefDiagnostic::with_dynamic(
-                    XrefDiagCode::StructHybridConflict,
+                result.diagnostics.push(Diag::with_dynamic(
+                    DiagCode::StructHybridConflict,
                     0,
                     format!(
                         "Object {}: traditional table marks as Free, stream marks as InUse; traditional wins (object is Free)",
@@ -446,8 +378,8 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
     let header_bytes = match source.read_at(pos, 1024) {
         Ok(bytes) if !bytes.is_empty() => bytes,
         _ => {
-            result.diagnostics.push(XrefDiagnostic::with_static(
-                XrefDiagCode::XrefTruncated,
+            result.diagnostics.push(Diag::with_static(
+                DiagCode::XrefTruncated,
                 pos,
                 "Failed to read xref header",
             ));
@@ -461,8 +393,8 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
         let header_str = match std::str::from_utf8(&header_bytes) {
             Ok(s) => s,
             Err(_) => {
-                result.diagnostics.push(XrefDiagnostic::with_static(
-                    XrefDiagCode::InvalidXrefHeader,
+                result.diagnostics.push(Diag::with_static(
+                    DiagCode::XrefInvalidHeader,
                     pos,
                     "Invalid UTF-8 in xref header",
                 ));
@@ -478,8 +410,8 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
             // Found it! ws_offset is the position of "xref" in header_bytes
             break ws_offset;
         } else {
-            result.diagnostics.push(XrefDiagnostic::with_static(
-                XrefDiagCode::InvalidXrefHeader,
+            result.diagnostics.push(Diag::with_static(
+                DiagCode::XrefInvalidHeader,
                 pos,
                 "xref keyword not found",
             ));
@@ -522,8 +454,8 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
         let chunk_str = match std::str::from_utf8(&chunk_bytes) {
             Ok(s) => s,
             Err(_) => {
-                result.diagnostics.push(XrefDiagnostic::with_static(
-                    XrefDiagCode::XrefTruncated,
+                result.diagnostics.push(Diag::with_static(
+                    DiagCode::XrefTruncated,
                     pos,
                     "Invalid UTF-8 in xref data",
                 ));
@@ -547,8 +479,8 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
         let header_line = match read_line_at(source, subsection_start) {
             Some(line) => line,
             None => {
-                result.diagnostics.push(XrefDiagnostic::with_static(
-                    XrefDiagCode::InvalidSubsectionHeader,
+                result.diagnostics.push(Diag::with_static(
+                    DiagCode::XrefInvalidSubsectionHeader,
                     subsection_start,
                     "Failed to read subsection header",
                 ));
@@ -558,8 +490,8 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
 
         let header_parts: Vec<&str> = header_line.split_whitespace().collect();
         if header_parts.len() != 2 {
-            result.diagnostics.push(XrefDiagnostic::with_dynamic(
-                XrefDiagCode::InvalidSubsectionHeader,
+            result.diagnostics.push(Diag::with_dynamic(
+                DiagCode::XrefInvalidSubsectionHeader,
                 subsection_start,
                 format!("Invalid subsection header: {}", header_line),
             ));
@@ -584,8 +516,8 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
         let obj_start: u32 = match header_parts[0].parse() {
             Ok(n) => n,
             Err(_) => {
-                result.diagnostics.push(XrefDiagnostic::with_dynamic(
-                    XrefDiagCode::InvalidSubsectionHeader,
+                result.diagnostics.push(Diag::with_dynamic(
+                    DiagCode::XrefInvalidSubsectionHeader,
                     subsection_start,
                     format!("Invalid subsection start: {}", header_parts[0]),
                 ));
@@ -597,8 +529,8 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
         let obj_count: u32 = match header_parts[1].parse() {
             Ok(n) => n,
             Err(_) => {
-                result.diagnostics.push(XrefDiagnostic::with_dynamic(
-                    XrefDiagCode::InvalidSubsectionHeader,
+                result.diagnostics.push(Diag::with_dynamic(
+                    DiagCode::XrefInvalidSubsectionHeader,
                     subsection_start,
                     format!("Invalid subsection count: {}", header_parts[1]),
                 ));
@@ -635,8 +567,8 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
             let entry_bytes = match source.read_at(pos, 20) {
                 Ok(bytes) => bytes,
                 _ => {
-                    result.diagnostics.push(XrefDiagnostic::with_static(
-                        XrefDiagCode::XrefTruncated,
+                    result.diagnostics.push(Diag::with_static(
+                        DiagCode::XrefTruncated,
                         pos,
                         "Failed to read xref entry",
                     ));
@@ -646,8 +578,8 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
 
             if entry_bytes.len() < 19 {
                 // Definitely truncated
-                result.diagnostics.push(XrefDiagnostic::with_static(
-                    XrefDiagCode::XrefTruncated,
+                result.diagnostics.push(Diag::with_static(
+                    DiagCode::XrefTruncated,
                     pos,
                     "Xref entry truncated (< 19 bytes)",
                 ));
@@ -668,18 +600,16 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
                     // Object 0 must be free (PDF spec requirement)
                     if obj_nr == 0 {
                         if let XrefEntry::InUse { .. } = entry {
-                            result.diagnostics.push(XrefDiagnostic::with_static(
-                                XrefDiagCode::ObjectZeroNotFree,
+                            result.diagnostics.push(Diag::with_static(
+                                DiagCode::XrefObjectZeroNotFree,
                                 entry_start,
                                 "Object 0 is not free (violates PDF spec)",
                             ));
                         }
                     }
-                    // Only add in-use entries to the result
-                    // Free entries are ignored per pdftract spec (they don't resolve to objects)
-                    if matches!(entry, XrefEntry::InUse { .. }) {
-                        result.add_entry(obj_nr, entry);
-                    }
+                    // Add all entries to the result (both InUse and Free)
+                    // Free entries are needed for /Prev chain merge semantics to track object lifecycle
+                    result.add_entry(obj_nr, entry);
                     pos += stride as u64;
                     entries_parsed += 1;
                 }
@@ -699,8 +629,8 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
 
     // If we exited the loop without finding a trailer, emit a diagnostic
     if !trailer_found {
-        result.diagnostics.push(XrefDiagnostic::with_static(
-            XrefDiagCode::TrailerNotFound,
+        result.diagnostics.push(Diag::with_static(
+            DiagCode::XrefTrailerNotFound,
             pos,
             "Trailer dictionary not found (xref table may be truncated)",
         ));
@@ -717,7 +647,7 @@ fn parse_xref_entry(
     obj_nr: u32,
     offset: u64,
     stride: usize,
-    diagnostics: &mut Vec<XrefDiagnostic>,
+    diagnostics: &mut Vec<Diag>,
 ) -> Option<(u32, XrefEntry)> {
     if bytes.len() != stride {
         return None;
@@ -727,8 +657,8 @@ fn parse_xref_entry(
     let entry_str = match std::str::from_utf8(bytes) {
         Ok(s) => s,
         Err(_) => {
-            diagnostics.push(XrefDiagnostic::with_static(
-                XrefDiagCode::InvalidXrefEntry,
+            diagnostics.push(Diag::with_static(
+                DiagCode::XrefInvalidEntry,
                 offset,
                 "Invalid UTF-8 in xref entry",
             ));
@@ -739,8 +669,8 @@ fn parse_xref_entry(
     // Entry format: "offset/next_free generation f/n" with line ending
     let parts: Vec<&str> = entry_str.split_whitespace().collect();
     if parts.len() < 3 {
-        diagnostics.push(XrefDiagnostic::with_dynamic(
-            XrefDiagCode::InvalidXrefEntry,
+        diagnostics.push(Diag::with_dynamic(
+            DiagCode::XrefInvalidEntry,
             offset,
             format!("Malformed xref entry: {}", entry_str.trim()),
         ));
@@ -750,8 +680,8 @@ fn parse_xref_entry(
     let first_field: u64 = match parts[0].parse() {
         Ok(n) => n,
         Err(_) => {
-            diagnostics.push(XrefDiagnostic::with_dynamic(
-                XrefDiagCode::InvalidXrefEntry,
+            diagnostics.push(Diag::with_dynamic(
+                DiagCode::XrefInvalidEntry,
                 offset,
                 format!("Invalid offset/next_free: {}", parts[0]),
             ));
@@ -762,8 +692,8 @@ fn parse_xref_entry(
     let gen_nr: u16 = match parts[1].parse() {
         Ok(n) => n,
         Err(_) => {
-            diagnostics.push(XrefDiagnostic::with_dynamic(
-                XrefDiagCode::InvalidXrefEntry,
+            diagnostics.push(Diag::with_dynamic(
+                DiagCode::XrefInvalidEntry,
                 offset,
                 format!("Invalid generation: {}", parts[1]),
             ));
@@ -776,8 +706,8 @@ fn parse_xref_entry(
         Some('n') | Some('N') => Some((obj_nr, XrefEntry::InUse { offset: first_field, gen_nr })),
         Some('f') | Some('F') => Some((obj_nr, XrefEntry::Free { next_free: first_field as u32, gen_nr })),
         _ => {
-            diagnostics.push(XrefDiagnostic::with_dynamic(
-                XrefDiagCode::InvalidXrefEntry,
+            diagnostics.push(Diag::with_dynamic(
+                DiagCode::XrefInvalidEntry,
                 offset,
                 format!("Invalid entry type: {}", parts[2]),
             ));
@@ -842,7 +772,7 @@ fn read_line_at(source: &dyn PdfSource, mut pos: u64) -> Option<String> {
 fn read_line(
     source: &dyn PdfSource,
     pos: &mut u64,
-    diagnostics: &mut Vec<XrefDiagnostic>,
+    diagnostics: &mut Vec<Diag>,
 ) -> Option<String> {
     let line = read_line_at(source, *pos)?;
     // Advance position past the line (including line ending)
@@ -865,26 +795,30 @@ fn read_line(
 
 /// Parse the trailer dictionary.
 ///
-/// This is a simplified implementation that reads until the end of the
-/// dictionary (>>) and returns a placeholder dict object.
-/// The full implementation will use the object parser from Phase 1.2.
+/// Parse the trailer dictionary from the xref trailer section.
+///
+/// This function extracts the trailer dictionary bytes and parses them
+/// using the object parser to get the actual key-value pairs.
 fn parse_trailer_dict(
     source: &dyn PdfSource,
     pos: &mut u64,
-    diagnostics: &mut Vec<XrefDiagnostic>,
+    diagnostics: &mut Vec<Diag>,
 ) -> Option<PdfDict> {
     // Skip whitespace before <<
     let mut seen_bracket = false;
     let mut depth = 0;
     let mut chunk_pos = 0u64;
+    let dict_start_offset = *pos;
+    let mut dict_end_offset = None;
 
+    // First, find the extent of the trailer dict (from << to >>)
     loop {
-        let chunk = match source.read_at(*pos + chunk_pos, 1024) {
+        let chunk = match source.read_at(dict_start_offset + chunk_pos, 4096) {
             Ok(bytes) => bytes,
             Err(_) => {
-                diagnostics.push(XrefDiagnostic::with_static(
-                    XrefDiagCode::TrailerNotFound,
-                    *pos,
+                diagnostics.push(Diag::with_static(
+                    DiagCode::XrefTrailerNotFound,
+                    dict_start_offset,
                     "I/O error reading trailer",
                 ));
                 return None;
@@ -914,8 +848,10 @@ fn parse_trailer_dict(
                                 if j + 1 < remaining.len() && remaining[j + 1] == b'>' {
                                     depth -= 1;
                                     if depth == 0 {
-                                        *pos += chunk_pos + j as u64 + 2;
-                                        return Some(PdfDict::new());
+                                        // Found the end of the dict
+                                        let end_offset = dict_start_offset + chunk_pos + j as u64 + 2;
+                                        dict_end_offset = Some(end_offset);
+                                        break;
                                     }
                                 }
                             }
@@ -927,25 +863,74 @@ fn parse_trailer_dict(
             }
         }
 
+        if dict_end_offset.is_some() {
+            break;
+        }
+
         chunk_pos += chunk.len() as u64;
 
         // Safety limit
         if chunk_pos > 100000 {
-            diagnostics.push(XrefDiagnostic::with_static(
-                XrefDiagCode::TrailerNotFound,
-                *pos,
+            diagnostics.push(Diag::with_static(
+                DiagCode::XrefTrailerNotFound,
+                dict_start_offset,
                 "Trailer dictionary too large or unterminated",
             ));
             return None;
         }
     }
 
-    diagnostics.push(XrefDiagnostic::with_static(
-        XrefDiagCode::TrailerNotFound,
-        *pos,
-        "Trailer dictionary not found",
-    ));
-    None
+    // If we didn't find the end, return None
+    let dict_end_offset = match dict_end_offset {
+        Some(offset) => offset,
+        None => {
+            diagnostics.push(Diag::with_static(
+                DiagCode::XrefTrailerNotFound,
+                dict_start_offset,
+                "Trailer dictionary not found (no << >> markers)",
+            ));
+            return None;
+        }
+    };
+
+    // Read the full dict bytes and parse them
+    let dict_len = (dict_end_offset - dict_start_offset) as usize;
+    let dict_bytes = match source.read_at(dict_start_offset, dict_len) {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            diagnostics.push(Diag::with_static(
+                DiagCode::XrefTrailerNotFound,
+                dict_start_offset,
+                "Failed to read trailer dictionary bytes",
+            ));
+            return None;
+        }
+    };
+
+    // Parse the dict using ObjectParser
+    let mut parser = ObjectParser::new(&dict_bytes);
+    if let Some(PdfObject::Dict(dict)) = parser.parse_direct_object() {
+        // Update pos to after the dict
+        *pos = dict_end_offset;
+
+        // Transfer any diagnostics from the parser
+        for diag in parser.take_diagnostics() {
+            diagnostics.push(Diag::with_dynamic(
+                DiagCode::XrefTrailerNotFound,
+                dict_start_offset,
+                diag.message.into_owned(),
+            ));
+        }
+
+        Some(*dict)
+    } else {
+        diagnostics.push(Diag::with_static(
+            DiagCode::XrefTrailerNotFound,
+            dict_start_offset,
+            "Failed to parse trailer dictionary as a dict object",
+        ));
+        None
+    }
 }
 
 /// Parse a direct PDF object (for trailer dictionary parsing).
@@ -999,8 +984,8 @@ pub fn forward_scan_xref(source: &dyn PdfSource, is_linearized: bool) -> XrefSec
 
     // Check for linearized file
     if is_linearized {
-        result.diagnostics.push(XrefDiagnostic::with_static(
-            XrefDiagCode::LinearizedNoForwardScan,
+        result.diagnostics.push(Diag::with_static(
+            DiagCode::XrefLinearizedNoForwardScan,
             0,
             "Forward scan disabled for linearized PDF (partial leading xref would cause false results)",
         ));
@@ -1014,8 +999,8 @@ pub fn forward_scan_xref(source: &dyn PdfSource, is_linearized: bool) -> XrefSec
     let source_len = match source.len() {
         Ok(len) if len > 0 => len,
         _ => {
-            result.diagnostics.push(XrefDiagnostic::with_static(
-                XrefDiagCode::XrefTruncated,
+            result.diagnostics.push(Diag::with_static(
+                DiagCode::XrefTruncated,
                 0,
                 "Unable to determine source length for forward scan",
             ));
@@ -1095,8 +1080,8 @@ pub fn forward_scan_xref(source: &dyn PdfSource, is_linearized: bool) -> XrefSec
     }
 
     // Emit XREF_REPAIRED diagnostic with count
-    result.diagnostics.push(XrefDiagnostic::with_dynamic(
-        XrefDiagCode::XrefRepaired,
+    result.diagnostics.push(Diag::with_dynamic(
+        DiagCode::XrefRepaired,
         0,
         format!("Forward scan recovered {} object entries", entries_found),
     ));
@@ -1162,8 +1147,8 @@ fn forward_scan_memory(data: &[u8], source_len: u64) -> XrefSection {
     }
 
     // Emit XREF_REPAIRED diagnostic with count
-    result.diagnostics.push(XrefDiagnostic::with_dynamic(
-        XrefDiagCode::XrefRepaired,
+    result.diagnostics.push(Diag::with_dynamic(
+        DiagCode::XrefRepaired,
         0,
         format!("Forward scan recovered {} object entries", entries_found),
     ));
@@ -1403,8 +1388,8 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
     let obj_bytes = match source.read_at(stream_obj_offset, 4096) {
         Ok(bytes) if !bytes.is_empty() => bytes,
         _ => {
-            result.diagnostics.push(XrefDiagnostic::with_static(
-                XrefDiagCode::InvalidXrefStreamFormat,
+            result.diagnostics.push(Diag::with_static(
+                DiagCode::XrefInvalidStreamFormat,
                 stream_obj_offset,
                 "Failed to read xref stream object",
             ));
@@ -1416,8 +1401,8 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
     let indirect = match parser.parse_indirect_object() {
         Some(i) => i,
         None => {
-            result.diagnostics.push(XrefDiagnostic::with_static(
-                XrefDiagCode::InvalidXrefStreamFormat,
+            result.diagnostics.push(Diag::with_static(
+                DiagCode::XrefInvalidStreamFormat,
                 stream_obj_offset,
                 "Failed to parse xref stream as indirect object",
             ));
@@ -1429,8 +1414,8 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
     let stream = match indirect.obj {
         PdfObject::Stream(s) => s,
         _ => {
-            result.diagnostics.push(XrefDiagnostic::with_static(
-                XrefDiagCode::InvalidXrefStreamFormat,
+            result.diagnostics.push(Diag::with_static(
+                DiagCode::XrefInvalidStreamFormat,
                 stream_obj_offset,
                 "Xref stream object is not a stream",
             ));
@@ -1441,8 +1426,8 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
     // Check for /Type /XRef (optional per spec, but we validate it)
     if let Some(PdfObject::Name(type_name)) = stream.dict.get("Type") {
         if type_name.as_ref() != "/XRef" && type_name.as_ref() != "XRef" {
-            result.diagnostics.push(XrefDiagnostic::with_static(
-                XrefDiagCode::InvalidXrefStreamFormat,
+            result.diagnostics.push(Diag::with_static(
+                DiagCode::XrefInvalidStreamFormat,
                 stream_obj_offset,
                 "Stream /Type is not /XRef",
             ));
@@ -1453,8 +1438,8 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
     let size = match stream.dict.get("Size") {
         Some(PdfObject::Integer(n)) if *n >= 0 => *n as u32,
         _ => {
-            result.diagnostics.push(XrefDiagnostic::with_static(
-                XrefDiagCode::InvalidXrefStreamFormat,
+            result.diagnostics.push(Diag::with_static(
+                DiagCode::XrefInvalidStreamFormat,
                 stream_obj_offset,
                 "Missing or invalid /Size in xref stream",
             ));
@@ -1469,8 +1454,8 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
                 .filter_map(|o| o.as_int())
                 .collect();
             if widths.len() != 3 {
-                result.diagnostics.push(XrefDiagnostic::with_dynamic(
-                    XrefDiagCode::InvalidXrefStreamFormat,
+                result.diagnostics.push(Diag::with_dynamic(
+                    DiagCode::XrefInvalidStreamFormat,
                     stream_obj_offset,
                     format!("/W array must have 3 elements, got {}", widths.len()),
                 ));
@@ -1478,8 +1463,8 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
             }
             // Widths can be 0, but negative is invalid
             if widths.iter().any(|&w| w < 0) {
-                result.diagnostics.push(XrefDiagnostic::with_static(
-                    XrefDiagCode::InvalidXrefStreamFormat,
+                result.diagnostics.push(Diag::with_static(
+                    DiagCode::XrefInvalidStreamFormat,
                     stream_obj_offset,
                     "/W array contains negative values",
                 ));
@@ -1488,8 +1473,8 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
             widths
         }
         _ => {
-            result.diagnostics.push(XrefDiagnostic::with_static(
-                XrefDiagCode::InvalidXrefStreamFormat,
+            result.diagnostics.push(Diag::with_static(
+                DiagCode::XrefInvalidStreamFormat,
                 stream_obj_offset,
                 "Missing or invalid /W in xref stream",
             ));
@@ -1512,8 +1497,8 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
                 let first = match first_obj.as_int() {
                     Some(n) if n >= 0 => n as u32,
                     _ => {
-                        result.diagnostics.push(XrefDiagnostic::with_static(
-                            XrefDiagCode::InvalidXrefStreamFormat,
+                        result.diagnostics.push(Diag::with_static(
+                            DiagCode::XrefInvalidStreamFormat,
                             stream_obj_offset,
                             "Invalid /Index first value",
                         ));
@@ -1523,8 +1508,8 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
                 let count = match iter.peek() {
                     Some(PdfObject::Integer(n)) if *n >= 0 => *n as u32,
                     _ => {
-                        result.diagnostics.push(XrefDiagnostic::with_static(
-                            XrefDiagCode::InvalidXrefStreamFormat,
+                        result.diagnostics.push(Diag::with_static(
+                            DiagCode::XrefInvalidStreamFormat,
                             stream_obj_offset,
                             "Invalid /Index count value",
                         ));
@@ -1535,8 +1520,8 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
                 pairs.push((first, count));
             }
             if pairs.is_empty() {
-                result.diagnostics.push(XrefDiagnostic::with_static(
-                    XrefDiagCode::InvalidXrefStreamFormat,
+                result.diagnostics.push(Diag::with_static(
+                    DiagCode::XrefInvalidStreamFormat,
                     stream_obj_offset,
                     "/Index array is empty",
                 ));
@@ -1546,8 +1531,8 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
         }
         None => vec![(0, size)],
         _ => {
-            result.diagnostics.push(XrefDiagnostic::with_static(
-                XrefDiagCode::InvalidXrefStreamFormat,
+            result.diagnostics.push(Diag::with_static(
+                DiagCode::XrefInvalidStreamFormat,
                 stream_obj_offset,
                 "Invalid /Index in xref stream (not an array)",
             ));
@@ -1582,8 +1567,8 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
     if decoded.is_empty() {
         // Check if this is a legitimate empty stream (no objects) or an error
         // A valid xref stream with no objects would have /Size 0, which is unusual
-        result.diagnostics.push(XrefDiagnostic::with_static(
-            XrefDiagCode::XrefStreamDecompressionFailed,
+        result.diagnostics.push(Diag::with_static(
+            DiagCode::StreamDecodeError,
             stream_obj_offset,
             "Xref stream decompression produced empty output",
         ));
@@ -1600,8 +1585,8 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
 
             // Check we have enough bytes for this entry
             if data_pos + entry_stride > decoded.len() {
-                result.diagnostics.push(XrefDiagnostic::with_dynamic(
-                    XrefDiagCode::InvalidXrefStreamEntry,
+                result.diagnostics.push(Diag::with_dynamic(
+                    DiagCode::XrefInvalidStreamEntry,
                     stream_obj_offset,
                     format!("Xref stream truncated at object {}", obj_nr),
                 ));
@@ -1657,8 +1642,8 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
                 }
                 _ => {
                     // Unknown type - emit diagnostic and treat as free
-                    result.diagnostics.push(XrefDiagnostic::with_dynamic(
-                        XrefDiagCode::InvalidXrefStreamEntry,
+                    result.diagnostics.push(Diag::with_dynamic(
+                        DiagCode::XrefInvalidStreamEntry,
                         stream_obj_offset,
                         format!("Invalid xref entry type {} for object {}", entry_type, obj_nr),
                     ));
@@ -2105,12 +2090,12 @@ pub fn load_xref_with_prev_chain(source: &dyn PdfSource, start_offset: u64) -> X
         offset: u64,
         visited: &mut HashSet<u64>,
         depth: u32,
-        diagnostics: &mut Vec<XrefDiagnostic>,
+        diagnostics: &mut Vec<Diag>,
     ) -> XrefSection {
         // Cycle detection
         if visited.contains(&offset) {
-            diagnostics.push(XrefDiagnostic::with_static(
-                XrefDiagCode::StructCircularRef,
+            diagnostics.push(Diag::with_static(
+                DiagCode::StructCircularRef,
                 offset,
                 "Circular /Prev reference detected; stopping chain traversal",
             ));
@@ -2121,8 +2106,8 @@ pub fn load_xref_with_prev_chain(source: &dyn PdfSource, start_offset: u64) -> X
 
         // Depth limit check
         if depth >= MAX_PREV_DEPTH {
-            diagnostics.push(XrefDiagnostic::with_dynamic(
-                XrefDiagCode::StructDepthExceeded,
+            diagnostics.push(Diag::with_dynamic(
+                DiagCode::StructDepthExceeded,
                 offset,
                 format!("/Prev chain depth exceeded maximum of {}", MAX_PREV_DEPTH).into(),
             ));
@@ -2143,14 +2128,13 @@ pub fn load_xref_with_prev_chain(source: &dyn PdfSource, start_offset: u64) -> X
             })
         });
 
-        // Validate /Prev offset if present
-        let mut should_follow_prev = false;
+        // Validate /Prev offset and recursively load previous revision if present
         if let Some(prev) = prev_offset {
             match source.len() {
                 Ok(file_size) if prev > file_size => {
                     // /Prev points beyond file size - invalid
-                    diagnostics.push(XrefDiagnostic::with_dynamic(
-                        XrefDiagCode::StructInvalidPrevOffset,
+                    diagnostics.push(Diag::with_dynamic(
+                        DiagCode::StructInvalidPrevOffset,
                         offset,
                         format!("/Prev offset {} exceeds file size {}; ignoring /Prev key", prev, file_size).into(),
                     ));
@@ -2158,52 +2142,56 @@ pub fn load_xref_with_prev_chain(source: &dyn PdfSource, start_offset: u64) -> X
                     if let Some(ref mut trailer) = current.trailer {
                         trailer.shift_remove("Prev");
                     }
+                    // Return current revision without following /Prev
+                    let mut result = current;
+                    result.diagnostics.extend(diagnostics.drain(..));
+                    return result;
                 }
                 Ok(_) => {
-                    // Valid /Prev offset
-                    should_follow_prev = true;
+                    // Valid /Prev offset - recursively load
+                    let mut older = walk_chain(source, prev, visited, depth + 1, diagnostics);
+
+                    // Merge: older entries first, then current (newer) entries override
+                    // This is the opposite of hybrid merge (where first parameter wins)
+                    for (obj_nr, entry) in current.entries {
+                        older.entries.insert(obj_nr, entry);
+                    }
+
+                    // Preserve current (latest) trailer
+                    older.trailer = current.trailer;
+
+                    // Merge diagnostics from current revision
+                    older.diagnostics.extend(current.diagnostics);
+
+                    // Mark as hybrid if current revision is hybrid
+                    if current.is_hybrid {
+                        older.is_hybrid = true;
+                    }
+
+                    // Add current's diagnostics to the merged result
+                    older.diagnostics.extend(diagnostics.drain(..));
+
+                    older
                 }
                 Err(_) => {
                     // Can't determine file size - be conservative and don't follow
-                    diagnostics.push(XrefDiagnostic::with_static(
-                        XrefDiagCode::StructInvalidPrevOffset,
+                    diagnostics.push(Diag::with_static(
+                        DiagCode::StructInvalidPrevOffset,
                         offset,
                         "Cannot determine file size; ignoring /Prev key",
                     ));
+                    // Return current revision without following /Prev
+                    let mut result = current;
+                    result.diagnostics.extend(diagnostics.drain(..));
+                    result
                 }
             }
-        }
-
-        // Recursively load previous revision if /Prev exists
-        if should_follow_prev {
-            let prev = prev_offset.unwrap(); // Safe because we checked should_follow_prev
-            let mut older = walk_chain(source, prev, visited, depth + 1, diagnostics);
-
-            // Merge: older entries first, then current (newer) entries override
-            // This is the opposite of hybrid merge (where first parameter wins)
-            for (obj_nr, entry) in current.entries {
-                older.entries.insert(obj_nr, entry);
-            }
-
-            // Preserve current (latest) trailer
-            older.trailer = current.trailer;
-
-            // Merge diagnostics from current revision
-            older.diagnostics.extend(current.diagnostics);
-
-            // Mark as hybrid if current revision is hybrid
-            if current.is_hybrid {
-                older.is_hybrid = true;
-            }
-
-            // Add current's diagnostics to the merged result
-            older.diagnostics.extend(diagnostics.drain(..));
-
-            older
         } else {
             // No /Prev - this is the baseline (original) revision
-            // Return current as-is
-            current
+            // Return current with any diagnostics from this level
+            let mut result = current;
+            result.diagnostics.extend(diagnostics.drain(..));
+            result
         }
     }
 
@@ -2341,26 +2329,26 @@ mod tests {
 
     #[test]
     fn test_xref_diagnostic_static() {
-        let diag = XrefDiagnostic::with_static(
-            XrefDiagCode::InvalidXrefHeader,
+        let diag = Diag::with_static(
+            DiagCode::XrefInvalidHeader,
             100,
             "test message",
         );
-        assert_eq!(diag.byte_offset, 100);
-        assert_eq!(diag.msg.as_ref(), "test message");
-        assert!(matches!(diag.code, XrefDiagCode::InvalidXrefHeader));
+        assert_eq!(diag.byte_offset, Some(100));
+        assert_eq!(diag.message.as_ref(), "test message");
+        assert!(matches!(diag.code, DiagCode::XrefInvalidHeader));
     }
 
     #[test]
     fn test_xref_diagnostic_dynamic() {
-        let diag = XrefDiagnostic::with_dynamic(
-            XrefDiagCode::InvalidXrefEntry,
+        let diag = Diag::with_dynamic(
+            DiagCode::XrefInvalidEntry,
             200,
             "dynamic message".to_string(),
         );
-        assert_eq!(diag.byte_offset, 200);
-        assert_eq!(diag.msg.as_ref(), "dynamic message");
-        assert!(matches!(diag.code, XrefDiagCode::InvalidXrefEntry));
+        assert_eq!(diag.byte_offset, Some(200));
+        assert_eq!(diag.message.as_ref(), "dynamic message");
+        assert!(matches!(diag.code, DiagCode::XrefInvalidEntry));
     }
 
     #[test]
@@ -2378,12 +2366,15 @@ trailer\n<< /Size 6 >>\n";
         let source = MemorySource::new(xref_data.to_vec());
         let result = parse_traditional_xref(&source, 0);
 
-        // Should have parsed 4 in-use entries (objects 0 and 3 are free and ignored)
-        assert_eq!(result.len(), 4);
+        // Should have parsed 6 entries (all objects 0-5, including free entries)
+        // Free entries are tracked for /Prev chain merge semantics
+        assert_eq!(result.len(), 6);
 
         // Check specific entries
+        assert_eq!(result.entries.get(&0), Some(&XrefEntry::Free { next_free: 0, gen_nr: 65535 }));
         assert_eq!(result.entries.get(&1), Some(&XrefEntry::InUse { offset: 17, gen_nr: 0 }));
         assert_eq!(result.entries.get(&2), Some(&XrefEntry::InUse { offset: 81, gen_nr: 0 }));
+        assert_eq!(result.entries.get(&3), Some(&XrefEntry::Free { next_free: 0, gen_nr: 7 }));
         assert_eq!(result.entries.get(&4), Some(&XrefEntry::InUse { offset: 331, gen_nr: 0 }));
         assert_eq!(result.entries.get(&5), Some(&XrefEntry::InUse { offset: 409, gen_nr: 0 }));
 
@@ -2403,8 +2394,10 @@ trailer\r\n<< /Size 3 >>\r\n";
         let source = MemorySource::new(xref_data.to_vec());
         let result = parse_traditional_xref(&source, 0);
 
-        // Should have parsed 2 in-use entries
-        assert_eq!(result.len(), 2);
+        // Should have parsed 3 entries (all objects 0-2, including free entry)
+        // Free entries are tracked for /Prev chain merge semantics
+        assert_eq!(result.len(), 3);
+        assert_eq!(result.entries.get(&0), Some(&XrefEntry::Free { next_free: 0, gen_nr: 65535 }));
         assert_eq!(result.entries.get(&1), Some(&XrefEntry::InUse { offset: 15, gen_nr: 0 }));
         assert_eq!(result.entries.get(&2), Some(&XrefEntry::InUse { offset: 78, gen_nr: 0 }));
     }
@@ -2421,7 +2414,10 @@ trailer\n<< /Size 3 >>\n";
         let source = MemorySource::new(xref_data.to_vec());
         let result = parse_traditional_xref(&source, 0);
 
-        // Should have parsed 2 in-use entries
+        // Should have parsed 3 entries (all objects 0-2, including free entry)
+        // Free entries are tracked for /Prev chain merge semantics
+        assert_eq!(result.len(), 3);
+        assert_eq!(result.entries.get(&0), Some(&XrefEntry::Free { next_free: 0, gen_nr: 65535 }));
         assert_eq!(result.len(), 2);
         assert_eq!(result.entries.get(&1), Some(&XrefEntry::InUse { offset: 15, gen_nr: 0 }));
         assert_eq!(result.entries.get(&2), Some(&XrefEntry::InUse { offset: 78, gen_nr: 0 }));
@@ -2473,7 +2469,7 @@ trailer\n<< /Size 4 >>\n";
 
         // Should have emitted a diagnostic for the bad entry
         assert!(!result.diagnostics.is_empty());
-        assert!(result.diagnostics.iter().any(|d| d.code == XrefDiagCode::InvalidXrefEntry));
+        assert!(result.diagnostics.iter().any(|d| d.code == DiagCode::XrefInvalidEntry));
     }
 
     #[test]
@@ -2489,7 +2485,7 @@ trailer\n<< /Size 3 >>\n";
         let result = parse_traditional_xref(&source, 0);
 
         // Should emit diagnostic for object 0 not being free
-        assert!(result.diagnostics.iter().any(|d| d.code == XrefDiagCode::ObjectZeroNotFree));
+        assert!(result.diagnostics.iter().any(|d| d.code == DiagCode::XrefObjectZeroNotFree));
     }
 
     #[test]
@@ -2502,12 +2498,13 @@ trailer\n<< /Size 3 >>\n";
         let source = MemorySource::new(xref_data.to_vec());
         let result = parse_traditional_xref(&source, 0);
 
-        // Should still parse the entry
-        assert_eq!(result.len(), 1);
+        // Should still parse both entries (including free entry)
+        // Free entries are tracked for /Prev chain merge semantics
+        assert_eq!(result.len(), 2);
         assert!(result.trailer.is_none());
 
         // Should emit diagnostic about missing trailer
-        assert!(result.diagnostics.iter().any(|d| d.code == XrefDiagCode::TrailerNotFound));
+        assert!(result.diagnostics.iter().any(|d| d.code == DiagCode::XrefTrailerNotFound));
     }
 
     #[test]
@@ -2686,7 +2683,7 @@ trailer\n<< /Size 3 >>\n";
         assert!(result.entries.contains_key(&3));
 
         // Check for XREF_REPAIRED diagnostic
-        assert!(result.diagnostics.iter().any(|d| d.code == XrefDiagCode::XrefRepaired));
+        assert!(result.diagnostics.iter().any(|d| d.code == DiagCode::XrefRepaired));
     }
 
     #[test]
@@ -2719,7 +2716,7 @@ trailer\n<< /Size 3 >>\n";
         assert_eq!(result.len(), 0);
 
         // Should have LINEARIZED_NO_FORWARD_SCAN diagnostic
-        assert!(result.diagnostics.iter().any(|d| d.code == XrefDiagCode::LinearizedNoForwardScan));
+        assert!(result.diagnostics.iter().any(|d| d.code == DiagCode::XrefLinearizedNoForwardScan));
     }
 
     #[test]
@@ -3119,7 +3116,7 @@ trailer\n<< /Size 3 >>\n";
         assert_eq!(result.entries.get(&2), Some(&XrefEntry::InUse { offset: 2000, gen_nr: 0 }));
 
         // Should have emitted a diagnostic for invalid type
-        assert!(result.diagnostics.iter().any(|d| d.code == XrefDiagCode::InvalidXrefStreamEntry));
+        assert!(result.diagnostics.iter().any(|d| d.code == DiagCode::XrefInvalidStreamEntry));
     }
 
     #[test]
@@ -3134,7 +3131,7 @@ trailer\n<< /Size 3 >>\n";
         let result = parse_xref_stream(&source, 0);
 
         // Should have emitted diagnostic about missing /Size
-        assert!(result.diagnostics.iter().any(|d| d.code == XrefDiagCode::InvalidXrefStreamFormat));
+        assert!(result.diagnostics.iter().any(|d| d.code == DiagCode::XrefInvalidStreamFormat));
     }
 
     #[test]
@@ -3156,7 +3153,7 @@ trailer\n<< /Size 3 >>\n";
         let result = parse_xref_stream(&source, 0);
 
         // Should have emitted diagnostic about invalid /W
-        assert!(result.diagnostics.iter().any(|d| d.code == XrefDiagCode::InvalidXrefStreamFormat));
+        assert!(result.diagnostics.iter().any(|d| d.code == DiagCode::XrefInvalidStreamFormat));
     }
 
     #[test]
@@ -3443,7 +3440,7 @@ trailer\n<< /Size 3 >>\n";
 
         assert!(merged.is_hybrid);
         // Should have emitted STRUCT_HYBRID_CONFLICT diagnostic
-        assert!(merged.diagnostics.iter().any(|d| matches!(d.code, XrefDiagCode::StructHybridConflict)));
+        assert!(merged.diagnostics.iter().any(|d| matches!(d.code, DiagCode::StructHybridConflict)));
         // Traditional Free wins
         assert_eq!(merged.entries.get(&1), Some(&XrefEntry::Free { next_free: 0, gen_nr: 65535 }));
     }
@@ -3829,8 +3826,8 @@ trailer\n<< /Size 3 >>\n";
         // Load from the latest revision
         let result = load_xref_with_prev_chain(&source, rev3_offset);
 
-        // Verify all 5 objects are present
-        assert_eq!(result.len(), 5, "Should have entries for objects 1-5, got {}", result.len());
+        // Verify all 6 entries are present (including object 0)
+        assert_eq!(result.len(), 6, "Should have entries for objects 0-5, got {}", result.len());
 
         // Verify LATEST values win:
         // Object 1: unchanged from rev1 (offset 100)
@@ -3980,11 +3977,12 @@ trailer\n<< /Size 3 >>\n";
         let root = trailer.get("Root");
         assert!(root.is_some());
         match root {
-            Some(PdfObject::Array(ref arr)) if arr.len() == 3 => {
-                // [2, 0, R] - object number 2
-                assert_eq!(arr[0], PdfObject::Integer(2));
+            Some(PdfObject::Ref(obj_ref)) => {
+                // 2 0 R - indirect reference to object 2
+                assert_eq!(obj_ref.object, 2);
+                assert_eq!(obj_ref.generation, 0);
             }
-            _ => panic!("Expected /Root to be an array [2 0 R]"),
+            _ => panic!("Expected /Root to be an indirect reference 2 0 R"),
         }
 
         // Should have /Info from rev2
@@ -4043,7 +4041,7 @@ trailer\n<< /Size 3 >>\n";
         let result = load_xref_with_prev_chain(&source, rev3_offset);
 
         // Should emit STRUCT_CIRCULAR_REF diagnostic
-        assert!(result.diagnostics.iter().any(|d| d.code == XrefDiagCode::StructCircularRef));
+        assert!(result.diagnostics.iter().any(|d| d.code == DiagCode::StructCircularRef));
     }
 
     /// Test depth limit enforcement.
@@ -4081,7 +4079,7 @@ trailer\n<< /Size 3 >>\n";
         let result = load_xref_with_prev_chain(&source, start_offset);
 
         // Should emit STRUCT_DEPTH_EXCEEDED diagnostic
-        assert!(result.diagnostics.iter().any(|d| d.code == XrefDiagCode::StructDepthExceeded));
+        assert!(result.diagnostics.iter().any(|d| d.code == DiagCode::StructDepthExceeded));
     }
 
     /// Test /Prev offset pointing beyond file size.
@@ -4109,7 +4107,7 @@ trailer\n<< /Size 3 >>\n";
         let result = load_xref_with_prev_chain(&source, rev2_offset);
 
         // Should emit STRUCT_INVALID_PREV_OFFSET diagnostic
-        assert!(result.diagnostics.iter().any(|d| d.code == XrefDiagCode::StructInvalidPrevOffset));
+        assert!(result.diagnostics.iter().any(|d| d.code == DiagCode::StructInvalidPrevOffset));
 
         // /Prev should be removed from trailer
         let trailer = result.trailer.as_ref().unwrap();
@@ -4134,7 +4132,7 @@ trailer\n<< /Size 3 >>\n";
         let result = load_xref_with_prev_chain(&source, offset);
 
         // Should not follow /Prev 0, should just return this single revision
-        assert!(!result.diagnostics.iter().any(|d| d.code == XrefDiagCode::StructInvalidPrevOffset));
+        assert!(!result.diagnostics.iter().any(|d| d.code == DiagCode::StructInvalidPrevOffset));
     }
 
     /// Test negative /Prev treated as "no previous revision".
@@ -4155,7 +4153,7 @@ trailer\n<< /Size 3 >>\n";
         let result = load_xref_with_prev_chain(&source, offset);
 
         // Should not follow negative /Prev
-        assert!(!result.diagnostics.iter().any(|d| d.code == XrefDiagCode::StructInvalidPrevOffset));
+        assert!(!result.diagnostics.iter().any(|d| d.code == DiagCode::StructInvalidPrevOffset));
     }
 
     /// Test hybrid file in /Prev chain.

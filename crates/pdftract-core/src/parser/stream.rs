@@ -17,7 +17,7 @@ use flate2::read::ZlibDecoder;
 use lzw::{MsbReader, Decoder, DecoderEarlyChange};
 use secrecy::SecretString;
 
-use crate::parser::diagnostic::{Diagnostic, DiagCode};
+use crate::diagnostics::{Diagnostic, DiagCode};
 use crate::parser::object::{PdfObject, PdfStream};
 
 /// Maximum number of filters allowed in a single stream's pipeline.
@@ -1863,8 +1863,10 @@ fn decode_stream_impl(
                 let truncated = raw_bytes[..remaining.min(raw_bytes.len())].to_vec();
                 return DecodeResult::with_diagnostic(
                     truncated,
-                    Diagnostic::error("1.5",
-                        format!("STREAM_BOMB: Decompression bomb limit exceeded: {} bytes", opts.max_decompress_bytes))
+                    Diagnostic::with_dynamic_no_offset(
+                        DiagCode::StreamBomb,
+                        format!("Decompression bomb limit exceeded: {} bytes", opts.max_decompress_bytes)
+                    )
                 );
             }
             *doc_decompress_counter += len;
@@ -1881,13 +1883,17 @@ fn decode_stream_impl(
     // Step 3: Get decode params (aligned with filters, may be shorter)
     let decode_params = stream.decode_params().unwrap_or_default();
 
-    // Validate /Filter and /DecodeParms array lengths match
-    if !decode_params.is_empty() && decode_params.len() != filters.len() {
+    // Validate /Filter and /DecodeParms array lengths
+    // Per PDF spec, /DecodeParms can be shorter than /Filter (missing params are treated as null).
+    // But /DecodeParms cannot be longer than /Filter.
+    if decode_params.len() > filters.len() {
         return DecodeResult::with_diagnostic(
             raw_bytes,
-            Diagnostic::error("1.5",
-                format!("STRUCT_INVALID_FILTER_PARAMS: /Filter array length ({}) != /DecodeParms array length ({})",
-                    filters.len(), decode_params.len()))
+            Diagnostic::with_dynamic_no_offset(
+                DiagCode::StreamInvalidParams,
+                format!("/DecodeParms array length ({}) > /Filter array length ({})",
+                    decode_params.len(), filters.len())
+            )
         );
     }
 
@@ -1918,9 +1924,8 @@ fn decode_stream_impl(
                     Err(FilterError::EncryptionUnsupported) => {
                         // Crypt filter with custom /Name - emit ENCRYPTION_UNSUPPORTED
                         // and return empty bytes (stream is undecryptable)
-                        diagnostics.push(Diagnostic::error_with_code(
+                        diagnostics.push(Diagnostic::with_static_no_offset(
                             DiagCode::EncryptionUnsupported,
-                            "1.5",
                             "Crypt filter with custom /Name parameter is not supported",
                         ));
                         return DecodeResult {
@@ -1928,7 +1933,7 @@ fn decode_stream_impl(
                             diagnostics,
                         };
                     }
-                    Err(_) => {
+                    Err(e) => {
                         // Hard error - return raw bytes for this filter
                         break;
                     }
@@ -1936,16 +1941,20 @@ fn decode_stream_impl(
             }
             None => {
                 // Unknown filter - emit diagnostic and return current bytes (partial decode) per INV-8
-                diagnostics.push(Diagnostic::warning("1.5",
-                    format!("STRUCT_UNKNOWN_FILTER: Unknown filter: {}, returning partial decode", filter_name)));
+                diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StreamUnknownFilter,
+                    format!("Unknown filter: {}, returning partial decode", filter_name)
+                ));
                 break;
             }
         }
     }
 
     if bomb_limit_hit {
-        diagnostics.push(Diagnostic::error("1.5",
-            format!("STREAM_BOMB: Decompression bomb limit exceeded: {} bytes", opts.max_decompress_bytes)));
+        diagnostics.push(Diagnostic::with_dynamic_no_offset(
+            DiagCode::StreamBomb,
+            format!("Decompression bomb limit exceeded: {} bytes", opts.max_decompress_bytes)
+        ));
     }
 
     DecodeResult {

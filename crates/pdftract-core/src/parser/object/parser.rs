@@ -5,7 +5,7 @@
 
 use super::types::{intern, ObjRef, PdfDict, PdfObject, PdfStream, PdfIndirect};
 use crate::parser::lexer::{Lexer, Token};
-use crate::parser::diagnostic::{Diagnostic, DiagCode};
+use crate::diagnostics::{Diagnostic as Diag, DiagCode};
 
 /// Maximum nesting depth for dictionaries and arrays.
 ///
@@ -21,7 +21,7 @@ pub struct ObjectParser<'a> {
     /// The lexer that provides tokens
     lexer: Lexer<'a>,
     /// Accumulated diagnostics
-    diagnostics: Vec<Diagnostic>,
+    diagnostics: Vec<Diag>,
     /// Current nesting depth (for depth limit enforcement)
     depth: u16,
 }
@@ -50,7 +50,7 @@ impl<'a> ObjectParser<'a> {
     }
 
     /// Take all accumulated diagnostics.
-    pub fn take_diagnostics(&mut self) -> Vec<Diagnostic> {
+    pub fn take_diagnostics(&mut self) -> Vec<Diag> {
         std::mem::take(&mut self.diagnostics)
     }
 
@@ -93,8 +93,8 @@ impl<'a> ObjectParser<'a> {
             Token::Eof => None,
             _ => {
                 // Unexpected token - emit diagnostic and return null
-                self.diagnostics.push(Diagnostic::warning(
-                    "1.2",
+                self.diagnostics.push(Diag::with_dynamic_no_offset(
+                    DiagCode::StructUnexpectedByte,
                     format!("Unexpected token: {:?}", token),
                 ));
                 Some(PdfObject::Null)
@@ -119,8 +119,8 @@ impl<'a> ObjectParser<'a> {
 
             // Validate object and generation numbers are non-negative
             if first_int < 0 || gen < 0 {
-                self.diagnostics.push(Diagnostic::warning(
-                    "1.2",
+                self.diagnostics.push(Diag::with_dynamic_no_offset(
+                    DiagCode::StructInvalidIndirectHeader,
                     format!("Invalid indirect reference: {} {} R", first_int, gen),
                 ));
                 return Some(PdfObject::Null);
@@ -141,9 +141,9 @@ impl<'a> ObjectParser<'a> {
     fn parse_array(&mut self) -> Option<PdfObject> {
         // Check depth limit
         if self.depth >= MAX_DEPTH {
-            self.diagnostics.push(Diagnostic::error(
-                "1.2",
-                    format!("STRUCT_DEPTH_EXCEEDED: Array nesting depth exceeds limit of {}", MAX_DEPTH),
+            self.diagnostics.push(Diag::with_dynamic_no_offset(
+                DiagCode::StructDepthExceeded,
+                format!("Array nesting depth exceeds limit of {}", MAX_DEPTH),
             ));
             // Skip to matching closing bracket
             self.skip_to_array_end();
@@ -199,9 +199,8 @@ impl<'a> ObjectParser<'a> {
     fn parse_dict(&mut self) -> Option<PdfObject> {
         // Check depth limit
         if self.depth >= MAX_DEPTH {
-            self.diagnostics.push(Diagnostic::error_with_code(
-                DiagCode::DepthExceeded,
-                "1.2",
+            self.diagnostics.push(Diag::with_dynamic_no_offset(
+                DiagCode::StructDepthExceeded,
                 format!("Dictionary nesting depth exceeds limit of {}", MAX_DEPTH),
             ));
             self.skip_to_dict_end();
@@ -232,9 +231,9 @@ impl<'a> ObjectParser<'a> {
                                 match self.lexer.peek_token() {
                                     Some(Token::DictEnd) | Some(Token::Eof) => {
                                         // Missing value - insert PdfNull
-                                        self.diagnostics.push(Diagnostic::warning(
-                                            "1.2",
-                                                format!("STRUCT_INVALID_DICT_VALUE: Dictionary key '{}' has no value, inserting null", key),
+                                        self.diagnostics.push(Diag::with_dynamic_no_offset(
+                                            DiagCode::StructInvalidDictValue,
+                                            format!("Dictionary key '{}' has no value, inserting null", key),
                                         ));
                                         dict.insert(key, PdfObject::Null);
                                         break; // End of dict
@@ -253,9 +252,9 @@ impl<'a> ObjectParser<'a> {
                             }
                             _ => {
                                 // Invalid key - not a name
-                                self.diagnostics.push(Diagnostic::warning(
-                                    "1.2",
-                                        format!("STRUCT_INVALID_DICT_KEY: Dictionary key is not a name object, skipping"),
+                                self.diagnostics.push(Diag::with_dynamic_no_offset(
+                                    DiagCode::StructInvalidDictKey,
+                                    "Dictionary key is not a name object, skipping".to_string(),
                                 ));
                                 // Skip the invalid token and the next token (would-be value)
                                 let _ = self.lexer.next_token();
@@ -314,9 +313,9 @@ impl<'a> ObjectParser<'a> {
             let len_usize = len as usize;
             let actual_skipped = self.lexer.skip_bytes(len);
             if actual_skipped < len_usize {
-                self.diagnostics.push(Diagnostic::error(
-                    "1.2",
-                        format!("STRUCT_TRUNCATED_STREAM: Stream truncated at EOF: expected {} bytes, got {}", len, actual_skipped),
+                self.diagnostics.push(Diag::with_dynamic_no_offset(
+                    DiagCode::StructUnexpectedEof,
+                    format!("Stream truncated at EOF: expected {} bytes, got {}", len, actual_skipped),
                 ));
             }
         } else {
@@ -330,24 +329,24 @@ impl<'a> ObjectParser<'a> {
                 // Normal case - stream properly terminated
             }
             Some(Token::Eof) => {
-                self.diagnostics.push(Diagnostic::error(
-                    "1.2",
-                        "STRUCT_TRUNCATED_STREAM: Stream truncated at EOF, missing endstream keyword",
+                self.diagnostics.push(Diag::with_dynamic_no_offset(
+                    DiagCode::StructUnexpectedEof,
+                    "Stream truncated at EOF, missing endstream keyword".to_string(),
                 ));
             }
             Some(other) => {
-                self.diagnostics.push(Diagnostic::warning(
-                    "1.2",
-                        format!("STRUCT_MISSING_KEY: Expected endstream keyword after stream body, found {:?}", other),
+                self.diagnostics.push(Diag::with_dynamic_no_offset(
+                    DiagCode::StructUnexpectedByte,
+                    format!("Expected endstream keyword after stream body, found {:?}", other),
                 ));
                 // Try to recover by scanning forward for EndStream
                 self.scan_to_endstream();
             }
             None => {
                 // Shouldn't happen, but handle gracefully
-                self.diagnostics.push(Diagnostic::error(
-                    "1.2",
-                    "Unexpected None after skipping stream body",
+                self.diagnostics.push(Diag::with_dynamic_no_offset(
+                    DiagCode::StructUnexpectedEof,
+                    "Unexpected None after skipping stream body".to_string(),
                 ));
             }
         }
@@ -420,15 +419,15 @@ impl<'a> ObjectParser<'a> {
             Token::Integer(n) => {
                 // Check for overflow
                 if n > u32::MAX as i64 {
-                    self.diagnostics.push(Diagnostic::warning(
-                        "1.2",
-                        format!("STRUCT_INTEGER_OVERFLOW: Object number {} exceeds u32::MAX, clamping", n),
+                    self.diagnostics.push(Diag::with_dynamic_no_offset(
+                        DiagCode::StructIntegerOverflow,
+                        format!("Object number {} exceeds u32::MAX, clamping", n),
                     ));
                     u32::MAX
                 } else if n < 0 {
-                    self.diagnostics.push(Diagnostic::warning(
-                        "1.2",
-                        format!("STRUCT_INVALID_INDIRECT_HEADER: Negative object number {}", n),
+                    self.diagnostics.push(Diag::with_dynamic_no_offset(
+                        DiagCode::StructInvalidIndirectHeader,
+                        format!("Negative object number {}", n),
                     ));
                     // Recover by scanning forward to next obj keyword
                     self.scan_to_next_obj();
@@ -439,9 +438,9 @@ impl<'a> ObjectParser<'a> {
             }
             _ => {
                 // Not an integer - emit diagnostic and recover
-                self.diagnostics.push(Diagnostic::warning(
-                    "1.2",
-                    format!("STRUCT_INVALID_INDIRECT_HEADER: Expected object number, found {:?}", token1),
+                self.diagnostics.push(Diag::with_dynamic_no_offset(
+                    DiagCode::StructInvalidIndirectHeader,
+                    format!("Expected object number, found {:?}", token1),
                 ));
                 self.scan_to_next_obj();
                 return None;
@@ -454,15 +453,15 @@ impl<'a> ObjectParser<'a> {
             Token::Integer(g) => {
                 // Check for overflow
                 if g > u16::MAX as i64 {
-                    self.diagnostics.push(Diagnostic::warning(
-                        "1.2",
-                        format!("STRUCT_INTEGER_OVERFLOW: Generation number {} exceeds u16::MAX, clamping", g),
+                    self.diagnostics.push(Diag::with_dynamic_no_offset(
+                        DiagCode::StructIntegerOverflow,
+                        format!("Generation number {} exceeds u16::MAX, clamping", g),
                     ));
                     u16::MAX
                 } else if g < 0 {
-                    self.diagnostics.push(Diagnostic::warning(
-                        "1.2",
-                        format!("STRUCT_INVALID_INDIRECT_HEADER: Negative generation number {}", g),
+                    self.diagnostics.push(Diag::with_dynamic_no_offset(
+                        DiagCode::StructInvalidIndirectHeader,
+                        format!("Negative generation number {}", g),
                     ));
                     self.scan_to_next_obj();
                     return None;
@@ -472,9 +471,9 @@ impl<'a> ObjectParser<'a> {
             }
             _ => {
                 // Not an integer - emit diagnostic and recover
-                self.diagnostics.push(Diagnostic::warning(
-                    "1.2",
-                    format!("STRUCT_INVALID_INDIRECT_HEADER: Expected generation number, found {:?}", token2),
+                self.diagnostics.push(Diag::with_dynamic_no_offset(
+                    DiagCode::StructInvalidIndirectHeader,
+                    format!("Expected generation number, found {:?}", token2),
                 ));
                 self.scan_to_next_obj();
                 return None;
@@ -484,9 +483,9 @@ impl<'a> ObjectParser<'a> {
         // Read the third token (must be Obj)
         let token3 = self.lexer.next_token()?;
         if !matches!(token3, Token::Obj) {
-            self.diagnostics.push(Diagnostic::warning(
-                "1.2",
-                format!("STRUCT_INVALID_INDIRECT_HEADER: Expected 'obj' keyword, found {:?}", token3),
+            self.diagnostics.push(Diag::with_dynamic_no_offset(
+                DiagCode::StructInvalidIndirectHeader,
+                format!("Expected 'obj' keyword, found {:?}", token3),
             ));
             self.scan_to_next_obj();
             return None;
@@ -507,9 +506,9 @@ impl<'a> ObjectParser<'a> {
             Some(Token::Obj) => {
                 // Found the start of the next indirect object before endobj
                 // This means the current object is malformed
-                self.diagnostics.push(Diagnostic::warning(
-                    "1.2",
-                    "STRUCT_MISSING_KEY: Missing 'endobj' before next indirect object".to_string(),
+                self.diagnostics.push(Diag::with_dynamic_no_offset(
+                    DiagCode::StructMissingKey,
+                    "Missing 'endobj' before next indirect object".to_string(),
                 ));
                 // We're positioned at 'obj' but need to be at the object number
                 // Scan forward to find the next integer (object number)
@@ -518,22 +517,22 @@ impl<'a> ObjectParser<'a> {
             Some(Token::Eof) => {
                 // Consume the Eof
                 let _ = self.lexer.next_token();
-                self.diagnostics.push(Diagnostic::warning(
-                    "1.2",
-                    "STRUCT_MISSING_KEY: Missing 'endobj' at EOF".to_string(),
+                self.diagnostics.push(Diag::with_dynamic_no_offset(
+                    DiagCode::StructMissingKey,
+                    "Missing 'endobj' at EOF".to_string(),
                 ));
             }
             None => {
-                self.diagnostics.push(Diagnostic::warning(
-                    "1.2",
-                    "STRUCT_MISSING_KEY: Missing 'endobj' at EOF".to_string(),
+                self.diagnostics.push(Diag::with_dynamic_no_offset(
+                    DiagCode::StructMissingKey,
+                    "Missing 'endobj' at EOF".to_string(),
                 ));
             }
             Some(_) => {
                 // Some other token - scan for endobj or next obj
-                self.diagnostics.push(Diagnostic::warning(
-                    "1.2",
-                    "STRUCT_MISSING_KEY: Expected 'endobj', scanning forward".to_string(),
+                self.diagnostics.push(Diag::with_dynamic_no_offset(
+                    DiagCode::StructMissingKey,
+                    "Expected 'endobj', scanning forward".to_string(),
                 ));
                 self.scan_to_endobj_or_obj();
             }
@@ -826,7 +825,7 @@ mod tests {
             assert_eq!(dict.len(), 1);
             assert_eq!(dict.get("Type"), Some(&PdfObject::Null));
             let diags = parser.take_diagnostics();
-            assert!(diags.iter().any(|d| d.message.contains("STRUCT_INVALID_DICT_VALUE")));
+            assert!(diags.iter().any(|d| d.code == DiagCode::StructInvalidDictValue));
         } else {
             panic!("Expected dict, got {:?}", obj);
         }
@@ -839,7 +838,7 @@ mod tests {
         if let Some(PdfObject::Dict(dict)) = obj {
             assert_eq!(dict.len(), 0);
             let diags = parser.take_diagnostics();
-            assert!(diags.iter().any(|d| d.message.contains("STRUCT_INVALID_DICT_KEY")));
+            assert!(diags.iter().any(|d| d.code == DiagCode::StructInvalidDictKey));
         } else {
             panic!("Expected dict, got {:?}", obj);
         }
@@ -926,7 +925,7 @@ mod tests {
 
         // Should have emitted STRUCT_DEPTH_EXCEEDED diagnostic
         let diags = parser.take_diagnostics();
-        assert!(diags.iter().any(|d| d.code == DiagCode::DepthExceeded));
+        assert!(diags.iter().any(|d| d.code == DiagCode::StructDepthExceeded));
     }
 
     #[test]
@@ -951,7 +950,7 @@ mod tests {
 
         // Should have emitted STRUCT_INVALID_DICT_VALUE diagnostic for missing value
         let diags = parser.take_diagnostics();
-        assert!(diags.iter().any(|d| d.code == DiagCode::InvalidDictValue));
+        assert!(diags.iter().any(|d| d.code == DiagCode::StructInvalidDictValue));
     }
 
     #[test]
@@ -962,7 +961,7 @@ mod tests {
         // Should return PdfNull with diagnostic
         assert_eq!(obj, Some(PdfObject::Null));
         let diags = parser.take_diagnostics();
-        assert!(diags.iter().any(|d| d.code == DiagCode::StructUnexpectedEof));
+        assert!(diags.iter().any(|d| d.code == DiagCode::StructInvalidIndirectHeader));
     }
 
     #[test]
@@ -1085,7 +1084,7 @@ mod tests {
 
         // Should have emitted STRUCT_MISSING_KEY diagnostic
         let diags = parser.take_diagnostics();
-        assert!(diags.iter().any(|d| d.message.contains("STRUCT_MISSING_KEY")));
+        assert!(diags.iter().any(|d| d.code == DiagCode::StructMissingKey));
 
         // Next parse should handle the second object
         let indirect2 = parser.parse_indirect_object();
@@ -1109,7 +1108,7 @@ mod tests {
 
         // Should have emitted STRUCT_INTEGER_OVERFLOW diagnostic
         let diags = parser.take_diagnostics();
-        assert!(diags.iter().any(|d| d.message.contains("STRUCT_INTEGER_OVERFLOW")));
+        assert!(diags.iter().any(|d| d.code == DiagCode::StructIntegerOverflow));
     }
 
     #[test]
@@ -1124,7 +1123,7 @@ mod tests {
 
         // Should have emitted STRUCT_INTEGER_OVERFLOW diagnostic
         let diags = parser.take_diagnostics();
-        assert!(diags.iter().any(|d| d.message.contains("STRUCT_INTEGER_OVERFLOW")));
+        assert!(diags.iter().any(|d| d.code == DiagCode::StructIntegerOverflow));
     }
 
     #[test]
@@ -1138,7 +1137,7 @@ mod tests {
 
         // Should have emitted STRUCT_INVALID_INDIRECT_HEADER diagnostic
         let diags = parser.take_diagnostics();
-        assert!(diags.iter().any(|d| d.message.contains("STRUCT_INVALID_INDIRECT_HEADER")));
+        assert!(diags.iter().any(|d| d.code == DiagCode::StructInvalidIndirectHeader));
     }
 
     #[test]
@@ -1151,7 +1150,7 @@ mod tests {
 
         // Should have emitted STRUCT_INVALID_INDIRECT_HEADER diagnostic
         let diags = parser.take_diagnostics();
-        assert!(diags.iter().any(|d| d.message.contains("STRUCT_INVALID_INDIRECT_HEADER")));
+        assert!(diags.iter().any(|d| d.code == DiagCode::StructInvalidIndirectHeader));
     }
 
     #[test]

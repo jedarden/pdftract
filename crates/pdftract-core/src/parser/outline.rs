@@ -214,27 +214,27 @@ fn decode_utf16be_raw(bytes: &[u8]) -> std::result::Result<String, ()> {
 ///
 /// Returns true if:
 /// - Length is even
-/// - For any byte > 0x7F, the adjacent bytes are 0x00
+/// - Most high bytes (first byte of each pair) are 0x00
+///
+/// This detects UTF-16BE encoded ASCII text, where each ASCII character
+/// is stored as [0x00, char_code].
 fn looks_like_utf16be(bytes: &[u8]) -> bool {
     if bytes.len() < 2 || bytes.len() % 2 != 0 {
         return false;
     }
 
-    // Check if high bytes are mostly zero (indicative of UTF-16BE ASCII text)
-    let mut high_bytes_count = 0;
-    let mut high_bytes_zero = 0;
+    // Count how many high bytes are zero
+    let mut zero_high_bytes = 0;
+    let total_pairs = bytes.len() / 2;
 
     for chunk in bytes.chunks_exact(2) {
-        if chunk[0] > 0x7F || chunk[1] > 0x7F {
-            high_bytes_count += 1;
-            if chunk[0] == 0x00 {
-                high_bytes_zero += 1;
-            }
+        if chunk[0] == 0x00 {
+            zero_high_bytes += 1;
         }
     }
 
-    // If we have non-ASCII bytes and most high bytes are zero, likely UTF-16BE
-    high_bytes_count > 0 && high_bytes_zero >= high_bytes_count / 2
+    // If most high bytes are zero (>= 75%), likely UTF-16BE
+    zero_high_bytes >= total_pairs * 3 / 4
 }
 
 /// Decode PDFDocEncoded string to UTF-8.
@@ -566,6 +566,13 @@ fn resolve_destination(
                 return (None, None);
             }
         }
+        (None, None)
+    } else if dest_obj.as_name().is_some() || dest_obj.as_string().is_some() {
+        // Named destination (name or string) - emit diagnostic and return None
+        diagnostics.push(Diagnostic::with_static_no_offset(
+            DiagCode::StructUnresolvedDestination,
+            "STRUCT_UNRESOLVED_DESTINATION: Named destination not supported",
+        ));
         (None, None)
     } else {
         (None, None)

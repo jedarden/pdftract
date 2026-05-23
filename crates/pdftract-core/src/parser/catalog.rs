@@ -783,7 +783,9 @@ mod tests {
         assert!(catalog.names_ref.is_none());
         assert!(catalog.metadata_ref.is_none());
         assert!(catalog.page_labels.is_none());
-        assert!(catalog.oc_properties.is_none());
+        // oc_properties is always Some; check present flag for absence
+        assert!(catalog.oc_properties.is_some());
+        assert!(!catalog.oc_properties.as_ref().unwrap().present);
         assert!(catalog.open_action.is_none());
         assert!(catalog.aa.is_none());
         assert!(catalog.version.is_none());

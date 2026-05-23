@@ -3,7 +3,7 @@
 //! This module provides the lexer that converts raw PDF byte sequences into tokens.
 //! PDF is byte-oriented; position tracking is byte-level, not character-level.
 
-use std::borrow::Cow;
+use crate::diagnostics::{Diagnostic as Diag, DiagCode};
 
 /// Token produced by the PDF lexer.
 ///
@@ -49,82 +49,6 @@ pub enum Token {
     Eof,
 }
 
-/// Diagnostic code for lexer errors.
-///
-/// All lexer diagnostic codes use the `STRUCT_` prefix to indicate
-/// they relate to structural/lexical issues in the PDF document.
-#[derive(Clone, Debug, PartialEq)]
-pub enum DiagCode {
-    /// Invalid name character or malformed name
-    StructInvalidName,
-    /// Invalid hexadecimal character in hex string or name escape
-    StructInvalidHex,
-    /// Invalid octal escape sequence in literal string
-    StructInvalidOctal,
-    /// Invalid stream header (stream keyword not followed by proper newline)
-    StructInvalidStreamHeader,
-    /// Unexpected byte (e.g., stray `>` not part of `>>`)
-    StructUnexpectedByte,
-    /// Unexpected end of file while parsing a token
-    StructUnexpectedEof,
-    /// Unterminated literal string (missing closing paren)
-    StructUnterminatedString,
-
-    // Object parser codes
-    /// Dictionary nesting depth exceeds limit
-    DepthExceeded,
-    /// Missing required key in dictionary
-    MissingKey,
-
-    // Object stream codes
-    /// Invalid object stream format
-    InvalidObjstm,
-    /// Circular reference in /Extends chain
-    CircularRef,
-    /// Stream decompression failed
-    DecompressionFailed,
-    /// Decompression bomb limit exceeded
-    StreamBomb,
-}
-
-/// Diagnostic message emitted during lexing.
-///
-/// Diagnostics are accumulated during lexing and can be retrieved
-/// via `Lexer::take_diagnostics()`. They do not stop lexing; the
-/// lexer attempts recovery and continues.
-///
-/// Diagnostic messages use `Cow<'static, str>` so static error messages
-/// don't allocate. Dynamic messages (with formatting) allocate only when needed.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Diagnostic {
-    /// The diagnostic code identifying the type of error
-    pub code: DiagCode,
-    /// Byte offset in the input where the error occurred
-    pub byte_offset: u64,
-    /// Human-readable error message
-    pub msg: Cow<'static, str>,
-}
-
-impl Diagnostic {
-    /// Create a diagnostic with a static message (no allocation).
-    fn with_static(code: DiagCode, byte_offset: u64, msg: &'static str) -> Self {
-        Diagnostic {
-            code,
-            byte_offset,
-            msg: Cow::Borrowed(msg),
-        }
-    }
-
-    /// Create a diagnostic with a dynamic message (allocates).
-    fn with_dynamic(code: DiagCode, byte_offset: u64, msg: String) -> Self {
-        Diagnostic {
-            code,
-            byte_offset,
-            msg: Cow::Owned(msg),
-        }
-    }
-}
-
 /// PDF lexical analyzer.
 ///
 /// The lexer processes PDF byte sequences and produces tokens.
@@ -149,7 +73,7 @@ pub struct Lexer<'a> {
     /// Current byte position within the original input
     pos: usize,
     /// Accumulated diagnostics
-    diagnostics: Vec<Diagnostic>,
+    diagnostics: Vec<Diag>,
     /// Cached token for peek operations (token, position after token)
     peek_cache: Option<(Token, usize)>,
     /// Whether Eof has been returned
@@ -322,7 +246,7 @@ impl<'a> Lexer<'a> {
     /// let diags = lexer.take_diagnostics();
     /// assert!(diags.is_empty());
     /// ```
-    pub fn take_diagnostics(&mut self) -> Vec<Diagnostic> {
+    pub fn take_diagnostics(&mut self) -> Vec<Diag> {
         std::mem::take(&mut self.diagnostics)
     }
 
@@ -387,6 +311,17 @@ impl<'a> Lexer<'a> {
             b'n' => self.lex_n_keyword(),
             b'x' => self.lex_x_keyword(),
             b'%' => self.lex_percent(),
+            b'{' | b'}' => {
+                // PDF 1.2 reserved these for future use; treat as unexpected bytes
+                let pos = self.pos;
+                self.diagnostics.push(Diag::with_dynamic(
+                    DiagCode::StructUnexpectedByte,
+                    pos as u64,
+                    format!("Unexpected byte: 0x{:02x}", next),
+                ));
+                self.advance(1);
+                Some(Token::Null)
+            }
             _ => self.lex_keyword(),
         }
     }
@@ -601,7 +536,7 @@ impl<'a> Lexer<'a> {
 
         if !has_digit {
             // Not a valid number, emit diagnostic and return null
-            self.diagnostics.push(Diagnostic::with_static(
+            self.diagnostics.push(Diag::with_static(
                 DiagCode::StructUnexpectedEof,
                 start as u64,
                 "Invalid numeric literal",
@@ -710,7 +645,7 @@ impl<'a> Lexer<'a> {
                             }
 
                             if value > 255 {
-                                self.diagnostics.push(Diagnostic::with_dynamic(
+                                self.diagnostics.push(Diag::with_dynamic(
                                     DiagCode::StructInvalidOctal,
                                     self.pos as u64,
                                     format!("Octal escape \\{:03o} exceeds 255, truncated", value),
@@ -738,7 +673,7 @@ impl<'a> Lexer<'a> {
         }
 
         // Unterminated string
-        self.diagnostics.push(Diagnostic::with_static(
+        self.diagnostics.push(Diag::with_static(
             DiagCode::StructUnterminatedString,
             start as u64,
             "Unterminated literal string",
@@ -763,7 +698,7 @@ impl<'a> Lexer<'a> {
 
             // Special check for NUL byte: it's whitespace per spec, but invalid in names
             if b == 0x00 {
-                self.diagnostics.push(Diagnostic::with_static(
+                self.diagnostics.push(Diag::with_static(
                     DiagCode::StructInvalidName,
                     self.pos as u64,
                     "NUL byte in name is invalid per PDF spec",
@@ -796,7 +731,7 @@ impl<'a> Lexer<'a> {
                             let decoded = (h << 4) | l;
                             // Check if decoded byte is NUL
                             if decoded == 0 {
-                                self.diagnostics.push(Diagnostic::with_static(
+                                self.diagnostics.push(Diag::with_static(
                                     DiagCode::StructInvalidName,
                                     self.pos as u64,
                                     "NUL byte in name is invalid per PDF spec",
@@ -810,7 +745,7 @@ impl<'a> Lexer<'a> {
                         }
                         _ => {
                             // Invalid hex: emit diagnostic and treat # as literal
-                            self.diagnostics.push(Diagnostic::with_static(
+                            self.diagnostics.push(Diag::with_static(
                                 DiagCode::StructInvalidName,
                                 self.pos as u64,
                                 "Invalid hex escape sequence in name",
@@ -836,7 +771,7 @@ impl<'a> Lexer<'a> {
 
         // Emit diagnostic if we hit the length limit
         if truncated_due_to_length || raw_consumed > MAX_RAW_BYTES {
-            self.diagnostics.push(Diagnostic::with_static(
+            self.diagnostics.push(Diag::with_static(
                 DiagCode::StructInvalidName,
                 start as u64,
                 "Name exceeds 127-byte length limit",
@@ -845,7 +780,7 @@ impl<'a> Lexer<'a> {
             // Check if there's more input that we didn't consume
             if let Some(&b) = self.bytes.first() {
                 if !Self::is_pdf_whitespace(b) && !Self::is_pdf_delimiter(b) {
-                    self.diagnostics.push(Diagnostic::with_static(
+                    self.diagnostics.push(Diag::with_static(
                         DiagCode::StructInvalidName,
                         start as u64,
                         "Name exceeds 127-byte length limit",
@@ -910,7 +845,7 @@ impl<'a> Lexer<'a> {
                     out.push(hi << 4);
                     current_nibble = None;
                 }
-                self.diagnostics.push(Diagnostic::with_dynamic(
+                self.diagnostics.push(Diag::with_dynamic(
                     DiagCode::StructInvalidHex,
                     self.pos as u64,
                     format!("Invalid hex character '{}' (0x{:02x})", b as char, b),
@@ -920,7 +855,7 @@ impl<'a> Lexer<'a> {
         }
 
         // EOF before >
-        self.diagnostics.push(Diagnostic::with_static(
+        self.diagnostics.push(Diag::with_static(
             DiagCode::StructUnterminatedString,
             start as u64,
             "Unterminated hex string",
@@ -950,7 +885,7 @@ impl<'a> Lexer<'a> {
             Some(Token::DictEnd)
         } else {
             // Stray > - emit diagnostic
-            self.diagnostics.push(Diagnostic::with_static(
+            self.diagnostics.push(Diag::with_static(
                 DiagCode::StructUnexpectedByte,
                 self.pos as u64,
                 "Unexpected > character",
@@ -980,7 +915,7 @@ impl<'a> Lexer<'a> {
                         self.advance(1); // consume the \n
                     } else {
                         // Lone \r - invalid
-                        self.diagnostics.push(Diagnostic::with_static(
+                        self.diagnostics.push(Diag::with_static(
                             DiagCode::StructInvalidStreamHeader,
                             start_pos as u64,
                             "stream keyword must be followed by \\n or \\r\\n, not lone \\r",
@@ -988,7 +923,7 @@ impl<'a> Lexer<'a> {
                     }
                 } else {
                     // No line ending at all - invalid
-                    self.diagnostics.push(Diagnostic::with_static(
+                    self.diagnostics.push(Diag::with_static(
                         DiagCode::StructInvalidStreamHeader,
                         start_pos as u64,
                         "stream keyword must be followed by \\n or \\r\\n",
@@ -1071,7 +1006,7 @@ impl<'a> Lexer<'a> {
     fn lex_unknown(&mut self) -> Option<Token> {
         // Unknown character - skip it and emit diagnostic
         let pos = self.pos;
-        self.diagnostics.push(Diagnostic::with_dynamic(
+        self.diagnostics.push(Diag::with_dynamic(
             DiagCode::StructUnexpectedEof,
             pos as u64,
             format!("Unexpected byte: 0x{:02x}", self.bytes[0]),
@@ -1201,7 +1136,7 @@ mod tests {
         let diags = lexer.take_diagnostics();
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].code, DiagCode::StructInvalidStreamHeader);
-        assert!(diags[0].msg.contains("lone \\r"));
+        assert!(diags[0].message.as_ref().contains("lone \\r"));
     }
 
     #[test]
@@ -1358,7 +1293,7 @@ mod tests {
         let diags = lexer.take_diagnostics();
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].code, DiagCode::StructInvalidOctal);
-        assert!(diags[0].msg.contains("401"));
+        assert!(diags[0].message.as_ref().contains("401"));
     }
 
     #[test]
@@ -1477,8 +1412,8 @@ mod tests {
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].code, DiagCode::StructInvalidHex);
         // Debug: print actual message
-        eprintln!("Actual diagnostic message: {}", diags[0].msg);
-        assert!(diags[0].msg.contains("Z"));
+        eprintln!("Actual diagnostic message: {}", diags[0].message.as_ref());
+        assert!(diags[0].message.as_ref().contains("Z"));
     }
 
     #[test]
@@ -1489,7 +1424,7 @@ mod tests {
         let diags = lexer.take_diagnostics();
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].code, DiagCode::StructUnterminatedString);
-        assert!(diags[0].msg.contains("hex string"));
+        assert!(diags[0].message.as_ref().contains("hex string"));
     }
 
     #[test]
@@ -1772,7 +1707,7 @@ mod tests {
         let diags = lexer.take_diagnostics();
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].code, DiagCode::StructInvalidName);
-        assert!(diags[0].msg.contains("NUL"));
+        assert!(diags[0].message.as_ref().contains("NUL"));
     }
 
     #[test]
@@ -1801,7 +1736,7 @@ mod tests {
         let diags = lexer.take_diagnostics();
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].code, DiagCode::StructInvalidName);
-        assert!(diags[0].msg.contains("127"));
+        assert!(diags[0].message.as_ref().contains("127"));
     }
 
     #[test]
@@ -1873,7 +1808,7 @@ mod tests {
         let diags = lexer.take_diagnostics();
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].code, DiagCode::StructInvalidName);
-        assert!(diags[0].msg.contains("hex"));
+        assert!(diags[0].message.as_ref().contains("hex"));
     }
 
     #[test]

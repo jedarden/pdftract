@@ -738,6 +738,7 @@ dependencies = [
  "chrono",
  "clap",
  "lzw",
+ "pdftract-core",
  "regex",
  "secrecy",
  "serde",

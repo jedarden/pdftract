@@ -383,6 +383,30 @@ pub enum DiagCode {
     /// Phase origin: 1.3
     XrefRemoteNoForwardScan,
 
+    /// Invalid xref stream format
+    ///
+    /// Emitted when an xref stream has a malformed header, invalid /W array,
+    /// or other format violations. The stream is skipped.
+    ///
+    /// Phase origin: 1.3
+    XrefInvalidStreamFormat,
+
+    /// Invalid xref stream entry
+    ///
+    /// Emitted when an xref stream entry cannot be parsed due to invalid data
+    /// in the stream's compressed entries section.
+    ///
+    /// Phase origin: 1.3
+    XrefInvalidStreamEntry,
+
+    /// Invalid /Prev offset in xref chain
+    ///
+    /// Emitted when a trailer's /Prev offset points to invalid data (outside file,
+    /// not at xref boundary, etc.). The chain is truncated at this point.
+    ///
+    /// Phase origin: 1.3
+    StructInvalidPrevOffset,
+
     // === STREAM_* codes ===
 
     /// Stream decompression failed (corrupt data)
@@ -687,7 +711,12 @@ impl DiagCode {
             | DiagCode::XrefTruncated
             | DiagCode::XrefRepaired
             | DiagCode::XrefLinearizedNoForwardScan
-            | DiagCode::XrefRemoteNoForwardScan => "XREF",
+            | DiagCode::XrefRemoteNoForwardScan
+            | DiagCode::XrefInvalidStreamFormat
+            | DiagCode::XrefInvalidStreamEntry => "XREF",
+
+            // STRUCT_* (continued)
+            DiagCode::StructInvalidPrevOffset => "STRUCT",
 
             // STREAM_*
             DiagCode::StreamDecodeError
@@ -774,6 +803,9 @@ impl DiagCode {
             DiagCode::XrefRepaired => "XREF_REPAIRED",
             DiagCode::XrefLinearizedNoForwardScan => "XREF_LINEARIZED_NO_FORWARD_SCAN",
             DiagCode::XrefRemoteNoForwardScan => "XREF_REMOTE_NO_FORWARD_SCAN",
+            DiagCode::XrefInvalidStreamFormat => "XREF_INVALID_STREAM_FORMAT",
+            DiagCode::XrefInvalidStreamEntry => "XREF_INVALID_STREAM_ENTRY",
+            DiagCode::StructInvalidPrevOffset => "STRUCT_INVALID_PREV_OFFSET",
             DiagCode::StreamDecodeError => "STREAM_DECODE_ERROR",
             DiagCode::StreamBomb => "STREAM_BOMB",
             DiagCode::StreamUnknownFilter => "STREAM_UNKNOWN_FILTER",
@@ -836,6 +868,7 @@ impl DiagCode {
             | DiagCode::StructNonGotoOutline
             | DiagCode::StructInvalidPdfDocEncoding
             | DiagCode::StructHybridConflict
+            | DiagCode::StructInvalidPrevOffset
             | DiagCode::XrefInvalidHeader
             | DiagCode::XrefInvalidEntry
             | DiagCode::XrefInvalidSubsectionHeader
@@ -844,6 +877,8 @@ impl DiagCode {
             | DiagCode::XrefTruncated
             | DiagCode::XrefLinearizedNoForwardScan
             | DiagCode::XrefRemoteNoForwardScan
+            | DiagCode::XrefInvalidStreamFormat
+            | DiagCode::XrefInvalidStreamEntry
             | DiagCode::StreamDecodeError
             | DiagCode::StreamUnknownFilter
             | DiagCode::StreamInvalidParams
@@ -1144,6 +1179,30 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         recoverable: true,
         phase: "1.3",
         suggested_action: "Forward scan is disabled for HTTP sources (would fetch entire file)",
+    },
+    DiagInfo {
+        code: DiagCode::XrefInvalidStreamFormat,
+        category: "XREF",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "1.3",
+        suggested_action: "The xref stream has a malformed header or invalid /W array; the stream is skipped",
+    },
+    DiagInfo {
+        code: DiagCode::XrefInvalidStreamEntry,
+        category: "XREF",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "1.3",
+        suggested_action: "An xref stream entry cannot be parsed due to invalid data",
+    },
+    DiagInfo {
+        code: DiagCode::StructInvalidPrevOffset,
+        category: "STRUCT",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "1.3",
+        suggested_action: "A trailer's /Prev offset points to invalid data; the xref chain is truncated at this point",
     },
     // === STREAM_* codes ===
     DiagInfo {

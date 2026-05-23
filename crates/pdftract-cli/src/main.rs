@@ -8,6 +8,9 @@ mod mcp;
 mod password;
 use codegen::Language;
 
+// Re-export diagnostics for the --list-diagnostics and --explain-diagnostic commands
+pub use pdftract_core::diagnostics::{DiagCode, DiagInfo, DIAGNOSTIC_CATALOG};
+
 #[derive(Parser)]
 #[command(name = "pdftract")]
 #[command(about = "pdftract CLI - PDF extraction and conformance testing", long_about = None)]
@@ -18,6 +21,13 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// List all diagnostic codes with their metadata
+    ListDiagnostics,
+    /// Explain a specific diagnostic code in detail
+    ExplainDiagnostic {
+        /// Diagnostic code to explain (e.g., STRUCT_MISSING_KEY, STREAM_BOMB)
+        code: String,
+    },
     /// Compare actual results against expected values with tolerances (for conformance testing)
     Compare {
         /// Path to the actual results JSON
@@ -113,6 +123,12 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::ListDiagnostics => {
+            cmd_list_diagnostics()?;
+        }
+        Commands::ExplainDiagnostic { code } => {
+            cmd_explain_diagnostic(&code)?;
+        }
         Commands::Compare {
             actual,
             expected,
@@ -188,6 +204,335 @@ fn cmd_extract(
     // TODO: Implement actual PDF extraction
     // This will be done in the extraction implementation beads
     eprintln!("NOTE: Full extraction implementation is pending (see plan for extraction beads)");
+
+    Ok(())
+}
+
+fn cmd_list_diagnostics() -> Result<()> {
+    println!("pdftract Diagnostic Codes");
+    println!();
+    println!("This catalog lists all diagnostic codes emitted during PDF parsing and extraction.");
+    println!("Each diagnostic includes a severity level, recoverable flag, phase origin, and suggested action.");
+    println!();
+
+    // Group by category
+    let mut categories: std::collections::HashMap<&str, Vec<&DiagInfo>> = std::collections::HashMap::new();
+    for info in DIAGNOSTIC_CATALOG {
+        categories.entry(info.category).or_default().push(info);
+    }
+
+    // Define category order
+    let category_order = vec![
+        "STRUCT", "XREF", "STREAM", "ENCRYPTION", "PAGE", "FONT",
+        "OCR", "REMOTE", "GSTATE", "LAYOUT", "MCP", "CACHE",
+    ];
+
+    for category in category_order {
+        if let Some(infos) = categories.get(category) {
+            println!("=== {}_* codes ===", category);
+            println!();
+
+            for info in infos {
+                println!("{} ({})", info.code, info.severity);
+                println!("  Phase: {}", info.phase);
+                println!("  Recoverable: {}", if info.recoverable { "Yes" } else { "No" });
+                println!("  Action: {}", info.suggested_action);
+                println!();
+            }
+        }
+    }
+
+    println!("Total: {} diagnostic codes", DIAGNOSTIC_CATALOG.len());
+    Ok(())
+}
+
+fn cmd_explain_diagnostic(code: &str) -> Result<()> {
+    // Normalize the input code (handle case-insensitivity and strip whitespace)
+    let code_upper = code.to_uppercase().trim().to_string();
+
+    // Try to find the diagnostic by name in the catalog
+    let info = DIAGNOSTIC_CATALOG
+        .iter()
+        .find(|info| info.code.name() == code_upper)
+        .ok_or_else(|| anyhow::anyhow!("Unknown diagnostic code: {}", code))?;
+
+    println!("Diagnostic: {}", info.code);
+    println!("Category: {}", info.category);
+    println!("Severity: {}", info.severity);
+    println!("Recoverable: {}", if info.recoverable { "Yes" } else { "No" });
+    println!("Phase Origin: {}", info.phase);
+    println!();
+    println!("Description:");
+
+    // Get the description from the DiagCode's doc comment
+    // We can't access doc comments at runtime, but we can provide useful info
+    match info.code {
+        DiagCode::StructInvalidName => {
+            println!("  Invalid name character or malformed name object");
+            println!("  Names containing invalid characters or exceeding the 127-byte limit are truncated.");
+        }
+        DiagCode::StructInvalidHex => {
+            println!("  Invalid hexadecimal character in hex string or name escape");
+            println!("  Non-hex characters in <...> strings or #XX escapes are skipped.");
+        }
+        DiagCode::StructInvalidOctal => {
+            println!("  Invalid octal escape sequence in literal string");
+            println!("  Invalid \\NNN escapes are passed through literally.");
+        }
+        DiagCode::StructInvalidStreamHeader => {
+            println!("  Invalid stream header");
+            println!("  The 'stream' keyword must be followed by CRLF or LF per PDF spec.");
+        }
+        DiagCode::StructUnexpectedByte => {
+            println!("  Unexpected byte during parsing");
+            println!("  A byte doesn't match expected token syntax; lexer resynchronizes.");
+        }
+        DiagCode::StructUnexpectedEof => {
+            println!("  Unexpected end of file");
+            println!("  The file ends mid-token; parsing continues with partial data.");
+        }
+        DiagCode::StructUnterminatedString => {
+            println!("  Unterminated literal string");
+            println!("  A literal string is missing a closing parenthesis.");
+        }
+        DiagCode::StructMissingKey => {
+            println!("  Missing required dictionary key");
+            println!("  A required key is absent from a dictionary.");
+        }
+        DiagCode::StructCircularRef => {
+            println!("  Circular reference detected");
+            println!("  An indirect reference forms a cycle (A → B → A).");
+        }
+        DiagCode::StructXobjectCycle => {
+            println!("  Form XObject cycle detected");
+            println!("  A form XObject invokes itself directly or indirectly.");
+        }
+        DiagCode::StructDepthExceeded => {
+            println!("  Dictionary nesting depth exceeds limit");
+            println!("  Structure is too deeply nested; truncated to prevent stack overflow.");
+        }
+        DiagCode::StructInvalidDictValue => {
+            println!("  Invalid dictionary value");
+            println!("  A dictionary key is not followed by a value.");
+        }
+        DiagCode::StructInvalidDictKey => {
+            println!("  Invalid dictionary key");
+            println!("  A dictionary key is not a name object.");
+        }
+        DiagCode::StructInvalidIndirectHeader => {
+            println!("  Invalid indirect object header");
+            println!("  The 'N G obj' header is malformed.");
+        }
+        DiagCode::StructIntegerOverflow => {
+            println!("  Integer overflow during parsing");
+            println!("  An integer would overflow i64; value is clamped.");
+        }
+        DiagCode::StructInvalidObjstm => {
+            println!("  Invalid object stream format");
+            println!("  An object stream has a malformed header or invalid data.");
+        }
+        DiagCode::StructInvalidGeometry => {
+            println!("  Invalid geometry value");
+            println!("  NaN or Inf in MediaBox/CropBox/Rotate; canonicalized to 0.");
+        }
+        DiagCode::StructInvalidUtf16 => {
+            println!("  Invalid UTF-16BE encoding");
+            println!("  A UTF-16BE string has odd length or invalid encoding.");
+        }
+        DiagCode::StructUnresolvedDestination => {
+            println!("  Unresolved named destination");
+            println!("  An outline references a named destination (not yet resolved).");
+        }
+        DiagCode::StructNonGotoOutline => {
+            println!("  Non-GoTo action in outline");
+            println!("  An outline has an action other than GoTo/URI.");
+        }
+        DiagCode::StructInvalidPdfDocEncoding => {
+            println!("  Invalid PDFDocEncoding");
+            println!("  A PDFDocEncoding string cannot be decoded to UTF-8.");
+        }
+        DiagCode::StructHybridConflict => {
+            println!("  Hybrid xref conflict");
+            println!("  Traditional xref and stream disagree on object state.");
+        }
+        DiagCode::StructInvalidPrevOffset => {
+            println!("  Invalid /Prev offset in xref chain");
+            println!("  A trailer's /Prev offset points to invalid data.");
+        }
+        DiagCode::XrefInvalidHeader => {
+            println!("  Invalid xref keyword or header");
+            println!("  The xref table doesn't start with the 'xref' keyword.");
+        }
+        DiagCode::XrefInvalidEntry => {
+            println!("  Malformed xref entry");
+            println!("  An xref entry doesn't match the 20-byte format.");
+        }
+        DiagCode::XrefInvalidSubsectionHeader => {
+            println!("  Invalid subsection header");
+            println!("  An xref subsection header is malformed.");
+        }
+        DiagCode::XrefObjectZeroNotFree => {
+            println!("  Object 0 is not free");
+            println!("  Object 0 is marked as in-use, violating PDF spec.");
+        }
+        DiagCode::XrefTrailerNotFound => {
+            println!("  Trailer dictionary not found");
+            println!("  The trailer dictionary couldn't be located or parsed.");
+        }
+        DiagCode::XrefTruncated => {
+            println!("  Truncated xref table");
+            println!("  The xref table ends unexpectedly.");
+        }
+        DiagCode::XrefRepaired => {
+            println!("  Xref was reconstructed");
+            println!("  Forward scan recovered xref entries after primary strategies failed.");
+        }
+        DiagCode::XrefLinearizedNoForwardScan => {
+            println!("  Forward scan disabled for linearized PDF");
+            println!("  Forward scan would incorrectly find the partial first-page xref.");
+        }
+        DiagCode::XrefRemoteNoForwardScan => {
+            println!("  Forward scan disabled for remote sources");
+            println!("  Forward scan would require fetching the entire file.");
+        }
+        DiagCode::XrefInvalidStreamFormat => {
+            println!("  Invalid xref stream format");
+            println!("  An xref stream has a malformed header or invalid /W array.");
+        }
+        DiagCode::XrefInvalidStreamEntry => {
+            println!("  Invalid xref stream entry");
+            println!("  An xref stream entry cannot be parsed due to invalid data.");
+        }
+        DiagCode::StreamDecodeError => {
+            println!("  Stream decompression failed");
+            println!("  A stream decoder encountered corrupt data mid-decompression.");
+        }
+        DiagCode::StreamBomb => {
+            println!("  Decompression bomb limit exceeded");
+            println!("  A stream's decompressed size would exceed the safety limit.");
+        }
+        DiagCode::StreamUnknownFilter => {
+            println!("  Unknown filter name");
+            println!("  A stream specifies an unsupported filter.");
+        }
+        DiagCode::StreamInvalidParams => {
+            println!("  Invalid filter parameters");
+            println!("  A stream's /DecodeParms dictionary is malformed.");
+        }
+        DiagCode::EncryptionUnsupported => {
+            println!("  Unsupported encryption or no password");
+            println!("  PDF is encrypted and no password was supplied or algorithm is unsupported.");
+        }
+        DiagCode::EncryptionWrongPassword => {
+            println!("  Password incorrect");
+            println!("  The supplied password doesn't match the PDF's encryption key.");
+        }
+        DiagCode::PageOutOfRange => {
+            println!("  Page number out of range");
+            println!("  --pages specifies a page number greater than the document's page count.");
+        }
+        DiagCode::PageInvalidCount => {
+            println!("  Invalid page count");
+            println!("  The /Count key in the /Pages tree is invalid.");
+        }
+        DiagCode::PageInvalidRotate => {
+            println!("  Invalid /Rotate value");
+            println!("  A page's /Rotate value is not a multiple of 90.");
+        }
+        DiagCode::FontGlyphUnmapped => {
+            println!("  Glyph could not be mapped to Unicode");
+            println!("  A glyph has no entry in /ToUnicode CMap, AGL, fingerprint, or shape match.");
+        }
+        DiagCode::FontNotFound => {
+            println!("  Font not found or couldn't be parsed");
+            println!("  A referenced font is missing from the PDF or couldn't be parsed.");
+        }
+        DiagCode::FontInvalidCmap => {
+            println!("  Invalid CMap format");
+            println!("  A CMap stream is malformed.");
+        }
+        DiagCode::OcrJbig2Unsupported => {
+            println!("  JBIG2 decoder not available");
+            println!("  Build with --features full-render to enable JBIG2 decoding.");
+        }
+        DiagCode::OcrJpxUnsupported => {
+            println!("  JPEG2000 decoder not available");
+            println!("  Build with --features full-render or install libopenjp2.");
+        }
+        DiagCode::OcrCcittUnsupported => {
+            println!("  CCITT fax decoder not available");
+            println!("  Install libtiff system library or build with --features full-render.");
+        }
+        DiagCode::OcrTesseractFailed => {
+            println!("  Tesseract OCR failed");
+            println!("  Tesseract crashed or returned an error.");
+        }
+        DiagCode::OcrBrokenVectorUnavailable => {
+            println!("  OCR unavailable on broken-vector page");
+            println!("  Build with --features ocr to enable OCR recovery.");
+        }
+        DiagCode::RemoteFetchInterrupted => {
+            println!("  HTTP fetch interrupted or failed");
+            println!("  Network error, timeout, or server error occurred.");
+        }
+        DiagCode::RemoteNoRangeSupport => {
+            println!("  Server does not support Range requests");
+            println!("  Falls back to downloading the entire file.");
+        }
+        DiagCode::RemoteTlsFailed => {
+            println!("  TLS handshake failed");
+            println!("  The TLS handshake failed; check the server's certificate.");
+        }
+        DiagCode::RemoteDnsFailed => {
+            println!("  DNS resolution failed");
+            println!("  The hostname could not be resolved.");
+        }
+        DiagCode::GstateStackOverflow => {
+            println!("  Graphics state stack overflow");
+            println!("  The graphics state stack exceeded the internal limit.");
+        }
+        DiagCode::GstateStackUnderflow => {
+            println!("  Graphics state stack underflow");
+            println!("  More Q operators than q operators in the content stream.");
+        }
+        DiagCode::GstateBtEtMismatch => {
+            println!("  Mismatched BT/ET pair");
+            println!("  The content stream has mismatched BT/ET operators.");
+        }
+        DiagCode::LayoutTaggedPdfDeferred => {
+            println!("  Tagged PDF StructTree deferred");
+            println!("  StructTree is ignored; XY-cut is used instead (Phase 7.1 pending).");
+        }
+        DiagCode::LayoutReadingOrderAmbiguous => {
+            println!("  Reading order may be incorrect");
+            println!("  The reading order algorithm detected ambiguity.");
+        }
+        DiagCode::LayoutLowReadability => {
+            println!("  Low readability score");
+            println!("  Page readability is below 0.85; may indicate mojibake.");
+        }
+        DiagCode::McpToolInvalidParams => {
+            println!("  MCP tool call has invalid parameters");
+            println!("  An MCP tool call doesn't match the tool's schema.");
+        }
+        DiagCode::McpPathTraversal => {
+            println!("  MCP path traversal attempt");
+            println!("  An MCP path escapes the --root directory.");
+        }
+        DiagCode::CacheEntryCorrupt => {
+            println!("  Cache entry is corrupted");
+            println!("  A cached entry failed to deserialize and was deleted.");
+        }
+        DiagCode::CacheWriteFailed => {
+            println!("  Cache write failed");
+            println!("  Writing to the cache failed (e.g., out of disk space).");
+        }
+    }
+
+    println!();
+    println!("Suggested Action: {}", info.suggested_action);
+    println!();
+    println!("Phase Origin: {}", info.phase);
 
     Ok(())
 }
