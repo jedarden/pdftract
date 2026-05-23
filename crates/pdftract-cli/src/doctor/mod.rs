@@ -3,11 +3,10 @@
 use anyhow::Result;
 use std::path::PathBuf;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::fmt::Write;
-use std::io::Write as IoWrite;
 
 // Private checks module
 mod checks;
+mod output;
 
 pub use checks::registry::all_checks;
 
@@ -134,6 +133,8 @@ pub struct DoctorOptions {
     pub features: bool,
     /// Output results as JSON
     pub json: bool,
+    /// Disable colored output
+    pub no_color: bool,
     /// Exit with code 1 if any check reports FAIL
     pub exit_on_fail: bool,
     /// Verify the profile search path includes DIR
@@ -148,7 +149,8 @@ pub struct DoctorOptions {
 pub fn run(opts: DoctorOptions) -> Result<()> {
     // If --features is set, print features and exit
     if opts.features {
-        println!("{}", version_info());
+        let features = DoctorFeatures::from_build();
+        output::output_features(&features);
         return Ok(());
     }
 
@@ -175,9 +177,11 @@ pub fn run(opts: DoctorOptions) -> Result<()> {
 
     // Output results
     if opts.json {
-        output_json(&results);
+        output::output_json(&results);
     } else {
-        output_text(&results)?;
+        output::output_text(&results, &output::TextOptions {
+            no_color: opts.no_color,
+        })?;
     }
 
     // Determine exit code
@@ -185,107 +189,6 @@ pub fn run(opts: DoctorOptions) -> Result<()> {
     if has_fail {
         std::process::exit(1);
     }
-
-    Ok(())
-}
-
-/// Output results as JSON
-fn output_json(results: &[CheckResult]) {
-    let mut ok = 0;
-    let mut warn = 0;
-    let mut fail = 0;
-
-    let checks_json: Vec<serde_json::Value> = results
-        .iter()
-        .map(|r| {
-            let status_str = match r.status {
-                CheckStatus::Ok => {
-                    ok += 1;
-                    "OK"
-                }
-                CheckStatus::Warn => {
-                    warn += 1;
-                    "WARN"
-                }
-                CheckStatus::Fail => {
-                    fail += 1;
-                    "FAIL"
-                }
-                CheckStatus::NotApplicable => "N/A",
-            };
-
-            serde_json::json!({
-                "name": r.name,
-                "status": status_str,
-                "detail": r.detail,
-            })
-        })
-        .collect();
-
-    let output = serde_json::json!({
-        "summary": {
-            "ok": ok,
-            "warn": warn,
-            "fail": fail,
-        },
-        "checks": checks_json,
-    });
-
-    println!("{}", serde_json::to_string_pretty(&output).unwrap());
-}
-
-/// Output results as human-readable text
-fn output_text(results: &[CheckResult]) -> Result<()> {
-    use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
-
-    let mut stdout = StandardStream::stdout(ColorChoice::Auto);
-
-    let mut ok = 0;
-    let mut warn = 0;
-    let mut fail = 0;
-
-    for result in results {
-        let (color, status_str) = match result.status {
-            CheckStatus::Ok => {
-                ok += 1;
-                (Color::Green, "OK")
-            }
-            CheckStatus::Warn => {
-                warn += 1;
-                (Color::Yellow, "WARN")
-            }
-            CheckStatus::Fail => {
-                fail += 1;
-                (Color::Red, "FAIL")
-            }
-            CheckStatus::NotApplicable => (Color::Cyan, "N/A"),
-        };
-
-        // Print check name
-        stdout.set_color(ColorSpec::new().set_bold(true))?;
-        write!(&mut stdout, "{:30}", result.name)?;
-        stdout.reset()?;
-
-        // Print status badge
-        stdout.set_color(ColorSpec::new().set_fg(Some(color)).set_bold(true))?;
-        write!(&mut stdout, "[{:4}] ", status_str)?;
-        stdout.reset()?;
-
-        // Print detail
-        writeln!(&mut stdout, "{}", result.detail)?;
-    }
-
-    // Print summary
-    writeln!(&mut stdout)?;
-    stdout.set_color(ColorSpec::new().set_bold(true))?;
-    write!(&mut stdout, "Summary: ")?;
-    stdout.reset()?;
-
-    writeln!(
-        &mut stdout,
-        "{} OK, {} WARN, {} FAIL",
-        ok, warn, fail
-    )?;
 
     Ok(())
 }

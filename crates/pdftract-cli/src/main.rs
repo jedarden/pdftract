@@ -179,6 +179,10 @@ enum Commands {
         #[arg(long)]
         json: bool,
 
+        /// Disable colored output
+        #[arg(long)]
+        no_color: bool,
+
         /// Exit with code 1 if any check reports FAIL
         #[arg(long)]
         exit_on_fail: bool,
@@ -372,6 +376,7 @@ fn main() -> Result<()> {
         Commands::Doctor {
             features,
             json,
+            no_color,
             exit_on_fail,
             profile_dir,
             cache_dir,
@@ -380,6 +385,7 @@ fn main() -> Result<()> {
             if let Err(e) = doctor::run(doctor::DoctorOptions {
                 features,
                 json,
+                no_color,
                 exit_on_fail,
                 profile_dir,
                 cache_dir,
