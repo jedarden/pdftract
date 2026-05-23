@@ -6,6 +6,7 @@ use std::path::PathBuf;
 mod codegen;
 mod mcp;
 mod password;
+mod verify_receipt;
 use codegen::Language;
 
 // Re-export diagnostics for the --list-diagnostics and --explain-diagnostic commands
@@ -78,6 +79,8 @@ enum Commands {
         #[arg(short, long, default_value = "json")]
         format: String,
     },
+    /// Verify a receipt against a PDF file
+    VerifyReceipt(verify_receipt::VerifyReceiptCommand),
     /// Start the MCP (Model Context Protocol) server
     ///
     /// Per ADR-006: stdio and HTTP transports are mutually exclusive because they have
@@ -180,6 +183,12 @@ fn main() -> Result<()> {
             format,
         } => {
             if let Err(e) = cmd_extract(input, password_stdin, password, &format) {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
+        Commands::VerifyReceipt(cmd) => {
+            if let Err(e) = verify_receipt::run_verify_receipt(cmd) {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }

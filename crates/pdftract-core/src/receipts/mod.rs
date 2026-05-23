@@ -22,6 +22,8 @@
 //! - `svg_clip`: Optional SVG rendering (only in SVG mode)
 
 pub mod lite;
+pub mod svg;
+pub mod verifier;
 
 use serde::{Deserialize, Serialize};
 

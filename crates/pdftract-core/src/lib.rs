@@ -5,6 +5,7 @@
 //! text extraction engines.
 
 pub mod diagnostics;
+pub mod document;
 pub mod fingerprint;
 pub mod parser;
 pub mod receipts;
