@@ -737,6 +737,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "lzw",
  "regex",
  "secrecy",
  "serde",

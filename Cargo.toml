@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["crates/pdftract-core", "crates/pdftract-cli", "crates/pdftract-py"]
+exclude = ["tests/fixtures/generate_lzw_fixtures.rs"]
 
 [workspace.package]
 version = "0.1.0"
