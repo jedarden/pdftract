@@ -14,6 +14,7 @@ pub mod pages;
 pub mod outline;
 pub mod resources;
 pub mod ocg;
+pub mod struct_tree;
 
 // Re-export from the unified diagnostics module (Phase 1.6)
 pub use crate::diagnostics::{Diagnostic, Severity, DiagCode, ObjRef};
@@ -29,6 +30,10 @@ pub use catalog::{Catalog, MarkInfo, PageLabel, PageLabelsTree, PageLabelStyle, 
 pub use ocg::{OcProperties, OcGroup, Ocmd, OcmdPolicy, BaseState, parse_oc_properties};
 pub use resources::{ResourceDict, merge_resources, extract_resources};
 pub use pages::{PageDict, flatten_page_tree, DEFAULT_MEDIABOX};
+pub use struct_tree::{
+    StructureType, StructElemNode, StructTreeRoot, RoleMap, Kid,
+    parse_struct_tree,
+};
 pub use stream::{
     StreamDecoder, FlateDecoder, ASCII85Decoder, ASCIIHexDecoder, CryptDecoder, PassthroughDecoder,
     normalize_filter_name, get_decoder, FilterError, DEFAULT_MAX_DECOMPRESS_BYTES,
