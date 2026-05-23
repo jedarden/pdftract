@@ -1,0 +1,6 @@
+# Cargo dist configuration for binary distribution
+# Ensures license files are included in all binary archives
+
+[dist]
+# Include license files in the root of every binary archive
+include = ["LICENSE-MIT", "LICENSE-APACHE"]

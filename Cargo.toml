@@ -9,7 +9,7 @@ edition = "2021"
 rust-version = "1.78"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/jedarden/pdftract"
-authors = ["Jedarden <bot@ardenone.com>"]
+authors = ["Jed Cabanero <me@jedcabanero.com>"]
 homepage = "https://github.com/jedarden/pdftract"
 documentation = "https://docs.rs/pdftract-core"
 

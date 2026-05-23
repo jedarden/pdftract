@@ -30,3 +30,5 @@ features = ["pyo3/extension-module"]
 strip = true
 # Use abi3 for forward compatibility across Python 3.11+
 python-source = "python"
+# Include license files in the wheel
+license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
