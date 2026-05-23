@@ -48,6 +48,9 @@ The three output formats for `pdftract doctor` were already implemented in:
 - Output fits within 80 columns without wrapping
 - Column widths: name=30, status=6, detail=flex
 - Separator line is exactly 80 characters
+- **FIX:** Detail truncation now applies uniformly to TTY and non-TTY output
+- Previously: Truncation only in TTY mode, causing >80-char lines when piped or using --no-color
+- Now: Truncation always based on 80 columns (TTY uses actual width, non-TTY assumes 80)
 
 ### PASS: N/A row handling
 - N/A checks excluded from human output (verified in code: line 41-43 of human.rs)
@@ -61,7 +64,22 @@ The three output formats for `pdftract doctor` were already implemented in:
 
 ## Implementation Notes
 
-The output modules were already implemented with:
+### Fix Applied
+
+**File:** `crates/pdftract-cli/src/doctor/output/human.rs`
+
+**Issue:** Detail field truncation only applied to TTY output. When piping to `cat` or using `--no-color`, long detail strings were not truncated, causing lines to exceed 80 columns.
+
+**Solution:** Modified truncation logic (lines 77-89) to:
+1. Determine terminal width: TTY uses actual width, non-TTY assumes 80 columns
+2. Calculate max detail width: `term_width - 38` (30 name + 1 space + 6 status + 1 space)
+3. Truncate detail to max width with "..." suffix if needed
+
+**Result:** Max line width now exactly 80 characters for all output modes.
+
+### Existing Implementation
+
+The output modules were implemented with:
 1. **TTY detection** via `std::io::IsTerminal` trait (nightly feature stabilized)
 2. **Color control** via `termcolor` crate with `ColorChoice` enum
 3. **Terminal width detection** via `terminal_size` crate
@@ -69,4 +87,4 @@ The output modules were already implemented with:
 5. **Summary line** at bottom with bold formatting
 6. **Stderr output** for failures (in addition to stdout summary)
 
-All acceptance criteria are met. No changes were required to the codebase.
+All acceptance criteria are met. One fix was applied to ensure 80-column compliance for non-TTY output.

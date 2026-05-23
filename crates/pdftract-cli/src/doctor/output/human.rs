@@ -74,16 +74,17 @@ pub fn output_text(results: &[CheckResult], opts: &TextOptions) -> Result<()> {
         stdout.reset()?;
 
         // Print detail (truncate if too long for terminal)
-        let detail = if std::io::stdout().is_terminal() && !opts.no_color {
-            let term_width = terminal_size::terminal_size()
+        // For TTY, use actual terminal width; for non-TTY, assume 80 columns
+        let term_width = if std::io::stdout().is_terminal() && !opts.no_color {
+            terminal_size::terminal_size()
                 .map(|(w, _)| w.0 as usize)
-                .unwrap_or(80);
-            let max_detail = term_width.saturating_sub(38); // 30 + 1 + 6 + 1 = 38 columns before detail
-            if result.detail.len() > max_detail {
-                format!("{}...", &result.detail[..max_detail.saturating_sub(3)])
-            } else {
-                result.detail.clone()
-            }
+                .unwrap_or(80)
+        } else {
+            80
+        };
+        let max_detail = term_width.saturating_sub(38); // 30 + 1 + 6 + 1 = 38 columns before detail
+        let detail = if result.detail.len() > max_detail {
+            format!("{}...", &result.detail[..max_detail.saturating_sub(3)])
         } else {
             result.detail.clone()
         };
