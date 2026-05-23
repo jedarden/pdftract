@@ -1,0 +1,17 @@
+[package]
+name = "pdftract-libpdftract"
+version.workspace = true
+license.workspace = true
+edition = "2021"
+
+[lib]
+name = "pdftract"
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+pdftract-core = { path = "../pdftract-core" }
+serde_json = "1"
+libc = "0.2"
+
+[build-dependencies]
+cbindgen = "0.27"
