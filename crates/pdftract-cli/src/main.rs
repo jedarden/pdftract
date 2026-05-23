@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 mod cache_cmd;
 mod codegen;
+mod doctor;
 mod mcp;
 mod password;
 mod serve;
@@ -167,6 +168,32 @@ enum Commands {
         /// trust-the-caller mode (no path-check applied).
         #[arg(long, value_name = "DIR")]
         root: Option<PathBuf>,
+    },
+    /// Check environment health and dependencies
+    Doctor {
+        /// Print compiled features and exit
+        #[arg(long)]
+        features: bool,
+
+        /// Output results as JSON
+        #[arg(long)]
+        json: bool,
+
+        /// Exit with code 1 if any check reports FAIL
+        #[arg(long)]
+        exit_on_fail: bool,
+
+        /// Verify the profile search path includes DIR
+        #[arg(long, value_name = "DIR")]
+        profile_dir: Option<PathBuf>,
+
+        /// Verify DIR is writable and has sufficient space
+        #[arg(long, value_name = "DIR")]
+        cache_dir: Option<PathBuf>,
+
+        /// Requested OCR languages (default: eng)
+        #[arg(long, value_delimiter = ',')]
+        lang: Vec<String>,
     },
 }
 
@@ -340,6 +367,26 @@ fn main() -> Result<()> {
                     eprintln!("Error: {}", e);
                     std::process::exit(1);
                 }
+            }
+        }
+        Commands::Doctor {
+            features,
+            json,
+            exit_on_fail,
+            profile_dir,
+            cache_dir,
+            lang,
+        } => {
+            if let Err(e) = doctor::run(doctor::DoctorOptions {
+                features,
+                json,
+                exit_on_fail,
+                profile_dir,
+                cache_dir,
+                lang,
+            }) {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
             }
         }
     }

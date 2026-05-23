@@ -16,9 +16,12 @@ impl LocaleCheck {
 
     fn get_locale() -> Option<String> {
         // Check LC_ALL first (highest priority), then LANG
-        env::var("LC_ALL")
-            .ok()
-            .or_else(|| env::var("LANG").ok())
+        // Note: env::var returns Err if not set, Ok(value) if set
+        let lc_all = env::var("LC_ALL");
+        let lang = env::var("LANG");
+
+        // Prefer LC_ALL, fall back to LANG
+        lc_all.ok().or_else(|| lang.ok())
     }
 }
 
@@ -34,8 +37,13 @@ impl Check for LocaleCheck {
                 status: CheckStatus::Fail,
                 detail: "Locale not set (LANG/LC_ALL environment variables unset)".to_string(),
             },
+            Some(locale) if locale.is_empty() => CheckResult {
+                name: self.name(),
+                status: CheckStatus::Warn,
+                detail: "Locale is empty (LANG/LC_ALL set to empty string, may cause encoding issues)".to_string(),
+            },
             Some(locale) => {
-                if locale.is_empty() || locale == "C" || locale == "POSIX" {
+                if locale == "C" || locale == "POSIX" {
                     CheckResult {
                         name: self.name(),
                         status: CheckStatus::Warn,

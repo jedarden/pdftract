@@ -11,24 +11,43 @@ pub struct CacheDirCheck;
 impl CacheDirCheck {
     const MIN_FREE_BYTES: u64 = 1024 * 1024 * 1024; // 1 GiB
 
+    #[cfg(unix)]
     fn check_free_space(path: &Path) -> Result<u64, String> {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::MetadataExt;
-            let metadata = std::fs::metadata(path)
-                .map_err(|e| format!("Failed to get metadata: {}", e))?;
+        use std::ffi::CString;
+        use std::os::unix::ffi::OsStrExt;
+        use libc::{statvfs, c_char};
 
-            // For free space, we need statvfs on Unix
-            // This is a simplified check - in production we'd use nix::sys::statvfs
-            // For now, return a conservative estimate
-            Ok(Self::MIN_FREE_BYTES)
-        }
+        let path_cstr = CString::new(path.as_os_str().as_bytes())
+            .map_err(|_| "Failed to convert path to CString".to_string())?;
 
-        #[cfg(not(unix))]
-        {
-            // On non-Unix, just return OK conservatively
-            Ok(Self::MIN_FREE_BYTES)
+        unsafe {
+            let mut stat: libc::statvfs = std::mem::zeroed();
+            if statvfs(path_cstr.as_ptr() as *const c_char, &mut stat) != 0 {
+                return Err("Failed to stat filesystem".to_string());
+            }
+
+            // f_bsize is the fundamental file system block size
+            // f_bavail is the number of free blocks available to a non-privileged process
+            let block_size = stat.f_frsize as u64;
+            let available_blocks = stat.f_bavail as u64;
+            Ok(block_size * available_blocks)
         }
+    }
+
+    #[cfg(windows)]
+    fn check_free_space(path: &Path) -> Result<u64, String> {
+        use std::os::windows::fs::GetDiskFreeSpaceEx;
+
+        let available = GetDiskFreeSpaceEx::new(path)
+            .map_err(|e| format!("Failed to get disk free space: {}", e))?
+            .available_bytes();
+        Ok(available)
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    fn check_free_space(_path: &Path) -> Result<u64, String> {
+        // On other platforms, conservatively return OK
+        Ok(Self::MIN_FREE_BYTES)
     }
 
     fn check_writable(path: &Path) -> Result<(), String> {
@@ -59,12 +78,12 @@ impl CacheDirCheck {
             .map_err(|e| format!("Failed to parse index.json: {}", e))?;
 
         let schema_version = value.get("schema_version")
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown");
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
 
         let current_version = pdftract_core::cache::layout::CURRENT_SCHEMA_VERSION;
 
-        if schema_version == current_version {
+        if schema_version == current_version as u64 {
             Ok(format!("Layout version {} (current)", schema_version))
         } else {
             Ok(format!("Layout version {} (migration available to {})", schema_version, current_version))

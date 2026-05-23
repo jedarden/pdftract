@@ -1,7 +1,15 @@
+//! Doctor subcommand - environment health checks
+
+use anyhow::Result;
 use std::path::PathBuf;
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::fmt::Write;
+use std::io::Write as IoWrite;
 
-pub mod checks;
+// Private checks module
+mod checks;
+
+pub use checks::registry::all_checks;
 
 /// Result of a single doctor check
 #[derive(Debug, Clone)]
@@ -32,7 +40,7 @@ pub enum CheckStatus {
 pub struct DoctorCtx {
     /// Requested OCR languages (from --lang flag)
     pub requested_langs: Vec<String>,
-    /// Cache directory path (from --cache-dir flag or default)
+    /// Cache directory path (from --cache-dir flag)
     pub cache_dir: Option<PathBuf>,
     /// Profile search path (from --profile-dir flag)
     pub profile_dir: Option<PathBuf>,
@@ -110,11 +118,6 @@ pub fn run_check_safe<C: Check + ?Sized>(check: &C, ctx: &DoctorCtx) -> CheckRes
     }
 }
 
-/// Get all registered checks
-pub fn all_checks() -> Vec<Box<dyn Check>> {
-    checks::registry::all_checks()
-}
-
 /// Get version information for the binary
 pub fn version_info() -> String {
     format!(
@@ -123,4 +126,166 @@ pub fn version_info() -> String {
         env!("GIT_SHA"),
         env!("COMPILED_FEATURES")
     )
+}
+
+/// Options for the doctor subcommand
+pub struct DoctorOptions {
+    /// Print compiled features and exit
+    pub features: bool,
+    /// Output results as JSON
+    pub json: bool,
+    /// Exit with code 1 if any check reports FAIL
+    pub exit_on_fail: bool,
+    /// Verify the profile search path includes DIR
+    pub profile_dir: Option<PathBuf>,
+    /// Verify DIR is writable and has sufficient space
+    pub cache_dir: Option<PathBuf>,
+    /// Requested OCR languages (default: eng)
+    pub lang: Vec<String>,
+}
+
+/// Run the doctor subcommand
+pub fn run(opts: DoctorOptions) -> Result<()> {
+    // If --features is set, print features and exit
+    if opts.features {
+        println!("{}", version_info());
+        return Ok(());
+    }
+
+    // Build the doctor context
+    let ctx = DoctorCtx {
+        requested_langs: if opts.lang.is_empty() {
+            vec!["eng".to_string()]
+        } else {
+            opts.lang
+        },
+        cache_dir: opts.cache_dir,
+        profile_dir: opts.profile_dir,
+        features: DoctorFeatures::from_build(),
+    };
+
+    // Run all checks
+    let checks = all_checks();
+    let mut results: Vec<CheckResult> = Vec::new();
+
+    for check in &checks {
+        let result = run_check_safe(&**check, &ctx);
+        results.push(result);
+    }
+
+    // Output results
+    if opts.json {
+        output_json(&results);
+    } else {
+        output_text(&results)?;
+    }
+
+    // Determine exit code
+    let has_fail = results.iter().any(|r| r.status == CheckStatus::Fail);
+    if has_fail {
+        std::process::exit(1);
+    }
+
+    Ok(())
+}
+
+/// Output results as JSON
+fn output_json(results: &[CheckResult]) {
+    let mut ok = 0;
+    let mut warn = 0;
+    let mut fail = 0;
+
+    let checks_json: Vec<serde_json::Value> = results
+        .iter()
+        .map(|r| {
+            let status_str = match r.status {
+                CheckStatus::Ok => {
+                    ok += 1;
+                    "OK"
+                }
+                CheckStatus::Warn => {
+                    warn += 1;
+                    "WARN"
+                }
+                CheckStatus::Fail => {
+                    fail += 1;
+                    "FAIL"
+                }
+                CheckStatus::NotApplicable => "N/A",
+            };
+
+            serde_json::json!({
+                "name": r.name,
+                "status": status_str,
+                "detail": r.detail,
+            })
+        })
+        .collect();
+
+    let output = serde_json::json!({
+        "summary": {
+            "ok": ok,
+            "warn": warn,
+            "fail": fail,
+        },
+        "checks": checks_json,
+    });
+
+    println!("{}", serde_json::to_string_pretty(&output).unwrap());
+}
+
+/// Output results as human-readable text
+fn output_text(results: &[CheckResult]) -> Result<()> {
+    use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
+
+    let mut stdout = StandardStream::stdout(ColorChoice::Auto);
+
+    let mut ok = 0;
+    let mut warn = 0;
+    let mut fail = 0;
+
+    for result in results {
+        let (color, status_str) = match result.status {
+            CheckStatus::Ok => {
+                ok += 1;
+                (Color::Green, "OK")
+            }
+            CheckStatus::Warn => {
+                warn += 1;
+                (Color::Yellow, "WARN")
+            }
+            CheckStatus::Fail => {
+                fail += 1;
+                (Color::Red, "FAIL")
+            }
+            CheckStatus::NotApplicable => (Color::Cyan, "N/A"),
+        };
+
+        // Print check name
+        stdout.set_color(ColorSpec::new().set_bold(true))?;
+        write!(&mut stdout, "{:30}", result.name)?;
+        stdout.reset()?;
+
+        // Print status badge
+        stdout.set_color(ColorSpec::new().set_fg(Some(color)).set_bold(true))?;
+        write!(&mut stdout, "[{:4}] ", status_str)?;
+        stdout.reset()?;
+
+        // Print detail
+        writeln!(&mut stdout, "{}", result.detail)?;
+    }
+
+    // Print summary
+    writeln!(&mut stdout)?;
+    stdout.set_color(ColorSpec::new().set_bold(true))?;
+    write!(&mut stdout, "Summary: ")?;
+    stdout.reset()?;
+
+    writeln!(
+        &mut stdout,
+        "{} OK, {} WARN, {} FAIL",
+        ok, warn, fail
+    )?;
+
+    Ok(())
 }

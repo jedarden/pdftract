@@ -95,8 +95,8 @@ impl Check for ProfilePathCheck {
         }
 
         // Check if directory is empty
-        let mut entries: Vec<_> = fs::read_dir(&profile_dir)
-            .and_then(|it| it.collect())
+        let entries: Vec<std::fs::DirEntry> = fs::read_dir(&profile_dir)
+            .map(|it| it.filter_map(|e| e.ok()).collect())
             .unwrap_or_default();
 
         if entries.is_empty() {
@@ -112,10 +112,6 @@ impl Check for ProfilePathCheck {
         let mut errors = vec![];
 
         for entry in &entries {
-            let entry = match entry {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
 
             let path = entry.path();
 

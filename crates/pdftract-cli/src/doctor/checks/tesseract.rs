@@ -18,7 +18,7 @@ impl Check for TesseractCheck {
             .arg("--version")
             .output();
 
-        let (status, detail) = match output {
+        match output {
             Ok(output) => {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 let stderr = String::from_utf8_lossy(&output.stderr);
@@ -71,9 +71,7 @@ impl Check for TesseractCheck {
                     detail: format!("tesseract not found: {}", e),
                 }
             }
-        };
-
-        CheckResult { status, ..result }
+        }
     }
 }
 

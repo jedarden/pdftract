@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::env;
 use super::super::{Check, CheckResult, CheckStatus, DoctorCtx};
 
@@ -34,28 +34,43 @@ impl TempDirCheck {
         Ok(())
     }
 
+    #[cfg(unix)]
     fn check_free_space(path: &Path) -> Result<u64, String> {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::MetadataExt;
+        use std::ffi::CString;
+        use std::os::unix::ffi::OsStrExt;
+        use libc::{statvfs, c_char};
 
-            let metadata = std::fs::metadata(path)
-                .map_err(|e| format!("Failed to get metadata: {}", e))?;
+        let path_cstr = CString::new(path.as_os_str().as_bytes())
+            .map_err(|_| "Failed to convert path to CString".to_string())?;
 
-            // For free space, we need statvfs on Unix
-            // This is a simplified check - a full implementation would use nix::sys::statvfs
-            // For now, we'll return a conservative OK value
-            // In production, you'd want to use:
-            // let stat = statvfs(path)?; Ok(stat.blocks_available * stat.fragment_size)
-            Ok(Self::MIN_FREE_BYTES)
+        unsafe {
+            let mut stat: libc::statvfs = std::mem::zeroed();
+            if statvfs(path_cstr.as_ptr() as *const c_char, &mut stat) != 0 {
+                return Err("Failed to stat filesystem".to_string());
+            }
+
+            // f_frsize is the fundamental file system block size
+            // f_bavail is the number of free blocks available to a non-privileged process
+            let block_size = stat.f_frsize as u64;
+            let available_blocks = stat.f_bavail as u64;
+            Ok(block_size * available_blocks)
         }
+    }
 
-        #[cfg(not(unix))]
-        {
-            // On non-Unix, just return OK conservatively
-            // A full implementation would use GetDiskFreeSpaceEx on Windows
-            Ok(Self::MIN_FREE_BYTES)
-        }
+    #[cfg(windows)]
+    fn check_free_space(path: &Path) -> Result<u64, String> {
+        use std::os::windows::fs::GetDiskFreeSpaceEx;
+
+        let available = GetDiskFreeSpaceEx::new(path)
+            .map_err(|e| format!("Failed to get disk free space: {}", e))?
+            .available_bytes();
+        Ok(available)
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    fn check_free_space(_path: &Path) -> Result<u64, String> {
+        // On other platforms, conservatively return OK
+        Ok(Self::MIN_FREE_BYTES)
     }
 }
 

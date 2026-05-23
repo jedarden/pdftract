@@ -67,15 +67,16 @@ impl MemoryCheck {
 
     #[cfg(target_os = "macos")]
     fn get_available_memory() -> Result<u64, String> {
-        use libc::{c_int, c_void, size_t, sysconfbyname, CTL_HW, HW_MEMSIZE};
+        use libc::{c_int, c_void, size_t, sysctl, CTL_HW, HW_MEMSIZE};
 
         unsafe {
             let mut memsize: u64 = 0;
             let mut len = std::mem::size_of::<u64>() as size_t;
 
-            let mib = [CTL_HW, HW_MEMSIZE];
-            let res = sysconfbyname(
-                b"hw.memsize\0".as_ptr() as *const i8,
+            let mib: [c_int; 2] = [CTL_HW, HW_MEMSIZE];
+            let res = sysctl(
+                mib.as_ptr() as *const c_int,
+                mib.len() as u32,
                 &mut memsize as *mut u64 as *mut c_void,
                 &mut len,
                 std::ptr::null(),
@@ -83,9 +84,9 @@ impl MemoryCheck {
             );
 
             if res == 0 {
-                // On macOS, we get total memory, not available
+                // On macOS, hw.memsize returns total physical memory
                 // For simplicity, we'll just check total is >= 256 MiB
-                // A more accurate check would use host_statistics64
+                // A more accurate check would use host_statistics64 for available memory
                 Ok(memsize)
             } else {
                 Err("sysctl hw.memsize failed".to_string())
