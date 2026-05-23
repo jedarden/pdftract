@@ -35,7 +35,7 @@
 # - setup: Clone repo, fetch dependencies, warm cargo cache
 # - build-matrix: Cross-compile for 5 targets (x86_64/aarch64 Linux musl, macOS x64/ARM64, Windows x64)
 # - test-matrix: Run unit tests across feature combinations (default, full, with OCR)
-# - quality-matrix: Linting (clippy, fmt), security audit (cargo-audit), dependency review
+# - quality-matrix: Five Tier 1 quality gates (clippy-fmt, clippy-unwrap, msrv-check, cargo-audit, cargo-deny)
 # - bench-matrix: Performance benchmarks (cargo bench) against fixture corpus
 # - publish-if-tag: On tags only, upload binaries to GitHub Releases
 #
@@ -44,7 +44,7 @@
 # - pdftract-xxxx: setup step, volume mount points, cache warming logic
 # - pdftract-yyyy: build-matrix templates (5 target builds with cross)
 # - pdftract-zzzz: test-matrix templates (feature combinations)
-# - pdftract-wwww: quality-matrix templates (clippy, fmt, audit)
+# - pdftract-wwww: quality-matrix templates (clippy-fmt, clippy-unwrap, msrv-check, cargo-audit, cargo-deny)
 # - pdftract-vvvv: bench-matrix templates (cargo bench)
 # - pdftract-uuuu: publish-if-tag template (gh release create)
 #
@@ -516,8 +516,12 @@ spec:
             memory: 8Gi
 
     # === Quality Matrix ===
-    # Run linting (clippy, fmt), security audit (cargo-audit), dependency review,
-    # and MSRV check (build with rust:1.78-slim to detect new-Rust feature usage)
+    # Five parallel Tier 1 quality gates — any failure blocks PR merge:
+    # 1. clippy-fmt: General linting and formatting check
+    # 2. clippy-unwrap: Feature-specific clippy with INV-8 unwrap/expect ban
+    # 3. msrv-check: Verify no newer Rust features are used (MSRV 1.78)
+    # 4. cargo-audit: Security advisory check on dependencies
+    # 5. cargo-deny: License and security policy enforcement
     #
     # CRITICAL: All cargo commands MUST use --locked (or --locked --frozen)
     - name: quality-matrix
@@ -526,10 +530,14 @@ spec:
         tasks:
           - name: clippy-fmt
             template: clippy-fmt
+          - name: clippy-unwrap
+            template: clippy-unwrap
           - name: msrv-check
             template: msrv-check
           - name: cargo-audit
             template: cargo-audit
+          - name: cargo-deny
+            template: cargo-deny
 
     # === Clippy and Fmt Check ===
     # Runs clippy with MSRV-aware lints and verifies formatting
@@ -557,6 +565,56 @@ spec:
             cargo fmt --check
 
             echo "=== Clippy and fmt checks passed ==="
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+
+    # === Clippy Unwrap/Expect Check (INV-8 Enforcement) ===
+    # Runs clippy with specific features (default,serve,decrypt) and enforces INV-8
+    # (no panic at public boundary) via unwrap_used/expect_used lints on library code.
+    # This is one of the 5 Tier 1 hard gates — any failure blocks PR merge.
+    #
+    # Uses pdftract-test-glibc:1.78 base image where the dependency tree is precompiled,
+    # making clippy significantly faster than cold images.
+    #
+    # CRITICAL: All cargo commands MUST use --locked (or --locked --frozen)
+    - name: clippy-unwrap
+      activeDeadlineSeconds: 600
+      container:
+        image: pdftract-test-glibc:1.78
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+
+            echo "=========================================="
+            echo "Clippy Unwrap/Expect Check (INV-8)"
+            echo "=========================================="
+
+            cd /workspace
+            export CARGO_HOME="/cache/cargo/registry"
+            export CARGO_TARGET_DIR="/cache/cargo/target-clippy-unwrap"
+
+            echo "=== Running clippy with features default,serve,decrypt ==="
+            cargo clippy --locked --all-targets --features default,serve,decrypt -- -D warnings
+
+            echo "=== Running library-only clippy with unwrap/expect bans (INV-8) ==="
+            echo "This enforces the invariant: no panic reaches the public boundary of pdftract-core"
+            cargo clippy --locked --lib -p pdftract-core --features default,serve,decrypt -- \
+              -D clippy::unwrap_used \
+              -D clippy::expect_used
+
+            echo "=== Clippy unwrap/expect checks passed ==="
+            echo "INV-8 invariant verified: no unwrap() or expect() in pdftract-core library code"
         volumeMounts:
           - name: workspace
             mountPath: /workspace
@@ -640,6 +698,50 @@ spec:
             cargo audit --locked
 
             echo "=== Security audit passed ==="
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+
+    # === Cargo Deny ===
+    # Runs cargo-deny to check licenses, bans, advisories, and sources
+    - name: cargo-deny
+      activeDeadlineSeconds: 300
+      container:
+        image: rust:1.83-bookworm
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+
+            echo "=========================================="
+            echo "License and Security Policy (cargo-deny)"
+            echo "=========================================="
+
+            cd /workspace
+            export CARGO_HOME="/cache/cargo/registry"
+
+            # Install cargo-deny if not present
+            if ! command -v cargo-deny &> /dev/null; then
+              echo "Installing cargo-deny..."
+              cargo install cargo-deny --locked
+            fi
+
+            echo "=== Updating advisory database ==="
+            cargo deny fetch
+
+            echo "=== Running cargo deny check ==="
+            cargo deny check licenses bans advisories sources
+
+            echo "=== License and security checks passed ==="
         volumeMounts:
           - name: workspace
             mountPath: /workspace
