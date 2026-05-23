@@ -18,8 +18,11 @@
 //! # Module Structure
 //!
 //! - [`layout`] — Path construction and directory creation
+//! - [`key`] — Cache key construction from (fingerprint, options) pairs
 //! - [`metadata`] — Cache index.json and metadata handling (TODO: 6.9.3)
 
+pub mod key;
 pub mod layout;
 
+pub use key::CacheKey;
 pub use layout::{entry_path, CacheIndex, CURRENT_SCHEMA_VERSION};
