@@ -29,8 +29,9 @@
 use crate::parser::object::{ObjRef, PdfObject};
 use crate::parser::xref::XrefResolver;
 use crate::diagnostics::{Diagnostic, DiagCode};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::rc::Rc;
 
 /// Result type for structure tree parsing.
 pub type Result<T> = std::result::Result<T, Vec<Diagnostic>>;
@@ -313,6 +314,344 @@ impl StructElemNode {
     }
 }
 
+/// ParentTree entry for a page or annotation.
+///
+/// The ParentTree is a number tree where each key is a /StructParents value
+/// and the value is either:
+/// - An array of StructElem refs (for pages, indexed by MCID)
+/// - A single StructElem ref (for annotations with /StructParent)
+#[derive(Debug, Clone)]
+pub enum ParentTreeEntry {
+    /// Array of StructElem refs indexed by MCID (for pages)
+    Array(Vec<ObjRef>),
+    /// Single StructElem ref (for annotations)
+    Single(ObjRef),
+}
+
+/// ParentTree resolver.
+///
+/// Caches the resolved ParentTree and provides per-page MCID-to-StructElem mapping.
+#[derive(Debug, Clone)]
+pub struct ParentTreeResolver {
+    /// Map from /StructParents key to ParentTree entry
+    entries: HashMap<i32, ParentTreeEntry>,
+    /// Diagnostics emitted during parsing
+    diagnostics: Vec<Diagnostic>,
+    /// Map from object reference to parsed StructElem node
+    /// Set after struct tree parsing is complete
+    struct_elems: HashMap<ObjRef, Rc<StructElemNode>>,
+}
+
+impl ParentTreeResolver {
+    /// Create a new empty ParentTreeResolver.
+    pub fn new() -> Self {
+        ParentTreeResolver {
+            entries: HashMap::new(),
+            diagnostics: Vec::new(),
+            struct_elems: HashMap::new(),
+        }
+    }
+
+    /// Set the struct_elems map after parsing is complete.
+    pub(crate) fn set_struct_elems(&mut self, struct_elems: HashMap<ObjRef, Rc<StructElemNode>>) {
+        self.struct_elems = struct_elems;
+    }
+
+    /// Parse a ParentTree from a StructTreeRoot dictionary.
+    ///
+    /// # Arguments
+    ///
+    /// * `resolver` - The xref resolver
+    /// * `struct_tree_root` - The StructTreeRoot dictionary (must contain /ParentTree)
+    ///
+    /// # Returns
+    ///
+    /// A `ParentTreeResolver` with all entries parsed from the number tree.
+    pub fn parse(resolver: &XrefResolver, struct_tree_root: &PdfObject) -> Self {
+        let mut resolver_impl = Self::new();
+
+        // Get the /ParentTree entry (may be indirect reference)
+        let parent_tree_obj = match struct_tree_root.as_dict() {
+            Some(dict) => dict.get("ParentTree"),
+            None => {
+                resolver_impl.diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructMissingKey,
+                    "StructTreeRoot is not a dictionary".to_string(),
+                ));
+                return resolver_impl;
+            }
+        };
+
+        let parent_tree_obj = match parent_tree_obj {
+            Some(obj) => obj,
+            None => {
+                // No ParentTree is valid - just return empty resolver
+                return resolver_impl;
+            }
+        };
+
+        // Resolve if it's an indirect reference
+        let tree_obj = match parent_tree_obj.as_ref() {
+            Some(ref_obj) => match resolver.resolve(ref_obj) {
+                Ok(obj) => obj,
+                Err(e) => {
+                    resolver_impl.diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                        DiagCode::StructUnexpectedEof,
+                        format!("Failed to resolve ParentTree reference {}: {}", ref_obj, e),
+                    ));
+                    return resolver_impl;
+                }
+            },
+            None => parent_tree_obj.clone(),
+        };
+
+        // Walk the number tree
+        walk_number_tree(resolver, &tree_obj, &mut resolver_impl);
+
+        resolver_impl
+    }
+
+    /// Resolve MCIDs for a page to their owning StructElem nodes.
+    ///
+    /// # Arguments
+    ///
+    /// * `struct_parents` - The /StructParents value from the page dictionary
+    ///
+    /// # Returns
+    ///
+    /// A map from MCID to StructElem node, plus a set of orphan MCIDs (those present
+    /// in content but not claimed by any StructElem).
+    pub fn resolve_page(&self, struct_parents: Option<i32>) -> (HashMap<u32, Rc<StructElemNode>>, Vec<u32>) {
+        let struct_parents = match struct_parents {
+            Some(sp) => sp,
+            None => {
+                // No /StructParents - no MCIDs can be resolved
+                return (HashMap::new(), Vec::new());
+            }
+        };
+
+        let entry = match self.entries.get(&struct_parents) {
+            Some(e) => e,
+            None => {
+                // /StructParents key not found in ParentTree - all MCIDs are orphans
+                return (HashMap::new(), Vec::new());
+            }
+        };
+
+        match entry {
+            ParentTreeEntry::Array(refs) => {
+                let mut map = HashMap::new();
+                let mut orphans = Vec::new();
+
+                for (mcid, elem_ref) in refs.iter().enumerate() {
+                    // Check if this is a "null" object reference (object = 0)
+                    if elem_ref.object == 0 {
+                        // Null entry means this MCID is an orphan
+                        orphans.push(mcid as u32);
+                    } else {
+                        // Look up the StructElem node from the struct_elems map
+                        if let Some(node) = self.struct_elems.get(elem_ref) {
+                            map.insert(mcid as u32, Rc::clone(node));
+                        } else {
+                            // Reference not found in struct_elems - treat as orphan
+                            orphans.push(mcid as u32);
+                        }
+                    }
+                }
+
+                (map, orphans)
+            }
+            ParentTreeEntry::Single(ref_obj) => {
+                // Single entry - treat as if MCID 0 maps to this ref
+                let mut map = HashMap::new();
+                if let Some(node) = self.struct_elems.get(ref_obj) {
+                    map.insert(0, Rc::clone(node));
+                } else {
+                    // Reference not found - MCID 0 is orphan
+                    return (HashMap::new(), vec![0]);
+                }
+                (map, Vec::new())
+            }
+        }
+    }
+
+    /// Resolve an annotation's /StructParent to its owning StructElem ref.
+    ///
+    /// # Arguments
+    ///
+    /// * `struct_parent` - The /StructParent value from the annotation dictionary
+    ///
+    /// # Returns
+    ///
+    /// The StructElem ref if found, None otherwise.
+    pub fn resolve_annotation(&self, struct_parent: Option<i32>) -> Option<ObjRef> {
+        let struct_parent = struct_parent?;
+
+        let entry = self.entries.get(&struct_parent)?;
+
+        match entry {
+            ParentTreeEntry::Single(ref_obj) => Some(*ref_obj),
+            ParentTreeEntry::Array(refs) => {
+                // Annotations should always map to Single, but if we get an Array,
+                // use the first entry as a fallback
+                if refs.is_empty() {
+                    None
+                } else {
+                    Some(refs[0])
+                }
+            }
+        }
+    }
+
+    /// Get all diagnostics emitted during parsing.
+    pub fn diagnostics(&self) -> &[Diagnostic] {
+        &self.diagnostics
+    }
+}
+
+impl Default for ParentTreeResolver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Walk a number tree and extract all key-value pairs.
+///
+/// Number trees use the same structure as name trees (ISO 32000-2 §7.9.6):
+/// - Root node has either /Nums (leaf) or /Kids (intermediate) + /Limits
+/// - Intermediate nodes have /Kids + /Limits
+/// - Leaf nodes have /Nums array: [key1, value1, key2, value2, ...]
+///
+/// # Arguments
+///
+/// * `resolver` - The xref resolver
+/// * `node_obj` - The root node of the number tree
+/// * `parent_resolver` - The ParentTreeResolver to populate
+fn walk_number_tree(resolver: &XrefResolver, node_obj: &PdfObject, parent_resolver: &mut ParentTreeResolver) {
+    let dict = match node_obj.as_dict() {
+        Some(d) => d,
+        None => {
+            parent_resolver.diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructInvalidType,
+                format!("Number tree node is not a dictionary (type: {})", node_obj.type_name()),
+            ));
+            return;
+        }
+    };
+
+    // Check if this is a leaf node (has /Nums) or intermediate node (has /Kids)
+    let nums = dict.get("Nums");
+    let kids = dict.get("Kids");
+
+    if let Some(nums_array) = nums {
+        // Leaf node - process /Nums array
+        process_nums_array(nums_array, parent_resolver);
+    } else if let Some(kids_array) = kids {
+        // Intermediate node - recurse into /Kids
+        if let Some(arr) = kids_array.as_array() {
+            for kid_obj in arr.as_ref() {
+                if let Some(kid_ref) = kid_obj.as_ref() {
+                    match resolver.resolve(kid_ref) {
+                        Ok(kid_node) => walk_number_tree(resolver, &kid_node, parent_resolver),
+                        Err(e) => {
+                            parent_resolver.diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                                DiagCode::StructUnexpectedEof,
+                                format!("Failed to resolve number tree kid {}: {}", kid_ref, e),
+                            ));
+                        }
+                    }
+                } else {
+                    walk_number_tree(resolver, kid_obj, parent_resolver);
+                }
+            }
+        }
+    } else {
+        // Neither /Nums nor /Kids - invalid number tree node
+        parent_resolver.diagnostics.push(Diagnostic::with_dynamic_no_offset(
+            DiagCode::StructMissingKey,
+            "Number tree node has neither /Nums nor /Kids".to_string(),
+        ));
+    }
+}
+
+/// Process a /Nums array from a number tree leaf node.
+///
+/// The /Nums array contains alternating key-value pairs: [key1, value1, key2, value2, ...]
+/// where keys are integers and values are either arrays (for pages) or single refs (for annotations).
+fn process_nums_array(nums_obj: &PdfObject, parent_resolver: &mut ParentTreeResolver) {
+    let nums = match nums_obj.as_array() {
+        Some(arr) => arr.as_ref(),
+        None => {
+            parent_resolver.diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructInvalidType,
+                format!("/Nums is not an array (type: {})", nums_obj.type_name()),
+            ));
+            return;
+        }
+    };
+
+    // Process pairs: [key1, value1, key2, value2, ...]
+    let mut chunks = nums.chunks_exact(2);
+    for chunk in &mut chunks {
+        let key_obj = &chunk[0];
+        let value_obj = &chunk[1];
+
+        // Extract the key (must be an integer)
+        let key = match key_obj.as_int() {
+            Some(k) => k as i32,  // Convert i64 to i32 for the HashMap key
+            None => {
+                parent_resolver.diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructInvalidType,
+                    format!("Number tree key is not an integer (type: {})", key_obj.type_name()),
+                ));
+                continue;
+            }
+        };
+
+        // Extract the value
+        let entry = match value_obj {
+            PdfObject::Array(arr) => {
+                // Array of refs (for pages)
+                // Null entries are preserved as ObjRef { object: 0 } to mark orphan MCIDs
+                let refs: Vec<ObjRef> = arr.as_ref()
+                    .iter()
+                    .map(|o| match o {
+                        PdfObject::Ref(r) => *r,
+                        PdfObject::Null => ObjRef { object: 0, generation: 0 },
+                        _ => ObjRef { object: 0, generation: 0 }, // Invalid ref treated as null
+                    })
+                    .collect();
+                ParentTreeEntry::Array(refs)
+            }
+            PdfObject::Ref(ref_obj) => {
+                // Single ref (for annotations)
+                ParentTreeEntry::Single(*ref_obj)
+            }
+            PdfObject::Null => {
+                // Null entry - treat as empty array
+                ParentTreeEntry::Array(Vec::new())
+            }
+            _ => {
+                parent_resolver.diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructInvalidType,
+                    format!("Number tree value has unsupported type: {}", value_obj.type_name()),
+                ));
+                continue;
+            }
+        };
+
+        parent_resolver.entries.insert(key, entry);
+    }
+
+    // Check for trailing element (odd-length array)
+    if !chunks.remainder().is_empty() {
+        parent_resolver.diagnostics.push(Diagnostic::with_dynamic_no_offset(
+            DiagCode::StructInvalidType,
+            "Number tree /Nums array has odd length (trailing element without value)".to_string(),
+        ));
+    }
+}
+
 /// The root of the structure tree.
 ///
 /// Parsed from /StructTreeRoot in the document catalog.
@@ -322,8 +661,13 @@ pub struct StructTreeRoot {
     pub kids: Vec<Kid>,
     /// RoleMap mapping non-standard type names to standard types
     pub role_map: RoleMap,
+    /// ParentTree resolver for MCID-to-StructElem mapping
+    pub parent_tree: ParentTreeResolver,
     /// Diagnostics emitted during parsing
     pub diagnostics: Vec<Diagnostic>,
+    /// Map from object reference to parsed StructElem node
+    /// Used by ParentTreeResolver to resolve MCIDs to actual nodes
+    pub(crate) struct_elems: HashMap<ObjRef, Rc<StructElemNode>>,
 }
 
 impl StructTreeRoot {
@@ -332,7 +676,9 @@ impl StructTreeRoot {
         StructTreeRoot {
             kids: Vec::new(),
             role_map: RoleMap::new(),
+            parent_tree: ParentTreeResolver::new(),
             diagnostics: Vec::new(),
+            struct_elems: HashMap::new(),
         }
     }
 }
@@ -493,6 +839,10 @@ pub fn parse_struct_tree(resolver: &XrefResolver, struct_tree_root_ref: ObjRef) 
         }
     }
 
+    // Parse the ParentTree
+    root.parent_tree = ParentTreeResolver::parse(resolver, &root_obj);
+    diagnostics.extend(root.parent_tree.diagnostics().iter().cloned());
+
     // Get the /K array (kids)
     let kids_array = match root_dict.get("K") {
         Some(k) => k,
@@ -505,15 +855,21 @@ pub fn parse_struct_tree(resolver: &XrefResolver, struct_tree_root_ref: ObjRef) 
 
     // Walk the /K array
     let mut visited = HashSet::new();
+    let mut struct_elems = HashMap::new();
     root.kids = walk_kids(
         resolver,
         kids_array,
         &root.role_map,
         &mut diagnostics,
         &mut visited,
+        &mut struct_elems,
         None,  // No parent lang at root
         None,  // No parent actual_text at root
     );
+
+    // Store the struct_elems map and set it on the ParentTreeResolver
+    root.struct_elems = struct_elems;
+    root.parent_tree.set_struct_elems(root.struct_elems.clone());
 
     root.diagnostics = diagnostics;
     Ok(root)
@@ -528,6 +884,7 @@ pub fn parse_struct_tree(resolver: &XrefResolver, struct_tree_root_ref: ObjRef) 
 /// * `role_map` - The RoleMap for type resolution
 /// * `diagnostics` - Diagnostics accumulator
 /// * `visited` - Set of visited object refs for cycle detection
+/// * `struct_elems` - Map to populate with ObjRef -> StructElemNode
 /// * `parent_lang` - Inherited language from parent
 /// * `parent_actual_text` - Inherited actual_text from parent
 fn walk_kids(
@@ -536,6 +893,7 @@ fn walk_kids(
     role_map: &RoleMap,
     diagnostics: &mut Vec<Diagnostic>,
     visited: &mut HashSet<ObjRef>,
+    struct_elems: &mut HashMap<ObjRef, Rc<StructElemNode>>,
     parent_lang: Option<&str>,
     parent_actual_text: Option<&str>,
 ) -> Vec<Kid> {
@@ -554,6 +912,7 @@ fn walk_kids(
             role_map,
             diagnostics,
             visited,
+            struct_elems,
             parent_lang,
             parent_actual_text,
         ) {
@@ -573,6 +932,7 @@ fn parse_kid_entry(
     role_map: &RoleMap,
     diagnostics: &mut Vec<Diagnostic>,
     visited: &mut HashSet<ObjRef>,
+    struct_elems: &mut HashMap<ObjRef, Rc<StructElemNode>>,
     parent_lang: Option<&str>,
     parent_actual_text: Option<&str>,
 ) -> Option<Kid> {
@@ -635,8 +995,10 @@ fn parse_kid_entry(
                 role_map,
                 diagnostics,
                 visited,
+                struct_elems,
                 parent_lang,
                 parent_actual_text,
+                Some(*obj_ref),
             )?;
 
             Some(Kid::Element(Box::new(elem_node)))
@@ -665,15 +1027,17 @@ fn parse_kid_entry(
                 }
             }
 
-            // Otherwise, treat as a StructElem
+            // Otherwise, treat as a StructElem (no object ref available for direct dict)
             let elem_node = parse_struct_elem(
                 resolver,
                 entry,
                 role_map,
                 diagnostics,
                 visited,
+                struct_elems,
                 parent_lang,
                 parent_actual_text,
+                None,  // No ObjRef for direct dict
             )?;
             Some(Kid::Element(Box::new(elem_node)))
         }
@@ -696,8 +1060,10 @@ fn parse_struct_elem(
     role_map: &RoleMap,
     diagnostics: &mut Vec<Diagnostic>,
     visited: &mut HashSet<ObjRef>,
+    struct_elems: &mut HashMap<ObjRef, Rc<StructElemNode>>,
     parent_lang: Option<&str>,
     parent_actual_text: Option<&str>,
+    obj_ref: Option<ObjRef>,
 ) -> Option<StructElemNode> {
     let dict = elem_obj.as_dict()?;
 
@@ -775,9 +1141,15 @@ fn parse_struct_elem(
             role_map,
             diagnostics,
             visited,
+            struct_elems,
             inherited_lang,
             inherited_actual_text,
         );
+    }
+
+    // Store the node in the struct_elems map if we have an object reference
+    if let Some(ref obj_ref) = obj_ref {
+        struct_elems.insert(*obj_ref, Rc::new(node.clone()));
     }
 
     Some(node)
@@ -1860,5 +2232,412 @@ mod tests {
         // Both H and H1 have level 1 - no auto-increment
         assert_eq!(h_kind.heading_level(), Some(1));
         assert_eq!(h1_kind.heading_level(), Some(1));
+    }
+
+    // ParentTree number tree tests (Phase 7.1.3)
+
+    #[test]
+    fn test_parent_tree_resolver_new() {
+        let resolver = ParentTreeResolver::new();
+        assert!(resolver.entries.is_empty());
+        assert!(resolver.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parent_tree_resolver_default() {
+        let resolver = ParentTreeResolver::default();
+        assert!(resolver.entries.is_empty());
+    }
+
+    #[test]
+    fn test_parent_tree_leaf_nums() {
+        // Test parsing a simple leaf number tree with /Nums array
+        let resolver = XrefResolver::new();
+
+        // Create /Nums array: [0, [ref1, ref2], 1, [ref3]]
+        let struct_elem1_ref = ObjRef::new(10, 0);
+        let struct_elem2_ref = ObjRef::new(11, 0);
+        let struct_elem3_ref = ObjRef::new(12, 0);
+
+        let nums_array = PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Ref(struct_elem1_ref),
+                PdfObject::Ref(struct_elem2_ref),
+            ])),
+            PdfObject::Integer(1),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Ref(struct_elem3_ref),
+            ])),
+        ]));
+
+        // Wrap in a StructTreeRoot-like structure with /ParentTree
+        let mut parent_tree_dict = PdfDict::new();
+        parent_tree_dict.insert(intern("Nums"), nums_array);
+        let mut root_dict = PdfDict::new();
+        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        let root_obj = PdfObject::Dict(Box::new(root_dict));
+
+        // Parse
+        let parent_resolver = ParentTreeResolver::parse(&resolver, &root_obj);
+
+        // Verify entries
+        assert_eq!(parent_resolver.entries.len(), 2);
+
+        // Key 0 should map to array with 2 refs
+        match parent_resolver.entries.get(&0) {
+            Some(ParentTreeEntry::Array(refs)) => {
+                assert_eq!(refs.len(), 2);
+                assert_eq!(refs[0], struct_elem1_ref);
+                assert_eq!(refs[1], struct_elem2_ref);
+            }
+            _ => panic!("Expected Array entry for key 0"),
+        }
+
+        // Key 1 should map to array with 1 ref
+        match parent_resolver.entries.get(&1) {
+            Some(ParentTreeEntry::Array(refs)) => {
+                assert_eq!(refs.len(), 1);
+                assert_eq!(refs[0], struct_elem3_ref);
+            }
+            _ => panic!("Expected Array entry for key 1"),
+        }
+    }
+
+    #[test]
+    fn test_parent_tree_single_ref() {
+        // Test parsing a number tree with single refs (for annotations)
+        let resolver = XrefResolver::new();
+
+        let annot_ref = ObjRef::new(20, 0);
+
+        let nums_array = PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(5),
+            PdfObject::Ref(annot_ref),
+        ]));
+
+        // Wrap in a StructTreeRoot-like structure with /ParentTree
+        let mut parent_tree_dict = PdfDict::new();
+        parent_tree_dict.insert(intern("Nums"), nums_array);
+        let mut root_dict = PdfDict::new();
+        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        let root_obj = PdfObject::Dict(Box::new(root_dict));
+
+        // Parse
+        let parent_resolver = ParentTreeResolver::parse(&resolver, &root_obj);
+
+        // Verify entry
+        match parent_resolver.entries.get(&5) {
+            Some(ParentTreeEntry::Single(r)) => {
+                assert_eq!(*r, annot_ref);
+            }
+            _ => panic!("Expected Single entry for key 5"),
+        }
+    }
+
+    #[test]
+    fn test_parent_tree_null_entry() {
+        // Test that null entries in arrays are handled
+        let resolver = XrefResolver::new();
+
+        let struct_elem_ref = ObjRef::new(10, 0);
+
+        let nums_array = PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Ref(struct_elem_ref),
+                PdfObject::Null,  // Null entry (orphan MCID)
+                PdfObject::Ref(struct_elem_ref),
+            ])),
+        ]));
+
+        // Wrap in a StructTreeRoot-like structure with /ParentTree
+        let mut parent_tree_dict = PdfDict::new();
+        parent_tree_dict.insert(intern("Nums"), nums_array);
+        let mut root_dict = PdfDict::new();
+        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        let root_obj = PdfObject::Dict(Box::new(root_dict));
+
+        // Parse
+        let mut parent_resolver = ParentTreeResolver::parse(&resolver, &root_obj);
+
+        // Populate struct_elems map with mock nodes
+        let mock_node = Rc::new(StructElemNode::new("P".to_string(), StructureType::P));
+        parent_resolver.struct_elems.insert(struct_elem_ref, mock_node);
+
+        // Resolve page and check orphans
+        let (mcid_map, orphans) = parent_resolver.resolve_page(Some(0));
+
+        // Should have 2 valid MCIDs
+        assert_eq!(mcid_map.len(), 2);
+        assert!(mcid_map.get(&0).is_some());
+        assert!(mcid_map.get(&2).is_some());
+
+        // MCID 1 should be orphan
+        assert_eq!(orphans, vec![1]);
+    }
+
+    #[test]
+    fn test_parent_tree_intermediate_kids() {
+        // Test parsing a number tree with intermediate nodes (/Kids + /Limits)
+        let resolver = XrefResolver::new();
+
+        // Create leaf node 1
+        let leaf1_ref = ObjRef::new(100, 0);
+        let struct_elem1_ref = ObjRef::new(10, 0);
+        let mut leaf1_with_limits = PdfDict::new();
+        leaf1_with_limits.insert(intern("Nums"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(struct_elem1_ref)])),
+        ])));
+        leaf1_with_limits.insert(intern("Limits"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+            PdfObject::Integer(0),
+        ])));
+        resolver.cache_object(leaf1_ref, PdfObject::Dict(Box::new(leaf1_with_limits)));
+
+        // Create leaf node 2
+        let leaf2_ref = ObjRef::new(101, 0);
+        let struct_elem2_ref = ObjRef::new(11, 0);
+        let mut leaf2_with_limits = PdfDict::new();
+        leaf2_with_limits.insert(intern("Nums"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(10),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(struct_elem2_ref)])),
+        ])));
+        leaf2_with_limits.insert(intern("Limits"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(10),
+            PdfObject::Integer(10),
+        ])));
+        resolver.cache_object(leaf2_ref, PdfObject::Dict(Box::new(leaf2_with_limits)));
+
+        // Create ParentTree root node with /Kids
+        let mut parent_tree_dict = PdfDict::new();
+        parent_tree_dict.insert(intern("Kids"), PdfObject::Array(Box::new(vec![
+            PdfObject::Ref(leaf1_ref),
+            PdfObject::Ref(leaf2_ref),
+        ])));
+
+        // Wrap in a StructTreeRoot-like structure with /ParentTree
+        let mut root_dict = PdfDict::new();
+        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        let root_obj = PdfObject::Dict(Box::new(root_dict));
+
+        // Parse
+        let parent_resolver = ParentTreeResolver::parse(&resolver, &root_obj);
+
+        // Verify both leaf nodes were processed
+        assert_eq!(parent_resolver.entries.len(), 2);
+        assert!(parent_resolver.entries.contains_key(&0));
+        assert!(parent_resolver.entries.contains_key(&10));
+    }
+
+    #[test]
+    fn test_parent_tree_missing_key() {
+        // Test resolve_page when /StructParents key is not in tree
+        let resolver = ParentTreeResolver::new();
+
+        let (mcid_map, orphans) = resolver.resolve_page(Some(999));
+
+        assert!(mcid_map.is_empty());
+        assert!(orphans.is_empty()); // No orphans because no entry found
+    }
+
+    #[test]
+    fn test_parent_tree_no_struct_parents() {
+        // Test resolve_page when page has no /StructParents
+        let resolver = ParentTreeResolver::new();
+
+        let (mcid_map, orphans) = resolver.resolve_page(None);
+
+        assert!(mcid_map.is_empty());
+        assert!(orphans.is_empty());
+    }
+
+    #[test]
+    fn test_parent_tree_annotation_resolution() {
+        // Test resolving annotation /StructParent
+        let mut resolver_impl = ParentTreeResolver::new();
+        let struct_elem_ref = ObjRef::new(50, 0);
+
+        // Insert a single ref entry (for annotations)
+        resolver_impl.entries.insert(7, ParentTreeEntry::Single(struct_elem_ref));
+
+        // Resolve annotation
+        let result = resolver_impl.resolve_annotation(Some(7));
+        assert_eq!(result, Some(struct_elem_ref));
+
+        // Non-existent key
+        let result = resolver_impl.resolve_annotation(Some(999));
+        assert_eq!(result, None);
+
+        // No key
+        let result = resolver_impl.resolve_annotation(None);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_parent_tree_annotation_from_array() {
+        // Test that annotations incorrectly mapped to arrays still work
+        let mut resolver_impl = ParentTreeResolver::new();
+        let struct_elem_ref = ObjRef::new(60, 0);
+
+        // Insert an array entry (should be for pages, but test fallback)
+        resolver_impl.entries.insert(8, ParentTreeEntry::Array(vec![
+            struct_elem_ref,
+        ]));
+
+        // Resolve annotation - should use first array element
+        let result = resolver_impl.resolve_annotation(Some(8));
+        assert_eq!(result, Some(struct_elem_ref));
+
+        // Empty array
+        resolver_impl.entries.insert(9, ParentTreeEntry::Array(vec![]));
+        let result = resolver_impl.resolve_annotation(Some(9));
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_parent_tree_malformed_nums_non_integer_key() {
+        // Test diagnostic when key is not an integer
+        let resolver = XrefResolver::new();
+
+        let nums_array = PdfObject::Array(Box::new(vec![
+            PdfObject::Name(intern("invalid")),  // Non-integer key
+            PdfObject::Array(Box::new(vec![])),
+        ]));
+
+        // Wrap in a StructTreeRoot-like structure with /ParentTree
+        let mut parent_tree_dict = PdfDict::new();
+        parent_tree_dict.insert(intern("Nums"), nums_array);
+        let mut root_dict = PdfDict::new();
+        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        let root_obj = PdfObject::Dict(Box::new(root_dict));
+
+        // Parse
+        let parent_resolver = ParentTreeResolver::parse(&resolver, &root_obj);
+
+        // Should have diagnostic
+        assert!(!parent_resolver.diagnostics.is_empty());
+        assert!(parent_resolver.diagnostics.iter().any(|d| d.message.contains("not an integer")));
+    }
+
+    #[test]
+    fn test_parent_tree_malformed_nums_odd_length() {
+        // Test diagnostic when /Nums has odd length
+        let resolver = XrefResolver::new();
+
+        let nums_array = PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+            PdfObject::Array(Box::new(vec![])),
+            PdfObject::Integer(1),  // Trailing element without value
+        ]));
+
+        // Wrap in a StructTreeRoot-like structure with /ParentTree
+        let mut parent_tree_dict = PdfDict::new();
+        parent_tree_dict.insert(intern("Nums"), nums_array);
+        let mut root_dict = PdfDict::new();
+        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        let root_obj = PdfObject::Dict(Box::new(root_dict));
+
+        // Parse
+        let parent_resolver = ParentTreeResolver::parse(&resolver, &root_obj);
+
+        // Should have diagnostic
+        assert!(!parent_resolver.diagnostics.is_empty());
+        assert!(parent_resolver.diagnostics.iter().any(|d| d.message.contains("odd length")));
+    }
+
+    #[test]
+    fn test_parent_tree_malformed_unsupported_value_type() {
+        // Test diagnostic when value has unsupported type
+        let resolver = XrefResolver::new();
+
+        let nums_array = PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+            PdfObject::Bool(true),  // Unsupported value type
+        ]));
+
+        // Wrap in a StructTreeRoot-like structure with /ParentTree
+        let mut parent_tree_dict = PdfDict::new();
+        parent_tree_dict.insert(intern("Nums"), nums_array);
+        let mut root_dict = PdfDict::new();
+        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        let root_obj = PdfObject::Dict(Box::new(root_dict));
+
+        // Parse
+        let parent_resolver = ParentTreeResolver::parse(&resolver, &root_obj);
+
+        // Should have diagnostic
+        assert!(!parent_resolver.diagnostics.is_empty());
+        assert!(parent_resolver.diagnostics.iter().any(|d| d.message.contains("unsupported type")));
+    }
+
+    #[test]
+    fn test_parent_tree_no_parent_tree_entry() {
+        // Test parsing StructTreeRoot without /ParentTree
+        let resolver = XrefResolver::new();
+
+        let mut dict = PdfDict::new();
+        dict.insert(intern("K"), PdfObject::Array(Box::new(vec![])));
+        let root_obj = PdfObject::Dict(Box::new(dict));
+
+        // Parse
+        let parent_resolver = ParentTreeResolver::parse(&resolver, &root_obj);
+
+        // Should have empty entries (no error - missing ParentTree is valid)
+        assert!(parent_resolver.entries.is_empty());
+        assert!(parent_resolver.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parent_tree_invalid_node_type() {
+        // Test diagnostic when node is not a dictionary
+        let resolver = XrefResolver::new();
+
+        let root_obj = PdfObject::Integer(42);  // Not a dict
+
+        // Parse
+        let parent_resolver = ParentTreeResolver::parse(&resolver, &root_obj);
+
+        // Should have diagnostic
+        assert!(!parent_resolver.diagnostics.is_empty());
+        assert!(parent_resolver.diagnostics.iter().any(|d| d.message.contains("not a dictionary")));
+    }
+
+    #[test]
+    fn test_parent_tree_empty_struct_tree_root() {
+        // Test integration with parse_struct_tree
+        let resolver = XrefResolver::new();
+        let root_ref = ObjRef::new(1, 0);
+
+        // Create StructTreeRoot with ParentTree
+        let struct_elem_ref = ObjRef::new(10, 0);
+        let parent_tree_nums = PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Ref(struct_elem_ref),
+            ])),
+        ]));
+
+        // ParentTree must be a dictionary with /Nums, not an array directly
+        let mut parent_tree_dict = PdfDict::new();
+        parent_tree_dict.insert(intern("Nums"), parent_tree_nums);
+
+        let mut root_dict = PdfDict::new();
+        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![])));
+        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
+
+        // Parse struct tree
+        let result = parse_struct_tree(&resolver, root_ref);
+        assert!(result.is_ok());
+
+        let tree = result.unwrap();
+
+        // Verify ParentTree was parsed - MCID 0 should be an orphan since
+        // there's no StructElem with that ref in the tree
+        let (mcid_map, orphans) = tree.parent_tree.resolve_page(Some(0));
+        assert!(mcid_map.is_empty()); // No struct_elems with that ref
+        assert_eq!(orphans, vec![0]); // MCID 0 is an orphan
     }
 }
