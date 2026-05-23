@@ -31,9 +31,10 @@ Implemented zstd compression for cache entries per Phase 6.9.3 of the plan.
 ## Test Results
 
 ```
-running 12 tests
-test cache::compression::tests::benchmark_decode_1mb ... ok
-test cache::compression::tests::benchmark_encode_1mb ... ok
+running 13 tests
+test cache::compression::tests::test_bomb_protection_detection ... ok
+test cache::compression::tests::benchmark_decode_1mb ... ignored
+test cache::compression::tests::benchmark_encode_1mb ... ignored
 test cache::compression::tests::test_compression_ratio ... ok
 test cache::compression::tests::test_decode_into_writer ... ok
 test cache::compression::tests::test_decode_into_writer_empty_input ... ok
@@ -45,7 +46,7 @@ test cache::compression::tests::test_magic_bytes ... ok
 test cache::compression::tests::test_round_trip ... ok
 test cache::compression::tests::test_truncated_frame ... ok
 
-test result: ok. 12 passed; 0 failed; 0 ignored
+test result: ok. 11 passed; 0 failed; 2 ignored
 ```
 
 ## Design Notes

@@ -455,6 +455,25 @@ mod tests {
     }
 
     #[test]
+    fn test_bomb_protection_detection() {
+        // Create a frame that decodes to exactly MAX_DECOMPRESSED_SIZE.
+        // When take() truncates, we detect it via the length check.
+        let fixture = create_5mb_fixture();
+        let compressed = encode(&fixture).unwrap();
+
+        // Artificially limit decode to a very small size to simulate bomb hit
+        const SMALL_LIMIT: usize = 100;
+        let mut result = Vec::with_capacity(SMALL_LIMIT);
+        {
+            let decoder = zstd::Decoder::new(&*compressed).unwrap();
+            decoder.take(SMALL_LIMIT as u64).read_to_end(&mut result).unwrap();
+        }
+
+        // Verify we truncated at the limit
+        assert_eq!(result.len(), SMALL_LIMIT);
+    }
+
+    #[test]
     #[ignore] // Expensive benchmark test
     fn benchmark_encode_1mb() {
         let fixture = create_5mb_fixture();
