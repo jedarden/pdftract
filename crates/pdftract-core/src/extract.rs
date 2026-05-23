@@ -8,6 +8,7 @@ use crate::options::{ExtractionOptions, ReceiptsMode};
 use crate::receipts::Receipt;
 use crate::schema::{BlockJson, SpanJson};
 use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 #[cfg(feature = "receipts")]
@@ -16,7 +17,7 @@ use crate::receipts::svg::GlyphList;
 /// Result of a PDF extraction operation.
 ///
 /// Contains the extracted pages, spans, blocks, and metadata.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtractionResult {
     /// The PDF fingerprint (for receipt generation).
     pub fingerprint: String,
@@ -27,7 +28,7 @@ pub struct ExtractionResult {
 }
 
 /// Result for a single page.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PageResult {
     /// 0-based page index.
     pub index: usize,
@@ -38,7 +39,7 @@ pub struct PageResult {
 }
 
 /// Metadata about the extraction process.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtractionMetadata {
     /// Total number of pages in the document.
     pub page_count: usize,
@@ -48,6 +49,10 @@ pub struct ExtractionMetadata {
     pub span_count: usize,
     /// Number of blocks extracted.
     pub block_count: usize,
+    /// Cache status: "hit", "miss", or "skipped"
+    pub cache_status: Option<String>,
+    /// Cache entry age in seconds (only present when cache_status == "hit")
+    pub cache_age_seconds: Option<u64>,
 }
 
 /// Extract text and structure from a PDF file.
@@ -100,6 +105,8 @@ pub fn extract_pdf(
             receipts_mode: options.receipts,
             span_count: total_spans,
             block_count: total_blocks,
+            cache_status: None,
+            cache_age_seconds: None,
         },
     })
 }
@@ -264,6 +271,8 @@ pub fn result_to_json(result: &ExtractionResult) -> serde_json::Value {
             "page_count": result.metadata.page_count,
             "span_count": result.metadata.span_count,
             "block_count": result.metadata.block_count,
+            "cache_status": result.metadata.cache_status,
+            "cache_age_seconds": result.metadata.cache_age_seconds,
         }
     })
 }

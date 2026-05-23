@@ -24,17 +24,22 @@ default-run = "pdftract"
 
 [dependencies]
 anyhow = { workspace = true }
+atty = "0.2"
 async-stream = "0.3"
-axum = { version = "0.7", features = ["json"] }
+axum = { version = "0.7", features = ["json", "multipart"] }
+bytes = "1"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.5", features = ["derive"] }
 hyper = { version = "1.0", features = ["full"] }
 hyper-util = { version = "0.1", features = ["full"] }
 http-body-util = "0.1"
+humantime = "2.1"
 lzw = { workspace = true }
+multer = "3"
 pdftract-core = { path = "../pdftract-core" }
 regex = "1.10"
 secrecy = { workspace = true }
+semver = "1.0"
 serde = { workspace = true, features = ["derive"] }
 subtle = "2.6"
 sha2 = "0.10"
@@ -47,6 +52,7 @@ tokio-stream = "0.1"
 tower = { version = "0.5", features = ["full"] }
 tower-http = { version = "0.5", features = ["cors", "trace", "limit", "compression-full"] }
 tracing = { workspace = true }
+uuid = { version = "1.0", features = ["v4", "serde"] }
 walkdir = "2"
 
 [target.'cfg(unix)'.dependencies]

@@ -3,13 +3,16 @@ use clap::{Parser, Subcommand};
 use std::fs;
 use std::path::PathBuf;
 
+mod cache_cmd;
 mod codegen;
 mod mcp;
 mod password;
+mod serve;
 mod verify_receipt;
 use codegen::Language;
 use pdftract_core::options::{ReceiptsMode, ExtractionOptions};
 use pdftract_core::extract::{extract_pdf, result_to_json};
+use pdftract_core::cache;
 
 // Re-export diagnostics for the --list-diagnostics and --explain-diagnostic commands
 pub use pdftract_core::diagnostics::{DiagCode, DiagInfo, DIAGNOSTIC_CATALOG};
@@ -84,9 +87,48 @@ enum Commands {
         /// Receipt mode: off (default), lite, or svg
         #[arg(long, value_name = "MODE", default_value = "off", value_parser = ["off", "lite", "svg"])]
         receipts: String,
+
+        /// Enable cache at this directory (creates if absent)
+        #[arg(long, value_name = "DIR")]
+        cache_dir: Option<PathBuf>,
+
+        /// Set cache size limit (default 1 GiB; accepts KiB, MiB, GiB suffixes)
+        #[arg(long, value_name = "SIZE", default_value = "1 GiB")]
+        cache_size: String,
+
+        /// Disable cache for this extraction (even if --cache-dir is set)
+        #[arg(long)]
+        no_cache: bool,
     },
     /// Verify a receipt against a PDF file
     VerifyReceipt(verify_receipt::VerifyReceiptCommand),
+    /// Manage the extraction cache
+    Cache {
+        #[command(subcommand)]
+        cache_command: CacheCommands,
+    },
+    /// Start the HTTP server for extraction
+    Serve {
+        /// Bind address (e.g., "127.0.0.1:8080", "[::1]:9000", "0.0.0.0:3000")
+        #[arg(short, long, default_value = "127.0.0.1:8080")]
+        bind: String,
+
+        /// Enable cache at this directory
+        #[arg(long, value_name = "DIR")]
+        cache_dir: Option<PathBuf>,
+
+        /// Set cache size limit (default 1 GiB; accepts KiB, MiB, GiB suffixes)
+        #[arg(long, value_name = "SIZE", default_value = "1 GiB")]
+        cache_size: String,
+
+        /// Disable cache
+        #[arg(long)]
+        no_cache: bool,
+
+        /// Maximum request body size in MB (default: 256)
+        #[arg(long, default_value = "256")]
+        max_upload_mb: usize,
+    },
     /// Start the MCP (Model Context Protocol) server
     ///
     /// Per ADR-006: stdio and HTTP transports are mutually exclusive because they have
@@ -153,6 +195,37 @@ enum SdkCommands {
     },
 }
 
+#[derive(Subcommand)]
+enum CacheCommands {
+    /// Show cache statistics
+    Stats {
+        /// Path to the cache directory
+        dir: PathBuf,
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
+    /// Clear all cache entries (preserves index.json and sentinel)
+    Clear {
+        /// Path to the cache directory
+        dir: PathBuf,
+        /// Skip confirmation prompt
+        #[arg(short, long)]
+        yes: bool,
+    },
+    /// Purge old cache entries
+    Purge {
+        /// Path to the cache directory
+        dir: PathBuf,
+        /// Delete entries older than this duration (e.g., "30d", "7d", "1h")
+        #[arg(long, value_name = "DURATION")]
+        older_than: Option<String>,
+        /// Delete entries matching this version constraint (e.g., "<1.0.0")
+        #[arg(long, value_name = "CONSTRAINT")]
+        version: Option<String>,
+    },
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -188,8 +261,29 @@ fn main() -> Result<()> {
             password,
             format,
             receipts,
+            cache_dir,
+            cache_size,
+            no_cache,
         } => {
-            if let Err(e) = cmd_extract(input, password_stdin, password, &format, &receipts) {
+            if let Err(e) = cmd_extract(input, password_stdin, password, &format, &receipts, cache_dir, &cache_size, no_cache) {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Cache { cache_command } => {
+            if let Err(e) = cmd_cache(cache_command) {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Serve {
+            bind,
+            cache_dir,
+            cache_size,
+            no_cache,
+            max_upload_mb,
+        } => {
+            if let Err(e) = cmd_serve(bind, cache_dir, &cache_size, no_cache, max_upload_mb) {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
@@ -259,6 +353,9 @@ fn cmd_extract(
     password: Option<String>,
     format: &str,
     receipts: &str,
+    cache_dir: Option<PathBuf>,
+    cache_size: &str,
+    no_cache: bool,
 ) -> Result<()> {
     // Validate receipts mode
     let receipts_mode = match ReceiptsMode::from_str(receipts) {
@@ -296,9 +393,47 @@ fn cmd_extract(
     // Build extraction options
     let options = ExtractionOptions::with_receipts(receipts_mode);
 
-    // Perform the extraction
-    let result = extract_pdf(&input, &options)
-        .context("Failed to extract PDF")?;
+    // Create cache directory if specified
+    let cache_dir_ref = if let Some(ref dir) = cache_dir {
+        if !no_cache {
+            if !dir.exists() {
+                fs::create_dir_all(dir)
+                    .context(format!("Failed to create cache directory: {}", dir.display()))?;
+            }
+            // Initialize cache index if it doesn't exist
+            if cache::layout::index_path(dir).exists() {
+                Some(dir.as_path())
+            } else {
+                // Create initial index
+                let _ = cache::layout::save_index(dir, &cache::layout::CacheIndex::default());
+                Some(dir.as_path())
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Parse cache size
+    let cache_size_bytes = if cache_dir_ref.is_some() {
+        Some(parse_size(cache_size)?)
+    } else {
+        None
+    };
+
+    // Perform extraction with cache integration
+    let (mut result, cache_status, cache_age) = cache::extract_with_cache(
+        &input,
+        &options,
+        cache_dir_ref,
+        no_cache,
+        cache_size_bytes,
+    ).context("Failed to extract PDF")?;
+
+    // Set cache status metadata
+    result.metadata.cache_status = Some(cache_status);
+    result.metadata.cache_age_seconds = cache_age;
 
     // Output based on requested format
     match format {
@@ -794,6 +929,93 @@ fn cmd_conformance(suite: PathBuf, sdk: &str, version: &str, output: PathBuf) ->
 
     println!("\nReport written to {:?}", output);
     Ok(())
+}
+
+fn cmd_cache(command: CacheCommands) -> Result<()> {
+    match command {
+        CacheCommands::Stats { dir, json } => {
+            let stats = cache_cmd::compute_stats(&dir)?;
+            if json {
+                cache_cmd::display_stats_json(&stats)?;
+            } else {
+                cache_cmd::display_stats(&stats);
+            }
+        }
+        CacheCommands::Clear { dir, yes } => {
+            cache_cmd::clear_cache(&dir, yes)?;
+        }
+        CacheCommands::Purge { dir, older_than, version } => {
+            if older_than.is_none() && version.is_none() {
+                eprintln!("Error: --older-than or --version is required for purge");
+                eprintln!("Usage: pdftract cache purge DIR --older-than 30d");
+                eprintln!("       pdftract cache purge DIR --version '<1.0.0'");
+                std::process::exit(2);
+            }
+            if let Some(duration) = older_than {
+                cache_cmd::purge_cache_older_than(&dir, &duration)?;
+            }
+            if let Some(constraint) = version {
+                cache_cmd::purge_cache_version(&dir, &constraint)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn cmd_serve(
+    bind: String,
+    cache_dir: Option<PathBuf>,
+    cache_size: &str,
+    no_cache: bool,
+    max_upload_mb: usize,
+) -> Result<()> {
+    // Parse cache size
+    let cache_size_bytes = parse_size(cache_size)?;
+
+    // Create cache directory if specified
+    if let Some(ref dir) = cache_dir {
+        if !dir.exists() {
+            fs::create_dir_all(dir)
+                .context(format!("Failed to create cache directory: {}", dir.display()))?;
+        }
+    }
+
+    // Run the HTTP server
+    tokio::runtime::Runtime::new()
+        .context("Failed to create tokio runtime")?
+        .block_on(serve::run(bind, cache_dir, cache_size_bytes, no_cache, max_upload_mb))
+}
+
+/// Parse a size string like "1 GiB", "500 MiB", "2 GiB" into bytes.
+fn parse_size(size_str: &str) -> Result<u64> {
+    let s = size_str.trim().to_lowercase();
+    let multiplier = if s.ends_with("gib") || s.ends_with("gb") || s.ends_with("g") {
+        1024 * 1024 * 1024
+    } else if s.ends_with("mib") || s.ends_with("mb") || s.ends_with("m") {
+        1024 * 1024
+    } else if s.ends_with("kib") || s.ends_with("kb") || s.ends_with("k") {
+        1024
+    } else {
+        1 // bytes
+    };
+
+    let num_str = s
+        .trim_end_matches("gib")
+        .trim_end_matches("gb")
+        .trim_end_matches("g")
+        .trim_end_matches("mib")
+        .trim_end_matches("mb")
+        .trim_end_matches("m")
+        .trim_end_matches("kib")
+        .trim_end_matches("kb")
+        .trim_end_matches("k")
+        .trim()
+        .replace('_', "");
+
+    let num: f64 = num_str.parse()
+        .context(format!("Invalid size value: {}", size_str))?;
+
+    Ok((num * multiplier as f64) as u64)
 }
 
 #[derive(Debug, serde::Serialize)]

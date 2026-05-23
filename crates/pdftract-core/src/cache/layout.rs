@@ -18,7 +18,8 @@ const FINGERPRINT_PREFIX: &str = "pdftract-v1:";
 /// Cache metadata stored in index.json.
 ///
 /// This file is read at startup and updated on shutdown. It tracks the
-/// cache schema version, creation timestamp, and LRU sweep timing.
+/// cache schema version, creation timestamp, LRU sweep timing, and
+/// hit ratio statistics.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheIndex {
     /// Cache schema version (current: 1)
@@ -31,6 +32,10 @@ pub struct CacheIndex {
     pub total_bytes: u64,
     /// Number of cached entries
     pub entry_count: u64,
+    /// Cache hits since last clear (incremented on successful cache read)
+    pub hits: u64,
+    /// Total cache accesses since last clear (hits + misses)
+    pub total_accesses: u64,
 }
 
 impl Default for CacheIndex {
@@ -44,6 +49,8 @@ impl Default for CacheIndex {
             last_lru_sweep: None,
             total_bytes: 0,
             entry_count: 0,
+            hits: 0,
+            total_accesses: 0,
         }
     }
 }
@@ -248,6 +255,43 @@ pub fn ensure_fingerprint_dir(cache_dir: &Path, fingerprint: &str) -> Result<(),
     std::fs::create_dir_all(fp_dir)
 }
 
+/// Increment cache hit counter in index.json.
+///
+/// This is called on a successful cache hit. The hit counter and total
+/// access counter are both incremented atomically.
+///
+/// # Arguments
+///
+/// * `cache_dir` - Root cache directory
+///
+/// # Returns
+///
+/// `Ok(())` on success, `Err` if the index cannot be loaded or saved.
+pub fn increment_hit_counter(cache_dir: &Path) -> Result<(), anyhow::Error> {
+    let mut index = load_index(cache_dir)?.unwrap_or_default();
+    index.hits += 1;
+    index.total_accesses += 1;
+    save_index(cache_dir, &index)
+}
+
+/// Increment cache miss counter in index.json.
+///
+/// This is called on a cache miss (extraction runs). Only the total
+/// access counter is incremented.
+///
+/// # Arguments
+///
+/// * `cache_dir` - Root cache directory
+///
+/// # Returns
+///
+/// `Ok(())` on success, `Err` if the index cannot be loaded or saved.
+pub fn increment_miss_counter(cache_dir: &Path) -> Result<(), anyhow::Error> {
+    let mut index = load_index(cache_dir)?.unwrap_or_default();
+    index.total_accesses += 1;
+    save_index(cache_dir, &index)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -386,6 +430,8 @@ mod tests {
             last_lru_sweep: Some(1234567900),
             total_bytes: 1024000,
             entry_count: 42,
+            hits: 10,
+            total_accesses: 15,
         };
 
         // Save it
@@ -428,6 +474,8 @@ mod tests {
             last_lru_sweep: None,
             total_bytes: 0,
             entry_count: 0,
+            hits: 0,
+            total_accesses: 0,
         };
 
         save_index(cache_dir, &index).unwrap();
