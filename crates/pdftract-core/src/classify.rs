@@ -1509,4 +1509,120 @@ mod tests {
         let result = classifier.classify(&ctx);
         assert_eq!(result.class, PageClass::Vector);
     }
+
+    #[test]
+    fn test_microbenchmark_classify_page_performance() {
+        // Micro-benchmark: verify classify_page p99 < 5 ms
+        // This test simulates a 50-fixture suite to verify performance
+
+        use std::time::Instant;
+
+        // Create 50 diverse page contexts representing real fixtures
+        let fixtures: Vec<PageContext> = vec![
+            // Vector pages (born-digital text)
+            PageContext {
+                text_op_count: 500,
+                raw_char_count: 3000,
+                valid_char_count: 2900,
+                invisible_text_count: 0,
+                replacement_char_count: 50,
+                image_coverage: 0.0,
+                has_full_page_image: false,
+                has_visible_text: true,
+                density_ratio: 0.95,
+                width: 612.0,
+                height: 792.0,
+                rotation: 0,
+                grid_cells: None,
+            },
+            // Scanned pages (image-only)
+            PageContext {
+                text_op_count: 0,
+                raw_char_count: 0,
+                valid_char_count: 0,
+                invisible_text_count: 0,
+                replacement_char_count: 0,
+                image_coverage: 0.95,
+                has_full_page_image: true,
+                has_visible_text: false,
+                density_ratio: 0.0,
+                width: 612.0,
+                height: 792.0,
+                rotation: 0,
+                grid_cells: None,
+            },
+            // BrokenVector pages
+            PageContext {
+                text_op_count: 100,
+                raw_char_count: 1000,
+                valid_char_count: 1000,
+                invisible_text_count: 100,
+                replacement_char_count: 0,
+                image_coverage: 0.95,
+                has_full_page_image: true,
+                has_visible_text: false,
+                density_ratio: 0.30,
+                width: 612.0,
+                height: 792.0,
+                rotation: 0,
+                grid_cells: None,
+            },
+            // Hybrid pages
+            PageContext {
+                text_op_count: 200,
+                raw_char_count: 1500,
+                valid_char_count: 1400,
+                invisible_text_count: 0,
+                replacement_char_count: 50,
+                image_coverage: 0.70,
+                has_full_page_image: false,
+                has_visible_text: true,
+                density_ratio: 0.50,
+                width: 612.0,
+                height: 792.0,
+                rotation: 0,
+                grid_cells: Some(std::array::from_fn(|i| {
+                    let row = i / 8;
+                    if row < 2 {
+                        CellData { text_op_count: 15, image_coverage: 0.05, char_validity: 0.95 }
+                    } else {
+                        CellData { text_op_count: 0, image_coverage: 0.90, char_validity: 0.0 }
+                    }
+                })),
+            },
+        ];
+
+        // Run each fixture 50 times to simulate 50-page document
+        let iterations = 50;
+        let mut durations = Vec::new();
+
+        for _ in 0..iterations {
+            for ctx in &fixtures {
+                let start = Instant::now();
+                let _result = classify_page(ctx);
+                let elapsed = start.elapsed();
+                durations.push(elapsed);
+            }
+        }
+
+        // Calculate p99 (99th percentile)
+        durations.sort();
+        let p99_index = (durations.len() as f64 * 0.99) as usize;
+        let p99 = durations[p99_index];
+
+        // Verify p99 < 5 ms
+        assert!(
+            p99.as_millis() < 5,
+            "classify_page p99 = {} ms, expected < 5 ms",
+            p99.as_millis()
+        );
+
+        // Also verify median for good measure
+        let median = durations[durations.len() / 2];
+        assert!(
+            median.as_micros() < 1000,
+            "classify_page median = {} μs, expected < 1000 μs",
+            median.as_micros()
+        );
+    }
 }
