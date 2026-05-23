@@ -26,6 +26,7 @@
 //! 5. If no signal voted, default to Vector with confidence 0.5
 
 use std::collections::BTreeSet;
+use serde::{Deserialize, Serialize};
 
 /// Page context containing all metrics needed for classification.
 ///
@@ -457,7 +458,7 @@ pub fn classify_page(ctx: &PageContext) -> PageClassification {
 /// Page classification result.
 ///
 /// Represents the extraction path that should be used for this page.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PageClass {
     /// Vector (text-based) page - use Phase 3 content stream extraction.
     Vector,
@@ -487,7 +488,7 @@ impl PageClass {
 ///
 /// Contains the classification decision, confidence score, and optionally
 /// the set of hybrid cell indexes for OCR routing.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PageClassification {
     /// The classification decision.
     pub class: PageClass,

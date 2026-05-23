@@ -4,6 +4,18 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
+use lopdf;
+
+/// Helper macro for creating dictionaries
+macro_rules! dictionary {
+    ($( $key:literal => $value:expr ),* $(,)?) => {{
+        let mut dict = lopdf::Dictionary::new();
+        $(
+            dict.set($key, $value);
+        )*
+        dict
+    }};
+}
 
 /// Find the workspace root directory by searching for Cargo.toml
 fn find_workspace_root() -> PathBuf {
@@ -88,10 +100,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.len() < 2 {
         eprintln!("Usage: xtask <command>");
         eprintln!("Commands:");
-        eprintln!("  doc-profile <profile-name>  Generate README skeleton for a profile");
-        eprintln!("  doc-profiles                 Generate README skeletons for all profiles");
-        eprintln!("  generate-stress-pdfs        Generate stress-test PDFs for memory ceiling testing");
-        eprintln!("  memory-ceiling              Run memory ceiling tests against perf/malformed corpora");
+        eprintln!("  doc-profile <profile-name>      Generate README skeleton for a profile");
+        eprintln!("  doc-profiles                     Generate README skeletons for all profiles");
+        eprintln!("  generate-stress-pdfs            Generate stress-test PDFs for memory ceiling testing");
+        eprintln!("  generate-page-class-fixtures    Generate page classification test fixtures");
+        eprintln!("  memory-ceiling                  Run memory ceiling tests against perf/malformed corpora");
         std::process::exit(1);
     }
 
@@ -117,6 +130,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         "generate-stress-pdfs" => {
             generate_stress_pdfs()?;
+        }
+        "generate-page-class-fixtures" => {
+            generate_page_class_fixtures()?;
         }
         "memory-ceiling" => {
             run_memory_ceiling_tests()?;
@@ -906,4 +922,463 @@ fn sample_rss(pid: u32) -> Result<usize, Box<dyn std::error::Error>> {
     }
 
     Err("VmRSS not found in /proc status".into())
+}
+
+/// Generate page classification test fixtures
+///
+/// Creates 4 fixture types for testing page classification:
+/// - vector_pure: Pure text PDF (born-digital)
+/// - scanned_single: Image-only PDF (scanned page)
+/// - brokenvector_pdfa: Invisible text layer over scanned image
+/// - hybrid_header_body: Text header + scanned body
+fn generate_page_class_fixtures() -> Result<(), Box<dyn std::error::Error>> {
+    use lopdf::{Document, Object, Stream, Dictionary};
+
+    println!("==========================================");
+    println!("Generating Page Classification Fixtures");
+    println!("==========================================");
+
+    let workspace_root = find_workspace_root();
+    let fixtures_dir = workspace_root.join("tests/fixtures/page_class");
+    fs::create_dir_all(&fixtures_dir)?;
+
+    // 1. Vector pure: Born-digital text PDF
+    println!("\n1. Generating vector_pure fixture...");
+    let vector_dir = fixtures_dir.join("vector_pure");
+    fs::create_dir_all(&vector_dir)?;
+    generate_vector_pure_pdf(&vector_dir)?;
+
+    // 2. Scanned single: Image-only PDF
+    println!("2. Generating scanned_single fixture...");
+    let scanned_dir = fixtures_dir.join("scanned_single");
+    fs::create_dir_all(&scanned_dir)?;
+    generate_scanned_single_pdf(&scanned_dir)?;
+
+    // 3. BrokenVector: Invisible text + image
+    println!("3. Generating brokenvector_pdfa fixture...");
+    let broken_dir = fixtures_dir.join("brokenvector_pdfa");
+    fs::create_dir_all(&broken_dir)?;
+    generate_brokenvector_pdf(&broken_dir)?;
+
+    // 4. Hybrid: Text header + scanned body
+    println!("4. Generating hybrid_header_body fixture...");
+    let hybrid_dir = fixtures_dir.join("hybrid_header_body");
+    fs::create_dir_all(&hybrid_dir)?;
+    generate_hybrid_pdf(&hybrid_dir)?;
+
+    println!("\n==========================================");
+    println!("Page Classification Fixtures Generated");
+    println!("==========================================");
+
+    // Print sizes
+    for fixture_name in &["vector_pure", "scanned_single", "brokenvector_pdfa", "hybrid_header_body"] {
+        let fixture_dir = fixtures_dir.join(fixture_name);
+        let pdf_path = fixture_dir.join("source.pdf");
+        if let Ok(metadata) = fs::metadata(&pdf_path) {
+            let size_kb = metadata.len() as f64 / 1024.0;
+            println!("  - {}/source.pdf: {:.2} KB", fixture_name, size_kb);
+        }
+    }
+
+    Ok(())
+}
+
+/// Generate a pure vector PDF (born-digital text)
+fn generate_vector_pure_pdf(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    use lopdf::{Document, Object, Stream, Dictionary};
+
+    let mut doc = Document::with_version("1.5");
+
+    // Create font
+    let mut font_dict = Dictionary::new();
+    font_dict.set("Type", "Font");
+    font_dict.set("Subtype", "Type1");
+    font_dict.set("BaseFont", "Helvetica");
+    let font_id = doc.add_object(font_dict);
+
+    // Resources
+    let mut resources = Dictionary::new();
+    let mut font_resources = Dictionary::new();
+    font_resources.set("F1", font_id);
+    resources.set("Font", font_resources);
+
+    // Content stream: Multiple lines of text with high character count
+    let content_text = r#"
+        BT /F1 12 Tf 50 750 Td
+        (This is a born-digital PDF with pure vector text.) Tj
+        0 -15 Td (It contains multiple text operators and high character validity.) Tj
+        0 -15 Td (The classification should detect this as a Vector page.) Tj
+        0 -15 Td (Lorem ipsum dolor sit amet, consectetur adipiscing elit.) Tj
+        0 -15 Td (Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.) Tj
+        0 -15 Td (Ut enim ad minim veniam, quis nostrud exercitation ullamco.) Tj
+        0 -15 Td (Duis aute irure dolor in reprehenderit in voluptate velit esse.) Tj
+        0 -15 Td (Excepteur sint occaecat cupidatat non proident sunt in culpa.) Tj
+        ET
+    "#;
+
+    let content_bytes = content_text.as_bytes();
+    let mut content_dict = Dictionary::new();
+    content_dict.set("Length", content_bytes.len() as i32);
+    let content_stream = Stream::new(content_dict, content_bytes.to_vec());
+    let content_id = doc.add_object(content_stream);
+
+    // Page dictionary
+    let page_dict = dictionary! {
+        "Type" => "Page",
+        "MediaBox" => vec![0.0.into(), 0.0.into(), 612.0.into(), 792.0.into()],
+        "Contents" => content_id,
+        "Resources" => resources,
+        "CropBox" => vec![0.0.into(), 0.0.into(), 612.0.into(), 792.0.into()],
+    };
+    let page_id = doc.add_object(page_dict);
+
+    // Pages tree
+    let pages_id = doc.add_object(dictionary! {
+        "Type" => "Pages",
+        "Count" => 1,
+        "Kids" => vec![page_id.into()],
+    });
+
+    // Update page with parent reference
+    let mut page_obj = doc.get_object(page_id)?.as_dict().cloned()?;
+    page_obj.set("Parent", pages_id);
+    doc.objects.insert(page_id, Object::Dictionary(page_obj));
+
+    // Catalog
+    let catalog_id = doc.add_object(dictionary! {
+        "Type" => "Catalog",
+        "Pages" => pages_id,
+    });
+    doc.trailer.set("Root", catalog_id);
+
+    // Save PDF
+    let pdf_path = dir.join("source.pdf");
+    doc.save(&pdf_path)?;
+
+    // Generate expected.json
+    let expected = PageClassExpected {
+        class: "Vector".to_string(),
+        confidence_min: 0.90,
+        hybrid_cells: None,
+    };
+    let json_path = dir.join("expected.json");
+    fs::write(&json_path, serde_json::to_string_pretty(&expected)?)?;
+
+    println!("  Created: {}/source.pdf ({:.2} KB)",
+        dir.file_name().unwrap().to_string_lossy(),
+        fs::metadata(&pdf_path)?.len() as f64 / 1024.0
+    );
+
+    Ok(())
+}
+
+/// Generate an image-only scanned PDF
+fn generate_scanned_single_pdf(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    use lopdf::{Document, Object, Dictionary, Stream};
+
+    let mut doc = Document::with_version("1.5");
+
+    // Create a simple 1x1 pixel white image (minimal image object)
+    let image_data = vec![0u8; 4]; // 1x1 white pixel in RGB
+    let mut image_stream = Stream::new(dictionary! {
+        "Type" => "XObject",
+        "Subtype" => "Image",
+        "Width" => 1,
+        "Height" => 1,
+        "BitsPerComponent" => 8,
+        "ColorSpace" => "DeviceRGB",
+        "Length" => image_data.len() as i32,
+    }, image_data);
+    let image_id = doc.add_object(image_stream);
+
+    // Resources with image
+    let mut resources = Dictionary::new();
+    let mut xobject = Dictionary::new();
+    xobject.set("Im1", image_id);
+    resources.set("XObject", xobject);
+
+    // Content stream: Draw image covering most of the page
+    let content_text = r#"
+        q 612 792 scale
+        /Im1 Do
+        Q
+    "#;
+
+    let content_bytes = content_text.as_bytes();
+    let mut content_dict = Dictionary::new();
+    content_dict.set("Length", content_bytes.len() as i32);
+    let content_stream = Stream::new(content_dict, content_bytes.to_vec());
+    let content_id = doc.add_object(content_stream);
+
+    // Page dictionary
+    let page_dict = dictionary! {
+        "Type" => "Page",
+        "MediaBox" => vec![0.0.into(), 0.0.into(), 612.0.into(), 792.0.into()],
+        "Contents" => content_id,
+        "Resources" => resources,
+    };
+    let page_id = doc.add_object(page_dict);
+
+    // Pages tree
+    let pages_id = doc.add_object(dictionary! {
+        "Type" => "Pages",
+        "Count" => 1,
+        "Kids" => vec![page_id.into()],
+    });
+
+    // Update page with parent reference
+    let mut page_obj = doc.get_object(page_id)?.as_dict().cloned()?;
+    page_obj.set("Parent", pages_id);
+    doc.objects.insert(page_id, Object::Dictionary(page_obj));
+
+    // Catalog
+    let catalog_id = doc.add_object(dictionary! {
+        "Type" => "Catalog",
+        "Pages" => pages_id,
+    });
+    doc.trailer.set("Root", catalog_id);
+
+    // Save PDF
+    let pdf_path = dir.join("source.pdf");
+    doc.save(&pdf_path)?;
+
+    // Generate expected.json
+    let expected = PageClassExpected {
+        class: "Scanned".to_string(),
+        confidence_min: 0.90,
+        hybrid_cells: None,
+    };
+    let json_path = dir.join("expected.json");
+    fs::write(&json_path, serde_json::to_string_pretty(&expected)?)?;
+
+    println!("  Created: {}/source.pdf ({:.2} KB)",
+        dir.file_name().unwrap().to_string_lossy(),
+        fs::metadata(&pdf_path)?.len() as f64 / 1024.0
+    );
+
+    Ok(())
+}
+
+/// Generate a BrokenVector PDF (invisible text + image)
+fn generate_brokenvector_pdf(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    use lopdf::{Document, Object, Dictionary, Stream};
+
+    let mut doc = Document::with_version("1.5");
+
+    // Create font
+    let mut font_dict = Dictionary::new();
+    font_dict.set("Type", "Font");
+    font_dict.set("Subtype", "Type1");
+    font_dict.set("BaseFont", "Helvetica");
+    let font_id = doc.add_object(font_dict);
+
+    // Create a 1x1 white pixel image
+    let image_data = vec![255u8; 4];
+    let mut image_stream = Stream::new(dictionary! {
+        "Type" => "XObject",
+        "Subtype" => "Image",
+        "Width" => 1,
+        "Height" => 1,
+        "BitsPerComponent" => 8,
+        "ColorSpace" => "DeviceRGB",
+        "Length" => image_data.len() as i32,
+    }, image_data);
+    let image_id = doc.add_object(image_stream);
+
+    // Resources
+    let mut resources = Dictionary::new();
+    let mut font_resources = Dictionary::new();
+    font_resources.set("F1", font_id);
+    resources.set("Font", font_resources);
+    let mut xobject = Dictionary::new();
+    xobject.set("Im1", image_id);
+    resources.set("XObject", xobject);
+
+    // Content stream: Invisible text (Tr=3) + full-page image
+    // The text is there but invisible, simulating a bad OCR overlay
+    let content_text = r#"
+        BT /F1 12 Tf 50 750 Td 3 Tr
+        (This text is invisible Tr=3 overlay over scanned image.) Tj
+        0 -15 Td (It represents a broken vector PDF with bad OCR layer.) Tj
+        0 -15 Td (Classification should detect this as BrokenVector.) Tj
+        ET
+        q 612 792 scale
+        /Im1 Do
+        Q
+    "#;
+
+    let content_bytes = content_text.as_bytes();
+    let mut content_dict = Dictionary::new();
+    content_dict.set("Length", content_bytes.len() as i32);
+    let content_stream = Stream::new(content_dict, content_bytes.to_vec());
+    let content_id = doc.add_object(content_stream);
+
+    // Page dictionary
+    let page_dict = dictionary! {
+        "Type" => "Page",
+        "MediaBox" => vec![0.0.into(), 0.0.into(), 612.0.into(), 792.0.into()],
+        "Contents" => content_id,
+        "Resources" => resources,
+    };
+    let page_id = doc.add_object(page_dict);
+
+    // Pages tree
+    let pages_id = doc.add_object(dictionary! {
+        "Type" => "Pages",
+        "Count" => 1,
+        "Kids" => vec![page_id.into()],
+    });
+
+    // Update page with parent reference
+    let mut page_obj = doc.get_object(page_id)?.as_dict().cloned()?;
+    page_obj.set("Parent", pages_id);
+    doc.objects.insert(page_id, Object::Dictionary(page_obj));
+
+    // Catalog
+    let catalog_id = doc.add_object(dictionary! {
+        "Type" => "Catalog",
+        "Pages" => pages_id,
+    });
+    doc.trailer.set("Root", catalog_id);
+
+    // Save PDF
+    let pdf_path = dir.join("source.pdf");
+    doc.save(&pdf_path)?;
+
+    // Generate expected.json
+    let expected = PageClassExpected {
+        class: "BrokenVector".to_string(),
+        confidence_min: 0.90,
+        hybrid_cells: None,
+    };
+    let json_path = dir.join("expected.json");
+    fs::write(&json_path, serde_json::to_string_pretty(&expected)?)?;
+
+    println!("  Created: {}/source.pdf ({:.2} KB)",
+        dir.file_name().unwrap().to_string_lossy(),
+        fs::metadata(&pdf_path)?.len() as f64 / 1024.0
+    );
+
+    Ok(())
+}
+
+/// Generate a Hybrid PDF (text header + scanned body)
+fn generate_hybrid_pdf(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    use lopdf::{Document, Object, Dictionary, Stream};
+
+    let mut doc = Document::with_version("1.5");
+
+    // Create font
+    let mut font_dict = Dictionary::new();
+    font_dict.set("Type", "Font");
+    font_dict.set("Subtype", "Type1");
+    font_dict.set("BaseFont", "Helvetica");
+    let font_id = doc.add_object(font_dict);
+
+    // Create a 1x1 white pixel image for the body
+    let image_data = vec![255u8; 4];
+    let mut image_stream = Stream::new(dictionary! {
+        "Type" => "XObject",
+        "Subtype" => "Image",
+        "Width" => 1,
+        "Height" => 1,
+        "BitsPerComponent" => 8,
+        "ColorSpace" => "DeviceRGB",
+        "Length" => image_data.len() as i32,
+    }, image_data);
+    let image_id = doc.add_object(image_stream);
+
+    // Resources
+    let mut resources = Dictionary::new();
+    let mut font_resources = Dictionary::new();
+    font_resources.set("F1", font_id);
+    resources.set("Font", font_resources);
+    let mut xobject = Dictionary::new();
+    xobject.set("Im1", image_id);
+    resources.set("XObject", xobject);
+
+    // Content stream: Text header (top 25%) + image body (bottom 75%)
+    // Header: visible text in the top portion
+    // Body: image covering the bottom portion
+    let content_text = r#"
+        BT /F1 14 Tf 50 750 Td
+        (This is a HYBRID document with vector text header) Tj
+        0 -20 Td (The header contains selectable text) Tj
+        0 -20 Td (Below this header is a scanned image body) Tj
+        ET
+        q
+        0 0 612 560 re  W n
+        612 792 scale
+        /Im1 Do
+        Q
+    "#;
+
+    let content_bytes = content_text.as_bytes();
+    let mut content_dict = Dictionary::new();
+    content_dict.set("Length", content_bytes.len() as i32);
+    let content_stream = Stream::new(content_dict, content_bytes.to_vec());
+    let content_id = doc.add_object(content_stream);
+
+    // Page dictionary
+    let page_dict = dictionary! {
+        "Type" => "Page",
+        "MediaBox" => vec![0.0.into(), 0.0.into(), 612.0.into(), 792.0.into()],
+        "Contents" => content_id,
+        "Resources" => resources,
+    };
+    let page_id = doc.add_object(page_dict);
+
+    // Pages tree
+    let pages_id = doc.add_object(dictionary! {
+        "Type" => "Pages",
+        "Count" => 1,
+        "Kids" => vec![page_id.into()],
+    });
+
+    // Update page with parent reference
+    let mut page_obj = doc.get_object(page_id)?.as_dict().cloned()?;
+    page_obj.set("Parent", pages_id);
+    doc.objects.insert(page_id, Object::Dictionary(page_obj));
+
+    // Catalog
+    let catalog_id = doc.add_object(dictionary! {
+        "Type" => "Catalog",
+        "Pages" => pages_id,
+    });
+    doc.trailer.set("Root", catalog_id);
+
+    // Save PDF
+    let pdf_path = dir.join("source.pdf");
+    doc.save(&pdf_path)?;
+
+    // Generate expected.json
+    // For hybrid, we expect specific hybrid_cells (bottom rows of the 8x8 grid)
+    // The image covers bottom 75% of page, which corresponds to rows 2-7 (6 rows = 48 cells)
+    let hybrid_cells: Vec<usize> = (16..64).collect(); // rows 2-7
+
+    let expected = PageClassExpected {
+        class: "Hybrid".to_string(),
+        confidence_min: 0.15,
+        hybrid_cells: Some(hybrid_cells),
+    };
+    let json_path = dir.join("expected.json");
+    fs::write(&json_path, serde_json::to_string_pretty(&expected)?)?;
+
+    println!("  Created: {}/source.pdf ({:.2} KB)",
+        dir.file_name().unwrap().to_string_lossy(),
+        fs::metadata(&pdf_path)?.len() as f64 / 1024.0
+    );
+
+    Ok(())
+}
+
+/// Expected page classification for a fixture
+#[derive(Debug, Serialize)]
+struct PageClassExpected {
+    /// Expected class name (Vector, Scanned, Hybrid, BrokenVector)
+    class: String,
+    /// Minimum confidence threshold (actual confidence may vary slightly)
+    confidence_min: f32,
+    /// For Hybrid pages: expected scanned cell indexes
+    hybrid_cells: Option<Vec<usize>>,
 }
