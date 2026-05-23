@@ -114,3 +114,18 @@ See [`SECURITY.md`](SECURITY.md) for our full disclosure policy, including:
 ### Supply-Chain Security
 
 This project uses `cargo-audit` and `cargo-deny` for supply-chain security. New direct dependencies require an ADR or written justification in the PR description.
+
+## Licensing
+
+pdftract is dual-licensed under **MIT OR Apache-2.0**. You may choose either license for your use.
+
+### Apache NOTICE File
+
+The Apache-2.0 license includes a NOTICE file requirement, but pdftract does not ship a NOTICE file in the source distribution. This is intentional: the project maintains no contributor list outside of git history, and there are no third-party attribution notices required.
+
+**Downstream redistributors MAY add a NOTICE file** when distributing pdftract as part of their own product. If you choose to add one, it should include:
+- Attribution to the pdftract project
+- A link to the original source repository
+- Any modifications you made (if distributing a modified version)
+
+The absence of a NOTICE file in the upstream distribution does not violate the Apache-2.0 license; the NOTICE requirement applies only when there is something to notice.
