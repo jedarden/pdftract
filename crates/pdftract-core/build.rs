@@ -5,6 +5,7 @@ use std::path::Path;
 fn main() {
     println!("cargo:rerun-if-changed=build/std14-metrics.json");
     println!("cargo:rerun-if-changed=build/named-encodings.json");
+    println!("cargo:rerun-if-changed=build/agl.json");
 
     let out_dir = env::var("OUT_DIR").unwrap();
     let out_path = Path::new(&out_dir);
@@ -16,6 +17,10 @@ fn main() {
     // Generate named encoding tables
     let encodings_path = Path::new("build/named-encodings.json");
     generate_named_encodings(out_path, encodings_path);
+
+    // Generate AGL phf maps
+    let agl_path = Path::new("build/agl.json");
+    generate_agl_maps(out_path, agl_path);
 }
 
 fn generate_std14_metrics(out_dir: &Path, metrics_path: &Path) {
@@ -183,4 +188,91 @@ pub fn get_named_encoding_table(encoding: NamedEncoding) -> &'static [Option<&'s
 
     fs::write(Path::new(out_dir).join("named_encodings.rs"), rust_code)
         .expect("Failed to write named_encodings.rs");
+}
+
+fn generate_agl_maps(out_dir: &Path, agl_path: &Path) {
+    let json_content = fs::read_to_string(agl_path)
+        .expect("Failed to read agl.json");
+
+    let data: serde_json::Value = serde_json::from_str(&json_content)
+        .expect("Failed to parse agl.json");
+
+    // Single-codepoint map
+    let single = data["merged_single"].as_object()
+        .expect("merged_single object missing");
+
+    let mut single_map_builder = phf_codegen::Map::new();
+
+    for (name, uvalue) in single {
+        let uvalue_str = uvalue.as_str()
+            .expect("unicode value is not a string");
+        // Parse the JSON unicode escape like "A" into a Rust char literal
+        let unicode_char = decode_json_unicode(uvalue_str);
+        single_map_builder.entry(name.as_str(), &format!("'\\u{{{}}}'", unicode_char));
+    }
+
+    // Multi-codepoint map
+    let multi = data["merged_multi"].as_object()
+        .expect("merged_multi object missing");
+
+    let mut multi_arrays = String::new();
+    let mut multi_map_builder = phf_codegen::Map::new();
+
+    for (name, uvalues) in multi {
+        let uvalues_arr = uvalues.as_array()
+            .expect("multi value is not an array");
+        let ident = name.to_uppercase().replace("-", "_").replace(".", "_");
+
+        let chars: Vec<String> = uvalues_arr.iter()
+            .map(|v| {
+                let uvalue_str = v.as_str().expect("unicode value is not a string");
+                let unicode_char = decode_json_unicode(uvalue_str);
+                format!("'\\u{{{}}}'", unicode_char)
+            })
+            .collect();
+
+        multi_arrays.push_str(&format!(r#"
+static {}: &[char] = &[{}];
+"#,
+            ident,
+            chars.join(", ")
+        ));
+
+        multi_map_builder.entry(name.as_str(), &format!("&{}", ident));
+    }
+
+    let rust_code = format!(r#"
+// Auto-generated Adobe Glyph List (AGL) phf maps.
+// Do not edit manually.
+// Source: Adobe Glyph List 1.4 + AGLFN 1.7
+// https://github.com/adobe-type-tools/agl-aglfn
+
+{}
+
+/// AGL phf map for single-codepoint glyph names.
+/// Maps glyph names like "A", "quoteright", "Euro" to their Unicode codepoints.
+pub static AGL: phf::Map<&'static str, char> = {};
+
+/// AGL phf map for multi-codepoint (ligature) glyph names.
+/// Maps glyph names like "dalethatafpatah" to sequences of Unicode codepoints.
+pub static AGL_MULTI: phf::Map<&'static str, &[char]> = {};
+"#,
+        multi_arrays,
+        single_map_builder.build(),
+        multi_map_builder.build()
+    );
+
+    fs::write(Path::new(out_dir).join("agl.rs"), rust_code)
+        .expect("Failed to write agl.rs");
+}
+
+/// Decode a JSON unicode escape string like "\\u0041" to "0041".
+fn decode_json_unicode(s: &str) -> String {
+    // The JSON has "\\uXXXX" which Rust reads as "\uXXXX"
+    // We need to extract just the hex part
+    if s.starts_with("\\u") {
+        s[2..].to_string()
+    } else {
+        s.to_string()
+    }
 }
