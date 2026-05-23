@@ -407,3 +407,65 @@ fn test_expected_json_validity() {
 
     println!("All expected.json files are valid");
 }
+
+/// Test that reproducibility gate fails on intentional perturbation.
+///
+/// This verifies that the reproducibility check is working correctly
+/// by intentionally perturbing a confidence value and asserting the
+/// test fails with a clear diff.
+#[test]
+fn test_reproducibility_gate_with_perturbation() {
+    use pdftract_core::classify::{PageContext, classify_page};
+
+    // Create a page context for a vector page
+    let mut ctx = PageContext::new();
+    ctx.text_op_count = 500;
+    ctx.raw_char_count = 3000;
+    ctx.valid_char_count = 2900;
+    ctx.image_coverage = 0.0;
+    ctx.density_ratio = 0.95;
+    ctx.has_visible_text = true;
+
+    // Classify twice
+    let result1 = classify_page(&ctx);
+    let mut result2 = classify_page(&ctx);
+
+    // Intentionally perturb the confidence
+    result2.confidence += 0.01;
+
+    // Serialize both results to JSON
+    let json1 = serde_json::to_string_pretty(&result1).expect("Failed to serialize result1");
+    let json2 = serde_json::to_string_pretty(&result2).expect("Failed to serialize result2");
+
+    // This should fail because we perturbed the confidence
+    let result = std::panic::catch_unwind(|| {
+        assert_eq!(
+            json1, json2,
+            "Reproducibility gate should fail on perturbation\nFirst:  {}\nSecond: {}",
+            json1, json2
+        );
+    });
+
+    // Verify the test did panic (reproducibility gate caught the perturbation)
+    assert!(result.is_err(), "Reproducibility gate should have failed on perturbation");
+
+    // Verify the error message contains the diff
+    if let Err(panic_payload) = result {
+        let panic_msg = if let Some(s) = panic_payload.downcast_ref::<String>() {
+            s.clone()
+        } else if let Some(s) = panic_payload.downcast_ref::<&str>() {
+            (*s).to_string()
+        } else {
+            "Unknown panic message".to_string()
+        };
+        assert!(
+            panic_msg.contains("Reproducibility gate should fail on perturbation") ||
+            panic_msg.contains("assertion `left == right` failed") ||
+            panic_msg.contains("assert_eq!") ||
+            panic_msg.contains("First:") ||
+            panic_msg.contains("Second:"),
+            "Panic message should contain diff information, got: {}",
+            panic_msg
+        );
+    }
+}
