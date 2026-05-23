@@ -6,16 +6,8 @@
 
 include!(concat!(env!("OUT_DIR"), "/std14_registry.rs"));
 
-/// Named encoding for Standard 14 fonts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NamedEncoding {
-    /// StandardEncoding (most Standard 14 fonts)
-    Standard,
-    /// SymbolEncoding (Symbol font)
-    Symbol,
-    /// ZapfDingbatsEncoding (ZapfDingbats font)
-    ZapfDingbats,
-}
+// Re-export NamedEncoding from the encoding module
+pub use super::encoding::NamedEncoding;
 
 /// AFM-derived metrics for a Standard 14 font.
 ///
