@@ -7,11 +7,15 @@
 pub mod cache;
 pub mod classify;
 pub mod diagnostics;
+#[cfg(feature = "ocr")]
+pub mod dpi;
 pub mod document;
 pub mod extract;
 pub mod fingerprint;
 pub mod font;
 pub mod graphics_state;
+#[cfg(feature = "ocr")]
+pub mod hybrid;
 pub mod options;
 pub mod parser;
 pub mod receipts;
@@ -30,4 +34,9 @@ pub use extract::{extract_pdf, extract_pdf_ndjson, ExtractionResult, PageResult,
 pub use font::std14::{Std14Metrics, NamedEncoding, get_std14_metrics};
 pub use options::{ExtractionOptions, ReceiptsMode};
 pub use parser::pages::{LazyPageIter, PageDict, DEFAULT_MEDIABOX, count_pages_tree};
-pub use schema::{SpanJson, BlockJson};
+pub use schema::{SpanJson, BlockJson, ExtractionQuality};
+
+#[cfg(feature = "ocr")]
+pub use dpi::{Pdf1Filter, FontSizeSpan, select_dpi};
+#[cfg(feature = "ocr")]
+pub use hybrid::{Span, SpanSource, compute_iou, merge_vector_and_ocr_spans, crop_cell_from_page, get_hybrid_cells, compute_cell_crops, CellCrop};

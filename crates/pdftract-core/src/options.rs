@@ -102,6 +102,20 @@ pub struct ExtractionOptions {
     /// When the feature is absent, this field is silently ignored and the
     /// direct compositing path is always used.
     pub full_render: bool,
+    /// Override DPI for OCR rendering (Phase 5.2).
+    ///
+    /// When set, this value overrides the automatic DPI selection algorithm.
+    /// Useful for debugging or for documents with known DPI requirements.
+    ///
+    /// Default: None (automatic selection based on font size and image filters)
+    ///
+    /// # DPI Selection Algorithm
+    ///
+    /// When not overridden, DPI is selected as follows:
+    /// - JBIG2 images present: 200 DPI (already binary)
+    /// - Median font size < 7.0 pt: 400 DPI (fine print)
+    /// - Otherwise: 300 DPI (standard body text)
+    pub ocr_dpi_override: Option<u32>,
 }
 
 impl Default for ExtractionOptions {
@@ -111,6 +125,7 @@ impl Default for ExtractionOptions {
             max_parallel_pages: Self::default_max_parallel_pages(),
             memory_budget_mb: Self::default_memory_budget_mb(),
             full_render: false,
+            ocr_dpi_override: None,
         }
     }
 }
@@ -142,7 +157,7 @@ impl ExtractionOptions {
     pub fn with_receipts(receipts: ReceiptsMode) -> Self {
         Self {
             receipts,
-            full_render: false,
+            ocr_dpi_override: None,
             ..Default::default()
         }
     }
@@ -151,7 +166,7 @@ impl ExtractionOptions {
     pub fn with_receipts_str(receipts: &str) -> Result<Self, String> {
         Ok(Self {
             receipts: ReceiptsMode::from_str(receipts)?,
-            full_render: false,
+            ocr_dpi_override: None,
             ..Default::default()
         })
     }
@@ -169,7 +184,7 @@ impl ExtractionOptions {
         Self {
             max_parallel_pages: max_parallel_pages.max(1),
             memory_budget_mb: memory_budget_mb.max(64),
-            full_render: false,
+            ocr_dpi_override: None,
             ..Default::default()
         }
     }

@@ -93,6 +93,86 @@ pub struct BlockJson {
     pub receipt: Option<Receipt>,
 }
 
+/// Extraction quality metrics for the document.
+///
+/// This structure appears in the document footer (NDJSON mode) or
+/// in the root metadata (full JSON mode). It provides aggregate
+/// quality signals across all pages.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ExtractionQuality {
+    /// Overall quality assessment: "high", "medium", "low", or "none".
+    ///
+    /// - "high": All pages extracted successfully with high confidence
+    /// - "medium": Most pages extracted, some with lower confidence
+    /// - "low": Significant extraction issues (many low-confidence pages)
+    /// - "none": No extractable content found (all blank pages)
+    pub overall_quality: String,
+
+    /// DPI used for OCR rendering (Phase 5.2).
+    ///
+    /// This field records the DPI selected by the automatic DPI selection
+    /// algorithm (or the user-specified override). It is present when OCR
+    /// was performed on any page.
+    ///
+    /// Values: 200 (JBIG2), 300 (standard), 400 (fine print), or custom
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dpi_used: Option<u32>,
+
+    /// Fraction of pages that required OCR fallback [0.0, 1.0].
+    ///
+    /// This is the count of pages classified as "scanned" or "mixed"
+    /// divided by the total page count.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ocr_fraction: Option<f32>,
+
+    /// Minimum confidence score across all spans [0.0, 1.0].
+    ///
+    /// This represents the weakest link in the extraction chain.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_confidence: Option<f32>,
+
+    /// Average confidence score across all spans [0.0, 1.0].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avg_confidence: Option<f32>,
+}
+
+impl ExtractionQuality {
+    /// Create a new extraction quality summary.
+    pub fn new() -> Self {
+        Self {
+            overall_quality: "none".to_string(),
+            dpi_used: None,
+            ocr_fraction: None,
+            min_confidence: None,
+            avg_confidence: None,
+        }
+    }
+
+    /// Set the overall quality level.
+    pub fn with_quality(mut self, quality: &str) -> Self {
+        self.overall_quality = quality.to_string();
+        self
+    }
+
+    /// Set the DPI used for OCR rendering.
+    pub fn with_dpi(mut self, dpi: u32) -> Self {
+        self.dpi_used = Some(dpi);
+        self
+    }
+
+    /// Set the OCR fraction.
+    pub fn with_ocr_fraction(mut self, fraction: f32) -> Self {
+        self.ocr_fraction = Some(fraction);
+        self
+    }
+}
+
+impl Default for ExtractionQuality {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -269,5 +349,94 @@ mod tests {
         // Both should contain the core fields
         assert!(json_with.contains("text"));
         assert!(json_without.contains("text"));
+    }
+
+    #[test]
+    fn test_extraction_quality_default() {
+        let quality = ExtractionQuality::new();
+        assert_eq!(quality.overall_quality, "none");
+        assert_eq!(quality.dpi_used, None);
+        assert_eq!(quality.ocr_fraction, None);
+        assert_eq!(quality.min_confidence, None);
+        assert_eq!(quality.avg_confidence, None);
+    }
+
+    #[test]
+    fn test_extraction_quality_with_quality() {
+        let quality = ExtractionQuality::new().with_quality("high");
+        assert_eq!(quality.overall_quality, "high");
+    }
+
+    #[test]
+    fn test_extraction_quality_with_dpi() {
+        let quality = ExtractionQuality::new().with_dpi(300);
+        assert_eq!(quality.dpi_used, Some(300));
+    }
+
+    #[test]
+    fn test_extraction_quality_with_ocr_fraction() {
+        let quality = ExtractionQuality::new().with_ocr_fraction(0.5);
+        assert_eq!(quality.ocr_fraction, Some(0.5));
+    }
+
+    #[test]
+    fn test_extraction_quality_serialization() {
+        let quality = ExtractionQuality {
+            overall_quality: "high".to_string(),
+            dpi_used: Some(300),
+            ocr_fraction: Some(0.25),
+            min_confidence: Some(0.95),
+            avg_confidence: Some(0.98),
+        };
+
+        let json = serde_json::to_string(&quality).unwrap();
+        assert!(json.contains("overall_quality"));
+        assert!(json.contains("high"));
+        assert!(json.contains("dpi_used"));
+        assert!(json.contains("300"));
+        assert!(json.contains("ocr_fraction"));
+        assert!(json.contains("min_confidence"));
+        assert!(json.contains("avg_confidence"));
+    }
+
+    #[test]
+    fn test_extraction_quality_serialization_minimal() {
+        // Test that optional fields are omitted when None
+        let quality = ExtractionQuality {
+            overall_quality: "none".to_string(),
+            dpi_used: None,
+            ocr_fraction: None,
+            min_confidence: None,
+            avg_confidence: None,
+        };
+
+        let json = serde_json::to_string(&quality).unwrap();
+        // Should only contain overall_quality
+        assert!(json.contains("overall_quality"));
+        assert!(json.contains("none"));
+        // Optional fields should not be present
+        assert!(!json.contains("dpi_used"));
+        assert!(!json.contains("ocr_fraction"));
+        assert!(!json.contains("min_confidence"));
+        assert!(!json.contains("avg_confidence"));
+    }
+
+    #[test]
+    fn test_extraction_quality_default_impl() {
+        let quality = ExtractionQuality::default();
+        assert_eq!(quality.overall_quality, "none");
+        assert_eq!(quality.dpi_used, None);
+    }
+
+    #[test]
+    fn test_extraction_quality_chained_setters() {
+        let quality = ExtractionQuality::new()
+            .with_quality("medium")
+            .with_dpi(400)
+            .with_ocr_fraction(0.75);
+
+        assert_eq!(quality.overall_quality, "medium");
+        assert_eq!(quality.dpi_used, Some(400));
+        assert_eq!(quality.ocr_fraction, Some(0.75));
     }
 }
