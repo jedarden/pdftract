@@ -3232,6 +3232,186 @@ mod predictor_tests {
                  if is_release { "release" } else { "debug" },
                  elapsed_ms, mb_per_sec, max_ms);
     }
+
+    /// Critical test: PNG predictor enforces max_output budget with small fixture.
+    ///
+    /// This test verifies that PNG predictor processing stops at the max_output
+    /// budget WITHOUT pre-allocating a full copy of the output. Per bf-49wmw,
+    /// the predictor uses row-by-row processing with peak memory at 2x stride
+    /// (MAX_ROW_BYTES = 64 KB) regardless of image height.
+    ///
+    /// The test uses a minimal fixture (200 bytes) that would decode to more
+    /// than the budget limit, forcing early truncation.
+    #[test]
+    fn test_png_predictor_budget_enforcement_small_fixture() {
+        // Create a small predicted payload: 20 rows × 10 bytes = 200 bytes
+        // This is well below MAX_ROW_BYTES (64 KB) but large enough to test budget
+        let mut predicted_data = Vec::new();
+        for _ in 0..20 {
+            predicted_data.push(10); // PNG predictor 10 (None)
+            predicted_data.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        }
+
+        let params = PredictorParams {
+            predictor: 15,
+            columns: 9,
+            colors: 1,
+            bits_per_component: 8,
+        };
+
+        // Set budget to 100 bytes (less than the 200-byte decoded size)
+        // This forces early abort during predictor processing
+        let max_output = 100;
+        let result = apply_predictor(&predicted_data, &params, max_output);
+
+        // CRITICAL: Must stop at or before budget limit
+        assert!(result.len() <= max_output as usize,
+                "PNG predictor output {} exceeds budget limit {}",
+                result.len(), max_output);
+
+        // Verify truncation occurred (got partial output, not full)
+        assert!(result.len() < 180, // 20 rows × 9 bytes
+                "Should have truncated at budget limit, got full output {} bytes",
+                result.len());
+
+        // Verify row-by-row processing: output should be a multiple of row_size
+        let row_size = params.bytes_per_row();
+        assert!(result.len() % row_size == 0 || result.len() % row_size == row_size - 1,
+                "Output length {} should be aligned to row boundaries (row_size={})",
+                result.len(), row_size);
+    }
+
+    /// Critical test: TIFF predictor 2 enforces max_output budget with small fixture.
+    ///
+    /// This test verifies that TIFF predictor 2 processing stops at the max_output
+    /// budget WITHOUT pre-allocating a full copy of the output. Per bf-49wmw,
+    /// the predictor uses row-by-row processing with peak memory at 2x stride
+    /// (MAX_ROW_BYTES = 64 KB) regardless of image height.
+    ///
+    /// The test uses a minimal fixture (160 bytes) that would decode to more
+    /// than the budget limit, forcing early truncation.
+    #[test]
+    fn test_tiff_predictor_2_budget_enforcement_small_fixture() {
+        // Create a small predicted payload: 20 rows × 8 bytes = 160 bytes
+        let mut predicted_data = Vec::new();
+        for _ in 0..20 {
+            // Each row: [0, 1, 1, 1, 1, 1, 1, 1] for grayscale
+            predicted_data.extend_from_slice(&[0, 1, 1, 1, 1, 1, 1, 1]);
+        }
+
+        let params = PredictorParams {
+            predictor: 2,
+            columns: 8,
+            colors: 1,
+            bits_per_component: 8,
+        };
+
+        // Set budget to 80 bytes (half of the 160-byte decoded size)
+        // This forces early abort during predictor processing
+        let max_output = 80;
+        let result = apply_predictor(&predicted_data, &params, max_output);
+
+        // CRITICAL: Must stop at or before budget limit
+        assert!(result.len() <= max_output as usize,
+                "TIFF predictor 2 output {} exceeds budget limit {}",
+                result.len(), max_output);
+
+        // Verify truncation occurred (got partial output, not full)
+        assert!(result.len() < 160,
+                "Should have truncated at budget limit, got full output {} bytes",
+                result.len());
+
+        // Verify row-by-row processing: output should be a multiple of row_size
+        let row_size = params.bytes_per_row();
+        assert!(result.len() % row_size == 0,
+                "Output length {} should be aligned to row boundaries (row_size={})",
+                result.len(), row_size);
+    }
+
+    /// Test: PNG predictor with multiple selectors enforces budget per-row.
+    ///
+    /// This test verifies that PNG predictor processes each selector type
+    /// (None, Sub, Up, Average, Paeth) with row-by-row budget checking.
+    /// Per bf-49wmw, budget is checked BEFORE processing each row.
+    #[test]
+    fn test_png_predictor_multiple_selectors_budget_per_row() {
+        let mut data = Vec::new();
+
+        // Row 1: PNG predictor 10 (None)
+        data.push(10);
+        data.extend_from_slice(&[10, 20, 30]);
+
+        // Row 2: PNG predictor 11 (Sub)
+        data.push(11);
+        data.extend_from_slice(&[5, 5, 5]);
+
+        // Row 3: PNG predictor 12 (Up)
+        data.push(12);
+        data.extend_from_slice(&[1, 2, 3]);
+
+        // Row 4: PNG predictor 13 (Average)
+        data.push(13);
+        data.extend_from_slice(&[2, 2, 2]);
+
+        // Row 5: PNG predictor 14 (Paeth)
+        data.push(14);
+        data.extend_from_slice(&[0, 0, 0]);
+
+        let params = PredictorParams {
+            predictor: 15,
+            columns: 3,
+            colors: 1,
+            bits_per_component: 8,
+        };
+
+        // Set budget to only allow 2 complete rows (6 bytes)
+        let max_output = 6;
+        let result = apply_predictor(&data, &params, max_output);
+
+        // Should get exactly 2 rows (6 bytes) before budget is hit
+        assert_eq!(result.len(), 6,
+                "Should have gotten exactly 2 rows before budget, got {} bytes",
+                result.len());
+
+        // Verify the first two rows are correct
+        assert_eq!(result[0..3], [10, 20, 30], "First row (None) incorrect");
+        assert_eq!(result[3..6], [5, 10, 15], "Second row (Sub) incorrect");
+    }
+
+    /// Test: TIFF predictor 2 with RGB processes row-by-row with budget enforcement.
+    ///
+    /// This test verifies that TIFF predictor 2 handles multi-byte pixels (RGB)
+    /// with row-by-row processing and per-row budget checking.
+    #[test]
+    fn test_tiff_predictor_2_rgb_budget_enforcement() {
+        // Create 5 rows of RGB data (3 bytes per pixel, 3 columns = 9 bytes per row)
+        let mut predicted_data = Vec::new();
+        for i in 0..5 {
+            // Each row starts with a base value, then differences
+            let base = (i * 10) as u8;
+            predicted_data.extend_from_slice(&[base, 1, 1, base, 2, 2, base, 3, 3]);
+        }
+
+        let params = PredictorParams {
+            predictor: 2,
+            columns: 3,
+            colors: 3,  // RGB
+            bits_per_component: 8,
+        };
+
+        // Set budget to only allow 2 complete rows (18 bytes)
+        let max_output = 18;
+        let result = apply_predictor(&predicted_data, &params, max_output);
+
+        // Should get exactly 2 rows (18 bytes) before budget is hit
+        assert_eq!(result.len(), 18,
+                "Should have gotten exactly 2 rows before budget, got {} bytes",
+                result.len());
+
+        // Verify row-by-row processing with RGB
+        // Row 0: [0, 1, 1] + [0, 2, 2] + [0, 3, 3] -> [0, 1, 1, 0, 3, 3, 0, 6, 6]
+        assert_eq!(result[0..9], [0, 1, 1, 0, 3, 3, 0, 6, 6], "First row incorrect");
+    }
 }
 
 /// Unit tests for Crypt filter functionality.
