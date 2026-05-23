@@ -21,3 +21,5 @@ pub const CODE_PDF_ENCRYPTED: &str = "PDF_ENCRYPTED";
 pub const CODE_IO_ERROR: &str = "IO_ERROR";
 pub const CODE_PATH_INVALID: &str = "PATH_INVALID";
 pub const CODE_NOT_YET_IMPLEMENTED: &str = "NOT_YET_IMPLEMENTED";
+
+use std::path::Path;

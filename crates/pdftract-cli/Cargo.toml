@@ -36,6 +36,7 @@ pdftract-core = { path = "../pdftract-core" }
 regex = "1.10"
 secrecy = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+subtle = "2.6"
 sha2 = "0.10"
 serde_json = "1.0"
 schemars = { version = "0.8", features = ["derive"] }

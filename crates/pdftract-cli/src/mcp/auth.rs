@@ -10,6 +10,27 @@ pub const EXIT_USAGE_ERROR: u8 = 64;
 /// Minimum recommended token length (bytes)
 const MIN_TOKEN_LENGTH: usize = 32;
 
+/// The source of the authentication token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthSource {
+    /// Token from --auth-token-file PATH (recommended)
+    TokenFile,
+    /// Token from PDFTRACT_MCP_TOKEN environment variable
+    EnvVar,
+    /// Token from --auth-token VALUE (deprecated, requires PDFTRACT_INSECURE_CLI_TOKEN=1)
+    CliInsecure,
+}
+
+impl std::fmt::Display for AuthSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AuthSource::TokenFile => write!(f, "--auth-token-file"),
+            AuthSource::EnvVar => write!(f, "PDFTRACT_MCP_TOKEN env var"),
+            AuthSource::CliInsecure => write!(f, "--auth-token (insecure)"),
+        }
+    }
+}
+
 /// Resolves the MCP bearer token from multiple possible sources.
 ///
 /// Priority order:
@@ -18,27 +39,28 @@ const MIN_TOKEN_LENGTH: usize = 32;
 /// 3. `--auth-token VALUE` (only if `PDFTRACT_INSECURE_CLI_TOKEN=1`) — DEPRECATED
 /// 4. None
 ///
+/// Returns the token (if any) and the source that provided it.
 /// Tokens shorter than 32 characters emit a warning but are accepted
 /// to avoid breaking existing deployments.
 pub fn resolve_token(
     token_file: Option<&Path>,
     env_token: Option<String>,
     cli_token: Option<String>,
-) -> Result<Option<SecretString>> {
+) -> Result<Option<(SecretString, AuthSource)>> {
     // Priority 1: --auth-token-file
     if let Some(path) = token_file {
         let token_content = fs::read_to_string(path)
             .with_context(|| format!("Failed to read token file: {}", path.display()))?;
         let token = token_content.trim_end().to_string();
         check_token_length(&token);
-        return Ok(Some(SecretString::new(token.into())));
+        return Ok(Some((SecretString::new(token.into()), AuthSource::TokenFile)));
     }
 
     // Priority 2: PDFTRACT_MCP_TOKEN env var
     if let Some(token) = env_token {
         if !token.is_empty() {
             check_token_length(&token);
-            return Ok(Some(SecretString::new(token.into())));
+            return Ok(Some((SecretString::new(token.into()), AuthSource::EnvVar)));
         }
     }
 
@@ -62,7 +84,7 @@ pub fn resolve_token(
              Recommended: Use --auth-token-file PATH or PDFTRACT_MCP_TOKEN env var."
         );
         check_token_length(&token);
-        return Ok(Some(SecretString::new(token.into())));
+        return Ok(Some((SecretString::new(token.into()), AuthSource::CliInsecure)));
     }
 
     // No token provided
@@ -93,7 +115,7 @@ mod tests {
         let temp_file = NamedTempFile::new().unwrap();
         write(temp_file.path(), "file-token\n").unwrap();
 
-        let token = resolve_token(
+        let (token, source) = resolve_token(
             Some(temp_file.path()),
             Some("env-token".to_string()),
             Some("cli-token".to_string()),
@@ -102,11 +124,12 @@ mod tests {
         .unwrap();
 
         assert_eq!(token.expose_secret(), "file-token");
+        assert_eq!(source, AuthSource::TokenFile);
     }
 
     #[test]
     fn test_resolve_token_priority_env_second() {
-        let token = resolve_token(
+        let (token, source) = resolve_token(
             None,
             Some("env-token".to_string()),
             Some("cli-token".to_string()),
@@ -115,6 +138,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(token.expose_secret(), "env-token");
+        assert_eq!(source, AuthSource::EnvVar);
     }
 
     #[test]
@@ -127,12 +151,13 @@ mod tests {
     #[test]
     fn test_resolve_token_accepts_cli_token_with_insecure_flag() {
         env::set_var("PDFTRACT_INSECURE_CLI_TOKEN", "1");
-        let token = resolve_token(None, None, Some("cli-token".to_string()))
+        let (token, source) = resolve_token(None, None, Some("cli-token".to_string()))
             .unwrap()
             .unwrap();
         env::remove_var("PDFTRACT_INSECURE_CLI_TOKEN");
 
         assert_eq!(token.expose_secret(), "cli-token");
+        assert_eq!(source, AuthSource::CliInsecure);
     }
 
     #[test]
@@ -152,11 +177,12 @@ mod tests {
         let temp_file = NamedTempFile::new().unwrap();
         write(temp_file.path(), "token-with-newline\n").unwrap();
 
-        let token = resolve_token(Some(temp_file.path()), None, None)
+        let (token, source) = resolve_token(Some(temp_file.path()), None, None)
             .unwrap()
             .unwrap();
 
         assert_eq!(token.expose_secret(), "token-with-newline");
+        assert_eq!(source, AuthSource::TokenFile);
     }
 
     #[test]
@@ -165,10 +191,11 @@ mod tests {
         write(temp_file.path(), "short").unwrap();
 
         // Should succeed but emit warning (captured in test output)
-        let token = resolve_token(Some(temp_file.path()), None, None)
+        let (token, source) = resolve_token(Some(temp_file.path()), None, None)
             .unwrap()
             .unwrap();
 
         assert_eq!(token.expose_secret(), "short");
+        assert_eq!(source, AuthSource::TokenFile);
     }
 }

@@ -225,6 +225,20 @@ impl ErrorObject {
         self
     }
 
+    /// Override the message of the error.
+    pub fn with_message(mut self, message: impl Into<String>) -> Self {
+        self.message = message.into();
+        self
+    }
+}
+
+impl std::fmt::Display for ErrorObject {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} (code {})", self.message, self.code)
+    }
+}
+
+impl ErrorObject {
     // JSON-RPC 2.0 spec-defined error constructors
 
     /// Parse error (-32700): Invalid JSON was received.

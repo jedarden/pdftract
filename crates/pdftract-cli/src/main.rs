@@ -83,18 +83,17 @@ enum Commands {
     /// Per ADR-006: stdio and HTTP transports are mutually exclusive because they have
     /// opposite stdout discipline (stdio: JSON-RPC sink; HTTP: log channel). Exactly one
     /// transport must be selected per invocation.
-    #[group(id = "transport", multiple = false)]
     Mcp {
         /// Use stdio transport (for Claude Desktop, Claude Code, Continue, Cursor)
         ///
         /// This is the default transport mode if neither --stdio nor --bind is specified.
-        #[arg(long, group = "transport")]
+        #[arg(long, conflicts_with = "bind")]
         stdio: bool,
 
         /// Bind address for the MCP server (e.g., "127.0.0.1:8080", "[::1]:9000", "0.0.0.0:3000")
         ///
         /// Enables HTTP+SSE transport mode. Mutually exclusive with --stdio.
-        #[arg(short, long, value_name = "ADDR", group = "transport")]
+        #[arg(short, long, value_name = "ADDR", conflicts_with = "stdio")]
         bind: Option<String>,
 
         /// Path to a file containing the bearer token (RECOMMENDED)
@@ -108,6 +107,15 @@ enum Commands {
         /// Maximum request body size in MB (default: 256)
         #[arg(long, default_value = "256")]
         max_upload_mb: usize,
+
+        /// Root directory for local filesystem access (enforces path-traversal protection)
+        ///
+        /// When set, all local-path tool arguments are resolved relative to DIR and any
+        /// path that escapes DIR is rejected with JSON-RPC error code -32602.
+        /// HTTPS URLs are not affected by this flag. Without --root, the server runs in
+        /// trust-the-caller mode (no path-check applied).
+        #[arg(long, value_name = "DIR")]
+        root: Option<PathBuf>,
     },
 }
 
@@ -182,21 +190,43 @@ fn main() -> Result<()> {
             auth_token_file,
             auth_token,
             max_upload_mb,
+            root,
         } => {
             // Per ADR-006: exactly one transport must be selected.
             // If neither --stdio nor --bind is specified, default to stdio mode.
             let use_stdio = stdio || bind.is_none();
 
+            // Validate and canonicalize the root directory if provided
+            let root_path = match root {
+                Some(ref root_arg) => {
+                    match mcp::canonicalize_root(root_arg) {
+                        Ok(canonical) => Some(canonical),
+                        Err(e) => {
+                            eprintln!("Error: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                None => None,
+            };
+
+            // Report root configuration
+            if let Some(ref root) = root_path {
+                eprintln!("Root directory: {} (path-traversal protection enabled)", root.display());
+            } else {
+                eprintln!("No root directory (trust-the-caller mode)");
+            }
+
             if use_stdio {
                 // stdio mode (default for Claude Desktop, Claude Code, etc.)
-                if let Err(e) = mcp::run_stdio() {
+                if let Err(e) = mcp::run_stdio(root_path.as_deref()) {
                     eprintln!("Error: {}", e);
                     std::process::exit(1);
                 }
             } else {
                 // HTTP mode (--bind was specified)
                 let bind_addr = bind.expect("--bind is Some when use_stdio is false");
-                if let Err(e) = mcp::run(bind_addr, auth_token_file, auth_token, Some(max_upload_mb)) {
+                if let Err(e) = mcp::run(bind_addr, auth_token_file, auth_token, Some(max_upload_mb), root_path) {
                     eprintln!("Error: {}", e);
                     std::process::exit(1);
                 }

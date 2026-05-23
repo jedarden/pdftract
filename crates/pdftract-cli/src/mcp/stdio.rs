@@ -11,12 +11,13 @@
 //! - Never using println! or print! macros (only eprintln!/eprint!)
 //! - Using a single BufWriter<Stdout> protected by a Mutex for all JSON-RPC output
 
-use crate::mcp::framing::{ErrorObject, Id, Request, Response};
+use crate::mcp::framing::{BatchMessage, ErrorObject, Id, Request, Response};
 use crate::mcp::tools;
 use anyhow::{anyhow, Context, Result};
 use serde_json::json;
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Stdin, Stdout, Write};
 use std::panic::Location;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Instant;
@@ -234,15 +235,28 @@ fn read_message(stdin: &mut BufReader<Stdin>) -> Result<Option<Request>> {
         }
     }
 
-    // Parse as JSON
-    let request: Request = serde_json::from_slice(&buffer)
+    // Parse as JSON-RPC BatchMessage (handles both single requests and batches)
+    let batch: BatchMessage = serde_json::from_slice(&buffer)
         .context("Failed to parse JSON-RPC request")?;
+
+    // Extract the single request from the batch
+    // For now, we only support single requests (not batches)
+    let request = match batch {
+        BatchMessage::Single(req) => req,
+        BatchMessage::Batch(reqs) => {
+            // We don't support batch requests yet
+            return Err(anyhow!(
+                "Batch requests not supported (got {} requests in one message)",
+                reqs.len()
+            ));
+        }
+    };
 
     Ok(Some(request))
 }
 
 /// Handle a JSON-RPC request and return a response.
-fn handle_request(request: Request, registry: &tools::ToolRegistry) -> Response {
+fn handle_request(request: Request, registry: &tools::ToolRegistry, root: Option<&Path>) -> Response {
     let id = request.request_id();
 
     match request.method.as_str() {
@@ -297,7 +311,7 @@ fn handle_request(request: Request, registry: &tools::ToolRegistry) -> Response 
             let start = Instant::now();
             let log_path = arguments.get("path").and_then(|v| v.as_str()).map(|s| s.to_string());
 
-            let result = tool.execute(arguments, log_path.as_deref());
+            let result = tool.execute(arguments, log_path.as_deref(), root);
 
             let duration_ms = start.elapsed().as_millis();
             let response_size = result.as_ref().ok()
@@ -342,6 +356,10 @@ fn handle_request(request: Request, registry: &tools::ToolRegistry) -> Response 
 /// 7. Writes responses to stdout
 /// 8. Exits cleanly on EOF or SIGTERM
 ///
+/// # Arguments
+///
+/// * `root` - Optional root directory for path-traversal protection
+///
 /// # Signal handling
 ///
 /// - **SIGTERM**: Graceful shutdown (drain in-flight requests, exit 0)
@@ -353,7 +371,7 @@ fn handle_request(request: Request, registry: &tools::ToolRegistry) -> Response 
 /// - A message cannot be read or parsed
 /// - A response cannot be written
 /// - stdin/stdout is not a TTY (but this is expected for stdio mode)
-pub fn run() -> Result<()> {
+pub fn run(root: Option<&Path>) -> Result<()> {
     // Set up panic hook FIRST (before any potential panics)
     setup_panic_hook();
 
@@ -363,7 +381,7 @@ pub fn run() -> Result<()> {
     // Initialize stdout writer (only way to write to stdout in stdio mode)
     init_stdout();
 
-    // Create the tool registry
+    // Create the tool registry with the root path
     let registry = tools::all_tools();
 
     // Print startup banner to stderr (not stdout!)
@@ -371,6 +389,11 @@ pub fn run() -> Result<()> {
     eprintln!("Version: {}", env!("CARGO_PKG_VERSION"));
     eprintln!("Protocol: JSON-RPC 2.0 over stdio");
     eprintln!("Tools: {}", registry.tools_list()["tools"].as_array().map(|v| v.len()).unwrap_or(0));
+    if root.is_some() {
+        eprintln!("Path-traversal protection: enabled");
+    } else {
+        eprintln!("Path-traversal protection: disabled (trust-the-caller mode)");
+    }
     eprintln!();
 
     // Create buffered stdin reader
@@ -382,7 +405,7 @@ pub fn run() -> Result<()> {
         match read_message(&mut stdin) {
             Ok(Some(request)) => {
                 // Handle the request
-                let response = handle_request(request, &registry);
+                let response = handle_request(request, &registry, root);
 
                 // Write the response
                 if let Err(e) = write_response(&response) {
@@ -464,7 +487,7 @@ mod tests {
             Some(Id::Number(1)),
         );
 
-        let response = handle_request(request, &registry);
+        let response = handle_request(request, &registry, None);
 
         assert!(response.is_error());
         assert_eq!(response.get_error().unwrap().code, -32601);
@@ -480,7 +503,7 @@ mod tests {
             Some(Id::Number(1)),
         );
 
-        let response = handle_request(request, &registry);
+        let response = handle_request(request, &registry, None);
 
         assert!(response.is_success());
         assert!(response.get_result().is_some());
@@ -551,7 +574,7 @@ mod tests {
 
         // Handle it
         let registry = tools::all_tools();
-        let response = handle_request(request, &registry);
+        let response = handle_request(request, &registry, None);
 
         // Verify it's a success response
         assert!(response.is_success());

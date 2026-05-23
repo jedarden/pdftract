@@ -1586,7 +1586,8 @@ impl<'de> serde::Deserialize<'de> for ExtractionOptions {
         D: serde::Deserializer<'de>,
     {
         use secrecy::SecretString;
-        use serde::de::{self, Deserialize, SeqAccess, Visitor, MapAccess};
+        use serde::de::{self, SeqAccess, Visitor, MapAccess};
+        use serde::Deserialize;
 
         #[derive(Deserialize)]
         #[serde(field_identifier)]

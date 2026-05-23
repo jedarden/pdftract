@@ -7,6 +7,7 @@
 use super::args::*;
 use super::{ERROR_NOT_YET_IMPLEMENTED, ERROR_IO_ERROR, ERROR_PATH_INVALID, CODE_IO_ERROR, CODE_PATH_INVALID};
 use crate::mcp::framing::ErrorObject;
+use crate::mcp::root::resolve_path;
 use pdftract_core::{
     parser::{self, catalog, pages, stream::{MemorySource, PdfSource}, xref},
     diagnostics::DiagCode,
@@ -35,7 +36,13 @@ pub trait Tool: Send + Sync {
     /// Execute the tool with the given arguments.
     ///
     /// The arguments are already validated against input_schema.
-    fn execute(&self, args: Value, log_path: Option<&str>) -> ToolResult;
+    ///
+    /// # Arguments
+    ///
+    /// * `args` - The validated tool arguments
+    /// * `log_path` - Optional path for logging (extracted from args before path resolution)
+    /// * `root` - Optional root directory for path-traversal protection
+    fn execute(&self, args: Value, log_path: Option<&str>, root: Option<&Path>) -> ToolResult;
 }
 
 /// Registry of all available MCP tools.
@@ -185,17 +192,15 @@ struct PdfContext {
 /// - The file doesn't exist or can't be read
 /// - The PDF is encrypted and no password was provided
 /// - The PDF structure is invalid
-fn open_pdf(path: &str, _password: Option<&str>) -> Result<PdfContext, ErrorObject> {
-    // Validate and resolve the path
-    let path_buf = PathBuf::from(path);
-
-    // Check if path exists
-    if !path_buf.exists() {
-        return Err(ErrorObject::server_error(
-            ERROR_PATH_INVALID,
-            format!("File not found: {}", path),
-        ).with_data(json!({"code": CODE_PATH_INVALID, "path": path})));
-    }
+///
+/// # Arguments
+///
+/// * `path` - The path argument (may be a URL or local path)
+/// * `password` - Optional PDF password
+/// * `root` - Optional root directory for path-traversal protection
+fn open_pdf(path: &str, password: Option<&str>, root: Option<&Path>) -> Result<PdfContext, ErrorObject> {
+    // Validate and resolve the path using the root if set
+    let path_buf = resolve_path(path, root)?;
 
     // Check if it's a file (not a directory)
     if !path_buf.is_file() {
@@ -359,7 +364,7 @@ impl Tool for ExtractTool {
         to_value(schemars::schema_for!(ExtractArgs)).unwrap()
     }
 
-    fn execute(&self, args: Value, _log_path: Option<&str>) -> ToolResult {
+    fn execute(&self, args: Value, _log_path: Option<&str>, root: Option<&Path>) -> ToolResult {
         // Parse arguments
         let tool_args: ExtractArgs = serde_json::from_value(args)
             .map_err(|_| ErrorObject::invalid_params())?;
@@ -376,7 +381,7 @@ impl Tool for ExtractTool {
         }
 
         // Open the PDF to check for encryption and get basic info
-        let ctx = open_pdf(&tool_args.path, tool_args.password.as_deref())?;
+        let ctx = open_pdf(&tool_args.path, tool_args.password.as_deref(), root)?;
 
         Ok(stub_extraction_response(&tool_args.path, "extract", ctx.page_count))
     }
@@ -398,7 +403,7 @@ impl Tool for ExtractTextTool {
         to_value(schemars::schema_for!(ExtractTextArgs)).unwrap()
     }
 
-    fn execute(&self, args: Value, _log_path: Option<&str>) -> ToolResult {
+    fn execute(&self, args: Value, _log_path: Option<&str>, root: Option<&Path>) -> ToolResult {
         let tool_args: ExtractTextArgs = serde_json::from_value(args)
             .map_err(|_| ErrorObject::invalid_params())?;
 
@@ -411,7 +416,7 @@ impl Tool for ExtractTextTool {
             }));
         }
 
-        let ctx = open_pdf(&tool_args.path, tool_args.password.as_deref())?;
+        let ctx = open_pdf(&tool_args.path, tool_args.password.as_deref(), root)?;
         Ok(stub_extraction_response(&tool_args.path, "extract_text", ctx.page_count))
     }
 }
@@ -432,7 +437,7 @@ impl Tool for ExtractMarkdownTool {
         to_value(schemars::schema_for!(ExtractMarkdownArgs)).unwrap()
     }
 
-    fn execute(&self, args: Value, _log_path: Option<&str>) -> ToolResult {
+    fn execute(&self, args: Value, _log_path: Option<&str>, root: Option<&Path>) -> ToolResult {
         let tool_args: ExtractMarkdownArgs = serde_json::from_value(args)
             .map_err(|_| ErrorObject::invalid_params())?;
 
@@ -445,7 +450,7 @@ impl Tool for ExtractMarkdownTool {
             }));
         }
 
-        let ctx = open_pdf(&tool_args.path, tool_args.password.as_deref())?;
+        let ctx = open_pdf(&tool_args.path, tool_args.password.as_deref(), root)?;
         Ok(stub_extraction_response(&tool_args.path, "extract_markdown", ctx.page_count))
     }
 }
@@ -466,7 +471,7 @@ impl Tool for SearchTool {
         to_value(schemars::schema_for!(SearchArgs)).unwrap()
     }
 
-    fn execute(&self, args: Value, _log_path: Option<&str>) -> ToolResult {
+    fn execute(&self, args: Value, _log_path: Option<&str>, root: Option<&Path>) -> ToolResult {
         let tool_args: SearchArgs = serde_json::from_value(args)
             .map_err(|_| ErrorObject::invalid_params())?;
 
@@ -486,7 +491,7 @@ impl Tool for SearchTool {
             }));
         }
 
-        let ctx = open_pdf(&tool_args.path, tool_args.password.as_deref())?;
+        let ctx = open_pdf(&tool_args.path, tool_args.password.as_deref(), root)?;
         let mut response = stub_extraction_response(&tool_args.path, "search", ctx.page_count);
         if let Some(obj) = response.as_object_mut() {
             obj.insert("_pattern".to_string(), json!(tool_args.pattern));
@@ -511,7 +516,7 @@ impl Tool for GetMetadataTool {
         to_value(schemars::schema_for!(GetMetadataArgs)).unwrap()
     }
 
-    fn execute(&self, args: Value, _log_path: Option<&str>) -> ToolResult {
+    fn execute(&self, args: Value, _log_path: Option<&str>, root: Option<&Path>) -> ToolResult {
         let tool_args: GetMetadataArgs = serde_json::from_value(args)
             .map_err(|_| ErrorObject::invalid_params())?;
 
@@ -526,8 +531,7 @@ impl Tool for GetMetadataTool {
         }
 
         // Parse the PDF to extract metadata
-        let path = &tool_args.path;
-        let result = extract_metadata(path, tool_args.password.as_deref());
+        let result = extract_metadata(&tool_args.path, tool_args.password.as_deref(), root);
 
         match result {
             Ok(metadata) => Ok(metadata),
@@ -537,8 +541,8 @@ impl Tool for GetMetadataTool {
 }
 
 /// Extract metadata from a PDF file.
-fn extract_metadata(path: &str, _password: Option<&str>) -> ToolResult {
-    let ctx = open_pdf(path, _password)?;
+fn extract_metadata(path: &str, _password: Option<&str>, root: Option<&Path>) -> ToolResult {
+    let ctx = open_pdf(path, _password, root)?;
 
     // Build metadata response
     let mut metadata = serde_json::Map::new();
@@ -615,7 +619,7 @@ impl Tool for HashTool {
         to_value(schemars::schema_for!(HashArgs)).unwrap()
     }
 
-    fn execute(&self, args: Value, _log_path: Option<&str>) -> ToolResult {
+    fn execute(&self, args: Value, _log_path: Option<&str>, root: Option<&Path>) -> ToolResult {
         let tool_args: HashArgs = serde_json::from_value(args)
             .map_err(|_| ErrorObject::invalid_params())?;
 
@@ -628,7 +632,7 @@ impl Tool for HashTool {
         }
 
         // Parse the PDF to compute fingerprint
-        let result = compute_fingerprint(&tool_args.path, tool_args.password.as_deref());
+        let result = compute_fingerprint(&tool_args.path, tool_args.password.as_deref(), root);
 
         match result {
             Ok(fingerprint) => Ok(json!({ "fingerprint": fingerprint })),
@@ -638,8 +642,8 @@ impl Tool for HashTool {
 }
 
 /// Compute the fingerprint of a PDF file.
-fn compute_fingerprint(path: &str, _password: Option<&str>) -> Result<String, ErrorObject> {
-    let ctx = open_pdf(path, _password)?;
+fn compute_fingerprint(path: &str, _password: Option<&str>, root: Option<&Path>) -> Result<String, ErrorObject> {
+    let ctx = open_pdf(path, _password, root)?;
 
     // Compute a simplified fingerprint for now
     // Full fingerprint computation would use the Phase 1.7 algorithm with
@@ -683,7 +687,7 @@ impl Tool for GetTableTool {
         to_value(schemars::schema_for!(GetTableArgs)).unwrap()
     }
 
-    fn execute(&self, _args: Value, _log_path: Option<&str>) -> ToolResult {
+    fn execute(&self, _args: Value, _log_path: Option<&str>, _root: Option<&Path>) -> ToolResult {
         // Validate args structure but don't process
         let _args: GetTableArgs = match serde_json::from_value(_args) {
             Ok(args) => args,
@@ -718,7 +722,7 @@ impl Tool for GetFormFieldsTool {
         to_value(schemars::schema_for!(GetFormFieldsArgs)).unwrap()
     }
 
-    fn execute(&self, _args: Value, _log_path: Option<&str>) -> ToolResult {
+    fn execute(&self, _args: Value, _log_path: Option<&str>, _root: Option<&Path>) -> ToolResult {
         // Validate args structure but don't process
         let _args: GetFormFieldsArgs = match serde_json::from_value(_args) {
             Ok(args) => args,
@@ -752,7 +756,7 @@ impl Tool for GetAttachmentsTool {
         to_value(schemars::schema_for!(GetAttachmentsArgs)).unwrap()
     }
 
-    fn execute(&self, _args: Value, _log_path: Option<&str>) -> ToolResult {
+    fn execute(&self, _args: Value, _log_path: Option<&str>, _root: Option<&Path>) -> ToolResult {
         // Validate args structure but don't process
         let _args: GetAttachmentsArgs = match serde_json::from_value(_args) {
             Ok(args) => args,
@@ -786,7 +790,7 @@ impl Tool for ClassifyTool {
         to_value(schemars::schema_for!(ClassifyArgs)).unwrap()
     }
 
-    fn execute(&self, _args: Value, _log_path: Option<&str>) -> ToolResult {
+    fn execute(&self, _args: Value, _log_path: Option<&str>, _root: Option<&Path>) -> ToolResult {
         // Validate args structure but don't process
         let _args: ClassifyArgs = match serde_json::from_value(_args) {
             Ok(args) => args,
@@ -916,28 +920,28 @@ mod tests {
 
         // Test get_table
         let tool = registry.get("get_table").unwrap();
-        let result = tool.execute(json!({"path": "test.pdf", "page": 0, "table_index": 0}), None);
+        let result = tool.execute(json!({"path": "test.pdf", "page": 0, "table_index": 0}), None, None);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.code, ERROR_NOT_YET_IMPLEMENTED);
 
         // Test get_form_fields
         let tool = registry.get("get_form_fields").unwrap();
-        let result = tool.execute(json!({"path": "test.pdf"}), None);
+        let result = tool.execute(json!({"path": "test.pdf"}), None, None);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.code, ERROR_NOT_YET_IMPLEMENTED);
 
         // Test get_attachments
         let tool = registry.get("get_attachments").unwrap();
-        let result = tool.execute(json!({"path": "test.pdf"}), None);
+        let result = tool.execute(json!({"path": "test.pdf"}), None, None);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.code, ERROR_NOT_YET_IMPLEMENTED);
 
         // Test classify
         let tool = registry.get("classify").unwrap();
-        let result = tool.execute(json!({"path": "test.pdf"}), None);
+        let result = tool.execute(json!({"path": "test.pdf"}), None, None);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.code, ERROR_NOT_YET_IMPLEMENTED);
@@ -948,7 +952,7 @@ mod tests {
         let tool = ExtractTool;
 
         // Missing required field
-        let result = tool.execute(json!({}), None);
+        let result = tool.execute(json!({}), None, None);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.code, -32602); // Invalid params

@@ -18,7 +18,7 @@ fn test_get_metadata_performance_on_100_page_pdf() {
     });
 
     let start = Instant::now();
-    let result = tool.execute(args, None);
+    let result = tool.execute(args, None, None);
     let duration_ms = start.elapsed().as_millis();
 
     assert!(result.is_ok(), "get_metadata should succeed: {:?}", result);
@@ -47,7 +47,7 @@ fn test_hash_performance_on_100_page_pdf() {
     });
 
     let start = Instant::now();
-    let result = tool.execute(args, None);
+    let result = tool.execute(args, None, None);
     let duration_ms = start.elapsed().as_millis();
 
     assert!(result.is_ok(), "hash should succeed: {:?}", result);
@@ -113,7 +113,7 @@ fn test_phase_7_stub_tools_return_not_implemented() {
 
     for (tool_name, args) in stub_tools {
         let tool = registry.get(tool_name).unwrap();
-        let result = tool.execute(args, None);
+        let result = tool.execute(args, None, None);
 
         assert!(result.is_err(), "{} should return error", tool_name);
         let err = result.unwrap_err();
@@ -143,7 +143,7 @@ fn test_missing_required_path_returns_error() {
     // Missing required 'path' field
     let args = serde_json::json!({});
 
-    let result = tool.execute(args, None);
+    let result = tool.execute(args, None, None);
     assert!(result.is_err());
 
     let err = result.unwrap_err();
@@ -159,7 +159,7 @@ fn test_extract_tool_with_real_pdf() {
         "path": "../../tests/sdk-conformance/fixtures/large/100pages.pdf"
     });
 
-    let result = tool.execute(args, None);
+    let result = tool.execute(args, None, None);
     if let Err(ref e) = result {
         eprintln!("Error from tool: code={}, message={}, data={:?}", e.code, e.message, e.data);
     }
@@ -184,7 +184,7 @@ fn test_search_tool_with_invalid_regex() {
         "pattern": "(?invalid"
     });
 
-    let result = tool.execute(args, None);
+    let result = tool.execute(args, None, None);
     assert!(result.is_err());
 
     let err = result.unwrap_err();
@@ -225,7 +225,7 @@ fn test_nonexistent_file_returns_path_invalid() {
         "path": "/nonexistent/path/to/file.pdf"
     });
 
-    let result = tool.execute(args, None);
+    let result = tool.execute(args, None, None);
     assert!(result.is_err());
 
     let err = result.unwrap_err();
@@ -248,7 +248,7 @@ fn test_encrypted_pdf_returns_pdf_encrypted_error() {
         "path": "../../tests/sdk-conformance/fixtures/encrypted/encrypted.pdf"
     });
 
-    let result = tool.execute(args, None);
+    let result = tool.execute(args, None, None);
 
     // Debug: print the result if it succeeds unexpectedly
     if let Ok(ref response) = result {

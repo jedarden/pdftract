@@ -24,6 +24,7 @@
 use crate::mcp::framing::{BatchMessage, ErrorObject, Id, Notification, Request, Response};
 use crate::mcp::tools;
 use anyhow::{anyhow, Context, Result};
+use subtle::ConstantTimeEq;
 use axum::{
     body::Body,
     extract::{DefaultBodyLimit, Request as AxumRequest, State},
@@ -35,6 +36,7 @@ use axum::{
 use secrecy::{ExposeSecret, SecretString};
 use serde_json::{json, Value};
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -66,11 +68,14 @@ pub struct McpServerState {
 
     /// Tool registry for tools/list and tools/call
     tool_registry: Arc<tools::ToolRegistry>,
+
+    /// Root directory for path-traversal protection (canonicalized at startup)
+    root: Option<PathBuf>,
 }
 
 impl McpServerState {
     /// Create a new MCP server state.
-    pub fn new(auth_token: Option<SecretString>, max_upload_mb: Option<usize>) -> Self {
+    pub fn new(auth_token: Option<SecretString>, max_upload_mb: Option<usize>, root: Option<PathBuf>) -> Self {
         let max_body_bytes = max_upload_mb.unwrap_or(DEFAULT_MAX_UPLOAD_MB) * 1024 * 1024;
         let notify_tx = broadcast::channel(100).0; // Channel size 100 for buffered notifications
 
@@ -80,6 +85,7 @@ impl McpServerState {
             max_body_bytes,
             client_count: Arc::new(AtomicUsize::new(0)),
             tool_registry: Arc::new(tools::all_tools()),
+            root,
         }
     }
 
@@ -111,6 +117,7 @@ impl McpServerState {
 /// * `bind_addr` - The bind address (e.g., "127.0.0.1:8080")
 /// * `auth_token` - Optional bearer token for authentication
 /// * `max_upload_mb` - Optional max upload size in MB (default 256)
+/// * `root` - Optional root directory for path-traversal protection
 ///
 /// # Returns
 /// * Ok(()) when the server shuts down cleanly
@@ -119,9 +126,10 @@ pub async fn run_server(
     bind_addr: String,
     auth_token: Option<SecretString>,
     max_upload_mb: Option<usize>,
+    root: Option<&std::path::Path>,
 ) -> Result<()> {
     // Create the shared server state
-    let state = McpServerState::new(auth_token, max_upload_mb);
+    let state = McpServerState::new(auth_token, max_upload_mb, root.map(|p| p.to_path_buf()));
     let max_body_bytes = state.max_body_bytes;
 
     // Build the router
@@ -208,9 +216,10 @@ async fn handle_post_request(
     let requests = batch.into_requests();
     let mut responses = Vec::with_capacity(requests.len());
     let registry = state.tool_registry.as_ref();
+    let root = state.root.as_deref();
 
     for request in requests {
-        let response = handle_request(request, registry);
+        let response = handle_request(request, registry, root);
         responses.push(response);
     }
 
@@ -330,10 +339,55 @@ async fn handle_health() -> impl IntoResponse {
     }))
 }
 
+/// Verify a bearer token against the configured token using constant-time comparison.
+///
+/// Returns true if the tokens match, false otherwise.
+/// This function is pure computation with no side effects, making it suitable
+/// for timing-attack resistance testing.
+///
+/// The comparison is constant-time with respect to both content and length:
+/// - All bytes are always compared
+/// - No short-circuiting on length mismatch
+/// - Timing does not reveal where the first mismatch occurred
+fn verify_token(provided: &str, configured: &str) -> bool {
+    use subtle::Choice;
+
+    let provided_bytes = provided.as_bytes();
+    let configured_bytes = configured.as_bytes();
+
+    // To achieve true constant-time comparison regardless of length,
+    // we need to always compare the same number of bytes.
+    // We use the maximum length and pad the shorter slice with zeros.
+    let max_len = provided_bytes.len().max(configured_bytes.len());
+
+    // Create extended arrays that are both the same length (max_len)
+    // The shorter slice is padded with zeros at the end
+    let mut provided_ext = Vec::with_capacity(max_len);
+    let mut configured_ext = Vec::with_capacity(max_len);
+
+    provided_ext.extend_from_slice(provided_bytes);
+    provided_ext.resize(max_len, 0);
+
+    configured_ext.extend_from_slice(configured_bytes);
+    configured_ext.resize(max_len, 0);
+
+    // Constant-time compare the extended arrays
+    let bytes_match = provided_ext.ct_eq(&configured_ext);
+
+    // For the tokens to be truly equal, we also need the lengths to match.
+    // We compute this in constant-time using Choice.
+    let lengths_match = Choice::from(u8::from(provided_bytes.len() == configured_bytes.len()));
+
+    // Both bytes AND lengths must match
+    (bytes_match & lengths_match).into()
+}
+
 /// Check bearer token authentication.
 ///
 /// Returns Err(response) if auth fails, Ok(()) if auth passes.
 /// If no auth token is configured, all requests are allowed.
+///
+/// Token comparison uses constant-time comparison to prevent timing attacks.
 fn check_auth(
     state: &McpServerState,
     headers: &HeaderMap,
@@ -346,13 +400,21 @@ fn check_auth(
         match auth_header {
             Some(header) if header.starts_with("Bearer ") => {
                 let provided_token = &header[7..]; // Strip "Bearer "
-                if provided_token == token.expose_secret() {
+                let configured_token = token.expose_secret();
+
+                // Use constant-time comparison to prevent timing attacks
+                if verify_token(provided_token, configured_token) {
                     Ok(())
                 } else {
-                    Err((
+                    let mut response = (
                         StatusCode::UNAUTHORIZED,
                         Json(Response::error(Id::Null, ErrorObject::new(-32001, "Invalid authentication token"))),
-                    ).into_response())
+                    ).into_response();
+                    response.headers_mut().insert(
+                        "WWW-Authenticate",
+                        HeaderValue::from_static("Bearer realm=\"pdftract\""),
+                    );
+                    Err(response)
                 }
             }
             _ => {
@@ -362,7 +424,7 @@ fn check_auth(
                 ).into_response();
                 response.headers_mut().insert(
                     "WWW-Authenticate",
-                    HeaderValue::from_static("Bearer"),
+                    HeaderValue::from_static("Bearer realm=\"pdftract\""),
                 );
                 Err(response)
             }
@@ -373,7 +435,7 @@ fn check_auth(
 }
 
 /// Handle a single JSON-RPC request and return a response.
-fn handle_request(request: Request, registry: &tools::ToolRegistry) -> Response {
+fn handle_request(request: Request, registry: &tools::ToolRegistry, root: Option<&std::path::Path>) -> Response {
     let id = request.request_id();
 
     match request.method.as_str() {
@@ -428,7 +490,7 @@ fn handle_request(request: Request, registry: &tools::ToolRegistry) -> Response 
             let start = std::time::Instant::now();
             let log_path = arguments.get("path").and_then(|v| v.as_str()).map(|s| s.to_string());
 
-            let result = tool.execute(arguments, log_path.as_deref());
+            let result = tool.execute(arguments, log_path.as_deref(), root);
 
             let duration_ms = start.elapsed().as_millis();
             let response_size = result.as_ref().ok()
@@ -510,7 +572,7 @@ mod tests {
     #[test]
     fn test_mcp_server_state_creation() {
         let token = SecretString::new("test-token".into());
-        let state = McpServerState::new(Some(token), Some(10));
+        let state = McpServerState::new(Some(token), Some(10), None);
 
         assert_eq!(state.max_body_bytes, 10 * 1024 * 1024);
         assert_eq!(state.client_count(), 0);
@@ -519,7 +581,7 @@ mod tests {
 
     #[test]
     fn test_mcp_server_state_no_token() {
-        let state = McpServerState::new(None, None);
+        let state = McpServerState::new(None, None, None);
 
         assert_eq!(state.max_body_bytes, DEFAULT_MAX_UPLOAD_MB * 1024 * 1024);
         assert_eq!(state.client_count(), 0);
@@ -528,7 +590,7 @@ mod tests {
 
     #[test]
     fn test_mcp_server_state_broadcast() {
-        let state = McpServerState::new(None, None);
+        let state = McpServerState::new(None, None, None);
         let notification = Notification::new("test/notification", None);
 
         // Broadcast with no clients should return 0
@@ -540,7 +602,7 @@ mod tests {
     fn test_handle_request_tools_list() {
         let registry = tools::all_tools();
         let request = Request::new("tools/list", None, Some(Id::Number(1)));
-        let response = handle_request(request, &registry);
+        let response = handle_request(request, &registry, None);
 
         assert!(response.is_success());
         assert!(response.get_result().is_some());
@@ -550,7 +612,7 @@ mod tests {
     fn test_handle_request_initialize() {
         let registry = tools::all_tools();
         let request = Request::new("initialize", None, Some(Id::Number(1)));
-        let response = handle_request(request, &registry);
+        let response = handle_request(request, &registry, None);
 
         assert!(response.is_success());
         let result = response.get_result().unwrap();
@@ -562,7 +624,7 @@ mod tests {
     fn test_handle_request_unknown_method() {
         let registry = tools::all_tools();
         let request = Request::new("unknown/method", None, Some(Id::Number(1)));
-        let response = handle_request(request, &registry);
+        let response = handle_request(request, &registry, None);
 
         assert!(response.is_error());
         let error = response.get_error().unwrap();
@@ -575,5 +637,210 @@ mod tests {
         let response = error_response(StatusCode::BAD_REQUEST, error);
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn test_check_auth_no_token_configured() {
+        let state = McpServerState::new(None, None, None);
+        let mut headers = HeaderMap::new();
+
+        // No token configured, so any headers should pass
+        assert!(check_auth(&state, &headers).is_ok());
+
+        headers.insert("Authorization", HeaderValue::from_static("Bearer irrelevant"));
+        assert!(check_auth(&state, &headers).is_ok());
+    }
+
+    #[test]
+    fn test_check_auth_valid_token() {
+        let token = SecretString::new("correct-token".into());
+        let state = McpServerState::new(Some(token), None, None);
+        let mut headers = HeaderMap::new();
+
+        headers.insert("Authorization", HeaderValue::from_static("Bearer correct-token"));
+        assert!(check_auth(&state, &headers).is_ok());
+    }
+
+    #[test]
+    fn test_check_auth_invalid_token() {
+        let token = SecretString::new("correct-token".into());
+        let state = McpServerState::new(Some(token), None, None);
+        let mut headers = HeaderMap::new();
+
+        headers.insert("Authorization", HeaderValue::from_static("Bearer wrong-token"));
+        let result = check_auth(&state, &headers);
+        assert!(result.is_err());
+        if let Err(resp) = result {
+            assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+        }
+    }
+
+    #[test]
+    fn test_check_auth_missing_token() {
+        let token = SecretString::new("correct-token".into());
+        let state = McpServerState::new(Some(token), None, None);
+        let headers = HeaderMap::new();
+
+        let result = check_auth(&state, &headers);
+        assert!(result.is_err());
+        if let Err(resp) = result {
+            assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+            assert!(resp.headers().get("WWW-Authenticate").is_some());
+        }
+    }
+
+    #[test]
+    fn test_check_auth_malformed_header() {
+        let token = SecretString::new("correct-token".into());
+        let state = McpServerState::new(Some(token), None, None);
+        let mut headers = HeaderMap::new();
+
+        // Missing "Bearer " prefix
+        headers.insert("Authorization", HeaderValue::from_static("correct-token"));
+        let result = check_auth(&state, &headers);
+        assert!(result.is_err());
+    }
+
+    /// Timing-attack test: verifies that token comparison is constant-time.
+    ///
+    /// This test makes many comparisons with different token lengths and compares
+    /// the timing variance. A non-constant-time comparison would show a
+    /// significant difference in timing between tokens that mismatch early
+    /// versus tokens that mismatch late.
+    ///
+    /// This is a statistical test that may occasionally fail due to system
+    /// noise, so we use a relatively loose threshold (5x variance allowed).
+    #[test]
+    fn test_check_auth_constant_time() {
+        use std::time::Instant;
+
+        let correct_token = "correct-token-32-bytes-long!";
+
+        // Test 1: Token that mismatches at the first character
+        let token_early = "Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+
+        // Test 2: Token that mismatches at the last character
+        let token_late = "correct-token-32-bytes-long?";
+
+        // Test 3: Correct token (should return true)
+        let token_correct = "correct-token-32-bytes-long!";
+
+        let iterations = 1000;
+        let mut times_early = Vec::with_capacity(iterations);
+        let mut times_late = Vec::with_capacity(iterations);
+        let mut times_correct = Vec::with_capacity(iterations);
+
+        for _ in 0..iterations {
+            let start = Instant::now();
+            let _ = verify_token(token_early, correct_token);
+            times_early.push(start.elapsed());
+
+            let start = Instant::now();
+            let _ = verify_token(token_late, correct_token);
+            times_late.push(start.elapsed());
+
+            let start = Instant::now();
+            let _ = verify_token(token_correct, correct_token);
+            times_correct.push(start.elapsed());
+        }
+
+        // Calculate median times to reduce noise impact
+        let mut sorted_early = times_early.clone();
+        let mut sorted_late = times_late.clone();
+        let mut sorted_correct = times_correct.clone();
+
+        sorted_early.sort();
+        sorted_late.sort();
+        sorted_correct.sort();
+
+        let median_early = sorted_early[iterations / 2];
+        let median_late = sorted_late[iterations / 2];
+        let median_correct = sorted_correct[iterations / 2];
+
+        // For constant-time comparison, all three should have similar timing
+        // We allow up to 5x variance to account for system noise
+        let max_time = median_early.max(median_late).max(median_correct);
+        let min_time = median_early.min(median_late).min(median_correct);
+
+        let ratio = if min_time.as_nanos() > 0 {
+            max_time.as_nanos() / min_time.as_nanos()
+        } else {
+            1 // Both are essentially zero
+        };
+
+        // Assert that timing variance is within acceptable bounds
+        // If this fails, the comparison is likely not constant-time
+        assert!(
+            ratio <= 5,
+            "Token comparison appears to be non-constant-time: \
+             early mismatch={:?}, late mismatch={:?}, correct={:?}, ratio={}",
+            median_early, median_late, median_correct, ratio
+        );
+
+        // Also verify that the correct token actually returns true
+        assert!(verify_token(token_correct, correct_token));
+        assert!(!verify_token(token_early, correct_token));
+        assert!(!verify_token(token_late, correct_token));
+    }
+
+    /// Test that tokens of different lengths have constant-time comparison.
+    ///
+    /// A naive string comparison would short-circuit on length mismatch,
+    /// which is a timing leak. This test verifies that our implementation
+    /// does not have this leak.
+    #[test]
+    fn test_check_auth_constant_time_different_lengths() {
+        use std::time::Instant;
+
+        let token = SecretString::new("correct-token-32-bytes-long!".into());
+        let state = McpServerState::new(Some(token), None, None);
+
+        // Test 1: Token that is much shorter
+        let mut headers_short = HeaderMap::new();
+        headers_short.insert("Authorization", HeaderValue::from_static("Bearer short"));
+
+        // Test 2: Token that is much longer
+        let mut headers_long = HeaderMap::new();
+        headers_long.insert("Authorization", HeaderValue::from_static("Bearer this-token-is-much-longer-than-the-correct-one"));
+
+        let iterations = 1000;
+        let mut times_short = Vec::with_capacity(iterations);
+        let mut times_long = Vec::with_capacity(iterations);
+
+        for _ in 0..iterations {
+            let start = Instant::now();
+            let _ = check_auth(&state, &headers_short);
+            times_short.push(start.elapsed());
+
+            let start = Instant::now();
+            let _ = check_auth(&state, &headers_long);
+            times_long.push(start.elapsed());
+        }
+
+        // Calculate median times
+        let mut sorted_short = times_short.clone();
+        let mut sorted_long = times_long.clone();
+        sorted_short.sort();
+        sorted_long.sort();
+
+        let median_short = sorted_short[iterations / 2];
+        let median_long = sorted_long[iterations / 2];
+
+        // For constant-time comparison, different lengths should have similar timing
+        // We allow up to 3x variance for length differences (implementation-dependent)
+        let ratio = if median_short.as_nanos() > 0 && median_long.as_nanos() > 0 {
+            let max = median_short.max(median_long);
+            let min = median_short.min(median_long);
+            max.as_nanos() / min.as_nanos()
+        } else {
+            1
+        };
+
+        assert!(
+            ratio <= 3,
+            "Token comparison appears to leak length information: \
+             short={:?}, long={:?}, ratio={}",
+            median_short, median_long, ratio
+        );
     }
 }
