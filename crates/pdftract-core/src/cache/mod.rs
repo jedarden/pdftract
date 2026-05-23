@@ -25,6 +25,10 @@
 pub mod key;
 pub mod layout;
 pub mod compression;
+pub mod multi_process;
+pub mod lru;
 
 pub use key::CacheKey;
 pub use layout::{entry_path, CacheIndex, CURRENT_SCHEMA_VERSION};
+pub use multi_process::{Reader, Writer, cleanup_stale_temp_files};
+pub use lru::Lru;
