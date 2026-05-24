@@ -13,6 +13,7 @@
 //! processing. This ensures peak RSS stays flat across page count, even for
 //! large documents with 10,000+ pages.
 
+use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::document::compute_fingerprint_lazy;
 use crate::forms::{
     acro_field_to_value, combine, walk_acroform_fields, AcroFormField, FormFieldValue,
@@ -318,35 +319,21 @@ pub fn extract_pdf(
             anyhow::anyhow!("Failed to create lazy page iterator: {}", msg)
         })?;
 
-    // Phase 7.1.4: Determine reading order algorithm based on StructTree coverage
-    // Parse StructTree if present and compute coverage for Suspects check
-    let (reading_order_algorithm, struct_tree) =
-        if let Some(struct_tree_root_ref) = catalog.struct_tree_root_ref {
-            // Parse the StructTree
-            let struct_tree_result = parse_struct_tree(&resolver_arc, struct_tree_root_ref);
-
-            match struct_tree_result {
-                Ok(tree) => {
-                    // If StructTree parsed successfully, check coverage if Suspects is true
-                    if catalog.mark_info.requires_coverage_check() {
-                        // We need MCID tracking to compute coverage - do this after we collect page data
-                        // For now, defer the decision until we have page data
-                        (ReadingOrderAlgorithm::StructTree, Some(tree))
-                    } else {
-                        // Suspects is false - trust the StructTree
-                        (ReadingOrderAlgorithm::StructTree, Some(tree))
-                    }
-                }
-                Err(_diagnostics) => {
-                    // StructTree parsing failed - fall back to XY-cut
-                    // Return empty tree to avoid further issues
-                    (ReadingOrderAlgorithm::XyCut, None)
-                }
-            }
-        } else {
-            // No StructTree - use XY-cut
-            (ReadingOrderAlgorithm::XyCut, None)
-        };
+    // Phase 4.5: Determine reading order algorithm
+    // For v0.1.0-v0.3.0: Tagged PDFs emit TAGGED_PDF_STRUCT_TREE_DEFERRED and use XY-cut
+    // Phase 7.1 will replace this with real StructTree traversal
+    let (reading_order_algorithm, struct_tree, deferred_diagnostic) = if catalog.mark_info.is_tagged
+    {
+        // Tagged PDF: emit diagnostic once per document and use XY-cut
+        let diagnostic = Diagnostic::with_static_no_offset(
+            DiagCode::LayoutTaggedPdfDeferred,
+            "Tagged PDF detected; StructTree traversal deferred to Phase 7.1, using XY-cut for now",
+        );
+        (ReadingOrderAlgorithm::XyCut, None, Some(diagnostic))
+    } else {
+        // Untagged PDF: use XY-cut
+        (ReadingOrderAlgorithm::XyCut, None, None)
+    };
 
     // Wrap options in Arc for sharing across threads
     let fingerprint_arc = Arc::new(fingerprint.clone());
@@ -480,7 +467,7 @@ pub fn extract_pdf(
 
     // Phase 7.1.4: Perform coverage check if Suspects is true
     // This must happen after we've collected MCID data from all pages
-    let (reading_order_algorithm, coverage_diagnostics) = if needs_coverage_check {
+    let (final_reading_order_algorithm, coverage_diagnostics) = if needs_coverage_check {
         if let Some(ref tree) = struct_tree {
             let coverage_result =
                 check_coverage_for_pages(tree, &catalog.mark_info, &pages_with_mcids);
@@ -492,11 +479,17 @@ pub fn extract_pdf(
             (coverage_result.reading_order_algorithm, diagnostics)
         } else {
             // Shouldn't happen due to the needs_coverage_check condition
-            (ReadingOrderAlgorithm::XyCut, Vec::new())
+            (reading_order_algorithm, Vec::new())
         }
     } else {
         (reading_order_algorithm, Vec::new())
     };
+
+    // Add the tagged PDF deferred diagnostic if present
+    let mut all_diagnostics = coverage_diagnostics;
+    if let Some(ref deferred) = deferred_diagnostic {
+        all_diagnostics.push(deferred.message.as_ref().to_string());
+    }
 
     // Phase 7.2.6: Detect two-page table continuation
     // This must happen after all pages have been extracted so we can compare
@@ -573,8 +566,8 @@ pub fn extract_pdf(
             cache_status: None,
             cache_age_seconds: None,
             error_count,
-            reading_order_algorithm: Some(reading_order_algorithm.as_str().to_string()),
-            diagnostics: coverage_diagnostics,
+            reading_order_algorithm: Some(final_reading_order_algorithm.as_str().to_string()),
+            diagnostics: all_diagnostics,
         },
         signatures,
         form_fields,
@@ -1018,38 +1011,23 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
         anyhow::anyhow!("Failed to parse catalog: {}", msg)
     })?;
 
-    // Phase 7.1.4: Determine reading order algorithm based on StructTree coverage
-    // Create Arc for resolver to use in struct tree parsing and page processing
+    // Phase 4.5: Determine reading order algorithm
+    // For v0.1.0-v0.3.0: Tagged PDFs emit TAGGED_PDF_STRUCT_TREE_DEFERRED and use XY-cut
+    // Phase 7.1 will replace this with real StructTree traversal
     let resolver_arc = Arc::new(resolver);
 
-    // Parse StructTree if present and compute coverage for Suspects check
-    let (initial_reading_order_algorithm, struct_tree) =
-        if let Some(struct_tree_root_ref) = catalog.struct_tree_root_ref {
-            // Parse the StructTree
-            let struct_tree_result = parse_struct_tree(&resolver_arc, struct_tree_root_ref);
-
-            match struct_tree_result {
-                Ok(tree) => {
-                    // If StructTree parsed successfully, check coverage if Suspects is true
-                    if catalog.mark_info.requires_coverage_check() {
-                        // We need MCID tracking to compute coverage - do this after we collect page data
-                        // For now, defer the decision until we have page data
-                        (ReadingOrderAlgorithm::StructTree, Some(tree))
-                    } else {
-                        // Suspects is false - trust the StructTree
-                        (ReadingOrderAlgorithm::StructTree, Some(tree))
-                    }
-                }
-                Err(_diagnostics) => {
-                    // StructTree parsing failed - fall back to XY-cut
-                    // Return empty tree to avoid further issues
-                    (ReadingOrderAlgorithm::XyCut, None)
-                }
-            }
-        } else {
-            // No StructTree - use XY-cut
-            (ReadingOrderAlgorithm::XyCut, None)
-        };
+    let (reading_order_algorithm, struct_tree, deferred_diagnostic) = if catalog.mark_info.is_tagged
+    {
+        // Tagged PDF: emit diagnostic once per document and use XY-cut
+        let diagnostic = Diagnostic::with_static_no_offset(
+            DiagCode::LayoutTaggedPdfDeferred,
+            "Tagged PDF detected; StructTree traversal deferred to Phase 7.1, using XY-cut for now",
+        );
+        (ReadingOrderAlgorithm::XyCut, None, Some(diagnostic))
+    } else {
+        // Untagged PDF: use XY-cut
+        (ReadingOrderAlgorithm::XyCut, None, None)
+    };
 
     // For lazy extraction, use a placeholder fingerprint
     // The full fingerprint would require walking all pages, which defeats the purpose
@@ -1222,7 +1200,7 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
 
     // Phase 7.1.4: Perform coverage check if Suspects is true
     // This must happen after we've collected MCID data from all pages
-    let (reading_order_algorithm, coverage_diagnostics) = if needs_coverage_check {
+    let (final_reading_order_algorithm, coverage_diagnostics) = if needs_coverage_check {
         if let Some(ref tree) = struct_tree {
             let coverage_result =
                 check_coverage_for_pages(tree, &catalog.mark_info, &pages_with_mcids);
@@ -1234,11 +1212,17 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
             (coverage_result.reading_order_algorithm, diagnostics)
         } else {
             // Shouldn't happen due to the needs_coverage_check condition
-            (initial_reading_order_algorithm, Vec::new())
+            (reading_order_algorithm, Vec::new())
         }
     } else {
-        (initial_reading_order_algorithm, Vec::new())
+        (reading_order_algorithm, Vec::new())
     };
+
+    // Add the tagged PDF deferred diagnostic if present
+    let mut all_diagnostics = coverage_diagnostics;
+    if let Some(ref deferred) = deferred_diagnostic {
+        all_diagnostics.push(deferred.message.as_ref().to_string());
+    }
 
     Ok(ExtractionMetadata {
         page_count,
@@ -1248,8 +1232,8 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
         cache_status: None,
         cache_age_seconds: None,
         error_count: error_count as usize,
-        reading_order_algorithm: Some(reading_order_algorithm.as_str().to_string()),
-        diagnostics: coverage_diagnostics,
+        reading_order_algorithm: Some(final_reading_order_algorithm.as_str().to_string()),
+        diagnostics: all_diagnostics,
     })
 }
 
@@ -1325,24 +1309,21 @@ where
     // Wrap resolver in Arc for sharing across threads
     let resolver_arc = Arc::new(resolver);
 
-    // Phase 7.1.4: Determine reading order algorithm based on StructTree coverage
-    let (reading_order_algorithm, struct_tree) =
-        if let Some(struct_tree_root_ref) = catalog.struct_tree_root_ref {
-            let struct_tree_result = parse_struct_tree(&resolver_arc, struct_tree_root_ref);
-
-            match struct_tree_result {
-                Ok(tree) => {
-                    if catalog.mark_info.requires_coverage_check() {
-                        (ReadingOrderAlgorithm::StructTree, Some(tree))
-                    } else {
-                        (ReadingOrderAlgorithm::StructTree, Some(tree))
-                    }
-                }
-                Err(_diagnostics) => (ReadingOrderAlgorithm::XyCut, None),
-            }
-        } else {
-            (ReadingOrderAlgorithm::XyCut, None)
-        };
+    // Phase 4.5: Determine reading order algorithm
+    // For v0.1.0-v0.3.0: Tagged PDFs emit TAGGED_PDF_STRUCT_TREE_DEFERRED and use XY-cut
+    // Phase 7.1 will replace this with real StructTree traversal
+    let (reading_order_algorithm, struct_tree, deferred_diagnostic) = if catalog.mark_info.is_tagged
+    {
+        // Tagged PDF: emit diagnostic once per document and use XY-cut
+        let diagnostic = Diagnostic::with_static_no_offset(
+            DiagCode::LayoutTaggedPdfDeferred,
+            "Tagged PDF detected; StructTree traversal deferred to Phase 7.1, using XY-cut for now",
+        );
+        (ReadingOrderAlgorithm::XyCut, None, Some(diagnostic))
+    } else {
+        // Untagged PDF: use XY-cut
+        (ReadingOrderAlgorithm::XyCut, None, None)
+    };
 
     // Build fingerprint
     let fingerprint = compute_fingerprint_lazy(&catalog, &xref_section);
@@ -1490,6 +1471,12 @@ where
         (reading_order_algorithm, Vec::new())
     };
 
+    // Add the tagged PDF deferred diagnostic if present
+    let mut all_diagnostics = coverage_diagnostics;
+    if let Some(ref deferred) = deferred_diagnostic {
+        all_diagnostics.push(deferred.message.as_ref().to_string());
+    }
+
     Ok(ExtractionMetadata {
         page_count,
         receipts_mode: options.receipts,
@@ -1499,7 +1486,7 @@ where
         cache_age_seconds: None,
         error_count,
         reading_order_algorithm: Some(final_reading_order_algorithm.as_str().to_string()),
-        diagnostics: coverage_diagnostics,
+        diagnostics: all_diagnostics,
     })
 }
 
@@ -2020,5 +2007,73 @@ startxref
         // Should serialize correctly
         let json = serde_json::to_string(&sig_valid).unwrap();
         assert!(json.contains("not_checked"));
+    }
+
+    #[test]
+    fn test_tagged_pdf_emits_deferred_diagnostic() {
+        // Test that tagged PDFs emit TAGGED_PDF_STRUCT_TREE_DEFERRED diagnostic
+        use crate::diagnostics::DiagCode;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("tagged_test.pdf");
+
+        // Create a minimal tagged PDF (with /MarkInfo /Marked true)
+        let pdf_data = br#"%PDF-1.4
+1 0 obj<</Type/Catalog/Pages 2 0 R/MarkInfo<</Marked true>>>>endobj
+2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
+3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Resources<</Font<</F1<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>>>>>>>>>endobj
+
+xref
+0 4
+0000000000 65535 f
+0000000009 00000 n
+0000000096 00000 n
+0000000145 00000 n
+trailer<</Size 4/Root 1 0 R>>
+startxref
+283
+%%EOF
+"#;
+        fs::write(&pdf_path, pdf_data).unwrap();
+
+        let options = ExtractionOptions::default();
+        let result = extract_pdf(&pdf_path, &options).unwrap();
+
+        // Verify the tagged PDF diagnostic is emitted
+        assert!(!result.metadata.diagnostics.is_empty());
+        let deferred_diag = result
+            .metadata
+            .diagnostics
+            .iter()
+            .find(|d| d.contains("TAGGED_PDF_STRUCT_TREE_DEFERRED"))
+            .expect("TAGGED_PDF_STRUCT_TREE_DEFERRED diagnostic should be emitted for tagged PDFs");
+
+        // Verify the reading order algorithm is xy_cut
+        assert_eq!(
+            result.metadata.reading_order_algorithm,
+            Some("xy_cut".to_string()),
+            "Tagged PDFs should use xy_cut algorithm in v0.1.0-v0.3.0"
+        );
+    }
+
+    #[test]
+    fn test_untagged_pdf_no_deferred_diagnostic() {
+        // Test that untagged PDFs do NOT emit TAGGED_PDF_STRUCT_TREE_DEFERRED
+        let pdf_path = ensure_test_pdf();
+
+        let options = ExtractionOptions::default();
+        let result = extract_pdf(&pdf_path, &options).unwrap();
+
+        // Verify NO tagged PDF diagnostic is emitted
+        let has_deferred_diag = result
+            .metadata
+            .diagnostics
+            .iter()
+            .any(|d| d.contains("TAGGED_PDF_STRUCT_TREE_DEFERRED"));
+
+        assert!(
+            !has_deferred_diag,
+            "Untagged PDFs should NOT emit TAGGED_PDF_STRUCT_TREE_DEFERRED diagnostic"
+        );
     }
 }
