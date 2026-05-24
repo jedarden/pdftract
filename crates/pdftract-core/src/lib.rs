@@ -4,6 +4,7 @@
 //! processing PDF documents, including the lexer, object parser, and
 //! text extraction engines.
 
+pub mod attachment;
 pub mod cache;
 pub mod classify;
 pub mod diagnostics;
