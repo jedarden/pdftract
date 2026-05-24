@@ -22,8 +22,8 @@ pub use code::{
     is_monospace_span, MonospaceSpan,
 };
 pub use line::{
-    compute_baseline, group_lines_into_blocks, union_bboxes, BlockInput, HasBBox, Line,
-    LineDirection, LineMetadata,
+    cluster_spans_into_lines, compute_baseline, group_lines_into_blocks, union_bboxes, BlockInput,
+    HasBBox, HasFontSize, Line, LineDirection, LineMetadata,
 };
 pub use readability::{aggregate_page_readability, ScoredSpan};
 pub use wordlist::is_english_word;

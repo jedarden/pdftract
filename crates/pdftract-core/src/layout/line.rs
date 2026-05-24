@@ -455,6 +455,184 @@ pub trait HasBBox {
     fn bbox(&self) -> [f32; 4];
 }
 
+/// Trait for types that have font size.
+///
+/// This trait allows the clustering algorithm to work with different
+/// span representations.
+pub trait HasFontSize {
+    /// Get the font size in points.
+    fn font_size(&self) -> f32;
+}
+
+/// Cluster spans into lines by baseline proximity.
+///
+/// This function implements Phase 4.2 Algorithm step 2: grouping spans
+/// with baselines within `0.5 * median_font_size` of each other into
+/// the same line.
+///
+/// # Algorithm
+///
+/// 1. Compute baseline for each span using `compute_baseline`
+/// 2. Sort spans by baseline ASC
+/// 3. Sweep through sorted spans:
+///    - Track `cluster_max_baseline` (maximum baseline in current cluster)
+///    - If `new_baseline - cluster_max_baseline <= 0.5 * median_font_size`, append to cluster
+///    - Otherwise, close current cluster and start a new one
+/// 4. Emit one `Line` per cluster
+///
+/// # Arguments
+///
+/// * `spans` - Spans to cluster, with bbox and font_size
+/// * `median_font_size` - Median font size of all spans on the page (points)
+///
+/// # Returns
+///
+/// A vector of lines, each containing one or more spans sorted by x0 (left-to-right).
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::layout::line::{cluster_spans_into_lines, TestSpan};
+///
+/// // Spans at baselines 100, 100.5, 105 with median 12 (threshold 6): all one line
+/// let spans = vec![
+///     TestSpan::new([0.0, 98.0, 50.0, 108.0], 12.0), // baseline ≈ 100
+///     TestSpan::new([0.0, 98.5, 30.0, 108.5], 12.0), // baseline ≈ 100.5
+///     TestSpan::new([0.0, 103.0, 40.0, 113.0], 12.0), // baseline ≈ 105
+/// ];
+/// let lines = cluster_spans_into_lines(spans, 12.0);
+/// assert_eq!(lines.len(), 1);
+///
+/// // Spans at baselines 100, 110 with median 12 (threshold 6): two lines
+/// let spans = vec![
+///     TestSpan::new([0.0, 98.0, 50.0, 108.0], 12.0), // baseline ≈ 100
+///     TestSpan::new([0.0, 108.0, 50.0, 118.0], 12.0), // baseline ≈ 110
+/// ];
+/// let lines = cluster_spans_into_lines(spans, 12.0);
+/// assert_eq!(lines.len(), 2);
+/// ```
+///
+/// # INV
+///
+/// The threshold is `0.5 * median_font_size`, never hardcoded.
+/// This ensures superscripts (small font, slightly higher baseline) stay
+/// on the same line as the base text.
+pub fn cluster_spans_into_lines<S>(spans: Vec<S>, median_font_size: f32) -> Vec<Line<S>>
+where
+    S: HasBBox + HasFontSize + Clone,
+{
+    if spans.is_empty() {
+        return Vec::new();
+    }
+
+    // INV: threshold = 0.5 * median_font_size; do NOT hardcode
+    let threshold = 0.5 * median_font_size;
+
+    // Step 1: Compute baseline for each span and sort by baseline ASC
+    let mut baselines: Vec<(f32, S)> = spans
+        .into_iter()
+        .map(|span| {
+            let baseline = compute_baseline(&span.bbox());
+            (baseline, span)
+        })
+        .collect();
+
+    baselines.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Step 2: Sweep through sorted spans, clustering within threshold
+    let mut lines: Vec<Line<S>> = Vec::new();
+    let mut current_cluster_spans: Vec<S> = Vec::new();
+    let mut cluster_max_baseline: Option<f32> = None;
+    let mut cluster_union_bbox: Option<[f32; 4]> = None;
+
+    for (baseline, span) in baselines {
+        if current_cluster_spans.is_empty() {
+            // First span in cluster
+            current_cluster_spans.push(span.clone());
+            cluster_max_baseline = Some(baseline);
+            cluster_union_bbox = Some(span.bbox());
+            continue;
+        }
+
+        let cluster_max = cluster_max_baseline.unwrap();
+        let delta = baseline - cluster_max;
+
+        if delta <= threshold {
+            // Within threshold: append to current cluster
+            current_cluster_spans.push(span.clone());
+            cluster_max_baseline = Some(baseline); // Update max baseline
+
+            // Update union bbox
+            if let Some(ref mut union) = cluster_union_bbox {
+                let bbox = span.bbox();
+                union[0] = union[0].min(bbox[0]); // x0
+                union[1] = union[1].min(bbox[1]); // y0
+                union[2] = union[2].max(bbox[2]); // x1
+                union[3] = union[3].max(bbox[3]); // y1
+            }
+        } else {
+            // Beyond threshold: close current cluster and start new one
+            lines.push(finalize_line_cluster(
+                std::mem::take(&mut current_cluster_spans),
+                cluster_union_bbox.unwrap(),
+            ));
+
+            // Start new cluster with this span
+            current_cluster_spans.push(span.clone());
+            cluster_max_baseline = Some(baseline);
+            cluster_union_bbox = Some(span.bbox());
+        }
+    }
+
+    // Finalize the last cluster
+    if !current_cluster_spans.is_empty() {
+        lines.push(finalize_line_cluster(
+            current_cluster_spans,
+            cluster_union_bbox.unwrap(),
+        ));
+    }
+
+    lines
+}
+
+/// Finalize a line cluster by sorting spans by x0 and computing metadata.
+fn finalize_line_cluster<S>(mut spans: Vec<S>, union_bbox: [f32; 4]) -> Line<S>
+where
+    S: HasBBox + HasFontSize,
+{
+    // Sort spans by x0 (left-to-right for LTR scripts)
+    spans.sort_by(|a, b| {
+        a.bbox()[0]
+            .partial_cmp(&b.bbox()[0])
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    // Compute line metadata
+    let baseline = if spans.is_empty() {
+        union_bbox[1] + (union_bbox[3] - union_bbox[1]) * 0.2
+    } else {
+        // Average of member span baselines
+        let sum: f32 = spans.iter().map(|s| compute_baseline(&s.bbox())).sum();
+        sum / spans.len() as f32
+    };
+
+    // Compute median font size of spans in this line
+    let mut font_sizes: Vec<f32> = spans.iter().map(|s| s.font_size()).collect();
+    font_sizes.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let median_font_size = font_sizes[font_sizes.len() / 2];
+
+    Line {
+        spans,
+        bbox: union_bbox,
+        baseline,
+        direction: LineDirection::Ltr, // TODO: RTL detection in future
+        page_relative_y: 0.0,          // TODO: Compute from page_height
+        median_font_size,
+        rendering_mode: None, // TODO: Extract from span metadata
+        column: None,         // Set by Phase 4.3 column detection
+    }
+}
+
 /// Compute the union of multiple bounding boxes.
 ///
 /// # Arguments
@@ -510,6 +688,32 @@ mod tests {
         median_font_size: f32,
         column: Option<usize>,
         rendering_mode: Option<u32>,
+    }
+
+    /// Mock span type for testing cluster_spans_into_lines.
+    #[derive(Debug, Clone)]
+    struct TestSpan {
+        bbox: [f32; 4],
+        font_size: f32,
+    }
+
+    impl TestSpan {
+        /// Create a new test span.
+        fn new(bbox: [f32; 4], font_size: f32) -> Self {
+            Self { bbox, font_size }
+        }
+    }
+
+    impl HasBBox for TestSpan {
+        fn bbox(&self) -> [f32; 4] {
+            self.bbox
+        }
+    }
+
+    impl HasFontSize for TestSpan {
+        fn font_size(&self) -> f32 {
+            self.font_size
+        }
     }
 
     impl LineMetadata for TestLine {
@@ -805,5 +1009,162 @@ mod tests {
         // Second block should be column 1 (lines at y=90, y=80)
         assert_eq!(blocks[1].column, 1);
         assert_eq!(blocks[1].lines.len(), 2);
+    }
+
+    // Phase 4.2 Line Formation Tests (cluster_spans_into_lines)
+
+    #[test]
+    fn test_cluster_spans_baselines_100_100_5_105_median_12_one_line() {
+        // Spans baselines 100, 100.5, 105 with median 12 (threshold 6): all one line
+        let spans = vec![
+            TestSpan::new([0.0, 98.0, 50.0, 108.0], 12.0), // baseline ≈ 100
+            TestSpan::new([0.0, 98.5, 30.0, 108.5], 12.0), // baseline ≈ 100.5
+            TestSpan::new([0.0, 103.0, 40.0, 113.0], 12.0), // baseline ≈ 105
+        ];
+        let lines = cluster_spans_into_lines(spans, 12.0);
+        assert_eq!(lines.len(), 1, "All 3 spans should form 1 line");
+        assert_eq!(lines[0].spans.len(), 3);
+    }
+
+    #[test]
+    fn test_cluster_spans_baselines_100_110_median_12_two_lines() {
+        // Same with 100, 110: 2 lines (delta 10 > 6)
+        let spans = vec![
+            TestSpan::new([0.0, 98.0, 50.0, 108.0], 12.0), // baseline ≈ 100
+            TestSpan::new([0.0, 108.0, 50.0, 118.0], 12.0), // baseline ≈ 110
+        ];
+        let lines = cluster_spans_into_lines(spans, 12.0);
+        assert_eq!(
+            lines.len(),
+            2,
+            "Delta 10 > threshold 6 should create 2 lines"
+        );
+        assert_eq!(lines[0].spans.len(), 1);
+        assert_eq!(lines[1].spans.len(), 1);
+    }
+
+    #[test]
+    fn test_cluster_spans_superscript_stays_on_same_line() {
+        // Superscript at 105, line baseline 100, font 12: SAME line
+        let spans = vec![
+            TestSpan::new([0.0, 98.0, 50.0, 108.0], 12.0), // baseline ≈ 100
+            TestSpan::new([50.0, 103.0, 70.0, 113.0], 8.0), // superscript, baseline ≈ 105
+        ];
+        let lines = cluster_spans_into_lines(spans, 12.0);
+        assert_eq!(
+            lines.len(),
+            1,
+            "Superscript should stay on same line as base text"
+        );
+        assert_eq!(lines[0].spans.len(), 2);
+    }
+
+    #[test]
+    fn test_cluster_spans_empty_input_empty_output() {
+        let spans: Vec<TestSpan> = vec![];
+        let lines = cluster_spans_into_lines(spans, 12.0);
+        assert_eq!(lines.len(), 0, "Empty input should produce empty output");
+    }
+
+    #[test]
+    fn test_cluster_spans_single_span_single_line() {
+        let spans = vec![TestSpan::new([0.0, 98.0, 50.0, 108.0], 12.0)];
+        let lines = cluster_spans_into_lines(spans, 12.0);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].spans.len(), 1);
+    }
+
+    #[test]
+    fn test_cluster_spans_threshold_is_0_5_times_median_font_size() {
+        // INV: threshold = 0.5 * median_font_size; do NOT hardcode
+        // Test with median 20 (threshold 10): baselines 100 and 109 should be one line
+        let spans = vec![
+            TestSpan::new([0.0, 98.0, 50.0, 108.0], 12.0), // baseline ≈ 100
+            TestSpan::new([0.0, 107.0, 50.0, 117.0], 12.0), // baseline ≈ 109
+        ];
+        let lines = cluster_spans_into_lines(spans, 20.0);
+        assert_eq!(
+            lines.len(),
+            1,
+            "Delta 9 <= threshold 10 should create 1 line"
+        );
+    }
+
+    #[test]
+    fn test_cluster_spans_sorted_by_x0_within_line() {
+        // Spans within a line should be sorted by x0 (left-to-right)
+        let spans = vec![
+            TestSpan::new([50.0, 98.0, 70.0, 108.0], 12.0), // Right side
+            TestSpan::new([0.0, 98.0, 30.0, 108.0], 12.0),  // Left side
+            TestSpan::new([30.0, 98.0, 50.0, 108.0], 12.0), // Middle
+        ];
+        let lines = cluster_spans_into_lines(spans, 12.0);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].spans.len(), 3);
+        // Verify sorted by x0
+        assert_eq!(lines[0].spans[0].bbox()[0], 0.0);
+        assert_eq!(lines[0].spans[1].bbox()[0], 30.0);
+        assert_eq!(lines[0].spans[2].bbox()[0], 50.0);
+    }
+
+    #[test]
+    fn test_cluster_spans_two_column_at_same_y_one_line() {
+        // Two-column at same y: cluster into one Line; Phase 4.4 splits per column
+        let spans = vec![
+            TestSpan::new([0.0, 98.0, 50.0, 108.0], 12.0), // Column 0
+            TestSpan::new([150.0, 98.0, 200.0, 108.0], 12.0), // Column 1
+            TestSpan::new([50.0, 98.0, 80.0, 108.0], 12.0), // Column 0
+        ];
+        let lines = cluster_spans_into_lines(spans, 12.0);
+        // All spans at same baseline should be in one line
+        assert_eq!(
+            lines.len(),
+            1,
+            "Two-column at same y should cluster into one Line"
+        );
+        assert_eq!(lines[0].spans.len(), 3);
+    }
+
+    #[test]
+    fn test_cluster_spans_union_bbox_computed_correctly() {
+        // Verify union bbox is computed correctly
+        let spans = vec![
+            TestSpan::new([10.0, 90.0, 40.0, 100.0], 12.0),
+            TestSpan::new([40.0, 90.0, 70.0, 100.0], 12.0),
+        ];
+        let lines = cluster_spans_into_lines(spans, 12.0);
+        assert_eq!(lines.len(), 1);
+        // Union bbox should be [10, 90, 70, 100]
+        assert_eq!(lines[0].bbox[0], 10.0);
+        assert_eq!(lines[0].bbox[1], 90.0);
+        assert_eq!(lines[0].bbox[2], 70.0);
+        assert_eq!(lines[0].bbox[3], 100.0);
+    }
+
+    #[test]
+    fn test_cluster_spans_baseline_computed_as_average() {
+        // Verify baseline is average of member span baselines
+        let spans = vec![
+            TestSpan::new([0.0, 98.0, 50.0, 108.0], 12.0), // baseline ≈ 100
+            TestSpan::new([0.0, 92.0, 50.0, 102.0], 12.0), // baseline ≈ 94
+        ];
+        let lines = cluster_spans_into_lines(spans, 12.0);
+        assert_eq!(lines.len(), 1);
+        // Average baseline should be (100 + 94) / 2 = 97
+        assert!((lines[0].baseline - 97.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_cluster_spans_median_font_size_computed() {
+        // Verify median font size is computed from line spans
+        let spans = vec![
+            TestSpan::new([0.0, 98.0, 50.0, 108.0], 10.0),
+            TestSpan::new([0.0, 92.0, 50.0, 102.0], 12.0),
+            TestSpan::new([0.0, 86.0, 50.0, 96.0], 14.0),
+        ];
+        let lines = cluster_spans_into_lines(spans, 12.0);
+        assert_eq!(lines.len(), 1);
+        // Median of [10, 12, 14] is 12
+        assert_eq!(lines[0].median_font_size, 12.0);
     }
 }
