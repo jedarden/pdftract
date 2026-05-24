@@ -3,33 +3,37 @@
 //! This module provides utilities for classifying PDF fonts by type
 //! and handling font subset prefixes.
 
-pub mod std14;
+pub mod agl;
+pub mod cmap;
 pub mod embedded;
+pub mod encoding;
+pub mod fingerprint;
+pub mod predefined_cmap;
+pub mod resolver;
+pub mod shape;
+pub mod std14;
 pub mod type0;
 pub mod type3;
 pub mod type3_rasterizer;
-pub mod cmap;
-pub mod encoding;
-pub mod agl;
-pub mod fingerprint;
-pub mod resolver;
-pub mod predefined_cmap;
 
 #[cfg(feature = "cjk")]
 pub mod cjk_encoding;
 
-pub use embedded::{EmbeddedFont, FontMetrics, EmptyFontMetrics, GlyphBbox};
-pub use type0::{Type0Font, DescendantCIDFont, CIDToGIDMap};
-pub use type3::Type3Font;
-pub use cmap::{ToUnicodeMap, parse_to_unicode, parse_to_unicode_with_diags};
-pub use encoding::{NamedEncoding, DifferencesOverlay, FontEncoding};
 pub use agl::{unicode_for_glyph_name, unicode_for_glyph_name_multi};
-pub use fingerprint::{FontFingerprint, CachedFingerprint, lookup_font_fingerprint};
-pub use resolver::{FontId, UnicodeSource, ResolvedGlyph, ResolverCache, Font, resolve_unicode};
-pub use predefined_cmap::{PredefinedCMap, from_name as predefined_cmap_from_name, CharacterCollection};
+pub use cmap::{parse_to_unicode, parse_to_unicode_with_diags, ToUnicodeMap};
+pub use embedded::{EmbeddedFont, EmptyFontMetrics, FontMetrics, GlyphBbox};
+pub use encoding::{DifferencesOverlay, FontEncoding, NamedEncoding};
+pub use fingerprint::{lookup_font_fingerprint, CachedFingerprint, FontFingerprint};
+pub use predefined_cmap::{
+    from_name as predefined_cmap_from_name, CharacterCollection, PredefinedCMap,
+};
+pub use resolver::{resolve_unicode, Font, FontId, ResolvedGlyph, ResolverCache, UnicodeSource};
+pub use shape::{hamming_distance, phash_glyph};
+pub use type0::{CIDToGIDMap, DescendantCIDFont, Type0Font};
+pub use type3::Type3Font;
 
 #[cfg(feature = "cjk")]
-pub use cjk_encoding::{CjkEncoding, decode_cjk_bytes};
+pub use cjk_encoding::{decode_cjk_bytes, CjkEncoding};
 
 use crate::parser::object::types::{PdfDict, PdfObject};
 
@@ -435,10 +439,7 @@ mod tests {
     #[test]
     fn test_classify_font_cidfonttype0() {
         let mut dict = PdfDict::new();
-        dict.insert(
-            intern("/Subtype"),
-            PdfObject::Name(intern("/CIDFontType0")),
-        );
+        dict.insert(intern("/Subtype"), PdfObject::Name(intern("/CIDFontType0")));
         dict.insert(intern("/BaseFont"), PdfObject::Name(intern("CIDFont0")));
 
         assert_eq!(classify_font(&dict), FontKind::CIDFontType0);
@@ -447,10 +448,7 @@ mod tests {
     #[test]
     fn test_classify_font_cidfonttype2() {
         let mut dict = PdfDict::new();
-        dict.insert(
-            intern("/Subtype"),
-            PdfObject::Name(intern("/CIDFontType2")),
-        );
+        dict.insert(intern("/Subtype"), PdfObject::Name(intern("/CIDFontType2")));
         dict.insert(intern("/BaseFont"), PdfObject::Name(intern("CIDFont2")));
 
         assert_eq!(classify_font(&dict), FontKind::CIDFontType2);
@@ -460,23 +458,15 @@ mod tests {
     fn test_classify_font_type0_with_cidfonttype0() {
         // Create descendant CIDFont dict
         let mut cidfont_dict = PdfDict::new();
-        cidfont_dict.insert(
-            intern("/Subtype"),
-            PdfObject::Name(intern("/CIDFontType0")),
-        );
+        cidfont_dict.insert(intern("/Subtype"), PdfObject::Name(intern("/CIDFontType0")));
 
         // Create Type0 font dict with descendant
         let mut dict = PdfDict::new();
         dict.insert(intern("/Subtype"), PdfObject::Name(intern("/Type0")));
-        dict.insert(
-            intern("/BaseFont"),
-            PdfObject::Name(intern("Type0Font")),
-        );
+        dict.insert(intern("/BaseFont"), PdfObject::Name(intern("Type0Font")));
         dict.insert(
             intern("/DescendantFonts"),
-            PdfObject::Array(Box::new(vec![PdfObject::Dict(Box::new(
-                cidfont_dict,
-            ))])),
+            PdfObject::Array(Box::new(vec![PdfObject::Dict(Box::new(cidfont_dict))])),
         );
 
         assert_eq!(classify_font(&dict), FontKind::CIDFontType0);
@@ -486,23 +476,15 @@ mod tests {
     fn test_classify_font_type0_with_cidfonttype2() {
         // Create descendant CIDFont dict
         let mut cidfont_dict = PdfDict::new();
-        cidfont_dict.insert(
-            intern("/Subtype"),
-            PdfObject::Name(intern("/CIDFontType2")),
-        );
+        cidfont_dict.insert(intern("/Subtype"), PdfObject::Name(intern("/CIDFontType2")));
 
         // Create Type0 font dict with descendant
         let mut dict = PdfDict::new();
         dict.insert(intern("/Subtype"), PdfObject::Name(intern("/Type0")));
-        dict.insert(
-            intern("/BaseFont"),
-            PdfObject::Name(intern("Type0Font")),
-        );
+        dict.insert(intern("/BaseFont"), PdfObject::Name(intern("Type0Font")));
         dict.insert(
             intern("/DescendantFonts"),
-            PdfObject::Array(Box::new(vec![PdfObject::Dict(Box::new(
-                cidfont_dict,
-            ))])),
+            PdfObject::Array(Box::new(vec![PdfObject::Dict(Box::new(cidfont_dict))])),
         );
 
         assert_eq!(classify_font(&dict), FontKind::CIDFontType2);
@@ -512,10 +494,7 @@ mod tests {
     fn test_classify_font_opentype_cff() {
         // Create FontFile3 stream dict with /Subtype /OpenType
         let mut font_file3_dict = PdfDict::new();
-        font_file3_dict.insert(
-            intern("/Subtype"),
-            PdfObject::Name(intern("/OpenType")),
-        );
+        font_file3_dict.insert(intern("/Subtype"), PdfObject::Name(intern("/OpenType")));
 
         // Create FontDescriptor dict
         let mut font_descriptor = PdfDict::new();
