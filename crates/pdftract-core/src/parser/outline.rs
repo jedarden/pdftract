@@ -818,6 +818,7 @@ mod tests {
                 actual_text: None,
                 lang: None,
                 aa: None,
+                struct_parents: None,
             },
             PageDict {
                 obj_ref: ObjRef::new(11, 0),
@@ -833,6 +834,7 @@ mod tests {
                 actual_text: None,
                 lang: None,
                 aa: None,
+                struct_parents: None,
             },
             PageDict {
                 obj_ref: ObjRef::new(12, 0),
@@ -848,6 +850,7 @@ mod tests {
                 actual_text: None,
                 lang: None,
                 aa: None,
+                struct_parents: None,
             },
         ]
     }

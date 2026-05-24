@@ -857,6 +857,29 @@ fn cmd_explain_diagnostic(code: &str) -> Result<()> {
             println!("  Cache write failed");
             println!("  Writing to the cache failed (e.g., out of disk space).");
         }
+        DiagCode::StructInvalidType => {
+            println!("  Invalid object type");
+            println!("  An object is not the expected type (e.g., expecting a stream but finding a dictionary).");
+        }
+        DiagCode::StructIncompleteCoverage => {
+            println!("  StructTree coverage below threshold");
+            println!("  StructTree coverage is below 80% with /Suspects true, triggering XY-cut fallback.");
+        }
+        DiagCode::FontParseFailed => {
+            println!("  Font parsing failed");
+            println!("  A font file could not be parsed.");
+        }
+        DiagCode::FontUnsupported => {
+            println!("  Unsupported font type");
+            println!("  A font uses an unsupported format or encoding.");
+        }
+        DiagCode::FontCidtogidmapTruncated => {
+            println!("  CIDToGIDMap truncated");
+            println!("  A CIDToGIDMap stream is incomplete.");
+        }
+        _ => {
+            println!("  (See diagnostic code)");
+        }
     }
 
     println!();

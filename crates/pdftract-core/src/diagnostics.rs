@@ -322,6 +322,14 @@ pub enum DiagCode {
     /// Phase origin: 1.3
     StructHybridConflict,
 
+    /// StructTree coverage below 80% threshold with /Suspects true
+    ///
+    /// Emitted when StructTree coverage is below 80% and /MarkInfo /Suspects is true,
+    /// triggering XY-cut fallback per Phase 7.1.4.
+    ///
+    /// Phase origin: 7.1.4
+    StructIncompleteCoverage,
+
     // === XREF_* codes ===
 
     /// Invalid xref keyword or header
@@ -767,7 +775,8 @@ impl DiagCode {
             | DiagCode::StructUnresolvedDestination
             | DiagCode::StructNonGotoOutline
             | DiagCode::StructInvalidPdfDocEncoding
-            | DiagCode::StructHybridConflict => "STRUCT",
+            | DiagCode::StructHybridConflict
+            | DiagCode::StructIncompleteCoverage => "STRUCT",
 
             // XREF_*
             DiagCode::XrefInvalidHeader
@@ -871,6 +880,7 @@ impl DiagCode {
             DiagCode::StructNonGotoOutline => "STRUCT_NON_GOTO_OUTLINE",
             DiagCode::StructInvalidPdfDocEncoding => "STRUCT_INVALID_PDFDOC_ENCODING",
             DiagCode::StructHybridConflict => "STRUCT_HYBRID_CONFLICT",
+            DiagCode::StructIncompleteCoverage => "STRUCT_INCOMPLETE_COVERAGE",
             DiagCode::XrefInvalidHeader => "XREF_INVALID_HEADER",
             DiagCode::XrefInvalidEntry => "XREF_INVALID_ENTRY",
             DiagCode::XrefInvalidSubsectionHeader => "XREF_INVALID_SUBSECTION_HEADER",
@@ -928,7 +938,9 @@ impl DiagCode {
     #[inline]
     pub const fn severity(self) -> Severity {
         match self {
-            DiagCode::XrefRepaired | DiagCode::LayoutTaggedPdfDeferred => Severity::Info,
+            DiagCode::XrefRepaired
+            | DiagCode::LayoutTaggedPdfDeferred
+            | DiagCode::StructIncompleteCoverage => Severity::Info,
 
             DiagCode::StructInvalidName
             | DiagCode::StructInvalidHex
@@ -1198,6 +1210,14 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         recoverable: true,
         phase: "1.3",
         suggested_action: "Traditional table entry takes precedence; object marked as Free per traditional table",
+    },
+    DiagInfo {
+        code: DiagCode::StructIncompleteCoverage,
+        category: "STRUCT",
+        severity: Severity::Info,
+        recoverable: true,
+        phase: "7.1.4",
+        suggested_action: "StructTree coverage below 80% with /Suspects true; falling back to XY-cut reading order",
     },
     // === XREF_* codes ===
     DiagInfo {

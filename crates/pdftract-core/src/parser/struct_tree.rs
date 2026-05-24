@@ -28,7 +28,9 @@
 
 use crate::parser::object::{ObjRef, PdfObject};
 use crate::parser::xref::XrefResolver;
+use crate::parser::catalog::{MarkInfo, ReadingOrderAlgorithm};
 use crate::diagnostics::{Diagnostic, DiagCode};
+use crate::parser::marked_content::CoverageResult;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::rc::Rc;
@@ -507,12 +509,174 @@ impl ParentTreeResolver {
     pub fn diagnostics(&self) -> &[Diagnostic] {
         &self.diagnostics
     }
+
+    /// Compute StructTree coverage for a page.
+    ///
+    /// This method calculates the coverage ratio for the Suspects fallback check:
+    /// - claimed_mcids: MCIDs that resolve to a non-Artifact StructElem
+    /// - total_mcids: Total MCIDs emitted in marked-content sequences
+    ///
+    /// # Arguments
+    ///
+    /// * `page_index` - The page index (0-based)
+    /// * `struct_parents` - The /StructParents value from the page dictionary
+    /// * `all_mcids` - All MCIDs seen in marked-content sequences on this page
+    ///
+    /// # Returns
+    ///
+    /// A `CoverageResult` containing the coverage ratio and fallback decision.
+    ///
+    /// # Coverage Calculation
+    ///
+    /// Coverage = claimed_mcids / total_mcids
+    ///
+    /// Where:
+    /// - claimed_mcids = MCIDs that resolved to a StructElem (non-null ParentTree entries)
+    /// - total_mcids = All MCIDs from marked-content sequences (from MCID tracker)
+    ///
+    /// If total_mcids == 0 (no marked content), coverage is 0.0 and fallback is recommended.
+    /// The fallback threshold is hard-coded at 0.80 (80%) per the plan.
+    pub fn compute_coverage(
+        &self,
+        page_index: usize,
+        struct_parents: Option<i32>,
+        all_mcids: &std::collections::HashSet<u32>,
+    ) -> crate::parser::marked_content::CoverageResult {
+        use crate::parser::marked_content::{compute_coverage_from_sets};
+
+        // Resolve MCIDs to StructElems
+        let (claimed_map, _orphans) = self.resolve_page(struct_parents);
+
+        // Build set of claimed MCIDs
+        let claimed_mcids: std::collections::HashSet<u32> = claimed_map.keys().cloned().collect();
+
+        // Compute coverage using the sets
+        compute_coverage_from_sets(page_index, all_mcids, &claimed_mcids)
+    }
 }
 
 impl Default for ParentTreeResolver {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Per-page coverage check result for Phase 7.1.4 Suspects fallback.
+///
+/// Contains the coverage result for each page and the overall reading order algorithm.
+#[derive(Debug, Clone)]
+pub struct CoverageCheckResult {
+    /// Per-page coverage results
+    pub page_results: Vec<CoverageResult>,
+    /// The reading order algorithm to use for the document
+    pub reading_order_algorithm: ReadingOrderAlgorithm,
+    /// Diagnostics emitted during coverage check
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+impl CoverageCheckResult {
+    /// Create a new coverage check result.
+    fn new() -> Self {
+        CoverageCheckResult {
+            page_results: Vec::new(),
+            reading_order_algorithm: ReadingOrderAlgorithm::StructTree,
+            diagnostics: Vec::new(),
+        }
+    }
+}
+
+/// Check StructTree coverage for all pages and determine reading order algorithm.
+///
+/// This function implements Phase 7.1.4: if /MarkInfo /Suspects is true,
+/// compute per-page coverage and fall back to XY-cut for pages with coverage < 80%.
+///
+/// # Arguments
+///
+/// * `struct_tree` - The parsed structure tree with ParentTree resolver
+/// * `mark_info` - The MarkInfo from catalog (checked for /Suspects flag)
+/// * `pages_with_mcids` - Slice of (page_index, struct_parents, mcid_count) tuples
+///
+/// # Returns
+///
+/// A `CoverageCheckResult` containing per-page coverage results and the overall
+/// reading order algorithm to use.
+///
+/// # Reading Order Algorithm Selection
+///
+/// - If /Suspects is false: use StructTree for all pages
+/// - If /Suspects is true:
+///   - Compute coverage for each page: claimed_mcids / total_mcids
+///   - If coverage < 80% on any page: use XY-cut for the entire document
+///   - Otherwise: use StructTree
+///
+/// # Coverage Calculation
+///
+/// Coverage = claimed_mcids / total_mcids
+///
+/// Where:
+/// - claimed_mcids: MCIDs that resolve to a non-Artifact StructElem via ParentTree
+/// - total_mcids: All MCIDs emitted in marked-content sequences on this page
+///
+/// If total_mcids == 0 (no marked content), coverage is 0.0 and the page
+/// triggers fallback if /Suspects is true.
+pub fn check_coverage_for_pages(
+    struct_tree: &StructTreeRoot,
+    mark_info: &MarkInfo,
+    pages_with_mcids: &[(usize, Option<i32>, std::collections::HashSet<u32>)],
+) -> CoverageCheckResult {
+    use crate::parser::catalog::{MarkInfo, ReadingOrderAlgorithm};
+
+    let mut result = CoverageCheckResult::new();
+
+    // Always compute coverage for each page (needed for diagnostics and transparency)
+    // But only apply fallback logic when /Suspects is true
+    let suspects_mode = mark_info.requires_coverage_check();
+    let mut any_fallback = false;
+
+    for (page_index, struct_parents, all_mcids) in pages_with_mcids {
+
+        // Compute coverage using ParentTreeResolver
+        let coverage_result = struct_tree.parent_tree.compute_coverage(
+            *page_index,
+            *struct_parents,
+            &all_mcids,
+        );
+
+        // Apply Suspects mode to determine actual fallback behavior
+        let coverage_result = coverage_result.with_suspects_mode(suspects_mode);
+
+        // Track if any page should fall back (only matters in Suspects mode)
+        if coverage_result.should_fallback {
+            any_fallback = true;
+        }
+
+        result.page_results.push(coverage_result);
+    }
+
+    // Determine reading order algorithm
+    // If /Suspects is false, always use StructTree
+    // If /Suspects is true and any page falls back, use XY-cut for the entire document
+    result.reading_order_algorithm = if !suspects_mode {
+        ReadingOrderAlgorithm::StructTree
+    } else if any_fallback {
+        ReadingOrderAlgorithm::XyCut
+    } else {
+        ReadingOrderAlgorithm::StructTree
+    };
+
+    // Emit diagnostics for pages that triggered fallback (only in Suspects mode)
+    if suspects_mode {
+        for page_result in &result.page_results {
+            if let Some(diag_message) = page_result.fallback_diagnostic() {
+                result.diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructIncompleteCoverage,
+                    diag_message,
+                ));
+            }
+        }
+    }
+
+    result
 }
 
 /// Walk a number tree and extract all key-value pairs.
@@ -2772,5 +2936,677 @@ mod tests {
 
         // If the page has MCIDs beyond the array length, they'd be orphans too
         // (This would be detected in Phase 7.1.4 coverage check)
+    }
+
+    // Phase 7.1.4 Coverage Check Tests
+
+    #[test]
+    fn test_compute_coverage_full_coverage() {
+        // Test 100% coverage: all MCIDs claimed by StructTree
+        let resolver = XrefResolver::new();
+        let root_ref = ObjRef::new(1, 0);
+
+        // Create a StructElem
+        let mut elem_dict = PdfDict::new();
+        elem_dict.insert(intern("S"), PdfObject::Name(intern("P")));
+        elem_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+            PdfObject::Integer(1),
+            PdfObject::Integer(2),
+        ])));
+        let elem_ref = ObjRef::new(10, 0);
+        resolver.cache_object(elem_ref, PdfObject::Dict(Box::new(elem_dict)));
+
+        // Create ParentTree with 3 MCIDs all claimed
+        let parent_tree_nums = PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+            ])),
+        ]));
+
+        let mut parent_tree_dict = PdfDict::new();
+        parent_tree_dict.insert(intern("Nums"), parent_tree_nums);
+
+        let mut root_dict = PdfDict::new();
+        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
+            PdfObject::Ref(elem_ref),
+        ])));
+        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
+
+        // Parse struct tree
+        let result = parse_struct_tree(&resolver, root_ref);
+        assert!(result.is_ok());
+        let tree = result.unwrap();
+
+        // All MCIDs present on page
+        let mut all_mcids = std::collections::HashSet::new();
+        all_mcids.insert(0);
+        all_mcids.insert(1);
+        all_mcids.insert(2);
+
+        // Compute coverage
+        let coverage = tree.parent_tree.compute_coverage(0, Some(0), &all_mcids);
+
+        assert_eq!(coverage.page_index, 0);
+        assert_eq!(coverage.total_mcids, 3);
+        assert_eq!(coverage.claimed_mcids, 3);
+        assert!((coverage.coverage - 1.0).abs() < f64::EPSILON);
+        assert!(!coverage.should_fallback); // 100% >= 80%
+    }
+
+    #[test]
+    fn test_compute_coverage_below_threshold() {
+        // Test coverage below 80% threshold: should trigger fallback
+        let resolver = XrefResolver::new();
+        let root_ref = ObjRef::new(1, 0);
+
+        // Create a StructElem
+        let mut elem_dict = PdfDict::new();
+        elem_dict.insert(intern("S"), PdfObject::Name(intern("P")));
+        elem_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+        ])));
+        let elem_ref = ObjRef::new(10, 0);
+        resolver.cache_object(elem_ref, PdfObject::Dict(Box::new(elem_dict)));
+
+        // Create ParentTree with 10 MCIDs but only 6 claimed (60% coverage)
+        let parent_tree_nums = PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Null, // MCID 6 is orphan
+                PdfObject::Null, // MCID 7 is orphan
+                PdfObject::Null, // MCID 8 is orphan
+                PdfObject::Null, // MCID 9 is orphan
+            ])),
+        ]));
+
+        let mut parent_tree_dict = PdfDict::new();
+        parent_tree_dict.insert(intern("Nums"), parent_tree_nums);
+
+        let mut root_dict = PdfDict::new();
+        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
+            PdfObject::Ref(elem_ref),
+        ])));
+        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
+
+        // Parse struct tree
+        let result = parse_struct_tree(&resolver, root_ref);
+        assert!(result.is_ok());
+        let tree = result.unwrap();
+
+        // All MCIDs present on page (0-9)
+        let mut all_mcids = std::collections::HashSet::new();
+        for i in 0..10 {
+            all_mcids.insert(i);
+        }
+
+        // Compute coverage
+        let coverage = tree.parent_tree.compute_coverage(0, Some(0), &all_mcids);
+
+        assert_eq!(coverage.total_mcids, 10);
+        assert_eq!(coverage.claimed_mcids, 6);
+        assert!((coverage.coverage - 0.60).abs() < f64::EPSILON);
+        assert!(coverage.should_fallback); // 60% < 80%
+        assert!(coverage.fallback_diagnostic().unwrap().contains("60.0%"));
+    }
+
+    #[test]
+    fn test_compute_coverage_above_threshold() {
+        // Test coverage above 80% threshold: should NOT trigger fallback
+        let resolver = XrefResolver::new();
+        let root_ref = ObjRef::new(1, 0);
+
+        // Create a StructElem
+        let mut elem_dict = PdfDict::new();
+        elem_dict.insert(intern("S"), PdfObject::Name(intern("P")));
+        elem_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+        ])));
+        let elem_ref = ObjRef::new(10, 0);
+        resolver.cache_object(elem_ref, PdfObject::Dict(Box::new(elem_dict)));
+
+        // Create ParentTree with 10 MCIDs, 9 claimed (90% coverage)
+        let parent_tree_nums = PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Null, // Only MCID 9 is orphan
+            ])),
+        ]));
+
+        let mut parent_tree_dict = PdfDict::new();
+        parent_tree_dict.insert(intern("Nums"), parent_tree_nums);
+
+        let mut root_dict = PdfDict::new();
+        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
+            PdfObject::Ref(elem_ref),
+        ])));
+        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
+
+        // Parse struct tree
+        let result = parse_struct_tree(&resolver, root_ref);
+        assert!(result.is_ok());
+        let tree = result.unwrap();
+
+        // All MCIDs present on page (0-9)
+        let mut all_mcids = std::collections::HashSet::new();
+        for i in 0..10 {
+            all_mcids.insert(i);
+        }
+
+        // Compute coverage
+        let coverage = tree.parent_tree.compute_coverage(0, Some(0), &all_mcids);
+
+        assert_eq!(coverage.total_mcids, 10);
+        assert_eq!(coverage.claimed_mcids, 9);
+        assert!((coverage.coverage - 0.90).abs() < f64::EPSILON);
+        assert!(!coverage.should_fallback); // 90% >= 80%
+    }
+
+    #[test]
+    fn test_compute_coverage_no_mcids() {
+        // Test page with no marked content (no MCIDs)
+        let resolver = XrefResolver::new();
+        let root_ref = ObjRef::new(1, 0);
+
+        // Empty StructTreeRoot
+        let mut root_dict = PdfDict::new();
+        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![])));
+        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(PdfDict::new())));
+        resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
+
+        // Parse struct tree
+        let result = parse_struct_tree(&resolver, root_ref);
+        assert!(result.is_ok());
+        let tree = result.unwrap();
+
+        // No MCIDs on page
+        let all_mcids = std::collections::HashSet::new();
+
+        // Compute coverage
+        let coverage = tree.parent_tree.compute_coverage(0, None, &all_mcids);
+
+        assert_eq!(coverage.total_mcids, 0);
+        assert_eq!(coverage.claimed_mcids, 0);
+        assert_eq!(coverage.coverage, 0.0);
+        assert!(coverage.should_fallback); // No MCIDs = fallback
+        assert!(coverage.fallback_diagnostic().unwrap().contains("no marked-content sequences"));
+    }
+
+    #[test]
+    fn test_compute_coverage_threshold_edge_case() {
+        // Test exactly 80% coverage (threshold boundary)
+        let resolver = XrefResolver::new();
+        let root_ref = ObjRef::new(1, 0);
+
+        // Create a StructElem
+        let mut elem_dict = PdfDict::new();
+        elem_dict.insert(intern("S"), PdfObject::Name(intern("P")));
+        elem_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+        ])));
+        let elem_ref = ObjRef::new(10, 0);
+        resolver.cache_object(elem_ref, PdfObject::Dict(Box::new(elem_dict)));
+
+        // Create ParentTree with 10 MCIDs, 8 claimed (80% coverage)
+        let parent_tree_nums = PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Null, // MCID 8 is orphan
+                PdfObject::Null, // MCID 9 is orphan
+            ])),
+        ]));
+
+        let mut parent_tree_dict = PdfDict::new();
+        parent_tree_dict.insert(intern("Nums"), parent_tree_nums);
+
+        let mut root_dict = PdfDict::new();
+        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
+            PdfObject::Ref(elem_ref),
+        ])));
+        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
+
+        // Parse struct tree
+        let result = parse_struct_tree(&resolver, root_ref);
+        assert!(result.is_ok());
+        let tree = result.unwrap();
+
+        // All MCIDs present on page (0-9)
+        let mut all_mcids = std::collections::HashSet::new();
+        for i in 0..10 {
+            all_mcids.insert(i);
+        }
+
+        // Compute coverage
+        let coverage = tree.parent_tree.compute_coverage(0, Some(0), &all_mcids);
+
+        assert_eq!(coverage.total_mcids, 10);
+        assert_eq!(coverage.claimed_mcids, 8);
+        assert!((coverage.coverage - 0.80).abs() < f64::EPSILON);
+        assert!(!coverage.should_fallback); // 80% >= 80% (not less than)
+    }
+
+    #[test]
+    fn test_compute_coverage_with_orphan_mcids() {
+        // Test that MCIDs not in the ParentTree are correctly counted as orphans
+        let resolver = XrefResolver::new();
+        let root_ref = ObjRef::new(1, 0);
+
+        // Create a StructElem
+        let mut elem_dict = PdfDict::new();
+        elem_dict.insert(intern("S"), PdfObject::Name(intern("P")));
+        elem_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+        ])));
+        let elem_ref = ObjRef::new(10, 0);
+        resolver.cache_object(elem_ref, PdfObject::Dict(Box::new(elem_dict)));
+
+        // ParentTree only has 3 entries, but page has 5 MCIDs
+        // MCIDs 3 and 4 are orphans (not in ParentTree)
+        let parent_tree_nums = PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Null, // MCID 2 is null (orphan)
+                // MCIDs 3 and 4 don't exist in ParentTree at all
+            ])),
+        ]));
+
+        let mut parent_tree_dict = PdfDict::new();
+        parent_tree_dict.insert(intern("Nums"), parent_tree_nums);
+
+        let mut root_dict = PdfDict::new();
+        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
+            PdfObject::Ref(elem_ref),
+        ])));
+        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
+
+        // Parse struct tree
+        let result = parse_struct_tree(&resolver, root_ref);
+        assert!(result.is_ok());
+        let tree = result.unwrap();
+
+        // Page has 5 MCIDs (0-4)
+        let mut all_mcids = std::collections::HashSet::new();
+        for i in 0..5 {
+            all_mcids.insert(i);
+        }
+
+        // Compute coverage
+        let coverage = tree.parent_tree.compute_coverage(0, Some(0), &all_mcids);
+
+        // Only MCIDs 0 and 1 are claimed (2/5 = 40%)
+        assert_eq!(coverage.total_mcids, 5);
+        assert_eq!(coverage.claimed_mcids, 2);
+        assert!((coverage.coverage - 0.40).abs() < f64::EPSILON);
+        assert!(coverage.should_fallback); // 40% < 80%
+    }
+
+    // Tests for check_coverage_for_pages with MarkInfo Suspects flag
+
+    #[test]
+    fn test_check_coverage_suspects_false_low_coverage() {
+        // Suspects false + 50% coverage -> no fallback (trust tree)
+        let resolver = XrefResolver::new();
+        let root_ref = ObjRef::new(1, 0);
+
+        // Create a StructElem
+        let mut elem_dict = PdfDict::new();
+        elem_dict.insert(intern("S"), PdfObject::Name(intern("P")));
+        elem_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+        ])));
+        let elem_ref = ObjRef::new(10, 0);
+        resolver.cache_object(elem_ref, PdfObject::Dict(Box::new(elem_dict)));
+
+        // ParentTree with 10 MCIDs, 5 claimed (50% coverage)
+        let parent_tree_nums = PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Null,
+                PdfObject::Null,
+                PdfObject::Null,
+                PdfObject::Null,
+                PdfObject::Null,
+            ])),
+        ]));
+
+        let mut parent_tree_dict = PdfDict::new();
+        parent_tree_dict.insert(intern("Nums"), parent_tree_nums);
+
+        let mut root_dict = PdfDict::new();
+        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
+            PdfObject::Ref(elem_ref),
+        ])));
+        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
+
+        // Parse struct tree
+        let result = parse_struct_tree(&resolver, root_ref);
+        assert!(result.is_ok());
+        let tree = result.unwrap();
+
+        // MarkInfo with Suspects false
+        let mark_info = MarkInfo {
+            is_tagged: true,
+            user_properties: false,
+            suspects: false,
+        };
+
+        // Pages with MCID data: (page_index, struct_parents, mcid_set)
+        let pages_with_mcids: Vec<(usize, Option<i32>, std::collections::HashSet<u32>)> = vec![
+            (0, Some(0), (0..10u32).collect::<std::collections::HashSet<_>>())
+        ];
+
+        // Check coverage
+        let coverage_result = check_coverage_for_pages(&tree, &mark_info, &pages_with_mcids);
+
+        // Suspects false means we trust the tree regardless of coverage
+        assert_eq!(coverage_result.reading_order_algorithm, ReadingOrderAlgorithm::StructTree);
+        assert!(coverage_result.diagnostics.is_empty()); // No diagnostics when Suspects false
+        assert_eq!(coverage_result.page_results.len(), 1);
+        assert!((coverage_result.page_results[0].coverage - 0.50).abs() < f64::EPSILON);
+        assert!(!coverage_result.page_results[0].should_fallback); // No fallback when Suspects false
+    }
+
+    #[test]
+    fn test_check_coverage_suspects_true_high_coverage() {
+        // Suspects true + 95% coverage -> no fallback
+        let resolver = XrefResolver::new();
+        let root_ref = ObjRef::new(1, 0);
+
+        // Create a StructElem
+        let mut elem_dict = PdfDict::new();
+        elem_dict.insert(intern("S"), PdfObject::Name(intern("P")));
+        elem_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+        ])));
+        let elem_ref = ObjRef::new(10, 0);
+        resolver.cache_object(elem_ref, PdfObject::Dict(Box::new(elem_dict)));
+
+        // ParentTree with 20 MCIDs, 19 claimed (95% coverage)
+        let mut refs = vec![
+            PdfObject::Ref(elem_ref);
+            19
+        ];
+        refs.push(PdfObject::Null); // MCID 19 is orphan
+
+        let parent_tree_nums = PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+            PdfObject::Array(Box::new(refs)),
+        ]));
+
+        let mut parent_tree_dict = PdfDict::new();
+        parent_tree_dict.insert(intern("Nums"), parent_tree_nums);
+
+        let mut root_dict = PdfDict::new();
+        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
+            PdfObject::Ref(elem_ref),
+        ])));
+        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
+
+        // Parse struct tree
+        let result = parse_struct_tree(&resolver, root_ref);
+        assert!(result.is_ok());
+        let tree = result.unwrap();
+
+        // MarkInfo with Suspects true
+        let mark_info = MarkInfo {
+            is_tagged: true,
+            user_properties: false,
+            suspects: true,
+        };
+
+        // Pages with MCID data: (page_index, struct_parents, mcid_set)
+        let pages_with_mcids = vec![(0, Some(0), (0..20u32).collect::<std::collections::HashSet<_>>())];
+
+        // Check coverage
+        let coverage_result = check_coverage_for_pages(&tree, &mark_info, &pages_with_mcids);
+
+        // 95% >= 80%, so use StructTree
+        assert_eq!(coverage_result.reading_order_algorithm, ReadingOrderAlgorithm::StructTree);
+        assert!(coverage_result.diagnostics.is_empty()); // No diagnostics when above threshold
+        assert_eq!(coverage_result.page_results.len(), 1);
+        assert!((coverage_result.page_results[0].coverage - 0.95).abs() < f64::EPSILON);
+        assert!(!coverage_result.page_results[0].should_fallback); // No fallback at 95%
+    }
+
+    #[test]
+    fn test_check_coverage_suspects_true_low_coverage() {
+        // Suspects true + 60% coverage -> fallback to XY-cut
+        let resolver = XrefResolver::new();
+        let root_ref = ObjRef::new(1, 0);
+
+        // Create a StructElem
+        let mut elem_dict = PdfDict::new();
+        elem_dict.insert(intern("S"), PdfObject::Name(intern("P")));
+        elem_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+        ])));
+        let elem_ref = ObjRef::new(10, 0);
+        resolver.cache_object(elem_ref, PdfObject::Dict(Box::new(elem_dict)));
+
+        // ParentTree with 10 MCIDs, 6 claimed (60% coverage)
+        let parent_tree_nums = PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Ref(elem_ref),
+                PdfObject::Null,
+                PdfObject::Null,
+                PdfObject::Null,
+                PdfObject::Null,
+            ])),
+        ]));
+
+        let mut parent_tree_dict = PdfDict::new();
+        parent_tree_dict.insert(intern("Nums"), parent_tree_nums);
+
+        let mut root_dict = PdfDict::new();
+        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
+            PdfObject::Ref(elem_ref),
+        ])));
+        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
+
+        // Parse struct tree
+        let result = parse_struct_tree(&resolver, root_ref);
+        assert!(result.is_ok());
+        let tree = result.unwrap();
+
+        // MarkInfo with Suspects true
+        let mark_info = MarkInfo {
+            is_tagged: true,
+            user_properties: false,
+            suspects: true,
+        };
+
+        // Pages with MCID data: (page_index, struct_parents, mcid_set)
+        let pages_with_mcids: Vec<(usize, Option<i32>, std::collections::HashSet<u32>)> = vec![
+            (0, Some(0), (0..10u32).collect::<std::collections::HashSet<_>>())
+        ];
+
+        // Check coverage
+        let coverage_result = check_coverage_for_pages(&tree, &mark_info, &pages_with_mcids);
+
+        // 60% < 80%, so fall back to XY-cut
+        assert_eq!(coverage_result.reading_order_algorithm, ReadingOrderAlgorithm::XyCut);
+        assert!(!coverage_result.diagnostics.is_empty()); // Diagnostic emitted for fallback
+        assert_eq!(coverage_result.diagnostics.len(), 1);
+        assert_eq!(coverage_result.diagnostics[0].code, DiagCode::StructIncompleteCoverage);
+        assert!(coverage_result.diagnostics[0].message.contains("Page 0"));
+        assert!(coverage_result.diagnostics[0].message.contains("60.0%"));
+        assert!(coverage_result.diagnostics[0].message.contains("6/10"));
+        assert!(coverage_result.diagnostics[0].message.contains("falling back to XY-cut"));
+
+        assert_eq!(coverage_result.page_results.len(), 1);
+        assert!((coverage_result.page_results[0].coverage - 0.60).abs() < f64::EPSILON);
+        assert!(coverage_result.page_results[0].should_fallback); // Fallback at 60%
+        assert!(coverage_result.page_results[0].fallback_diagnostic().is_some());
+    }
+
+    #[test]
+    fn test_check_coverage_multi_page_one_fallback() {
+        // Test that if any page falls back, the whole document uses XY-cut
+        let resolver = XrefResolver::new();
+        let root_ref = ObjRef::new(1, 0);
+
+        // Create a StructElem
+        let mut elem_dict = PdfDict::new();
+        elem_dict.insert(intern("S"), PdfObject::Name(intern("P")));
+        elem_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+        ])));
+        let elem_ref = ObjRef::new(10, 0);
+        resolver.cache_object(elem_ref, PdfObject::Dict(Box::new(elem_dict)));
+
+        // ParentTree for struct_parents=0 (high coverage: 90%)
+        let high_refs = vec![
+            PdfObject::Ref(elem_ref);
+            9
+        ];
+        let mut high_refs_with_null = high_refs;
+        high_refs_with_null.push(PdfObject::Null);
+
+        // ParentTree for struct_parents=1 (low coverage: 60%)
+        let low_refs = vec![
+            PdfObject::Ref(elem_ref);
+            6
+        ];
+        let mut low_refs_with_null = low_refs;
+        for _ in 0..4 {
+            low_refs_with_null.push(PdfObject::Null);
+        }
+
+        let parent_tree_nums = PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+            PdfObject::Array(Box::new(high_refs_with_null)),
+            PdfObject::Integer(1),
+            PdfObject::Array(Box::new(low_refs_with_null)),
+        ]));
+
+        let mut parent_tree_dict = PdfDict::new();
+        parent_tree_dict.insert(intern("Nums"), parent_tree_nums);
+
+        let mut root_dict = PdfDict::new();
+        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
+            PdfObject::Ref(elem_ref),
+        ])));
+        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
+
+        // Parse struct tree
+        let result = parse_struct_tree(&resolver, root_ref);
+        assert!(result.is_ok());
+        let tree = result.unwrap();
+
+        // MarkInfo with Suspects true
+        let mark_info = MarkInfo {
+            is_tagged: true,
+            user_properties: false,
+            suspects: true,
+        };
+
+        // Two pages: page 0 has 90% coverage, page 1 has 60% coverage
+        let pages_with_mcids = vec![
+            (0, Some(0), (0..10u32).collect::<std::collections::HashSet<_>>()), // 90% coverage
+            (1, Some(1), (0..10u32).collect::<std::collections::HashSet<_>>()), // 60% coverage (triggers fallback)
+        ];
+
+        // Check coverage
+        let coverage_result = check_coverage_for_pages(&tree, &mark_info, &pages_with_mcids);
+
+        // One page triggers fallback, so whole document uses XY-cut
+        assert_eq!(coverage_result.reading_order_algorithm, ReadingOrderAlgorithm::XyCut);
+        assert_eq!(coverage_result.diagnostics.len(), 1); // One diagnostic for page 1
+        assert!(coverage_result.diagnostics[0].message.contains("Page 1"));
+
+        assert_eq!(coverage_result.page_results.len(), 2);
+        assert!((coverage_result.page_results[0].coverage - 0.90).abs() < f64::EPSILON);
+        assert!(!coverage_result.page_results[0].should_fallback); // Page 0 OK
+
+        assert!((coverage_result.page_results[1].coverage - 0.60).abs() < f64::EPSILON);
+        assert!(coverage_result.page_results[1].should_fallback); // Page 1 triggers fallback
+    }
+
+    #[test]
+    fn test_check_coverage_no_marked_content() {
+        // Test page with no marked content (mcid_count = 0)
+        let resolver = XrefResolver::new();
+        let root_ref = ObjRef::new(1, 0);
+
+        // Empty StructTreeRoot
+        let mut root_dict = PdfDict::new();
+        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![])));
+        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(PdfDict::new())));
+        resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
+
+        // Parse struct tree
+        let result = parse_struct_tree(&resolver, root_ref);
+        assert!(result.is_ok());
+        let tree = result.unwrap();
+
+        // MarkInfo with Suspects true
+        let mark_info = MarkInfo {
+            is_tagged: true,
+            user_properties: false,
+            suspects: true,
+        };
+
+        // Page with no marked content
+        let pages_with_mcids = vec![(0, None, std::collections::HashSet::new())];
+
+        // Check coverage
+        let coverage_result = check_coverage_for_pages(&tree, &mark_info, &pages_with_mcids);
+
+        // No marked content = fallback to XY-cut
+        assert_eq!(coverage_result.reading_order_algorithm, ReadingOrderAlgorithm::XyCut);
+        assert_eq!(coverage_result.diagnostics.len(), 1);
+        assert!(coverage_result.diagnostics[0].message.contains("no marked-content sequences"));
+
+        assert_eq!(coverage_result.page_results.len(), 1);
+        assert_eq!(coverage_result.page_results[0].coverage, 0.0);
+        assert!(coverage_result.page_results[0].should_fallback);
     }
 }

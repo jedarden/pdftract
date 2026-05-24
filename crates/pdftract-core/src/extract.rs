@@ -13,11 +13,15 @@
 //! processing. This ensures peak RSS stays flat across page count, even for
 //! large documents with 10,000+ pages.
 
-use crate::document::{parse_pdf_file, compute_fingerprint_lazy};
+use crate::document::compute_fingerprint_lazy;
 use crate::options::{ExtractionOptions, ReceiptsMode};
 use crate::receipts::Receipt;
 use crate::schema::{BlockJson, SpanJson};
 use crate::semaphore::{Semaphore, SemaphoreExt};
+use crate::parser::catalog::{ReadingOrderAlgorithm, MarkInfo};
+use crate::parser::struct_tree::{parse_struct_tree, check_coverage_for_pages, StructTreeRoot};
+use crate::parser::marked_content::{McidTracker, track_mcids_from_content_stream};
+use crate::parser::stream::DEFAULT_MAX_DECOMPRESS_BYTES;
 use anyhow::{Context, Result};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -136,6 +140,12 @@ pub struct ExtractionMetadata {
     pub cache_age_seconds: Option<u64>,
     /// Number of pages that failed to extract.
     pub error_count: usize,
+    /// Reading order algorithm used for this extraction.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reading_order_algorithm: Option<String>,
+    /// Diagnostics emitted during extraction (coverage warnings, etc.)
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<String>,
 }
 
 /// Extract text and structure from a PDF file.
@@ -229,6 +239,35 @@ pub fn extract_pdf(
             anyhow::anyhow!("Failed to create lazy page iterator: {}", msg)
         })?;
 
+    // Phase 7.1.4: Determine reading order algorithm based on StructTree coverage
+    // Parse StructTree if present and compute coverage for Suspects check
+    let (reading_order_algorithm, struct_tree) = if let Some(struct_tree_root_ref) = catalog.struct_tree_root_ref {
+        // Parse the StructTree
+        let struct_tree_result = parse_struct_tree(&resolver_arc, struct_tree_root_ref);
+
+        match struct_tree_result {
+            Ok(tree) => {
+                // If StructTree parsed successfully, check coverage if Suspects is true
+                if catalog.mark_info.requires_coverage_check() {
+                    // We need MCID tracking to compute coverage - do this after we collect page data
+                    // For now, defer the decision until we have page data
+                    (ReadingOrderAlgorithm::StructTree, Some(tree))
+                } else {
+                    // Suspects is false - trust the StructTree
+                    (ReadingOrderAlgorithm::StructTree, Some(tree))
+                }
+            }
+            Err(_diagnostics) => {
+                // StructTree parsing failed - fall back to XY-cut
+                // Return empty tree to avoid further issues
+                (ReadingOrderAlgorithm::XyCut, None)
+            }
+        }
+    } else {
+        // No StructTree - use XY-cut
+        (ReadingOrderAlgorithm::XyCut, None)
+    };
+
     // Wrap options in Arc for sharing across threads
     let fingerprint_arc = Arc::new(fingerprint.clone());
     let options_arc = Arc::new(options.clone());
@@ -245,6 +284,11 @@ pub fn extract_pdf(
     let mut error_count = 0;
     let mut page_count = 0;
 
+    // Phase 7.1.4: Collect page data for coverage check
+    // Track MCIDs and struct_parents for each page
+    let mut pages_with_mcids: Vec<(usize, Option<i32>, std::collections::HashSet<u32>)> = Vec::new();
+    let needs_coverage_check = catalog.mark_info.requires_coverage_check() && struct_tree.is_some();
+
     while let Some(page_result) = page_iter.next() {
         let page_dict = match page_result {
             Ok(p) => p,
@@ -260,10 +304,39 @@ pub fn extract_pdf(
                     blocks: vec![],
                     error: Some(msg.to_string()),
                 });
+                // Still record page data for coverage check (even on error)
+                if needs_coverage_check {
+                    pages_with_mcids.push((page_count, None, std::collections::HashSet::new()));
+                }
                 page_count += 1;
                 continue;
             }
         };
+
+        // Track MCIDs for this page if coverage check is needed
+        if needs_coverage_check {
+            // Decode content streams and track MCIDs
+            let decoded_streams = decode_page_content_streams(
+                &page_dict,
+                &resolver_arc,
+                &source,
+                DEFAULT_MAX_DECOMPRESS_BYTES,
+            );
+
+            let mut tracker = McidTracker::new();
+            track_mcids_from_content_stream(&decoded_streams, &mut tracker);
+
+            // Get the struct_parents value for this page
+            let struct_parents = page_dict.struct_parents();
+
+            // Record page data for coverage check
+            let mcid_set = tracker.mcid_set().clone();
+            pages_with_mcids.push((page_count, struct_parents, mcid_set));
+
+            // Drop decoded_streams and tracker to free memory
+            drop(decoded_streams);
+            // tracker dropped implicitly
+        }
 
         // Extract this page with lazy stream decoding.
         // Content streams are decoded, processed, and dropped immediately.
@@ -309,6 +382,28 @@ pub fn extract_pdf(
         page_count += 1;
     }
 
+    // Phase 7.1.4: Perform coverage check if Suspects is true
+    // This must happen after we've collected MCID data from all pages
+    let (reading_order_algorithm, coverage_diagnostics) = if needs_coverage_check {
+        if let Some(ref tree) = struct_tree {
+            let coverage_result = check_coverage_for_pages(
+                tree,
+                &catalog.mark_info,
+                &pages_with_mcids,
+            );
+            let diagnostics: Vec<String> = coverage_result.diagnostics
+                .iter()
+                .map(|d| d.message.as_ref().to_string())
+                .collect();
+            (coverage_result.reading_order_algorithm, diagnostics)
+        } else {
+            // Shouldn't happen due to the needs_coverage_check condition
+            (ReadingOrderAlgorithm::XyCut, Vec::new())
+        }
+    } else {
+        (reading_order_algorithm, Vec::new())
+    };
+
     Ok(ExtractionResult {
         fingerprint,
         pages: extracted_pages,
@@ -320,6 +415,8 @@ pub fn extract_pdf(
             cache_status: None,
             cache_age_seconds: None,
             error_count,
+            reading_order_algorithm: Some(reading_order_algorithm.as_str().to_string()),
+            diagnostics: coverage_diagnostics,
         },
     })
 }
@@ -477,17 +574,29 @@ pub fn result_to_json(result: &ExtractionResult) -> serde_json::Value {
         })
         .collect();
 
+    let mut metadata_obj = json!({
+        "page_count": result.metadata.page_count,
+        "span_count": result.metadata.span_count,
+        "block_count": result.metadata.block_count,
+        "cache_status": result.metadata.cache_status,
+        "cache_age_seconds": result.metadata.cache_age_seconds,
+    });
+
+    // Add reading_order_algorithm if present
+    if let Some(ref algo) = result.metadata.reading_order_algorithm {
+        metadata_obj["reading_order_algorithm"] = json!(algo);
+    }
+
+    // Add diagnostics if present
+    if !result.metadata.diagnostics.is_empty() {
+        metadata_obj["diagnostics"] = json!(result.metadata.diagnostics);
+    }
+
     json!({
         "fingerprint": result.fingerprint,
         "schema_version": "1.0",
         "pages": pages,
-        "metadata": {
-            "page_count": result.metadata.page_count,
-            "span_count": result.metadata.span_count,
-            "block_count": result.metadata.block_count,
-            "cache_status": result.metadata.cache_status,
-            "cache_age_seconds": result.metadata.cache_age_seconds,
-        }
+        "metadata": metadata_obj
     })
 }
 
@@ -563,15 +672,44 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
             anyhow::anyhow!("Failed to parse catalog: {}", msg)
         })?;
 
+    // Phase 7.1.4: Determine reading order algorithm based on StructTree coverage
+    // Create Arc for resolver to use in struct tree parsing and page processing
+    let resolver_arc = Arc::new(resolver);
+
+    // Parse StructTree if present and compute coverage for Suspects check
+    let (initial_reading_order_algorithm, struct_tree) = if let Some(struct_tree_root_ref) = catalog.struct_tree_root_ref {
+        // Parse the StructTree
+        let struct_tree_result = parse_struct_tree(&resolver_arc, struct_tree_root_ref);
+
+        match struct_tree_result {
+            Ok(tree) => {
+                // If StructTree parsed successfully, check coverage if Suspects is true
+                if catalog.mark_info.requires_coverage_check() {
+                    // We need MCID tracking to compute coverage - do this after we collect page data
+                    // For now, defer the decision until we have page data
+                    (ReadingOrderAlgorithm::StructTree, Some(tree))
+                } else {
+                    // Suspects is false - trust the StructTree
+                    (ReadingOrderAlgorithm::StructTree, Some(tree))
+                }
+            }
+            Err(_diagnostics) => {
+                // StructTree parsing failed - fall back to XY-cut
+                // Return empty tree to avoid further issues
+                (ReadingOrderAlgorithm::XyCut, None)
+            }
+        }
+    } else {
+        // No StructTree - use XY-cut
+        (ReadingOrderAlgorithm::XyCut, None)
+    };
+
     // For lazy extraction, use a placeholder fingerprint
     // The full fingerprint would require walking all pages, which defeats the purpose
     let fingerprint = format!("pdftract-v1:lazy{:016x}", std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos());
-
-    // Wrap resolver in Arc for sharing across threads
-    let resolver_arc = Arc::new(resolver);
 
     // Create lazy page iterator - this walks the tree on-demand
     let mut page_iter = LazyPageIter::new(&resolver_arc, catalog.pages_ref)
@@ -591,6 +729,11 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
     let mut total_blocks = 0u64;
     let mut error_count = 0u64;
     let mut page_count = 0usize;
+
+    // Phase 7.1.4: Collect page data for coverage check
+    // Track MCIDs and struct_parents for each page
+    let mut pages_with_mcids: Vec<(usize, Option<i32>, std::collections::HashSet<u32>)> = Vec::new();
+    let needs_coverage_check = catalog.mark_info.requires_coverage_check() && struct_tree.is_some();
 
     // Create a semaphore to bound the number of in-flight pages
     let semaphore = Arc::new(Semaphore::new(options.max_parallel_pages));
@@ -616,12 +759,41 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
                     .context("Failed to write NDJSON")?;
                 writeln!(writer).context("Failed to write newline")?;
                 writer.flush().context("Failed to flush output")?;
+                // Still record page data for coverage check (even on error)
+                if needs_coverage_check {
+                    pages_with_mcids.push((page_count, None, std::collections::HashSet::new()));
+                }
                 page_count += 1;
                 continue;
             }
         };
 
         let page_index = page_count;
+
+        // Track MCIDs for this page if coverage check is needed
+        if needs_coverage_check {
+            // Decode content streams and track MCIDs
+            let decoded_streams = decode_page_content_streams(
+                &page_dict,
+                &resolver_arc,
+                &source,
+                DEFAULT_MAX_DECOMPRESS_BYTES,
+            );
+
+            let mut tracker = McidTracker::new();
+            track_mcids_from_content_stream(&decoded_streams, &mut tracker);
+
+            // Get the struct_parents value for this page
+            let struct_parents = page_dict.struct_parents();
+
+            // Record page data for coverage check
+            let mcid_set = tracker.mcid_set().clone();
+            pages_with_mcids.push((page_count, struct_parents, mcid_set));
+
+            // Drop decoded_streams and tracker to free memory
+            drop(decoded_streams);
+            // tracker dropped implicitly
+        }
 
         // Extract this page with lazy stream decoding.
         // Content streams are decoded, processed, and dropped immediately.
@@ -691,6 +863,28 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
         page_count += 1;
     }
 
+    // Phase 7.1.4: Perform coverage check if Suspects is true
+    // This must happen after we've collected MCID data from all pages
+    let (reading_order_algorithm, coverage_diagnostics) = if needs_coverage_check {
+        if let Some(ref tree) = struct_tree {
+            let coverage_result = check_coverage_for_pages(
+                tree,
+                &catalog.mark_info,
+                &pages_with_mcids,
+            );
+            let diagnostics: Vec<String> = coverage_result.diagnostics
+                .iter()
+                .map(|d| d.message.as_ref().to_string())
+                .collect();
+            (coverage_result.reading_order_algorithm, diagnostics)
+        } else {
+            // Shouldn't happen due to the needs_coverage_check condition
+            (initial_reading_order_algorithm, Vec::new())
+        }
+    } else {
+        (initial_reading_order_algorithm, Vec::new())
+    };
+
     Ok(ExtractionMetadata {
         page_count,
         receipts_mode: options.receipts,
@@ -699,6 +893,8 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
         cache_status: None,
         cache_age_seconds: None,
         error_count: error_count as usize,
+        reading_order_algorithm: Some(reading_order_algorithm.as_str().to_string()),
+        diagnostics: coverage_diagnostics,
     })
 }
 
@@ -846,15 +1042,16 @@ mod tests {
 1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
 3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Resources<</Font<</F1<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>>>>>>>>>endobj
+
 xref
 0 4
 0000000000 65535 f
 0000000009 00000 n
 0000000052 00000 n
-0000000109 00000 n
+0000000101 00000 n
 trailer<</Size 4/Root 1 0 R>>
 startxref
-206
+239
 %%EOF
 "#;
         fs::write(path, pdf_data)?;

@@ -62,6 +62,18 @@ pub struct PageDict {
     pub lang: Option<String>,
     /// Page-level additional actions (used by JS detection)
     pub aa: Option<PdfObject>,
+    /// /StructParents value for StructTree MCID resolution (Phase 7.1.4)
+    pub struct_parents: Option<i32>,
+}
+
+impl PageDict {
+    /// Get the /StructParents value for this page.
+    ///
+    /// This value is used to resolve MCIDs to structure elements via the ParentTree.
+    /// Returns None if the page has no /StructParents entry.
+    pub fn struct_parents(&self) -> Option<i32> {
+        self.struct_parents
+    }
 }
 
 /// Inherited attributes accumulator for page tree traversal.
@@ -522,6 +534,7 @@ fn build_page_dict(page_obj: &PdfObject, inherited: &InheritedAttrs, diagnostics
                 actual_text: None,
                 lang: None,
                 aa: None,
+                struct_parents: None,
             };
         }
     };
@@ -609,6 +622,11 @@ fn build_page_dict(page_obj: &PdfObject, inherited: &InheritedAttrs, diagnostics
     // AA (additional actions)
     let aa = dict.get("AA").cloned();
 
+    // StructParents: for StructTree MCID resolution (Phase 7.1.4)
+    let struct_parents = dict.get("StructParents")
+        .and_then(|o| o.as_int())
+        .map(|i| i as i32);
+
     PageDict {
         obj_ref,
         media_box,
@@ -623,6 +641,7 @@ fn build_page_dict(page_obj: &PdfObject, inherited: &InheritedAttrs, diagnostics
         actual_text,
         lang,
         aa,
+        struct_parents,
     }
 }
 

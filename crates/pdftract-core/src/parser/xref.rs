@@ -311,8 +311,109 @@ impl XrefResolver {
 
         // Stub: return Null for now
         // Full implementation will read from file offset and parse
+        // Use resolve_with_source instead
         self.finish_resolving(obj_ref);
         Ok(PdfObject::Null)
+    }
+
+    /// Resolve an object reference to its value, using a file source for reading.
+    ///
+    /// This method implements full object resolution by reading from the file source.
+    /// It:
+    /// - Checks for circular references
+    /// - Checks the cache first
+    /// - Looks up the xref entry
+    /// - Reads and parses the object from its file offset
+    /// - Caches the result for future lookups
+    ///
+    /// # Parameters
+    /// - `obj_ref`: The object reference to resolve
+    /// - `source`: The PDF source to read bytes from
+    ///
+    /// # Returns
+    /// The resolved PdfObject, or an error if resolution fails
+    pub fn resolve_with_source(&self, obj_ref: ObjRef, source: &dyn PdfSource) -> ResolveResult<PdfObject> {
+        use crate::parser::object::ObjectParser;
+
+        // Check for circular reference
+        if !self.start_resolving(obj_ref) {
+            return Err(ResolveError::CircularRef(obj_ref));
+        }
+
+        // Check cache first
+        {
+            match self.cache.read() {
+                Ok(cache) => {
+                    if let Some(obj) = cache.get(&obj_ref) {
+                        self.finish_resolving(obj_ref);
+                        return Ok(obj.clone());
+                    }
+                }
+                Err(_) => {
+                    // Lock poisoned - clear the poisoned state and continue
+                    // The cache is optional, so we can proceed without it
+                }
+            }
+        }
+
+        // Look up the xref entry
+        let entry = self.entries.get(&obj_ref.object)
+            .ok_or_else(|| ResolveError::NotFound(obj_ref))?;
+
+        match entry {
+            XrefEntry::InUse { offset, gen_nr } => {
+                // Check generation number
+                if *gen_nr != obj_ref.generation {
+                    // Generation mismatch - treat as not found
+                    self.finish_resolving(obj_ref);
+                    return Err(ResolveError::NotFound(obj_ref));
+                }
+
+                // Read the object from the file
+                // Read up to 4KB starting from the offset
+                let bytes = source.read_at(*offset, 4096)
+                    .map_err(|e| ResolveError::Io(format!("Failed to read object at offset {}: {}", offset, e)))?;
+
+                // Parse the indirect object
+                let mut parser = ObjectParser::new(&bytes);
+
+                // The object should start with "obj_num gen obj"
+                // We need to verify that the parsed object number matches
+                if let Some(indirect) = parser.parse_indirect_object() {
+                    // Verify the object number and generation match
+                    if indirect.id.object != obj_ref.object || indirect.id.generation != obj_ref.generation {
+                        self.finish_resolving(obj_ref);
+                        return Err(ResolveError::NotFound(obj_ref));
+                    }
+
+                    // Get the parsed object (the actual value)
+                    let obj = indirect.obj;
+
+                    // Cache the result
+                    if let Ok(mut cache) = self.cache.write() {
+                        cache.insert(obj_ref, obj.clone());
+                    }
+
+                    self.finish_resolving(obj_ref);
+                    Ok(obj)
+                } else {
+                    // Failed to parse indirect object
+                    self.finish_resolving(obj_ref);
+                    Err(ResolveError::NotFound(obj_ref))
+                }
+            }
+            XrefEntry::Free { .. } => {
+                // Free entry - object doesn't exist
+                self.finish_resolving(obj_ref);
+                Err(ResolveError::NotFound(obj_ref))
+            }
+            XrefEntry::Compressed { .. } => {
+                // Object stream - not yet implemented
+                // For now, return not found
+                self.finish_resolving(obj_ref);
+                Err(ResolveError::NotFound(obj_ref))
+            }
+        }
     }
 
     /// Cache a resolved object.

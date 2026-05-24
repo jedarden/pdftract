@@ -49,6 +49,52 @@ impl MarkInfo {
 
         mark_info
     }
+
+    /// Check if this MarkInfo requires coverage-based fallback.
+    ///
+    /// Per Phase 7.1.4: If /Suspects is true, we must check StructTree coverage
+    /// for each page and fall back to XY-cut if coverage < 80%.
+    ///
+    /// # Returns
+    ///
+    /// `true` if /Suspects is true (coverage check required), `false` otherwise.
+    pub fn requires_coverage_check(&self) -> bool {
+        self.suspects
+    }
+}
+
+/// Reading order algorithm used for a document.
+///
+/// Indicates which algorithm was used to determine the reading order of blocks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReadingOrderAlgorithm {
+    /// Structure tree traversal (tagged PDF with sufficient coverage)
+    StructTree,
+    /// XY-cut recursive decomposition (untagged or low coverage)
+    XyCut,
+    /// Docstrum fallback (when XY-cut produces too many regions)
+    Docstrum,
+}
+
+impl ReadingOrderAlgorithm {
+    /// Get the string representation for JSON output.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ReadingOrderAlgorithm::StructTree => "struct_tree",
+            ReadingOrderAlgorithm::XyCut => "xy_cut",
+            ReadingOrderAlgorithm::Docstrum => "docstrum",
+        }
+    }
+
+    /// Parse from a string (for deserialization).
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "struct_tree" => Some(ReadingOrderAlgorithm::StructTree),
+            "xy_cut" => Some(ReadingOrderAlgorithm::XyCut),
+            "docstrum" => Some(ReadingOrderAlgorithm::Docstrum),
+            _ => None,
+        }
+    }
 }
 
 /// Page label style (from the /S entry in a PageLabel dict).
@@ -896,6 +942,76 @@ mod tests {
         assert_eq!(tree.get_label_with_start(0).map(|(l, start)| l.format_absolute(0, start)), Some("front-i".to_string()));
         assert_eq!(tree.get_label_with_start(1).map(|(l, start)| l.format_absolute(1, start)), Some("front-ii".to_string()));
         assert_eq!(tree.get_label_with_start(3).map(|(l, start)| l.format_absolute(3, start)), Some("1".to_string()));
+    }
+
+    // Phase 7.1.4 Coverage Check Tests
+
+    #[test]
+    fn test_reading_order_algorithm_as_str() {
+        assert_eq!(ReadingOrderAlgorithm::StructTree.as_str(), "struct_tree");
+        assert_eq!(ReadingOrderAlgorithm::XyCut.as_str(), "xy_cut");
+        assert_eq!(ReadingOrderAlgorithm::Docstrum.as_str(), "docstrum");
+    }
+
+    #[test]
+    fn test_reading_order_algorithm_from_str() {
+        assert_eq!(ReadingOrderAlgorithm::from_str("struct_tree"), Some(ReadingOrderAlgorithm::StructTree));
+        assert_eq!(ReadingOrderAlgorithm::from_str("xy_cut"), Some(ReadingOrderAlgorithm::XyCut));
+        assert_eq!(ReadingOrderAlgorithm::from_str("docstrum"), Some(ReadingOrderAlgorithm::Docstrum));
+        assert_eq!(ReadingOrderAlgorithm::from_str("unknown"), None);
+        assert_eq!(ReadingOrderAlgorithm::from_str(""), None);
+    }
+
+    #[test]
+    fn test_reading_order_algorithm_roundtrip() {
+        let algorithms = vec![
+            ReadingOrderAlgorithm::StructTree,
+            ReadingOrderAlgorithm::XyCut,
+            ReadingOrderAlgorithm::Docstrum,
+        ];
+
+        for algo in algorithms {
+            let s = algo.as_str();
+            let parsed = ReadingOrderAlgorithm::from_str(s);
+            assert_eq!(parsed, Some(algo), "Roundtrip failed for {:?}", algo);
+        }
+    }
+
+    #[test]
+    fn test_mark_info_requires_coverage_check() {
+        // Suspects = false should NOT require coverage check
+        let mark_info = MarkInfo {
+            is_tagged: true,
+            user_properties: false,
+            suspects: false,
+        };
+        assert!(!mark_info.requires_coverage_check());
+
+        // Suspects = true SHOULD require coverage check
+        let mark_info = MarkInfo {
+            is_tagged: true,
+            user_properties: false,
+            suspects: true,
+        };
+        assert!(mark_info.requires_coverage_check());
+
+        // Default (Suspects = false) should NOT require coverage check
+        let mark_info = MarkInfo::default();
+        assert!(!mark_info.requires_coverage_check());
+    }
+
+    #[test]
+    fn test_mark_info_parse_with_suspects() {
+        let mut dict = indexmap::IndexMap::new();
+        dict.insert(intern("Marked"), PdfObject::Bool(true));
+        dict.insert(intern("Suspects"), PdfObject::Bool(true));
+
+        let obj = PdfObject::Dict(Box::new(dict));
+        let mark_info = MarkInfo::parse(&obj);
+
+        assert!(mark_info.is_tagged);
+        assert!(mark_info.suspects);
+        assert!(mark_info.requires_coverage_check());
     }
 }
 

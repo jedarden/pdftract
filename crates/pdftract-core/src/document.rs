@@ -16,8 +16,8 @@ use crate::parser::stream::{FileSource, PdfSource};
 use crate::parser::xref::{XrefResolver, load_xref_with_prev_chain, XrefSection};
 use crate::receipts::verifier::SpanData;
 use anyhow::{Context, Result, anyhow};
+use serde::{Serialize, Deserialize};
 use std::path::Path;
-use std::sync::Arc;
 
 /// Parse a PDF file and return the document components needed for verification.
 ///
@@ -452,7 +452,7 @@ pub struct PageExtraction {
 }
 
 /// Block data for extracted content.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockData {
     /// Block kind (paragraph, heading, etc.)
     pub kind: String,

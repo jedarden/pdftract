@@ -15,6 +15,7 @@ pub mod outline;
 pub mod resources;
 pub mod ocg;
 pub mod struct_tree;
+pub mod marked_content;
 
 // Re-export from the unified diagnostics module (Phase 1.6)
 pub use crate::diagnostics::{Diagnostic, Severity, DiagCode, ObjRef};
@@ -26,7 +27,7 @@ pub use xref::{
     LinearizationInfo, detect_linearization, load_xref_linearized, merge_linearized_xrefs,
     load_xref_with_prev_chain,
 };
-pub use catalog::{Catalog, MarkInfo, PageLabel, PageLabelsTree, PageLabelStyle, parse_catalog};
+pub use catalog::{Catalog, MarkInfo, PageLabel, PageLabelsTree, PageLabelStyle, ReadingOrderAlgorithm, parse_catalog};
 pub use ocg::{OcProperties, OcGroup, Ocmd, OcmdPolicy, BaseState, parse_oc_properties};
 pub use resources::{ResourceDict, merge_resources, extract_resources};
 pub use pages::{PageDict, flatten_page_tree, DEFAULT_MEDIABOX};
@@ -34,6 +35,10 @@ pub use struct_tree::{
     StructureType, StructElemNode, StructTreeRoot, RoleMap, Kid,
     BlockKind, MappingResult, ParentTreeResolver, ParentTreeEntry,
     parse_struct_tree, structure_type_to_block_kind, map_element_to_block, is_artifact,
+    check_coverage_for_pages, CoverageCheckResult,
+};
+pub use marked_content::{
+    McidTracker, CoverageResult, compute_coverage, compute_coverage_from_sets,
 };
 pub use stream::{
     StreamDecoder, FlateDecoder, ASCII85Decoder, ASCIIHexDecoder, CryptDecoder, PassthroughDecoder,
