@@ -15,7 +15,7 @@
 #![cfg(feature = "ocr")]
 
 use crate::diagnostics::{Diagnostic, DiagCode};
-use image::{GrayImage, ImageBuffer, Luma, Luma};
+use image::{GrayImage, ImageBuffer, Luma};
 use std::ffi::c_float;
 
 /// Border padding size in pixels.
