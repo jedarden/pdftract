@@ -1,7 +1,7 @@
 // Benchmark for table detection.
 //
-// Tests the performance of line-based table detection on pages with
-// varying numbers of path segments.
+// Tests the performance of line-based and borderless table detection
+// on pages with varying numbers of path segments and text positions.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
 use pdftract_core::table::{TableDetector, PageContext};
@@ -54,6 +54,35 @@ fn generate_grid_content(num_horiz: usize, num_vert: usize) -> Vec<u8> {
     content
 }
 
+/// Generate content with text positions for borderless tables.
+/// Creates a grid-like pattern of text at aligned positions.
+fn generate_borderless_content(num_rows: usize, num_cols: usize) -> Vec<u8> {
+    let mut content = Vec::new();
+
+    let y_start = 700.0;
+    let y_end = 100.0;
+    let x_start = 50.0;
+    let x_spacing = 100.0;
+
+    // Start text block
+    content.extend(b"BT ");
+
+    // Generate text positions in a grid pattern
+    for row in 0..num_rows {
+        let y = y_start - (row as f32 * (y_start - y_end) / (num_rows.max(1) - 1) as f32);
+        for col in 0..num_cols {
+            let x = x_start + (col as f32 * x_spacing);
+            // Move to position and show text
+            content.extend(format!("{} {} Td (R{}C{}) Tj ", x, y, row, col).as_bytes());
+        }
+    }
+
+    // End text block
+    content.extend(b"ET");
+
+    content
+}
+
 fn bench_table_detection(c: &mut Criterion) {
     let detector = TableDetector::new();
     let page = make_page();
@@ -90,5 +119,31 @@ fn bench_table_detection(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_table_detection);
+fn bench_borderless_detection(c: &mut Criterion) {
+    let detector = TableDetector::new();
+    let page = make_page();
+
+    let mut group = c.benchmark_group("borderless_detection");
+
+    // Test with increasing numbers of text positions (rows * cols)
+    for (num_rows, num_cols) in [(3, 3), (5, 5), (10, 10), (20, 20), (50, 50), (70, 72)] {
+        let total_positions = num_rows * num_cols;
+        group.bench_with_input(
+            BenchmarkId::new("text_positions", total_positions),
+            &total_positions,
+            |b, _| {
+                let content = generate_borderless_content(num_rows, num_cols);
+                let ctx = PageContext::new(&page, &content);
+
+                b.iter(|| {
+                    black_box(detector.detect_borderless(black_box(&ctx)))
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
+criterion_group!(benches, bench_table_detection, bench_borderless_detection);
 criterion_main!(benches);
