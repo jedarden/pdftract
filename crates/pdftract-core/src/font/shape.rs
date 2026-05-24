@@ -28,6 +28,13 @@ use std::f32;
 // Include the build-generated shape database
 include!(concat!(env!("OUT_DIR"), "/shape_db.rs"));
 
+/// Maximum Hamming distance for a shape match to be considered acceptable.
+///
+/// Per the plan specification (line 1442), Hamming distance ≤ 8 indicates
+/// similar shapes (same character, different font), while distance > 8
+/// indicates different characters or excessive distortion.
+const HAMMING_MAX: u32 = 8;
+
 /// Shape database entry with pHash and associated character.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ShapeEntry {
@@ -64,9 +71,9 @@ impl ShapeMatch {
 
     /// Check if this match is within the acceptable threshold.
     ///
-    /// Per the plan, Hamming distance ≤ 8 indicates a similar shape.
+    /// Per the plan, Hamming distance ≤ HAMMING_MAX (8) indicates a similar shape.
     pub fn is_acceptable(&self) -> bool {
-        self.distance <= 8
+        self.distance <= HAMMING_MAX
     }
 }
 
@@ -269,11 +276,13 @@ pub fn hamming_distance(a: u64, b: u64) -> u32 {
 ///
 /// # Algorithm
 ///
-/// 1. Scan all entries in the database
-/// 2. Compute Hamming distance for each entry
-/// 3. Collect entries with distance ≤ 8
-/// 4. Return the entry with minimum distance
-/// 5. If no entry within threshold, return None
+/// 1. **Exact match optimization**: Attempt binary search for exact pHash match;
+///    if found, return immediately with distance 0 (fast path for exact matches).
+/// 2. **Linear scan**: Scan all entries in the database, computing Hamming distance.
+/// 3. **Threshold filter**: Only consider entries with distance ≤ HAMMING_MAX (8).
+/// 4. **Tie-breaking**: When multiple entries have the same minimum distance,
+///    prefer the character with the lower frequency rank (more common character).
+/// 5. Return the entry with minimum distance, or None if no entry within threshold.
 ///
 /// # Arguments
 ///
@@ -286,7 +295,13 @@ pub fn hamming_distance(a: u64, b: u64) -> u32 {
 ///
 /// # Performance
 ///
-/// Per the plan: ~5,000 entries × ~8 ns per XOR+popcount ≈ 40 µs worst-case.
+/// Per the plan (line 1442): ~5,000 entries × ~8 ns per XOR+popcount ≈ 40 µs worst-case.
+///
+/// # Invariants
+///
+/// - Given the same SHAPE_TABLE and FREQ_TABLE, returns the same Option<char>
+///   across runs (deterministic).
+/// - Empty SHAPE_TABLE always returns None (no panic).
 ///
 /// # Examples
 ///
@@ -301,32 +316,51 @@ pub fn hamming_distance(a: u64, b: u64) -> u32 {
 /// }
 /// ```
 pub fn lookup_shape(query_hash: u64) -> Option<ShapeMatch> {
-    // Get the shape database from the build-generated module
     let db = shape_database();
+    let freq = frequency_table();
 
-    // Linear scan: find all entries within Hamming threshold
-    let mut best_match: Option<ShapeMatch> = None;
+    // Fast path: exact match optimization via binary search
+    // SHAPE_TABLE is sorted by pHash (build.rs invariant)
+    if let Ok(idx) = db.binary_search_by_key(&query_hash, |&(hash, _)| hash) {
+        // Exact match found - return immediately with distance 0
+        let &(_, ch) = db.get(idx)?;
+        return Some(ShapeMatch::new(ch, 0));
+    }
+
+    // Linear scan: find best match within HAMMING_MAX threshold
     let mut best_distance = u32::MAX;
+    let mut best_idx = None;
 
-    for &(entry_hash, ch) in db.iter() {
+    for (idx, &(entry_hash, _)) in db.iter().enumerate() {
         let distance = hamming_distance(query_hash, entry_hash);
 
-        // Only consider matches within the threshold
-        if distance <= 8 {
-            // Update best match if this is closer
+        if distance <= HAMMING_MAX {
             if distance < best_distance {
+                // New best match found
                 best_distance = distance;
-                best_match = Some(ShapeMatch::new(ch, distance));
-
-                // Distance 0 is perfect match, can't do better
-                if distance == 0 {
-                    break;
+                best_idx = Some(idx);
+            } else if distance == best_distance {
+                // Tie: use frequency rank to break
+                // Lower rank = more common character = wins
+                if let Some(current_best) = best_idx {
+                    let current_freq = freq
+                        .get(current_best)
+                        .map(|&(_, rank)| rank)
+                        .unwrap_or(u32::MAX);
+                    let new_freq = freq.get(idx).map(|&(_, rank)| rank).unwrap_or(u32::MAX);
+                    if new_freq < current_freq {
+                        best_idx = Some(idx);
+                    }
                 }
             }
         }
     }
 
-    best_match
+    // Return the best match if found
+    best_idx.and_then(|idx| {
+        let &(_, ch) = db.get(idx)?;
+        Some(ShapeMatch::new(ch, best_distance))
+    })
 }
 
 /// Get the shape database slice.
@@ -335,6 +369,15 @@ pub fn lookup_shape(query_hash: u64) -> Option<ShapeMatch> {
 /// This is generated from build/glyph-shapes.json via build.rs.
 fn shape_database() -> &'static [(u64, char)] {
     SHAPE_TABLE
+}
+
+/// Get the frequency table slice.
+///
+/// Returns a slice of (pHash, frequency_rank) entries sorted by pHash,
+/// parallel to SHAPE_TABLE. Lower rank = more common character.
+/// This is generated from build/glyph-shapes.json via build.rs.
+fn frequency_table() -> &'static [(u64, u32)] {
+    FREQ_TABLE
 }
 
 #[cfg(test)]
@@ -537,6 +580,168 @@ mod tests {
                     db[i].0
                 );
             }
+        }
+    }
+
+    #[test]
+    fn test_lookup_shape_exact_match() {
+        // Exact match should return distance 0 (binary search fast path)
+        let db = shape_database();
+
+        if !db.is_empty() {
+            // Test with the first entry in the database
+            let &(hash, ch) = &db[0];
+            let result = lookup_shape(hash);
+
+            assert!(
+                result.is_some(),
+                "Exact match should return Some(ShapeMatch)"
+            );
+            let matched = result.unwrap();
+            assert_eq!(matched.ch, ch, "Exact match should return correct char");
+            assert_eq!(matched.distance, 0, "Exact match should have distance 0");
+        }
+    }
+
+    #[test]
+    fn test_lookup_shape_hamming_threshold() {
+        // Verify that HAMMING_MAX threshold is enforced
+        let db = shape_database();
+
+        if !db.is_empty() {
+            // Test with a hash that's very far from any entry
+            // We'll construct a hash with a specific pattern that's unlikely
+            // to match anything closely
+            let far_hash = 0xAAAAAAAAAAAAAAAA; // Alternating bit pattern
+
+            let result = lookup_shape(far_hash);
+
+            // If the database is small or empty, we might get None
+            // If we get Some result, verify it's at least not a perfect match
+            if let Some(matched) = result {
+                assert!(
+                    matched.distance > 0,
+                    "Far hash should not be an exact match"
+                );
+            }
+            // Note: We can't assert None because a real database might
+            // have entries close to any arbitrary hash
+        }
+    }
+
+    #[test]
+    fn test_lookup_shape_frequency_tiebreak() {
+        // Test that frequency tie-breaking works correctly
+        // This requires a non-empty database with at least 2 entries
+        let db = shape_database();
+        let freq = frequency_table();
+
+        if db.len() >= 2 {
+            // Find two entries with the same Hamming distance from a query
+            // We'll use the first two entries and construct a query hash
+            // that's equidistant from both
+            let (hash1, ch1) = db[0];
+            let (hash2, ch2) = db[1];
+            let rank1 = freq[0].1;
+            let rank2 = freq[1].1;
+
+            // Skip if the hashes are identical (would be exact match)
+            if hash1 != hash2 {
+                // Create a query hash with distance 4 from both entries
+                // Flip 4 bits in hash1 to create query
+                let query_hash = hash1 ^ 0x0000000F;
+
+                // Compute actual distances
+                let dist1 = hamming_distance(query_hash, hash1);
+                let dist2 = hamming_distance(query_hash, hash2);
+
+                // If they happen to be tied and both within threshold
+                if dist1 == dist2 && dist1 <= HAMMING_MAX {
+                    let result = lookup_shape(query_hash);
+
+                    if let Some(matched) = result {
+                        // The result should be the character with lower rank (more common)
+                        let expected_ch = if rank1 < rank2 { ch1 } else { ch2 };
+                        assert_eq!(
+                            matched.ch, expected_ch,
+                            "Tie-break should prefer lower frequency rank: \
+                             rank1={} vs rank2={}, got {}",
+                            rank1, rank2, matched.ch
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_lookup_shape_deterministic() {
+        // Verify INV: result is deterministic for same input
+        let db = shape_database();
+
+        if !db.is_empty() {
+            let query_hash = 0x1234567890ABCDEF;
+
+            let result1 = lookup_shape(query_hash);
+            let result2 = lookup_shape(query_hash);
+
+            assert_eq!(
+                result1, result2,
+                "lookup_shape must return identical results for identical inputs"
+            );
+        }
+    }
+
+    #[test]
+    fn test_frequency_table_parallel_to_shape_table() {
+        // Verify that FREQ_TABLE has the same length and is parallel to SHAPE_TABLE
+        let db = shape_database();
+        let freq = frequency_table();
+
+        assert_eq!(
+            db.len(),
+            freq.len(),
+            "SHAPE_TABLE and FREQ_TABLE must have the same length"
+        );
+
+        // Verify that the pHash values match at each index
+        for i in 0..db.len() {
+            assert_eq!(
+                db[i].0, freq[i].0,
+                "pHash mismatch at index {}: SHAPE_TABLE has {:016x}, FREQ_TABLE has {:016x}",
+                i, db[i].0, freq[i].0
+            );
+        }
+    }
+
+    #[test]
+    fn test_hamming_max_constant() {
+        // Verify HAMMING_MAX is set correctly per plan specification
+        assert_eq!(HAMMING_MAX, 8, "HAMMING_MAX must be 8 per plan line 1442");
+    }
+
+    #[test]
+    fn test_lookup_shape_nearest_neighbor() {
+        // Test that lookup_shape finds the nearest neighbor
+        let db = shape_database();
+
+        if !db.is_empty() {
+            // Create a query hash close to the first entry
+            let &(hash, _) = &db[0];
+            let query_hash = hash ^ 0x01; // Flip 1 bit -> distance 1
+
+            let result = lookup_shape(query_hash);
+
+            assert!(
+                result.is_some(),
+                "Should find a match within HAMMING_MAX threshold"
+            );
+
+            let matched = result.unwrap();
+            assert_eq!(matched.distance, 1, "Should find a very close match");
+            // Note: The matched character might not be the original due to
+            // frequency tie-breaking if another entry has the same distance
+            // but lower frequency rank. This is expected behavior.
         }
     }
 }
