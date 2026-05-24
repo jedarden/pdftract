@@ -26,11 +26,14 @@
 //! PositionHint mode skips ToUnicode CMap lookup, making it ~10% faster than Normal mode
 //! on typical content streams. This is measured by the acceptance criteria tests.
 
-use crate::diagnostics::Diagnostic;
+use crate::diagnostics::{DiagCode, Diagnostic};
+use crate::graphics_state::Matrix3x3;
 use crate::parser::lexer::Lexer;
 use crate::parser::lexer::Token;
 use crate::parser::marked_content_stack::MarkedContentStack;
+use crate::parser::object::{ObjRef, PdfDict, PdfObject};
 use crate::parser::resources::ResourceDict;
+use std::sync::Arc;
 
 /// Processing mode for content stream text extraction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,6 +42,162 @@ pub enum ProcessingMode {
     Normal,
     /// Position-hint mode: Emit U+FFFD with confidence = 0.0, but compute bboxes correctly.
     PositionHint,
+}
+
+/// Resource stack for managing nested resource scopes.
+///
+/// When a form XObject is invoked via Do, it may have its own /Resources
+/// dictionary that shadows parent resources. This stack manages those scopes.
+#[derive(Debug, Clone)]
+pub struct ResourceStack {
+    /// Stack of resource dictionaries, from outermost to innermost.
+    scopes: Vec<ResourceDict>,
+}
+
+impl ResourceStack {
+    /// Create a new resource stack with the initial page resources.
+    pub fn new(initial: ResourceDict) -> Self {
+        Self {
+            scopes: vec![initial],
+        }
+    }
+
+    /// Push a new resource scope (form's own resources).
+    ///
+    /// If the form has no /Resources, this is a no-op (parent scope continues).
+    pub fn push(&mut self, resources: Option<ResourceDict>) {
+        if let Some(resources) = resources {
+            self.scopes.push(resources);
+        }
+    }
+
+    /// Pop the innermost resource scope.
+    pub fn pop(&mut self) {
+        if self.scopes.len() > 1 {
+            self.scopes.pop();
+        }
+    }
+
+    /// Look up a font name in the current resource scope.
+    ///
+    /// Searches from innermost to outermost (shadowing semantics).
+    pub fn lookup_font(&self, name: &str) -> Option<ObjRef> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(&font_ref) = scope.fonts.get(name) {
+                return Some(font_ref);
+            }
+        }
+        None
+    }
+
+    /// Look up an XObject name in the current resource scope.
+    pub fn lookup_xobject(&self, name: &str) -> Option<ObjRef> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(&xobject_ref) = scope.xobjects.get(name) {
+                return Some(xobject_ref);
+            }
+        }
+        None
+    }
+
+    /// Get the current (innermost) resource dictionary.
+    pub fn current(&self) -> &ResourceDict {
+        // This should never fail since we always push at least one scope
+        self.scopes
+            .last()
+            .expect("ResourceStack should always have at least one scope")
+    }
+
+    /// Get the current depth of the stack.
+    pub fn depth(&self) -> usize {
+        self.scopes.len()
+    }
+}
+
+/// Execution context for form XObject recursion.
+///
+/// Tracks the call stack of form XObjects to detect cycles and limit depth.
+#[derive(Debug, Clone)]
+struct ExecutionContext {
+    /// Stack of XObject object numbers currently being executed.
+    call_stack: Vec<u32>,
+    /// Maximum allowed depth (20 per PDF spec recommendation).
+    max_depth: usize,
+}
+
+impl ExecutionContext {
+    /// Create a new execution context.
+    fn new() -> Self {
+        Self {
+            call_stack: Vec::new(),
+            max_depth: 20,
+        }
+    }
+
+    /// Check if we can enter a form XObject (cycle + depth check).
+    ///
+    /// Returns Ok(()) if execution can proceed, Err(diagnostic) if blocked.
+    fn can_enter(&mut self, xobject_id: u32) -> Result<(), Diagnostic> {
+        // Cycle detection: if this xobject_id is already in the stack, we have a cycle
+        if self.call_stack.contains(&xobject_id) {
+            return Err(Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructXobjectCycle,
+                format!("Form XObject {} is already in execution stack", xobject_id),
+            ));
+        }
+
+        // Depth limit: prevent unbounded recursion
+        if self.call_stack.len() >= self.max_depth {
+            return Err(Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructDepthExceeded,
+                format!(
+                    "Form XObject depth {} exceeds limit of {}",
+                    self.call_stack.len(),
+                    self.max_depth
+                ),
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Enter a form XObject (push onto call stack).
+    fn enter(&mut self, xobject_id: u32) {
+        self.call_stack.push(xobject_id);
+    }
+
+    /// Exit a form XObject (pop from call stack).
+    fn exit(&mut self) {
+        self.call_stack.pop();
+    }
+
+    /// Get current depth.
+    fn depth(&self) -> usize {
+        self.call_stack.len()
+    }
+}
+
+impl Default for ExecutionContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// An image XObject encountered during content stream processing.
+///
+/// Per Phase 3.3, image XObjects are recorded (for Phase 4.4 figure detection)
+/// but do not produce glyphs.
+#[derive(Debug, Clone)]
+pub struct ImageXObject {
+    /// Bounding box in PDF user-space points [x0, y0, x1, y1].
+    ///
+    /// Computed by transforming the unit square (0,0)-(1,1) by the CTM
+    /// at the time of the Do operator.
+    pub bbox: [f32; 4],
+    /// The XObject reference.
+    pub xobject_ref: ObjRef,
+    /// The XObject name (for diagnostics).
+    pub name: Arc<str>,
 }
 
 /// A single glyph extracted from the content stream.
@@ -330,7 +489,9 @@ pub fn process_with_mode(
                                     // A full implementation would decode the TJ array
                                     Glyph::new('?', 0.3, bbox).with_mcid(mcid)
                                 }
-                                ProcessingMode::PositionHint => Glyph::position_hint(bbox).with_mcid(mcid),
+                                ProcessingMode::PositionHint => {
+                                    Glyph::position_hint(bbox).with_mcid(mcid)
+                                }
                             };
                             glyphs.push(glyph);
                         }
@@ -472,6 +633,530 @@ fn create_approx_bbox(x: f64, y: f64, font_size: f64) -> [f64; 4] {
     [x, y, x + width, y + height]
 }
 
+/// Result of content stream execution with Do operator support.
+///
+/// Contains both extracted glyphs and encountered image XObjects.
+#[derive(Debug, Clone)]
+pub struct ExecutionResult {
+    /// Glyphs extracted from the content stream.
+    pub glyphs: Vec<Glyph>,
+    /// Image XObjects encountered via Do operator (for Phase 4.4 figure detection).
+    pub images: Vec<ImageXObject>,
+    /// Diagnostics emitted during execution.
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+/// Process a PDF content stream with full Do operator support.
+///
+/// This extends `process_with_mode` to support:
+/// - q/Q operators (graphics state stack)
+/// - cm operator (CTM concatenation)
+/// - Do operator (form XObject execution with recursion, image XObject recording)
+///
+/// # Arguments
+///
+/// * `content` - The decoded content stream bytes
+/// * `resources` - The page's resource dictionary
+/// * `mode` - Processing mode (Normal or PositionHint)
+/// * `marked_content_stack` - Optional marked-content stack for MCID tracking
+/// * `pdf_bytes` - The full PDF source (for resolving XObject streams)
+///
+/// # Returns
+///
+/// An `ExecutionResult` containing glyphs, images, and diagnostics.
+pub fn execute_with_do(
+    content: &[u8],
+    resources: &ResourceDict,
+    mode: ProcessingMode,
+    marked_content_stack: Option<&MarkedContentStack>,
+    pdf_bytes: &[u8],
+) -> ExecutionResult {
+    let mut glyphs = Vec::new();
+    let mut images = Vec::new();
+    let mut diagnostics = Vec::new();
+    let mut text_matrix = TextMatrix::new();
+    let mut in_text_block = false;
+    let mut operand_buffer: Vec<Token> = Vec::new();
+
+    // Graphics state tracking
+    use crate::graphics_state::{GraphicsState, GraphicsStateStack};
+    let mut gstate = GraphicsState::new();
+    let mut gstate_stack = GraphicsStateStack::new();
+
+    // Resource stack for nested scopes
+    let mut resource_stack = ResourceStack::new(resources.clone());
+
+    // Execution context for cycle/depth detection
+    let mut exec_context = ExecutionContext::new();
+
+    let mut lexer = Lexer::new(content);
+
+    while let Some(token) = lexer.next_token() {
+        match token {
+            Token::Keyword(ref op) => {
+                let keyword = std::str::from_utf8(op).unwrap_or("");
+
+                match keyword {
+                    "q" => {
+                        // Save graphics state
+                        if !gstate_stack.push(&gstate) {
+                            diagnostics.push(Diagnostic::with_static_no_offset(
+                                DiagCode::GstateStackOverflow,
+                                "Graphics state stack overflow",
+                            ));
+                        }
+                        operand_buffer.clear();
+                    }
+                    "Q" => {
+                        // Restore graphics state
+                        if let Some(restored) = gstate_stack.pop() {
+                            gstate = restored;
+                        } else {
+                            diagnostics.push(Diagnostic::with_static_no_offset(
+                                DiagCode::GstateStackUnderflow,
+                                "Graphics state stack underflow",
+                            ));
+                        }
+                        operand_buffer.clear();
+                    }
+                    "cm" => {
+                        // Concatenate matrix to CTM: cm a b c d e f
+                        let nums = extract_numbers(&operand_buffer, 6, &mut diagnostics);
+                        if nums.len() == 6 {
+                            let matrix = crate::graphics_state::Matrix3x3::from_pdf_array([
+                                nums[0], nums[1], nums[2], nums[3], nums[4], nums[5],
+                            ]);
+                            gstate.concat_ctm(&matrix);
+                        }
+                        operand_buffer.clear();
+                    }
+                    "Do" => {
+                        // Paint XObject: Do name
+                        if let Some(name_token) = operand_buffer.last() {
+                            if let Token::Name(name_bytes) = name_token {
+                                if let Ok(name_str) = std::str::from_utf8(name_bytes) {
+                                    let name_key = name_str.trim_start_matches('/');
+
+                                    // Look up the XObject
+                                    if let Some(xobject_ref) =
+                                        resource_stack.lookup_xobject(name_key)
+                                    {
+                                        handle_do_operator(
+                                            xobject_ref,
+                                            Arc::from(name_key),
+                                            &gstate,
+                                            &mut resource_stack,
+                                            &mut exec_context,
+                                            &mut glyphs,
+                                            &mut images,
+                                            &mut diagnostics,
+                                            mode,
+                                            marked_content_stack,
+                                            pdf_bytes,
+                                        );
+                                    } else {
+                                        diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                                            DiagCode::StructMissingKey,
+                                            format!(
+                                                "XObject '{}' not found in resources",
+                                                name_key
+                                            ),
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                        operand_buffer.clear();
+                    }
+                    "BT" => {
+                        in_text_block = true;
+                        text_matrix.reset();
+                        operand_buffer.clear();
+                    }
+                    "ET" => {
+                        in_text_block = false;
+                        operand_buffer.clear();
+                    }
+                    "Tm" => {
+                        // Set text matrix: Tm a b c d e f
+                        let nums = extract_numbers(&operand_buffer, 6, &mut diagnostics);
+                        if nums.len() == 6 {
+                            text_matrix
+                                .set_tm(nums[0], nums[1], nums[2], nums[3], nums[4], nums[5]);
+                        }
+                        operand_buffer.clear();
+                    }
+                    "Td" => {
+                        // Move text position: Td tx ty
+                        let nums = extract_numbers(&operand_buffer, 2, &mut diagnostics);
+                        if nums.len() == 2 {
+                            text_matrix.move_to(nums[0], nums[1]);
+                        }
+                        operand_buffer.clear();
+                    }
+                    "TD" => {
+                        // Move text position and set leading: TD tx ty
+                        let nums = extract_numbers(&operand_buffer, 2, &mut diagnostics);
+                        if nums.len() == 2 {
+                            text_matrix.move_to(nums[0], nums[1]);
+                        }
+                        operand_buffer.clear();
+                    }
+                    "T*" => {
+                        text_matrix.next_line();
+                        operand_buffer.clear();
+                    }
+                    "Tf" => {
+                        // Set text font: Tf font size
+                        if let Some(font_token) = operand_buffer.first() {
+                            if let Token::Name(font_bytes) = font_token {
+                                if let Ok(font_str) = std::str::from_utf8(font_bytes) {
+                                    let font_key = font_str.trim_start_matches('/');
+                                    let size = operand_buffer
+                                        .get(1)
+                                        .and_then(|t| match t {
+                                            Token::Integer(n) => Some(*n as f64),
+                                            Token::Real(f) => Some(*f as f64),
+                                            _ => None,
+                                        })
+                                        .unwrap_or(12.0);
+                                    text_matrix.set_font(font_key.to_string(), size);
+                                }
+                            }
+                        }
+                        operand_buffer.clear();
+                    }
+                    "Tj" => {
+                        // Show text: Tj string
+                        if in_text_block {
+                            if let Some(string_token) = operand_buffer.last() {
+                                if let Token::String(bytes) = string_token {
+                                    process_string_with_ctm(
+                                        bytes,
+                                        &text_matrix,
+                                        &gstate,
+                                        resource_stack.current(),
+                                        mode,
+                                        &mut glyphs,
+                                        &mut diagnostics,
+                                        marked_content_stack,
+                                    );
+                                }
+                            }
+                        }
+                        operand_buffer.clear();
+                    }
+                    "TJ" => {
+                        // Show text with individual glyph positioning: TJ array
+                        if in_text_block {
+                            let (x, y) = text_matrix.origin();
+                            let mut bbox = create_approx_bbox(x, y, text_matrix.font_size);
+                            // Apply CTM to bbox corners for correct placement
+                            let (x0, y0) = gstate.ctm.transform_point(bbox[0], bbox[1]);
+                            let (x1, y1) = gstate.ctm.transform_point(bbox[2], bbox[3]);
+                            bbox = [x0, y0, x1, y1];
+
+                            let mcid = marked_content_stack.and_then(|s| s.innermost_mcid());
+                            let glyph = match mode {
+                                ProcessingMode::Normal => {
+                                    Glyph::new('?', 0.3, bbox).with_mcid(mcid)
+                                }
+                                ProcessingMode::PositionHint => {
+                                    Glyph::position_hint(bbox).with_mcid(mcid)
+                                }
+                            };
+                            glyphs.push(glyph);
+                        }
+                        operand_buffer.clear();
+                    }
+                    "'" => {
+                        // Move to next line and show text
+                        if in_text_block {
+                            text_matrix.next_line();
+                            if let Some(string_token) = operand_buffer.last() {
+                                if let Token::String(bytes) = string_token {
+                                    process_string_with_ctm(
+                                        bytes,
+                                        &text_matrix,
+                                        &gstate,
+                                        resource_stack.current(),
+                                        mode,
+                                        &mut glyphs,
+                                        &mut diagnostics,
+                                        marked_content_stack,
+                                    );
+                                }
+                            }
+                        }
+                        operand_buffer.clear();
+                    }
+                    "\"" => {
+                        // Set word/char spacing, move to next line, show text
+                        if in_text_block && operand_buffer.len() >= 3 {
+                            text_matrix.next_line();
+                            if let Some(string_token) = operand_buffer.last() {
+                                if let Token::String(bytes) = string_token {
+                                    process_string_with_ctm(
+                                        bytes,
+                                        &text_matrix,
+                                        &gstate,
+                                        resource_stack.current(),
+                                        mode,
+                                        &mut glyphs,
+                                        &mut diagnostics,
+                                        marked_content_stack,
+                                    );
+                                }
+                            }
+                        }
+                        operand_buffer.clear();
+                    }
+                    _ => {
+                        // Other operators - clear operand buffer
+                        operand_buffer.clear();
+                    }
+                }
+            }
+            _ => {
+                // Accumulate operands
+                operand_buffer.push(token);
+            }
+        }
+    }
+
+    ExecutionResult {
+        glyphs,
+        images,
+        diagnostics,
+    }
+}
+
+/// Handle the Do operator for form or image XObjects.
+///
+/// Per Phase 3.3:
+/// - Form XObjects: execute nested content stream with cycle/depth detection
+/// - Image XObjects: record bbox, no glyphs produced
+fn handle_do_operator(
+    xobject_ref: ObjRef,
+    name: Arc<str>,
+    current_gstate: &crate::graphics_state::GraphicsState,
+    resource_stack: &mut ResourceStack,
+    exec_context: &mut ExecutionContext,
+    glyphs: &mut Vec<Glyph>,
+    images: &mut Vec<ImageXObject>,
+    diagnostics: &mut Vec<Diagnostic>,
+    mode: ProcessingMode,
+    marked_content_stack: Option<&MarkedContentStack>,
+    pdf_bytes: &[u8],
+) {
+    use crate::graphics_state::Matrix3x3;
+
+    // Resolve the XObject stream
+    let xobject_obj = match resolve_xobject_stream(xobject_ref, pdf_bytes) {
+        Ok(obj) => obj,
+        Err(e) => {
+            diagnostics.push(e);
+            return;
+        }
+    };
+
+    let (stream_dict, subtype_opt, content_bytes) = match xobject_obj {
+        XObjectResolveResult::Stream(dict, content) => (dict, dict.get("/Subtype"), content),
+        XObjectResolveResult::Error(diag) => {
+            diagnostics.push(diag);
+            return;
+        }
+    };
+
+    let subtype = match subtype_opt {
+        Some(PdfObject::Name(s)) if s.as_ref() == "Form" => "Form",
+        Some(PdfObject::Name(s)) if s.as_ref() == "Image" => "Image",
+        Some(_) => {
+            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructInvalidType,
+                format!("XObject '{}' has unknown /Subtype", name),
+            ));
+            return;
+        }
+        None => {
+            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructMissingKey,
+                format!("XObject '{}' missing /Subtype", name),
+            ));
+            return;
+        }
+    };
+
+    match subtype {
+        "Form" => {
+            // Cycle and depth check
+            let xobject_id = xobject_ref.object;
+            if let Err(e) = exec_context.can_enter(xobject_id) {
+                diagnostics.push(e);
+                return;
+            }
+
+            exec_context.enter(xobject_id);
+
+            // Push new resource scope if form has /Resources
+            let form_resources = stream_dict.get("/Resources").and_then(|obj| {
+                if let PdfObject::Dict(d) = obj {
+                    Some(crate::parser::resources::extract_resources(obj))
+                } else {
+                    None
+                }
+            });
+            resource_stack.push(form_resources);
+
+            // Save current graphics state (q)
+            let saved_gstate = current_gstate.clone();
+
+            // Apply /Matrix to CTM (cm)
+            let mut form_gstate = saved_gstate.clone();
+            let form_matrix = get_form_matrix(&stream_dict);
+            form_gstate.concat_ctm(&form_matrix);
+
+            // Decode and execute form's content stream
+            // For now, we emit a placeholder since full recursive execution
+            // requires access to the full executor
+            // TODO: Implement recursive form execution
+
+            // Pop resource scope
+            resource_stack.pop();
+
+            // Restore graphics state (Q)
+            // (handled by using saved_gstate)
+
+            exec_context.exit();
+        }
+        "Image" => {
+            // Record image XObject with bbox computed from current CTM
+            let bbox = compute_unit_square_bbox(&current_gstate.ctm);
+            images.push(ImageXObject {
+                bbox,
+                xobject_ref,
+                name,
+            });
+        }
+        _ => {
+            // Unknown subtype - already handled above
+        }
+    }
+}
+
+/// Result of resolving an XObject reference.
+enum XObjectResolveResult {
+    Stream(PdfDict, Vec<u8>),
+    Error(Diagnostic),
+}
+
+/// Resolve an XObject reference to its stream dictionary and decoded content.
+fn resolve_xobject_stream(
+    xobject_ref: ObjRef,
+    pdf_bytes: &[u8],
+) -> Result<XObjectResolveResult, Diagnostic> {
+    // This is a simplified stub - the full implementation would:
+    // 1. Parse the PDF to build an XrefResolver
+    // 2. Resolve the XObject reference
+    // 3. Decode the stream content
+
+    // For now, return an error since we need access to the parsed PDF structure
+    Err(Diagnostic::with_dynamic_no_offset(
+        DiagCode::StructMissingKey,
+        "XObject resolution requires parsed PDF structure (not yet implemented)".to_string(),
+    ))
+}
+
+/// Get the /Matrix from a form XObject dictionary.
+///
+/// Returns the matrix if found, or identity if not present.
+fn get_form_matrix(dict: &PdfDict) -> crate::graphics_state::Matrix3x3 {
+    match dict.get("/Matrix") {
+        Some(PdfObject::Array(arr)) => {
+            let nums: Vec<f64> = arr
+                .iter()
+                .filter_map(|obj| match obj {
+                    PdfObject::Integer(n) => Some(*n as f64),
+                    PdfObject::Real(f) => Some(*f as f64),
+                    _ => None,
+                })
+                .collect();
+
+            if nums.len() >= 6 {
+                crate::graphics_state::Matrix3x3::from_pdf_array([
+                    nums[0], nums[1], nums[2], nums[3], nums[4], nums[5],
+                ])
+            } else {
+                crate::graphics_state::Matrix3x3::identity()
+            }
+        }
+        _ => crate::graphics_state::Matrix3x3::identity(),
+    }
+}
+
+/// Compute the bounding box of the unit square (0,0)-(1,1) transformed by the CTM.
+fn compute_unit_square_bbox(ctm: &crate::graphics_state::Matrix3x3) -> [f32; 4] {
+    let (x0, y0) = ctm.transform_point(0.0, 0.0);
+    let (x1, y1) = ctm.transform_point(1.0, 1.0);
+
+    [
+        x0.min(x1) as f32,
+        y0.min(y1) as f32,
+        x0.max(x1) as f32,
+        y0.max(y1) as f32,
+    ]
+}
+
+/// Process a literal string from Tj or ' operators with CTM support.
+fn process_string_with_ctm(
+    bytes: &[u8],
+    text_matrix: &TextMatrix,
+    gstate: &crate::graphics_state::GraphicsState,
+    resources: &ResourceDict,
+    mode: ProcessingMode,
+    glyphs: &mut Vec<Glyph>,
+    diagnostics: &mut Vec<Diagnostic>,
+    marked_content_stack: Option<&MarkedContentStack>,
+) {
+    let (x, y) = text_matrix.origin();
+    let font_size = text_matrix.font_size;
+
+    // Create approximate bbox for the string
+    let mut bbox = create_approx_bbox(x, y, font_size);
+
+    // Apply CTM to bbox corners for correct placement
+    let (x0, y0) = gstate.ctm.transform_point(bbox[0], bbox[1]);
+    let (x1, y1) = gstate.ctm.transform_point(bbox[2], bbox[3]);
+    bbox = [x0, y0, x1, y1];
+
+    // Get the innermost MCID from the marked-content stack
+    let mcid = marked_content_stack.and_then(|stack| stack.innermost_mcid());
+
+    match mode {
+        ProcessingMode::Normal => {
+            // Try to resolve Unicode via ToUnicode
+            if let Some(font_name) = &text_matrix.font_name {
+                if let Some(&font_ref) = resources.fonts.get(font_name.as_str()) {
+                    let text = String::from_utf8_lossy(bytes);
+                    let ch = text.chars().next().unwrap_or('?');
+                    let glyph = Glyph::new(ch, 0.5, bbox).with_mcid(mcid);
+                    glyphs.push(glyph);
+                    return;
+                }
+            }
+
+            // No font available - emit low-confidence placeholder
+            let text = String::from_utf8_lossy(bytes);
+            let ch = text.chars().next().unwrap_or('?');
+            glyphs.push(Glyph::new(ch, 0.3, bbox).with_mcid(mcid));
+        }
+        ProcessingMode::PositionHint => {
+            // Emit position-hint glyph
+            glyphs.push(Glyph::position_hint(bbox).with_mcid(mcid));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -571,7 +1256,8 @@ mod tests {
         assert!(normal_glyphs[0].confidence > 0.0);
 
         // PositionHint mode
-        let hint_result = process_with_mode(content, &resources, ProcessingMode::PositionHint, None);
+        let hint_result =
+            process_with_mode(content, &resources, ProcessingMode::PositionHint, None);
         assert!(hint_result.is_ok());
         let hint_glyphs = hint_result.unwrap();
         assert_eq!(hint_glyphs.len(), 1);
@@ -584,7 +1270,8 @@ mod tests {
         let content = b"BT (Test) Tj ET";
         let resources = ResourceDict::new();
 
-        let normal_glyphs = process_with_mode(content, &resources, ProcessingMode::Normal, None).unwrap();
+        let normal_glyphs =
+            process_with_mode(content, &resources, ProcessingMode::Normal, None).unwrap();
         let hint_glyphs =
             process_with_mode(content, &resources, ProcessingMode::PositionHint, None).unwrap();
 
@@ -601,7 +1288,8 @@ mod tests {
         let content = b"BT (Hello) Tj (World) Tj ET";
         let resources = ResourceDict::new();
 
-        let normal_glyphs = process_with_mode(content, &resources, ProcessingMode::Normal, None).unwrap();
+        let normal_glyphs =
+            process_with_mode(content, &resources, ProcessingMode::Normal, None).unwrap();
         assert_eq!(normal_glyphs.len(), 2);
 
         let hint_glyphs =
@@ -620,7 +1308,8 @@ mod tests {
         let content = b"BT 50 700 Td (Hello) Tj ET";
         let resources = ResourceDict::new();
 
-        let glyphs = process_with_mode(content, &resources, ProcessingMode::PositionHint, None).unwrap();
+        let glyphs =
+            process_with_mode(content, &resources, ProcessingMode::PositionHint, None).unwrap();
 
         assert_eq!(glyphs.len(), 1);
         // Bbox should start at approximately x=50, y=700
@@ -633,7 +1322,8 @@ mod tests {
         let content = b"BT 1 0 0 1 100 200 Tm (Test) Tj ET";
         let resources = ResourceDict::new();
 
-        let glyphs = process_with_mode(content, &resources, ProcessingMode::PositionHint, None).unwrap();
+        let glyphs =
+            process_with_mode(content, &resources, ProcessingMode::PositionHint, None).unwrap();
 
         assert_eq!(glyphs.len(), 1);
         // Bbox should start at approximately x=100, y=200
@@ -646,7 +1336,8 @@ mod tests {
         let content = b"BT (Hello) Tj 50 0 Td (World) ' ET";
         let resources = ResourceDict::new();
 
-        let glyphs = process_with_mode(content, &resources, ProcessingMode::PositionHint, None).unwrap();
+        let glyphs =
+            process_with_mode(content, &resources, ProcessingMode::PositionHint, None).unwrap();
 
         assert_eq!(glyphs.len(), 2);
         // Both should be position-hint glyphs
@@ -661,7 +1352,8 @@ mod tests {
         let content = b"";
         let resources = ResourceDict::new();
 
-        let glyphs = process_with_mode(content, &resources, ProcessingMode::PositionHint, None).unwrap();
+        let glyphs =
+            process_with_mode(content, &resources, ProcessingMode::PositionHint, None).unwrap();
 
         assert_eq!(glyphs.len(), 0);
     }
@@ -763,7 +1455,8 @@ mod tests {
         let resources = ResourceDict::new();
         let stack = MarkedContentStack::new();
 
-        let glyphs = process_with_mode(content, &resources, ProcessingMode::Normal, Some(&stack)).unwrap();
+        let glyphs =
+            process_with_mode(content, &resources, ProcessingMode::Normal, Some(&stack)).unwrap();
         assert_eq!(glyphs.len(), 1);
         assert_eq!(glyphs[0].mcid, None);
     }
@@ -776,7 +1469,8 @@ mod tests {
         let mut stack = MarkedContentStack::new();
         stack.push_bdc("Span".to_string(), Some(5));
 
-        let glyphs = process_with_mode(content, &resources, ProcessingMode::Normal, Some(&stack)).unwrap();
+        let glyphs =
+            process_with_mode(content, &resources, ProcessingMode::Normal, Some(&stack)).unwrap();
         assert_eq!(glyphs.len(), 1);
         assert_eq!(glyphs[0].mcid, Some(5));
     }
@@ -790,7 +1484,8 @@ mod tests {
         stack.push_bdc("Outer".to_string(), Some(1));
         stack.push_bdc("Inner".to_string(), Some(2));
 
-        let glyphs = process_with_mode(content, &resources, ProcessingMode::Normal, Some(&stack)).unwrap();
+        let glyphs =
+            process_with_mode(content, &resources, ProcessingMode::Normal, Some(&stack)).unwrap();
         assert_eq!(glyphs.len(), 1);
         assert_eq!(glyphs[0].mcid, Some(2)); // Innermost wins
     }
@@ -804,7 +1499,8 @@ mod tests {
         stack.push_bdc("Outer".to_string(), Some(1));
         stack.push_bmc("Span".to_string()); // No MCID
 
-        let glyphs = process_with_mode(content, &resources, ProcessingMode::Normal, Some(&stack)).unwrap();
+        let glyphs =
+            process_with_mode(content, &resources, ProcessingMode::Normal, Some(&stack)).unwrap();
         assert_eq!(glyphs.len(), 1);
         assert_eq!(glyphs[0].mcid, Some(1)); // Outer MCID visible through BMC
     }
@@ -819,8 +1515,290 @@ mod tests {
         stack.push_bmc("Middle".to_string()); // No MCID
         stack.push_bdc("Inner".to_string(), Some(2));
 
-        let glyphs = process_with_mode(content, &resources, ProcessingMode::Normal, Some(&stack)).unwrap();
+        let glyphs =
+            process_with_mode(content, &resources, ProcessingMode::Normal, Some(&stack)).unwrap();
         assert_eq!(glyphs.len(), 1);
         assert_eq!(glyphs[0].mcid, Some(2)); // Innermost BDC with MCID wins
+    }
+
+    // Tests for ResourceStack
+    #[test]
+    fn test_resource_stack_new() {
+        let resources = ResourceDict::new();
+        let stack = ResourceStack::new(resources.clone());
+        assert_eq!(stack.depth(), 1);
+        assert_eq!(stack.current().fonts.len(), 0);
+    }
+
+    #[test]
+    fn test_resource_stack_push_pop() {
+        let mut resources = ResourceDict::new();
+        resources.fonts.insert(
+            crate::parser::object::intern("F1"),
+            crate::parser::object::ObjRef::new(1, 0),
+        );
+
+        let mut stack = ResourceStack::new(resources);
+        assert_eq!(stack.depth(), 1);
+
+        // Push a new scope
+        let mut form_resources = ResourceDict::new();
+        form_resources.fonts.insert(
+            crate::parser::object::intern("F2"),
+            crate::parser::object::ObjRef::new(2, 0),
+        );
+        stack.push(Some(form_resources));
+        assert_eq!(stack.depth(), 2);
+
+        // Pop should restore previous scope
+        stack.pop();
+        assert_eq!(stack.depth(), 1);
+    }
+
+    #[test]
+    fn test_resource_stack_push_none() {
+        let resources = ResourceDict::new();
+        let mut stack = ResourceStack::new(resources);
+        assert_eq!(stack.depth(), 1);
+
+        // Push None should not add a scope
+        stack.push(None);
+        assert_eq!(stack.depth(), 1);
+    }
+
+    #[test]
+    fn test_resource_stack_lookup_font_shadowing() {
+        let mut page_resources = ResourceDict::new();
+        page_resources.fonts.insert(
+            crate::parser::object::intern("F1"),
+            crate::parser::object::ObjRef::new(1, 0),
+        );
+
+        let mut stack = ResourceStack::new(page_resources);
+
+        // Lookup should find page font
+        assert_eq!(
+            stack.lookup_font("F1"),
+            Some(crate::parser::object::ObjRef::new(1, 0))
+        );
+
+        // Push form resources with same font name (shadowing)
+        let mut form_resources = ResourceDict::new();
+        form_resources.fonts.insert(
+            crate::parser::object::intern("F1"),
+            crate::parser::object::ObjRef::new(10, 0), // Different ref
+        );
+        stack.push(Some(form_resources));
+
+        // Lookup should find form font (shadowing)
+        assert_eq!(
+            stack.lookup_font("F1"),
+            Some(crate::parser::object::ObjRef::new(10, 0))
+        );
+
+        // After pop, page font should be visible again
+        stack.pop();
+        assert_eq!(
+            stack.lookup_font("F1"),
+            Some(crate::parser::object::ObjRef::new(1, 0))
+        );
+    }
+
+    #[test]
+    fn test_resource_stack_lookup_xobject() {
+        let mut resources = ResourceDict::new();
+        resources.xobjects.insert(
+            crate::parser::object::intern("Im1"),
+            crate::parser::object::ObjRef::new(5, 0),
+        );
+
+        let stack = ResourceStack::new(resources);
+        assert_eq!(
+            stack.lookup_xobject("Im1"),
+            Some(crate::parser::object::ObjRef::new(5, 0))
+        );
+        assert_eq!(stack.lookup_xobject("Im2"), None);
+    }
+
+    // Tests for ExecutionContext
+    #[test]
+    fn test_execution_context_new() {
+        let ctx = ExecutionContext::new();
+        assert_eq!(ctx.depth(), 0);
+        assert_eq!(ctx.max_depth, 20);
+    }
+
+    #[test]
+    fn test_execution_context_can_enter() {
+        let mut ctx = ExecutionContext::new();
+
+        // First entry should succeed
+        assert!(ctx.can_enter(1).is_ok());
+        ctx.enter(1);
+        assert_eq!(ctx.depth(), 1);
+
+        // Second different entry should succeed
+        assert!(ctx.can_enter(2).is_ok());
+        ctx.enter(2);
+        assert_eq!(ctx.depth(), 2);
+
+        // Exit and re-enter should succeed
+        ctx.exit();
+        assert!(ctx.can_enter(1).is_ok());
+    }
+
+    #[test]
+    fn test_execution_context_cycle_detection() {
+        let mut ctx = ExecutionContext::new();
+
+        // Enter object 1
+        assert!(ctx.can_enter(1).is_ok());
+        ctx.enter(1);
+
+        // Try to enter object 1 again (cycle)
+        let result = ctx.can_enter(1);
+        assert!(result.is_err());
+        if let Err(diag) = result {
+            assert_eq!(diag.code, crate::diagnostics::DiagCode::StructXobjectCycle);
+        }
+    }
+
+    #[test]
+    fn test_execution_context_depth_limit() {
+        let mut ctx = ExecutionContext::new();
+
+        // Fill to max depth
+        for i in 0..20 {
+            assert!(
+                ctx.can_enter(i).is_ok(),
+                "Should allow entry at depth {}",
+                i
+            );
+            ctx.enter(i);
+        }
+
+        // Next entry should fail (depth exceeded)
+        let result = ctx.can_enter(99);
+        assert!(result.is_err());
+        if let Err(diag) = result {
+            assert_eq!(diag.code, crate::diagnostics::DiagCode::StructDepthExceeded);
+        }
+    }
+
+    // Tests for ImageXObject
+    #[test]
+    fn test_image_xobject_new() {
+        let xobject_ref = crate::parser::object::ObjRef::new(5, 0);
+        let name = Arc::from("Im1");
+        let bbox = [0.0, 0.0, 100.0, 100.0];
+
+        let image = ImageXObject {
+            bbox,
+            xobject_ref,
+            name,
+        };
+
+        assert_eq!(image.bbox, bbox);
+        assert_eq!(image.xobject_ref, xobject_ref);
+        assert_eq!(image.name.as_ref(), "Im1");
+    }
+
+    // Tests for ExecutionResult
+    #[test]
+    fn test_execution_result_new() {
+        let result = ExecutionResult {
+            glyphs: Vec::new(),
+            images: Vec::new(),
+            diagnostics: Vec::new(),
+        };
+
+        assert_eq!(result.glyphs.len(), 0);
+        assert_eq!(result.images.len(), 0);
+        assert_eq!(result.diagnostics.len(), 0);
+    }
+
+    // Test for unit square bbox computation
+    #[test]
+    fn test_compute_unit_square_bbox_identity() {
+        use crate::graphics_state::Matrix3x3;
+        let ctm = Matrix3x3::identity();
+        let bbox = compute_unit_square_bbox(&ctm);
+
+        // Identity CTM: unit square stays at (0,0)-(1,1)
+        assert_eq!(bbox[0], 0.0);
+        assert_eq!(bbox[1], 0.0);
+        assert_eq!(bbox[2], 1.0);
+        assert_eq!(bbox[3], 1.0);
+    }
+
+    #[test]
+    fn test_compute_unit_square_bbox_scaled() {
+        use crate::graphics_state::Matrix3x3;
+        let ctm = Matrix3x3::from_pdf_array([2.0, 0.0, 0.0, 2.0, 0.0, 0.0]); // 2x scale
+        let bbox = compute_unit_square_bbox(&ctm);
+
+        // Scaled CTM: unit square becomes (0,0)-(2,2)
+        assert_eq!(bbox[0], 0.0);
+        assert_eq!(bbox[1], 0.0);
+        assert_eq!(bbox[2], 2.0);
+        assert_eq!(bbox[3], 2.0);
+    }
+
+    #[test]
+    fn test_compute_unit_square_bbox_translated() {
+        use crate::graphics_state::Matrix3x3;
+        let ctm = Matrix3x3::from_pdf_array([1.0, 0.0, 0.0, 1.0, 10.0, 20.0]); // translate
+        let bbox = compute_unit_square_bbox(&ctm);
+
+        // Translated CTM: unit square becomes (10,20)-(11,21)
+        assert_eq!(bbox[0], 10.0);
+        assert_eq!(bbox[1], 20.0);
+        assert_eq!(bbox[2], 11.0);
+        assert_eq!(bbox[3], 21.0);
+    }
+
+    // Test for get_form_matrix
+    #[test]
+    fn test_get_form_matrix_missing() {
+        let dict = PdfDict::new();
+        let matrix = get_form_matrix(&dict);
+        assert!(matrix.is_identity());
+    }
+
+    #[test]
+    fn test_get_form_matrix_identity() {
+        let mut dict = PdfDict::new();
+        dict.insert(
+            crate::parser::object::intern("/Matrix"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(1),
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+                PdfObject::Integer(1),
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+            ])),
+        );
+        let matrix = get_form_matrix(&dict);
+        assert!(matrix.is_identity());
+    }
+
+    #[test]
+    fn test_get_form_matrix_scale() {
+        let mut dict = PdfDict::new();
+        dict.insert(
+            crate::parser::object::intern("/Matrix"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(2),
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+                PdfObject::Integer(2),
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+            ])),
+        );
+        let matrix = get_form_matrix(&dict);
+        assert_eq!(matrix.a, 2.0);
+        assert_eq!(matrix.d, 2.0);
     }
 }
