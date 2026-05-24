@@ -16,6 +16,10 @@
 //! The `walk_acroform_fields` function is designed for reuse by Phase 7.3 (signature
 //! discovery), which filters its output to `/FT /Sig` fields only.
 
+pub mod xfa;
+
+pub use xfa::{extract_xfa_fields, XfaField};
+
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::parser::catalog::Catalog;
 use crate::parser::object::{intern, ObjRef, PdfDict, PdfObject};
