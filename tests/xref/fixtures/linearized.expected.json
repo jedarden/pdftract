@@ -1,0 +1,72 @@
+{
+  "entries": {
+    "3": {
+      "type": "in_use",
+      "offset": 3,
+      "gen_nr": 0
+    },
+    "2": {
+      "type": "in_use",
+      "offset": 2,
+      "gen_nr": 0
+    },
+    "4": {
+      "type": "in_use",
+      "offset": 4,
+      "gen_nr": 0
+    },
+    "0": {
+      "type": "free",
+      "next_free": 0,
+      "gen_nr": 65535
+    },
+    "1": {
+      "type": "in_use",
+      "offset": 1,
+      "gen_nr": 0
+    }
+  },
+  "trailer": null,
+  "diagnostics": [
+    {
+      "code": "XrefInvalidEntry",
+      "byte_offset": 1889,
+      "message": "Invalid generation: n"
+    },
+    {
+      "code": "XrefInvalidSubsectionHeader",
+      "byte_offset": 2934,
+      "message": "Invalid subsection start: ize"
+    },
+    {
+      "code": "XrefInvalidSubsectionHeader",
+      "byte_offset": 2944,
+      "message": "Invalid subsection header: /Root 5 0 R"
+    },
+    {
+      "code": "XrefInvalidSubsectionHeader",
+      "byte_offset": 2956,
+      "message": "Invalid subsection header: >>"
+    },
+    {
+      "code": "XrefInvalidSubsectionHeader",
+      "byte_offset": 2959,
+      "message": "Invalid subsection header: startxref"
+    },
+    {
+      "code": "XrefInvalidSubsectionHeader",
+      "byte_offset": 2969,
+      "message": "Invalid subsection header: 1779"
+    },
+    {
+      "code": "XrefInvalidSubsectionHeader",
+      "byte_offset": 2974,
+      "message": "Invalid subsection header: %%EOF"
+    },
+    {
+      "code": "XrefTrailerNotFound",
+      "byte_offset": 2980,
+      "message": "Trailer dictionary not found (xref table may be truncated)"
+    }
+  ]
+}

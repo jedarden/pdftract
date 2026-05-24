@@ -1,0 +1,11 @@
+{
+  "entries": {},
+  "trailer": null,
+  "diagnostics": [
+    {
+      "code": "XrefRepaired",
+      "byte_offset": 0,
+      "message": "Forward scan recovered 0 object entries"
+    }
+  ]
+}

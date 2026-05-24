@@ -1,0 +1,174 @@
+{
+  "entries": {
+    "35": {
+      "type": "in_use",
+      "offset": 1800,
+      "gen_nr": 0
+    },
+    "21": {
+      "type": "in_use",
+      "offset": 1100,
+      "gen_nr": 0
+    },
+    "15": {
+      "type": "in_use",
+      "offset": 800,
+      "gen_nr": 0
+    },
+    "42": {
+      "type": "in_use",
+      "offset": 2150,
+      "gen_nr": 0
+    },
+    "30": {
+      "type": "in_use",
+      "offset": 1550,
+      "gen_nr": 0
+    },
+    "45": {
+      "type": "in_use",
+      "offset": 2300,
+      "gen_nr": 0
+    },
+    "41": {
+      "type": "in_use",
+      "offset": 2100,
+      "gen_nr": 0
+    },
+    "31": {
+      "type": "in_use",
+      "offset": 1600,
+      "gen_nr": 0
+    },
+    "20": {
+      "type": "in_use",
+      "offset": 1050,
+      "gen_nr": 0
+    },
+    "43": {
+      "type": "in_use",
+      "offset": 2200,
+      "gen_nr": 0
+    },
+    "32": {
+      "type": "in_use",
+      "offset": 1650,
+      "gen_nr": 0
+    },
+    "33": {
+      "type": "in_use",
+      "offset": 1700,
+      "gen_nr": 0
+    },
+    "39": {
+      "type": "in_use",
+      "offset": 2000,
+      "gen_nr": 0
+    },
+    "28": {
+      "type": "in_use",
+      "offset": 1450,
+      "gen_nr": 0
+    },
+    "16": {
+      "type": "in_use",
+      "offset": 850,
+      "gen_nr": 0
+    },
+    "24": {
+      "type": "in_use",
+      "offset": 1250,
+      "gen_nr": 0
+    },
+    "27": {
+      "type": "in_use",
+      "offset": 1400,
+      "gen_nr": 0
+    },
+    "19": {
+      "type": "in_use",
+      "offset": 1000,
+      "gen_nr": 0
+    },
+    "29": {
+      "type": "in_use",
+      "offset": 1500,
+      "gen_nr": 0
+    },
+    "44": {
+      "type": "in_use",
+      "offset": 2250,
+      "gen_nr": 0
+    },
+    "22": {
+      "type": "in_use",
+      "offset": 1150,
+      "gen_nr": 0
+    },
+    "36": {
+      "type": "in_use",
+      "offset": 1850,
+      "gen_nr": 0
+    },
+    "17": {
+      "type": "in_use",
+      "offset": 900,
+      "gen_nr": 0
+    },
+    "34": {
+      "type": "in_use",
+      "offset": 1750,
+      "gen_nr": 0
+    },
+    "23": {
+      "type": "in_use",
+      "offset": 1200,
+      "gen_nr": 0
+    },
+    "38": {
+      "type": "in_use",
+      "offset": 1950,
+      "gen_nr": 0
+    },
+    "26": {
+      "type": "in_use",
+      "offset": 1350,
+      "gen_nr": 0
+    },
+    "18": {
+      "type": "in_use",
+      "offset": 950,
+      "gen_nr": 0
+    },
+    "37": {
+      "type": "in_use",
+      "offset": 1900,
+      "gen_nr": 0
+    },
+    "40": {
+      "type": "in_use",
+      "offset": 2050,
+      "gen_nr": 0
+    },
+    "25": {
+      "type": "in_use",
+      "offset": 1300,
+      "gen_nr": 0
+    },
+    "46": {
+      "type": "in_use",
+      "offset": 2350,
+      "gen_nr": 0
+    }
+  },
+  "trailer": {
+    "key_count": 3
+  },
+  "diagnostics": [
+    {
+      "code": "StructDepthExceeded",
+      "byte_offset": 1670,
+      "message": "/Prev chain depth exceeded maximum of 32"
+    }
+  ]
+}
