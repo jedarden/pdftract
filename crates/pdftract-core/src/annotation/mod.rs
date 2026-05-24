@@ -72,6 +72,8 @@ pub struct AnnotationCommon {
 ///
 /// * `resolver` - The Xref resolver for dereferencing indirect objects
 /// * `pages` - Slice of page dictionaries with their annotation references
+/// * `dests_dict` - Optional /Catalog /Dests dictionary for named destination resolution
+/// * `names_dests_ref` - Optional /Catalog /Names /Dests reference for name tree resolution
 ///
 /// # Returns
 ///
@@ -87,6 +89,8 @@ pub struct AnnotationCommon {
 pub fn dispatch_annotations(
     resolver: &XrefResolver,
     pages: &[crate::parser::pages::PageDict],
+    dests_dict: Option<&crate::parser::object::PdfDict>,
+    names_dests_ref: Option<crate::parser::object::ObjRef>,
 ) -> (Vec<LinkAnnotation>, Vec<Annotation>) {
     let mut all_links = Vec::new();
     let mut all_annotations = Vec::new();
@@ -119,6 +123,7 @@ pub fn dispatch_annotations(
                     },
                     uri: None,
                     dest: None,
+                    dest_array: None,
                 });
                 continue;
             }
@@ -155,7 +160,9 @@ pub fn dispatch_annotations(
 
             // Dispatch by subtype
             if subtype == "Link" {
-                if let Some(link) = links::extract_link(&annot_dict, common) {
+                if let Some(link) =
+                    links::extract_link(&annot_dict, common, resolver, dests_dict, names_dests_ref)
+                {
                     all_links.push(link);
                 }
             } else {
