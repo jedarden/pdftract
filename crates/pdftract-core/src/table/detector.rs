@@ -447,6 +447,7 @@ impl TableDetector {
             row_ys: row_ys_sorted,
             col_xs,
             segments: Vec::new(), // No segments for borderless tables
+            header_rows: 0, // Initialized to 0; set after header detection
         })
     }
 

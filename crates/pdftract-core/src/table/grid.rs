@@ -24,6 +24,16 @@ pub struct GridCandidate {
     /// The path segments that contributed to this grid.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub segments: Vec<super::Segment>,
+    /// Number of contiguous header rows from the top of the table.
+    /// Detected via bold font detection or StructTree TH tags.
+    /// Set to 0 if no header rows are detected.
+    #[serde(skip_serializing_if = "is_zero_header_rows")]
+    pub header_rows: u32,
+}
+
+/// Helper for serde to skip serializing header_rows when it's 0.
+fn is_zero_header_rows(v: &u32) -> bool {
+    *v == 0
 }
 
 impl GridCandidate {
@@ -82,6 +92,7 @@ impl GridCandidate {
             row_ys,
             col_xs,
             segments,
+            header_rows: 0, // Initialized to 0; set after header detection
         })
     }
 
