@@ -2,6 +2,10 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use std::path::PathBuf;
 
+// Matcher module
+mod matcher;
+pub use matcher::{MatchRange, Matcher};
+
 /// Progress reporting mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProgressMode {

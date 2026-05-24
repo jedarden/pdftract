@@ -2,6 +2,7 @@
 //!
 //! This library exports the CLI's internal modules for integration testing.
 
+pub mod grep;
 pub mod inspect;
 pub mod mcp;
 
