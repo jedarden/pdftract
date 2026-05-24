@@ -24,3 +24,4 @@ humantime = "2.1"
 lopdf = "0.34"
 schemars = "1.2"
 pdftract-core = { path = "../crates/pdftract-core", features = ["schemars"] }
+fontdue = "0.9"

@@ -69,6 +69,5 @@ fn generate_schema() -> String {
 
     // Convert to JSON string
     // The schema_for! macro already includes the $schema field
-    serde_json::to_string_pretty(&schema)
-        .expect("Failed to serialize schema")
+    serde_json::to_string_pretty(&schema).expect("Failed to serialize schema")
 }

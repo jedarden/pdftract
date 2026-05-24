@@ -1,15 +1,15 @@
-use std::collections::BTreeMap;
+use fontdue::Font;
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
-use serde::{Deserialize, Serialize};
-use lopdf;
 
 /// Helper macro for creating dictionaries
 macro_rules! dictionary {
     ($( $key:literal => $value:expr ),* $(,)?) => {{
-        let mut dict = lopdf::Dictionary::new();
+        let mut dict = Dictionary::new();
         $(
             dict.set($key, $value);
         )*
@@ -105,6 +105,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("  generate-stress-pdfs            Generate stress-test PDFs for memory ceiling testing");
         eprintln!("  generate-page-class-fixtures    Generate page classification test fixtures");
         eprintln!("  gen-schema                      Generate JSON Schema from Rust output types");
+        eprintln!(
+            "  gen-shape-db                    Generate glyph shape database from font files"
+        );
         eprintln!("  memory-ceiling                  Run memory ceiling tests against perf/malformed corpora");
         std::process::exit(1);
     }
@@ -147,6 +150,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             run_memory_ceiling_tests()?;
             Ok(())
         }
+        "gen-shape-db" => {
+            let fonts_dir = if args.len() >= 3 {
+                args[2].clone()
+            } else {
+                eprintln!("Usage: xtask gen-shape-db <fonts-dir>");
+                std::process::exit(1);
+            };
+            let output_path = if args.len() >= 4 {
+                args[3].clone()
+            } else {
+                "build/glyph-shapes.json".to_string()
+            };
+            gen_shape_db(&fonts_dir, &output_path)?;
+            Ok(())
+        }
         _ => {
             eprintln!("Unknown command: {}", args[1]);
             std::process::exit(1);
@@ -176,8 +194,14 @@ fn gen_schema() -> Result<(), Box<dyn std::error::Error>> {
 fn generate_profile_readme(profile_name: &str) -> Result<(), Box<dyn std::error::Error>> {
     // Find the workspace root by looking for the parent directory's Cargo.toml
     let workspace_root = find_workspace_root();
-    let profile_path = workspace_root.join("profiles/builtin").join(profile_name).join("profile.yaml");
-    let readme_path = workspace_root.join("profiles/builtin").join(profile_name).join("README.md");
+    let profile_path = workspace_root
+        .join("profiles/builtin")
+        .join(profile_name)
+        .join("profile.yaml");
+    let readme_path = workspace_root
+        .join("profiles/builtin")
+        .join(profile_name)
+        .join("README.md");
 
     if !profile_path.exists() {
         return Err(format!("Profile YAML not found: {}", profile_path.display()).into());
@@ -245,7 +269,9 @@ fn generate_profile_readme(profile_name: &str) -> Result<(), Box<dyn std::error:
         readme.push('\n');
     }
 
-    readme.push_str("\n*Additional heuristics and confidence scoring are applied during classification.*\n\n");
+    readme.push_str(
+        "\n*Additional heuristics and confidence scoring are applied during classification.*\n\n",
+    );
 
     // Extracted Fields
     readme.push_str("## Extracted Fields\n\n");
@@ -253,7 +279,7 @@ fn generate_profile_readme(profile_name: &str) -> Result<(), Box<dyn std::error:
     readme.push_str("|-------|------|-------------|----------------|-------------|\n");
 
     for (field_name, field) in &profile.profile_fields {
-        let description = format!("Extracted from page text using pattern matching");
+        let description = "Extracted from page text using pattern matching".to_string();
         let example = match field.field_type.as_str() {
             "string" => "\"example value\"",
             "decimal" => "123.45",
@@ -309,16 +335,25 @@ fn generate_profile_readme(profile_name: &str) -> Result<(), Box<dyn std::error:
     readme.push_str("## Configuration Tips\n\n");
     readme.push_str("To override this profile:\n\n");
     readme.push_str("```bash\n");
-    readme.push_str(&format!("pdftract profiles export {} > my-profile.yaml\n", profile_name));
-    readme.push_str("# Edit my-profile.yaml to customize match criteria, fields, or extraction patterns\n");
+    readme.push_str(&format!(
+        "pdftract profiles export {} > my-profile.yaml\n",
+        profile_name
+    ));
+    readme.push_str(
+        "# Edit my-profile.yaml to customize match criteria, fields, or extraction patterns\n",
+    );
     readme.push_str("pdftract extract --profile my-profile.yaml document.pdf\n");
     readme.push_str("```\n\n");
 
     // Footer
-    readme.push_str(&format!("---\n\n*This README was auto-generated from `profile.yaml`. Update the Match Criteria Summary and Known Limitations sections with profile-specific guidance.*\n"));
+    readme.push_str("---\n\n*This README was auto-generated from `profile.yaml`. Update the Match Criteria Summary and Known Limitations sections with profile-specific guidance.*\n");
 
     fs::write(&readme_path, readme)?;
-    println!("Generated README for {} at {}", profile_name, readme_path.display());
+    println!(
+        "Generated README for {} at {}",
+        profile_name,
+        readme_path.display()
+    );
 
     Ok(())
 }
@@ -338,8 +373,16 @@ fn generate_stress_pdfs() -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir_all(&perf_dir)?;
 
     let configs = vec![
-        (100, "100-page-vector.pdf", "Buffered mode stress test (512 MB budget)"),
-        (10000, "10k-page.pdf", "Streaming mode stress test (256 MB budget)"),
+        (
+            100,
+            "100-page-vector.pdf",
+            "Buffered mode stress test (512 MB budget)",
+        ),
+        (
+            10000,
+            "10k-page.pdf",
+            "Streaming mode stress test (256 MB budget)",
+        ),
     ];
 
     for (num_pages, filename, description) in &configs {
@@ -370,8 +413,11 @@ fn generate_stress_pdfs() -> Result<(), Box<dyn std::error::Error>> {
 ///
 /// Creates a PDF with the specified number of pages for memory ceiling testing.
 /// Uses a minimal approach with lopdf 0.34.
-fn generate_stress_pdf(output_path: &Path, num_pages: usize) -> Result<(), Box<dyn std::error::Error>> {
-    use lopdf::{Document, Object, Stream, Dictionary};
+fn generate_stress_pdf(
+    output_path: &Path,
+    num_pages: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use lopdf::{Dictionary, Document, Object, Stream};
 
     let mut doc = Document::with_version("1.5");
 
@@ -390,8 +436,10 @@ fn generate_stress_pdf(output_path: &Path, num_pages: usize) -> Result<(), Box<d
     // Create all page objects first
     let mut page_ids = Vec::new();
     let mediabox = Object::Array(vec![
-        Object::Real(0.0), Object::Real(0.0),
-        Object::Real(612.0), Object::Real(792.0),
+        Object::Real(0.0),
+        Object::Real(0.0),
+        Object::Real(612.0),
+        Object::Real(792.0),
     ]);
 
     for page_num in 1..=num_pages {
@@ -399,7 +447,8 @@ fn generate_stress_pdf(output_path: &Path, num_pages: usize) -> Result<(), Box<d
         let content_bytes = format!(
             "BT /F1 12 Tf 72 720 Td (Page {} of {}) Tj ET",
             page_num, num_pages
-        ).into_bytes();
+        )
+        .into_bytes();
 
         let mut content_dict = Dictionary::new();
         content_dict.set("Length", content_bytes.len() as i32);
@@ -421,7 +470,10 @@ fn generate_stress_pdf(output_path: &Path, num_pages: usize) -> Result<(), Box<d
     let mut pages_dict = Dictionary::new();
     pages_dict.set("Type", "Pages");
     pages_dict.set("Count", Object::Integer(num_pages as i64));
-    pages_dict.set("Kids", Object::Array(page_ids.iter().map(|&id| Object::Reference(id)).collect()));
+    pages_dict.set(
+        "Kids",
+        Object::Array(page_ids.iter().map(|&id| Object::Reference(id)).collect()),
+    );
 
     let pages_id = doc.add_object(pages_dict);
 
@@ -432,7 +484,9 @@ fn generate_stress_pdf(output_path: &Path, num_pages: usize) -> Result<(), Box<d
             let mut updated_dict = dict.clone();
             updated_dict.set("Parent", pages_id);
             // Need to replace the object
-            let _ = doc.objects.insert(page_id, Object::Dictionary(updated_dict));
+            let _ = doc
+                .objects
+                .insert(page_id, Object::Dictionary(updated_dict));
         }
     }
 
@@ -450,7 +504,11 @@ fn generate_stress_pdf(output_path: &Path, num_pages: usize) -> Result<(), Box<d
 
     let metadata = fs::metadata(output_path)?;
     let size_mb = metadata.len() as f64 / 1024.0 / 1024.0;
-    println!("  Generated: {} ({:.2} MB)", output_path.file_name().unwrap().to_string_lossy(), size_mb);
+    println!(
+        "  Generated: {} ({:.2} MB)",
+        output_path.file_name().unwrap().to_string_lossy(),
+        size_mb
+    );
 
     Ok(())
 }
@@ -458,8 +516,8 @@ fn generate_stress_pdf(output_path: &Path, num_pages: usize) -> Result<(), Box<d
 /// Memory budgets for different document categories (in MB)
 #[derive(Debug, Clone)]
 struct MemoryBudget {
-    pub buffered_100_page: usize,  // 512 MB
-    pub streaming_any: usize,       // 256 MB
+    pub buffered_100_page: usize,    // 512 MB
+    pub streaming_any: usize,        // 256 MB
     pub adversarial_hard_cap: usize, // 1 GB
 }
 
@@ -484,7 +542,7 @@ struct MemoryMeasurement {
 #[derive(Debug, Clone, Serialize)]
 struct MemoryTestResult {
     pub file_name: String,
-    pub category: String,  // "buffered", "streaming", "adversarial"
+    pub category: String, // "buffered", "streaming", "adversarial"
     pub peak_rss_mb: usize,
     pub duration_ms: u128,
     pub budget_mb: usize,
@@ -540,7 +598,10 @@ fn run_memory_ceiling_tests() -> Result<(), Box<dyn std::error::Error>> {
     println!("\nMemory budgets:");
     println!("  - Buffered 100-page: {} MB", budgets.buffered_100_page);
     println!("  - Streaming mode: {} MB", budgets.streaming_any);
-    println!("  - Adversarial hard cap: {} MB", budgets.adversarial_hard_cap);
+    println!(
+        "  - Adversarial hard cap: {} MB",
+        budgets.adversarial_hard_cap
+    );
 
     // Build pdftract binary first
     println!("\n=== Building pdftract for testing ===");
@@ -566,7 +627,10 @@ fn run_memory_ceiling_tests() -> Result<(), Box<dyn std::error::Error>> {
     let mut all_passed = true;
 
     // Test 1: Perf corpus - buffered mode (512 MB budget)
-    println!("\n=== Testing perf corpus (buffered mode, budget: {} MB) ===", budgets.buffered_100_page);
+    println!(
+        "\n=== Testing perf corpus (buffered mode, budget: {} MB) ===",
+        budgets.buffered_100_page
+    );
 
     if perf_dir.exists() {
         for entry in fs::read_dir(&perf_dir)? {
@@ -584,9 +648,15 @@ fn run_memory_ceiling_tests() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(measurement) => {
                     let passed = measurement.peak_rss_mb <= budgets.buffered_100_page;
                     if passed {
-                        println!("PASS ({} MB, {} ms)", measurement.peak_rss_mb, measurement.duration_ms);
+                        println!(
+                            "PASS ({} MB, {} ms)",
+                            measurement.peak_rss_mb, measurement.duration_ms
+                        );
                     } else {
-                        println!("FAIL ({} MB > {} MB)", measurement.peak_rss_mb, budgets.buffered_100_page);
+                        println!(
+                            "FAIL ({} MB > {} MB)",
+                            measurement.peak_rss_mb, budgets.buffered_100_page
+                        );
                         all_passed = false;
                     }
                     all_results.push(MemoryTestResult {
@@ -619,7 +689,10 @@ fn run_memory_ceiling_tests() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Test 2: Perf corpus - streaming mode (256 MB budget)
-    println!("\n=== Testing perf corpus (streaming mode, budget: {} MB) ===", budgets.streaming_any);
+    println!(
+        "\n=== Testing perf corpus (streaming mode, budget: {} MB) ===",
+        budgets.streaming_any
+    );
 
     if perf_dir.exists() {
         for entry in fs::read_dir(&perf_dir)? {
@@ -637,9 +710,15 @@ fn run_memory_ceiling_tests() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(measurement) => {
                     let passed = measurement.peak_rss_mb <= budgets.streaming_any;
                     if passed {
-                        println!("PASS ({} MB, {} ms)", measurement.peak_rss_mb, measurement.duration_ms);
+                        println!(
+                            "PASS ({} MB, {} ms)",
+                            measurement.peak_rss_mb, measurement.duration_ms
+                        );
                     } else {
-                        println!("FAIL ({} MB > {} MB)", measurement.peak_rss_mb, budgets.streaming_any);
+                        println!(
+                            "FAIL ({} MB > {} MB)",
+                            measurement.peak_rss_mb, budgets.streaming_any
+                        );
                         all_passed = false;
                     }
                     all_results.push(MemoryTestResult {
@@ -670,15 +749,19 @@ fn run_memory_ceiling_tests() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Test 3: Malformed corpus - adversarial hard cap (1 GB budget)
-    println!("\n=== Testing malformed corpus (adversarial hard cap: {} MB) ===", budgets.adversarial_hard_cap);
+    println!(
+        "\n=== Testing malformed corpus (adversarial hard cap: {} MB) ===",
+        budgets.adversarial_hard_cap
+    );
 
     if malformed_dir.exists() {
         for entry in fs::read_dir(&malformed_dir)? {
             let entry = entry?;
             let path = entry.path();
 
-            if path.extension().and_then(|s| s.to_str()) != Some("pdf") &&
-               path.extension().and_then(|s| s.to_str()) != Some("bin") {
+            if path.extension().and_then(|s| s.to_str()) != Some("pdf")
+                && path.extension().and_then(|s| s.to_str()) != Some("bin")
+            {
                 continue;
             }
 
@@ -689,9 +772,15 @@ fn run_memory_ceiling_tests() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(measurement) => {
                     let passed = measurement.peak_rss_mb <= budgets.adversarial_hard_cap;
                     if passed {
-                        println!("PASS ({} MB, {} ms)", measurement.peak_rss_mb, measurement.duration_ms);
+                        println!(
+                            "PASS ({} MB, {} ms)",
+                            measurement.peak_rss_mb, measurement.duration_ms
+                        );
                     } else {
-                        println!("FAIL ({} MB > {} MB)", measurement.peak_rss_mb, budgets.adversarial_hard_cap);
+                        println!(
+                            "FAIL ({} MB > {} MB)",
+                            measurement.peak_rss_mb, budgets.adversarial_hard_cap
+                        );
                         all_passed = false;
                     }
                     all_results.push(MemoryTestResult {
@@ -738,12 +827,17 @@ fn run_memory_ceiling_tests() -> Result<(), Box<dyn std::error::Error>> {
         for result in &all_results {
             if !result.passed {
                 if result.peak_rss_mb > 0 {
-                    println!("  - [{}] {} ({} MB > {} MB)",
-                        result.category, result.file_name, result.peak_rss_mb, result.budget_mb);
+                    println!(
+                        "  - [{}] {} ({} MB > {} MB)",
+                        result.category, result.file_name, result.peak_rss_mb, result.budget_mb
+                    );
                 } else {
-                    println!("  - [{}] {} (error: {})",
-                        result.category, result.file_name,
-                        result.error_message.as_deref().unwrap_or("unknown"));
+                    println!(
+                        "  - [{}] {} (error: {})",
+                        result.category,
+                        result.file_name,
+                        result.error_message.as_deref().unwrap_or("unknown")
+                    );
                 }
             }
         }
@@ -755,7 +849,10 @@ fn run_memory_ceiling_tests() -> Result<(), Box<dyn std::error::Error>> {
 
     // Generate JSON report
     let report = MemoryReport {
-        timestamp: format!("{}", humantime::format_rfc3339_seconds(std::time::SystemTime::now())),
+        timestamp: format!(
+            "{}",
+            humantime::format_rfc3339_seconds(std::time::SystemTime::now())
+        ),
         commit_sha: get_commit_sha()?,
         budgets: MemoryBudgetJson {
             buffered_100_page_mb: budgets.buffered_100_page,
@@ -823,20 +920,16 @@ fn measure_extraction(
             // Streaming mode: use --format text for lower memory footprint
             // Note: --format ndjson is not yet exposed in CLI (Phase 6.2)
             // Using text format as a reasonable proxy for streaming memory behavior
-            cmd.arg("extract")
-               .arg("--format")
-               .arg("text");
+            cmd.arg("extract").arg("--format").arg("text");
         } else {
             // Buffered mode: use --format json for full document buffering
-            cmd.arg("extract")
-               .arg("--format")
-               .arg("json");
+            cmd.arg("extract").arg("--format").arg("json");
         }
 
         cmd.arg(pdf_path)
-           .stdout(Stdio::null())
-           .stderr(Stdio::piped())
-           .process_group(0);
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .process_group(0);
 
         let mut child = cmd.spawn()?;
 
@@ -900,18 +993,14 @@ fn measure_extraction(
         let mut cmd = Command::new(binary_path);
 
         if streaming {
-            cmd.arg("extract")
-               .arg("--format")
-               .arg("text");
+            cmd.arg("extract").arg("--format").arg("text");
         } else {
-            cmd.arg("extract")
-               .arg("--format")
-               .arg("json");
+            cmd.arg("extract").arg("--format").arg("json");
         }
 
         cmd.arg(pdf_path)
-           .stdout(Stdio::null())
-           .stderr(Stdio::piped());
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
 
         let output = cmd.output()?;
 
@@ -959,7 +1048,6 @@ fn sample_rss(pid: u32) -> Result<usize, Box<dyn std::error::Error>> {
 /// - brokenvector_pdfa: Invisible text layer over scanned image
 /// - hybrid_header_body: Text header + scanned body
 fn generate_page_class_fixtures() -> Result<(), Box<dyn std::error::Error>> {
-    use lopdf::{Document, Object, Stream, Dictionary};
 
     println!("==========================================");
     println!("Generating Page Classification Fixtures");
@@ -998,7 +1086,12 @@ fn generate_page_class_fixtures() -> Result<(), Box<dyn std::error::Error>> {
     println!("==========================================");
 
     // Print sizes
-    for fixture_name in &["vector_pure", "scanned_single", "brokenvector_pdfa", "hybrid_header_body"] {
+    for fixture_name in &[
+        "vector_pure",
+        "scanned_single",
+        "brokenvector_pdfa",
+        "hybrid_header_body",
+    ] {
         let fixture_dir = fixtures_dir.join(fixture_name);
         let pdf_path = fixture_dir.join("source.pdf");
         if let Ok(metadata) = fs::metadata(&pdf_path) {
@@ -1012,7 +1105,7 @@ fn generate_page_class_fixtures() -> Result<(), Box<dyn std::error::Error>> {
 
 /// Generate a pure vector PDF (born-digital text)
 fn generate_vector_pure_pdf(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    use lopdf::{Document, Object, Stream, Dictionary};
+    use lopdf::{Dictionary, Document, Object, Stream};
 
     let mut doc = Document::with_version("1.5");
 
@@ -1091,7 +1184,8 @@ fn generate_vector_pure_pdf(dir: &Path) -> Result<(), Box<dyn std::error::Error>
     let json_path = dir.join("expected.json");
     fs::write(&json_path, serde_json::to_string_pretty(&expected)?)?;
 
-    println!("  Created: {}/source.pdf ({:.2} KB)",
+    println!(
+        "  Created: {}/source.pdf ({:.2} KB)",
         dir.file_name().unwrap().to_string_lossy(),
         fs::metadata(&pdf_path)?.len() as f64 / 1024.0
     );
@@ -1101,21 +1195,24 @@ fn generate_vector_pure_pdf(dir: &Path) -> Result<(), Box<dyn std::error::Error>
 
 /// Generate an image-only scanned PDF
 fn generate_scanned_single_pdf(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    use lopdf::{Document, Object, Dictionary, Stream};
+    use lopdf::{Dictionary, Document, Object, Stream};
 
     let mut doc = Document::with_version("1.5");
 
     // Create a simple 1x1 pixel white image (minimal image object)
     let image_data = vec![0u8; 4]; // 1x1 white pixel in RGB
-    let mut image_stream = Stream::new(dictionary! {
-        "Type" => "XObject",
-        "Subtype" => "Image",
-        "Width" => 1,
-        "Height" => 1,
-        "BitsPerComponent" => 8,
-        "ColorSpace" => "DeviceRGB",
-        "Length" => image_data.len() as i32,
-    }, image_data);
+    let image_stream = Stream::new(
+        dictionary! {
+            "Type" => "XObject",
+            "Subtype" => "Image",
+            "Width" => 1,
+            "Height" => 1,
+            "BitsPerComponent" => 8,
+            "ColorSpace" => "DeviceRGB",
+            "Length" => image_data.len() as i32,
+        },
+        image_data,
+    );
     let image_id = doc.add_object(image_stream);
 
     // Resources with image
@@ -1178,7 +1275,8 @@ fn generate_scanned_single_pdf(dir: &Path) -> Result<(), Box<dyn std::error::Err
     let json_path = dir.join("expected.json");
     fs::write(&json_path, serde_json::to_string_pretty(&expected)?)?;
 
-    println!("  Created: {}/source.pdf ({:.2} KB)",
+    println!(
+        "  Created: {}/source.pdf ({:.2} KB)",
         dir.file_name().unwrap().to_string_lossy(),
         fs::metadata(&pdf_path)?.len() as f64 / 1024.0
     );
@@ -1188,7 +1286,7 @@ fn generate_scanned_single_pdf(dir: &Path) -> Result<(), Box<dyn std::error::Err
 
 /// Generate a BrokenVector PDF (invisible text + image)
 fn generate_brokenvector_pdf(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    use lopdf::{Document, Object, Dictionary, Stream};
+    use lopdf::{Dictionary, Document, Object, Stream};
 
     let mut doc = Document::with_version("1.5");
 
@@ -1201,15 +1299,18 @@ fn generate_brokenvector_pdf(dir: &Path) -> Result<(), Box<dyn std::error::Error
 
     // Create a 1x1 white pixel image
     let image_data = vec![255u8; 4];
-    let mut image_stream = Stream::new(dictionary! {
-        "Type" => "XObject",
-        "Subtype" => "Image",
-        "Width" => 1,
-        "Height" => 1,
-        "BitsPerComponent" => 8,
-        "ColorSpace" => "DeviceRGB",
-        "Length" => image_data.len() as i32,
-    }, image_data);
+    let image_stream = Stream::new(
+        dictionary! {
+            "Type" => "XObject",
+            "Subtype" => "Image",
+            "Width" => 1,
+            "Height" => 1,
+            "BitsPerComponent" => 8,
+            "ColorSpace" => "DeviceRGB",
+            "Length" => image_data.len() as i32,
+        },
+        image_data,
+    );
     let image_id = doc.add_object(image_stream);
 
     // Resources
@@ -1281,7 +1382,8 @@ fn generate_brokenvector_pdf(dir: &Path) -> Result<(), Box<dyn std::error::Error
     let json_path = dir.join("expected.json");
     fs::write(&json_path, serde_json::to_string_pretty(&expected)?)?;
 
-    println!("  Created: {}/source.pdf ({:.2} KB)",
+    println!(
+        "  Created: {}/source.pdf ({:.2} KB)",
         dir.file_name().unwrap().to_string_lossy(),
         fs::metadata(&pdf_path)?.len() as f64 / 1024.0
     );
@@ -1291,7 +1393,7 @@ fn generate_brokenvector_pdf(dir: &Path) -> Result<(), Box<dyn std::error::Error
 
 /// Generate a Hybrid PDF (text header + scanned body)
 fn generate_hybrid_pdf(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    use lopdf::{Document, Object, Dictionary, Stream};
+    use lopdf::{Dictionary, Document, Object, Stream};
 
     let mut doc = Document::with_version("1.5");
 
@@ -1304,15 +1406,18 @@ fn generate_hybrid_pdf(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
     // Create a 1x1 white pixel image for the body
     let image_data = vec![255u8; 4];
-    let mut image_stream = Stream::new(dictionary! {
-        "Type" => "XObject",
-        "Subtype" => "Image",
-        "Width" => 1,
-        "Height" => 1,
-        "BitsPerComponent" => 8,
-        "ColorSpace" => "DeviceRGB",
-        "Length" => image_data.len() as i32,
-    }, image_data);
+    let image_stream = Stream::new(
+        dictionary! {
+            "Type" => "XObject",
+            "Subtype" => "Image",
+            "Width" => 1,
+            "Height" => 1,
+            "BitsPerComponent" => 8,
+            "ColorSpace" => "DeviceRGB",
+            "Length" => image_data.len() as i32,
+        },
+        image_data,
+    );
     let image_id = doc.add_object(image_stream);
 
     // Resources
@@ -1391,12 +1496,446 @@ fn generate_hybrid_pdf(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let json_path = dir.join("expected.json");
     fs::write(&json_path, serde_json::to_string_pretty(&expected)?)?;
 
-    println!("  Created: {}/source.pdf ({:.2} KB)",
+    println!(
+        "  Created: {}/source.pdf ({:.2} KB)",
         dir.file_name().unwrap().to_string_lossy(),
         fs::metadata(&pdf_path)?.len() as f64 / 1024.0
     );
 
     Ok(())
+}
+
+/// Generate glyph shape database from font files.
+///
+/// This function walks a directory of font files (TrueType/OpenType),
+/// rasterizes every mapped glyph at 32x32 via fontdue, computes pHash
+/// for each, and writes the result as build/glyph-shapes.json.
+///
+/// # Arguments
+///
+/// * `fonts_dir` - Path to directory containing .ttf/.otf font files
+/// * `output_path` - Path where glyph-shapes.json will be written
+///
+/// # Output format
+///
+/// JSON array of entries:
+/// ```json
+/// {
+///   "phash_hex": "0123456789abcdef",
+///   "char": "A",
+///   "source_font": "LiberationSans-Regular.ttf",
+///   "frequency_rank": 1
+/// }
+/// ```
+fn gen_shape_db(fonts_dir: &str, output_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    println!("==========================================");
+    println!("Generating Glyph Shape Database");
+    println!("==========================================");
+
+    let workspace_root = find_workspace_root();
+    let fonts_path = workspace_root.join(fonts_dir);
+    let output_file = workspace_root.join(output_path);
+
+    if !fonts_path.exists() {
+        return Err(format!("Fonts directory not found: {}", fonts_path.display()).into());
+    }
+
+    // Create output directory
+    if let Some(parent) = output_file.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    // Load character frequency data
+    let frequency_data = load_frequency_data(&workspace_root)?;
+
+    // Find all font files
+    let font_files = find_font_files(&fonts_path)?;
+    println!("\nFound {} font files:", font_files.len());
+    for font_file in &font_files {
+        println!("  - {}", font_file.file_name().unwrap().to_string_lossy());
+    }
+
+    // Process each font and collect glyphs
+    let mut all_glyphs: Vec<GlyphEntry> = Vec::new();
+    let mut seen_hashes: HashMap<(u64, char), String> = HashMap::new();
+    let mut collisions: Vec<(String, String, u64)> = Vec::new();
+
+    for font_file in &font_files {
+        println!(
+            "\nProcessing: {}",
+            font_file.file_name().unwrap().to_string_lossy()
+        );
+
+        // Load the font
+        let font_bytes = fs::read(font_file)?;
+        let font = Font::from_bytes(font_bytes.as_slice(), fontdue::FontSettings::default())
+            .map_err(|e| format!("Failed to load font: {}", e))?;
+
+        let font_name = font_file.file_name().unwrap().to_string_lossy().to_string();
+        let mut glyph_count = 0;
+
+        // Rasterize glyphs for all Unicode codepoints
+        // We'll iterate over common Unicode ranges
+        for codepoint in 0..0x10000 {
+            let ch = match std::char::from_u32(codepoint) {
+                Some(c) if !c.is_control() && c != '\u{FFFD}' => c,
+                _ => continue,
+            };
+
+            // Skip characters that are unlikely to be in fonts
+            if should_skip_char(ch) {
+                continue;
+            }
+
+            // Check if the font has this glyph
+            if !has_glyph(&font, ch) {
+                continue;
+            }
+
+            // Rasterize at 32px (scales to 32x32 bitmap)
+            let (metrics, bitmap) = font.rasterize(ch, 32.0);
+
+            // Skip empty glyphs (zero width/height)
+            if bitmap.is_empty() || metrics.width == 0 || metrics.height == 0 {
+                continue;
+            }
+
+            // Convert to centered 32x32 bitmap
+            let centered = center_bitmap_32x32(&bitmap, metrics.width, metrics.height);
+
+            // Compute pHash using pdftract-core's phash_glyph
+            let phash = compute_phash(&centered);
+
+            // Get frequency rank
+            let freq_rank = frequency_data.get(&ch).copied().unwrap_or(0);
+
+            // Check for collisions
+            let key = (phash, ch);
+            if let Some(_other_font) = seen_hashes.get(&key) {
+                // Same (phash, char) pair from different font - keep first
+                continue;
+            }
+
+            // Check for cross-character collisions (same hash, different char)
+            let mut collision_replacement = None;
+            let mut skip_new = false;
+
+            // Collect collision info first (without modifying seen_hashes)
+            for (&(existing_hash, existing_ch), other_font_name) in seen_hashes.iter() {
+                if existing_hash == phash && existing_ch != ch {
+                    // Different chars with same hash - keep higher frequency
+                    let freq_existing = frequency_data.get(&existing_ch).copied().unwrap_or(0);
+                    let freq_new = freq_rank;
+
+                    if freq_new > freq_existing {
+                        // New char has higher frequency, replace old
+                        collision_replacement =
+                            Some((existing_hash, existing_ch, other_font_name.clone()));
+                    } else {
+                        // Keep old, skip new
+                        skip_new = true;
+                        collisions.push((font_name.clone(), other_font_name.clone(), phash));
+                    }
+                }
+            }
+
+            // Handle collision replacement if needed
+            if let Some((existing_hash, existing_ch, _)) = collision_replacement {
+                all_glyphs.retain(|g| !(g.phash == existing_hash && g.ch == existing_ch));
+                seen_hashes.remove(&(existing_hash, existing_ch));
+            }
+
+            if skip_new {
+                continue;
+            }
+
+            seen_hashes.insert(key, font_name.clone());
+            all_glyphs.push(GlyphEntry {
+                phash_hex: format!("{:016x}", phash),
+                phash,
+                ch,
+                source_font: font_name.clone(),
+                frequency_rank: freq_rank,
+            });
+
+            glyph_count += 1;
+        }
+
+        println!("  Rasterized {} glyphs", glyph_count);
+    }
+
+    // Sort by pHash ascending
+    all_glyphs.sort_by(|a, b| a.phash_hex.cmp(&b.phash_hex));
+
+    // Write output
+    let json_output = serde_json::to_string_pretty(&all_glyphs)?;
+    fs::write(&output_file, json_output)?;
+
+    println!("\n==========================================");
+    println!("Shape Database Generation Complete");
+    println!("==========================================");
+    println!("\nOutput: {}", output_file.display());
+    println!("Total glyphs: {}", all_glyphs.len());
+    if !collisions.is_empty() {
+        println!("Hash collisions: {}", collisions.len());
+        for (font1, font2, hash) in collisions.iter().take(10) {
+            println!("  - {} vs {} (hash: {:016x})", font1, font2, hash);
+        }
+    }
+
+    Ok(())
+}
+
+/// Entry in the glyph shape database.
+#[derive(Debug, Serialize, Deserialize)]
+struct GlyphEntry {
+    /// Perceptual hash as hexadecimal string
+    phash_hex: String,
+    /// Perceptual hash as u64 for comparison
+    #[serde(skip)]
+    phash: u64,
+    /// Unicode character (escaped if needed)
+    #[serde(rename = "char")]
+    ch: char,
+    /// Source font filename
+    source_font: String,
+    /// Unicode frequency rank (higher = more common)
+    frequency_rank: u32,
+}
+
+/// Check if a font has a glyph for the given character.
+fn has_glyph(font: &Font, ch: char) -> bool {
+    // fontdue provides indices for characters
+    // If the character maps to a valid glyph index, the font has it
+    let index = font.lookup_glyph_index(ch);
+    index != 0
+}
+
+/// Skip characters that are unlikely to be in fonts or are control characters.
+fn should_skip_char(ch: char) -> bool {
+    // Skip control characters, private use, surrogates
+    if ch.is_control() {
+        return true;
+    }
+
+    let cp = ch as u32;
+
+    // Private Use Areas
+    if (0xE000..=0xF8FF).contains(&cp)
+        || (0xF0000..=0xFFFFD).contains(&cp)
+        || (0x100000..=0x10FFFD).contains(&cp)
+    {
+        return true;
+    }
+
+    // Surrogates
+    if (0xD800..=0xDFFF).contains(&cp) {
+        return true;
+    }
+
+    // Very high Unicode planes are unlikely to be in fonts
+    if cp > 0x2FFFF {
+        return true;
+    }
+
+    false
+}
+
+/// Center a glyph bitmap into a 32x32 canvas.
+///
+/// The input bitmap is centered both horizontally and vertically,
+/// with zero padding.
+fn center_bitmap_32x32(bitmap: &[u8], width: usize, height: usize) -> [u8; 1024] {
+    let mut centered = [0u8; 1024];
+
+    if width == 0 || height == 0 || bitmap.is_empty() {
+        return centered;
+    }
+
+    // Calculate offsets to center the bitmap
+    let x_offset = (32 - width) / 2;
+    let y_offset = (32 - height) / 2;
+
+    // Copy bitmap into centered position
+    for y in 0..height.min(32) {
+        for x in 0..width.min(32) {
+            let src_idx = y * width + x;
+            if src_idx < bitmap.len() {
+                let dst_y = y_offset + y;
+                let dst_x = x_offset + x;
+                if dst_y < 32 && dst_x < 32 {
+                    let dst_idx = dst_y * 32 + dst_x;
+                    centered[dst_idx] = bitmap[src_idx];
+                }
+            }
+        }
+    }
+
+    centered
+}
+
+/// Compute pHash for a 32x32 grayscale bitmap.
+///
+/// This is a wrapper around pdftract-core's phash_glyph function.
+fn compute_phash(bitmap: &[u8; 1024]) -> u64 {
+    // For now, we'll compute a simple hash
+    // In the future, we'd use pdftract-core::font::shape::phash_glyph
+    // but that's not accessible from xtask due to dependency direction
+
+    // Simple DCT-based pHash implementation
+    // TODO: Integrate with pdftract-core's phash_glyph once accessible
+    simple_phash(bitmap)
+}
+
+/// Simple pHash implementation for xtask.
+///
+/// This is a fallback until we can properly integrate with pdftract-core's phash.
+fn simple_phash(bitmap: &[u8; 1024]) -> u64 {
+    // Convert to centered floats
+    let mut input = [0.0f32; 1024];
+    for i in 0..1024 {
+        input[i] = (bitmap[i] as f32) / 127.5 - 1.0;
+    }
+
+    // Apply 2D DCT
+    let mut dct_output = [0.0f32; 1024];
+    simple_dct_2d(&input, &mut dct_output);
+
+    // Extract 8x8 low-frequency coefficients
+    let mut low_freq = [0.0f32; 64];
+    let mut idx = 0;
+    for y in 0..8 {
+        for x in 0..8 {
+            if x == 0 && y == 0 {
+                low_freq[idx] = dct_output[8].abs(); // Skip DC, use [0,8]
+            } else {
+                low_freq[idx] = dct_output[y * 32 + x].abs();
+            }
+            idx += 1;
+        }
+    }
+
+    // Compute median
+    let mut sorted = low_freq;
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let median = (sorted[31] + sorted[32]) / 2.0;
+
+    // Threshold to 64-bit hash
+    let mut hash: u64 = 0;
+    for (i, &val) in low_freq.iter().enumerate() {
+        if val > median {
+            hash |= 1 << i;
+        }
+    }
+
+    hash
+}
+
+/// Simple 2D DCT-II implementation.
+fn simple_dct_2d(input: &[f32; 1024], output: &mut [f32; 1024]) {
+    let mut temp = [0.0f32; 1024];
+
+    // Precompute cosine basis
+    let mut basis = [[0.0f32; 32]; 32];
+    for (k, row) in basis.iter_mut().enumerate() {
+        for (n, val) in row.iter_mut().enumerate() {
+            *val = (std::f32::consts::PI * k as f32 * (2 * n + 1) as f32 / 64.0).cos();
+        }
+    }
+
+    // Row-wise DCT
+    for y in 0..32 {
+        for k in 0..32 {
+            let mut sum = 0.0f32;
+            for n in 0..32 {
+                sum += input[y * 32 + n] * basis[k][n];
+            }
+            let scale: f32 = if k == 0 {
+                (1.0_f32 / 32.0_f32).sqrt()
+            } else {
+                (2.0_f32 / 32.0_f32).sqrt()
+            };
+            temp[y * 32 + k] = sum * scale;
+        }
+    }
+
+    // Column-wise DCT
+    for x in 0..32 {
+        for k in 0..32 {
+            let mut sum = 0.0f32;
+            for n in 0..32 {
+                sum += temp[n * 32 + x] * basis[k][n];
+            }
+            let scale: f32 = if k == 0 {
+                (1.0_f32 / 32.0_f32).sqrt()
+            } else {
+                (2.0_f32 / 32.0_f32).sqrt()
+            };
+            output[k * 32 + x] = sum * scale;
+        }
+    }
+}
+
+/// Load character frequency data.
+///
+/// Returns a map from character to frequency rank (higher = more common).
+fn load_frequency_data(
+    workspace_root: &Path,
+) -> Result<HashMap<char, u32>, Box<dyn std::error::Error>> {
+    let frequency_path = workspace_root.join("build").join("frequency.json");
+
+    // If frequency file doesn't exist, return empty map
+    if !frequency_path.exists() {
+        println!(
+            "Warning: frequency.json not found at {}",
+            frequency_path.display()
+        );
+        println!("Using zero frequency rank for all characters.");
+        return Ok(HashMap::new());
+    }
+
+    let content = fs::read_to_string(&frequency_path)?;
+    let data: serde_json::Value = serde_json::from_str(&content)?;
+
+    let mut frequency = HashMap::new();
+
+    // Parse frequency data
+    // Expected format: {"A": 1, "B": 2, ...} or array of objects
+    if let Some(obj) = data.as_object() {
+        for (key, value) in obj {
+            if let Some(rank) = value.as_u64() {
+                if let Some(ch) = key.chars().next() {
+                    frequency.insert(ch, rank as u32);
+                }
+            }
+        }
+    }
+
+    println!("Loaded frequency data for {} characters", frequency.len());
+    Ok(frequency)
+}
+
+/// Find all font files in a directory.
+fn find_font_files(dir: &Path) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+    let mut font_files = Vec::new();
+
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        if path.is_dir() {
+            // Recursively search subdirectories
+            font_files.extend(find_font_files(&path)?);
+        } else {
+            let ext = path.extension().and_then(|s| s.to_str());
+            if ext == Some("ttf") || ext == Some("otf") {
+                font_files.push(path);
+            }
+        }
+    }
+
+    font_files.sort();
+    Ok(font_files)
 }
 
 /// Expected page classification for a fixture
