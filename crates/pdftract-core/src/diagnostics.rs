@@ -575,6 +575,14 @@ pub enum DiagCode {
     /// Phase origin: 2.2
     FontEncodingDifferenceOutOfRange,
 
+    /// Type3 font /Widths array length mismatch
+    ///
+    /// Emitted when a Type3 font's /Widths array length does not match
+    /// LastChar - FirstChar + 1. The array is clamped or padded with zeros.
+    ///
+    /// Phase origin: 2.4
+    FontType3WidthsLengthMismatch,
+
     /// Malformed byte sequence in CJK encoding fallback
     ///
     /// Emitted when a CJK byte encoding (Shift-JIS, GB18030, Big5, or EUC-KR)
@@ -861,6 +869,7 @@ impl DiagCode {
             | DiagCode::FontInvalidCmap
             | DiagCode::FontParseFailed
             | DiagCode::FontUnsupported
+            | DiagCode::FontType3WidthsLengthMismatch
             | DiagCode::FontCidtogidmapTruncated
             | DiagCode::FontEncodingDifferenceOutOfRange => "FONT",
 
@@ -962,6 +971,7 @@ impl DiagCode {
             DiagCode::FontUnsupported => "FONT_UNSUPPORTED",
             DiagCode::FontCidtogidmapTruncated => "FONT_CIDTOGIDMAP_TRUNCATED",
             DiagCode::FontEncodingDifferenceOutOfRange => "ENCODING_DIFFERENCE_OUT_OF_RANGE",
+            DiagCode::FontType3WidthsLengthMismatch => "FONT_TYPE3_WIDTHS_LENGTH_MISMATCH",
             #[cfg(feature = "cjk")]
             DiagCode::CjkDecodeMalformed => "CJK_DECODE_MALFORMED",
             DiagCode::OcrJbig2Unsupported => "OCR_JBIG2_UNSUPPORTED",
@@ -1045,6 +1055,7 @@ impl DiagCode {
             | DiagCode::FontInvalidCmap
             | DiagCode::FontParseFailed
             | DiagCode::FontUnsupported
+            | DiagCode::FontType3WidthsLengthMismatch
             | DiagCode::FontCidtogidmapTruncated
             | DiagCode::FontEncodingDifferenceOutOfRange
             | DiagCode::OcrJbig2Unsupported

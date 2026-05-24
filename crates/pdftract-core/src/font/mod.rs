@@ -6,6 +6,7 @@
 pub mod std14;
 pub mod embedded;
 pub mod type0;
+pub mod type3;
 pub mod cmap;
 pub mod encoding;
 pub mod agl;
@@ -18,6 +19,7 @@ pub mod cjk_encoding;
 
 pub use embedded::{EmbeddedFont, FontMetrics, EmptyFontMetrics, GlyphBbox};
 pub use type0::{Type0Font, DescendantCIDFont, CIDToGIDMap};
+pub use type3::Type3Font;
 pub use cmap::{ToUnicodeMap, parse_to_unicode, parse_to_unicode_with_diags};
 pub use encoding::{NamedEncoding, DifferencesOverlay, FontEncoding};
 pub use agl::{unicode_for_glyph_name, unicode_for_glyph_name_multi};
