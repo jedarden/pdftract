@@ -16,12 +16,14 @@
 use crate::document::compute_fingerprint_lazy;
 use crate::options::{ExtractionOptions, ReceiptsMode};
 use crate::receipts::Receipt;
-use crate::schema::{BlockJson, SpanJson};
+use crate::schema::{BlockJson, SpanJson, TableJson};
 use crate::semaphore::{Semaphore, SemaphoreExt};
-use crate::parser::catalog::{ReadingOrderAlgorithm, MarkInfo};
-use crate::parser::struct_tree::{parse_struct_tree, check_coverage_for_pages, StructTreeRoot};
+use crate::parser::catalog::ReadingOrderAlgorithm;
+use crate::parser::struct_tree::{parse_struct_tree, check_coverage_for_pages};
 use crate::parser::marked_content::{McidTracker, track_mcids_from_content_stream};
 use crate::parser::stream::DEFAULT_MAX_DECOMPRESS_BYTES;
+use crate::table::{TableDetector, PageContext, grid_to_table_json, GridCandidate, detect_two_page_tables};
+use crate::table::{TableCell as Cell, TableSpan};
 use anyhow::{Context, Result};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -118,9 +120,59 @@ pub struct PageResult {
     pub spans: Vec<SpanJson>,
     /// Extracted blocks (semantic units like paragraphs, headings).
     pub blocks: Vec<BlockJson>,
+    /// Extracted tables (cell-level structure).
+    ///
+    /// This array provides detailed table structure with rows and cells.
+    /// Table blocks in the `blocks` array reference entries here via `table_index`.
+    pub tables: Vec<TableJson>,
     /// Error message if extraction failed for this page.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+/// Temporary structure holding both TableJson and GridCandidate during extraction.
+///
+/// This is used to preserve GridCandidate information for two-page table detection,
+/// which runs after all pages have been extracted. After detection, only the
+/// TableJson is retained in the final output.
+#[derive(Debug, Clone)]
+struct TableWithGrid {
+    /// The JSON output structure for this table.
+    json: TableJson,
+    /// The grid candidate used for two-page detection.
+    grid: GridCandidate,
+}
+
+/// Internal page result that includes grid information for two-page detection.
+///
+/// This is used during extraction to preserve GridCandidate information.
+/// After two-page detection, this is converted to the public PageResult.
+#[derive(Debug, Clone)]
+struct PageResultInternal {
+    /// 0-based page index.
+    pub index: usize,
+    /// Extracted spans (text fragments with consistent styling).
+    pub spans: Vec<SpanJson>,
+    /// Extracted blocks (semantic units like paragraphs, headings).
+    pub blocks: Vec<BlockJson>,
+    /// Extracted tables with grid information.
+    pub tables: Vec<TableWithGrid>,
+    /// Error message if extraction failed for this page.
+    pub error: Option<String>,
+    /// Page media box height for two-page detection.
+    pub page_height: f64,
+}
+
+impl From<PageResultInternal> for PageResult {
+    fn from(internal: PageResultInternal) -> Self {
+        PageResult {
+            index: internal.index,
+            spans: internal.spans,
+            blocks: internal.blocks,
+            tables: internal.tables.into_iter().map(|t| t.json).collect(),
+            error: internal.error,
+        }
+    }
 }
 
 /// Metadata about the extraction process.
@@ -283,6 +335,7 @@ pub fn extract_pdf(
     let mut total_blocks = 0;
     let mut error_count = 0;
     let mut page_count = 0;
+    let mut page_heights = Vec::new(); // Track page heights for two-page table detection
 
     // Phase 7.1.4: Collect page data for coverage check
     // Track MCIDs and struct_parents for each page
@@ -298,11 +351,15 @@ pub fn extract_pdf(
                     .map(|d| d.message.as_ref())
                     .unwrap_or("unknown error");
                 error_count += 1;
-                extracted_pages.push(PageResult {
+                let page_height = 792.0; // Default height for error pages
+                page_heights.push(page_height);
+                extracted_pages.push(PageResultInternal {
                     index: page_count,
                     spans: vec![],
                     blocks: vec![],
+                    tables: vec![],
                     error: Some(msg.to_string()),
+                    page_height,
                 });
                 // Still record page data for coverage check (even on error)
                 if needs_coverage_check {
@@ -312,6 +369,11 @@ pub fn extract_pdf(
                 continue;
             }
         };
+
+        // Get page height for two-page table detection
+        let [_x0, _y0, _x1, y1] = page_dict.media_box;
+        let page_height = (y1 - page_dict.media_box[1]).max(0.0);
+        page_heights.push(page_height);
 
         // Track MCIDs for this page if coverage check is needed
         if needs_coverage_check {
@@ -359,20 +421,24 @@ pub fn extract_pdf(
             }
             Ok(Err(e)) => {
                 error_count += 1;
-                extracted_pages.push(PageResult {
+                extracted_pages.push(PageResultInternal {
                     index: page_count,
                     spans: vec![],
                     blocks: vec![],
+                    tables: vec![],
                     error: Some(e.to_string()),
+                    page_height,
                 });
             }
             Err(_) => {
                 error_count += 1;
-                extracted_pages.push(PageResult {
+                extracted_pages.push(PageResultInternal {
                     index: page_count,
                     spans: vec![],
                     blocks: vec![],
+                    tables: vec![],
                     error: Some(format!("Page {} extraction panicked", page_count)),
+                    page_height,
                 });
             }
         }
@@ -404,6 +470,14 @@ pub fn extract_pdf(
         (reading_order_algorithm, Vec::new())
     };
 
+    // Phase 7.2.6: Detect two-page table continuation
+    // This must happen after all pages have been extracted so we can compare
+    // tables on adjacent pages
+    let extracted_pages = apply_two_page_table_detection(extracted_pages, &page_heights);
+
+    // Convert PageResultInternal to PageResult for final output
+    let extracted_pages: Vec<PageResult> = extracted_pages.into_iter().map(Into::into).collect();
+
     Ok(ExtractionResult {
         fingerprint,
         pages: extracted_pages,
@@ -419,6 +493,43 @@ pub fn extract_pdf(
             diagnostics: coverage_diagnostics,
         },
     })
+}
+
+/// Apply two-page table detection flags to extracted pages.
+///
+/// This function examines tables on adjacent pages and sets the
+/// `continued` and `continued_from_prev` flags where appropriate.
+///
+/// # Arguments
+///
+/// * `pages` - Pages with internal table information (grids preserved)
+/// * `page_heights` - Page heights in points for edge detection
+///
+/// # Returns
+///
+/// Pages with table continuation flags applied.
+fn apply_two_page_table_detection(mut pages: Vec<PageResultInternal>, page_heights: &[f64]) -> Vec<PageResultInternal> {
+    // Collect all GridCandidates by page
+    let all_grids: Vec<Vec<GridCandidate>> = pages.iter()
+        .map(|p| p.tables.iter().map(|t| t.grid.clone()).collect())
+        .collect();
+
+    // Run two-page detection
+    let continuation_flags = detect_two_page_tables(&all_grids, page_heights);
+
+    // Apply flags to the tables
+    for (page_idx, page) in pages.iter_mut().enumerate() {
+        if let Some(page_flags) = continuation_flags.get(page_idx) {
+            for (table_idx, table) in page.tables.iter_mut().enumerate() {
+                if let Some(&(continued, continued_from_prev)) = page_flags.get(table_idx) {
+                    table.json.continued = continued;
+                    table.json.continued_from_prev = continued_from_prev;
+                }
+            }
+        }
+    }
+
+    pages
 }
 
 /// Extract content from a single page.
@@ -483,6 +594,7 @@ fn extract_page(
         text: block_text,
         bbox: block_bbox,
         level: None,
+        table_index: None,
         receipt: block_receipt,
     };
 
@@ -490,6 +602,7 @@ fn extract_page(
         index: page_index,
         spans: vec![span],
         blocks: vec![block],
+        tables: vec![],
         error: None,
     })
 }
@@ -570,6 +683,7 @@ pub fn result_to_json(result: &ExtractionResult) -> serde_json::Value {
                 "index": page.index,
                 "spans": page.spans,
                 "blocks": page.blocks,
+                "tables": page.tables,
             })
         })
         .collect();
@@ -816,10 +930,13 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
                 total_blocks += page.blocks.len() as u64;
 
                 // Serialize and write this page immediately
+                // Extract TableJson from TableWithGrid for serialization
+                let tables_json: Vec<_> = page.tables.into_iter().map(|t| t.json).collect();
                 let page_json = json!({
                     "index": page.index,
                     "spans": page.spans,
                     "blocks": page.blocks,
+                    "tables": tables_json,
                 });
 
                 serde_json::to_writer(&mut writer, &page_json)
@@ -835,6 +952,7 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
                     "error": e.to_string(),
                     "spans": [],
                     "blocks": [],
+                    "tables": [],
                 });
 
                 serde_json::to_writer(&mut writer, &error_json)
@@ -849,6 +967,7 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
                     "error": format!("Page {} extraction panicked", page_index),
                     "spans": [],
                     "blocks": [],
+                    "tables": [],
                 });
 
                 serde_json::to_writer(&mut writer, &error_json)
@@ -955,6 +1074,10 @@ fn find_startxref(source: &FileSource) -> anyhow::Result<u64> {
 /// * `options` - Extraction options
 /// * `source` - The PDF source for reading stream data (optional, for lazy decode)
 /// * `resolver` - The xref resolver (optional, for lazy decode)
+///
+/// # Returns
+///
+/// A `PageResultInternal` with grid information preserved for two-page detection.
 fn extract_page_from_dict(
     fingerprint: &str,
     page_index: usize,
@@ -962,20 +1085,23 @@ fn extract_page_from_dict(
     options: &ExtractionOptions,
     source: Option<&dyn crate::parser::stream::PdfSource>,
     resolver: Option<&crate::parser::xref::XrefResolver>,
-) -> Result<PageResult> {
+) -> Result<PageResultInternal> {
     let [x0, y0, x1, y1] = page.media_box;
+    let page_height = y1 - y0;
 
     // Lazy decode content streams if source and resolver are provided
-    // This ensures streams are decoded only for this page and dropped immediately
-    let _decoded_streams = if let (Some(src), Some(res)) = (source, resolver) {
-        use crate::parser::stream::DEFAULT_MAX_DECOMPRESS_BYTES;
+    let decoded_streams = if let (Some(src), Some(res)) = (source, resolver) {
         Some(decode_page_content_streams(page, res, src, DEFAULT_MAX_DECOMPRESS_BYTES))
     } else {
         None
     };
 
-    // The decoded_streams are dropped here, before we create the result
-    // This ensures no decoded data is held in the returned PageResult
+    // Detect tables using line-based and borderless detection
+    let tables = if let Some(ref content_bytes) = decoded_streams {
+        detect_tables_on_page(page, content_bytes, page_index)?
+    } else {
+        Vec::new()
+    };
 
     // Create a placeholder span for the entire page
     // This is a minimal implementation - the full Phase 3 pipeline
@@ -1002,7 +1128,39 @@ fn extract_page_from_dict(
         receipt,
     };
 
-    // Create a block containing the span
+    // Create blocks including table blocks
+    let mut blocks = Vec::new();
+
+    // Add table blocks
+    for (table_idx, table) in tables.iter().enumerate() {
+        // Use the grid's bbox for the block, not a placeholder
+        let table_bbox = [
+            table.grid.bbox[0] as f64,
+            table.grid.bbox[1] as f64,
+            table.grid.bbox[2] as f64,
+            table.grid.bbox[3] as f64,
+        ];
+
+        let table_receipt = generate_receipt(
+            fingerprint,
+            page_index,
+            table_bbox,
+            "table",
+            options.receipts,
+            #[cfg(feature = "receipts")] None,
+        )?;
+
+        blocks.push(BlockJson {
+            kind: "table".to_string(),
+            text: format!("Table {}", table_idx),
+            bbox: table_bbox,
+            level: None,
+            table_index: Some(table_idx),
+            receipt: table_receipt,
+        });
+    }
+
+    // Add a placeholder paragraph block
     let block_text = span.text.clone();
     let block_bbox = span_bbox;
     let block_receipt = generate_receipt(
@@ -1014,20 +1172,91 @@ fn extract_page_from_dict(
         #[cfg(feature = "receipts")] None,
     )?;
 
-    let block = BlockJson {
+    blocks.push(BlockJson {
         kind: "paragraph".to_string(),
         text: block_text,
         bbox: block_bbox,
         level: None,
+        table_index: None,
         receipt: block_receipt,
-    };
+    });
 
-    Ok(PageResult {
+    Ok(PageResultInternal {
         index: page_index,
         spans: vec![span],
-        blocks: vec![block],
+        blocks,
+        tables,
         error: None,
+        page_height,
     })
+}
+
+/// Detect tables on a page using line-based and borderless detection.
+///
+/// This function runs both detection methods and combines the results,
+/// preferring line-based detection when both find tables in similar positions.
+///
+/// Returns `Vec<TableWithGrid>` to preserve grid information for two-page detection.
+fn detect_tables_on_page(
+    page: &crate::parser::pages::PageDict,
+    content_bytes: &[u8],
+    page_index: usize,
+) -> Result<Vec<TableWithGrid>> {
+    use crate::table::PageContext;
+
+    let ctx = PageContext::new(page, content_bytes);
+    let detector = TableDetector::new();
+
+    // Try line-based detection first
+    let line_based_grids = detector.detect_line_based(&ctx);
+
+    // If no tables found, try borderless detection
+    let grids = if line_based_grids.is_empty() {
+        detector.detect_borderless(&ctx)
+    } else {
+        line_based_grids
+    };
+
+    // Convert grids to TableWithGrid
+    let mut tables = Vec::new();
+    for grid in grids {
+        // Create empty cells (no span assignment yet - that requires full text extraction)
+        let cells = create_empty_cells(&grid);
+
+        let detection_method = if grid.segments.is_empty() {
+            "borderless"
+        } else {
+            "line_based"
+        };
+
+        let table_json = grid_to_table_json(
+            &grid,
+            &cells,
+            page_index,
+            detection_method,
+            false, // continued - will be set by two-page detection
+            false, // continued_from_prev - will be set by two-page detection
+        );
+
+        tables.push(TableWithGrid { json: table_json, grid });
+    }
+
+    Ok(tables)
+}
+
+/// Create empty cells for a grid (placeholder for when text extraction is not available).
+fn create_empty_cells(grid: &crate::table::GridCandidate) -> Vec<Cell> {
+    let mut cells = Vec::new();
+
+    for row in 0..grid.row_count() {
+        for col in 0..grid.col_count() {
+            if let Some(bbox) = grid.cell_bbox(row, col) {
+                cells.push(Cell::new(bbox, row, col));
+            }
+        }
+    }
+
+    cells
 }
 
 #[cfg(test)]

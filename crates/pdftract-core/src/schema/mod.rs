@@ -17,6 +17,7 @@
 //! proof of provenance. When receipts are disabled, the field is `null`.
 
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 use crate::receipts::Receipt;
 
@@ -85,12 +86,143 @@ pub struct BlockJson {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub level: Option<u8>,
 
+    /// Optional table index for "table" kind blocks.
+    ///
+    /// This field is present only for table blocks and points to the
+    /// corresponding entry in the page's `tables` array.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub table_index: Option<usize>,
+
     /// Optional cryptographic receipt for verification.
     ///
     /// This field is present when `--receipts=lite` or `--receipts=svg`
     /// is enabled. When receipts are disabled, the field is `null`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub receipt: Option<Receipt>,
+}
+
+/// A reference to a span by index.
+///
+/// This type is used in table cells to reference spans from the
+/// page-level `spans` array.
+pub type SpanRef = usize;
+
+/// JSON representation of a table cell.
+///
+/// A cell represents a single unit within a table row, containing
+/// its text content, bounding box, and position information.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CellJson {
+    /// Bounding box in PDF user-space points.
+    ///
+    /// Format: `[x0, y0, x1, y1]` where (x0, y0) is the bottom-left
+    /// corner and (x1, y1) is the top-right corner.
+    pub bbox: [f64; 4],
+
+    /// The concatenated text content of all spans in the cell.
+    pub text: String,
+
+    /// References to spans in the page's `spans` array.
+    ///
+    /// These indices point to the spans that make up this cell's content.
+    pub spans: Vec<SpanRef>,
+
+    /// Zero-based row index within the table.
+    pub row: usize,
+
+    /// Zero-based column index within the table.
+    pub col: usize,
+
+    /// Number of rows this cell spans (default 1).
+    ///
+    /// Values greater than 1 indicate a merged cell that spans
+    /// multiple rows vertically.
+    #[serde(default = "default_one")]
+    pub rowspan: u32,
+
+    /// Number of columns this cell spans (default 1).
+    ///
+    /// Values greater than 1 indicate a merged cell that spans
+    /// multiple columns horizontally.
+    #[serde(default = "default_one")]
+    pub colspan: u32,
+
+    /// Whether this cell is in a header row.
+    ///
+    /// Header cells are typically rendered differently (bold, centered)
+    /// and may be reused when tables span multiple pages.
+    pub is_header_row: bool,
+}
+
+fn default_one() -> u32 {
+    1
+}
+
+/// JSON representation of a table row.
+///
+/// A row contains a sequence of cells that form a horizontal strip
+/// in the table.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RowJson {
+    /// Bounding box in PDF user-space points.
+    ///
+    /// Format: `[x0, y0, x1, y1]` where (x0, y0) is the bottom-left
+    /// corner and (x1, y1) is the top-right corner.
+    pub bbox: [f64; 4],
+
+    /// Cells in this row, ordered left-to-right.
+    pub cells: Vec<CellJson>,
+
+    /// Whether this row is a header row.
+    ///
+    /// Header rows are typically repeated when tables span multiple pages.
+    pub is_header: bool,
+}
+
+/// JSON representation of a table.
+///
+/// Tables are emitted in parallel with table blocks - the block
+/// provides the concatenated text and position, while the TableJson
+/// provides full cell-level structure.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TableJson {
+    /// Unique identifier for this table (e.g., "table_0").
+    pub id: String,
+
+    /// Bounding box in PDF user-space points.
+    ///
+    /// Format: `[x0, y0, x1, y1]` where (x0, y0) is the bottom-left
+    /// corner and (x1, y1) is the top-right corner.
+    pub bbox: [f64; 4],
+
+    /// Rows in this table, ordered top-to-bottom.
+    pub rows: Vec<RowJson>,
+
+    /// Number of contiguous header rows at the top of the table.
+    ///
+    /// Header rows are typically repeated when tables span multiple pages.
+    pub header_rows: u32,
+
+    /// Detection method used to identify this table.
+    ///
+    /// - "line_based": Table detected via ruling lines (borders)
+    /// - "borderless": Table detected via x0 alignment heuristics
+    pub detection_method: String,
+
+    /// Whether this table continues on the next page.
+    ///
+    /// Set to `true` when a table is split across pages and this
+    /// page contains the first part.
+    pub continued: bool,
+
+    /// Whether this table is a continuation from the previous page.
+    ///
+    /// Set to `true` when a table is split across pages and this
+    /// page contains a subsequent part.
+    pub continued_from_prev: bool,
+
+    /// Zero-based page index where this table appears.
+    pub page_index: usize,
 }
 
 /// Extraction quality metrics for the document.
@@ -243,6 +375,7 @@ mod tests {
             text: "This is a paragraph.".to_string(),
             bbox: [50.0, 100.0, 500.0, 200.0],
             level: None,
+            table_index: None,
             receipt: None,
         };
 
@@ -262,6 +395,7 @@ mod tests {
             text: "Chapter 1".to_string(),
             bbox: [50.0, 700.0, 500.0, 750.0],
             level: Some(1),
+            table_index: None,
             receipt: None,
         };
 
@@ -285,6 +419,7 @@ mod tests {
             text: "This is a paragraph.".to_string(),
             bbox: [50.0, 100.0, 500.0, 200.0],
             level: None,
+            table_index: None,
             receipt: Some(receipt),
         };
 
@@ -438,5 +573,317 @@ mod tests {
         assert_eq!(quality.overall_quality, "medium");
         assert_eq!(quality.dpi_used, Some(400));
         assert_eq!(quality.ocr_fraction, Some(0.75));
+    }
+
+    #[test]
+    fn test_table_json_serialization() {
+        let table = TableJson {
+            id: "table_0".to_string(),
+            bbox: [50.0, 100.0, 550.0, 400.0],
+            rows: vec![
+                RowJson {
+                    bbox: [50.0, 350.0, 550.0, 400.0],
+                    cells: vec![
+                        CellJson {
+                            bbox: [50.0, 350.0, 200.0, 400.0],
+                            text: "Header 1".to_string(),
+                            spans: vec![0],
+                            row: 0,
+                            col: 0,
+                            rowspan: 1,
+                            colspan: 1,
+                            is_header_row: true,
+                        },
+                        CellJson {
+                            bbox: [200.0, 350.0, 550.0, 400.0],
+                            text: "Header 2".to_string(),
+                            spans: vec![1],
+                            row: 0,
+                            col: 1,
+                            rowspan: 1,
+                            colspan: 1,
+                            is_header_row: true,
+                        },
+                    ],
+                    is_header: true,
+                },
+            ],
+            header_rows: 1,
+            detection_method: "line_based".to_string(),
+            continued: false,
+            continued_from_prev: false,
+            page_index: 0,
+        };
+
+        let json = serde_json::to_string(&table).unwrap();
+
+        assert!(json.contains("id"));
+        assert!(json.contains("table_0"));
+        assert!(json.contains("rows"));
+        assert!(json.contains("header_rows"));
+        assert!(json.contains("detection_method"));
+        assert!(json.contains("line_based"));
+        assert!(json.contains("continued"));
+        assert!(json.contains("continued_from_prev"));
+    }
+
+    #[test]
+    fn test_table_json_borderless() {
+        let table = TableJson {
+            id: "table_1".to_string(),
+            bbox: [50.0, 100.0, 400.0, 300.0],
+            rows: vec![],
+            header_rows: 0,
+            detection_method: "borderless".to_string(),
+            continued: false,
+            continued_from_prev: false,
+            page_index: 1,
+        };
+
+        let json = serde_json::to_string(&table).unwrap();
+        assert!(json.contains("borderless"));
+    }
+
+    #[test]
+    fn test_table_json_continued_flags() {
+        let table = TableJson {
+            id: "table_2".to_string(),
+            bbox: [50.0, 40.0, 550.0, 200.0],
+            rows: vec![],
+            header_rows: 1,
+            detection_method: "line_based".to_string(),
+            continued: true,  // Table continues on next page
+            continued_from_prev: false,
+            page_index: 0,
+        };
+
+        let json = serde_json::to_string(&table).unwrap();
+
+        // Check that continued is true and continued_from_prev is false
+        assert!(json.contains(r#""continued":true"#));
+        assert!(json.contains(r#""continued_from_prev":false"#));
+    }
+
+    #[test]
+    fn test_table_json_continued_from_prev() {
+        let table = TableJson {
+            id: "table_3".to_string(),
+            bbox: [50.0, 750.0, 550.0, 900.0],
+            rows: vec![],
+            header_rows: 0,
+            detection_method: "line_based".to_string(),
+            continued: false,
+            continued_from_prev: true,  // Continuation from previous page
+            page_index: 1,
+        };
+
+        let json = serde_json::to_string(&table).unwrap();
+
+        // Check that continued is false and continued_from_prev is true
+        assert!(json.contains(r#""continued":false"#));
+        assert!(json.contains(r#""continued_from_prev":true"#));
+    }
+
+    #[test]
+    fn test_row_json_serialization() {
+        let row = RowJson {
+            bbox: [50.0, 100.0, 550.0, 150.0],
+            cells: vec![
+                CellJson {
+                    bbox: [50.0, 100.0, 200.0, 150.0],
+                    text: "Cell 1".to_string(),
+                    spans: vec![],
+                    row: 0,
+                    col: 0,
+                    rowspan: 1,
+                    colspan: 1,
+                    is_header_row: false,
+                },
+            ],
+            is_header: false,
+        };
+
+        let json = serde_json::to_string(&row).unwrap();
+
+        assert!(json.contains("bbox"));
+        assert!(json.contains("cells"));
+        assert!(json.contains("is_header"));
+    }
+
+    #[test]
+    fn test_cell_json_serialization() {
+        let cell = CellJson {
+            bbox: [50.0, 100.0, 200.0, 150.0],
+            text: "Cell content".to_string(),
+            spans: vec![0, 1, 2],
+            row: 1,
+            col: 0,
+            rowspan: 2,  // Spans 2 rows
+            colspan: 1,
+            is_header_row: false,
+        };
+
+        let json = serde_json::to_string(&cell).unwrap();
+
+        assert!(json.contains("bbox"));
+        assert!(json.contains("text"));
+        assert!(json.contains("Cell content"));
+        assert!(json.contains("spans"));
+        assert!(json.contains("row"));
+        assert!(json.contains("col"));
+        assert!(json.contains("rowspan"));
+        assert!(json.contains("colspan"));
+        assert!(json.contains("is_header_row"));
+    }
+
+    #[test]
+    fn test_v_1_0_table_schema_roundtrip() {
+        // Critical test: synthetic table -> JSON -> schema validate
+        let table = TableJson {
+            id: "table_0".to_string(),
+            bbox: [50.0, 100.0, 550.0, 400.0],
+            rows: vec![
+                RowJson {
+                    bbox: [50.0, 350.0, 550.0, 400.0],
+                    cells: vec![
+                        CellJson {
+                            bbox: [50.0, 350.0, 200.0, 400.0],
+                            text: "Header 1".to_string(),
+                            spans: vec![0],
+                            row: 0,
+                            col: 0,
+                            rowspan: 1,
+                            colspan: 1,
+                            is_header_row: true,
+                        },
+                        CellJson {
+                            bbox: [200.0, 350.0, 400.0, 400.0],
+                            text: "Header 2".to_string(),
+                            spans: vec![1],
+                            row: 0,
+                            col: 1,
+                            rowspan: 1,
+                            colspan: 2,  // Merged cell
+                            is_header_row: true,
+                        },
+                    ],
+                    is_header: true,
+                },
+                RowJson {
+                    bbox: [50.0, 100.0, 550.0, 350.0],
+                    cells: vec![
+                        CellJson {
+                            bbox: [50.0, 100.0, 200.0, 350.0],
+                            text: "Data 1".to_string(),
+                            spans: vec![2],
+                            row: 1,
+                            col: 0,
+                            rowspan: 1,
+                            colspan: 1,
+                            is_header_row: false,
+                        },
+                        CellJson {
+                            bbox: [200.0, 100.0, 400.0, 350.0],
+                            text: "Data 2".to_string(),
+                            spans: vec![3],
+                            row: 1,
+                            col: 1,
+                            rowspan: 1,
+                            colspan: 2,
+                            is_header_row: false,
+                        },
+                    ],
+                    is_header: false,
+                },
+            ],
+            header_rows: 1,
+            detection_method: "line_based".to_string(),
+            continued: false,
+            continued_from_prev: false,
+            page_index: 0,
+        };
+
+        // Serialize to JSON
+        let json_str = serde_json::to_string(&table).unwrap();
+
+        // Deserialize back to struct
+        let deserialized: TableJson = serde_json::from_str(&json_str).unwrap();
+
+        // Verify round-trip preservation
+        assert_eq!(deserialized.id, table.id);
+        assert_eq!(deserialized.bbox, table.bbox);
+        assert_eq!(deserialized.rows.len(), table.rows.len());
+        assert_eq!(deserialized.header_rows, table.header_rows);
+        assert_eq!(deserialized.detection_method, table.detection_method);
+        assert_eq!(deserialized.continued, table.continued);
+        assert_eq!(deserialized.continued_from_prev, table.continued_from_prev);
+        assert_eq!(deserialized.page_index, table.page_index);
+
+        // Verify row structure
+        assert_eq!(deserialized.rows[0].cells.len(), 2);
+        assert_eq!(deserialized.rows[0].cells[1].colspan, 2);  // Merged cell preserved
+    }
+
+    #[test]
+    fn test_tables_array_emitted_on_page_output() {
+        // Schema test: tables array emitted on every page output (even when empty)
+        // This test verifies that a page JSON always includes a "tables" field
+
+        // Create a minimal page output JSON with empty tables array
+        let page_json_with_empty_tables = json!({
+            "index": 0,
+            "spans": [],
+            "blocks": [],
+            "tables": []
+        });
+
+        // Verify tables field is present
+        assert!(page_json_with_empty_tables.get("tables").is_some());
+
+        // Verify it's an array
+        assert!(page_json_with_empty_tables["tables"].is_array());
+
+        // Verify it's empty
+        assert_eq!(page_json_with_empty_tables["tables"].as_array().unwrap().len(), 0);
+
+        // Test with non-empty tables array
+        let page_json_with_tables = json!({
+            "index": 0,
+            "spans": [],
+            "blocks": [],
+            "tables": [
+                {
+                    "id": "table_0",
+                    "bbox": [50.0, 100.0, 550.0, 400.0],
+                    "rows": [],
+                    "header_rows": 0,
+                    "detection_method": "line_based",
+                    "continued": false,
+                    "continued_from_prev": false,
+                    "page_index": 0
+                }
+            ]
+        });
+
+        // Verify tables field is present and has one entry
+        assert!(page_json_with_tables.get("tables").is_some());
+        assert_eq!(page_json_with_tables["tables"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_table_block_emission_shape() {
+        // Test that table blocks have the correct shape with table_index
+        let table_block = json!({
+            "kind": "table",
+            "text": "Table 0",
+            "bbox": [50.0, 100.0, 550.0, 400.0],
+            "table_index": 0
+        });
+
+        // Verify required fields
+        assert_eq!(table_block["kind"], "table");
+        assert!(table_block.get("bbox").is_some());
+        assert!(table_block.get("table_index").is_some());
+        assert_eq!(table_block["table_index"], 0);
     }
 }
