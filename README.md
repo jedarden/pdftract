@@ -41,6 +41,36 @@ pdftract extract invoice.pdf --output out.json
 pdftract serve --port 8080              # HTTP service: POST /extract
 ```
 
+## Installation
+
+### cargo binstall (recommended, fastest)
+
+If you have Rust toolchain installed, the quickest way to get a prebuilt binary is via `cargo binstall`:
+
+```bash
+cargo install cargo-binstall
+cargo binstall pdftract
+```
+
+This downloads the appropriate binary for your platform from the GitHub Releases (2-3 seconds) instead of compiling from source.
+
+### Pre-built binaries
+
+Download directly from [GitHub Releases](https://github.com/jedarden/pdftract/releases):
+
+- Linux (x86_64): `pdftract-v*-x86_64-unknown-linux-musl.tar.gz`
+- macOS (Apple Silicon): `pdftract-v*-aarch64-apple-darwin.tar.gz`
+- macOS (Intel): `pdftract-v*-x86_64-apple-darwin.tar.gz`
+- Windows: `pdftract-v*-x86_64-pc-windows-gnu.zip`
+
+### Build from source
+
+```bash
+cargo install pdftract --features full-render,ocr
+```
+
+See `docs/notes/` for language-specific SDK installation examples (Python, Node.js, Go, Ruby, Java, Rust, Bash).
+
 ## Architecture
 
 Rust core with PyO3 Python bindings and a CLI binary. The same binary runs as a command-line tool or as an HTTP microservice — the container deployment is just `pdftract serve`.

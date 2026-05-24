@@ -89,6 +89,14 @@ receipts = []
 # Markdown output
 markdown = []
 
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/pdftract-v{ version }-{ target }.{ archive-format }"
+pkg-fmt = "tgz"
+bin-dir = "pdftract-v{ version }-{ target }/{ bin }{ binary-ext }"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-gnu]
+pkg-fmt = "zip"
+
 [dev-dependencies]
 ureq = { version = "2.9", features = ["socks-proxy"] }
 serde_yaml = "0.9"
