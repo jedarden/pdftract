@@ -53,24 +53,37 @@ pub struct ImagePlacement {
     pub name: Arc<str>,
 }
 
-/// An inline image from a BI/ID/EI sequence.
+/// Header parameters for an inline image (BI/ID/EI sequence).
 ///
-/// Inline images are embedded directly in the content stream rather than
-/// being referenced as XObjects.
-#[derive(Debug, Clone)]
-pub struct InlineImage {
-    /// The image data (decoded).
-    pub data: Vec<u8>,
-    /// Image width in pixels.
-    pub width: u32,
-    /// Image height in pixels.
-    pub height: u32,
-    /// Bits per component.
+/// Contains the metadata from the inline image dictionary between BI and ID.
+#[derive(Debug, Clone, Default)]
+pub struct InlineImageHeader {
+    /// Width in samples (required).
+    pub width: Option<u32>,
+    /// Height in samples (required).
+    pub height: Option<u32>,
+    /// Bits per component (default: 8).
     pub bpc: u8,
-    /// Color space: "DeviceGray", "DeviceRGB", or "DeviceCMYK".
-    pub colorspace: String,
-    /// Filter applied to the image data.
-    pub filter: Option<String>,
+    /// Color space (default: DeviceGray).
+    pub colorspace: Option<String>,
+    /// Filter(s) applied to the image data.
+    pub filters: Vec<String>,
+    /// Whether this is an image mask (/ImageMask true).
+    pub is_mask: bool,
+    /// Image mask data (for /ImageMask true, /Mask [ Black | White ]).
+    pub mask_color: Option<u8>,
+}
+
+/// Reference to image bytes.
+///
+/// For v0.1.0, we store raw bytes + filter chain inline.
+/// Phase 5.2 will decode if/when needed for OCR.
+#[derive(Debug, Clone)]
+pub enum ImageBytesRef {
+    /// Inline image data (raw bytes from content stream).
+    Inline(Vec<u8>),
+    /// XObject reference (resolved later).
+    XObjectRef(ObjRef),
 }
 
 /// Represents either an XObject image or an inline image.
@@ -79,7 +92,29 @@ pub enum ImageSource {
     /// An XObject reference (most common).
     XObject(ObjRef, Arc<str>),
     /// An inline image (BI/ID/EI sequence).
-    Inline(InlineImage),
+    Inline,
+}
+
+/// An image XObject record in a page's image list.
+///
+/// This struct unifies both Do-referenced XObject images and inline images
+/// from BI/ID/EI sequences. Phase 4.4 figure detection uses this list to
+/// classify blocks as `figure` when they contain only image XObjects.
+#[derive(Debug, Clone)]
+pub struct ImageXObject {
+    /// Bounding box in PDF user-space points [x0, y0, x1, y1].
+    ///
+    /// For inline images: computed by transforming the unit square (0,0)-(1,1)
+    /// by the current CTM at the time of BI/ID/EI.
+    /// For Do-referenced images: computed similarly, but with the XObject's
+    /// /Matrix also applied.
+    pub bbox: [f32; 4],
+    /// Source of the image (inline vs XObject).
+    pub source: ImageSource,
+    /// Header parameters (only populated for inline images).
+    pub header: InlineImageHeader,
+    /// Reference to the image bytes.
+    pub bytes_ref: ImageBytesRef,
 }
 
 /// Walk content stream and collect image placements with their CTMs.
@@ -237,6 +272,405 @@ pub fn collect_image_placements(
     } else {
         Err(diagnostics)
     }
+}
+
+/// Collect all image XObjects from a content stream (both Do and inline images).
+///
+/// This function extends `collect_image_placements` to also handle inline images
+/// from BI/ID/EI sequences. It returns a unified list of `ImageXObject` entries
+/// that can be used by Phase 4.4 figure detection.
+///
+/// # Arguments
+///
+/// * `content` - The decoded content stream bytes
+/// * `resources` - The page's resource dictionary (for XObject lookup)
+///
+/// # Returns
+///
+/// A list of ImageXObject entries with bboxes computed from the current CTM,
+/// or diagnostics if parsing fails.
+pub fn collect_image_xobjects(
+    content: &[u8],
+    resources: &ResourceDict,
+) -> Result<Vec<ImageXObject>> {
+    let mut images = Vec::new();
+    let mut diagnostics = Vec::new();
+
+    // Create graphics state stack
+    let mut gss = GraphicsStateStack::new();
+    let mut state = GraphicsState::new();
+
+    // Tokenize content stream
+    let mut lexer = Lexer::new(content);
+    let mut operand_buffer: Vec<Token> = Vec::new();
+
+    while let Some(token) = lexer.next_token() {
+        match token {
+            Token::Keyword(ref k) => {
+                let keyword = std::str::from_utf8(k).unwrap_or("");
+
+                match keyword {
+                    "q" => {
+                        // Push graphics state
+                        if !gss.push(&state) {
+                            diagnostics.push(Diagnostic::with_static_no_offset(
+                                DiagCode::GstateStackOverflow,
+                                "Graphics state stack overflow",
+                            ));
+                            break;
+                        }
+                        operand_buffer.clear();
+                    }
+                    "Q" => {
+                        // Pop graphics state
+                        if let Some(popped) = gss.pop() {
+                            state = popped;
+                        }
+                        operand_buffer.clear();
+                    }
+                    "cm" => {
+                        // Concatenate matrix: cm expects exactly 6 numbers
+                        let nums: Vec<f64> = operand_buffer
+                            .iter()
+                            .filter_map(|t| match t {
+                                Token::Integer(n) => Some(*n as f64),
+                                Token::Real(f) => Some(*f),
+                                _ => None,
+                            })
+                            .collect();
+
+                        if nums.len() != 6 {
+                            diagnostics.push(Diagnostic::with_static_no_offset(
+                                DiagCode::CmArgCount,
+                                "cm operator requires exactly 6 numeric arguments",
+                            ));
+                            operand_buffer.clear();
+                            continue;
+                        }
+
+                        let matrix = Matrix3x3::from_pdf_array([
+                            nums[0], nums[1], nums[2], nums[3], nums[4], nums[5],
+                        ]);
+
+                        // Check for degenerate matrix (NaN or det == 0)
+                        let has_nan = nums.iter().any(|&n| n.is_nan());
+                        let det = matrix.determinant();
+                        if has_nan || det == 0.0 {
+                            diagnostics.push(Diagnostic::with_static_no_offset(
+                                DiagCode::CmDegenerate,
+                                "cm operator received degenerate matrix; clamped to identity",
+                            ));
+                            // Clamp to identity - don't modify CTM
+                        } else {
+                            state.concat_ctm(&matrix);
+                        }
+                        operand_buffer.clear();
+                    }
+                    "Do" => {
+                        // Paint XObject: Do expects a name operand
+                        if let Some(name_token) = operand_buffer.last() {
+                            if let Token::Name(name_bytes) = name_token {
+                                if let Ok(name_str) = std::str::from_utf8(name_bytes) {
+                                    let name_key = name_str.trim_start_matches('/');
+                                    // Check if this XObject exists in resources
+                                    if let Some(&xobject_ref) = resources.xobjects.get(name_key) {
+                                        // Compute bbox by transforming unit square [0,1]x[0,1]
+                                        let bbox = compute_unit_square_bbox(&state.ctm);
+
+                                        images.push(ImageXObject {
+                                            bbox,
+                                            source: ImageSource::XObject(
+                                                xobject_ref,
+                                                Arc::from(name_key),
+                                            ),
+                                            header: InlineImageHeader::default(),
+                                            bytes_ref: ImageBytesRef::XObjectRef(xobject_ref),
+                                        });
+
+                                        // Check image count limit
+                                        if images.len() >= MAX_IMAGES_PER_PAGE {
+                                            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                                                DiagCode::StreamBomb,
+                                                format!(
+                                                    "Too many images on page ({}), aborting",
+                                                    MAX_IMAGES_PER_PAGE
+                                                ),
+                                            ));
+                                            return Err(diagnostics);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        operand_buffer.clear();
+                    }
+                    "BI" => {
+                        // Begin inline image - parse the inline image dict and data
+                        match parse_inline_image(&mut lexer, &state.ctm) {
+                            Ok(Some((header, data))) => {
+                                // Compute bbox by transforming unit square
+                                let bbox = compute_unit_square_bbox(&state.ctm);
+
+                                images.push(ImageXObject {
+                                    bbox,
+                                    source: ImageSource::Inline,
+                                    header,
+                                    bytes_ref: ImageBytesRef::Inline(data),
+                                });
+
+                                // Check image count limit
+                                if images.len() >= MAX_IMAGES_PER_PAGE {
+                                    diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                                        DiagCode::StreamBomb,
+                                        format!(
+                                            "Too many images on page ({}), aborting",
+                                            MAX_IMAGES_PER_PAGE
+                                        ),
+                                    ));
+                                    return Err(diagnostics);
+                                }
+                            }
+                            Ok(None) => {
+                                // Inline image parsing failed or was skipped
+                                // Continue processing
+                            }
+                            Err(mut diags) => {
+                                diagnostics.append(&mut diags);
+                            }
+                        }
+                        operand_buffer.clear();
+                    }
+                    _ => {
+                        // Other operator - clear operands
+                        operand_buffer.clear();
+                    }
+                }
+            }
+            Token::Integer(_) | Token::Real(_) | Token::Name(_) => {
+                // Collect operands for cm and Do operators
+                operand_buffer.push(token);
+            }
+            _ => {
+                // Other tokens - ignore
+                operand_buffer.clear();
+            }
+        }
+    }
+
+    if diagnostics.is_empty() || !images.is_empty() {
+        Ok(images)
+    } else {
+        Err(diagnostics)
+    }
+}
+
+/// Parse an inline image from a BI/ID/EI sequence.
+///
+/// This function parses the inline image dictionary (between BI and ID),
+/// extracts the image data (between ID and EI), and returns the header
+/// parameters and raw image bytes.
+///
+/// # Arguments
+///
+/// * `lexer` - The lexer positioned after the BI keyword
+/// * `ctm` - The current CTM at the time of BI (for bbox computation)
+///
+/// # Returns
+///
+/// Ok(Some((header, data))) on success, Ok(None) if parsing failed gracefully,
+/// or Err(diagnostics) if a critical error occurred.
+fn parse_inline_image(
+    lexer: &mut Lexer,
+    ctm: &Matrix3x3,
+) -> Result<Option<(InlineImageHeader, Vec<u8>)>> {
+    let mut header = InlineImageHeader::default();
+    let mut diagnostics = Vec::new();
+
+    // Parse the inline image dictionary (key-value pairs until ID)
+    let mut dict_buffer: Vec<Token> = Vec::new();
+
+    while let Some(token) = lexer.next_token() {
+        match &token {
+            Token::Keyword(k) if k == b"ID" => {
+                // End of dictionary, start of image data
+                break;
+            }
+            Token::Keyword(k) if k == b"Do" || k == b"BI" || k == b"BT" || k == b"ET" => {
+                // Unexpected operator in inline image dict
+                diagnostics.push(Diagnostic::with_static_no_offset(
+                    DiagCode::StreamTruncated,
+                    "Unexpected operator in inline image dictionary",
+                ));
+                return Ok(None);
+            }
+            _ => {
+                dict_buffer.push(token);
+            }
+        }
+    }
+
+    // Parse the dictionary key-value pairs
+    let mut i = 0;
+    while i + 1 < dict_buffer.len() {
+        let key = match &dict_buffer[i] {
+            Token::Name(k) => std::str::from_utf8(k).unwrap_or(""),
+            _ => {
+                i += 2;
+                continue;
+            }
+        };
+
+        let value = &dict_buffer[i + 1];
+
+        match key {
+            "/W" | "/Width" => {
+                if let Token::Integer(w) = value {
+                    header.width = Some(*w as u32);
+                }
+            }
+            "/H" | "/Height" => {
+                if let Token::Integer(h) = value {
+                    header.height = Some(*h as u32);
+                }
+            }
+            "/BPC" | "/BitsPerComponent" => {
+                if let Token::Integer(bpc) = value {
+                    header.bpc = (*bpc as u8).clamp(1, 16);
+                }
+            }
+            "/CS" | "/ColorSpace" => {
+                if let Token::Name(cs) = value {
+                    header.colorspace = Some(std::str::from_utf8(cs).unwrap_or("").to_string());
+                }
+            }
+            "/F" | "/Filter" => {
+                match value {
+                    Token::Name(f) => {
+                        header
+                            .filters
+                            .push(std::str::from_utf8(f).unwrap_or("").to_string());
+                    }
+                    Token::Array(arr) => {
+                        // Filter array - extract all names
+                        for item in arr {
+                            if let Token::Name(f) = item {
+                                header
+                                    .filters
+                                    .push(std::str::from_utf8(f).unwrap_or("").to_string());
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            "/IM" | "/ImageMask" => {
+                if let Token::Bool(im) = value {
+                    header.is_mask = *im;
+                }
+            }
+            "/G" | "/Mask" => {
+                // Image mask color: /Mask [ Black | White ]
+                if let Token::Array(arr) = value {
+                    if arr.len() >= 1 {
+                        if let Token::Name(color) = &arr[0] {
+                            let color_str = std::str::from_utf8(color).unwrap_or("");
+                            if color_str == "Black" {
+                                header.mask_color = Some(0);
+                            } else if color_str == "White" {
+                                header.mask_color = Some(1);
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {
+                // Unknown key - ignore
+            }
+        }
+
+        i += 2;
+    }
+
+    // Now we need to extract the image data until EI
+    // The EI terminator must be preceded by whitespace
+    // We need to scan byte-by-byte to find it
+    let mut image_data = Vec::new();
+    let mut prev_was_whitespace = false;
+    let mut potential_ei = [0u8; 3]; // sliding window for EI detection
+    let mut window_pos = 0;
+
+    // Get the raw position from lexer to scan bytes directly
+    // For now, we'll use a simpler approach: continue tokenizing
+    // and collect data until we see EI
+    while let Some(token) = lexer.next_token() {
+        match token {
+            Token::Keyword(k) if k == b"EI" && prev_was_whitespace => {
+                // Found the EI terminator
+                // Remove the trailing newline from image data
+                if image_data.ends_with(&[b'\n']) {
+                    image_data.pop();
+                }
+                if image_data.ends_with(&[b'\r']) {
+                    image_data.pop();
+                }
+                return Ok(Some((header, image_data)));
+            }
+            Token::Keyword(k) if k == b"EI" => {
+                // EI without preceding whitespace - might be part of image data
+                // Continue scanning
+            }
+            _ => {
+                // Collect the raw bytes for image data
+                // For now, we'll need a different approach
+                // The lexer doesn't give us raw bytes easily
+            }
+        }
+
+        // Update whitespace tracking
+        prev_was_whitespace = false;
+    }
+
+    // If we get here, we didn't find EI - emit diagnostic and return None
+    diagnostics.push(Diagnostic::with_static_no_offset(
+        DiagCode::StreamTruncated,
+        "Inline image data missing EI terminator",
+    ));
+
+    Ok(None)
+}
+
+/// Compute bounding box by transforming the unit square [0,1]x[0,1] by a CTM.
+///
+/// This function transforms the four corners of the unit square:
+/// (0,0), (1,0), (0,1), (1,1)
+/// and returns the axis-aligned bounding box of the transformed points.
+///
+/// # Arguments
+///
+/// * `ctm` - The current transformation matrix
+///
+/// # Returns
+///
+/// Bounding box [x0, y0, x1, y1] in PDF user-space coordinates.
+fn compute_unit_square_bbox(ctm: &Matrix3x3) -> [f32; 4] {
+    // Unit square corners
+    let corners = [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)];
+
+    // Transform each corner
+    let mut min_x = f64::INFINITY;
+    let mut max_x = f64::NEG_INFINITY;
+    let mut min_y = f64::INFINITY;
+    let mut max_y = f64::NEG_INFINITY;
+
+    for &(x, y) in &corners {
+        let (tx, ty) = ctm.transform_point(x, y);
+        min_x = min_x.min(tx);
+        max_x = max_x.max(tx);
+        min_y = min_y.min(ty);
+        max_y = max_y.max(ty);
+    }
+
+    [min_x as f32, min_y as f32, max_x as f32, max_y as f32]
 }
 
 /// Get the /Matrix from an XObject dictionary if present.
@@ -1039,5 +1473,182 @@ mod tests {
 
         let diags = result.unwrap_err();
         assert!(diags.iter().any(|d| d.code == DiagCode::StreamBomb));
+    }
+
+    #[test]
+    fn test_compute_unit_square_bbox_identity() {
+        let ctm = Matrix3x3::identity();
+        let bbox = compute_unit_square_bbox(&ctm);
+        // Unit square at origin
+        assert_eq!(bbox, [0.0, 0.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn test_compute_unit_square_bbox_translate() {
+        let mut ctm = Matrix3x3::identity();
+        ctm.e = 100.0; // Translate x by 100
+        ctm.f = 200.0; // Translate y by 200
+        let bbox = compute_unit_square_bbox(&ctm);
+        // Unit square translated by (100, 200)
+        assert_eq!(bbox, [100.0, 200.0, 101.0, 201.0]);
+    }
+
+    #[test]
+    fn test_compute_unit_square_bbox_scale() {
+        // Test CTM with scaling: 100 0 0 50 200 300 cm
+        let ctm = Matrix3x3::from_pdf_array([100.0, 0.0, 0.0, 50.0, 200.0, 300.0]);
+        let bbox = compute_unit_square_bbox(&ctm);
+        // Unit square scaled by 100x50 and translated by (200, 300)
+        assert_eq!(bbox, [200.0, 300.0, 300.0, 350.0]);
+    }
+
+    #[test]
+    fn test_compute_unit_square_bbox_scale_only() {
+        // Test CTM with only scaling: 2 0 0 2 0 0 cm
+        let ctm = Matrix3x3::from_pdf_array([2.0, 0.0, 0.0, 2.0, 0.0, 0.0]);
+        let bbox = compute_unit_square_bbox(&ctm);
+        // Unit square scaled by 2x2
+        assert_eq!(bbox, [0.0, 0.0, 2.0, 2.0]);
+    }
+
+    #[test]
+    fn test_collect_image_xobjects_empty() {
+        let content = b"";
+        let resources = ResourceDict::new();
+        let result = collect_image_xobjects(content, &resources);
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_collect_image_xobjects_simple() {
+        // Simple content stream with one Do operator
+        let content = b"/Im1 Do";
+        let mut resources = ResourceDict::new();
+        resources
+            .xobjects
+            .insert(Arc::from("Im1"), ObjRef::new(1, 0));
+
+        let result = collect_image_xobjects(content, &resources);
+        assert!(result.is_ok());
+        let images = result.unwrap();
+        assert_eq!(images.len(), 1);
+
+        // Check the ImageXObject structure
+        match &images[0].source {
+            ImageSource::XObject(ref_obj, name) => {
+                assert_eq!(*ref_obj, ObjRef::new(1, 0));
+                assert_eq!(name.as_ref(), "Im1");
+            }
+            _ => panic!("Expected XObject source"),
+        }
+
+        // Bbox should be unit square at origin (identity CTM)
+        assert_eq!(images[0].bbox, [0.0, 0.0, 1.0, 1.0]);
+
+        // Header should be default for XObject images
+        assert_eq!(images[0].header.width, None);
+        assert_eq!(images[0].header.height, None);
+    }
+
+    #[test]
+    fn test_collect_image_xobjects_with_ctm() {
+        // Content stream with cm and Do operators
+        let content = b"100 0 0 50 200 300 cm /Im1 Do";
+        let mut resources = ResourceDict::new();
+        resources
+            .xobjects
+            .insert(Arc::from("Im1"), ObjRef::new(1, 0));
+
+        let result = collect_image_xobjects(content, &resources);
+        assert!(result.is_ok());
+        let images = result.unwrap();
+        assert_eq!(images.len(), 1);
+
+        // Bbox should be unit square transformed by CTM (scale 100x50 + translate 200,300)
+        assert_eq!(images[0].bbox, [200.0, 300.0, 300.0, 350.0]);
+    }
+
+    #[test]
+    fn test_collect_image_xobjects_multiple() {
+        // Test multiple images with different CTMs
+        let content = b"q 1 0 0 1 0 0 cm /Im1 Do Q q 2 0 0 2 100 100 cm /Im2 Do Q";
+        let mut resources = ResourceDict::new();
+        resources
+            .xobjects
+            .insert(Arc::from("Im1"), ObjRef::new(1, 0));
+        resources
+            .xobjects
+            .insert(Arc::from("Im2"), ObjRef::new(2, 0));
+
+        let result = collect_image_xobjects(content, &resources);
+        assert!(result.is_ok());
+        let images = result.unwrap();
+        assert_eq!(images.len(), 2);
+
+        // First image: identity CTM
+        assert_eq!(images[0].bbox, [0.0, 0.0, 1.0, 1.0]);
+
+        // Second image: scale 2x2 + translate (100, 100)
+        assert_eq!(images[1].bbox, [100.0, 100.0, 102.0, 102.0]);
+    }
+
+    #[test]
+    fn test_inline_image_header_default() {
+        let header = InlineImageHeader::default();
+        assert_eq!(header.width, None);
+        assert_eq!(header.height, None);
+        assert_eq!(header.bpc, 8); // Default BPC
+        assert_eq!(header.colorspace, None);
+        assert!(header.filters.is_empty());
+        assert!(!header.is_mask);
+        assert_eq!(header.mask_color, None);
+    }
+
+    #[test]
+    fn test_image_xobject_with_inline() {
+        // Test that InlineImageSource creates correct ImageXObject
+        let header = InlineImageHeader {
+            width: Some(100),
+            height: Some(50),
+            bpc: 8,
+            colorspace: Some("DeviceRGB".to_string()),
+            filters: vec!["DCTDecode".to_string()],
+            is_mask: false,
+            mask_color: None,
+        };
+        let data = vec![1u8, 2, 3, 4];
+        let ctm = Matrix3x3::from_pdf_array([2.0, 0.0, 0.0, 2.0, 10.0, 20.0]);
+
+        let image = ImageXObject {
+            bbox: compute_unit_square_bbox(&ctm),
+            source: ImageSource::Inline,
+            header: header.clone(),
+            bytes_ref: ImageBytesRef::Inline(data.clone()),
+        };
+
+        // Check bbox: unit square scaled by 2x2 + translate (10, 20)
+        assert_eq!(image.bbox, [10.0, 20.0, 12.0, 22.0]);
+
+        // Check source
+        match image.source {
+            ImageSource::Inline => {}
+            _ => panic!("Expected Inline source"),
+        }
+
+        // Check header
+        assert_eq!(image.header.width, Some(100));
+        assert_eq!(image.header.height, Some(50));
+        assert_eq!(image.header.bpc, 8);
+        assert_eq!(image.header.colorspace, Some("DeviceRGB".to_string()));
+        assert_eq!(image.header.filters, vec!["DCTDecode".to_string()]);
+
+        // Check bytes_ref
+        match image.bytes_ref {
+            ImageBytesRef::Inline(ref data_bytes) => {
+                assert_eq!(*data_bytes, data);
+            }
+            _ => panic!("Expected Inline bytes_ref"),
+        }
     }
 }
