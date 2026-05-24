@@ -488,6 +488,15 @@ pub enum DiagCode {
     /// Phase origin: 1.5
     StreamInvalidJpeg,
 
+    /// CCITT fax data has invalid or missing parameters
+    ///
+    /// Emitted when CCITTFaxDecode filter is missing required /Columns parameter
+    /// or has invalid /DecodeParms. The data is passed through anyway, but the
+    /// diagnostic alerts consumers that the CCITT parameters are malformed.
+    ///
+    /// Phase origin: 1.5
+    StreamInvalidCcitt,
+
     // === ENCRYPTION_* codes ===
     /// Unsupported encryption or no password supplied
     ///
@@ -938,6 +947,7 @@ impl DiagCode {
             | DiagCode::StreamUnknownFilter
             | DiagCode::StreamInvalidParams
             | DiagCode::StreamInvalidJpeg
+            | DiagCode::StreamInvalidCcitt
             | DiagCode::StreamTruncated => "STREAM",
 
             // ENCRYPTION_*
@@ -1059,6 +1069,7 @@ impl DiagCode {
             DiagCode::StreamUnknownFilter => "STREAM_UNKNOWN_FILTER",
             DiagCode::StreamInvalidParams => "STREAM_INVALID_PARAMS",
             DiagCode::StreamInvalidJpeg => "STREAM_INVALID_JPEG",
+            DiagCode::StreamInvalidCcitt => "STREAM_INVALID_CCITT",
             DiagCode::EncryptionUnsupported => "ENCRYPTION_UNSUPPORTED",
             DiagCode::EncryptionWrongPassword => "ENCRYPTION_WRONG_PASSWORD",
             DiagCode::PageOutOfRange => "PAGE_OUT_OF_RANGE",
@@ -1164,6 +1175,7 @@ impl DiagCode {
             | DiagCode::StreamUnknownFilter
             | DiagCode::StreamInvalidParams
             | DiagCode::StreamInvalidJpeg
+            | DiagCode::StreamInvalidCcitt
             | DiagCode::PageInvalidCount
             | DiagCode::PageInvalidRotate
             | DiagCode::FontGlyphUnmapped
@@ -1619,6 +1631,14 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         recoverable: true,
         phase: "1.5",
         suggested_action: "JPEG data is missing SOI/EOI markers; data is passed through anyway",
+    },
+    DiagInfo {
+        code: DiagCode::StreamInvalidCcitt,
+        category: "STREAM",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "1.5",
+        suggested_action: "CCITT data is missing required /Columns parameter; data is passed through anyway",
     },
     // === ENCRYPTION_* codes ===
     DiagInfo {

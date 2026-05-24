@@ -1107,88 +1107,70 @@ impl StreamDecoder for PassthroughDecoder {
 pub struct CCITTFaxDecoder;
 
 impl CCITTFaxDecoder {
+    /// Default /Columns value for CCITT when not specified (standard A4 width at 204 DPI).
+    /// Per PDF spec 7.4.6, /Columns is required, but we use a default for error recovery.
+    const DEFAULT_COLUMNS: u32 = 1728;
+
     /// Parse CCITT /DecodeParms from a PDF object.
     ///
     /// Returns None if params is None or not a dictionary.
     /// Returns Some(ParsedCCITTParams) if params is a dictionary (missing keys use defaults).
     ///
-    /// # Errors
-    ///
-    /// Returns FilterError::InvalidParams if /Columns is missing (REQUIRED parameter).
-    pub fn parse_params(
-        params: Option<&PdfObject>,
-    ) -> Result<Option<ParsedCCITTParams>, FilterError> {
+    /// Per INV-8 and the passthrough pattern, this function never returns an error.
+    /// Missing /Columns uses DEFAULT_COLUMNS (1728, standard fax width).
+    pub fn parse_params(params: Option<&PdfObject>) -> Option<ParsedCCITTParams> {
         let dict = match params {
             Some(PdfObject::Dict(d)) => d.as_ref(),
-            Some(_) => return Ok(None), // Invalid type - treat as missing
-            None => return Ok(None),    // No params - use defaults
+            Some(_) => return None, // Invalid type - treat as missing
+            None => return None,    // No params - use defaults
         };
 
-        // /Columns is REQUIRED per PDF spec 7.4.6
+        // /Columns is REQUIRED per PDF spec 7.4.6, but we use a default for error recovery.
+        // If /Columns is missing or invalid, we use DEFAULT_COLUMNS (1728, standard fax width).
         let columns = match dict.get("/Columns") {
             Some(PdfObject::Integer(n)) if *n > 0 => *n as u32,
-            Some(PdfObject::Integer(_)) => {
-                return Err(FilterError::InvalidParams(
-                    "/Columns must be positive".to_string(),
-                ))
-            }
-            Some(_) => {
-                return Err(FilterError::InvalidParams(
-                    "/Columns must be an integer".to_string(),
-                ))
-            }
-            None => {
-                return Err(FilterError::InvalidParams(
-                    "/Columns is required for CCITTFaxDecode".to_string(),
-                ))
-            }
+            _ => Self::DEFAULT_COLUMNS, // Missing, invalid, or non-positive -> use default
         };
 
         // /K: encoding type (default = 0, which means Group 3 1D)
         // -1 = Group 4, 0 = Group 3 1D, > 0 = Group 3 2D
         let k = match dict.get("/K") {
             Some(PdfObject::Integer(n)) => *n as i32,
-            Some(_) => return Ok(None), // Invalid type - use default
-            None => 0,                  // Default: Group 3 1D
+            _ => 0, // Invalid type or missing -> use default
         };
 
         // /Rows: image height in pixels (optional)
         let rows = match dict.get("/Rows") {
             Some(PdfObject::Integer(n)) if *n > 0 => Some(*n as u32),
-            Some(PdfObject::Integer(_)) => None, // Invalid value - treat as missing
-            Some(_) => None,                     // Invalid type - treat as missing
-            None => None,
+            _ => None, // Invalid value, missing, or invalid type -> treat as missing
         };
 
         // /EncodedByteAlign: whether each line is byte-aligned (default false)
         let encoded_byte_align = match dict.get("/EncodedByteAlign") {
             Some(PdfObject::Bool(b)) => *b,
-            Some(_) => false, // Invalid type - use default
-            None => false,
+            _ => false, // Invalid type or missing -> use default
         };
 
         // /EndOfLine: whether EOL markers are present (default false)
         let end_of_line = match dict.get("/EndOfLine") {
             Some(PdfObject::Bool(b)) => *b,
-            Some(_) => false, // Invalid type - use default
-            None => false,
+            _ => false, // Invalid type or missing -> use default
         };
 
         // /BlackIs1: whether 1 bit means black (default false = white)
         let black_is_1 = match dict.get("/BlackIs1") {
             Some(PdfObject::Bool(b)) => *b,
-            Some(_) => false, // Invalid type - use default
-            None => false,
+            _ => false, // Invalid type or missing -> use default
         };
 
-        Ok(Some(ParsedCCITTParams {
+        Some(ParsedCCITTParams {
             k,
             columns,
             rows,
             encoded_byte_align,
             end_of_line,
             black_is_1,
-        }))
+        })
     }
 }
 
@@ -1200,9 +1182,8 @@ impl StreamDecoder for CCITTFaxDecoder {
         doc_counter: &mut u64,
         max_bytes: u64,
     ) -> Result<Vec<u8>, FilterError> {
-        // Parse and validate /DecodeParms
-        // This ensures required parameters are present and valid
-        let _parsed = Self::parse_params(params)?;
+        // Parse /DecodeParms (uses defaults for missing/invalid values per INV-8)
+        let _parsed = Self::parse_params(params);
 
         // Pass through raw bytes unchanged
         let len = input.len() as u64;
@@ -1877,6 +1858,160 @@ mod tests {
         // Test no params (returns None)
         let result = DCTDecoder::parse_color_transform(None);
         assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_ccittfax_passthrough_with_columns() {
+        // CCITT data with valid /Columns parameter should pass through unchanged
+        let ccitt_data = b"\x00\x01\x02\x03"; // Fake CCITT data
+        let mut dict = indexmap::IndexMap::new();
+        dict.insert("/Columns".into(), PdfObject::Integer(1728));
+        dict.insert("/K".into(), PdfObject::Integer(-1)); // Group 4
+        let params = Some(PdfObject::Dict(Box::new(dict)));
+
+        let mut counter = 0;
+        let result = CCITTFaxDecoder::decode(
+            ccitt_data,
+            params.as_ref(),
+            &mut counter,
+            DEFAULT_MAX_DECOMPRESS_BYTES,
+        );
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output, ccitt_data);
+        assert_eq!(counter, ccitt_data.len() as u64);
+    }
+
+    #[test]
+    fn test_ccittfax_passthrough_missing_columns() {
+        // CCITT data with missing /Columns should use default (1728) and pass through
+        let ccitt_data = b"\x00\x01\x02\x03"; // Fake CCITT data
+        let dict = indexmap::IndexMap::new();
+        let params = Some(PdfObject::Dict(Box::new(dict))); // No /Columns
+
+        let mut counter = 0;
+        let result = CCITTFaxDecoder::decode(
+            ccitt_data,
+            params.as_ref(),
+            &mut counter,
+            DEFAULT_MAX_DECOMPRESS_BYTES,
+        );
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output, ccitt_data);
+    }
+
+    #[test]
+    fn test_ccittfax_passthrough_no_params() {
+        // CCITT data with no /DecodeParms should pass through unchanged
+        let ccitt_data = b"\x00\x01\x02\x03"; // Fake CCITT data
+
+        let mut counter = 0;
+        let result =
+            CCITTFaxDecoder::decode(ccitt_data, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output, ccitt_data);
+    }
+
+    #[test]
+    fn test_ccittfax_parse_params_with_all_fields() {
+        // Test parsing all CCITT parameters
+        let mut dict = indexmap::IndexMap::new();
+        dict.insert("/K".into(), PdfObject::Integer(-1)); // Group 4
+        dict.insert("/Columns".into(), PdfObject::Integer(2480));
+        dict.insert("/Rows".into(), PdfObject::Integer(3508));
+        dict.insert("/EncodedByteAlign".into(), PdfObject::Bool(true));
+        dict.insert("/EndOfLine".into(), PdfObject::Bool(false));
+        dict.insert("/BlackIs1".into(), PdfObject::Bool(true));
+
+        let params = Some(PdfObject::Dict(Box::new(dict)));
+        let result = CCITTFaxDecoder::parse_params(params);
+
+        assert!(result.is_some());
+        let parsed = result.unwrap();
+        assert_eq!(parsed.k, -1);
+        assert_eq!(parsed.columns, 2480);
+        assert_eq!(parsed.rows, Some(3508));
+        assert_eq!(parsed.encoded_byte_align, true);
+        assert_eq!(parsed.end_of_line, false);
+        assert_eq!(parsed.black_is_1, true);
+    }
+
+    #[test]
+    fn test_ccittfax_parse_params_defaults() {
+        // Test that missing parameters use defaults
+        let dict = indexmap::IndexMap::new();
+        let params = Some(PdfObject::Dict(Box::new(dict)));
+
+        let result = CCITTFaxDecoder::parse_params(params);
+
+        assert!(result.is_some());
+        let parsed = result.unwrap();
+        assert_eq!(parsed.k, 0); // Default: Group 3 1D
+        assert_eq!(parsed.columns, CCITTFaxDecoder::DEFAULT_COLUMNS); // Default: 1728
+        assert_eq!(parsed.rows, None); // Optional
+        assert_eq!(parsed.encoded_byte_align, false); // Default: false
+        assert_eq!(parsed.end_of_line, false); // Default: false
+        assert_eq!(parsed.black_is_1, false); // Default: false
+    }
+
+    #[test]
+    fn test_ccittfax_parse_params_invalid_columns() {
+        // Test that invalid /Columns values use default
+        let test_cases = vec![
+            (PdfObject::Integer(0), "zero columns"), // Zero -> use default
+            (PdfObject::Integer(-100), "negative columns"), // Negative -> use default
+            (PdfObject::Bool(true), "bool columns"), // Wrong type -> use default
+            (PdfObject::Name("Test".into()), "name columns"), // Wrong type -> use default
+        ];
+
+        for (value, desc) in test_cases {
+            let mut dict = indexmap::IndexMap::new();
+            dict.insert("/Columns".into(), value);
+            let params = Some(PdfObject::Dict(Box::new(dict)));
+
+            let result = CCITTFaxDecoder::parse_params(params);
+            assert!(result.is_some(), "{} should return Some", desc);
+            let parsed = result.unwrap();
+            assert_eq!(parsed.columns, CCITTFaxDecoder::DEFAULT_COLUMNS, "{}", desc);
+        }
+    }
+
+    #[test]
+    fn test_ccittfax_bomb_limit() {
+        // Test that bomb limit is enforced
+        let ccitt_data = vec![0u8; 1000];
+        let mut dict = indexmap::IndexMap::new();
+        dict.insert("/Columns".into(), PdfObject::Integer(1728));
+        let params = Some(PdfObject::Dict(Box::new(dict)));
+
+        let mut counter = 0;
+        let limit = 100; // Only allow 100 bytes
+        let result = CCITTFaxDecoder::decode(&ccitt_data, params.as_ref(), &mut counter, limit);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output.len(), 100); // Should truncate at bomb limit
+    }
+
+    #[test]
+    fn test_ccittfax_roundtrip_empty() {
+        // Empty CCITT data
+        let ccitt_data = b"";
+        let mut dict = indexmap::IndexMap::new();
+        dict.insert("/Columns".into(), PdfObject::Integer(1728));
+        let params = Some(PdfObject::Dict(Box::new(dict)));
+
+        let mut counter = 0;
+        let result = CCITTFaxDecoder::decode(
+            ccitt_data,
+            params.as_ref(),
+            &mut counter,
+            DEFAULT_MAX_DECOMPRESS_BYTES,
+        );
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output.len(), 0);
     }
 
     /// Test FlateDecode bomb limit with minimal crafted input.
@@ -2951,6 +3086,36 @@ fn decode_stream_impl(
         } else {
             None
         };
+
+        // Check for CCITTFaxDecode with missing /Columns (emit STREAM_INVALID_CCITT)
+        if normalized_name == "CCITTFaxDecode" {
+            if let Some(PdfObject::Dict(dict)) = params {
+                if !dict.contains_key("/Columns") {
+                    diagnostics.push(Diagnostic::with_static_no_offset(
+                        DiagCode::StreamInvalidCcitt,
+                        "CCITTFaxDecode stream missing required /Columns parameter; using default width 1728",
+                    ));
+                }
+            } else if params.is_none() {
+                diagnostics.push(Diagnostic::with_static_no_offset(
+                    DiagCode::StreamInvalidCcitt,
+                    "CCITTFaxDecode stream missing /DecodeParms; using default parameters",
+                ));
+            }
+
+            // Emit OCR_CCITT_UNSUPPORTED if full-render and libtiff are both unavailable
+            // cfg!(feature = "full-render") checks if pdfium-render is available
+            // We check if we have libtiff support by seeing if the image crate is available
+            let has_full_render = cfg!(feature = "full-render");
+            let has_libtiff = cfg!(feature = "image"); // image crate with tiff feature
+
+            if !has_full_render && !has_libtiff {
+                diagnostics.push(Diagnostic::with_static_no_offset(
+                    DiagCode::OcrCcittUnsupported,
+                    "CCITT fax compression detected but neither full-render nor libtiff is available; OCR will skip CCITT images",
+                ));
+            }
+        }
 
         match get_decoder(&normalized_name) {
             Some(decoder) => {
