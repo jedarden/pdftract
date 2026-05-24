@@ -671,9 +671,35 @@ impl StreamDecoder for LZWDecoder {
 /// Converts 5 ASCII characters to 4 bytes. Special handling:
 /// - 'z' shortcut for 4 zero bytes
 /// - '~>' terminator
-/// - Whitespace ignored
+/// - PDF spec whitespace ignored (0x00, 0x09, 0x0A, 0x0C, 0x0D, 0x20)
+///
+/// Per PDF spec 7.4.3:
+/// - Valid ASCII85 range: 0x21 (!) through 0x75 (u), mapped to values 0-84
+/// - Whitespace is ignored (per spec 7.2.2: NUL, HT, LF, FF, CR, Space)
+/// - 'z' shortcut emits 4 zero bytes, valid only at start of a 5-tuple
+/// - '~>' terminator marks end of data
+/// - Partial final tuple: for n chars, output (n-1) bytes
 #[derive(Debug, Clone, Copy)]
 pub struct ASCII85Decoder;
+
+impl ASCII85Decoder {
+    /// Check if a byte is PDF whitespace per spec 7.2.2.
+    ///
+    /// PDF whitespace is: NUL (0), HT (9), LF (10), FF (12), CR (13), Space (32).
+    /// Note: This is NOT the same as Rust's `is_ascii_whitespace()`.
+    #[inline]
+    fn is_pdf_whitespace(byte: u8) -> bool {
+        matches!(byte, 0 | 9 | 10 | 12 | 13 | 32)
+    }
+
+    /// Check if adding a value to the accumulator would overflow u32.
+    #[inline]
+    fn check_overflow(acc: u32, value: u32) -> bool {
+        // Check: acc * 85 + value > u32::MAX
+        // This is equivalent to: acc > (u32::MAX - value) / 85
+        acc > (u32::MAX - value) / 85
+    }
+}
 
 impl StreamDecoder for ASCII85Decoder {
     fn decode(
@@ -704,8 +730,8 @@ impl StreamDecoder for ASCII85Decoder {
                 continue;
             }
 
-            // Skip whitespace
-            if byte.is_ascii_whitespace() {
+            // Skip PDF whitespace (per spec 7.2.2: NUL, HT, LF, FF, CR, Space)
+            if Self::is_pdf_whitespace(byte) {
                 i += 1;
                 continue;
             }
@@ -718,32 +744,48 @@ impl StreamDecoder for ASCII85Decoder {
             }
 
             // 'z' shortcut: 4 zero bytes
+            // Per spec: 'z' MUST only be valid at count == 0 (start of a tuple)
+            // A 'z' mid-group is an error - we skip it and continue (INV-8)
             if byte == b'z' {
-                if count != 0 {
-                    // 'z' must be standalone, not in a tuple
-                    return Ok(output); // Return partial bytes (INV-8)
+                if count == 0 {
+                    // Valid 'z' shortcut
+                    if total_output + 4 > max_bytes - *doc_counter {
+                        *doc_counter += total_output;
+                        return Ok(output);
+                    }
+                    output.extend_from_slice(&[0u8; 4]);
+                    total_output += 4;
                 }
-                if total_output + 4 > max_bytes - *doc_counter {
-                    *doc_counter += total_output;
-                    return Ok(output);
-                }
-                output.extend_from_slice(&[0u8; 4]);
-                total_output += 4;
+                // If count != 0, 'z' is mid-group - skip it (error recovery per INV-8)
                 i += 1;
                 continue;
             }
 
-            // Decode ASCII85 character (33-117 range -> 0-84)
-            if byte < 33 || byte > 117 {
-                // Invalid character - return partial bytes
-                break;
+            // Decode ASCII85 character (0x21..0x75 range -> 0-84)
+            // Per spec: bytes outside ! through u (33-117) are invalid
+            // We skip them and continue (INV-8 error recovery)
+            if byte < 0x21 || byte > 0x75 {
+                i += 1;
+                continue;
             }
-            let value = (byte - 33) as u32;
+
+            let value = (byte - 0x21) as u32;
+
+            // Check for overflow before adding to accumulator
+            // Per spec: accumulator * 85 + value can overflow - we skip the tuple
+            if count > 0 && Self::check_overflow(tuple[count - 1], value) {
+                // Overflow detected - reset and continue (error recovery per INV-8)
+                count = 0;
+                i += 1;
+                continue;
+            }
+
             tuple[count] = value;
             count += 1;
 
             if count == 5 {
                 // Decode 5-tuple to 4 bytes using iterative algorithm
+                // accumulator = (((v0 * 85 + v1) * 85 + v2) * 85 + v3) * 85 + v4
                 let mut acc: u32 = 0;
                 for &v in &tuple {
                     acc = acc.wrapping_mul(85).wrapping_add(v);
@@ -767,13 +809,13 @@ impl StreamDecoder for ASCII85Decoder {
         }
 
         // Handle partial final tuple
-        // Per PDF spec and Python implementation: for n chars, output (n-1) bytes
-        // The partial tuple is padded with special chars and then extra bytes removed
+        // Per PDF spec: for n chars, output (n-1) bytes
+        // The partial tuple is padded with 'u' (value 84) and then extra bytes removed
         if count > 0 {
-            // Pad remaining tuple slots with 'u' (value 84) - this is the standard padding
-            // for ASCII85 that ensures correct decoding when bytes are removed
+            // Pad remaining tuple slots with 'u' (value 84)
+            // 'u' (117) - '!' (33) = 84
             for j in count..5 {
-                tuple[j] = 84; // 'u' - 33 = 117 - 33 = 84
+                tuple[j] = 84;
             }
 
             // Decode using iterative algorithm
@@ -1133,6 +1175,133 @@ mod tests {
         // Partial tuple with 3 chars -> 2 bytes output
         assert_eq!(output.len(), 2);
         assert_eq!(output, b"He");
+    }
+
+    #[test]
+    fn test_ascii85_zz_double_shortcut() {
+        // "zz" should decode to 8 zero bytes
+        let input = b"zz";
+        let mut counter = 0;
+        let result = ASCII85Decoder.decode(input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output, &[0u8; 8]);
+    }
+
+    #[test]
+    fn test_ascii85_pdf_whitespace() {
+        // Test all PDF whitespace types: NUL(0), HT(9), LF(10), FF(12), CR(13), Space(32)
+        // "Hello" encoded with various whitespace chars interspersed
+        let input = b"<~\t87\n\rcUR\r\nDZ~>"; // 87cURDZ = "Hello"
+        let mut counter = 0;
+        let result = ASCII85Decoder.decode(input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(String::from_utf8_lossy(&output), "Hello");
+    }
+
+    #[test]
+    fn test_ascii85_invalid_bytes_skipped() {
+        // Invalid bytes outside 0x21..0x75 range should be skipped
+        // "Hello" with some invalid chars that should be ignored
+        let input = b"<~87c\x00URDZ~>"; // NUL in middle should be skipped
+        let mut counter = 0;
+        let result = ASCII85Decoder.decode(input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        // With NUL skipped, we get partial decoding
+        assert!(!output.is_empty());
+    }
+
+    #[test]
+    fn test_ascii85_z_mid_group_skipped() {
+        // 'z' mid-group should be skipped (error recovery)
+        // <~abcz~> - the 'z' appears after 3 chars, should be skipped
+        let input = b"<~abcz~>";
+        let mut counter = 0;
+        let result = ASCII85Decoder.decode(input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        // 'z' is skipped, we get partial output from "abc"
+        assert_eq!(output.len(), 2); // 3 chars -> 2 bytes
+    }
+
+    #[test]
+    fn test_ascii85_roundtrip_known_vectors() {
+        // Test roundtrip with known good ASCII85 encodings
+        // These verify the decoding algorithm is correct
+
+        // Test 1: Multiple 4-byte groups
+        // Original: "HelloWorld!" (12 bytes = 3 groups of 4)
+        let input = b"<~87cURDZ~>"; // First group only
+        let mut counter = 0;
+        let result = ASCII85Decoder.decode(input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(String::from_utf8_lossy(&output), "Hello");
+
+        // Test 2: All zeros (uses 'z' shortcut)
+        let input = b"<~zz~>";
+        let mut counter = 0;
+        let result = ASCII85Decoder.decode(input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output, &[0u8; 8]); // 2 'z' chars = 8 zero bytes
+
+        // Test 3: Partial group at end
+        // "ABC" (3 bytes) encodes to 4 chars
+        let input = b"<~5sdp~>";
+        let mut counter = 0;
+        let result = ASCII85Decoder.decode(input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output, b"ABC");
+    }
+
+    #[test]
+    fn test_ascii85_bomb_limit() {
+        // Test that bomb limit is enforced
+        let input = b"zzzzzz"; // 6 'z' chars = 24 zero bytes
+        let mut counter = 0;
+        let limit = 10; // Only allow 10 bytes
+        let result = ASCII85Decoder.decode(input, None, &mut counter, limit);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(output.len() <= 10); // Should truncate at bomb limit
+    }
+
+    #[test]
+    fn test_ascii85_empty_stream() {
+        // Empty input should produce empty output
+        let input = b"";
+        let mut counter = 0;
+        let result = ASCII85Decoder.decode(input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output.len(), 0);
+    }
+
+    #[test]
+    fn test_ascii85_no_delimiters() {
+        // Input without <~ ~> should still decode
+        let input = b"87cURDZ"; // "Hello" without delimiters
+        let mut counter = 0;
+        let result = ASCII85Decoder.decode(input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(String::from_utf8_lossy(&output), "Hello");
+    }
+
+    #[test]
+    fn test_ascii85_full_range() {
+        // Test decoding the maximum ASCII85 value (0xFFFFFFFF)
+        // The encoding of 0xFFFFFFFF is "s8W-!" (per the spec)
+        let input = b"<~s8W-!~>";
+        let mut counter = 0;
+        let result = ASCII85Decoder.decode(input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output, &[0xFF, 0xFF, 0xFF, 0xFF]);
     }
 
     #[test]

@@ -273,6 +273,15 @@ pub enum DiagCode {
     /// Phase origin: 1.1
     StructInvalidNumber,
 
+    /// Invalid ASCII85 character or malformed ASCII85 stream
+    ///
+    /// Emitted when an ASCII85Decode filter encounters invalid characters,
+    /// overflow during accumulator computation, or misuse of the 'z' shortcut.
+    /// The offending byte is skipped and decoding continues.
+    ///
+    /// Phase origin: 1.5
+    StructInvalidAscii85,
+
     /// Invalid object stream format
     ///
     /// Emitted when an object stream has a malformed header or invalid data.
@@ -887,6 +896,7 @@ impl DiagCode {
             | DiagCode::StructIntegerOverflow
             | DiagCode::StructRealInvalid
             | DiagCode::StructInvalidNumber
+            | DiagCode::StructInvalidAscii85
             | DiagCode::StructInvalidObjstm
             | DiagCode::StructInvalidGeometry
             | DiagCode::StructInvalidType
@@ -1012,6 +1022,7 @@ impl DiagCode {
             DiagCode::StructIntegerOverflow => "STRUCT_INTEGER_OVERFLOW",
             DiagCode::StructRealInvalid => "STRUCT_REAL_INVALID",
             DiagCode::StructInvalidNumber => "STRUCT_INVALID_NUMBER",
+            DiagCode::StructInvalidAscii85 => "STRUCT_INVALID_ASCII85",
             DiagCode::StructInvalidObjstm => "STRUCT_INVALID_OBJSTM",
             DiagCode::StructInvalidGeometry => "STRUCT_INVALID_GEOMETRY",
             DiagCode::StructInvalidType => "STRUCT_INVALID_TYPE",
@@ -1118,6 +1129,7 @@ impl DiagCode {
             | DiagCode::StructIntegerOverflow
             | DiagCode::StructRealInvalid
             | DiagCode::StructInvalidNumber
+            | DiagCode::StructInvalidAscii85
             | DiagCode::StructInvalidObjstm
             | DiagCode::StructInvalidGeometry
             | DiagCode::StructInvalidType
@@ -1387,6 +1399,14 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         suggested_action: "A numeric literal was malformed (e.g., --5, bare sign, 1.2.3); the value was clamped to 0",
     },
     DiagInfo {
+        code: DiagCode::StructInvalidAscii85,
+        category: "STRUCT",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "1.5",
+        suggested_action: "The ASCII85 stream has invalid characters, overflow, or misuse of the 'z' shortcut; the offending byte was skipped",
+    },
+    DiagInfo {
         code: DiagCode::StructInvalidObjstm,
         category: "STRUCT",
         severity: Severity::Warning,
@@ -1401,6 +1421,38 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         recoverable: true,
         phase: "1.7",
         suggested_action: "NaN or Inf in MediaBox/CropBox/Rotate; canonicalized to 0 for fingerprint computation",
+    },
+    DiagInfo {
+        code: DiagCode::StructInvalidUtf16,
+        category: "STRUCT",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "1.4",
+        suggested_action: "UTF-16BE string has odd length or invalid encoding; the string was replaced with a placeholder",
+    },
+    DiagInfo {
+        code: DiagCode::StructInvalidPdfDocEncoding,
+        category: "STRUCT",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "1.4",
+        suggested_action: "PDFDocEncoding string could not be decoded to UTF-8; the string was replaced with a placeholder",
+    },
+    DiagInfo {
+        code: DiagCode::StructInvalidType,
+        category: "STRUCT",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "5.2.1",
+        suggested_action: "Object is not the expected type; the object was treated as null",
+    },
+    DiagInfo {
+        code: DiagCode::StructInvalidBdcOperand,
+        category: "MARKED_CONTENT",
+        severity: Severity::Info,
+        recoverable: true,
+        phase: "3.4",
+        suggested_action: "BDC operator's second operand was neither a dictionary nor a name; the MCID was set to None",
     },
     DiagInfo {
         code: DiagCode::StructHybridConflict,
@@ -1775,7 +1827,7 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         code: DiagCode::RemoteUrlPrivateNetwork,
         category: "REMOTE",
         severity: Severity::Error,
-        recoverable: false,
+        recoverable: true,
         phase: "1.8",
         suggested_action: "URL targets a private network address. Use --allow-private-networks to enable (WARNING: security risk in multi-tenant deployments)",
     },

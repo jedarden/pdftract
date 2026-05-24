@@ -2453,6 +2453,7 @@ dependencies = [
 name = "pdftract-py"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "pdftract-core",
  "pyo3",
 ]
