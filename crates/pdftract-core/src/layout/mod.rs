@@ -26,7 +26,7 @@ pub use code::{
     is_monospace_span, MonospaceSpan,
 };
 pub use columns::{assign_columns_to_lines, assign_columns_to_spans, Column};
-pub use correction::detect_and_repair_mojibake;
+pub use correction::{detect_and_repair_mojibake, repair_hyphenation, HyphenableSpan};
 pub use line::{
     cluster_spans_into_lines, compute_baseline, group_lines_into_blocks, union_bboxes, BlockInput,
     HasBBox, HasFontSize, Line, LineDirection, LineMetadata,

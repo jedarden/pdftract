@@ -595,6 +595,7 @@ mod tests {
             size: 12.0,
             confidence: None,
             receipt: None,
+            column: None,
         };
 
         let json = serde_json::to_string(&span).unwrap();
@@ -740,6 +741,7 @@ mod tests {
                 [0.0, 0.0, 100.0, 20.0],
                 "test",
             )),
+            column: None,
         };
 
         let span_without_receipt = SpanJson {
@@ -749,6 +751,7 @@ mod tests {
             size: 12.0,
             confidence: None,
             receipt: None,
+            column: None,
         };
 
         // Both should serialize successfully
