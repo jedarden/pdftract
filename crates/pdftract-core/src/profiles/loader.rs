@@ -4,6 +4,7 @@
 //! with special security checks to prevent accidental publication of
 //! credentials in profile files.
 
+use crate::profiles::types::Profile;
 use serde_yaml::Value;
 use std::fmt;
 use std::io;
@@ -289,6 +290,101 @@ pub fn load_profile_yaml(content: &str) -> Result<Value, ProfileLoadError> {
 pub fn load_profile_file(path: &Path) -> Result<Value, ProfileLoadError> {
     let content = std::fs::read_to_string(path)?;
     load_profile_yaml(&content)
+}
+
+/// Load profiles from a YAML file.
+///
+/// This function reads a YAML file containing one or more Profile definitions
+/// and parses them into Profile structs. The file can contain either:
+/// - A single Profile object
+/// - An array of Profile objects
+///
+/// # Arguments
+///
+/// * `path` - Path to the YAML file to load
+///
+/// # Returns
+///
+/// * `Ok(Vec<Profile>)` - The parsed profiles
+/// * `Err(ProfileLoadError)` - If reading, parsing, or validation fails
+pub fn load_profiles_from_file(path: &Path) -> Result<Vec<Profile>, ProfileLoadError> {
+    let content = std::fs::read_to_string(path)?;
+
+    // First check for forbidden keys
+    let _value = load_profile_yaml(&content)?;
+
+    // Then try to parse as Profile
+    // Try as single profile first
+    if let Ok(profile) = serde_yaml::from_str::<Profile>(&content) {
+        return Ok(vec![profile]);
+    }
+
+    // Try as array of profiles
+    match serde_yaml::from_str::<Vec<Profile>>(&content) {
+        Ok(profiles) => Ok(profiles),
+        Err(e) => Err(ProfileLoadError::YamlError(e)),
+    }
+}
+
+/// Load profiles from a directory.
+///
+/// This function reads all YAML files from a directory and parses them
+/// into Profile structs. The directory path can be a file (in which case
+/// only that file is loaded) or a directory (in which case all .yaml files
+/// in the directory are loaded).
+///
+/// # Arguments
+///
+/// * `path` - Path to the YAML file or directory to load
+///
+/// # Returns
+///
+/// * `Ok(Vec<Profile>)` - The parsed profiles from all files
+/// * `Err(ProfileLoadError)` - If reading, parsing, or validation fails
+pub fn load_profiles_from_dir(path: &Path) -> Result<Vec<Profile>, ProfileLoadError> {
+    // If path is a file, load just that file
+    if path.is_file() {
+        return load_profiles_from_file(path);
+    }
+
+    // If path is a directory, load all .yaml files
+    if !path.is_dir() {
+        return Err(ProfileLoadError::IoError(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("Path does not exist: {}", path.display()),
+        )));
+    }
+
+    let mut profiles = Vec::new();
+
+    let entries = std::fs::read_dir(path).map_err(ProfileLoadError::IoError)?;
+
+    for entry in entries {
+        let entry = entry.map_err(ProfileLoadError::IoError)?;
+        let entry_path = entry.path();
+
+        // Skip directories and non-YAML files
+        if entry_path.is_dir() {
+            continue;
+        }
+
+        if entry_path.extension().and_then(|s| s.to_str()) != Some("yaml") {
+            continue;
+        }
+
+        // Load profiles from this file
+        match load_profiles_from_file(&entry_path) {
+            Ok(mut file_profiles) => {
+                profiles.append(&mut file_profiles);
+            }
+            Err(e) => {
+                // Return error on first failure
+                return Err(e);
+            }
+        }
+    }
+
+    Ok(profiles)
 }
 
 #[cfg(test)]

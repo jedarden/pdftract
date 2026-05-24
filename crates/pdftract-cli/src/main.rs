@@ -614,11 +614,74 @@ fn cmd_extract(
     if auto {
         eprintln!("Auto-detecting document type...");
 
-        // Note: Built-in profiles are not yet available (bead 5.6.4)
-        // For now, --auto will print a message and proceed with defaults
-        eprintln!("Warning: Built-in profiles are not yet available (bead 5.6.4).");
-        eprintln!("Proceeding with default extraction options.");
-        eprintln!("To use classification, provide custom profiles via --profiles DIR.");
+        use pdftract_core::profiles::{
+            classify, extract_signals_from_results, load_builtins, ProfileType,
+        };
+
+        // Load built-in profiles
+        let profiles = load_builtins();
+
+        if !profiles.is_empty() {
+            // Perform a lightweight extraction for classification
+            let classify_options = ExtractionOptions::default();
+            if let Ok(classify_result) = extract_pdf(&input, &classify_options) {
+                let has_signature_field = !classify_result.signatures.is_empty();
+                let has_form_field = !classify_result.form_fields.is_empty();
+
+                let page_data: Vec<(Vec<_>, Vec<_>)> = classify_result
+                    .pages
+                    .iter()
+                    .map(|p| (p.blocks.clone(), p.spans.clone()))
+                    .collect();
+
+                let signals =
+                    extract_signals_from_results(&page_data, has_signature_field, has_form_field);
+                let classification = classify(&signals, &profiles);
+
+                match classification.document_type {
+                    ProfileType::Unknown => {
+                        eprintln!(
+                            "Document type: unknown (confidence: {:.2})",
+                            classification.confidence
+                        );
+                        eprintln!("Proceeding with default extraction options.");
+                    }
+                    detected_type => {
+                        let type_name = match detected_type {
+                            ProfileType::Invoice => "invoice",
+                            ProfileType::Receipt => "receipt",
+                            ProfileType::Contract => "contract",
+                            ProfileType::ScientificPaper => "scientific_paper",
+                            ProfileType::SlideDeck => "slide_deck",
+                            ProfileType::Form => "form",
+                            ProfileType::BankStatement => "bank_statement",
+                            ProfileType::LegalFiling => "legal_filing",
+                            ProfileType::BookChapter => "book_chapter",
+                            ProfileType::Unknown => "unknown",
+                        };
+                        eprintln!(
+                            "Document type: {} (confidence: {:.2})",
+                            type_name, classification.confidence
+                        );
+
+                        // Apply profile-specific extraction options
+                        // For now, just log the detection - profile option overrides
+                        // will be implemented in Phase 7.10
+                        for reason in classification.reasons.iter().take(5) {
+                            eprintln!("  - {}", reason);
+                        }
+                    }
+                }
+            } else {
+                eprintln!(
+                    "Warning: Classification failed. Proceeding with default extraction options."
+                );
+            }
+        } else {
+            eprintln!(
+                "Warning: No profiles available. Proceeding with default extraction options."
+            );
+        }
     }
 
     #[cfg(not(feature = "profiles"))]
