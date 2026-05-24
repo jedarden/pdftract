@@ -34,6 +34,7 @@ pub mod receipts;
 pub mod render;
 #[cfg(feature = "remote")]
 pub mod url_validation;
+pub mod word_boundary;
 
 // Re-export has_full_render for runtime feature detection
 #[cfg(all(feature = "ocr", feature = "full-render"))]

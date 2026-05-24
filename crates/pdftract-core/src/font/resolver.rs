@@ -115,6 +115,12 @@ impl FontId {
     pub fn from_arc<T>(arc: &Arc<T>) -> Self {
         Self(Arc::as_ptr(arc) as usize)
     }
+
+    /// Create a FontId from a usize value (for testing).
+    #[cfg(test)]
+    pub fn from_usize(id: usize) -> Self {
+        Self(id)
+    }
 }
 
 /// Source of a Unicode glyph mapping.
