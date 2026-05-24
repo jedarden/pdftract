@@ -146,6 +146,24 @@ pub struct ExtractionOptions {
     ///
     /// See docs/notes/ocr-language-packs.md for the full distribution strategy.
     pub ocr_language: Vec<String>,
+
+    /// Emit HTML comment anchors before each block in Markdown output (Phase 6.5).
+    ///
+    /// When enabled, each block in markdown output is preceded by a single-line
+    /// HTML comment containing positional metadata:
+    ///
+    /// ```markdown
+    /// <!-- pdftract: page=3 block=12 bbox=[72.0,640.5,540.0,672.0] kind=heading -->
+    /// ## Chapter 3
+    /// ```
+    ///
+    /// This allows downstream tools (LLM agents, audit tools, document Q&A systems)
+    /// to map a Markdown excerpt back to a precise PDF location. HTML comments
+    /// are passthrough in every major Markdown renderer (GitHub, GitLab, Obsidian,
+    /// Notion import, pulldown-cmark, marked, markdown-it).
+    ///
+    /// Default: false (anchors disabled)
+    pub markdown_anchors: bool,
 }
 
 impl Default for ExtractionOptions {
@@ -157,6 +175,7 @@ impl Default for ExtractionOptions {
             full_render: false,
             ocr_dpi_override: None,
             ocr_language: vec!["eng".to_string()],
+            markdown_anchors: false,
         }
     }
 }
@@ -190,6 +209,7 @@ impl ExtractionOptions {
             receipts,
             ocr_dpi_override: None,
             ocr_language: vec!["eng".to_string()],
+            markdown_anchors: false,
             ..Default::default()
         }
     }
@@ -200,6 +220,7 @@ impl ExtractionOptions {
             receipts: ReceiptsMode::from_str(receipts)?,
             ocr_dpi_override: None,
             ocr_language: vec!["eng".to_string()],
+            markdown_anchors: false,
             ..Default::default()
         })
     }
@@ -219,6 +240,7 @@ impl ExtractionOptions {
             memory_budget_mb: memory_budget_mb.max(64),
             ocr_dpi_override: None,
             ocr_language: vec!["eng".to_string()],
+            markdown_anchors: false,
             ..Default::default()
         }
     }

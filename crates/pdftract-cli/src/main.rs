@@ -14,6 +14,7 @@ use codegen::Language;
 use pdftract_core::options::{ReceiptsMode, ExtractionOptions};
 use pdftract_core::extract::{extract_pdf, result_to_json};
 use pdftract_core::cache;
+use pdftract_core::markdown::{page_to_markdown, block_to_markdown};
 
 // Re-export diagnostics for the --list-diagnostics and --explain-diagnostic commands
 pub use pdftract_core::diagnostics::{DiagCode, DiagInfo, DIAGNOSTIC_CATALOG};
@@ -108,6 +109,10 @@ enum Commands {
         /// Disable cache for this extraction (even if --cache-dir is set)
         #[arg(long)]
         no_cache: bool,
+
+        /// Emit HTML comment anchors before each block in Markdown output
+        #[arg(long)]
+        md_anchors: bool,
     },
     /// Verify a receipt against a PDF file
     VerifyReceipt(verify_receipt::VerifyReceiptCommand),
@@ -311,8 +316,9 @@ fn main() -> Result<()> {
             cache_dir,
             cache_size,
             no_cache,
+            md_anchors,
         } => {
-            if let Err(e) = cmd_extract(input, password_stdin, password, &format, &receipts, ocr, ocr_language, cache_dir, &cache_size, no_cache) {
+            if let Err(e) = cmd_extract(input, password_stdin, password, &format, &receipts, ocr, ocr_language, cache_dir, &cache_size, no_cache, md_anchors) {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
@@ -427,6 +433,7 @@ fn cmd_extract(
     cache_dir: Option<PathBuf>,
     cache_size: &str,
     no_cache: bool,
+    md_anchors: bool,
 ) -> Result<()> {
     // Validate receipts mode
     let receipts_mode = match ReceiptsMode::from_str(receipts) {
@@ -473,6 +480,12 @@ fn cmd_extract(
 
     // Build extraction options
     let mut options = ExtractionOptions::with_receipts(receipts_mode);
+
+    // Set markdown anchors option
+    options.markdown_anchors = md_anchors;
+    if md_anchors {
+        eprintln!("Markdown anchors enabled");
+    }
 
     // Set OCR language if specified
     if !ocr_language.is_empty() {
@@ -540,23 +553,28 @@ fn cmd_extract(
             }
         }
         "markdown" => {
-            // Markdown output: simple conversion
-            for page in &result.pages {
-                for block in &page.blocks {
-                    match block.kind.as_str() {
-                        "heading" => {
-                            let level = block.level.unwrap_or(1);
-                            let prefix = "#".repeat(level as usize);
-                            println!("{} {}", prefix, block.text);
-                        }
-                        "paragraph" => {
-                            println!("{}", block.text);
-                        }
-                        _ => {
-                            println!("{}", block.text);
-                        }
+            // Markdown output: simple conversion with optional anchors
+            let include_anchors = options.markdown_anchors;
+            let include_page_breaks = true; // Add --- between pages
+
+            for (page_idx, page) in result.pages.iter().enumerate() {
+                let is_last_page = page_idx == result.pages.len() - 1;
+                let include_break = include_page_breaks && !is_last_page;
+
+                if include_anchors {
+                    // Use markdown module with anchors
+                    let md = page_to_markdown(&page.blocks, page.index, true, include_break);
+                    print!("{}", md);
+                } else {
+                    // Simple conversion without anchors
+                    for (block_idx, block) in page.blocks.iter().enumerate() {
+                        let md = block_to_markdown(block, page.index, block_idx, false);
+                        print!("{}", md);
+                        println!();
                     }
-                    println!();
+                    if include_break {
+                        println!("\n---\n");
+                    }
                 }
             }
         }

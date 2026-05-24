@@ -24,6 +24,7 @@ pub mod layout;
 pub mod graphics_state;
 #[cfg(feature = "ocr")]
 pub mod hybrid;
+pub mod markdown;
 pub mod options;
 pub mod parser;
 pub mod receipts;
@@ -41,6 +42,7 @@ pub mod table;
 pub use document::{PdfExtractor, PageIter, PageExtraction};
 pub use extract::{extract_pdf, extract_pdf_ndjson, ExtractionResult, PageResult, ExtractionMetadata};
 pub use font::std14::{Std14Metrics, NamedEncoding, get_std14_metrics};
+pub use markdown::{Anchor, parse_anchors, block_to_markdown, page_to_markdown};
 pub use options::{ExtractionOptions, ReceiptsMode};
 pub use parser::pages::{LazyPageIter, PageDict, DEFAULT_MEDIABOX, count_pages_tree};
 pub use schema::{SpanJson, BlockJson, ExtractionQuality, TableJson, RowJson, CellJson, SpanRef};

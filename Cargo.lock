@@ -2361,6 +2361,7 @@ dependencies = [
  "tracing",
  "ttf-parser 0.24.1",
  "unicode-normalization",
+ "url",
  "zstd",
 ]
 
