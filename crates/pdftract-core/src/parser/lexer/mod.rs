@@ -4,6 +4,7 @@
 //! PDF is byte-oriented; position tracking is byte-level, not character-level.
 
 use crate::diagnostics::{Diagnostic as Diag, DiagCode};
+use std::str::FromStr;
 
 /// Token produced by the PDF lexer.
 ///
@@ -297,7 +298,7 @@ impl<'a> Lexer<'a> {
         match next {
             b't' => self.lex_t_keyword(),
             b'f' => self.lex_f_keyword(),
-            b'0'..=b'9' | b'-' | b'+' => self.lex_numeric(),
+            b'0'..=b'9' | b'-' | b'+' | b'.' => self.lex_numeric(),
             b'(' => self.lex_literal_string(),
             b'/' => self.lex_name(),
             b'[' => self.consume_and_return(Token::ArrayStart),
@@ -311,8 +312,8 @@ impl<'a> Lexer<'a> {
             b'n' => self.lex_n_keyword(),
             b'x' => self.lex_x_keyword(),
             b'%' => self.lex_percent(),
-            b'{' | b'}' => {
-                // PDF 1.2 reserved these for future use; treat as unexpected bytes
+            b'{' | b'}' | b')' => {
+                // PDF 1.2 reserved {} for future use; ) outside string context is unexpected
                 let pos = self.pos;
                 self.diagnostics.push(Diag::with_dynamic(
                     DiagCode::StructUnexpectedByte,
@@ -496,65 +497,124 @@ impl<'a> Lexer<'a> {
 
     fn lex_numeric(&mut self) -> Option<Token> {
         let start = self.pos;
-        let mut has_dot = false;
+        let input = self.bytes;
+
+        // Track the number of sign characters and dots
+        let mut sign_count = 0;
+        let mut dot_count = 0;
         let mut has_digit = false;
-        let mut value: i64 = 0;
-        let mut sign: i64 = 1;
 
-        // Handle leading sign
-        if let Some(&b'-' | &b'+') = self.bytes.first() {
-            if self.bytes.first() == Some(&b'-') {
-                sign = -1;
-            }
-            self.advance(1);
+        // First pass: consume the numeric prefix greedily
+        let mut consumed = 0;
+
+        // Consume optional leading sign (max one)
+        if let Some(&b'-' | &b'+') = input.first() {
+            sign_count = 1;
+            consumed += 1;
         }
 
-        // Parse digits and optional decimal point
-        while let Some(&b) = self.bytes.first() {
-            if b.is_ascii_digit() {
+        // Consume digits before first dot (if any)
+        while consumed < input.len() && input[consumed].is_ascii_digit() {
+            has_digit = true;
+            consumed += 1;
+        }
+
+        // Consume dots and following digits (loop to detect multiple dots)
+        while consumed < input.len() && input[consumed] == b'.' {
+            dot_count += 1;
+            consumed += 1;
+
+            // Consume digits after this dot (if any)
+            while consumed < input.len() && input[consumed].is_ascii_digit() {
                 has_digit = true;
-                // Check for overflow
-                if let Some(new_value) = value.checked_mul(10) {
-                    if let Some(with_digit) = new_value.checked_add((b - b'0') as i64) {
-                        value = with_digit;
-                    } else {
-                        // Overflow - clamp to max value
-                        value = i64::MAX;
-                    }
-                } else {
-                    // Overflow - clamp to max value
-                    value = i64::MAX;
-                }
-                self.advance(1);
-            } else if b == b'.' && !has_dot {
-                has_dot = true;
-                self.advance(1);
-            } else {
-                break;
+                consumed += 1;
             }
         }
 
+        // Validate: must have at least one digit
         if !has_digit {
-            // Not a valid number, emit diagnostic and return null
             self.diagnostics.push(Diag::with_static(
-                DiagCode::StructUnexpectedEof,
+                DiagCode::StructInvalidNumber,
                 start as u64,
-                "Invalid numeric literal",
+                "Numeric literal must contain at least one digit",
             ));
-            return Some(Token::Null);
+            // Consume what we scanned (at least the sign character)
+            self.advance(consumed);
+            return Some(Token::Integer(0));
         }
 
-        // Apply sign
-        value = value * sign;
+        // Validate: at most one dot
+        if dot_count > 1 {
+            self.diagnostics.push(Diag::with_static(
+                DiagCode::StructInvalidNumber,
+                start as u64,
+                "Numeric literal may contain at most one decimal point",
+            ));
+            // Consume only the valid first part (up to second dot)
+            let valid_end = consumed - (dot_count - 1); // Back up to before second dot
+            self.advance(valid_end);
+            return Some(Token::Integer(0));
+        }
+
+        // Check if we're at a boundary (whitespace or delimiter)
+        // If not, we need to stop before the boundary character
+        if consumed < input.len() {
+            let next_byte = input[consumed];
+            if !Self::is_pdf_whitespace(next_byte) && !Self::is_pdf_delimiter(next_byte) {
+                // Check for scientific notation (e/E) - PDF doesn't support it
+                // The 'e' or 'E' becomes the start of the next token
+                if next_byte == b'e' || next_byte == b'E' {
+                    // Stop before the 'e' - it's not part of the number
+                } else {
+                    // Some other non-delimiter character - stop here
+                    // The consumed bytes are valid, so we proceed
+                }
+            }
+        }
+
+        // Extract the numeric literal as a string slice
+        let num_bytes = &input[..consumed];
+
+        // SAFETY: PDF numeric literals are ASCII-only per spec, so this is safe
+        let num_str = unsafe { std::str::from_utf8_unchecked(num_bytes) };
 
         // Determine if integer or real
-        if has_dot {
-            // Real number - parse as f64 by reconstructing the string
-            // For now, just return the integer part as a real
-            Some(Token::Real(value as f64))
+        if dot_count == 1 {
+            // Real number - parse as f64
+            match f64::from_str(num_str) {
+                Ok(value) => {
+                    self.advance(consumed);
+                    Some(Token::Real(value))
+                }
+                Err(_) => {
+                    // Parse failed - emit diagnostic and return 0.0
+                    self.diagnostics.push(Diag::with_dynamic(
+                        DiagCode::StructRealInvalid,
+                        start as u64,
+                        format!("Real number '{}' could not be parsed", num_str),
+                    ));
+                    self.advance(consumed);
+                    Some(Token::Real(0.0))
+                }
+            }
         } else {
-            // Integer
-            Some(Token::Integer(value))
+            // Integer - parse as i64
+            match i64::from_str(num_str) {
+                Ok(value) => {
+                    self.advance(consumed);
+                    Some(Token::Integer(value))
+                }
+                Err(_) => {
+                    // Overflow - emit diagnostic and clamp to i64::MAX
+                    self.diagnostics.push(Diag::with_dynamic(
+                        DiagCode::StructIntegerOverflow,
+                        start as u64,
+                        format!("Integer '{}' exceeds i64 range, clamped to i64::MAX", num_str),
+                    ));
+                    self.advance(consumed);
+                    Some(Token::Integer(i64::MAX))
+                }
+            }
         }
     }
 
@@ -1994,6 +2054,159 @@ mod tests {
         assert_eq!(lexer.next_token(), Some(Token::Bool(false)));
         assert_eq!(lexer.next_token(), Some(Token::Null));
         assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    // Numeric literal tests for pdftract-1jjn
+
+    #[test]
+    fn numeric_integer_positive() {
+        let mut lexer = Lexer::new(b"123");
+        assert_eq!(lexer.next_token(), Some(Token::Integer(123)));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn numeric_integer_negative() {
+        let mut lexer = Lexer::new(b"-7");
+        assert_eq!(lexer.next_token(), Some(Token::Integer(-7)));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn numeric_real_simple() {
+        let mut lexer = Lexer::new(b"3.14");
+        assert_eq!(lexer.next_token(), Some(Token::Real(3.14)));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn numeric_real_negative_dot_then_digits() {
+        // Acceptance: -.5 -> Real(-0.5)
+        let mut lexer = Lexer::new(b"-.5");
+        assert_eq!(lexer.next_token(), Some(Token::Real(-0.5)));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn numeric_real_digits_then_dot() {
+        // Acceptance: 42. -> Real(42.0)
+        let mut lexer = Lexer::new(b"42.");
+        assert_eq!(lexer.next_token(), Some(Token::Real(42.0)));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn numeric_real_dot_then_digits() {
+        // Acceptance: .001 -> Real(0.001)
+        let mut lexer = Lexer::new(b".001");
+        assert_eq!(lexer.next_token(), Some(Token::Real(0.001)));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn numeric_integer_positive_zero() {
+        // Acceptance: +0 -> Integer(0)
+        let mut lexer = Lexer::new(b"+0");
+        assert_eq!(lexer.next_token(), Some(Token::Integer(0)));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn numeric_scientific_notation_rejected() {
+        // Acceptance: 1e5 -> Integer(1) followed by Name(b"e5") or similar
+        // PDF does NOT support scientific notation
+        let mut lexer = Lexer::new(b"1e5");
+        assert_eq!(lexer.next_token(), Some(Token::Integer(1)));
+        // The 'e5' becomes a keyword (not a name since it doesn't start with /)
+        assert_eq!(lexer.next_token(), Some(Token::Keyword(b"e5".to_vec())));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn numeric_overflow_clamps_to_max() {
+        // Acceptance: 99999999999999999999 (overflow) -> Integer(i64::MAX) with STRUCT_INTEGER_OVERFLOW
+        let mut lexer = Lexer::new(b"99999999999999999999");
+        let token = lexer.next_token();
+        assert_eq!(token, Some(Token::Integer(i64::MAX)));
+        let diags = lexer.take_diagnostics();
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].code, DiagCode::StructIntegerOverflow);
+    }
+
+    #[test]
+    fn numeric_double_sign_emits_diagnostic() {
+        // Acceptance: --5 -> diagnostic STRUCT_INVALID_NUMBER
+        let mut lexer = Lexer::new(b"--5");
+        let token = lexer.next_token();
+        // Should emit diagnostic and return Integer(0) or similar
+        assert!(matches!(token, Some(Token::Integer(0)) | Some(Token::Null)));
+        let diags = lexer.take_diagnostics();
+        assert!(!diags.is_empty());
+        assert!(diags.iter().any(|d| d.code == DiagCode::StructInvalidNumber));
+    }
+
+    #[test]
+    fn numeric_real_negative_dot_then_digits_with_boundary() {
+        // -.5 followed by delimiter
+        let mut lexer = Lexer::new(b"-.5[");
+        assert_eq!(lexer.next_token(), Some(Token::Real(-0.5)));
+        assert_eq!(lexer.next_token(), Some(Token::ArrayStart));
+    }
+
+    #[test]
+    fn numeric_multiple_dots_emits_diagnostic() {
+        // 1.2.3 should emit STRUCT_INVALID_NUMBER
+        let mut lexer = Lexer::new(b"1.2.3");
+        let token = lexer.next_token();
+        // Should consume up to second dot and emit diagnostic
+        assert!(matches!(token, Some(Token::Integer(0)) | Some(Token::Real(_))));
+        let diags = lexer.take_diagnostics();
+        assert!(!diags.is_empty());
+        assert!(diags.iter().any(|d| d.code == DiagCode::StructInvalidNumber));
+    }
+
+    #[test]
+    fn numeric_bare_sign_emits_diagnostic() {
+        // A bare + or - with no following digits is invalid
+        let mut lexer = Lexer::new(b"+");
+        let token = lexer.next_token();
+        assert!(matches!(token, Some(Token::Integer(0)) | Some(Token::Null)));
+        let diags = lexer.take_diagnostics();
+        assert!(!diags.is_empty());
+        assert!(diags.iter().any(|d| d.code == DiagCode::StructInvalidNumber));
+    }
+
+    #[test]
+    fn numeric_hex_notation_not_supported() {
+        // 0xFF is NOT a numeric literal in PDF
+        // The 'x' terminates the number at position 1
+        let mut lexer = Lexer::new(b"0xFF");
+        assert_eq!(lexer.next_token(), Some(Token::Integer(0)));
+        // The 'xFF' becomes a keyword
+        assert_eq!(lexer.next_token(), Some(Token::Keyword(b"xFF".to_vec())));
+    }
+
+    #[test]
+    fn proptest_numeric_never_panics() {
+        use proptest::prelude::*;
+
+        // Generate random byte sequences starting with numeric characters
+        let test_strategy = prop::collection::vec(prop::num::u8::ANY, 0..1000).prop_map(|mut bytes| {
+            // Ensure the input starts with a numeric-start character (+, -, ., 0-9)
+            if bytes.is_empty() {
+                bytes.push(b'1');
+            } else {
+                let numeric_starts = [b'+', b'-', b'.', b'0', b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9'];
+                bytes[0] = numeric_starts[bytes[0] as usize % numeric_starts.len()];
+            }
+            bytes
+        });
+
+        proptest!(|(bytes in test_strategy)| {
+            // This should never panic
+            let mut lexer = Lexer::new(&bytes);
+            let _ = lexer.next_token();
+        });
     }
 
     #[test]

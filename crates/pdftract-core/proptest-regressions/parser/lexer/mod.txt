@@ -6,3 +6,4 @@
 # everyone who runs the test benefits from these saved cases.
 cc 9eb796a85e40a841d1cd43881214b688676e982ec812d8c66313ea753a019ec6 # shrinks to bytes = [123]
 cc e23be3e45757e93e13f0d3daf57c9fbce249a6629b9bfc8d0cb14ebf332767ae # shrinks to bytes = [41]
+cc c36c87a3fd729d9c7dc69ee5fa7866c667740cb0bad2e6430caf125986d8f257 # shrinks to bytes = [43, 0]

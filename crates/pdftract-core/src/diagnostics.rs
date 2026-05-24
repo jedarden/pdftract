@@ -258,6 +258,22 @@ pub enum DiagCode {
     /// Phase origin: 1.2
     StructIntegerOverflow,
 
+    /// Invalid real number literal
+    ///
+    /// Emitted when a real number literal cannot be parsed as f64 (e.g., malformed format).
+    /// The value is clamped to 0.0.
+    ///
+    /// Phase origin: 1.1
+    StructRealInvalid,
+
+    /// Invalid numeric literal
+    ///
+    /// Emitted when a numeric literal is malformed (e.g., `--5`, bare `+` or `-`, `1.2.3`).
+    /// The lexer returns Integer(0) with a diagnostic.
+    ///
+    /// Phase origin: 1.1
+    StructInvalidNumber,
+
     /// Invalid object stream format
     ///
     /// Emitted when an object stream has a malformed header or invalid data.
@@ -777,6 +793,8 @@ impl DiagCode {
             | DiagCode::StructInvalidDictKey
             | DiagCode::StructInvalidIndirectHeader
             | DiagCode::StructIntegerOverflow
+            | DiagCode::StructRealInvalid
+            | DiagCode::StructInvalidNumber
             | DiagCode::StructInvalidObjstm
             | DiagCode::StructInvalidGeometry
             | DiagCode::StructInvalidType
@@ -882,6 +900,8 @@ impl DiagCode {
             DiagCode::StructInvalidDictKey => "STRUCT_INVALID_DICT_KEY",
             DiagCode::StructInvalidIndirectHeader => "STRUCT_INVALID_INDIRECT_HEADER",
             DiagCode::StructIntegerOverflow => "STRUCT_INTEGER_OVERFLOW",
+            DiagCode::StructRealInvalid => "STRUCT_REAL_INVALID",
+            DiagCode::StructInvalidNumber => "STRUCT_INVALID_NUMBER",
             DiagCode::StructInvalidObjstm => "STRUCT_INVALID_OBJSTM",
             DiagCode::StructInvalidGeometry => "STRUCT_INVALID_GEOMETRY",
             DiagCode::StructInvalidType => "STRUCT_INVALID_TYPE",
@@ -968,6 +988,8 @@ impl DiagCode {
             | DiagCode::StructInvalidDictKey
             | DiagCode::StructInvalidIndirectHeader
             | DiagCode::StructIntegerOverflow
+            | DiagCode::StructRealInvalid
+            | DiagCode::StructInvalidNumber
             | DiagCode::StructInvalidObjstm
             | DiagCode::StructInvalidGeometry
             | DiagCode::StructInvalidType
@@ -1198,6 +1220,22 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         recoverable: true,
         phase: "1.2",
         suggested_action: "An integer value exceeded the i64 range and was clamped",
+    },
+    DiagInfo {
+        code: DiagCode::StructRealInvalid,
+        category: "STRUCT",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "1.1",
+        suggested_action: "A real number literal could not be parsed as f64; the value was clamped to 0.0",
+    },
+    DiagInfo {
+        code: DiagCode::StructInvalidNumber,
+        category: "STRUCT",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "1.1",
+        suggested_action: "A numeric literal was malformed (e.g., --5, bare sign, 1.2.3); the value was clamped to 0",
     },
     DiagInfo {
         code: DiagCode::StructInvalidObjstm,
