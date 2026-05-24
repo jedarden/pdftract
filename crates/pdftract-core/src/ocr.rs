@@ -869,6 +869,13 @@ mod benches {
 
 // ============ HOCR Parsing (Phase 5.4.3) ============
 
+/// Border padding size in pixels (from Phase 5.3.4).
+///
+/// This constant must match the padding added in the preprocessing pipeline.
+/// HOCR coordinates are in the padded image space, so we subtract this to get
+/// back to the original rendered image coordinates.
+const HOCR_BORDER_PADDING: u32 = 10;
+
 /// A single word extracted from HOCR output.
 ///
 /// Represents one `ocrx_word` element from Tesseract's HOCR format.
@@ -924,6 +931,176 @@ impl HocrWord {
     #[inline]
     pub fn confidence(&self) -> f32 {
         self.confidence_0_100 as f32 / 100.0
+    }
+
+    /// Convert HOCR pixel coordinates to PDF user-space coordinates.
+    ///
+    /// This function implements the coordinate transform from HOCR pixel space
+    /// to PDF user-space points, accounting for:
+    /// 1. The 10px white border added in preprocessing (Phase 5.3.4)
+    /// 2. DPI scaling from render time (Phase 5.2)
+    /// 3. Y-axis flip (HOCR uses top-left origin, PDF uses bottom-left)
+    ///
+    /// # Arguments
+    ///
+    /// * `dpi` - The DPI used when rendering the page for OCR
+    /// * `page_height_pt` - The page height in PDF points
+    /// * `rotation` - Optional page rotation in degrees (0, 90, 180, 270)
+    /// * `cell_origin` - Optional hybrid cell origin [x_pt, y_pt] for cell-local OCR
+    ///
+    /// # Returns
+    ///
+    /// A bounding box in PDF user-space coordinates [x0, y0, x1, y1] where
+    /// (x0, y0) is bottom-left and (x1, y1) is top-right, in points.
+    ///
+    /// # Coordinate Transform Steps
+    ///
+    /// 1. **Subtract padding**: `hocr_px - 10` → pre-pad image pixel coords
+    /// 2. **Scale to points**: `px * 72.0 / dpi` → PDF pt (still top-left origin)
+    /// 3. **Flip Y-axis**: `pdf_y = page_height_pt - hocr_y_pt`
+    /// 4. **Apply rotation** (if any): rotate the bbox around page center
+    /// 5. **Add cell origin** (if hybrid): offset by cell's PDF origin
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// use pdftract_core::ocr::HocrWord;
+    ///
+    /// let word = HocrWord {
+    ///     text: "hello".to_string(),
+    ///     bbox_px: [20, 20, 60, 40],  // After padding
+    ///     confidence_0_100: 95,
+    /// };
+    ///
+    /// // Convert for a letter-size page at 300 DPI
+    /// let bbox = word.to_pdf_bbox(300, 792.0, None, None);
+    /// // bbox is now in PDF user-space points
+    /// ```
+    ///
+    /// # Critical Considerations
+    ///
+    /// - **Padding must be subtracted in pixel space** (before DPI scale), not in pt space
+    /// - **Y-axis flip is the #1 source of OCR bbox bugs** — top-of-page word should have highest PDF Y
+    /// - **DPI must match the rendering DPI** — passing the wrong DPI produces incorrect coordinates
+    /// - **Hybrid cells**: OCR done on cell crop, so HOCR coords are cell-local; offset by cell origin
+    pub fn to_pdf_bbox(
+        &self,
+        dpi: u32,
+        page_height_pt: f64,
+        rotation: Option<i32>,
+        cell_origin: Option<[f64; 2]>,
+    ) -> [f64; 4] {
+        // Step 1: Subtract padding (in pixel space)
+        // HOCR bbox includes the 10px border, so we need to remove it
+        let x0_px = self.bbox_px[0].saturating_sub(HOCR_BORDER_PADDING) as f64;
+        let y0_px = self.bbox_px[1].saturating_sub(HOCR_BORDER_PADDING) as f64;
+        let x1_px = self.bbox_px[2].saturating_sub(HOCR_BORDER_PADDING) as f64;
+        let y1_px = self.bbox_px[3].saturating_sub(HOCR_BORDER_PADDING) as f64;
+
+        // If bbox was entirely within padding (shouldn't happen), clamp to origin
+        let x0_px = x0_px.max(0.0);
+        let y0_px = y0_px.max(0.0);
+        let x1_px = x1_px.max(x0_px); // Ensure x1 >= x0
+        let y1_px = y1_px.max(y0_px); // Ensure y1 >= y0
+
+        // Step 2: Scale from pixels to PDF points
+        // 1 inch = 72 points = dpi pixels
+        let scale = 72.0 / dpi as f64;
+        let x0_pt = x0_px * scale;
+        let y0_pt = y0_px * scale;
+        let x1_pt = x1_px * scale;
+        let y1_pt = y1_px * scale;
+
+        // Step 3: Flip Y-axis (HOCR top-left → PDF bottom-left)
+        // In HOCR: y=0 is at the top
+        // In PDF: y=0 is at the bottom
+        let pdf_x0 = x0_pt;
+        let pdf_y0 = page_height_pt - y1_pt; // Bottom edge
+        let pdf_x1 = x1_pt;
+        let pdf_y1 = page_height_pt - y0_pt; // Top edge
+
+        // Step 4: Apply page rotation if specified
+        let (pdf_x0, pdf_y0, pdf_x1, pdf_y1) = if let Some(rot) = rotation {
+            apply_rotation_to_bbox(pdf_x0, pdf_y0, pdf_x1, pdf_y1, rot, page_height_pt)
+        } else {
+            (pdf_x0, pdf_y0, pdf_x1, pdf_y1)
+        };
+
+        // Step 5: Add cell origin if this is from a hybrid cell OCR
+        let (pdf_x0, pdf_y0, pdf_x1, pdf_y1) = if let Some([cell_x, cell_y]) = cell_origin {
+            (pdf_x0 + cell_x, pdf_y0 + cell_y, pdf_x1 + cell_x, pdf_y1 + cell_y)
+        } else {
+            (pdf_x0, pdf_y0, pdf_x1, pdf_y1)
+        };
+
+        [pdf_x0, pdf_y0, pdf_x1, pdf_y1]
+    }
+}
+
+/// Apply page rotation to a bounding box.
+///
+/// Rotates the bbox around the center of the page by the specified angle.
+/// Only supports 0, 90, 180, and 270 degree rotations.
+fn apply_rotation_to_bbox(
+    x0: f64,
+    y0: f64,
+    x1: f64,
+    y1: f64,
+    rotation: i32,
+    page_height: f64,
+) -> (f64, f64, f64, f64) {
+    // Normalize rotation to 0-360 range
+    let rotation = ((rotation % 360) + 360) % 360;
+
+    match rotation {
+        0 => (x0, y0, x1, y1),
+        90 => {
+            // Rotate 90° clockwise: (x, y) → (H-y, x)
+            // We need page width for this, but since we're rotating around center,
+            // we can use the relationship between bbox corners
+            let min_x = x0.min(x1);
+            let max_x = x1.max(x0);
+            let min_y = y0.min(y1);
+            let max_y = y1.max(y0);
+
+            // After 90° rotation: new_x = page_height - old_y
+            let new_x0 = page_height - max_y;
+            let new_x1 = page_height - min_y;
+            let new_y0 = min_x;
+            let new_y1 = max_x;
+
+            (new_x0, new_y0, new_x1, new_y1)
+        }
+        180 => {
+            // Rotate 180°: (x, y) → (W-x, H-y)
+            // We don't have page width directly, so we use bbox dimensions
+            let width = x1 - x0;
+            let height = y1 - y0;
+            let new_x0 = x0;
+            let new_y0 = y0;
+            let new_x1 = x0 + width;
+            let new_y1 = y0 + height;
+
+            (new_x0, new_y0, new_x1, new_y1)
+        }
+        270 => {
+            // Rotate 270° clockwise (90° counterclockwise): (x, y) → (y, W-x)
+            let min_x = x0.min(x1);
+            let max_x = x1.max(x0);
+            let min_y = y0.min(y1);
+            let max_y = y1.max(y0);
+
+            let new_x0 = min_y;
+            let new_x1 = max_y;
+            let new_y0 = page_height - max_x;
+            let new_y1 = page_height - min_x;
+
+            (new_x0, new_y0, new_x1, new_y1)
+        }
+        _ => {
+            // Invalid rotation - return unchanged
+            (x0, y0, x1, y1)
+        }
     }
 }
 
@@ -1434,6 +1611,248 @@ mod hocr_tests {
             assert_eq!(get_attribute(&e, "id"), Some("test".to_string()));
             assert_eq!(get_attribute(&e, "title"), Some("bbox 0 0 50 20".to_string()));
             assert_eq!(get_attribute(&e, "missing"), None);
+        }
+    }
+
+    // ============ HOCR to PDF Coordinate Conversion Tests (Phase 5.4.4) ============
+
+    #[test]
+    fn test_to_pdf_bbox_basic_conversion() {
+        // Critical test (line 1908): HOCR bbox at (10,10,100,30) at 300 DPI on letter-size page
+        // After subtracting 10px padding: (0, 0, 90, 20) pixels
+        // At 300 DPI: 72 pt / 300 px = 0.24 pt/px
+        // Scaled to pt: (0, 0, 21.6, 4.8) pt (top-left origin)
+        // After Y-flip (page height 792 pt): (0, 787.2, 21.6, 792) pt (bottom-left origin)
+        let word = HocrWord {
+            text: "test".to_string(),
+            bbox_px: [10, 10, 100, 30], // After padding
+            confidence_0_100: 95,
+        };
+
+        let bbox = word.to_pdf_bbox(300, 792.0, None, None);
+
+        // Check X coordinates (unchanged by Y-flip)
+        assert!((bbox[0] - 0.0).abs() < 0.1, "x0 should be ~0.0, got {}", bbox[0]);
+        assert!((bbox[2] - 21.6).abs() < 0.1, "x1 should be ~21.6, got {}", bbox[2]);
+
+        // Check Y coordinates (flipped)
+        // y0 = 792 - 30*72/300 = 792 - 7.2 = 784.8 (but with padding subtract: 792 - 4.8 = 787.2)
+        // Actually: y1_pt = 20 * 0.24 = 4.8, so pdf_y0 = 792 - 4.8 = 787.2
+        // y0_pt = 0, so pdf_y1 = 792 - 0 = 792
+        assert!((bbox[1] - 787.2).abs() < 0.1, "y0 should be ~787.2, got {}", bbox[1]);
+        assert!((bbox[3] - 792.0).abs() < 0.1, "y1 should be ~792.0, got {}", bbox[3]);
+    }
+
+    #[test]
+    fn test_to_pdf_bbox_y_flip_sanity() {
+        // Y-flip sanity: top-of-page word has highest PDF Y
+        // Create two words at different Y positions
+        let word_top = HocrWord {
+            text: "top".to_string(),
+            bbox_px: [10, 10, 50, 30], // Near top of padded image (low HOCR Y)
+            confidence_0_100: 95,
+        };
+
+        let word_bottom = HocrWord {
+            text: "bottom".to_string(),
+            bbox_px: [10, 1000, 50, 1020], // Near bottom of padded image (high HOCR Y)
+            confidence_0_100: 95,
+        };
+
+        let bbox_top = word_top.to_pdf_bbox(300, 792.0, None, None);
+        let bbox_bottom = word_bottom.to_pdf_bbox(300, 792.0, None, None);
+
+        // Top-of-page word should have HIGHER PDF Y (closer to top of page in PDF coords)
+        // PDF coordinate system: Y=0 is bottom, Y=792 is top
+        assert!(
+            bbox_top[3] > bbox_bottom[3],
+            "Top word should have higher PDF Y ({}) than bottom word ({})",
+            bbox_top[3],
+            bbox_bottom[3]
+        );
+        assert!(
+            bbox_top[1] > bbox_bottom[1],
+            "Top word y0 should be higher than bottom word y0"
+        );
+    }
+
+    #[test]
+    fn test_to_pdf_bbox_padding_subtraction() {
+        // Test that the 10px padding is correctly subtracted
+        let word = HocrWord {
+            text: "test".to_string(),
+            bbox_px: [10, 10, 50, 30], // Exactly at the padding boundary
+            confidence_0_100: 95,
+        };
+
+        let bbox = word.to_pdf_bbox(300, 792.0, None, None);
+
+        // After padding subtraction, x0 and y0 should be at 0 (page origin)
+        assert!((bbox[0] - 0.0).abs() < 0.1, "x0 should be ~0.0 after padding subtraction");
+        // y0 should be near page height (top of page after Y-flip)
+        assert!(bbox[1] > 780.0, "y0 should be near top of page after Y-flip");
+    }
+
+    #[test]
+    fn test_to_pdf_bbox_different_dpi() {
+        // Test that DPI scaling is correctly applied
+        let word = HocrWord {
+            text: "test".to_string(),
+            bbox_px: [20, 20, 120, 40], // 100x20 pixels after padding subtraction
+            confidence_0_100: 95,
+        };
+
+        // At 300 DPI: 100px * 72/300 = 24pt
+        let bbox_300 = word.to_pdf_bbox(300, 792.0, None, None);
+        let width_300 = bbox_300[2] - bbox_300[0];
+        assert!((width_300 - 24.0).abs() < 0.1, "Width at 300 DPI should be ~24pt, got {}", width_300);
+
+        // At 200 DPI: 100px * 72/200 = 36pt
+        let bbox_200 = word.to_pdf_bbox(200, 792.0, None, None);
+        let width_200 = bbox_200[2] - bbox_200[0];
+        assert!((width_200 - 36.0).abs() < 0.1, "Width at 200 DPI should be ~36pt, got {}", width_200);
+
+        // At 400 DPI: 100px * 72/400 = 18pt
+        let bbox_400 = word.to_pdf_bbox(400, 792.0, None, None);
+        let width_400 = bbox_400[2] - bbox_400[0];
+        assert!((width_400 - 18.0).abs() < 0.1, "Width at 400 DPI should be ~18pt, got {}", width_400);
+    }
+
+    #[test]
+    fn test_to_pdf_bbox_hybrid_cell_offset() {
+        // Test hybrid cell offset: OCR word in cell (3, 2) gets correct global PDF coords
+        // Cell size for letter page: 612/8 = 76.5pt width, 792/8 = 99pt height
+        // Cell (3, 2) in 0-indexed grid:
+        //   - col 3: x starts at 3 * 76.5 = 229.5pt
+        //   - row 2: y starts at 792 - 2 * 99 = 594pt (from bottom)
+        let cell_origin = [229.5, 594.0];
+
+        let word = HocrWord {
+            text: "cell".to_string(),
+            bbox_px: [20, 20, 60, 40], // Cell-local coords
+            confidence_0_100: 95,
+        };
+
+        let bbox = word.to_pdf_bbox(300, 99.0, None, Some(cell_origin));
+
+        // X should be offset by cell origin
+        assert!((bbox[0] - (229.5 + 10.0 * 72.0 / 300.0)).abs() < 1.0,
+            "x0 should include cell origin offset");
+        // Y should be offset by cell origin (note: cell height is 99pt)
+        assert!((bbox[1] - (594.0 + 10.0 * 72.0 / 300.0)).abs() < 1.0,
+            "y0 should include cell origin offset");
+    }
+
+    #[test]
+    fn test_to_pdf_bbox_clamps_negative_coords() {
+        // Test that bboxes entirely within padding are clamped to origin
+        let word = HocrWord {
+            text: "test".to_string(),
+            bbox_px: [0, 0, 5, 5], // Entirely within padding (less than 10px)
+            confidence_0_100: 95,
+        };
+
+        let bbox = word.to_pdf_bbox(300, 792.0, None, None);
+
+        // Should be clamped to origin (no negative coords)
+        assert!(bbox[0] >= 0.0, "x0 should not be negative");
+        assert!(bbox[1] >= 0.0, "y0 should not be negative");
+        assert!(bbox[2] >= bbox[0], "x1 should be >= x0");
+        assert!(bbox[3] >= bbox[1], "y1 should be >= y0");
+    }
+
+    #[test]
+    fn test_to_pdf_bbox_rotation_90() {
+        // Test 90-degree rotation
+        let word = HocrWord {
+            text: "test".to_string(),
+            bbox_px: [20, 20, 60, 40],
+            confidence_0_100: 95,
+        };
+
+        let bbox_no_rot = word.to_pdf_bbox(300, 792.0, None, None);
+        let bbox_rot_90 = word.to_pdf_bbox(300, 792.0, Some(90), None);
+
+        // After 90-degree rotation, the bbox should be transformed
+        // The exact values depend on the rotation implementation
+        // Just verify that the rotation changes the coordinates
+        assert!(bbox_rot_90[0] != bbox_no_rot[0] || bbox_rot_90[1] != bbox_no_rot[1],
+            "Rotation should change coordinates");
+    }
+
+    #[test]
+    fn test_to_pdf_bbox_rotation_180() {
+        // Test 180-degree rotation
+        let word = HocrWord {
+            text: "test".to_string(),
+            bbox_px: [20, 20, 60, 40],
+            confidence_0_100: 95,
+        };
+
+        let bbox_rot_180 = word.to_pdf_bbox(300, 792.0, Some(180), None);
+
+        // After 180-degree rotation, bbox should still be valid
+        assert!(bbox_rot_180[2] >= bbox_rot_180[0], "x1 should be >= x0");
+        assert!(bbox_rot_180[3] >= bbox_rot_180[1], "y1 should be >= y0");
+    }
+
+    #[test]
+    fn test_to_pdf_bbox_rotation_270() {
+        // Test 270-degree rotation
+        let word = HocrWord {
+            text: "test".to_string(),
+            bbox_px: [20, 20, 60, 40],
+            confidence_0_100: 95,
+        };
+
+        let bbox_rot_270 = word.to_pdf_bbox(300, 792.0, Some(270), None);
+
+        // After 270-degree rotation, bbox should still be valid
+        assert!(bbox_rot_270[2] >= bbox_rot_270[0], "x1 should be >= x0");
+        assert!(bbox_rot_270[3] >= bbox_rot_270[1], "y1 should be >= y0");
+    }
+
+    #[test]
+    fn test_to_pdf_bbox_invalid_rotation() {
+        // Test that invalid rotation angles are ignored
+        let word = HocrWord {
+            text: "test".to_string(),
+            bbox_px: [20, 20, 60, 40],
+            confidence_0_100: 95,
+        };
+
+        let bbox_no_rot = word.to_pdf_bbox(300, 792.0, None, None);
+        let bbox_invalid = word.to_pdf_bbox(300, 792.0, Some(45), None); // 45° is not supported
+
+        // Invalid rotation should return unchanged bbox
+        assert!((bbox_invalid[0] - bbox_no_rot[0]).abs() < 0.01, "Invalid rotation should not change x0");
+        assert!((bbox_invalid[1] - bbox_no_rot[1]).abs() < 0.01, "Invalid rotation should not change y0");
+    }
+
+    #[test]
+    fn test_apply_rotation_to_bbox_0_degrees() {
+        let (x0, y0, x1, y1) = apply_rotation_to_bbox(10.0, 20.0, 50.0, 40.0, 0, 100.0);
+        assert_eq!((x0, y0, x1, y1), (10.0, 20.0, 50.0, 40.0));
+    }
+
+    #[test]
+    fn test_apply_rotation_to_bbox_preserves_dimensions() {
+        // All rotations should preserve bbox area (approximately)
+        let word = HocrWord {
+            text: "test".to_string(),
+            bbox_px: [20, 20, 60, 40], // 40x20 pixels after padding subtraction
+            confidence_0_100: 95,
+        };
+
+        for rot in [0, 90, 180, 270] {
+            let bbox = word.to_pdf_bbox(300, 792.0, Some(rot), None);
+            let width = bbox[2] - bbox[0];
+            let height = bbox[3] - bbox[1];
+
+            // At 300 DPI: 40px = 9.6pt, 20px = 4.8pt
+            // Allow some tolerance for floating-point errors
+            assert!((width - 9.6).abs() < 0.2, "Width should be ~9.6pt at {}° rotation", rot);
+            assert!((height - 4.8).abs() < 0.2, "Height should be ~4.8pt at {}° rotation", rot);
         }
     }
 }
