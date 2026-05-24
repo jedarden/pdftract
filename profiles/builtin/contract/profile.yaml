@@ -1,57 +1,38 @@
-description: Legal contract with parties, effective date, term, signatures
-priority: 40
+# Contract profile for legal agreements
+# Extracts parties, effective date, term, governing law, and signatures from contracts
+name: contract
+description: Legal contracts and agreements with parties, effective date, term, governing law, and signatures
+priority: 20
+
+# Matching predicates: identify documents as contracts
 match:
-  any:
-    - text_patterns:
-        - "(?i)agreement\\s+is\\s+made"
-        - "(?i)contract\\s+agreement"
-        - "(?i)this\\s+agreement"
-        - "(?i)terms\\s+and\\s+conditions"
-        - "(?i)memorandum\\s+of\\s+understanding"
-    - text_patterns:
-        - "(?i)effective\\s+date"
-        - "(?i)governing\\s+law"
-        - "(?i)termination\\s+notice"
-        - "(?i)indemnification"
-    - structural:
-        - has_signature_blocks: true
-        - page_count_gte: 2
-  page_count_hint: 2-50
-profile_fields:
+  all:
+    - any:
+        - text_contains: ["AGREEMENT", "CONTRACT", "WHEREAS", "NOW THEREFORE", "In witness whereof"]
+        - heading_matches: '^(Agreement|Contract|Memorandum of Understanding)'
+    - structural: {page_count: {min: 2, max: 200}}
+  none:
+    - text_contains: ["Invoice #", "Receipt"]
+
+# Extraction tuning for contracts
+extraction:
+  reading_order: xy_cut
+  readability_threshold: 0.5
+  include_headers_footers: false
+
+# Field extractors for contract-specific metadata
+fields:
   parties:
-    type: array
-    extraction:
-      patterns:
-        - "(?i)between\\s+([A-Z][A-Za-z0-9\\s&]+)\\s+and\\s+([A-Z][A-Za-z0-9\\s&]+)"
-        - "(?i)party\\s+[A-Z]\\s*:.*?([A-Z][A-Za-z0-9\\s&]+)"
-      fallback: []
+    near: ["between", "party of the first part", "BY AND BETWEEN"]
+    pick: nearest_below
   effective_date:
-    type: date
-    extraction:
-      patterns:
-        - "(?i)effective\\s+date\\s*(?:as\\s+of|:)?\\s*([A-Za-z]+\\s+[0-9]{1,2},?\\s+[0-9]{4})"
-        - "(?i)effective\\s+date\\s*(?:as\\s+of|:)?\\s*([0-9]{1,2}[/-][0-9]{1,2}[/-][0-9]{2,4})"
-      fallback: null
+    near: ["Effective Date", "Date of Agreement", "as of"]
+    parse: date
   term:
-    type: string
-    extraction:
-      patterns:
-        - "(?i)term\\s*(?:of\\s*this\\s+agreement)?\\s*:?.*?([0-9]+\\s+(?:months?|years?))"
-        - "(?i)shall\\s+continue\\s+for.*?([0-9]+\\s+(?:months?|years?))"
-      fallback: null
+    near: ["Term", "Initial Term", "expires on", "shall remain in effect"]
+    regex: '\d+\s+(years?|months?)|expires?\s+\d{4}'
   governing_law:
-    type: string
-    extraction:
-      patterns:
-        - "(?i)governing\\s+law\\s*(?:of|:)?\\s*([A-Za-z\\s]+?)(?=\\n|\\r|\\.)"
-      fallback: null
+    near: ["Governing Law", "governed by the laws of"]
+    pick: nearest_right
   signatures:
-    type: array
-    extraction:
-      region_hint: "bottom_20_percent"
-      patterns:
-        - "(?i)signature\\s*:.*?([A-Z][A-Za-z\\s]+)"
-        - "(?i)signed\\s*:.*?([A-Z][A-Za-z\\s]+)"
-      fallback: []
-reading_order: line_dominant
-zone_filtering: exclude_headers_footers
+    region: bottom_quarter

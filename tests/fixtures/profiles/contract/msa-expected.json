@@ -1,0 +1,21 @@
+{
+  "metadata": {
+    "document_type": "contract",
+    "document_type_confidence": 0.97,
+    "document_type_reasons": [
+      "text_contains matched 'MASTER SERVICES AGREEMENT'",
+      "text_contains matched 'WHEREAS'",
+      "text_contains matched 'NOW THEREFORE'",
+      "structural.page_count in range [2, 200]"
+    ],
+    "profile_name": "contract",
+    "profile_version": "1.0.0",
+    "profile_fields": {
+      "parties": ["Global Services Provider LLC", "Enterprise Customer Inc."],
+      "effective_date": "2025-01-01",
+      "term": "3 years with auto-renewal",
+      "governing_law": "State of New York",
+      "signatures": ["Vendor Representative", "Client Representative"]
+    }
+  }
+}

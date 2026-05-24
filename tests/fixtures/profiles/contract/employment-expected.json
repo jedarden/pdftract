@@ -1,0 +1,20 @@
+{
+  "metadata": {
+    "document_type": "contract",
+    "document_type_confidence": 0.92,
+    "document_type_reasons": [
+      "text_contains matched 'Agreement'",
+      "text_contains matched 'Employment'",
+      "structural.page_count in range [2, 200]"
+    ],
+    "profile_name": "contract",
+    "profile_version": "1.0.0",
+    "profile_fields": {
+      "parties": ["TechCorp Inc.", "Alice Johnson"],
+      "effective_date": "2025-02-01",
+      "term": "at-will employment",
+      "governing_law": "State of California",
+      "signatures": ["Alice Johnson", "Bob HR (TechCorp)"]
+    }
+  }
+}

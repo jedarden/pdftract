@@ -1,0 +1,20 @@
+{
+  "metadata": {
+    "document_type": "contract",
+    "document_type_confidence": 0.94,
+    "document_type_reasons": [
+      "text_contains matched 'PURCHASE AGREEMENT'",
+      "text_contains matched 'In witness whereof'",
+      "structural.page_count in range [2, 200]"
+    ],
+    "profile_name": "contract",
+    "profile_version": "1.0.0",
+    "profile_fields": {
+      "parties": ["Buyer Trust LLC", "Seller Properties Inc."],
+      "effective_date": "2025-04-15",
+      "term": "closing on or before 2025-06-30",
+      "governing_law": "State of Florida",
+      "signatures": ["Buyer", "Seller", "Notary Public"]
+    }
+  }
+}

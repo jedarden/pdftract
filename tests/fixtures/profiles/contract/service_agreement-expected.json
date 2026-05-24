@@ -1,0 +1,20 @@
+{
+  "metadata": {
+    "document_type": "contract",
+    "document_type_confidence": 0.88,
+    "document_type_reasons": [
+      "text_contains matched 'Agreement'",
+      "text_contains matched 'BY AND BETWEEN'",
+      "structural.page_count in range [2, 200]"
+    ],
+    "profile_name": "contract",
+    "profile_version": "1.0.0",
+    "profile_fields": {
+      "parties": ["Freelance Consultant", "Small Business LLC"],
+      "effective_date": "2025-03-01",
+      "term": "project completion or 6 months",
+      "governing_law": "State of Texas",
+      "signatures": ["Consultant", "Business Owner"]
+    }
+  }
+}

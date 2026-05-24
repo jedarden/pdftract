@@ -1,0 +1,20 @@
+{
+  "metadata": {
+    "document_type": "contract",
+    "document_type_confidence": 0.95,
+    "document_type_reasons": [
+      "text_contains matched 'AGREEMENT'",
+      "text_contains matched 'WHEREAS'",
+      "structural.page_count in range [2, 200]"
+    ],
+    "profile_name": "contract",
+    "profile_version": "1.0.0",
+    "profile_fields": {
+      "parties": ["Acme Corporation", "Beta LLC"],
+      "effective_date": "2025-01-15",
+      "term": "2 years",
+      "governing_law": "State of Delaware",
+      "signatures": ["John Doe (Acme)", "Jane Smith (Beta)"]
+    }
+  }
+}
