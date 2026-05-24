@@ -20,6 +20,7 @@ pub mod preprocess;
 pub mod extract;
 pub mod fingerprint;
 pub mod font;
+pub mod layout;
 pub mod graphics_state;
 #[cfg(feature = "ocr")]
 pub mod hybrid;

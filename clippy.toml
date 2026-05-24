@@ -19,4 +19,5 @@ type-complexity-threshold = 250
 literal-representation-threshold = 10
 
 # Enforce documentation for public items
-missing-docs-in-private-items = false
+# Note: missing-docs-in-private-items is not a valid clippy.toml option
+# Documentation is enforced via other means
