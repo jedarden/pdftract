@@ -42,6 +42,7 @@ fuzzing = []  # Enable cfg(fuzzing) for fuzz harnesses
 
 [dev-dependencies]
 chrono = "0.4"
+criterion = "0.5"
 proptest = "1.4"
 quick-xml = "0.36"
 regex = "1.10"
@@ -49,6 +50,10 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tempfile = "3.10"
 filetime = "0.2"
+
+[[bench]]
+name = "table_detection"
+harness = false
 
 [build-dependencies]
 phf_codegen = "0.11"

@@ -29,6 +29,7 @@ pub mod render;
 pub use render::pdfium_path::has_full_render;
 pub mod schema;
 pub mod semaphore;
+pub mod table;
 
 // Re-export key types for convenience
 pub use document::{PdfExtractor, PageIter, PageExtraction};
@@ -37,6 +38,7 @@ pub use font::std14::{Std14Metrics, NamedEncoding, get_std14_metrics};
 pub use options::{ExtractionOptions, ReceiptsMode};
 pub use parser::pages::{LazyPageIter, PageDict, DEFAULT_MEDIABOX, count_pages_tree};
 pub use schema::{SpanJson, BlockJson, ExtractionQuality};
+pub use table::{TableDetector, PageContext as TablePageContext, GridCandidate};
 
 #[cfg(feature = "ocr")]
 pub use dpi::{Pdf1Filter, FontSizeSpan, select_dpi};
