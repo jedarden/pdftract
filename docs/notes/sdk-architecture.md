@@ -7,6 +7,28 @@ JavaScript, Go, Ruby, Java, Rust, and Bash. Gaps: TypeScript, C#, C++, PHP, and 
 
 ---
 
+## Workspace layout
+
+The workspace is organized so that `pdftract-core` is the only crate that other consumers depend on directly. The CLI, Python bindings, and inspector UI are siblings that compose `pdftract-core` behind their respective surfaces.
+
+```
+pdftract/
+├── Cargo.toml (workspace root)
+├── crates/
+│   ├── pdftract-core/ (library — only direct dependency for downstream consumers)
+│   ├── pdftract-cli/ (binary)
+│   ├── pdftract-py/ (PyO3 bindings, optional feature)
+│   └── pdftract-inspector-ui/ (HTML/CSS/JS bundled via include_bytes!, Phase 7.9)
+└── docs/
+    ├── plan/plan.md
+    ├── research/ (per-feature deep dives)
+    └── notes/ (this file, sdk-invocation.md, sdk-contract.md, ocr-language-packs.md)
+```
+
+See `docs/plan/plan.md` lines 141–268 for the full file and module layout specification.
+
+---
+
 ## Common infrastructure (required before any SDK ships)
 
 ### Binary distribution
@@ -15,15 +37,35 @@ Every SDK approach — subprocess or native — depends on platform binaries pub
 
 | Target triple | Platform |
 |---|---|
-| `x86_64-unknown-linux-gnu` | Linux x86_64 |
-| `aarch64-unknown-linux-gnu` | Linux ARM64 |
+| `x86_64-unknown-linux-musl` | Linux x86_64 (production binary) |
+| `aarch64-unknown-linux-musl` | Linux ARM64 |
 | `x86_64-apple-darwin` | macOS Intel |
 | `aarch64-apple-darwin` | macOS Apple Silicon |
-| `x86_64-pc-windows-msvc` | Windows x86_64 |
+| `x86_64-pc-windows-gnu` | Windows x86_64 |
 
 The CI workflow must cross-compile for all five targets and attach the binaries to a versioned
 GitHub Release tag on every release. SDKs pin to a binary version and download the appropriate
 artifact at install time.
+
+### Cross-platform test limitation (KU-12)
+
+Per ADR-009, `iad-ci` is Linux-only. **Linux is fully CI-tested; macOS and Windows are build-tested and manually smoke-tested per release.** macOS and Windows binaries are *built* via `cross` on Linux but never *executed* in CI. This is acknowledged as Known Unknown KU-12 with the following mitigation:
+
+- A manual smoke-test runbook in `docs/operations/manual-platform-smoke.md` is executed by the release lead before each milestone tag against at least one physical macOS machine and one Windows VM
+- User bug reports for platform-specific issues acknowledged within 48 hours and addressed in the next patch release
+
+See `docs/plan/plan.md` lines 3431–3436 and lines 608–609 for the full KU-12 specification.
+
+### Argo CI templates
+
+Binary and wheel builds are orchestrated by Argo WorkflowTemplates on the `iad-ci` Rackspace Spot cluster:
+
+- `pdftract-cargo-build` — builds the Rust binary for all five target triples using `cross` (Docker-based cross-compilation)
+- `pdftract-maturin-build` — builds the PyO3 wheel for all five target triples (uses `ghcr.io/rust-cross/manylinux` for Linux, `osxcross` for macOS, `cross` for Windows)
+
+GitHub Actions is **FORBIDDEN** per ADR-009. All CI runs on `iad-ci`; secrets live in OpenBao and reach workflows via ESO-synced Kubernetes Secrets.
+
+See `docs/plan/plan.md` ADR-009 (lines 495–502) and Phase 0.2 (lines 1015–1029) for the full CI specification.
 
 ### Release format
 
@@ -32,6 +74,47 @@ https://github.com/jedarden/pdftract/releases/download/v{VERSION}/pdftract-{TARG
 ```
 
 Semantic versioning is required before any package is published to a package registry.
+
+---
+
+## Feature flag composition
+
+Feature flags control the binary footprint. The default build (`cargo build`) includes only the core extraction path. Heavy optional capabilities are behind named features.
+
+### Feature tiers
+
+| Tier | Features | Binary size (stripped) | Use case |
+|---|---|---|---|
+| **slim** | `["cli", "decrypt"]` | < 3 MB | Minimal CLI without Markdown |
+| **default** | `["cli", "decrypt", "markdown"]` | < 4 MB | Standard CLI with Markdown output |
+| **serve** | `default + ["serve"]` | < 12 MB | HTTP server mode |
+| **ocr** | `default + ["ocr"]` | < 12 MB | OCR with Tesseract |
+| **full** | `default + ["serve", "ocr", "mcp", "inspect", "grep", "profiles", "cache", "receipts", "remote"]` | < 14 MB | All features except `full-render` |
+
+### Feature dependencies
+
+Some features implicitly enable others:
+
+- `serve` → enables `cache` (the HTTP server is the primary cache consumer)
+- `mcp` → depends on `serve` (both transports share the HTTP infrastructure)
+- `inspect` → depends on `serve` (bundles a ~80 KB static HTML/CSS/JS frontend via `include_bytes!`)
+- `grep` → requires `regex` crate
+- `profiles` → requires `regex` crate
+
+### Binary size budgets
+
+Per the Primary Objectives (Weight Targets):
+
+| Metric | Target |
+|---|---|
+| Binary size, default features (no OCR, no serve) | < 4 MB stripped |
+| Binary size, `--features ocr,serve` | < 12 MB stripped |
+| Binary size, `--features full` (everything except `full-render`) | < 14 MB stripped |
+| Docker image, CLI only | < 20 MB (distroless base) |
+| Docker image, with OCR (`tesseract-ocr` system pkg) | < 120 MB |
+| Docker image, `pdftract:full` | < 140 MB |
+
+See `docs/plan/plan.md` lines 46–62 for the full weight targets specification.
 
 ---
 
@@ -577,3 +660,20 @@ Separate artifact ID (`pdftract-kotlin`) so Java users don't pull in Kotlin stdl
 | 5 | C++ | 1–2 days | `popen` + libcurl; no package manager standard, distribute as vcpkg port |
 
 All five are blocked on the GitHub Releases binary distribution infrastructure being in place first.
+
+---
+
+## Cross-references
+
+Related documentation:
+
+- **[`sdk-invocation.md`](sdk-invocation.md)** — Subprocess and HTTP invocation patterns for all supported languages
+- **[`sdk-contract.md`](sdk-contract.md)** — The constitutional SDK specification (method surface, error mapping, versioning, conformance)
+- **[`ocr-language-packs.md`](ocr-language-packs.md)** — Tesseract language pack distribution and installation
+- **[`docs/plan/plan.md`](../plan/plan.md)** — The source of truth for all architectural decisions (workspace layout, cross-compile matrix, ADR-009 CI policy, KU-12 platform testing)
+
+See also:
+
+- **Phase 6.3** (PyO3 bindings) — Python wheel build matrix via `pdftract-maturin-build`
+- **Phase 7.9** (Inspector UI) — Web debug viewer bundled via `include_bytes!`
+- **ADR-009** (Argo Workflows on iad-ci) — CI/CD architecture and cross-compilation strategy

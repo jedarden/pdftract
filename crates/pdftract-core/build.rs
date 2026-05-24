@@ -297,8 +297,8 @@ pub static AGL_MULTI: phf::Map<&'static str, &[char]> = {};
 fn decode_json_unicode(s: &str) -> String {
     // The JSON has "\\uXXXX" which Rust reads as "\uXXXX"
     // We need to extract just the hex part
-    if s.starts_with("\\u") {
-        s[2..].to_string()
+    if let Some(suffix) = s.strip_prefix("\\u") {
+        suffix.to_string()
     } else {
         s.to_string()
     }
@@ -370,7 +370,7 @@ fn generate_font_fingerprints(out_dir: &Path, fingerprints_path: &Path) {
         for entry in entries {
             let arr = entry.as_array().expect("entry must be an array");
             let gid = arr
-                .get(0)
+                .first()
                 .and_then(|v| v.as_u64())
                 .expect("gid must be a number") as u16;
             let codepoint = arr
@@ -496,16 +496,15 @@ pub fn cid_to_unicode(cid: u32) -> Option<&'static [char]> {{
             collection = module_name.to_uppercase(),
             json_name = json_name,
         );
-
-        fs::write(&out_path, rust_code).expect(&format!("Failed to write {}", out_path.display()));
+        fs::write(&out_path, rust_code).unwrap_or_else(|_| panic!("Failed to write {}", out_path.display()));
         return;
     }
 
     let json_content =
-        fs::read_to_string(&json_path).expect(&format!("Failed to read {}", json_path.display()));
+        fs::read_to_string(&json_path).unwrap_or_else(|_| panic!("Failed to read {}", json_path.display()));
 
     let data: serde_json::Value = serde_json::from_str(&json_content)
-        .expect(&format!("Failed to parse {}", json_path.display()));
+        .unwrap_or_else(|_| panic!("Failed to parse {}", json_path.display()));
 
     // Build phf map
     let mut map_builder = phf_codegen::Map::new();
@@ -515,7 +514,7 @@ pub fn cid_to_unicode(cid: u32) -> Option<&'static [char]> {{
         for (cid_str, unicode_value) in mappings {
             let cid: u32 = cid_str
                 .parse()
-                .expect(&format!("Invalid CID key: {}", cid_str));
+                .unwrap_or_else(|_| panic!("Invalid CID key: {}", cid_str));
 
             // Parse the Unicode value
             if let Some(unicode_str) = unicode_value.as_str() {
@@ -573,7 +572,7 @@ pub fn cid_to_unicode(cid: u32) -> Option<&'static [char]> {{
         map = map_builder.build(),
     );
 
-    fs::write(&out_path, rust_code).expect(&format!("Failed to write {}", out_path.display()));
+    fs::write(&out_path, rust_code).unwrap_or_else(|_| panic!("Failed to write {}", out_path.display()));
 }
 
 /// Parse a Unicode value from JSON to a Vec<char>.
@@ -631,7 +630,7 @@ fn parse_unicode_value(s: &str) -> Vec<char> {
 ///   "frequency_rank": 1
 /// }
 /// ```
-fn generate_shape_db(out_dir: &Path, shapes_path: &Path) {
+fn generate_shape_db(out_dir: &Path, _shapes_path: &Path) {
     // Resolve shapes_path relative to the workspace root
     // build.rs runs from the crate directory, but the build/ dir is at workspace root
     // We can find the workspace root by going up from the crate directory
@@ -701,7 +700,7 @@ const _: () = assert!(SHAPE_TABLE.len() == FREQ_TABLE.len());
     }
 
     // Sort by pHash ascending
-    sorted_entries.sort_by(|a, b| a.0.cmp(&b.0));
+    sorted_entries.sort_by_key(|a| a.0);
 
     // Check for duplicate pHash entries
     for i in 1..sorted_entries.len() {
