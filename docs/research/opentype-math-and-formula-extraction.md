@@ -166,3 +166,261 @@ Formulas that cannot be reliably reconstructed must be emitted, not silently dro
 The `glyphs` field preserves every decoded character in stream order so that downstream tools — computer algebra systems, LLM post-processors, or human reviewers — can attempt further parsing with full information. When even glyph-level decoding fails (Type 3 fonts with no Unicode recovery, OMX extender glyphs with no Unicode equivalent), the field is populated with Unicode REPLACEMENT CHARACTER (U+FFFD) placeholders in glyph count, preserving the character count for layout correlation.
 
 The minimum requirement is that every formula region identified on the page produces an output block. Formula content is never silently omitted.
+
+---
+
+## 11. Formula-Region Detection Algorithm
+
+Formula-region detection operates on spans flagged during font recognition as using a math-capable font (any font with a MATH table). The algorithm aggregates these spans into contiguous formula regions using proximity and geometric consistency.
+
+### Pseudo-code
+
+```
+function detect_formula_regions(spans: Vec<Span>, page_metrics: PageMetrics) -> Vec<FormulaRegion> {
+    let mut regions: Vec<FormulaRegion> = vec![];
+    let mut candidate_spans: Vec<Span> = spans
+        .iter()
+        .filter(|s| s.font.has_math_table())
+        .cloned()
+        .collect();
+
+    // Sort by y (top to bottom), then by x (left to right)
+    candidate_spans.sort_by(|a, b| {
+        a.bbox.y0.partial_cmp(&b.bbox.y0)
+            .unwrap()
+            .then(a.bbox.x0.partial_cmp(&b.bbox.x0).unwrap())
+    });
+
+    let mut current_region: Option<FormulaRegion> = None;
+    let math_axis = estimate_math_axis(&candidate_spans, page_metrics);
+
+    for span in candidate_spans {
+        if let Some(ref region) = current_region {
+            // Check if span belongs to current region
+            let vertical_gap = span.bbox.y0 - region.bbox.y1;
+            let horizontal_overlap = spans_horizontally_overlap(&span.bbox, &region.bbox);
+            let baseline_aligned = (span.baseline - math_axis).abs() < (page_metrics.x_height * 0.3);
+
+            if vertical_gap < page_metrics.line_height * 0.5
+                && (horizontal_overlap || baseline_aligned)
+            {
+                // Extend current region
+                region.add_span(span);
+            } else {
+                // Finalize current region and start new one
+                regions.push(current_region.take().unwrap());
+                current_region = Some(FormulaRegion::new(span));
+            }
+        } else {
+            current_region = Some(FormulaRegion::new(span));
+        }
+    }
+
+    if let Some(region) = current_region {
+        regions.push(region);
+    }
+
+    regions
+}
+
+function estimate_math_axis(spans: &[Span], page_metrics: PageMetrics) -> f32 {
+    // Compute median baseline of math-font spans as math axis estimate
+    let mut baselines: Vec<f32> = spans.iter().map(|s| s.baseline).collect();
+    baselines.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    baselines[baselines.len() / 2]
+}
+```
+
+### Region properties
+
+Each `FormulaRegion` contains:
+- `spans`: All constituent text spans
+- `bbox`: Union of all span bounding boxes
+- `math_axis`: Computed axis height for this region
+- `has_display_style`: True if region is centered and offset from surrounding text (see Section 12)
+- `confidence`: Composite score based on glyph coverage, MATH table parsability, and geometric clarity
+
+Formula regions are atomic for XY-cut purposes: the reading-order algorithm treats an entire formula as a single block and does not split it across columns.
+
+---
+
+## 12. Inline vs Display Formula Classification
+
+The distinction between inline and display formulas determines the output block kind and affects reading-order placement.
+
+### Display formula detection
+
+A formula region is classified as **display** if ANY of the following conditions hold:
+
+1. **Centering**: The region's horizontal center is within 5% of the page's horizontal center AND the region's width is < 80% of the column width.
+2. **Vertical spacing**: The vertical gap above AND below the region exceeds `1.5 * line_height` of the surrounding body text.
+3. **Font size**: The median font size of the region exceeds `1.2 * body_font_size` (display-style operators are larger).
+
+### Inline formula detection
+
+A formula region is classified as **inline** if:
+
+1. The region appears within a paragraph (vertical gap < `0.5 * line_height` on both sides).
+2. The region's horizontal extent does not exceed the column width by more than 10%.
+3. The font size is within ±20% of the surrounding body text.
+
+### Output representation
+
+- **Display formulas**: Emitted as `kind: formula` with `display: "block"` in MathML output. Surrounded by blank lines in plain text output.
+- **Inline formulas**: Emitted as `kind: formula` with `display: "inline"` in MathML output. Integrated into paragraph text flow in plain text output.
+
+### Edge cases
+
+- **Display formulas within multi-column layouts**: If a formula spans across column boundaries (width > column width), it is classified as display and assigned to the dominant column based on horizontal center position.
+- **Offset inline formulas**: Some academic journals offset inline formulas by 0.5em for emphasis. These are NOT display formulas if the vertical spacing condition fails. Detection uses the font-size signal as the primary discriminator.
+
+---
+
+## 13. LaTeX-Like Reconstruction (Best-Effort)
+
+Reconstructing LaTeX source from formula glyphs is fundamentally lossy. PDF rendering discards semantic information: `\frac{a}{b}` and `\dfrac{a}{b}` produce identical glyph sequences, and `\left( \right)` vs `\bigl( \bigr)` are indistinguishable after font substitution. This section describes a best-effort reconstruction that produces plausible LaTeX when confidence is high, falling back to Unicode text otherwise.
+
+### Reconstruction algorithm
+
+The reconstruction proceeds in three passes:
+
+1. **Structure detection**: Identify fractions, scripts, radicals, and large operators using the spatial heuristics in Sections 4–5.
+2. **LaTeX template selection**: Map each detected structure to a LaTeX template:
+   - Fraction → `\frac{<numerator>}{<denominator>}`
+   - Superscript → `^{<superscript>}`
+   - Subscript → `_{<subscript>}`
+   - Radical → `\sqrt{<radicand>}`
+   - Large operator with limits → `\sum_{<lower>}^{<upper>}` or `\sum\nolimits` depending on display context
+3. **Token serialization**: Convert each glyph cluster to a LaTeX token:
+   - Math italic letters → single letter (e.g., `x`, `A`)
+   - Function names → backslash-prefixed name (e.g., `\sin`, `\log`)
+   - Operators → operator command (e.g., `\times`, `\cdot`, `\leq`)
+   - Greek letters → backslash-prefixed name (e.g., `\alpha`, `\Gamma`)
+
+### Confidence scoring
+
+LaTeX reconstruction confidence is computed as:
+
+- `structure_confidence`: Fraction of glyphs successfully assigned to a structure (0.0–1.0)
+- `unicode_coverage`: Fraction of glyphs with clean Unicode mappings (excluding U+FFFD)
+- `math_table_quality`: 1.0 if MATH table present and parsable, 0.5 if present but malformed, 0.0 if absent
+
+Overall `latex_confidence = 0.5 * structure_confidence + 0.3 * unicode_coverage + 0.2 * math_table_quality`
+
+### Output format
+
+- **High confidence** (`latex_confidence >= 0.7`): Emit `metadata.formula_latex` field with reconstructed LaTeX string.
+- **Medium confidence** (`0.4 <= latex_confidence < 0.7`): Emit `metadata.formula_latex` with an `(experimental)` comment prefix and set `metadata.formula_latex_confidence`.
+- **Low confidence** (`latex_confidence < 0.4`): Do NOT emit LaTeX. Emit Unicode text only in `text` field.
+
+### Feature flag
+
+The LaTeX reconstruction path is gated behind the `formula_latex` feature flag. When disabled (default for v1.0), the extractor skips structure detection and emits only the raw Unicode glyph sequence. This reduces binary size and eliminates the maintenance burden of LaTeX template mapping until the algorithm is validated against a large corpus.
+
+### Fallback example
+
+Input (glyphs with positions):
+```
+∫ at (100, 200), size 12
+0 at (110, 190), size 8, Ts=-10 (subscript)
+1 at (120, 215), size 8, Ts=+10 (superscript)
+f at (135, 200), size 12
+( at (145, 200), size 12
+x at (152, 200), size 12
+) at (160, 200), size 12
+```
+
+High-confidence LaTeX output:
+```latex
+\int_{0}^{1} f(x)
+```
+
+Low-confidence fallback (Unicode text):
+```
+∫₀¹ f(x)
+```
+
+---
+
+## 14. Profile Classifier Signal: `structural.has_math`
+
+The profile classifier uses the `structural.has_math` boolean signal to identify scientific papers and distinguish them from other document types (e.g., a book chapter with inline equations vs a research article).
+
+### Signal definition
+
+`structural.has_math = true` when ANY of the following conditions are met across the first 5 pages of the document:
+
+1. **OpenType Math detection**: At least one span uses a font with a MATH table (detected during Phase 2 font recognition).
+2. **Formula region count**: At least 3 formula regions are detected (using the algorithm in Section 11) with confidence >= 0.5.
+3. **Math operator density**: The document contains >= 10 distinct mathematical operator Unicode code points from the set {∑, ∫, ∏, √, ±, ≠, ≤, ≥, ∈, ∉, ∪, ∩, ⊂, ⊃}.
+
+### Rationale
+
+The three-condition definition handles the major PDF production workflows:
+
+- **Modern LaTeX (XeLaTeX, LuaLaTeX)**: Uses Unicode math fonts with MATH tables. Condition 1 fires.
+- **Legacy pdfLaTeX**: Uses OML/OMS/OMX encoding without MATH tables but produces recognizable operators. Condition 2 or 3 fires.
+- **Word/MathType**: Embeds equation objects with operator glyphs. Condition 3 fires.
+
+### False positive mitigation
+
+To avoid misclassifying a finance document with currency symbols as a math paper:
+
+- Currency symbols ($, €, £, ¥) are excluded from the operator code point set.
+- The formula region count threshold (3) filters out documents with incidental math notation (e.g., a single equation in an annual report).
+- The page range limit (first 5 pages) prevents back-matter references from triggering the signal.
+
+### Usage in built-in profiles
+
+The `scientific_paper` profile (plan line 3060) uses `structural.has_math` as a strong positive signal. A document with `structural.has_math = true`, headings matching academic paper patterns (Abstract, Introduction, References), and PDF metadata indicating a journal source is classified as `scientific_paper` with confidence >= 0.8.
+
+---
+
+## 15. Validation Methodology
+
+Formula extraction validation requires a fixture corpus of scientific papers with known equations. The validation methodology measures both geometric reconstruction accuracy and semantic correctness.
+
+### Fixture corpus
+
+- **Source**: arXiv preprints in PDF format with accompanying LaTeX source (available via arXiv's "source" download).
+- **Size**: Minimum 50 papers spanning physics, mathematics, and computer science.
+- **Selection criteria**: Each paper must contain at least 5 display equations and 10 inline equations.
+- **Ground truth**: Extracted from LaTeX source by stripping non-math content and parsing equation environments (equation, align, gather, inline $...$).
+
+### Metrics
+
+1. **Formula-region detection**: Precision, recall, F1 for identifying formula regions (bounding box overlap > 0.8 IoU counts as detection).
+2. **Structure reconstruction**: Percentage of formulas with correct structure (fraction, script, radical) compared to LaTeX AST.
+3. **Unicode accuracy**: Character-level accuracy of the extracted Unicode text against the LaTeX-rendered Unicode.
+4. **LaTeX reconstruction** (when `formula_latex` feature is enabled): Levenshtein distance between reconstructed LaTeX and source LaTeX, normalized by length.
+
+### CI gate
+
+A WER (Word Error Rate) delta gate is added to the `BrokenVector` fixture set (bead `pdftract-48ea`). The gate compares the current extraction's character error rate against the baseline. If the delta exceeds +0.5%, the CI fails and blocks the PR. This gate specifically catches regressions in formula extraction that corrupt non-formula text (e.g., OMX extender glyphs leaking into output).
+
+### Test infrastructure
+
+```rust
+#[test]
+fn test_formula_region_detection_arxiv_sample() {
+    let pdf = std::fs::read("tests/fixtures/arxiv_sample.pdf").unwrap();
+    let result = extract(&pdf).unwrap();
+    assert!(result.metadata.structural.has_math);
+    assert!(result.pages[0].blocks.iter().filter(|b| b.kind == BlockKind::Formula).count() >= 5);
+}
+
+#[test]
+fn test_formula_mathml_output_validates() {
+    let pdf = std::fs::read("tests/fixtures/arxiv_sample.pdf").unwrap();
+    let result = extract(&pdf).unwrap();
+    let formula_block = result.pages[0].blocks.iter()
+        .find(|b| b.kind == BlockKind::Formula).unwrap();
+    let mathml = formula_block.mathml.as_ref().unwrap();
+    // Validate against MathML 3.0 schema
+    assert!(validate_mathml(mathml).is_ok());
+}
+```
+
+### Ongoing validation
+
+As the fixture corpus grows, the validation metrics are tracked over time in the benchmark suite (plan lines 3127–3131). Each commit records the formula-region F1 and LaTeX reconstruction accuracy, allowing detection of regressions before they reach users.
