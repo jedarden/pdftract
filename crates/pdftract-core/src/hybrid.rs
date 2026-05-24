@@ -42,7 +42,7 @@ pub struct Span {
     pub text: String,
 }
 
-/// Source of a span - either vector extraction, OCR, or assisted OCR.
+/// Source of a span - either vector extraction, OCR, assisted OCR, or OCR fallback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpanSource {
     /// Text extracted from content stream (Phase 3).
@@ -51,6 +51,8 @@ pub enum SpanSource {
     Ocr,
     /// Text extracted via assisted OCR with position validation (Phase 5.5).
     OcrAssisted,
+    /// Text extracted via pure OCR fallback after region-level validation failed (Phase 5.5.3).
+    OcrFallback,
 }
 
 impl Span {
@@ -77,6 +79,11 @@ impl Span {
     /// Create a span with assisted OCR source (position-validated).
     pub fn ocr_assisted(bbox: [f64; 4], confidence: f32, text: String) -> Self {
         Self::new(bbox, confidence, SpanSource::OcrAssisted, text)
+    }
+
+    /// Create a span with OCR fallback source (region-level validation failed).
+    pub fn ocr_fallback(bbox: [f64; 4], confidence: f32, text: String) -> Self {
+        Self::new(bbox, confidence, SpanSource::OcrFallback, text)
     }
 
     /// Get the width of the span's bbox.

@@ -28,6 +28,13 @@ use crate::signature::Signature;
 ///
 /// A span is the smallest unit of extracted text, representing a
 /// contiguous run of text with consistent font and styling.
+///
+/// # TODO: Phase 6.1 - Add confidence_source field
+///
+/// When the `confidence_source` field is added to the schema (per plan line 363, 1662),
+/// it should include "ocr-fallback" as a valid value for spans emitted via
+/// Phase 5.5.3 region-level fallback. The internal `SpanSource::OcrFallback` variant
+/// in `hybrid.rs` maps to this value.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct SpanJson {

@@ -17,7 +17,7 @@ use std::ffi::CString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use tesseract::TessBaseAPI;
+use tesseract::{PageSegMode, TessBaseAPI};
 
 /// Global counter for tracking Tesseract initializations across all threads.
 ///
@@ -286,6 +286,11 @@ pub struct TessOpts {
     ///
     /// Default: None
     pub tessdata_path: Option<PathBuf>,
+    /// Page segmentation mode.
+    ///
+    /// Controls how Tesseract interprets the page layout.
+    /// Default: None (Tesseract's default, usually PSM_AUTO).
+    pub page_seg_mode: Option<PageSegMode>,
 }
 
 impl Default for TessOpts {
@@ -293,6 +298,7 @@ impl Default for TessOpts {
         Self {
             language: "eng".to_string(),
             tessdata_path: None,
+            page_seg_mode: None,
         }
     }
 }
@@ -317,6 +323,7 @@ impl TessOpts {
         Self {
             language: language.to_string(),
             tessdata_path: None,
+            page_seg_mode: None,
         }
     }
 
@@ -340,6 +347,31 @@ impl TessOpts {
         Self {
             language: "eng".to_string(),
             tessdata_path: Some(tessdata_path),
+            page_seg_mode: None,
+        }
+    }
+
+    /// Create TessOpts with a specific page segmentation mode.
+    ///
+    /// # Arguments
+    ///
+    /// * `page_seg_mode` - Page segmentation mode for Tesseract
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pdftract_core::ocr::TessOpts;
+    /// use tesseract::PageSegMode;
+    ///
+    /// let opts = TessOpts::with_page_seg_mode(PageSegMode::PsmSparseText);
+    /// assert!(opts.page_seg_mode.is_some());
+    /// ```
+    #[must_use]
+    pub fn with_page_seg_mode(page_seg_mode: PageSegMode) -> Self {
+        Self {
+            language: "eng".to_string(),
+            tessdata_path: None,
+            page_seg_mode: Some(page_seg_mode),
         }
     }
 
@@ -435,6 +467,11 @@ impl TessState {
                 opts.language, tessdata_path, e
             )
         })?;
+
+        // Set page segmentation mode if specified
+        if let Some(mode) = opts.page_seg_mode {
+            api.set_page_seg_mode(mode);
+        }
 
         // Track initialization for testing
         INIT_COUNT.fetch_add(1, Ordering::SeqCst);
@@ -549,6 +586,7 @@ mod tests {
         let opts = TessOpts::default();
         assert_eq!(opts.language, "eng");
         assert!(opts.tessdata_path.is_none());
+        assert!(opts.page_seg_mode.is_none());
     }
 
     #[test]
@@ -556,6 +594,7 @@ mod tests {
         let opts = TessOpts::with_language("fra");
         assert_eq!(opts.language, "fra");
         assert!(opts.tessdata_path.is_none());
+        assert!(opts.page_seg_mode.is_none());
     }
 
     #[test]
@@ -564,6 +603,15 @@ mod tests {
         let opts = TessOpts::with_tessdata_path(path.clone());
         assert_eq!(opts.language, "eng");
         assert_eq!(opts.tessdata_path, Some(path));
+        assert!(opts.page_seg_mode.is_none());
+    }
+
+    #[test]
+    fn test_tess_opts_with_page_seg_mode() {
+        let opts = TessOpts::with_page_seg_mode(PageSegMode::PsmSparseText);
+        assert_eq!(opts.language, "eng");
+        assert!(opts.tessdata_path.is_none());
+        assert_eq!(opts.page_seg_mode, Some(PageSegMode::PsmSparseText));
     }
 
     #[test]
@@ -578,6 +626,9 @@ mod tests {
         let path = PathBuf::from("/custom/path");
         let opts4 = TessOpts::with_tessdata_path(path);
         assert_ne!(opts1, opts4);
+
+        let opts5 = TessOpts::with_page_seg_mode(PageSegMode::PsmSparseText);
+        assert_ne!(opts1, opts5);
     }
 
     #[test]
@@ -586,6 +637,7 @@ mod tests {
         let opts = TessOpts {
             language: "eng".to_string(),
             tessdata_path: Some(path.clone()),
+            page_seg_mode: None,
         };
 
         let resolved = opts.resolve_tessdata_path();
@@ -613,6 +665,7 @@ mod tests {
         let opts = TessOpts {
             language: "eng".to_string(),
             tessdata_path: Some(path.clone()),
+            page_seg_mode: None,
         };
 
         let resolved = opts.resolve_tessdata_path();
@@ -2347,6 +2400,19 @@ const ASSISTED_OCR_CONFIDENCE_CAP: f32 = 0.4;
 /// For small N (< 100), linear scan is faster due to lower overhead.
 const ASSISTED_OCR_KDTREE_THRESHOLD: usize = 100;
 
+/// Region-level confidence threshold for keeping assisted-OCR output.
+///
+/// If the mean confidence of all assisted-OCR words in a region is greater
+/// than this value, the region is kept as-is with confidence_source = "ocr-assisted".
+const ASSISTED_OCR_KEEP_THRESH: f32 = 0.7;
+
+/// Region-level confidence threshold for falling back to pure OCR.
+///
+/// If the mean confidence of all assisted-OCR words in a region is less
+/// than this value, the region is reprocessed with pure OCR (no validation filter)
+/// and emitted with confidence_source = "ocr-fallback".
+const ASSISTED_OCR_FALLBACK_THRESH: f32 = 0.3;
+
 /// Validate OCR words against vector glyph position hints.
 ///
 /// This function implements the per-word validation filter for the
@@ -2446,6 +2512,172 @@ pub fn validate_ocr_with_position_hints(
             crate::hybrid::Span::ocr_assisted(pdf_bbox, adjusted_confidence, word.text.clone())
         })
         .collect()
+}
+
+/// Region (line) for grouping OCR words by baseline proximity.
+#[derive(Debug, Clone)]
+struct OcrRegion {
+    /// Words in this region.
+    words: Vec<(HocrWord, [f64; 4])>, // (HocrWord, PDF bbox)
+    /// Mean confidence of all words in this region.
+    mean_confidence: f32,
+}
+
+/// Apply region-level confidence policy to assisted-OCR spans.
+///
+/// This function implements Phase 5.5.3 step 5: for each region (line),
+/// compute the mean confidence across all assisted-OCR words and decide
+/// whether to keep as-is, keep with high confidence flag, or trigger fallback.
+///
+/// # Arguments
+///
+/// * `hocr_words` - OCR words from Tesseract (in pixel coordinates)
+/// * `vector_glyphs` - Position hints from Phase 3
+/// * `dpi` - DPI used for rendering
+/// * `page_height_pt` - Page height in PDF points
+///
+/// # Returns
+///
+/// A tuple of:
+/// - Vec of spans with adjusted confidence sources
+/// - Vec of HocrWords that need fallback (grouped by regions with mean < 0.3)
+///
+/// # Region Grouping
+///
+/// Words are grouped into regions by baseline proximity (Y-coordinate).
+/// Two words are in the same region if their baselines are within 12pt
+/// (approximately 1.5x the typical line height for 12pt text).
+///
+/// # Policy
+///
+/// For each region:
+/// - mean > 0.7: keep with `OcrAssisted` source
+/// - mean < 0.3: flag for fallback (caller should rerun Tesseract)
+/// - 0.3 <= mean <= 0.7: keep with `OcrAssisted` source
+///
+/// # See also
+///
+/// - Phase 5.5 pipeline step 5 (plan line 1937)
+/// - `validate_ocr_with_position_hints` for per-word validation
+pub fn apply_region_level_confidence_policy(
+    hocr_words: &[HocrWord],
+    vector_glyphs: &[Glyph],
+    dpi: u32,
+    page_height_pt: f64,
+) -> (Vec<crate::hybrid::Span>, Vec<(HocrWord, [f64; 4])>) {
+    // First, apply per-word validation to get initial confidence-adjusted spans
+    let validated_spans =
+        validate_ocr_with_position_hints(hocr_words, vector_glyphs, dpi, page_height_pt);
+
+    // Group words into regions by baseline proximity
+    let regions = group_words_by_region(hocr_words, dpi, page_height_pt);
+
+    // Compute mean confidence for each region and classify
+    let mut final_spans = Vec::new();
+    let mut fallback_words = Vec::new();
+
+    for region in regions {
+        if region.mean_confidence < ASSISTED_OCR_FALLBACK_THRESH {
+            // Region needs fallback - collect original words for rerun
+            for (word, pdf_bbox) in region.words {
+                fallback_words.push((word, pdf_bbox));
+            }
+        } else {
+            // Keep region - convert validated spans to final output
+            // Words in this region are already in validated_spans
+            // We need to match them up by position
+            for (word, pdf_bbox) in region.words {
+                // Find the corresponding validated span
+                if let Some(span) = validated_spans
+                    .iter()
+                    .find(|s| s.bbox == pdf_bbox && s.text == word.text)
+                {
+                    let span = if region.mean_confidence > ASSISTED_OCR_KEEP_THRESH {
+                        // High confidence region - keep as OcrAssisted
+                        crate::hybrid::Span::ocr_assisted(
+                            span.bbox,
+                            span.confidence,
+                            span.text.clone(),
+                        )
+                    } else {
+                        // Medium confidence region - keep as-is (OcrAssisted)
+                        span.clone()
+                    };
+                    final_spans.push(span);
+                }
+            }
+        }
+    }
+
+    (final_spans, fallback_words)
+}
+
+/// Group OCR words into regions by baseline proximity.
+///
+/// Two words are in the same region if their baselines are within 12pt.
+/// The baseline is computed as `y0 + (bbox_height * 0.2)`.
+///
+/// # Arguments
+///
+/// * `hocr_words` - OCR words from Tesseract
+/// * `dpi` - DPI used for rendering
+/// * `page_height_pt` - Page height in PDF points
+///
+/// # Returns
+///
+/// A vector of regions, each containing words and their mean confidence.
+fn group_words_by_region(hocr_words: &[HocrWord], dpi: u32, page_height_pt: f64) -> Vec<OcrRegion> {
+    if hocr_words.is_empty() {
+        return Vec::new();
+    }
+
+    // Convert all words to PDF coordinates and compute baselines
+    let mut word_info: Vec<(HocrWord, [f64; 4], f64)> = hocr_words
+        .iter()
+        .map(|word| {
+            let pdf_bbox = word.to_pdf_bbox(dpi, page_height_pt, None, None);
+            let baseline = pdf_bbox[1] + (pdf_bbox[3] - pdf_bbox[1]) * 0.2;
+            (word.clone(), pdf_bbox, baseline)
+        })
+        .collect();
+
+    // Sort by baseline for deterministic grouping
+    word_info.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Group by baseline proximity (within 12pt)
+    let mut regions: Vec<OcrRegion> = Vec::new();
+    const BASELINE_TOLERANCE_PT: f64 = 12.0;
+
+    for (word, pdf_bbox, baseline) in word_info {
+        let confidence = word.confidence();
+
+        // Find existing region with compatible baseline
+        let region = regions.iter_mut().find(|r| {
+            if r.words.is_empty() {
+                return false;
+            }
+            // Compute region's baseline from first word
+            let (_, first_bbox, _) = &r.words[0];
+            let region_baseline = first_bbox[1] + (first_bbox[3] - first_bbox[1]) * 0.2;
+            (region_baseline - baseline).abs() < BASELINE_TOLERANCE_PT
+        });
+
+        if let Some(region) = region {
+            // Add to existing region
+            region.words.push((word, pdf_bbox));
+            // Recompute mean confidence
+            let sum: f32 = region.words.iter().map(|(w, _)| w.confidence()).sum();
+            region.mean_confidence = sum / region.words.len() as f32;
+        } else {
+            // Create new region
+            regions.push(OcrRegion {
+                words: vec![(word, pdf_bbox)],
+                mean_confidence: confidence,
+            });
+        }
+    }
+
+    regions
 }
 
 #[cfg(test)]
@@ -2586,6 +2818,135 @@ mod assisted_ocr_tests {
         assert_eq!(ASSISTED_OCR_DISTANCE_PT, 5.0);
         assert_eq!(ASSISTED_OCR_CONFIDENCE_CAP, 0.4);
         assert_eq!(ASSISTED_OCR_KDTREE_THRESHOLD, 100);
+        assert_eq!(ASSISTED_OCR_KEEP_THRESH, 0.7);
+        assert_eq!(ASSISTED_OCR_FALLBACK_THRESH, 0.3);
+    }
+
+    #[test]
+    fn test_region_level_policy_high_confidence_region() {
+        // Test region with mean confidence > 0.7 - should keep as OcrAssisted
+        let glyphs = vec![
+            Glyph::position_hint([100.0, 200.0, 110.0, 210.0]),
+            Glyph::position_hint([120.0, 200.0, 130.0, 210.0]),
+        ];
+        let words = vec![
+            HocrWord {
+                text: "hello".to_string(),
+                bbox_px: [102, 202, 108, 208],
+                confidence_0_100: 95,
+            },
+            HocrWord {
+                text: "world".to_string(),
+                bbox_px: [122, 202, 128, 208],
+                confidence_0_100: 90,
+            },
+        ];
+
+        let (spans, fallback) = apply_region_level_confidence_policy(&words, &glyphs, 300, 792.0);
+
+        // Both words are near glyphs, so they keep high confidence
+        assert_eq!(spans.len(), 2);
+        assert_eq!(fallback.len(), 0); // No fallback needed
+        assert!(spans
+            .iter()
+            .all(|s| s.source == crate::hybrid::SpanSource::OcrAssisted));
+    }
+
+    #[test]
+    fn test_region_level_policy_low_confidence_region() {
+        // Test region with mean confidence < 0.3 - should trigger fallback
+        let glyphs = vec![]; // No glyphs -> all words capped at 0.4
+        let words = vec![
+            HocrWord {
+                text: "low1".to_string(),
+                bbox_px: [100, 100, 120, 120],
+                confidence_0_100: 20,
+            },
+            HocrWord {
+                text: "low2".to_string(),
+                bbox_px: [130, 100, 150, 120],
+                confidence_0_100: 25,
+            },
+        ];
+
+        let (spans, fallback) = apply_region_level_confidence_policy(&words, &glyphs, 300, 792.0);
+
+        // Low confidence region -> fallback triggered
+        assert_eq!(spans.len(), 0); // No spans kept
+        assert_eq!(fallback.len(), 2); // Both words need fallback
+    }
+
+    #[test]
+    fn test_region_level_policy_medium_confidence_region() {
+        // Test region with 0.3 <= mean confidence <= 0.7 - should keep as-is
+        let glyphs = vec![];
+        let words = vec![
+            HocrWord {
+                text: "med1".to_string(),
+                bbox_px: [100, 100, 120, 120],
+                confidence_0_100: 40,
+            },
+            HocrWord {
+                text: "med2".to_string(),
+                bbox_px: [130, 100, 150, 120],
+                confidence_0_100: 50,
+            },
+        ];
+
+        let (spans, fallback) = apply_region_level_confidence_policy(&words, &glyphs, 300, 792.0);
+
+        // Medium confidence region -> kept as-is (capped at 0.4 by validation)
+        assert_eq!(spans.len(), 2);
+        assert_eq!(fallback.len(), 0); // No fallback needed
+    }
+
+    #[test]
+    fn test_region_level_policy_multiple_regions() {
+        // Test multiple regions with different confidence levels
+        let glyphs = vec![
+            Glyph::position_hint([100.0, 200.0, 110.0, 210.0]), // For high confidence region
+        ];
+        let words = vec![
+            // Region 1: high confidence (near glyph)
+            HocrWord {
+                text: "hello".to_string(),
+                bbox_px: [102, 202, 108, 208],
+                confidence_0_100: 95,
+            },
+            // Region 2: low confidence (far from glyph, different Y)
+            HocrWord {
+                text: "low".to_string(),
+                bbox_px: [500, 500, 520, 520],
+                confidence_0_100: 20,
+            },
+        ];
+
+        let (spans, fallback) = apply_region_level_confidence_policy(&words, &glyphs, 300, 792.0);
+
+        // One span kept, one word needs fallback
+        assert_eq!(spans.len(), 1);
+        assert_eq!(fallback.len(), 1);
+        assert_eq!(spans[0].text, "hello");
+    }
+
+    #[test]
+    fn test_group_words_by_region_empty() {
+        let words: Vec<HocrWord> = vec![];
+        let regions = group_words_by_region(&words, 300, 792.0);
+        assert_eq!(regions.len(), 0);
+    }
+
+    #[test]
+    fn test_group_words_by_region_single_word() {
+        let words = vec![HocrWord {
+            text: "test".to_string(),
+            bbox_px: [100, 100, 120, 120],
+            confidence_0_100: 80,
+        }];
+        let regions = group_words_by_region(&words, 300, 792.0);
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0].words.len(), 1);
+        assert_eq!(regions[0].mean_confidence, 0.8);
     }
 }
 
