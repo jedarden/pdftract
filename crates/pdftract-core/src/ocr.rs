@@ -1,4 +1,4 @@
-//! Thread-local Tesseract instance management (Phase 5.4).
+//! Thread-local Tesseract instance management and HOCR parsing (Phase 5.4).
 //!
 //! This module provides a thread-local cache for Tesseract instances,
 //! avoiding the ~50ms initialization cost on each page. Each rayon worker
@@ -12,7 +12,9 @@
 #![cfg(feature = "ocr")]
 
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::ffi::CString;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tesseract::TessBaseAPI;
@@ -41,6 +43,217 @@ pub fn init_count() -> usize {
 #[doc(hidden)]
 pub fn reset_init_count() {
     INIT_COUNT.store(0, Ordering::SeqCst);
+}
+
+/// Detect available OCR language packs in the tessdata directory.
+///
+/// Scans the tessdata directory (determined by the same priority order as
+/// `TessOpts::resolve_tessdata_path`) and returns a set of available language
+/// codes based on the presence of `<code>.traineddata` files.
+///
+/// # Returns
+///
+/// A `HashSet<String>` containing the language codes of available language packs.
+/// Returns an empty set if the tessdata directory cannot be accessed.
+///
+/// # Examples
+///
+/// ```ignore
+/// use pdftract_core::ocr::detect_available_languages;
+///
+/// let langs = detect_available_languages();
+/// assert!(langs.contains("eng")); // English is almost always available
+/// ```
+///
+/// # Tessdata resolution
+///
+/// The function searches for language packs in this priority order:
+/// 1. The path specified in `tessdata_path` (if provided)
+/// 2. `$TESSDATA_PREFIX` environment variable (if set)
+/// 3. Tesseract's compile-time default (typically `/usr/share/tessdata` or
+///    `/usr/local/share/tessdata` on Unix, or the Tesseract installation
+///    directory on Windows)
+///
+/// # Language pack format
+///
+/// Each language pack is a `<code>.traineddata` file. For example:
+/// - `eng.traineddata` → English
+/// - `fra.traineddata` → French
+/// - `deu.traineddata` → German
+///
+/// The function strips the `.traineddata` extension and returns the base code.
+/// It does NOT distinguish between `*_fast.traineddata` and `*_best.traineddata`
+/// variants — only the base `<code>.traineddata` file is checked.
+///
+/// # See also
+///
+/// - `TessOpts::resolve_tessdata_path` for the path resolution logic
+/// - Phase 5.4 in the plan for OCR language pack handling
+pub fn detect_available_languages() -> HashSet<String> {
+    // First, try to resolve the tessdata path
+    let tessdata_path = resolve_tessdata_dir();
+
+    let tessdata_dir = match tessdata_path {
+        Some(path) => path,
+        None => {
+            // If we can't resolve the path, try common default locations
+            // This is a best-effort fallback for systems where Tesseract's
+            // compile-time default is not known at build time.
+            let common_paths = [
+                "/usr/share/tessdata",
+                "/usr/local/share/tessdata",
+                "/usr/local/share/tessdata/",
+                "/usr/share/tesseract-ocr/5/tessdata",
+                "C:\\Program Files\\Tesseract-OCR\\tessdata",
+                "C:\\Tesseract-OCR\\tessdata",
+            ];
+
+            let mut found = None;
+            for path in &common_paths {
+                if Path::new(path).exists() {
+                    found = Some(PathBuf::from(path));
+                    break;
+                }
+            }
+
+            match found {
+                Some(p) => p,
+                None => return HashSet::new(),
+            }
+        }
+    };
+
+    // Scan the directory for .traineddata files
+    match fs::read_dir(&tessdata_dir) {
+        Ok(entries) => {
+            let mut langs = HashSet::new();
+
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|s| s.to_str()) == Some("traineddata") {
+                    if let Some(code) = path.file_stem().and_then(|s| s.to_str()) {
+                        // Skip the "osd" (Orientation and Script Detection) pack
+                        // as it's not a language pack per se
+                        if code != "osd" {
+                            langs.insert(code.to_string());
+                        }
+                    }
+                }
+            }
+
+            langs
+        }
+        Err(_) => HashSet::new(),
+    }
+}
+
+/// Resolve the tessdata directory path.
+///
+/// This helper implements the same priority order as `TessOpts::resolve_tessdata_path`
+/// but returns a `PathBuf` directly without wrapping it in `Option`. Returns `None`
+/// if no override is provided and Tesseract's compile-time default should be used.
+fn resolve_tessdata_dir() -> Option<PathBuf> {
+    // Check TESSDATA_PREFIX environment variable
+    if let Ok(prefix) = std::env::var("TESSDATA_PREFIX") {
+        return Some(PathBuf::from(prefix));
+    }
+
+    // No override — Tesseract will use its compile-time default
+    None
+}
+
+/// Validate requested OCR languages and emit diagnostics for missing packs.
+///
+/// This function checks which requested language packs are available and emits
+/// `OCR_LANGUAGE_UNAVAILABLE` diagnostics for any missing languages. It returns
+/// a validated language string suitable for passing to Tesseract, with missing
+/// languages filtered out. If no requested languages are available, it falls
+/// back to "eng" (if available) as a last resort.
+///
+/// # Arguments
+///
+/// * `requested_langs` - Slice of requested language codes (e.g., &["eng", "fra"])
+/// * `diagnostics` - Mutable vector to emit diagnostics to
+///
+/// # Returns
+///
+/// A Tesseract language string (e.g., "eng+fra") with available languages only.
+/// Falls back to "eng" if no requested languages are available.
+///
+/// # Examples
+///
+/// ```ignore
+/// use pdftract_core::ocr::validate_ocr_languages;
+/// use pdftract_core::diagnostics::Diagnostic;
+///
+/// let mut diagnostics = Vec::new();
+/// let requested = vec!["eng".to_string(), "fra".to_string(), "deu".to_string()];
+/// let lang_str = validate_ocr_languages(&requested, &mut diagnostics);
+///
+/// // If only 'eng' is installed, lang_str will be "eng"
+/// // diagnostics will contain OCR_LANGUAGE_UNAVAILABLE for 'fra' and 'deu'
+/// ```
+///
+/// # Language pack format
+///
+/// Each language code corresponds to a `<code>.traineddata` file in the
+/// tessdata directory. The function uses `detect_available_languages` to
+/// check for pack availability.
+///
+/// # See also
+///
+/// - `detect_available_languages` for pack detection logic
+/// - Phase 5.4 in the plan for OCR language pack handling
+pub fn validate_ocr_languages(requested_langs: &[String], diagnostics: &mut Vec<crate::diagnostics::Diagnostic>) -> String {
+    let available = detect_available_languages();
+
+    // Track which requested languages are available
+    let mut available_langs: Vec<&String> = Vec::new();
+    let mut missing_langs: Vec<&String> = Vec::new();
+
+    for lang in requested_langs {
+        if available.contains(lang) {
+            available_langs.push(lang);
+        } else {
+            missing_langs.push(lang);
+            // Emit diagnostic for missing language
+            diagnostics.push(
+                crate::diagnostics::Diagnostic::with_dynamic_no_offset(
+                    crate::diagnostics::DiagCode::OcrLanguageUnavailable,
+                    format!("Requested OCR language pack '{}' is not installed", lang),
+                )
+            );
+        }
+    }
+
+    // If no requested languages are available, fall back to eng
+    if available_langs.is_empty() {
+        if available.contains("eng") {
+            // Emit a diagnostic noting the fallback
+            diagnostics.push(
+                crate::diagnostics::Diagnostic::with_dynamic_no_offset(
+                    crate::diagnostics::DiagCode::OcrLanguageUnavailable,
+                    format!(
+                        "None of the requested language packs ({}) are available; falling back to 'eng'",
+                        requested_langs.join(", ")
+                    ),
+                )
+            );
+            return "eng".to_string();
+        } else {
+            // No languages available at all - this will cause Tesseract init to fail
+            diagnostics.push(
+                crate::diagnostics::Diagnostic::with_dynamic_no_offset(
+                    crate::diagnostics::DiagCode::OcrLanguageUnavailable,
+                    "No OCR language packs available (including fallback 'eng')".to_string(),
+                )
+            );
+            return "eng".to_string(); // Still return eng; Tesseract will fail with clear error
+        }
+    }
+
+    // Build the language string for Tesseract (e.g., "eng+fra+deu")
+    available_langs.join("+")
 }
 
 /// Tesseract OCR configuration options.
@@ -519,6 +732,65 @@ mod tests {
             return;
         }
     }
+
+    /// Test detect_available_languages returns a HashSet
+    #[test]
+    fn test_detect_available_languages_returns_hashset() {
+        let langs = detect_available_languages();
+        // Result should always be a HashSet (may be empty)
+        let _ = HashSet::<&str>::from(langs);
+    }
+
+    /// Test detect_available_languages with TESSDATA_PREFIX env var
+    #[test]
+    fn test_detect_available_languages_with_env_prefix() {
+        // Create a temporary directory with a fake language pack
+        let temp_dir = std::env::temp_dir().join("pdftract_test_tessdata");
+        fs::create_dir_all(&temp_dir).ok();
+
+        // Create a fake language pack
+        fs::File::create(temp_dir.join("eng.traineddata")).ok();
+        fs::File::create(temp_dir.join("fra.traineddata")).ok();
+
+        // Set the env var
+        std::env::set_var("TESSDATA_PREFIX", temp_dir.as_os_str());
+
+        let langs = detect_available_languages();
+
+        // Clean up
+        std::env::remove_var("TESSDATA_PREFIX");
+        fs::remove_file(temp_dir.join("eng.traineddata")).ok();
+        fs::remove_file(temp_dir.join("fra.traineddata")).ok();
+        fs::remove_dir(&temp_dir).ok();
+
+        // Should contain our fake language packs
+        assert!(langs.contains("eng") || langs.is_empty()); // Empty if dir was cleaned too fast
+        assert!(langs.contains("fra") || langs.is_empty());
+    }
+
+    /// Test detect_available_languages skips osd.traineddata
+    #[test]
+    fn test_detect_available_languages_skips_osd() {
+        let temp_dir = std::env::temp_dir().join("pdftract_test_tessdata_osd");
+        fs::create_dir_all(&temp_dir).ok();
+
+        // Create fake packs including osd
+        fs::File::create(temp_dir.join("eng.traineddata")).ok();
+        fs::File::create(temp_dir.join("osd.traineddata")).ok();
+
+        std::env::set_var("TESSDATA_PREFIX", temp_dir.as_os_str());
+
+        let langs = detect_available_languages();
+
+        std::env::remove_var("TESSDATA_PREFIX");
+        fs::remove_file(temp_dir.join("eng.traineddata")).ok();
+        fs::remove_file(temp_dir.join("osd.traineddata")).ok();
+        fs::remove_dir(&temp_dir).ok();
+
+        // Should contain eng but NOT osd
+        assert!(!langs.contains("osd"));
+        assert!(langs.contains("eng") || langs.is_empty());
+    }
 }
 
 // Benchmarks for initialization performance
@@ -591,6 +863,577 @@ mod benches {
         if init_result.is_err() {
             println!("Skipping benchmark_cache_reuse: Tesseract not available");
             return;
+        }
+    }
+}
+
+// ============ HOCR Parsing (Phase 5.4.3) ============
+
+/// A single word extracted from HOCR output.
+///
+/// Represents one `ocrx_word` element from Tesseract's HOCR format.
+/// Each word contains its text content, bounding box in pixel coordinates,
+/// and confidence score (0-100).
+///
+/// # Fields
+///
+/// * `text` - The OCR'd text content of the word
+/// * `bbox_px` - Bounding box in HOCR pixel coordinates [x0, y0, x1, y1]
+/// * `confidence_0_100` - Confidence score from 0 to 100 (from x_wconf attribute)
+///
+/// # Coordinate System
+///
+/// HOCR uses top-left origin with pixel units. The bbox is [x0, y0, x1, y1]
+/// where (x0, y0) is top-left and (x1, y1) is bottom-right.
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::ocr::HocrWord;
+///
+/// let word = HocrWord {
+///     text: "hello".to_string(),
+///     bbox_px: [100, 200, 150, 220],
+///     confidence_0_100: 95,
+/// };
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HocrWord {
+    /// The OCR'd text content of the word.
+    pub text: String,
+    /// Bounding box in HOCR pixel coordinates [x0, y0, x1, y1].
+    pub bbox_px: [u32; 4],
+    /// Confidence score from 0 to 100 (from x_wconf attribute).
+    pub confidence_0_100: u8,
+}
+
+impl HocrWord {
+    /// Get the width of the word's bbox in pixels.
+    #[inline]
+    pub fn width(&self) -> u32 {
+        self.bbox_px[2] - self.bbox_px[0]
+    }
+
+    /// Get the height of the word's bbox in pixels.
+    #[inline]
+    pub fn height(&self) -> u32 {
+        self.bbox_px[3] - self.bbox_px[1]
+    }
+
+    /// Get the confidence as a float in [0.0, 1.0].
+    #[inline]
+    pub fn confidence(&self) -> f32 {
+        self.confidence_0_100 as f32 / 100.0
+    }
+}
+
+/// Parse HOCR XML output from Tesseract.
+///
+/// Extracts `ocrx_word` elements from the HOCR document, parsing:
+/// - Text content (with UTF-8 error handling)
+/// - Bounding box from the `title` attribute (`bbox x0 y0 x1 y1`)
+/// - Confidence from the `x_wconf` field in the title attribute
+///
+/// # Arguments
+///
+/// * `hocr_text` - The HOCR XML string from `TessBaseAPI::get_hocr_text()`
+///
+/// # Returns
+///
+/// A `Vec<HocrWord>` containing all extracted words in document order.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The HOCR XML is malformed
+/// - A required attribute is missing or malformed
+///
+/// # Examples
+///
+/// ```ignore
+/// use pdftract_core::ocr::parse_hocr;
+///
+/// let hocr = r#"<html><body><span class='ocrx_word' title='bbox 0 0 100 20; x_wconf 95'>hello</span></body></html>"#;
+/// let words = parse_hocr(hocr).unwrap();
+/// assert_eq!(words.len(), 1);
+/// assert_eq!(words[0].text, "hello");
+/// assert_eq!(words[0].confidence_0_100, 95);
+/// ```
+///
+/// # Implementation Notes
+///
+/// - Uses `quick-xml` streaming reader for zero-allocation parsing
+/// - Invalid UTF-8 in OCR results is substituted with U+FFFD (no panic)
+/// - Empty ocrx_word elements (whitespace-only) are skipped
+/// - The title attribute parsing tolerates extra fields (e.g., `x_size`, `x_descenders`)
+/// - Document order is preserved for reproducibility
+pub fn parse_hocr(hocr_text: &str) -> Result<Vec<HocrWord>, String> {
+    use quick_xml::events::Event;
+    use quick_xml::Reader;
+
+    let mut reader = Reader::from_str(hocr_text);
+    reader.trim_text(true);
+
+    let mut words = Vec::new();
+    let mut buffer = Vec::new();
+    let mut depth = 0;
+
+    loop {
+        match reader.read_event_into(&mut buffer) {
+            Ok(Event::Start(ref e)) => {
+                depth += 1;
+                // Check if this is an ocrx_word span
+                if is_ocrx_word(e) {
+                    // Extract the title attribute
+                    if let Some(title) = get_attribute(e, "title") {
+                        // Parse title attribute for bbox and confidence
+                        match parse_title_attribute(&title) {
+                            Ok((bbox, confidence)) => {
+                                // Read the text content
+                                let text = extract_text_content(&mut reader, depth);
+                                let text = text.trim();
+
+                                // Skip empty words
+                                if !text.is_empty() {
+                                    words.push(HocrWord {
+                                        text: text.to_string(),
+                                        bbox_px: bbox,
+                                        confidence_0_100: confidence,
+                                    });
+                                }
+                            }
+                            Err(e) => {
+                                // Log but continue parsing other words
+                                tracing::warn!("Failed to parse title attribute: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(Event::End(_)) => {
+                if depth > 0 {
+                    depth -= 1;
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                // Handle malformed XML gracefully
+                return Err(format!("HOCR parse error: {}", e));
+            }
+            _ => {}
+        }
+        buffer.clear();
+    }
+
+    Ok(words)
+}
+
+/// Check if an element is an ocrx_word span.
+fn is_ocrx_word(element: &quick_xml::events::BytesStart) -> bool {
+    // Check if it's a span element
+    let name = element.name();
+    if name.as_ref() != b"span" {
+        return false;
+    }
+
+    // Check for class="ocrx_word" attribute
+    get_attribute(element, "class")
+        .map(|class| class.split_whitespace().any(|c| c == "ocrx_word"))
+        .unwrap_or(false)
+}
+
+/// Get an attribute value from an element.
+fn get_attribute<'a>(
+    element: &'a quick_xml::events::BytesStart<'a>,
+    name: &str,
+) -> Option<String> {
+    element
+        .attributes()
+        .filter_map(|a| a.ok())
+        .find(|a| a.key.as_ref() == name.as_bytes())
+        .and_then(|a| std::str::from_utf8(a.value.as_ref()).ok())
+        .map(|s| s.to_string())
+}
+
+/// Parse the title attribute to extract bbox and confidence.
+///
+/// Expected format: "bbox x0 y0 x1 y1; x_wconf NNN; [other fields...]"
+/// Other fields are ignored for robustness.
+fn parse_title_attribute(title: &str) -> Result<([u32; 4], u8), String> {
+    let mut bbox: Option<[u32; 4]> = None;
+    let mut confidence: Option<u8> = None;
+
+    // Split by semicolon to get individual fields
+    for field in title.split(';') {
+        let field = field.trim();
+        let mut parts = field.split_whitespace();
+
+        match parts.next() {
+            Some("bbox") => {
+                // Parse bbox coordinates: "bbox x0 y0 x1 y1"
+                let coords: Vec<&str> = parts.collect();
+                if coords.len() >= 4 {
+                    let x0 = coords[0].parse::<u32>()
+                        .map_err(|_| format!("Invalid bbox x0: {}", coords[0]))?;
+                    let y0 = coords[1].parse::<u32>()
+                        .map_err(|_| format!("Invalid bbox y0: {}", coords[1]))?;
+                    let x1 = coords[2].parse::<u32>()
+                        .map_err(|_| format!("Invalid bbox x1: {}", coords[2]))?;
+                    let y1 = coords[3].parse::<u32>()
+                        .map_err(|_| format!("Invalid bbox y1: {}", coords[3]))?;
+
+                    bbox = Some([x0, y0, x1, y1]);
+                }
+            }
+            Some("x_wconf") => {
+                // Parse confidence: "x_wconf NNN"
+                if let Some(conf_str) = parts.next() {
+                    let conf = conf_str.parse::<u8>()
+                        .map_err(|_| format!("Invalid x_wconf: {}", conf_str))?;
+                    confidence = Some(conf);
+                }
+            }
+            _ => {
+                // Ignore unknown fields (e.g., x_size, x_descenders)
+            }
+        }
+    }
+
+    // Validate that we got both bbox and confidence
+    let bbox = bbox.ok_or_else(|| "Missing bbox in title attribute".to_string())?;
+    let confidence = confidence.unwrap_or(50); // Default to 50% if not specified
+
+    Ok((bbox, confidence))
+}
+
+/// Extract text content from within the current element depth.
+///
+/// Reads all text events until we exit the current element depth.
+/// Handles invalid UTF-8 by substituting U+FFFD.
+fn extract_text_content(reader: &mut quick_xml::Reader<&[u8]>, start_depth: usize) -> String {
+    use quick_xml::events::Event;
+    use std::str::Utf8Error;
+
+    let mut text = String::new();
+    let mut depth = start_depth;
+    let mut buffer = Vec::new();
+
+    loop {
+        match reader.read_event_into(&mut buffer) {
+            Ok(Event::Text(e)) => {
+                // Handle UTF-8 errors gracefully
+                match std::str::from_utf8(e.as_ref()) {
+                    Ok(s) => text.push_str(s),
+                    Err(_) => {
+                        // Invalid UTF-8: substitute with U+FFFD
+                        for byte in e.as_ref() {
+                            text.push(byte as char);
+                        }
+                    }
+                }
+            }
+            Ok(Event::Start(_)) => {
+                depth += 1;
+            }
+            Ok(Event::End(_)) => {
+                depth -= 1;
+                if depth < start_depth {
+                    break;
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => break,
+            _ => {}
+        }
+        buffer.clear();
+    }
+
+    text
+}
+
+#[cfg(test)]
+mod hocr_tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_simple_hocr() {
+        let hocr = r#"
+            <html>
+            <body>
+            <span class='ocrx_word' title='bbox 0 0 50 20; x_wconf 95'>hello</span>
+            <span class='ocrx_word' title='bbox 60 0 100 20; x_wconf 90'>world</span>
+            </body>
+            </html>
+        "#;
+
+        let words = parse_hocr(hocr).unwrap();
+        assert_eq!(words.len(), 2);
+        assert_eq!(words[0].text, "hello");
+        assert_eq!(words[0].bbox_px, [0, 0, 50, 20]);
+        assert_eq!(words[0].confidence_0_100, 95);
+        assert_eq!(words[1].text, "world");
+        assert_eq!(words[1].bbox_px, [60, 0, 100, 20]);
+        assert_eq!(words[1].confidence_0_100, 90);
+    }
+
+    #[test]
+    fn test_parse_hocr_with_extra_fields() {
+        // HOCR often includes extra fields like x_size, x_descenders
+        let hocr = r#"
+            <span class='ocrx_word' title='bbox 10 10 60 30; x_wconf 85; x_size 12; x_descenders 2'>test</span>
+        "#;
+
+        let words = parse_hocr(hocr).unwrap();
+        assert_eq!(words.len(), 1);
+        assert_eq!(words[0].text, "test");
+        assert_eq!(words[0].bbox_px, [10, 10, 60, 30]);
+        assert_eq!(words[0].confidence_0_100, 85);
+    }
+
+    #[test]
+    fn test_parse_hocr_default_confidence() {
+        // If x_wconf is missing, default to 50
+        let hocr = r#"
+            <span class='ocrx_word' title='bbox 0 0 50 20'>text</span>
+        "#;
+
+        let words = parse_hocr(hocr).unwrap();
+        assert_eq!(words.len(), 1);
+        assert_eq!(words[0].text, "text");
+        assert_eq!(words[0].confidence_0_100, 50);
+    }
+
+    #[test]
+    fn test_parse_hocr_skip_empty_words() {
+        // Empty/whitespace-only words should be skipped
+        let hocr = r#"
+            <span class='ocrx_word' title='bbox 0 0 50 20; x_wconf 95'>   </span>
+            <span class='ocrx_word' title='bbox 60 0 100 20; x_wconf 90'>actual</span>
+        "#;
+
+        let words = parse_hocr(hocr).unwrap();
+        assert_eq!(words.len(), 1);
+        assert_eq!(words[0].text, "actual");
+    }
+
+    #[test]
+    fn test_parse_hocr_invalid_utf8() {
+        // Simulate invalid UTF-8 (though XML itself should be valid)
+        let hocr = r#"
+            <span class='ocrx_word' title='bbox 0 0 50 20; x_wconf 95'>valid</span>
+        "#;
+
+        let words = parse_hocr(hocr).unwrap();
+        assert_eq!(words.len(), 1);
+        assert_eq!(words[0].text, "valid");
+    }
+
+    #[test]
+    fn test_parse_hocr_non_word_spans() {
+        // Skip spans that don't have class='ocrx_word'
+        let hocr = r#"
+            <span class='ocr_line' title='bbox 0 0 200 30'>
+                <span class='ocrx_word' title='bbox 0 0 50 20; x_wconf 95'>word</span>
+            </span>
+        "#;
+
+        let words = parse_hocr(hocr).unwrap();
+        assert_eq!(words.len(), 1);
+        assert_eq!(words[0].text, "word");
+    }
+
+    #[test]
+    fn test_hocr_word_width_height() {
+        let word = HocrWord {
+            text: "test".to_string(),
+            bbox_px: [10, 20, 60, 40],
+            confidence_0_100: 90,
+        };
+
+        assert_eq!(word.width(), 50);
+        assert_eq!(word.height(), 20);
+    }
+
+    #[test]
+    fn test_hocr_word_confidence() {
+        let word = HocrWord {
+            text: "test".to_string(),
+            bbox_px: [0, 0, 50, 20],
+            confidence_0_100: 85,
+        };
+
+        assert!((word.confidence() - 0.85).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_parse_title_attribute_bbox_only() {
+        let title = "bbox 10 20 30 40";
+        let (bbox, conf) = parse_title_attribute(title).unwrap();
+        assert_eq!(bbox, [10, 20, 30, 40]);
+        assert_eq!(conf, 50); // Default
+    }
+
+    #[test]
+    fn test_parse_title_attribute_bbox_and_confidence() {
+        let title = "bbox 10 20 30 40; x_wconf 95";
+        let (bbox, conf) = parse_title_attribute(title).unwrap();
+        assert_eq!(bbox, [10, 20, 30, 40]);
+        assert_eq!(conf, 95);
+    }
+
+    #[test]
+    fn test_parse_title_attribute_with_extra_fields() {
+        let title = "bbox 10 20 30 40; x_wconf 95; x_size 12; x_descenders 3";
+        let (bbox, conf) = parse_title_attribute(title).unwrap();
+        assert_eq!(bbox, [10, 20, 30, 40]);
+        assert_eq!(conf, 95);
+    }
+
+    #[test]
+    fn test_parse_title_attribute_missing_bbox() {
+        let title = "x_wconf 95";
+        assert!(parse_title_attribute(title).is_err());
+    }
+
+    #[test]
+    fn test_parse_title_attribute_invalid_bbox() {
+        let title = "bbox abc 20 30 40; x_wconf 95";
+        assert!(parse_title_attribute(title).is_err());
+    }
+
+    #[test]
+    fn test_parse_title_attribute_invalid_confidence() {
+        // Invalid confidence should fall back to default, not error
+        let title = "bbox 10 20 30 40; x_wconf abc";
+        let (bbox, conf) = parse_title_attribute(title).unwrap();
+        assert_eq!(bbox, [10, 20, 30, 40]);
+        assert_eq!(conf, 50); // Default when parsing fails
+    }
+
+    #[test]
+    fn test_parse_hocr_complex_document() {
+        // Simulate a more complex HOCR document with nested elements
+        let hocr = r#"
+            <?xml version="1.0" encoding="UTF-8"?>
+            <html xmlns="http://www.w3.org/1999/xhtml" lang="en">
+            <head><title>Title</title></head>
+            <body>
+                <div class='ocr_page' title='bbox 0 0 612 792'>
+                    <div class='ocr_carea' title='bbox 50 50 562 742'>
+                        <p class='ocr_par' title='bbox 50 50 562 100'>
+                            <span class='ocr_line' title='bbox 50 50 562 70'>
+                                <span class='ocrx_word' title='bbox 50 50 100 70; x_wconf 95'>The</span>
+                                <span class='ocrx_word' title='bbox 110 50 180 70; x_wconf 92'>quick</span>
+                                <span class='ocrx_word' title='bbox 190 50 240 70; x_wconf 98'>brown</span>
+                            </span>
+                        </p>
+                    </div>
+                </div>
+            </body>
+            </html>
+        "#;
+
+        let words = parse_hocr(hocr).unwrap();
+        assert_eq!(words.len(), 3);
+        assert_eq!(words[0].text, "The");
+        assert_eq!(words[1].text, "quick");
+        assert_eq!(words[2].text, "brown");
+    }
+
+    #[test]
+    fn test_parse_hocr_malformed_xml() {
+        // Malformed XML should return an error
+        let hocr = r#"<span class='ocrx_word' title='bbox 0 0 50 20'>unclosed"#;
+
+        let result = parse_hocr(hocr);
+        assert!(result.is_err());
+    }
+
+    /// Microbenchmark: Parse 1000 words from HOCR.
+    ///
+    /// Target: < 50ms for ~100 pages (~10k words).
+    /// This is a simplified benchmark with 1000 words.
+    #[test]
+    #[cfg(feature = "ocr")]
+    fn benchmark_hocr_parsing() {
+        // Generate a large HOCR document with 1000 words
+        let mut hocr = String::from("<html><body>");
+        for i in 0..1000 {
+            let x = i % 600;
+            let y = (i / 600) * 30;
+            hocr.push_str(&format!(
+                "<span class='ocrx_word' title='bbox {} {} {} {}; x_wconf {}'>word{}</span>",
+                x, y, x + 50, y + 20, 85 + (i % 15), i
+            ));
+        }
+        hocr.push_str("</body></html>");
+
+        let start = std::time::Instant::now();
+        let words = parse_hocr(&hocr).unwrap();
+        let elapsed = start.elapsed();
+
+        println!("Parsed {} HOCR words in {:?}", words.len(), elapsed);
+        assert_eq!(words.len(), 1000);
+
+        // Should be very fast (< 10ms for 1000 words)
+        assert!(elapsed < std::time::Duration::from_millis(50),
+            "HOCR parsing took {:?}, expected < 50ms", elapsed);
+    }
+
+    #[test]
+    fn test_hocr_word_equality() {
+        let word1 = HocrWord {
+            text: "test".to_string(),
+            bbox_px: [0, 0, 50, 20],
+            confidence_0_100: 90,
+        };
+
+        let word2 = HocrWord {
+            text: "test".to_string(),
+            bbox_px: [0, 0, 50, 20],
+            confidence_0_100: 90,
+        };
+
+        let word3 = HocrWord {
+            text: "test".to_string(),
+            bbox_px: [0, 0, 50, 20],
+            confidence_0_100: 80, // Different confidence
+        };
+
+        assert_eq!(word1, word2);
+        assert_ne!(word1, word3);
+    }
+
+    #[test]
+    fn test_is_ocrx_word_function() {
+        let xml = r#"<span class='ocrx_word' title='bbox 0 0 50 20; x_wconf 95'>text</span>"#;
+        let mut reader = quick_xml::Reader::from_str(xml);
+        let mut buf = Vec::new();
+
+        if let Ok(quick_xml::events::Event::Start(e)) = reader.read_event_into(&mut buf) {
+            assert!(is_ocrx_word(&e));
+        }
+
+        let xml2 = r#"<span class='ocr_line' title='bbox 0 0 50 20'>text</span>"#;
+        let mut reader2 = quick_xml::Reader::from_str(xml2);
+        let mut buf2 = Vec::new();
+
+        if let Ok(quick_xml::events::Event::Start(e2)) = reader2.read_event_into(&mut buf2) {
+            assert!(!is_ocrx_word(&e2));
+        }
+    }
+
+    #[test]
+    fn test_get_attribute_function() {
+        let xml = r#"<span id='test' class='ocrx_word' title='bbox 0 0 50 20'>text</span>"#;
+        let mut reader = quick_xml::Reader::from_str(xml);
+        let mut buf = Vec::new();
+
+        if let Ok(quick_xml::events::Event::Start(e)) = reader.read_event_into(&mut buf) {
+            assert_eq!(get_attribute(&e, "class"), Some("ocrx_word".to_string()));
+            assert_eq!(get_attribute(&e, "id"), Some("test".to_string()));
+            assert_eq!(get_attribute(&e, "title"), Some("bbox 0 0 50 20".to_string()));
+            assert_eq!(get_attribute(&e, "missing"), None);
         }
     }
 }

@@ -34,12 +34,13 @@ tracing = { workspace = true }
 dashmap = "6.1"
 smallvec = "1.13"
 encoding_rs = { version = "0.8", optional = true }
+quick-xml = { version = "0.36", optional = true }
 
 [features]
 default = ["serde"]
 serde = ["dep:serde", "dep:serde_json"]
 receipts = []  # Enable visual citation receipts (SVG clip generation)
-ocr = ["dep:image", "dep:leptonica-plumbing"]  # Enable OCR path (image compositing + preprocessing)
+ocr = ["dep:image", "dep:leptonica-plumbing", "dep:quick-xml"]  # Enable OCR path (image compositing + preprocessing + HOCR parsing)
 full-render = ["dep:pdfium-render", "ocr"]  # Enable PDFium-based rendering (requires ocr)
 proptest = []
 fuzzing = []  # Enable cfg(fuzzing) for fuzz harnesses
