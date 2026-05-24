@@ -1,0 +1,17 @@
+API Reference: extract_pdf()
+
+Parameters:
+- path: &str - Path to the PDF file
+- options: ExtractionOptions - Configuration options
+
+Returns: Result<ExtractionResult, Error>
+
+The extract_pdf function processes PDF documents and returns structured text extraction results. It supports various extraction modes including full text, layout-aware extraction, and OCR for scanned content.
+
+Options:
+- ocr_enabled: bool - Enable OCR for scanned pages (default: true)
+- ocr_language: Vec<String> - Language codes for OCR (default: ["eng"])
+- dpi: u32 - Rendering DPI for OCR (default: 300)
+
+Example:
+    let result = extract_pdf("document.pdf", ExtractionOptions::default())?;

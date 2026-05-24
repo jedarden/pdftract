@@ -89,6 +89,14 @@ enum Commands {
         #[arg(long, value_name = "MODE", default_value = "off", value_parser = ["off", "lite", "svg"])]
         receipts: String,
 
+        /// Enable OCR for scanned pages (requires 'ocr' feature)
+        #[arg(long)]
+        ocr: bool,
+
+        /// OCR language codes (comma-separated, e.g., 'eng,fra,deu')
+        #[arg(long, value_delimiter = ',')]
+        ocr_language: Vec<String>,
+
         /// Enable cache at this directory (creates if absent)
         #[arg(long, value_name = "DIR")]
         cache_dir: Option<PathBuf>,
@@ -298,11 +306,13 @@ fn main() -> Result<()> {
             password,
             format,
             receipts,
+            ocr,
+            ocr_language,
             cache_dir,
             cache_size,
             no_cache,
         } => {
-            if let Err(e) = cmd_extract(input, password_stdin, password, &format, &receipts, cache_dir, &cache_size, no_cache) {
+            if let Err(e) = cmd_extract(input, password_stdin, password, &format, &receipts, ocr, ocr_language, cache_dir, &cache_size, no_cache) {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
@@ -412,6 +422,8 @@ fn cmd_extract(
     password: Option<String>,
     format: &str,
     receipts: &str,
+    ocr: bool,
+    ocr_language: Vec<String>,
     cache_dir: Option<PathBuf>,
     cache_size: &str,
     no_cache: bool,
@@ -435,6 +447,16 @@ fn cmd_extract(
         }
     }
 
+    // Check if OCR is requested but feature is not available
+    if ocr {
+        #[cfg(not(feature = "ocr"))]
+        {
+            eprintln!("Error: --ocr requires the 'ocr' feature to be enabled");
+            eprintln!("Build pdftract with: --features ocr");
+            std::process::exit(2);
+        }
+    }
+
     // Resolve password using the priority order defined in TH-07
     let resolved_password = match password::resolve_password(password_stdin, password) {
         Ok(pwd) => pwd,
@@ -450,7 +472,16 @@ fn cmd_extract(
     }
 
     // Build extraction options
-    let options = ExtractionOptions::with_receipts(receipts_mode);
+    let mut options = ExtractionOptions::with_receipts(receipts_mode);
+
+    // Set OCR language if specified
+    if !ocr_language.is_empty() {
+        options.ocr_language = ocr_language;
+        eprintln!("OCR languages: {}", options.ocr_language.join("+"));
+    } else if ocr {
+        // OCR enabled but no language specified, use default (eng)
+        eprintln!("OCR enabled with default language: eng");
+    }
 
     // Create cache directory if specified
     let cache_dir_ref = if let Some(ref dir) = cache_dir {

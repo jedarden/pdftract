@@ -1,0 +1,7 @@
+Chapter 1: Introduction
+
+This document serves as a performance test fixture for OCR processing. It contains ten pages with diverse content types including text-heavy sections, forms, tables, and mixed layouts.
+
+The primary objective is to measure OCR processing time on a multi-page document. The target is to complete OCR on all ten pages in less than thirty seconds on a standard four-core CI runner.
+
+Performance optimization is critical for production OCR systems. The implementation uses thread-local Tesseract instances to minimize initialization overhead across pages processed in parallel.

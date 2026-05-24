@@ -1,0 +1,11 @@
+The quick brown fox jumps over the lazy dog. This is a standard English sentence that contains common words and demonstrates basic OCR capabilities for the English language.
+
+Le renard brun rapide saute par-dessus le chien paresseux. C'est une phrase française standard qui contient des mots communs et démontre les capacités OCR de base pour la langue française.
+
+The weather today is quite beautiful with clear blue skies and pleasant temperatures perfect for outdoor activities.
+
+La météo d'aujourd'hui est assez belle avec un ciel bleu clair et des températures agréables parfaites pour les activités de plein air.
+
+English text contains words like "computer", "keyboard", "mouse", and "monitor" which are common in technical documentation.
+
+Le texte français contient des mots comme "ordinateur", "clavier", "souris" et "moniteur" qui sont courants dans la documentation technique.

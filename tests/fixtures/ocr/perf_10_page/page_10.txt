@@ -1,0 +1,24 @@
+EXECUTIVE SUMMARY
+
+This ten-page document demonstrates OCR performance across diverse content types:
+
+Content Distribution:
+- Text-heavy pages: 5 (50%)
+- Forms: 1 (10%)
+- Tables: 2 (20%)
+- Technical documentation: 1 (10%)
+- Correspondence: 1 (10%)
+
+Performance Metrics Target:
+- Processing time: < 30 seconds (10 pages @ 3 sec/page)
+- Throughput: > 20 pages/minute on 4-core CI runner
+- Memory usage: < 500MB per worker thread
+
+Quality Metrics:
+- Clean text WER: < 2%
+- Multi-language WER: < 3%
+- Table cell accuracy: > 95%
+
+The fixture is designed to stress-test the OCR pipeline while providing reproducible benchmarks for performance regression testing.
+
+End of Document

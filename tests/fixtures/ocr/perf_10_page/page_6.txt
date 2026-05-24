@@ -1,0 +1,26 @@
+BALANCE SHEET - December 31, 2024
+
+ASSETS
+Current Assets:
+  Cash and Equivalents        $125,000
+  Accounts Receivable          $89,500
+  Inventory                    $67,200
+  Prepaid Expenses             $12,800
+  Total Current Assets        $294,500
+
+Non-Current Assets:
+  Property, Plant & Equipment $450,000
+  Less: Accumulated Depreciation ($125,000)
+  Net PPE                     $325,000
+  Intangible Assets            $50,000
+  Total Non-Current Assets   $375,000
+
+TOTAL ASSETS                 $669,500
+
+LIABILITIES AND EQUITY
+  Current Liabilities         $125,000
+  Long-term Debt              $200,000
+  Total Liabilities           $325,000
+  Shareholders' Equity        $344,500
+
+TOTAL L&E                    $669,500

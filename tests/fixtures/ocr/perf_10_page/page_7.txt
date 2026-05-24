@@ -1,0 +1,17 @@
+Abstract: A Study on Optical Character Recognition Accuracy
+
+This research examines the factors affecting Word Error Rate (WER) in commercial OCR systems. We conducted experiments across various document types, fonts, and scanning resolutions.
+
+Methodology:
+- 500 test documents spanning 5 categories
+- Resolution range: 200-400 DPI
+- Fonts: Arial, Times New Roman, Helvetica, Courier
+- Languages: English, French, German, Spanish
+
+Results:
+Average WER by DPI:
+- 200 DPI: 4.2%
+- 300 DPI: 1.8%
+- 400 DPI: 1.5%
+
+Conclusion: 300 DPI provides the optimal balance between accuracy and processing time for most document types.

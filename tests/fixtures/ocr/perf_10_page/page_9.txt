@@ -1,0 +1,22 @@
+Dear Customer,
+
+Thank you for your recent purchase. We are committed to providing you with the best possible service and support.
+
+Order Details:
+Order Number: ORD-2024-78542
+Date: May 15, 2024
+Items: 3
+Total: $247.50
+
+Your order has been processed and will be shipped within 2-3 business days. You will receive a shipping confirmation email with tracking information once your package has been dispatched.
+
+If you have any questions or concerns, please do not hesitate to contact our customer service team at:
+
+Email: support@example.com
+Phone: 1-800-555-0123
+Hours: Monday-Friday, 8AM-6PM EST
+
+Thank you for choosing our company. We value your business and look forward to serving you again in the future.
+
+Sincerely,
+Customer Service Team

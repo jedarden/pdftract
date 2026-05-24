@@ -1,0 +1,13 @@
+TERMS AND CONDITIONS
+
+1. ACCEPTANCE OF TERMS
+By accessing and using this service, you acknowledge that you have read, understood, and agree to be bound by these Terms and Conditions.
+
+2. LICENSE GRANT
+Subject to the terms of this agreement, we grant you a limited, non-exclusive, non-transferable license to use the service for internal business purposes.
+
+3. LIMITATION OF LIABILITY
+In no event shall we be liable for any indirect, incidental, special, consequential, or punitive damages, including without limitation, loss of profits, data, use, goodwill, or other intangible losses.
+
+4. INDEMNIFICATION
+You agree to indemnify and hold harmless the company from any claims resulting from your use of the service.
