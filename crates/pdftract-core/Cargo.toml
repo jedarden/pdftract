@@ -33,6 +33,8 @@ owned_ttf_parser = "0.21"
 zstd = "0.13"
 rayon = "1.10"
 phf = "0.11"
+rand = "0.8"
+tempfile = "3.10"
 tracing = { workspace = true }
 dashmap = "6.1"
 smallvec = "1.13"

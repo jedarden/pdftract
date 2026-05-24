@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
 
 mod cache_cmd;
@@ -12,6 +13,7 @@ mod password;
 mod serve;
 mod verify_receipt;
 use codegen::Language;
+use pdftract_core::atomic_file_writer::AtomicFileWriter;
 use pdftract_core::cache;
 use pdftract_core::extract::{extract_pdf, result_to_json};
 use pdftract_core::markdown::{block_to_markdown, page_to_markdown};
@@ -86,6 +88,10 @@ enum Commands {
         /// Output format (json, text, markdown)
         #[arg(short, long, default_value = "json")]
         format: String,
+
+        /// Output file path (use '-' for stdout, default)
+        #[arg(short, long, default_value = "-")]
+        output: PathBuf,
 
         /// Receipt mode: off (default), lite, or svg
         #[arg(long, value_name = "MODE", default_value = "off", value_parser = ["off", "lite", "svg"])]
@@ -351,12 +357,14 @@ fn main() -> Result<()> {
             cache_size,
             no_cache,
             md_anchors,
+            output,
         } => {
             if let Err(e) = cmd_extract(
                 input,
                 password_stdin,
                 password,
                 &format,
+                output,
                 &receipts,
                 ocr,
                 ocr_language,
@@ -486,6 +494,7 @@ fn cmd_extract(
     password_stdin: bool,
     password: Option<String>,
     format: &str,
+    output: PathBuf,
     receipts: &str,
     ocr: bool,
     ocr_language: Vec<String>,
@@ -595,17 +604,22 @@ fn cmd_extract(
     result.metadata.cache_status = Some(cache_status);
     result.metadata.cache_age_seconds = cache_age;
 
+    // Create atomic file writer for output
+    let mut writer =
+        AtomicFileWriter::create(&output).context("Failed to create output file writer")?;
+
     // Output based on requested format
     match format {
         "json" => {
             let json_output = result_to_json(&result);
-            println!("{}", serde_json::to_string_pretty(&json_output)?);
+            let json_str = serde_json::to_string_pretty(&json_output)?;
+            write!(writer, "{}", json_str)?;
         }
         "text" => {
             // Plain text output: concatenate all span texts
             for page in &result.pages {
                 for span in &page.spans {
-                    println!("{}", span.text);
+                    writeln!(writer, "{}", span.text)?;
                 }
             }
         }
@@ -621,38 +635,37 @@ fn cmd_extract(
                 if include_anchors {
                     // Use markdown module with anchors
                     let md = page_to_markdown(&page.blocks, page.index, true, include_break);
-                    print!("{}", md);
+                    write!(writer, "{}", md)?;
                 } else {
                     // Simple conversion without anchors
                     for (block_idx, block) in page.blocks.iter().enumerate() {
                         let md = block_to_markdown(block, page.index, block_idx, false);
-                        print!("{}", md);
-                        println!();
+                        write!(writer, "{}\n", md)?;
                     }
                     if include_break {
-                        println!("\n---\n");
+                        writeln!(writer, "\n---\n")?;
                     }
                 }
             }
 
             // Emit signatures footer if any signatures exist
             if !result.signatures.is_empty() {
-                println!("\n## Signatures\n");
+                writeln!(writer, "\n## Signatures\n")?;
                 for sig in &result.signatures {
-                    println!("- **{}**: {}", sig.field_name, sig.signer_name);
+                    writeln!(writer, "- **{}**: {}", sig.field_name, sig.signer_name)?;
                     if let Some(date) = &sig.signing_date {
-                        println!("  - Date: {}", date);
+                        writeln!(writer, "  - Date: {}", date)?;
                     }
                     if let Some(reason) = &sig.reason {
-                        println!("  - Reason: {}", reason);
+                        writeln!(writer, "  - Reason: {}", reason)?;
                     }
                     if let Some(location) = &sig.location {
-                        println!("  - Location: {}", location);
+                        writeln!(writer, "  - Location: {}", location)?;
                     }
                     if let Some(sub_filter) = &sig.sub_filter {
-                        println!("  - Format: {}", sub_filter);
+                        writeln!(writer, "  - Format: {}", sub_filter)?;
                     }
-                    println!("  - Validation Status: {}", sig.validation_status);
+                    writeln!(writer, "  - Validation Status: {}", sig.validation_status)?;
                 }
             }
         }
@@ -664,6 +677,9 @@ fn cmd_extract(
             std::process::exit(2);
         }
     }
+
+    // Commit the atomic write (rename temp file to target)
+    writer.commit().context("Failed to commit output file")?;
 
     Ok(())
 }
