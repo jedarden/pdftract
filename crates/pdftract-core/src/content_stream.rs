@@ -682,6 +682,7 @@ pub fn execute_with_do(
     use crate::graphics_state::{GraphicsState, GraphicsStateStack};
     let mut gstate = GraphicsState::new();
     let mut gstate_stack = GraphicsStateStack::new();
+    let mut gstate_overflow_logged = false; // Track if overflow diagnostic already emitted
 
     // Resource stack for nested scopes
     let mut resource_stack = ResourceStack::new(resources.clone());
@@ -700,10 +701,14 @@ pub fn execute_with_do(
                     "q" => {
                         // Save graphics state
                         if !gstate_stack.push(&gstate) {
-                            diagnostics.push(Diagnostic::with_static_no_offset(
-                                DiagCode::GstateStackOverflow,
-                                "Graphics state stack overflow",
-                            ));
+                            // Only emit overflow diagnostic once per page
+                            if !gstate_overflow_logged {
+                                diagnostics.push(Diagnostic::with_static_no_offset(
+                                    DiagCode::GstateStackOverflow,
+                                    "Graphics state stack overflow",
+                                ));
+                                gstate_overflow_logged = true;
+                            }
                         }
                         operand_buffer.clear();
                     }
@@ -1800,5 +1805,66 @@ mod tests {
         let matrix = get_form_matrix(&dict);
         assert_eq!(matrix.a, 2.0);
         assert_eq!(matrix.d, 2.0);
+    }
+
+    // Acceptance criteria tests for pdftract-1os1
+
+    #[test]
+    fn test_overflow_diagnostic_emitted_once_per_page() {
+        // AC: Diagnostic emitted exactly once per page even after multiple overflows
+        use crate::diagnostics::DiagCode;
+
+        let resources = ResourceDict::new();
+
+        // Create a content stream with 70 q operations (exceeds depth of 64)
+        // This should trigger overflow on q 65, 66, 67, 68, 69, 70
+        let mut content = Vec::new();
+        for _ in 0..70 {
+            content.extend_from_slice(b"q ");
+        }
+
+        let result = execute_with_do(
+            &content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            &[],
+        );
+
+        // Count overflow diagnostics
+        let overflow_count = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == DiagCode::GstateStackOverflow)
+            .count();
+
+        // Should only emit ONCE, not 6 times
+        assert_eq!(
+            overflow_count, 1,
+            "Overflow diagnostic should be emitted exactly once per page"
+        );
+    }
+
+    #[test]
+    fn test_underflow_diagnostic_emitted_for_stray_q() {
+        // AC: Q at depth 0 emits GSTATE_STACK_UNDERFLOW
+        use crate::diagnostics::DiagCode;
+
+        let resources = ResourceDict::new();
+        let content = b"Q"; // Q at depth 0
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        // Should emit underflow diagnostic
+        let underflow_count = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == DiagCode::GstateStackUnderflow)
+            .count();
+
+        assert_eq!(
+            underflow_count, 1,
+            "Underflow diagnostic should be emitted for Q at depth 0"
+        );
     }
 }

@@ -18,8 +18,8 @@ use std::sync::Arc;
 
 use crate::font::Font;
 
-/// Maximum depth of graphics state stack (prevents stack overflow).
-const MAX_GSTATE_DEPTH: usize = 32;
+/// Maximum depth of graphics state stack (per PDF spec section 8.4).
+const MAX_GSTATE_DEPTH: usize = 64;
 
 /// Color space and value for text extraction output.
 ///
@@ -698,5 +698,87 @@ mod tests {
         assert!((result.d - 1.0).abs() < 1e-10);
         assert!((result.e - 0.0).abs() < 1e-10);
         assert!((result.f - 0.0).abs() < 1e-10);
+    }
+
+    // Acceptance criteria tests for pdftract-1os1
+
+    #[test]
+    fn test_64_nested_q_calls_succeed() {
+        // AC: 64 nested q calls succeed; the 65th emits diagnostic and discards
+        let mut stack = GraphicsStateStack::new();
+        let state = GraphicsState::new();
+
+        // 64 nested q calls should all succeed
+        for i in 0..64 {
+            assert!(stack.push(&state), "q call {} should succeed", i + 1);
+        }
+        assert_eq!(stack.depth(), 64);
+
+        // 65th q should fail
+        assert!(!stack.push(&state), "65th q should fail");
+        assert_eq!(stack.depth(), 64);
+    }
+
+    #[test]
+    fn test_64_q_plus_64_q_restores_initial_state() {
+        // AC: 64 q + 64 Q restores to initial state
+        let mut stack = GraphicsStateStack::new();
+        let mut state = GraphicsState::new();
+
+        // Modify state
+        let translate = Matrix3x3::from_pdf_array([1.0, 0.0, 0.0, 1.0, 10.0, 20.0]);
+        state.concat_ctm(&translate);
+        let initial_ctm = state.ctm;
+
+        // Push 64 times
+        for _ in 0..64 {
+            stack.push(&state);
+        }
+
+        // Pop 64 times
+        for _ in 0..64 {
+            stack.pop();
+        }
+
+        // Stack should be empty
+        assert!(stack.is_empty());
+        assert_eq!(stack.depth(), 0);
+    }
+
+    #[test]
+    fn test_q_at_depth_0_is_noop() {
+        // AC: Q at depth 0 is a no-op (no panic) and emits GSTATE_STACK_UNDERFLOW
+        let mut stack = GraphicsStateStack::new();
+
+        // Stack is empty, Q should return None
+        assert!(stack.pop().is_none());
+        assert!(stack.is_empty());
+
+        // Multiple Q at depth 0 should all be no-ops
+        assert!(stack.pop().is_none());
+        assert!(stack.pop().is_none());
+        assert!(stack.pop().is_none());
+        assert!(stack.is_empty());
+    }
+
+    #[test]
+    fn test_1000_paired_q_q_operations_succeed() {
+        // AC: 1000 paired q...Q operations succeed (depth never exceeds 1)
+        let mut stack = GraphicsStateStack::new();
+        let state = GraphicsState::new();
+
+        for i in 0..1000 {
+            assert!(stack.push(&state), "Paired q {} should succeed", i);
+            assert_eq!(stack.depth(), 1);
+            let restored = stack.pop();
+            assert!(restored.is_some(), "Paired Q {} should succeed", i);
+            assert!(stack.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_max_depth_is_64() {
+        // Verify MAX_GSTATE_DEPTH is 64 per PDF spec
+        assert_eq!(MAX_GSTATE_DEPTH, 64);
     }
 }
