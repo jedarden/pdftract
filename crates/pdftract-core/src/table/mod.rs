@@ -25,7 +25,7 @@ mod cell;
 pub use detector::TableDetector;
 pub use segment::{Segment, SegmentOrientation};
 pub use grid::GridCandidate;
-pub use cell::{Cell, TableSpan};
+pub use cell::{Cell, TableSpan, detect_merged_cells};
 
 use crate::parser::pages::PageDict;
 
