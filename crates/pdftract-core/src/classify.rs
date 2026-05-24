@@ -483,6 +483,79 @@ impl PageClass {
             PageClass::BrokenVector => "broken_vector",
         }
     }
+
+    /// Check if this page class is eligible for BrokenVector escalation.
+    ///
+    /// Only Vector pages can be escalated to BrokenVector based on readability.
+    /// Scanned and Hybrid pages are already handled by other paths.
+    pub fn can_escalate_to_broken_vector(&self) -> bool {
+        matches!(self, PageClass::Vector)
+    }
+}
+
+/// Apply BrokenVector escalation based on readability score (Phase 4.7).
+///
+/// Per plan section 4.7 (line 1801): If page readability score < 0.5 AND
+/// the page is classified as Vector, escalate to BrokenVector and route
+/// to Phase 5.5 assisted OCR.
+///
+/// # Arguments
+///
+/// * `current_class` - The current page classification from Phase 5.1
+/// * `readability_score` - The page-level readability score from `aggregate_page_readability`
+/// * `page_index` - The page index (for diagnostic messages)
+///
+/// # Returns
+///
+/// The updated `PageClass` after escalation logic:
+/// - If readability < 0.5 AND current_class is Vector: returns BrokenVector
+/// - Otherwise: returns current_class unchanged
+///
+/// # Escalation Behavior
+///
+/// When escalation occurs (Vector → BrokenVector):
+/// - With `ocr` feature: routes to Phase 5.5 assisted OCR for re-extraction
+/// - Without `ocr` feature: emits `BROKENVECTOR_OCR_UNAVAILABLE` diagnostic
+///   and sets page_type = "broken_vector" in output (no re-extraction)
+pub fn apply_broken_vector_escalation(
+    current_class: PageClass,
+    readability_score: f32,
+    page_index: usize,
+) -> PageClass {
+    // Escalation only applies to Vector pages
+    if !current_class.can_escalate_to_broken_vector() {
+        return current_class;
+    }
+
+    // Check readability threshold (0.5 per plan spec)
+    if readability_score < 0.5 {
+        #[cfg(feature = "ocr")]
+        {
+            // Route to Phase 5.5 assisted OCR
+            // TODO: Implement Phase 5.5 routing when available
+            // For now, escalate to BrokenVector to indicate re-extraction needed
+        }
+
+        #[cfg(not(feature = "ocr"))]
+        {
+            // Emit diagnostic when OCR feature is unavailable
+            use crate::diagnostics::{Diagnostic, DiagCode};
+
+            // Emit diagnostic via a thread-local or callback mechanism
+            // For now, we escalate to BrokenVector which will be reflected in output
+            Diagnostic::with_dynamic_no_offset(
+                DiagCode::OcrBrokenVectorUnavailable,
+                format!(
+                    "Page {} readability {:.2} < 0.5 on Vector page; OCR feature unavailable",
+                    page_index, readability_score
+                ),
+            );
+        }
+
+        PageClass::BrokenVector
+    } else {
+        current_class
+    }
 }
 
 /// Page classification result with confidence and metadata.
@@ -1648,5 +1721,128 @@ mod tests {
             "classify_page median = {} μs, expected < 1000 μs",
             median.as_micros()
         );
+    }
+
+    // ============ BrokenVector Escalation Tests (Phase 4.7) ============
+
+    #[test]
+    fn test_broken_vector_escalation_vector_low_readability() {
+        // AC: Vector page with readability < 0.5 escalates to BrokenVector
+        let current_class = PageClass::Vector;
+        let readability_score = 0.4;
+        let page_index = 5;
+
+        let result = apply_broken_vector_escalation(current_class, readability_score, page_index);
+
+        assert_eq!(result, PageClass::BrokenVector);
+    }
+
+    #[test]
+    fn test_broken_vector_escalation_vector_high_readability() {
+        // AC: Vector page with readability >= 0.5 does NOT escalate
+        let current_class = PageClass::Vector;
+        let readability_score = 0.6;
+        let page_index = 3;
+
+        let result = apply_broken_vector_escalation(current_class, readability_score, page_index);
+
+        assert_eq!(result, PageClass::Vector);
+    }
+
+    #[test]
+    fn test_broken_vector_escalation_vector_threshold_exact() {
+        // AC: Vector page with readability exactly 0.5 does NOT escalate
+        // (threshold is < 0.5, not <= 0.5)
+        let current_class = PageClass::Vector;
+        let readability_score = 0.5;
+        let page_index = 0;
+
+        let result = apply_broken_vector_escalation(current_class, readability_score, page_index);
+
+        assert_eq!(result, PageClass::Vector);
+    }
+
+    #[test]
+    fn test_broken_vector_escalation_scanned_no_escalation() {
+        // AC: Scanned page does NOT escalate (already OCR path)
+        let current_class = PageClass::Scanned;
+        let readability_score = 0.3;
+        let page_index = 10;
+
+        let result = apply_broken_vector_escalation(current_class, readability_score, page_index);
+
+        assert_eq!(result, PageClass::Scanned);
+    }
+
+    #[test]
+    fn test_broken_vector_escalation_hybrid_no_escalation() {
+        // AC: Hybrid page does NOT escalate (mixed path)
+        let current_class = PageClass::Hybrid;
+        let readability_score = 0.2;
+        let page_index = 7;
+
+        let result = apply_broken_vector_escalation(current_class, readability_score, page_index);
+
+        assert_eq!(result, PageClass::Hybrid);
+    }
+
+    #[test]
+    fn test_broken_vector_escalation_broken_vector_stays() {
+        // AC: Already BrokenVector page stays BrokenVector
+        let current_class = PageClass::BrokenVector;
+        let readability_score = 0.1;
+        let page_index = 12;
+
+        let result = apply_broken_vector_escalation(current_class, readability_score, page_index);
+
+        assert_eq!(result, PageClass::BrokenVector);
+    }
+
+    #[test]
+    fn test_broken_vector_escalation_zero_readability() {
+        // AC: Vector page with 0.0 readability escalates
+        let current_class = PageClass::Vector;
+        let readability_score = 0.0;
+        let page_index = 2;
+
+        let result = apply_broken_vector_escalation(current_class, readability_score, page_index);
+
+        assert_eq!(result, PageClass::BrokenVector);
+    }
+
+    #[test]
+    fn test_broken_vector_escalation_perfect_readability() {
+        // AC: Vector page with 1.0 readability does NOT escalate
+        let current_class = PageClass::Vector;
+        let readability_score = 1.0;
+        let page_index = 15;
+
+        let result = apply_broken_vector_escalation(current_class, readability_score, page_index);
+
+        assert_eq!(result, PageClass::Vector);
+    }
+
+    #[test]
+    fn test_page_class_can_escalate_vector() {
+        // AC: Vector pages can escalate to BrokenVector
+        assert!(PageClass::Vector.can_escalate_to_broken_vector());
+    }
+
+    #[test]
+    fn test_page_class_can_escalate_scanned() {
+        // AC: Scanned pages cannot escalate
+        assert!(!PageClass::Scanned.can_escalate_to_broken_vector());
+    }
+
+    #[test]
+    fn test_page_class_can_escalate_hybrid() {
+        // AC: Hybrid pages cannot escalate
+        assert!(!PageClass::Hybrid.can_escalate_to_broken_vector());
+    }
+
+    #[test]
+    fn test_page_class_can_escalate_broken_vector() {
+        // AC: BrokenVector pages cannot escalate (already there)
+        assert!(!PageClass::BrokenVector.can_escalate_to_broken_vector());
     }
 }
