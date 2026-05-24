@@ -2,102 +2,199 @@
 
 ## Overview
 
-PDF text extraction depends on the font's encoding machinery to map raw glyph identifiers — character codes in a content stream — to Unicode codepoints. When that machinery is absent, broken, or intentionally obscured, a robust extractor must fall back through a layered series of heuristics. This document surveys the failure modes and recovery strategies a Rust engineer needs to understand when building `pdftract`.
+PDF text extraction depends on the font's encoding machinery to map raw glyph identifiers — character codes in a content stream — to Unicode codepoints. When that machinery is absent, broken, or intentionally obscured, a robust extractor must fall back through a layered series of heuristics. This document specifies the **four-level Unicode recovery cascade** implemented in `pdftract` Phase 2.2, the Type 3 fallback in Phase 2.4, and the shape database design from Phase 2.5.
 
 ---
 
-## 1. Why CMaps Fail
+## The Four-Level Recovery Cascade
 
-A ToUnicode CMap is an optional but critical PDF object that maps each glyph's character code to one or more Unicode codepoints. Its absence or incorrectness is a frequent source of garbled extraction output.
+Each level attempts to recover Unicode from character codes, proceeding from highest-confidence to lowest-confidence. The first non-empty result wins. All levels emit a `confidence` score in `[0, 1]` and a `unicode_source` tag for diagnostics.
 
-**Custom encoding without ToUnicode.** Type 1 and TrueType fonts embedded in PDF can use a custom Encoding dictionary that remaps character codes arbitrarily. If no ToUnicode CMap is present, the only remaining signal is the glyph name — and only if the author did not rename glyphs. Many print-production workflows strip ToUnicode entries during PDF/X conversion to reduce file size.
+### Level 1: ToUnicode CMap (confidence = 1.0)
 
-**Type 3 fonts with arbitrary glyph procedures.** A Type 3 font defines each glyph as a sequence of PDF content stream operators. There is no standardized shape; the glyph procedure could draw anything, including decorative symbols, logos, or redacted characters. The font's Encoding maps codes to glyph names, but those names are arbitrary strings chosen by the document author.
+**Happy path** — the font explicitly declares the mapping.
 
-**Scanned PDFs with fake text layers.** OCR pipelines sometimes embed a hidden Type 3 or Type 1 font whose glyphs are designed to be invisible at normal rendering, purely to carry searchable text. The ToUnicode CMap may be correct but carry OCR errors, or may be present only for a subset of characters. In pathological cases the text layer and visual content are deliberately misaligned (common in forms with print-and-sign workflows).
+Parse the `/ToUnicode` stream as a PDF CMap program. The CMap syntax to implement:
 
-**Symbol fonts repurposed for body text.** ZapfDingbats, Symbol, and similar fonts have standard glyph shapes that encode mathematical or decorative characters. Documents that route body-text characters through these fonts — especially via PDF/A compliance workarounds or legacy WordPerfect exports — will produce garbled output when a consumer naively interprets character codes as Latin.
+- `beginbfchar` / `endbfchar`: Single-character mappings. Format: `<srcCode> <dstHex>` where `<dstHex>` may be a UTF-16BE multi-codepoint sequence (e.g., `fi` ligature → `<00660069>`).
+- `beginbfrange` / `endbfrange`: Range mappings. Two forms:
+  - `<lo> <hi> <dst>`: Contiguous range where each code maps to an incrementing Unicode codepoint.
+  - `<lo> <hi> [<d0> <d1> ...]`: Explicit array for non-contiguous targets.
+- `usecmap`: Inherit from a named CMap (e.g., `Adobe-Japan1-UCS2`).
+- Comments (`%`) stripped.
 
-**Intentionally obfuscated PDFs (DRM).** Some DRM schemes replace ToUnicode CMaps with shuffled or encrypted equivalents. The content stream references glyph codes whose ToUnicode entries map to decoy codepoints, while the real text requires a key or rendering to recover. Detecting this is an open problem; the best practical heuristic is low-confidence scoring on known-word frequency after extraction.
+**Result**: `unicode_source = "to_unicode"`, `confidence = 1.0`.  
+**Fall-through**: If the CMap maps a code to U+FFFD or U+0000, treat as missing and proceed to Level 2.
 
-**Authoring tool bugs.** Adobe InDesign, Microsoft Word, and LibreOffice all have historically shipped versions that generated incorrect ToUnicode CMaps — most commonly for ligatures (fi, fl, ff), for characters outside Basic Latin, and for fonts using expert-set or OldStyle figure variants. The ToUnicode entry may be structurally valid (parseable) but semantically wrong, mapping the fi ligature to U+0066 U+0069 in one range definition and to U+FB01 in another, with the wrong range selected at runtime.
+**Entry point**: `pdftract-core::font::resolve_to_unicode()` (Phase 2.2).
+
+### Level 2: Encoding Vector + AGL (confidence = 0.9)
+
+**Second-most-common path** — glyph names are available via the font's `/Encoding`.
+
+Map character code → glyph name via the font's `/Encoding` dictionary:
+
+1. **Named encodings** (hardcoded tables):
+   - `WinAnsiEncoding` — Windows ANSI (superset of ISO-8859-1)
+   - `MacRomanEncoding` — classic Mac OS Roman
+   - `MacExpertEncoding` — expert set for old-style figures
+   - `StandardEncoding` — PDF standard encoding
+   - `SymbolEncoding` — Symbol font (see note below)
+   - `ZapfDingbatsEncoding` — ZapfDingbats font (see note below)
+
+2. **`/Differences` array**: Sparse overlay on base encoding. Format: `[n /GlyphName1 /GlyphName2 ...]` where `n` is the starting code position.
+
+Map glyph name → Unicode via the **Adobe Glyph List (AGL 1.4)** algorithm:
+
+1. Direct AGL table lookup (~4,400 entries, compiled as a static `phf::Map`).
+2. If name is `uniXXXX` (exactly four uppercase hex digits), return U+XXXX. Multiple consecutive `uniXXXX` segments encode a sequence (ligatures).
+3. If name is `uXXXXXX` (four to six uppercase hex digits), return U+XXXXXX, provided the codepoint is valid (not surrogate, not above U+10FFFF).
+4. If name contains a period (`.`), strip suffix and retry on base name.
+5. Otherwise, unrecognized → fall through to Level 3.
+
+**Special cases**: ZapfDingbats and Symbol have their own mappings defined in ISO 32000-2 Section 9.10.2. Do NOT apply AGL to these fonts.
+
+**Result**: `unicode_source = "agl"`, `confidence = 0.9`.  
+**Entry point**: `pdftract-core::font::resolve_agl()` (Phase 2.2).
+
+### Level 3: Font Fingerprint Cache (confidence = 0.85)
+
+**Known-font database** — identify the embedded font and use its standard mapping.
+
+Hash the embedded font program: SHA-256 of the raw font program stream bytes (the decoded `/FontFile`, `/FontFile2`, or `/FontFile3` stream). Look up in a bundled database of known font checksums → per-glyph Unicode mapping tables.
+
+**Database spec**:
+
+- Compile-time `phf::Map<[u8; 32], &'static [(u16, char)]>`
+- Key: 32-byte SHA-256 of raw font program bytes
+- Value: Slice of `(glyph_id, unicode_char)` pairs covering every mapped glyph
+- Generated from `build/font-fingerprints.json` via `build.rs` using `phf_codegen`
+- **Binary footprint**: ~500 KB (approved allocation within 4 MB budget)
+
+**Curation pipeline**: See OQ-02 (Open Questions) and `docs/research/font-fingerprinting.md`. Initially populated with ~200 common commercial fonts from Adobe and Google Fonts metric data.
+
+**Guard**: If the font has no embedded program (Standard-14 fonts or no `/FontFile*`), skip Level 3 and proceed to Level 4.
+
+**Result**: `unicode_source = "fingerprint"`, `confidence = 0.85`.  
+**Entry point**: `pdftract-core::font::resolve_fingerprint()` (Phase 2.2).
+
+### Level 4: Glyph Shape Recognition (confidence = 0.7)
+
+**Fallback** — match the rendered glyph shape against a pre-computed database.
+
+Render the glyph to a 32×32 grayscale bitmap and compute a perceptual hash. Look up in a bundled shape→Unicode database.
+
+**Perceptual hash algorithm (pHash)**:
+
+1. Rasterize glyph to 32×32 grayscale bitmap:
+   - TrueType/OpenType: use `fontdue` rasterizer
+   - Type 3 glyphs: use Type 3 content stream renderer (Phase 2.4)
+2. Apply 32×32 Discrete Cosine Transform (DCT)
+3. Retain top-left 8×8 AC coefficients (64 values)
+4. Threshold against median of those 64 values → 64-bit integer hash
+
+This yields a scale-invariant hash robust to minor rendering differences.
+
+**Database format**:
+
+- Compile-time `&'static [(u64, char)]` — sorted slice of `(pHash, char)` pairs
+- Generated from `build/glyph-shapes.json` via `build.rs` (emitted as `static` array)
+- NOT `phf::Map` because we need nearest-neighbor scan, not exact lookup
+- **Binary footprint**: ~300 KB for ~5,000 common glyphs (Latin, Greek, Cyrillic, extended Latin)
+
+**Query algorithm**:
+
+1. Linear scan over all entries computing `(query_hash XOR entry_hash).count_ones()`
+2. Collect entries with Hamming distance ≤ 8
+3. Select entry with smallest distance
+4. **Tie-break**: Use Unicode frequency rank from companion table (`&'static [(u64, u32)]` sorted by pHash)
+5. If no entry within threshold, fall through to failure
+
+**Performance**: 5,000 entries × ~8 ns per XOR+popcount ≈ 40 µs worst-case scan.
+
+**Tie-break rules for visually similar glyphs**:
+
+When pHash distance is tied or ambiguous (e.g., `l` vs `I` vs `|`, `O` vs `0`):
+- Prefer digits if previous span resolved to digits (monospaced font context)
+- Prefer lowercase letters if surrounding text is mostly lowercase
+- Use Unicode frequency rank as final tie-breaker (common chars preferred)
+
+**Result**: `unicode_source = "shape_match"`, `confidence = 0.7`.  
+**Entry point**: `pdftract-core::font::resolve_shape_match()` (Phase 2.2) and Type 3 fallback (Phase 2.4).
 
 ---
 
-## 2. Glyph Name Heuristics
+## Confidence Scoring Formula
 
-When ToUnicode is absent, the font's Encoding dictionary may still provide glyph names — strings like `A`, `comma`, `fi`, `uni0041`, `u1D400`. The Adobe Glyph List (AGL) 2.0 and its companion specification define an algorithm to extract Unicode codepoints from these names.
+Each level emits a confidence score:
 
-**The AGL algorithm (abbreviated):**
+| Level | Source | Confidence |
+|-------|--------|------------|
+| 1 | ToUnicode CMap | 1.0 |
+| 2 | AGL lookup | 0.9 |
+| 3 | Font fingerprint | 0.85 |
+| 4 | Shape match | 0.7 |
 
-1. If the name is in the AGL table (a ~4000-entry mapping from name to codepoint), return the mapped codepoint.
-2. If the name is of the form `uniXXXX` (exactly four uppercase hex digits), return U+XXXX. Multiple consecutive `uniXXXX` segments encode a sequence (ligatures or decomposed characters).
-3. If the name is of the form `uXXXXXX` (four to six uppercase hex digits), return U+XXXXXX, provided the codepoint is in a valid Unicode range (not a surrogate, not above U+10FFFF).
-4. If the name contains a period (`.`), strip the suffix and reapply the algorithm to the base name. The suffix is a variant tag and carries no Unicode meaning.
-5. Otherwise, the name is unrecognized; return REPLACEMENT CHARACTER or signal failure.
+**Cascade behavior**: The first non-empty result wins. Confidence is emitted in diagnostic metadata but does NOT override cascade priority.
 
-The full AGL table is published by Adobe at `https://github.com/adobe-type-tools/agl-aglfn`. The `aglfn` variant (Adobe Glyph List for New Fonts) is the normative source for production use — it includes only names that unambiguously map to a single codepoint. The broader AGL includes legacy names with complex decompositions.
-
-**ZapfDingbats and Symbol.** These fonts are explicitly carved out of the AGL algorithm. The PDF specification (ISO 32000-2, section 9.10.2) mandates a separate glyph-name-to-Unicode mapping for each. Symbol uses an encoding close to ISO Latin-1 for printable ASCII, then maps higher bytes to Greek letters and mathematical operators via a font-specific table. ZapfDingbats maps character codes 33–254 to a defined set of Unicode dingbat and geometric shape codepoints. Both tables are small (< 300 entries) and should be hardcoded; attempting to apply AGL to them produces wrong results.
-
----
-
-## 3. Font Fingerprinting Approaches
-
-When glyph names are absent or unhelpful, characteristics of the font itself may identify it.
-
-**FontDescriptor metrics.** Every embedded font should include a FontDescriptor dictionary with numeric metrics: `Ascent`, `Descent`, `CapHeight`, `XHeight`, `StemV`, `StemH`, `ItalicAngle`, and a `FontBBox` rectangle. These values are not unique enough alone, but they prune the candidate space significantly. A font with CapHeight 716 and XHeight 523 in a 1000-unit em square is almost certainly Times New Roman Regular or a metric-equivalent clone. Combining four or five metrics gives a coarse but useful fingerprint.
-
-**Checksum and hash matching.** Embedded TrueType and OpenType fonts contain a `checkSumAdjustment` field in the `head` table. More reliably, the raw bytes of the `cmap`, `glyf`, or `CFF ` table can be hashed (SHA-256) and looked up in a pre-built database of known fonts. This is the most precise fingerprinting strategy; the challenge is building and maintaining the database. Google Fonts, Adobe Fonts, and the web safe fonts cover the majority of PDFs encountered in practice.
-
-**PostScript name matching.** The `FontName` in the FontDescriptor and `BaseFont` in the font dictionary are PostScript names (e.g., `TimesNewRomanPSMT`, `ArialMT`, `HelveticaNeue-Bold`). These frequently identify the font family and style without metric lookup. Normalize by stripping common suffixes (`-Regular`, `-MT`, `PS`, `LT`), folding to lowercase, and removing whitespace before matching against a known-font table. False positives are common (many fonts claim to be "Helvetica"), so use name matching only to select a candidate, then confirm with metrics.
+**Post-cascade context rescoring** (optional): For results below 0.8 confidence, apply character n-gram or dictionary-based validation using surrounding high-confidence characters. This can downgrade ambiguous matches to U+FFFD with a `SHAPE_AMBIGUOUS` diagnostic.
 
 ---
 
-## 4. Glyph Outline Analysis
+## Type 3 Font Handling
 
-If a font is embedded with full outline data, glyph shapes can serve as fingerprints against Unicode character databases, without full raster OCR.
+Type 3 fonts define each glyph as a PDF content stream in `/CharProcs`. The same four-level cascade applies:
 
-**Type 1 charstrings.** A Type 1 charstring encodes a glyph's Bezier outline as a compact stack-based bytecode. Parsing charstrings yields a sequence of moveto/lineto/curveto operations. Normalize the resulting path: translate to origin, scale to unit square, and compute a fixed-size feature vector (e.g., a grid of orientation histograms, or moment invariants). Compare against pre-computed vectors for every Unicode character in candidate fonts.
+1. Check `/ToUnicode` first (Level 1)
+2. If absent, attempt `/Encoding` glyph name lookup (Level 2)
+3. If glyph name is non-standard (arbitrary user name), rasterize the content stream to 32×32 bitmap and apply shape recognition (Level 4)
 
-**TrueType glyph programs.** TrueType stores outlines in the `glyf` table as contour sequences with on-curve and off-curve control points. The same normalization-and-comparison approach applies. One practical simplification: rasterize the normalized outline to a small bitmap (e.g., 32×32 grayscale) and compute a perceptual hash (pHash or dHash). This loses some precision but is fast and storage-efficient for the reference database.
+**Type 3 rasterization** (Phase 2.4):
 
-**Approximate shape matching tradeoffs.** Vector-based outline matching is accurate for clean outlines but degrades with variation in design weight, optical size, or deliberate distortion. It cannot handle Type 3 fonts where the glyph procedure uses fill rules or clip paths that the Bezier extraction misses. Full raster OCR (e.g., Tesseract on a rasterized glyph image) is more robust but orders of magnitude slower and introduces an external binary dependency. The recommended middle ground is outline matching as a fast first pass, falling back to OCR only for glyphs where outline matching confidence is below a threshold.
+- Execute the glyph's content stream as a constrained sub-content-stream
+- Track graphics state (CTM, fill/stroke state) using the Phase 3 graphics state machine
+- Record stroke/fill operations to a 32×32 grayscale bitmap
+- Support operators: `m l c v y` (path construction), `h S s f F B b f* B* b*` (stroke/fill), `q Q cm` (state), `Do` (form XObject, recursive), `re` (rectangle)
+- Stack depth limit: 20 levels (same as form XObject limit)
 
----
-
-## 5. Context-Based Recovery
-
-When a document is mostly well-decoded, poorly decoded characters can be inferred from context.
-
-**Statistical character prediction.** Character n-gram models trained on text corpora assign probabilities to candidate codepoints given surrounding decoded characters. For a position where extraction fails, score each candidate against the n-gram model. This is most useful for single-glyph substitutions in otherwise Latin text (e.g., a missing `e` in English).
-
-**Dictionary-based gap filling.** If a word contains one or two unknown characters and the surrounding characters form a near-match to a dictionary entry, the dictionary entry is a candidate. Restrict to the same script as the surrounding characters. Edit distance (Levenshtein with wildcards for unknown positions) is the standard metric. This works well for ligatures: an unknown glyph between `o` and `e` in an English word is almost certainly `ff` or `fi`.
-
-**Language model scoring.** A word-level or subword language model can rescore candidates from the above methods. For `pdftract`, integrating a full LM is heavy; a practical approximation is a ranked word-list with bigram statistics. The Norvig frequency list or Zipf-weighted lists from Wikipedia work well for English; CLDR/BabelNet equivalents exist for other scripts.
+**Entry point**: `pdftract-core::font::rasterize_type3_glyph()` (Phase 2.4).
 
 ---
 
-## 6. Practical Recovery Pipeline
+## Database Licensing and Provenance
 
-The recommended priority order for `pdftract` is:
+**Font fingerprint database** (`build/font-fingerprints.json`):
 
-### Step 1: ToUnicode CMap
-Parse the ToUnicode stream, validate that it is a well-formed CMap (check `begincmap`/`endcmap`, `beginbfchar`/`endbfchar`, `beginbfrange`/`endbfrange` blocks). Apply the mapping. Flag any character codes that fall outside the mapped ranges as unresolved. If the CMap maps a code to U+FFFD or U+0000, treat those mappings as missing rather than authoritative.
+- Source: Adobe's public font databases, Google Fonts `cmap` metric exports
+- License: Fonts used are SIL Open Font License or similar permissive licenses
+- Curation: Maintainer-owned; see OQ-02 and `docs/research/font-fingerprinting.md`
 
-### Step 2: Glyph Name via AGL
-For each unresolved code, retrieve its glyph name from the font's Encoding dictionary. Apply the AGL algorithm in order: direct AGL table lookup, `uniXXXX` expansion, `uXXXXXX` expansion, period-stripped base name retry. Apply the ZapfDingbats or Symbol override table if the font is identified by name as one of those two. Assign the resulting codepoint with high confidence.
+**Glyph shape database** (`build/glyph-shapes.json`):
 
-### Step 3: Font Name Fingerprinting
-For glyphs still unresolved, normalize the `BaseFont` / `FontName` strings and look up in a known-font database. If matched, use the font's standard encoding for the matched font (e.g., look up the character code in the font's standard cmap). Validate against FontDescriptor metrics if present. If the font is a known metric-equivalent, retrieve its standard glyph-to-Unicode mapping. Assign the result with medium confidence and tag for downstream review.
+- Source: Glyph bitmaps rendered from open-source fonts (Google Fonts corpus, SIL OFL fonts)
+- License: SIL Open Font License fonts are free of Unicode licensing entanglements
+- Curation: Offline hash pipeline; JSON is the authoritative artifact
 
-### Step 4: Outline Shape Matching
-For glyphs where steps 1–3 failed or produced low-confidence results, extract the glyph outline from the font program (Type 1 charstring parser or TrueType `glyf` reader). Normalize and compute the shape fingerprint. Query a pre-built reference database of Unicode character outlines. Return the top-k candidates with similarity scores. Select the highest-scoring candidate above a threshold (empirically ~0.85 cosine similarity on moment-invariant vectors). Below the threshold, mark as unresolved and defer to step 5.
+**Reprocibility**: Same glyph shape MUST always hash to the same bucket and yield the same Unicode value. No float nondeterminism, no random seeds.
 
-### Step 5: OCR Fallback
-As a last resort, rasterize the unresolved glyph at a sufficient resolution (>= 150 DPI equivalent on the normalized em square, typically 32–64px) and pass it to a character-level OCR recognizer. Tesseract's single-character mode or a custom CNN trained on Unicode character images are both viable. OCR introduces latency and an external dependency, so it should be gated on a configuration flag and applied only when no other step has produced a confident result.
+---
 
-**Cross-step confidence aggregation.** Assign each step a base confidence tier (Step 1: 0.95, Step 2: 0.90, Step 3: 0.70, Step 4: 0.60–0.90, Step 5: 0.50–0.85). After the pipeline, apply context-based rescoring (Section 5) to candidates below 0.80 confidence, using the surrounding high-confidence characters as context. Expose the final confidence score and the recovery step taken as metadata on each extracted character, so callers can choose to suppress or highlight uncertain output.
+## Failure Mode
+
+If all four levels fail:
+
+- Emit U+FFFD (REPLACEMENT CHARACTER)
+- Set `unicode_source = "unknown"`, `confidence = 0.0`
+- Log `GLYPH_UNMAPPED` diagnostic with font ID and character code
+
+---
+
+## Cross-References
+
+- **Phase 2.2** (font recognition coordinator): Entry point for the four-level cascade
+- **Phase 2.4** (Type 3 charstring renderer): Type 3 fallback to Level 4
+- **Phase 2.5** (shape database bundling): Build artifact generation
+- **OQ-02** (plan line 513): Font-fingerprint database curation pipeline ownership
 
 ---
 
@@ -109,4 +206,5 @@ As a last resort, rasterize the unresolved glyph at a sufficient resolution (>= 
 - Adobe Type 1 Font Format specification (Black Book), Chapter 6 (Charstrings)
 - Apple TrueType Reference Manual — `glyf` table specification
 - OpenType Specification 1.9, Microsoft Typography (CFF / CFF2 charstring formats)
-- Unicode Standard Annex #29 (Unicode Text Segmentation) — relevant for ligature decomposition
+- Unicode Standard Annex #29 (Unicode Text Segmentation)
+- `pdftract` plan: Phase 2.2 (line 1340), Phase 2.4 (line 1416), Phase 2.5 (line 1434)
