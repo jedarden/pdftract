@@ -16,12 +16,13 @@
 //! blocks include an optional `receipt` field containing cryptographic
 //! proof of provenance. When receipts are disabled, the field is `null`.
 
-use serde::{Deserialize, Serialize};
-use serde_json::json;
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 use crate::receipts::Receipt;
+use crate::signature::Signature;
 
 /// JSON representation of a text span.
 ///
@@ -321,6 +322,94 @@ impl Default for ExtractionQuality {
     }
 }
 
+/// JSON representation of a digital signature.
+///
+/// This struct represents a signature extracted from a PDF signature field,
+/// including signer identity, timestamp, and coverage information.
+///
+/// Per the plan (Phase 7.3), pdftract does NOT perform cryptographic validation
+/// in v1. The `validation_status` field is always "not_checked" — future versions
+/// may add "valid", "invalid", or "indeterminate" as cryptographic validation
+/// is implemented.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct SignatureJson {
+    /// The absolute (dot-joined) field name from the AcroForm.
+    /// Example: "employer_signature" or "form.employee_sig"
+    pub field_name: String,
+
+    /// The signer's name from the /Name entry in the signature dictionary.
+    ///
+    /// Empty string if /Name is absent.
+    pub signer_name: String,
+
+    /// The signing date as an ISO 8601 string (RFC 3339 format).
+    ///
+    /// Parsed from the PDF /M date string. None if the date is missing,
+    /// malformed, or the field is unsigned.
+    ///
+    /// Format: "YYYY-MM-DDTHH:MM:SS+HH:MM" or "YYYY-MM-DDTHH:MM:SSZ"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signing_date: Option<String>,
+
+    /// The reason for signing from the /Reason entry.
+    ///
+    /// None if /Reason is absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+
+    /// The location of signing from the /Location entry.
+    ///
+    /// None if /Location is absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+
+    /// The signature format / filter from the /SubFilter entry.
+    ///
+    /// Indicates the signature format: "adbe.pkcs7.detached", "adbe.x509.rsa.sha1", etc.
+    /// None if /SubFilter is absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sub_filter: Option<String>,
+
+    /// The /ByteRange array defining which bytes of the file are signed.
+    ///
+    /// Format: array of 4 integers [offset, length, offset, length] defining two byte ranges.
+    /// None if /ByteRange is missing or malformed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub byte_range: Option<Vec<u64>>,
+
+    /// Fraction of the file covered by the signature (0.0 to 1.0).
+    ///
+    /// Computed as `(byte_range[1] + byte_range[3]) / file_size`.
+    /// None if /ByteRange is missing, malformed, or file_size is unknown.
+    ///
+    /// Values < 1.0 indicate partial signatures (a common red flag for tampered docs).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub coverage_fraction: Option<f64>,
+
+    /// Validation status — always "not_checked" in v1.
+    ///
+    /// Future versions may add "valid", "invalid", "indeterminate" as cryptographic
+    /// validation is implemented. This is a string enum for schema stability.
+    pub validation_status: String,
+}
+
+impl From<Signature> for SignatureJson {
+    fn from(sig: Signature) -> Self {
+        SignatureJson {
+            field_name: sig.field_name,
+            signer_name: sig.signer_name,
+            signing_date: sig.signing_date,
+            reason: sig.reason,
+            location: sig.location,
+            sub_filter: sig.sub_filter,
+            byte_range: sig.byte_range,
+            coverage_fraction: sig.coverage_fraction,
+            validation_status: sig.validation_status,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -601,34 +690,32 @@ mod tests {
         let table = TableJson {
             id: "table_0".to_string(),
             bbox: [50.0, 100.0, 550.0, 400.0],
-            rows: vec![
-                RowJson {
-                    bbox: [50.0, 350.0, 550.0, 400.0],
-                    cells: vec![
-                        CellJson {
-                            bbox: [50.0, 350.0, 200.0, 400.0],
-                            text: "Header 1".to_string(),
-                            spans: vec![0],
-                            row: 0,
-                            col: 0,
-                            rowspan: 1,
-                            colspan: 1,
-                            is_header_row: true,
-                        },
-                        CellJson {
-                            bbox: [200.0, 350.0, 550.0, 400.0],
-                            text: "Header 2".to_string(),
-                            spans: vec![1],
-                            row: 0,
-                            col: 1,
-                            rowspan: 1,
-                            colspan: 1,
-                            is_header_row: true,
-                        },
-                    ],
-                    is_header: true,
-                },
-            ],
+            rows: vec![RowJson {
+                bbox: [50.0, 350.0, 550.0, 400.0],
+                cells: vec![
+                    CellJson {
+                        bbox: [50.0, 350.0, 200.0, 400.0],
+                        text: "Header 1".to_string(),
+                        spans: vec![0],
+                        row: 0,
+                        col: 0,
+                        rowspan: 1,
+                        colspan: 1,
+                        is_header_row: true,
+                    },
+                    CellJson {
+                        bbox: [200.0, 350.0, 550.0, 400.0],
+                        text: "Header 2".to_string(),
+                        spans: vec![1],
+                        row: 0,
+                        col: 1,
+                        rowspan: 1,
+                        colspan: 1,
+                        is_header_row: true,
+                    },
+                ],
+                is_header: true,
+            }],
             header_rows: 1,
             detection_method: "line_based".to_string(),
             continued: false,
@@ -673,7 +760,7 @@ mod tests {
             rows: vec![],
             header_rows: 1,
             detection_method: "line_based".to_string(),
-            continued: true,  // Table continues on next page
+            continued: true, // Table continues on next page
             continued_from_prev: false,
             page_index: 0,
         };
@@ -694,7 +781,7 @@ mod tests {
             header_rows: 0,
             detection_method: "line_based".to_string(),
             continued: false,
-            continued_from_prev: true,  // Continuation from previous page
+            continued_from_prev: true, // Continuation from previous page
             page_index: 1,
         };
 
@@ -709,18 +796,16 @@ mod tests {
     fn test_row_json_serialization() {
         let row = RowJson {
             bbox: [50.0, 100.0, 550.0, 150.0],
-            cells: vec![
-                CellJson {
-                    bbox: [50.0, 100.0, 200.0, 150.0],
-                    text: "Cell 1".to_string(),
-                    spans: vec![],
-                    row: 0,
-                    col: 0,
-                    rowspan: 1,
-                    colspan: 1,
-                    is_header_row: false,
-                },
-            ],
+            cells: vec![CellJson {
+                bbox: [50.0, 100.0, 200.0, 150.0],
+                text: "Cell 1".to_string(),
+                spans: vec![],
+                row: 0,
+                col: 0,
+                rowspan: 1,
+                colspan: 1,
+                is_header_row: false,
+            }],
             is_header: false,
         };
 
@@ -739,7 +824,7 @@ mod tests {
             spans: vec![0, 1, 2],
             row: 1,
             col: 0,
-            rowspan: 2,  // Spans 2 rows
+            rowspan: 2, // Spans 2 rows
             colspan: 1,
             is_header_row: false,
         };
@@ -784,7 +869,7 @@ mod tests {
                             row: 0,
                             col: 1,
                             rowspan: 1,
-                            colspan: 2,  // Merged cell
+                            colspan: 2, // Merged cell
                             is_header_row: true,
                         },
                     ],
@@ -842,7 +927,7 @@ mod tests {
 
         // Verify row structure
         assert_eq!(deserialized.rows[0].cells.len(), 2);
-        assert_eq!(deserialized.rows[0].cells[1].colspan, 2);  // Merged cell preserved
+        assert_eq!(deserialized.rows[0].cells[1].colspan, 2); // Merged cell preserved
     }
 
     #[test]
@@ -865,7 +950,13 @@ mod tests {
         assert!(page_json_with_empty_tables["tables"].is_array());
 
         // Verify it's empty
-        assert_eq!(page_json_with_empty_tables["tables"].as_array().unwrap().len(), 0);
+        assert_eq!(
+            page_json_with_empty_tables["tables"]
+                .as_array()
+                .unwrap()
+                .len(),
+            0
+        );
 
         // Test with non-empty tables array
         let page_json_with_tables = json!({
@@ -906,5 +997,93 @@ mod tests {
         assert!(table_block.get("bbox").is_some());
         assert!(table_block.get("table_index").is_some());
         assert_eq!(table_block["table_index"], 0);
+    }
+
+    #[test]
+    fn test_signature_json_full() {
+        let sig = SignatureJson {
+            field_name: "employer_sig".to_string(),
+            signer_name: "John Doe".to_string(),
+            signing_date: Some("2023-01-15T14:30:45Z".to_string()),
+            reason: Some("Contract approval".to_string()),
+            location: Some("New York, NY".to_string()),
+            sub_filter: Some("adbe.pkcs7.detached".to_string()),
+            byte_range: Some(vec![0, 1000, 2000, 500]),
+            coverage_fraction: Some(0.5),
+            validation_status: "not_checked".to_string(),
+        };
+
+        let json_str = serde_json::to_string(&sig).unwrap();
+        let json_val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+
+        assert_eq!(json_val["field_name"], "employer_sig");
+        assert_eq!(json_val["signer_name"], "John Doe");
+        assert_eq!(json_val["signing_date"], "2023-01-15T14:30:45Z");
+        assert_eq!(json_val["reason"], "Contract approval");
+        assert_eq!(json_val["location"], "New York, NY");
+        assert_eq!(json_val["sub_filter"], "adbe.pkcs7.detached");
+        assert_eq!(json_val["validation_status"], "not_checked");
+
+        // Round-trip test
+        let deserialized: SignatureJson = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(deserialized, sig);
+    }
+
+    #[test]
+    fn test_signature_json_minimal_unsigned() {
+        let sig = SignatureJson {
+            field_name: "blank_sig".to_string(),
+            signer_name: String::new(),
+            signing_date: None,
+            reason: None,
+            location: None,
+            sub_filter: None,
+            byte_range: None,
+            coverage_fraction: None,
+            validation_status: "not_checked".to_string(),
+        };
+
+        let json_str = serde_json::to_string(&sig).unwrap();
+        let json_val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+
+        assert_eq!(json_val["field_name"], "blank_sig");
+        assert_eq!(json_val["signer_name"], "");
+        assert_eq!(json_val["validation_status"], "not_checked");
+
+        // Optional fields should not be present in JSON when None
+        assert!(json_val.get("signing_date").is_none());
+        assert!(json_val.get("reason").is_none());
+        assert!(json_val.get("location").is_none());
+        assert!(json_val.get("sub_filter").is_none());
+        assert!(json_val.get("byte_range").is_none());
+        assert!(json_val.get("coverage_fraction").is_none());
+    }
+
+    #[test]
+    fn test_signature_json_round_trip() {
+        let sig = SignatureJson {
+            field_name: "test_sig".to_string(),
+            signer_name: "Alice Smith".to_string(),
+            signing_date: Some("2023-06-01T10:00:00+05:30".to_string()),
+            reason: None,
+            location: Some("San Francisco, CA".to_string()),
+            sub_filter: Some("adbe.x509.rsa.sha1".to_string()),
+            byte_range: Some(vec![0, 2048, 4096, 1024]),
+            coverage_fraction: Some(0.75),
+            validation_status: "not_checked".to_string(),
+        };
+
+        let json_str = serde_json::to_string(&sig).unwrap();
+        let deserialized: SignatureJson = serde_json::from_str(&json_str).unwrap();
+
+        assert_eq!(deserialized.field_name, sig.field_name);
+        assert_eq!(deserialized.signer_name, sig.signer_name);
+        assert_eq!(deserialized.signing_date, sig.signing_date);
+        assert_eq!(deserialized.reason, sig.reason);
+        assert_eq!(deserialized.location, sig.location);
+        assert_eq!(deserialized.sub_filter, sig.sub_filter);
+        assert_eq!(deserialized.byte_range, sig.byte_range);
+        assert_eq!(deserialized.coverage_fraction, sig.coverage_fraction);
+        assert_eq!(deserialized.validation_status, sig.validation_status);
     }
 }

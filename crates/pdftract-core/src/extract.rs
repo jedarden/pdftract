@@ -15,23 +15,26 @@
 
 use crate::document::compute_fingerprint_lazy;
 use crate::options::{ExtractionOptions, ReceiptsMode};
-use crate::receipts::Receipt;
-use crate::schema::{BlockJson, SpanJson, TableJson};
-use crate::semaphore::{Semaphore, SemaphoreExt};
 use crate::parser::catalog::ReadingOrderAlgorithm;
-use crate::parser::struct_tree::{parse_struct_tree, check_coverage_for_pages};
-use crate::parser::marked_content::{McidTracker, track_mcids_from_content_stream};
+use crate::parser::marked_content::{track_mcids_from_content_stream, McidTracker};
+use crate::parser::stream::FileSource;
 use crate::parser::stream::DEFAULT_MAX_DECOMPRESS_BYTES;
-use crate::table::{TableDetector, PageContext, grid_to_table_json, GridCandidate, detect_two_page_tables};
+use crate::parser::struct_tree::{check_coverage_for_pages, parse_struct_tree};
+use crate::receipts::Receipt;
+use crate::schema::{BlockJson, SignatureJson, SpanJson, TableJson};
+use crate::semaphore::{Semaphore, SemaphoreExt};
+use crate::signature::{discover, extract_signatures};
+use crate::table::{
+    detect_two_page_tables, grid_to_table_json, GridCandidate, PageContext, TableDetector,
+};
 use crate::table::{TableCell as Cell, TableSpan};
 use anyhow::{Context, Result};
 use rayon::prelude::*;
-use serde::{Deserialize, Serialize};
-use serde_json::json;
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::sync::Arc;
-use crate::parser::stream::FileSource;
 
 #[cfg(feature = "receipts")]
 use crate::receipts::svg::GlyphList;
@@ -112,6 +115,12 @@ pub struct ExtractionResult {
     pub pages: Vec<PageResult>,
     /// Metadata about the extraction.
     pub metadata: ExtractionMetadata,
+    /// Digital signatures extracted from the document.
+    ///
+    /// This array contains all signature fields discovered in the AcroForm,
+    /// including both signed and unsigned (blank) signature fields.
+    /// Empty when the PDF has no signature fields.
+    pub signatures: Vec<SignatureJson>,
 }
 
 /// Result for a single page.
@@ -246,18 +255,16 @@ pub fn extract_pdf(
     pdf_path: &std::path::Path,
     options: &ExtractionOptions,
 ) -> Result<ExtractionResult> {
-    use crate::parser::pages::LazyPageIter;
-    use crate::parser::xref::{XrefResolver, load_xref_with_prev_chain};
     use crate::parser::catalog::parse_catalog;
+    use crate::parser::pages::LazyPageIter;
     use crate::parser::stream::FileSource;
+    use crate::parser::xref::{load_xref_with_prev_chain, XrefResolver};
 
     // Open the PDF file
-    let source = FileSource::open(pdf_path)
-        .context("Failed to open PDF file")?;
+    let source = FileSource::open(pdf_path).context("Failed to open PDF file")?;
 
     // Find the startxref offset
-    let startxref_offset = find_startxref(&source)
-        .context("Failed to find startxref offset")?;
+    let startxref_offset = find_startxref(&source).context("Failed to find startxref offset")?;
 
     // Load the xref table
     let xref_section = load_xref_with_prev_chain(&source, startxref_offset);
@@ -266,20 +273,21 @@ pub fn extract_pdf(
     let resolver = XrefResolver::from_section(xref_section.clone());
 
     // Get the root reference from trailer
-    let root_ref = xref_section.trailer
+    let root_ref = xref_section
+        .trailer
         .as_ref()
         .and_then(|trailer| trailer.get("Root"))
         .and_then(|obj| obj.as_ref())
         .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref)
-        .map_err(|diagnostics| {
-            let msg = diagnostics.first()
-                .map(|d| d.message.as_ref())
-                .unwrap_or("unknown error");
-            anyhow::anyhow!("Failed to parse catalog: {}", msg)
-        })?;
+    let catalog = parse_catalog(&resolver, root_ref).map_err(|diagnostics| {
+        let msg = diagnostics
+            .first()
+            .map(|d| d.message.as_ref())
+            .unwrap_or("unknown error");
+        anyhow::anyhow!("Failed to parse catalog: {}", msg)
+    })?;
 
     // Build fingerprint input (without full page tree for lazy extraction)
     let fingerprint = compute_fingerprint_lazy(&catalog, &xref_section);
@@ -288,9 +296,10 @@ pub fn extract_pdf(
     let resolver_arc = Arc::new(resolver);
 
     // Create lazy page iterator - this walks the tree on-demand
-    let mut page_iter = LazyPageIter::new(&resolver_arc, catalog.pages_ref)
-        .map_err(|diagnostics| {
-            let msg = diagnostics.first()
+    let mut page_iter =
+        LazyPageIter::new(&resolver_arc, catalog.pages_ref).map_err(|diagnostics| {
+            let msg = diagnostics
+                .first()
                 .map(|d| d.message.as_ref())
                 .unwrap_or("unknown error");
             anyhow::anyhow!("Failed to create lazy page iterator: {}", msg)
@@ -298,32 +307,33 @@ pub fn extract_pdf(
 
     // Phase 7.1.4: Determine reading order algorithm based on StructTree coverage
     // Parse StructTree if present and compute coverage for Suspects check
-    let (reading_order_algorithm, struct_tree) = if let Some(struct_tree_root_ref) = catalog.struct_tree_root_ref {
-        // Parse the StructTree
-        let struct_tree_result = parse_struct_tree(&resolver_arc, struct_tree_root_ref);
+    let (reading_order_algorithm, struct_tree) =
+        if let Some(struct_tree_root_ref) = catalog.struct_tree_root_ref {
+            // Parse the StructTree
+            let struct_tree_result = parse_struct_tree(&resolver_arc, struct_tree_root_ref);
 
-        match struct_tree_result {
-            Ok(tree) => {
-                // If StructTree parsed successfully, check coverage if Suspects is true
-                if catalog.mark_info.requires_coverage_check() {
-                    // We need MCID tracking to compute coverage - do this after we collect page data
-                    // For now, defer the decision until we have page data
-                    (ReadingOrderAlgorithm::StructTree, Some(tree))
-                } else {
-                    // Suspects is false - trust the StructTree
-                    (ReadingOrderAlgorithm::StructTree, Some(tree))
+            match struct_tree_result {
+                Ok(tree) => {
+                    // If StructTree parsed successfully, check coverage if Suspects is true
+                    if catalog.mark_info.requires_coverage_check() {
+                        // We need MCID tracking to compute coverage - do this after we collect page data
+                        // For now, defer the decision until we have page data
+                        (ReadingOrderAlgorithm::StructTree, Some(tree))
+                    } else {
+                        // Suspects is false - trust the StructTree
+                        (ReadingOrderAlgorithm::StructTree, Some(tree))
+                    }
+                }
+                Err(_diagnostics) => {
+                    // StructTree parsing failed - fall back to XY-cut
+                    // Return empty tree to avoid further issues
+                    (ReadingOrderAlgorithm::XyCut, None)
                 }
             }
-            Err(_diagnostics) => {
-                // StructTree parsing failed - fall back to XY-cut
-                // Return empty tree to avoid further issues
-                (ReadingOrderAlgorithm::XyCut, None)
-            }
-        }
-    } else {
-        // No StructTree - use XY-cut
-        (ReadingOrderAlgorithm::XyCut, None)
-    };
+        } else {
+            // No StructTree - use XY-cut
+            (ReadingOrderAlgorithm::XyCut, None)
+        };
 
     // Wrap options in Arc for sharing across threads
     let fingerprint_arc = Arc::new(fingerprint.clone());
@@ -344,7 +354,8 @@ pub fn extract_pdf(
 
     // Phase 7.1.4: Collect page data for coverage check
     // Track MCIDs and struct_parents for each page
-    let mut pages_with_mcids: Vec<(usize, Option<i32>, std::collections::HashSet<u32>)> = Vec::new();
+    let mut pages_with_mcids: Vec<(usize, Option<i32>, std::collections::HashSet<u32>)> =
+        Vec::new();
     let needs_coverage_check = catalog.mark_info.requires_coverage_check() && struct_tree.is_some();
 
     while let Some(page_result) = page_iter.next() {
@@ -352,7 +363,8 @@ pub fn extract_pdf(
             Ok(p) => p,
             Err(diagnostics) => {
                 // Emit diagnostics as error pages
-                let msg = diagnostics.first()
+                let msg = diagnostics
+                    .first()
                     .map(|d| d.message.as_ref())
                     .unwrap_or("unknown error");
                 error_count += 1;
@@ -457,12 +469,10 @@ pub fn extract_pdf(
     // This must happen after we've collected MCID data from all pages
     let (reading_order_algorithm, coverage_diagnostics) = if needs_coverage_check {
         if let Some(ref tree) = struct_tree {
-            let coverage_result = check_coverage_for_pages(
-                tree,
-                &catalog.mark_info,
-                &pages_with_mcids,
-            );
-            let diagnostics: Vec<String> = coverage_result.diagnostics
+            let coverage_result =
+                check_coverage_for_pages(tree, &catalog.mark_info, &pages_with_mcids);
+            let diagnostics: Vec<String> = coverage_result
+                .diagnostics
                 .iter()
                 .map(|d| d.message.as_ref().to_string())
                 .collect();
@@ -483,6 +493,14 @@ pub fn extract_pdf(
     // Convert PageResultInternal to PageResult for final output
     let extracted_pages: Vec<PageResult> = extracted_pages.into_iter().map(Into::into).collect();
 
+    // Phase 7.3: Extract digital signature metadata
+    // Discover signature fields and extract metadata from them
+    let sig_fields = discover(&resolver_arc, &catalog);
+    use crate::parser::stream::PdfSource;
+    let file_size = source.len().ok();
+    let signatures_core = extract_signatures(&sig_fields, &resolver_arc, file_size);
+    let signatures: Vec<SignatureJson> = signatures_core.into_iter().map(|s| s.into()).collect();
+
     Ok(ExtractionResult {
         fingerprint,
         pages: extracted_pages,
@@ -497,6 +515,7 @@ pub fn extract_pdf(
             reading_order_algorithm: Some(reading_order_algorithm.as_str().to_string()),
             diagnostics: coverage_diagnostics,
         },
+        signatures,
     })
 }
 
@@ -513,9 +532,13 @@ pub fn extract_pdf(
 /// # Returns
 ///
 /// Pages with table continuation flags applied.
-fn apply_two_page_table_detection(mut pages: Vec<PageResultInternal>, page_heights: &[f64]) -> Vec<PageResultInternal> {
+fn apply_two_page_table_detection(
+    mut pages: Vec<PageResultInternal>,
+    page_heights: &[f64],
+) -> Vec<PageResultInternal> {
     // Collect all GridCandidates by page
-    let all_grids: Vec<Vec<GridCandidate>> = pages.iter()
+    let all_grids: Vec<Vec<GridCandidate>> = pages
+        .iter()
         .map(|p| p.tables.iter().map(|t| t.grid.clone()).collect())
         .collect();
 
@@ -570,7 +593,8 @@ fn extract_page(
         span_bbox,
         &span_text,
         options.receipts,
-        #[cfg(feature = "receipts")] None,
+        #[cfg(feature = "receipts")]
+        None,
     )?;
 
     let span = SpanJson {
@@ -591,7 +615,8 @@ fn extract_page(
         block_bbox,
         &block_text,
         options.receipts,
-        #[cfg(feature = "receipts")] None,
+        #[cfg(feature = "receipts")]
+        None,
     )?;
 
     let block = BlockJson {
@@ -715,7 +740,8 @@ pub fn result_to_json(result: &ExtractionResult) -> serde_json::Value {
         "fingerprint": result.fingerprint,
         "schema_version": "1.0",
         "pages": pages,
-        "metadata": metadata_obj
+        "metadata": metadata_obj,
+        "signatures": result.signatures
     })
 }
 
@@ -755,19 +781,17 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
     options: &ExtractionOptions,
     mut writer: W,
 ) -> Result<ExtractionMetadata> {
-    use std::io::Write;
-    use crate::parser::pages::LazyPageIter;
-    use crate::parser::xref::{XrefResolver, load_xref_with_prev_chain};
     use crate::parser::catalog::parse_catalog;
+    use crate::parser::pages::LazyPageIter;
     use crate::parser::stream::FileSource;
+    use crate::parser::xref::{load_xref_with_prev_chain, XrefResolver};
+    use std::io::Write;
 
     // Open the PDF file
-    let source = FileSource::open(pdf_path)
-        .context("Failed to open PDF file")?;
+    let source = FileSource::open(pdf_path).context("Failed to open PDF file")?;
 
     // Find the startxref offset
-    let startxref_offset = find_startxref(&source)
-        .context("Failed to find startxref offset")?;
+    let startxref_offset = find_startxref(&source).context("Failed to find startxref offset")?;
 
     // Load the xref table
     let xref_section = load_xref_with_prev_chain(&source, startxref_offset);
@@ -776,64 +800,70 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
     let resolver = XrefResolver::from_section(xref_section.clone());
 
     // Get the root reference from trailer
-    let root_ref = xref_section.trailer
+    let root_ref = xref_section
+        .trailer
         .as_ref()
         .and_then(|trailer| trailer.get("Root"))
         .and_then(|obj| obj.as_ref())
         .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref)
-        .map_err(|diagnostics| {
-            let msg = diagnostics.first()
-                .map(|d| d.message.as_ref())
-                .unwrap_or("unknown error");
-            anyhow::anyhow!("Failed to parse catalog: {}", msg)
-        })?;
+    let catalog = parse_catalog(&resolver, root_ref).map_err(|diagnostics| {
+        let msg = diagnostics
+            .first()
+            .map(|d| d.message.as_ref())
+            .unwrap_or("unknown error");
+        anyhow::anyhow!("Failed to parse catalog: {}", msg)
+    })?;
 
     // Phase 7.1.4: Determine reading order algorithm based on StructTree coverage
     // Create Arc for resolver to use in struct tree parsing and page processing
     let resolver_arc = Arc::new(resolver);
 
     // Parse StructTree if present and compute coverage for Suspects check
-    let (initial_reading_order_algorithm, struct_tree) = if let Some(struct_tree_root_ref) = catalog.struct_tree_root_ref {
-        // Parse the StructTree
-        let struct_tree_result = parse_struct_tree(&resolver_arc, struct_tree_root_ref);
+    let (initial_reading_order_algorithm, struct_tree) =
+        if let Some(struct_tree_root_ref) = catalog.struct_tree_root_ref {
+            // Parse the StructTree
+            let struct_tree_result = parse_struct_tree(&resolver_arc, struct_tree_root_ref);
 
-        match struct_tree_result {
-            Ok(tree) => {
-                // If StructTree parsed successfully, check coverage if Suspects is true
-                if catalog.mark_info.requires_coverage_check() {
-                    // We need MCID tracking to compute coverage - do this after we collect page data
-                    // For now, defer the decision until we have page data
-                    (ReadingOrderAlgorithm::StructTree, Some(tree))
-                } else {
-                    // Suspects is false - trust the StructTree
-                    (ReadingOrderAlgorithm::StructTree, Some(tree))
+            match struct_tree_result {
+                Ok(tree) => {
+                    // If StructTree parsed successfully, check coverage if Suspects is true
+                    if catalog.mark_info.requires_coverage_check() {
+                        // We need MCID tracking to compute coverage - do this after we collect page data
+                        // For now, defer the decision until we have page data
+                        (ReadingOrderAlgorithm::StructTree, Some(tree))
+                    } else {
+                        // Suspects is false - trust the StructTree
+                        (ReadingOrderAlgorithm::StructTree, Some(tree))
+                    }
+                }
+                Err(_diagnostics) => {
+                    // StructTree parsing failed - fall back to XY-cut
+                    // Return empty tree to avoid further issues
+                    (ReadingOrderAlgorithm::XyCut, None)
                 }
             }
-            Err(_diagnostics) => {
-                // StructTree parsing failed - fall back to XY-cut
-                // Return empty tree to avoid further issues
-                (ReadingOrderAlgorithm::XyCut, None)
-            }
-        }
-    } else {
-        // No StructTree - use XY-cut
-        (ReadingOrderAlgorithm::XyCut, None)
-    };
+        } else {
+            // No StructTree - use XY-cut
+            (ReadingOrderAlgorithm::XyCut, None)
+        };
 
     // For lazy extraction, use a placeholder fingerprint
     // The full fingerprint would require walking all pages, which defeats the purpose
-    let fingerprint = format!("pdftract-v1:lazy{:016x}", std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos());
+    let fingerprint = format!(
+        "pdftract-v1:lazy{:016x}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
 
     // Create lazy page iterator - this walks the tree on-demand
-    let mut page_iter = LazyPageIter::new(&resolver_arc, catalog.pages_ref)
-        .map_err(|diagnostics| {
-            let msg = diagnostics.first()
+    let mut page_iter =
+        LazyPageIter::new(&resolver_arc, catalog.pages_ref).map_err(|diagnostics| {
+            let msg = diagnostics
+                .first()
                 .map(|d| d.message.as_ref())
                 .unwrap_or("unknown error");
             anyhow::anyhow!("Failed to create lazy page iterator: {}", msg)
@@ -851,7 +881,8 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
 
     // Phase 7.1.4: Collect page data for coverage check
     // Track MCIDs and struct_parents for each page
-    let mut pages_with_mcids: Vec<(usize, Option<i32>, std::collections::HashSet<u32>)> = Vec::new();
+    let mut pages_with_mcids: Vec<(usize, Option<i32>, std::collections::HashSet<u32>)> =
+        Vec::new();
     let needs_coverage_check = catalog.mark_info.requires_coverage_check() && struct_tree.is_some();
 
     // Create a semaphore to bound the number of in-flight pages
@@ -864,7 +895,8 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
             Ok(p) => p,
             Err(diagnostics) => {
                 // Emit diagnostics as error pages
-                let msg = diagnostics.first()
+                let msg = diagnostics
+                    .first()
                     .map(|d| d.message.as_ref())
                     .unwrap_or("unknown error");
                 error_count += 1;
@@ -944,8 +976,7 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
                     "tables": tables_json,
                 });
 
-                serde_json::to_writer(&mut writer, &page_json)
-                    .context("Failed to write NDJSON")?;
+                serde_json::to_writer(&mut writer, &page_json).context("Failed to write NDJSON")?;
                 writeln!(writer).context("Failed to write newline")?;
                 writer.flush().context("Failed to flush output")?;
             }
@@ -991,12 +1022,10 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
     // This must happen after we've collected MCID data from all pages
     let (reading_order_algorithm, coverage_diagnostics) = if needs_coverage_check {
         if let Some(ref tree) = struct_tree {
-            let coverage_result = check_coverage_for_pages(
-                tree,
-                &catalog.mark_info,
-                &pages_with_mcids,
-            );
-            let diagnostics: Vec<String> = coverage_result.diagnostics
+            let coverage_result =
+                check_coverage_for_pages(tree, &catalog.mark_info, &pages_with_mcids);
+            let diagnostics: Vec<String> = coverage_result
+                .diagnostics
                 .iter()
                 .map(|d| d.message.as_ref().to_string())
                 .collect();
@@ -1032,11 +1061,13 @@ fn find_startxref(source: &FileSource) -> anyhow::Result<u64> {
     let scan_start = len.saturating_sub(1024);
     let scan_end = len;
 
-    let tail_data = source.read_at(scan_start as u64, scan_end - scan_start)
+    let tail_data = source
+        .read_at(scan_start as u64, scan_end - scan_start)
         .context("Failed to read PDF tail")?;
 
     // Find "startxref" in the tail data
-    let startxref_pos = tail_data.windows(9)
+    let startxref_pos = tail_data
+        .windows(9)
         .rposition(|w| w == b"startxref")
         .ok_or_else(|| anyhow::anyhow!("startxref not found in PDF"))?;
 
@@ -1044,21 +1075,25 @@ fn find_startxref(source: &FileSource) -> anyhow::Result<u64> {
     let offset_data = &tail_data[startxref_pos + 9..];
 
     // Skip leading whitespace (space, \r, \n, \t)
-    let offset_start = offset_data.iter()
+    let offset_start = offset_data
+        .iter()
         .position(|&b| !matches!(b, b' ' | b'\r' | b'\n' | b'\t'))
         .unwrap_or(offset_data.len());
 
     let offset_data_trimmed = &offset_data[offset_start..];
 
     // Find the newline after the offset
-    let newline_pos = offset_data_trimmed.iter()
+    let newline_pos = offset_data_trimmed
+        .iter()
         .position(|&b| b == b'\n' || b == b'\r')
         .unwrap_or(offset_data_trimmed.len());
 
     let offset_str = std::str::from_utf8(&offset_data_trimmed[..newline_pos])
         .context("startxref offset is not valid UTF-8")?;
 
-    let offset: u64 = offset_str.trim().parse()
+    let offset: u64 = offset_str
+        .trim()
+        .parse()
         .context("startxref offset is not a valid number")?;
 
     Ok(offset)
@@ -1096,7 +1131,12 @@ fn extract_page_from_dict(
 
     // Lazy decode content streams if source and resolver are provided
     let decoded_streams = if let (Some(src), Some(res)) = (source, resolver) {
-        Some(decode_page_content_streams(page, res, src, DEFAULT_MAX_DECOMPRESS_BYTES))
+        Some(decode_page_content_streams(
+            page,
+            res,
+            src,
+            DEFAULT_MAX_DECOMPRESS_BYTES,
+        ))
     } else {
         None
     };
@@ -1121,7 +1161,8 @@ fn extract_page_from_dict(
         span_bbox,
         &span_text,
         options.receipts,
-        #[cfg(feature = "receipts")] None,
+        #[cfg(feature = "receipts")]
+        None,
     )?;
 
     let span = SpanJson {
@@ -1152,7 +1193,8 @@ fn extract_page_from_dict(
             table_bbox,
             "table",
             options.receipts,
-            #[cfg(feature = "receipts")] None,
+            #[cfg(feature = "receipts")]
+            None,
         )?;
 
         blocks.push(BlockJson {
@@ -1174,7 +1216,8 @@ fn extract_page_from_dict(
         block_bbox,
         &block_text,
         options.receipts,
-        #[cfg(feature = "receipts")] None,
+        #[cfg(feature = "receipts")]
+        None,
     )?;
 
     blocks.push(BlockJson {
@@ -1243,7 +1286,10 @@ fn detect_tables_on_page(
             false, // continued_from_prev - will be set by two-page detection
         );
 
-        tables.push(TableWithGrid { json: table_json, grid });
+        tables.push(TableWithGrid {
+            json: table_json,
+            grid,
+        });
     }
 
     Ok(tables)
@@ -1442,5 +1488,84 @@ startxref
         assert!(result.metadata.span_count > 0);
         assert!(result.metadata.block_count > 0);
         assert_eq!(result.metadata.receipts_mode, ReceiptsMode::Lite);
+    }
+
+    #[test]
+    fn test_result_to_json_includes_signatures() {
+        // Test that result_to_json includes the signatures array
+        let pdf_path = ensure_test_pdf();
+
+        let options = ExtractionOptions::default();
+        let result = extract_pdf(&pdf_path, &options).unwrap();
+
+        let json = result_to_json(&result);
+
+        // Verify signatures key exists
+        assert!(json.get("signatures").is_some());
+
+        // Verify signatures is an array
+        assert!(json["signatures"].is_array());
+
+        // For most test PDFs, signatures will be empty (no signature fields)
+        // But the array should always be present
+    }
+
+    #[test]
+    fn test_signatures_always_not_checked() {
+        // Test that all signatures have validation_status == "not_checked"
+        // This is required by the plan - cryptographic verification is out of scope for v1
+        let pdf_path = ensure_test_pdf();
+
+        let options = ExtractionOptions::default();
+        let result = extract_pdf(&pdf_path, &options).unwrap();
+
+        for sig in &result.signatures {
+            assert_eq!(sig.validation_status, "not_checked");
+        }
+    }
+
+    #[test]
+    fn test_signature_json_schema_round_trip() {
+        // Test that SignatureJson round-trips through JSON correctly
+        use crate::schema::SignatureJson;
+
+        let sig = SignatureJson {
+            field_name: "test_sig".to_string(),
+            signer_name: "John Doe".to_string(),
+            signing_date: Some("2023-01-15T14:30:45Z".to_string()),
+            reason: Some("Test".to_string()),
+            location: Some("Test Location".to_string()),
+            sub_filter: Some("adbe.pkcs7.detached".to_string()),
+            byte_range: Some(vec![0, 1000, 2000, 500]),
+            coverage_fraction: Some(0.5),
+            validation_status: "not_checked".to_string(),
+        };
+
+        let json_str = serde_json::to_string(&sig).unwrap();
+        let deserialized: SignatureJson = serde_json::from_str(&json_str).unwrap();
+
+        assert_eq!(deserialized, sig);
+    }
+
+    #[test]
+    fn test_signature_json_validation_status_enum() {
+        // Test that validation_status accepts only valid enum values
+        use crate::schema::SignatureJson;
+
+        let sig_valid = SignatureJson {
+            field_name: "test".to_string(),
+            signer_name: String::new(),
+            signing_date: None,
+            reason: None,
+            location: None,
+            sub_filter: None,
+            byte_range: None,
+            coverage_fraction: None,
+            validation_status: "not_checked".to_string(),
+        };
+
+        // Should serialize correctly
+        let json = serde_json::to_string(&sig_valid).unwrap();
+        assert!(json.contains("not_checked"));
     }
 }

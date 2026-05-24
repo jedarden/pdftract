@@ -18,12 +18,20 @@
       "items": {
         "$ref": "#/$defs/PageResult"
       }
+    },
+    "signatures": {
+      "description": "Digital signatures extracted from the document.\n\nThis array contains all signature fields discovered in the AcroForm,\nincluding both signed and unsigned (blank) signature fields.\nEmpty when the PDF has no signature fields.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/SignatureJson"
+      }
     }
   },
   "required": [
     "fingerprint",
     "pages",
-    "metadata"
+    "metadata",
+    "signatures"
   ],
   "$defs": {
     "BlockJson": {
@@ -483,6 +491,75 @@
         "continued",
         "continued_from_prev",
         "page_index"
+      ]
+    },
+    "SignatureJson": {
+      "description": "JSON representation of a digital signature.\n\nThis struct represents a signature extracted from a PDF signature field,\nincluding signer identity, timestamp, and coverage information.\n\nPer the plan (Phase 7.3), pdftract does NOT perform cryptographic validation\nin v1. The `validation_status` field is always \"not_checked\" — future versions\nmay add \"valid\", \"invalid\", or \"indeterminate\" as cryptographic validation\nis implemented.",
+      "type": "object",
+      "properties": {
+        "byte_range": {
+          "description": "The /ByteRange array defining which bytes of the file are signed.\n\nFormat: array of 4 integers [offset, length, offset, length] defining two byte ranges.\nNone if /ByteRange is missing or malformed.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "coverage_fraction": {
+          "description": "Fraction of the file covered by the signature (0.0 to 1.0).\n\nComputed as `(byte_range[1] + byte_range[3]) / file_size`.\nNone if /ByteRange is missing, malformed, or file_size is unknown.\n\nValues < 1.0 indicate partial signatures (a common red flag for tampered docs).",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "field_name": {
+          "description": "The absolute (dot-joined) field name from the AcroForm.\nExample: \"employer_signature\" or \"form.employee_sig\"",
+          "type": "string"
+        },
+        "location": {
+          "description": "The location of signing from the /Location entry.\n\nNone if /Location is absent.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "description": "The reason for signing from the /Reason entry.\n\nNone if /Reason is absent.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "signer_name": {
+          "description": "The signer's name from the /Name entry in the signature dictionary.\n\nEmpty string if /Name is absent.",
+          "type": "string"
+        },
+        "signing_date": {
+          "description": "The signing date as an ISO 8601 string (RFC 3339 format).\n\nParsed from the PDF /M date string. None if the date is missing,\nmalformed, or the field is unsigned.\n\nFormat: \"YYYY-MM-DDTHH:MM:SS+HH:MM\" or \"YYYY-MM-DDTHH:MM:SSZ\"",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sub_filter": {
+          "description": "The signature format / filter from the /SubFilter entry.\n\nIndicates the signature format: \"adbe.pkcs7.detached\", \"adbe.x509.rsa.sha1\", etc.\nNone if /SubFilter is absent.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "validation_status": {
+          "description": "Validation status — always \"not_checked\" in v1.\n\nFuture versions may add \"valid\", \"invalid\", \"indeterminate\" as cryptographic\nvalidation is implemented. This is a string enum for schema stability.",
+          "type": "string",
+          "enum": ["not_checked"]
+        }
+      },
+      "required": [
+        "field_name",
+        "signer_name",
+        "validation_status"
       ]
     }
   }

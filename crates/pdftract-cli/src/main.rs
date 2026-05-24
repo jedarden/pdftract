@@ -11,10 +11,10 @@ mod password;
 mod serve;
 mod verify_receipt;
 use codegen::Language;
-use pdftract_core::options::{ReceiptsMode, ExtractionOptions};
-use pdftract_core::extract::{extract_pdf, result_to_json};
 use pdftract_core::cache;
-use pdftract_core::markdown::{page_to_markdown, block_to_markdown};
+use pdftract_core::extract::{extract_pdf, result_to_json};
+use pdftract_core::markdown::{block_to_markdown, page_to_markdown};
+use pdftract_core::options::{ExtractionOptions, ReceiptsMode};
 
 // Re-export diagnostics for the --list-diagnostics and --explain-diagnostic commands
 pub use pdftract_core::diagnostics::{DiagCode, DiagInfo, DIAGNOSTIC_CATALOG};
@@ -318,7 +318,19 @@ fn main() -> Result<()> {
             no_cache,
             md_anchors,
         } => {
-            if let Err(e) = cmd_extract(input, password_stdin, password, &format, &receipts, ocr, ocr_language, cache_dir, &cache_size, no_cache, md_anchors) {
+            if let Err(e) = cmd_extract(
+                input,
+                password_stdin,
+                password,
+                &format,
+                &receipts,
+                ocr,
+                ocr_language,
+                cache_dir,
+                &cache_size,
+                no_cache,
+                md_anchors,
+            ) {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
@@ -361,21 +373,22 @@ fn main() -> Result<()> {
 
             // Validate and canonicalize the root directory if provided
             let root_path = match root {
-                Some(ref root_arg) => {
-                    match mcp::canonicalize_root(root_arg) {
-                        Ok(canonical) => Some(canonical),
-                        Err(e) => {
-                            eprintln!("Error: {}", e);
-                            std::process::exit(1);
-                        }
+                Some(ref root_arg) => match mcp::canonicalize_root(root_arg) {
+                    Ok(canonical) => Some(canonical),
+                    Err(e) => {
+                        eprintln!("Error: {}", e);
+                        std::process::exit(1);
                     }
-                }
+                },
                 None => None,
             };
 
             // Report root configuration
             if let Some(ref root) = root_path {
-                eprintln!("Root directory: {} (path-traversal protection enabled)", root.display());
+                eprintln!(
+                    "Root directory: {} (path-traversal protection enabled)",
+                    root.display()
+                );
             } else {
                 eprintln!("No root directory (trust-the-caller mode)");
             }
@@ -389,7 +402,13 @@ fn main() -> Result<()> {
             } else {
                 // HTTP mode (--bind was specified)
                 let bind_addr = bind.expect("--bind is Some when use_stdio is false");
-                if let Err(e) = mcp::run(bind_addr, auth_token_file, auth_token, Some(max_upload_mb), root_path) {
+                if let Err(e) = mcp::run(
+                    bind_addr,
+                    auth_token_file,
+                    auth_token,
+                    Some(max_upload_mb),
+                    root_path,
+                ) {
                     eprintln!("Error: {}", e);
                     std::process::exit(1);
                 }
@@ -500,8 +519,10 @@ fn cmd_extract(
     let cache_dir_ref = if let Some(ref dir) = cache_dir {
         if !no_cache {
             if !dir.exists() {
-                fs::create_dir_all(dir)
-                    .context(format!("Failed to create cache directory: {}", dir.display()))?;
+                fs::create_dir_all(dir).context(format!(
+                    "Failed to create cache directory: {}",
+                    dir.display()
+                ))?;
             }
             // Initialize cache index if it doesn't exist
             if cache::layout::index_path(dir).exists() {
@@ -526,13 +547,9 @@ fn cmd_extract(
     };
 
     // Perform extraction with cache integration
-    let (mut result, cache_status, cache_age) = cache::extract_with_cache(
-        &input,
-        &options,
-        cache_dir_ref,
-        no_cache,
-        cache_size_bytes,
-    ).context("Failed to extract PDF")?;
+    let (mut result, cache_status, cache_age) =
+        cache::extract_with_cache(&input, &options, cache_dir_ref, no_cache, cache_size_bytes)
+            .context("Failed to extract PDF")?;
 
     // Set cache status metadata
     result.metadata.cache_status = Some(cache_status);
@@ -577,9 +594,33 @@ fn cmd_extract(
                     }
                 }
             }
+
+            // Emit signatures footer if any signatures exist
+            if !result.signatures.is_empty() {
+                println!("\n## Signatures\n");
+                for sig in &result.signatures {
+                    println!("- **{}**: {}", sig.field_name, sig.signer_name);
+                    if let Some(date) = &sig.signing_date {
+                        println!("  - Date: {}", date);
+                    }
+                    if let Some(reason) = &sig.reason {
+                        println!("  - Reason: {}", reason);
+                    }
+                    if let Some(location) = &sig.location {
+                        println!("  - Location: {}", location);
+                    }
+                    if let Some(sub_filter) = &sig.sub_filter {
+                        println!("  - Format: {}", sub_filter);
+                    }
+                    println!("  - Validation Status: {}", sig.validation_status);
+                }
+            }
         }
         _ => {
-            eprintln!("Error: Unknown format '{}', expected 'json', 'text', or 'markdown'", format);
+            eprintln!(
+                "Error: Unknown format '{}', expected 'json', 'text', or 'markdown'",
+                format
+            );
             std::process::exit(2);
         }
     }
@@ -595,15 +636,26 @@ fn cmd_list_diagnostics() -> Result<()> {
     println!();
 
     // Group by category
-    let mut categories: std::collections::HashMap<&str, Vec<&DiagInfo>> = std::collections::HashMap::new();
+    let mut categories: std::collections::HashMap<&str, Vec<&DiagInfo>> =
+        std::collections::HashMap::new();
     for info in DIAGNOSTIC_CATALOG {
         categories.entry(info.category).or_default().push(info);
     }
 
     // Define category order
     let category_order = vec![
-        "STRUCT", "XREF", "STREAM", "ENCRYPTION", "PAGE", "FONT",
-        "OCR", "REMOTE", "GSTATE", "LAYOUT", "MCP", "CACHE",
+        "STRUCT",
+        "XREF",
+        "STREAM",
+        "ENCRYPTION",
+        "PAGE",
+        "FONT",
+        "OCR",
+        "REMOTE",
+        "GSTATE",
+        "LAYOUT",
+        "MCP",
+        "CACHE",
     ];
 
     for category in category_order {
@@ -614,7 +666,10 @@ fn cmd_list_diagnostics() -> Result<()> {
             for info in infos {
                 println!("{} ({})", info.code, info.severity);
                 println!("  Phase: {}", info.phase);
-                println!("  Recoverable: {}", if info.recoverable { "Yes" } else { "No" });
+                println!(
+                    "  Recoverable: {}",
+                    if info.recoverable { "Yes" } else { "No" }
+                );
                 println!("  Action: {}", info.suggested_action);
                 println!();
             }
@@ -638,7 +693,10 @@ fn cmd_explain_diagnostic(code: &str) -> Result<()> {
     println!("Diagnostic: {}", info.code);
     println!("Category: {}", info.category);
     println!("Severity: {}", info.severity);
-    println!("Recoverable: {}", if info.recoverable { "Yes" } else { "No" });
+    println!(
+        "Recoverable: {}",
+        if info.recoverable { "Yes" } else { "No" }
+    );
     println!("Phase Origin: {}", info.phase);
     println!();
     println!("Description:");
@@ -800,7 +858,9 @@ fn cmd_explain_diagnostic(code: &str) -> Result<()> {
         }
         DiagCode::EncryptionUnsupported => {
             println!("  Unsupported encryption or no password");
-            println!("  PDF is encrypted and no password was supplied or algorithm is unsupported.");
+            println!(
+                "  PDF is encrypted and no password was supplied or algorithm is unsupported."
+            );
         }
         DiagCode::EncryptionWrongPassword => {
             println!("  Password incorrect");
@@ -820,7 +880,9 @@ fn cmd_explain_diagnostic(code: &str) -> Result<()> {
         }
         DiagCode::FontGlyphUnmapped => {
             println!("  Glyph could not be mapped to Unicode");
-            println!("  A glyph has no entry in /ToUnicode CMap, AGL, fingerprint, or shape match.");
+            println!(
+                "  A glyph has no entry in /ToUnicode CMap, AGL, fingerprint, or shape match."
+            );
         }
         DiagCode::FontNotFound => {
             println!("  Font not found or couldn't be parsed");
@@ -939,22 +1001,31 @@ fn cmd_explain_diagnostic(code: &str) -> Result<()> {
     Ok(())
 }
 
-fn cmd_compare(actual: PathBuf, expected: PathBuf, tolerances: Option<PathBuf>, format: &str) -> Result<()> {
+fn cmd_compare(
+    actual: PathBuf,
+    expected: PathBuf,
+    tolerances: Option<PathBuf>,
+    format: &str,
+) -> Result<()> {
     let actual_json = fs::read_to_string(&actual)
         .context(format!("Failed to read actual results from {:?}", actual))?;
-    let actual_val: serde_json::Value = serde_json::from_str(&actual_json)
-        .context("Failed to parse actual results as JSON")?;
+    let actual_val: serde_json::Value =
+        serde_json::from_str(&actual_json).context("Failed to parse actual results as JSON")?;
 
-    let expected_json = fs::read_to_string(&expected)
-        .context(format!("Failed to read expected results from {:?}", expected))?;
-    let expected_val: serde_json::Value = serde_json::from_str(&expected_json)
-        .context("Failed to parse expected results as JSON")?;
+    let expected_json = fs::read_to_string(&expected).context(format!(
+        "Failed to read expected results from {:?}",
+        expected
+    ))?;
+    let expected_val: serde_json::Value =
+        serde_json::from_str(&expected_json).context("Failed to parse expected results as JSON")?;
 
     let tolerances_val = if let Some(tol_path) = tolerances {
         let tol_json = fs::read_to_string(&tol_path)
             .context(format!("Failed to read tolerances from {:?}", tol_path))?;
-        Some(serde_json::from_str::<serde_json::Value>(&tol_json)
-            .context("Failed to parse tolerances as JSON")?)
+        Some(
+            serde_json::from_str::<serde_json::Value>(&tol_json)
+                .context("Failed to parse tolerances as JSON")?,
+        )
     } else {
         None
     };
@@ -1016,10 +1087,10 @@ fn cmd_conformance(suite: PathBuf, sdk: &str, version: &str, output: PathBuf) ->
     println!("SDK: {} v{}", sdk, version);
     println!("Output: {:?}", output);
 
-    let suite_json = fs::read_to_string(&suite)
-        .context(format!("Failed to read suite from {:?}", suite))?;
-    let suite_val: serde_json::Value = serde_json::from_str(&suite_json)
-        .context("Failed to parse suite as JSON")?;
+    let suite_json =
+        fs::read_to_string(&suite).context(format!("Failed to read suite from {:?}", suite))?;
+    let suite_val: serde_json::Value =
+        serde_json::from_str(&suite_json).context("Failed to parse suite as JSON")?;
 
     let cases = suite_val
         .get("cases")
@@ -1075,7 +1146,11 @@ fn cmd_cache(command: CacheCommands) -> Result<()> {
         CacheCommands::Clear { dir, yes } => {
             cache_cmd::clear_cache(&dir, yes)?;
         }
-        CacheCommands::Purge { dir, older_than, version } => {
+        CacheCommands::Purge {
+            dir,
+            older_than,
+            version,
+        } => {
             if older_than.is_none() && version.is_none() {
                 eprintln!("Error: --older-than or --version is required for purge");
                 eprintln!("Usage: pdftract cache purge DIR --older-than 30d");
@@ -1106,15 +1181,23 @@ fn cmd_serve(
     // Create cache directory if specified
     if let Some(ref dir) = cache_dir {
         if !dir.exists() {
-            fs::create_dir_all(dir)
-                .context(format!("Failed to create cache directory: {}", dir.display()))?;
+            fs::create_dir_all(dir).context(format!(
+                "Failed to create cache directory: {}",
+                dir.display()
+            ))?;
         }
     }
 
     // Run the HTTP server
     tokio::runtime::Runtime::new()
         .context("Failed to create tokio runtime")?
-        .block_on(serve::run(bind, cache_dir, cache_size_bytes, no_cache, max_upload_mb))
+        .block_on(serve::run(
+            bind,
+            cache_dir,
+            cache_size_bytes,
+            no_cache,
+            max_upload_mb,
+        ))
 }
 
 /// Parse a size string like "1 GiB", "500 MiB", "2 GiB" into bytes.
@@ -1143,7 +1226,8 @@ fn parse_size(size_str: &str) -> Result<u64> {
         .trim()
         .replace('_', "");
 
-    let num: f64 = num_str.parse()
+    let num: f64 = num_str
+        .parse()
         .context(format!("Invalid size value: {}", size_str))?;
 
     Ok((num * multiplier as f64) as u64)
@@ -1210,7 +1294,11 @@ fn compare_recursive(
         }
         // String constraints
         (serde_json::Value::String(act), serde_json::Value::Object(exp)) => {
-            if let Some(min_len) = exp.get("min_length").and_then(|v| v.as_u64()).map(|v| v as usize) {
+            if let Some(min_len) = exp
+                .get("min_length")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+            {
                 if act.len() < min_len {
                     results.insert(
                         path.to_string(),
@@ -1300,7 +1388,11 @@ fn compare_with_tolerance(
     let act_val = actual.as_f64().unwrap();
     let exp_val = match expected {
         serde_json::Value::Number(n) => n.as_f64().unwrap(),
-        _ => return CompareResult::Fail { reason: "expected value is not a number".to_string() },
+        _ => {
+            return CompareResult::Fail {
+                reason: "expected value is not a number".to_string(),
+            }
+        }
     };
 
     if let Some(tol) = tolerance {
