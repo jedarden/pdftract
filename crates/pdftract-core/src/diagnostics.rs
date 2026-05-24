@@ -575,6 +575,16 @@ pub enum DiagCode {
     /// Phase origin: 2.2
     FontEncodingDifferenceOutOfRange,
 
+    /// Malformed byte sequence in CJK encoding fallback
+    ///
+    /// Emitted when a CJK byte encoding (Shift-JIS, GB18030, Big5, or EUC-KR)
+    /// contains malformed byte sequences. The offending bytes are replaced
+    /// with U+FFFD (Unicode REPLACEMENT CHARACTER).
+    ///
+    /// Phase origin: 2.3
+    #[cfg(feature = "cjk")]
+    CjkDecodeMalformed,
+
     // === OCR_* codes ===
 
     /// JBIG2 decoder not available
@@ -845,6 +855,9 @@ impl DiagCode {
             | DiagCode::FontCidtogidmapTruncated
             | DiagCode::FontEncodingDifferenceOutOfRange => "FONT",
 
+            #[cfg(feature = "cjk")]
+            DiagCode::CjkDecodeMalformed => "CJK",
+
             // OCR_*
             DiagCode::OcrJbig2Unsupported
             | DiagCode::OcrJpxUnsupported
@@ -939,6 +952,8 @@ impl DiagCode {
             DiagCode::FontUnsupported => "FONT_UNSUPPORTED",
             DiagCode::FontCidtogidmapTruncated => "FONT_CIDTOGIDMAP_TRUNCATED",
             DiagCode::FontEncodingDifferenceOutOfRange => "ENCODING_DIFFERENCE_OUT_OF_RANGE",
+            #[cfg(feature = "cjk")]
+            DiagCode::CjkDecodeMalformed => "CJK_DECODE_MALFORMED",
             DiagCode::OcrJbig2Unsupported => "OCR_JBIG2_UNSUPPORTED",
             DiagCode::OcrJpxUnsupported => "OCR_JPX_UNSUPPORTED",
             DiagCode::OcrCcittUnsupported => "OCR_CCITT_UNSUPPORTED",
@@ -1038,6 +1053,9 @@ impl DiagCode {
             | DiagCode::LayoutLowReadability
             | DiagCode::CacheEntryCorrupt
             | DiagCode::CacheWriteFailed => Severity::Warning,
+
+            #[cfg(feature = "cjk")]
+            DiagCode::CjkDecodeMalformed => Severity::Warning,
 
             DiagCode::StreamBomb
             | DiagCode::PageOutOfRange
@@ -1497,6 +1515,15 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         recoverable: true,
         phase: "2.2",
         suggested_action: "A /Differences array contains a character code outside 0-255; the code was clamped",
+    },
+    #[cfg(feature = "cjk")]
+    DiagInfo {
+        code: DiagCode::CjkDecodeMalformed,
+        category: "CJK",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "2.3",
+        suggested_action: "The CJK byte sequence contained malformed bytes, replaced with U+FFFD",
     },
     // === OCR_* codes ===
     DiagInfo {

@@ -33,6 +33,7 @@ phf = "0.11"
 tracing = { workspace = true }
 dashmap = "6.1"
 smallvec = "1.13"
+encoding_rs = { version = "0.8", optional = true }
 
 [features]
 default = ["serde"]
@@ -43,7 +44,7 @@ full-render = ["dep:pdfium-render", "ocr"]  # Enable PDFium-based rendering (req
 proptest = []
 fuzzing = []  # Enable cfg(fuzzing) for fuzz harnesses
 shape-db = []  # Enable glyph shape database (Level 4 encoding fallback)
-cjk = []  # Enable CJK text extraction via predefined CMap registry (~1.2 MB binary size increase)
+cjk = ["dep:encoding_rs"]  # Enable CJK text extraction via predefined CMap registry (~1.2 MB binary size increase)
 
 [dev-dependencies]
 chrono = "0.4"

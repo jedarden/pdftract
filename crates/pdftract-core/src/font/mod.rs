@@ -13,6 +13,9 @@ pub mod fingerprint;
 pub mod resolver;
 pub mod predefined_cmap;
 
+#[cfg(feature = "cjk")]
+pub mod cjk_encoding;
+
 pub use embedded::{EmbeddedFont, FontMetrics, EmptyFontMetrics, GlyphBbox};
 pub use type0::{Type0Font, DescendantCIDFont, CIDToGIDMap};
 pub use cmap::{ToUnicodeMap, parse_to_unicode, parse_to_unicode_with_diags};
@@ -21,6 +24,9 @@ pub use agl::{unicode_for_glyph_name, unicode_for_glyph_name_multi};
 pub use fingerprint::{FontFingerprint, CachedFingerprint, lookup_font_fingerprint};
 pub use resolver::{FontId, UnicodeSource, ResolvedGlyph, ResolverCache, Font, resolve_unicode};
 pub use predefined_cmap::{PredefinedCMap, from_name as predefined_cmap_from_name, CharacterCollection};
+
+#[cfg(feature = "cjk")]
+pub use cjk_encoding::{CjkEncoding, decode_cjk_bytes};
 
 use crate::parser::object::types::{PdfDict, PdfObject};
 
