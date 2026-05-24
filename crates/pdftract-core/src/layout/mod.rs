@@ -7,6 +7,7 @@
 //! - Line formation (line.rs)
 //! - Readability aggregation (readability.rs)
 //! - English wordlist for dict coverage scoring (wordlist.rs)
+//! - Text correction pipeline (correction.rs)
 //!
 //! Phase 4 organizes extracted text into semantic blocks (paragraphs,
 //! headings, figures, captions, etc.) based on spatial and font metrics.
@@ -14,6 +15,7 @@
 pub mod caption;
 pub mod code;
 pub mod columns;
+pub mod correction;
 pub mod line;
 pub mod readability;
 pub mod wordlist;
@@ -24,6 +26,7 @@ pub use code::{
     is_monospace_span, MonospaceSpan,
 };
 pub use columns::{assign_columns_to_lines, assign_columns_to_spans, Column};
+pub use correction::detect_and_repair_mojibake;
 pub use line::{
     cluster_spans_into_lines, compute_baseline, group_lines_into_blocks, union_bboxes, BlockInput,
     HasBBox, HasFontSize, Line, LineDirection, LineMetadata,

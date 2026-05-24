@@ -23,6 +23,7 @@
 //! IoU = area(A ∩ B) / area(A ∪ B)
 
 use crate::classify::{CellIndex, PageClass, PageClassification};
+use crate::layout::correction::CorrectableText;
 use image::{GrayImage, ImageBuffer, Luma};
 use std::collections::BTreeSet;
 
@@ -108,6 +109,16 @@ impl Span {
     #[inline]
     pub fn area(&self) -> f64 {
         self.width() * self.height()
+    }
+}
+
+impl CorrectableText for Span {
+    fn text_mut(&mut self) -> &mut String {
+        &mut self.text
+    }
+
+    fn text(&self) -> &str {
+        &self.text
     }
 }
 

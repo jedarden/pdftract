@@ -21,6 +21,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use crate::layout::correction::CorrectableText;
 use crate::receipts::Receipt;
 use crate::signature::Signature;
 
@@ -74,6 +75,16 @@ pub struct SpanJson {
     /// (e.g., full-width headings, inter-column gaps).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub column: Option<u32>,
+}
+
+impl CorrectableText for SpanJson {
+    fn text_mut(&mut self) -> &mut String {
+        &mut self.text
+    }
+
+    fn text(&self) -> &str {
+        &self.text
+    }
 }
 
 /// JSON representation of a structural block.

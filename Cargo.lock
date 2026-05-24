@@ -2419,6 +2419,7 @@ dependencies = [
  "phf_codegen",
  "proptest",
  "quick-xml",
+ "rand 0.8.6",
  "rayon",
  "regex",
  "schemars 1.2.1",

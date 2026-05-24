@@ -38,7 +38,7 @@ tempfile = "3.10"
 tracing = { workspace = true }
 dashmap = "6.1"
 smallvec = "1.13"
-encoding_rs = { version = "0.8", optional = true }
+encoding_rs = "0.8"
 quick-xml = { version = "0.36", optional = true }
 serde_yaml = { version = "0.9", optional = true }
 
@@ -54,7 +54,7 @@ profiles = ["dep:serde_yaml"]  # Enable extraction profiles (Phase 7.10)
 proptest = []
 fuzzing = []  # Enable cfg(fuzzing) for fuzz harnesses
 shape-db = []  # Enable glyph shape database (Level 4 encoding fallback)
-cjk = ["dep:encoding_rs"]  # Enable CJK text extraction via predefined CMap registry (~1.2 MB binary size increase)
+cjk = []  # Enable CJK text extraction via predefined CMap registry (~1.2 MB binary size increase)
 
 [dev-dependencies]
 chrono = "0.4"
