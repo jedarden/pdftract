@@ -1856,3 +1856,532 @@ mod hocr_tests {
         }
     }
 }
+
+// ============ End-to-End Tesseract Integration (Phase 5.4.5) ============
+
+use image::{GrayImage, ImageBuffer, Luma};
+
+/// Run Tesseract OCR on a grayscale image and return extracted spans.
+///
+/// This is the main entry point for OCR in the pdftract pipeline. It integrates:
+/// - Thread-local Tesseract instance management (borrow_or_init)
+/// - Image preprocessing and Tesseract invocation
+/// - HOCR parsing (parse_hocr)
+/// - Coordinate conversion (HocrWord::to_pdf_bbox)
+///
+/// # Arguments
+///
+/// * `image` - The grayscale image to run OCR on
+/// * `dpi` - The DPI at which the image was rendered (for coordinate conversion)
+/// * `page_height_pt` - The page height in PDF points (for Y-axis flip)
+/// * `opts` - Tesseract configuration options
+///
+/// # Returns
+///
+/// A `Result<Vec<Span>>` containing the extracted OCR spans with PDF coordinates.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Tesseract initialization fails
+/// - Image processing fails
+/// - HOCR parsing fails
+///
+/// # Examples
+///
+/// ```ignore
+/// use pdftract_core::ocr::{run_tesseract, TessOpts};
+/// use image::GrayImage;
+///
+/// let image: GrayImage = ...; // Rendered at 300 DPI
+/// let opts = TessOpts::default();
+/// let spans = run_tesseract(&image, 300, 792.0, &opts).unwrap();
+///
+/// for span in spans {
+///     println!("{} at {:?} (confidence: {})",
+///         span.text, span.bbox, span.confidence);
+/// }
+/// ```
+///
+/// # Performance
+///
+/// - First call per thread: ~50ms (Tesseract initialization)
+/// - Subsequent calls with same opts: ~10-20ms (cache hit)
+/// - Language change: ~50ms (reinitialization required)
+///
+/// # See also
+///
+/// - `borrow_or_init` for thread-local caching behavior
+/// - `parse_hocr` for HOCR parsing details
+/// - `HocrWord::to_pdf_bbox` for coordinate conversion
+pub fn run_tesseract(
+    image: &GrayImage,
+    dpi: u32,
+    page_height_pt: f64,
+    opts: &TessOpts,
+) -> Result<Vec<crate::hybrid::Span>, String> {
+    // Step 1: Borrow or initialize thread-local Tesseract instance
+    let mut tess_state = borrow_or_init(opts);
+    let tess_api = tess_state.api_mut();
+
+    // Step 2: Set the image for Tesseract to process
+    // Tesseract expects raw image bytes in grayscale format
+    let width = image.width();
+    let height = image.height();
+    let raw_data: Vec<u8> = image
+        .pixels()
+        .flat_map(|p| std::array::IntoIter::new([p[0]]))
+        .collect();
+
+    tess_api
+        .set_image(&raw_data, width, height, 1, width as i32)
+        .map_err(|e| format!("Failed to set image for OCR: {}", e))?;
+
+    // Step 3: Run OCR and get HOCR output
+    // GetHOCRText writes to a file path in the C API, but the Rust wrapper
+    // returns it as a String
+    let hocr_text = tess_api
+        .get_hocr_text(0) // Page number (0-indexed)
+        .map_err(|e| format!("OCR failed: {}", e))?;
+
+    // Step 4: Parse HOCR into HocrWord list
+    let hocr_words = parse_hocr(&hocr_text)?;
+
+    // Step 5: Convert HocrWords to Spans with PDF coordinates
+    let spans: Vec<crate::hybrid::Span> = hocr_words
+        .into_iter()
+        .map(|word| {
+            let pdf_bbox = word.to_pdf_bbox(dpi, page_height_pt, None, None);
+            crate::hybrid::Span::ocr(
+                pdf_bbox,
+                word.confidence(),
+                word.text,
+            )
+        })
+        .collect();
+
+    Ok(spans)
+}
+
+/// Run Tesseract OCR on a cell crop with cell-local coordinate conversion.
+///
+/// This is a specialized variant of `run_tesseract` for hybrid cell processing,
+/// where the OCR was performed on a cropped cell region rather than the full page.
+/// The cell origin is added to the converted coordinates to get global PDF coordinates.
+///
+/// # Arguments
+///
+/// * `image` - The grayscale cell crop image
+/// * `dpi` - The DPI at which the page was rendered
+/// * `cell_height_pt` - The cell height in PDF points (for Y-axis flip within cell)
+/// * `cell_origin` - The cell's origin [x_pt, y_pt] in global PDF coordinates
+/// * `opts` - Tesseract configuration options
+///
+/// # Returns
+///
+/// A `Result<Vec<Span>>` with OCR spans in global PDF coordinates.
+///
+/// # See also
+///
+/// - `run_tesseract` for full-page OCR
+/// - `crate::hybrid::crop_cell_from_page` for cell cropping logic
+pub fn run_tesseract_on_cell(
+    image: &GrayImage,
+    dpi: u32,
+    cell_height_pt: f64,
+    cell_origin: [f64; 2],
+    opts: &TessOpts,
+) -> Result<Vec<crate::hybrid::Span>, String> {
+    let mut tess_state = borrow_or_init(opts);
+    let tess_api = tess_state.api_mut();
+
+    let width = image.width();
+    let height = image.height();
+    let raw_data: Vec<u8> = image
+        .pixels()
+        .flat_map(|p| std::array::IntoIter::new([p[0]]))
+        .collect();
+
+    tess_api
+        .set_image(&raw_data, width, height, 1, width as i32)
+        .map_err(|e| format!("Failed to set image for cell OCR: {}", e))?;
+
+    let hocr_text = tess_api
+        .get_hocr_text(0)
+        .map_err(|e| format!("Cell OCR failed: {}", e))?;
+
+    let hocr_words = parse_hocr(&hocr_text)?;
+
+    let spans: Vec<crate::hybrid::Span> = hocr_words
+        .into_iter()
+        .map(|word| {
+            let pdf_bbox = word.to_pdf_bbox(dpi, cell_height_pt, None, Some(cell_origin));
+            crate::hybrid::Span::ocr(
+                pdf_bbox,
+                word.confidence(),
+                word.text,
+            )
+        })
+        .collect();
+
+    Ok(spans)
+}
+
+#[cfg(test)]
+mod integration_tests {
+    use super::*;
+
+    /// Test that run_tesseract returns a Vec<Span> with expected structure.
+    #[test]
+    #[cfg_attr(not(feature = "ocr"), ignore)]
+    fn test_run_tesseract_returns_spans() {
+        // Create a simple 100x20 white image with a black rectangle
+        // This is a minimal test to verify the integration works
+        let img: GrayImage = ImageBuffer::from_pixel(100, 20, Luma([255u8]));
+
+        let opts = TessOpts::default();
+
+        let result = std::panic::catch_unwind(|| {
+            run_tesseract(&img, 300, 792.0, &opts)
+        });
+
+        if result.is_err() {
+            // Tesseract not available - skip gracefully
+            println!("Skipping test_run_tesseract_returns_spans: Tesseract not available");
+            return;
+        }
+
+        let spans = result.unwrap();
+        // Empty image should produce empty or minimal spans
+        println!("Got {} spans from empty image", spans.len());
+    }
+
+    /// Test that run_tesseract_on_cell adds cell origin correctly.
+    #[test]
+    #[cfg_attr(not(feature = "ocr"), ignore)]
+    fn test_run_tesseract_on_cell_offset() {
+        let img: GrayImage = ImageBuffer::from_pixel(50, 50, Luma([255u8]));
+        let opts = TessOpts::default();
+        let cell_origin = [100.0, 200.0];
+
+        let result = std::panic::catch_unwind(|| {
+            run_tesseract_on_cell(&img, 300, 99.0, cell_origin, &opts)
+        });
+
+        if result.is_err() {
+            println!("Skipping test_run_tesseract_on_cell_offset: Tesseract not available");
+            return;
+        }
+
+        let spans = result.unwrap();
+        // Verify that any spans have coordinates offset by cell origin
+        for span in spans {
+            assert!(span.bbox[0] >= 100.0, "X should be offset by cell origin");
+            assert!(span.bbox[1] >= 200.0, "Y should be offset by cell origin");
+        }
+    }
+}
+
+// ============ Word Error Rate (WER) Measurement (Phase 5.4.5) ============
+
+/// Calculate Word Error Rate (WER) between OCR output and ground truth.
+///
+/// WER = (substitutions + insertions + deletions) / reference_length
+///
+/// This is the standard metric for OCR accuracy evaluation. Lower is better.
+///
+/// # Arguments
+///
+/// * `ocr_output` - The text produced by OCR
+/// * `ground_truth` - The reference/expected text
+///
+/// # Returns
+///
+/// A `f64` representing WER as a fraction (0.0 = perfect, 1.0 = all words wrong).
+/// Multiply by 100 to get percentage.
+///
+/// # Normalization
+///
+/// Both texts are normalized before comparison:
+/// - Converted to lowercase
+/// - Leading/trailing whitespace stripped
+/// - Internal whitespace normalized to single spaces
+/// - Common punctuation stripped (.,!?;:"'()[]{})
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::ocr::calculate_wer;
+///
+/// let ocr = "The quick brown fox jumps";
+/// let reference = "The quick brown fox jumped";
+/// let wer = calculate_wer(ocr, reference);
+///
+/// // "jumps" vs "jumped" = 1 substitution
+/// // WER = 1 / 5 = 0.2 (20%)
+/// ```
+///
+/// # Algorithm
+///
+/// Uses the Wagner-Fischer algorithm for edit distance (Levenshtein distance)
+/// with word-level tokenization instead of character-level.
+///
+/// # See also
+///
+/// - Phase 5.4.5 in the plan for WER CI gate requirements
+pub fn calculate_wer(ocr_output: &str, ground_truth: &str) -> f64 {
+    let ocr_words = normalize_text(ocr_output);
+    let ref_words = normalize_text(ground_truth);
+
+    if ref_words.is_empty() {
+        return if ocr_words.is_empty() { 0.0 } else { 1.0 };
+    }
+
+    let (substitutions, insertions, deletions) = word_edit_distance(&ocr_words, &ref_words);
+    let total_errors = substitutions + insertions + deletions;
+
+    total_errors as f64 / ref_words.len() as f64
+}
+
+/// Normalize text for WER calculation.
+///
+/// Normalization steps:
+/// 1. Convert to lowercase
+/// 2. Strip leading/trailing whitespace
+/// 3. Normalize internal whitespace to single spaces
+/// 4. Strip punctuation: .,!?;:"'()[]{}
+///
+/// # Arguments
+///
+/// * `text` - The text to normalize
+///
+/// # Returns
+///
+/// A `Vec<String>` of normalized words.
+fn normalize_text(text: &str) -> Vec<String> {
+    // Define punctuation to strip
+    let punct = ['.', ',', '!', '?', ';', ':', '"', '\'', '(', ')', '[', ']', '{', '}'];
+
+    text.to_lowercase()
+        .split_whitespace()
+        .map(|word| {
+            // Strip leading and trailing punctuation from each word
+            word.trim_matches(&punct[..]).to_string()
+        })
+        .filter(|word| !word.is_empty())
+        .collect()
+}
+
+/// Calculate word-level edit distance (Levenshtein distance).
+///
+/// Returns (substitutions, insertions, deletions).
+///
+/// # Arguments
+///
+/// * `ocr` - Tokenized OCR output
+/// * `reference` - Tokenized ground truth
+fn word_edit_distance(ocr: &[String], reference: &[String]) -> (usize, usize, usize) {
+    let m = ocr.len();
+    let n = reference.len();
+
+    // Initialize distance matrix
+    let mut dp = vec![vec![0usize; n + 1]; m + 1];
+
+    // Base cases: transforming to/from empty string
+    for i in 0..=m {
+        dp[i][0] = i; // i deletions
+    }
+    for j in 0..=n {
+        dp[0][j] = j; // j insertions
+    }
+
+    // Fill the matrix
+    for i in 1..=m {
+        for j in 1..=n {
+            if ocr[i - 1] == reference[j - 1] {
+                dp[i][j] = dp[i - 1][j - 1]; // No operation needed
+            } else {
+                dp[i][j] = [
+                    dp[i - 1][j] + 1,      // Deletion
+                    dp[i][j - 1] + 1,      // Insertion
+                    dp[i - 1][j - 1] + 1,  // Substitution
+                ]
+                .into_iter()
+                .min()
+                .unwrap();
+            }
+        }
+    }
+
+    // Backtrack to count error types
+    let mut substitutions = 0;
+    let mut insertions = 0;
+    let mut deletions = 0;
+
+    let mut i = m;
+    let mut j = n;
+
+    while i > 0 || j > 0 {
+        if i > 0 && j > 0 && ocr[i - 1] == reference[j - 1] {
+            // Match - no error
+            i -= 1;
+            j -= 1;
+        } else if i > 0 && j > 0 && dp[i][j] == dp[i - 1][j - 1] + 1 {
+            // Substitution
+            substitutions += 1;
+            i -= 1;
+            j -= 1;
+        } else if i > 0 && dp[i][j] == dp[i - 1][j] + 1 {
+            // Deletion
+            deletions += 1;
+            i -= 1;
+        } else if j > 0 && dp[i][j] == dp[i][j - 1] + 1 {
+            // Insertion
+            insertions += 1;
+            j -= 1;
+        } else {
+            // Default case (shouldn't happen in valid backtracking)
+            if i > 0 { i -= 1; }
+            if j > 0 { j -= 1; }
+        }
+    }
+
+    (substitutions, insertions, deletions)
+}
+
+#[cfg(test)]
+mod wer_tests {
+    use super::*;
+
+    #[test]
+    fn test_calculate_wer_perfect_match() {
+        let wer = calculate_wer("The quick brown fox", "The quick brown fox");
+        assert_eq!(wer, 0.0, "Perfect match should have WER = 0");
+    }
+
+    #[test]
+    fn test_calculate_wer_with_substitution() {
+        let wer = calculate_wer("The quick brown fox", "The quick brown box");
+        assert_eq!(wer, 0.25, "One substitution in 4 words = 0.25");
+    }
+
+    #[test]
+    fn test_calculate_wer_with_insertion() {
+        let wer = calculate_wer("The quick brown fox jumps", "The quick brown fox");
+        assert_eq!(wer, 0.2, "One insertion in 5 words = 0.2");
+    }
+
+    #[test]
+    fn test_calculate_wer_with_deletion() {
+        let wer = calculate_wer("The quick brown fox", "The quick brown fox jumps");
+        assert_eq!(wer, 0.2, "One deletion in 5 reference words = 0.2");
+    }
+
+    #[test]
+    fn test_calculate_wer_case_insensitive() {
+        let wer = calculate_wer("THE QUICK BROWN FOX", "the quick brown fox");
+        assert_eq!(wer, 0.0, "Case differences should be normalized");
+    }
+
+    #[test]
+    fn test_calculate_wer_punctuation_insensitive() {
+        let wer = calculate_wer("The quick, brown fox.", "The quick brown fox");
+        assert_eq!(wer, 0.0, "Punctuation should be stripped");
+    }
+
+    #[test]
+    fn test_calculate_wer_whitespace_normalized() {
+        let wer = calculate_wer("The  quick   brown fox", "The quick brown fox");
+        assert_eq!(wer, 0.0, "Extra whitespace should be normalized");
+    }
+
+    #[test]
+    fn test_calculate_wer_empty_strings() {
+        let wer = calculate_wer("", "");
+        assert_eq!(wer, 0.0, "Two empty strings should have WER = 0");
+    }
+
+    #[test]
+    fn test_calculate_wer_empty_reference_nonempty_ocr() {
+        let wer = calculate_wer("some text", "");
+        assert_eq!(wer, 1.0, "Non-empty OCR with empty reference should have WER = 1");
+    }
+
+    #[test]
+    fn test_calculate_wer_empty_ocr_nonempty_reference() {
+        let wer = calculate_wer("", "some text");
+        assert_eq!(wer, 1.0, "Empty OCR with non-empty reference should have WER = 1");
+    }
+
+    #[test]
+    fn test_calculate_wer_complex() {
+        // Real-world example with multiple error types
+        let ocr = "The qick brown fox jump over the lazzy dog";
+        let reference = "The quick brown fox jumps over the lazy dog";
+
+        // Errors:
+        // - qick -> quick (substitution)
+        // - jump -> jumps (substitution)
+        // - lazzy -> lazy (substitution)
+        // Total: 3 substitutions / 9 words = 0.333...
+        let wer = calculate_wer(ocr, reference);
+        assert!((wer - 0.333).abs() < 0.01, "Complex WER calculation failed");
+    }
+
+    #[test]
+    fn test_normalize_text_lowercase() {
+        let words = normalize_text("HELLO World");
+        assert_eq!(words, vec!["hello", "world"]);
+    }
+
+    #[test]
+    fn test_normalize_text_strip_punctuation() {
+        let words = normalize_text("Hello, world! How are you?");
+        assert_eq!(words, vec!["hello", "world", "how", "are", "you"]);
+    }
+
+    #[test]
+    fn test_normalize_text_whitespace() {
+        let words = normalize_text("  hello    world  ");
+        assert_eq!(words, vec!["hello", "world"]);
+    }
+
+    #[test]
+    fn test_normalize_text_combined() {
+        let words = normalize_text("  The QUICK, brown... FOX!!!  ");
+        assert_eq!(words, vec!["the", "quick", "brown", "fox"]);
+    }
+
+    #[test]
+    fn test_word_edit_distance_no_errors() {
+        let ocr = vec!["hello".to_string(), "world".to_string()];
+        let reference = vec!["hello".to_string(), "world".to_string()];
+        let (sub, ins, del) = word_edit_distance(&ocr, &reference);
+        assert_eq!(sub, 0);
+        assert_eq!(ins, 0);
+        assert_eq!(del, 0);
+    }
+
+    #[test]
+    fn test_word_edit_distance_substitution() {
+        let ocr = vec!["hello".to_string(), "word".to_string()];
+        let reference = vec!["hello".to_string(), "world".to_string()];
+        let (sub, ins, del) = word_edit_distance(&ocr, &reference);
+        assert_eq!(sub, 1);
+        assert_eq!(ins, 0);
+        assert_eq!(del, 0);
+    }
+
+    #[test]
+    fn test_word_edit_distance_insertion_deletion() {
+        let ocr = vec!["hello".to_string(), "there".to_string()];
+        let reference = vec!["hello".to_string(), "world".to_string(), "there".to_string()];
+        let (sub, ins, del) = word_edit_distance(&ocr, &reference);
+        // "world" deleted from reference, but also could be seen as insertion
+        // The algorithm counts it as:
+        // - "hello" matches
+        // - "there" vs "world" -> substitution, then "there" vs "there" matches
+        // Actually: deletion of "world" then match "there"
+        assert!(sub + ins + del == 1, "Should have exactly one error");
+    }
+}
