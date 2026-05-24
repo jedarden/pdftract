@@ -118,6 +118,16 @@ For the Python package:
 python -c "import pdftract; print(pdftract.__version__)"
 ```
 
+### Environment Health Check
+
+After installation, verify your environment is properly configured for pdftract:
+
+```bash
+pdftract doctor
+```
+
+This validates that all OS-level dependencies (Tesseract, leptonica, libtiff, etc.) are installed and correctly configured. See the [Operations Runbook](../../operations/manual-platform-smoke.md) for detailed troubleshooting of each check.
+
 ## Next Steps
 
 Once installed, proceed to the [Quickstart](./quickstart.md) for a five-minute walkthrough of pdftract's core features.

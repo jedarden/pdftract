@@ -16,6 +16,26 @@ git clone https://github.com/jedarden/pdftract.git
 cd pdftract
 ```
 
+### Verify Your Environment
+
+Before extracting, verify your environment is properly configured:
+
+```bash
+pdftract doctor
+```
+
+Expected output:
+
+```
+Check                         Status  Detail
+─────────────────────────────────────────────
+pdftract binary               OK      0.1.0 (git: abc1234)
+tesseract install             OK      v5.3.0
+...
+```
+
+If any check shows FAIL, see the [Operations Runbook](../../operations/manual-platform-smoke.md#troubleshooting) for resolution steps.
+
 ### Extract Your First PDF
 
 The simplest extraction outputs plain text to stdout:
