@@ -25,13 +25,21 @@
       "items": {
         "$ref": "#/$defs/SignatureJson"
       }
+    },
+    "form_fields": {
+      "description": "Interactive form fields extracted from the document.\n\nThis array contains all form fields from the AcroForm and/or XFA data.\nFields are sorted alphabetically by name. When both AcroForm and XFA\nare present, XFA values take precedence on collision.\nEmpty when the PDF has no form fields.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/FormFieldJson"
+      }
     }
   },
   "required": [
     "fingerprint",
     "pages",
     "metadata",
-    "signatures"
+    "signatures",
+    "form_fields"
   ],
   "$defs": {
     "BlockJson": {
@@ -560,6 +568,176 @@
         "field_name",
         "signer_name",
         "validation_status"
+      ]
+    },
+    "FormFieldJson": {
+      "description": "JSON representation of a form field.\n\nThis struct represents a single interactive form field from the PDF's\nAcroForm or XFA data, including its type, value, and metadata.\n\nPer the plan (Phase 7.4), form fields are extracted from both AcroForm\nand XFA sources, with XFA values taking precedence on collision.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "The absolute (dot-joined) field name from the AcroForm.\nExample: \"employer_signature\" or \"form.employee_sig\"",
+          "type": "string"
+        },
+        "type": {
+          "description": "The field type variant (text, button, choice, or signature).",
+          "type": "string",
+          "enum": ["text", "button", "choice", "signature"]
+        },
+        "value": {
+          "description": "The current value of the form field.\n\nThis field's structure varies by field_type:\n- text: string value\n- button: boolean selected state\n- choice: string or array of strings (for multi-select)\n- signature: signature reference number (or null if unsigned)",
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Text field value (null if empty/absent)"
+            },
+            {
+              "type": "null",
+              "description": "Null value for empty text or unsigned signature"
+            },
+            {
+              "type": "boolean",
+              "description": "Button field selected state"
+            },
+            {
+              "type": "string",
+              "description": "Choice field single selected value"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Choice field multiple selected values"
+            },
+            {
+              "type": "integer",
+              "description": "Signature reference number",
+              "minimum": 0
+            }
+          ]
+        },
+        "default": {
+          "description": "The default value (/DV entry) if present.\n\nMatches the structure of `value` but represents the field's default state.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "page_index": {
+          "description": "Zero-based page index where this field's widget appears.\n\nNone if the field has no visual representation (form-only field).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "rect": {
+          "description": "Bounding box in PDF user-space points.\n\nFormat: [x0, y0, x1, y1] where (x0, y0) is the bottom-left corner.\nNone if the field has no visual appearance.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "float"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "required": {
+          "description": "Whether this field is required (bit 2 of /Ff flags).",
+          "type": "boolean"
+        },
+        "read_only": {
+          "description": "Whether this field is read-only (bit 1 of /Ff flags).",
+          "type": "boolean"
+        },
+        "multiline": {
+          "description": "Whether this text field supports multiple lines (bit 13 of /Ff).\nOnly present for text fields.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "max_length": {
+          "description": "Maximum length for text fields (/MaxLen entry).\nOnly present for text fields that have a max length set.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "options": {
+          "description": "Available options for choice fields.\n\nEach option is a [export_value, display_name] pair.\nOnly present for choice fields.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "multi_select": {
+          "description": "Whether this choice field supports multiple selections (bit 21 of /Ff).\nOnly present for choice fields.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "selected": {
+          "description": "Selected state for button fields.\nTrue = checked/selected, False = unchecked.\nOnly present for button fields.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "state_name": {
+          "description": "Appearance state name for button fields.\nE.g., \"Yes\", \"Off\", or custom state names.\nOnly present for button fields.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pushbutton": {
+          "description": "Whether this button is a pushbutton (bit 26 of /Ff).\nOnly present for button fields.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "radio": {
+          "description": "Whether this button is a radio button (bit 25 of /Ff).\nOnly present for button fields.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "type",
+        "value",
+        "required",
+        "read_only"
       ]
     }
   }

@@ -14,6 +14,9 @@
 //! large documents with 10,000+ pages.
 
 use crate::document::compute_fingerprint_lazy;
+use crate::forms::{
+    acro_field_to_value, combine, walk_acroform_fields, AcroFormField, FormFieldValue,
+};
 use crate::options::{ExtractionOptions, ReceiptsMode};
 use crate::parser::catalog::ReadingOrderAlgorithm;
 use crate::parser::marked_content::{track_mcids_from_content_stream, McidTracker};
@@ -21,7 +24,10 @@ use crate::parser::stream::FileSource;
 use crate::parser::stream::DEFAULT_MAX_DECOMPRESS_BYTES;
 use crate::parser::struct_tree::{check_coverage_for_pages, parse_struct_tree};
 use crate::receipts::Receipt;
-use crate::schema::{BlockJson, SignatureJson, SpanJson, TableJson};
+use crate::schema::{
+    BlockJson, ChoiceValueJson, FormFieldJson, FormFieldTypeJson, FormFieldValueJson,
+    SignatureJson, SpanJson, TableJson,
+};
 use crate::semaphore::{Semaphore, SemaphoreExt};
 use crate::signature::{discover, extract_signatures};
 use crate::table::{
@@ -121,6 +127,13 @@ pub struct ExtractionResult {
     /// including both signed and unsigned (blank) signature fields.
     /// Empty when the PDF has no signature fields.
     pub signatures: Vec<SignatureJson>,
+    /// Interactive form fields extracted from the document.
+    ///
+    /// This array contains all form fields from the AcroForm and/or XFA data.
+    /// Fields are sorted alphabetically by name. When both AcroForm and XFA
+    /// are present, XFA values take precedence on collision.
+    /// Empty when the PDF has no form fields.
+    pub form_fields: Vec<FormFieldJson>,
 }
 
 /// Result for a single page.
@@ -501,6 +514,54 @@ pub fn extract_pdf(
     let signatures_core = extract_signatures(&sig_fields, &resolver_arc, file_size);
     let signatures: Vec<SignatureJson> = signatures_core.into_iter().map(|s| s.into()).collect();
 
+    // Phase 7.4: Extract form fields from AcroForm and XFA
+    // Walk AcroForm fields and convert to FormFieldValue
+    let acro_fields = walk_acroform_fields(&resolver_arc, &catalog, None);
+    let mut acro_fields_typed: Vec<(String, FormFieldValue)> = Vec::new();
+    for field in acro_fields {
+        let field_value = acro_field_to_value(&field);
+        acro_fields_typed.push((field.full_name.clone(), field_value));
+    }
+
+    // Extract XFA fields if present (requires re-opening the source for stream access)
+    let xfa_fields = if catalog.acroform_ref.is_some() {
+        // Resolve the AcroForm dictionary
+        use crate::parser::xref::XrefResolver;
+        let acroform_ref = catalog.acroform_ref.unwrap();
+        if let Ok(acroform_obj) = resolver_arc.resolve(acroform_ref) {
+            if let Some(acroform_dict) = acroform_obj.as_dict() {
+                // Create extraction options for stream decoding
+                use crate::parser::stream::ExtractionOptions as StreamExtractionOptions;
+                let stream_opts = StreamExtractionOptions {
+                    max_decompress_bytes: DEFAULT_MAX_DECOMPRESS_BYTES,
+                    password: None,
+                };
+                use crate::forms::extract_xfa_fields;
+                let xfa_extracted =
+                    extract_xfa_fields(&resolver_arc, acroform_dict, &source, &stream_opts);
+                xfa_extracted
+                    .into_iter()
+                    .filter_map(|f| f.value.map(|v| (f.full_name, v)))
+                    .collect()
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+
+    // Combine AcroForm and XFA fields (XFA wins on collision)
+    let (combined_fields, _form_diagnostics) = combine(acro_fields_typed, xfa_fields);
+
+    // Convert to FormFieldJson
+    let form_fields: Vec<FormFieldJson> = combined_fields
+        .into_iter()
+        .map(|(name, value)| convert_form_field_to_json(name, value, &resolver_arc, &catalog))
+        .collect();
+
     Ok(ExtractionResult {
         fingerprint,
         pages: extracted_pages,
@@ -516,6 +577,7 @@ pub fn extract_pdf(
             diagnostics: coverage_diagnostics,
         },
         signatures,
+        form_fields,
     })
 }
 
@@ -558,6 +620,145 @@ fn apply_two_page_table_detection(
     }
 
     pages
+}
+
+/// Convert a FormFieldValue to FormFieldJson for serialization.
+///
+/// This helper function converts the internal FormFieldValue representation
+/// to the JSON-serializable FormFieldJson structure.
+///
+/// # Arguments
+///
+/// * `name` - The field name
+/// * `value` - The FormFieldValue to convert
+/// * `resolver` - Xref resolver (for looking up field metadata)
+/// * `catalog` - Document catalog (for accessing AcroForm)
+fn convert_form_field_to_json(
+    name: String,
+    value: FormFieldValue,
+    resolver: &crate::parser::xref::XrefResolver,
+    catalog: &crate::parser::catalog::Catalog,
+) -> FormFieldJson {
+    match value {
+        FormFieldValue::Text {
+            value,
+            default,
+            multiline,
+            max_length,
+        } => FormFieldJson {
+            name,
+            field_type: FormFieldTypeJson::Text,
+            value: FormFieldValueJson::Text(value),
+            default: default.map(|v| FormFieldValueJson::Text(Some(v))),
+            page_index: None,
+            rect: None,
+            required: false,
+            read_only: false,
+            multiline: Some(multiline),
+            max_length,
+            options: None,
+            multi_select: None,
+            selected: None,
+            state_name: None,
+            pushbutton: None,
+            radio: None,
+        },
+
+        FormFieldValue::Button {
+            kind,
+            selected,
+            state_name,
+            default_selected,
+            pushbutton,
+            radio,
+        } => FormFieldJson {
+            name,
+            field_type: FormFieldTypeJson::Button,
+            value: FormFieldValueJson::Button(selected),
+            default: default_selected.map(FormFieldValueJson::Button),
+            page_index: None,
+            rect: None,
+            required: false,
+            read_only: false,
+            multiline: None,
+            max_length: None,
+            options: None,
+            multi_select: None,
+            selected: Some(selected),
+            state_name,
+            pushbutton: Some(pushbutton),
+            radio: Some(radio),
+        },
+
+        FormFieldValue::Choice {
+            value,
+            default,
+            options,
+            is_combo,
+            is_multi_select,
+        } => {
+            let json_value = match value {
+                crate::forms::ChoiceValue::Single(s) => {
+                    FormFieldValueJson::Choice(ChoiceValueJson::Single(s))
+                }
+                crate::forms::ChoiceValue::Multiple(vec) => {
+                    FormFieldValueJson::Choice(ChoiceValueJson::Multiple(vec))
+                }
+            };
+
+            let json_default = default.map(|dv| match dv {
+                crate::forms::ChoiceValue::Single(s) => {
+                    FormFieldValueJson::Choice(ChoiceValueJson::Single(s))
+                }
+                crate::forms::ChoiceValue::Multiple(vec) => {
+                    FormFieldValueJson::Choice(ChoiceValueJson::Multiple(vec))
+                }
+            });
+
+            let json_options: Vec<[String; 2]> = options
+                .into_iter()
+                .map(|(export, display)| [export, display])
+                .collect();
+
+            FormFieldJson {
+                name,
+                field_type: FormFieldTypeJson::Choice,
+                value: json_value,
+                default: json_default,
+                page_index: None,
+                rect: None,
+                required: false,
+                read_only: false,
+                multiline: None,
+                max_length: None,
+                options: Some(json_options),
+                multi_select: Some(is_multi_select),
+                selected: None,
+                state_name: None,
+                pushbutton: None,
+                radio: None,
+            }
+        }
+
+        FormFieldValue::Signature { signature_ref } => FormFieldJson {
+            name,
+            field_type: FormFieldTypeJson::Signature,
+            value: FormFieldValueJson::Signature(signature_ref),
+            default: None,
+            page_index: None,
+            rect: None,
+            required: false,
+            read_only: false,
+            multiline: None,
+            max_length: None,
+            options: None,
+            multi_select: None,
+            selected: None,
+            state_name: None,
+            pushbutton: None,
+            radio: None,
+        },
+    }
 }
 
 /// Extract content from a single page.
@@ -604,6 +805,7 @@ fn extract_page(
         size: 12.0,
         confidence: None,
         receipt,
+        column: None,
     };
 
     // Create a block containing the span
@@ -1422,6 +1624,7 @@ fn extract_page_from_dict(
         size: 12.0,
         confidence: None,
         receipt,
+        column: None,
     };
 
     // Create blocks including table blocks

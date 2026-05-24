@@ -26,12 +26,189 @@ pub use xfa::{extract_xfa_fields, XfaField};
 pub use combiner::{combine, ChoiceValue, FormFieldValue};
 pub use value_button::{extract_button_value, ButtonKind, ButtonValue};
 
+/// Convert an AcroFormField to FormFieldValue.
+///
+/// This function implements Phase 7.4.2 type-specific extraction: it converts
+/// the raw AcroFormField (from Phase 7.4.1) into a type-safe FormFieldValue
+/// that can be combined with XFA fields and serialized to JSON.
+///
+/// # Arguments
+///
+/// * `field` - The AcroFormField to convert
+///
+/// # Returns
+///
+/// A `FormFieldValue` variant matching the field's type, with values extracted
+/// from the field's /V, /DV, /Ff, and /Opt entries.
+pub fn acro_field_to_value(field: &AcroFormField) -> FormFieldValue {
+    match field.field_type {
+        AcroFieldType::Tx => {
+            // Text field: extract string value from /V
+            let value = field
+                .value
+                .as_ref()
+                .and_then(|v| v.as_string())
+                .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok());
+            let default = field
+                .default
+                .as_ref()
+                .and_then(|v| v.as_string())
+                .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok());
+            let multiline = field.is_multi_line();
+
+            // Extract /MaxLen if present (would need to be added to AcroFormField)
+            let max_length = None; // TODO: extract from field dict if needed
+
+            FormFieldValue::Text {
+                value,
+                default,
+                multiline,
+                max_length,
+            }
+        }
+
+        AcroFieldType::Btn => {
+            // Button field: use extract_button_value
+            let button_value = extract_button_value(field.value.as_ref(), field.flags);
+
+            // Extract default selected state from /DV
+            let default_selected = field
+                .default
+                .as_ref()
+                .and_then(|v| v.as_name())
+                .map(|name| {
+                    let name_str: &str = &name;
+                    name_str != "Off"
+                });
+
+            FormFieldValue::Button {
+                kind: button_value.kind,
+                selected: button_value.selected,
+                state_name: button_value.state_name,
+                default_selected,
+                pushbutton: button_value.pushbutton,
+                radio: button_value.radio,
+            }
+        }
+
+        AcroFieldType::Ch => {
+            // Choice field: extract selected value(s) and options
+            let (value, default) = extract_choice_values(&field.value, &field.default);
+            let options = field.opt.clone().unwrap_or_default();
+
+            // Extract combo and multi_select flags from /Ff
+            const COMBO_FLAG: u32 = 1 << 17; // Bit 18
+            const MULTI_SELECT_FLAG: u32 = 1 << 20; // Bit 21
+            let is_combo = (field.flags & COMBO_FLAG) != 0;
+            let is_multi_select = (field.flags & MULTI_SELECT_FLAG) != 0;
+
+            FormFieldValue::Choice {
+                value,
+                default,
+                options,
+                is_combo,
+                is_multi_select,
+            }
+        }
+
+        AcroFieldType::Sig => {
+            // Signature field: extract reference number
+            let ref_num = field.value.as_ref().and_then(|v| match v {
+                PdfObject::Ref(ref_) => Some(ref_.object),
+                _ => None,
+            });
+
+            FormFieldValue::Signature {
+                signature_ref: ref_num,
+            }
+        }
+
+        AcroFieldType::Other => {
+            // Unknown field type: treat as text
+            let value = field
+                .value
+                .as_ref()
+                .and_then(|v| v.as_string())
+                .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok());
+            let default = field
+                .default
+                .as_ref()
+                .and_then(|v| v.as_string())
+                .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok());
+
+            FormFieldValue::Text {
+                value,
+                default,
+                multiline: false,
+                max_length: None,
+            }
+        }
+    }
+}
+
+/// Extract choice field values from /V and /DV entries.
+///
+/// Choice fields can have either a single selected value or multiple
+/// selected values (for multi-select list boxes).
+fn extract_choice_values(
+    value: &Option<PdfObject>,
+    default: &Option<PdfObject>,
+) -> (ChoiceValue, Option<ChoiceValue>) {
+    // Extract current value
+    let current = match value {
+        Some(PdfObject::String(s)) => String::from_utf8(s.to_vec())
+            .ok()
+            .map(|v| ChoiceValue::Single(v))
+            .unwrap_or_else(|| ChoiceValue::Single(String::new())),
+        Some(PdfObject::Array(arr)) => {
+            let values: Vec<String> = arr
+                .iter()
+                .filter_map(|v| v.as_string())
+                .filter_map(|bytes| String::from_utf8(bytes.to_vec()).ok())
+                .collect();
+            if values.is_empty() {
+                ChoiceValue::Single(String::new())
+            } else if values.len() == 1 {
+                ChoiceValue::Single(values.into_iter().next().unwrap())
+            } else {
+                ChoiceValue::Multiple(values)
+            }
+        }
+        _ => ChoiceValue::Single(String::new()),
+    };
+
+    // Extract default value
+    let default_val = match default {
+        Some(PdfObject::String(s)) => String::from_utf8(s.to_vec())
+            .ok()
+            .map(|v| ChoiceValue::Single(v)),
+        Some(PdfObject::Array(arr)) => {
+            let values: Vec<String> = arr
+                .iter()
+                .filter_map(|v| v.as_string())
+                .filter_map(|bytes| String::from_utf8(bytes.to_vec()).ok())
+                .collect();
+            if values.is_empty() {
+                None
+            } else if values.len() == 1 {
+                Some(ChoiceValue::Single(values.into_iter().next().unwrap()))
+            } else {
+                Some(ChoiceValue::Multiple(values))
+            }
+        }
+        _ => None,
+    };
+
+    (current, default_val)
+}
+
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::parser::catalog::Catalog;
 use crate::parser::object::{intern, ObjRef, PdfDict, PdfObject};
 use crate::parser::pages::PageDict;
 use crate::parser::xref::XrefResolver;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 /// Result type for form operations.
 pub type Result<T> = std::result::Result<T, Vec<Diagnostic>>;

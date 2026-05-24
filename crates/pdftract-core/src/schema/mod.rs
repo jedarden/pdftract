@@ -67,6 +67,13 @@ pub struct SpanJson {
     /// is enabled. When receipts are disabled, the field is `null`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub receipt: Option<Receipt>,
+
+    /// Column index (0-based) assigned by Phase 4.3 column detection.
+    ///
+    /// This field is `None` for spans outside any detected column
+    /// (e.g., full-width headings, inter-column gaps).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub column: Option<u32>,
 }
 
 /// JSON representation of a structural block.
@@ -327,6 +334,153 @@ impl Default for ExtractionQuality {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// JSON representation of a form field.
+///
+/// This struct represents a single interactive form field from the PDF's
+/// AcroForm or XFA data, including its type, value, and metadata.
+///
+/// Per the plan (Phase 7.4), form fields are extracted from both AcroForm
+/// and XFA sources, with XFA values taking precedence on collision.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct FormFieldJson {
+    /// The absolute (dot-joined) field name from the AcroForm.
+    /// Example: "employer_signature" or "form.employee_sig"
+    pub name: String,
+
+    /// The field type variant (text, button, choice, or signature).
+    #[serde(rename = "type")]
+    pub field_type: FormFieldTypeJson,
+
+    /// The current value of the form field.
+    ///
+    /// This field's structure varies by field_type:
+    /// - text: string value
+    /// - button: boolean selected state
+    /// - choice: string or array of strings (for multi-select)
+    /// - signature: signature reference number (or null if unsigned)
+    pub value: FormFieldValueJson,
+
+    /// The default value (/DV entry) if present.
+    ///
+    /// Matches the structure of `value` but represents the field's default state.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default: Option<FormFieldValueJson>,
+
+    /// Zero-based page index where this field's widget appears.
+    ///
+    /// None if the field has no visual representation (form-only field).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page_index: Option<usize>,
+
+    /// Bounding box in PDF user-space points.
+    ///
+    /// Format: [x0, y0, x1, y1] where (x0, y0) is the bottom-left corner.
+    /// None if the field has no visual appearance.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rect: Option<[f32; 4]>,
+
+    /// Whether this field is required (bit 2 of /Ff flags).
+    pub required: bool,
+
+    /// Whether this field is read-only (bit 1 of /Ff flags).
+    pub read_only: bool,
+
+    /// Whether this text field supports multiple lines (bit 13 of /Ff).
+    /// Only present for text fields.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub multiline: Option<bool>,
+
+    /// Maximum length for text fields (/MaxLen entry).
+    /// Only present for text fields that have a max length set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_length: Option<u32>,
+
+    /// Available options for choice fields.
+    ///
+    /// Each option is a [export_value, display_name] pair.
+    /// Only present for choice fields.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<Vec<[String; 2]>>,
+
+    /// Whether this choice field supports multiple selections (bit 21 of /Ff).
+    /// Only present for choice fields.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub multi_select: Option<bool>,
+
+    /// Selected state for button fields.
+    /// True = checked/selected, False = unchecked.
+    /// Only present for button fields.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selected: Option<bool>,
+
+    /// Appearance state name for button fields.
+    /// E.g., "Yes", "Off", or custom state names.
+    /// Only present for button fields.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state_name: Option<String>,
+
+    /// Whether this button is a pushbutton (bit 26 of /Ff).
+    /// Only present for button fields.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pushbutton: Option<bool>,
+
+    /// Whether this button is a radio button (bit 25 of /Ff).
+    /// Only present for button fields.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub radio: Option<bool>,
+}
+
+/// Form field type discriminator.
+///
+/// This enum uses serde's "tag" representation to produce a JSON string
+/// indicating the field type.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub enum FormFieldTypeJson {
+    /// Text field (/FT /Tx) - single-line or multi-line text input.
+    Text,
+    /// Button field (/FT /Btn) - pushbutton, checkbox, or radio button.
+    Button,
+    /// Choice field (/FT /Ch) - dropdown or list box.
+    Choice,
+    /// Signature field (/FT /Sig) - digital signature field.
+    Signature,
+}
+
+/// Form field value representation.
+///
+/// This enum captures the current value of a form field, with the variant
+/// type matching the field_type.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub enum FormFieldValueJson {
+    /// Text field value (string or null).
+    Text(Option<String>),
+    /// Button field value (boolean selected state).
+    Button(bool),
+    /// Choice field value (single string or array of strings for multi-select).
+    Choice(ChoiceValueJson),
+    /// Signature field value (signature reference number or null).
+    Signature(Option<u32>),
+}
+
+/// Choice field value representation.
+///
+/// Choice fields can have either a single selected value or multiple
+/// selected values (for multi-select list boxes).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub enum ChoiceValueJson {
+    /// Single selected option.
+    Single(String),
+    /// Multiple selected options.
+    Multiple(Vec<String>),
 }
 
 /// JSON representation of a digital signature.

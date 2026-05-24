@@ -35,7 +35,9 @@
 //! assert_eq!(anchors[0].block, 0);
 //! ```
 
-use crate::schema::BlockJson;
+use crate::schema::{
+    BlockJson, ChoiceValueJson, FormFieldJson, FormFieldTypeJson, FormFieldValueJson,
+};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
@@ -503,4 +505,86 @@ Some text."#;
         assert_eq!(anchors[0].block, 0);
         assert_eq!(anchors[0].kind, "heading");
     }
+}
+
+/// Generate a markdown footer section for form fields.
+///
+/// This function creates a formatted markdown table listing all form fields
+/// with their names, types, and current values. Only emits the section when
+/// form_fields count > 0.
+///
+/// # Arguments
+///
+/// * `form_fields` - The form fields to include in the footer
+///
+/// # Returns
+///
+/// A markdown string with a form fields table, or an empty string if no fields.
+///
+/// # Example
+///
+/// ```ignore
+/// use pdftract_core::markdown::form_fields_to_markdown;
+/// use pdftract_core::schema::{FormFieldJson, FormFieldTypeJson, FormFieldValueJson};
+///
+/// let fields = vec![
+///     FormFieldJson {
+///         name: "employee_name".to_string(),
+///         field_type: FormFieldTypeJson::Text,
+///         value: FormFieldValueJson::Text(Some("John Doe".to_string())),
+///         // ... other fields
+///     },
+/// ];
+///
+/// let md = form_fields_to_markdown(&fields);
+/// assert!(md.contains("## Form Fields"));
+/// assert!(md.contains("employee_name"));
+/// ```
+pub fn form_fields_to_markdown(form_fields: &[FormFieldJson]) -> String {
+    if form_fields.is_empty() {
+        return String::new();
+    }
+
+    let mut result = String::from("\n\n## Form Fields\n\n");
+    result.push_str("| Name | Type | Value |\n");
+    result.push_str("|------|------|-------|\n");
+
+    for field in form_fields {
+        let type_str = match field.field_type {
+            FormFieldTypeJson::Text => "text",
+            FormFieldTypeJson::Button => "button",
+            FormFieldTypeJson::Choice => "choice",
+            FormFieldTypeJson::Signature => "signature",
+        };
+
+        let value_str = format_value_json(&field.value);
+
+        result.push_str(&format!(
+            "| {} | {} | {} |\n",
+            field.name, type_str, value_str
+        ));
+    }
+
+    result
+}
+
+/// Format a FormFieldValueJson as a string for markdown display.
+fn format_value_json(value: &FormFieldValueJson) -> String {
+    match value {
+        FormFieldValueJson::Text(None) => "*empty*".to_string(),
+        FormFieldValueJson::Text(Some(s)) => escape_pipe(s),
+        FormFieldValueJson::Button(b) => b.to_string(),
+        FormFieldValueJson::Choice(ChoiceValueJson::Single(s)) => escape_pipe(s),
+        FormFieldValueJson::Choice(ChoiceValueJson::Multiple(vec)) => {
+            let values: Vec<String> = vec.iter().map(|s| escape_pipe(s.as_str())).collect();
+            values.join(", ")
+        }
+        FormFieldValueJson::Signature(None) => "*unsigned*".to_string(),
+        FormFieldValueJson::Signature(Some(n)) => format!("ref #{}", n),
+    }
+}
+
+/// Escape pipe characters for markdown table cells.
+fn escape_pipe(s: &str) -> String {
+    s.replace('|', "\\|")
 }
