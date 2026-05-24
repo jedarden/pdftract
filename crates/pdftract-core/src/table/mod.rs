@@ -20,10 +20,12 @@
 mod detector;
 mod segment;
 mod grid;
+mod cell;
 
 pub use detector::TableDetector;
 pub use segment::{Segment, SegmentOrientation};
 pub use grid::GridCandidate;
+pub use cell::{Cell, TableSpan};
 
 use crate::parser::pages::PageDict;
 
