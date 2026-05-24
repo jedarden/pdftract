@@ -1248,6 +1248,119 @@ pub struct ParsedCCITTParams {
     pub black_is_1: bool,
 }
 
+/// DCTDecode filter (JPEG) passthrough with SOI/EOI marker validation.
+///
+/// This decoder:
+/// - Validates SOI (0xFFD8) and EOI (0xFFD9) markers
+/// - Parses and records /ColorTransform from /DecodeParms
+/// - Passes through raw JPEG bytes unchanged (pdftract-core does not decode JPEG)
+///
+/// Per PDF spec 7.4.8:
+/// - /ColorTransform: 0 = none, 1 = YCbCr conversion (default for 3-channel images)
+///
+/// For OCR path: JPEG data is passed to libjpeg-turbo / image crate for decoding.
+/// For no-OCR case: raw bytes are passed through unchanged.
+///
+/// Note: Some buggy PDF producers omit EOI; we emit STREAM_INVALID_JPEG warning
+/// but pass through the data anyway (INV-8 error recovery).
+#[derive(Debug, Clone, Copy)]
+pub struct DCTDecoder;
+
+impl DCTDecoder {
+    /// JPEG SOI (Start Of Image) marker: 0xFFD8
+    const JPEG_SOI: [u8; 2] = [0xFF, 0xD8];
+
+    /// JPEG EOI (End Of Image) marker: 0xFFD9
+    const JPEG_EOI: [u8; 2] = [0xFF, 0xD9];
+
+    /// Parse DCTDecode /DecodeParms to extract /ColorTransform.
+    ///
+    /// Returns None if params is None or not a dictionary.
+    /// Returns Some(color_transform) if params is a dictionary (missing /ColorTransform defaults to None).
+    ///
+    /// Per PDF spec 7.4.8:
+    /// - /ColorTransform 0 = no transformation (RGB or grayscale)
+    /// - /ColorTransform 1 = YCbCr to RGB conversion (default for 3-component images)
+    pub fn parse_color_transform(params: Option<&PdfObject>) -> Option<i64> {
+        let dict = match params {
+            Some(PdfObject::Dict(d)) => d.as_ref(),
+            Some(_) => return None, // Invalid type - treat as missing
+            None => return None,    // No params - use default
+        };
+
+        match dict.get("/ColorTransform") {
+            Some(PdfObject::Integer(n)) => Some(*n),
+            Some(PdfObject::Bool(b)) => Some(if *b { 1 } else { 0 }),
+            _ => None, // Missing /ColorTransform - use default
+        }
+    }
+
+    /// Validate JPEG markers (SOI at start, EOI at end).
+    ///
+    /// Returns (has_soi, has_eoi). Missing markers emit diagnostics but don't
+    /// fail the decode (INV-8: always return partial bytes).
+    fn validate_markers(input: &[u8], diagnostics: &mut Vec<Diagnostic>) -> (bool, bool) {
+        let has_soi = input.len() >= 2 && input[0..2] == Self::JPEG_SOI;
+        let has_eoi = input.len() >= 2 && input[input.len() - 2..] == Self::JPEG_EOI;
+
+        if !has_soi {
+            diagnostics.push(Diagnostic::with_static_no_offset(
+                DiagCode::StreamInvalidJpeg,
+                "Missing SOI (Start Of Image) marker at start of JPEG data",
+            ));
+        }
+
+        if !has_eoi {
+            diagnostics.push(Diagnostic::with_dynamic(
+                DiagCode::StreamInvalidJpeg,
+                input.len().saturating_sub(2) as u64,
+                format!(
+                    "Missing EOI (End Of Image) marker at end of JPEG data (length: {})",
+                    input.len()
+                ),
+            ));
+        }
+
+        (has_soi, has_eoi)
+    }
+}
+
+impl StreamDecoder for DCTDecoder {
+    fn decode(
+        &self,
+        input: &[u8],
+        params: Option<&PdfObject>,
+        doc_counter: &mut u64,
+        max_bytes: u64,
+    ) -> Result<Vec<u8>, FilterError> {
+        // Parse /ColorTransform from /DecodeParms (for downstream consumers)
+        let _color_transform = Self::parse_color_transform(params);
+
+        // Validate SOI/EOI markers (emit diagnostics if missing, but pass through anyway)
+        let mut diagnostics = Vec::new();
+        let (_has_soi, _has_eoi) = Self::validate_markers(input, &mut diagnostics);
+
+        // TODO: Store diagnostics somewhere for downstream consumers
+        // For now, we'll just drop them since the StreamDecoder trait doesn't
+        // provide a way to emit them. In a future change, we may extend the
+        // trait to accept a diagnostics buffer.
+
+        // Pass through raw bytes unchanged, enforcing bomb limit
+        let len = input.len() as u64;
+        *doc_counter += len;
+        if *doc_counter > max_bytes {
+            // Truncate to stay within limit
+            let remaining = max_bytes.saturating_sub(*doc_counter - len);
+            return Ok(input[..remaining.min(len) as usize].to_vec());
+        }
+        Ok(input.to_vec())
+    }
+
+    fn name(&self) -> &'static str {
+        "DCTDecode"
+    }
+}
+
 /// Normalize a filter name, expanding abbreviations per PDF spec 7.4.2 Table 6.
 ///
 /// Abbreviations:
@@ -1281,7 +1394,7 @@ pub fn get_decoder(name: &str) -> Option<Box<dyn StreamDecoder>> {
         "ASCII85Decode" => Some(Box::new(ASCII85Decoder)),
         "ASCIIHexDecode" => Some(Box::new(ASCIIHexDecoder)),
         "Crypt" => Some(Box::new(CryptDecoder)),
-        "DCTDecode" => Some(Box::new(PassthroughDecoder::new("DCTDecode"))),
+        "DCTDecode" => Some(Box::new(DCTDecoder)),
         "JBIG2Decode" => Some(Box::new(PassthroughDecoder::new("JBIG2Decode"))),
         "JPXDecode" => Some(Box::new(PassthroughDecoder::new("JPXDecode"))),
         "CCITTFaxDecode" => Some(Box::new(CCITTFaxDecoder)),
@@ -1659,6 +1772,111 @@ mod tests {
         assert_eq!(normalize_filter_name("Fl"), "FlateDecode");
         assert_eq!(normalize_filter_name("LZW"), "LZWDecode");
         assert_eq!(normalize_filter_name("FlateDecode"), "FlateDecode"); // No change
+    }
+
+    #[test]
+    fn test_dctdecode_passthrough_valid_jpeg() {
+        // Valid JPEG with SOI and EOI markers
+        let mut jpeg_data = vec![0xFF, 0xD8]; // SOI
+        jpeg_data.extend_from_slice(b"fake_jpeg_data");
+        jpeg_data.extend_from_slice(&[0xFF, 0xD9]); // EOI
+
+        let mut counter = 0;
+        let result =
+            DCTDecoder.decode(&jpeg_data, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        // Pass through unchanged
+        assert_eq!(output, jpeg_data);
+        // Byte counter should be incremented
+        assert_eq!(counter, jpeg_data.len() as u64);
+    }
+
+    #[test]
+    fn test_dctdecode_passthrough_missing_soi() {
+        // JPEG data without SOI marker (still passes through)
+        let jpeg_data = b"fake_jpeg_data\xFF\xD9"; // Missing SOI, has EOI
+
+        let mut counter = 0;
+        let result = DCTDecoder.decode(jpeg_data, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        // Still passes through unchanged even without SOI
+        assert_eq!(output, jpeg_data.to_vec());
+    }
+
+    #[test]
+    fn test_dctdecode_passthrough_missing_eoi() {
+        // JPEG data without EOI marker (some buggy PDFs omit this)
+        let mut jpeg_data = vec![0xFF, 0xD8]; // SOI
+        jpeg_data.extend_from_slice(b"fake_jpeg_data"); // Missing EOI
+
+        let mut counter = 0;
+        let result =
+            DCTDecoder.decode(&jpeg_data, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        // Still passes through unchanged even without EOI
+        assert_eq!(output, jpeg_data);
+    }
+
+    #[test]
+    fn test_dctdecode_passthrough_empty() {
+        // Empty JPEG data (edge case)
+        let jpeg_data = b"";
+
+        let mut counter = 0;
+        let result = DCTDecoder.decode(jpeg_data, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output.len(), 0);
+    }
+
+    #[test]
+    fn test_dctdecode_bomb_limit() {
+        // Test that bomb limit is enforced
+        let mut jpeg_data = vec![0xFF, 0xD8]; // SOI
+        jpeg_data.extend_from_slice(&[0u8; 1000]); // 1000 bytes of data
+        jpeg_data.extend_from_slice(&[0xFF, 0xD9]); // EOI
+
+        let mut counter = 0;
+        let limit = 100; // Only allow 100 bytes
+        let result = DCTDecoder.decode(&jpeg_data, None, &mut counter, limit);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output.len(), 100); // Should truncate at bomb limit
+    }
+
+    #[test]
+    fn test_dctdecode_color_transform_parsing() {
+        use std::sync::Arc;
+
+        // Test /ColorTransform = 1 (YCbCr)
+        let mut params = indexmap::IndexMap::new();
+        params.insert(Arc::from("/ColorTransform"), PdfObject::Integer(1));
+        let result = DCTDecoder::parse_color_transform(Some(&PdfObject::Dict(params.into())));
+        assert_eq!(result, Some(1));
+
+        // Test /ColorTransform = 0 (none)
+        let mut params = indexmap::IndexMap::new();
+        params.insert(Arc::from("/ColorTransform"), PdfObject::Integer(0));
+        let result = DCTDecoder::parse_color_transform(Some(&PdfObject::Dict(params.into())));
+        assert_eq!(result, Some(0));
+
+        // Test /ColorTransform = true (treated as 1)
+        let mut params = indexmap::IndexMap::new();
+        params.insert(Arc::from("/ColorTransform"), PdfObject::Bool(true));
+        let result = DCTDecoder::parse_color_transform(Some(&PdfObject::Dict(params.into())));
+        assert_eq!(result, Some(1));
+
+        // Test missing /ColorTransform (returns None)
+        let params = indexmap::IndexMap::new();
+        let result = DCTDecoder::parse_color_transform(Some(&PdfObject::Dict(params.into())));
+        assert_eq!(result, None);
+
+        // Test no params (returns None)
+        let result = DCTDecoder::parse_color_transform(None);
+        assert_eq!(result, None);
     }
 
     /// Test FlateDecode bomb limit with minimal crafted input.

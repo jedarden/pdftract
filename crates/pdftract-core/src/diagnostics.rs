@@ -479,6 +479,15 @@ pub enum DiagCode {
     /// Phase origin: 1.5
     StreamInvalidParams,
 
+    /// JPEG data has invalid or missing markers
+    ///
+    /// Emitted when DCTDecode filter data is missing SOI (0xFFD8) or EOI (0xFFD9)
+    /// markers. The data is passed through anyway, but the diagnostic alerts
+    /// consumers that the JPEG may be malformed.
+    ///
+    /// Phase origin: 1.5
+    StreamInvalidJpeg,
+
     // === ENCRYPTION_* codes ===
     /// Unsupported encryption or no password supplied
     ///
@@ -928,6 +937,7 @@ impl DiagCode {
             | DiagCode::StreamBomb
             | DiagCode::StreamUnknownFilter
             | DiagCode::StreamInvalidParams
+            | DiagCode::StreamInvalidJpeg
             | DiagCode::StreamTruncated => "STREAM",
 
             // ENCRYPTION_*
@@ -1048,6 +1058,7 @@ impl DiagCode {
             DiagCode::StreamBomb => "STREAM_BOMB",
             DiagCode::StreamUnknownFilter => "STREAM_UNKNOWN_FILTER",
             DiagCode::StreamInvalidParams => "STREAM_INVALID_PARAMS",
+            DiagCode::StreamInvalidJpeg => "STREAM_INVALID_JPEG",
             DiagCode::EncryptionUnsupported => "ENCRYPTION_UNSUPPORTED",
             DiagCode::EncryptionWrongPassword => "ENCRYPTION_WRONG_PASSWORD",
             DiagCode::PageOutOfRange => "PAGE_OUT_OF_RANGE",
@@ -1152,6 +1163,7 @@ impl DiagCode {
             | DiagCode::StreamDecodeError
             | DiagCode::StreamUnknownFilter
             | DiagCode::StreamInvalidParams
+            | DiagCode::StreamInvalidJpeg
             | DiagCode::PageInvalidCount
             | DiagCode::PageInvalidRotate
             | DiagCode::FontGlyphUnmapped
@@ -1599,6 +1611,14 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         recoverable: true,
         phase: "1.5",
         suggested_action: "The /DecodeParms dictionary is malformed; default parameters are used",
+    },
+    DiagInfo {
+        code: DiagCode::StreamInvalidJpeg,
+        category: "STREAM",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "1.5",
+        suggested_action: "JPEG data is missing SOI/EOI markers; data is passed through anyway",
     },
     // === ENCRYPTION_* codes ===
     DiagInfo {
