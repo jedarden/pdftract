@@ -252,3 +252,309 @@ Key field semantics:
 - `continued_from_page` and `continues_on_page` are `null` when the table fits on a single page, or contain the 1-based page index of the adjacent page fragment.
 
 This representation is lossless with respect to the detected structure and provides sufficient metadata for downstream consumers to reconstruct a DOM-equivalent table, apply styling, or perform data extraction without re-analyzing geometry.
+
+---
+
+## Algorithm: Line-Based Grid Reconstruction
+
+```python
+def reconstruct_grid_from_lines(content_stream, page_width, page_height):
+    """
+    Reconstruct a table grid from explicit line drawing operators.
+    
+    Args:
+        content_stream: Parsed PDF content stream operators
+        page_width: Page width in PDF units
+        page_height: Page height in PDF units
+    
+    Returns:
+        Grid with horizontal_lines, vertical_lines, intersections, cells
+    """
+    # Step 1: Collect path segments
+    horizontal_segments = []
+    vertical_segments = []
+    
+    for op in content_stream:
+        if op.operator == 'l' and op.next_operator == 'S':
+            # Line-to followed by stroke
+            x0, y0 = op.position
+            x1, y1 = op.end_position
+            if abs(y0 - y1) < 0.5:  # Horizontal
+                horizontal_segments.append((min(x0, x1), max(x0, x1), y0))
+            elif abs(x0 - x1) < 0.5:  # Vertical
+                vertical_segments.append((min(y0, y1), max(y0, y1), x0))
+        
+        elif op.operator == 're':
+            # Rectangle: expand to 4 segments
+            x, y, w, h = op.rect
+            horizontal_segments.append((x, x + w, y))          # Top
+            horizontal_segments.append((x, x + w, y + h))      # Bottom
+            vertical_segments.append((y, y + h, x))            # Left
+            vertical_segments.append((y, y + h, x + w))        # Right
+    
+    # Step 2: Merge collinear segments
+    horizontal_lines = merge_collinear(horizontal_segments, axis='y', gap_threshold=2.0)
+    vertical_lines = merge_collinear(vertical_segments, axis='x', gap_threshold=2.0)
+    
+    # Step 3: Find intersections
+    intersections = []
+    for h_line in horizontal_lines:
+        for v_line in vertical_lines:
+            x = v_line.x  # x-coordinate of vertical line
+            y = h_line.y  # y-coordinate of horizontal line
+            if (h_line.x_min <= x <= h_line.x_max and
+                v_line.y_min <= y <= v_line.y_max):
+                intersections.append((x, y))
+    
+    # Step 4: Build cells from intersections
+    cells = []
+    sorted_x = sorted(set(i[0] for i in intersections))
+    sorted_y = sorted(set(i[1] for i in intersections), reverse=True)  # PDF y is downward
+    
+    for i in range(len(sorted_y) - 1):
+        for j in range(len(sorted_x) - 1):
+            x0, x1 = sorted_x[j], sorted_x[j + 1]
+            y0, y1 = sorted_y[i], sorted_y[i + 1]  # y0 > y1 in PDF coords
+            
+            # Verify all four edges exist
+            top = any(l.y == y0 and l.x_min <= x0 and l.x_max >= x1 for l in horizontal_lines)
+            bottom = any(l.y == y1 and l.x_min <= x0 and l.x_max >= x1 for l in horizontal_lines)
+            left = any(l.x == x0 and l.y_min <= y1 and l.y_max >= y0 for l in vertical_lines)
+            right = any(l.x == x1 and l.y_min <= y1 and l.y_max >= y0 for l in vertical_lines)
+            
+            if top and bottom and left and right:
+                cells.append({
+                    'row': i,
+                    'col': j,
+                    'bounding_box': {'x0': x0, 'y0': y1, 'x1': x1, 'y1': y0},
+                    'border_present': {'top': top, 'bottom': bottom, 'left': left, 'right': right}
+                })
+    
+    return Grid(horizontal_lines, vertical_lines, intersections, cells)
+
+
+def merge_collinear(segments, axis, gap_threshold):
+    """Merge segments that are collinear and overlapping/contiguous."""
+    if not segments:
+        return []
+    
+    # Group by coordinate along the orthogonal axis
+    groups = {}
+    for seg in segments:
+        if axis == 'y':
+            key = round(seg[2], 1)  # y-coordinate
+        else:
+            key = round(seg[2], 1)  # x-coordinate
+        groups.setdefault(key, []).append(seg)
+    
+    # Merge within each group
+    merged = []
+    for coord, group in groups.items():
+        group.sort(key=lambda s: s[0])  # Sort by start position
+        current_start, current_end, _ = group[0]
+        
+        for start, end, _ in group[1:]:
+            if start <= current_end + gap_threshold:
+                # Overlapping or contiguous - extend
+                current_end = max(current_end, end)
+            else:
+                # Gap - emit current segment and start new
+                if axis == 'y':
+                    merged.append(Line(current_start, current_end, coord))
+                else:
+                    merged.append(Line(current_start, current_end, coord))
+                current_start, current_end = start, end
+        
+        # Emit final segment
+        if axis == 'y':
+            merged.append(Line(current_start, current_end, coord))
+        else:
+            merged.append(Line(current_start, current_end, coord))
+    
+    return merged
+```
+
+---
+
+## Algorithm: Borderless Table Detection
+
+```python
+def detect_borderless_table(text_spans, page_width):
+    """
+    Detect a table structure from text alignment when no ruling lines exist.
+    
+    Args:
+        text_spans: List of TextSpan objects with bounding boxes
+        page_width: Page width for normalization
+    
+    Returns:
+        Table with inferred rows and columns, or None if not tabular
+    """
+    # Step 1: Group spans into rows by y-coordinate proximity
+    rows = group_spans_into_rows(text_spans, y_tolerance=2.0)
+    
+    if len(rows) < 3:
+        return None  # Too few rows to be a table
+    
+    # Step 2: Build vertical projection profile
+    # For each x-coordinate, count how many rows have text coverage
+    projection = np.zeros(int(page_width))
+    for row in rows:
+        for span in row.spans:
+            x_start = int(span.bbox.x0)
+            x_end = int(span.bbox.x1)
+            projection[x_start:x_end] += 1
+    
+    # Step 3: Find column separators (gaps in projection)
+    # Compute median word space from intra-row gaps
+    word_spaces = []
+    for row in rows:
+        for i in range(len(row.spans) - 1):
+            gap = row.spans[i + 1].bbox.x0 - row.spans[i].bbox.x1
+            if gap > 0:
+                word_spaces.append(gap)
+    
+    if not word_spaces:
+        return None
+    
+    median_word_space = np.median(word_spaces)
+    min_column_gap = median_word_space * 2.5  # K = 2.5
+    
+    # Find gaps where projection drops to near-zero
+    column_separators = []
+    in_gap = False
+    gap_start = 0
+    
+    for x in range(1, len(projection) - 1):
+        is_gap = projection[x] < len(rows) * 0.3  # Coverage < 30% of rows
+        
+        if is_gap and not in_gap:
+            gap_start = x
+            in_gap = True
+        elif not is_gap and in_gap:
+            gap_width = x - gap_start
+            if gap_width >= min_column_gap:
+                column_separators.append((gap_start, x))
+            in_gap = False
+    
+    if len(column_separators) < 1:
+        return None  # No clear column structure
+    
+    # Step 4: Verify tabular structure
+    # Check that at least 60% of rows share the same column count
+    column_counts = []
+    for row in rows:
+        count = 0
+        for sep_start, sep_end in column_separators:
+            # Check if row has text spanning across this separator
+            # (i.e., the separator falls within a gap for this row)
+            has_gap = True
+            for span in row.spans:
+                if span.bbox.x0 < sep_end and span.bbox.x1 > sep_start:
+                    has_gap = False
+                    break
+            if has_gap:
+                count += 1
+        column_counts.append(count + 1)  # +1 for columns on either side of separators
+    
+    # Mode of column counts
+    mode_count = max(set(column_counts), key=column_counts.count)
+    consistency = sum(1 for c in column_counts if c == mode_count) / len(column_counts)
+    
+    if consistency < 0.6:
+        return None  # Column structure not consistent enough
+    
+    # Step 5: Build table from separators
+    # Column boundaries are at: 0, sep[0].start, sep[0].end, sep[1].start, ..., page_width
+    col_boundaries = [0.0]
+    for sep_start, sep_end in column_separators:
+        col_boundaries.append((sep_start + sep_end) / 2)  # Use gap midpoint
+    col_boundaries.append(page_width)
+    
+    # Build cells
+    cells = []
+    for row_idx, row in enumerate(rows):
+        for col_idx in range(len(col_boundaries) - 1):
+            x0, x1 = col_boundaries[col_idx], col_boundaries[col_idx + 1]
+            y0, y1 = row.y_max, row.y_min  # PDF y is downward
+            
+            # Collect text spans within this cell
+            cell_text = []
+            for span in row.spans:
+                span_center_x = (span.bbox.x0 + span.bbox.x1) / 2
+                if x0 <= span_center_x <= x1:
+                    cell_text.append(span.text)
+            
+            cells.append({
+                'row': row_idx,
+                'col': col_idx,
+                'bounding_box': {'x0': x0, 'y0': y1, 'x1': x1, 'y1': y0},
+                'text': ' '.join(cell_text),
+                'border_present': {'top': False, 'bottom': False, 'left': False, 'right': False}
+            })
+    
+    return Table(
+        row_count=len(rows),
+        col_count=len(col_boundaries) - 1,
+        cells=cells,
+        confidence=consistency
+    )
+```
+
+---
+
+## Algorithm: Cell Content Assignment
+
+```python
+def assign_cell_contents(cells, text_spans, images):
+    """
+    Assign text spans and images to table cells based on centroid containment.
+    
+    Args:
+        cells: List of cell bounding boxes from grid reconstruction
+        text_spans: All text spans on the page
+        images: All image bounding boxes on the page
+    
+    Returns:
+        Cells with populated 'text' and 'images' fields
+    """
+    for cell in cells:
+        cell_bbox = cell['bounding_box']
+        cell_center_x = (cell_bbox['x0'] + cell_bbox['x1']) / 2
+        cell_center_y = (cell_bbox['y0'] + cell_bbox['y1']) / 2
+        
+        # Collect text spans whose centroid is inside the cell
+        cell_texts = []
+        for span in text_spans:
+            span_center_x = (span.bbox.x0 + span.bbox.x1) / 2
+            span_center_y = (span.bbox.y0 + span.bbox.y1) / 2
+            
+            if (cell_bbox['x0'] <= span_center_x <= cell_bbox['x1'] and
+                cell_bbox['y1'] <= span_center_y <= cell_bbox['y0']):  # PDF y is inverted
+                cell_texts.append((span_center_x, span_center_y, span.text))
+        
+        # Sort by reading order (left-to-right, top-to-bottom)
+        cell_texts.sort(key=lambda t: (-t[1], t[0]))  # Sort by y desc, then x asc
+        cell['text'] = ' '.join(t[2] for t in cell_texts)
+        
+        # Collect images whose centroid is inside the cell
+        cell_images = []
+        for img in images:
+            img_center_x = (img.bbox.x0 + img.bbox.x1) / 2
+            img_center_y = (img.bbox.y0 + img.bbox.y1) / 2
+            
+            if (cell_bbox['x0'] <= img_center_x <= cell_bbox['x1'] and
+                cell_bbox['y1'] <= img_center_y <= cell_bbox['y0']):
+                cell_images.append(img)
+        
+        cell['images'] = cell_images
+    
+    return cells
+```
+
+---
+
+## Version History
+
+- **v1.0** (2025-01-24): Final-pass with complete pseudo-code listings for line-based grid reconstruction, borderless table detection, and cell content assignment algorithms. Added merged cell handling, multi-page table continuation detection, and StructTree TH detection specification.
+- **v0.9** (2024-12-15): Initial 218-line draft covering line-based detection fundamentals, whitespace gap analysis, and output representation.
