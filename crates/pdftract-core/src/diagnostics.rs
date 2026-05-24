@@ -797,6 +797,32 @@ pub enum DiagCode {
     /// Phase origin: 3.1
     TextRenderingModeClamped,
 
+    /// T* operator when leading == 0 (no-op)
+    ///
+    /// Emitted when T* is called with leading == 0, resulting in no vertical
+    /// movement. This is typically a PDF bug but is not fatal.
+    ///
+    /// Phase origin: 3.1
+    TstarZeroLeading,
+
+    /// Font resource not found
+    ///
+    /// Emitted when the Tf operator references a font name that doesn't exist
+    /// in the current resource dictionary's /Font subdictionary. Subsequent
+    /// text-show ops emit no glyphs until a valid font is bound.
+    ///
+    /// Phase origin: 3.1
+    FontResourceNotFound,
+
+    /// Font size zero or negative (clamped to 1.0)
+    ///
+    /// Emitted when the Tf operator receives a font_size <= 0, which would
+    /// produce zero-height glyphs. The size is clamped to 1.0 to avoid
+    /// breaking layout.
+    ///
+    /// Phase origin: 3.1
+    FontSizeZeroOrNegative,
+
     // === LAYOUT_* codes ===
     /// Tagged PDF StructTree deferred to Phase 7
     ///
@@ -1014,7 +1040,10 @@ impl DiagCode {
             | DiagCode::CmArgCount
             | DiagCode::CmDegenerate
             | DiagCode::HorizScalingZero
-            | DiagCode::TextRenderingModeClamped => "GSTATE",
+            | DiagCode::TextRenderingModeClamped
+            | DiagCode::TstarZeroLeading
+            | DiagCode::FontResourceNotFound
+            | DiagCode::FontSizeZeroOrNegative => "GSTATE",
 
             // LAYOUT_*
             DiagCode::LayoutTaggedPdfDeferred
@@ -1125,6 +1154,9 @@ impl DiagCode {
             DiagCode::CmDegenerate => "CM_DEGENERATE",
             DiagCode::HorizScalingZero => "HORIZ_SCALING_ZERO",
             DiagCode::TextRenderingModeClamped => "TEXT_RENDERING_MODE_CLAMPED",
+            DiagCode::TstarZeroLeading => "TSTAR_ZERO_LEADING",
+            DiagCode::FontResourceNotFound => "FONT_RESOURCE_NOT_FOUND",
+            DiagCode::FontSizeZeroOrNegative => "FONT_SIZE_ZERO_OR_NEGATIVE",
             DiagCode::LayoutTaggedPdfDeferred => "TAGGED_PDF_STRUCT_TREE_DEFERRED",
             DiagCode::LayoutReadingOrderAmbiguous => "LAYOUT_READING_ORDER_AMBIGUOUS",
             DiagCode::LayoutLowReadability => "LAYOUT_LOW_READABILITY",
@@ -1224,6 +1256,9 @@ impl DiagCode {
             | DiagCode::CmDegenerate
             | DiagCode::HorizScalingZero
             | DiagCode::TextRenderingModeClamped
+            | DiagCode::TstarZeroLeading
+            | DiagCode::FontResourceNotFound
+            | DiagCode::FontSizeZeroOrNegative
             | DiagCode::LayoutReadingOrderAmbiguous
             | DiagCode::LayoutLowReadability
             | DiagCode::CacheEntryCorrupt
@@ -1949,6 +1984,30 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         recoverable: true,
         phase: "3.1",
         suggested_action: "The Tr operator received a value outside 0-7; clamped to valid range",
+    },
+    DiagInfo {
+        code: DiagCode::TstarZeroLeading,
+        category: "GSTATE",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "3.1",
+        suggested_action: "The T* operator was called with leading == 0; no vertical movement occurred",
+    },
+    DiagInfo {
+        code: DiagCode::FontResourceNotFound,
+        category: "GSTATE",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "3.1",
+        suggested_action: "The Tf operator referenced a font name not found in the resource dictionary; text-show ops will produce no glyphs until a valid font is bound",
+    },
+    DiagInfo {
+        code: DiagCode::FontSizeZeroOrNegative,
+        category: "GSTATE",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "3.1",
+        suggested_action: "The Tf operator received a font_size <= 0; clamped to 1.0 to avoid zero-height glyphs",
     },
     // === LAYOUT_* codes ===
     DiagInfo {

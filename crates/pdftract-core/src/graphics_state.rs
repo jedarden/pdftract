@@ -399,6 +399,70 @@ impl GraphicsState {
     pub fn set_text_rendering_mode(&mut self, value: u8) {
         self.text_rendering_mode = value.min(7);
     }
+
+    /// Move text position (Td operator).
+    ///
+    /// Sets text_line_matrix = translate(tx, ty) * text_line_matrix,
+    /// then copies text_line_matrix to text_matrix.
+    #[inline]
+    pub fn move_text(&mut self, tx: f64, ty: f64) {
+        let translation = Matrix3x3::translate(tx, ty);
+        self.text_line_matrix = translation.multiply(&self.text_line_matrix);
+        self.text_matrix = self.text_line_matrix;
+    }
+
+    /// Move text position and set leading (TD operator).
+    ///
+    /// Same as Td, but also sets leading = -ty.
+    #[inline]
+    pub fn move_text_set_leading(&mut self, tx: f64, ty: f64) {
+        self.leading = -ty;
+        self.move_text(tx, ty);
+    }
+
+    /// Set text matrix (Tm operator).
+    ///
+    /// Sets both text_matrix and text_line_matrix to the given matrix.
+    #[inline]
+    pub fn set_text_matrix(&mut self, matrix: &Matrix3x3) {
+        self.text_matrix = *matrix;
+        self.text_line_matrix = *matrix;
+    }
+
+    /// Move to next line (T* operator).
+    ///
+    /// Equivalent to Td 0 -leading. If leading == 0, this is a no-op.
+    #[inline]
+    pub fn next_line(&mut self) {
+        self.move_text(0.0, -self.leading);
+    }
+
+    /// Bind font (Tf operator).
+    ///
+    /// Sets the font and font_size. If size <= 0, clamps to 1.0.
+    #[inline]
+    pub fn set_font(&mut self, font: std::sync::Arc<Font>, size: f64) {
+        self.font = Some(font);
+        self.font_size = if size <= 0.0 { 1.0 } else { size };
+    }
+
+    /// Reset text matrices to identity (BT operator).
+    ///
+    /// Called when beginning a text block.
+    #[inline]
+    pub fn begin_text(&mut self) {
+        self.text_matrix = Matrix3x3::identity();
+        self.text_line_matrix = Matrix3x3::identity();
+    }
+
+    /// Discard text matrices (ET operator).
+    ///
+    /// Called when ending a text block.
+    #[inline]
+    pub fn end_text(&mut self) {
+        self.text_matrix = Matrix3x3::identity();
+        self.text_line_matrix = Matrix3x3::identity();
+    }
 }
 
 impl Default for GraphicsState {

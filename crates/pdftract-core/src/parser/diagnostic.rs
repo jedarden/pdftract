@@ -71,6 +71,14 @@ pub enum DiagCode {
     StructUnresolvedDestination,
     /// Outline action is not a GoTo action (e.g., URI action)
     StructNonGotoOutline,
+
+    // Graphics state codes
+    /// T* operator when leading == 0 (no-op, no vertical movement)
+    TstarZeroLeading,
+    /// Tf operator referenced font name not found in resource dictionary
+    FontResourceNotFound,
+    /// Tf operator with font_size <= 0 (clamped to 1.0)
+    FontSizeZeroOrNegative,
 }
 
 /// A diagnostic message emitted during PDF parsing.
