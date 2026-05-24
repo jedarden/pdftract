@@ -118,6 +118,7 @@ mod tests {
             size: 12.0,
             confidence: None,
             receipt: None,
+            column: None,
         }];
 
         let output = render_spans(&spans);

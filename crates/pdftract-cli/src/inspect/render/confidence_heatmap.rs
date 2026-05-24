@@ -151,6 +151,7 @@ mod tests {
             size: 20.0,
             confidence: Some(0.9),
             receipt: None,
+            column: None,
         }];
 
         let result = render_confidence_heatmap(&spans);

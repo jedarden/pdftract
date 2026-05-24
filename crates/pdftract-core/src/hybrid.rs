@@ -40,6 +40,11 @@ pub struct Span {
     pub source: SpanSource,
     /// The extracted text.
     pub text: String,
+    /// Column index (0-based) assigned by Phase 4.3 column detection.
+    ///
+    /// This field is `None` for spans outside any detected column
+    /// (e.g., full-width headings, inter-column gaps).
+    pub column: Option<u32>,
 }
 
 /// Source of a span - either vector extraction, OCR, assisted OCR, or OCR fallback.
@@ -63,6 +68,7 @@ impl Span {
             confidence,
             source,
             text,
+            column: None,
         }
     }
 
