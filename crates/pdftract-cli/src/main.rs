@@ -158,6 +158,8 @@ enum Commands {
     },
     /// Search for text patterns in PDF files with bounding-box results
     Grep(grep::GrepArgs),
+    /// Inspect a PDF file in a local web browser with debugging overlays
+    Inspect(inspect::InspectArgs),
     /// Verify a receipt against a PDF file
     VerifyReceipt(verify_receipt::VerifyReceiptCommand),
     /// Manage the extraction cache
@@ -438,6 +440,12 @@ fn main() -> Result<()> {
         }
         Commands::Grep(args) => {
             if let Err(e) = grep::run_grep(args) {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Inspect(args) => {
+            if let Err(e) = cmd_inspect(args) {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
@@ -1445,6 +1453,15 @@ fn cmd_serve(
             no_cache,
             max_upload_mb,
         ))
+}
+
+/// Wrapper for the inspect subcommand.
+///
+/// Creates a tokio runtime and runs the async inspect::run function.
+fn cmd_inspect(args: inspect::InspectArgs) -> Result<()> {
+    tokio::runtime::Runtime::new()
+        .context("Failed to create tokio runtime")?
+        .block_on(inspect::run(args))
 }
 
 /// Parse a size string like "1 GiB", "500 MiB", "2 GiB" into bytes.

@@ -1,0 +1,196 @@
+//! Inspector web debug viewer implementation.
+//!
+//! Implements Phase 7.9.1: inspect subcommand with extraction pipeline,
+//! axum server, and browser launcher.
+
+use super::args::InspectArgs;
+use anyhow::{Context, Result};
+use axum::{extract::State, response::Html, routing::get, Router};
+use pdftract_core::extract::{extract_pdf, result_to_json};
+use pdftract_core::options::ExtractionOptions;
+use serde_json::Value as JsonValue;
+use std::path::Path;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+/// Cached extraction result for the inspector.
+#[derive(Clone)]
+pub struct InspectorState {
+    /// Extraction result for the primary document
+    pub document_a: JsonValue,
+    /// Extraction result for the comparison document (if any)
+    pub document_b: Option<JsonValue>,
+    /// Authentication token for non-loopback binds
+    pub auth_token: Option<String>,
+}
+
+/// Run the inspector subcommand.
+///
+/// # Steps
+///
+/// 1. Validate arguments
+/// 2. Run extraction pipeline on the input file
+/// 3. (Optionally) Run extraction on the compare file
+/// 4. Build axum router with inspector state
+/// 5. Start HTTP server
+/// 6. Launch browser (unless --no-open)
+/// 7. Wait for Ctrl-C
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Argument validation fails
+/// - PDF extraction fails
+/// - Server fails to bind
+pub async fn run(args: InspectArgs) -> Result<()> {
+    // Step 1: Validate arguments
+    args.validate().context("Invalid inspect arguments")?;
+
+    // Step 2: Extract the primary document
+    let document_a = extract_document(&args.file).context(format!(
+        "Failed to extract document: {}",
+        args.file.display()
+    ))?;
+
+    // Step 3: Extract the compare document if provided
+    let document_b = if let Some(ref compare_path) = args.compare {
+        Some(extract_document(compare_path).context(format!(
+            "Failed to extract compare document: {}",
+            compare_path.display()
+        ))?)
+    } else {
+        None
+    };
+
+    // Step 4: Build inspector state
+    let state = InspectorState {
+        document_a,
+        document_b,
+        auth_token: args.auth_token.clone(),
+    };
+
+    // Step 5: Build axum router
+    let app = create_router(state);
+
+    // Step 6: Start server
+    let bind_addr = args.parse_bind()?;
+    let addr = (bind_addr, args.port);
+    let server_url = args.server_url();
+
+    eprintln!("Inspector running at {}", server_url);
+    eprintln!("Press Ctrl-C to stop");
+
+    // Spawn the server task
+    let server_handle = tokio::spawn(async move {
+        let listener = tokio::net::TcpListener::bind(addr)
+            .await
+            .context(format!("Failed to bind to {}", addr.0))?;
+
+        axum::serve(listener, app).await.context("Server error")?;
+
+        Ok::<(), anyhow::Error>(())
+    });
+
+    // Step 7: Launch browser (unless --no-open)
+    if !args.no_open {
+        launch_browser(&server_url);
+    }
+
+    // Wait for Ctrl-C
+    tokio::select! {
+        result = server_handle => {
+            result??;
+        }
+        _ = tokio::signal::ctrl_c() => {
+            eprintln!("\nShutting down inspector...");
+        }
+    }
+
+    Ok(())
+}
+
+/// Extract a PDF document and return the JSON result.
+fn extract_document(path: &Path) -> Result<JsonValue> {
+    // Run extraction with default options
+    let options = ExtractionOptions::default();
+    let result = extract_pdf(path, &options).context(format!(
+        "Extraction pipeline failed for: {}",
+        path.display()
+    ))?;
+
+    // Convert to JSON
+    let json = result_to_json(&result);
+
+    Ok(json)
+}
+
+/// Create the axum router for the inspector.
+fn create_router(state: InspectorState) -> Router {
+    Router::new()
+        .route("/", get(index_handler))
+        .with_state(Arc::new(Mutex::new(state)))
+}
+
+/// Handler for the index page.
+async fn index_handler(State(_state): State<Arc<Mutex<InspectorState>>>) -> Html<&'static str> {
+    // For now, return a placeholder. The full frontend will be in 7.9.3.
+    Html(
+        r#"<!DOCTYPE html>
+<html>
+<head>
+    <title>pdftract inspector</title>
+    <style>
+        body { font-family: system-ui, sans-serif; margin: 2rem; }
+        h1 { color: #333; }
+    </style>
+</head>
+<body>
+    <h1>pdftract inspector</h1>
+    <p>Inspector mode is under construction. See Phase 7.9 for the full implementation.</p>
+</body>
+</html>"#,
+    )
+}
+
+/// Launch the OS default browser to the given URL.
+///
+/// This function attempts to open the URL in the user's default browser:
+/// - Linux: `xdg-open`
+/// - macOS: `open`
+/// - Windows: `cmd /c start`
+///
+/// If the browser launch fails (e.g., no $DISPLAY on Linux), we print the URL
+/// instead of failing. This allows CI environments to work gracefully.
+fn launch_browser(url: &str) {
+    let (program, args) = if cfg!(target_os = "linux") {
+        ("xdg-open", vec![url])
+    } else if cfg!(target_os = "macos") {
+        ("open", vec![url])
+    } else if cfg!(target_os = "windows") {
+        ("cmd", vec!["/c", "start", url])
+    } else {
+        // Unknown OS; just print the URL
+        eprintln!("Open this URL in your browser: {}", url);
+        return;
+    };
+
+    match std::process::Command::new(program).args(&args).spawn() {
+        Ok(_) => {}
+        Err(e) => {
+            // Browser launch failed (e.g., no $DISPLAY on Linux)
+            eprintln!("Failed to launch browser: {}", e);
+            eprintln!("Open this URL in your browser: {}", url);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_launch_browser_doesnt_crash() {
+        // This should not crash even if there's no display
+        launch_browser("http://127.0.0.1:7676/");
+    }
+}
