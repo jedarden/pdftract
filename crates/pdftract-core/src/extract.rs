@@ -1051,6 +1051,256 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
     })
 }
 
+/// Extract text and structure from a PDF file, invoking a callback for each page.
+///
+/// This is the callback-based streaming variant of `extract_pdf`. Each page
+/// is extracted and passed to the callback immediately after extraction,
+/// then dropped from memory. This keeps memory usage bounded regardless of
+/// document size.
+///
+/// # Arguments
+///
+/// * `pdf_path` - Path to the PDF file
+/// * `options` - Extraction options controlling receipt generation and parallelism
+/// * `callback` - Function called with each PageResult as it completes
+///
+/// # Returns
+///
+/// An `ExtractionMetadata` containing summary statistics.
+///
+/// # Memory Bounding
+///
+/// This function never accumulates all pages in memory. Pages are iterated
+/// lazily via LazyPageIter, extracted one at a time, and passed to the callback.
+/// Peak RSS stays O(depth × per-page) not O(pages × per-page).
+///
+/// # Callback Contract
+///
+/// The callback is invoked from the extraction thread with a reference to each
+/// PageResult. If the callback returns `false`, extraction stops early.
+pub fn extract_pdf_streaming<F>(
+    pdf_path: &std::path::Path,
+    options: &ExtractionOptions,
+    mut callback: F,
+) -> Result<ExtractionMetadata>
+where
+    F: FnMut(&PageResult) -> bool,
+{
+    use crate::parser::catalog::parse_catalog;
+    use crate::parser::pages::LazyPageIter;
+    use crate::parser::stream::FileSource;
+    use crate::parser::xref::{load_xref_with_prev_chain, XrefResolver};
+
+    // Open the PDF file
+    let source = FileSource::open(pdf_path).context("Failed to open PDF file")?;
+
+    // Find the startxref offset
+    let startxref_offset = find_startxref(&source).context("Failed to find startxref offset")?;
+
+    // Load the xref table
+    let xref_section = load_xref_with_prev_chain(&source, startxref_offset);
+
+    // Create resolver from xref section
+    let resolver = XrefResolver::from_section(xref_section.clone());
+
+    // Get the root reference from trailer
+    let root_ref = xref_section
+        .trailer
+        .as_ref()
+        .and_then(|trailer| trailer.get("Root"))
+        .and_then(|obj| obj.as_ref())
+        .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
+
+    // Parse the catalog
+    let catalog = parse_catalog(&resolver, root_ref).map_err(|diagnostics| {
+        let msg = diagnostics
+            .first()
+            .map(|d| d.message.as_ref())
+            .unwrap_or("unknown error");
+        anyhow::anyhow!("Failed to parse catalog: {}", msg)
+    })?;
+
+    // Wrap resolver in Arc for sharing across threads
+    let resolver_arc = Arc::new(resolver);
+
+    // Phase 7.1.4: Determine reading order algorithm based on StructTree coverage
+    let (reading_order_algorithm, struct_tree) =
+        if let Some(struct_tree_root_ref) = catalog.struct_tree_root_ref {
+            let struct_tree_result = parse_struct_tree(&resolver_arc, struct_tree_root_ref);
+
+            match struct_tree_result {
+                Ok(tree) => {
+                    if catalog.mark_info.requires_coverage_check() {
+                        (ReadingOrderAlgorithm::StructTree, Some(tree))
+                    } else {
+                        (ReadingOrderAlgorithm::StructTree, Some(tree))
+                    }
+                }
+                Err(_diagnostics) => (ReadingOrderAlgorithm::XyCut, None),
+            }
+        } else {
+            (ReadingOrderAlgorithm::XyCut, None)
+        };
+
+    // Build fingerprint
+    let fingerprint = compute_fingerprint_lazy(&catalog, &xref_section);
+
+    // Wrap options in Arc for sharing across threads
+    let fingerprint_arc = Arc::new(fingerprint.clone());
+    let options_arc = Arc::new(options.clone());
+
+    // Create lazy page iterator
+    let mut page_iter =
+        LazyPageIter::new(&resolver_arc, catalog.pages_ref).map_err(|diagnostics| {
+            let msg = diagnostics
+                .first()
+                .map(|d| d.message.as_ref())
+                .unwrap_or("unknown error");
+            anyhow::anyhow!("Failed to create lazy page iterator: {}", msg)
+        })?;
+
+    // Create a semaphore to bound the number of in-flight pages
+    let semaphore = Arc::new(Semaphore::new(options.max_parallel_pages));
+
+    // Track metadata across all pages
+    let mut total_spans = 0;
+    let mut total_blocks = 0;
+    let mut error_count = 0;
+    let mut page_count = 0;
+
+    // Phase 7.1.4: Collect page data for coverage check
+    let mut pages_with_mcids: Vec<(usize, Option<i32>, std::collections::HashSet<u32>)> =
+        Vec::new();
+    let needs_coverage_check = catalog.mark_info.requires_coverage_check() && struct_tree.is_some();
+
+    while let Some(page_result) = page_iter.next() {
+        let page_dict = match page_result {
+            Ok(p) => p,
+            Err(diagnostics) => {
+                let msg = diagnostics
+                    .first()
+                    .map(|d| d.message.as_ref())
+                    .unwrap_or("unknown error");
+                error_count += 1;
+                let error_page = PageResult {
+                    index: page_count,
+                    spans: vec![],
+                    blocks: vec![],
+                    tables: vec![],
+                    error: Some(msg.to_string()),
+                };
+                if !callback(&error_page) {
+                    break;
+                }
+                if needs_coverage_check {
+                    pages_with_mcids.push((page_count, None, std::collections::HashSet::new()));
+                }
+                page_count += 1;
+                continue;
+            }
+        };
+
+        // Track MCIDs for this page if coverage check is needed
+        if needs_coverage_check {
+            let decoded_streams = decode_page_content_streams(
+                &page_dict,
+                &resolver_arc,
+                &source,
+                DEFAULT_MAX_DECOMPRESS_BYTES,
+            );
+
+            let mut tracker = McidTracker::new();
+            track_mcids_from_content_stream(&decoded_streams, &mut tracker);
+
+            let struct_parents = page_dict.struct_parents();
+            let mcid_set = tracker.mcid_set().clone();
+            pages_with_mcids.push((page_count, struct_parents, mcid_set));
+
+            drop(decoded_streams);
+        }
+
+        // Extract this page
+        let _permit = semaphore.acquire_guard();
+        let extract_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            extract_page_from_dict(
+                &fingerprint_arc,
+                page_count,
+                &page_dict,
+                &options_arc,
+                Some(&source),
+                Some(&resolver_arc),
+            )
+        }));
+
+        let page_result = match extract_result {
+            Ok(Ok(internal_page)) => {
+                total_spans += internal_page.spans.len();
+                total_blocks += internal_page.blocks.len();
+                PageResult::from(internal_page)
+            }
+            Ok(Err(e)) => {
+                error_count += 1;
+                PageResult {
+                    index: page_count,
+                    spans: vec![],
+                    blocks: vec![],
+                    tables: vec![],
+                    error: Some(e.to_string()),
+                }
+            }
+            Err(_) => {
+                error_count += 1;
+                PageResult {
+                    index: page_count,
+                    spans: vec![],
+                    blocks: vec![],
+                    tables: vec![],
+                    error: Some(format!("Page {} extraction panicked", page_count)),
+                }
+            }
+        };
+
+        // Invoke callback with this page
+        if !callback(&page_result) {
+            // Caller requested early termination
+            break;
+        }
+
+        drop(page_dict);
+        page_count += 1;
+    }
+
+    // Phase 7.1.4: Perform coverage check if Suspects is true
+    let (final_reading_order_algorithm, coverage_diagnostics) = if needs_coverage_check {
+        if let Some(ref tree) = struct_tree {
+            let coverage_result =
+                check_coverage_for_pages(tree, &catalog.mark_info, &pages_with_mcids);
+            let diagnostics: Vec<String> = coverage_result
+                .diagnostics
+                .iter()
+                .map(|d| d.message.as_ref().to_string())
+                .collect();
+            (coverage_result.reading_order_algorithm, diagnostics)
+        } else {
+            (reading_order_algorithm, Vec::new())
+        }
+    } else {
+        (reading_order_algorithm, Vec::new())
+    };
+
+    Ok(ExtractionMetadata {
+        page_count,
+        receipts_mode: options.receipts,
+        span_count: total_spans,
+        block_count: total_blocks,
+        cache_status: None,
+        cache_age_seconds: None,
+        error_count,
+        reading_order_algorithm: Some(final_reading_order_algorithm.as_str().to_string()),
+        diagnostics: coverage_diagnostics,
+    })
+}
+
 /// Find the startxref offset in a PDF file.
 ///
 /// Scans the last 1024 bytes of the file for "startxref" keyword.

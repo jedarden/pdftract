@@ -48,7 +48,8 @@ pub mod table;
 // Re-export key types for convenience
 pub use document::{PageExtraction, PageIter, PdfExtractor};
 pub use extract::{
-    extract_pdf, extract_pdf_ndjson, ExtractionMetadata, ExtractionResult, PageResult,
+    extract_pdf, extract_pdf_ndjson, extract_pdf_streaming, ExtractionMetadata, ExtractionResult,
+    PageResult,
 };
 pub use font::std14::{get_std14_metrics, NamedEncoding, Std14Metrics};
 pub use forms::{walk_acroform_fields, AcroFieldType, AcroFormField};
