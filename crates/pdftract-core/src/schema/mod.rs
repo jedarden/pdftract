@@ -274,6 +274,13 @@ pub struct ExtractionQuality {
     /// Average confidence score across all spans [0.0, 1.0].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub avg_confidence: Option<f32>,
+
+    /// Per-page readability score (char-weighted median of span scores) [0.0, 1.0].
+    ///
+    /// This is the median of per-span readability scores, weighted by character count.
+    /// A score below 0.5 may indicate mojibake, encoding issues, or broken text layers.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub readability: Option<f32>,
 }
 
 impl ExtractionQuality {
@@ -285,6 +292,7 @@ impl ExtractionQuality {
             ocr_fraction: None,
             min_confidence: None,
             avg_confidence: None,
+            readability: None,
         }
     }
 
@@ -502,6 +510,7 @@ mod tests {
         assert_eq!(quality.ocr_fraction, None);
         assert_eq!(quality.min_confidence, None);
         assert_eq!(quality.avg_confidence, None);
+        assert_eq!(quality.readability, None);
     }
 
     #[test]
@@ -530,6 +539,7 @@ mod tests {
             ocr_fraction: Some(0.25),
             min_confidence: Some(0.95),
             avg_confidence: Some(0.98),
+            readability: Some(0.87),
         };
 
         let json = serde_json::to_string(&quality).unwrap();
@@ -540,6 +550,7 @@ mod tests {
         assert!(json.contains("ocr_fraction"));
         assert!(json.contains("min_confidence"));
         assert!(json.contains("avg_confidence"));
+        assert!(json.contains("readability"));
     }
 
     #[test]
@@ -551,6 +562,7 @@ mod tests {
             ocr_fraction: None,
             min_confidence: None,
             avg_confidence: None,
+            readability: None,
         };
 
         let json = serde_json::to_string(&quality).unwrap();
@@ -562,6 +574,7 @@ mod tests {
         assert!(!json.contains("ocr_fraction"));
         assert!(!json.contains("min_confidence"));
         assert!(!json.contains("avg_confidence"));
+        assert!(!json.contains("readability"));
     }
 
     #[test]
