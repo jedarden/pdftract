@@ -1,0 +1,26 @@
+Bool(true)
+Bool(false)
+Null
+Integer(123)
+Integer(-42)
+Real(3.14)
+Real(-0.5)
+String([72, 101, 108, 108, 111, 32, 87, 111, 114, 108, 100])
+String([110, 101, 115, 116, 101, 100, 32, 40, 112, 97, 114, 101, 110, 115, 41])
+String([72, 101, 108, 108, 111])
+Name([84, 121, 112, 101])
+Name([70, 111, 110, 116, 32, 70, 105, 108, 101])
+Name([32, 115, 112, 97, 99, 101])
+ArrayStart
+ArrayEnd
+DictStart
+DictEnd
+Stream
+EndStream
+Obj
+Keyword([101, 110, 100, 111, 98, 106])
+IndirectRef
+Keyword([120, 114, 101, 102])
+Keyword([116, 114, 97, 105, 108, 101, 114])
+Keyword([115, 116, 97, 114, 116, 120, 114, 101, 102])
+Eof

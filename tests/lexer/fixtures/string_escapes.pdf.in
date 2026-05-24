@@ -1,0 +1,11 @@
+(n\\n) (newline escape)
+(n\\r) (carriage return escape)
+(n\\t) (tab escape)
+(n\\\\) (backslash escape)
+(n\\() (open paren escape)
+(n\\)) (close paren escape)
+(n\\101) (octal A)
+(n\\101\\102\\103) (multiple octal)
+(line1\
+line2) (line continuation)
+(bare\\rcarriage) (line ending normalization test)

@@ -411,6 +411,70 @@ proptest::proptest! {
     }
 }
 
+/// Property: Literal string roundtrip preserves content.
+///
+/// Literal strings in PDF are wrapped in parentheses. This test generates
+/// arbitrary printable byte strings, wraps them in `(...)`, and verifies
+/// that the lexer decodes them back to the original bytes.
+///
+/// Line ending normalization is allowed: bare `\r` may become `\n` per
+/// PDF spec (section 7.3.4.2).
+#[cfg(feature = "proptest")]
+proptest::proptest! {
+    #[test]
+    fn prop_string_roundtrip(
+        // Generate arbitrary printable ASCII strings with some escapes
+        original in proptest::collection::vec(
+            prop_oneof![
+                // Printable ASCII range (space through tilde)
+                0x20u8..=0x7E,
+                // Tab and newline (valid in strings)
+                Just(b'\t'),
+                Just(b'\n'),
+                Just(b'\r'),
+            ],
+            0..500
+        )
+    ) {
+        // Wrap in parentheses, escaping special characters
+        let mut wrapped = Vec::with_capacity(original.len() * 2 + 2);
+        wrapped.push(b'(');
+
+        for &b in &original {
+            match b {
+                b'\\' | b'(' | b')' => {
+                    wrapped.push(b'\\');
+                    wrapped.push(b);
+                }
+                _ => wrapped.push(b),
+            }
+        }
+
+        wrapped.push(b')');
+
+        let mut lexer = Lexer::new(&wrapped);
+        let token = lexer.next_token();
+
+        match token {
+            Some(Token::String(decoded)) => {
+                // Allow line ending normalization: bare \r -> \n
+                let normalized: Vec<u8> = original.iter()
+                    .map(|&b| if b == b'\r' { b'\n' } else { b })
+                    .collect();
+                prop_assert_eq!(decoded, normalized,
+                    "String roundtrip failed: expected {:?}, got {:?}",
+                    normalized, decoded);
+            }
+            Some(Token::Eof) => {
+                prop_assert!(false, "Expected String token, got Eof");
+            }
+            other => {
+                prop_assert!(false, "Expected String token, got {:?}", other);
+            }
+        }
+    }
+}
+
 // Re-export for use in other modules
 pub use lexer_never_panics;
 

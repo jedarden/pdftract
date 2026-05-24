@@ -20,6 +20,10 @@ path = "../../tests/fixtures/generate_lzw_fixtures_main.rs"
 name = "generate_preprocess_fixtures"
 path = "../../tests/fixtures/preprocess/generate_fixtures_main.rs"
 
+[[bin]]
+name = "gen_lexer_golden"
+path = "../../tests/gen_lexer_golden.rs"
+
 [lib]
 name = "pdftract_cli"
 path = "src/lib.rs"

@@ -8,7 +8,7 @@
 //! - BDC /Tag <<props>> or BDC /Tag /PropName: begin marked content with properties
 //! - EMC: end marked content (pop top frame)
 
-use crate::parser::object::PdfObject;
+use crate::parser::object::{PdfObject, ObjRef};
 use crate::parser::resources::ResourceDict;
 use crate::parser::marked_content_stack::{MarkedContentStack, MarkedContentFrame};
 use crate::diagnostics::{Diagnostic, DiagCode};

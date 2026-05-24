@@ -1,0 +1,12 @@
+-.5
+42.
+123
+-456
++789
+0
+0.0
+1e5 (not scientific per PDF spec)
+1.5e2 (not scientific per PDF spec)
+999999999999999999999
+.
+-. (no digits)
