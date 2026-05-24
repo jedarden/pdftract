@@ -6,6 +6,7 @@ fn main() {
     println!("cargo:rerun-if-changed=build/std14-metrics.json");
     println!("cargo:rerun-if-changed=build/named-encodings.json");
     println!("cargo:rerun-if-changed=build/agl.json");
+    println!("cargo:rerun-if-changed=build/font-fingerprints.json");
 
     let out_dir = env::var("OUT_DIR").unwrap();
     let out_path = Path::new(&out_dir);
@@ -21,6 +22,10 @@ fn main() {
     // Generate AGL phf maps
     let agl_path = Path::new("build/agl.json");
     generate_agl_maps(out_path, agl_path);
+
+    // Generate font fingerprint phf map
+    let fingerprints_path = Path::new("build/font-fingerprints.json");
+    generate_font_fingerprints(out_path, fingerprints_path);
 }
 
 fn generate_std14_metrics(out_dir: &Path, metrics_path: &Path) {
@@ -275,4 +280,145 @@ fn decode_json_unicode(s: &str) -> String {
     } else {
         s.to_string()
     }
+}
+
+/// Generate font fingerprint phf map from font-fingerprints.json.
+///
+/// The JSON format is:
+/// ```json
+/// [
+///   {
+///     "sha256_hex": "abc123...",
+///     "font_name": "Font Name (informational)",
+///     "entries": [[gid1, codepoint1], [gid2, codepoint2], ...]
+///   }
+/// ]
+/// ```
+///
+/// Each entry maps a glyph ID to a Unicode codepoint for a specific font
+/// identified by its SHA-256 hash.
+fn generate_font_fingerprints(out_dir: &Path, fingerprints_path: &Path) {
+    let json_content = fs::read_to_string(fingerprints_path)
+        .expect("Failed to read font-fingerprints.json");
+
+    let data: serde_json::Value = serde_json::from_str(&json_content)
+        .expect("Failed to parse font-fingerprints.json");
+
+    let fonts = data.as_array()
+        .expect("font-fingerprints must be an array");
+
+    let mut entries_arrays = String::new();
+    let mut map_builder = phf_codegen::Map::new();
+
+    // Store keys and values to ensure they live long enough
+    let mut keys = Vec::new();
+    let mut values = Vec::new();
+
+    for font_entry in fonts {
+        let sha256_hex = font_entry.get("sha256_hex")
+            .and_then(|v| v.as_str())
+            .expect("sha256_hex must be a string");
+
+        // Skip empty hashes (placeholder entries)
+        if sha256_hex.is_empty() {
+            continue;
+        }
+
+        // Validate SHA-256 hex (64 hex chars = 32 bytes)
+        if sha256_hex.len() != 64 {
+            panic!("SHA-256 hex must be 64 characters, got {}", sha256_hex.len());
+        }
+
+        // Convert hex string to [u8; 32] bytes
+        let hash_bytes: [u8; 32] = hex_decode_to_array(sha256_hex);
+
+        // Get entries
+        let entries = font_entry.get("entries")
+            .and_then(|v| v.as_array())
+            .expect("entries must be an array");
+
+        let ident = format!("HASH_{}", sha256_hex.replace('-', "_"));
+
+        // Build the entries array
+        let mut entry_values = Vec::new();
+        for entry in entries {
+            let arr = entry.as_array().expect("entry must be an array");
+            let gid = arr.get(0).and_then(|v| v.as_u64()).expect("gid must be a number") as u16;
+            let codepoint = arr.get(1).and_then(|v| v.as_u64()).expect("codepoint must be a number") as u32;
+
+            // Validate codepoint is a valid Unicode scalar value
+            if !is_valid_unicode_scalar(codepoint) {
+                panic!("Invalid Unicode scalar: 0x{:X}", codepoint);
+            }
+
+            entry_values.push(format!("({}, {})", gid, codepoint));
+        }
+
+        entries_arrays.push_str(&format!(r#"
+static {}: &[(u16, u32)] = &[{}];
+"#,
+            ident,
+            entry_values.join(", ")
+        ));
+
+        // Build the phf map key as a byte array literal
+        let key_bytes: Vec<String> = hash_bytes.iter()
+            .map(|b| format!("0x{:02x}", b))
+            .collect();
+
+        let key = format!("[{}]", key_bytes.join(", "));
+        let value = format!("&{}", ident);
+
+        keys.push(key);
+        values.push(value);
+    }
+
+    // Add entries to the map builder
+    for (key, value) in keys.iter().zip(values.iter()) {
+        map_builder.entry(key.as_str(), value.as_str());
+    }
+
+    let rust_code = format!(r#"
+// Auto-generated font fingerprint phf map.
+// Do not edit manually.
+// Source: build/font-fingerprints.json
+
+{}
+
+/// Font fingerprint database.
+///
+/// Maps SHA-256 hashes of embedded font programs to their glyph ID to
+/// Unicode codepoint mappings. This is Level 3 of the encoding fallback
+/// chain, used when:
+/// - /ToUnicode is missing or empty
+/// - The embedded font subset has stripped glyph names
+/// - The font binary matches a known fingerprint
+///
+/// The hash is computed over the DECODED font program bytes (post stream
+/// decoding, pre-interpretation).
+pub static FONT_FINGERPRINTS: phf::Map<[u8; 32], &'static [(u16, u32)]> = {};
+"#,
+        entries_arrays,
+        map_builder.build()
+    );
+
+    fs::write(Path::new(out_dir).join("font_fingerprints.rs"), rust_code)
+        .expect("Failed to write font_fingerprints.rs");
+}
+
+/// Decode a hex string to a [u8; 32] array.
+fn hex_decode_to_array(hex: &str) -> [u8; 32] {
+    let mut bytes = [0u8; 32];
+    for i in 0..32 {
+        let byte_str = &hex[i * 2..i * 2 + 2];
+        bytes[i] = u8::from_str_radix(byte_str, 16)
+            .expect("Invalid hex string");
+    }
+    bytes
+}
+
+/// Check if a value is a valid Unicode scalar value.
+fn is_valid_unicode_scalar(cp: u32) -> bool {
+    // Unicode scalar values: 0x0..=0xD7FF, 0xE000..=0x10FFFF
+    (0x0..=0xD7FF).contains(&cp) || (0xE000..=0x10FFFF).contains(&cp)
 }

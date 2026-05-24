@@ -9,12 +9,14 @@ pub mod type0;
 pub mod cmap;
 pub mod encoding;
 pub mod agl;
+pub mod fingerprint;
 
 pub use embedded::{EmbeddedFont, FontMetrics, EmptyFontMetrics, GlyphBbox};
 pub use type0::{Type0Font, DescendantCIDFont, CIDToGIDMap};
 pub use cmap::{ToUnicodeMap, parse_to_unicode, parse_to_unicode_with_diags};
 pub use encoding::{NamedEncoding, DifferencesOverlay, FontEncoding};
 pub use agl::{unicode_for_glyph_name, unicode_for_glyph_name_multi};
+pub use fingerprint::{FontFingerprint, CachedFingerprint, lookup_font_fingerprint};
 
 use crate::parser::object::types::{PdfDict, PdfObject};
 
