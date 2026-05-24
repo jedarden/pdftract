@@ -30,6 +30,8 @@ zstd = "0.13"
 rayon = "1.10"
 phf = "0.11"
 tracing = { workspace = true }
+dashmap = "6.1"
+smallvec = "1.13"
 
 [features]
 default = ["serde"]
@@ -39,6 +41,7 @@ ocr = ["dep:image", "dep:leptonica-plumbing"]  # Enable OCR path (image composit
 full-render = ["dep:pdfium-render", "ocr"]  # Enable PDFium-based rendering (requires ocr)
 proptest = []
 fuzzing = []  # Enable cfg(fuzzing) for fuzz harnesses
+shape-db = []  # Enable glyph shape database (Level 4 encoding fallback)
 
 [dev-dependencies]
 chrono = "0.4"
