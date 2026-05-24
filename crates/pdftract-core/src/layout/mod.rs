@@ -2,6 +2,7 @@
 //!
 //! This module implements block-level layout analysis including:
 //! - Caption classification (caption.rs)
+//! - Code block classification (code.rs)
 //! - Line formation (line.rs)
 //! - Readability aggregation (readability.rs)
 //! - English wordlist for dict coverage scoring (wordlist.rs)
@@ -10,11 +11,16 @@
 //! headings, figures, captions, etc.) based on spatial and font metrics.
 
 pub mod caption;
+pub mod code;
 pub mod line;
 pub mod readability;
 pub mod wordlist;
 
 pub use caption::{classify_caption, classify_page_captions, Block, PageContext};
+pub use code::{
+    classify_code, classify_page_code_blocks, is_fixed_pitch_flag, is_monospace_font_name,
+    is_monospace_span, MonospaceSpan,
+};
 pub use line::{
     compute_baseline, group_lines_into_blocks, union_bboxes, BlockInput, HasBBox, Line,
     LineDirection, LineMetadata,
