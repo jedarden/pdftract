@@ -2,6 +2,106 @@
 
 Thank you for your interest in contributing to pdftract! This document covers the essential workflows for contributors.
 
+## Licensing and Sign-off
+
+pdftract is dual-licensed under **MIT OR Apache-2.0**. You may choose either license for your use.
+
+### Developer Certificate of Origin (DCO)
+
+This project requires a **Developer Certificate of Origin (DCO)** sign-off on all commits. This certifies that you wrote the code or have the right to pass it on as open-source.
+
+**To sign your commits, use `git commit --signoff` (or `git commit -s`):**
+
+```bash
+git commit -s -m "feat: add some feature"
+# The "Signed-off-by" trailer is added automatically
+```
+
+**No CLA is required.** The DCO is sufficient for this permissive-license project.
+
+### Apache NOTICE File
+
+The Apache-2.0 license includes a NOTICE file requirement, but pdftract does not ship a NOTICE file in the source distribution. This is intentional: the project maintains no contributor list outside of git history, and there are no third-party attribution notices required.
+
+**Downstream redistributors MAY add a NOTICE file** when distributing pdftract as part of their own product. If you choose to add one, it should include:
+- Attribution to the pdftract project
+- A link to the original source repository
+- Any modifications you made (if distributing a modified version)
+
+The absence of a NOTICE file in the upstream distribution does not violate the Apache-2.0 license; the NOTICE requirement applies only when there is something to notice.
+
+## Code of Conduct
+
+This project adopts the [Contributor Covenant v2.1](CODE_OF_CONDUCT.md). All contributors are expected to uphold this code of conduct.
+
+## Reporting Security Issues
+
+If you discover a security vulnerability, please do **NOT** open a public issue or pull request. Instead, report it privately:
+
+1. **Email (preferred):** [security@jedarden.com](mailto:security@jedarden.com)
+   - PGP-encrypted emails are strongly encouraged
+   - PGP key: [`docs/security/pgp-public-key.asc`](docs/security/pgp-public-key.asc)
+
+2. **GitHub Private Vulnerability Reporting:**
+   - Use the [Security tab](https://github.com/jedarden/pdftract/security/advisories)
+
+See [`SECURITY.md`](SECURITY.md) for our full disclosure policy, including:
+- Supported versions and security fix timeline
+- 90-day disclosure window
+- CVE assignment process
+- Safe harbor for good-faith researchers
+
+## Development Setup
+
+### Prerequisites
+
+- **Rust 1.78 or later** — See [Minimum Supported Rust Version (MSRV)](#minimum-supported-rust-version-msrv) below
+- **Git** — For cloning and committing
+
+### OCR Feature Dependencies (Optional)
+
+If you're developing OCR-related features (Phase 5), you'll need additional dependencies:
+
+**Linux (Debian/Ubuntu):**
+```bash
+sudo apt-get install libleptonica-dev libtesseract-dev tesseract-ocr-eng
+```
+
+**macOS:**
+```bash
+brew install tesseract leptonica
+```
+
+**Windows:**
+- Install Tesseract from the official installers: https://github.com/UB-Mannheim/tesseract/wiki
+
+### Building
+
+```bash
+# Clone your fork
+git clone https://github.com/YOUR_USERNAME/pdftract.git
+cd pdftract
+
+# Build the workspace
+cargo build --workspace --locked
+
+# Build release binaries
+cargo build --release --workspace
+```
+
+### Testing
+
+```bash
+# Run all tests
+cargo test --workspace --features default
+
+# Run tests with output
+cargo test --workspace --features default -- --nocapture
+
+# Run a specific test
+cargo test --workspace --features default test_name
+```
+
 ## Minimum Supported Rust Version (MSRV)
 
 The **Minimum Supported Rust Version (MSRV)** for pdftract is **1.78**. This is the oldest Rust version that can successfully build the project. The MSRV is declared in `Cargo.toml` via the `rust-version` field and enforced in CI.
@@ -71,61 +171,122 @@ The Rust ecosystem convention is that library crates should not check in `Cargo.
 - A single workspace-level `Cargo.lock` applies to all members.
 - Downstream consumers can still ignore the lockfile by using `cargo build --frozen` with their own lockfile, or by vendoring.
 
-## Development Workflow
+## Local Validation Before Opening a PR
 
-### Building
-
-```bash
-cargo build --release
-```
-
-### Testing
+Before submitting a pull request, please run the following commands locally to ensure your changes pass all quality gates:
 
 ```bash
-cargo test --all
-```
+# 1. Run all tests (must be all green)
+cargo test --workspace --features default
 
-### Linting
+# 2. Lint with clippy (no warnings allowed)
+cargo clippy --all-targets --features default -- -D warnings
 
-```bash
-cargo clippy --all-targets --all-features
+# 3. Check binary size (must be within budget; target <= 4 MB stripped)
+cargo bloat --release --features default
+
+# 4. Check for security advisories (no medium+ issues)
+cargo audit
+
+# 5. Check license compliance (no rejected licenses)
+cargo deny check licenses
+
+# 6. Check code formatting
 cargo fmt --check
 ```
 
-## Security
+**Why these checks?** These exact commands are run in the `pdftract-ci` Argo workflow. A green local run predicts a green CI run, reducing review iteration cycles.
 
-### Responsible Disclosure
+### Binary Size Budget
 
-If you discover a security vulnerability, please do **NOT** open a public issue or pull request. Instead, report it privately:
+The release binary must be <= 4 MB when stripped. `cargo bloat` helps identify functions contributing most to binary size. If your PR adds significant code:
+- Run `cargo bloat --release --features default --crates pdftract-cli`
+- Check the top functions in the output
+- Consider if large dependencies can be made optional or feature-gated
 
-1. **Email (preferred):** [security@jedarden.com](mailto:security@jedarden.com)
-   - PGP-encrypted emails are strongly encouraged
-   - PGP key: [`docs/security/pgp-public-key.asc`](docs/security/pgp-public-key.asc)
+## CI on Forks — The Argo-CI Caveat
 
-2. **GitHub Private Vulnerability Reporting:**
-   - Use the [Security tab](https://github.com/jedarden/pdftract/security/advisories)
+> **IMPORTANT:** Because CI runs on the private `iad-ci` cluster, external contributors cannot trigger CI from their fork.
 
-See [`SECURITY.md`](SECURITY.md) for our full disclosure policy, including:
-- Supported versions and security fix timeline
-- 90-day disclosure window
-- CVE assignment process
-- Safe harbor for good-faith researchers
+### How It Works
 
-### Supply-Chain Security
+1. **Fork and open a pull request** against `jedarden/pdftract:main`
+2. **A maintainer will trigger the `pdftract-ci` Argo workflow** against your branch
+3. **Results are posted as a PR comment** once the workflow completes
 
-This project uses `cargo-audit` and `cargo-deny` for supply-chain security. New direct dependencies require an ADR or written justification in the PR description.
+### Expected Response Time
 
-## Licensing
+- Maintainer-triggered CI: **within 48 hours**
+- You'll receive a comment on your PR with the full CI log
 
-pdftract is dual-licensed under **MIT OR Apache-2.0**. You may choose either license for your use.
+### Why This Model?
 
-### Apache NOTICE File
+The `iad-ci` cluster is a private Rackspace Spot cluster accessed via kubectl-proxy over Tailscale. External forks do not have credentials to access this cluster, so they cannot self-serve CI runs. This is unusual, but it allows us to run CI on infrastructure we control without exposing cluster credentials publicly.
 
-The Apache-2.0 license includes a NOTICE file requirement, but pdftract does not ship a NOTICE file in the source distribution. This is intentional: the project maintains no contributor list outside of git history, and there are no third-party attribution notices required.
+### Local Validation is Critical
 
-**Downstream redistributors MAY add a NOTICE file** when distributing pdftract as part of their own product. If you choose to add one, it should include:
-- Attribution to the pdftract project
-- A link to the original source repository
-- Any modifications you made (if distributing a modified version)
+Since you cannot trigger CI yourself, **please run the full local validation checklist** before opening your PR. This minimizes back-and-forth cycles when the maintainer-triggered CI fails.
 
-The absence of a NOTICE file in the upstream distribution does not violate the Apache-2.0 license; the NOTICE requirement applies only when there is something to notice.
+## Pull Request Template
+
+All pull requests must follow the [PR template](.github/PULL_REQUEST_TEMPLATE.md). The template requires:
+
+- **Linked issue or RFC** — Every PR should reference an issue or design document
+- **Scope statement** — Which Phase / which Acceptance Scenario does this address?
+- **Test plan** — How did you verify this works?
+- **Manual-test evidence** — Screenshots, terminal output, or example runs
+- **Performance impact** — If hot-path code was touched, include benchmark results
+
+## Commit Message Style
+
+This project uses **Conventional Commits** for commit messages. Release notes are auto-generated from commit history using `git-cliff`.
+
+### Format
+
+```
+<type>(<scope>): <short summary>
+
+[optional body]
+
+[optional footer]
+```
+
+### Types
+
+- `feat:` — A new feature
+- `fix:` — A bug fix
+- `perf:` — A performance improvement
+- `docs:` — Documentation changes
+- `chore:` — Maintenance tasks (updates, refactoring, tooling)
+- `test:` — Test changes
+- `BREAKING CHANGE:` — A breaking change (include in body or footer)
+
+### Examples
+
+```bash
+feat(ocr): add Tesseract integration for phase 5
+fix(font): handle missing /Widths in Type 3 fonts
+perf(extract): cache page tree parsing results
+docs(contributing): add Argo-CI caveat section
+chore(deps): upgrade lodepng to 0.9.0
+```
+
+## Issue Triage
+
+We use issue templates to ensure all necessary information is provided upfront. When opening an issue, please use the appropriate template:
+
+- **Bug report** — Must include `pdftract doctor` output
+- **Feature request** — Describe the use case and proposed API
+- **Performance regression** — Include before/after benchmarks
+- **Security advisory** — Redirects to private disclosure (see [Reporting Security Issues](#reporting-security-issues))
+
+See [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/) for the full list.
+
+## Getting Help
+
+- **Documentation:** Check [`docs/`](docs/) for design docs and ADRs
+- **Issues:** Search existing issues before opening a new one
+- **Discussions:** Use GitHub Discussions for questions and RFCs
+- **Security:** See [SECURITY.md](SECURITY.md) for vulnerability reporting
+
+Thank you for contributing to pdftract!

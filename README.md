@@ -147,6 +147,15 @@ For responsible disclosure of security vulnerabilities, please email [security@j
 
 > **NOTE:** The PGP key is currently a placeholder. The security contact must generate and publish a 4096-bit RSA key for `security@jedarden.com`. See `docs/security/pgp-public-key.asc` for generation instructions.
 
+## Contributing
+
+Contributions are welcome! Please see [`CONTRIBUTING.md`](CONTRIBUTING.md) for:
+- Development setup and build instructions
+- Local validation checklist before opening a PR
+- Commit message style (Conventional Commits)
+- CI on forks (maintainer-triggered Argo workflow)
+- DCO sign-off requirement
+
 ## Status
 
 Early development. See `docs/plan/` for the implementation roadmap.
