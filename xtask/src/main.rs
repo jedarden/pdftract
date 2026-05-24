@@ -1752,13 +1752,17 @@ fn center_bitmap_32x32(bitmap: &[u8], width: usize, height: usize) -> [u8; 1024]
         return centered;
     }
 
+    // Clamp dimensions to 32x32 (crop larger glyphs)
+    let clamped_width = width.min(32);
+    let clamped_height = height.min(32);
+
     // Calculate offsets to center the bitmap
-    let x_offset = (32 - width) / 2;
-    let y_offset = (32 - height) / 2;
+    let x_offset = (32 - clamped_width) / 2;
+    let y_offset = (32 - clamped_height) / 2;
 
     // Copy bitmap into centered position
-    for y in 0..height.min(32) {
-        for x in 0..width.min(32) {
+    for y in 0..clamped_height {
+        for x in 0..clamped_width {
             let src_idx = y * width + x;
             if src_idx < bitmap.len() {
                 let dst_y = y_offset + y;
