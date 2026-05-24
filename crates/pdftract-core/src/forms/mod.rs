@@ -18,11 +18,13 @@
 //! discovery), which filters its output to `/FT /Sig` fields only.
 
 pub mod combiner;
+pub mod value_button;
 pub mod xfa;
 
 pub use xfa::{extract_xfa_fields, XfaField};
 
 pub use combiner::{combine, ChoiceValue, FormFieldValue};
+pub use value_button::{extract_button_value, ButtonKind, ButtonValue};
 
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::parser::catalog::Catalog;

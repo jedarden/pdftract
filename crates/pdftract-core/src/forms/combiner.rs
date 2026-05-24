@@ -27,16 +27,20 @@ pub enum FormFieldValue {
         max_length: Option<u32>,
     },
 
-    /// Button field value (/FT /Btn) - checkbox or radio button.
+    /// Button field value (/FT /Btn) - pushbutton, checkbox, or radio button.
     Button {
+        /// Button kind (pushbutton, checkbox, or radio).
+        kind: super::value_button::ButtonKind,
         /// Selected state (true = checked, false = unchecked).
         selected: bool,
+        /// Appearance state name (e.g., "Yes", "Off", or custom).
+        state_name: Option<String>,
         /// Default selected state (from /DV).
         default_selected: Option<bool>,
-        /// Radio button flag (from /Ff bit 25).
-        is_radio: bool,
         /// Pushbutton flag (from /Ff bit 26).
-        is_pushbutton: bool,
+        pushbutton: bool,
+        /// Radio button flag (from /Ff bit 25).
+        radio: bool,
     },
 
     /// Choice field value (/FT /Ch) - dropdown or list box.
@@ -226,18 +230,26 @@ fn merge_xfa_value_with_acro_type(
         },
 
         FormFieldValue::Button {
+            kind,
             selected: _,
+            state_name: _,
             default_selected,
-            is_radio,
-            is_pushbutton,
+            pushbutton,
+            radio,
         } => {
             // Convert XFA boolean string to selected state
             let selected = parse_xfa_boolean(xfa_value).unwrap_or(false);
             FormFieldValue::Button {
+                kind: *kind,
                 selected,
+                state_name: if selected {
+                    Some(xfa_value.to_string())
+                } else {
+                    None
+                },
                 default_selected: *default_selected,
-                is_radio: *is_radio,
-                is_pushbutton: *is_pushbutton,
+                pushbutton: *pushbutton,
+                radio: *radio,
             }
         }
 
@@ -317,6 +329,7 @@ fn infer_xfa_field_type(xfa_value: &str) -> FormFieldValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::forms::value_button::ButtonKind;
 
     fn make_text_value(value: &str) -> FormFieldValue {
         FormFieldValue::Text {
@@ -329,10 +342,16 @@ mod tests {
 
     fn make_button_value(selected: bool) -> FormFieldValue {
         FormFieldValue::Button {
+            kind: ButtonKind::Checkbox,
             selected,
+            state_name: if selected {
+                Some("Yes".to_string())
+            } else {
+                Some("Off".to_string())
+            },
             default_selected: None,
-            is_radio: false,
-            is_pushbutton: false,
+            pushbutton: false,
+            radio: false,
         }
     }
 

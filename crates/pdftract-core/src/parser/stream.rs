@@ -1049,7 +1049,7 @@ impl StreamDecoder for CryptDecoder {
 /// - DCTDecode (JPEG) - pass raw JPEG bytes
 /// - JBIG2Decode - pass raw JBIG2 bytes
 /// - JPXDecode - pass raw JPEG2000 bytes
-/// - CCITTFaxDecode - pass raw CCITT bytes
+/// - RunLengthDecode - pass raw bytes (TODO: implement)
 /// - Crypt with /Identity
 #[derive(Debug, Clone, Copy)]
 pub struct PassthroughDecoder {
@@ -1083,6 +1083,169 @@ impl StreamDecoder for PassthroughDecoder {
     fn name(&self) -> &'static str {
         self.name
     }
+}
+
+/// CCITTFaxDecode filter (Group 3/4 fax compression) passthrough with parameter parsing.
+///
+/// CCITT Group 3/4 is the dominant compression for scanned legal documents and faxed PDFs.
+/// This decoder:
+/// - Passes through raw CCITT bytes unchanged (pdftract-core does not decode CCITT)
+/// - Parses and validates /DecodeParms (/K, /Columns, /Rows, /EncodedByteAlign, /EndOfLine, /BlackIs1)
+/// - Records parameters for downstream consumers (via PdfStream dict)
+///
+/// For OCR path: requires `full-render` feature or libtiff system library.
+/// Without either, emit OCR_CCITT_UNSUPPORTED diagnostic (handled at call site).
+///
+/// Per PDF spec 7.4.6:
+/// - /K: encoding type (-1 = Group 4, 0 = Group 3 1D, > 0 = Group 3 2D with K rows)
+/// - /Columns: image width in pixels (REQUIRED)
+/// - /Rows: image height in pixels (optional)
+/// - /EncodedByteAlign: whether each line is byte-aligned (bool, default false)
+/// - /EndOfLine: whether EOL markers are present (bool, default false)
+/// - /BlackIs1: whether 1 bit means black or white (bool, default false)
+#[derive(Debug, Clone, Copy)]
+pub struct CCITTFaxDecoder;
+
+impl CCITTFaxDecoder {
+    /// Parse CCITT /DecodeParms from a PDF object.
+    ///
+    /// Returns None if params is None or not a dictionary.
+    /// Returns Some(ParsedCCITTParams) if params is a dictionary (missing keys use defaults).
+    ///
+    /// # Errors
+    ///
+    /// Returns FilterError::InvalidParams if /Columns is missing (REQUIRED parameter).
+    pub fn parse_params(
+        params: Option<&PdfObject>,
+    ) -> Result<Option<ParsedCCITTParams>, FilterError> {
+        let dict = match params {
+            Some(PdfObject::Dict(d)) => d.as_ref(),
+            Some(_) => return Ok(None), // Invalid type - treat as missing
+            None => return Ok(None),    // No params - use defaults
+        };
+
+        // /Columns is REQUIRED per PDF spec 7.4.6
+        let columns = match dict.get("/Columns") {
+            Some(PdfObject::Integer(n)) if *n > 0 => *n as u32,
+            Some(PdfObject::Integer(_)) => {
+                return Err(FilterError::InvalidParams(
+                    "/Columns must be positive".to_string(),
+                ))
+            }
+            Some(_) => {
+                return Err(FilterError::InvalidParams(
+                    "/Columns must be an integer".to_string(),
+                ))
+            }
+            None => {
+                return Err(FilterError::InvalidParams(
+                    "/Columns is required for CCITTFaxDecode".to_string(),
+                ))
+            }
+        };
+
+        // /K: encoding type (default = 0, which means Group 3 1D)
+        // -1 = Group 4, 0 = Group 3 1D, > 0 = Group 3 2D
+        let k = match dict.get("/K") {
+            Some(PdfObject::Integer(n)) => *n as i32,
+            Some(_) => return Ok(None), // Invalid type - use default
+            None => 0,                  // Default: Group 3 1D
+        };
+
+        // /Rows: image height in pixels (optional)
+        let rows = match dict.get("/Rows") {
+            Some(PdfObject::Integer(n)) if *n > 0 => Some(*n as u32),
+            Some(PdfObject::Integer(_)) => None, // Invalid value - treat as missing
+            Some(_) => None,                     // Invalid type - treat as missing
+            None => None,
+        };
+
+        // /EncodedByteAlign: whether each line is byte-aligned (default false)
+        let encoded_byte_align = match dict.get("/EncodedByteAlign") {
+            Some(PdfObject::Bool(b)) => *b,
+            Some(_) => false, // Invalid type - use default
+            None => false,
+        };
+
+        // /EndOfLine: whether EOL markers are present (default false)
+        let end_of_line = match dict.get("/EndOfLine") {
+            Some(PdfObject::Bool(b)) => *b,
+            Some(_) => false, // Invalid type - use default
+            None => false,
+        };
+
+        // /BlackIs1: whether 1 bit means black (default false = white)
+        let black_is_1 = match dict.get("/BlackIs1") {
+            Some(PdfObject::Bool(b)) => *b,
+            Some(_) => false, // Invalid type - use default
+            None => false,
+        };
+
+        Ok(Some(ParsedCCITTParams {
+            k,
+            columns,
+            rows,
+            encoded_byte_align,
+            end_of_line,
+            black_is_1,
+        }))
+    }
+}
+
+impl StreamDecoder for CCITTFaxDecoder {
+    fn decode(
+        &self,
+        input: &[u8],
+        params: Option<&PdfObject>,
+        doc_counter: &mut u64,
+        max_bytes: u64,
+    ) -> Result<Vec<u8>, FilterError> {
+        // Parse and validate /DecodeParms
+        // This ensures required parameters are present and valid
+        let _parsed = Self::parse_params(params)?;
+
+        // Pass through raw bytes unchanged
+        let len = input.len() as u64;
+        *doc_counter += len;
+        if *doc_counter > max_bytes {
+            // Truncate to stay within limit
+            let remaining = max_bytes.saturating_sub(*doc_counter - len);
+            return Ok(input[..remaining.min(len) as usize].to_vec());
+        }
+        Ok(input.to_vec())
+    }
+
+    fn name(&self) -> &'static str {
+        "CCITTFaxDecode"
+    }
+}
+
+/// Parsed CCITT /DecodeParms.
+///
+/// These parameters are extracted from the /DecodeParms dictionary
+/// and describe the CCITT encoding parameters for the image.
+///
+/// Per PDF spec 7.4.6:
+/// - /K: encoding type (-1 = Group 4, 0 = Group 3 1D, > 0 = Group 3 2D)
+/// - /Columns: image width in pixels (REQUIRED)
+/// - /Rows: image height in pixels (optional)
+/// - /EncodedByteAlign: whether each line is byte-aligned (default false)
+/// - /EndOfLine: whether EOL markers are present (default false)
+/// - /BlackIs1: whether 1 bit means black (default false = white)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParsedCCITTParams {
+    /// Encoding type: -1 = Group 4, 0 = Group 3 1D, > 0 = Group 3 2D
+    pub k: i32,
+    /// Image width in pixels (REQUIRED)
+    pub columns: u32,
+    /// Image height in pixels (optional)
+    pub rows: Option<u32>,
+    /// Whether each line is byte-aligned
+    pub encoded_byte_align: bool,
+    /// Whether EOL markers are present
+    pub end_of_line: bool,
+    /// Whether 1 bit means black (true) or white (false)
+    pub black_is_1: bool,
 }
 
 /// Normalize a filter name, expanding abbreviations per PDF spec 7.4.2 Table 6.
@@ -1121,7 +1284,7 @@ pub fn get_decoder(name: &str) -> Option<Box<dyn StreamDecoder>> {
         "DCTDecode" => Some(Box::new(PassthroughDecoder::new("DCTDecode"))),
         "JBIG2Decode" => Some(Box::new(PassthroughDecoder::new("JBIG2Decode"))),
         "JPXDecode" => Some(Box::new(PassthroughDecoder::new("JPXDecode"))),
-        "CCITTFaxDecode" => Some(Box::new(PassthroughDecoder::new("CCITTFaxDecode"))),
+        "CCITTFaxDecode" => Some(Box::new(CCITTFaxDecoder)),
         "RunLengthDecode" => Some(Box::new(PassthroughDecoder::new("RunLengthDecode"))), // TODO: implement RunLength
         _ => None,
     }
@@ -2040,6 +2203,122 @@ mod tests {
         // The exact amount depends on how much data could be decoded
         // before hitting the truncation
         assert!(!decoded.is_empty() || decoded.is_empty()); // Either way is fine - no panic
+    }
+
+    #[test]
+    fn test_ccitt_decode_passthrough() {
+        // CCITTFaxDecode should pass through raw bytes unchanged
+        let input = b"\x00\x01\x02\x03\x04\x05";
+        let mut counter = 0;
+        let result =
+            CCITTFaxDecoder.decode(input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output, input);
+    }
+
+    #[test]
+    fn test_ccitt_parse_params_missing_columns() {
+        // /Columns is REQUIRED - missing it should return an error
+        let mut dict = indexmap::IndexMap::new();
+        dict.insert("/K".into(), PdfObject::Integer(-1));
+        let params = Some(PdfObject::Dict(Box::new(dict)));
+
+        let result = CCITTFaxDecoder::parse_params(params.as_ref());
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            FilterError::InvalidParams(msg) => {
+                assert!(msg.contains("Columns") || msg.contains("required"));
+            }
+            _ => panic!("Expected InvalidParams error"),
+        }
+    }
+
+    #[test]
+    fn test_ccitt_parse_params_group4() {
+        // Parse Group 4 params (K=-1)
+        let mut dict = indexmap::IndexMap::new();
+        dict.insert("/K".into(), PdfObject::Integer(-1));
+        dict.insert("/Columns".into(), PdfObject::Integer(2480));
+        dict.insert("/Rows".into(), PdfObject::Integer(3508));
+        dict.insert("/BlackIs1".into(), PdfObject::Bool(true));
+        let params = Some(PdfObject::Dict(Box::new(dict)));
+
+        let result = CCITTFaxDecoder::parse_params(params.as_ref());
+        assert!(result.is_ok());
+        let parsed = result.unwrap().unwrap();
+        assert_eq!(parsed.k, -1);
+        assert_eq!(parsed.columns, 2480);
+        assert_eq!(parsed.rows, Some(3508));
+        assert!(parsed.black_is_1);
+    }
+
+    #[test]
+    fn test_ccitt_parse_params_defaults() {
+        // Parse with only required /Columns param
+        let mut dict = indexmap::IndexMap::new();
+        dict.insert("/Columns".into(), PdfObject::Integer(1728));
+        let params = Some(PdfObject::Dict(Box::new(dict)));
+
+        let result = CCITTFaxDecoder::parse_params(params.as_ref());
+        assert!(result.is_ok());
+        let parsed = result.unwrap().unwrap();
+        assert_eq!(parsed.k, 0); // Default: Group 3 1D
+        assert_eq!(parsed.columns, 1728);
+        assert_eq!(parsed.rows, None);
+        assert!(!parsed.encoded_byte_align);
+        assert!(!parsed.end_of_line);
+        assert!(!parsed.black_is_1);
+    }
+
+    #[test]
+    fn test_ccitt_decode_with_invalid_columns() {
+        // /Columns = 0 should return InvalidParams error
+        let mut dict = indexmap::IndexMap::new();
+        dict.insert("/Columns".into(), PdfObject::Integer(0));
+        let params = Some(PdfObject::Dict(Box::new(dict)));
+
+        let mut counter = 0;
+        let result = CCITTFaxDecoder.decode(
+            b"test",
+            params.as_ref(),
+            &mut counter,
+            DEFAULT_MAX_DECOMPRESS_BYTES,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_ccitt_decode_bomb_limit() {
+        // CCITTFaxDecode should respect bomb limits
+        let input = vec![0u8; 1000];
+        let mut counter = 0;
+        let mut dict = indexmap::IndexMap::new();
+        dict.insert("/Columns".into(), PdfObject::Integer(100));
+        let params = Some(PdfObject::Dict(Box::new(dict)));
+
+        let result = CCITTFaxDecoder.decode(&input, params.as_ref(), &mut counter, 500);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output.len(), 500); // Truncated to bomb limit
+    }
+
+    #[test]
+    fn test_ccitt_parse_params_group3_2d() {
+        // Parse Group 3 2D params (K>0)
+        let mut dict = indexmap::IndexMap::new();
+        dict.insert("/K".into(), PdfObject::Integer(5)); // Group 3 2D with K=5
+        dict.insert("/Columns".into(), PdfObject::Integer(1728));
+        dict.insert("/EndOfLine".into(), PdfObject::Bool(true));
+        dict.insert("/EncodedByteAlign".into(), PdfObject::Bool(true));
+        let params = Some(PdfObject::Dict(Box::new(dict)));
+
+        let result = CCITTFaxDecoder::parse_params(params.as_ref());
+        assert!(result.is_ok());
+        let parsed = result.unwrap().unwrap();
+        assert_eq!(parsed.k, 5);
+        assert!(parsed.end_of_line);
+        assert!(parsed.encoded_byte_align);
     }
 }
 
