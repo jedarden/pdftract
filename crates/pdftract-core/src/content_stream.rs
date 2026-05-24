@@ -29,6 +29,7 @@
 use crate::diagnostics::Diagnostic;
 use crate::parser::lexer::Lexer;
 use crate::parser::lexer::Token;
+use crate::parser::marked_content_stack::MarkedContentStack;
 use crate::parser::resources::ResourceDict;
 
 /// Processing mode for content stream text extraction.
@@ -69,6 +70,13 @@ pub struct Glyph {
 
     /// Fill color in CSS format (e.g., "#000000") if available.
     pub color: Option<String>,
+
+    /// Marked Content Identifier (MCID) from the innermost marked-content scope.
+    ///
+    /// Per Phase 3.4, this is the MCID of the innermost BDC frame that has an MCID.
+    /// If the glyph is outside any marked-content scope, or if only BMC frames
+    /// (without MCID) are active, this is None.
+    pub mcid: Option<u32>,
 }
 
 impl Glyph {
@@ -81,6 +89,7 @@ impl Glyph {
             font: None,
             size: None,
             color: None,
+            mcid: None,
         }
     }
 
@@ -93,7 +102,14 @@ impl Glyph {
             font: None,
             size: None,
             color: None,
+            mcid: None,
         }
+    }
+
+    /// Set the MCID for this glyph (builder pattern).
+    pub fn with_mcid(mut self, mcid: Option<u32>) -> Self {
+        self.mcid = mcid;
+        self
     }
 }
 
@@ -198,15 +214,16 @@ impl Default for TextMatrix {
 /// # let content = b"BT (Hello) Tj ET";
 /// # let resources = ResourceDict::new();
 /// // Normal mode: extract text with Unicode resolution
-/// let glyphs = process_with_mode(content, &resources, ProcessingMode::Normal);
+/// let glyphs = process_with_mode(content, &resources, ProcessingMode::Normal, None);
 ///
 /// // PositionHint mode: get geometry only
-/// let hints = process_with_mode(content, &resources, ProcessingMode::PositionHint);
+/// let hints = process_with_mode(content, &resources, ProcessingMode::PositionHint, None);
 /// ```
 pub fn process_with_mode(
     content: &[u8],
     resources: &ResourceDict,
     mode: ProcessingMode,
+    marked_content_stack: Option<&MarkedContentStack>,
 ) -> Result<Vec<Glyph>, Vec<Diagnostic>> {
     let mut glyphs = Vec::new();
     let mut diagnostics = Vec::new();
@@ -292,6 +309,7 @@ pub fn process_with_mode(
                                         mode,
                                         &mut glyphs,
                                         &mut diagnostics,
+                                        marked_content_stack,
                                     );
                                 }
                             }
@@ -305,13 +323,14 @@ pub fn process_with_mode(
                             // A full implementation would handle offset adjustments
                             let (x, y) = text_matrix.origin();
                             let bbox = create_approx_bbox(x, y, text_matrix.font_size);
+                            let mcid = marked_content_stack.and_then(|s| s.innermost_mcid());
                             let glyph = match mode {
                                 ProcessingMode::Normal => {
                                     // For now, emit a placeholder in normal mode too
                                     // A full implementation would decode the TJ array
-                                    Glyph::new('?', 0.3, bbox)
+                                    Glyph::new('?', 0.3, bbox).with_mcid(mcid)
                                 }
-                                ProcessingMode::PositionHint => Glyph::position_hint(bbox),
+                                ProcessingMode::PositionHint => Glyph::position_hint(bbox).with_mcid(mcid),
                             };
                             glyphs.push(glyph);
                         }
@@ -330,6 +349,7 @@ pub fn process_with_mode(
                                         mode,
                                         &mut glyphs,
                                         &mut diagnostics,
+                                        marked_content_stack,
                                     );
                                 }
                             }
@@ -349,6 +369,7 @@ pub fn process_with_mode(
                                         mode,
                                         &mut glyphs,
                                         &mut diagnostics,
+                                        marked_content_stack,
                                     );
                                 }
                             }
@@ -383,6 +404,7 @@ fn process_string(
     mode: ProcessingMode,
     glyphs: &mut Vec<Glyph>,
     diagnostics: &mut Vec<Diagnostic>,
+    marked_content_stack: Option<&MarkedContentStack>,
 ) {
     let (x, y) = text_matrix.origin();
     let font_size = text_matrix.font_size;
@@ -390,6 +412,10 @@ fn process_string(
     // Create approximate bbox for the string
     // A full implementation would measure actual glyph widths
     let bbox = create_approx_bbox(x, y, font_size);
+
+    // Get the innermost MCID from the marked-content stack
+    // Per Phase 3.4: "innermost MCID wins for enclosed glyphs"
+    let mcid = marked_content_stack.and_then(|stack| stack.innermost_mcid());
 
     match mode {
         ProcessingMode::Normal => {
@@ -400,7 +426,7 @@ fn process_string(
                     // A full implementation would use the font resolver
                     let text = String::from_utf8_lossy(bytes);
                     let ch = text.chars().next().unwrap_or('?');
-                    let glyph = Glyph::new(ch, 0.5, bbox);
+                    let glyph = Glyph::new(ch, 0.5, bbox).with_mcid(mcid);
                     glyphs.push(glyph);
                     return;
                 }
@@ -409,11 +435,11 @@ fn process_string(
             // No font available - emit low-confidence placeholder
             let text = String::from_utf8_lossy(bytes);
             let ch = text.chars().next().unwrap_or('?');
-            glyphs.push(Glyph::new(ch, 0.3, bbox));
+            glyphs.push(Glyph::new(ch, 0.3, bbox).with_mcid(mcid));
         }
         ProcessingMode::PositionHint => {
             // Emit position-hint glyph
-            glyphs.push(Glyph::position_hint(bbox));
+            glyphs.push(Glyph::position_hint(bbox).with_mcid(mcid));
         }
     }
 }
@@ -467,6 +493,14 @@ mod tests {
         assert!(glyph.font.is_none());
         assert!(glyph.size.is_none());
         assert!(glyph.color.is_none());
+        assert_eq!(glyph.mcid, None); // MCID defaults to None
+    }
+
+    #[test]
+    fn test_glyph_with_mcid() {
+        let glyph = Glyph::new('A', 1.0, [0.0, 0.0, 10.0, 12.0]).with_mcid(Some(5));
+        assert_eq!(glyph.unicode, 'A');
+        assert_eq!(glyph.mcid, Some(5));
     }
 
     #[test]
@@ -478,6 +512,7 @@ mod tests {
         assert!(glyph.font.is_none());
         assert!(glyph.size.is_none());
         assert!(glyph.color.is_none());
+        assert_eq!(glyph.mcid, None); // MCID defaults to None
     }
 
     #[test]
@@ -528,7 +563,7 @@ mod tests {
         let resources = ResourceDict::new();
 
         // Normal mode
-        let normal_result = process_with_mode(content, &resources, ProcessingMode::Normal);
+        let normal_result = process_with_mode(content, &resources, ProcessingMode::Normal, None);
         assert!(normal_result.is_ok());
         let normal_glyphs = normal_result.unwrap();
         assert_eq!(normal_glyphs.len(), 1);
@@ -536,7 +571,7 @@ mod tests {
         assert!(normal_glyphs[0].confidence > 0.0);
 
         // PositionHint mode
-        let hint_result = process_with_mode(content, &resources, ProcessingMode::PositionHint);
+        let hint_result = process_with_mode(content, &resources, ProcessingMode::PositionHint, None);
         assert!(hint_result.is_ok());
         let hint_glyphs = hint_result.unwrap();
         assert_eq!(hint_glyphs.len(), 1);
@@ -549,9 +584,9 @@ mod tests {
         let content = b"BT (Test) Tj ET";
         let resources = ResourceDict::new();
 
-        let normal_glyphs = process_with_mode(content, &resources, ProcessingMode::Normal).unwrap();
+        let normal_glyphs = process_with_mode(content, &resources, ProcessingMode::Normal, None).unwrap();
         let hint_glyphs =
-            process_with_mode(content, &resources, ProcessingMode::PositionHint).unwrap();
+            process_with_mode(content, &resources, ProcessingMode::PositionHint, None).unwrap();
 
         // Bboxes should be identical (geometry is the same)
         assert_eq!(normal_glyphs[0].bbox, hint_glyphs[0].bbox);
@@ -566,11 +601,11 @@ mod tests {
         let content = b"BT (Hello) Tj (World) Tj ET";
         let resources = ResourceDict::new();
 
-        let normal_glyphs = process_with_mode(content, &resources, ProcessingMode::Normal).unwrap();
+        let normal_glyphs = process_with_mode(content, &resources, ProcessingMode::Normal, None).unwrap();
         assert_eq!(normal_glyphs.len(), 2);
 
         let hint_glyphs =
-            process_with_mode(content, &resources, ProcessingMode::PositionHint).unwrap();
+            process_with_mode(content, &resources, ProcessingMode::PositionHint, None).unwrap();
         assert_eq!(hint_glyphs.len(), 2);
 
         // All hint glyphs should be U+FFFD
@@ -585,7 +620,7 @@ mod tests {
         let content = b"BT 50 700 Td (Hello) Tj ET";
         let resources = ResourceDict::new();
 
-        let glyphs = process_with_mode(content, &resources, ProcessingMode::PositionHint).unwrap();
+        let glyphs = process_with_mode(content, &resources, ProcessingMode::PositionHint, None).unwrap();
 
         assert_eq!(glyphs.len(), 1);
         // Bbox should start at approximately x=50, y=700
@@ -598,7 +633,7 @@ mod tests {
         let content = b"BT 1 0 0 1 100 200 Tm (Test) Tj ET";
         let resources = ResourceDict::new();
 
-        let glyphs = process_with_mode(content, &resources, ProcessingMode::PositionHint).unwrap();
+        let glyphs = process_with_mode(content, &resources, ProcessingMode::PositionHint, None).unwrap();
 
         assert_eq!(glyphs.len(), 1);
         // Bbox should start at approximately x=100, y=200
@@ -611,7 +646,7 @@ mod tests {
         let content = b"BT (Hello) Tj 50 0 Td (World) ' ET";
         let resources = ResourceDict::new();
 
-        let glyphs = process_with_mode(content, &resources, ProcessingMode::PositionHint).unwrap();
+        let glyphs = process_with_mode(content, &resources, ProcessingMode::PositionHint, None).unwrap();
 
         assert_eq!(glyphs.len(), 2);
         // Both should be position-hint glyphs
@@ -626,7 +661,7 @@ mod tests {
         let content = b"";
         let resources = ResourceDict::new();
 
-        let glyphs = process_with_mode(content, &resources, ProcessingMode::PositionHint).unwrap();
+        let glyphs = process_with_mode(content, &resources, ProcessingMode::PositionHint, None).unwrap();
 
         assert_eq!(glyphs.len(), 0);
     }
@@ -653,20 +688,20 @@ mod tests {
         let resources = ResourceDict::new();
 
         // Warm up
-        let _ = process_with_mode(content, &resources, ProcessingMode::Normal);
-        let _ = process_with_mode(content, &resources, ProcessingMode::PositionHint);
+        let _ = process_with_mode(content, &resources, ProcessingMode::Normal, None);
+        let _ = process_with_mode(content, &resources, ProcessingMode::PositionHint, None);
 
         // Benchmark Normal mode (100 iterations)
         let start = std::time::Instant::now();
         for _ in 0..100 {
-            let _ = process_with_mode(content, &resources, ProcessingMode::Normal);
+            let _ = process_with_mode(content, &resources, ProcessingMode::Normal, None);
         }
         let normal_duration = start.elapsed();
 
         // Benchmark PositionHint mode (100 iterations)
         let start = std::time::Instant::now();
         for _ in 0..100 {
-            let _ = process_with_mode(content, &resources, ProcessingMode::PositionHint);
+            let _ = process_with_mode(content, &resources, ProcessingMode::PositionHint, None);
         }
         let hint_duration = start.elapsed();
 
@@ -685,5 +720,107 @@ mod tests {
         // In practice, PositionHint is faster because it skips ToUnicode lookup.
         // This test verifies the code paths work correctly; for actual
         // performance measurement, use criterion benches/bench_position_hint.rs
+    }
+
+    #[test]
+    fn test_glyph_mcid_default_none() {
+        // Glyphs created without MCID should have None
+        let glyph = Glyph::new('A', 1.0, [0.0, 0.0, 10.0, 12.0]);
+        assert_eq!(glyph.mcid, None);
+
+        let glyph = Glyph::position_hint([0.0, 0.0, 10.0, 12.0]);
+        assert_eq!(glyph.mcid, None);
+    }
+
+    #[test]
+    fn test_glyph_with_mcid_zero() {
+        // MCID 0 is a valid value (not treated as None)
+        let glyph = Glyph::new('A', 1.0, [0.0, 0.0, 10.0, 12.0]).with_mcid(Some(0));
+        assert_eq!(glyph.mcid, Some(0));
+    }
+
+    #[test]
+    fn test_glyph_with_mcid_positive() {
+        let glyph = Glyph::new('A', 1.0, [0.0, 0.0, 10.0, 12.0]).with_mcid(Some(42));
+        assert_eq!(glyph.mcid, Some(42));
+    }
+
+    #[test]
+    fn test_process_with_mode_no_marked_content() {
+        // Without marked-content stack, glyphs should have mcid=None
+        let content = b"BT (Hello) Tj ET";
+        let resources = ResourceDict::new();
+
+        let glyphs = process_with_mode(content, &resources, ProcessingMode::Normal, None).unwrap();
+        assert_eq!(glyphs.len(), 1);
+        assert_eq!(glyphs[0].mcid, None);
+    }
+
+    #[test]
+    fn test_process_with_mode_with_empty_marked_content() {
+        // With empty marked-content stack, glyphs should have mcid=None
+        let content = b"BT (Hello) Tj ET";
+        let resources = ResourceDict::new();
+        let stack = MarkedContentStack::new();
+
+        let glyphs = process_with_mode(content, &resources, ProcessingMode::Normal, Some(&stack)).unwrap();
+        assert_eq!(glyphs.len(), 1);
+        assert_eq!(glyphs[0].mcid, None);
+    }
+
+    #[test]
+    fn test_process_with_mode_with_mcid() {
+        // With BDC that has MCID, glyphs should get that MCID
+        let content = b"BT (Hello) Tj ET";
+        let resources = ResourceDict::new();
+        let mut stack = MarkedContentStack::new();
+        stack.push_bdc("Span".to_string(), Some(5));
+
+        let glyphs = process_with_mode(content, &resources, ProcessingMode::Normal, Some(&stack)).unwrap();
+        assert_eq!(glyphs.len(), 1);
+        assert_eq!(glyphs[0].mcid, Some(5));
+    }
+
+    #[test]
+    fn test_process_with_mode_innermost_mcid_wins() {
+        // With nested BDCs, innermost MCID should win
+        let content = b"BT (Hello) Tj ET";
+        let resources = ResourceDict::new();
+        let mut stack = MarkedContentStack::new();
+        stack.push_bdc("Outer".to_string(), Some(1));
+        stack.push_bdc("Inner".to_string(), Some(2));
+
+        let glyphs = process_with_mode(content, &resources, ProcessingMode::Normal, Some(&stack)).unwrap();
+        assert_eq!(glyphs.len(), 1);
+        assert_eq!(glyphs[0].mcid, Some(2)); // Innermost wins
+    }
+
+    #[test]
+    fn test_process_with_mode_bmc_no_mcid() {
+        // BMC has no MCID, so outer BDC's MCID should be used
+        let content = b"BT (Hello) Tj ET";
+        let resources = ResourceDict::new();
+        let mut stack = MarkedContentStack::new();
+        stack.push_bdc("Outer".to_string(), Some(1));
+        stack.push_bmc("Span".to_string()); // No MCID
+
+        let glyphs = process_with_mode(content, &resources, ProcessingMode::Normal, Some(&stack)).unwrap();
+        assert_eq!(glyphs.len(), 1);
+        assert_eq!(glyphs[0].mcid, Some(1)); // Outer MCID visible through BMC
+    }
+
+    #[test]
+    fn test_process_with_mode_nested_bmc_then_bdc() {
+        // BMC followed by inner BDC with MCID
+        let content = b"BT (Hello) Tj ET";
+        let resources = ResourceDict::new();
+        let mut stack = MarkedContentStack::new();
+        stack.push_bdc("Outer".to_string(), Some(1));
+        stack.push_bmc("Middle".to_string()); // No MCID
+        stack.push_bdc("Inner".to_string(), Some(2));
+
+        let glyphs = process_with_mode(content, &resources, ProcessingMode::Normal, Some(&stack)).unwrap();
+        assert_eq!(glyphs.len(), 1);
+        assert_eq!(glyphs[0].mcid, Some(2)); // Innermost BDC with MCID wins
     }
 }
