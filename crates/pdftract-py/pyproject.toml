@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "pdftract"
-version = "0.1.0"
+dynamic = ["version"]
 description = "PDF text extraction library with robust encoding detection"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -24,6 +24,12 @@ classifiers = [
     "Topic :: Text Processing :: Linguistic",
 ]
 
+[project.urls]
+Homepage = "https://github.com/jedarden/pdftract"
+Documentation = "https://github.com/jedarden/pdftract"
+Repository = "https://github.com/jedarden/pdftract"
+Issues = "https://github.com/jedarden/pdftract/issues"
+
 [tool.maturin]
 features = ["pyo3/extension-module"]
 # Strip symbols from the final wheel for smaller size
@@ -31,4 +37,6 @@ strip = true
 # Use abi3 for forward compatibility across Python 3.11+
 python-source = "python"
 # Include license files in the wheel
-license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
+license-files = ["../../LICENSE-MIT", "../../LICENSE-APACHE"]
+# Dynamic version from Cargo.toml
+version-provider = "cargo"

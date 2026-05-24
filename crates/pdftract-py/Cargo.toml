@@ -11,6 +11,7 @@ name = "pdftract"
 crate-type = ["cdylib"]
 
 [dependencies]
+anyhow = "1"
 pdftract-core = { path = "../pdftract-core" }
 pyo3 = { version = "0.20", features = ["extension-module"] }
 
