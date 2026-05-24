@@ -6,8 +6,8 @@
 //!
 //! ## Architecture
 //!
-//! - **Discovery** (this module): Walk /Fields recursively, filter to /FT /Sig
-//! - **Metadata extraction** (future): Extract /V dict properties (signer, date, reason, etc.)
+//! - **Discovery** (7.3.1): Walk /Fields recursively, filter to /FT /Sig
+//! - **Metadata extraction** (7.3.2): Extract /V dict properties (signer, date, reason, etc.)
 //! - **Validation** (out of scope): Cryptographic validation requires certificate chains
 //!
 //! ## Reuse
@@ -53,6 +53,459 @@ pub struct SigFieldRef {
 
     /// The field's own indirect reference.
     pub field_ref: ObjRef,
+}
+
+/// A digital signature with extracted metadata.
+///
+/// Represents a fully-extracted signature from a PDF signature field,
+/// including signer identity, timestamp, and coverage information.
+///
+/// This is the output of Phase 7.3.2 (metadata extraction) and the
+/// primary type emitted in the document-level `/signatures` array.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Signature {
+    /// The absolute (dot-joined) field name from the AcroForm.
+    /// Example: "employer_signature" or "form.employee_sig"
+    pub field_name: String,
+
+    /// The signer's name from the /Name entry in the signature dictionary.
+    ///
+    /// Empty string if /Name is absent (not null — default to "").
+    pub signer_name: String,
+
+    /// The signing date as an ISO 8601 string (RFC 3339 format).
+    ///
+    /// Parsed from the PDF /M date string (D:YYYYMMDDHHmmSSOHH'mm format).
+    /// None if the date is missing, malformed, or the field is unsigned.
+    ///
+    /// Format: "YYYY-MM-DDTHH:MM:SS+HH:MM" or "YYYY-MM-DDTHH:MM:SSZ"
+    pub signing_date: Option<String>,
+
+    /// The reason for signing from the /Reason entry.
+    ///
+    /// None if /Reason is absent.
+    pub reason: Option<String>,
+
+    /// The location of signing from the /Location entry.
+    ///
+    /// None if /Location is absent.
+    pub location: Option<String>,
+
+    /// The signature format / filter from the /SubFilter entry.
+    ///
+    /// Indicates the signature format: "adbe.pkcs7.detached", "adbe.x509.rsa.sha1", etc.
+    /// None if /SubFilter is absent.
+    pub sub_filter: Option<String>,
+
+    /// The /ByteRange array defining which bytes of the file are signed.
+    ///
+    /// Format: [offset, length, offset, length] defining two byte ranges.
+    /// The first range covers the file up to the signature; the second covers
+    /// the file after the signature. The signature value itself is NOT covered.
+    ///
+    /// None if /ByteRange is missing or malformed.
+    pub byte_range: Option<Vec<u64>>,
+
+    /// Fraction of the file covered by the signature (0.0 to 1.0).
+    ///
+    /// Computed as `(byte_range[1] + byte_range[3]) / file_size`.
+    /// None if /ByteRange is missing, malformed, or file_size is unknown.
+    ///
+    /// Values < 1.0 indicate partial signatures (a common red flag for tampered docs).
+    pub coverage_fraction: Option<f64>,
+
+    /// Validation status — always "not_checked" in v1.
+    ///
+    /// Future versions may add "valid", "invalid", "indeterminate" as cryptographic
+    /// validation is implemented. This is a string enum for schema stability.
+    pub validation_status: String,
+}
+
+impl Signature {
+    /// Create a new unsigned signature (field exists but /V is absent).
+    fn unsigned(field_name: String) -> Self {
+        Signature {
+            field_name,
+            signer_name: String::new(),
+            signing_date: None,
+            reason: None,
+            location: None,
+            sub_filter: None,
+            byte_range: None,
+            coverage_fraction: None,
+            validation_status: "not_checked".to_string(),
+        }
+    }
+}
+
+/// Parse a PDF date string to ISO 8601 (RFC 3339) format.
+///
+/// Per PDF 1.7 spec section 7.9.4 "Dates":
+/// - Format: D:YYYYMMDDHHmmSSOHH'mm
+/// - D: is a literal prefix
+/// - YYYY = year (4 digits)
+/// - MM = month (01-12)
+/// - DD = day (01-31)
+/// - HH = hour (00-23)
+/// - mm = minute (00-59)
+/// - SS = second (00-59)
+/// - O = relationship to UTC: +, -, or Z
+/// - HH'mm = UTC offset hours and minutes
+///
+/// The function tolerates truncated dates (date only, no time, no timezone)
+/// by filling defaults: 00 for time components, Z for timezone.
+///
+/// # Arguments
+///
+/// * `pdf_date` - The raw PDF date string from the /M entry
+///
+/// # Returns
+///
+/// * `Some(String)` - ISO 8601 formatted date if parsing succeeds
+/// * `None` - If the input is malformed or empty
+///
+/// # Examples
+///
+/// ```ignore
+/// // Full date with timezone
+/// parse_pdf_date(b"D:20230115143045+05'30'"); // Some("2023-01-15T14:30:45+05:30")
+///
+/// // UTC timezone
+/// parse_pdf_date(b"D:20230115143045Z"); // Some("2023-01-15T14:30:45Z")
+///
+/// // Date only (truncated)
+/// parse_pdf_date(b"D:20230115"); // Some("2023-01-15T00:00:00Z")
+///
+/// // Malformed
+/// parse_pdf_date(b"invalid"); // None
+/// ```
+fn parse_pdf_date(pdf_date: &[u8]) -> Option<String> {
+    // PDF date strings are typically PDFDocEncoding or ASCII, so we can
+    // work with them directly as UTF-8 lossy conversion
+    let date_str = std::str::from_utf8(pdf_date).ok()?;
+
+    // Strip the D: prefix if present
+    let date_str = if date_str.starts_with("D:") {
+        &date_str[2..]
+    } else {
+        date_str
+    };
+
+    // Minimum length: YYYYMMDD = 8 characters
+    if date_str.len() < 8 {
+        return None;
+    }
+
+    // Parse year, month, day (required)
+    let year = date_str[0..4].parse::<u32>().ok()?;
+    let month = date_str[4..6].parse::<u32>().ok()?;
+    let day = date_str[6..8].parse::<u32>().ok()?;
+
+    // Validate date ranges
+    if month == 0 || month > 12 || day == 0 || day > 31 {
+        return None;
+    }
+
+    // Parse time components if present
+    let (hour, minute, second) = if date_str.len() >= 14 {
+        let hour = date_str[8..10].parse::<u32>().ok()?;
+        let minute = date_str[10..12].parse::<u32>().ok()?;
+        let second = date_str[12..14].parse::<u32>().ok()?;
+
+        // Validate time ranges
+        if hour > 23 || minute > 59 || second > 59 {
+            return None;
+        }
+        (hour, minute, second)
+    } else {
+        // Default to midnight if time not present
+        (0, 0, 0)
+    };
+
+    // Parse timezone if present
+    let tz_str = if date_str.len() > 14 {
+        &date_str[14..]
+    } else {
+        ""
+    };
+
+    let timezone = if tz_str.is_empty() || tz_str == "Z" {
+        // Default to UTC if no timezone specified
+        "Z".to_string()
+    } else if tz_str.starts_with('+') || tz_str.starts_with('-') {
+        // Parse OHH'mm format (e.g., +05'30' or -08'00')
+        let sign = if tz_str.starts_with('+') { "+" } else { "-" };
+
+        // Extract HH and mm from format like +05'30' or +0530
+        let tz_digits: String = tz_str[1..].chars().filter(|c| c.is_ascii_digit()).collect();
+        if tz_digits.len() >= 4 {
+            let tz_hour = &tz_digits[0..2];
+            let tz_min = &tz_digits[2..4];
+            // Check if this is UTC (+00'00' or +0000)
+            if tz_hour == "00" && tz_min == "00" {
+                "Z".to_string()
+            } else {
+                format!("{}{}:{}", sign, tz_hour, tz_min)
+            }
+        } else {
+            // Malformed timezone, default to UTC
+            "Z".to_string()
+        }
+    } else {
+        // Unknown format, default to UTC
+        "Z".to_string()
+    };
+
+    // Format as ISO 8601: YYYY-MM-DDTHH:MM:SS+HH:MM
+    Some(format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}{}",
+        year, month, day, hour, minute, second, timezone
+    ))
+}
+
+/// Decode a PDF text string to UTF-8.
+///
+/// Per PDF 1.7 spec section "Text String Type":
+/// - If the string starts with UTF-16BE BOM (0xFE 0xFF), decode as UTF-16BE
+/// - Otherwise, decode as PDFDocEncoding (Latin-1 with named character overrides)
+///
+/// This is a copy of the function from outline.rs; the original is private
+/// to that module. We duplicate it here to avoid coupling the modules.
+fn decode_pdf_string(bytes: &[u8]) -> Result<String> {
+    // Check for UTF-16BE BOM
+    if bytes.len() >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF {
+        return decode_utf16be_bom(&bytes[2..]);
+    }
+
+    // Check for UTF-16BE without BOM (heuristic: every other byte is 0x00 for non-ASCII)
+    if looks_like_utf16be(bytes) {
+        if let Ok(s) = decode_utf16be_raw(bytes) {
+            return Ok(s);
+        }
+    }
+
+    // Fall back to PDFDocEncoding (treat as Latin-1 for basic use)
+    decode_pdfdocencoding(bytes)
+}
+
+/// Decode UTF-16BE string with BOM (bytes after 0xFE 0xFF).
+fn decode_utf16be_bom(bytes: &[u8]) -> Result<String> {
+    if bytes.len() % 2 != 0 {
+        return Err(vec![
+            Diagnostic::with_static_no_offset(
+                DiagCode::StructInvalidUtf16,
+                "STRUCT_INVALID_UTF16: UTF-16BE string has odd length",
+            )
+        ]);
+    }
+
+    let utf16_chars: Vec<u16> = bytes
+        .chunks_exact(2)
+        .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
+        .collect();
+
+    String::from_utf16(&utf16_chars).map_err(|_| {
+        vec![
+            Diagnostic::with_static_no_offset(
+                DiagCode::StructInvalidUtf16,
+                "STRUCT_INVALID_UTF16: Invalid UTF-16BE sequence",
+            )
+        ]
+    })
+}
+
+/// Decode raw UTF-16BE (without BOM).
+fn decode_utf16be_raw(bytes: &[u8]) -> std::result::Result<String, ()> {
+    if bytes.len() % 2 != 0 {
+        return Err(());
+    }
+
+    let utf16_chars: Vec<u16> = bytes
+        .chunks_exact(2)
+        .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
+        .collect();
+
+    String::from_utf16(&utf16_chars).map_err(|_| ())
+}
+
+/// Heuristic check if bytes look like UTF-16BE.
+///
+/// Returns true if:
+/// - Length is even
+/// - Most high bytes (first byte of each pair) are 0x00
+fn looks_like_utf16be(bytes: &[u8]) -> bool {
+    if bytes.len() < 2 || bytes.len() % 2 != 0 {
+        return false;
+    }
+
+    let mut zero_high_bytes = 0;
+    let total_pairs = bytes.len() / 2;
+
+    for chunk in bytes.chunks_exact(2) {
+        if chunk[0] == 0x00 {
+            zero_high_bytes += 1;
+        }
+    }
+
+    zero_high_bytes >= total_pairs * 3 / 4
+}
+
+/// Decode PDFDocEncoding (Latin-1 subset).
+///
+/// PDFDocEncoding is defined in PDF spec Annex D.2.
+/// For basic use, we treat it as Latin-1 (ISO-8859-1).
+fn decode_pdfdocencoding(bytes: &[u8]) -> Result<String> {
+    // Latin-1 bytes 0-255 map directly to Unicode code points 0-255
+    let s: String = bytes.iter().map(|&b| b as char).collect();
+    Ok(s)
+}
+
+/// Extract metadata for a single signature field.
+///
+/// This is the core of Phase 7.3.2: resolve the /V dictionary and extract
+/// all signature metadata fields (signer, date, reason, location, subfilter,
+/// byte range, coverage fraction).
+///
+/// # Arguments
+///
+/// * `field_ref` - The signature field reference from discovery
+/// * `resolver` - Xref resolver for dereferencing indirect objects
+/// * `file_size` - Total size of the PDF file in bytes (for coverage computation)
+///
+/// # Returns
+///
+/// A `Signature` struct with all extracted metadata. If the field has no /V
+/// (unsigned), returns an unsigned signature with minimal metadata.
+fn extract_signature_metadata(
+    field_ref: &SigFieldRef,
+    resolver: &XrefResolver,
+    file_size: Option<u64>,
+) -> Signature {
+    // If no /V reference, the field is unsigned
+    let v_ref = match field_ref.v_ref {
+        Some(ref_) => ref_,
+        None => return Signature::unsigned(field_ref.full_name.clone()),
+    };
+
+    // Resolve the /V dictionary (signature dictionary)
+    let v_obj = match resolver.resolve(v_ref) {
+        Ok(obj) => obj,
+        Err(_) => return Signature::unsigned(field_ref.full_name.clone()),
+    };
+
+    let v_dict = match v_obj.as_dict() {
+        Some(d) => d,
+        None => return Signature::unsigned(field_ref.full_name.clone()),
+    };
+
+    // Extract /Name (signer name) - default to empty string if absent
+    let signer_name = v_dict.get("Name")
+        .and_then(|o| o.as_string())
+        .and_then(|bytes| decode_pdf_string(bytes).ok())
+        .unwrap_or_else(String::new);
+
+    // Extract /M (signing date) - parse to ISO 8601
+    let signing_date = v_dict.get("M")
+        .and_then(|o| o.as_string())
+        .and_then(|bytes| parse_pdf_date(bytes));
+
+    // Extract /Reason (optional)
+    let reason = v_dict.get("Reason")
+        .and_then(|o| o.as_string())
+        .and_then(|bytes| decode_pdf_string(bytes).ok());
+
+    // Extract /Location (optional)
+    let location = v_dict.get("Location")
+        .and_then(|o| o.as_string())
+        .and_then(|bytes| decode_pdf_string(bytes).ok());
+
+    // Extract /SubFilter (signature format) - this is a Name, not a String
+    let sub_filter = v_dict.get("SubFilter")
+        .and_then(|o| o.as_name())
+        .map(|n| n.to_string());
+
+    // Extract /ByteRange (array of 4 integers: [offset, length, offset, length])
+    let byte_range = v_dict.get("ByteRange")
+        .and_then(|o| o.as_array())
+        .and_then(|arr| {
+            if arr.len() != 4 {
+                return None;
+            }
+            let mut result = Vec::with_capacity(4);
+            for item in arr.iter() {
+                let val = item.as_int().or_else(|| item.as_real().map(|r| r as i64))?;
+                if val < 0 {
+                    return None;
+                }
+                result.push(val as u64);
+            }
+            Some(result)
+        });
+
+    // Compute coverage_fraction: (byte_range[1] + byte_range[3]) / file_size
+    let coverage_fraction = match (byte_range.as_ref(), file_size) {
+        (Some(br), Some(fs)) if fs > 0 => {
+            let covered = br[1].saturating_add(br[3]);
+            Some(covered as f64 / fs as f64)
+        }
+        _ => None,
+    };
+
+    Signature {
+        field_name: field_ref.full_name.clone(),
+        signer_name,
+        signing_date,
+        reason,
+        location,
+        sub_filter,
+        byte_range,
+        coverage_fraction,
+        validation_status: "not_checked".to_string(),
+    }
+}
+
+/// Extract metadata for all discovered signature fields.
+///
+/// This is the main entry point for Phase 7.3.2. Takes the output of
+/// 7.3.1 discovery and resolves all signature dictionaries to extract
+/// metadata.
+///
+/// # Arguments
+///
+/// * `fields` - Discovered signature fields from `discover()`
+/// * `resolver` - Xref resolver for dereferencing indirect objects
+/// * `file_size` - Total size of the PDF file in bytes (for coverage computation)
+///
+/// # Returns
+///
+/// A `Vec<Signature>` containing extracted metadata for all signature fields.
+/// Unsigned fields (no /V) are included with minimal metadata.
+///
+/// # Example
+///
+/// ```ignore
+/// use pdftract_core::signature::{discover, extract_signatures};
+///
+/// let sig_fields = discover(&resolver, &catalog);
+/// let signatures = extract_signatures(&sig_fields, &resolver, Some(file_size));
+///
+/// for sig in signatures {
+///     println!("Signature: {}", sig.field_name);
+///     println!("  Signer: {}", sig.signer_name);
+///     if let Some(date) = &sig.signing_date {
+///         println!("  Date: {}", date);
+///     }
+/// }
+/// ```
+pub fn extract_signatures(
+    fields: &[SigFieldRef],
+    resolver: &XrefResolver,
+    file_size: Option<u64>,
+) -> Vec<Signature> {
+    fields
+        .iter()
+        .map(|field| extract_signature_metadata(field, resolver, file_size))
+        .collect()
 }
 
 /// A field reference from AcroForm walking.
@@ -704,5 +1157,383 @@ mod tests {
 
         let sig_field = all_fields.iter().find(|f| f.full_name == "sig_field").unwrap();
         assert_eq!(sig_field.field_type.as_deref(), Some("Sig"));
+    }
+
+    // === Phase 7.3.2: Metadata extraction tests ===
+
+    /// Helper to create a signature dictionary (/V)
+    fn make_signature_dict(
+        name: Option<&str>,
+        m: Option<&[u8]>,
+        reason: Option<&str>,
+        location: Option<&str>,
+        subfilter: Option<&str>,
+        byte_range: Option<Vec<i64>>,
+    ) -> (ObjRef, PdfObject) {
+        let mut dict = indexmap::IndexMap::new();
+
+        if let Some(name_val) = name {
+            dict.insert(intern("Name"), PdfObject::String(Box::new(name_val.as_bytes().to_vec())));
+        }
+
+        if let Some(m_val) = m {
+            dict.insert(intern("M"), PdfObject::String(Box::new(m_val.to_vec())));
+        }
+
+        if let Some(reason_val) = reason {
+            dict.insert(intern("Reason"), PdfObject::String(Box::new(reason_val.as_bytes().to_vec())));
+        }
+
+        if let Some(location_val) = location {
+            dict.insert(intern("Location"), PdfObject::String(Box::new(location_val.as_bytes().to_vec())));
+        }
+
+        if let Some(subfilter_val) = subfilter {
+            dict.insert(intern("SubFilter"), PdfObject::Name(intern(subfilter_val)));
+        }
+
+        if let Some(br_val) = byte_range {
+            let br_array: Vec<PdfObject> = br_val.iter()
+                .map(|&v| PdfObject::Integer(v))
+                .collect();
+            dict.insert(intern("ByteRange"), PdfObject::Array(Box::new(br_array)));
+        }
+
+        let v_ref = ObjRef::new(500, 0);
+        (v_ref, PdfObject::Dict(Box::new(dict)))
+    }
+
+    #[test]
+    fn test_extract_signature_metadata_full() {
+        let v_ref = ObjRef::new(500, 0);
+        let (v_ref, v_dict) = make_signature_dict(
+            Some("John Doe"),
+            Some(b"D:20230115143045Z"),
+            Some("Contract approval"),
+            Some("New York, NY"),
+            Some("adbe.pkcs7.detached"),
+            Some(vec![0, 1000, 2000, 500]),
+        );
+
+        let field = SigFieldRef {
+            full_name: "employer_sig".to_string(),
+            v_ref: Some(v_ref),
+            rect: None,
+            page_index: None,
+            field_ref: ObjRef::new(100, 0),
+        };
+
+        let mut resolver = XrefResolver::new();
+        resolver.cache_object(v_ref, v_dict);
+
+        let sig = extract_signature_metadata(&field, &resolver, Some(3000));
+
+        assert_eq!(sig.field_name, "employer_sig");
+        assert_eq!(sig.signer_name, "John Doe");
+        assert_eq!(sig.signing_date, Some("2023-01-15T14:30:45Z".to_string()));
+        assert_eq!(sig.reason, Some("Contract approval".to_string()));
+        assert_eq!(sig.location, Some("New York, NY".to_string()));
+        assert_eq!(sig.sub_filter, Some("adbe.pkcs7.detached".to_string()));
+        assert_eq!(sig.byte_range, Some(vec![0, 1000, 2000, 500]));
+        assert_eq!(sig.coverage_fraction, Some(1500.0 / 3000.0)); // (1000 + 500) / 3000
+        assert_eq!(sig.validation_status, "not_checked");
+    }
+
+    #[test]
+    fn test_extract_signature_metadata_unsigned() {
+        let field = SigFieldRef {
+            full_name: "blank_sig".to_string(),
+            v_ref: None, // No /V = unsigned
+            rect: None,
+            page_index: None,
+            field_ref: ObjRef::new(100, 0),
+        };
+
+        let resolver = XrefResolver::new();
+
+        let sig = extract_signature_metadata(&field, &resolver, Some(1000));
+
+        assert_eq!(sig.field_name, "blank_sig");
+        assert_eq!(sig.signer_name, "");
+        assert!(sig.signing_date.is_none());
+        assert!(sig.reason.is_none());
+        assert!(sig.location.is_none());
+        assert!(sig.sub_filter.is_none());
+        assert!(sig.byte_range.is_none());
+        assert!(sig.coverage_fraction.is_none());
+        assert_eq!(sig.validation_status, "not_checked");
+    }
+
+    #[test]
+    fn test_extract_signature_metadata_missing_optional_fields() {
+        let v_ref = ObjRef::new(500, 0);
+        let mut dict = indexmap::IndexMap::new();
+        dict.insert(intern("Name"), PdfObject::String(Box::new(b"Alice Smith".to_vec())));
+
+        let field = SigFieldRef {
+            full_name: "minimal_sig".to_string(),
+            v_ref: Some(v_ref),
+            rect: None,
+            page_index: None,
+            field_ref: ObjRef::new(100, 0),
+        };
+
+        let mut resolver = XrefResolver::new();
+        resolver.cache_object(v_ref, PdfObject::Dict(Box::new(dict)));
+
+        let sig = extract_signature_metadata(&field, &resolver, None);
+
+        assert_eq!(sig.field_name, "minimal_sig");
+        assert_eq!(sig.signer_name, "Alice Smith");
+        assert!(sig.signing_date.is_none());
+        assert!(sig.reason.is_none());
+        assert!(sig.location.is_none());
+        assert!(sig.sub_filter.is_none());
+        assert!(sig.byte_range.is_none());
+        assert!(sig.coverage_fraction.is_none());
+    }
+
+    #[test]
+    fn test_extract_signatures_multiple() {
+        // Create two signature fields with different /V dicts
+        let v_ref1 = ObjRef::new(500, 0);
+        let (_, v_dict1) = make_signature_dict(
+            Some("Signer One"),
+            Some(b"D:20230101000000Z"),
+            None,
+            None,
+            Some("adbe.pkcs7.detached"),
+            None,
+        );
+
+        let v_ref2 = ObjRef::new(501, 0);
+        let (_, v_dict2) = make_signature_dict(
+            Some("Signer Two"),
+            Some(b"D:20230201000000Z"),
+            Some("Approved"),
+            None,
+            Some("adbe.x509.rsa.sha1"),
+            None,
+        );
+
+        let field1 = SigFieldRef {
+            full_name: "sig1".to_string(),
+            v_ref: Some(v_ref1),
+            rect: None,
+            page_index: None,
+            field_ref: ObjRef::new(100, 0),
+        };
+
+        let field2 = SigFieldRef {
+            full_name: "sig2".to_string(),
+            v_ref: Some(v_ref2),
+            rect: None,
+            page_index: None,
+            field_ref: ObjRef::new(101, 0),
+        };
+
+        let fields = vec![field1.clone(), field2.clone()];
+
+        let mut resolver = XrefResolver::new();
+        resolver.cache_object(v_ref1, v_dict1);
+        resolver.cache_object(v_ref2, v_dict2);
+
+        let sigs = extract_signatures(&fields, &resolver, None);
+
+        assert_eq!(sigs.len(), 2);
+
+        let sig1 = sigs.iter().find(|s| s.field_name == "sig1").unwrap();
+        assert_eq!(sig1.signer_name, "Signer One");
+        assert_eq!(sig1.sub_filter, Some("adbe.pkcs7.detached".to_string()));
+
+        let sig2 = sigs.iter().find(|s| s.field_name == "sig2").unwrap();
+        assert_eq!(sig2.signer_name, "Signer Two");
+        assert_eq!(sig2.reason, Some("Approved".to_string()));
+        assert_eq!(sig2.sub_filter, Some("adbe.x509.rsa.sha1".to_string()));
+    }
+
+    // === PDF date parsing tests ===
+
+    #[test]
+    fn test_parse_pdf_date_full_with_timezone() {
+        let result = parse_pdf_date(b"D:20230115143045+05'30'");
+        assert_eq!(result, Some("2023-01-15T14:30:45+05:30".to_string()));
+    }
+
+    #[test]
+    fn test_parse_pdf_date_utc() {
+        let result = parse_pdf_date(b"D:20230115143045Z");
+        assert_eq!(result, Some("2023-01-15T14:30:45Z".to_string()));
+    }
+
+    #[test]
+    fn test_parse_pdf_date_negative_timezone() {
+        let result = parse_pdf_date(b"D:20230115143045-08'00'");
+        assert_eq!(result, Some("2023-01-15T14:30:45-08:00".to_string()));
+    }
+
+    #[test]
+    fn test_parse_pdf_date_only() {
+        let result = parse_pdf_date(b"D:20230115");
+        assert_eq!(result, Some("2023-01-15T00:00:00Z".to_string()));
+    }
+
+    #[test]
+    fn test_parse_pdf_date_no_timezone() {
+        let result = parse_pdf_date(b"D:20230115143045");
+        assert_eq!(result, Some("2023-01-15T14:30:45Z".to_string()));
+    }
+
+    #[test]
+    fn test_parse_pdf_date_malformed() {
+        assert!(parse_pdf_date(b"invalid").is_none());
+        assert!(parse_pdf_date(b"D:2023").is_none()); // Too short
+        assert!(parse_pdf_date(b"D:20231301").is_none()); // Invalid month
+        assert!(parse_pdf_date(b"D:20230132").is_none()); // Invalid day
+    }
+
+    #[test]
+    fn test_parse_pdf_date_without_d_prefix() {
+        let result = parse_pdf_date(b"20230115143045Z");
+        assert_eq!(result, Some("2023-01-15T14:30:45Z".to_string()));
+    }
+
+    // === ByteRange coverage tests ===
+
+    #[test]
+    fn test_coverage_fraction_full_coverage() {
+        let v_ref = ObjRef::new(500, 0);
+        let (_, v_dict) = make_signature_dict(
+            Some("Signer"),
+            None,
+            None,
+            None,
+            None,
+            Some(vec![0, 1000, 2000, 3000]), // Covers 4000 bytes
+        );
+
+        let field = SigFieldRef {
+            full_name: "sig".to_string(),
+            v_ref: Some(v_ref),
+            rect: None,
+            page_index: None,
+            field_ref: ObjRef::new(100, 0),
+        };
+
+        let mut resolver = XrefResolver::new();
+        resolver.cache_object(v_ref, v_dict);
+
+        let sig = extract_signature_metadata(&field, &resolver, Some(4000));
+
+        assert_eq!(sig.coverage_fraction, Some(1.0));
+    }
+
+    #[test]
+    fn test_coverage_fraction_partial() {
+        let v_ref = ObjRef::new(500, 0);
+        let (_, v_dict) = make_signature_dict(
+            Some("Signer"),
+            None,
+            None,
+            None,
+            None,
+            Some(vec![0, 1000, 2000, 500]), // Covers 1500 bytes
+        );
+
+        let field = SigFieldRef {
+            full_name: "sig".to_string(),
+            v_ref: Some(v_ref),
+            rect: None,
+            page_index: None,
+            field_ref: ObjRef::new(100, 0),
+        };
+
+        let mut resolver = XrefResolver::new();
+        resolver.cache_object(v_ref, v_dict);
+
+        let sig = extract_signature_metadata(&field, &resolver, Some(3000));
+
+        assert_eq!(sig.coverage_fraction, Some(0.5));
+    }
+
+    #[test]
+    fn test_coverage_fraction_no_file_size() {
+        let v_ref = ObjRef::new(500, 0);
+        let (_, v_dict) = make_signature_dict(
+            Some("Signer"),
+            None,
+            None,
+            None,
+            None,
+            Some(vec![0, 1000, 2000, 500]),
+        );
+
+        let field = SigFieldRef {
+            full_name: "sig".to_string(),
+            v_ref: Some(v_ref),
+            rect: None,
+            page_index: None,
+            field_ref: ObjRef::new(100, 0),
+        };
+
+        let mut resolver = XrefResolver::new();
+        resolver.cache_object(v_ref, v_dict);
+
+        let sig = extract_signature_metadata(&field, &resolver, None);
+
+        assert!(sig.coverage_fraction.is_none());
+    }
+
+    #[test]
+    fn test_coverage_fraction_invalid_byte_range() {
+        let v_ref = ObjRef::new(500, 0);
+        // Only 3 elements instead of 4
+        let mut dict = indexmap::IndexMap::new();
+        dict.insert(intern("Name"), PdfObject::String(Box::new(b"Signer".to_vec())));
+        dict.insert(intern("ByteRange"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+            PdfObject::Integer(1000),
+            PdfObject::Integer(2000),
+        ])));
+
+        let field = SigFieldRef {
+            full_name: "sig".to_string(),
+            v_ref: Some(v_ref),
+            rect: None,
+            page_index: None,
+            field_ref: ObjRef::new(100, 0),
+        };
+
+        let mut resolver = XrefResolver::new();
+        resolver.cache_object(v_ref, PdfObject::Dict(Box::new(dict)));
+
+        let sig = extract_signature_metadata(&field, &resolver, Some(3000));
+
+        assert!(sig.byte_range.is_none());
+        assert!(sig.coverage_fraction.is_none());
+    }
+
+    // === PDF string decoding tests ===
+
+    #[test]
+    fn test_decode_pdf_string_ascii() {
+        let result = decode_pdf_string(b"Hello World");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "Hello World");
+    }
+
+    #[test]
+    fn test_decode_pdf_string_utf16be_bom() {
+        let utf16be = vec![0xFE, 0xFF, 0x00, 0x48, 0x00, 0x69]; // "Hi"
+        let result = decode_pdf_string(&utf16be);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "Hi");
+    }
+
+    #[test]
+    fn test_decode_pdf_string_empty() {
+        let result = decode_pdf_string(b"");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "");
     }
 }
