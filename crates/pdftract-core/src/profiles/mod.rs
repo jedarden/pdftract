@@ -19,12 +19,14 @@
 
 mod engine;
 mod loader;
+mod signals;
 mod types;
 
 pub use engine::{
     classify, has_currency_pattern, ClassificationResult, ClassifierEngine, FeatureSignals,
 };
 pub use loader::{check_forbidden_keys, ForbiddenKeyError, ProfileLoadError};
+pub use signals::{extract_feature_signals, extract_signals_from_results, PageSignalAccumulator};
 pub use types::{MatchPredicate, Profile, ProfileType};
 
 use crate::diagnostics::DiagCode;
