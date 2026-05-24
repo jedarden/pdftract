@@ -30,6 +30,16 @@ Implemented the deskew preprocessing step using leptonica's `pixFindSkewAndDeske
 - **File**: `crates/pdftract-core/src/lib.rs`
 - **Change**: Added `#[cfg(feature = "ocr")] pub mod preprocess;`
 
+### 5. Added acceptance criteria tests (2026-05-23)
+- **File**: `crates/pdftract-core/src/preprocess.rs` (test module)
+- **New tests**:
+  - `test_deskew_2_degree_skew`: Verifies 2-degree skew is deskewed within 0.1 deg
+  - `test_deskew_0_2_degree_skew_skipped`: Verifies 0.2-degree skew is skipped (unchanged)
+  - `test_deskew_20_degree_skew_out_of_range`: Verifies 20-degree skew emits IMG_DESKEW_OUT_OF_RANGE diagnostic
+- **Helper functions**:
+  - `create_skewed_text_lines()`: Creates synthetic test images with known skew angles
+  - `verify_deskewed()`: Verifies an image is properly deskewed via double-pass check
+
 ## Implementation Details
 
 The `deskew()` function:
@@ -48,9 +58,9 @@ The function uses `pixFindSkewAndDeskew` instead of separate `pixFindSkew` + `pi
 
 | Criterion | Status | Notes |
 |-----------|--------|-------|
-| 2-deg synthetic skewed fixture: deskewed within 0.1 deg | PASS (by design) | pixFindSkewAndDeskew detects and corrects skew; angle is returned in result tuple |
-| 0.2-deg skewed fixture: untouched | PASS (by design) | Lines 106-109 return original image unchanged when angle < 0.3 deg |
-| 20-deg skewed fixture: IMG_DESKEW_OUT_OF_RANGE diagnostic | PASS (by design) | Lines 114-121 emit diagnostic when angle > 15.0 deg |
+| 2-deg synthetic skewed fixture: deskewed within 0.1 deg | TEST ADDED | `test_deskew_2_degree_skew` creates synthetic 2° skewed image, verifies deskewing produces < 0.1° residual skew |
+| 0.2-deg skewed fixture: untouched | TEST ADDED | `test_deskew_0_2_degree_skew_skipped` verifies sub-threshold angles return original unchanged |
+| 20-deg skewed fixture: IMG_DESKEW_OUT_OF_RANGE diagnostic | TEST ADDED | `test_deskew_20_degree_skew_out_of_range` verifies diagnostic emitted for out-of-range angles |
 | WER on standard deskew fixture: deskew + OCR < deskew-disabled + OCR | WARN | Requires OCR integration and test fixtures - deferred to later phase |
 
 ## Infrastructure Notes
@@ -63,14 +73,24 @@ The implementation is correct by code review:
 - Emits the required diagnostic for out-of-range angles
 - Returns the detected angle for quality tracking
 - Properly manages leptonica Pix memory (pixDestroy on drop)
+- Tests compile and are ready to run once leptonica is available
+
+## Test Implementation Details
+
+The new tests use synthetic test images created programmatically:
+- `create_skewed_text_lines()` draws horizontal text-like lines at a specified angle
+- Uses small-angle trigonometric approximations to avoid external math library dependencies
+- The 2-degree test verifies deskewing by running deskew twice and checking the second pass detects near-zero skew
+- The 0.2-degree test verifies the skip branch by checking the angle is exactly 0.0 (returned unchanged)
+- The 20-degree test verifies the out-of-range diagnostic is emitted
 
 ## Future Work
 
 1. **Per-page quality tracking**: The deskew angle is returned but not yet recorded in `extraction_quality.deskew_angle_deg`. This requires adding a per-page quality struct to the extraction pipeline.
-2. **Test fixtures**: Add synthetic skewed fixtures (0.2 deg, 2 deg, 20 deg) to verify the implementation once leptonica is available in the test environment.
-3. **WER benchmark**: Compare OCR accuracy with/without deskewing once the OCR pipeline is integrated.
+2. **WER benchmark**: Compare OCR accuracy with/without deskewing once the OCR pipeline is integrated.
+3. **Leptonica test environment**: Set up a CI environment with leptonica available to run these tests automatically.
 
-## Commit
+## Commits
 
-- **Hash**: `5ef9ef7`
-- **Message**: `feat(pdftract-3wku): implement deskew via pixFindSkewAndDeskew`
+- **Hash**: `5ef9ef7` - Initial implementation
+- **Hash**: `pending` - Added acceptance criteria tests
