@@ -5,8 +5,11 @@
 //! # Submodules
 //!
 //! - [`associated_files`]: PDF 2.0 /AF (Associated Files) array walker
+//! - [`filespec`]: Filespec dictionary and EF stream decoder (PDF 1.7+)
 
 pub mod associated_files;
+pub mod filespec;
 
 // Re-export key types for convenience
 pub use associated_files::{walk_af_array, AssociatedFileEntry};
+pub use filespec::{extract_one, AttachmentBuilder};
