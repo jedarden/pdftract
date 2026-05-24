@@ -18,7 +18,7 @@
 
 use std::sync::Arc;
 
-use crate::diagnostics::{Diagnostic, DiagCode};
+use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::font::type3::Type3Font;
 use crate::graphics_state::{GraphicsState, GraphicsStateStack, Matrix3x3};
 use crate::parser::lexer::Lexer;
@@ -315,11 +315,8 @@ impl<'a> RasterizerContext<'a> {
         let x2 = stack.pop().unwrap();
         let y1 = stack.pop().unwrap();
         let x1 = stack.pop().unwrap();
-        self.path.cubic_to(
-            Point::new(x1, y1),
-            Point::new(x2, y2),
-            Point::new(x3, y3),
-        );
+        self.path
+            .cubic_to(Point::new(x1, y1), Point::new(x2, y2), Point::new(x3, y3));
     }
 
     /// v x2 y2 x3 y3 - Shorthand cubic Bezier (first control point implied)
@@ -331,7 +328,8 @@ impl<'a> RasterizerContext<'a> {
         let x3 = stack.pop().unwrap();
         let y2 = stack.pop().unwrap();
         let x2 = stack.pop().unwrap();
-        self.path.shorthand_cubic_to(Point::new(x2, y2), Point::new(x3, y3));
+        self.path
+            .shorthand_cubic_to(Point::new(x2, y2), Point::new(x3, y3));
     }
 
     /// y x1 y1 x3 y3 - Shorthand cubic Bezier (second control point implied)
@@ -343,7 +341,8 @@ impl<'a> RasterizerContext<'a> {
         let x3 = stack.pop().unwrap();
         let y1 = stack.pop().unwrap();
         let x1 = stack.pop().unwrap();
-        self.path.shorthand_cubic_to_y(Point::new(x1, y1), Point::new(x3, y3));
+        self.path
+            .shorthand_cubic_to_y(Point::new(x1, y1), Point::new(x3, y3));
     }
 
     /// re x y width height - Append rectangle
@@ -449,6 +448,10 @@ impl<'a> RasterizerContext<'a> {
     /// cm a b c d e f - Concatenate matrix to CTM
     fn op_concat(&mut self, stack: &mut Vec<f64>) {
         if stack.len() < 6 {
+            self.diagnostics.push(Diagnostic::with_static_no_offset(
+                DiagCode::CmArgCount,
+                "cm operator requires exactly 6 numeric arguments",
+            ));
             return;
         }
         let f = stack.pop().unwrap();
@@ -457,7 +460,27 @@ impl<'a> RasterizerContext<'a> {
         let c = stack.pop().unwrap();
         let b = stack.pop().unwrap();
         let a = stack.pop().unwrap();
+
+        // Check for NaN values
+        if a.is_nan() || b.is_nan() || c.is_nan() || d.is_nan() || e.is_nan() || f.is_nan() {
+            self.diagnostics.push(Diagnostic::with_static_no_offset(
+                DiagCode::CmDegenerate,
+                "cm operator received NaN values; clamped to identity",
+            ));
+            return; // Don't modify CTM
+        }
+
         let matrix = Matrix3x3::from_pdf_array([a, b, c, d, e, f]);
+
+        // Check for degenerate matrix (det == 0)
+        if matrix.determinant() == 0.0 {
+            self.diagnostics.push(Diagnostic::with_static_no_offset(
+                DiagCode::CmDegenerate,
+                "cm operator received degenerate matrix (det=0); clamped to identity",
+            ));
+            return; // Don't modify CTM
+        }
+
         self.gstate.concat_ctm(&matrix);
     }
 
@@ -472,7 +495,10 @@ impl<'a> RasterizerContext<'a> {
         if self.depth >= MAX_GLYPH_DEPTH {
             self.diagnostics.push(Diagnostic::with_dynamic_no_offset(
                 DiagCode::StructXobjectCycle,
-                format!("Type3 glyph recursion depth limit reached at {}", MAX_GLYPH_DEPTH),
+                format!(
+                    "Type3 glyph recursion depth limit reached at {}",
+                    MAX_GLYPH_DEPTH
+                ),
             ));
             return;
         }

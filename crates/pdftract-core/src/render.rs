@@ -21,15 +21,17 @@
 #[cfg(all(feature = "ocr", feature = "full-render"))]
 pub mod pdfium_path;
 
-use crate::graphics_state::{Matrix3x3, GraphicsStateStack, GraphicsState};
+use crate::diagnostics::{DiagCode, Diagnostic};
+use crate::graphics_state::{GraphicsState, GraphicsStateStack, Matrix3x3};
 use crate::parser::lexer::Lexer;
 use crate::parser::lexer::Token;
-use crate::parser::object::{PdfObject, ObjRef};
-use crate::parser::xref::XrefResolver;
-use crate::parser::stream::{decode_stream, ExtractionOptions as StreamExtractionOptions, PdfSource};
+use crate::parser::object::{ObjRef, PdfObject};
 use crate::parser::resources::ResourceDict;
-use crate::diagnostics::{Diagnostic, DiagCode};
-use image::{GrayImage, RgbImage, RgbaImage, Luma, Rgb, Rgba, ImageBuffer, DynamicImage};
+use crate::parser::stream::{
+    decode_stream, ExtractionOptions as StreamExtractionOptions, PdfSource,
+};
+use crate::parser::xref::XrefResolver;
+use image::{DynamicImage, GrayImage, ImageBuffer, Luma, Rgb, RgbImage, Rgba, RgbaImage};
 use std::sync::Arc;
 
 /// Maximum number of images to composite per page (prevents DoS).
@@ -137,17 +139,39 @@ pub fn collect_image_placements(
                         operand_buffer.clear();
                     }
                     "cm" => {
-                        // Concatenate matrix: cm expects 6 numbers
-                        let nums: Vec<f64> = operand_buffer.iter().filter_map(|t| {
-                            match t {
+                        // Concatenate matrix: cm expects exactly 6 numbers
+                        let nums: Vec<f64> = operand_buffer
+                            .iter()
+                            .filter_map(|t| match t {
                                 Token::Integer(n) => Some(*n as f64),
                                 Token::Real(f) => Some(*f),
                                 _ => None,
-                            }
-                        }).collect();
+                            })
+                            .collect();
 
-                        if nums.len() >= 6 {
-                            let matrix = Matrix3x3::from_pdf_array([nums[0], nums[1], nums[2], nums[3], nums[4], nums[5]]);
+                        if nums.len() != 6 {
+                            diagnostics.push(Diagnostic::with_static_no_offset(
+                                DiagCode::CmArgCount,
+                                "cm operator requires exactly 6 numeric arguments",
+                            ));
+                            operand_buffer.clear();
+                            continue;
+                        }
+
+                        let matrix = Matrix3x3::from_pdf_array([
+                            nums[0], nums[1], nums[2], nums[3], nums[4], nums[5],
+                        ]);
+
+                        // Check for degenerate matrix (NaN or det == 0)
+                        let has_nan = nums.iter().any(|&n| n.is_nan());
+                        let det = matrix.determinant();
+                        if has_nan || det == 0.0 {
+                            diagnostics.push(Diagnostic::with_static_no_offset(
+                                DiagCode::CmDegenerate,
+                                "cm operator received degenerate matrix; clamped to identity",
+                            ));
+                            // Clamp to identity - don't modify CTM
+                        } else {
                             state.concat_ctm(&matrix);
                         }
                         operand_buffer.clear();
@@ -171,7 +195,10 @@ pub fn collect_image_placements(
                                         if placements.len() >= MAX_IMAGES_PER_PAGE {
                                             diagnostics.push(Diagnostic::with_dynamic_no_offset(
                                                 DiagCode::StreamBomb,
-                                                format!("Too many images on page ({}), aborting", MAX_IMAGES_PER_PAGE),
+                                                format!(
+                                                    "Too many images on page ({}), aborting",
+                                                    MAX_IMAGES_PER_PAGE
+                                                ),
                                             ));
                                             return Err(diagnostics);
                                         }
@@ -215,10 +242,7 @@ pub fn collect_image_placements(
 /// Get the /Matrix from an XObject dictionary if present.
 ///
 /// Returns the matrix if found, or identity if not present.
-fn get_xobject_matrix(
-    xobject_ref: ObjRef,
-    resolver: &XrefResolver,
-) -> Matrix3x3 {
+fn get_xobject_matrix(xobject_ref: ObjRef, resolver: &XrefResolver) -> Matrix3x3 {
     // Resolve the XObject
     let xobject = match resolver.resolve(xobject_ref) {
         Ok(obj) => obj,
@@ -236,13 +260,14 @@ fn get_xobject_matrix(
     match dict.get("/Matrix") {
         Some(PdfObject::Array(arr)) => {
             // Matrix should be a 6-element array
-            let nums: Vec<f64> = arr.iter().filter_map(|v| {
-                match v {
+            let nums: Vec<f64> = arr
+                .iter()
+                .filter_map(|v| match v {
                     PdfObject::Integer(n) => Some(*n as f64),
                     PdfObject::Real(f) => Some(*f),
                     _ => None,
-                }
-            }).collect();
+                })
+                .collect();
 
             if nums.len() >= 6 {
                 Matrix3x3::from_pdf_array([nums[0], nums[1], nums[2], nums[3], nums[4], nums[5]])
@@ -417,13 +442,23 @@ pub fn decode_image_xobject(
     };
 
     // Calculate expected data size
-    let components = if is_rgb { 3 } else if is_cmyk { 4 } else { 1 };
+    let components = if is_rgb {
+        3
+    } else if is_cmyk {
+        4
+    } else {
+        1
+    };
     let expected_size = (width as usize) * (height as usize) * (components as usize);
 
     if decoded.len() < expected_size {
         diagnostics.push(Diagnostic::with_dynamic_no_offset(
             DiagCode::StreamTruncated,
-            format!("Image data truncated: expected {} bytes, got {}", expected_size, decoded.len()),
+            format!(
+                "Image data truncated: expected {} bytes, got {}",
+                expected_size,
+                decoded.len()
+            ),
         ));
         return Err(diagnostics);
     }
@@ -536,7 +571,16 @@ pub fn composite_images(
     source: &dyn PdfSource,
     max_bytes: u64,
 ) -> Result<GrayImage> {
-    composite_images_with_rotation(placements, page_width, page_height, dpi, 0, resolver, source, max_bytes)
+    composite_images_with_rotation(
+        placements,
+        page_width,
+        page_height,
+        dpi,
+        0,
+        resolver,
+        source,
+        max_bytes,
+    )
 }
 
 /// Composite images onto a canvas using their CTMs, with page rotation support.
@@ -618,10 +662,10 @@ pub fn composite_images_with_rotation(
 
         // Transform the image corners
         let corners = [
-            (0.0, 0.0),   // Bottom-left
-            (1.0, 0.0),   // Bottom-right
-            (0.0, 1.0),   // Top-left
-            (1.0, 1.0),   // Top-right
+            (0.0, 0.0), // Bottom-left
+            (1.0, 0.0), // Bottom-right
+            (0.0, 1.0), // Top-left
+            (1.0, 1.0), // Top-right
         ];
 
         let mut transformed_corners = Vec::new();
@@ -659,10 +703,26 @@ pub fn composite_images_with_rotation(
         }
 
         // Compute bounding box
-        let min_x = transformed_corners.iter().map(|(x, _)| x).fold(f64::INFINITY, |a, &b| a.min(b)).floor() as i32;
-        let max_x = transformed_corners.iter().map(|(x, _)| x).fold(f64::NEG_INFINITY, |a, &b| a.max(b)).ceil() as i32;
-        let min_y = transformed_corners.iter().map(|(_, y)| y).fold(f64::INFINITY, |a, &b| a.min(b)).floor() as i32;
-        let max_y = transformed_corners.iter().map(|(_, y)| y).fold(f64::NEG_INFINITY, |a, &b| a.max(b)).ceil() as i32;
+        let min_x = transformed_corners
+            .iter()
+            .map(|(x, _)| x)
+            .fold(f64::INFINITY, |a, &b| a.min(b))
+            .floor() as i32;
+        let max_x = transformed_corners
+            .iter()
+            .map(|(x, _)| x)
+            .fold(f64::NEG_INFINITY, |a, &b| a.max(b))
+            .ceil() as i32;
+        let min_y = transformed_corners
+            .iter()
+            .map(|(_, y)| y)
+            .fold(f64::INFINITY, |a, &b| a.min(b))
+            .floor() as i32;
+        let max_y = transformed_corners
+            .iter()
+            .map(|(_, y)| y)
+            .fold(f64::NEG_INFINITY, |a, &b| a.max(b))
+            .ceil() as i32;
 
         // Clamp to canvas bounds
         let min_x = min_x.max(0) as u32;
@@ -692,7 +752,12 @@ pub fn composite_images_with_rotation(
 
         // Resize image to fit
         let resized = if img_width != bbox_width || img_height != bbox_height {
-            image::imageops::resize(&gray_img, bbox_width, bbox_height, image::imageops::FilterType::Lanczos3)
+            image::imageops::resize(
+                &gray_img,
+                bbox_width,
+                bbox_height,
+                image::imageops::FilterType::Lanczos3,
+            )
         } else {
             gray_img
         };
@@ -738,7 +803,9 @@ mod tests {
         // Simple content stream with one Do operator
         let content = b"/Im1 Do";
         let mut resources = ResourceDict::new();
-        resources.xobjects.insert(Arc::from("Im1"), ObjRef::new(1, 0));
+        resources
+            .xobjects
+            .insert(Arc::from("Im1"), ObjRef::new(1, 0));
 
         let result = collect_image_placements(content, &resources);
         assert!(result.is_ok());
@@ -754,7 +821,9 @@ mod tests {
         // Content stream with cm and Do operators
         let content = b"1 0 0 1 100 200 cm /Im1 Do";
         let mut resources = ResourceDict::new();
-        resources.xobjects.insert(Arc::from("Im1"), ObjRef::new(1, 0));
+        resources
+            .xobjects
+            .insert(Arc::from("Im1"), ObjRef::new(1, 0));
 
         let result = collect_image_placements(content, &resources);
         assert!(result.is_ok());
@@ -770,8 +839,12 @@ mod tests {
         // Content stream with q/Q operators
         let content = b"q 1 0 0 1 100 200 cm /Im1 Do Q /Im2 Do";
         let mut resources = ResourceDict::new();
-        resources.xobjects.insert(Arc::from("Im1"), ObjRef::new(1, 0));
-        resources.xobjects.insert(Arc::from("Im2"), ObjRef::new(2, 0));
+        resources
+            .xobjects
+            .insert(Arc::from("Im1"), ObjRef::new(1, 0));
+        resources
+            .xobjects
+            .insert(Arc::from("Im2"), ObjRef::new(2, 0));
 
         let result = collect_image_placements(content, &resources);
         assert!(result.is_ok());
@@ -789,11 +862,11 @@ mod tests {
         // Create a simple RGB image
         let rgb_img: RgbImage = ImageBuffer::from_fn(2, 2, |x, y| {
             match (x, y) {
-                (0, 0) => Rgb([255, 0, 0]),    // Red
-                (1, 0) => Rgb([0, 255, 0]),    // Green
-                (0, 1) => Rgb([0, 0, 255]),    // Blue
+                (0, 0) => Rgb([255, 0, 0]),     // Red
+                (1, 0) => Rgb([0, 255, 0]),     // Green
+                (0, 1) => Rgb([0, 0, 255]),     // Blue
                 (1, 1) => Rgb([255, 255, 255]), // White
-                _ => Rgb([0, 0, 0]), // Should never happen for 2x2 image
+                _ => Rgb([0, 0, 0]),            // Should never happen for 2x2 image
             }
         });
 
@@ -847,7 +920,9 @@ mod tests {
         assert!(result.is_err());
 
         let diags = result.unwrap_err();
-        assert!(diags.iter().any(|d| d.code == DiagCode::GstateStackOverflow));
+        assert!(diags
+            .iter()
+            .any(|d| d.code == DiagCode::GstateStackOverflow));
     }
 
     #[test]
@@ -855,7 +930,9 @@ mod tests {
         // Test CTM with scaling
         let content = b"2 0 0 2 0 0 cm /Im1 Do";
         let mut resources = ResourceDict::new();
-        resources.xobjects.insert(Arc::from("Im1"), ObjRef::new(1, 0));
+        resources
+            .xobjects
+            .insert(Arc::from("Im1"), ObjRef::new(1, 0));
 
         let result = collect_image_placements(content, &resources);
         assert!(result.is_ok());
@@ -872,7 +949,9 @@ mod tests {
         // [0 1 -1 0 0 0] is a 90-degree rotation
         let content = b"0 1 -1 0 100 200 cm /Im1 Do";
         let mut resources = ResourceDict::new();
-        resources.xobjects.insert(Arc::from("Im1"), ObjRef::new(1, 0));
+        resources
+            .xobjects
+            .insert(Arc::from("Im1"), ObjRef::new(1, 0));
 
         let result = collect_image_placements(content, &resources);
         assert!(result.is_ok());
@@ -891,7 +970,9 @@ mod tests {
         // [1 0 0 -1 0 height] flips Y
         let content = b"1 0 0 -1 0 792 cm /Im1 Do";
         let mut resources = ResourceDict::new();
-        resources.xobjects.insert(Arc::from("Im1"), ObjRef::new(1, 0));
+        resources
+            .xobjects
+            .insert(Arc::from("Im1"), ObjRef::new(1, 0));
 
         let result = collect_image_placements(content, &resources);
         assert!(result.is_ok());
@@ -908,9 +989,15 @@ mod tests {
         // Test multiple images with different CTMs
         let content = b"q 1 0 0 1 0 0 cm /Im1 Do Q q 2 0 0 2 100 100 cm /Im2 Do Q q 0 1 -1 0 200 200 cm /Im3 Do Q";
         let mut resources = ResourceDict::new();
-        resources.xobjects.insert(Arc::from("Im1"), ObjRef::new(1, 0));
-        resources.xobjects.insert(Arc::from("Im2"), ObjRef::new(2, 0));
-        resources.xobjects.insert(Arc::from("Im3"), ObjRef::new(3, 0));
+        resources
+            .xobjects
+            .insert(Arc::from("Im1"), ObjRef::new(1, 0));
+        resources
+            .xobjects
+            .insert(Arc::from("Im2"), ObjRef::new(2, 0));
+        resources
+            .xobjects
+            .insert(Arc::from("Im3"), ObjRef::new(3, 0));
 
         let result = collect_image_placements(content, &resources);
         assert!(result.is_ok());
@@ -942,7 +1029,9 @@ mod tests {
         // Create 300 image references (exceeds MAX_IMAGES_PER_PAGE)
         for i in 0..300 {
             content.push_str(&format!("/Im{} Do ", i));
-            resources.xobjects.insert(Arc::from(format!("Im{}", i)), ObjRef::new(i as u32, 0));
+            resources
+                .xobjects
+                .insert(Arc::from(format!("Im{}", i)), ObjRef::new(i as u32, 0));
         }
 
         let result = collect_image_placements(content.as_bytes(), &resources);

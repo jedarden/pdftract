@@ -940,6 +940,14 @@ fn cmd_explain_diagnostic(code: &str) -> Result<()> {
             println!("  Mismatched BT/ET pair");
             println!("  The content stream has mismatched BT/ET operators.");
         }
+        DiagCode::CmArgCount => {
+            println!("  Invalid argument count for cm operator");
+            println!("  The cm operator requires exactly 6 numeric arguments.");
+        }
+        DiagCode::CmDegenerate => {
+            println!("  Degenerate matrix");
+            println!("  The cm operator received a degenerate matrix (det=0 or NaN); clamped to identity.");
+        }
         DiagCode::LayoutTaggedPdfDeferred => {
             println!("  Tagged PDF StructTree deferred");
             println!("  StructTree is ignored; XY-cut is used instead (Phase 7.1 pending).");

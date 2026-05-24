@@ -138,7 +138,6 @@ impl fmt::Display for Severity {
 #[repr(u16)]
 pub enum DiagCode {
     // === STRUCT_* codes ===
-
     /// Invalid name character or malformed name object
     ///
     /// Emitted when a PDF name object contains invalid characters or exceeds
@@ -347,7 +346,6 @@ pub enum DiagCode {
     StructIncompleteCoverage,
 
     // === XREF_* codes ===
-
     /// Invalid xref keyword or header
     ///
     /// Emitted when the xref table doesn't start with the `xref` keyword.
@@ -440,7 +438,6 @@ pub enum DiagCode {
     StructInvalidPrevOffset,
 
     // === STREAM_* codes ===
-
     /// Stream decompression failed (corrupt data)
     ///
     /// Emitted when a stream decoder encounters corrupt data mid-decompression.
@@ -474,7 +471,6 @@ pub enum DiagCode {
     StreamInvalidParams,
 
     // === ENCRYPTION_* codes ===
-
     /// Unsupported encryption or no password supplied
     ///
     /// Emitted when the PDF is encrypted and no password was supplied, or the
@@ -492,7 +488,6 @@ pub enum DiagCode {
     EncryptionWrongPassword,
 
     // === PAGE_* codes ===
-
     /// Page number out of range
     ///
     /// Emitted when `--pages` specifies a page number greater than the document's
@@ -517,7 +512,6 @@ pub enum DiagCode {
     PageInvalidRotate,
 
     // === FONT_* codes ===
-
     /// Glyph could not be mapped to Unicode
     ///
     /// Emitted when a glyph has no entry in the font's `/ToUnicode` CMap, is not
@@ -594,7 +588,6 @@ pub enum DiagCode {
     CjkDecodeMalformed,
 
     // === OCR_* codes ===
-
     /// JBIG2 decoder not available
     ///
     /// Emitted when a PDF contains JBIG2-compressed images and pdftract wasn't
@@ -682,7 +675,6 @@ pub enum DiagCode {
     StreamTruncated,
 
     // === REMOTE_* codes ===
-
     /// HTTP fetch interrupted or failed
     ///
     /// Emitted when an HTTP range request fails due to network error, timeout,
@@ -723,7 +715,6 @@ pub enum DiagCode {
     RemoteUrlPrivateNetwork,
 
     // === GSTATE_* codes ===
-
     /// Graphics state stack overflow
     ///
     /// Emitted when the graphics state stack exceeds the internal limit (prevents
@@ -747,8 +738,23 @@ pub enum DiagCode {
     /// Phase origin: 3.1
     GstateBtEtMismatch,
 
-    // === LAYOUT_* codes ===
+    /// Invalid argument count for cm operator
+    ///
+    /// Emitted when the cm operator doesn't have exactly 6 numeric operands.
+    /// The operator is discarded and CTM is not modified.
+    ///
+    /// Phase origin: 3.1
+    CmArgCount,
 
+    /// Degenerate matrix (det == 0 or NaN)
+    ///
+    /// Emitted when the cm operator receives a degenerate matrix (determinant
+    /// is zero or contains NaN values). The matrix is clamped to identity.
+    ///
+    /// Phase origin: 3.1
+    CmDegenerate,
+
+    // === LAYOUT_* codes ===
     /// Tagged PDF StructTree deferred to Phase 7
     ///
     /// Emitted for tagged PDFs before Phase 7.1 is implemented. The StructTree
@@ -774,7 +780,6 @@ pub enum DiagCode {
     LayoutLowReadability,
 
     // === MCP_* codes (Phase 6.7) ===
-
     /// MCP tool call has invalid parameters
     ///
     /// Emitted when an MCP tool call doesn't match the tool's schema.
@@ -790,7 +795,6 @@ pub enum DiagCode {
     McpPathTraversal,
 
     // === CACHE_* codes (Phase 6.9) ===
-
     /// Cache entry is corrupted
     ///
     /// Emitted when a cached entry fails to deserialize. The entry is deleted
@@ -808,7 +812,6 @@ pub enum DiagCode {
     CacheWriteFailed,
 
     // === MARKED_CONTENT_* codes ===
-
     /// EMC operator without matching BMC/BDC
     ///
     /// Emitted when an EMC operator is encountered with an empty marked-content stack.
@@ -910,9 +913,9 @@ impl DiagCode {
             DiagCode::EncryptionUnsupported | DiagCode::EncryptionWrongPassword => "ENCRYPTION",
 
             // PAGE_*
-            DiagCode::PageOutOfRange
-            | DiagCode::PageInvalidCount
-            | DiagCode::PageInvalidRotate => "PAGE",
+            DiagCode::PageOutOfRange | DiagCode::PageInvalidCount | DiagCode::PageInvalidRotate => {
+                "PAGE"
+            }
 
             // FONT_*
             DiagCode::FontGlyphUnmapped
@@ -950,7 +953,9 @@ impl DiagCode {
             // GSTATE_*
             DiagCode::GstateStackOverflow
             | DiagCode::GstateStackUnderflow
-            | DiagCode::GstateBtEtMismatch => "GSTATE",
+            | DiagCode::GstateBtEtMismatch
+            | DiagCode::CmArgCount
+            | DiagCode::CmDegenerate => "GSTATE",
 
             // LAYOUT_*
             DiagCode::LayoutTaggedPdfDeferred
@@ -1051,6 +1056,8 @@ impl DiagCode {
             DiagCode::GstateStackOverflow => "GSTATE_STACK_OVERFLOW",
             DiagCode::GstateStackUnderflow => "GSTATE_STACK_UNDERFLOW",
             DiagCode::GstateBtEtMismatch => "GSTATE_BT_ET_MISMATCH",
+            DiagCode::CmArgCount => "CM_ARG_COUNT",
+            DiagCode::CmDegenerate => "CM_DEGENERATE",
             DiagCode::LayoutTaggedPdfDeferred => "TAGGED_PDF_STRUCT_TREE_DEFERRED",
             DiagCode::LayoutReadingOrderAmbiguous => "LAYOUT_READING_ORDER_AMBIGUOUS",
             DiagCode::LayoutLowReadability => "LAYOUT_LOW_READABILITY",
@@ -1142,6 +1149,8 @@ impl DiagCode {
             | DiagCode::GstateStackOverflow
             | DiagCode::GstateStackUnderflow
             | DiagCode::GstateBtEtMismatch
+            | DiagCode::CmArgCount
+            | DiagCode::CmDegenerate
             | DiagCode::LayoutReadingOrderAmbiguous
             | DiagCode::LayoutLowReadability
             | DiagCode::CacheEntryCorrupt
@@ -1185,7 +1194,10 @@ impl DiagCode {
     /// only logged in verbose mode.
     #[inline]
     pub const fn should_log(self) -> bool {
-        matches!(self.severity(), Severity::Warning | Severity::Error | Severity::Fatal)
+        matches!(
+            self.severity(),
+            Severity::Warning | Severity::Error | Severity::Fatal
+        )
     }
 }
 
@@ -1776,6 +1788,22 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         phase: "3.1",
         suggested_action: "The content stream has mismatched BT/ET operators",
     },
+    DiagInfo {
+        code: DiagCode::CmArgCount,
+        category: "GSTATE",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "3.1",
+        suggested_action: "The cm operator requires exactly 6 numeric arguments",
+    },
+    DiagInfo {
+        code: DiagCode::CmDegenerate,
+        category: "GSTATE",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "3.1",
+        suggested_action: "The cm operator received a degenerate matrix; clamped to identity",
+    },
     // === LAYOUT_* codes ===
     DiagInfo {
         code: DiagCode::LayoutTaggedPdfDeferred,
@@ -2113,7 +2141,11 @@ mod tests {
 
     #[test]
     fn test_diagnostic_with_dynamic() {
-        let diag = Diagnostic::with_dynamic(DiagCode::StructInvalidName, 42, "dynamic message".to_string());
+        let diag = Diagnostic::with_dynamic(
+            DiagCode::StructInvalidName,
+            42,
+            "dynamic message".to_string(),
+        );
         assert_eq!(diag.code, DiagCode::StructInvalidName);
         assert_eq!(diag.byte_offset, Some(42));
         assert_eq!(diag.object_ref, None);
@@ -2130,10 +2162,14 @@ mod tests {
     #[test]
     fn test_diagnostic_display() {
         let diag = Diagnostic::with_static(DiagCode::StructInvalidName, 42, "test message");
-        assert_eq!(diag.to_string(), "STRUCT_INVALID_NAME: test message (byte offset 42)");
+        assert_eq!(
+            diag.to_string(),
+            "STRUCT_INVALID_NAME: test message (byte offset 42)"
+        );
 
-        let diag_with_obj = Diagnostic::with_static(DiagCode::StructInvalidName, 42, "test message")
-            .with_object_ref(ObjRef::new(5, 0));
+        let diag_with_obj =
+            Diagnostic::with_static(DiagCode::StructInvalidName, 42, "test message")
+                .with_object_ref(ObjRef::new(5, 0));
         assert_eq!(
             diag_with_obj.to_string(),
             "STRUCT_INVALID_NAME: test message (byte offset 42) [5 0 R]"
@@ -2180,7 +2216,12 @@ mod tests {
     #[test]
     fn test_emit_macro_with_message() {
         let mut diagnostics = Vec::new();
-        emit!(diagnostics, StreamDecodeError, offset = 200, message = "zlib error".to_string());
+        emit!(
+            diagnostics,
+            StreamDecodeError,
+            offset = 200,
+            message = "zlib error".to_string()
+        );
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].message.as_ref(), "zlib error");
     }
@@ -2205,7 +2246,15 @@ mod tests {
         let size = std::mem::size_of::<Diagnostic>();
         // Diagnostic should be 48-64 bytes (actual: 56)
         // breakdown: code (2) + byte_offset (16) + object_ref (12) + message (24) + padding (2)
-        assert!(size >= 48, "Diagnostic is smaller than expected: {} bytes", size);
-        assert!(size <= 64, "Diagnostic is larger than expected: {} bytes", size);
+        assert!(
+            size >= 48,
+            "Diagnostic is smaller than expected: {} bytes",
+            size
+        );
+        assert!(
+            size <= 64,
+            "Diagnostic is larger than expected: {} bytes",
+            size
+        );
     }
 }
