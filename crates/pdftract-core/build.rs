@@ -496,12 +496,13 @@ pub fn cid_to_unicode(cid: u32) -> Option<&'static [char]> {{
             collection = module_name.to_uppercase(),
             json_name = json_name,
         );
-        fs::write(&out_path, rust_code).unwrap_or_else(|_| panic!("Failed to write {}", out_path.display()));
+        fs::write(&out_path, rust_code)
+            .unwrap_or_else(|_| panic!("Failed to write {}", out_path.display()));
         return;
     }
 
-    let json_content =
-        fs::read_to_string(&json_path).unwrap_or_else(|_| panic!("Failed to read {}", json_path.display()));
+    let json_content = fs::read_to_string(&json_path)
+        .unwrap_or_else(|_| panic!("Failed to read {}", json_path.display()));
 
     let data: serde_json::Value = serde_json::from_str(&json_content)
         .unwrap_or_else(|_| panic!("Failed to parse {}", json_path.display()));
@@ -572,7 +573,8 @@ pub fn cid_to_unicode(cid: u32) -> Option<&'static [char]> {{
         map = map_builder.build(),
     );
 
-    fs::write(&out_path, rust_code).unwrap_or_else(|_| panic!("Failed to write {}", out_path.display()));
+    fs::write(&out_path, rust_code)
+        .unwrap_or_else(|_| panic!("Failed to write {}", out_path.display()));
 }
 
 /// Parse a Unicode value from JSON to a Vec<char>.
