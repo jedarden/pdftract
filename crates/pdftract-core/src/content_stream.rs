@@ -1027,16 +1027,22 @@ fn handle_do_operator(
     };
 
     let (stream_dict, subtype_opt, content_bytes) = match xobject_obj {
-        XObjectResolveResult::Stream(dict, content) => (dict, dict.get("/Subtype"), content),
+        XObjectResolveResult::Stream(dict, content) => {
+            let subtype_str = dict
+                .get("/Subtype")
+                .and_then(|o| o.as_name())
+                .map(|s| s.to_string());
+            (dict, subtype_str, content)
+        }
         XObjectResolveResult::Error(diag) => {
             diagnostics.push(diag);
             return;
         }
     };
 
-    let subtype = match subtype_opt {
-        Some(PdfObject::Name(s)) if s.as_ref() == "Form" => "Form",
-        Some(PdfObject::Name(s)) if s.as_ref() == "Image" => "Image",
+    let subtype = match subtype_opt.as_deref() {
+        Some("Form") => "Form",
+        Some("Image") => "Image",
         Some(_) => {
             diagnostics.push(Diagnostic::with_dynamic_no_offset(
                 DiagCode::StructInvalidType,

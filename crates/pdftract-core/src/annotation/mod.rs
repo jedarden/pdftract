@@ -166,7 +166,7 @@ pub fn dispatch_annotations(
                     all_links.push(link);
                 }
             } else {
-                if let Some(annotation) = other::extract_annotation(&annot_dict, common) {
+                if let Some(annotation) = other::extract_annotation(&annot_dict, common, resolver) {
                     all_annotations.push(annotation);
                 }
             }
