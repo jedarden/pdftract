@@ -5,9 +5,11 @@ use std::io::Write;
 use std::path::PathBuf;
 
 mod cache_cmd;
+mod classify;
 mod codegen;
 mod doctor;
 mod grep;
+mod inspect;
 mod mcp;
 mod password;
 mod serve;
@@ -120,6 +122,39 @@ enum Commands {
         /// Emit HTML comment anchors before each block in Markdown output
         #[arg(long)]
         md_anchors: bool,
+
+        /// Auto-detect document type and apply appropriate profile
+        #[arg(long)]
+        auto: bool,
+    },
+    /// Classify document type (runs metadata + signal extraction, not full text extraction)
+    Classify {
+        /// Path to the PDF file
+        input: PathBuf,
+
+        /// Read password from stdin (one line, terminated by newline)
+        #[arg(long, conflicts_with = "password")]
+        password_stdin: bool,
+
+        /// PDF password (INSECURE: rejected unless PDFTRACT_INSECURE_CLI_PASSWORD=1)
+        #[arg(long, conflicts_with = "password_stdin")]
+        password: Option<String>,
+
+        /// Directory containing custom profile YAML files
+        #[arg(long, value_name = "DIR")]
+        profiles: Option<PathBuf>,
+
+        /// Pretty-print JSON output
+        #[arg(long)]
+        pretty: bool,
+
+        /// Number of top reasons to include (default: all)
+        #[arg(long, default_value = "0")]
+        top_k: usize,
+
+        /// Exit with code 1 if document type is unknown
+        #[arg(long)]
+        exit_on_unknown: bool,
     },
     /// Search for text patterns in PDF files with bounding-box results
     Grep(grep::GrepArgs),
@@ -357,6 +392,7 @@ fn main() -> Result<()> {
             cache_size,
             no_cache,
             md_anchors,
+            auto,
             output,
         } => {
             if let Err(e) = cmd_extract(
@@ -372,6 +408,29 @@ fn main() -> Result<()> {
                 &cache_size,
                 no_cache,
                 md_anchors,
+                auto,
+            ) {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Classify {
+            input,
+            password_stdin,
+            password,
+            profiles,
+            pretty,
+            top_k,
+            exit_on_unknown,
+        } => {
+            if let Err(e) = cmd_classify(
+                input,
+                password_stdin,
+                password,
+                profiles,
+                pretty,
+                top_k,
+                exit_on_unknown,
             ) {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
@@ -502,6 +561,7 @@ fn cmd_extract(
     cache_size: &str,
     no_cache: bool,
     md_anchors: bool,
+    auto: bool,
 ) -> Result<()> {
     // Validate receipts mode
     let receipts_mode = match ReceiptsMode::from_str(receipts) {
@@ -548,6 +608,25 @@ fn cmd_extract(
 
     // Build extraction options
     let mut options = ExtractionOptions::with_receipts(receipts_mode);
+
+    // Handle --auto flag: run classifier first
+    #[cfg(feature = "profiles")]
+    if auto {
+        eprintln!("Auto-detecting document type...");
+
+        // Note: Built-in profiles are not yet available (bead 5.6.4)
+        // For now, --auto will print a message and proceed with defaults
+        eprintln!("Warning: Built-in profiles are not yet available (bead 5.6.4).");
+        eprintln!("Proceeding with default extraction options.");
+        eprintln!("To use classification, provide custom profiles via --profiles DIR.");
+    }
+
+    #[cfg(not(feature = "profiles"))]
+    if auto {
+        eprintln!("Warning: --auto flag requires the 'profiles' feature to be enabled.");
+        eprintln!("Build pdftract with: --features profiles");
+        eprintln!("Proceeding with default extraction options.");
+    }
 
     // Set markdown anchors option
     options.markdown_anchors = md_anchors;
@@ -680,6 +759,47 @@ fn cmd_extract(
 
     // Commit the atomic write (rename temp file to target)
     writer.commit().context("Failed to commit output file")?;
+
+    Ok(())
+}
+
+fn cmd_classify(
+    input: PathBuf,
+    password_stdin: bool,
+    password: Option<String>,
+    profiles_dir: Option<PathBuf>,
+    pretty: bool,
+    top_k: usize,
+    exit_on_unknown: bool,
+) -> Result<()> {
+    // Resolve password using the priority order defined in TH-07
+    let resolved_password = match password::resolve_password(password_stdin, password) {
+        Ok(pwd) => pwd,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(password::EXIT_USAGE_ERROR as i32);
+        }
+    };
+
+    // Report password status (never the value itself)
+    if resolved_password.is_some() {
+        eprintln!("Password provided via secure channel");
+    }
+
+    // Run classification
+    let args = classify::ClassifyArgs {
+        input,
+        profiles_dir,
+        pretty,
+        top_k,
+        exit_on_unknown,
+    };
+
+    let output = classify::run_classify(args)?;
+
+    // Print JSON output
+    let json_str = classify::format_json(&output, pretty);
+    println!("{}", json_str);
 
     Ok(())
 }
