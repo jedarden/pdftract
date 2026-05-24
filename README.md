@@ -156,6 +156,8 @@ Contributions are welcome! Please see [`CONTRIBUTING.md`](CONTRIBUTING.md) for:
 - CI on forks (maintainer-triggered Argo workflow)
 - DCO sign-off requirement
 
+By participating in this project, you agree to abide by our [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Status
 
 Early development. See `docs/plan/` for the implementation roadmap.

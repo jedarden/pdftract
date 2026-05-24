@@ -6,3 +6,6 @@ contact_links:
   - name: Security vulnerabilities
     url: https://github.com/jedarden/pdftract/security/advisories
     about: Report security vulnerabilities privately. Do NOT file public issues.
+  - name: Code of Conduct
+    url: https://github.com/jedarden/pdftract/blob/main/CODE_OF_CONDUCT.md
+    about: Read our Code of Conduct
