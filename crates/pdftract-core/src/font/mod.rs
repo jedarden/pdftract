@@ -7,6 +7,7 @@ pub mod std14;
 pub mod embedded;
 pub mod type0;
 pub mod type3;
+pub mod type3_rasterizer;
 pub mod cmap;
 pub mod encoding;
 pub mod agl;

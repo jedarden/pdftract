@@ -11,6 +11,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use dashmap::DashMap;
+
 use crate::diagnostics::{Diagnostic, DiagCode};
 use crate::font::encoding::FontEncoding;
 use crate::graphics_state::Matrix3x3;
@@ -54,6 +56,11 @@ pub struct Type3Font {
     pub encoding: FontEncoding,
     /// Diagnostics emitted during loading.
     pub diagnostics: Vec<Diagnostic>,
+    /// Rasterized glyph cache: glyph name -> 32x32 bitmap.
+    ///
+    /// Cached to avoid re-rasterizing the same glyph multiple times
+    /// during shape recognition.
+    raster_cache: Arc<DashMap<Arc<str>, [u8; 1024]>>,
 }
 
 impl Type3Font {
@@ -97,6 +104,7 @@ impl Type3Font {
             resources,
             encoding,
             diagnostics,
+            raster_cache: Arc::new(DashMap::new()),
         }
     }
 
@@ -351,6 +359,23 @@ impl Type3Font {
     /// Check if this font has a glyph with the given name.
     pub fn has_glyph(&self, glyph_name: &str) -> bool {
         self.char_procs.contains_key(glyph_name)
+    }
+
+    /// Get a cached rasterized bitmap for a glyph.
+    ///
+    /// Returns None if the glyph is not in the cache.
+    pub fn get_cached_bitmap(&self, glyph_name: &str) -> Option<[u8; 1024]> {
+        self.raster_cache.get(glyph_name).map(|entry| *entry.value())
+    }
+
+    /// Cache a rasterized bitmap for a glyph.
+    pub fn cache_bitmap(&self, glyph_name: Arc<str>, bitmap: [u8; 1024]) {
+        self.raster_cache.entry(glyph_name).or_insert(bitmap);
+    }
+
+    /// Get the raster cache (for testing and diagnostics).
+    pub fn raster_cache(&self) -> &DashMap<Arc<str>, [u8; 1024]> {
+        &self.raster_cache
     }
 }
 
