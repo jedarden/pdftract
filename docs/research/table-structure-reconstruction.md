@@ -148,18 +148,54 @@ Validate merges by checking that the combined bounding box of the merged cell is
 
 ## Header Row Detection
 
-Header rows carry column labels and are distinguished from data rows by multiple signals, each assigned a weight:
+Header rows carry column labels and are distinguished from data rows by multiple signals. The implementation supports two primary detection methods:
 
-| Signal | Weight |
-|--------|--------|
-| Font weight bold (detected from font name or `FontDescriptor.StemV`) | High |
-| Font size larger than modal data row font size | High |
-| Background fill color distinct from data rows (detected from `re f` operations covering the row) | High |
-| First row in the table | Medium |
-| Text content matches all-uppercase or title-case pattern | Low |
-| Text content contains no numeric-only cells | Low |
+### Bold Font Detection (Implemented)
 
-A row scores as a header if the weighted sum exceeds a threshold. In practice, a bold font alone is usually sufficient.
+A row is a bold-header if:
+- It has at least 2 cells with content (single-cell rows don't qualify)
+- 100% of its non-empty cells use bold fonts
+
+Bold font detection uses heuristics based on PostScript naming conventions:
+- Font name contains "Bold", "Bd", "Black", "Heavy", "ExtraBold", "Extrabold", "UltraBold", or "Ultrabold"
+- Subset prefixes are stripped before checking (e.g., "ABCDEF+Helvetica-Bold" → "Helvetica-Bold")
+- Whitespace-only cells are excluded from bold checks
+
+The ForceBold flag (bit 19) in FontDescriptor flags is authoritative when present, but the name-based heuristic is used when that information is unavailable.
+
+### StructTree TH Detection (Placeholder)
+
+A row is a TH-header if every cell in the row maps to a TH StructElem (TR > TH chain in the structure tree). This requires:
+1. MCID tracking on spans during content extraction
+2. ParentTree lookup to find StructElem for each MCID
+3. Verification that the StructElem is a TH within a TR
+
+**Note:** TH detection is currently a stub that returns `false` for all rows. It will be implemented when MCID tracking is added to TableSpan.
+
+### Combined Detection
+
+The `is_header_row()` function combines both signals:
+- A row is a header if **either** bold detection **or** TH detection succeeds
+- If both signals are present, they confirm each other
+- If there's a conflict (e.g., bold body row without TH tag), bold wins per the body data design principle
+
+### Multi-Row Headers
+
+Contiguous header rows from the top of the table are all marked as headers. The detection stops at the first non-header row (headers must be contiguous from row 0).
+
+### Additional Signals (Not Yet Implemented)
+
+Future enhancements may include:
+
+| Signal | Weight | Status |
+|--------|--------|--------|
+| Font weight bold | High | ✅ Implemented |
+| StructTree TH tag | High | ⏳ Pending MCID tracking |
+| Font size larger than modal data row font size | High | ❌ Not implemented |
+| Background fill color distinct from data rows | High | ❌ Not implemented |
+| First row in the table | Medium | ✅ Implicit (contiguous from top) |
+| Text content matches all-uppercase or title-case pattern | Low | ❌ Not implemented |
+| Text content contains no numeric-only cells | Low | ❌ Not implemented |
 
 ---
 

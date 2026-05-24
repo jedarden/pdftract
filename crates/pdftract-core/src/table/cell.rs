@@ -16,6 +16,194 @@ use serde::{Deserialize, Serialize};
 /// from reordering spans on the same line.
 const Y_BUCKET_SIZE: f64 = 2.0;
 
+/// Bold indicator patterns in PostScript font names.
+///
+/// These patterns are used to detect bold fonts when the ForceBold flag
+/// is not available or authoritative.
+const BOLD_PATTERNS: &[&str] = &[
+    "Bold",
+    "Bd",
+    "Black",
+    "Heavy",
+    "ExtraBold",
+    "Extrabold",
+    "UltraBold",
+    "Ultrabold",
+];
+
+/// Check if a font name indicates a bold font.
+///
+/// This function uses heuristics based on PostScript naming conventions:
+/// - Font name contains "Bold", "Bd", "Black", "Heavy", "ExtraBold", etc.
+/// - Subset prefixes are stripped before checking (e.g., "ABCDEF+Helvetica-Bold")
+///
+/// Note: The ForceBold flag (bit 19) in FontDescriptor flags is authoritative
+/// when present, but this heuristic is used when that information is unavailable.
+///
+/// # Arguments
+///
+/// * `font_name` - The PostScript font name (may include subset prefix)
+///
+/// # Returns
+///
+/// `true` if the font name indicates a bold font, `false` otherwise.
+pub fn is_bold_font(font_name: &str) -> bool {
+    // Strip subset prefix if present (e.g., "ABCDEF+Helvetica-Bold" -> "Helvetica-Bold")
+    let base_name = crate::font::strip_subset_prefix(font_name);
+
+    // Check for bold indicators in the font name
+    BOLD_PATTERNS.iter().any(|pattern| base_name.contains(pattern))
+}
+
+/// Check if all text spans in a cell use bold fonts.
+///
+/// A cell is considered "bold" if 100% of its non-whitespace glyphs
+/// are in bold fonts. Whitespace-only cells are excluded from bold checks.
+///
+/// # Arguments
+///
+/// * `cell` - The cell to check
+///
+/// # Returns
+///
+/// `true` if all non-whitespace text in the cell uses bold fonts.
+pub fn is_cell_bold(cell: &Cell) -> bool {
+    // Count non-whitespace spans
+    let non_whitespace_spans: Vec<_> = cell.content.iter()
+        .filter(|s| !s.text.trim().is_empty())
+        .collect();
+
+    if non_whitespace_spans.is_empty() {
+        // Empty or whitespace-only cells don't count as bold
+        return false;
+    }
+
+    // All non-whitespace spans must use bold fonts
+    non_whitespace_spans.iter().all(|span| is_bold_font(&span.font_name))
+}
+
+/// Check if a row is a header row based on bold font detection.
+///
+/// A row is a bold-header if:
+/// - It has at least 2 cells with content (single-cell rows don't qualify)
+/// - 100% of its non-empty cells are bold
+///
+/// # Arguments
+///
+/// * `row_cells` - All cells in the row
+///
+/// # Returns
+///
+/// `true` if the row qualifies as a header row based on bold detection.
+pub fn is_bold_header_row(row_cells: &[&Cell]) -> bool {
+    // Filter cells with content
+    let non_empty_cells: Vec<_> = row_cells.iter()
+        .filter(|c| !c.content.is_empty() && c.content.iter().any(|s| !s.text.trim().is_empty()))
+        .collect();
+
+    // Must have at least 2 cells with content
+    if non_empty_cells.len() < 2 {
+        return false;
+    }
+
+    // All non-empty cells must be bold
+    non_empty_cells.iter().all(|c| is_cell_bold(c))
+}
+
+/// Check if a row is a header row based on StructTree TH detection.
+///
+/// A row is a TH-header if every cell in the row maps to a TH StructElem
+/// (TR > TH chain in the structure tree). This requires:
+/// 1. MCID tracking on spans (not yet implemented - TableSpan needs mcid field)
+/// 2. ParentTree lookup to find StructElem for each MCID
+/// 3. Verification that the StructElem is a TH within a TR
+///
+/// # Arguments
+///
+/// * `row_cells` - All cells in the row
+///
+/// # Returns
+///
+/// `true` if the row qualifies as a header row based on StructTree TH detection.
+///
+/// # Note
+///
+/// This function currently returns `false` for all rows because MCID tracking
+/// on TableSpan is not yet implemented. When MCID tracking is added, this function
+/// should:
+/// 1. Collect all MCIDs from spans in each cell
+/// 2. Look up the StructElem for each MCID via ParentTree
+/// 3. Check if each cell's StructElem is a TH within a TR
+/// 4. Return true only if all cells in the row are TH elements
+pub fn is_th_header_row(_row_cells: &[&Cell]) -> bool {
+    // TODO: Implement TH detection when MCID tracking is available on TableSpan
+    // This requires:
+    // 1. Add `mcid: Option<u32>` field to TableSpan
+    // 2. Track MCIDs during span extraction from content stream
+    // 3. Pass ParentTreeResolver to enable MCID -> StructElem lookup
+    // 4. Verify each cell's StructElem is TH within a TR structure
+    false
+}
+
+/// Check if a row is a header row using both bold and TH signals.
+///
+/// A row is considered a header if either:
+/// - All cells are bold (bold signal)
+/// - All cells map to TH StructElems (TH signal from StructTree)
+///
+/// If both signals are present, they confirm each other.
+/// If there's a conflict (e.g., bold body row without TH tag), bold wins
+/// per the body data design principle.
+///
+/// # Arguments
+///
+/// * `row_cells` - All cells in the row
+///
+/// # Returns
+///
+/// `true` if the row qualifies as a header row based on either signal.
+pub fn is_header_row(row_cells: &[&Cell]) -> bool {
+    is_bold_header_row(row_cells) || is_th_header_row(row_cells)
+}
+
+/// Count contiguous header rows starting from row 0.
+///
+/// This function detects multi-row headers by checking contiguous
+/// rows from the top of the table that are headers (either bold or TH).
+///
+/// # Arguments
+///
+/// * `cells` - All cells in the table
+/// * `row_count` - Number of rows in the table
+///
+/// # Returns
+///
+/// The number of contiguous header rows from the top (0 if none).
+pub fn count_header_rows(cells: &[Cell], row_count: usize) -> u32 {
+    let mut header_count = 0;
+
+    for row_idx in 0..row_count {
+        // Get all cells in this row
+        let row_cells: Vec<_> = cells.iter()
+            .filter(|c| c.row == row_idx)
+            .collect();
+
+        if row_cells.is_empty() {
+            break;
+        }
+
+        // Check if this row is a header row (bold or TH)
+        if is_header_row(&row_cells) {
+            header_count += 1;
+        } else {
+            // Stop at first non-header row (headers must be contiguous)
+            break;
+        }
+    }
+
+    header_count
+}
+
 /// A text span for table cell assignment.
 ///
 /// Minimal span representation used during cell assignment.
@@ -26,12 +214,14 @@ pub struct TableSpan {
     pub bbox: [f64; 4],
     /// The extracted text.
     pub text: String,
+    /// Font name (PostScript name, may include subset prefix).
+    pub font_name: String,
 }
 
 impl TableSpan {
     /// Create a new table span.
-    pub fn new(bbox: [f64; 4], text: String) -> Self {
-        Self { bbox, text }
+    pub fn new(bbox: [f64; 4], text: String, font_name: String) -> Self {
+        Self { bbox, text, font_name }
     }
 
     /// Get the centroid of this span's bbox.
@@ -78,6 +268,8 @@ pub struct Cell {
     pub rowspan: u32,
     /// Column span (default 1, >1 for merged cells).
     pub colspan: u32,
+    /// Whether this cell is in a header row.
+    pub is_header_row: bool,
 }
 
 impl Cell {
@@ -90,7 +282,34 @@ impl Cell {
             col,
             rowspan: 1,
             colspan: 1,
+            is_header_row: false,
         }
+    }
+
+    /// Mark header rows on a set of cells based on bold detection.
+    ///
+    /// This function counts contiguous header rows from the top of the table
+    /// and sets the `is_header_row` flag on all cells in those rows.
+    ///
+    /// # Arguments
+    ///
+    /// * `cells` - Mutable slice of cells to update
+    /// * `row_count` - Number of rows in the table
+    ///
+    /// # Returns
+    ///
+    /// The number of header rows detected (0 if none).
+    pub fn mark_header_rows(cells: &mut [Cell], row_count: usize) -> u32 {
+        let header_rows = count_header_rows(cells, row_count);
+
+        // Mark all cells in header rows
+        for cell in cells.iter_mut() {
+            if cell.row < header_rows as usize {
+                cell.is_header_row = true;
+            }
+        }
+
+        header_rows
     }
 
     /// Check if this cell contains a point (centroid).
@@ -293,7 +512,11 @@ mod tests {
     use crate::table::GridCandidate;
 
     fn make_span(x0: f64, y0: f64, x1: f64, y1: f64, text: &str) -> TableSpan {
-        TableSpan::new([x0, y0, x1, y1], text.to_string())
+        TableSpan::new([x0, y0, x1, y1], text.to_string(), "Helvetica".to_string())
+    }
+
+    fn make_bold_span(x0: f64, y0: f64, x1: f64, y1: f64, text: &str) -> TableSpan {
+        TableSpan::new([x0, y0, x1, y1], text.to_string(), "Helvetica-Bold".to_string())
     }
 
     #[test]
@@ -707,5 +930,395 @@ mod tests {
         assert_eq!(span.width(), 100.0);
         assert_eq!(span.height(), 100.0);
         assert_eq!(span.area(), 10000.0);
+    }
+
+    // Bold detection tests
+
+    #[test]
+    fn test_is_bold_font_helvetica_bold() {
+        assert!(is_bold_font("Helvetica-Bold"));
+        assert!(is_bold_font("ABCDEF+Helvetica-Bold")); // With subset prefix
+    }
+
+    #[test]
+    fn test_is_bold_font_times_bold() {
+        assert!(is_bold_font("Times-Bold"));
+        assert!(is_bold_font("TimesNewRomanBold"));
+    }
+
+    #[test]
+    fn test_is_bold_font_heavy_black() {
+        assert!(is_bold_font("Arial-Black"));
+        assert!(is_bold_font("Roboto-Heavy"));
+        assert!(is_bold_font("Georgia-ExtraBold"));
+    }
+
+    #[test]
+    fn test_is_bold_font_short_form() {
+        assert!(is_bold_font("ArialBd"));
+        assert!(is_bold_font("CalibriBd"));
+    }
+
+    #[test]
+    fn test_is_bold_font_negative() {
+        assert!(!is_bold_font("Helvetica"));
+        assert!(!is_bold_font("Times-Italic"));
+        assert!(!is_bold_font("Arial-Regular"));
+        assert!(!is_bold_font("Georgia"));
+    }
+
+    #[test]
+    fn test_is_cell_bold_all_bold() {
+        let mut cell = Cell::new([50.0, 100.0, 150.0, 200.0], 0, 0);
+        cell.content = vec![
+            make_bold_span(60.0, 110.0, 90.0, 120.0, "Header"),
+            make_bold_span(60.0, 125.0, 90.0, 135.0, "Text"),
+        ];
+        assert!(is_cell_bold(&cell));
+    }
+
+    #[test]
+    fn test_is_cell_bold_mixed() {
+        let mut cell = Cell::new([50.0, 100.0, 150.0, 200.0], 0, 0);
+        cell.content = vec![
+            make_bold_span(60.0, 110.0, 90.0, 120.0, "Bold"),
+            make_span(60.0, 125.0, 90.0, 135.0, "Plain"), // Not bold
+        ];
+        assert!(!is_cell_bold(&cell));
+    }
+
+    #[test]
+    fn test_is_cell_bold_all_plain() {
+        let mut cell = Cell::new([50.0, 100.0, 150.0, 200.0], 0, 0);
+        cell.content = vec![
+            make_span(60.0, 110.0, 90.0, 120.0, "Plain"),
+            make_span(60.0, 125.0, 90.0, 135.0, "Text"),
+        ];
+        assert!(!is_cell_bold(&cell));
+    }
+
+    #[test]
+    fn test_is_cell_bold_empty() {
+        let cell = Cell::new([50.0, 100.0, 150.0, 200.0], 0, 0);
+        assert!(!is_cell_bold(&cell)); // Empty cell is not bold
+    }
+
+    #[test]
+    fn test_is_cell_bold_whitespace_only() {
+        let mut cell = Cell::new([50.0, 100.0, 150.0, 200.0], 0, 0);
+        cell.content = vec![
+            make_bold_span(60.0, 110.0, 90.0, 120.0, "   "),
+            make_bold_span(60.0, 125.0, 90.0, 135.0, "\t"),
+        ];
+        assert!(!is_cell_bold(&cell)); // Whitespace-only cells don't count
+    }
+
+    #[test]
+    fn test_is_bold_header_row_two_bold_cells() {
+        let mut cell1 = Cell::new([50.0, 300.0, 150.0, 400.0], 0, 0);
+        cell1.content = vec![make_bold_span(60.0, 310.0, 90.0, 320.0, "Header1")];
+
+        let mut cell2 = Cell::new([150.0, 300.0, 250.0, 400.0], 0, 1);
+        cell2.content = vec![make_bold_span(160.0, 310.0, 190.0, 320.0, "Header2")];
+
+        assert!(is_bold_header_row(&[&cell1, &cell2]));
+    }
+
+    #[test]
+    fn test_is_bold_header_row_single_cell() {
+        let mut cell1 = Cell::new([50.0, 300.0, 150.0, 400.0], 0, 0);
+        cell1.content = vec![make_bold_span(60.0, 310.0, 90.0, 320.0, "Header")];
+
+        // Single cell rows don't qualify as headers
+        assert!(!is_bold_header_row(&[&cell1]));
+    }
+
+    #[test]
+    fn test_is_bold_header_row_mixed_boldness() {
+        let mut cell1 = Cell::new([50.0, 300.0, 150.0, 400.0], 0, 0);
+        cell1.content = vec![make_bold_span(60.0, 310.0, 90.0, 320.0, "Bold")];
+
+        let mut cell2 = Cell::new([150.0, 300.0, 250.0, 400.0], 0, 1);
+        cell2.content = vec![make_span(160.0, 310.0, 190.0, 320.0, "Plain")];
+
+        // Not all cells are bold
+        assert!(!is_bold_header_row(&[&cell1, &cell2]));
+    }
+
+    #[test]
+    fn test_is_bold_header_row_with_empty_cell() {
+        let mut cell1 = Cell::new([50.0, 300.0, 150.0, 400.0], 0, 0);
+        cell1.content = vec![make_bold_span(60.0, 310.0, 90.0, 320.0, "Header1")];
+
+        let mut cell2 = Cell::new([150.0, 300.0, 250.0, 400.0], 0, 1);
+        cell2.content = vec![make_bold_span(160.0, 310.0, 190.0, 320.0, "Header2")];
+
+        let cell3 = Cell::new([250.0, 300.0, 350.0, 400.0], 0, 2); // Empty
+
+        // Empty cells are ignored, so 2 bold cells still qualify
+        assert!(is_bold_header_row(&[&cell1, &cell2, &cell3]));
+    }
+
+    #[test]
+    fn test_count_header_rows_single_header() {
+        // Row 0: bold header
+        // Row 1: plain data
+        let mut cells = Vec::new();
+
+        // Header row (0)
+        let mut cell_r0c0 = Cell::new([50.0, 300.0, 150.0, 400.0], 0, 0);
+        cell_r0c0.content = vec![make_bold_span(60.0, 310.0, 90.0, 320.0, "Header1")];
+
+        let mut cell_r0c1 = Cell::new([150.0, 300.0, 250.0, 400.0], 0, 1);
+        cell_r0c1.content = vec![make_bold_span(160.0, 310.0, 190.0, 320.0, "Header2")];
+
+        // Data row (1)
+        let mut cell_r1c0 = Cell::new([50.0, 200.0, 150.0, 300.0], 1, 0);
+        cell_r1c0.content = vec![make_span(60.0, 210.0, 90.0, 220.0, "Data1")];
+
+        let mut cell_r1c1 = Cell::new([150.0, 200.0, 250.0, 300.0], 1, 1);
+        cell_r1c1.content = vec![make_span(160.0, 210.0, 190.0, 220.0, "Data2")];
+
+        cells.extend([cell_r0c0, cell_r0c1, cell_r1c0, cell_r1c1]);
+
+        assert_eq!(count_header_rows(&cells, 2), 1);
+    }
+
+    #[test]
+    fn test_count_header_rows_multi_row_header() {
+        // Row 0: bold header
+        // Row 1: bold subheader
+        // Row 2: plain data
+        let mut cells = Vec::new();
+
+        // Header row 1 (0)
+        let mut cell_r0c0 = Cell::new([50.0, 400.0, 150.0, 500.0], 0, 0);
+        cell_r0c0.content = vec![make_bold_span(60.0, 410.0, 90.0, 420.0, "Header1")];
+
+        let mut cell_r0c1 = Cell::new([150.0, 400.0, 250.0, 500.0], 0, 1);
+        cell_r0c1.content = vec![make_bold_span(160.0, 410.0, 190.0, 420.0, "Header2")];
+
+        // Header row 2 (1)
+        let mut cell_r1c0 = Cell::new([50.0, 300.0, 150.0, 400.0], 1, 0);
+        cell_r1c0.content = vec![make_bold_span(60.0, 310.0, 90.0, 320.0, "Sub1")];
+
+        let mut cell_r1c1 = Cell::new([150.0, 300.0, 250.0, 400.0], 1, 1);
+        cell_r1c1.content = vec![make_bold_span(160.0, 310.0, 190.0, 320.0, "Sub2")];
+
+        // Data row (2)
+        let mut cell_r2c0 = Cell::new([50.0, 200.0, 150.0, 300.0], 2, 0);
+        cell_r2c0.content = vec![make_span(60.0, 210.0, 90.0, 220.0, "Data1")];
+
+        let mut cell_r2c1 = Cell::new([150.0, 200.0, 250.0, 300.0], 2, 1);
+        cell_r2c1.content = vec![make_span(160.0, 210.0, 190.0, 220.0, "Data2")];
+
+        cells.extend([cell_r0c0, cell_r0c1, cell_r1c0, cell_r1c1, cell_r2c0, cell_r2c1]);
+
+        assert_eq!(count_header_rows(&cells, 3), 2);
+    }
+
+    #[test]
+    fn test_count_header_rows_no_header() {
+        // All rows are plain
+        let mut cells = Vec::new();
+
+        for row in 0..2 {
+            for col in 0..2 {
+                let mut cell = Cell::new([50.0, 300.0 - (row as f32) * 100.0, 150.0, 400.0 - (row as f32) * 100.0], row, col);
+                cell.content = vec![make_span(60.0, 310.0 - (row as f64) * 100.0, 90.0, 320.0 - (row as f64) * 100.0, "Data")];
+                cells.push(cell);
+            }
+        }
+
+        assert_eq!(count_header_rows(&cells, 2), 0);
+    }
+
+    #[test]
+    fn test_count_header_rows_non_contiguous() {
+        // Row 0: bold header
+        // Row 1: plain data
+        // Row 2: bold (but not contiguous, so not counted)
+        let mut cells = Vec::new();
+
+        // Header row (0)
+        let mut cell_r0c0 = Cell::new([50.0, 400.0, 150.0, 500.0], 0, 0);
+        cell_r0c0.content = vec![make_bold_span(60.0, 410.0, 90.0, 420.0, "Header1")];
+
+        let mut cell_r0c1 = Cell::new([150.0, 400.0, 250.0, 500.0], 0, 1);
+        cell_r0c1.content = vec![make_bold_span(160.0, 410.0, 190.0, 420.0, "Header2")];
+
+        // Plain row (1)
+        let mut cell_r1c0 = Cell::new([50.0, 300.0, 150.0, 400.0], 1, 0);
+        cell_r1c0.content = vec![make_span(60.0, 310.0, 90.0, 320.0, "Data1")];
+
+        let mut cell_r1c1 = Cell::new([150.0, 300.0, 250.0, 400.0], 1, 1);
+        cell_r1c1.content = vec![make_span(160.0, 310.0, 190.0, 320.0, "Data2")];
+
+        // Bold row (2) - not contiguous, should not be counted
+        let mut cell_r2c0 = Cell::new([50.0, 200.0, 150.0, 300.0], 2, 0);
+        cell_r2c0.content = vec![make_bold_span(60.0, 210.0, 90.0, 220.0, "Total")];
+
+        let mut cell_r2c1 = Cell::new([150.0, 200.0, 250.0, 300.0], 2, 1);
+        cell_r2c1.content = vec![make_bold_span(160.0, 210.0, 190.0, 220.0, "100")];
+
+        cells.extend([cell_r0c0, cell_r0c1, cell_r1c0, cell_r1c1, cell_r2c0, cell_r2c1]);
+
+        // Only row 0 is counted (row 2 is not contiguous)
+        assert_eq!(count_header_rows(&cells, 3), 1);
+    }
+
+    #[test]
+    fn test_mark_header_rows_single_header() {
+        let mut cells = Vec::new();
+
+        // Header row (0)
+        let mut cell_r0c0 = Cell::new([50.0, 300.0, 150.0, 400.0], 0, 0);
+        cell_r0c0.content = vec![make_bold_span(60.0, 310.0, 90.0, 320.0, "Header1")];
+
+        let mut cell_r0c1 = Cell::new([150.0, 300.0, 250.0, 400.0], 0, 1);
+        cell_r0c1.content = vec![make_bold_span(160.0, 310.0, 190.0, 320.0, "Header2")];
+
+        // Data row (1)
+        let mut cell_r1c0 = Cell::new([50.0, 200.0, 150.0, 300.0], 1, 0);
+        cell_r1c0.content = vec![make_span(60.0, 210.0, 90.0, 220.0, "Data1")];
+
+        let mut cell_r1c1 = Cell::new([150.0, 200.0, 250.0, 300.0], 1, 1);
+        cell_r1c1.content = vec![make_span(160.0, 210.0, 190.0, 220.0, "Data2")];
+
+        cells.extend([cell_r0c0, cell_r0c1, cell_r1c0, cell_r1c1]);
+
+        let header_count = Cell::mark_header_rows(&mut cells, 2);
+
+        assert_eq!(header_count, 1);
+        assert!(cells[0].is_header_row); // r0c0
+        assert!(cells[1].is_header_row); // r0c1
+        assert!(!cells[2].is_header_row); // r1c0
+        assert!(!cells[3].is_header_row); // r1c1
+    }
+
+    #[test]
+    fn test_mark_header_rows_multi_row_header() {
+        let mut cells = Vec::new();
+
+        // Header row 1 (0)
+        let mut cell_r0c0 = Cell::new([50.0, 400.0, 150.0, 500.0], 0, 0);
+        cell_r0c0.content = vec![make_bold_span(60.0, 410.0, 90.0, 420.0, "H1")];
+
+        let mut cell_r0c1 = Cell::new([150.0, 400.0, 250.0, 500.0], 0, 1);
+        cell_r0c1.content = vec![make_bold_span(160.0, 410.0, 190.0, 420.0, "H2")];
+
+        // Header row 2 (1)
+        let mut cell_r1c0 = Cell::new([50.0, 300.0, 150.0, 400.0], 1, 0);
+        cell_r1c0.content = vec![make_bold_span(60.0, 310.0, 90.0, 320.0, "Sub1")];
+
+        let mut cell_r1c1 = Cell::new([150.0, 300.0, 250.0, 400.0], 1, 1);
+        cell_r1c1.content = vec![make_bold_span(160.0, 310.0, 190.0, 320.0, "Sub2")];
+
+        // Data row (2)
+        let mut cell_r2c0 = Cell::new([50.0, 200.0, 150.0, 300.0], 2, 0);
+        cell_r2c0.content = vec![make_span(60.0, 210.0, 90.0, 220.0, "D1")];
+
+        let mut cell_r2c1 = Cell::new([150.0, 200.0, 250.0, 300.0], 2, 1);
+        cell_r2c1.content = vec![make_span(160.0, 210.0, 190.0, 220.0, "D2")];
+
+        cells.extend([cell_r0c0, cell_r0c1, cell_r1c0, cell_r1c1, cell_r2c0, cell_r2c1]);
+
+        let header_count = Cell::mark_header_rows(&mut cells, 3);
+
+        assert_eq!(header_count, 2);
+        assert!(cells[0].is_header_row); // r0c0
+        assert!(cells[1].is_header_row); // r0c1
+        assert!(cells[2].is_header_row); // r1c0
+        assert!(cells[3].is_header_row); // r1c1
+        assert!(!cells[4].is_header_row); // r2c0
+        assert!(!cells[5].is_header_row); // r2c1
+    }
+
+    #[test]
+    fn test_mark_header_rows_none() {
+        let mut cells = Vec::new();
+
+        // All plain rows
+        for row in 0..2 {
+            for col in 0..2 {
+                let mut cell = Cell::new([50.0, 300.0 - (row as f32) * 100.0, 150.0, 400.0 - (row as f32) * 100.0], row, col);
+                cell.content = vec![make_span(60.0, 310.0 - (row as f64) * 100.0, 90.0, 320.0 - (row as f64) * 100.0, "Data")];
+                cells.push(cell);
+            }
+        }
+
+        let header_count = Cell::mark_header_rows(&mut cells, 2);
+
+        assert_eq!(header_count, 0);
+        assert!(!cells[0].is_header_row);
+        assert!(!cells[1].is_header_row);
+        assert!(!cells[2].is_header_row);
+        assert!(!cells[3].is_header_row);
+    }
+
+    // TH detection tests (placeholder for future MCID tracking implementation)
+
+    #[test]
+    fn test_is_th_header_row_not_implemented() {
+        // TH detection is not yet implemented - requires MCID tracking on spans
+        let mut cell1 = Cell::new([50.0, 300.0, 150.0, 400.0], 0, 0);
+        cell1.content = vec![make_span(60.0, 310.0, 90.0, 320.0, "Header1")];
+
+        let mut cell2 = Cell::new([150.0, 300.0, 250.0, 400.0], 0, 1);
+        cell2.content = vec![make_span(160.0, 310.0, 190.0, 320.0, "Header2")];
+
+        // Currently returns false for all rows until MCID tracking is implemented
+        assert!(!is_th_header_row(&[&cell1, &cell2]));
+    }
+
+    #[test]
+    fn test_is_header_row_bold_signal() {
+        // Combined header detection should work with bold signal
+        let mut cell1 = Cell::new([50.0, 300.0, 150.0, 400.0], 0, 0);
+        cell1.content = vec![make_bold_span(60.0, 310.0, 90.0, 320.0, "Header1")];
+
+        let mut cell2 = Cell::new([150.0, 300.0, 250.0, 400.0], 0, 1);
+        cell2.content = vec![make_bold_span(160.0, 310.0, 190.0, 320.0, "Header2")];
+
+        // Bold signal should work
+        assert!(is_header_row(&[&cell1, &cell2]));
+    }
+
+    #[test]
+    fn test_is_header_row_plain_row() {
+        // Combined header detection should return false for plain rows
+        let mut cell1 = Cell::new([50.0, 300.0, 150.0, 400.0], 0, 0);
+        cell1.content = vec![make_span(60.0, 310.0, 90.0, 320.0, "Data1")];
+
+        let mut cell2 = Cell::new([150.0, 300.0, 250.0, 400.0], 0, 1);
+        cell2.content = vec![make_span(160.0, 310.0, 190.0, 320.0, "Data2")];
+
+        // Plain row (no bold, no TH) should not be a header
+        assert!(!is_header_row(&[&cell1, &cell2]));
+    }
+
+    #[test]
+    fn test_count_header_rows_uses_combined_signal() {
+        // Verify that count_header_rows uses the combined is_header_row function
+        let mut cells = Vec::new();
+
+        // Bold header row (0)
+        let mut cell_r0c0 = Cell::new([50.0, 300.0, 150.0, 400.0], 0, 0);
+        cell_r0c0.content = vec![make_bold_span(60.0, 310.0, 90.0, 320.0, "Header1")];
+
+        let mut cell_r0c1 = Cell::new([150.0, 300.0, 250.0, 400.0], 0, 1);
+        cell_r0c1.content = vec![make_bold_span(160.0, 310.0, 190.0, 320.0, "Header2")];
+
+        // Plain data row (1)
+        let mut cell_r1c0 = Cell::new([50.0, 200.0, 150.0, 300.0], 1, 0);
+        cell_r1c0.content = vec![make_span(60.0, 210.0, 90.0, 220.0, "Data1")];
+
+        let mut cell_r1c1 = Cell::new([150.0, 200.0, 250.0, 300.0], 1, 1);
+        cell_r1c1.content = vec![make_span(160.0, 210.0, 190.0, 220.0, "Data2")];
+
+        cells.extend([cell_r0c0, cell_r0c1, cell_r1c0, cell_r1c1]);
+
+        // Should count 1 header row (bold signal)
+        assert_eq!(count_header_rows(&cells, 2), 1);
     }
 }
