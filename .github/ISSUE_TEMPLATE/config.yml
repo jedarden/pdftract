@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and discussion
+    url: https://github.com/jedarden/pdftract/discussions
+    about: Use GitHub Discussions for questions, ideas, or general discussion.
+  - name: Security vulnerabilities
+    url: https://github.com/jedarden/pdftract/security/advisories
+    about: Report security vulnerabilities privately. Do NOT file public issues.

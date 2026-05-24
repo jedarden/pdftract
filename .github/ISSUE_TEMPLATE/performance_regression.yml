@@ -1,0 +1,144 @@
+name: Performance regression
+description: Report a slowdown or performance issue
+title: '[PERF] '
+labels: [performance, regression]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a performance issue! Performance regressions are taken seriously.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Performance issue description
+      description: A clear and concise description of the performance problem.
+      placeholder: Processing time has increased significantly since version X...
+    validations:
+      required: true
+
+  - type: input
+    id: version_before
+    attributes:
+      label: Version before regression
+      description: The last version where performance was acceptable.
+      placeholder: 0.5.0
+    validations:
+      required: true
+
+  - type: input
+    id: version_after
+    attributes:
+      label: Version with regression
+      description: The version where performance degraded.
+      placeholder: 0.6.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: baseline_performance
+    attributes:
+      label: Baseline performance (before)
+      description: Processing time, memory usage, etc. with the older version.
+      placeholder: |
+        - Processing time: 2.5 seconds for a 100-page PDF
+        - Memory usage: 150 MB peak
+    validations:
+      required: true
+
+  - type: textarea
+    id: regression_performance
+    attributes:
+      label: Regression performance (after)
+      description: Processing time, memory usage, etc. with the newer version.
+      placeholder: |
+        - Processing time: 8 seconds for the same PDF
+        - Memory usage: 600 MB peak
+    validations:
+      required: true
+
+  - type: textarea
+    id: test_case
+    attributes:
+      label: Test case
+      description: Please provide the PDF file, command used, and benchmark results.
+      placeholder: |
+        PDF file: (attach or link to a representative file)
+
+        Command:
+        ```bash
+        pdftract extract input.pdf
+        ```
+
+        Benchmark results (using hyperfine or similar):
+        ```text
+        Benchmark 1: pdftract old_version
+          Time (mean ± σ):      2.542 s ±  0.123 s    [User: 2.1 s, System: 0.4 s]
+          Range (min … max):    2.3 s …  2.9 s
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: profiling_data
+    attributes:
+      label: Profiling data (optional but helpful)
+      description: If available, attach profiling output (flamegraph, perf, Instruments).
+      placeholder: |
+        # Flamegraph (Linux)
+        cargo install flamegraph
+        cargo flamegraph --bin pdftract -- <args>
+
+        # perf (Linux)
+        perf record -g cargo run --release -- <args>
+        perf report
+    validations:
+      required: false
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: e.g., Ubuntu 22.04, macOS 14, Windows 11
+      placeholder: Ubuntu 22.04
+    validations:
+      required: true
+
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware specification
+      description: CPU and RAM are most relevant for performance issues.
+      placeholder: Intel i7-12700K, 32 GB RAM
+    validations:
+      required: true
+
+  - type: textarea
+    id: suspected_cause
+    attributes:
+      label: Suspected cause
+      description: If you have a hypothesis about what's causing the regression (e.g., a specific commit, a new dependency), please describe it here.
+      placeholder: |
+        I suspect commit abc123 which changed the encoding resolution algorithm...
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional context
+      description: Add any other context, related issues, or workarounds here.
+      placeholder: |
+        - Related issue: #456
+        - Workaround: Using version 0.5.0 avoids the problem
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our Code of Conduct
+      options:
+        - label: I agree to follow the Code of Conduct
+          required: true

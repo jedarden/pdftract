@@ -1,0 +1,75 @@
+name: Feature request
+description: Suggest an enhancement or new feature for pdftract
+title: '[FEATURE] '
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature! Please take a moment to search for existing feature requests to avoid duplicates.
+
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Use case
+      description: Describe the specific problem this feature would solve. Who would benefit from this feature?
+      placeholder: |
+        As a user working with scientific papers, I need to extract tables as structured data so that I can analyze experimental results without manual transcription.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed_solution
+    attributes:
+      label: Proposed solution
+      description: How do you envision this feature working? Include API design, CLI flags, or output formats if applicable.
+      placeholder: |
+        - API: `pub fn extract_tables(&mut self) -> Result<Vec<Table>>`
+        - CLI: `pdftract extract --tables input.pdf`
+        - Output: JSON with rows, columns, and cell text
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe any alternative solutions or workarounds you've considered. Why aren't they sufficient?
+      placeholder: |
+        I've tried using X, but it doesn't work because...
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional context
+      description: Add any other context, screenshots, or example files that demonstrate the need for this feature.
+      placeholder: |
+        - Links to related issues or PRs
+        - References to similar features in other tools (tabula, pdftotext, etc.)
+        - Example PDF files that demonstrate the need
+        - Draft API designs or pseudocode
+    validations:
+      required: false
+
+  - type: dropdown
+    id: willing_to_implement
+    attributes:
+      label: Are you willing to implement this feature?
+      description: This helps us understand if you'll be submitting a pull request.
+      options:
+        - Yes, I'll submit a PR
+        - Maybe, I'd like guidance first
+        - No, I'm just suggesting the idea
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our Code of Conduct
+      options:
+        - label: I agree to follow the Code of Conduct
+          required: true

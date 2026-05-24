@@ -1,0 +1,61 @@
+name: Documentation issue
+description: Report a problem or suggest an improvement to the documentation
+title: '[DOCS] '
+labels: [documentation]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to improve the documentation! Your feedback helps us make pdftract more accessible.
+
+  - type: input
+    id: page_url
+    attributes:
+      label: Documentation page URL
+      description: Which page are you referring to?
+      placeholder: https://jedarden.com/pdftract/docs/...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: doc_type
+    attributes:
+      label: What type of documentation issue is this?
+      description: This helps us route your issue to the right team.
+      options:
+        - Typo or grammar error
+        - Confusing or unclear explanation
+        - Missing information
+        - Outdated information
+        - Suggested improvement
+        - Code example issue
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Issue description
+      description: Please describe the documentation issue clearly and concisely.
+      placeholder: The explanation of X is confusing because...
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggested_change
+    attributes:
+      label: Suggested change
+      description: If you have a specific improvement in mind, please describe it here. You can also provide a pull request!
+      placeholder: Instead of saying X, say Y...
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our Code of Conduct
+      options:
+        - label: I agree to follow the Code of Conduct
+          required: true

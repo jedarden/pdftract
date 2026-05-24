@@ -60,6 +60,7 @@ If this PR touches hot-path code (parsing, text extraction, encoding resolution)
 - [ ] I have added tests that prove my fix is effective or that my feature works
 - [ ] New and existing tests pass locally with `cargo test --workspace --features default`
 - [ ] I have signed off my commits (`git commit -s`) per the DCO
+- [ ] I have verified local validation per [`CONTRIBUTING.md`](../../CONTRIBUTING.md)
 
 ## Additional Notes
 
