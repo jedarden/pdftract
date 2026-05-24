@@ -10,6 +10,9 @@
 //!
 //! URLs targeting these addresses are rejected unless the `--allow-private-networks`
 //! flag is set.
+//!
+//! This module also provides URL credential parsing for HTTPS URLs with embedded
+//! credentials (e.g., `https://user:pass@host/path`).
 
 use crate::diagnostics::{Diagnostic, DiagCode};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -50,6 +53,76 @@ impl std::error::Error for UrlValidationError {}
 
 /// Result type for URL validation.
 pub type Result<T> = std::result::Result<T, UrlValidationError>;
+
+/// Extract URL credentials from an HTTPS URL.
+///
+/// Parses URLs of the form `https://user:pass@host/path` and returns:
+/// - The cleaned URL (without credentials)
+/// - Optional credentials tuple (username, password)
+///
+/// # Arguments
+///
+/// * `url_str` - The URL string to parse
+///
+/// # Returns
+///
+/// Returns `Ok((clean_url, creds))` where `clean_url` is the URL without credentials
+/// and `creds` is `Some((username, password))` if credentials were present, or `None`.
+///
+/// # Errors
+///
+/// Returns `Err(UrlValidationError::InvalidUrl)` if the URL is malformed.
+/// Returns `Err(UrlValidationError::InvalidScheme)` if the URL is `http://` with embedded
+/// credentials (HTTP Basic over plain HTTP is forbidden).
+///
+/// # Examples
+///
+/// ```rust
+/// use pdftract_core::url_validation::extract_url_credentials;
+///
+/// // URL with credentials
+/// let (clean, creds) = extract_url_credentials("https://alice:secret@example.com/doc.pdf").unwrap();
+/// assert_eq!(clean, "https://example.com/doc.pdf");
+/// assert_eq!(creds, Some(("alice".to_string(), "secret".to_string())));
+///
+/// // URL without credentials
+/// let (clean, creds) = extract_url_credentials("https://example.com/doc.pdf").unwrap();
+/// assert_eq!(clean, "https://example.com/doc.pdf");
+/// assert_eq!(creds, None);
+///
+/// // HTTP with credentials is rejected
+/// assert!(extract_url_credentials("http://alice:secret@example.com/doc.pdf").is_err());
+/// ```
+#[cfg(feature = "remote")]
+pub fn extract_url_credentials(url_str: &str) -> std::result::Result<(String, Option<(String, String)>), UrlValidationError> {
+    let url = url::Url::parse(url_str)
+        .map_err(|_| UrlValidationError::InvalidUrl(url_str.to_string()))?;
+
+    // Reject http:// URLs with embedded credentials
+    if url.scheme() == "http" && !url.username().is_empty() {
+        return Err(UrlValidationError::InvalidScheme(
+            "http:// URLs with embedded credentials are forbidden (HTTP Basic over plain HTTP is insecure)".to_string()
+        ));
+    }
+
+    // Extract credentials if present
+    // Per RFC 7617 (HTTP Basic), credentials must be percent-decoded before base64-encoding
+    let creds = if !url.username().is_empty() {
+        let username = url.username().to_string();
+        let password = url.password().unwrap_or("").to_string();
+        Some((username, password))
+    } else {
+        None
+    };
+
+    // Reconstruct URL without credentials
+    let mut clean = url.clone();
+    // set_username returns Err if the scheme doesn't support auth, but we want to ignore that
+    let _ = clean.set_username("");
+    let _ = clean.set_password(None);
+
+    Ok((clean.to_string(), creds))
+}
 
 /// Check if an IPv4 address is in a private network range.
 ///
@@ -379,5 +452,79 @@ mod tests {
     fn test_validate_url_rejects_metadata_hostname() {
         let result = validate_url("https://metadata.google.internal/", false);
         assert!(matches!(result, Err(UrlValidationError::PrivateNetwork(_))));
+    }
+
+    #[cfg(feature = "remote")]
+    #[test]
+    fn test_extract_url_credentials_with_creds() {
+        let (clean, creds) = extract_url_credentials("https://alice:secret@example.com/doc.pdf").unwrap();
+        assert_eq!(clean, "https://example.com/doc.pdf");
+        assert_eq!(creds, Some(("alice".to_string(), "secret".to_string())));
+    }
+
+    #[cfg(feature = "remote")]
+    #[test]
+    fn test_extract_url_credentials_without_creds() {
+        let (clean, creds) = extract_url_credentials("https://example.com/doc.pdf").unwrap();
+        assert_eq!(clean, "https://example.com/doc.pdf");
+        assert_eq!(creds, None);
+    }
+
+    #[cfg(feature = "remote")]
+    #[test]
+    fn test_extract_url_credentials_http_with_creds_rejected() {
+        let result = extract_url_credentials("http://alice:secret@example.com/doc.pdf");
+        assert!(matches!(result, Err(UrlValidationError::InvalidScheme(_))));
+    }
+
+    #[cfg(feature = "remote")]
+    #[test]
+    fn test_extract_url_credentials_empty_password() {
+        let (clean, creds) = extract_url_credentials("https://alice@example.com/doc.pdf").unwrap();
+        assert_eq!(clean, "https://example.com/doc.pdf");
+        assert_eq!(creds, Some(("alice".to_string(), "".to_string())));
+    }
+
+    #[cfg(feature = "remote")]
+    #[test]
+    fn test_extract_url_credentials_url_encoded() {
+        // URL-encoded credentials: the url crate preserves percent-encoding in userinfo
+        // Percent-decoding happens when credentials are used for HTTP Basic auth (base64 encoding)
+        let (clean, creds) = extract_url_credentials("https://alice%40example.com:secret@example.com/doc.pdf").unwrap();
+        assert_eq!(clean, "https://example.com/doc.pdf");
+        // The url crate preserves percent-encoding; HTTP Basic auth will decode when base64-encoding
+        assert_eq!(creds, Some(("alice%40example.com".to_string(), "secret".to_string())));
+    }
+
+    #[cfg(feature = "remote")]
+    #[test]
+    fn test_extract_url_credentials_with_path_and_query() {
+        let (clean, creds) = extract_url_credentials("https://user:pass@example.com/path/to/doc.pdf?query=value#fragment").unwrap();
+        assert_eq!(clean, "https://example.com/path/to/doc.pdf?query=value#fragment");
+        assert_eq!(creds, Some(("user".to_string(), "pass".to_string())));
+    }
+
+    #[cfg(feature = "remote")]
+    #[test]
+    fn test_extract_url_credentials_preserves_https_without_creds() {
+        let (clean, creds) = extract_url_credentials("https://example.com/doc.pdf").unwrap();
+        assert_eq!(clean, "https://example.com/doc.pdf");
+        assert!(creds.is_none());
+    }
+
+    #[cfg(feature = "remote")]
+    #[test]
+    fn test_extract_url_credentials_invalid_url() {
+        let result = extract_url_credentials("not-a-url");
+        assert!(matches!(result, Err(UrlValidationError::InvalidUrl(_))));
+    }
+
+    #[cfg(feature = "remote")]
+    #[test]
+    fn test_extract_url_credentials_http_without_creds_allowed() {
+        // http:// without credentials should be allowed (it will fail later in validation)
+        let (clean, creds) = extract_url_credentials("http://example.com/doc.pdf").unwrap();
+        assert_eq!(clean, "http://example.com/doc.pdf");
+        assert!(creds.is_none());
     }
 }
