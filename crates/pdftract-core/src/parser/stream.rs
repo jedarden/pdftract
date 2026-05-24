@@ -808,8 +808,37 @@ impl StreamDecoder for ASCII85Decoder {
 ///
 /// Converts hex digit pairs to bytes. Whitespace ignored.
 /// '>' terminator marks end of data.
+///
+/// Per PDF spec 7.4.2:
+/// - Hex digit pairs are decoded to bytes
+/// - Whitespace (NUL, HT, LF, FF, CR, Space) is ignored
+/// - '>' terminator marks end of data
+/// - Odd-length final pair pads with low nibble = 0
+/// - Non-hex bytes are skipped (invalid, decoder continues)
 #[derive(Debug, Clone, Copy)]
 pub struct ASCIIHexDecoder;
+
+impl ASCIIHexDecoder {
+    /// Check if a byte is PDF whitespace per spec 7.2.2.
+    ///
+    /// PDF whitespace is: NUL (0), HT (9), LF (10), FF (12), CR (13), Space (32).
+    /// Note: This is NOT the same as Rust's char::is_whitespace().
+    #[inline]
+    fn is_pdf_whitespace(byte: u8) -> bool {
+        matches!(byte, 0 | 9 | 10 | 12 | 13 | 32)
+    }
+
+    /// Decode a hex nibble (0-15) from a byte, or None if not a valid hex digit.
+    #[inline]
+    fn decode_nibble(byte: u8) -> Option<u8> {
+        match byte {
+            b'0'..=b'9' => Some(byte - b'0'),
+            b'A'..=b'F' => Some(byte - b'A' + 10),
+            b'a'..=b'f' => Some(byte - b'a' + 10),
+            _ => None,
+        }
+    }
+}
 
 impl StreamDecoder for ASCIIHexDecoder {
     fn decode(
@@ -823,34 +852,46 @@ impl StreamDecoder for ASCIIHexDecoder {
         let mut high_nibble: Option<u8> = None;
 
         for &byte in input {
+            // Check for '>' terminator first
             if byte == b'>' {
                 break;
             }
 
-            if byte.is_ascii_whitespace() {
+            // Skip PDF whitespace (not Rust's is_whitespace)
+            if Self::is_pdf_whitespace(byte) {
                 continue;
             }
 
-            let nibble = match byte {
-                b'0'..=b'9' => byte - b'0',
-                b'A'..=b'F' => byte - b'A' + 10,
-                b'a'..=b'f' => byte - b'a' + 10,
-                _ => break, // Invalid hex - return partial bytes
+            // Try to decode hex nibble
+            let nibble = match Self::decode_nibble(byte) {
+                Some(n) => n,
+                None => continue, // Invalid hex - skip and continue per INV-8
             };
 
             match high_nibble {
                 Some(high) => {
-                    output.push((high << 4) | nibble);
-                    *doc_counter += 1;
-                    if *doc_counter > max_bytes {
+                    // Complete byte: high nibble (from before) + low nibble (current)
+                    // Check bomb limit BEFORE adding the byte
+                    if *doc_counter >= max_bytes {
                         return Ok(output);
                     }
+                    output.push((high << 4) | nibble);
+                    *doc_counter += 1;
                     high_nibble = None;
                 }
                 None => {
+                    // Store high nibble, wait for low nibble
                     high_nibble = Some(nibble);
                 }
             }
+        }
+
+        // Handle odd-length final pair: pad with low nibble = 0
+        // Per PDF spec 7.4.2 and bead requirements:
+        // <3> decodes to 0x30 (3 is HIGH nibble, low nibble is implicit 0)
+        if let Some(high) = high_nibble {
+            output.push(high << 4);
+            *doc_counter += 1;
         }
 
         Ok(output)
@@ -1103,6 +1144,180 @@ mod tests {
         assert!(result.is_ok());
         let output = result.unwrap();
         assert_eq!(output, b"Hello");
+    }
+
+    #[test]
+    fn test_asciihex_odd_length_single() {
+        // <3> should decode to [0x30]
+        // 3 is the HIGH nibble, low nibble is implicit 0
+        let input = b"3>";
+        let mut counter = 0;
+        let result =
+            ASCIIHexDecoder.decode(input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output, &[0x30]);
+    }
+
+    #[test]
+    fn test_asciihex_odd_length_triple() {
+        // <ABC> should decode to [0xAB, 0xC0]
+        // AB forms a complete byte (0xAB)
+        // C is the HIGH nibble of the second byte, low nibble is implicit 0
+        let input = b"ABC>";
+        let mut counter = 0;
+        let result =
+            ASCIIHexDecoder.decode(input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output, &[0xAB, 0xC0]);
+    }
+
+    #[test]
+    fn test_asciihex_mixed_case() {
+        // <aF> and <Af> should both decode to [0xAF]
+        let input1 = b"aF>";
+        let input2 = b"Af>";
+
+        let mut counter = 0;
+        let result1 =
+            ASCIIHexDecoder.decode(input1, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result1.is_ok());
+        let output1 = result1.unwrap();
+        assert_eq!(output1, &[0xAF]);
+
+        let mut counter = 0;
+        let result2 =
+            ASCIIHexDecoder.decode(input2, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result2.is_ok());
+        let output2 = result2.unwrap();
+        assert_eq!(output2, &[0xAF]);
+    }
+
+    #[test]
+    fn test_asciihex_whitespace_ignored() {
+        // <A B C D> should decode to [0xAB, 0xCD]
+        // PDF spec whitespace: NUL, HT, LF, FF, CR, Space
+        let input = b"A B\tC\nD\r>";
+        let mut counter = 0;
+        let result =
+            ASCIIHexDecoder.decode(input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output, &[0xAB, 0xCD]);
+    }
+
+    #[test]
+    fn test_asciihex_pdf_whitespace_types() {
+        // Test all PDF whitespace types: NUL(0), HT(9), LF(10), FF(12), CR(13), Space(32)
+        let input = b"\x00\x09\x0A\x0C\x0D\x20 41 42>"; // "AB" with all whitespace types
+        let mut counter = 0;
+        let result =
+            ASCIIHexDecoder.decode(input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output, b"AB");
+    }
+
+    #[test]
+    fn test_asciihex_invalid_bytes_continue() {
+        // Invalid hex bytes should be skipped, decoder continues
+        // <A G B> -> A=valid, G=invalid (skip), B=valid (needs pair)
+        // Since A is waiting for a pair and G is skipped, we get just A padded
+        let input = b"AxGBy>";
+        let mut counter = 0;
+        let result =
+            ASCIIHexDecoder.decode(input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        // A (0xA) is high nibble, x is invalid, G is invalid, B (0xB) forms 0xAB
+        // y is invalid, so we get 0xAB
+        assert_eq!(output, &[0xAB]);
+    }
+
+    #[test]
+    fn test_asciihex_empty_stream() {
+        // <> should decode to empty bytes
+        let input = b">";
+        let mut counter = 0;
+        let result =
+            ASCIIHexDecoder.decode(input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output.len(), 0);
+    }
+
+    #[test]
+    fn test_asciihex_no_terminator() {
+        // Input without '>' should decode all valid hex pairs
+        let input = b"4142"; // "AB"
+        let mut counter = 0;
+        let result =
+            ASCIIHexDecoder.decode(input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output, b"AB");
+    }
+
+    #[test]
+    fn test_asciihex_roundtrip_random() {
+        // Round-trip test: encode random bytes as hex, decode back
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        // Create a deterministic 1 KB pattern using a seed
+        let mut hasher = DefaultHasher::new();
+        42u64.hash(&mut hasher);
+        let mut original = Vec::with_capacity(1024);
+        for i in 0..1024 {
+            let byte = ((i * 17 + 42) % 256) as u8;
+            original.push(byte);
+        }
+
+        // Encode as hex
+        let mut hex = Vec::new();
+        for &byte in &original {
+            hex.push(b"0123456789ABCDEF"[(byte >> 4) as usize]);
+            hex.push(b"0123456789ABCDEF"[(byte & 0x0F) as usize]);
+        }
+        hex.push(b'>');
+
+        // Decode back
+        let mut counter = 0;
+        let result = ASCIIHexDecoder.decode(&hex, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let decoded = result.unwrap();
+
+        // Should be byte-identical
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn test_asciihex_bomb_limit() {
+        // Test that bomb limit is enforced
+        let input = b"0102030405060708"; // 4 bytes
+        let mut counter = 0;
+        let limit = 2; // Only allow 2 bytes
+        let result = ASCIIHexDecoder.decode(input, None, &mut counter, limit);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output.len(), 2); // Should truncate at bomb limit
+    }
+
+    #[test]
+    fn test_asciihex_all_nibbles() {
+        // Test all 16 hex digits in both cases
+        let input = b"0123456789ABCDEFabcdef>";
+        let mut counter = 0;
+        let result =
+            ASCIIHexDecoder.decode(input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        // 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF, 0xab, 0xcd, 0xef (odd last)
+        assert_eq!(
+            output,
+            &[0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF, 0xAB, 0xCD, 0xEF,]
+        );
     }
 
     #[test]
