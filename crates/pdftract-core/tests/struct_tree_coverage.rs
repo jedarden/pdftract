@@ -11,8 +11,8 @@
 //! - Per-page diagnostic appears in receipts when fallback triggers
 //! - Integration: full pipeline test on tagged-suspects-true.pdf fixture produces expected reading order
 
-use pdftract_core::options::ExtractionOptions;
 use pdftract_core::extract::extract_pdf;
+use pdftract_core::options::ExtractionOptions;
 use std::path::PathBuf;
 
 /// Get the path to a fixture file, handling both workspace and crate test locations
@@ -84,7 +84,9 @@ fn test_suspects_true_fallback_to_xy_cut() {
     match result {
         Ok(extraction_result) => {
             // Verify reading_order_algorithm is "xy_cut" due to Suspects + low coverage
-            let algo = extraction_result.metadata.reading_order_algorithm
+            let algo = extraction_result
+                .metadata
+                .reading_order_algorithm
                 .expect("reading_order_algorithm should be set");
 
             assert_eq!(
@@ -94,7 +96,10 @@ fn test_suspects_true_fallback_to_xy_cut() {
                 algo
             );
 
-            println!("Integration test passed: reading_order_algorithm = '{}'", algo);
+            println!(
+                "Integration test passed: reading_order_algorithm = '{}'",
+                algo
+            );
         }
         Err(e) => {
             panic!("Extraction failed: {}", e);
@@ -132,17 +137,21 @@ fn test_suspects_false_trusts_tree() {
     match result {
         Ok(extraction_result) => {
             // Verify reading_order_algorithm is "struct_tree" even with low coverage
-            let algo = extraction_result.metadata.reading_order_algorithm
+            let algo = extraction_result
+                .metadata
+                .reading_order_algorithm
                 .expect("reading_order_algorithm should be set");
 
             assert_eq!(
-                algo,
-                "struct_tree",
+                algo, "struct_tree",
                 "Expected reading_order_algorithm='struct_tree' for Suspects false, got '{}'",
                 algo
             );
 
-            println!("Integration test passed: reading_order_algorithm = '{}'", algo);
+            println!(
+                "Integration test passed: reading_order_algorithm = '{}'",
+                algo
+            );
         }
         Err(e) => {
             panic!("Extraction failed: {}", e);
@@ -179,17 +188,21 @@ fn test_suspects_true_high_coverage_no_fallback() {
     match result {
         Ok(extraction_result) => {
             // Verify reading_order_algorithm is "struct_tree" with high coverage
-            let algo = extraction_result.metadata.reading_order_algorithm
+            let algo = extraction_result
+                .metadata
+                .reading_order_algorithm
                 .expect("reading_order_algorithm should be set");
 
             assert_eq!(
-                algo,
-                "struct_tree",
+                algo, "struct_tree",
                 "Expected reading_order_algorithm='struct_tree' for high coverage, got '{}'",
                 algo
             );
 
-            println!("Integration test passed: reading_order_algorithm = '{}'", algo);
+            println!(
+                "Integration test passed: reading_order_algorithm = '{}'",
+                algo
+            );
         }
         Err(e) => {
             panic!("Extraction failed: {}", e);

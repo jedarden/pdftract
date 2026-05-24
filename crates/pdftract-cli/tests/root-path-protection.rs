@@ -25,7 +25,10 @@ fn test_acceptance_criteria_path_traversal_rejected() {
     let result = resolve_path("../../../etc/passwd", Some(root));
     assert!(result.is_err());
     let err = result.unwrap_err();
-    assert_eq!(err.code, -32602, "Should return -32602 (Invalid params) for path traversal");
+    assert_eq!(
+        err.code, -32602,
+        "Should return -32602 (Invalid params) for path traversal"
+    );
     assert!(err.message.contains("escapes root"));
 }
 
@@ -67,7 +70,10 @@ fn test_acceptance_criteria_https_url_bypasses_check() {
 
     let result = resolve_path("https://example.com/file.pdf", Some(root));
     assert!(result.is_ok());
-    assert_eq!(result.unwrap(), std::path::PathBuf::from("https://example.com/file.pdf"));
+    assert_eq!(
+        result.unwrap(),
+        std::path::PathBuf::from("https://example.com/file.pdf")
+    );
 }
 
 #[test]
@@ -75,7 +81,10 @@ fn test_acceptance_criteria_no_root_trust_the_caller() {
     // Without --root, paths should be returned as-is (trust-the-caller mode)
     let result = resolve_path("../../../etc/passwd", None);
     assert!(result.is_ok());
-    assert_eq!(result.unwrap(), std::path::PathBuf::from("../../../etc/passwd"));
+    assert_eq!(
+        result.unwrap(),
+        std::path::PathBuf::from("../../../etc/passwd")
+    );
 }
 
 #[test]
@@ -92,10 +101,8 @@ fn test_acceptance_criteria_symlink_escape_rejected() {
 
     #[cfg(windows)]
     {
-        std::os::windows::fs::symlink_file(
-            r"C:\Windows\System32\drivers\etc\hosts",
-            &symlink_path
-        ).unwrap();
+        std::os::windows::fs::symlink_file(r"C:\Windows\System32\drivers\etc\hosts", &symlink_path)
+            .unwrap();
     }
 
     // Try to access the symlink
@@ -134,7 +141,10 @@ fn test_plan_critical_test_path_traversal_with_root() {
     let result = resolve_path("../../etc/passwd", Some(root));
     assert!(result.is_err());
     let err = result.unwrap_err();
-    assert_eq!(err.code, -32602, "Critical test: path traversal must return -32602");
+    assert_eq!(
+        err.code, -32602,
+        "Critical test: path traversal must return -32602"
+    );
     assert!(err.message.contains("escapes root"));
 
     // Verify the error data contains the expected code
@@ -152,7 +162,10 @@ fn test_http_url_bypasses_check() {
 
     let result = resolve_path("http://example.com/file.pdf", Some(root));
     assert!(result.is_ok());
-    assert_eq!(result.unwrap(), std::path::PathBuf::from("http://example.com/file.pdf"));
+    assert_eq!(
+        result.unwrap(),
+        std::path::PathBuf::from("http://example.com/file.pdf")
+    );
 }
 
 #[test]
@@ -205,6 +218,10 @@ fn test_complex_path_traversal_patterns() {
         let result = resolve_path(pattern, Some(root));
         assert!(result.is_err(), "Pattern '{}' should be rejected", pattern);
         let err = result.unwrap_err();
-        assert_eq!(err.code, -32602, "Pattern '{}' should return -32602", pattern);
+        assert_eq!(
+            err.code, -32602,
+            "Pattern '{}' should return -32602",
+            pattern
+        );
     }
 }

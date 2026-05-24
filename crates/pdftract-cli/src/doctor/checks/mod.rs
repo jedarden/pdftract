@@ -1,27 +1,27 @@
 // Individual check modules
 mod binary;
+mod cache_dir;
+#[cfg(feature = "ocr")]
+mod leptonica;
+#[cfg(feature = "ocr")]
+mod libopenjp2;
+#[cfg(feature = "ocr")]
+mod libtiff;
+mod locale;
+mod memory;
+#[cfg(feature = "remote")]
+mod network;
+#[cfg(feature = "full-render")]
+mod pdfium;
+#[cfg(feature = "profiles")]
+mod profile_path;
+mod temp_dir;
 #[cfg(feature = "ocr")]
 mod tesseract;
 #[cfg(feature = "ocr")]
 mod tesseract_langs;
-#[cfg(feature = "ocr")]
-mod leptonica;
-#[cfg(feature = "ocr")]
-mod libtiff;
-#[cfg(feature = "ocr")]
-mod libopenjp2;
-#[cfg(feature = "full-render")]
-mod pdfium;
-#[cfg(feature = "remote")]
-mod network;
-mod cache_dir;
-#[cfg(feature = "profiles")]
-mod profile_path;
 #[cfg(unix)]
 mod ulimit;
-mod memory;
-mod locale;
-mod temp_dir;
 
 use super::Check;
 

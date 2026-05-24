@@ -14,10 +14,10 @@ use std::io::Seek;
 use std::path::Path;
 
 use flate2::read::ZlibDecoder;
-use lzw::{MsbReader, Decoder, DecoderEarlyChange};
+use lzw::{Decoder, DecoderEarlyChange, MsbReader};
 use secrecy::SecretString;
 
-use crate::diagnostics::{Diagnostic, DiagCode};
+use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::parser::object::{PdfObject, PdfStream};
 
 /// Maximum number of filters allowed in a single stream's pipeline.
@@ -55,7 +55,9 @@ impl std::fmt::Display for FilterError {
         match self {
             FilterError::UnknownFilter(name) => write!(f, "unknown filter: {}", name),
             FilterError::InvalidParams(msg) => write!(f, "invalid filter parameters: {}", msg),
-            FilterError::EncryptionUnsupported => write!(f, "unsupported encryption: custom crypt filter"),
+            FilterError::EncryptionUnsupported => {
+                write!(f, "unsupported encryption: custom crypt filter")
+            }
         }
     }
 }
@@ -111,7 +113,7 @@ pub struct PredictorParams {
 impl Default for PredictorParams {
     fn default() -> Self {
         Self {
-            predictor: 1,  // No prediction
+            predictor: 1, // No prediction
             columns: 1,
             colors: 1,
             bits_per_component: 8,
@@ -139,26 +141,32 @@ impl PredictorParams {
 
         let predictor = match dict.get("/Predictor") {
             Some(PdfObject::Integer(n)) => *n,
-            Some(PdfObject::Bool(b)) => if *b { 2 } else { 1 },
-            _ => 1,  // Default: no predictor
+            Some(PdfObject::Bool(b)) => {
+                if *b {
+                    2
+                } else {
+                    1
+                }
+            }
+            _ => 1, // Default: no predictor
         };
 
         // For predictors other than 1, require the other parameters
         let columns = match dict.get("/Columns") {
             Some(PdfObject::Integer(n)) => *n,
-            _ if predictor != 1 => 1,  // Default for predictors
+            _ if predictor != 1 => 1, // Default for predictors
             _ => 1,
         };
 
         let colors = match dict.get("/Colors") {
             Some(PdfObject::Integer(n)) => *n,
-            _ if predictor != 1 => 1,  // Default for predictors
+            _ if predictor != 1 => 1, // Default for predictors
             _ => 1,
         };
 
         let bits_per_component = match dict.get("/BitsPerComponent") {
             Some(PdfObject::Integer(n)) => *n,
-            _ if predictor != 1 => 8,  // Default for predictors
+            _ if predictor != 1 => 8, // Default for predictors
             _ => 8,
         };
 
@@ -257,7 +265,7 @@ pub fn apply_predictor(data: &[u8], params: &PredictorParams, max_output: u64) -
     match params.predictor {
         2 => apply_tiff_predictor_2(data, params, max_output),
         10..=15 => apply_png_predictors(data, params, max_output),
-        _ => data.to_vec(),  // Unknown predictor - return as-is
+        _ => data.to_vec(), // Unknown predictor - return as-is
     }
 }
 
@@ -268,7 +276,7 @@ pub fn apply_predictor(data: &[u8], params: &PredictorParams, max_output: u64) -
 ///
 /// Formula: output[j] = (input[j] + output[j-1]) % 256
 fn apply_tiff_predictor_2(data: &[u8], params: &PredictorParams, max_output: u64) -> Vec<u8> {
-    let mut output = Vec::new();  // Don't pre-allocate - grow row-by-row
+    let mut output = Vec::new(); // Don't pre-allocate - grow row-by-row
     let row_size = params.bytes_per_row();
     let bpp = params.bytes_per_pixel();
 
@@ -286,7 +294,7 @@ fn apply_tiff_predictor_2(data: &[u8], params: &PredictorParams, max_output: u64
     for chunk in data.chunks_exact(row_size) {
         // Check budget before processing this row
         if output.len() as u64 + row_size as u64 > max_output {
-            break;  // Budget exceeded - return partial data
+            break; // Budget exceeded - return partial data
         }
 
         // First byte of each row is copied as-is
@@ -297,7 +305,7 @@ fn apply_tiff_predictor_2(data: &[u8], params: &PredictorParams, max_output: u64
             let prev = if i >= bpp {
                 output[output.len() - bpp]
             } else {
-                0  // First byte of component - no previous
+                0 // First byte of component - no previous
             };
             output.push(chunk[i].wrapping_add(prev));
         }
@@ -338,7 +346,7 @@ fn apply_png_predictors(data: &[u8], params: &PredictorParams, max_output: u64) 
         return data.to_vec();
     }
 
-    let mut output = Vec::new();  // Don't pre-allocate - grow row-by-row
+    let mut output = Vec::new(); // Don't pre-allocate - grow row-by-row
     let mut prev_row: Vec<u8> = vec![0; row_size];
 
     for row_idx in 0..num_rows {
@@ -346,7 +354,7 @@ fn apply_png_predictors(data: &[u8], params: &PredictorParams, max_output: u64) 
         let row_end = row_start + row_size_with_selector;
 
         if row_end > data.len() {
-            break;  // Incomplete row
+            break; // Incomplete row
         }
 
         let row_data = &data[row_start..row_end];
@@ -356,7 +364,7 @@ fn apply_png_predictors(data: &[u8], params: &PredictorParams, max_output: u64) 
         if filtered.len() != row_size {
             // Row size mismatch - copy as-is
             if output.len() as u64 + filtered.len() as u64 > max_output {
-                break;  // Budget exceeded
+                break; // Budget exceeded
             }
             output.extend_from_slice(filtered);
             continue;
@@ -364,7 +372,7 @@ fn apply_png_predictors(data: &[u8], params: &PredictorParams, max_output: u64) 
 
         // Check budget before processing this row
         if output.len() as u64 + row_size as u64 > max_output {
-            break;  // Budget exceeded - return partial data
+            break; // Budget exceeded - return partial data
         }
 
         let mut current_row = vec![0u8; row_size];
@@ -377,11 +385,7 @@ fn apply_png_predictors(data: &[u8], params: &PredictorParams, max_output: u64) 
             1 | 11 => {
                 // Sub: each byte is the difference from the corresponding byte of the prior pixel
                 for (i, &val) in filtered.iter().enumerate() {
-                    let left = if i >= bpp {
-                        current_row[i - bpp]
-                    } else {
-                        0
-                    };
+                    let left = if i >= bpp { current_row[i - bpp] } else { 0 };
                     current_row[i] = val.wrapping_add(left);
                 }
             }
@@ -394,11 +398,7 @@ fn apply_png_predictors(data: &[u8], params: &PredictorParams, max_output: u64) 
             3 | 13 => {
                 // Average: each byte is the difference from the average of left and up
                 for (i, &val) in filtered.iter().enumerate() {
-                    let left = if i >= bpp {
-                        current_row[i - bpp]
-                    } else {
-                        0
-                    };
+                    let left = if i >= bpp { current_row[i - bpp] } else { 0 };
                     let up = prev_row[i];
                     // Average using integer division
                     let avg = ((left as u16 + up as u16) / 2) as u8;
@@ -408,17 +408,9 @@ fn apply_png_predictors(data: &[u8], params: &PredictorParams, max_output: u64) 
             4 | 14 => {
                 // Paeth: each byte is the difference from the Paeth predictor
                 for (i, &val) in filtered.iter().enumerate() {
-                    let left = if i >= bpp {
-                        current_row[i - bpp]
-                    } else {
-                        0
-                    };
+                    let left = if i >= bpp { current_row[i - bpp] } else { 0 };
                     let up = prev_row[i];
-                    let up_left = if i >= bpp {
-                        prev_row[i - bpp]
-                    } else {
-                        0
-                    };
+                    let up_left = if i >= bpp { prev_row[i - bpp] } else { 0 };
                     current_row[i] = val.wrapping_add(paeth(left, up, up_left));
                 }
             }
@@ -590,10 +582,12 @@ impl LZWDecoder {
                         // Check bomb limit
                         if output.len() as u64 + data.len() as u64 > budget_remaining {
                             // Bomb limit exceeded - return partial bytes
-                            let remaining_budget = (budget_remaining as usize).saturating_sub(output.len());
+                            let remaining_budget =
+                                (budget_remaining as usize).saturating_sub(output.len());
                             output.extend_from_slice(&data[..remaining_budget.min(data.len())]);
                             let predictor_budget = max_bytes.saturating_sub(*doc_counter);
-                            let predicted = apply_predictor(&output, &pred_params, predictor_budget);
+                            let predicted =
+                                apply_predictor(&output, &pred_params, predictor_budget);
                             *doc_counter += predicted.len() as u64;
                             return Ok(predicted);
                         }
@@ -623,10 +617,12 @@ impl LZWDecoder {
                         // Check bomb limit
                         if output.len() as u64 + data.len() as u64 > budget_remaining {
                             // Bomb limit exceeded - return partial bytes
-                            let remaining_budget = (budget_remaining as usize).saturating_sub(output.len());
+                            let remaining_budget =
+                                (budget_remaining as usize).saturating_sub(output.len());
                             output.extend_from_slice(&data[..remaining_budget.min(data.len())]);
                             let predictor_budget = max_bytes.saturating_sub(*doc_counter);
-                            let predicted = apply_predictor(&output, &pred_params, predictor_budget);
+                            let predicted =
+                                apply_predictor(&output, &pred_params, predictor_budget);
                             *doc_counter += predicted.len() as u64;
                             return Ok(predicted);
                         }
@@ -932,7 +928,11 @@ impl CryptDecoder {
     }
 
     /// Pass input through unchanged, enforcing bomb limit.
-    fn pass_through(input: &[u8], doc_counter: &mut u64, max_bytes: u64) -> Result<Vec<u8>, FilterError> {
+    fn pass_through(
+        input: &[u8],
+        doc_counter: &mut u64,
+        max_bytes: u64,
+    ) -> Result<Vec<u8>, FilterError> {
         let len = input.len() as u64;
         *doc_counter += len;
         if *doc_counter > max_bytes {
@@ -1098,7 +1098,8 @@ mod tests {
     fn test_asciihex_decode() {
         let input = b"48656C6C6F>"; // "Hello" in hex
         let mut counter = 0;
-        let result = ASCIIHexDecoder.decode(input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        let result =
+            ASCIIHexDecoder.decode(input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
         assert!(result.is_ok());
         let output = result.unwrap();
         assert_eq!(output, b"Hello");
@@ -1145,12 +1146,16 @@ mod tests {
         let compressed = encoder.finish().unwrap();
 
         // Verify we're using a minimal crafted input (not a large buffer)
-        assert!(compressed.len() < 100,
-                "Compressed payload should be minimal, got {} bytes",
-                compressed.len());
-        assert!(pattern.len() < 250,
-                "Pattern should be small, got {} bytes",
-                pattern.len());
+        assert!(
+            compressed.len() < 100,
+            "Compressed payload should be minimal, got {} bytes",
+            compressed.len()
+        );
+        assert!(
+            pattern.len() < 250,
+            "Pattern should be small, got {} bytes",
+            pattern.len()
+        );
 
         // Set bomb limit to 50 bytes (much less than the 200-byte decoded size)
         // This forces early abort during decompression
@@ -1163,20 +1168,29 @@ mod tests {
 
         // CRITICAL ASSERTION: The decoder MUST stop at or before the bomb limit
         // It MUST NOT materialize the full 200-byte output
-        assert!(output.len() <= bomb_limit as usize,
-                "STREAM_BOMB abort failed: decoded {} bytes, exceeding bomb limit of {} \
+        assert!(
+            output.len() <= bomb_limit as usize,
+            "STREAM_BOMB abort failed: decoded {} bytes, exceeding bomb limit of {} \
                  - decoder did not stop early!",
-                output.len(), bomb_limit);
+            output.len(),
+            bomb_limit
+        );
 
         // Verify the counter stayed within bounds
-        assert!(counter <= bomb_limit as u64,
-                "Counter {} exceeds bomb limit {}", counter, bomb_limit);
+        assert!(
+            counter <= bomb_limit as u64,
+            "Counter {} exceeds bomb limit {}",
+            counter,
+            bomb_limit
+        );
 
         // Verify we actually hit the limit (got partial output, not full)
         // If output.len() == 200, the bomb check failed completely
-        assert!(output.len() < pattern.len(),
-                "Got full output ({} bytes) - bomb limit was not enforced",
-                output.len());
+        assert!(
+            output.len() < pattern.len(),
+            "Got full output ({} bytes) - bomb limit was not enforced",
+            output.len()
+        );
     }
 
     #[test]
@@ -1194,7 +1208,8 @@ mod tests {
     fn test_lzw_decode_simple_early_change() {
         // Test with /EarlyChange = 1 (default, Adobe/TIFF variant)
         let encoded = [
-            0x80, 0x1a, 0x0c, 0xa6, 0xc3, 0x61, 0xbc, 0x40, 0x77, 0x37, 0x9c, 0x8d, 0x86, 0x41, 0x0c, 0x04,
+            0x80, 0x1a, 0x0c, 0xa6, 0xc3, 0x61, 0xbc, 0x40, 0x77, 0x37, 0x9c, 0x8d, 0x86, 0x41,
+            0x0c, 0x04,
         ];
         let expected = b"hello world!";
         let mut counter = 0;
@@ -1208,7 +1223,8 @@ mod tests {
     fn test_lzw_decode_with_params_early_change() {
         // Test with explicit /EarlyChange = 1
         let encoded = [
-            0x80, 0x1a, 0x0c, 0xa6, 0xc3, 0x61, 0xbc, 0x40, 0x77, 0x37, 0x9c, 0x8d, 0x86, 0x41, 0x0c, 0x04,
+            0x80, 0x1a, 0x0c, 0xa6, 0xc3, 0x61, 0xbc, 0x40, 0x77, 0x37, 0x9c, 0x8d, 0x86, 0x41,
+            0x0c, 0x04,
         ];
         let expected = b"hello world!";
 
@@ -1218,7 +1234,12 @@ mod tests {
         let params = Some(PdfObject::Dict(Box::new(dict)));
 
         let mut counter = 0;
-        let result = LZWDecoder.decode(&encoded, params.as_ref(), &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        let result = LZWDecoder.decode(
+            &encoded,
+            params.as_ref(),
+            &mut counter,
+            DEFAULT_MAX_DECOMPRESS_BYTES,
+        );
         assert!(result.is_ok());
         let output = result.unwrap();
         assert_eq!(output, expected);
@@ -1229,7 +1250,8 @@ mod tests {
         // Test with /EarlyChange = 0 (GIF variant)
         // The late change decoder should still handle valid LZW data
         let encoded = [
-            0x80, 0x1a, 0x0c, 0xa6, 0xc3, 0x61, 0xbc, 0x40, 0x77, 0x37, 0x9c, 0x8d, 0x86, 0x41, 0x0c, 0x04,
+            0x80, 0x1a, 0x0c, 0xa6, 0xc3, 0x61, 0xbc, 0x40, 0x77, 0x37, 0x9c, 0x8d, 0x86, 0x41,
+            0x0c, 0x04,
         ];
         let expected = b"hello world!";
 
@@ -1239,7 +1261,12 @@ mod tests {
         let params = Some(PdfObject::Dict(Box::new(dict)));
 
         let mut counter = 0;
-        let result = LZWDecoder.decode(&encoded, params.as_ref(), &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        let result = LZWDecoder.decode(
+            &encoded,
+            params.as_ref(),
+            &mut counter,
+            DEFAULT_MAX_DECOMPRESS_BYTES,
+        );
         assert!(result.is_ok());
         let output = result.unwrap();
         assert_eq!(output, expected);
@@ -1249,8 +1276,8 @@ mod tests {
     fn test_lzw_decode_repeated_pattern() {
         // Test with repeated pattern (compresses well)
         let encoded = [
-            0x80, 0x10, 0x60, 0x50, 0x22, 0x14, 0x16, 0x0a, 0x43, 0x84, 0x42, 0x08, 0x90, 0xb8, 0x59, 0x16,
-            0x1d, 0x0e, 0x80, 0x80,
+            0x80, 0x10, 0x60, 0x50, 0x22, 0x14, 0x16, 0x0a, 0x43, 0x84, 0x42, 0x08, 0x90, 0xb8,
+            0x59, 0x16, 0x1d, 0x0e, 0x80, 0x80,
         ];
         let expected = b"AAAAABBBBBCCCCCDDDDDEEEEE";
         let mut counter = 0;
@@ -1274,7 +1301,8 @@ mod tests {
     fn test_lzw_bomb_limit() {
         // Test that bomb limit is enforced
         let encoded = [
-            0x80, 0x1a, 0x0c, 0xa6, 0xc3, 0x61, 0xbc, 0x40, 0x77, 0x37, 0x9c, 0x8d, 0x86, 0x41, 0x0c, 0x04,
+            0x80, 0x1a, 0x0c, 0xa6, 0xc3, 0x61, 0xbc, 0x40, 0x77, 0x37, 0x9c, 0x8d, 0x86, 0x41,
+            0x0c, 0x04,
         ];
         let mut counter = 0;
         // Set a very low limit (5 bytes)
@@ -1290,7 +1318,8 @@ mod tests {
         // Test LZW + PNG predictor 12
         // This tests that the predictor is applied after LZW decode
         let encoded = [
-            0x80, 0x05, 0x61, 0x09, 0xa1, 0xd4, 0xc0, 0x80, 0x60, 0x20, 0x20, 0x10, 0x08, 0x04, 0x02,
+            0x80, 0x05, 0x61, 0x09, 0xa1, 0xd4, 0xc0, 0x80, 0x60, 0x20, 0x20, 0x10, 0x08, 0x04,
+            0x02,
         ];
         let mut counter = 0;
 
@@ -1302,7 +1331,12 @@ mod tests {
         dict.insert("/BitsPerComponent".into(), PdfObject::Integer(8));
         let params = Some(PdfObject::Dict(Box::new(dict)));
 
-        let result = LZWDecoder.decode(&encoded, params.as_ref(), &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        let result = LZWDecoder.decode(
+            &encoded,
+            params.as_ref(),
+            &mut counter,
+            DEFAULT_MAX_DECOMPRESS_BYTES,
+        );
         assert!(result.is_ok());
         // The output should be different with predictor applied
         let output = result.unwrap();
@@ -1313,12 +1347,11 @@ mod tests {
     fn test_lzw_decode_truncated_stream() {
         // Truncated LZW stream should return partial bytes (INV-8)
         // This fixture is the predictor fixture with 5 bytes removed
-        let truncated = [
-            0x80, 0x10, 0x48, 0x44, 0x32, 0x24, 0x0a, 0x09, 0x06,
-        ];
+        let truncated = [0x80, 0x10, 0x48, 0x44, 0x32, 0x24, 0x0a, 0x09, 0x06];
 
         let mut counter = 0;
-        let result = LZWDecoder.decode(&truncated, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        let result =
+            LZWDecoder.decode(&truncated, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
 
         // Should return Ok with partial bytes, not Err
         assert!(result.is_ok());
@@ -1335,7 +1368,8 @@ mod tests {
         // Test incremental decoding with small chunks
         // This verifies the decoder handles chunked input correctly
         let encoded = [
-            0x80, 0x1a, 0x0c, 0xa6, 0xc3, 0x61, 0xbc, 0x40, 0x77, 0x37, 0x9c, 0x8d, 0x86, 0x41, 0x0c, 0x04,
+            0x80, 0x1a, 0x0c, 0xa6, 0xc3, 0x61, 0xbc, 0x40, 0x77, 0x37, 0x9c, 0x8d, 0x86, 0x41,
+            0x0c, 0x04,
         ];
         let expected = b"hello world!";
 
@@ -1364,7 +1398,10 @@ mod tests {
 
         assert!(result.is_ok(), "LZWDecode should succeed");
         let output = result.unwrap();
-        assert_eq!(output, expected, "decoded output must match reference byte-perfectly");
+        assert_eq!(
+            output, expected,
+            "decoded output must match reference byte-perfectly"
+        );
     }
 
     #[test]
@@ -1383,7 +1420,10 @@ mod tests {
 
         assert!(result.is_ok(), "LZWDecode should succeed");
         let output = result.unwrap();
-        assert_eq!(output, expected, "decoded output must match reference byte-perfectly");
+        assert_eq!(
+            output, expected,
+            "decoded output must match reference byte-perfectly"
+        );
     }
 
     #[test]
@@ -1402,7 +1442,10 @@ mod tests {
 
         assert!(result.is_ok(), "LZWDecode should succeed");
         let output = result.unwrap();
-        assert_eq!(output, expected, "decoded output must match reference byte-perfectly");
+        assert_eq!(
+            output, expected,
+            "decoded output must match reference byte-perfectly"
+        );
     }
 
     #[test]
@@ -1421,7 +1464,10 @@ mod tests {
 
         assert!(result.is_ok(), "LZWDecode should succeed");
         let output = result.unwrap();
-        assert_eq!(output, expected, "decoded output must match reference byte-perfectly");
+        assert_eq!(
+            output, expected,
+            "decoded output must match reference byte-perfectly"
+        );
     }
 
     #[test]
@@ -1444,7 +1490,12 @@ mod tests {
         let params = Some(PdfObject::Dict(Box::new(dict)));
 
         let mut counter = 0;
-        let result = LZWDecoder.decode(&encoded, params.as_ref(), &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        let result = LZWDecoder.decode(
+            &encoded,
+            params.as_ref(),
+            &mut counter,
+            DEFAULT_MAX_DECOMPRESS_BYTES,
+        );
 
         assert!(result.is_ok(), "LZWDecode with predictor should succeed");
         let output = result.unwrap();
@@ -1471,11 +1522,19 @@ mod tests {
         let params = Some(PdfObject::Dict(Box::new(dict)));
 
         let mut counter = 0;
-        let result = LZWDecoder.decode(&encoded, params.as_ref(), &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        let result = LZWDecoder.decode(
+            &encoded,
+            params.as_ref(),
+            &mut counter,
+            DEFAULT_MAX_DECOMPRESS_BYTES,
+        );
 
         assert!(result.is_ok(), "LZWDecode with late change should succeed");
         let output = result.unwrap();
-        assert_eq!(output, expected, "decoded output must match reference byte-perfectly");
+        assert_eq!(
+            output, expected,
+            "decoded output must match reference byte-perfectly"
+        );
     }
 
     #[test]
@@ -1495,11 +1554,19 @@ mod tests {
         let params = Some(PdfObject::Dict(Box::new(dict)));
 
         let mut counter = 0;
-        let result = LZWDecoder.decode(&encoded, params.as_ref(), &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        let result = LZWDecoder.decode(
+            &encoded,
+            params.as_ref(),
+            &mut counter,
+            DEFAULT_MAX_DECOMPRESS_BYTES,
+        );
 
         assert!(result.is_ok(), "LZWDecode with late change should succeed");
         let output = result.unwrap();
-        assert_eq!(output, expected, "decoded output must match reference byte-perfectly");
+        assert_eq!(
+            output, expected,
+            "decoded output must match reference byte-perfectly"
+        );
     }
 
     #[test]
@@ -1519,11 +1586,19 @@ mod tests {
         let params = Some(PdfObject::Dict(Box::new(dict)));
 
         let mut counter = 0;
-        let result = LZWDecoder.decode(&encoded, params.as_ref(), &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        let result = LZWDecoder.decode(
+            &encoded,
+            params.as_ref(),
+            &mut counter,
+            DEFAULT_MAX_DECOMPRESS_BYTES,
+        );
 
         assert!(result.is_ok(), "LZWDecode with late change should succeed");
         let output = result.unwrap();
-        assert_eq!(output, expected, "decoded output must match reference byte-perfectly");
+        assert_eq!(
+            output, expected,
+            "decoded output must match reference byte-perfectly"
+        );
     }
 
     #[test]
@@ -1543,11 +1618,19 @@ mod tests {
         let params = Some(PdfObject::Dict(Box::new(dict)));
 
         let mut counter = 0;
-        let result = LZWDecoder.decode(&encoded, params.as_ref(), &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        let result = LZWDecoder.decode(
+            &encoded,
+            params.as_ref(),
+            &mut counter,
+            DEFAULT_MAX_DECOMPRESS_BYTES,
+        );
 
         assert!(result.is_ok(), "LZWDecode with late change should succeed");
         let output = result.unwrap();
-        assert_eq!(output, expected, "decoded output must match reference byte-perfectly");
+        assert_eq!(
+            output, expected,
+            "decoded output must match reference byte-perfectly"
+        );
     }
 
     #[test]
@@ -1560,10 +1643,14 @@ mod tests {
             .expect("fixture file should exist");
 
         let mut counter = 0;
-        let result = LZWDecoder.decode(&truncated, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        let result =
+            LZWDecoder.decode(&truncated, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
 
         // Should return Ok with partial bytes, not Err
-        assert!(result.is_ok(), "truncated stream should return Ok with partial bytes");
+        assert!(
+            result.is_ok(),
+            "truncated stream should return Ok with partial bytes"
+        );
         let decoded = result.unwrap();
         // We should get some partial output, even if incomplete
         // The exact amount depends on how much data could be decoded
@@ -1638,7 +1725,7 @@ impl<'de> serde::Deserialize<'de> for ExtractionOptions {
         D: serde::Deserializer<'de>,
     {
         use secrecy::SecretString;
-        use serde::de::{self, SeqAccess, Visitor, MapAccess};
+        use serde::de::{self, MapAccess, SeqAccess, Visitor};
         use serde::Deserialize;
 
         #[derive(Deserialize)]
@@ -1918,8 +2005,11 @@ fn decode_stream_impl(
                     truncated,
                     Diagnostic::with_dynamic_no_offset(
                         DiagCode::StreamBomb,
-                        format!("Decompression bomb limit exceeded: {} bytes", opts.max_decompress_bytes)
-                    )
+                        format!(
+                            "Decompression bomb limit exceeded: {} bytes",
+                            opts.max_decompress_bytes
+                        ),
+                    ),
                 );
             }
             *doc_decompress_counter += len;
@@ -1944,9 +2034,12 @@ fn decode_stream_impl(
             raw_bytes,
             Diagnostic::with_dynamic_no_offset(
                 DiagCode::StreamInvalidParams,
-                format!("/DecodeParms array length ({}) > /Filter array length ({})",
-                    decode_params.len(), filters.len())
-            )
+                format!(
+                    "/DecodeParms array length ({}) > /Filter array length ({})",
+                    decode_params.len(),
+                    filters.len()
+                ),
+            ),
         );
     }
 
@@ -1966,10 +2059,17 @@ fn decode_stream_impl(
         match get_decoder(&normalized_name) {
             Some(decoder) => {
                 let counter_before = *doc_decompress_counter;
-                match decoder.decode(&current_bytes, params, doc_decompress_counter, opts.max_decompress_bytes) {
+                match decoder.decode(
+                    &current_bytes,
+                    params,
+                    doc_decompress_counter,
+                    opts.max_decompress_bytes,
+                ) {
                     Ok(decoded) => {
                         // Check if we hit the bomb limit during this filter
-                        if *doc_decompress_counter >= opts.max_decompress_bytes && counter_before < opts.max_decompress_bytes {
+                        if *doc_decompress_counter >= opts.max_decompress_bytes
+                            && counter_before < opts.max_decompress_bytes
+                        {
                             bomb_limit_hit = true;
                         }
                         current_bytes = decoded;
@@ -1996,7 +2096,7 @@ fn decode_stream_impl(
                 // Unknown filter - emit diagnostic and return current bytes (partial decode) per INV-8
                 diagnostics.push(Diagnostic::with_dynamic_no_offset(
                     DiagCode::StreamUnknownFilter,
-                    format!("Unknown filter: {}, returning partial decode", filter_name)
+                    format!("Unknown filter: {}, returning partial decode", filter_name),
                 ));
                 break;
             }
@@ -2006,7 +2106,10 @@ fn decode_stream_impl(
     if bomb_limit_hit {
         diagnostics.push(Diagnostic::with_dynamic_no_offset(
             DiagCode::StreamBomb,
-            format!("Decompression bomb limit exceeded: {} bytes", opts.max_decompress_bytes)
+            format!(
+                "Decompression bomb limit exceeded: {} bytes",
+                opts.max_decompress_bytes
+            ),
         ));
     }
 
@@ -2051,17 +2154,20 @@ mod integration_tests {
 
         // Multiple filters (array)
         let mut dict2 = IndexMap::new();
-        dict2.insert("/Filter".into(), PdfObject::Array(Box::new(vec![
-            PdfObject::Name("ASCII85Decode".into()),
-            PdfObject::Name("FlateDecode".into()),
-        ])));
+        dict2.insert(
+            "/Filter".into(),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Name("ASCII85Decode".into()),
+                PdfObject::Name("FlateDecode".into()),
+            ])),
+        );
         dict2.insert("/Length".into(), PdfObject::Integer(200));
         let stream2 = PdfStream::new(dict2, 2000, Some(200));
 
-        assert_eq!(stream2.filter(), Some(vec![
-            "ASCII85Decode".to_string(),
-            "FlateDecode".to_string(),
-        ]));
+        assert_eq!(
+            stream2.filter(),
+            Some(vec!["ASCII85Decode".to_string(), "FlateDecode".to_string(),])
+        );
     }
 
     #[test]
@@ -2089,7 +2195,10 @@ mod integration_tests {
 
         let mut dict = IndexMap::new();
         dict.insert("/Filter".into(), PdfObject::Name("FlateDecode".into()));
-        dict.insert("/Length".into(), PdfObject::Integer(compressed.len() as i64));
+        dict.insert(
+            "/Length".into(),
+            PdfObject::Integer(compressed.len() as i64),
+        );
         let stream = PdfStream::new(dict, 0, Some(compressed.len() as u64));
 
         let opts = ExtractionOptions::default();
@@ -2126,23 +2235,37 @@ mod integration_tests {
         let compressed = encoder.finish().unwrap();
 
         // Verify compression worked (should be smaller)
-        assert!(compressed.len() < original.len(),
+        assert!(
+            compressed.len() < original.len(),
             "Compressed size {} should be less than original {}",
-            compressed.len(), original.len());
+            compressed.len(),
+            original.len()
+        );
 
         // Now decode the compressed bytes directly with Flate
         let mut counter = 0;
-        let flate_decoded = FlateDecoder.decode(&compressed, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES).unwrap();
+        let flate_decoded = FlateDecoder
+            .decode(
+                &compressed,
+                None,
+                &mut counter,
+                DEFAULT_MAX_DECOMPRESS_BYTES,
+            )
+            .unwrap();
         assert_eq!(flate_decoded, original);
 
         // Now test the filter array: [/FlateDecode] should work the same
         let source = MemorySource::new(compressed.clone());
 
         let mut dict = IndexMap::new();
-        dict.insert("/Filter".into(), PdfObject::Array(Box::new(vec![
-            PdfObject::Name("FlateDecode".into()),
-        ])));
-        dict.insert("/Length".into(), PdfObject::Integer(compressed.len() as i64));
+        dict.insert(
+            "/Filter".into(),
+            PdfObject::Array(Box::new(vec![PdfObject::Name("FlateDecode".into())])),
+        );
+        dict.insert(
+            "/Length".into(),
+            PdfObject::Integer(compressed.len() as i64),
+        );
         let stream = PdfStream::new(dict, 0, Some(compressed.len() as u64));
 
         let opts = ExtractionOptions::default();
@@ -2166,7 +2289,10 @@ mod integration_tests {
 
         let mut dict = IndexMap::new();
         dict.insert("/Filter".into(), PdfObject::Name("Fl".into())); // Abbreviated
-        dict.insert("/Length".into(), PdfObject::Integer(compressed.len() as i64));
+        dict.insert(
+            "/Length".into(),
+            PdfObject::Integer(compressed.len() as i64),
+        );
         let stream = PdfStream::new(dict, 0, Some(compressed.len() as u64));
 
         let opts = ExtractionOptions::default();
@@ -2248,21 +2374,21 @@ mod integration_tests {
         // Format: zlib header + deflate block with RLE encoding
         // The pattern "AB" repeated 750 times = 1500 bytes
         let inline_bomb: &[u8] = &[
-            0x78, 0x9c,  // zlib header (default compression, window size 32768)
+            0x78, 0x9c, // zlib header (default compression, window size 32768)
             // Deflate block: compressed, final
             // Encoding "AB" repeated 750 times using RLE
-            0x73, 0x74, 0x72, 0x65, 0x61, 0x6d,  // "stream" marker (not actual deflate)
-            // For a valid test, we use a pre-compressed fixture
+            0x73, 0x74, 0x72, 0x65, 0x61,
+            0x6d, // "stream" marker (not actual deflate)
+                  // For a valid test, we use a pre-compressed fixture
         ];
 
         // Try to load the fixture file
         let manifest_dir = env!("CARGO_MANIFEST_DIR");
-        let fixture_path = Path::new(manifest_dir)
-            .join("../../tests/fixtures/malformed/compression-bomb.bin");
+        let fixture_path =
+            Path::new(manifest_dir).join("../../tests/fixtures/malformed/compression-bomb.bin");
 
         let compressed = if fixture_path.exists() {
-            std::fs::read(&fixture_path)
-                .unwrap_or_else(|_| inline_bomb.to_vec())
+            std::fs::read(&fixture_path).unwrap_or_else(|_| inline_bomb.to_vec())
         } else {
             // Fall back to inline minimal payload
             // Use flate2 to compress a small pattern without creating large buffer
@@ -2282,7 +2408,10 @@ mod integration_tests {
 
         let mut dict = IndexMap::new();
         dict.insert("/Filter".into(), PdfObject::Name("FlateDecode".into()));
-        dict.insert("/Length".into(), PdfObject::Integer(compressed.len() as i64));
+        dict.insert(
+            "/Length".into(),
+            PdfObject::Integer(compressed.len() as i64),
+        );
         let stream = PdfStream::new(dict, 0, Some(compressed.len() as u64));
 
         // Set bomb limit to 100 bytes (much smaller than decompressed size)
@@ -2296,25 +2425,34 @@ mod integration_tests {
         let decoded = decode_stream(&stream, &source, &opts, &mut counter);
 
         // CRITICAL: The decoder must stop AT the bomb limit, not exceed it
-        assert!(decoded.len() <= bomb_limit as usize,
-                "Decoded {} bytes, exceeding bomb limit of {}",
-                decoded.len(), bomb_limit);
+        assert!(
+            decoded.len() <= bomb_limit as usize,
+            "Decoded {} bytes, exceeding bomb limit of {}",
+            decoded.len(),
+            bomb_limit
+        );
 
         // The counter must also stay within bounds
-        assert!(counter <= bomb_limit as u64,
-                "Counter {} exceeds bomb limit {}", counter, bomb_limit);
+        assert!(
+            counter <= bomb_limit as u64,
+            "Counter {} exceeds bomb limit {}",
+            counter,
+            bomb_limit
+        );
 
         // Verify we actually hit the limit (got partial output, not full)
         // If we got the full decompressed payload, the bomb check failed
         let manifest_dir = env!("CARGO_MANIFEST_DIR");
-        let fixture_path = Path::new(manifest_dir)
-            .join("../../tests/fixtures/malformed/compression-bomb.bin");
+        let fixture_path =
+            Path::new(manifest_dir).join("../../tests/fixtures/malformed/compression-bomb.bin");
         if !fixture_path.exists() {
             // For inline test, verify truncation occurred
             // The pattern is 200 bytes, bomb limit is 100, so we should get <= 100
-            assert!(decoded.len() <= 100,
-                    "Should have truncated at bomb limit, got {} bytes",
-                    decoded.len());
+            assert!(
+                decoded.len() <= 100,
+                "Should have truncated at bomb limit, got {} bytes",
+                decoded.len()
+            );
         }
     }
 
@@ -2356,32 +2494,48 @@ mod integration_tests {
         // Decode first stream (200 bytes when decompressed)
         let mut dict = IndexMap::new();
         dict.insert("/Filter".into(), PdfObject::Name("FlateDecode".into()));
-        dict.insert("/Length".into(), PdfObject::Integer(compressed.len() as i64));
+        dict.insert(
+            "/Length".into(),
+            PdfObject::Integer(compressed.len() as i64),
+        );
         let stream1 = PdfStream::new(dict, 0, Some(compressed.len() as u64));
         let decoded1 = decode_stream(&stream1, &source, &opts, &mut counter);
 
         // First stream should be truncated at bomb limit
-        assert!(decoded1.len() <= bomb_limit as usize,
-                "First stream decoded {} bytes, exceeding bomb limit of {}",
-                decoded1.len(), bomb_limit);
+        assert!(
+            decoded1.len() <= bomb_limit as usize,
+            "First stream decoded {} bytes, exceeding bomb limit of {}",
+            decoded1.len(),
+            bomb_limit
+        );
 
         let bytes_used = counter;
 
         // Decode second stream (would be another 200 bytes, but bomb limit is 150 total)
         let mut dict2 = IndexMap::new();
         dict2.insert("/Filter".into(), PdfObject::Name("FlateDecode".into()));
-        dict2.insert("/Length".into(), PdfObject::Integer(compressed.len() as i64));
+        dict2.insert(
+            "/Length".into(),
+            PdfObject::Integer(compressed.len() as i64),
+        );
         let stream2 = PdfStream::new(dict2, 0, Some(compressed.len() as u64));
         let decoded2 = decode_stream(&stream2, &source, &opts, &mut counter);
 
         // Second stream should be empty or very small since we already hit the limit
-        assert!(decoded2.len() <= (bomb_limit as usize - bytes_used as usize),
-                "Second stream decoded {} bytes, exceeding remaining budget of {}",
-                decoded2.len(), bomb_limit as usize - bytes_used as usize);
+        assert!(
+            decoded2.len() <= (bomb_limit as usize - bytes_used as usize),
+            "Second stream decoded {} bytes, exceeding remaining budget of {}",
+            decoded2.len(),
+            bomb_limit as usize - bytes_used as usize
+        );
 
         // Total should not exceed bomb limit
-        assert!(counter <= bomb_limit as u64,
-                "Total counter {} exceeds bomb limit {}", counter, bomb_limit);
+        assert!(
+            counter <= bomb_limit as u64,
+            "Total counter {} exceeds bomb limit {}",
+            counter,
+            bomb_limit
+        );
     }
 
     /// TH-01 test: Decompression bomb abort fires before materialization.
@@ -2406,8 +2560,8 @@ mod integration_tests {
         use std::path::Path;
 
         let manifest_dir = env!("CARGO_MANIFEST_DIR");
-        let fixture_path = Path::new(manifest_dir)
-            .join("../../tests/fixtures/malformed/compression-bomb.bin");
+        let fixture_path =
+            Path::new(manifest_dir).join("../../tests/fixtures/malformed/compression-bomb.bin");
 
         // Skip test if fixture doesn't exist (e.g., during cargo publish)
         if !fixture_path.exists() {
@@ -2416,19 +2570,23 @@ mod integration_tests {
 
         // Load the compressed bomb payload
         // This is ONLY ~509 bytes - we never load the 500 KB expanded form
-        let compressed = std::fs::read(&fixture_path)
-            .expect("fixture file should be readable");
+        let compressed = std::fs::read(&fixture_path).expect("fixture file should be readable");
 
         // Verify the fixture is highly compressed (the bomb property)
-        assert!(compressed.len() < 2000,
-                "Fixture should be highly compressed, got {} bytes",
-                compressed.len());
+        assert!(
+            compressed.len() < 2000,
+            "Fixture should be highly compressed, got {} bytes",
+            compressed.len()
+        );
 
         let source = MemorySource::new(compressed.clone());
 
         let mut dict = IndexMap::new();
         dict.insert("/Filter".into(), PdfObject::Name("FlateDecode".into()));
-        dict.insert("/Length".into(), PdfObject::Integer(compressed.len() as i64));
+        dict.insert(
+            "/Length".into(),
+            PdfObject::Integer(compressed.len() as i64),
+        );
         let stream = PdfStream::new(dict, 0, Some(compressed.len() as u64));
 
         // Set bomb limit to 100 KB (much less than the 500 KB decoded size)
@@ -2443,21 +2601,29 @@ mod integration_tests {
 
         // CRITICAL ASSERTION: The decoder MUST stop at or before the bomb limit
         // It MUST NOT materialize the full 500 KB output
-        assert!(decoded.len() <= bomb_limit as usize,
-                "TH-01 FAILED: Decoder materialized {} bytes, exceeding bomb limit of {} \
+        assert!(
+            decoded.len() <= bomb_limit as usize,
+            "TH-01 FAILED: Decoder materialized {} bytes, exceeding bomb limit of {} \
                  - STREAM_BOMB abort did not fire early enough!",
-                decoded.len(), bomb_limit);
+            decoded.len(),
+            bomb_limit
+        );
 
         // Verify the counter stayed within bounds
-        assert!(counter <= bomb_limit,
-                "TH-01 FAILED: Counter {} exceeded bomb limit {}",
-                counter, bomb_limit);
+        assert!(
+            counter <= bomb_limit,
+            "TH-01 FAILED: Counter {} exceeded bomb limit {}",
+            counter,
+            bomb_limit
+        );
 
         // Verify we got partial output (truncated), not the full 500 KB
         // If decoded.len() == 500000, the bomb check failed completely
-        assert!(decoded.len() < 400000,
-                "TH-01 FAILED: Got full output ({} bytes) - bomb limit was not enforced",
-                decoded.len());
+        assert!(
+            decoded.len() < 400000,
+            "TH-01 FAILED: Got full output ({} bytes) - bomb limit was not enforced",
+            decoded.len()
+        );
     }
 
     /// Critical test: [/ASCII85Decode /FlateDecode] applies filters in correct order.
@@ -2493,21 +2659,27 @@ mod integration_tests {
         // "Hell" (4 bytes) encodes to "87cUR" (5 chars) in ASCII85
         let ascii85_hell = b"<~87cUR~>";
         let mut counter = 0;
-        let decoded = ASCII85Decoder.decode(
-            ascii85_hell,
-            None,
-            &mut counter,
-            DEFAULT_MAX_DECOMPRESS_BYTES,
-        ).unwrap();
+        let decoded = ASCII85Decoder
+            .decode(
+                ascii85_hell,
+                None,
+                &mut counter,
+                DEFAULT_MAX_DECOMPRESS_BYTES,
+            )
+            .unwrap();
         assert_eq!(decoded, b"Hell");
 
         // Test 2: Filter array with ASCII85 works
         let source = MemorySource::new(ascii85_hell.to_vec());
         let mut dict = IndexMap::new();
-        dict.insert("/Filter".into(), PdfObject::Array(Box::new(vec![
-            PdfObject::Name("ASCII85Decode".into()),
-        ])));
-        dict.insert("/Length".into(), PdfObject::Integer(ascii85_hell.len() as i64));
+        dict.insert(
+            "/Filter".into(),
+            PdfObject::Array(Box::new(vec![PdfObject::Name("ASCII85Decode".into())])),
+        );
+        dict.insert(
+            "/Length".into(),
+            PdfObject::Integer(ascii85_hell.len() as i64),
+        );
         let stream = PdfStream::new(dict, 0, Some(ascii85_hell.len() as u64));
 
         let opts = ExtractionOptions::default();
@@ -2519,10 +2691,14 @@ mod integration_tests {
         let compressed_test = b"\x78\x9c\xcbH\xcd\xc9\xc9\x07\x00\x06,\x02\x15"; // "hello"
         let source2 = MemorySource::new(compressed_test.to_vec());
         let mut dict2 = IndexMap::new();
-        dict2.insert("/Filter".into(), PdfObject::Array(Box::new(vec![
-            PdfObject::Name("FlateDecode".into()),
-        ])));
-        dict2.insert("/Length".into(), PdfObject::Integer(compressed_test.len() as i64));
+        dict2.insert(
+            "/Filter".into(),
+            PdfObject::Array(Box::new(vec![PdfObject::Name("FlateDecode".into())])),
+        );
+        dict2.insert(
+            "/Length".into(),
+            PdfObject::Integer(compressed_test.len() as i64),
+        );
         let stream2 = PdfStream::new(dict2, 0, Some(compressed_test.len() as u64));
 
         let mut counter2 = 0;
@@ -2546,14 +2722,18 @@ mod integration_tests {
         let source = MemorySource::new(data.to_vec());
 
         let mut dict = IndexMap::new();
-        dict.insert("/Filter".into(), PdfObject::Array(Box::new(vec![
-            PdfObject::Name("FlateDecode".into()),
-        ])));
+        dict.insert(
+            "/Filter".into(),
+            PdfObject::Array(Box::new(vec![PdfObject::Name("FlateDecode".into())])),
+        );
         // Two params for one filter (mismatch)
-        dict.insert("/DecodeParms".into(), PdfObject::Array(Box::new(vec![
-            PdfObject::Dict(Box::new(IndexMap::new())),
-            PdfObject::Dict(Box::new(IndexMap::new())),
-        ])));
+        dict.insert(
+            "/DecodeParms".into(),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Dict(Box::new(IndexMap::new())),
+                PdfObject::Dict(Box::new(IndexMap::new())),
+            ])),
+        );
         dict.insert("/Length".into(), PdfObject::Integer(data.len() as i64));
         let stream = PdfStream::new(dict, 0, Some(data.len() as u64));
 
@@ -2575,9 +2755,12 @@ mod integration_tests {
         let source = MemorySource::new(encoded.to_vec());
 
         let mut dict = IndexMap::new();
-        dict.insert("/Filter".into(), PdfObject::Array(Box::new(vec![
-            PdfObject::Name("A85".into()), // Abbreviated
-        ])));
+        dict.insert(
+            "/Filter".into(),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Name("A85".into()), // Abbreviated
+            ])),
+        );
         dict.insert("/Length".into(), PdfObject::Integer(encoded.len() as i64));
         let stream = PdfStream::new(dict, 0, Some(encoded.len() as u64));
 
@@ -2837,13 +3020,10 @@ mod predictor_tests {
         };
         let result = apply_predictor(&data, &params, 10000);
 
-        assert_eq!(result, vec![
-            1, 2, 3,
-            10, 20, 30,
-            15, 30, 45,
-            15, 30, 45,
-            15, 30, 45,
-        ]);
+        assert_eq!(
+            result,
+            vec![1, 2, 3, 10, 20, 30, 15, 30, 45, 15, 30, 45, 15, 30, 45,]
+        );
     }
 
     #[test]
@@ -2875,10 +3055,10 @@ mod predictor_tests {
             bits_per_component: 8,
         };
         let result = apply_predictor(&data, &params, 10000);
-        assert_eq!(result, vec![
-            10, 20, 30, 40, 50, 60, 70, 80,
-            15, 30, 45, 60, 75, 90, 105, 120,
-        ]);
+        assert_eq!(
+            result,
+            vec![10, 20, 30, 40, 50, 60, 70, 80, 15, 30, 45, 60, 75, 90, 105, 120,]
+        );
     }
 
     #[test]
@@ -2933,7 +3113,8 @@ mod predictor_tests {
         let truncated = b"\x78\x9c\xcbH\xcd\xc9";
 
         let mut counter = 0;
-        let result = FlateDecoder.decode(truncated, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        let result =
+            FlateDecoder.decode(truncated, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
 
         assert!(result.is_ok());
         let decoded = result.unwrap();
@@ -2980,14 +3161,19 @@ mod predictor_tests {
         let decoded = result.unwrap();
 
         // CRITICAL: Must stop at or before bomb limit
-        assert!(decoded.len() <= bomb_limit as usize,
-                "Predictor output {} exceeds bomb limit {}",
-                decoded.len(), bomb_limit);
+        assert!(
+            decoded.len() <= bomb_limit as usize,
+            "Predictor output {} exceeds bomb limit {}",
+            decoded.len(),
+            bomb_limit
+        );
 
         // Verify truncation occurred
-        assert!(decoded.len() < 150,
-                "Should have truncated at bomb limit, got full output {} bytes",
-                decoded.len());
+        assert!(
+            decoded.len() < 150,
+            "Should have truncated at bomb limit, got full output {} bytes",
+            decoded.len()
+        );
     }
 
     #[test]
@@ -3068,7 +3254,10 @@ mod predictor_tests {
         assert_eq!(opts.max_decompress_bytes, 536870912);
         assert!(opts.password.is_some());
         // Verify we can access the secret value
-        assert_eq!(opts.password.as_ref().map(|p| p.expose_secret().as_ref()), Some("test123"));
+        assert_eq!(
+            opts.password.as_ref().map(|p| p.expose_secret().as_ref()),
+            Some("test123")
+        );
 
         // Test deserialization without password
         let json_no_pwd = r#"{"max_decompress_bytes": 1073741824}"#;
@@ -3156,10 +3345,10 @@ mod predictor_tests {
         // Pixel 1, G: paeth(30, 80, 20) - compute: p=90, pa=60, pb=10, pc=70 -> min is pb -> b=80 -> 30+80=110
         // Pixel 1, B: paeth(45, 100, 30) - compute: p=115, pa=70, pb=15, pc=85 -> min is pb -> b=100 -> 35+100=135
         // Pixel 1, A: paeth(60, 120, 40) - compute: p=140, pa=80, pb=20, pc=100 -> min is pb -> b=120 -> 40+120=160
-        assert_eq!(result, vec![
-            10, 20, 30, 40, 60, 80, 100, 120,
-            15, 30, 45, 60, 85, 110, 135, 160,
-        ]);
+        assert_eq!(
+            result,
+            vec![10, 20, 30, 40, 60, 80, 100, 120, 15, 30, 45, 60, 85, 110, 135, 160,]
+        );
     }
 
     /// Performance test: FlateDecode of 100 MB completes in < 250 ms (release mode).
@@ -3178,8 +3367,8 @@ mod predictor_tests {
         use std::time::Instant;
 
         const ORIGINAL_SIZE: usize = 100 * 1024 * 1024; // 100 MB
-        const MAX_MS_DEBUG: u128 = 5000;    // 5 seconds for debug mode
-        const MAX_MS_RELEASE: u128 = 250;   // 250 ms for release mode
+        const MAX_MS_DEBUG: u128 = 5000; // 5 seconds for debug mode
+        const MAX_MS_RELEASE: u128 = 250; // 250 ms for release mode
 
         // Skip this test in CI unless explicitly requested
         if std::env::var("CI").is_ok() && std::env::var("RUN_PERF_TESTS").is_err() {
@@ -3195,9 +3384,12 @@ mod predictor_tests {
         let compressed = encoder.finish().unwrap();
 
         // Verify compression achieved good ratio
-        assert!(compressed.len() < ORIGINAL_SIZE / 100,
-                "Compression ratio too low: {} -> {}",
-                compressed.len(), ORIGINAL_SIZE);
+        assert!(
+            compressed.len() < ORIGINAL_SIZE / 100,
+            "Compression ratio too low: {} -> {}",
+            compressed.len(),
+            ORIGINAL_SIZE
+        );
 
         // Measure decompression time
         let start = Instant::now();
@@ -3217,20 +3409,31 @@ mod predictor_tests {
         // Assert performance meets target (different thresholds for debug/release)
         let elapsed_ms = elapsed.as_millis();
         let is_release = cfg!(not(debug_assertions));
-        let max_ms = if is_release { MAX_MS_RELEASE } else { MAX_MS_DEBUG };
+        let max_ms = if is_release {
+            MAX_MS_RELEASE
+        } else {
+            MAX_MS_DEBUG
+        };
 
         // Only enforce performance in release mode
         if is_release {
-            assert!(elapsed_ms < max_ms,
-                    "FlateDecode too slow: {} ms for 100 MB (target: < {} ms)",
-                    elapsed_ms, max_ms);
+            assert!(
+                elapsed_ms < max_ms,
+                "FlateDecode too slow: {} ms for 100 MB (target: < {} ms)",
+                elapsed_ms,
+                max_ms
+            );
         }
 
         // Print performance info for manual verification
         let mb_per_sec = (ORIGINAL_SIZE as f64 / (1024.0 * 1024.0)) / (elapsed_ms as f64 / 1000.0);
-        println!("FlateDecode performance ({}): {} ms for 100 MB ({} MB/s) - target: < {} ms",
-                 if is_release { "release" } else { "debug" },
-                 elapsed_ms, mb_per_sec, max_ms);
+        println!(
+            "FlateDecode performance ({}): {} ms for 100 MB ({} MB/s) - target: < {} ms",
+            if is_release { "release" } else { "debug" },
+            elapsed_ms,
+            mb_per_sec,
+            max_ms
+        );
     }
 
     /// Critical test: PNG predictor enforces max_output budget with small fixture.
@@ -3265,20 +3468,28 @@ mod predictor_tests {
         let result = apply_predictor(&predicted_data, &params, max_output);
 
         // CRITICAL: Must stop at or before budget limit
-        assert!(result.len() <= max_output as usize,
-                "PNG predictor output {} exceeds budget limit {}",
-                result.len(), max_output);
+        assert!(
+            result.len() <= max_output as usize,
+            "PNG predictor output {} exceeds budget limit {}",
+            result.len(),
+            max_output
+        );
 
         // Verify truncation occurred (got partial output, not full)
-        assert!(result.len() < 180, // 20 rows × 9 bytes
-                "Should have truncated at budget limit, got full output {} bytes",
-                result.len());
+        assert!(
+            result.len() < 180, // 20 rows × 9 bytes
+            "Should have truncated at budget limit, got full output {} bytes",
+            result.len()
+        );
 
         // Verify row-by-row processing: output should be a multiple of row_size
         let row_size = params.bytes_per_row();
-        assert!(result.len() % row_size == 0 || result.len() % row_size == row_size - 1,
-                "Output length {} should be aligned to row boundaries (row_size={})",
-                result.len(), row_size);
+        assert!(
+            result.len() % row_size == 0 || result.len() % row_size == row_size - 1,
+            "Output length {} should be aligned to row boundaries (row_size={})",
+            result.len(),
+            row_size
+        );
     }
 
     /// Critical test: TIFF predictor 2 enforces max_output budget with small fixture.
@@ -3312,20 +3523,28 @@ mod predictor_tests {
         let result = apply_predictor(&predicted_data, &params, max_output);
 
         // CRITICAL: Must stop at or before budget limit
-        assert!(result.len() <= max_output as usize,
-                "TIFF predictor 2 output {} exceeds budget limit {}",
-                result.len(), max_output);
+        assert!(
+            result.len() <= max_output as usize,
+            "TIFF predictor 2 output {} exceeds budget limit {}",
+            result.len(),
+            max_output
+        );
 
         // Verify truncation occurred (got partial output, not full)
-        assert!(result.len() < 160,
-                "Should have truncated at budget limit, got full output {} bytes",
-                result.len());
+        assert!(
+            result.len() < 160,
+            "Should have truncated at budget limit, got full output {} bytes",
+            result.len()
+        );
 
         // Verify row-by-row processing: output should be a multiple of row_size
         let row_size = params.bytes_per_row();
-        assert!(result.len() % row_size == 0,
-                "Output length {} should be aligned to row boundaries (row_size={})",
-                result.len(), row_size);
+        assert!(
+            result.len() % row_size == 0,
+            "Output length {} should be aligned to row boundaries (row_size={})",
+            result.len(),
+            row_size
+        );
     }
 
     /// Test: PNG predictor with multiple selectors enforces budget per-row.
@@ -3369,9 +3588,12 @@ mod predictor_tests {
         let result = apply_predictor(&data, &params, max_output);
 
         // Should get exactly 2 rows (6 bytes) before budget is hit
-        assert_eq!(result.len(), 6,
-                "Should have gotten exactly 2 rows before budget, got {} bytes",
-                result.len());
+        assert_eq!(
+            result.len(),
+            6,
+            "Should have gotten exactly 2 rows before budget, got {} bytes",
+            result.len()
+        );
 
         // Verify the first two rows are correct
         assert_eq!(result[0..3], [10, 20, 30], "First row (None) incorrect");
@@ -3395,7 +3617,7 @@ mod predictor_tests {
         let params = PredictorParams {
             predictor: 2,
             columns: 3,
-            colors: 3,  // RGB
+            colors: 3, // RGB
             bits_per_component: 8,
         };
 
@@ -3404,13 +3626,20 @@ mod predictor_tests {
         let result = apply_predictor(&predicted_data, &params, max_output);
 
         // Should get exactly 2 rows (18 bytes) before budget is hit
-        assert_eq!(result.len(), 18,
-                "Should have gotten exactly 2 rows before budget, got {} bytes",
-                result.len());
+        assert_eq!(
+            result.len(),
+            18,
+            "Should have gotten exactly 2 rows before budget, got {} bytes",
+            result.len()
+        );
 
         // Verify row-by-row processing with RGB
         // Row 0: [0, 1, 1] + [0, 2, 2] + [0, 3, 3] -> [0, 1, 1, 0, 3, 3, 0, 6, 6]
-        assert_eq!(result[0..9], [0, 1, 1, 0, 3, 3, 0, 6, 6], "First row incorrect");
+        assert_eq!(
+            result[0..9],
+            [0, 1, 1, 0, 3, 3, 0, 6, 6],
+            "First row incorrect"
+        );
     }
 }
 
@@ -3429,12 +3658,18 @@ mod crypt_tests {
         let source = MemorySource::new(input.to_vec());
 
         let mut decode_parms = IndexMap::new();
-        decode_parms.insert("/Type".into(), PdfObject::Name("CryptFilterDecodeParms".into()));
+        decode_parms.insert(
+            "/Type".into(),
+            PdfObject::Name("CryptFilterDecodeParms".into()),
+        );
         decode_parms.insert("/Name".into(), PdfObject::Name("Identity".into()));
 
         let mut dict = IndexMap::new();
         dict.insert("/Filter".into(), PdfObject::Name("Crypt".into()));
-        dict.insert("/DecodeParms".into(), PdfObject::Dict(Box::new(decode_parms)));
+        dict.insert(
+            "/DecodeParms".into(),
+            PdfObject::Dict(Box::new(decode_parms)),
+        );
         dict.insert("/Length".into(), PdfObject::Integer(input.len() as i64));
         let stream = PdfStream::new(dict, 0, Some(input.len() as u64));
 
@@ -3455,12 +3690,18 @@ mod crypt_tests {
         let source = MemorySource::new(input.to_vec());
 
         let mut decode_parms = IndexMap::new();
-        decode_parms.insert("/Type".into(), PdfObject::Name("CryptFilterDecodeParms".into()));
+        decode_parms.insert(
+            "/Type".into(),
+            PdfObject::Name("CryptFilterDecodeParms".into()),
+        );
         decode_parms.insert("/Name".into(), PdfObject::Name("MyCustom".into()));
 
         let mut dict = IndexMap::new();
         dict.insert("/Filter".into(), PdfObject::Name("Crypt".into()));
-        dict.insert("/DecodeParms".into(), PdfObject::Dict(Box::new(decode_parms)));
+        dict.insert(
+            "/DecodeParms".into(),
+            PdfObject::Dict(Box::new(decode_parms)),
+        );
         dict.insert("/Length".into(), PdfObject::Integer(input.len() as i64));
         let stream = PdfStream::new(dict, 0, Some(input.len() as u64));
 
@@ -3502,12 +3743,18 @@ mod crypt_tests {
         let source = MemorySource::new(input.to_vec());
 
         let mut decode_parms = IndexMap::new();
-        decode_parms.insert("/Type".into(), PdfObject::Name("CryptFilterDecodeParms".into()));
+        decode_parms.insert(
+            "/Type".into(),
+            PdfObject::Name("CryptFilterDecodeParms".into()),
+        );
         // /Name is intentionally missing
 
         let mut dict = IndexMap::new();
         dict.insert("/Filter".into(), PdfObject::Name("Crypt".into()));
-        dict.insert("/DecodeParms".into(), PdfObject::Dict(Box::new(decode_parms)));
+        dict.insert(
+            "/DecodeParms".into(),
+            PdfObject::Dict(Box::new(decode_parms)),
+        );
         dict.insert("/Length".into(), PdfObject::Integer(input.len() as i64));
         let stream = PdfStream::new(dict, 0, Some(input.len() as u64));
 
@@ -3530,18 +3777,28 @@ mod crypt_tests {
         let source = MemorySource::new(compressed.to_vec());
 
         let mut decode_parms = IndexMap::new();
-        decode_parms.insert("/Type".into(), PdfObject::Name("CryptFilterDecodeParms".into()));
+        decode_parms.insert(
+            "/Type".into(),
+            PdfObject::Name("CryptFilterDecodeParms".into()),
+        );
         decode_parms.insert("/Name".into(), PdfObject::Name("Identity".into()));
 
         let mut dict = IndexMap::new();
-        dict.insert("/Filter".into(), PdfObject::Array(Box::new(vec![
-            PdfObject::Name("Crypt".into()),
-            PdfObject::Name("FlateDecode".into()),
-        ])));
-        dict.insert("/DecodeParms".into(), PdfObject::Array(Box::new(vec![
-            PdfObject::Dict(Box::new(decode_parms)),
-        ])));
-        dict.insert("/Length".into(), PdfObject::Integer(compressed.len() as i64));
+        dict.insert(
+            "/Filter".into(),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Name("Crypt".into()),
+                PdfObject::Name("FlateDecode".into()),
+            ])),
+        );
+        dict.insert(
+            "/DecodeParms".into(),
+            PdfObject::Array(Box::new(vec![PdfObject::Dict(Box::new(decode_parms))])),
+        );
+        dict.insert(
+            "/Length".into(),
+            PdfObject::Integer(compressed.len() as i64),
+        );
         let stream = PdfStream::new(dict, 0, Some(compressed.len() as u64));
 
         let opts = ExtractionOptions::default();
@@ -3633,9 +3890,7 @@ mod crypt_tests {
         let input = b"encrypted data";
 
         // Test various custom filter names that should all be rejected
-        let custom_names = vec![
-            "V2", "AESV2", "AESV3", "MyCrypt", "Unknown",
-        ];
+        let custom_names = vec!["V2", "AESV2", "AESV3", "MyCrypt", "Unknown"];
 
         for name in custom_names {
             let mut decode_parms = IndexMap::new();
@@ -3649,8 +3904,11 @@ mod crypt_tests {
                 DEFAULT_MAX_DECOMPRESS_BYTES,
             );
 
-            assert!(matches!(result, Err(FilterError::EncryptionUnsupported)),
-                "Custom filter '{}' should return EncryptionUnsupported", name);
+            assert!(
+                matches!(result, Err(FilterError::EncryptionUnsupported)),
+                "Custom filter '{}' should return EncryptionUnsupported",
+                name
+            );
         }
     }
 }

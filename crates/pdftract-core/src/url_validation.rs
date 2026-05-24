@@ -14,7 +14,7 @@
 //! This module also provides URL credential parsing for HTTPS URLs with embedded
 //! credentials (e.g., `https://user:pass@host/path`).
 
-use crate::diagnostics::{Diagnostic, DiagCode};
+use crate::diagnostics::{DiagCode, Diagnostic};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 /// Error type for URL validation failures.
@@ -34,7 +34,11 @@ impl std::fmt::Display for UrlValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             UrlValidationError::InvalidScheme(scheme) => {
-                write!(f, "Invalid URL scheme: '{}'. Only 'https://' is allowed.", scheme)
+                write!(
+                    f,
+                    "Invalid URL scheme: '{}'. Only 'https://' is allowed.",
+                    scheme
+                )
             }
             UrlValidationError::PrivateNetwork(addr) => {
                 write!(f, "URL targets private network address: {}. Use --allow-private-networks to enable (WARNING: security risk).", addr)
@@ -94,7 +98,9 @@ pub type Result<T> = std::result::Result<T, UrlValidationError>;
 /// assert!(extract_url_credentials("http://alice:secret@example.com/doc.pdf").is_err());
 /// ```
 #[cfg(feature = "remote")]
-pub fn extract_url_credentials(url_str: &str) -> std::result::Result<(String, Option<(String, String)>), UrlValidationError> {
+pub fn extract_url_credentials(
+    url_str: &str,
+) -> std::result::Result<(String, Option<(String, String)>), UrlValidationError> {
     let url = url::Url::parse(url_str)
         .map_err(|_| UrlValidationError::InvalidUrl(url_str.to_string()))?;
 
@@ -224,10 +230,7 @@ fn is_metadata_endpoint(addr: &IpAddr) -> bool {
 ///
 /// These hostnames are checked before DNS resolution to prevent
 /// DNS rebinding attacks.
-const METADATA_HOSTNAMES: &[&str] = &[
-    "metadata.google.internal",
-    "instance-data.google.internal",
-];
+const METADATA_HOSTNAMES: &[&str] = &["metadata.google.internal", "instance-data.google.internal"];
 
 /// Check if a hostname is a known metadata endpoint.
 fn is_metadata_hostname(hostname: &str) -> bool {
@@ -260,7 +263,7 @@ pub fn validate_url(url_str: &str, allow_private_networks: bool) -> Result<()> {
     // The url crate strips zone IDs, so we need to check the raw string
     if url_str.contains('%') {
         return Err(UrlValidationError::PrivateNetwork(
-            "IPv6 link-local address (zone ID)".to_string()
+            "IPv6 link-local address (zone ID)".to_string(),
         ));
     }
 
@@ -270,21 +273,23 @@ pub fn validate_url(url_str: &str, allow_private_networks: bool) -> Result<()> {
 
     // Check scheme: only https:// is allowed
     match url.scheme() {
-        "https" => {},
+        "https" => {}
         scheme => {
             return Err(UrlValidationError::InvalidScheme(scheme.to_string()));
         }
     }
 
     // Extract hostname
-    let hostname = url.host_str()
+    let hostname = url
+        .host_str()
         .ok_or_else(|| UrlValidationError::InvalidUrl(url_str.to_string()))?;
 
     // Check for metadata hostnames (before DNS resolution)
     if is_metadata_hostname(hostname) {
-        return Err(UrlValidationError::PrivateNetwork(
-            format!("metadata endpoint: {}", hostname)
-        ));
+        return Err(UrlValidationError::PrivateNetwork(format!(
+            "metadata endpoint: {}",
+            hostname
+        )));
     }
 
     // Resolve the hostname to an IP address
@@ -305,9 +310,10 @@ pub fn validate_url(url_str: &str, allow_private_networks: bool) -> Result<()> {
 
         // Check for metadata endpoints
         if is_metadata_endpoint(&ip_addr) {
-            return Err(UrlValidationError::PrivateNetwork(
-                format!("cloud metadata endpoint: {}", ip_addr)
-            ));
+            return Err(UrlValidationError::PrivateNetwork(format!(
+                "cloud metadata endpoint: {}",
+                ip_addr
+            )));
         }
 
         // If private networks are not allowed, check the IP ranges
@@ -315,16 +321,18 @@ pub fn validate_url(url_str: &str, allow_private_networks: bool) -> Result<()> {
             match ip_addr {
                 IpAddr::V4(v4) => {
                     if is_private_ipv4(v4) {
-                        return Err(UrlValidationError::PrivateNetwork(
-                            format!("private IPv4: {}", v4)
-                        ));
+                        return Err(UrlValidationError::PrivateNetwork(format!(
+                            "private IPv4: {}",
+                            v4
+                        )));
                     }
                 }
                 IpAddr::V6(v6) => {
                     if is_private_ipv6(&v6) {
-                        return Err(UrlValidationError::PrivateNetwork(
-                            format!("private IPv6: {}", v6)
-                        ));
+                        return Err(UrlValidationError::PrivateNetwork(format!(
+                            "private IPv6: {}",
+                            v6
+                        )));
                     }
                 }
             }
@@ -351,11 +359,10 @@ pub fn validate_url_with_diagnostic(
     url_str: &str,
     allow_private_networks: bool,
 ) -> std::result::Result<(), Diagnostic> {
-    validate_url(url_str, allow_private_networks)
-        .map_err(|err| {
-            let message = err.to_string();
-            Diagnostic::with_dynamic_no_offset(DiagCode::RemoteUrlPrivateNetwork, message)
-        })
+    validate_url(url_str, allow_private_networks).map_err(|err| {
+        let message = err.to_string();
+        Diagnostic::with_dynamic_no_offset(DiagCode::RemoteUrlPrivateNetwork, message)
+    })
 }
 
 #[cfg(test)]
@@ -403,22 +410,32 @@ mod tests {
 
         // Public addresses
         assert!(!is_private_ipv6(&"2001:4860:4860::8888".parse().unwrap()));
-        assert!(!is_private_ipv6(&"2606:2800:220:1:248:1893:25c8:1946".parse().unwrap()));
+        assert!(!is_private_ipv6(
+            &"2606:2800:220:1:248:1893:25c8:1946".parse().unwrap()
+        ));
     }
 
     #[test]
     fn test_is_metadata_endpoint() {
         // AWS
-        assert!(is_metadata_endpoint(&IpAddr::V4(Ipv4Addr::new(169, 254, 169, 254))));
+        assert!(is_metadata_endpoint(&IpAddr::V4(Ipv4Addr::new(
+            169, 254, 169, 254
+        ))));
 
         // Azure
-        assert!(is_metadata_endpoint(&IpAddr::V4(Ipv4Addr::new(168, 63, 129, 16))));
+        assert!(is_metadata_endpoint(&IpAddr::V4(Ipv4Addr::new(
+            168, 63, 129, 16
+        ))));
 
         // Alibaba
-        assert!(is_metadata_endpoint(&IpAddr::V4(Ipv4Addr::new(100, 100, 100, 200))));
+        assert!(is_metadata_endpoint(&IpAddr::V4(Ipv4Addr::new(
+            100, 100, 100, 200
+        ))));
 
         // Non-metadata
-        assert!(!is_metadata_endpoint(&IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))));
+        assert!(!is_metadata_endpoint(&IpAddr::V4(Ipv4Addr::new(
+            8, 8, 8, 8
+        ))));
     }
 
     #[test]
@@ -457,7 +474,8 @@ mod tests {
     #[cfg(feature = "remote")]
     #[test]
     fn test_extract_url_credentials_with_creds() {
-        let (clean, creds) = extract_url_credentials("https://alice:secret@example.com/doc.pdf").unwrap();
+        let (clean, creds) =
+            extract_url_credentials("https://alice:secret@example.com/doc.pdf").unwrap();
         assert_eq!(clean, "https://example.com/doc.pdf");
         assert_eq!(creds, Some(("alice".to_string(), "secret".to_string())));
     }
@@ -490,17 +508,28 @@ mod tests {
     fn test_extract_url_credentials_url_encoded() {
         // URL-encoded credentials: the url crate preserves percent-encoding in userinfo
         // Percent-decoding happens when credentials are used for HTTP Basic auth (base64 encoding)
-        let (clean, creds) = extract_url_credentials("https://alice%40example.com:secret@example.com/doc.pdf").unwrap();
+        let (clean, creds) =
+            extract_url_credentials("https://alice%40example.com:secret@example.com/doc.pdf")
+                .unwrap();
         assert_eq!(clean, "https://example.com/doc.pdf");
         // The url crate preserves percent-encoding; HTTP Basic auth will decode when base64-encoding
-        assert_eq!(creds, Some(("alice%40example.com".to_string(), "secret".to_string())));
+        assert_eq!(
+            creds,
+            Some(("alice%40example.com".to_string(), "secret".to_string()))
+        );
     }
 
     #[cfg(feature = "remote")]
     #[test]
     fn test_extract_url_credentials_with_path_and_query() {
-        let (clean, creds) = extract_url_credentials("https://user:pass@example.com/path/to/doc.pdf?query=value#fragment").unwrap();
-        assert_eq!(clean, "https://example.com/path/to/doc.pdf?query=value#fragment");
+        let (clean, creds) = extract_url_credentials(
+            "https://user:pass@example.com/path/to/doc.pdf?query=value#fragment",
+        )
+        .unwrap();
+        assert_eq!(
+            clean,
+            "https://example.com/path/to/doc.pdf?query=value#fragment"
+        );
         assert_eq!(creds, Some(("user".to_string(), "pass".to_string())));
     }
 

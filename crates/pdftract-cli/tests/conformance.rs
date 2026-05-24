@@ -19,14 +19,8 @@ const SDK_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Simple semver comparison - returns Less if v1 < v2
 fn compare_versions(v1: &str, v2: &str) -> std::cmp::Ordering {
-    let v1_parts: Vec<u32> = v1
-        .split('.')
-        .filter_map(|s| s.parse().ok())
-        .collect();
-    let v2_parts: Vec<u32> = v2
-        .split('.')
-        .filter_map(|s| s.parse().ok())
-        .collect();
+    let v1_parts: Vec<u32> = v1.split('.').filter_map(|s| s.parse().ok()).collect();
+    let v2_parts: Vec<u32> = v2.split('.').filter_map(|s| s.parse().ok()).collect();
 
     for (a, b) in v1_parts.iter().zip(v2_parts.iter()) {
         match a.cmp(b) {
@@ -181,8 +175,8 @@ fn run_conformance(suite_path: &str, output_path: &str) -> Result<()> {
 }
 
 fn load_suite(path: &str) -> Result<Value> {
-    let suite_json = fs::read_to_string(path)
-        .context(format!("Failed to read suite from {}", path))?;
+    let suite_json =
+        fs::read_to_string(path).context(format!("Failed to read suite from {}", path))?;
     serde_json::from_str(&suite_json).context("Failed to parse suite as JSON")
 }
 
@@ -212,8 +206,14 @@ fn run_test_case(case: &Value, schema_version: &str) -> Result<TestResult> {
 
     let fixture = case["fixture"].as_str().unwrap_or("");
     let method = case["method"].as_str().unwrap_or("extract");
-    let options = case.get("options").cloned().unwrap_or(Value::Object(Default::default()));
-    let expected = case.get("expected").cloned().unwrap_or(Value::Object(Default::default()));
+    let options = case
+        .get("options")
+        .cloned()
+        .unwrap_or(Value::Object(Default::default()));
+    let expected = case
+        .get("expected")
+        .cloned()
+        .unwrap_or(Value::Object(Default::default()));
     let tolerances = case.get("tolerances").cloned();
 
     let fixture_path = if fixture.starts_with("http://") || fixture.starts_with("https://") {
@@ -283,10 +283,10 @@ fn execute_method(method: &str, fixture: &str, options: &Value) -> Result<Value>
             }))
         }
         "extract_text" => Ok(Value::String("Sample text content".to_string())),
-        "extract_markdown" => Ok(Value::String("# Sample Markdown\n\nContent here".to_string())),
-        "extract_stream" => {
-            Ok(serde_json::json!({"output_type": "iterator", "frame_count": 3}))
-        }
+        "extract_markdown" => Ok(Value::String(
+            "# Sample Markdown\n\nContent here".to_string(),
+        )),
+        "extract_stream" => Ok(serde_json::json!({"output_type": "iterator", "frame_count": 3})),
         "search" => Ok(serde_json::json!({
             "output_type": "iterator",
             "matches": [{"page": 0, "text": "found"}]
@@ -346,7 +346,10 @@ fn compare_recursive(
             }
         }
         (Value::String(act), Value::Object(exp)) => {
-            if let Some(min_len) = exp.get("min_length").and_then(|v| v.as_u64().map(|v| v as usize)) {
+            if let Some(min_len) = exp
+                .get("min_length")
+                .and_then(|v| v.as_u64().map(|v| v as usize))
+            {
                 if act.len() < min_len {
                     return Err(format!(
                         "[{}]: string length {} is less than minimum {}",
@@ -428,14 +431,14 @@ fn compare_number(
     tolerance: Option<&Value>,
     path: &str,
 ) -> Result<(), String> {
-    let act_val = actual.as_f64().ok_or_else(|| {
-        format!("[{}]: actual number is not f64-representable", path)
-    })?;
+    let act_val = actual
+        .as_f64()
+        .ok_or_else(|| format!("[{}]: actual number is not f64-representable", path))?;
 
     let exp_val = match expected {
-        Value::Number(n) => n.as_f64().ok_or_else(|| {
-            format!("[{}]: expected number is not f64-representable", path)
-        })?,
+        Value::Number(n) => n
+            .as_f64()
+            .ok_or_else(|| format!("[{}]: expected number is not f64-representable", path))?,
         _ => {
             return Err(format!("[{}]: expected value is not a number", path));
         }
@@ -532,13 +535,15 @@ fn write_report(report: &ConformanceReport, path: &str) -> Result<()> {
         obj.insert("id".to_string(), Value::String(r.id.clone()));
         obj.insert(
             "status".to_string(),
-            Value::String(match r.status {
-                TestStatus::Pass => "pass",
-                TestStatus::Fail => "fail",
-                TestStatus::Skip => "skip",
-                TestStatus::Error => "error",
-            }
-            .to_string()),
+            Value::String(
+                match r.status {
+                    TestStatus::Pass => "pass",
+                    TestStatus::Fail => "fail",
+                    TestStatus::Skip => "skip",
+                    TestStatus::Error => "error",
+                }
+                .to_string(),
+            ),
         );
         if let Some(actual) = &r.actual {
             obj.insert("actual".to_string(), actual.clone());

@@ -1,9 +1,9 @@
 // Simple test to verify forward_scan_xref functionality
 // This is a standalone test file to verify the forward scan implementation
 
-use std::collections::HashMap;
-use pdftract_core::parser::xref::{XrefEntry, XrefSection, forward_scan_xref};
 use pdftract_core::parser::stream::MemorySource;
+use pdftract_core::parser::xref::{forward_scan_xref, XrefEntry, XrefSection};
+use std::collections::HashMap;
 
 fn main() {
     println!("Testing forward_scan_xref implementation...\n");
@@ -44,7 +44,10 @@ fn main() {
     let source = MemorySource::new(pdf_data.to_vec());
     let result = forward_scan_xref(&source, false);
 
-    println!("  Found {} objects (including the one after truncated xref)", result.len());
+    println!(
+        "  Found {} objects (including the one after truncated xref)",
+        result.len()
+    );
     assert!(result.len() >= 4, "Expected at least 4 objects");
     println!("  ✓ PASSED\n");
 
@@ -57,8 +60,13 @@ fn main() {
 
     println!("  Found {} objects (should be 0)", result.len());
     assert_eq!(result.len(), 0, "Expected 0 objects for linearized file");
-    println!("  Has LINEARIZED_NO_FORWARD_SCAN diagnostic: {}",
-             result.diagnostics.iter().any(|d| matches!(d.code, pdftract_core::parser::xref::XrefDiagCode::LinearizedNoForwardScan)));
+    println!(
+        "  Has LINEARIZED_NO_FORWARD_SCAN diagnostic: {}",
+        result.diagnostics.iter().any(|d| matches!(
+            d.code,
+            pdftract_core::parser::xref::XrefDiagCode::LinearizedNoForwardScan
+        ))
+    );
     println!("  ✓ PASSED\n");
 
     // Test 4: Multi-revision - last occurrence wins
@@ -88,9 +96,16 @@ fn main() {
     let source = MemorySource::new(pdf_data.to_vec());
     let result = forward_scan_xref(&source, false);
 
-    let has_repaired_diagnostic = result.diagnostics.iter()
-        .any(|d| matches!(d.code, pdftract_core::parser::xref::XrefDiagCode::XrefRepaired));
-    println!("  Has XREF_REPAIRED diagnostic: {}", has_repaired_diagnostic);
+    let has_repaired_diagnostic = result.diagnostics.iter().any(|d| {
+        matches!(
+            d.code,
+            pdftract_core::parser::xref::XrefDiagCode::XrefRepaired
+        )
+    });
+    println!(
+        "  Has XREF_REPAIRED diagnostic: {}",
+        has_repaired_diagnostic
+    );
     assert!(has_repaired_diagnostic, "Expected XREF_REPAIRED diagnostic");
     println!("  ✓ PASSED\n");
 

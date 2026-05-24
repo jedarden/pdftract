@@ -4,7 +4,9 @@
 //! file for touch-time tracking. Eviction is triggered on cache writes when
 //! the total compressed size exceeds the configured limit (default 1 GiB).
 
-use crate::cache::layout::{entry_path, parse_opts_hash_from_filename, parse_size_from_filename, sentinel_path};
+use crate::cache::layout::{
+    entry_path, parse_opts_hash_from_filename, parse_size_from_filename, sentinel_path,
+};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -138,7 +140,9 @@ impl Lru {
             .unwrap_or(0);
 
         // Strip the prefix to match filesystem layout
-        let fp_normalized = fingerprint.strip_prefix(FINGERPRINT_PREFIX).unwrap_or(fingerprint);
+        let fp_normalized = fingerprint
+            .strip_prefix(FINGERPRINT_PREFIX)
+            .unwrap_or(fingerprint);
 
         // Build the touch record: "<timestamp> <fingerprint>/<opts_hash>\n"
         let record = format!("{} {}/{}\n", timestamp, fp_normalized, opts_hash);
@@ -220,29 +224,31 @@ impl Lru {
             .filter(|e| {
                 e.path().is_dir()
                     && e.file_name().to_string_lossy().len() == 2
-                    && e.file_name().to_string_lossy().chars().all(|c| c.is_ascii_hexdigit())
+                    && e.file_name()
+                        .to_string_lossy()
+                        .chars()
+                        .all(|c| c.is_ascii_hexdigit())
             })
         {
             let prefix1_dir = prefix1_entry.path();
 
             // Walk the second-level prefix directories
-            for prefix2_entry in prefix1_dir.read_dir()?
-                .filter_map(|e| e.ok())
-                .filter(|e| {
-                    e.path().is_dir()
-                        && e.file_name().to_string_lossy().len() == 2
-                        && e.file_name()
-                            .to_string_lossy()
-                            .chars()
-                            .all(|c| c.is_ascii_hexdigit())
-                })
-            {
+            for prefix2_entry in prefix1_dir.read_dir()?.filter_map(|e| e.ok()).filter(|e| {
+                e.path().is_dir()
+                    && e.file_name().to_string_lossy().len() == 2
+                    && e.file_name()
+                        .to_string_lossy()
+                        .chars()
+                        .all(|c| c.is_ascii_hexdigit())
+            }) {
                 let prefix2_dir = prefix2_entry.path();
 
                 // Walk the fingerprint directories
-                for fp_entry in prefix2_dir.read_dir()?.filter_map(|e| e.ok()).filter(|e| {
-                    e.path().is_dir()
-                }) {
+                for fp_entry in prefix2_dir
+                    .read_dir()?
+                    .filter_map(|e| e.ok())
+                    .filter(|e| e.path().is_dir())
+                {
                     let fp_dir = fp_entry.path();
 
                     // Walk the entry files
@@ -276,10 +282,8 @@ impl Lru {
         // Check if sentinel exists and exceeds rotation threshold
         if let Ok(metadata) = sentinel_file.metadata() {
             if metadata.len() > SENTINEL_ROTATION_SIZE {
-                let old_path = sentinel_file.with_extension(&format!(
-                    "touched{}",
-                    SENTINEL_OLD_SUFFIX
-                ));
+                let old_path =
+                    sentinel_file.with_extension(&format!("touched{}", SENTINEL_OLD_SUFFIX));
 
                 // Move current to .old (replace existing .old)
                 let _ = std::fs::remove_file(&old_path); // Ignore error if doesn't exist
@@ -314,27 +318,22 @@ impl Lru {
             .filter_map(|e| e.ok())
             .filter(|e| {
                 let name = e.file_name().to_string_lossy().to_string();
-                e.path().is_dir()
-                    && name.len() == 2
-                    && name.chars().all(|c| c.is_ascii_hexdigit())
+                e.path().is_dir() && name.len() == 2 && name.chars().all(|c| c.is_ascii_hexdigit())
             })
         {
             let prefix1_dir = prefix1_entry.path();
 
-            for prefix2_entry in prefix1_dir.read_dir()?
-                .filter_map(|e| e.ok())
-                .filter(|e| {
-                    let name = e.file_name().to_string_lossy().to_string();
-                    e.path().is_dir()
-                        && name.len() == 2
-                        && name.chars().all(|c| c.is_ascii_hexdigit())
-                })
-            {
+            for prefix2_entry in prefix1_dir.read_dir()?.filter_map(|e| e.ok()).filter(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                e.path().is_dir() && name.len() == 2 && name.chars().all(|c| c.is_ascii_hexdigit())
+            }) {
                 let prefix2_dir = prefix2_entry.path();
 
-                for fp_entry in prefix2_dir.read_dir()?.filter_map(|e| e.ok()).filter(|e| {
-                    e.path().is_dir()
-                }) {
+                for fp_entry in prefix2_dir
+                    .read_dir()?
+                    .filter_map(|e| e.ok())
+                    .filter(|e| e.path().is_dir())
+                {
                     let fp_dir = fp_entry.path();
 
                     // Extract fingerprint from path (last component)
@@ -347,7 +346,10 @@ impl Lru {
                     for entry in fp_dir.read_dir()?.filter_map(|e| e.ok()) {
                         let path = entry.path();
                         if path.is_file() {
-                            let filename_opt = path.file_name().and_then(|n| n.to_str()).map(|s| s.to_string());
+                            let filename_opt = path
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .map(|s| s.to_string());
                             if let Some(filename) = filename_opt {
                                 if let (Some(opts_hash), Some(size)) = (
                                     parse_opts_hash_from_filename(&filename),
@@ -441,10 +443,7 @@ impl Lru {
         }
 
         // Read the old sentinel file (.old) if it exists
-        let old_sentinel = sentinel_file.with_extension(&format!(
-            "touched{}",
-            SENTINEL_OLD_SUFFIX
-        ));
+        let old_sentinel = sentinel_file.with_extension(&format!("touched{}", SENTINEL_OLD_SUFFIX));
         if let Ok(contents) = std::fs::read_to_string(&old_sentinel) {
             for line in contents.lines().rev() {
                 let parts: Vec<&str> = line.splitn(2, ' ').collect();
@@ -499,27 +498,29 @@ impl Lru {
             .filter(|e| {
                 e.path().is_dir()
                     && e.file_name().to_string_lossy().len() == 2
-                    && e.file_name().to_string_lossy().chars().all(|c| c.is_ascii_hexdigit())
+                    && e.file_name()
+                        .to_string_lossy()
+                        .chars()
+                        .all(|c| c.is_ascii_hexdigit())
             })
         {
             let prefix1_dir = prefix1_entry.path();
 
-            for prefix2_entry in prefix1_dir.read_dir()?
-                .filter_map(|e| e.ok())
-                .filter(|e| {
-                    e.path().is_dir()
-                        && e.file_name().to_string_lossy().len() == 2
-                        && e.file_name()
-                            .to_string_lossy()
-                            .chars()
-                            .all(|c| c.is_ascii_hexdigit())
-                })
-            {
+            for prefix2_entry in prefix1_dir.read_dir()?.filter_map(|e| e.ok()).filter(|e| {
+                e.path().is_dir()
+                    && e.file_name().to_string_lossy().len() == 2
+                    && e.file_name()
+                        .to_string_lossy()
+                        .chars()
+                        .all(|c| c.is_ascii_hexdigit())
+            }) {
                 let prefix2_dir = prefix2_entry.path();
 
-                for fp_entry in prefix2_dir.read_dir()?.filter_map(|e| e.ok()).filter(|e| {
-                    e.path().is_dir()
-                }) {
+                for fp_entry in prefix2_dir
+                    .read_dir()?
+                    .filter_map(|e| e.ok())
+                    .filter(|e| e.path().is_dir())
+                {
                     let fp_dir = fp_entry.path();
 
                     // Check if the fingerprint directory is empty
@@ -563,7 +564,7 @@ impl Lru {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 // Sentinel doesn't exist yet (no entries touched), nothing to truncate
                 return Ok(());
-            },
+            }
             Err(e) => return Err(e),
         };
         let lines: Vec<&str> = contents.lines().collect();
@@ -588,10 +589,13 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
-    const TEST_FINGERPRINT: &str = "pdftract-v1:e7a1f3deadbeef00000000000000000000000000000000000000000000000000";
-    const TEST_FINGERPRINT_2: &str = "pdftract-v1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const TEST_FINGERPRINT: &str =
+        "pdftract-v1:e7a1f3deadbeef00000000000000000000000000000000000000000000000000";
+    const TEST_FINGERPRINT_2: &str =
+        "pdftract-v1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     const TEST_OPTS_HASH: &str = "9b21c0ffee000000000000000000000000000000000000000000000000000000"; // 64 chars
-    const TEST_OPTS_HASH_2: &str = "aaaaaaaa00000000000000000000000000000000000000000000000000000000"; // 64 chars
+    const TEST_OPTS_HASH_2: &str =
+        "aaaaaaaa00000000000000000000000000000000000000000000000000000000"; // 64 chars
 
     /// Create a test cache entry file.
     fn create_test_entry(cache_dir: &Path, fp: &str, opts: &str, size: usize) -> PathBuf {
@@ -626,7 +630,9 @@ mod tests {
 
         let contents = fs::read_to_string(&sentinel_file).unwrap();
         // Sentinel stores fingerprint without prefix
-        let fp_normalized = TEST_FINGERPRINT.strip_prefix(FINGERPRINT_PREFIX).unwrap_or(TEST_FINGERPRINT);
+        let fp_normalized = TEST_FINGERPRINT
+            .strip_prefix(FINGERPRINT_PREFIX)
+            .unwrap_or(TEST_FINGERPRINT);
         assert!(contents.contains(&format!("{}/{}", fp_normalized, TEST_OPTS_HASH)));
     }
 
@@ -655,7 +661,9 @@ mod tests {
         assert!(now.saturating_sub(timestamp) < 10);
 
         // Second part should be "fp/opts_hash" (fp without prefix)
-        let fp_normalized = TEST_FINGERPRINT.strip_prefix(FINGERPRINT_PREFIX).unwrap_or(TEST_FINGERPRINT);
+        let fp_normalized = TEST_FINGERPRINT
+            .strip_prefix(FINGERPRINT_PREFIX)
+            .unwrap_or(TEST_FINGERPRINT);
         assert_eq!(parts[1], &format!("{}/{}", fp_normalized, TEST_OPTS_HASH));
     }
 
@@ -725,7 +733,10 @@ mod tests {
         // Verify touch was written
         let sentinel_file = sentinel_path(cache_dir);
         let sentinel_contents = fs::read_to_string(&sentinel_file).unwrap();
-        assert!(sentinel_contents.contains(TEST_OPTS_HASH), "Sentinel should contain opts_hash");
+        assert!(
+            sentinel_contents.contains(TEST_OPTS_HASH),
+            "Sentinel should contain opts_hash"
+        );
 
         // Trigger eviction
         lru.maybe_evict().unwrap();
@@ -798,7 +809,11 @@ mod tests {
         }
 
         // Should have at least 95 parseable records (allowing for some edge cases)
-        assert!(parseable_count >= 95, "Expected at least 95 parseable records, got {}", parseable_count);
+        assert!(
+            parseable_count >= 95,
+            "Expected at least 95 parseable records, got {}",
+            parseable_count
+        );
     }
 
     #[test]
@@ -823,7 +838,16 @@ mod tests {
                 .open(&sentinel_file)
                 .unwrap();
             for _ in 0..5 {
-                writeln!(file, "{} {}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(), large_data).unwrap();
+                writeln!(
+                    file,
+                    "{} {}",
+                    SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs(),
+                    large_data
+                )
+                .unwrap();
             }
         }
 
@@ -835,10 +859,7 @@ mod tests {
         lru.touch(TEST_FINGERPRINT_2, TEST_OPTS_HASH_2).unwrap();
 
         // Old sentinel should exist
-        let old_sentinel = sentinel_file.with_extension(&format!(
-            "touched{}",
-            SENTINEL_OLD_SUFFIX
-        ));
+        let old_sentinel = sentinel_file.with_extension(&format!("touched{}", SENTINEL_OLD_SUFFIX));
         assert!(old_sentinel.exists());
 
         // New sentinel should be smaller
@@ -891,15 +912,31 @@ mod tests {
         lru.touch(TEST_FINGERPRINT_2, TEST_OPTS_HASH).unwrap(); // newest
 
         // Build LRU order (use fingerprints without prefix to match filesystem layout)
-        let fp1 = TEST_FINGERPRINT.strip_prefix(FINGERPRINT_PREFIX).unwrap_or(TEST_FINGERPRINT);
-        let fp2 = TEST_FINGERPRINT_2.strip_prefix(FINGERPRINT_PREFIX).unwrap_or(TEST_FINGERPRINT_2);
+        let fp1 = TEST_FINGERPRINT
+            .strip_prefix(FINGERPRINT_PREFIX)
+            .unwrap_or(TEST_FINGERPRINT);
+        let fp2 = TEST_FINGERPRINT_2
+            .strip_prefix(FINGERPRINT_PREFIX)
+            .unwrap_or(TEST_FINGERPRINT_2);
         let entries = vec![
-            (fp1.to_string(), TEST_OPTS_HASH.to_string(), 1000,
-             entry_path(cache_dir, TEST_FINGERPRINT, TEST_OPTS_HASH, 1000)),
-            (fp1.to_string(), TEST_OPTS_HASH_2.to_string(), 2000,
-             entry_path(cache_dir, TEST_FINGERPRINT, TEST_OPTS_HASH_2, 2000)),
-            (fp2.to_string(), TEST_OPTS_HASH.to_string(), 3000,
-             entry_path(cache_dir, TEST_FINGERPRINT_2, TEST_OPTS_HASH, 3000)),
+            (
+                fp1.to_string(),
+                TEST_OPTS_HASH.to_string(),
+                1000,
+                entry_path(cache_dir, TEST_FINGERPRINT, TEST_OPTS_HASH, 1000),
+            ),
+            (
+                fp1.to_string(),
+                TEST_OPTS_HASH_2.to_string(),
+                2000,
+                entry_path(cache_dir, TEST_FINGERPRINT, TEST_OPTS_HASH_2, 2000),
+            ),
+            (
+                fp2.to_string(),
+                TEST_OPTS_HASH.to_string(),
+                3000,
+                entry_path(cache_dir, TEST_FINGERPRINT_2, TEST_OPTS_HASH, 3000),
+            ),
         ];
 
         let lru_order = lru.build_lru_order(&entries).unwrap();
@@ -1007,14 +1044,16 @@ mod tests {
 
         // Helper to generate valid 64-char hex opts hashes with a counter
         // Replace the last 4 chars of the base hash with hex counter
-        let gen_opts = |i: u32| -> String {
-            format!("{}{:04x}", &TEST_OPTS_HASH[..60], i)
-        };
+        let gen_opts = |i: u32| -> String { format!("{}{:04x}", &TEST_OPTS_HASH[..60], i) };
 
         // Helper to generate valid 64-char hex fingerprints with a counter
         // Replace the last 4 chars of the base fingerprint with hex counter
         let gen_fp = |i: u32| -> String {
-            format!("{}{:04x}", &TEST_FINGERPRINT[FINGERPRINT_PREFIX.len()..60], i)
+            format!(
+                "{}{:04x}",
+                &TEST_FINGERPRINT[FINGERPRINT_PREFIX.len()..60],
+                i
+            )
         };
 
         // Create 1000 entries totaling 100 MB (over limit)
@@ -1083,7 +1122,9 @@ mod tests {
     // Helper function to get fingerprint dir (copied from layout module)
     fn fingerprint_dir(cache_dir: &Path, fingerprint: &str) -> PathBuf {
         const FINGERPRINT_PREFIX: &str = "pdftract-v1:";
-        let fp = fingerprint.strip_prefix(FINGERPRINT_PREFIX).unwrap_or(fingerprint);
+        let fp = fingerprint
+            .strip_prefix(FINGERPRINT_PREFIX)
+            .unwrap_or(fingerprint);
         let prefix1 = &fp[0..2.min(fp.len())];
         let prefix2 = &fp[2..4.min(fp.len())];
         cache_dir.join(prefix1).join(prefix2).join(fp)

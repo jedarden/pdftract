@@ -53,7 +53,10 @@ pub fn resolve_token(
             .with_context(|| format!("Failed to read token file: {}", path.display()))?;
         let token = token_content.trim_end().to_string();
         check_token_length(&token);
-        return Ok(Some((SecretString::new(token.into()), AuthSource::TokenFile)));
+        return Ok(Some((
+            SecretString::new(token.into()),
+            AuthSource::TokenFile,
+        )));
     }
 
     // Priority 2: PDFTRACT_MCP_TOKEN env var
@@ -66,10 +69,7 @@ pub fn resolve_token(
 
     // Priority 3: --auth-token VALUE (only if PDFTRACT_INSECURE_CLI_TOKEN=1)
     if let Some(token) = cli_token {
-        let insecure_allowed = env::var("PDFTRACT_INSECURE_CLI_TOKEN")
-            .ok()
-            .as_deref()
-            == Some("1");
+        let insecure_allowed = env::var("PDFTRACT_INSECURE_CLI_TOKEN").ok().as_deref() == Some("1");
 
         if !insecure_allowed {
             anyhow::bail!(
@@ -84,7 +84,10 @@ pub fn resolve_token(
              Recommended: Use --auth-token-file PATH or PDFTRACT_MCP_TOKEN env var."
         );
         check_token_length(&token);
-        return Ok(Some((SecretString::new(token.into()), AuthSource::CliInsecure)));
+        return Ok(Some((
+            SecretString::new(token.into()),
+            AuthSource::CliInsecure,
+        )));
     }
 
     // No token provided

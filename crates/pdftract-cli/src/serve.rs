@@ -25,9 +25,9 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use pdftract_core::options::{ExtractionOptions, ReceiptsMode};
-use pdftract_core::extract::{extract_pdf, result_to_json};
 use pdftract_core::cache;
+use pdftract_core::extract::{extract_pdf, result_to_json};
+use pdftract_core::options::{ExtractionOptions, ReceiptsMode};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -145,17 +145,23 @@ pub async fn run(
         .layer(RequestBodyLimitLayer::new(max_body_bytes))
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind(&bind_addr).await
+    let listener = tokio::net::TcpListener::bind(&bind_addr)
+        .await
         .context(format!("Failed to bind to {}", bind_addr))?;
 
     eprintln!("pdftract serve listening on http://{}", bind_addr);
     if let Some(dir) = cache_dir_for_logging {
-        eprintln!("Cache enabled: {} (max {} bytes)", dir.display(), cache_size_bytes);
+        eprintln!(
+            "Cache enabled: {} (max {} bytes)",
+            dir.display(),
+            cache_size_bytes
+        );
     } else {
         eprintln!("Cache disabled");
     }
 
-    axum::serve(listener, app).await
+    axum::serve(listener, app)
+        .await
         .context("HTTP server error")?;
 
     Ok(())
@@ -199,8 +205,14 @@ async fn extract_handler(
     let pdf_file_clone = pdf_file.clone();
     let (result, cache_status, cache_age) = tokio::task::spawn_blocking(move || {
         let cache_dir_ref = cache_dir.as_deref();
-        cache::extract_with_cache(&pdf_file_clone, &options, cache_dir_ref, cache_disabled, Some(cache_size_bytes))
-            .map_err(|e| AxumError::Extraction(format!("{:?}", e)))
+        cache::extract_with_cache(
+            &pdf_file_clone,
+            &options,
+            cache_dir_ref,
+            cache_disabled,
+            Some(cache_size_bytes),
+        )
+        .map_err(|e| AxumError::Extraction(format!("{:?}", e)))
     })
     .await
     .map_err(|e| AxumError::Internal(format!("{:?}", e)))?
@@ -216,7 +228,10 @@ async fn extract_handler(
     let response = AxumResponse::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "application/json")
-        .header("X-Pdftract-Cache", CacheStatus::from_string(&cache_status).header_value())
+        .header(
+            "X-Pdftract-Cache",
+            CacheStatus::from_string(&cache_status).header_value(),
+        )
         .body(Body::from(serde_json::to_string(&json).unwrap()))
         .map_err(|e| AxumError::Internal(format!("{:?}", e)))?;
 
@@ -240,8 +255,14 @@ async fn extract_text_handler(
 
     let (result, cache_status, _cache_age) = tokio::task::spawn_blocking(move || {
         let cache_dir_ref = cache_dir.as_deref();
-        cache::extract_with_cache(&pdf_file, &options, cache_dir_ref, cache_disabled, Some(cache_size_bytes))
-            .map_err(|e| AxumError::Extraction(format!("{:?}", e)))
+        cache::extract_with_cache(
+            &pdf_file,
+            &options,
+            cache_dir_ref,
+            cache_disabled,
+            Some(cache_size_bytes),
+        )
+        .map_err(|e| AxumError::Extraction(format!("{:?}", e)))
     })
     .await
     .map_err(|e| AxumError::Internal(format!("{:?}", e)))?
@@ -257,7 +278,10 @@ async fn extract_text_handler(
 
     let response = AxumResponse::builder()
         .status(StatusCode::OK)
-        .header("X-Pdftract-Cache", CacheStatus::from_string(&cache_status).header_value())
+        .header(
+            "X-Pdftract-Cache",
+            CacheStatus::from_string(&cache_status).header_value(),
+        )
         .body(Body::from(text))
         .map_err(|e| AxumError::Internal(format!("{:?}", e)))?;
 
@@ -281,8 +305,14 @@ async fn extract_stream_handler(
 
     let (result, _cache_status, _cache_age) = tokio::task::spawn_blocking(move || {
         let cache_dir_ref = cache_dir.as_deref();
-        cache::extract_with_cache(&pdf_file, &options, cache_dir_ref, cache_disabled, Some(cache_size_bytes))
-            .map_err(|e| AxumError::Extraction(format!("{:?}", e)))
+        cache::extract_with_cache(
+            &pdf_file,
+            &options,
+            cache_dir_ref,
+            cache_disabled,
+            Some(cache_size_bytes),
+        )
+        .map_err(|e| AxumError::Extraction(format!("{:?}", e)))
     })
     .await
     .map_err(|e| AxumError::Internal(format!("{:?}", e)))?
@@ -319,19 +349,24 @@ async fn receive_pdf(multipart: &mut Multipart) -> Result<(PathBuf, ExtractParam
         full_render: false,
     };
 
-    while let Some(field) = multipart.next_field().await
+    while let Some(field) = multipart
+        .next_field()
+        .await
         .map_err(|e| AxumError::Internal(format!("{:?}", e)))?
     {
         let name = field.name().unwrap_or("").to_string();
 
         if name == "file" || name == "pdf" {
-            let data = field.bytes().await
+            let data = field
+                .bytes()
+                .await
                 .map_err(|e| AxumError::Internal(format!("{:?}", e)))?;
 
             // Create a temp file that will persist for the duration of the request
             let temp_dir = std::env::temp_dir();
             let temp_file = temp_dir.join(format!("pdftract-upload-{}.pdf", uuid::Uuid::new_v4()));
-            tokio::fs::write(&temp_file, &data).await
+            tokio::fs::write(&temp_file, &data)
+                .await
                 .map_err(|e| AxumError::Internal(format!("{:?}", e)))?;
             pdf_path = Some(temp_file);
         } else if name == "receipts" {
@@ -352,7 +387,8 @@ async fn receive_pdf(multipart: &mut Multipart) -> Result<(PathBuf, ExtractParam
         }
     }
 
-    let pdf_path = pdf_path.ok_or_else(|| AxumError::BadRequest("No PDF file uploaded".to_string()))?;
+    let pdf_path =
+        pdf_path.ok_or_else(|| AxumError::BadRequest("No PDF file uploaded".to_string()))?;
 
     Ok((pdf_path, params))
 }
@@ -378,7 +414,8 @@ fn build_options(params: &ExtractParams) -> Result<ExtractionOptions, AxumError>
             if !has_full_render() {
                 return Err(AxumError::BadRequest(
                     "full_render requested but PDFium is not available at runtime. \
-                    Ensure the PDFium native library is installed.".to_string()
+                    Ensure the PDFium native library is installed."
+                        .to_string(),
                 ));
             }
         }

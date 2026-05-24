@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use crate::diagnostics::{Diagnostic, DiagCode};
+use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::font::FontKind;
 use crate::parser::object::types::{PdfDict, PdfObject};
 use crate::parser::stream::{decode_stream, ExtractionOptions};
@@ -132,9 +132,7 @@ impl OpenTypeMetrics {
             .cmap
             .map(|cmap| {
                 // Try to find a valid Unicode subtable
-                cmap.subtables
-                    .into_iter()
-                    .any(|st| st.is_unicode())
+                cmap.subtables.into_iter().any(|st| st.is_unicode())
             })
             .unwrap_or(false);
 
@@ -159,9 +157,7 @@ impl FontMetrics for OpenTypeMetrics {
 
         let face_ref = self.face.as_face_ref();
         // Use Face's built-in glyph_index which handles cmap lookup
-        face_ref
-            .glyph_index(ch)
-            .map(|id| id.0)
+        face_ref.glyph_index(ch).map(|id| id.0)
     }
 
     fn advance(&self, glyph_id: u16) -> Option<u16> {
@@ -214,12 +210,11 @@ impl Type1Metrics {
     pub fn from_descriptor(descriptor: &PdfDict, font_dict: &PdfDict) -> FontResult<Self> {
         // Extract /Widths array from font dict
         let widths = match font_dict.get("/Widths") {
-            Some(PdfObject::Array(arr)) => {
-                arr.iter()
-                    .filter_map(|obj| obj.as_int())
-                    .map(|i| i as u16)
-                    .collect()
-            }
+            Some(PdfObject::Array(arr)) => arr
+                .iter()
+                .filter_map(|obj| obj.as_int())
+                .map(|i| i as u16)
+                .collect(),
             _ => return Err(FontError::InvalidFontData("missing /Widths array".into())),
         };
 
@@ -445,18 +440,16 @@ impl EmbeddedFont {
                     }
                 }
             }
-            FontKind::Type1 => {
-                match Type1Metrics::from_descriptor(descriptor, font_dict) {
-                    Ok(t1_metrics) => Arc::new(t1_metrics),
-                    Err(e) => {
-                        diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                            DiagCode::FontParseFailed,
-                            format!("Type1 font load failed: {}", e),
-                        ));
-                        Arc::new(Type1Metrics::empty())
-                    }
+            FontKind::Type1 => match Type1Metrics::from_descriptor(descriptor, font_dict) {
+                Ok(t1_metrics) => Arc::new(t1_metrics),
+                Err(e) => {
+                    diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                        DiagCode::FontParseFailed,
+                        format!("Type1 font load failed: {}", e),
+                    ));
+                    Arc::new(Type1Metrics::empty())
                 }
-            }
+            },
             _ => Arc::new(EmptyFontMetrics),
         };
 
@@ -543,12 +536,15 @@ mod tests {
     fn test_type1_metrics_from_descriptor() {
         // Create a FontDescriptor-like dict
         let mut descriptor = PdfDict::new();
-        descriptor.insert(intern("/FontBBox"), PdfObject::Array(Box::new(vec![
-            PdfObject::Integer(-100),
-            PdfObject::Integer(-200),
-            PdfObject::Integer(1000),
-            PdfObject::Integer(900),
-        ])));
+        descriptor.insert(
+            intern("/FontBBox"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(-100),
+                PdfObject::Integer(-200),
+                PdfObject::Integer(1000),
+                PdfObject::Integer(900),
+            ])),
+        );
 
         // Create a font dict with /Widths
         let mut font_dict = PdfDict::new();
@@ -560,7 +556,10 @@ mod tests {
                 PdfObject::Integer(700),
             ])),
         );
-        font_dict.insert(intern("/Encoding"), PdfObject::Name(intern("/WinAnsiEncoding")));
+        font_dict.insert(
+            intern("/Encoding"),
+            PdfObject::Name(intern("/WinAnsiEncoding")),
+        );
 
         let metrics = Type1Metrics::from_descriptor(&descriptor, &font_dict).unwrap();
 
@@ -625,12 +624,15 @@ mod tests {
     fn test_embedded_font_load_from_dict() {
         // Create a minimal font dict with FontDescriptor
         let mut descriptor = PdfDict::new();
-        descriptor.insert(intern("/FontBBox"), PdfObject::Array(Box::new(vec![
-            PdfObject::Integer(-100),
-            PdfObject::Integer(-200),
-            PdfObject::Integer(1000),
-            PdfObject::Integer(900),
-        ])));
+        descriptor.insert(
+            intern("/FontBBox"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(-100),
+                PdfObject::Integer(-200),
+                PdfObject::Integer(1000),
+                PdfObject::Integer(900),
+            ])),
+        );
 
         // For this test, we'll use a Type1-style descriptor without a stream
         // to test the fallback path
@@ -679,7 +681,7 @@ mod tests {
         // Uncommon characters might not be in the base font
         // (This depends on the specific fixture)
         let result = metrics.glyph_id_for('\u{1F600}'); // Emoji
-        // May or may not be present, but shouldn't panic
+                                                        // May or may not be present, but shouldn't panic
         let _ = result;
     }
 
@@ -700,16 +702,32 @@ mod tests {
         // Test common Latin characters
         for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".chars() {
             let gid = metrics.glyph_id_for(ch);
-            assert!(gid.is_some(), "Character '{}' should be mapped in Latin font", ch);
+            assert!(
+                gid.is_some(),
+                "Character '{}' should be mapped in Latin font",
+                ch
+            );
 
             // Verify advance width exists for mapped glyphs
             let advance = metrics.advance(gid.unwrap());
-            assert!(advance.is_some(), "Advance should exist for glyph ID {}", gid.unwrap());
-            assert!(advance.unwrap() > 0, "Advance should be positive for glyph ID {}", gid.unwrap());
+            assert!(
+                advance.is_some(),
+                "Advance should exist for glyph ID {}",
+                gid.unwrap()
+            );
+            assert!(
+                advance.unwrap() > 0,
+                "Advance should be positive for glyph ID {}",
+                gid.unwrap()
+            );
 
             // Verify bbox exists
             let bbox = metrics.bbox(gid.unwrap());
-            assert!(bbox.is_some(), "Bbox should exist for glyph ID {}", gid.unwrap());
+            assert!(
+                bbox.is_some(),
+                "Bbox should exist for glyph ID {}",
+                gid.unwrap()
+            );
         }
     }
 
@@ -733,7 +751,10 @@ mod tests {
         // Verify that advance widths are in font units (less than UPEM for typical glyphs)
         let gid_a = metrics.glyph_id_for('A').unwrap();
         let advance_a = metrics.advance(gid_a).unwrap();
-        assert!(advance_a <= upem, "Advance should be in font units (≤ UPEM)");
+        assert!(
+            advance_a <= upem,
+            "Advance should be in font units (≤ UPEM)"
+        );
     }
 
     #[test]
@@ -750,7 +771,10 @@ mod tests {
         // The error should be InvalidFontData
         match result {
             Err(FontError::InvalidFontData(msg)) => {
-                assert!(msg.contains("ttf-parser error"), "Error should mention ttf-parser");
+                assert!(
+                    msg.contains("ttf-parser error"),
+                    "Error should mention ttf-parser"
+                );
             }
             _ => panic!("Expected InvalidFontData error"),
         }
@@ -782,12 +806,15 @@ mod tests {
         // Acceptance criteria: Type1 font program: gracefully wrap with limited
         // capability; do not crash on missing CharStrings parser.
         let mut descriptor = PdfDict::new();
-        descriptor.insert(intern("/FontBBox"), PdfObject::Array(Box::new(vec![
-            PdfObject::Integer(-100),
-            PdfObject::Integer(-200),
-            PdfObject::Integer(1000),
-            PdfObject::Integer(900),
-        ])));
+        descriptor.insert(
+            intern("/FontBBox"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(-100),
+                PdfObject::Integer(-200),
+                PdfObject::Integer(1000),
+                PdfObject::Integer(900),
+            ])),
+        );
 
         let mut font_dict = PdfDict::new();
         font_dict.insert(intern("/Subtype"), PdfObject::Name(intern("/Type1")));
@@ -832,19 +859,25 @@ mod tests {
         let metrics = OpenTypeMetrics::from_data(font_data, 0).unwrap();
 
         // DejaVuSans has a Unicode cmap
-        assert!(metrics.has_valid_cmap(), "DejaVuSans should have valid Unicode cmap");
+        assert!(
+            metrics.has_valid_cmap(),
+            "DejaVuSans should have valid Unicode cmap"
+        );
     }
 
     #[test]
     fn test_embedded_font_returns_diagnostics() {
         // Verify that EmbeddedFont collects and returns diagnostics
         let mut descriptor = PdfDict::new();
-        descriptor.insert(intern("/FontBBox"), PdfObject::Array(Box::new(vec![
-            PdfObject::Integer(0),
-            PdfObject::Integer(0),
-            PdfObject::Integer(1000),
-            PdfObject::Integer(1000),
-        ])));
+        descriptor.insert(
+            intern("/FontBBox"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+                PdfObject::Integer(1000),
+                PdfObject::Integer(1000),
+            ])),
+        );
 
         let mut font_dict = PdfDict::new();
         font_dict.insert(intern("/Subtype"), PdfObject::Name(intern("/Type1")));

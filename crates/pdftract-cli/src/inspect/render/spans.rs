@@ -75,10 +75,10 @@ pub fn render_spans(spans: &[SpanJson]) -> Vec<String> {
 /// - `Some(c) where c >= 0.8`: green (#22c55e) - high confidence
 fn confidence_to_color(confidence: Option<f64>) -> &'static str {
     match confidence {
-        None => "#94a3b8", // gray - direct extraction
+        None => "#94a3b8",               // gray - direct extraction
         Some(c) if c < 0.5 => "#ef4444", // red - low confidence
         Some(c) if c < 0.8 => "#eab308", // yellow - medium confidence
-        Some(_) => "#22c55e", // green - high confidence
+        Some(_) => "#22c55e",            // green - high confidence
     }
 }
 
@@ -111,16 +111,14 @@ mod tests {
 
     #[test]
     fn test_render_spans_single() {
-        let spans = vec![
-            SpanJson {
-                text: "Hello".to_string(),
-                bbox: [100.0, 200.0, 200.0, 220.0],
-                font: "Helvetica".to_string(),
-                size: 12.0,
-                confidence: None,
-                receipt: None,
-            }
-        ];
+        let spans = vec![SpanJson {
+            text: "Hello".to_string(),
+            bbox: [100.0, 200.0, 200.0, 220.0],
+            font: "Helvetica".to_string(),
+            size: 12.0,
+            confidence: None,
+            receipt: None,
+        }];
 
         let output = render_spans(&spans);
         assert_eq!(output.len(), 1);
@@ -149,50 +147,48 @@ mod tests {
     #[test]
     fn test_render_spans_confidence_colors() {
         let test_cases = [
-            (None, "#94a3b8"),           // gray - no confidence
-            (Some(0.3), "#ef4444"),      // red - low
-            (Some(0.5), "#eab308"),      // yellow - medium (boundary)
-            (Some(0.6), "#eab308"),      // yellow - medium
-            (Some(0.79), "#eab308"),     // yellow - medium (boundary)
-            (Some(0.8), "#22c55e"),      // green - high (boundary)
-            (Some(0.95), "#22c55e"),     // green - high
-            (Some(1.0), "#22c55e"),      // green - perfect
+            (None, "#94a3b8"),       // gray - no confidence
+            (Some(0.3), "#ef4444"),  // red - low
+            (Some(0.5), "#eab308"),  // yellow - medium (boundary)
+            (Some(0.6), "#eab308"),  // yellow - medium
+            (Some(0.79), "#eab308"), // yellow - medium (boundary)
+            (Some(0.8), "#22c55e"),  // green - high (boundary)
+            (Some(0.95), "#22c55e"), // green - high
+            (Some(1.0), "#22c55e"),  // green - perfect
         ];
 
         for (confidence, expected_color) in test_cases {
-            let spans = vec![
-                SpanJson {
-                    text: "Test".to_string(),
-                    bbox: [0.0, 0.0, 10.0, 10.0],
-                    font: "Arial".to_string(),
-                    size: 10.0,
-                    confidence,
-                    receipt: None,
-                }
-            ];
+            let spans = vec![SpanJson {
+                text: "Test".to_string(),
+                bbox: [0.0, 0.0, 10.0, 10.0],
+                font: "Arial".to_string(),
+                size: 10.0,
+                confidence,
+                receipt: None,
+            }];
 
             let output = render_spans(&spans);
             assert_eq!(output.len(), 1);
             assert!(
                 output[0].contains(&format!("stroke=\"{}\"", expected_color)),
                 "Confidence {:?} should produce color {}, got: {}",
-                confidence, expected_color, output[0]
+                confidence,
+                expected_color,
+                output[0]
             );
         }
     }
 
     #[test]
     fn test_render_spans_data_attributes() {
-        let spans = vec![
-            SpanJson {
-                text: "Test & <quote>".to_string(),
-                bbox: [50.0, 100.0, 150.0, 120.0],
-                font: "Times \"Roman\"".to_string(),
-                size: 14.0,
-                confidence: Some(0.85),
-                receipt: None,
-            }
-        ];
+        let spans = vec![SpanJson {
+            text: "Test & <quote>".to_string(),
+            bbox: [50.0, 100.0, 150.0, 120.0],
+            font: "Times \"Roman\"".to_string(),
+            size: 14.0,
+            confidence: Some(0.85),
+            receipt: None,
+        }];
 
         let output = render_spans(&spans);
         let rect = &output[0];
@@ -283,16 +279,14 @@ mod tests {
 
     #[test]
     fn test_render_spans_css_class() {
-        let spans = vec![
-            SpanJson {
-                text: "Test".to_string(),
-                bbox: [0.0, 0.0, 100.0, 20.0],
-                font: "Arial".to_string(),
-                size: 12.0,
-                confidence: None,
-                receipt: None,
-            }
-        ];
+        let spans = vec![SpanJson {
+            text: "Test".to_string(),
+            bbox: [0.0, 0.0, 100.0, 20.0],
+            font: "Arial".to_string(),
+            size: 12.0,
+            confidence: None,
+            receipt: None,
+        }];
 
         let output = render_spans(&spans);
         assert!(output[0].contains(r#"class="span-rect""#));
@@ -325,16 +319,14 @@ mod tests {
 
     #[test]
     fn test_render_spans_float_bbox() {
-        let spans = vec![
-            SpanJson {
-                text: "Float".to_string(),
-                bbox: [10.567, 20.891, 100.234, 110.567],
-                font: "Arial".to_string(),
-                size: 12.5,
-                confidence: None,
-                receipt: None,
-            }
-        ];
+        let spans = vec![SpanJson {
+            text: "Float".to_string(),
+            bbox: [10.567, 20.891, 100.234, 110.567],
+            font: "Arial".to_string(),
+            size: 12.5,
+            confidence: None,
+            receipt: None,
+        }];
 
         let output = render_spans(&spans);
         let rect = &output[0];
@@ -348,16 +340,14 @@ mod tests {
 
     #[test]
     fn test_render_spans_output_is_valid_svg() {
-        let spans = vec![
-            SpanJson {
-                text: "Valid".to_string(),
-                bbox: [0.0, 0.0, 100.0, 20.0],
-                font: "Arial".to_string(),
-                size: 12.0,
-                confidence: Some(0.95),
-                receipt: None,
-            }
-        ];
+        let spans = vec![SpanJson {
+            text: "Valid".to_string(),
+            bbox: [0.0, 0.0, 100.0, 20.0],
+            font: "Arial".to_string(),
+            size: 12.0,
+            confidence: Some(0.95),
+            receipt: None,
+        }];
 
         let output = render_spans(&spans);
         let rect = &output[0];

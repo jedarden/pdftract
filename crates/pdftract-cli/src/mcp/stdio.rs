@@ -61,8 +61,7 @@ fn init_stdout() {
 /// CRITICAL: The JSON body is written WITHOUT a trailing newline.
 /// Adding any extra bytes after the JSON body breaks the framing.
 fn write_response(response: &Response) -> Result<()> {
-    let json = serde_json::to_string(response)
-        .context("Failed to serialize response")?;
+    let json = serde_json::to_string(response).context("Failed to serialize response")?;
 
     let content_length = json.len();
 
@@ -86,8 +85,7 @@ fn write_response(response: &Response) -> Result<()> {
     write!(stdout, "{json}")?;
 
     // Flush immediately to ensure the client receives the response
-    stdout.flush()
-        .context("Failed to flush stdout")?;
+    stdout.flush().context("Failed to flush stdout")?;
 
     Ok(())
 }
@@ -190,7 +188,8 @@ fn read_message(stdin: &mut BufReader<Stdin>) -> Result<Option<Request>> {
     // Read headers until empty line
     loop {
         let mut line = String::new();
-        let bytes_read = stdin.read_line(&mut line)
+        let bytes_read = stdin
+            .read_line(&mut line)
             .context("Failed to read header line")?;
 
         if bytes_read == 0 {
@@ -208,14 +207,16 @@ fn read_message(stdin: &mut BufReader<Stdin>) -> Result<Option<Request>> {
         // Parse Content-Length header
         if let Some(value) = line.strip_prefix("Content-Length:") {
             let value = value.trim();
-            content_length = Some(value.parse::<usize>()
-                .with_context(|| format!("Invalid Content-Length: {value}"))?);
+            content_length = Some(
+                value
+                    .parse::<usize>()
+                    .with_context(|| format!("Invalid Content-Length: {value}"))?,
+            );
         }
         // Ignore other headers (we don't need Content-Type for now)
     }
 
-    let content_length = content_length
-        .ok_or_else(|| anyhow!("Missing Content-Length header"))?;
+    let content_length = content_length.ok_or_else(|| anyhow!("Missing Content-Length header"))?;
 
     // Read exactly content_length bytes
     let mut buffer = vec![0u8; content_length];
@@ -236,8 +237,8 @@ fn read_message(stdin: &mut BufReader<Stdin>) -> Result<Option<Request>> {
     }
 
     // Parse as JSON-RPC BatchMessage (handles both single requests and batches)
-    let batch: BatchMessage = serde_json::from_slice(&buffer)
-        .context("Failed to parse JSON-RPC request")?;
+    let batch: BatchMessage =
+        serde_json::from_slice(&buffer).context("Failed to parse JSON-RPC request")?;
 
     // Extract the single request from the batch
     // For now, we only support single requests (not batches)
@@ -256,7 +257,11 @@ fn read_message(stdin: &mut BufReader<Stdin>) -> Result<Option<Request>> {
 }
 
 /// Handle a JSON-RPC request and return a response.
-fn handle_request(request: Request, registry: &tools::ToolRegistry, root: Option<&Path>) -> Response {
+fn handle_request(
+    request: Request,
+    registry: &tools::ToolRegistry,
+    root: Option<&Path>,
+) -> Response {
     let id = request.request_id();
 
     match request.method.as_str() {
@@ -284,16 +289,22 @@ fn handle_request(request: Request, registry: &tools::ToolRegistry, root: Option
             let params = match request.params {
                 Some(p) => p,
                 None => {
-                    return Response::error(id, ErrorObject::invalid_params()
-                        .with_data(json!({"reason": "Missing params"})));
+                    return Response::error(
+                        id,
+                        ErrorObject::invalid_params()
+                            .with_data(json!({"reason": "Missing params"})),
+                    );
                 }
             };
 
             let tool_name = match params.get("name").and_then(|v| v.as_str()) {
                 Some(name) => name,
                 None => {
-                    return Response::error(id, ErrorObject::invalid_params()
-                        .with_data(json!({"reason": "Missing or invalid 'name' field"})));
+                    return Response::error(
+                        id,
+                        ErrorObject::invalid_params()
+                            .with_data(json!({"reason": "Missing or invalid 'name' field"})),
+                    );
                 }
             };
 
@@ -309,12 +320,17 @@ fn handle_request(request: Request, registry: &tools::ToolRegistry, root: Option
 
             // Execute the tool with observability logging
             let start = Instant::now();
-            let log_path = arguments.get("path").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let log_path = arguments
+                .get("path")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
 
             let result = tool.execute(arguments, log_path.as_deref(), root);
 
             let duration_ms = start.elapsed().as_millis();
-            let response_size = result.as_ref().ok()
+            let response_size = result
+                .as_ref()
+                .ok()
                 .map(|v| serde_json::to_vec(v).unwrap_or_default().len())
                 .unwrap_or(0);
 
@@ -323,13 +339,9 @@ fn handle_request(request: Request, registry: &tools::ToolRegistry, root: Option
             let path_or_hash = log_path.as_deref().unwrap_or("<unknown>");
             let error_code = result.as_ref().err().map(|e| e.code.to_string());
 
-            eprintln!("{} tool={} path={} duration_ms={} response_size_bytes={} error_code={:?}",
-                timestamp,
-                tool_name,
-                path_or_hash,
-                duration_ms,
-                response_size,
-                error_code,
+            eprintln!(
+                "{} tool={} path={} duration_ms={} response_size_bytes={} error_code={:?}",
+                timestamp, tool_name, path_or_hash, duration_ms, response_size, error_code,
             );
 
             match result {
@@ -388,7 +400,13 @@ pub fn run(root: Option<&Path>) -> Result<()> {
     eprintln!("pdftract MCP server (stdio mode) starting...");
     eprintln!("Version: {}", env!("CARGO_PKG_VERSION"));
     eprintln!("Protocol: JSON-RPC 2.0 over stdio");
-    eprintln!("Tools: {}", registry.tools_list()["tools"].as_array().map(|v| v.len()).unwrap_or(0));
+    eprintln!(
+        "Tools: {}",
+        registry.tools_list()["tools"]
+            .as_array()
+            .map(|v| v.len())
+            .unwrap_or(0)
+    );
     if root.is_some() {
         eprintln!("Path-traversal protection: enabled");
     } else {
@@ -422,10 +440,7 @@ pub fn run(root: Option<&Path>) -> Result<()> {
                 // Parse error - send error response and continue
                 eprintln!("Parse error: {}", e);
 
-                let error_response = Response::error(
-                    Id::Null,
-                    ErrorObject::parse_error(),
-                );
+                let error_response = Response::error(Id::Null, ErrorObject::parse_error());
 
                 if let Err(write_err) = write_response(&error_response) {
                     eprintln!("Failed to write error response: {}", write_err);
@@ -444,7 +459,8 @@ pub fn run(root: Option<&Path>) -> Result<()> {
 
     // Flush stdout before exit
     if let Some(mut stdout) = STDOUT.lock().unwrap().take() {
-        stdout.flush()
+        stdout
+            .flush()
             .context("Failed to flush stdout on shutdown")?;
     }
 
@@ -462,10 +478,7 @@ mod tests {
     fn test_write_response_framing() {
         init_stdout();
 
-        let response = Response::success(
-            Id::Number(1),
-            serde_json::json!({"result": "ok"}),
-        );
+        let response = Response::success(Id::Number(1), serde_json::json!({"result": "ok"}));
 
         // This should succeed (stdout is initialized)
         // We can't easily test the actual output without capturing stdout,
@@ -481,11 +494,7 @@ mod tests {
     #[test]
     fn test_handle_unknown_method() {
         let registry = tools::all_tools();
-        let request = Request::new(
-            "unknown/method",
-            None,
-            Some(Id::Number(1)),
-        );
+        let request = Request::new("unknown/method", None, Some(Id::Number(1)));
 
         let response = handle_request(request, &registry, None);
 
@@ -497,11 +506,7 @@ mod tests {
     #[test]
     fn test_handle_tools_list() {
         let registry = tools::all_tools();
-        let request = Request::new(
-            "tools/list",
-            None,
-            Some(Id::Number(1)),
-        );
+        let request = Request::new("tools/list", None, Some(Id::Number(1)));
 
         let response = handle_request(request, &registry, None);
 
@@ -512,11 +517,7 @@ mod tests {
     /// Test that notifications (no id) return Id::Null.
     #[test]
     fn test_request_id_notification() {
-        let request = Request::new(
-            "notifications/message",
-            None,
-            None,
-        );
+        let request = Request::new("notifications/message", None, None);
 
         assert_eq!(request.request_id(), Id::Null);
     }

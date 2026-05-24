@@ -1,5 +1,5 @@
-use std::path::Path;
 use super::super::{Check, CheckResult, CheckStatus, DoctorCtx};
+use std::path::Path;
 
 /// Check: cache directory (cache feature)
 ///
@@ -13,9 +13,9 @@ impl CacheDirCheck {
 
     #[cfg(unix)]
     fn check_free_space(path: &Path) -> Result<u64, String> {
+        use libc::{c_char, statvfs};
         use std::ffi::CString;
         use std::os::unix::ffi::OsStrExt;
-        use libc::{statvfs, c_char};
 
         let path_cstr = CString::new(path.as_os_str().as_bytes())
             .map_err(|_| "Failed to convert path to CString".to_string())?;
@@ -54,8 +54,7 @@ impl CacheDirCheck {
         // Try to create a temporary file
         let test_file = path.join(".pdftract-doctor-test");
 
-        std::fs::write(&test_file, b"test")
-            .map_err(|e| format!("Not writable: {}", e))?;
+        std::fs::write(&test_file, b"test").map_err(|e| format!("Not writable: {}", e))?;
 
         // Clean up
         let _ = std::fs::remove_file(&test_file);
@@ -77,7 +76,8 @@ impl CacheDirCheck {
         let value: serde_json::Value = serde_json::from_str(&content)
             .map_err(|e| format!("Failed to parse index.json: {}", e))?;
 
-        let schema_version = value.get("schema_version")
+        let schema_version = value
+            .get("schema_version")
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
 
@@ -86,7 +86,10 @@ impl CacheDirCheck {
         if schema_version == current_version as u64 {
             Ok(format!("Layout version {} (current)", schema_version))
         } else {
-            Ok(format!("Layout version {} (migration available to {})", schema_version, current_version))
+            Ok(format!(
+                "Layout version {} (migration available to {})",
+                schema_version, current_version
+            ))
         }
     }
 }
@@ -111,7 +114,10 @@ impl Check for CacheDirCheck {
             return CheckResult {
                 name: self.name(),
                 status: CheckStatus::Warn,
-                detail: format!("Cache directory does not exist: {} (will be created on first use)", cache_dir.display()),
+                detail: format!(
+                    "Cache directory does not exist: {} (will be created on first use)",
+                    cache_dir.display()
+                ),
             };
         }
 
@@ -131,7 +137,10 @@ impl Check for CacheDirCheck {
                     CheckResult {
                         name: self.name(),
                         status: CheckStatus::Warn,
-                        detail: format!("{} (low disk space: {} MiB free, 1 GiB recommended)", layout, free_mb),
+                        detail: format!(
+                            "{} (low disk space: {} MiB free, 1 GiB recommended)",
+                            layout, free_mb
+                        ),
                     }
                 } else {
                     CheckResult {
@@ -141,13 +150,15 @@ impl Check for CacheDirCheck {
                     }
                 }
             }
-            (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => {
-                CheckResult {
-                    name: self.name(),
-                    status: CheckStatus::Fail,
-                    detail: format!("Cache directory check failed at {}: {}", cache_dir.display(), e),
-                }
-            }
+            (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => CheckResult {
+                name: self.name(),
+                status: CheckStatus::Fail,
+                detail: format!(
+                    "Cache directory check failed at {}: {}",
+                    cache_dir.display(),
+                    e
+                ),
+            },
         }
     }
 }

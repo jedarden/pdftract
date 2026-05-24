@@ -3,9 +3,9 @@
 //! This module defines the options that control how PDFs are extracted,
 //! including the receipts mode for cryptographic provenance tracking.
 
-use serde::{Deserialize, Serialize};
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 /// Receipt generation mode.
 ///

@@ -33,37 +33,42 @@ fn main() {
 }
 
 fn generate_std14_metrics(out_dir: &Path, metrics_path: &Path) {
+    let json_content = fs::read_to_string(metrics_path).expect("Failed to read std14-metrics.json");
 
-    let json_content = fs::read_to_string(metrics_path)
-        .expect("Failed to read std14-metrics.json");
+    let data: serde_json::Value =
+        serde_json::from_str(&json_content).expect("Failed to parse std14-metrics.json");
 
-    let data: serde_json::Value = serde_json::from_str(&json_content)
-        .expect("Failed to parse std14-metrics.json");
-
-    let fonts = data["fonts"].as_object()
-        .expect("fonts object missing");
+    let fonts = data["fonts"].as_object().expect("fonts object missing");
 
     let mut metrics_structs = String::new();
 
     for (font_name, font_data) in fonts {
         let font_ident = font_name.replace("-", "_");
-        let weights = font_data["weights"].as_array()
+        let weights = font_data["weights"]
+            .as_array()
             .expect("weights array missing");
 
-        let weights_array: Vec<String> = weights.iter()
+        let weights_array: Vec<String> = weights
+            .iter()
             .map(|v| v.as_u64().unwrap_or(0).to_string())
             .collect();
 
-        let font_bbox = font_data["font_bbox"].as_array()
+        let font_bbox = font_data["font_bbox"]
+            .as_array()
             .expect("font_bbox array missing");
-        let font_bbox: Vec<String> = font_bbox.iter()
+        let font_bbox: Vec<String> = font_bbox
+            .iter()
             .map(|v| v.as_i64().unwrap_or(0).to_string())
             .collect();
 
         let ascent = font_data["ascent"].as_i64().expect("ascent missing");
         let descent = font_data["descent"].as_i64().expect("descent missing");
-        let italic_angle = font_data["italic_angle"].as_f64().expect("italic_angle missing");
-        let cap_height = font_data["cap_height"].as_i64().expect("cap_height missing");
+        let italic_angle = font_data["italic_angle"]
+            .as_f64()
+            .expect("italic_angle missing");
+        let cap_height = font_data["cap_height"]
+            .as_i64()
+            .expect("cap_height missing");
         let stem_v = font_data["stem_v"].as_i64().expect("stem_v missing");
 
         let encoding_str = font_data["encoding"].as_str().expect("encoding missing");
@@ -74,7 +79,8 @@ fn generate_std14_metrics(out_dir: &Path, metrics_path: &Path) {
             _ => "NamedEncoding::Standard",
         };
 
-        metrics_structs.push_str(&format!(r#"
+        metrics_structs.push_str(&format!(
+            r#"
 static {}_WIDTHS: &[u16; 256] = &[{}];
 static {}_METRICS: Std14Metrics = Std14Metrics {{
     widths: &{}_WIDTHS,
@@ -106,10 +112,14 @@ static {}_METRICS: Std14Metrics = Std14Metrics {{
 
     for font_name in fonts.keys() {
         let ident = font_name.replace("-", "_");
-        map_builder.entry(font_name.as_str(), &format!("&{}_METRICS", ident.to_uppercase()));
+        map_builder.entry(
+            font_name.as_str(),
+            &format!("&{}_METRICS", ident.to_uppercase()),
+        );
     }
 
-    let rust_code = format!(r#"
+    let rust_code = format!(
+        r#"
 // Auto-generated Standard 14 font metrics.
 // Do not edit manually.
 
@@ -129,14 +139,13 @@ pub fn get_std14_metrics(name: &str) -> Option<&'static Std14Metrics> {{
 }
 
 fn generate_named_encodings(out_dir: &Path, encodings_path: &Path) {
-    let json_content = fs::read_to_string(encodings_path)
-        .expect("Failed to read named-encodings.json");
+    let json_content =
+        fs::read_to_string(encodings_path).expect("Failed to read named-encodings.json");
 
-    let data: serde_json::Value = serde_json::from_str(&json_content)
-        .expect("Failed to parse named-encodings.json");
+    let data: serde_json::Value =
+        serde_json::from_str(&json_content).expect("Failed to parse named-encodings.json");
 
-    let encodings = data.as_object()
-        .expect("encodings object missing");
+    let encodings = data.as_object().expect("encodings object missing");
 
     let mut encoding_arrays = String::new();
 
@@ -151,7 +160,8 @@ fn generate_named_encodings(out_dir: &Path, encodings_path: &Path) {
             _ => continue,
         };
 
-        let entries = encoding_data.as_object()
+        let entries = encoding_data
+            .as_object()
             .expect("encoding data is not an object");
 
         let mut array_values = Vec::new();
@@ -165,7 +175,8 @@ fn generate_named_encodings(out_dir: &Path, encodings_path: &Path) {
             array_values.push(rust_value);
         }
 
-        encoding_arrays.push_str(&format!(r#"
+        encoding_arrays.push_str(&format!(
+            r#"
 pub static {}: [Option<&'static str>; 256] = [
 {}];
 "#,
@@ -174,7 +185,8 @@ pub static {}: [Option<&'static str>; 256] = [
         ));
     }
 
-    let rust_code = format!(r#"
+    let rust_code = format!(
+        r#"
 // Auto-generated named encoding tables.
 // Do not edit manually.
 // Source: ISO 32000-1 Annex D
@@ -200,39 +212,39 @@ pub fn get_named_encoding_table(encoding: NamedEncoding) -> &'static [Option<&'s
 }
 
 fn generate_agl_maps(out_dir: &Path, agl_path: &Path) {
-    let json_content = fs::read_to_string(agl_path)
-        .expect("Failed to read agl.json");
+    let json_content = fs::read_to_string(agl_path).expect("Failed to read agl.json");
 
-    let data: serde_json::Value = serde_json::from_str(&json_content)
-        .expect("Failed to parse agl.json");
+    let data: serde_json::Value =
+        serde_json::from_str(&json_content).expect("Failed to parse agl.json");
 
     // Single-codepoint map
-    let single = data["merged_single"].as_object()
+    let single = data["merged_single"]
+        .as_object()
         .expect("merged_single object missing");
 
     let mut single_map_builder = phf_codegen::Map::new();
 
     for (name, uvalue) in single {
-        let uvalue_str = uvalue.as_str()
-            .expect("unicode value is not a string");
+        let uvalue_str = uvalue.as_str().expect("unicode value is not a string");
         // Parse the JSON unicode escape like "A" into a Rust char literal
         let unicode_char = decode_json_unicode(uvalue_str);
         single_map_builder.entry(name.as_str(), &format!("'\\u{{{}}}'", unicode_char));
     }
 
     // Multi-codepoint map
-    let multi = data["merged_multi"].as_object()
+    let multi = data["merged_multi"]
+        .as_object()
         .expect("merged_multi object missing");
 
     let mut multi_arrays = String::new();
     let mut multi_map_builder = phf_codegen::Map::new();
 
     for (name, uvalues) in multi {
-        let uvalues_arr = uvalues.as_array()
-            .expect("multi value is not an array");
+        let uvalues_arr = uvalues.as_array().expect("multi value is not an array");
         let ident = name.to_uppercase().replace("-", "_").replace(".", "_");
 
-        let chars: Vec<String> = uvalues_arr.iter()
+        let chars: Vec<String> = uvalues_arr
+            .iter()
             .map(|v| {
                 let uvalue_str = v.as_str().expect("unicode value is not a string");
                 let unicode_char = decode_json_unicode(uvalue_str);
@@ -240,7 +252,8 @@ fn generate_agl_maps(out_dir: &Path, agl_path: &Path) {
             })
             .collect();
 
-        multi_arrays.push_str(&format!(r#"
+        multi_arrays.push_str(&format!(
+            r#"
 static {}: &[char] = &[{}];
 "#,
             ident,
@@ -250,7 +263,8 @@ static {}: &[char] = &[{}];
         multi_map_builder.entry(name.as_str(), &format!("&{}", ident));
     }
 
-    let rust_code = format!(r#"
+    let rust_code = format!(
+        r#"
 // Auto-generated Adobe Glyph List (AGL) phf maps.
 // Do not edit manually.
 // Source: Adobe Glyph List 1.4 + AGLFN 1.7
@@ -271,8 +285,7 @@ pub static AGL_MULTI: phf::Map<&'static str, &[char]> = {};
         multi_map_builder.build()
     );
 
-    fs::write(Path::new(out_dir).join("agl.rs"), rust_code)
-        .expect("Failed to write agl.rs");
+    fs::write(Path::new(out_dir).join("agl.rs"), rust_code).expect("Failed to write agl.rs");
 }
 
 /// Decode a JSON unicode escape string like "\\u0041" to "0041".
@@ -302,14 +315,13 @@ fn decode_json_unicode(s: &str) -> String {
 /// Each entry maps a glyph ID to a Unicode codepoint for a specific font
 /// identified by its SHA-256 hash.
 fn generate_font_fingerprints(out_dir: &Path, fingerprints_path: &Path) {
-    let json_content = fs::read_to_string(fingerprints_path)
-        .expect("Failed to read font-fingerprints.json");
+    let json_content =
+        fs::read_to_string(fingerprints_path).expect("Failed to read font-fingerprints.json");
 
-    let data: serde_json::Value = serde_json::from_str(&json_content)
-        .expect("Failed to parse font-fingerprints.json");
+    let data: serde_json::Value =
+        serde_json::from_str(&json_content).expect("Failed to parse font-fingerprints.json");
 
-    let fonts = data.as_array()
-        .expect("font-fingerprints must be an array");
+    let fonts = data.as_array().expect("font-fingerprints must be an array");
 
     let mut entries_arrays = String::new();
     let mut map_builder = phf_codegen::Map::new();
@@ -319,7 +331,8 @@ fn generate_font_fingerprints(out_dir: &Path, fingerprints_path: &Path) {
     let mut values = Vec::new();
 
     for font_entry in fonts {
-        let sha256_hex = font_entry.get("sha256_hex")
+        let sha256_hex = font_entry
+            .get("sha256_hex")
             .and_then(|v| v.as_str())
             .expect("sha256_hex must be a string");
 
@@ -330,14 +343,18 @@ fn generate_font_fingerprints(out_dir: &Path, fingerprints_path: &Path) {
 
         // Validate SHA-256 hex (64 hex chars = 32 bytes)
         if sha256_hex.len() != 64 {
-            panic!("SHA-256 hex must be 64 characters, got {}", sha256_hex.len());
+            panic!(
+                "SHA-256 hex must be 64 characters, got {}",
+                sha256_hex.len()
+            );
         }
 
         // Convert hex string to [u8; 32] bytes
         let hash_bytes: [u8; 32] = hex_decode_to_array(sha256_hex);
 
         // Get entries
-        let entries = font_entry.get("entries")
+        let entries = font_entry
+            .get("entries")
             .and_then(|v| v.as_array())
             .expect("entries must be an array");
 
@@ -347,8 +364,14 @@ fn generate_font_fingerprints(out_dir: &Path, fingerprints_path: &Path) {
         let mut entry_values = Vec::new();
         for entry in entries {
             let arr = entry.as_array().expect("entry must be an array");
-            let gid = arr.get(0).and_then(|v| v.as_u64()).expect("gid must be a number") as u16;
-            let codepoint = arr.get(1).and_then(|v| v.as_u64()).expect("codepoint must be a number") as u32;
+            let gid = arr
+                .get(0)
+                .and_then(|v| v.as_u64())
+                .expect("gid must be a number") as u16;
+            let codepoint = arr
+                .get(1)
+                .and_then(|v| v.as_u64())
+                .expect("codepoint must be a number") as u32;
 
             // Validate codepoint is a valid Unicode scalar value
             if !is_valid_unicode_scalar(codepoint) {
@@ -358,7 +381,8 @@ fn generate_font_fingerprints(out_dir: &Path, fingerprints_path: &Path) {
             entry_values.push(format!("({}, {})", gid, codepoint));
         }
 
-        entries_arrays.push_str(&format!(r#"
+        entries_arrays.push_str(&format!(
+            r#"
 static {}: &[(u16, u32)] = &[{}];
 "#,
             ident,
@@ -366,9 +390,7 @@ static {}: &[(u16, u32)] = &[{}];
         ));
 
         // Build the phf map key as a byte array literal
-        let key_bytes: Vec<String> = hash_bytes.iter()
-            .map(|b| format!("0x{:02x}", b))
-            .collect();
+        let key_bytes: Vec<String> = hash_bytes.iter().map(|b| format!("0x{:02x}", b)).collect();
 
         let key = format!("[{}]", key_bytes.join(", "));
         let value = format!("&{}", ident);
@@ -382,7 +404,8 @@ static {}: &[(u16, u32)] = &[{}];
         map_builder.entry(key.as_str(), value.as_str());
     }
 
-    let rust_code = format!(r#"
+    let rust_code = format!(
+        r#"
 // Auto-generated font fingerprint phf map.
 // Do not edit manually.
 // Source: build/font-fingerprints.json
@@ -415,8 +438,7 @@ fn hex_decode_to_array(hex: &str) -> [u8; 32] {
     let mut bytes = [0u8; 32];
     for i in 0..32 {
         let byte_str = &hex[i * 2..i * 2 + 2];
-        bytes[i] = u8::from_str_radix(byte_str, 16)
-            .expect("Invalid hex string");
+        bytes[i] = u8::from_str_radix(byte_str, 16).expect("Invalid hex string");
     }
     bytes
 }
@@ -450,7 +472,8 @@ fn generate_collection_cmap(out_dir: &Path, base_dir: &Path, json_name: &str, mo
     // Check if the JSON file exists
     if !json_path.exists() {
         // Generate a stub implementation
-        let rust_code = format!(r#"
+        let rust_code = format!(
+            r#"
 // Auto-generated {collection} CID to Unicode mapping.
 //
 // Source: {json_name}.json (not found - stub implementation)
@@ -469,13 +492,12 @@ pub fn cid_to_unicode(cid: u32) -> Option<&'static [char]> {{
             json_name = json_name,
         );
 
-        fs::write(&out_path, rust_code)
-            .expect(&format!("Failed to write {}", out_path.display()));
+        fs::write(&out_path, rust_code).expect(&format!("Failed to write {}", out_path.display()));
         return;
     }
 
-    let json_content = fs::read_to_string(&json_path)
-        .expect(&format!("Failed to read {}", json_path.display()));
+    let json_content =
+        fs::read_to_string(&json_path).expect(&format!("Failed to read {}", json_path.display()));
 
     let data: serde_json::Value = serde_json::from_str(&json_content)
         .expect(&format!("Failed to parse {}", json_path.display()));
@@ -486,7 +508,8 @@ pub fn cid_to_unicode(cid: u32) -> Option<&'static [char]> {{
 
     if let Some(mappings) = data.as_object() {
         for (cid_str, unicode_value) in mappings {
-            let cid: u32 = cid_str.parse()
+            let cid: u32 = cid_str
+                .parse()
                 .expect(&format!("Invalid CID key: {}", cid_str));
 
             // Parse the Unicode value
@@ -497,11 +520,13 @@ pub fn cid_to_unicode(cid: u32) -> Option<&'static [char]> {{
                 let array_ident = format!("CID_{}_{}", module_name.to_uppercase(), cid);
 
                 // Build the array
-                let char_literals: Vec<String> = chars.iter()
+                let char_literals: Vec<String> = chars
+                    .iter()
                     .map(|c| format!("'\\u{{{:04X}}}'", *c as u32))
                     .collect();
 
-                arrays.push_str(&format!(r#"
+                arrays.push_str(&format!(
+                    r#"
 static {}: &[char] = &[{}];
 "#,
                     array_ident,
@@ -514,7 +539,8 @@ static {}: &[char] = &[{}];
         }
     }
 
-    let rust_code = format!(r#"
+    let rust_code = format!(
+        r#"
 // Auto-generated {collection} CID to Unicode mapping.
 //
 // Source: {json_name}.json
@@ -542,8 +568,7 @@ pub fn cid_to_unicode(cid: u32) -> Option<&'static [char]> {{
         map = map_builder.build(),
     );
 
-    fs::write(&out_path, rust_code)
-        .expect(&format!("Failed to write {}", out_path.display()));
+    fs::write(&out_path, rust_code).expect(&format!("Failed to write {}", out_path.display()));
 }
 
 /// Parse a Unicode value from JSON to a Vec<char>.

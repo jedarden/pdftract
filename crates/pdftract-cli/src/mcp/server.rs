@@ -70,8 +70,7 @@ pub fn run(
     }
 
     // Start the HTTP+SSE server (this blocks until shutdown)
-    let runtime = tokio::runtime::Runtime::new()
-        .context("Failed to create tokio runtime")?;
+    let runtime = tokio::runtime::Runtime::new().context("Failed to create tokio runtime")?;
 
     runtime.block_on(http::run_server(
         bind_addr,

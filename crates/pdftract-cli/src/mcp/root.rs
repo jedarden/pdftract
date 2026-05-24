@@ -51,7 +51,10 @@ pub fn resolve_path(arg: &str, root: Option<&Path>) -> Result<PathBuf, ErrorObje
     // Reject absolute paths when --root is set
     if arg.starts_with('/') || Path::new(arg).is_absolute() {
         return Err(ErrorObject::invalid_params()
-            .with_message(format!("absolute paths not permitted under --root: '{}'", arg))
+            .with_message(format!(
+                "absolute paths not permitted under --root: '{}'",
+                arg
+            ))
             .with_data(json!({ "code": CODE_ABSOLUTE_PATH_NOT_PERMITTED, "path": arg })));
     }
 
@@ -62,7 +65,9 @@ pub fn resolve_path(arg: &str, root: Option<&Path>) -> Result<PathBuf, ErrorObje
     let canonical = std::fs::canonicalize(&candidate).map_err(|e| {
         ErrorObject::invalid_params()
             .with_message(format!("path resolution failed: {}", e))
-            .with_data(json!({ "code": CODE_PATH_RESOLUTION_FAILED, "path": arg, "error": e.to_string() }))
+            .with_data(
+                json!({ "code": CODE_PATH_RESOLUTION_FAILED, "path": arg, "error": e.to_string() }),
+            )
     })?;
 
     // Reject if canonical is not a descendant of root
@@ -90,12 +95,19 @@ pub fn resolve_path(arg: &str, root: Option<&Path>) -> Result<PathBuf, ErrorObje
 /// * `Err(String)` - Error message if root is invalid
 pub fn canonicalize_root(root_arg: &Path) -> Result<PathBuf, String> {
     // Canonicalize the root path (follows symlinks, resolves relative components)
-    let canonical = std::fs::canonicalize(root_arg)
-        .map_err(|e| format!("--root path does not exist or cannot be canonicalized: {}", e))?;
+    let canonical = std::fs::canonicalize(root_arg).map_err(|e| {
+        format!(
+            "--root path does not exist or cannot be canonicalized: {}",
+            e
+        )
+    })?;
 
     // Verify it's a directory
     if !canonical.is_dir() {
-        return Err(format!("--root must be a directory, not a file: {}", canonical.display()));
+        return Err(format!(
+            "--root must be a directory, not a file: {}",
+            canonical.display()
+        ));
     }
 
     Ok(canonical)
@@ -112,18 +124,27 @@ mod tests {
     fn test_https_url_bypasses_check() {
         let result = resolve_path("https://example.com/file.pdf", None);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), PathBuf::from("https://example.com/file.pdf"));
+        assert_eq!(
+            result.unwrap(),
+            PathBuf::from("https://example.com/file.pdf")
+        );
 
         let result = resolve_path("https://example.com/file.pdf", Some(Path::new("/tmp")));
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), PathBuf::from("https://example.com/file.pdf"));
+        assert_eq!(
+            result.unwrap(),
+            PathBuf::from("https://example.com/file.pdf")
+        );
     }
 
     #[test]
     fn test_http_url_bypasses_check() {
         let result = resolve_path("http://example.com/file.pdf", None);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), PathBuf::from("http://example.com/file.pdf"));
+        assert_eq!(
+            result.unwrap(),
+            PathBuf::from("http://example.com/file.pdf")
+        );
     }
 
     #[test]
@@ -195,7 +216,11 @@ mod tests {
 
         #[cfg(windows)]
         {
-            std::os::windows::fs::symlink_file(r"C:\Windows\System32\drivers\etc\hosts", &symlink_path).unwrap();
+            std::os::windows::fs::symlink_file(
+                r"C:\Windows\System32\drivers\etc\hosts",
+                &symlink_path,
+            )
+            .unwrap();
         }
 
         // Try to access the symlink
@@ -264,12 +289,18 @@ mod tests {
         let result = resolve_path("/etc/passwd", Some(root));
         let err = result.unwrap_err();
         let data = err.data.unwrap();
-        assert_eq!(data.get("code").unwrap().as_str(), Some(CODE_ABSOLUTE_PATH_NOT_PERMITTED));
+        assert_eq!(
+            data.get("code").unwrap().as_str(),
+            Some(CODE_ABSOLUTE_PATH_NOT_PERMITTED)
+        );
 
         // Test traversal error
         let result = resolve_path("../../../etc/passwd", Some(root));
         let err = result.unwrap_err();
         let data = err.data.unwrap();
-        assert_eq!(data.get("code").unwrap().as_str(), Some(CODE_PATH_ESCAPES_ROOT));
+        assert_eq!(
+            data.get("code").unwrap().as_str(),
+            Some(CODE_PATH_ESCAPES_ROOT)
+        );
     }
 }

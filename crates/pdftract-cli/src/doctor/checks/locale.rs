@@ -1,5 +1,5 @@
-use std::env;
 use super::super::{Check, CheckResult, CheckStatus, DoctorCtx};
+use std::env;
 
 /// Check: system locale
 ///
@@ -40,14 +40,19 @@ impl Check for LocaleCheck {
             Some(locale) if locale.is_empty() => CheckResult {
                 name: self.name(),
                 status: CheckStatus::Warn,
-                detail: "Locale is empty (LANG/LC_ALL set to empty string, may cause encoding issues)".to_string(),
+                detail:
+                    "Locale is empty (LANG/LC_ALL set to empty string, may cause encoding issues)"
+                        .to_string(),
             },
             Some(locale) => {
                 if locale == "C" || locale == "POSIX" {
                     CheckResult {
                         name: self.name(),
                         status: CheckStatus::Warn,
-                        detail: format!("Locale is '{}' (non-UTF-8, may cause encoding issues)", locale),
+                        detail: format!(
+                            "Locale is '{}' (non-UTF-8, may cause encoding issues)",
+                            locale
+                        ),
                     }
                 } else if Self::is_utf8_locale(&locale) {
                     CheckResult {
@@ -59,7 +64,10 @@ impl Check for LocaleCheck {
                     CheckResult {
                         name: self.name(),
                         status: CheckStatus::Warn,
-                        detail: format!("Locale '{}' (non-UTF-8, may cause encoding issues)", locale),
+                        detail: format!(
+                            "Locale '{}' (non-UTF-8, may cause encoding issues)",
+                            locale
+                        ),
                     }
                 }
             }

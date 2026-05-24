@@ -84,9 +84,9 @@ impl PageContext {
     /// Create a new page context with default values.
     pub fn new() -> Self {
         Self {
-            page_body_median: 12.0,  // Typical body text is ~12pt
-            line_height: 14.0,       // Typical line spacing is ~1.2x font size
-            num_columns: 1,          // Default single-column layout
+            page_body_median: 12.0, // Typical body text is ~12pt
+            line_height: 14.0,      // Typical line spacing is ~1.2x font size
+            num_columns: 1,         // Default single-column layout
         }
     }
 
@@ -180,7 +180,11 @@ pub fn classify_page_captions(blocks: &mut [Block], ctx: &PageContext) {
 
         // Update previous block for next iteration
         // Note: we use a reference to the block before any modification
-        prev_block = if i < blocks.len() { Some(&blocks[i]) } else { None };
+        prev_block = if i < blocks.len() {
+            Some(&blocks[i])
+        } else {
+            None
+        };
     }
 }
 
@@ -206,7 +210,13 @@ mod tests {
     fn test_caption_immediately_below_figure() {
         // Figure at y=[100, 200], caption at y=[90, 100] (1 line below)
         let figure = make_figure([50.0, 100.0, 150.0, 200.0], 0);
-        let caption = make_block("paragraph", "Figure 1: A chart", 9.0, [50.0, 90.0, 150.0, 100.0], 0);
+        let caption = make_block(
+            "paragraph",
+            "Figure 1: A chart",
+            9.0,
+            [50.0, 90.0, 150.0, 100.0],
+            0,
+        );
 
         let ctx = PageContext::with_values(12.0, 10.0, 1);
 
@@ -217,7 +227,13 @@ mod tests {
     fn test_caption_too_far_below_figure() {
         // Figure at y=[100, 200], caption at y=[70, 80] (3 lines below = 30pt)
         let figure = make_figure([50.0, 100.0, 150.0, 200.0], 0);
-        let caption = make_block("paragraph", "Figure 1: A chart", 9.0, [50.0, 70.0, 150.0, 80.0], 0);
+        let caption = make_block(
+            "paragraph",
+            "Figure 1: A chart",
+            9.0,
+            [50.0, 70.0, 150.0, 80.0],
+            0,
+        );
 
         let ctx = PageContext::with_values(12.0, 10.0, 1);
 
@@ -228,7 +244,13 @@ mod tests {
     fn test_caption_font_not_smaller() {
         // Caption with same font size as body text
         let figure = make_figure([50.0, 100.0, 150.0, 200.0], 0);
-        let not_caption = make_block("paragraph", "Figure 1: A chart", 12.0, [50.0, 90.0, 150.0, 100.0], 0);
+        let not_caption = make_block(
+            "paragraph",
+            "Figure 1: A chart",
+            12.0,
+            [50.0, 90.0, 150.0, 100.0],
+            0,
+        );
 
         let ctx = PageContext::with_values(12.0, 10.0, 1);
 
@@ -239,7 +261,13 @@ mod tests {
     fn test_caption_different_column() {
         // Figure in column 0, caption in column 1 (two-column layout)
         let figure = make_figure([50.0, 100.0, 150.0, 200.0], 0);
-        let caption = make_block("paragraph", "Figure 1: A chart", 9.0, [200.0, 90.0, 300.0, 100.0], 1);
+        let caption = make_block(
+            "paragraph",
+            "Figure 1: A chart",
+            9.0,
+            [200.0, 90.0, 300.0, 100.0],
+            1,
+        );
 
         let ctx = PageContext::with_values(12.0, 10.0, 2);
 
@@ -258,7 +286,13 @@ mod tests {
     #[test]
     fn test_caption_above_figure() {
         // Caption positioned above the figure (not detected in v0.1.0)
-        let caption = make_block("paragraph", "Figure 1: A chart", 9.0, [50.0, 200.0, 150.0, 210.0], 0);
+        let caption = make_block(
+            "paragraph",
+            "Figure 1: A chart",
+            9.0,
+            [50.0, 200.0, 150.0, 210.0],
+            0,
+        );
         let figure = make_figure([50.0, 100.0, 150.0, 200.0], 0);
 
         let ctx = PageContext::with_values(12.0, 10.0, 1);
@@ -269,9 +303,21 @@ mod tests {
     #[test]
     fn test_page_classification() {
         let mut blocks = vec![
-            make_figure([50.0, 100.0, 150.0, 200.0], 0),  // Figure
-            make_block("paragraph", "Figure 1: A chart", 9.0, [50.0, 90.0, 150.0, 100.0], 0),  // Caption
-            make_block("paragraph", "Next paragraph", 12.0, [50.0, 70.0, 150.0, 80.0], 0),  // Regular text
+            make_figure([50.0, 100.0, 150.0, 200.0], 0), // Figure
+            make_block(
+                "paragraph",
+                "Figure 1: A chart",
+                9.0,
+                [50.0, 90.0, 150.0, 100.0],
+                0,
+            ), // Caption
+            make_block(
+                "paragraph",
+                "Next paragraph",
+                12.0,
+                [50.0, 70.0, 150.0, 80.0],
+                0,
+            ), // Regular text
         ];
 
         let ctx = PageContext::with_values(12.0, 10.0, 1);
@@ -280,7 +326,7 @@ mod tests {
 
         assert_eq!(blocks[0].kind, "figure");
         assert_eq!(blocks[1].kind, "caption");
-        assert_eq!(blocks[2].kind, "paragraph");  // Unchanged
+        assert_eq!(blocks[2].kind, "paragraph"); // Unchanged
     }
 
     #[test]

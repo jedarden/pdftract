@@ -17,17 +17,17 @@
 //! 4. Find row candidates (y positions where >= 2 column candidates have spans)
 //! 5. Validate: 3+ rows AND 3+ columns, contiguous y range, no gap > 100 pt
 
-mod detector;
-mod segment;
-mod grid;
 mod cell;
+mod detector;
+mod grid;
 mod output;
+mod segment;
 
+pub use cell::{detect_merged_cells, Cell, TableSpan};
 pub use detector::TableDetector;
-pub use segment::{Segment, SegmentOrientation};
 pub use grid::GridCandidate;
-pub use cell::{Cell, TableSpan, detect_merged_cells};
-pub use output::{grid_to_table_json, detect_two_page_tables};
+pub use output::{detect_two_page_tables, grid_to_table_json};
+pub use segment::{Segment, SegmentOrientation};
 
 // Re-export cell types for use in extract module
 pub use cell::Cell as TableCell;
@@ -48,7 +48,10 @@ pub struct PageContext<'a> {
 impl<'a> PageContext<'a> {
     /// Create a new page context from a page dict and content bytes.
     pub fn new(page: &'a PageDict, content_bytes: &'a [u8]) -> Self {
-        Self { page, content_bytes }
+        Self {
+            page,
+            content_bytes,
+        }
     }
 }
 
@@ -59,9 +62,9 @@ mod tests {
     #[test]
     fn test_page_context_creation() {
         // Minimal test to verify the module compiles
-        use std::sync::Arc;
         use crate::parser::object::ObjRef;
         use crate::parser::resources::ResourceDict;
+        use std::sync::Arc;
 
         let page = PageDict {
             obj_ref: ObjRef::new(1, 0),

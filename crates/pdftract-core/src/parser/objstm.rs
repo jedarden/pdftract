@@ -29,9 +29,9 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
-use crate::parser::object::{ObjRef, PdfObject, PdfStream, ObjectParser};
+use crate::diagnostics::{DiagCode, Diagnostic};
+use crate::parser::object::{ObjRef, ObjectParser, PdfObject, PdfStream};
 use crate::parser::stream::{decode_stream, ExtractionOptions, PdfSource};
-use crate::diagnostics::{Diagnostic, DiagCode};
 
 /// Maximum depth for `/Extends` chain to prevent adversarial deep chains.
 const MAX_EXTENDS_DEPTH: u8 = 16;
@@ -58,9 +58,15 @@ impl std::fmt::Display for ObjStmError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ObjStmError::MissingKey { key } => write!(f, "Missing required key: {}", key),
-            ObjStmError::InvalidFormat { msg } => write!(f, "Invalid object stream format: {}", msg),
-            ObjStmError::CircularRef { obj_ref } => write!(f, "Circular reference in /Extends chain at {}", obj_ref),
-            ObjStmError::DepthExceeded { max } => write!(f, "Extends chain depth exceeded (max {})", max),
+            ObjStmError::InvalidFormat { msg } => {
+                write!(f, "Invalid object stream format: {}", msg)
+            }
+            ObjStmError::CircularRef { obj_ref } => {
+                write!(f, "Circular reference in /Extends chain at {}", obj_ref)
+            }
+            ObjStmError::DepthExceeded { max } => {
+                write!(f, "Extends chain depth exceeded (max {})", max)
+            }
             ObjStmError::DecompressionFailed => write!(f, "Stream decompression failed"),
         }
     }
@@ -184,13 +190,11 @@ impl ObjectStmParser {
         // Load the object stream
         let stream = match resolve_fn(host_objstm_ref) {
             Some(s) => s,
-            None => return PdfObject::Null,    // Not found
+            None => return PdfObject::Null, // Not found
         };
 
         // Create a wrapper that handles the recursion properly
-        let resolve_wrapper = |ref_obj: ObjRef| -> Option<PdfStream> {
-            resolve_fn(ref_obj)
-        };
+        let resolve_wrapper = |ref_obj: ObjRef| -> Option<PdfStream> { resolve_fn(ref_obj) };
 
         match self.load_object_stream_impl(
             host_objstm_ref,
@@ -207,15 +211,13 @@ impl ObjectStmParser {
                 }
 
                 // Return the requested object by 0-based index
-                entry.get(embedded_index as usize)
+                entry
+                    .get(embedded_index as usize)
                     .map(|(_, obj)| obj.clone())
                     .unwrap_or(PdfObject::Null)
             }
             Err(e) => {
-                self.emit_diagnostic(
-                    e.diag_code(),
-                    format!("Object stream error: {}", e),
-                );
+                self.emit_diagnostic(e.diag_code(), format!("Object stream error: {}", e));
                 PdfObject::Null
             }
         }
@@ -257,9 +259,7 @@ impl ObjectStmParser {
         }
 
         // Create a wrapper that handles the recursion properly
-        let resolve_wrapper = |ref_obj: ObjRef| -> Option<PdfStream> {
-            resolve_fn(ref_obj)
-        };
+        let resolve_wrapper = |ref_obj: ObjRef| -> Option<PdfStream> { resolve_fn(ref_obj) };
 
         match self.load_object_stream_impl(
             obj_stm_ref,
@@ -302,12 +302,17 @@ impl ObjectStmParser {
 
         // Check for circular reference
         if in_progress.contains(&obj_stm_ref) {
-            return Err(ObjStmError::CircularRef { obj_ref: obj_stm_ref });
+            return Err(ObjStmError::CircularRef {
+                obj_ref: obj_stm_ref,
+            });
         }
 
         // Check cache first
         {
-            let cache = self.cache.read().map_err(|_| ObjStmError::DecompressionFailed)?;
+            let cache = self
+                .cache
+                .read()
+                .map_err(|_| ObjStmError::DecompressionFailed)?;
             if let Some(cached) = cache.get(&obj_stm_ref) {
                 // Return the cached Arc directly (no clone)
                 return Ok(cached.clone());
@@ -323,7 +328,9 @@ impl ObjectStmParser {
         let n = stream_dict
             .get("/N")
             .and_then(|obj| obj.as_int())
-            .ok_or_else(|| ObjStmError::MissingKey { key: "/N".to_string() })? as u32;
+            .ok_or_else(|| ObjStmError::MissingKey {
+                key: "/N".to_string(),
+            })? as u32;
 
         let first = stream_dict
             .get("/First")
@@ -344,7 +351,11 @@ impl ObjectStmParser {
         }
 
         #[cfg(test)]
-        eprintln!("DEBUG: decompressed {} bytes, first: {:?}", decompressed.len(), decompressed.get(0..20));
+        eprintln!(
+            "DEBUG: decompressed {} bytes, first: {:?}",
+            decompressed.len(),
+            decompressed.get(0..20)
+        );
 
         if decompressed.is_empty() {
             in_progress.remove(&obj_stm_ref);
@@ -356,7 +367,11 @@ impl ObjectStmParser {
             in_progress.remove(&obj_stm_ref);
             self.emit_diagnostic(
                 DiagCode::StructInvalidObjstm,
-                format!("ObjStm /First offset {} exceeds decompressed size {}", first, decompressed.len()),
+                format!(
+                    "ObjStm /First offset {} exceeds decompressed size {}",
+                    first,
+                    decompressed.len()
+                ),
             );
             return Ok(Arc::new(Vec::new()));
         }
@@ -421,7 +436,10 @@ impl ObjectStmParser {
             let remaining = &decompressed[obj_start..];
 
             #[cfg(test)]
-            eprintln!("DEBUG: Parsing object {} at offset {}, remaining bytes: {:?}", obj_number, obj_start, remaining);
+            eprintln!(
+                "DEBUG: Parsing object {} at offset {}, remaining bytes: {:?}",
+                obj_number, obj_start, remaining
+            );
 
             let mut obj_parser = ObjectParser::new(remaining);
 
@@ -478,12 +496,16 @@ impl ObjectStmParser {
                     Err(ObjStmError::CircularRef { .. }) => {
                         // Propagate circular reference errors
                         in_progress.remove(&obj_stm_ref);
-                        return Err(ObjStmError::CircularRef { obj_ref: extends_ref });
+                        return Err(ObjStmError::CircularRef {
+                            obj_ref: extends_ref,
+                        });
                     }
                     Err(ObjStmError::DepthExceeded { .. }) => {
                         // Propagate depth exceeded errors
                         in_progress.remove(&obj_stm_ref);
-                        return Err(ObjStmError::DepthExceeded { max: MAX_EXTENDS_DEPTH });
+                        return Err(ObjStmError::DepthExceeded {
+                            max: MAX_EXTENDS_DEPTH,
+                        });
                     }
                     Err(_) => {
                         // Failed to parse parent - just use our objects
@@ -594,7 +616,10 @@ mod tests {
         dict.insert(intern("/N"), PdfObject::Integer(2));
         dict.insert(intern("/First"), PdfObject::Integer(header.len() as i64));
         dict.insert(intern("/Filter"), PdfObject::Name(intern("/FlateDecode")));
-        dict.insert(intern("/Length"), PdfObject::Integer(compressed.len() as i64));
+        dict.insert(
+            intern("/Length"),
+            PdfObject::Integer(compressed.len() as i64),
+        );
 
         // Create a PdfStream with the dict and offset 0 (for MemorySource)
         let stream = PdfStream::new(dict.clone(), 0, Some(compressed.len() as u64));
@@ -606,18 +631,13 @@ mod tests {
         // Mock resolve function that returns the stream
         let obj_stm_ref = ObjRef::new(10, 0);
         let stream_clone = stream.clone();
-        let result = parser.load_object_stream(
-            obj_stm_ref,
-            &stream,
-            &source,
-            move |ref_obj| {
-                if ref_obj == obj_stm_ref {
-                    Some(stream_clone.clone())
-                } else {
-                    None
-                }
-            },
-        );
+        let result = parser.load_object_stream(obj_stm_ref, &stream, &source, move |ref_obj| {
+            if ref_obj == obj_stm_ref {
+                Some(stream_clone.clone())
+            } else {
+                None
+            }
+        });
 
         assert!(result.is_ok());
         let entry = result.unwrap();
@@ -706,7 +726,10 @@ mod tests {
         dict.insert(intern("/N"), PdfObject::Integer(10));
         dict.insert(intern("/First"), PdfObject::Integer(first as i64));
         dict.insert(intern("/Filter"), PdfObject::Name(intern("/FlateDecode")));
-        dict.insert(intern("/Length"), PdfObject::Integer(compressed.len() as i64));
+        dict.insert(
+            intern("/Length"),
+            PdfObject::Integer(compressed.len() as i64),
+        );
 
         // Create a PdfStream with the dict and offset 0 (for MemorySource)
         let stream = PdfStream::new(dict.clone(), 0, Some(compressed.len() as u64));
@@ -716,18 +739,13 @@ mod tests {
 
         let obj_stm_ref = ObjRef::new(10, 0);
         let stream_clone = stream.clone();
-        let result = parser.load_object_stream(
-            obj_stm_ref,
-            &stream,
-            &source,
-            move |ref_obj| {
-                if ref_obj == obj_stm_ref {
-                    Some(stream_clone.clone())
-                } else {
-                    None
-                }
-            },
-        );
+        let result = parser.load_object_stream(obj_stm_ref, &stream, &source, move |ref_obj| {
+            if ref_obj == obj_stm_ref {
+                Some(stream_clone.clone())
+            } else {
+                None
+            }
+        });
 
         assert!(result.is_ok());
         let entry = result.unwrap();
@@ -754,12 +772,7 @@ mod tests {
         let source = MemorySource::new(vec![0u8; 100]);
         let parser = ObjectStmParser::default();
 
-        let result = parser.load_object_stream(
-            ObjRef::new(1, 0),
-            &stream,
-            &source,
-            |_| None,
-        );
+        let result = parser.load_object_stream(ObjRef::new(1, 0), &stream, &source, |_| None);
 
         assert!(matches!(result, Err(ObjStmError::MissingKey { key }) if key == "/N"));
     }
@@ -773,12 +786,7 @@ mod tests {
         let source = MemorySource::new(vec![0u8; 100]);
         let parser = ObjectStmParser::default();
 
-        let result = parser.load_object_stream(
-            ObjRef::new(1, 0),
-            &stream,
-            &source,
-            |_| None,
-        );
+        let result = parser.load_object_stream(ObjRef::new(1, 0), &stream, &source, |_| None);
 
         assert!(matches!(result, Err(ObjStmError::MissingKey { key }) if key == "/First"));
     }
@@ -799,18 +807,13 @@ mod tests {
         // Mock resolve function that returns the same stream (circular reference)
         let self_ref = ObjRef::new(1, 0);
         let stream_clone = stream.clone();
-        let result = parser.load_object_stream(
-            self_ref,
-            &stream,
-            &source,
-            move |ref_obj| {
-                if ref_obj == self_ref {
-                    Some(stream_clone.clone())
-                } else {
-                    None
-                }
-            },
-        );
+        let result = parser.load_object_stream(self_ref, &stream, &source, move |ref_obj| {
+            if ref_obj == self_ref {
+                Some(stream_clone.clone())
+            } else {
+                None
+            }
+        });
 
         assert!(matches!(result, Err(ObjStmError::CircularRef { .. })));
     }
@@ -838,7 +841,10 @@ mod tests {
         dict.insert(intern("/N"), PdfObject::Integer(2));
         dict.insert(intern("/First"), PdfObject::Integer(header.len() as i64));
         dict.insert(intern("/Filter"), PdfObject::Name(intern("/FlateDecode")));
-        dict.insert(intern("/Length"), PdfObject::Integer(compressed.len() as i64));
+        dict.insert(
+            intern("/Length"),
+            PdfObject::Integer(compressed.len() as i64),
+        );
 
         let stream = PdfStream::new(dict.clone(), 0, Some(compressed.len() as u64));
 
@@ -849,18 +855,13 @@ mod tests {
         let stream_clone = stream.clone();
 
         // First call - should load and cache
-        let result1 = parser.load_object_stream(
-            obj_stm_ref,
-            &stream,
-            &source,
-            move |ref_obj| {
-                if ref_obj == obj_stm_ref {
-                    Some(stream_clone.clone())
-                } else {
-                    None
-                }
-            },
-        );
+        let result1 = parser.load_object_stream(obj_stm_ref, &stream, &source, move |ref_obj| {
+            if ref_obj == obj_stm_ref {
+                Some(stream_clone.clone())
+            } else {
+                None
+            }
+        });
 
         assert!(result1.is_ok());
         let entry1 = result1.unwrap();
@@ -893,9 +894,15 @@ mod tests {
         let mut parent_dict = PdfDict::new();
         parent_dict.insert(intern("/Type"), PdfObject::Name(intern("/ObjStm")));
         parent_dict.insert(intern("/N"), PdfObject::Integer(3));
-        parent_dict.insert(intern("/First"), PdfObject::Integer(parent_header.len() as i64));
+        parent_dict.insert(
+            intern("/First"),
+            PdfObject::Integer(parent_header.len() as i64),
+        );
         parent_dict.insert(intern("/Filter"), PdfObject::Name(intern("/FlateDecode")));
-        parent_dict.insert(intern("/Length"), PdfObject::Integer(parent_compressed.len() as i64));
+        parent_dict.insert(
+            intern("/Length"),
+            PdfObject::Integer(parent_compressed.len() as i64),
+        );
 
         // Create child ObjStm (objects 4-5) that extends parent
         let child_header = b"4 0 5 4";
@@ -913,9 +920,15 @@ mod tests {
         let mut child_dict = PdfDict::new();
         child_dict.insert(intern("/Type"), PdfObject::Name(intern("/ObjStm")));
         child_dict.insert(intern("/N"), PdfObject::Integer(2));
-        child_dict.insert(intern("/First"), PdfObject::Integer(child_header.len() as i64));
+        child_dict.insert(
+            intern("/First"),
+            PdfObject::Integer(child_header.len() as i64),
+        );
         child_dict.insert(intern("/Filter"), PdfObject::Name(intern("/FlateDecode")));
-        child_dict.insert(intern("/Length"), PdfObject::Integer(child_compressed.len() as i64));
+        child_dict.insert(
+            intern("/Length"),
+            PdfObject::Integer(child_compressed.len() as i64),
+        );
         child_dict.insert(intern("/Extends"), PdfObject::Ref(parent_ref));
 
         let parser = ObjectStmParser::default();
@@ -927,29 +940,16 @@ mod tests {
         let parent_dict_clone = parent_dict.clone();
         let child_stream = PdfStream::new(child_dict_clone.clone(), 0, None);
 
-        let result = parser.load_object_stream(
-            child_ref,
-            &child_stream,
-            &source,
-            move |ref_obj| {
-                if ref_obj == parent_ref {
-                    // Return parent stream
-                    Some(PdfStream::new(
-                        parent_dict_clone.clone(),
-                        0,
-                        None,
-                    ))
-                } else if ref_obj == child_ref {
-                    Some(PdfStream::new(
-                        child_dict_clone.clone(),
-                        0,
-                        None,
-                    ))
-                } else {
-                    None
-                }
-            },
-        );
+        let result = parser.load_object_stream(child_ref, &child_stream, &source, move |ref_obj| {
+            if ref_obj == parent_ref {
+                // Return parent stream
+                Some(PdfStream::new(parent_dict_clone.clone(), 0, None))
+            } else if ref_obj == child_ref {
+                Some(PdfStream::new(child_dict_clone.clone(), 0, None))
+            } else {
+                None
+            }
+        });
 
         // The test may not fully work due to source limitations,
         // but it verifies the /Extends handling doesn't crash
@@ -979,7 +979,10 @@ mod tests {
         dict.insert(intern("/N"), PdfObject::Integer(2));
         dict.insert(intern("/First"), PdfObject::Integer(header.len() as i64));
         dict.insert(intern("/Filter"), PdfObject::Name(intern("/FlateDecode")));
-        dict.insert(intern("/Length"), PdfObject::Integer(compressed.len() as i64));
+        dict.insert(
+            intern("/Length"),
+            PdfObject::Integer(compressed.len() as i64),
+        );
 
         let source = MemorySource::new(compressed);
         let parser = ObjectStmParser::default();
@@ -1053,7 +1056,10 @@ mod tests {
         dict.insert(intern("/N"), PdfObject::Integer(3));
         dict.insert(intern("/First"), PdfObject::Integer(header.len() as i64));
         dict.insert(intern("/Filter"), PdfObject::Name(intern("/FlateDecode")));
-        dict.insert(intern("/Length"), PdfObject::Integer(compressed.len() as i64));
+        dict.insert(
+            intern("/Length"),
+            PdfObject::Integer(compressed.len() as i64),
+        );
 
         let source = MemorySource::new(compressed);
         let parser = ObjectStmParser::default();
@@ -1061,22 +1067,13 @@ mod tests {
         let obj_stm_ref = ObjRef::new(10, 0);
         let dict_clone = dict.clone();
         let stream = PdfStream::new(dict.clone(), 0, Some(compressed_len));
-        let result = parser.load_object_stream(
-            obj_stm_ref,
-            &stream,
-            &source,
-            move |ref_obj| {
-                if ref_obj == obj_stm_ref {
-                    Some(PdfStream::new(
-                        dict_clone.clone(),
-                        0,
-                        Some(compressed_len),
-                    ))
-                } else {
-                    None
-                }
-            },
-        );
+        let result = parser.load_object_stream(obj_stm_ref, &stream, &source, move |ref_obj| {
+            if ref_obj == obj_stm_ref {
+                Some(PdfStream::new(dict_clone.clone(), 0, Some(compressed_len)))
+            } else {
+                None
+            }
+        });
 
         // Should succeed with partial objects
         assert!(result.is_ok());
@@ -1121,7 +1118,10 @@ mod tests {
         dict.insert(intern("/N"), PdfObject::Integer(2));
         dict.insert(intern("/First"), PdfObject::Integer(header.len() as i64));
         dict.insert(intern("/Filter"), PdfObject::Name(intern("/FlateDecode")));
-        dict.insert(intern("/Length"), PdfObject::Integer(compressed.len() as i64));
+        dict.insert(
+            intern("/Length"),
+            PdfObject::Integer(compressed.len() as i64),
+        );
 
         // Create parser with very small decompression limit
         let parser = ObjectStmParser::new(max_bytes);
@@ -1130,22 +1130,13 @@ mod tests {
         let obj_stm_ref = ObjRef::new(10, 0);
         let dict_clone = dict.clone();
         let stream = PdfStream::new(dict.clone(), 0, None);
-        let result = parser.load_object_stream(
-            obj_stm_ref,
-            &stream,
-            &source,
-            move |ref_obj| {
-                if ref_obj == obj_stm_ref {
-                    Some(PdfStream::new(
-                        dict_clone.clone(),
-                        0,
-                        None,
-                    ))
-                } else {
-                    None
-                }
-            },
-        );
+        let result = parser.load_object_stream(obj_stm_ref, &stream, &source, move |ref_obj| {
+            if ref_obj == obj_stm_ref {
+                Some(PdfStream::new(dict_clone.clone(), 0, None))
+            } else {
+                None
+            }
+        });
 
         // The result should be ok (we get what we can before hitting the limit)
         // but diagnostics should be emitted
@@ -1183,7 +1174,10 @@ mod tests {
         dict.insert(intern("/N"), PdfObject::Integer(1));
         dict.insert(intern("/First"), PdfObject::Integer(header.len() as i64));
         dict.insert(intern("/Filter"), PdfObject::Name(intern("/FlateDecode")));
-        dict.insert(intern("/Length"), PdfObject::Integer(compressed.len() as i64));
+        dict.insert(
+            intern("/Length"),
+            PdfObject::Integer(compressed.len() as i64),
+        );
 
         let source = MemorySource::new(compressed);
         let parser = ObjectStmParser::default();
@@ -1191,22 +1185,13 @@ mod tests {
         let obj_stm_ref = ObjRef::new(10, 0);
         let dict_clone = dict.clone();
         let stream = PdfStream::new(dict.clone(), 0, None);
-        let result = parser.load_object_stream(
-            obj_stm_ref,
-            &stream,
-            &source,
-            move |ref_obj| {
-                if ref_obj == obj_stm_ref {
-                    Some(PdfStream::new(
-                        dict_clone.clone(),
-                        0,
-                        None,
-                    ))
-                } else {
-                    None
-                }
-            },
-        );
+        let result = parser.load_object_stream(obj_stm_ref, &stream, &source, move |ref_obj| {
+            if ref_obj == obj_stm_ref {
+                Some(PdfStream::new(dict_clone.clone(), 0, None))
+            } else {
+                None
+            }
+        });
 
         assert!(result.is_ok());
         let entry = result.unwrap();
@@ -1238,7 +1223,10 @@ mod tests {
         base_dict.insert(intern("/N"), PdfObject::Integer(1));
         base_dict.insert(intern("/First"), PdfObject::Integer(header.len() as i64));
         base_dict.insert(intern("/Filter"), PdfObject::Name(intern("/FlateDecode")));
-        base_dict.insert(intern("/Length"), PdfObject::Integer(compressed.len() as i64));
+        base_dict.insert(
+            intern("/Length"),
+            PdfObject::Integer(compressed.len() as i64),
+        );
 
         // Create a chain of ObjStms where each extends the previous
         // We'll create 18 dicts (0-17), each extending the previous
@@ -1247,7 +1235,10 @@ mod tests {
             let mut dict = base_dict.clone();
             if i > 0 {
                 // This ObjStm extends the previous one
-                dict.insert(intern("/Extends"), PdfObject::Ref(ObjRef::new(100 + (i as u32) - 1, 0)));
+                dict.insert(
+                    intern("/Extends"),
+                    PdfObject::Ref(ObjRef::new(100 + (i as u32) - 1, 0)),
+                );
             }
             dicts.push(dict);
         }
@@ -1259,20 +1250,15 @@ mod tests {
         let obj_stm_17_ref = ObjRef::new(117, 0);
         let stream_17 = PdfStream::new(dicts[17].clone(), 0, None);
 
-        let result = parser.load_object_stream(
-            obj_stm_17_ref,
-            &stream_17,
-            &source,
-            |ref_obj| {
-                // Return a stream for any ref in the chain
-                if ref_obj.object >= 100 && ref_obj.object <= 117 {
-                    let idx = (ref_obj.object - 100) as usize;
-                    Some(PdfStream::new(dicts[idx].clone(), 0, None))
-                } else {
-                    None
-                }
-            },
-        );
+        let result = parser.load_object_stream(obj_stm_17_ref, &stream_17, &source, |ref_obj| {
+            // Return a stream for any ref in the chain
+            if ref_obj.object >= 100 && ref_obj.object <= 117 {
+                let idx = (ref_obj.object - 100) as usize;
+                Some(PdfStream::new(dicts[idx].clone(), 0, None))
+            } else {
+                None
+            }
+        });
 
         // Should fail with DepthExceeded
         assert!(matches!(result, Err(ObjStmError::DepthExceeded { .. })));

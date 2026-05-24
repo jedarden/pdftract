@@ -129,7 +129,9 @@ pub fn decode(data: &[u8]) -> io::Result<Vec<u8>> {
     let mut result = Vec::with_capacity(data.len().min(MAX_DECOMPRESSED_SIZE));
     {
         let mut decoder = zstd::Decoder::new(data)?;
-        decoder.take(MAX_DECOMPRESSED_SIZE as u64).read_to_end(&mut result)?;
+        decoder
+            .take(MAX_DECOMPRESSED_SIZE as u64)
+            .read_to_end(&mut result)?;
     }
 
     // Check if we hit the bomb limit
@@ -466,7 +468,10 @@ mod tests {
         let mut result = Vec::with_capacity(SMALL_LIMIT);
         {
             let decoder = zstd::Decoder::new(&*compressed).unwrap();
-            decoder.take(SMALL_LIMIT as u64).read_to_end(&mut result).unwrap();
+            decoder
+                .take(SMALL_LIMIT as u64)
+                .read_to_end(&mut result)
+                .unwrap();
         }
 
         // Verify we truncated at the limit

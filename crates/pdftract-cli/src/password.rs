@@ -105,7 +105,9 @@ fn read_password_from_stdin() -> Result<Option<secrecy::SecretString>> {
         return Ok(None);
     }
 
-    Ok(Some(secrecy::SecretString::new(password.to_string().into_boxed_str())))
+    Ok(Some(secrecy::SecretString::new(
+        password.to_string().into_boxed_str(),
+    )))
 }
 
 #[cfg(test)]
@@ -153,7 +155,10 @@ mod tests {
     fn test_resolve_password_empty_env_var() {
         std::env::set_var(ENV_PASSWORD, "");
         let result = resolve_password(false, None).unwrap();
-        assert!(result.is_none(), "Empty env var should be treated as no password");
+        assert!(
+            result.is_none(),
+            "Empty env var should be treated as no password"
+        );
         std::env::remove_var(ENV_PASSWORD);
     }
 

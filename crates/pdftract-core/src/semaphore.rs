@@ -46,7 +46,7 @@ impl Semaphore {
                     Ordering::AcqRel,
                     Ordering::Acquire,
                 ) {
-                    Ok(_) => return, // Successfully acquired
+                    Ok(_) => return,    // Successfully acquired
                     Err(_) => continue, // Retry
                 }
             }

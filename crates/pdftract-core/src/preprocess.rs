@@ -14,7 +14,7 @@
 
 #![cfg(feature = "ocr")]
 
-use crate::diagnostics::{Diagnostic, DiagCode};
+use crate::diagnostics::{DiagCode, Diagnostic};
 use image::{GrayImage, ImageBuffer, Luma};
 use std::ffi::c_float;
 
@@ -114,8 +114,8 @@ const DESKEW_MAX_RANGE_DEG: f64 = 15.0;
 /// ```
 pub fn deskew(image: &GrayImage) -> Result<(GrayImage, f64, Vec<Diagnostic>)> {
     use leptonica_plumbing::leptonica_sys::{
-        pixDestroy, pixFindSkewAndDeskew, pixGetWidth, pixGetHeight, pixGetDepth,
-        Pix, l_float32, l_int32,
+        l_float32, l_int32, pixDestroy, pixFindSkewAndDeskew, pixGetDepth, pixGetHeight,
+        pixGetWidth, Pix,
     };
 
     let mut diagnostics = Vec::new();
@@ -157,7 +157,10 @@ pub fn deskew(image: &GrayImage) -> Result<(GrayImage, f64, Vec<Diagnostic>)> {
             pixDestroy(pix);
             diagnostics.push(Diagnostic::with_static_no_offset(
                 DiagCode::ImgDeskewOutOfRange,
-                format!("Skew angle {}° exceeds detection range (±{}°)", angle_deg, DESKEW_MAX_RANGE_DEG),
+                format!(
+                    "Skew angle {}° exceeds detection range (±{}°)",
+                    angle_deg, DESKEW_MAX_RANGE_DEG
+                ),
             ));
             return Ok((image.clone(), angle_deg, diagnostics));
         }
@@ -180,9 +183,7 @@ pub fn deskew(image: &GrayImage) -> Result<(GrayImage, f64, Vec<Diagnostic>)> {
 ///
 /// Creates an 8-bit grayscale Pix from the image data.
 fn grayimage_to_pix(image: &GrayImage) -> Result<*mut Pix> {
-    use leptonica_plumbing::leptonica_sys::{
-        pixCreate, pixDestroy, pixGetData, Pix,
-    };
+    use leptonica_plumbing::leptonica_sys::{pixCreate, pixDestroy, pixGetData, Pix};
     use std::ptr;
 
     let width = image.width() as i32;
@@ -231,7 +232,7 @@ fn grayimage_to_pix(image: &GrayImage) -> Result<*mut Pix> {
 /// Expects an 8-bit grayscale Pix.
 fn pix_to_grayimage(pix: *mut Pix) -> Result<GrayImage> {
     use leptonica_plumbing::leptonica_sys::{
-        pixGetData, pixGetWidth, pixGetHeight, pixGetDepth, Pix,
+        pixGetData, pixGetDepth, pixGetHeight, pixGetWidth, Pix,
     };
 
     unsafe {
@@ -323,7 +324,9 @@ mod tests {
         let (deskewed, angle, diagnostics) = deskew(&img).expect("Deskew failed");
 
         assert!(angle.abs() < 0.1, "Angle should be near 0°, got {}", angle);
-        assert!(!diagnostics.iter().any(|d| d.code == DiagCode::ImgDeskewOutOfRange));
+        assert!(!diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::ImgDeskewOutOfRange));
     }
 
     #[test]
@@ -343,7 +346,9 @@ mod tests {
 
         // Check that the Pix was created successfully
         unsafe {
-            use leptonica_plumbing::leptonica_sys::{pixGetWidth, pixGetHeight, pixGetDepth, pixDestroy};
+            use leptonica_plumbing::leptonica_sys::{
+                pixDestroy, pixGetDepth, pixGetHeight, pixGetWidth,
+            };
 
             assert!(!pix.is_null(), "Pix pointer should not be null");
             assert_eq!(pixGetWidth(pix) as u32, img.width());
@@ -445,14 +450,24 @@ mod tests {
         let (deskewed, angle, diagnostics) = deskew(&skewed).expect("Deskew failed");
 
         // The detected angle should be close to 2 degrees
-        assert!((angle.abs() - 2.0).abs() < 0.5, "Detected angle {} should be close to 2°", angle);
+        assert!(
+            (angle.abs() - 2.0).abs() < 0.5,
+            "Detected angle {} should be close to 2°",
+            angle
+        );
 
         // After deskewing, a second pass should detect near-zero skew
         let (_, second_angle, _) = deskew(&deskewed).expect("Second deskew failed");
-        assert!(second_angle.abs() < 0.1, "Second pass should detect near-zero skew, got {}", second_angle);
+        assert!(
+            second_angle.abs() < 0.1,
+            "Second pass should detect near-zero skew, got {}",
+            second_angle
+        );
 
         // No out-of-range diagnostic for 2 degrees
-        assert!(!diagnostics.iter().any(|d| d.code == DiagCode::ImgDeskewOutOfRange));
+        assert!(!diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::ImgDeskewOutOfRange));
     }
 
     #[test]
@@ -462,7 +477,11 @@ mod tests {
         let (deskewed, angle, diagnostics) = deskew(&skewed).expect("Deskew failed");
 
         // Angle should be 0.0 because we skip deskewing for angles < 0.3 deg
-        assert_eq!(angle, 0.0, "Angle should be 0.0 for sub-threshold skew, got {}", angle);
+        assert_eq!(
+            angle, 0.0,
+            "Angle should be 0.0 for sub-threshold skew, got {}",
+            angle
+        );
 
         // Image should be unchanged (same dimensions and pixels)
         assert_eq!(deskewed.dimensions(), skewed.dimensions());
@@ -479,8 +498,12 @@ mod tests {
         let (deskewed, angle, diagnostics) = deskew(&skewed).expect("Deskew failed");
 
         // Should emit the out-of-range diagnostic
-        assert!(diagnostics.iter().any(|d| d.code == DiagCode::ImgDeskewOutOfRange),
-                "Should emit IMG_DESKEW_OUT_OF_RANGE for 20-degree skew");
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| d.code == DiagCode::ImgDeskewOutOfRange),
+            "Should emit IMG_DESKEW_OUT_OF_RANGE for 20-degree skew"
+        );
 
         // Image dimensions should be preserved (may be different due to rotation padding,
         // but should not be the original since pixFindSkewAndDeskew will attempt to rotate)
@@ -722,8 +745,7 @@ mod tests {
         // Helper to get sum from integral image
         let get_sum = |integral: &[u64], x1: usize, y1: usize, x2: usize, y2: usize| -> u64 {
             let w = width + 1;
-            integral[y2 * w + x2]
-                + integral[y1 * w + x1]
+            integral[y2 * w + x2] + integral[y1 * w + x1]
                 - integral[y1 * w + x2]
                 - integral[y2 * w + x1]
         };
@@ -827,7 +849,10 @@ mod tests {
     /// let original: GrayImage = // ... load image
     /// let (preprocessed, diagnostics) = preprocess(&original, ImageSource::PhysicalScan)?;
     /// ```
-    pub fn preprocess(image: &GrayImage, source: ImageSource) -> Result<(GrayImage, Vec<Diagnostic>)> {
+    pub fn preprocess(
+        image: &GrayImage,
+        source: ImageSource,
+    ) -> Result<(GrayImage, Vec<Diagnostic>)> {
         let mut diagnostics = Vec::new();
         let mut current = image.clone();
 
@@ -951,7 +976,11 @@ mod tests {
         for y in 0..100 {
             for x in 0..100 {
                 let pixel = binary.get_pixel(x, y)[0];
-                assert!(pixel == 0 || pixel == 255, "Pixel should be 0 or 255, got {}", pixel);
+                assert!(
+                    pixel == 0 || pixel == 255,
+                    "Pixel should be 0 or 255, got {}",
+                    pixel
+                );
             }
         }
 
@@ -978,7 +1007,11 @@ mod tests {
         for y in 0..100 {
             for x in 0..100 {
                 let pixel = binary.get_pixel(x, y)[0];
-                assert!(pixel == 0 || pixel == 255, "Pixel should be 0 or 255, got {}", pixel);
+                assert!(
+                    pixel == 0 || pixel == 255,
+                    "Pixel should be 0 or 255, got {}",
+                    pixel
+                );
             }
         }
     }
@@ -988,58 +1021,68 @@ mod tests {
         // Create an image with salt-and-pepper noise
         let mut img = GrayImage::from_pixel(100, 100, Luma([128]));
         // Add some noise
-        img.put_pixel(50, 50, Luma([0]));   // pepper
+        img.put_pixel(50, 50, Luma([0])); // pepper
         img.put_pixel(51, 50, Luma([255])); // salt
         img.put_pixel(50, 51, Luma([255])); // salt
-        img.put_pixel(51, 51, Luma([0]));   // pepper
+        img.put_pixel(51, 51, Luma([0])); // pepper
 
         let denoised = denoise_median(&img);
 
         // The noisy pixels should be closer to 128 after median filtering
         let center = denoised.get_pixel(50, 50)[0];
-        assert!(center > 64 && center < 192, "Denoised pixel should be near middle, got {}", center);
+        assert!(
+            center > 64 && center < 192,
+            "Denoised pixel should be near middle, got {}",
+            center
+        );
     }
 
     #[test]
     fn test_preprocess_physical_scan() {
         let img = create_horizontal_lines_image();
-        let (preprocessed, diagnostics) = preprocess(&img, ImageSource::PhysicalScan)
-            .expect("Preprocess failed");
+        let (preprocessed, diagnostics) =
+            preprocess(&img, ImageSource::PhysicalScan).expect("Preprocess failed");
 
         // Should have border padding
         assert_eq!(preprocessed.width(), img.width() + 20);
         assert_eq!(preprocessed.height(), img.height() + 20);
 
         // Diagnostics should not have errors
-        assert!(!diagnostics.iter().any(|d| d.code == DiagCode::ImgUnsupportedFormat));
+        assert!(!diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::ImgUnsupportedFormat));
     }
 
     #[test]
     fn test_preprocess_digital_origin() {
         let img = create_horizontal_lines_image();
-        let (preprocessed, diagnostics) = preprocess(&img, ImageSource::DigitalOrigin)
-            .expect("Preprocess failed");
+        let (preprocessed, diagnostics) =
+            preprocess(&img, ImageSource::DigitalOrigin).expect("Preprocess failed");
 
         // Should have border padding
         assert_eq!(preprocessed.width(), img.width() + 20);
         assert_eq!(preprocessed.height(), img.height() + 20);
 
         // Diagnostics should not have errors
-        assert!(!diagnostics.iter().any(|d| d.code == DiagCode::ImgUnsupportedFormat));
+        assert!(!diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::ImgUnsupportedFormat));
     }
 
     #[test]
     fn test_preprocess_jbig2() {
         let img = create_horizontal_lines_image();
-        let (preprocessed, diagnostics) = preprocess(&img, ImageSource::Jbig2)
-            .expect("Preprocess failed");
+        let (preprocessed, diagnostics) =
+            preprocess(&img, ImageSource::Jbig2).expect("Preprocess failed");
 
         // Should have border padding
         assert_eq!(preprocessed.width(), img.width() + 20);
         assert_eq!(preprocessed.height(), img.height() + 20);
 
         // Diagnostics should not have errors
-        assert!(!diagnostics.iter().any(|d| d.code == DiagCode::ImgUnsupportedFormat));
+        assert!(!diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::ImgUnsupportedFormat));
     }
 
     #[test]
@@ -1067,18 +1110,21 @@ mod tests {
 
     /// Helper to load a fixture image.
     fn load_fixture(path: &str) -> GrayImage {
-        image::io::Reader::with_format(std::io::Cursor::new(std::fs::read(path).unwrap()), image::ImageFormat::Png)
-            .decode()
-            .unwrap()
-            .to_luma8()
+        image::io::Reader::with_format(
+            std::io::Cursor::new(std::fs::read(path).unwrap()),
+            image::ImageFormat::Png,
+        )
+        .decode()
+        .unwrap()
+        .to_luma8()
     }
 
     #[test]
     fn test_preprocess_skewed_2deg_deskews() {
         // Acceptance criterion: 2-deg skewed fixture deskewed within 0.1 deg
         let source = load_fixture("tests/fixtures/preprocess/skewed_2deg/source.png");
-        let (preprocessed, diagnostics) = preprocess(&source, ImageSource::PhysicalScan)
-            .expect("Preprocess failed");
+        let (preprocessed, diagnostics) =
+            preprocess(&source, ImageSource::PhysicalScan).expect("Preprocess failed");
 
         // Should have border padding
         assert_eq!(preprocessed.width(), source.width() + 20);
@@ -1092,21 +1138,28 @@ mod tests {
             BORDER_PADDING,
             preprocessed.width() - 2 * BORDER_PADDING,
             preprocessed.height() - 2 * BORDER_PADDING,
-        ).to_image();
+        )
+        .to_image();
 
         let (_, second_angle, _) = deskew(&cropped).expect("Second deskew failed");
-        assert!(second_angle.abs() < 0.1, "Second pass should detect near-zero skew, got {}", second_angle);
+        assert!(
+            second_angle.abs() < 0.1,
+            "Second pass should detect near-zero skew, got {}",
+            second_angle
+        );
 
         // No errors in diagnostics
-        assert!(!diagnostics.iter().any(|d| d.code == DiagCode::ImgUnsupportedFormat));
+        assert!(!diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::ImgUnsupportedFormat));
     }
 
     #[test]
     fn test_preprocess_uneven_lighting_binarizes() {
         // Acceptance criterion: uneven-lighting binarized correctly
         let source = load_fixture("tests/fixtures/preprocess/uneven_lighting/source.png");
-        let (preprocessed, diagnostics) = preprocess(&source, ImageSource::PhysicalScan)
-            .expect("Preprocess failed");
+        let (preprocessed, diagnostics) =
+            preprocess(&source, ImageSource::PhysicalScan).expect("Preprocess failed");
 
         // Should have border padding
         assert_eq!(preprocessed.width(), source.width() + 20);
@@ -1116,20 +1169,26 @@ mod tests {
         for y in BORDER_PADDING..preprocessed.height() - BORDER_PADDING {
             for x in BORDER_PADDING..preprocessed.width() - BORDER_PADDING {
                 let pixel = preprocessed.get_pixel(x, y)[0];
-                assert!(pixel == 0 || pixel == 255, "Pixel should be binary (0 or 255), got {}", pixel);
+                assert!(
+                    pixel == 0 || pixel == 255,
+                    "Pixel should be binary (0 or 255), got {}",
+                    pixel
+                );
             }
         }
 
         // No errors in diagnostics
-        assert!(!diagnostics.iter().any(|d| d.code == DiagCode::ImgUnsupportedFormat));
+        assert!(!diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::ImgUnsupportedFormat));
     }
 
     #[test]
     fn test_preprocess_clean_digital_binarizes() {
         // Acceptance criterion: clean digital origin binarized with Otsu
         let source = load_fixture("tests/fixtures/preprocess/clean_digital/source.png");
-        let (preprocessed, diagnostics) = preprocess(&source, ImageSource::DigitalOrigin)
-            .expect("Preprocess failed");
+        let (preprocessed, diagnostics) =
+            preprocess(&source, ImageSource::DigitalOrigin).expect("Preprocess failed");
 
         // Should have border padding
         assert_eq!(preprocessed.width(), source.width() + 20);
@@ -1139,20 +1198,26 @@ mod tests {
         for y in BORDER_PADDING..preprocessed.height() - BORDER_PADDING {
             for x in BORDER_PADDING..preprocessed.width() - BORDER_PADDING {
                 let pixel = preprocessed.get_pixel(x, y)[0];
-                assert!(pixel == 0 || pixel == 255, "Pixel should be binary (0 or 255), got {}", pixel);
+                assert!(
+                    pixel == 0 || pixel == 255,
+                    "Pixel should be binary (0 or 255), got {}",
+                    pixel
+                );
             }
         }
 
         // No errors in diagnostics
-        assert!(!diagnostics.iter().any(|d| d.code == DiagCode::ImgUnsupportedFormat));
+        assert!(!diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::ImgUnsupportedFormat));
     }
 
     #[test]
     fn test_preprocess_jbig2_only_pads() {
         // Acceptance criterion: JBIG2 untouched except for border padding
         let source = load_fixture("tests/fixtures/preprocess/jbig2_scan/source.png");
-        let (preprocessed, diagnostics) = preprocess(&source, ImageSource::Jbig2)
-            .expect("Preprocess failed");
+        let (preprocessed, diagnostics) =
+            preprocess(&source, ImageSource::Jbig2).expect("Preprocess failed");
 
         // Should have border padding
         assert_eq!(preprocessed.width(), source.width() + 20);
@@ -1163,12 +1228,18 @@ mod tests {
             for x in 0..source.width() {
                 let orig = source.get_pixel(x, y)[0];
                 let pad = preprocessed.get_pixel(x + BORDER_PADDING, y + BORDER_PADDING)[0];
-                assert_eq!(orig, pad, "JBIG2 inner pixel at ({}, {}) should match original", x, y);
+                assert_eq!(
+                    orig, pad,
+                    "JBIG2 inner pixel at ({}, {}) should match original",
+                    x, y
+                );
             }
         }
 
         // No errors in diagnostics
-        assert!(!diagnostics.iter().any(|d| d.code == DiagCode::ImgUnsupportedFormat));
+        assert!(!diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::ImgUnsupportedFormat));
     }
 
     #[test]
@@ -1176,10 +1247,10 @@ mod tests {
         // Acceptance criterion: same input -> bit-identical output
         let source = load_fixture("tests/fixtures/preprocess/clean_digital/source.png");
 
-        let (result1, _) = preprocess(&source, ImageSource::DigitalOrigin)
-            .expect("First preprocess failed");
-        let (result2, _) = preprocess(&source, ImageSource::DigitalOrigin)
-            .expect("Second preprocess failed");
+        let (result1, _) =
+            preprocess(&source, ImageSource::DigitalOrigin).expect("First preprocess failed");
+        let (result2, _) =
+            preprocess(&source, ImageSource::DigitalOrigin).expect("Second preprocess failed");
 
         // Compare pixel-by-pixel
         assert_eq!(result1.dimensions(), result2.dimensions());
@@ -1196,34 +1267,50 @@ mod tests {
     fn test_preprocess_border_padding_pixel_perfect() {
         // Acceptance criterion: padding adds exactly 10px on each side
         let source = load_fixture("tests/fixtures/preprocess/clean_digital/source.png");
-        let (preprocessed, _) = preprocess(&source, ImageSource::DigitalOrigin)
-            .expect("Preprocess failed");
+        let (preprocessed, _) =
+            preprocess(&source, ImageSource::DigitalOrigin).expect("Preprocess failed");
 
         // Check top border is white
         for x in 0..preprocessed.width() {
             for y in 0..BORDER_PADDING {
-                assert_eq!(preprocessed.get_pixel(x, y)[0], 255, "Top border should be white");
+                assert_eq!(
+                    preprocessed.get_pixel(x, y)[0],
+                    255,
+                    "Top border should be white"
+                );
             }
         }
 
         // Check bottom border is white
         for x in 0..preprocessed.width() {
             for y in preprocessed.height() - BORDER_PADDING..preprocessed.height() {
-                assert_eq!(preprocessed.get_pixel(x, y)[0], 255, "Bottom border should be white");
+                assert_eq!(
+                    preprocessed.get_pixel(x, y)[0],
+                    255,
+                    "Bottom border should be white"
+                );
             }
         }
 
         // Check left border is white
         for y in 0..preprocessed.height() {
             for x in 0..BORDER_PADDING {
-                assert_eq!(preprocessed.get_pixel(x, y)[0], 255, "Left border should be white");
+                assert_eq!(
+                    preprocessed.get_pixel(x, y)[0],
+                    255,
+                    "Left border should be white"
+                );
             }
         }
 
         // Check right border is white
         for y in 0..preprocessed.height() {
             for x in preprocessed.width() - BORDER_PADDING..preprocessed.width() {
-                assert_eq!(preprocessed.get_pixel(x, y)[0], 255, "Right border should be white");
+                assert_eq!(
+                    preprocessed.get_pixel(x, y)[0],
+                    255,
+                    "Right border should be white"
+                );
             }
         }
     }
@@ -1267,8 +1354,8 @@ mod benches {
         let img = create_a4_test_image();
 
         let start = Instant::now();
-        let (result, diagnostics) = preprocess(&img, ImageSource::PhysicalScan)
-            .expect("Preprocess failed");
+        let (result, diagnostics) =
+            preprocess(&img, ImageSource::PhysicalScan).expect("Preprocess failed");
         let elapsed = start.elapsed();
 
         println!("A4 (2480x3508) PhysicalScan preprocess time: {:?}", elapsed);
@@ -1292,11 +1379,13 @@ mod benches {
         let img = create_a4_test_image();
 
         let start = Instant::now();
-        let (result, _) = preprocess(&img, ImageSource::DigitalOrigin)
-            .expect("Preprocess failed");
+        let (result, _) = preprocess(&img, ImageSource::DigitalOrigin).expect("Preprocess failed");
         let elapsed = start.elapsed();
 
-        println!("A4 (2480x3508) DigitalOrigin preprocess time: {:?}", elapsed);
+        println!(
+            "A4 (2480x3508) DigitalOrigin preprocess time: {:?}",
+            elapsed
+        );
 
         assert_eq!(result.width(), A4_WIDTH + 20);
         assert_eq!(result.height(), A4_HEIGHT + 20);
@@ -1313,8 +1402,7 @@ mod benches {
         let img = create_a4_test_image();
 
         let start = Instant::now();
-        let (result, _) = preprocess(&img, ImageSource::Jbig2)
-            .expect("Preprocess failed");
+        let (result, _) = preprocess(&img, ImageSource::Jbig2).expect("Preprocess failed");
         let elapsed = start.elapsed();
 
         println!("A4 (2480x3508) Jbig2 preprocess time: {:?}", elapsed);

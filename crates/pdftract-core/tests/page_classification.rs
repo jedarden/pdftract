@@ -55,8 +55,7 @@ fn get_fixture_dir() -> PathBuf {
 
     // Try using CARGO_MANIFEST_DIR
     if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
-        let from_manifest = PathBuf::from(manifest_dir)
-            .join("../../tests/fixtures/page_class");
+        let from_manifest = PathBuf::from(manifest_dir).join("../../tests/fixtures/page_class");
         if from_manifest.exists() {
             return from_manifest;
         }
@@ -87,7 +86,8 @@ fn discover_fixtures() -> Vec<Fixture> {
             continue;
         }
 
-        let name = path.file_name()
+        let name = path
+            .file_name()
             .expect("No file name")
             .to_string_lossy()
             .to_string();
@@ -278,7 +278,9 @@ fn test_page_classification_fixtures() {
         assert!(
             result.confidence >= fixture.expected.confidence_min,
             "Fixture '{}' confidence {} below threshold {}",
-            fixture.name, result.confidence, fixture.expected.confidence_min
+            fixture.name,
+            result.confidence,
+            fixture.expected.confidence_min
         );
 
         // For Hybrid: check hybrid_cells presence and content
@@ -289,7 +291,9 @@ fn test_page_classification_fixtures() {
                 fixture.name
             );
             // Verify hybrid_cells matches expected
-            let expected_cells: std::collections::BTreeSet<usize> = fixture.expected.hybrid_cells
+            let expected_cells: std::collections::BTreeSet<usize> = fixture
+                .expected
+                .hybrid_cells
                 .as_ref()
                 .expect("Hybrid fixture must have hybrid_cells array")
                 .iter()
@@ -306,7 +310,8 @@ fn test_page_classification_fixtures() {
             assert!(
                 result.hybrid_cells.is_none(),
                 "Fixture '{}' (non-Hybrid) has unexpected hybrid_cells: {:?}",
-                fixture.name, result.hybrid_cells
+                fixture.name,
+                result.hybrid_cells
             );
         }
     }
@@ -341,7 +346,10 @@ fn test_page_classification_reproducibility() {
         );
     }
 
-    println!("Reproducibility check passed for {} fixtures", fixtures.len());
+    println!(
+        "Reproducibility check passed for {} fixtures",
+        fixtures.len()
+    );
 }
 
 /// Test that fixture files exist and total size < 1 MB
@@ -360,7 +368,9 @@ fn test_fixture_files_exist_and_size() {
         );
 
         // Check PDF is not empty
-        let metadata = fixture.pdf_path.metadata()
+        let metadata = fixture
+            .pdf_path
+            .metadata()
             .expect("Failed to get PDF metadata");
         assert!(
             metadata.len() > 0,
@@ -373,7 +383,11 @@ fn test_fixture_files_exist_and_size() {
         println!("  {}: {} bytes", fixture.name, metadata.len());
     }
 
-    println!("Total fixture size: {} bytes ({} MB)", total_size, total_size as f64 / 1024.0 / 1024.0);
+    println!(
+        "Total fixture size: {} bytes ({} MB)",
+        total_size,
+        total_size as f64 / 1024.0 / 1024.0
+    );
 
     // Check total size < 1 MB
     assert!(
@@ -393,7 +407,8 @@ fn test_expected_json_validity() {
         assert!(
             fixture.expected.confidence_min >= 0.0 && fixture.expected.confidence_min <= 1.0,
             "Fixture '{}' has invalid confidence_min: {}",
-            fixture.name, fixture.expected.confidence_min
+            fixture.name,
+            fixture.expected.confidence_min
         );
 
         // Verify class is one of the expected values
@@ -401,7 +416,8 @@ fn test_expected_json_validity() {
         assert!(
             valid_classes.contains(&fixture.expected.class.as_str()),
             "Fixture '{}' has invalid class: {}",
-            fixture.name, fixture.expected.class
+            fixture.name,
+            fixture.expected.class
         );
     }
 
@@ -415,7 +431,7 @@ fn test_expected_json_validity() {
 /// test fails with a clear diff.
 #[test]
 fn test_reproducibility_gate_with_perturbation() {
-    use pdftract_core::classify::{PageContext, classify_page};
+    use pdftract_core::classify::{classify_page, PageContext};
 
     // Create a page context for a vector page
     let mut ctx = PageContext::new();
@@ -447,7 +463,10 @@ fn test_reproducibility_gate_with_perturbation() {
     });
 
     // Verify the test did panic (reproducibility gate caught the perturbation)
-    assert!(result.is_err(), "Reproducibility gate should have failed on perturbation");
+    assert!(
+        result.is_err(),
+        "Reproducibility gate should have failed on perturbation"
+    );
 
     // Verify the error message contains the diff
     if let Err(panic_payload) = result {
@@ -459,11 +478,11 @@ fn test_reproducibility_gate_with_perturbation() {
             "Unknown panic message".to_string()
         };
         assert!(
-            panic_msg.contains("Reproducibility gate should fail on perturbation") ||
-            panic_msg.contains("assertion `left == right` failed") ||
-            panic_msg.contains("assert_eq!") ||
-            panic_msg.contains("First:") ||
-            panic_msg.contains("Second:"),
+            panic_msg.contains("Reproducibility gate should fail on perturbation")
+                || panic_msg.contains("assertion `left == right` failed")
+                || panic_msg.contains("assert_eq!")
+                || panic_msg.contains("First:")
+                || panic_msg.contains("Second:"),
             "Panic message should contain diff information, got: {}",
             panic_msg
         );

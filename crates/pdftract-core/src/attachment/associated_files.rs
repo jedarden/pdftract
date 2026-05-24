@@ -20,9 +20,9 @@
 //! - "EncryptedPayload": The file is an encrypted payload
 //! - "Unspecified": No specific relationship (default)
 
+use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::parser::object::ObjRef;
 use crate::parser::xref::XrefResolver;
-use crate::diagnostics::{Diagnostic, DiagCode};
 
 /// Result type for /AF parsing.
 pub type Result<T> = std::result::Result<T, Vec<Diagnostic>>;
@@ -119,7 +119,11 @@ pub fn walk_af_array(
             None => {
                 diagnostics.push(Diagnostic::with_dynamic_no_offset(
                     DiagCode::StructInvalidType,
-                    format!("/AF[{}] is not a reference (type: {})", idx, entry_obj.type_name()),
+                    format!(
+                        "/AF[{}] is not a reference (type: {})",
+                        idx,
+                        entry_obj.type_name()
+                    ),
                 ));
                 continue;
             }
@@ -179,19 +183,21 @@ fn extract_af_relationship(
         None => {
             diagnostics.push(Diagnostic::with_dynamic_no_offset(
                 DiagCode::StructInvalidType,
-                format!("Filespec {} is not a dictionary (type: {})", filespec_ref, filespec_obj.type_name()),
+                format!(
+                    "Filespec {} is not a dictionary (type: {})",
+                    filespec_ref,
+                    filespec_obj.type_name()
+                ),
             ));
             return Err(diagnostics);
         }
     };
 
     // Extract /AFRelationship (optional)
-    let relationship = filespec_dict
-        .get("/AFRelationship")
-        .and_then(|obj| {
-            // /AFRelationship is typically a Name object
-            obj.as_name().map(|s| s.to_string())
-        });
+    let relationship = filespec_dict.get("/AFRelationship").and_then(|obj| {
+        // /AFRelationship is typically a Name object
+        obj.as_name().map(|s| s.to_string())
+    });
 
     Ok(relationship)
 }
@@ -203,11 +209,7 @@ mod tests {
     use indexmap::IndexMap;
 
     /// Helper to create a test Filespec dictionary.
-    fn make_filespec(
-        resolver: &XrefResolver,
-        obj_ref: ObjRef,
-        relationship: Option<&str>,
-    ) {
+    fn make_filespec(resolver: &XrefResolver, obj_ref: ObjRef, relationship: Option<&str>) {
         let mut dict = IndexMap::new();
         dict.insert(intern("/Type"), PdfObject::Name(intern("Filespec")));
         dict.insert(intern("/F"), PdfObject::Name(intern("test.pdf")));
@@ -326,7 +328,9 @@ mod tests {
         assert!(result.is_err());
 
         let diagnostics = result.unwrap_err();
-        assert!(diagnostics.iter().any(|d| d.message.contains("not an array")));
+        assert!(diagnostics
+            .iter()
+            .any(|d| d.message.contains("not an array")));
     }
 
     #[test]
@@ -350,15 +354,14 @@ mod tests {
         assert!(result.is_err());
 
         let diagnostics = result.unwrap_err();
-        assert!(diagnostics.iter().any(|d| d.message.contains("not a reference")));
+        assert!(diagnostics
+            .iter()
+            .any(|d| d.message.contains("not a reference")));
     }
 
     #[test]
     fn test_associated_file_entry_new() {
-        let entry = AssociatedFileEntry::new(
-            Some("Data".to_string()),
-            ObjRef::new(42, 0),
-        );
+        let entry = AssociatedFileEntry::new(Some("Data".to_string()), ObjRef::new(42, 0));
 
         assert_eq!(entry.relationship, Some("Data".to_string()));
         assert_eq!(entry.filespec_ref, ObjRef::new(42, 0));
@@ -428,7 +431,10 @@ mod tests {
         assert_eq!(entries[2].filespec_ref, fs3);
 
         assert_eq!(entries[0].relationship, Some("Unspecified".to_string()));
-        assert_eq!(entries[1].relationship, Some("EncryptedPayload".to_string()));
+        assert_eq!(
+            entries[1].relationship,
+            Some("EncryptedPayload".to_string())
+        );
         assert_eq!(entries[2].relationship, Some("Source".to_string()));
     }
 
@@ -465,10 +471,7 @@ mod tests {
         assert_eq!(entries.len(), relationships.len());
 
         for (idx, entry) in entries.iter().enumerate() {
-            assert_eq!(
-                entry.relationship.as_deref(),
-                Some(relationships[idx])
-            );
+            assert_eq!(entry.relationship.as_deref(), Some(relationships[idx]));
         }
     }
 }

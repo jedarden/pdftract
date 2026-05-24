@@ -8,9 +8,9 @@
 
 use std::collections::HashMap;
 
-use crate::parser::{Diagnostic, DiagCode};
 use crate::parser::object::{intern, ObjRef, PdfDict, PdfObject};
 use crate::parser::xref::XrefResolver;
+use crate::parser::{DiagCode, Diagnostic};
 
 /// Base state for OCG visibility in the default configuration.
 ///
@@ -102,15 +102,13 @@ impl Ocmd {
         // Parse /OCGs (can be a single ref or an array)
         let ocgs = match dict.get("OCGs") {
             Some(PdfObject::Ref(ref_)) => vec![*ref_],
-            Some(PdfObject::Array(arr)) => arr
-                .iter()
-                .filter_map(|o| o.as_ref())
-                .collect(),
+            Some(PdfObject::Array(arr)) => arr.iter().filter_map(|o| o.as_ref()).collect(),
             _ => return None,
         };
 
         // Parse /P (policy; defaults to AnyOn if absent per spec)
-        let policy = dict.get("P")
+        let policy = dict
+            .get("P")
             .and_then(|o| o.as_name())
             .and_then(OcmdPolicy::from_name)
             .unwrap_or(OcmdPolicy::AnyOn);
@@ -153,7 +151,8 @@ impl OcGroup {
 
         // Parse /Name (required per spec, but we handle missing)
         if let Some(name_obj) = dict.get("Name") {
-            group.name = name_obj.as_string()
+            group.name = name_obj
+                .as_string()
                 .or_else(|| name_obj.as_name().map(|s| s.as_bytes()))
                 .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok());
         }
@@ -245,7 +244,8 @@ impl OcProperties {
 
     /// Evaluate an OCMD policy against current OCG states.
     fn evaluate_ocmd_policy(&self, ocmd: &Ocmd) -> bool {
-        let ocg_states: Vec<bool> = ocmd.ocgs
+        let ocg_states: Vec<bool> = ocmd
+            .ocgs
             .iter()
             .map(|&ref_| self.is_visible(ref_))
             .collect();
@@ -279,10 +279,7 @@ impl Default for OcProperties {
 /// # Returns
 /// An `OcProperties` struct containing the parsed OCG information.
 /// If `oc_props_ref` is None, returns `OcProperties::not_present()`.
-pub fn parse_oc_properties(
-    resolver: &XrefResolver,
-    oc_props_ref: Option<ObjRef>,
-) -> OcProperties {
+pub fn parse_oc_properties(resolver: &XrefResolver, oc_props_ref: Option<ObjRef>) -> OcProperties {
     let oc_props_ref = match oc_props_ref {
         Some(r) => r,
         None => return OcProperties::not_present(),
@@ -316,7 +313,10 @@ pub fn parse_oc_properties(
         None => {
             diagnostics.push(Diagnostic::with_dynamic_no_offset(
                 DiagCode::StructUnexpectedEof,
-                format!("/OCProperties is not a dictionary (type: {})", oc_props_obj.type_name()),
+                format!(
+                    "/OCProperties is not a dictionary (type: {})",
+                    oc_props_obj.type_name()
+                ),
             ));
             oc_properties.diagnostics = diagnostics;
             return oc_properties;
@@ -325,10 +325,7 @@ pub fn parse_oc_properties(
 
     // Parse /OCGs array (required per spec)
     let ocg_refs: Vec<ObjRef> = match oc_props_dict.get("OCGs") {
-        Some(PdfObject::Array(arr)) => arr
-            .iter()
-            .filter_map(|o| o.as_ref())
-            .collect(),
+        Some(PdfObject::Array(arr)) => arr.iter().filter_map(|o| o.as_ref()).collect(),
         Some(other) => {
             diagnostics.push(Diagnostic::with_dynamic_no_offset(
                 DiagCode::StructUnexpectedEof,
@@ -385,14 +382,17 @@ pub fn parse_oc_properties(
     };
 
     // Parse /BaseState (defaults to ON if absent)
-    oc_properties.base_state = default_config.get("BaseState")
+    oc_properties.base_state = default_config
+        .get("BaseState")
         .and_then(|o| o.as_name())
         .and_then(BaseState::from_name)
         .unwrap_or(BaseState::On);
 
     // Initialize all OCGs to base state
     for &ocg_ref in &ocg_refs {
-        oc_properties.default_visibility.insert(ocg_ref, oc_properties.base_state.as_bool());
+        oc_properties
+            .default_visibility
+            .insert(ocg_ref, oc_properties.base_state.as_bool());
     }
 
     // Apply /ON array (overrides BaseState for these OCGs)
@@ -433,7 +433,10 @@ mod tests {
     fn make_test_ocg(obj_ref: ObjRef, name: &str, intent: Option<&str>) -> PdfObject {
         let mut dict = PdfDict::new();
         dict.insert(intern("Type"), PdfObject::Name(intern("OCG")));
-        dict.insert(intern("Name"), PdfObject::String(Box::new(name.as_bytes().to_vec())));
+        dict.insert(
+            intern("Name"),
+            PdfObject::String(Box::new(name.as_bytes().to_vec())),
+        );
         if let Some(i) = intent {
             dict.insert(intern("Intent"), PdfObject::Name(intern(i)));
         }
@@ -444,7 +447,10 @@ mod tests {
     fn test_base_state_from_name() {
         assert_eq!(BaseState::from_name("ON"), Some(BaseState::On));
         assert_eq!(BaseState::from_name("OFF"), Some(BaseState::Off));
-        assert_eq!(BaseState::from_name("Unchanged"), Some(BaseState::Unchanged));
+        assert_eq!(
+            BaseState::from_name("Unchanged"),
+            Some(BaseState::Unchanged)
+        );
         assert_eq!(BaseState::from_name("Invalid"), None);
     }
 
@@ -495,10 +501,13 @@ mod tests {
 
         // Create /OCProperties dict
         let mut oc_props_dict = PdfDict::new();
-        oc_props_dict.insert(intern("OCGs"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(ocg1_ref),
-            PdfObject::Ref(ocg2_ref),
-        ])));
+        oc_props_dict.insert(
+            intern("OCGs"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Ref(ocg1_ref),
+                PdfObject::Ref(ocg2_ref),
+            ])),
+        );
 
         let mut default_config = PdfDict::new();
         default_config.insert(intern("BaseState"), PdfObject::Name(intern("ON")));
@@ -527,10 +536,13 @@ mod tests {
         resolver.cache_object(ocg2_ref, make_test_ocg(ocg2_ref, "Layer2", None));
 
         let mut oc_props_dict = PdfDict::new();
-        oc_props_dict.insert(intern("OCGs"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(ocg1_ref),
-            PdfObject::Ref(ocg2_ref),
-        ])));
+        oc_props_dict.insert(
+            intern("OCGs"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Ref(ocg1_ref),
+                PdfObject::Ref(ocg2_ref),
+            ])),
+        );
 
         let mut default_config = PdfDict::new();
         default_config.insert(intern("BaseState"), PdfObject::Name(intern("OFF")));
@@ -559,18 +571,24 @@ mod tests {
         resolver.cache_object(ocg3_ref, make_test_ocg(ocg3_ref, "Layer3", None));
 
         let mut oc_props_dict = PdfDict::new();
-        oc_props_dict.insert(intern("OCGs"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(ocg1_ref),
-            PdfObject::Ref(ocg2_ref),
-            PdfObject::Ref(ocg3_ref),
-        ])));
+        oc_props_dict.insert(
+            intern("OCGs"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Ref(ocg1_ref),
+                PdfObject::Ref(ocg2_ref),
+                PdfObject::Ref(ocg3_ref),
+            ])),
+        );
 
         let mut default_config = PdfDict::new();
         default_config.insert(intern("BaseState"), PdfObject::Name(intern("OFF")));
-        default_config.insert(intern("ON"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(ocg1_ref),
-            PdfObject::Ref(ocg2_ref),
-        ])));
+        default_config.insert(
+            intern("ON"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Ref(ocg1_ref),
+                PdfObject::Ref(ocg2_ref),
+            ])),
+        );
         oc_props_dict.insert(intern("D"), PdfObject::Dict(Box::new(default_config)));
 
         let oc_props_ref = ObjRef::new(1, 0);
@@ -595,16 +613,20 @@ mod tests {
         resolver.cache_object(ocg2_ref, make_test_ocg(ocg2_ref, "Layer2", None));
 
         let mut oc_props_dict = PdfDict::new();
-        oc_props_dict.insert(intern("OCGs"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(ocg1_ref),
-            PdfObject::Ref(ocg2_ref),
-        ])));
+        oc_props_dict.insert(
+            intern("OCGs"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Ref(ocg1_ref),
+                PdfObject::Ref(ocg2_ref),
+            ])),
+        );
 
         let mut default_config = PdfDict::new();
         default_config.insert(intern("BaseState"), PdfObject::Name(intern("ON")));
-        default_config.insert(intern("OFF"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(ocg2_ref),
-        ])));
+        default_config.insert(
+            intern("OFF"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(ocg2_ref)])),
+        );
         oc_props_dict.insert(intern("D"), PdfObject::Dict(Box::new(default_config)));
 
         let oc_props_ref = ObjRef::new(1, 0);
@@ -626,19 +648,22 @@ mod tests {
         resolver.cache_object(ocg1_ref, make_test_ocg(ocg1_ref, "Layer1", None));
 
         let mut oc_props_dict = PdfDict::new();
-        oc_props_dict.insert(intern("OCGs"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(ocg1_ref),
-        ])));
+        oc_props_dict.insert(
+            intern("OCGs"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(ocg1_ref)])),
+        );
 
         let mut default_config = PdfDict::new();
         default_config.insert(intern("BaseState"), PdfObject::Name(intern("OFF")));
         // OCG in both /ON and /OFF: /OFF wins per spec
-        default_config.insert(intern("ON"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(ocg1_ref),
-        ])));
-        default_config.insert(intern("OFF"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(ocg1_ref),
-        ])));
+        default_config.insert(
+            intern("ON"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(ocg1_ref)])),
+        );
+        default_config.insert(
+            intern("OFF"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(ocg1_ref)])),
+        );
         oc_props_dict.insert(intern("D"), PdfObject::Dict(Box::new(default_config)));
 
         let oc_props_ref = ObjRef::new(1, 0);
@@ -658,9 +683,10 @@ mod tests {
         resolver.cache_object(ocg1_ref, make_test_ocg(ocg1_ref, "TestLayer", None));
 
         let mut oc_props_dict = PdfDict::new();
-        oc_props_dict.insert(intern("OCGs"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(ocg1_ref),
-        ])));
+        oc_props_dict.insert(
+            intern("OCGs"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(ocg1_ref)])),
+        );
 
         let mut default_config = PdfDict::new();
         default_config.insert(intern("BaseState"), PdfObject::Name(intern("ON")));
@@ -699,10 +725,13 @@ mod tests {
 
         let mut ocmd_dict = PdfDict::new();
         ocmd_dict.insert(intern("Type"), PdfObject::Name(intern("OCMD")));
-        ocmd_dict.insert(intern("OCGs"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(ocg1_ref),
-            PdfObject::Ref(ocg2_ref),
-        ])));
+        ocmd_dict.insert(
+            intern("OCGs"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Ref(ocg1_ref),
+                PdfObject::Ref(ocg2_ref),
+            ])),
+        );
         ocmd_dict.insert(intern("P"), PdfObject::Name(intern("AllOn")));
 
         let ocmd = Ocmd::parse(&PdfObject::Dict(Box::new(ocmd_dict)));
@@ -789,11 +818,17 @@ mod tests {
     fn test_ocg_group_parse() {
         let mut ocg_dict = PdfDict::new();
         ocg_dict.insert(intern("Type"), PdfObject::Name(intern("OCG")));
-        ocg_dict.insert(intern("Name"), PdfObject::String(Box::new(b"TestLayer".to_vec())));
-        ocg_dict.insert(intern("Intent"), PdfObject::Array(Box::new(vec![
-            PdfObject::Name(intern("View")),
-            PdfObject::Name(intern("Design")),
-        ])));
+        ocg_dict.insert(
+            intern("Name"),
+            PdfObject::String(Box::new(b"TestLayer".to_vec())),
+        );
+        ocg_dict.insert(
+            intern("Intent"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Name(intern("View")),
+                PdfObject::Name(intern("Design")),
+            ])),
+        );
 
         let group = OcGroup::parse(&PdfObject::Dict(Box::new(ocg_dict)), &mut Vec::new());
 

@@ -40,7 +40,11 @@ pub enum CharacterCollection {
 
 impl PredefinedCMap {
     /// Create a new predefined CMap.
-    const fn new(name: &'static str, is_vertical: bool, collection: Option<CharacterCollection>) -> Self {
+    const fn new(
+        name: &'static str,
+        is_vertical: bool,
+        collection: Option<CharacterCollection>,
+    ) -> Self {
         Self {
             name,
             is_vertical,
@@ -172,20 +176,52 @@ pub fn from_name(name: &str) -> Option<PredefinedCMap> {
         "Identity-V" => Some(PredefinedCMap::new("Identity-V", true, None)),
 
         // Adobe-Japan1 (Japanese)
-        "UniJIS-UTF16-H" => Some(PredefinedCMap::new("UniJIS-UTF16-H", false, Some(CharacterCollection::Japan1))),
-        "UniJIS-UTF16-V" => Some(PredefinedCMap::new("UniJIS-UTF16-V", true, Some(CharacterCollection::Japan1))),
+        "UniJIS-UTF16-H" => Some(PredefinedCMap::new(
+            "UniJIS-UTF16-H",
+            false,
+            Some(CharacterCollection::Japan1),
+        )),
+        "UniJIS-UTF16-V" => Some(PredefinedCMap::new(
+            "UniJIS-UTF16-V",
+            true,
+            Some(CharacterCollection::Japan1),
+        )),
 
         // Adobe-GB1 (Simplified Chinese)
-        "UniGB-UTF16-H" => Some(PredefinedCMap::new("UniGB-UTF16-H", false, Some(CharacterCollection::GB1))),
-        "UniGB-UTF16-V" => Some(PredefinedCMap::new("UniGB-UTF16-V", true, Some(CharacterCollection::GB1))),
+        "UniGB-UTF16-H" => Some(PredefinedCMap::new(
+            "UniGB-UTF16-H",
+            false,
+            Some(CharacterCollection::GB1),
+        )),
+        "UniGB-UTF16-V" => Some(PredefinedCMap::new(
+            "UniGB-UTF16-V",
+            true,
+            Some(CharacterCollection::GB1),
+        )),
 
         // Adobe-CNS1 (Traditional Chinese)
-        "UniCNS-UTF16-H" => Some(PredefinedCMap::new("UniCNS-UTF16-H", false, Some(CharacterCollection::CNS1))),
-        "UniCNS-UTF16-V" => Some(PredefinedCMap::new("UniCNS-UTF16-V", true, Some(CharacterCollection::CNS1))),
+        "UniCNS-UTF16-H" => Some(PredefinedCMap::new(
+            "UniCNS-UTF16-H",
+            false,
+            Some(CharacterCollection::CNS1),
+        )),
+        "UniCNS-UTF16-V" => Some(PredefinedCMap::new(
+            "UniCNS-UTF16-V",
+            true,
+            Some(CharacterCollection::CNS1),
+        )),
 
         // Adobe-Korea1 (Korean)
-        "UniKS-UTF16-H" => Some(PredefinedCMap::new("UniKS-UTF16-H", false, Some(CharacterCollection::Korea1))),
-        "UniKS-UTF16-V" => Some(PredefinedCMap::new("UniKS-UTF16-V", true, Some(CharacterCollection::Korea1))),
+        "UniKS-UTF16-H" => Some(PredefinedCMap::new(
+            "UniKS-UTF16-H",
+            false,
+            Some(CharacterCollection::Korea1),
+        )),
+        "UniKS-UTF16-V" => Some(PredefinedCMap::new(
+            "UniKS-UTF16-V",
+            true,
+            Some(CharacterCollection::Korea1),
+        )),
 
         _ => None,
     }
@@ -318,11 +354,16 @@ mod tests {
     fn test_all_predefined_names() {
         // Verify all 10 predefined CMap names resolve
         let names = [
-            "Identity-H", "Identity-V",
-            "UniJIS-UTF16-H", "UniJIS-UTF16-V",
-            "UniGB-UTF16-H", "UniGB-UTF16-V",
-            "UniCNS-UTF16-H", "UniCNS-UTF16-V",
-            "UniKS-UTF16-H", "UniKS-UTF16-V",
+            "Identity-H",
+            "Identity-V",
+            "UniJIS-UTF16-H",
+            "UniJIS-UTF16-V",
+            "UniGB-UTF16-H",
+            "UniGB-UTF16-V",
+            "UniCNS-UTF16-H",
+            "UniCNS-UTF16-V",
+            "UniKS-UTF16-H",
+            "UniKS-UTF16-V",
         ];
 
         for name in names {

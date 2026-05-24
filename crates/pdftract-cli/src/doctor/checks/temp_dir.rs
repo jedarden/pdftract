@@ -1,6 +1,6 @@
-use std::path::{Path, PathBuf};
-use std::env;
 use super::super::{Check, CheckResult, CheckStatus, DoctorCtx};
+use std::env;
+use std::path::{Path, PathBuf};
 
 /// Check: temp directory writable and free space
 ///
@@ -25,8 +25,7 @@ impl TempDirCheck {
         // Try to create a temporary file
         let test_file = path.join(".pdftract-doctor-test");
 
-        std::fs::write(&test_file, b"test")
-            .map_err(|e| format!("Not writable: {}", e))?;
+        std::fs::write(&test_file, b"test").map_err(|e| format!("Not writable: {}", e))?;
 
         // Clean up
         let _ = std::fs::remove_file(&test_file);
@@ -36,9 +35,9 @@ impl TempDirCheck {
 
     #[cfg(unix)]
     fn check_free_space(path: &Path) -> Result<u64, String> {
+        use libc::{c_char, statvfs};
         use std::ffi::CString;
         use std::os::unix::ffi::OsStrExt;
-        use libc::{statvfs, c_char};
 
         let path_cstr = CString::new(path.as_os_str().as_bytes())
             .map_err(|_| "Failed to convert path to CString".to_string())?;
@@ -114,20 +113,24 @@ impl Check for TempDirCheck {
                     }
                 }
             }
-            (Err(e), _) => {
-                CheckResult {
-                    name: self.name(),
-                    status: CheckStatus::Fail,
-                    detail: format!("Temp directory check failed at {}: {}", temp_dir.display(), e),
-                }
-            }
-            (_, Err(e)) => {
-                CheckResult {
-                    name: self.name(),
-                    status: CheckStatus::Warn,
-                    detail: format!("Could not check free space at {}: {}", temp_dir.display(), e),
-                }
-            }
+            (Err(e), _) => CheckResult {
+                name: self.name(),
+                status: CheckStatus::Fail,
+                detail: format!(
+                    "Temp directory check failed at {}: {}",
+                    temp_dir.display(),
+                    e
+                ),
+            },
+            (_, Err(e)) => CheckResult {
+                name: self.name(),
+                status: CheckStatus::Warn,
+                detail: format!(
+                    "Could not check free space at {}: {}",
+                    temp_dir.display(),
+                    e
+                ),
+            },
         }
     }
 }

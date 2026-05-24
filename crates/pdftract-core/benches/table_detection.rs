@@ -3,12 +3,12 @@
 // Tests the performance of line-based and borderless table detection
 // on pages with varying numbers of path segments and text positions.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
-use pdftract_core::table::{TableDetector, PageContext};
-use pdftract_core::parser::pages::PageDict;
-use std::sync::Arc;
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use pdftract_core::parser::object::ObjRef;
+use pdftract_core::parser::pages::PageDict;
 use pdftract_core::parser::resources::ResourceDict;
+use pdftract_core::table::{PageContext, TableDetector};
+use std::sync::Arc;
 
 fn make_page() -> PageDict {
     PageDict {
@@ -99,9 +99,7 @@ fn bench_table_detection(c: &mut Criterion) {
                 let content = generate_grid_content(num_horiz, num_vert);
                 let ctx = PageContext::new(&page, &content);
 
-                b.iter(|| {
-                    black_box(detector.detect_line_based(black_box(&ctx)))
-                });
+                b.iter(|| black_box(detector.detect_line_based(black_box(&ctx))));
             },
         );
     }
@@ -111,9 +109,7 @@ fn bench_table_detection(c: &mut Criterion) {
         let content = generate_grid_content(500, 500);
         let ctx = PageContext::new(&page, &content);
 
-        b.iter(|| {
-            black_box(detector.detect_line_based(black_box(&ctx)))
-        });
+        b.iter(|| black_box(detector.detect_line_based(black_box(&ctx))));
     });
 
     group.finish();
@@ -135,9 +131,7 @@ fn bench_borderless_detection(c: &mut Criterion) {
                 let content = generate_borderless_content(num_rows, num_cols);
                 let ctx = PageContext::new(&page, &content);
 
-                b.iter(|| {
-                    black_box(detector.detect_borderless(black_box(&ctx)))
-                });
+                b.iter(|| black_box(detector.detect_borderless(black_box(&ctx))));
             },
         );
     }

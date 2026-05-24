@@ -5,14 +5,20 @@
 //! provides the tools/list response.
 
 use super::args::*;
-use super::{ERROR_NOT_YET_IMPLEMENTED, ERROR_IO_ERROR, ERROR_PATH_INVALID, CODE_IO_ERROR, CODE_PATH_INVALID};
+use super::{
+    CODE_IO_ERROR, CODE_PATH_INVALID, ERROR_IO_ERROR, ERROR_NOT_YET_IMPLEMENTED, ERROR_PATH_INVALID,
+};
 use crate::mcp::framing::ErrorObject;
 use crate::mcp::root::resolve_path;
 use pdftract_core::{
-    parser::{self, catalog, pages, stream::{MemorySource, PdfSource}, xref},
     diagnostics::DiagCode,
-    options::{ExtractionOptions, ReceiptsMode},
     extract::{extract_pdf, result_to_json},
+    options::{ExtractionOptions, ReceiptsMode},
+    parser::{
+        self, catalog, pages,
+        stream::{MemorySource, PdfSource},
+        xref,
+    },
 };
 use regex::Regex;
 use serde_json::{json, to_value, Value};
@@ -153,19 +159,19 @@ fn find_startxref_offset(data: &[u8]) -> Result<u64, ErrorObject> {
             return Err(ErrorObject::server_error(
                 super::ERROR_IO_ERROR,
                 "Invalid startxref offset in PDF",
-            ).with_data(json!({"code": super::CODE_IO_ERROR})));
+            )
+            .with_data(json!({"code": super::CODE_IO_ERROR})));
         }
 
-        let offset_str = std::str::from_utf8(&data[offset_start..offset_end])
-            .map_err(|_| ErrorObject::server_error(
-                super::ERROR_IO_ERROR,
-                "Invalid UTF-8 in startxref offset",
-            ).with_data(json!({"code": super::CODE_IO_ERROR})))?;
+        let offset_str = std::str::from_utf8(&data[offset_start..offset_end]).map_err(|_| {
+            ErrorObject::server_error(super::ERROR_IO_ERROR, "Invalid UTF-8 in startxref offset")
+                .with_data(json!({"code": super::CODE_IO_ERROR}))
+        })?;
 
-        let offset: u64 = offset_str.parse().map_err(|_| ErrorObject::server_error(
-            super::ERROR_IO_ERROR,
-            "Failed to parse startxref offset",
-        ).with_data(json!({"code": super::CODE_IO_ERROR})))?;
+        let offset: u64 = offset_str.parse().map_err(|_| {
+            ErrorObject::server_error(super::ERROR_IO_ERROR, "Failed to parse startxref offset")
+                .with_data(json!({"code": super::CODE_IO_ERROR}))
+        })?;
 
         Ok(offset)
     } else {
@@ -200,24 +206,26 @@ struct PdfContext {
 /// * `path` - The path argument (may be a URL or local path)
 /// * `password` - Optional PDF password
 /// * `root` - Optional root directory for path-traversal protection
-fn open_pdf(path: &str, password: Option<&str>, root: Option<&Path>) -> Result<PdfContext, ErrorObject> {
+fn open_pdf(
+    path: &str,
+    password: Option<&str>,
+    root: Option<&Path>,
+) -> Result<PdfContext, ErrorObject> {
     // Validate and resolve the path using the root if set
     let path_buf = resolve_path(path, root)?;
 
     // Check if it's a file (not a directory)
     if !path_buf.is_file() {
-        return Err(ErrorObject::server_error(
-            ERROR_PATH_INVALID,
-            format!("Not a file: {}", path),
-        ).with_data(json!({"code": CODE_PATH_INVALID, "path": path})));
+        return Err(
+            ErrorObject::server_error(ERROR_PATH_INVALID, format!("Not a file: {}", path))
+                .with_data(json!({"code": CODE_PATH_INVALID, "path": path})),
+        );
     }
 
     // Read the PDF file
     let buffer = fs::read(&path_buf).map_err(|e| {
-        ErrorObject::server_error(
-            ERROR_IO_ERROR,
-            format!("Failed to read PDF file: {}", e),
-        ).with_data(json!({"code": CODE_IO_ERROR, "path": path}))
+        ErrorObject::server_error(ERROR_IO_ERROR, format!("Failed to read PDF file: {}", e))
+            .with_data(json!({"code": CODE_IO_ERROR, "path": path}))
     })?;
 
     // Check for PDF magic number
@@ -225,7 +233,8 @@ fn open_pdf(path: &str, password: Option<&str>, root: Option<&Path>) -> Result<P
         return Err(ErrorObject::server_error(
             ERROR_IO_ERROR,
             "Not a valid PDF file (missing %PDF- header)",
-        ).with_data(json!({"code": CODE_IO_ERROR, "path": path})));
+        )
+        .with_data(json!({"code": CODE_IO_ERROR, "path": path})));
     }
 
     // Create a MemorySource for parsing
@@ -240,7 +249,8 @@ fn open_pdf(path: &str, password: Option<&str>, root: Option<&Path>) -> Result<P
             return Err(ErrorObject::server_error(
                 super::ERROR_PDF_ENCRYPTED,
                 "PDF is encrypted and no password was provided",
-            ).with_data(json!({"code": super::CODE_PDF_ENCRYPTED})));
+            )
+            .with_data(json!({"code": super::CODE_PDF_ENCRYPTED})));
         }
     }
 
@@ -250,18 +260,19 @@ fn open_pdf(path: &str, password: Option<&str>, root: Option<&Path>) -> Result<P
             return Err(ErrorObject::server_error(
                 super::ERROR_PDF_ENCRYPTED,
                 "PDF is encrypted and no password was provided",
-            ).with_data(json!({"code": super::CODE_PDF_ENCRYPTED})));
+            )
+            .with_data(json!({"code": super::CODE_PDF_ENCRYPTED})));
         }
     }
 
     // Get the root reference from the trailer
-    let root_ref = xref_section.trailer.as_ref()
+    let root_ref = xref_section
+        .trailer
+        .as_ref()
         .and_then(|trailer| trailer.get("Root"))
-        .and_then(|obj| {
-            match obj {
-                pdftract_core::parser::object::PdfObject::Ref(obj_ref) => Some(obj_ref),
-                _ => None,
-            }
+        .and_then(|obj| match obj {
+            pdftract_core::parser::object::PdfObject::Ref(obj_ref) => Some(obj_ref),
+            _ => None,
         });
 
     let (catalog, page_count) = match root_ref {
@@ -283,11 +294,15 @@ fn open_pdf(path: &str, password: Option<&str>, root: Option<&Path>) -> Result<P
                 }
                 Err(diags) => {
                     // Check for encryption errors
-                    if diags.iter().any(|d| d.code == DiagCode::EncryptionUnsupported) {
+                    if diags
+                        .iter()
+                        .any(|d| d.code == DiagCode::EncryptionUnsupported)
+                    {
                         return Err(ErrorObject::server_error(
                             super::ERROR_PDF_ENCRYPTED,
                             "PDF is encrypted and no password was provided",
-                        ).with_data(json!({"code": super::CODE_PDF_ENCRYPTED})));
+                        )
+                        .with_data(json!({"code": super::CODE_PDF_ENCRYPTED})));
                     }
                     // Catalog parsing failed - return partial context
                     (None, None)
@@ -345,7 +360,10 @@ fn build_extraction_options(
 /// Create a stub response for tools that require Phase 6 extraction surface.
 fn stub_extraction_response(path: &str, tool_name: &str, page_count: Option<usize>) -> Value {
     let mut response = serde_json::Map::new();
-    response.insert("_note".to_string(), json!("This tool requires Phase 6 extraction surface"));
+    response.insert(
+        "_note".to_string(),
+        json!("This tool requires Phase 6 extraction surface"),
+    );
     response.insert("_tool".to_string(), json!(tool_name));
     response.insert("_path".to_string(), json!(path));
 
@@ -396,8 +414,8 @@ impl Tool for ExtractTool {
 
     fn execute(&self, args: Value, _log_path: Option<&str>, root: Option<&Path>) -> ToolResult {
         // Parse arguments
-        let tool_args: ExtractArgs = serde_json::from_value(args)
-            .map_err(|_| ErrorObject::invalid_params())?;
+        let tool_args: ExtractArgs =
+            serde_json::from_value(args).map_err(|_| ErrorObject::invalid_params())?;
 
         // Check if path is a URL
         if is_url(&tool_args.path) {
@@ -414,14 +432,17 @@ impl Tool for ExtractTool {
         let path_buf = resolve_path(&tool_args.path, root)?;
 
         // Build extraction options
-        let options = build_extraction_options(&tool_args.pages, &tool_args.ocr, tool_args.receipts.as_deref());
+        let options = build_extraction_options(
+            &tool_args.pages,
+            &tool_args.ocr,
+            tool_args.receipts.as_deref(),
+        );
 
         // Perform the extraction
-        let result = extract_pdf(&path_buf, &options)
-            .map_err(|e| ErrorObject::server_error(
-                super::ERROR_IO_ERROR,
-                format!("Extraction failed: {}", e),
-            ).with_data(json!({"code": super::CODE_IO_ERROR})))?;
+        let result = extract_pdf(&path_buf, &options).map_err(|e| {
+            ErrorObject::server_error(super::ERROR_IO_ERROR, format!("Extraction failed: {}", e))
+                .with_data(json!({"code": super::CODE_IO_ERROR}))
+        })?;
 
         Ok(result_to_json(&result))
     }
@@ -444,8 +465,8 @@ impl Tool for ExtractTextTool {
     }
 
     fn execute(&self, args: Value, _log_path: Option<&str>, root: Option<&Path>) -> ToolResult {
-        let tool_args: ExtractTextArgs = serde_json::from_value(args)
-            .map_err(|_| ErrorObject::invalid_params())?;
+        let tool_args: ExtractTextArgs =
+            serde_json::from_value(args).map_err(|_| ErrorObject::invalid_params())?;
 
         if is_url(&tool_args.path) {
             return Ok(json!({
@@ -460,17 +481,22 @@ impl Tool for ExtractTextTool {
         let path_buf = resolve_path(&tool_args.path, root)?;
 
         // Build extraction options
-        let options = build_extraction_options(&tool_args.pages, &tool_args.ocr, tool_args.receipts.as_deref());
+        let options = build_extraction_options(
+            &tool_args.pages,
+            &tool_args.ocr,
+            tool_args.receipts.as_deref(),
+        );
 
         // Perform the extraction
-        let result = extract_pdf(&path_buf, &options)
-            .map_err(|e| ErrorObject::server_error(
-                super::ERROR_IO_ERROR,
-                format!("Extraction failed: {}", e),
-            ).with_data(json!({"code": super::CODE_IO_ERROR})))?;
+        let result = extract_pdf(&path_buf, &options).map_err(|e| {
+            ErrorObject::server_error(super::ERROR_IO_ERROR, format!("Extraction failed: {}", e))
+                .with_data(json!({"code": super::CODE_IO_ERROR}))
+        })?;
 
         // Convert to plain text
-        let text = result.pages.iter()
+        let text = result
+            .pages
+            .iter()
             .flat_map(|page| page.spans.iter().map(|span| span.text.as_str()))
             .collect::<Vec<&str>>()
             .join("\n");
@@ -496,8 +522,8 @@ impl Tool for ExtractMarkdownTool {
     }
 
     fn execute(&self, args: Value, _log_path: Option<&str>, root: Option<&Path>) -> ToolResult {
-        let tool_args: ExtractMarkdownArgs = serde_json::from_value(args)
-            .map_err(|_| ErrorObject::invalid_params())?;
+        let tool_args: ExtractMarkdownArgs =
+            serde_json::from_value(args).map_err(|_| ErrorObject::invalid_params())?;
 
         if is_url(&tool_args.path) {
             return Ok(json!({
@@ -512,19 +538,24 @@ impl Tool for ExtractMarkdownTool {
         let path_buf = resolve_path(&tool_args.path, root)?;
 
         // Build extraction options
-        let options = build_extraction_options(&tool_args.pages, &tool_args.ocr, tool_args.receipts.as_deref());
+        let options = build_extraction_options(
+            &tool_args.pages,
+            &tool_args.ocr,
+            tool_args.receipts.as_deref(),
+        );
 
         // Perform the extraction
-        let result = extract_pdf(&path_buf, &options)
-            .map_err(|e| ErrorObject::server_error(
-                super::ERROR_IO_ERROR,
-                format!("Extraction failed: {}", e),
-            ).with_data(json!({"code": super::CODE_IO_ERROR})))?;
+        let result = extract_pdf(&path_buf, &options).map_err(|e| {
+            ErrorObject::server_error(super::ERROR_IO_ERROR, format!("Extraction failed: {}", e))
+                .with_data(json!({"code": super::CODE_IO_ERROR}))
+        })?;
 
         // Convert to markdown
-        let markdown = result.pages.iter()
-            .flat_map(|page| page.blocks.iter().map(|block| {
-                match block.kind.as_str() {
+        let markdown = result
+            .pages
+            .iter()
+            .flat_map(|page| {
+                page.blocks.iter().map(|block| match block.kind.as_str() {
                     "heading" => {
                         let level = block.level.unwrap_or(1);
                         let prefix = "#".repeat(level as usize);
@@ -532,8 +563,8 @@ impl Tool for ExtractMarkdownTool {
                     }
                     "paragraph" => format!("{}\n", block.text),
                     _ => format!("{}\n", block.text),
-                }
-            }))
+                })
+            })
             .collect::<Vec<String>>()
             .join("\n");
 
@@ -558,8 +589,8 @@ impl Tool for SearchTool {
     }
 
     fn execute(&self, args: Value, _log_path: Option<&str>, root: Option<&Path>) -> ToolResult {
-        let tool_args: SearchArgs = serde_json::from_value(args)
-            .map_err(|_| ErrorObject::invalid_params())?;
+        let tool_args: SearchArgs =
+            serde_json::from_value(args).map_err(|_| ErrorObject::invalid_params())?;
 
         // Validate the regex pattern
         let _regex = Regex::new(&tool_args.pattern).map_err(|e| {
@@ -603,8 +634,8 @@ impl Tool for GetMetadataTool {
     }
 
     fn execute(&self, args: Value, _log_path: Option<&str>, root: Option<&Path>) -> ToolResult {
-        let tool_args: GetMetadataArgs = serde_json::from_value(args)
-            .map_err(|_| ErrorObject::invalid_params())?;
+        let tool_args: GetMetadataArgs =
+            serde_json::from_value(args).map_err(|_| ErrorObject::invalid_params())?;
 
         // Check if path is a URL
         if is_url(&tool_args.path) {
@@ -657,14 +688,18 @@ fn extract_metadata(path: &str, _password: Option<&str>, root: Option<&Path>) ->
 
         // Fingerprint - compute a simple one based on file size and page count
         // Full fingerprint computation would use the Phase 1.7 algorithm
-        let fingerprint = format!("pdftract-v1:{:064x}",
+        let fingerprint = format!(
+            "pdftract-v1:{:064x}",
             sha2::Sha256::digest(
-                format!("{}:{}:{}",
+                format!(
+                    "{}:{}:{}",
                     ctx.source.len().unwrap_or(0),
                     ctx.page_count.unwrap_or(0),
                     catalog.pages_ref.object
-                ).as_bytes()
-            ));
+                )
+                .as_bytes()
+            )
+        );
 
         Ok(json!({
             "metadata": metadata,
@@ -673,13 +708,17 @@ fn extract_metadata(path: &str, _password: Option<&str>, root: Option<&Path>) ->
         }))
     } else {
         // Catalog not available, return partial metadata
-        let fingerprint = format!("pdftract-v1:{:064x}",
+        let fingerprint = format!(
+            "pdftract-v1:{:064x}",
             sha2::Sha256::digest(
-                format!("{}:{}",
+                format!(
+                    "{}:{}",
                     ctx.source.len().unwrap_or(0),
                     ctx.page_count.unwrap_or(0)
-                ).as_bytes()
-            ));
+                )
+                .as_bytes()
+            )
+        );
 
         Ok(json!({
             "metadata": metadata,
@@ -706,8 +745,8 @@ impl Tool for HashTool {
     }
 
     fn execute(&self, args: Value, _log_path: Option<&str>, root: Option<&Path>) -> ToolResult {
-        let tool_args: HashArgs = serde_json::from_value(args)
-            .map_err(|_| ErrorObject::invalid_params())?;
+        let tool_args: HashArgs =
+            serde_json::from_value(args).map_err(|_| ErrorObject::invalid_params())?;
 
         // Check if path is a URL
         if is_url(&tool_args.path) {
@@ -728,31 +767,43 @@ impl Tool for HashTool {
 }
 
 /// Compute the fingerprint of a PDF file.
-fn compute_fingerprint(path: &str, _password: Option<&str>, root: Option<&Path>) -> Result<String, ErrorObject> {
+fn compute_fingerprint(
+    path: &str,
+    _password: Option<&str>,
+    root: Option<&Path>,
+) -> Result<String, ErrorObject> {
     let ctx = open_pdf(path, _password, root)?;
 
     // Compute a simplified fingerprint for now
     // Full fingerprint computation would use the Phase 1.7 algorithm with
     // content stream hashing, resource dict hashing, etc.
     if let Some(catalog) = &ctx.catalog {
-        let fingerprint = format!("pdftract-v1:{:064x}",
+        let fingerprint = format!(
+            "pdftract-v1:{:064x}",
             sha2::Sha256::digest(
-                format!("{}:{}:{}:{}",
+                format!(
+                    "{}:{}:{}:{}",
                     ctx.source.len().unwrap_or(0),
                     ctx.page_count.unwrap_or(0),
                     catalog.pages_ref.object,
                     catalog.mark_info.is_tagged
-                ).as_bytes()
-            ));
+                )
+                .as_bytes()
+            )
+        );
         Ok(fingerprint)
     } else {
-        let fingerprint = format!("pdftract-v1:{:064x}",
+        let fingerprint = format!(
+            "pdftract-v1:{:064x}",
             sha2::Sha256::digest(
-                format!("{}:{}",
+                format!(
+                    "{}:{}",
                     ctx.source.len().unwrap_or(0),
                     ctx.page_count.unwrap_or(0)
-                ).as_bytes()
-            ));
+                )
+                .as_bytes()
+            )
+        );
         Ok(fingerprint)
     }
 }
@@ -1006,7 +1057,11 @@ mod tests {
 
         // Test get_table
         let tool = registry.get("get_table").unwrap();
-        let result = tool.execute(json!({"path": "test.pdf", "page": 0, "table_index": 0}), None, None);
+        let result = tool.execute(
+            json!({"path": "test.pdf", "page": 0, "table_index": 0}),
+            None,
+            None,
+        );
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.code, ERROR_NOT_YET_IMPLEMENTED);
@@ -1061,7 +1116,10 @@ mod tests {
 
         // Create a JSON Schema validator
         let compilation_result = jsonschema::JSONSchema::compile(&schema);
-        assert!(compilation_result.is_ok(), "Extract tool schema should be valid JSON Schema");
+        assert!(
+            compilation_result.is_ok(),
+            "Extract tool schema should be valid JSON Schema"
+        );
     }
 
     #[test]
@@ -1070,7 +1128,10 @@ mod tests {
         let schema = tool.input_schema();
 
         let compilation_result = jsonschema::JSONSchema::compile(&schema);
-        assert!(compilation_result.is_ok(), "ExtractText tool schema should be valid JSON Schema");
+        assert!(
+            compilation_result.is_ok(),
+            "ExtractText tool schema should be valid JSON Schema"
+        );
     }
 
     #[test]
@@ -1079,7 +1140,10 @@ mod tests {
         let schema = tool.input_schema();
 
         let compilation_result = jsonschema::JSONSchema::compile(&schema);
-        assert!(compilation_result.is_ok(), "ExtractMarkdown tool schema should be valid JSON Schema");
+        assert!(
+            compilation_result.is_ok(),
+            "ExtractMarkdown tool schema should be valid JSON Schema"
+        );
     }
 
     #[test]
@@ -1088,7 +1152,10 @@ mod tests {
         let schema = tool.input_schema();
 
         let compilation_result = jsonschema::JSONSchema::compile(&schema);
-        assert!(compilation_result.is_ok(), "Search tool schema should be valid JSON Schema");
+        assert!(
+            compilation_result.is_ok(),
+            "Search tool schema should be valid JSON Schema"
+        );
     }
 
     #[test]
@@ -1097,7 +1164,10 @@ mod tests {
         let schema = tool.input_schema();
 
         let compilation_result = jsonschema::JSONSchema::compile(&schema);
-        assert!(compilation_result.is_ok(), "GetMetadata tool schema should be valid JSON Schema");
+        assert!(
+            compilation_result.is_ok(),
+            "GetMetadata tool schema should be valid JSON Schema"
+        );
     }
 
     #[test]
@@ -1106,7 +1176,10 @@ mod tests {
         let schema = tool.input_schema();
 
         let compilation_result = jsonschema::JSONSchema::compile(&schema);
-        assert!(compilation_result.is_ok(), "Hash tool schema should be valid JSON Schema");
+        assert!(
+            compilation_result.is_ok(),
+            "Hash tool schema should be valid JSON Schema"
+        );
     }
 
     #[test]
@@ -1115,7 +1188,10 @@ mod tests {
         let schema = tool.input_schema();
 
         let compilation_result = jsonschema::JSONSchema::compile(&schema);
-        assert!(compilation_result.is_ok(), "GetTable tool schema should be valid JSON Schema");
+        assert!(
+            compilation_result.is_ok(),
+            "GetTable tool schema should be valid JSON Schema"
+        );
     }
 
     #[test]
@@ -1124,7 +1200,10 @@ mod tests {
         let schema = tool.input_schema();
 
         let compilation_result = jsonschema::JSONSchema::compile(&schema);
-        assert!(compilation_result.is_ok(), "GetFormFields tool schema should be valid JSON Schema");
+        assert!(
+            compilation_result.is_ok(),
+            "GetFormFields tool schema should be valid JSON Schema"
+        );
     }
 
     #[test]
@@ -1133,7 +1212,10 @@ mod tests {
         let schema = tool.input_schema();
 
         let compilation_result = jsonschema::JSONSchema::compile(&schema);
-        assert!(compilation_result.is_ok(), "GetAttachments tool schema should be valid JSON Schema");
+        assert!(
+            compilation_result.is_ok(),
+            "GetAttachments tool schema should be valid JSON Schema"
+        );
     }
 
     #[test]
@@ -1142,7 +1224,10 @@ mod tests {
         let schema = tool.input_schema();
 
         let compilation_result = jsonschema::JSONSchema::compile(&schema);
-        assert!(compilation_result.is_ok(), "Classify tool schema should be valid JSON Schema");
+        assert!(
+            compilation_result.is_ok(),
+            "Classify tool schema should be valid JSON Schema"
+        );
     }
 
     #[test]
@@ -1152,10 +1237,12 @@ mod tests {
         for (_key, tool) in &registry.tools {
             let schema = tool.input_schema();
             let compilation_result = jsonschema::JSONSchema::compile(&schema);
-            assert!(compilation_result.is_ok(),
+            assert!(
+                compilation_result.is_ok(),
                 "Tool '{}' schema should be valid JSON Schema: {:?}",
                 tool.name(),
-                compilation_result.err());
+                compilation_result.err()
+            );
         }
     }
 

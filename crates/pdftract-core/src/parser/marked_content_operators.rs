@@ -8,12 +8,12 @@
 //! - BDC /Tag <<props>> or BDC /Tag /PropName: begin marked content with properties
 //! - EMC: end marked content (pop top frame)
 
-use crate::parser::object::{PdfObject, ObjRef};
+use crate::diagnostics::{DiagCode, Diagnostic};
+use crate::parser::marked_content_stack::{MarkedContentFrame, MarkedContentStack};
+use crate::parser::object::{ObjRef, PdfObject};
 use crate::parser::resources::ResourceDict;
-use crate::parser::marked_content_stack::{MarkedContentStack, MarkedContentFrame};
-use crate::diagnostics::{Diagnostic, DiagCode};
-use std::sync::Arc;
 use indexmap::IndexMap;
+use std::sync::Arc;
 
 /// Parse BMC operator (begin marked content).
 ///
@@ -245,10 +245,9 @@ mod tests {
     fn test_parse_bdc_with_property_name_found() {
         let mut stack = MarkedContentStack::new();
         let mut resources = ResourceDict::new();
-        resources.properties.insert(
-            Arc::from("MyProps"),
-            ObjRef::new(10, 0),
-        );
+        resources
+            .properties
+            .insert(Arc::from("MyProps"), ObjRef::new(10, 0));
 
         // Property name resolution requires full resolver, so this returns None
         assert!(parse_bdc(
@@ -366,7 +365,12 @@ mod tests {
         // Outer BDC with MCID
         let mut props1 = IndexMap::new();
         props1.insert(intern("/MCID"), PdfObject::Integer(1));
-        parse_bdc(&mut stack, Arc::from("P"), &PdfObject::Dict(Box::new(props1)), &ResourceDict::new());
+        parse_bdc(
+            &mut stack,
+            Arc::from("P"),
+            &PdfObject::Dict(Box::new(props1)),
+            &ResourceDict::new(),
+        );
 
         // Inner BMC
         parse_bmc(&mut stack, Arc::from("Span"));
@@ -400,7 +404,12 @@ mod tests {
         let mut props = IndexMap::new();
         props.insert(intern("/MCID"), PdfObject::Integer(5));
 
-        parse_bdc(&mut stack, Arc::from("/P"), &PdfObject::Dict(Box::new(props)), &ResourceDict::new());
+        parse_bdc(
+            &mut stack,
+            Arc::from("/P"),
+            &PdfObject::Dict(Box::new(props)),
+            &ResourceDict::new(),
+        );
 
         assert_eq!(stack.depth(), 1);
         assert_eq!(stack.innermost_frame().unwrap().tag, "/P");

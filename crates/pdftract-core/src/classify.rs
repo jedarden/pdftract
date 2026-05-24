@@ -25,8 +25,8 @@
 //! 4. After all signals run: tally votes weighted by strength; pick highest-weight class
 //! 5. If no signal voted, default to Vector with confidence 0.5
 
-use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 
 /// Page context containing all metrics needed for classification.
 ///
@@ -360,7 +360,8 @@ impl PageClassifier {
         }
 
         // Weight each class by sum of strengths
-        let mut class_weights: std::collections::HashMap<PageClass, f32> = std::collections::HashMap::new();
+        let mut class_weights: std::collections::HashMap<PageClass, f32> =
+            std::collections::HashMap::new();
         let mut total_weight = 0.0;
 
         for vote in &votes {
@@ -960,7 +961,10 @@ mod tests {
         set2.insert(2);
 
         // Iteration order should be the same
-        assert_eq!(set1.iter().collect::<Vec<_>>(), set2.iter().collect::<Vec<_>>());
+        assert_eq!(
+            set1.iter().collect::<Vec<_>>(),
+            set2.iter().collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -1022,9 +1026,12 @@ mod tests {
         // Verify all scanned cells are from rows 2-7 only
         for flat in scanned_cells {
             let cell = CellIndex::from_flat(*flat);
-            assert!(cell.row >= 2 && cell.row <= 7,
+            assert!(
+                cell.row >= 2 && cell.row <= 7,
                 "scanned cell at flat {} should be in rows 2-7, got row {}",
-                flat, cell.row);
+                flat,
+                cell.row
+            );
         }
     }
 
@@ -1432,7 +1439,10 @@ mod tests {
 
         assert_eq!(result1.class, result2.class);
         assert_eq!(result1.confidence, result2.confidence);
-        assert_eq!(result1.hybrid_cells.is_some(), result2.hybrid_cells.is_some());
+        assert_eq!(
+            result1.hybrid_cells.is_some(),
+            result2.hybrid_cells.is_some()
+        );
     }
 
     #[test]
@@ -1440,9 +1450,9 @@ mod tests {
         // Verify all confidence values are in [0.0, 1.0]
         let test_cases = vec![
             // (text_ops, raw_chars, valid_chars, image_cov, density)
-            (0, 0, 0, 0.0, 0.0),      // blank
-            (0, 0, 0, 0.95, 0.0),     // scanned
-            (100, 1000, 100, 0.1, 0.1), // low validity
+            (0, 0, 0, 0.0, 0.0),         // blank
+            (0, 0, 0, 0.95, 0.0),        // scanned
+            (100, 1000, 100, 0.1, 0.1),  // low validity
             (500, 3000, 2900, 0.0, 0.9), // high validity vector
             (200, 1500, 1400, 0.7, 0.5), // ambiguous
         ];
@@ -1459,7 +1469,12 @@ mod tests {
             assert!(
                 result.confidence >= 0.0 && result.confidence <= 1.0,
                 "confidence {} out of range for case ({}, {}, {}, {}, {})",
-                result.confidence, text_ops, raw, valid, img_cov, density
+                result.confidence,
+                text_ops,
+                raw,
+                valid,
+                img_cov,
+                density
             );
         }
     }
@@ -1585,9 +1600,17 @@ mod tests {
                 grid_cells: Some(std::array::from_fn(|i| {
                     let row = i / 8;
                     if row < 2 {
-                        CellData { text_op_count: 15, image_coverage: 0.05, char_validity: 0.95 }
+                        CellData {
+                            text_op_count: 15,
+                            image_coverage: 0.05,
+                            char_validity: 0.95,
+                        }
                     } else {
-                        CellData { text_op_count: 0, image_coverage: 0.90, char_validity: 0.0 }
+                        CellData {
+                            text_op_count: 0,
+                            image_coverage: 0.90,
+                            char_validity: 0.0,
+                        }
                     }
                 })),
             },

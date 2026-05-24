@@ -126,7 +126,11 @@ impl PdfStream {
     /// Create a new stream.
     #[inline]
     pub fn new(dict: PdfDict, offset: u64, len_hint: Option<u64>) -> Self {
-        Self { dict, offset, len_hint }
+        Self {
+            dict,
+            offset,
+            len_hint,
+        }
     }
 
     /// Get the /Filter entry from the stream dictionary.
@@ -149,16 +153,18 @@ impl PdfStream {
             }
             PdfObject::Array(arr) => arr
                 .iter()
-                .filter_map(|obj| obj.as_name().map(|n| {
-                    // Strip leading slash from filter name for normalization
-                    let name_str: &str = n.as_ref();
-                    let stripped = if name_str.starts_with('/') {
-                        &name_str[1..]
-                    } else {
-                        name_str
-                    };
-                    stripped.to_string()
-                }))
+                .filter_map(|obj| {
+                    obj.as_name().map(|n| {
+                        // Strip leading slash from filter name for normalization
+                        let name_str: &str = n.as_ref();
+                        let stripped = if name_str.starts_with('/') {
+                            &name_str[1..]
+                        } else {
+                            name_str
+                        };
+                        stripped.to_string()
+                    })
+                })
                 .collect(),
             _ => return None,
         })
@@ -521,7 +527,10 @@ mod tests {
         let obj = PdfObject::Dict(Box::new(dict.clone()));
 
         assert!(obj.as_dict().is_some());
-        assert_eq!(obj.as_dict().unwrap().get("Type").unwrap().as_name(), Some("Page"));
+        assert_eq!(
+            obj.as_dict().unwrap().get("Type").unwrap().as_name(),
+            Some("Page")
+        );
         assert_eq!(PdfObject::Integer(42).as_dict(), None);
     }
 
@@ -544,7 +553,11 @@ mod tests {
 
     #[test]
     fn test_as_array() {
-        let arr = vec![PdfObject::Integer(1), PdfObject::Integer(2), PdfObject::Integer(3)];
+        let arr = vec![
+            PdfObject::Integer(1),
+            PdfObject::Integer(2),
+            PdfObject::Integer(3),
+        ];
         let obj = PdfObject::Array(Box::new(arr.clone()));
 
         assert!(obj.as_array().is_some());
@@ -639,7 +652,10 @@ mod tests {
     fn test_pdf_object_indirect_variant() {
         let obj_ref = ObjRef::new(5, 1);
         let inner = PdfObject::Name(intern("Test"));
-        let indirect = PdfIndirect { id: obj_ref, obj: inner };
+        let indirect = PdfIndirect {
+            id: obj_ref,
+            obj: inner,
+        };
         let obj = PdfObject::Indirect(Box::new(indirect));
 
         assert!(obj.as_indirect().is_some());

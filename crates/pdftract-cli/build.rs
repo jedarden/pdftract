@@ -29,7 +29,8 @@ fn main() {
         ("MARKDOWN", cfg!(feature = "markdown")),
     ];
 
-    let enabled: Vec<&str> = features.iter()
+    let enabled: Vec<&str> = features
+        .iter()
         .filter(|(_, enabled)| *enabled)
         .map(|(name, _)| *name)
         .collect();

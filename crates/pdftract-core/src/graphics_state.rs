@@ -14,7 +14,7 @@
 //!   x' = a*x + c*y + e
 //!   y' = b*x + d*y + f
 
-use crate::diagnostics::{Diagnostic, DiagCode};
+use crate::diagnostics::{DiagCode, Diagnostic};
 
 /// Maximum depth of graphics state stack (prevents stack overflow).
 const MAX_GSTATE_DEPTH: usize = 32;
@@ -73,8 +73,12 @@ impl Matrix3x3 {
     /// Check if this is the identity matrix.
     #[inline]
     pub fn is_identity(&self) -> bool {
-        self.a == 1.0 && self.b == 0.0 && self.c == 0.0 &&
-        self.d == 1.0 && self.e == 0.0 && self.f == 0.0
+        self.a == 1.0
+            && self.b == 0.0
+            && self.c == 0.0
+            && self.d == 1.0
+            && self.e == 0.0
+            && self.f == 0.0
     }
 
     /// Multiply this matrix by another (this * other).

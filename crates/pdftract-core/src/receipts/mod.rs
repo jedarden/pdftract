@@ -25,9 +25,9 @@ pub mod lite;
 pub mod svg;
 pub mod verifier;
 
-use serde::{Deserialize, Serialize};
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 /// A visual citation receipt for extracted text.
 ///
@@ -272,7 +272,10 @@ mod tests {
         let hash1 = compute_content_hash(text);
         let hash2 = compute_content_hash(text);
 
-        assert_eq!(hash1, hash2, "Hashing the same text should produce the same result");
+        assert_eq!(
+            hash1, hash2,
+            "Hashing the same text should produce the same result"
+        );
     }
 
     #[test]
@@ -280,10 +283,10 @@ mod tests {
         use unicode_normalization::UnicodeNormalization;
 
         // U+00E9 is "é" in NFC (composed form)
-        let nfc_text = "café";  // U+0063 U+0061 U+0066 U+00E9
+        let nfc_text = "café"; // U+0063 U+0061 U+0066 U+00E9
 
         // U+0065 U+0301 is "é" in NFD (decomposed form: e + combining acute)
-        let nfd_text: String = "cafe\u{0301}".nfd().collect();  // U+0063 U+0061 U+0066 U+0065 U+0301
+        let nfd_text: String = "cafe\u{0301}".nfd().collect(); // U+0063 U+0061 U+0066 U+0065 U+0301
 
         // Both should produce the same hash after NFC normalization
         let hash_nfc = compute_content_hash(nfc_text);
@@ -318,11 +321,11 @@ mod tests {
     fn test_content_hash_unicode() {
         // Test with various Unicode characters
         let texts = [
-            "Hello 世界",  // Chinese
-            "Привет мир",  // Cyrillic
-            "مرحبا",       // Arabic
-            "🎉🎊",        // Emoji
-            "café",        // Latin with diacritics (NFC)
+            "Hello 世界", // Chinese
+            "Привет мир", // Cyrillic
+            "مرحبا",      // Arabic
+            "🎉🎊",       // Emoji
+            "café",       // Latin with diacritics (NFC)
         ];
 
         for text in texts {
@@ -337,7 +340,8 @@ mod tests {
         // Create a realistic receipt
         let receipt = Receipt::lite(
             // Real fingerprint: 11 + 64 = 75 chars
-            "pdftract-v1:a7f3b8c4d2e1f6a9b5c3d8e7f4a2b1c9d6e3f8a7b4c2d9e6f3a8b7c4d1e9f6a3b8".to_string(),
+            "pdftract-v1:a7f3b8c4d2e1f6a9b5c3d8e7f4a2b1c9d6e3f8a7b4c2d9e6f3a8b7c4d1e9f6a3b8"
+                .to_string(),
             14,
             [220.0, 412.0, 412.0, 432.0],
             "Net Income: $2.4M",
@@ -347,7 +351,13 @@ mod tests {
 
         // Lite mode receipt should be roughly 150-180 bytes
         // This is a sanity check, not a strict requirement
-        assert!(json.len() > 100, "Receipt JSON should be at least 100 bytes");
-        assert!(json.len() < 300, "Receipt JSON should be less than 300 bytes in lite mode");
+        assert!(
+            json.len() > 100,
+            "Receipt JSON should be at least 100 bytes"
+        );
+        assert!(
+            json.len() < 300,
+            "Receipt JSON should be less than 300 bytes in lite mode"
+        );
     }
 }

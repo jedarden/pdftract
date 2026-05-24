@@ -17,9 +17,9 @@
 //!
 //! Coverage = claimed_mcids / total_mcids
 
-use crate::parser::object::PdfObject;
-use crate::diagnostics::{Diagnostic, DiagCode};
+use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::parser::lexer::Lexer;
+use crate::parser::object::PdfObject;
 use std::collections::HashSet;
 
 /// Result type for marked content operations.
@@ -81,7 +81,8 @@ impl McidTracker {
 
     /// Add a diagnostic.
     fn emit_diagnostic(&mut self, code: DiagCode, message: String) {
-        self.diagnostics.push(Diagnostic::with_dynamic_no_offset(code, message));
+        self.diagnostics
+            .push(Diagnostic::with_dynamic_no_offset(code, message));
     }
 
     /// Get all diagnostics emitted during tracking.
@@ -184,7 +185,11 @@ impl CoverageResult {
 /// # Returns
 ///
 /// A `CoverageResult` containing the coverage ratio and fallback decision.
-pub fn compute_coverage(page_index: usize, total_mcids: usize, claimed_mcids: usize) -> CoverageResult {
+pub fn compute_coverage(
+    page_index: usize,
+    total_mcids: usize,
+    claimed_mcids: usize,
+) -> CoverageResult {
     CoverageResult::new(page_index, total_mcids, claimed_mcids)
 }
 
@@ -412,7 +417,10 @@ mod tests {
         assert_eq!(result.claimed_mcids, 0);
         assert_eq!(result.coverage, 0.0);
         assert!(result.should_fallback); // No MCIDs = fallback
-        assert!(result.fallback_diagnostic().unwrap().contains("no marked-content sequences"));
+        assert!(result
+            .fallback_diagnostic()
+            .unwrap()
+            .contains("no marked-content sequences"));
     }
 
     #[test]

@@ -15,10 +15,10 @@
 //! The `walk_acroform_fields` helper is designed for reuse by Phase 7.4 (form fields),
 //! which walks the same tree but filters to all field types, not just /Sig.
 
+use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::parser::catalog::Catalog;
-use crate::parser::object::{ObjRef, PdfObject, PdfDict, intern};
+use crate::parser::object::{intern, ObjRef, PdfDict, PdfObject};
 use crate::parser::xref::XrefResolver;
-use crate::diagnostics::{Diagnostic, DiagCode};
 use std::sync::Arc;
 
 /// Result type for signature operations.
@@ -291,12 +291,10 @@ fn decode_pdf_string(bytes: &[u8]) -> Result<String> {
 /// Decode UTF-16BE string with BOM (bytes after 0xFE 0xFF).
 fn decode_utf16be_bom(bytes: &[u8]) -> Result<String> {
     if bytes.len() % 2 != 0 {
-        return Err(vec![
-            Diagnostic::with_static_no_offset(
-                DiagCode::StructInvalidUtf16,
-                "STRUCT_INVALID_UTF16: UTF-16BE string has odd length",
-            )
-        ]);
+        return Err(vec![Diagnostic::with_static_no_offset(
+            DiagCode::StructInvalidUtf16,
+            "STRUCT_INVALID_UTF16: UTF-16BE string has odd length",
+        )]);
     }
 
     let utf16_chars: Vec<u16> = bytes
@@ -305,12 +303,10 @@ fn decode_utf16be_bom(bytes: &[u8]) -> Result<String> {
         .collect();
 
     String::from_utf16(&utf16_chars).map_err(|_| {
-        vec![
-            Diagnostic::with_static_no_offset(
-                DiagCode::StructInvalidUtf16,
-                "STRUCT_INVALID_UTF16: Invalid UTF-16BE sequence",
-            )
-        ]
+        vec![Diagnostic::with_static_no_offset(
+            DiagCode::StructInvalidUtf16,
+            "STRUCT_INVALID_UTF16: Invalid UTF-16BE sequence",
+        )]
     })
 }
 
@@ -399,33 +395,39 @@ fn extract_signature_metadata(
     };
 
     // Extract /Name (signer name) - default to empty string if absent
-    let signer_name = v_dict.get("Name")
+    let signer_name = v_dict
+        .get("Name")
         .and_then(|o| o.as_string())
         .and_then(|bytes| decode_pdf_string(bytes).ok())
         .unwrap_or_else(String::new);
 
     // Extract /M (signing date) - parse to ISO 8601
-    let signing_date = v_dict.get("M")
+    let signing_date = v_dict
+        .get("M")
         .and_then(|o| o.as_string())
         .and_then(|bytes| parse_pdf_date(bytes));
 
     // Extract /Reason (optional)
-    let reason = v_dict.get("Reason")
+    let reason = v_dict
+        .get("Reason")
         .and_then(|o| o.as_string())
         .and_then(|bytes| decode_pdf_string(bytes).ok());
 
     // Extract /Location (optional)
-    let location = v_dict.get("Location")
+    let location = v_dict
+        .get("Location")
         .and_then(|o| o.as_string())
         .and_then(|bytes| decode_pdf_string(bytes).ok());
 
     // Extract /SubFilter (signature format) - this is a Name, not a String
-    let sub_filter = v_dict.get("SubFilter")
+    let sub_filter = v_dict
+        .get("SubFilter")
         .and_then(|o| o.as_name())
         .map(|n| n.to_string());
 
     // Extract /ByteRange (array of 4 integers: [offset, length, offset, length])
-    let byte_range = v_dict.get("ByteRange")
+    let byte_range = v_dict
+        .get("ByteRange")
         .and_then(|o| o.as_array())
         .and_then(|arr| {
             if arr.len() != 4 {
@@ -586,10 +588,7 @@ impl FieldRef {
 /// - Resolves /FT inheritance from parent to child fields
 /// - Constructs absolute names by joining /T values with "."
 /// - Emits diagnostics for malformed structures but continues
-fn walk_acroform_fields(
-    resolver: &XrefResolver,
-    catalog: &Catalog,
-) -> Vec<FieldRef> {
+fn walk_acroform_fields(resolver: &XrefResolver, catalog: &Catalog) -> Vec<FieldRef> {
     let mut fields = Vec::new();
     let mut diagnostics = Vec::new();
 
@@ -616,7 +615,10 @@ fn walk_acroform_fields(
         None => {
             diagnostics.push(Diagnostic::with_dynamic_no_offset(
                 DiagCode::StructUnexpectedEof,
-                format!("/AcroForm is not a dictionary (type: {})", acroform.type_name()),
+                format!(
+                    "/AcroForm is not a dictionary (type: {})",
+                    acroform.type_name()
+                ),
             ));
             return fields;
         }
@@ -693,7 +695,8 @@ fn walk_field_recursive(
     };
 
     // Extract /T (partial name) for building absolute name
-    let partial_name = field_dict.get("T")
+    let partial_name = field_dict
+        .get("T")
         .and_then(|o| o.as_string())
         .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok());
 
@@ -709,7 +712,8 @@ fn walk_field_recursive(
     };
 
     // Extract /FT (field type) - may be absent on child fields (inherit from parent)
-    let field_type = field_dict.get("FT")
+    let field_type = field_dict
+        .get("FT")
         .and_then(|o| o.as_name())
         .map(|n| n.to_string());
 
@@ -717,18 +721,19 @@ fn walk_field_recursive(
     let effective_ft = field_type.as_ref().or(parent_ft.as_ref());
 
     // Extract /V (current value) if present
-    let v_ref = field_dict.get("V")
-        .and_then(|o| match o {
-            PdfObject::Ref(r) => Some(*r),
-            _ => None,
-        });
+    let v_ref = field_dict.get("V").and_then(|o| match o {
+        PdfObject::Ref(r) => Some(*r),
+        _ => None,
+    });
 
     // Extract /Rect (bounding rectangle) if present
-    let rect = field_dict.get("Rect")
+    let rect = field_dict
+        .get("Rect")
         .and_then(|o| o.as_array())
         .and_then(|arr| {
             if arr.len() == 4 {
-                let coords: Vec<Option<f64>> = arr.iter()
+                let coords: Vec<Option<f64>> = arr
+                    .iter()
                     .map(|o| o.as_real().or_else(|| o.as_int().map(|i| i as f64)))
                     .collect();
                 if coords.iter().all(|c| c.is_some()) {
@@ -816,10 +821,7 @@ fn walk_field_recursive(
 ///     }
 /// }
 /// ```
-pub fn discover(
-    resolver: &XrefResolver,
-    catalog: &Catalog,
-) -> Vec<SigFieldRef> {
+pub fn discover(resolver: &XrefResolver, catalog: &Catalog) -> Vec<SigFieldRef> {
     walk_acroform_fields(resolver, catalog)
         .into_iter()
         .filter_map(|f| f.into_sig_field())
@@ -865,7 +867,10 @@ mod tests {
         }
 
         if let Some(t_val) = t {
-            dict.insert(intern("T"), PdfObject::String(Box::new(t_val.as_bytes().to_vec())));
+            dict.insert(
+                intern("T"),
+                PdfObject::String(Box::new(t_val.as_bytes().to_vec())),
+            );
         }
 
         if let Some(v_ref) = v {
@@ -873,16 +878,15 @@ mod tests {
         }
 
         if let Some(rect_val) = rect {
-            let rect_array: Vec<PdfObject> = rect_val.iter()
+            let rect_array: Vec<PdfObject> = rect_val
+                .iter()
                 .map(|&c| PdfObject::Real(c as f64))
                 .collect();
             dict.insert(intern("Rect"), PdfObject::Array(Box::new(rect_array)));
         }
 
         if let Some(kids_refs) = kids {
-            let kids_array: Vec<PdfObject> = kids_refs.iter()
-                .map(|&r| PdfObject::Ref(r))
-                .collect();
+            let kids_array: Vec<PdfObject> = kids_refs.iter().map(|&r| PdfObject::Ref(r)).collect();
             dict.insert(intern("Kids"), PdfObject::Array(Box::new(kids_array)));
         }
 
@@ -918,28 +922,13 @@ mod tests {
 
     #[test]
     fn test_discover_two_flat_signatures() {
-        let (field1_ref, field1) = make_field_dict_with_id(
-            1,
-            Some("Sig"),
-            Some("employer_sig"),
-            None,
-            None,
-            None,
-        );
+        let (field1_ref, field1) =
+            make_field_dict_with_id(1, Some("Sig"), Some("employer_sig"), None, None, None);
 
-        let (field2_ref, field2) = make_field_dict_with_id(
-            2,
-            Some("Sig"),
-            Some("employee_sig"),
-            None,
-            None,
-            None,
-        );
+        let (field2_ref, field2) =
+            make_field_dict_with_id(2, Some("Sig"), Some("employee_sig"), None, None, None);
 
-        let fields = vec![
-            PdfObject::Ref(field1_ref),
-            PdfObject::Ref(field2_ref),
-        ];
+        let fields = vec![PdfObject::Ref(field1_ref), PdfObject::Ref(field2_ref)];
 
         let (mut catalog, mut resolver) = make_test_acroform(fields);
         resolver.cache_object(field1_ref, field1);
@@ -949,34 +938,28 @@ mod tests {
 
         assert_eq!(sig_fields.len(), 2);
 
-        let sig1 = sig_fields.iter().find(|s| s.full_name == "employer_sig").unwrap();
+        let sig1 = sig_fields
+            .iter()
+            .find(|s| s.full_name == "employer_sig")
+            .unwrap();
         assert_eq!(sig1.full_name, "employer_sig");
         assert!(sig1.v_ref.is_none());
 
-        let sig2 = sig_fields.iter().find(|s| s.full_name == "employee_sig").unwrap();
+        let sig2 = sig_fields
+            .iter()
+            .find(|s| s.full_name == "employee_sig")
+            .unwrap();
         assert_eq!(sig2.full_name, "employee_sig");
         assert!(sig2.v_ref.is_none());
     }
 
     #[test]
     fn test_discover_non_signature_fields_excluded() {
-        let (text_field_ref, text_field) = make_field_dict_with_id(
-            1,
-            Some("Tx"),
-            Some("employee_name"),
-            None,
-            None,
-            None,
-        );
+        let (text_field_ref, text_field) =
+            make_field_dict_with_id(1, Some("Tx"), Some("employee_name"), None, None, None);
 
-        let (sig_field_ref, sig_field) = make_field_dict_with_id(
-            2,
-            Some("Sig"),
-            Some("employee_sig"),
-            None,
-            None,
-            None,
-        );
+        let (sig_field_ref, sig_field) =
+            make_field_dict_with_id(2, Some("Sig"), Some("employee_sig"), None, None, None);
 
         let fields = vec![
             PdfObject::Ref(text_field_ref),
@@ -1097,14 +1080,8 @@ mod tests {
     fn test_discover_with_v_ref() {
         let v_ref = ObjRef::new(999, 0);
 
-        let (field_ref, field) = make_field_dict_with_id(
-            1,
-            Some("Sig"),
-            Some("signature"),
-            Some(v_ref),
-            None,
-            None,
-        );
+        let (field_ref, field) =
+            make_field_dict_with_id(1, Some("Sig"), Some("signature"), Some(v_ref), None, None);
 
         let fields = vec![PdfObject::Ref(field_ref)];
 
@@ -1120,28 +1097,13 @@ mod tests {
     #[test]
     fn test_walk_acroform_fields_reusable() {
         // Verify that walk_acroform_fields returns all field types
-        let (text_ref, text) = make_field_dict_with_id(
-            1,
-            Some("Tx"),
-            Some("text_field"),
-            None,
-            None,
-            None,
-        );
+        let (text_ref, text) =
+            make_field_dict_with_id(1, Some("Tx"), Some("text_field"), None, None, None);
 
-        let (sig_ref, sig) = make_field_dict_with_id(
-            2,
-            Some("Sig"),
-            Some("sig_field"),
-            None,
-            None,
-            None,
-        );
+        let (sig_ref, sig) =
+            make_field_dict_with_id(2, Some("Sig"), Some("sig_field"), None, None, None);
 
-        let fields = vec![
-            PdfObject::Ref(text_ref),
-            PdfObject::Ref(sig_ref),
-        ];
+        let fields = vec![PdfObject::Ref(text_ref), PdfObject::Ref(sig_ref)];
 
         let (mut catalog, mut resolver) = make_test_acroform(fields);
         resolver.cache_object(text_ref, text);
@@ -1152,10 +1114,16 @@ mod tests {
         assert_eq!(all_fields.len(), 2);
 
         // Verify field types are preserved
-        let text_field = all_fields.iter().find(|f| f.full_name == "text_field").unwrap();
+        let text_field = all_fields
+            .iter()
+            .find(|f| f.full_name == "text_field")
+            .unwrap();
         assert_eq!(text_field.field_type.as_deref(), Some("Tx"));
 
-        let sig_field = all_fields.iter().find(|f| f.full_name == "sig_field").unwrap();
+        let sig_field = all_fields
+            .iter()
+            .find(|f| f.full_name == "sig_field")
+            .unwrap();
         assert_eq!(sig_field.field_type.as_deref(), Some("Sig"));
     }
 
@@ -1173,7 +1141,10 @@ mod tests {
         let mut dict = indexmap::IndexMap::new();
 
         if let Some(name_val) = name {
-            dict.insert(intern("Name"), PdfObject::String(Box::new(name_val.as_bytes().to_vec())));
+            dict.insert(
+                intern("Name"),
+                PdfObject::String(Box::new(name_val.as_bytes().to_vec())),
+            );
         }
 
         if let Some(m_val) = m {
@@ -1181,11 +1152,17 @@ mod tests {
         }
 
         if let Some(reason_val) = reason {
-            dict.insert(intern("Reason"), PdfObject::String(Box::new(reason_val.as_bytes().to_vec())));
+            dict.insert(
+                intern("Reason"),
+                PdfObject::String(Box::new(reason_val.as_bytes().to_vec())),
+            );
         }
 
         if let Some(location_val) = location {
-            dict.insert(intern("Location"), PdfObject::String(Box::new(location_val.as_bytes().to_vec())));
+            dict.insert(
+                intern("Location"),
+                PdfObject::String(Box::new(location_val.as_bytes().to_vec())),
+            );
         }
 
         if let Some(subfilter_val) = subfilter {
@@ -1193,9 +1170,7 @@ mod tests {
         }
 
         if let Some(br_val) = byte_range {
-            let br_array: Vec<PdfObject> = br_val.iter()
-                .map(|&v| PdfObject::Integer(v))
-                .collect();
+            let br_array: Vec<PdfObject> = br_val.iter().map(|&v| PdfObject::Integer(v)).collect();
             dict.insert(intern("ByteRange"), PdfObject::Array(Box::new(br_array)));
         }
 
@@ -1268,7 +1243,10 @@ mod tests {
     fn test_extract_signature_metadata_missing_optional_fields() {
         let v_ref = ObjRef::new(500, 0);
         let mut dict = indexmap::IndexMap::new();
-        dict.insert(intern("Name"), PdfObject::String(Box::new(b"Alice Smith".to_vec())));
+        dict.insert(
+            intern("Name"),
+            PdfObject::String(Box::new(b"Alice Smith".to_vec())),
+        );
 
         let field = SigFieldRef {
             full_name: "minimal_sig".to_string(),
@@ -1489,12 +1467,18 @@ mod tests {
         let v_ref = ObjRef::new(500, 0);
         // Only 3 elements instead of 4
         let mut dict = indexmap::IndexMap::new();
-        dict.insert(intern("Name"), PdfObject::String(Box::new(b"Signer".to_vec())));
-        dict.insert(intern("ByteRange"), PdfObject::Array(Box::new(vec![
-            PdfObject::Integer(0),
-            PdfObject::Integer(1000),
-            PdfObject::Integer(2000),
-        ])));
+        dict.insert(
+            intern("Name"),
+            PdfObject::String(Box::new(b"Signer".to_vec())),
+        );
+        dict.insert(
+            intern("ByteRange"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(0),
+                PdfObject::Integer(1000),
+                PdfObject::Integer(2000),
+            ])),
+        );
 
         let field = SigFieldRef {
             full_name: "sig".to_string(),

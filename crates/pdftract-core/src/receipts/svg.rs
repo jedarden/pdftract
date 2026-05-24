@@ -119,7 +119,11 @@ impl SvgGenerator {
             let center_x = (glyph.bbox[0] + glyph.bbox[2]) / 2.0;
             let center_y = (glyph.bbox[1] + glyph.bbox[3]) / 2.0;
 
-            if center_x >= bbox[0] && center_x <= bbox[2] && center_y >= bbox[1] && center_y <= bbox[3] {
+            if center_x >= bbox[0]
+                && center_x <= bbox[2]
+                && center_y >= bbox[1]
+                && center_y <= bbox[3]
+            {
                 glyphs_by_color
                     .entry(glyph.fill_color.clone())
                     .or_default()
@@ -324,9 +328,15 @@ mod tests {
     #[test]
     fn test_pdf_color_to_css_cmyk() {
         // Cyan: C=1, M=0, Y=0, K=0
-        assert_eq!(pdf_color_to_css("DeviceCMYK", &[1.0, 0.0, 0.0, 0.0]), "rgb(0,255,255)");
+        assert_eq!(
+            pdf_color_to_css("DeviceCMYK", &[1.0, 0.0, 0.0, 0.0]),
+            "rgb(0,255,255)"
+        );
         // Black: all 1
-        assert_eq!(pdf_color_to_css("DeviceCMYK", &[1.0, 1.0, 1.0, 1.0]), "rgb(0,0,0)");
+        assert_eq!(
+            pdf_color_to_css("DeviceCMYK", &[1.0, 1.0, 1.0, 1.0]),
+            "rgb(0,0,0)"
+        );
     }
 
     #[test]
@@ -406,7 +416,11 @@ mod tests {
         // No external references (except xmlns)
         // Check that the only http:// reference is the xmlns attribute
         let http_count = svg.matches("http://").count();
-        assert_eq!(http_count, 1, "Only xmlns should contain http://, found {} occurrences", http_count);
+        assert_eq!(
+            http_count, 1,
+            "Only xmlns should contain http://, found {} occurrences",
+            http_count
+        );
         assert!(!svg.contains("href="));
         assert!(!svg.contains("xlink:href"));
 
@@ -448,8 +462,16 @@ mod tests {
         // svg_y = 440 - 432 = 8
         let (sx, sy) = builder.transform(220.0, 432.0);
 
-        assert!((sx - 20.0).abs() < 0.01, "x coordinate should be 20, got {}", sx);
-        assert!((sy - 8.0).abs() < 0.01, "y coordinate should be 8, got {}", sy);
+        assert!(
+            (sx - 20.0).abs() < 0.01,
+            "x coordinate should be 20, got {}",
+            sx
+        );
+        assert!(
+            (sy - 8.0).abs() < 0.01,
+            "y coordinate should be 8, got {}",
+            sy
+        );
     }
 
     #[test]
@@ -491,14 +513,12 @@ mod tests {
         // Test with real font data (DejaVu Sans)
         let font_data = include_bytes!("../../../../tests/fixtures/fonts/DejaVuSans.ttf");
         let glyph_list = GlyphList {
-            glyphs: vec![
-                Glyph {
-                    gid: 36, // 'A' in DejaVu Sans (not 3, which is typically .notdef)
-                    bbox: [50.0, 400.0, 100.0, 450.0],
-                    font_id: 0,
-                    fill_color: "#000000".to_string(),
-                },
-            ],
+            glyphs: vec![Glyph {
+                gid: 36, // 'A' in DejaVu Sans (not 3, which is typically .notdef)
+                bbox: [50.0, 400.0, 100.0, 450.0],
+                font_id: 0,
+                fill_color: "#000000".to_string(),
+            }],
             fonts: vec![FontFace {
                 data: font_data.to_vec(),
                 index: 0,

@@ -18,15 +18,18 @@
 //! ```
 
 use libc::{c_char, c_void};
+use pdftract_core::document::{compute_pdf_fingerprint, parse_pdf_file, PdfExtractor};
 use pdftract_core::extract::{extract_pdf, result_to_json};
 use pdftract_core::options::ExtractionOptions;
-use pdftract_core::document::{parse_pdf_file, compute_pdf_fingerprint, PdfExtractor};
-use pdftract_core::receipts::{Receipt, verifier::{verify_receipt, SpanData, VerificationResult, exit_code}};
-use std::ffi::{CString, CStr};
+use pdftract_core::receipts::{
+    verifier::{exit_code, verify_receipt, SpanData, VerificationResult},
+    Receipt,
+};
+use std::default::Default;
+use std::ffi::{CStr, CString};
 use std::panic::catch_unwind;
 use std::path::Path;
 use std::sync::Mutex;
-use std::default::Default;
 
 /// Error codes returned in JSON error responses.
 mod error_codes {
@@ -43,7 +46,11 @@ mod error_codes {
 
 /// Convert an error to a JSON error string.
 fn json_error(code: &str, message: &str) -> String {
-    format!(r#"{{"error":"{}","message":"{}"}}"#, code, escape_json(message))
+    format!(
+        r#"{{"error":"{}","message":"{}"}}"#,
+        code,
+        escape_json(message)
+    )
 }
 
 /// Escape a string for JSON (minimal escaping).
@@ -82,8 +89,7 @@ unsafe fn cstr_to_string(ptr: *const c_char) -> Result<String, &'static str> {
 
 /// Parse options JSON, returning an error string on failure.
 fn parse_options_json(options_json: &str) -> Result<ExtractionOptions, String> {
-    serde_json::from_str(options_json)
-        .map_err(|e| format!("Invalid options JSON: {}", e))
+    serde_json::from_str(options_json).map_err(|e| format!("Invalid options JSON: {}", e))
 }
 
 /// Result type for FFI operations that can fail.
@@ -120,12 +126,22 @@ pub extern "C" fn pdftract_extract(
         // Validate and convert arguments
         let source_path = match cstr_to_string(source) {
             Ok(s) => s,
-            Err(_) => return FfiResult::Err(json_error(error_codes::NULL_POINTER, "source pointer is null")),
+            Err(_) => {
+                return FfiResult::Err(json_error(
+                    error_codes::NULL_POINTER,
+                    "source pointer is null",
+                ))
+            }
         };
 
         let options_str = match cstr_to_string(options_json) {
             Ok(s) => s,
-            Err(_) => return FfiResult::Err(json_error(error_codes::NULL_POINTER, "options_json pointer is null")),
+            Err(_) => {
+                return FfiResult::Err(json_error(
+                    error_codes::NULL_POINTER,
+                    "options_json pointer is null",
+                ))
+            }
         };
 
         // Parse options
@@ -145,14 +161,19 @@ pub extern "C" fn pdftract_extract(
         let json_value = result_to_json(&extraction_result);
         match serde_json::to_string(&json_value) {
             Ok(json) => FfiResult::Ok(json),
-            Err(e) => FfiResult::Err(json_error(error_codes::EXTRACTION_ERROR, &format!("JSON serialization failed: {}", e))),
+            Err(e) => FfiResult::Err(json_error(
+                error_codes::EXTRACTION_ERROR,
+                &format!("JSON serialization failed: {}", e),
+            )),
         }
     });
 
     match result {
         Ok(FfiResult::Ok(json)) => CString::new(json).unwrap().into_raw(),
         Ok(FfiResult::Err(err)) => CString::new(err).unwrap().into_raw(),
-        Err(_) => CString::new(json_error(error_codes::PANIC, "panic in pdftract_extract")).unwrap().into_raw(),
+        Err(_) => CString::new(json_error(error_codes::PANIC, "panic in pdftract_extract"))
+            .unwrap()
+            .into_raw(),
     }
 }
 
@@ -175,12 +196,22 @@ pub extern "C" fn pdftract_extract_text(
     let result = catch_unwind(|| unsafe {
         let source_path = match cstr_to_string(source) {
             Ok(s) => s,
-            Err(_) => return FfiResult::Err(json_error(error_codes::NULL_POINTER, "source pointer is null")),
+            Err(_) => {
+                return FfiResult::Err(json_error(
+                    error_codes::NULL_POINTER,
+                    "source pointer is null",
+                ))
+            }
         };
 
         let options_str = match cstr_to_string(options_json) {
             Ok(s) => s,
-            Err(_) => return FfiResult::Err(json_error(error_codes::NULL_POINTER, "options_json pointer is null")),
+            Err(_) => {
+                return FfiResult::Err(json_error(
+                    error_codes::NULL_POINTER,
+                    "options_json pointer is null",
+                ))
+            }
         };
 
         let options: ExtractionOptions = match parse_options_json(&options_str) {
@@ -195,7 +226,8 @@ pub extern "C" fn pdftract_extract_text(
         };
 
         // Extract just the text from all pages
-        let text: String = extraction_result.pages
+        let text: String = extraction_result
+            .pages
             .iter()
             .flat_map(|page| page.spans.iter().map(|span| span.text.as_str()))
             .collect::<Vec<_>>()
@@ -203,14 +235,22 @@ pub extern "C" fn pdftract_extract_text(
 
         match serde_json::to_string(&text) {
             Ok(json) => FfiResult::Ok(json),
-            Err(e) => FfiResult::Err(json_error(error_codes::EXTRACTION_ERROR, &format!("JSON serialization failed: {}", e))),
+            Err(e) => FfiResult::Err(json_error(
+                error_codes::EXTRACTION_ERROR,
+                &format!("JSON serialization failed: {}", e),
+            )),
         }
     });
 
     match result {
         Ok(FfiResult::Ok(json)) => CString::new(json).unwrap().into_raw(),
         Ok(FfiResult::Err(err)) => CString::new(err).unwrap().into_raw(),
-        Err(_) => CString::new(json_error(error_codes::PANIC, "panic in pdftract_extract_text")).unwrap().into_raw(),
+        Err(_) => CString::new(json_error(
+            error_codes::PANIC,
+            "panic in pdftract_extract_text",
+        ))
+        .unwrap()
+        .into_raw(),
     }
 }
 
@@ -233,12 +273,22 @@ pub extern "C" fn pdftract_extract_markdown(
     let result = catch_unwind(|| unsafe {
         let source_path = match cstr_to_string(source) {
             Ok(s) => s,
-            Err(_) => return FfiResult::Err(json_error(error_codes::NULL_POINTER, "source pointer is null")),
+            Err(_) => {
+                return FfiResult::Err(json_error(
+                    error_codes::NULL_POINTER,
+                    "source pointer is null",
+                ))
+            }
         };
 
         let options_str = match cstr_to_string(options_json) {
             Ok(s) => s,
-            Err(_) => return FfiResult::Err(json_error(error_codes::NULL_POINTER, "options_json pointer is null")),
+            Err(_) => {
+                return FfiResult::Err(json_error(
+                    error_codes::NULL_POINTER,
+                    "options_json pointer is null",
+                ))
+            }
         };
 
         let options: ExtractionOptions = match parse_options_json(&options_str) {
@@ -253,33 +303,40 @@ pub extern "C" fn pdftract_extract_markdown(
         };
 
         // Convert blocks to markdown
-        let markdown: String = extraction_result.pages
+        let markdown: String = extraction_result
+            .pages
             .iter()
             .flat_map(|page| page.blocks.iter())
-            .map(|block| {
-                match block.kind.as_str() {
-                    "heading" => {
-                        let level = block.level.unwrap_or(1);
-                        let hashes = "#".repeat(level as usize);
-                        format!("{} {}\n\n", hashes, block.text)
-                    }
-                    "paragraph" => format!("{}\n\n", block.text),
-                    "list" => format!("- {}\n", block.text),
-                    _ => format!("{}\n\n", block.text),
+            .map(|block| match block.kind.as_str() {
+                "heading" => {
+                    let level = block.level.unwrap_or(1);
+                    let hashes = "#".repeat(level as usize);
+                    format!("{} {}\n\n", hashes, block.text)
                 }
+                "paragraph" => format!("{}\n\n", block.text),
+                "list" => format!("- {}\n", block.text),
+                _ => format!("{}\n\n", block.text),
             })
             .collect();
 
         match serde_json::to_string(&markdown) {
             Ok(json) => FfiResult::Ok(json),
-            Err(e) => FfiResult::Err(json_error(error_codes::EXTRACTION_ERROR, &format!("JSON serialization failed: {}", e))),
+            Err(e) => FfiResult::Err(json_error(
+                error_codes::EXTRACTION_ERROR,
+                &format!("JSON serialization failed: {}", e),
+            )),
         }
     });
 
     match result {
         Ok(FfiResult::Ok(json)) => CString::new(json).unwrap().into_raw(),
         Ok(FfiResult::Err(err)) => CString::new(err).unwrap().into_raw(),
-        Err(_) => CString::new(json_error(error_codes::PANIC, "panic in pdftract_extract_markdown")).unwrap().into_raw(),
+        Err(_) => CString::new(json_error(
+            error_codes::PANIC,
+            "panic in pdftract_extract_markdown",
+        ))
+        .unwrap()
+        .into_raw(),
     }
 }
 
@@ -329,7 +386,10 @@ pub extern "C" fn pdftract_extract_stream_open(
         let source_path = match cstr_to_string(source) {
             Ok(s) => s,
             Err(e) => {
-                set_last_error(json_error(error_codes::NULL_POINTER, "source pointer is null"));
+                set_last_error(json_error(
+                    error_codes::NULL_POINTER,
+                    "source pointer is null",
+                ));
                 return None;
             }
         };
@@ -337,7 +397,10 @@ pub extern "C" fn pdftract_extract_stream_open(
         let options_str = match cstr_to_string(options_json) {
             Ok(s) => s,
             Err(e) => {
-                set_last_error(json_error(error_codes::NULL_POINTER, "options_json pointer is null"));
+                set_last_error(json_error(
+                    error_codes::NULL_POINTER,
+                    "options_json pointer is null",
+                ));
                 return None;
             }
         };
@@ -374,7 +437,10 @@ pub extern "C" fn pdftract_extract_stream_open(
         Ok(Some(state)) => Box::into_raw(Box::new(state)) as *mut c_void,
         Ok(None) => std::ptr::null_mut(),
         Err(_) => {
-            set_last_error(json_error(error_codes::PANIC, "panic in pdftract_extract_stream_open"));
+            set_last_error(json_error(
+                error_codes::PANIC,
+                "panic in pdftract_extract_stream_open",
+            ));
             std::ptr::null_mut()
         }
     }
@@ -405,7 +471,9 @@ pub extern "C" fn pdftract_extract_stream_open(
 #[no_mangle]
 pub extern "C" fn pdftract_stream_next(handle: *mut c_void) -> *mut c_char {
     if handle.is_null() {
-        return CString::new(json_error(error_codes::INVALID_HANDLE, "null handle")).unwrap().into_raw();
+        return CString::new(json_error(error_codes::INVALID_HANDLE, "null handle"))
+            .unwrap()
+            .into_raw();
     }
 
     let result = catch_unwind(|| -> Option<*mut c_char> {
@@ -432,7 +500,11 @@ pub extern "C" fn pdftract_stream_next(handle: *mut c_void) -> *mut c_char {
                         "blocks": [],
                     });
                     state.current_index += 1;
-                    return Some(CString::new(serde_json::to_string(&error_json).unwrap()).unwrap().into_raw());
+                    return Some(
+                        CString::new(serde_json::to_string(&error_json).unwrap())
+                            .unwrap()
+                            .into_raw(),
+                    );
                 }
                 None => {
                     // Stream ended - return null pointer
@@ -452,14 +524,23 @@ pub extern "C" fn pdftract_stream_next(handle: *mut c_void) -> *mut c_char {
 
             // Serialize and return
             // The page_json is dropped after this call, freeing all page data
-            Some(CString::new(serde_json::to_string(&page_json).unwrap()).unwrap().into_raw())
+            Some(
+                CString::new(serde_json::to_string(&page_json).unwrap())
+                    .unwrap()
+                    .into_raw(),
+            )
         }
     });
 
     match result {
         Ok(Some(ptr)) => ptr,
         Ok(None) => std::ptr::null_mut(),
-        Err(_) => CString::new(json_error(error_codes::PANIC, "panic in pdftract_stream_next")).unwrap().into_raw(),
+        Err(_) => CString::new(json_error(
+            error_codes::PANIC,
+            "panic in pdftract_stream_next",
+        ))
+        .unwrap()
+        .into_raw(),
     }
 }
 
@@ -504,17 +585,32 @@ pub extern "C" fn pdftract_search(
     let result = catch_unwind(|| unsafe {
         let source_path = match cstr_to_string(source) {
             Ok(s) => s,
-            Err(_) => return FfiResult::Err(json_error(error_codes::NULL_POINTER, "source pointer is null")),
+            Err(_) => {
+                return FfiResult::Err(json_error(
+                    error_codes::NULL_POINTER,
+                    "source pointer is null",
+                ))
+            }
         };
 
         let search_pattern = match cstr_to_string(pattern) {
             Ok(s) => s,
-            Err(_) => return FfiResult::Err(json_error(error_codes::NULL_POINTER, "pattern pointer is null")),
+            Err(_) => {
+                return FfiResult::Err(json_error(
+                    error_codes::NULL_POINTER,
+                    "pattern pointer is null",
+                ))
+            }
         };
 
         let options_str = match cstr_to_string(options_json) {
             Ok(s) => s,
-            Err(_) => return FfiResult::Err(json_error(error_codes::NULL_POINTER, "options_json pointer is null")),
+            Err(_) => {
+                return FfiResult::Err(json_error(
+                    error_codes::NULL_POINTER,
+                    "options_json pointer is null",
+                ))
+            }
         };
 
         let options: ExtractionOptions = match parse_options_json(&options_str) {
@@ -549,14 +645,19 @@ pub extern "C" fn pdftract_search(
             "matches": matches,
         })) {
             Ok(json) => FfiResult::Ok(json),
-            Err(e) => FfiResult::Err(json_error(error_codes::EXTRACTION_ERROR, &format!("JSON serialization failed: {}", e))),
+            Err(e) => FfiResult::Err(json_error(
+                error_codes::EXTRACTION_ERROR,
+                &format!("JSON serialization failed: {}", e),
+            )),
         }
     });
 
     match result {
         Ok(FfiResult::Ok(json)) => CString::new(json).unwrap().into_raw(),
         Ok(FfiResult::Err(err)) => CString::new(err).unwrap().into_raw(),
-        Err(_) => CString::new(json_error(error_codes::PANIC, "panic in pdftract_search")).unwrap().into_raw(),
+        Err(_) => CString::new(json_error(error_codes::PANIC, "panic in pdftract_search"))
+            .unwrap()
+            .into_raw(),
     }
 }
 
@@ -579,12 +680,22 @@ pub extern "C" fn pdftract_get_metadata(
     let result = catch_unwind(|| unsafe {
         let source_path = match cstr_to_string(source) {
             Ok(s) => s,
-            Err(_) => return FfiResult::Err(json_error(error_codes::NULL_POINTER, "source pointer is null")),
+            Err(_) => {
+                return FfiResult::Err(json_error(
+                    error_codes::NULL_POINTER,
+                    "source pointer is null",
+                ))
+            }
         };
 
         let options_str = match cstr_to_string(options_json) {
             Ok(s) => s,
-            Err(_) => return FfiResult::Err(json_error(error_codes::NULL_POINTER, "options_json pointer is null")),
+            Err(_) => {
+                return FfiResult::Err(json_error(
+                    error_codes::NULL_POINTER,
+                    "options_json pointer is null",
+                ))
+            }
         };
 
         let options: ExtractionOptions = match parse_options_json(&options_str) {
@@ -606,14 +717,22 @@ pub extern "C" fn pdftract_get_metadata(
             "receipts_mode": extraction_result.metadata.receipts_mode.as_str(),
         })) {
             Ok(json) => FfiResult::Ok(json),
-            Err(e) => FfiResult::Err(json_error(error_codes::EXTRACTION_ERROR, &format!("JSON serialization failed: {}", e))),
+            Err(e) => FfiResult::Err(json_error(
+                error_codes::EXTRACTION_ERROR,
+                &format!("JSON serialization failed: {}", e),
+            )),
         }
     });
 
     match result {
         Ok(FfiResult::Ok(json)) => CString::new(json).unwrap().into_raw(),
         Ok(FfiResult::Err(err)) => CString::new(err).unwrap().into_raw(),
-        Err(_) => CString::new(json_error(error_codes::PANIC, "panic in pdftract_get_metadata")).unwrap().into_raw(),
+        Err(_) => CString::new(json_error(
+            error_codes::PANIC,
+            "panic in pdftract_get_metadata",
+        ))
+        .unwrap()
+        .into_raw(),
     }
 }
 
@@ -632,7 +751,12 @@ pub extern "C" fn pdftract_hash(source: *const c_char) -> *mut c_char {
     let result = catch_unwind(|| unsafe {
         let source_path = match cstr_to_string(source) {
             Ok(s) => s,
-            Err(_) => return FfiResult::Err(json_error(error_codes::NULL_POINTER, "source pointer is null")),
+            Err(_) => {
+                return FfiResult::Err(json_error(
+                    error_codes::NULL_POINTER,
+                    "source pointer is null",
+                ))
+            }
         };
 
         let pdf_path = Path::new(&source_path);
@@ -645,14 +769,19 @@ pub extern "C" fn pdftract_hash(source: *const c_char) -> *mut c_char {
             "fingerprint": fingerprint,
         })) {
             Ok(json) => FfiResult::Ok(json),
-            Err(e) => FfiResult::Err(json_error(error_codes::EXTRACTION_ERROR, &format!("JSON serialization failed: {}", e))),
+            Err(e) => FfiResult::Err(json_error(
+                error_codes::EXTRACTION_ERROR,
+                &format!("JSON serialization failed: {}", e),
+            )),
         }
     });
 
     match result {
         Ok(FfiResult::Ok(json)) => CString::new(json).unwrap().into_raw(),
         Ok(FfiResult::Err(err)) => CString::new(err).unwrap().into_raw(),
-        Err(_) => CString::new(json_error(error_codes::PANIC, "panic in pdftract_hash")).unwrap().into_raw(),
+        Err(_) => CString::new(json_error(error_codes::PANIC, "panic in pdftract_hash"))
+            .unwrap()
+            .into_raw(),
     }
 }
 
@@ -676,7 +805,12 @@ pub extern "C" fn pdftract_classify(source: *const c_char) -> *mut c_char {
     let result = catch_unwind(|| unsafe {
         let source_path = match cstr_to_string(source) {
             Ok(s) => s,
-            Err(_) => return FfiResult::Err(json_error(error_codes::NULL_POINTER, "source pointer is null")),
+            Err(_) => {
+                return FfiResult::Err(json_error(
+                    error_codes::NULL_POINTER,
+                    "source pointer is null",
+                ))
+            }
         };
 
         let pdf_path = Path::new(&source_path);
@@ -703,14 +837,19 @@ pub extern "C" fn pdftract_classify(source: *const c_char) -> *mut c_char {
             "confidence": 0.5,
         })) {
             Ok(json) => FfiResult::Ok(json),
-            Err(e) => FfiResult::Err(json_error(error_codes::EXTRACTION_ERROR, &format!("JSON serialization failed: {}", e))),
+            Err(e) => FfiResult::Err(json_error(
+                error_codes::EXTRACTION_ERROR,
+                &format!("JSON serialization failed: {}", e),
+            )),
         }
     });
 
     match result {
         Ok(FfiResult::Ok(json)) => CString::new(json).unwrap().into_raw(),
         Ok(FfiResult::Err(err)) => CString::new(err).unwrap().into_raw(),
-        Err(_) => CString::new(json_error(error_codes::PANIC, "panic in pdftract_classify")).unwrap().into_raw(),
+        Err(_) => CString::new(json_error(error_codes::PANIC, "panic in pdftract_classify"))
+            .unwrap()
+            .into_raw(),
     }
 }
 
@@ -854,17 +993,17 @@ pub extern "C" fn pdftract_abi_version() -> u32 {
 ///
 /// On error, use pdftract_last_error() to get a detailed message.
 #[no_mangle]
-pub extern "C" fn pdftract_verify_receipt(
-    path: *const c_char,
-    receipt_json: *const c_char,
-) -> i32 {
+pub extern "C" fn pdftract_verify_receipt(path: *const c_char, receipt_json: *const c_char) -> i32 {
     clear_last_error();
 
     let result = catch_unwind(|| unsafe {
         let pdf_path = match cstr_to_string(path) {
             Ok(s) => s,
             Err(_) => {
-                set_last_error(json_error(error_codes::NULL_POINTER, "path pointer is null"));
+                set_last_error(json_error(
+                    error_codes::NULL_POINTER,
+                    "path pointer is null",
+                ));
                 return exit_code::EXTRACTION_FAILED;
             }
         };
@@ -872,7 +1011,10 @@ pub extern "C" fn pdftract_verify_receipt(
         let receipt_str = match cstr_to_string(receipt_json) {
             Ok(s) => s,
             Err(_) => {
-                set_last_error(json_error(error_codes::NULL_POINTER, "receipt_json pointer is null"));
+                set_last_error(json_error(
+                    error_codes::NULL_POINTER,
+                    "receipt_json pointer is null",
+                ));
                 return exit_code::EXTRACTION_FAILED;
             }
         };
@@ -881,7 +1023,10 @@ pub extern "C" fn pdftract_verify_receipt(
         let receipt: Receipt = match serde_json::from_str(&receipt_str) {
             Ok(r) => r,
             Err(e) => {
-                set_last_error(json_error(error_codes::INVALID_JSON, &format!("Invalid receipt JSON: {}", e)));
+                set_last_error(json_error(
+                    error_codes::INVALID_JSON,
+                    &format!("Invalid receipt JSON: {}", e),
+                ));
                 return exit_code::EXTRACTION_FAILED;
             }
         };
@@ -900,14 +1045,21 @@ pub extern "C" fn pdftract_verify_receipt(
         let page = if receipt.page_index < extraction_result.pages.len() {
             &extraction_result.pages[receipt.page_index]
         } else {
-            set_last_error(json_error(error_codes::EXTRACTION_ERROR,
-                &format!("receipt page_index {} out of bounds (PDF has {} pages)",
-                    receipt.page_index, extraction_result.pages.len())));
+            set_last_error(json_error(
+                error_codes::EXTRACTION_ERROR,
+                &format!(
+                    "receipt page_index {} out of bounds (PDF has {} pages)",
+                    receipt.page_index,
+                    extraction_result.pages.len()
+                ),
+            ));
             return exit_code::EXTRACTION_FAILED;
         };
 
         // Collect spans from the page
-        let spans: Vec<SpanData> = page.spans.iter()
+        let spans: Vec<SpanData> = page
+            .spans
+            .iter()
             .map(|span| SpanData {
                 text: span.text.clone(),
                 bbox: span.bbox,
@@ -928,7 +1080,10 @@ pub extern "C" fn pdftract_verify_receipt(
     match result {
         Ok(code) => code,
         Err(_) => {
-            set_last_error(json_error(error_codes::PANIC, "panic in pdftract_verify_receipt"));
+            set_last_error(json_error(
+                error_codes::PANIC,
+                "panic in pdftract_verify_receipt",
+            ));
             exit_code::EXTRACTION_FAILED
         }
     }
@@ -977,11 +1132,7 @@ startxref
 
     #[test]
     fn test_pdftract_version_not_null() {
-        let version = unsafe {
-            CStr::from_ptr(pdftract_version())
-                .to_str()
-                .unwrap()
-        };
+        let version = unsafe { CStr::from_ptr(pdftract_version()).to_str().unwrap() };
         assert!(!version.is_empty());
     }
 }

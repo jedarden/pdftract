@@ -47,7 +47,9 @@ impl MemoryCheck {
 
             for line in meminfo.lines() {
                 let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() < 2 { continue; }
+                if parts.len() < 2 {
+                    continue;
+                }
 
                 if let Ok(kb) = parts[1].parse::<u64>() {
                     match parts[0] {
@@ -148,13 +150,11 @@ impl Check for MemoryCheck {
                     }
                 }
             }
-            Err(e) => {
-                CheckResult {
-                    name: self.name(),
-                    status: CheckStatus::Warn,
-                    detail: format!("Could not determine available memory: {}", e),
-                }
-            }
+            Err(e) => CheckResult {
+                name: self.name(),
+                status: CheckStatus::Warn,
+                detail: format!("Could not determine available memory: {}", e),
+            },
         }
     }
 }

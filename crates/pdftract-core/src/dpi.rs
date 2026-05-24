@@ -21,8 +21,8 @@
 //! images are already binary at scan resolution; rendering at 300 DPI throws away
 //! no data but wastes ~9x the CPU.
 
-use crate::options::ExtractionOptions;
 use crate::classify::PageContext;
+use crate::options::ExtractionOptions;
 
 /// PDF 1.x filter name for image streams.
 ///
@@ -206,10 +206,7 @@ fn compute_median_font_size(font_sizes: &[f32]) -> f32 {
     }
 
     // Clamp font sizes to reasonable bounds to prevent outliers
-    let mut clamped: Vec<f32> = font_sizes
-        .iter()
-        .map(|&s| s.clamp(4.0, 72.0))
-        .collect();
+    let mut clamped: Vec<f32> = font_sizes.iter().map(|&s| s.clamp(4.0, 72.0)).collect();
 
     // Use nth_element for O(n) median selection
     let len = clamped.len();
@@ -238,8 +235,14 @@ mod tests {
 
     #[test]
     fn test_pdf1_filter_from_name() {
-        assert_eq!(Pdf1Filter::from_name("JBIG2Decode"), Pdf1Filter::Jbig2Decode);
-        assert_eq!(Pdf1Filter::from_name("/JBIG2Decode"), Pdf1Filter::Jbig2Decode);
+        assert_eq!(
+            Pdf1Filter::from_name("JBIG2Decode"),
+            Pdf1Filter::Jbig2Decode
+        );
+        assert_eq!(
+            Pdf1Filter::from_name("/JBIG2Decode"),
+            Pdf1Filter::Jbig2Decode
+        );
         assert_eq!(Pdf1Filter::from_name("DCTDecode"), Pdf1Filter::DctDecode);
         assert_eq!(Pdf1Filter::from_name("DCT"), Pdf1Filter::DctDecode);
         assert_eq!(Pdf1Filter::from_name("Fl"), Pdf1Filter::FlateDecode);
@@ -404,8 +407,8 @@ mod tests {
         // With 30 footnotes vs 20 body text, median should be in fine-print range
         let mut font_sizes: Vec<f32> = (0..30).map(|_| 6.0).collect(); // footnotes
         font_sizes.extend((0..20).map(|_| 10.0)); // body text
-        // Sorted: 30x 6.0, then 20x 10.0 -> median is at index 25 (0-indexed)
-        // That's the 26th element, which is 6.0
+                                                  // Sorted: 30x 6.0, then 20x 10.0 -> median is at index 25 (0-indexed)
+                                                  // That's the 26th element, which is 6.0
         let dpi = select_dpi(&page, &filters, Some(&font_sizes), &options);
         assert_eq!(dpi, 400);
     }

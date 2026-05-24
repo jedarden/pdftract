@@ -265,10 +265,7 @@ fn test_public_urls_are_accepted() {
                 // OK in offline tests
             }
             Err(other) => {
-                panic!(
-                    "Public URL '{}' should be accepted, got: {:?}",
-                    url, other
-                );
+                panic!("Public URL '{}' should be accepted, got: {:?}", url, other);
             }
         }
     }
@@ -328,10 +325,10 @@ fn test_url_validation_returns_correct_diagnostic_code() {
 fn test_private_ipv4_boundary_addresses() {
     // Test addresses just outside the private ranges
     let public_addrs = &[
-        "172.15.255.255", // Just below 172.16.0.0/12
-        "172.32.0.1",     // Just above 172.16.0.0/12
+        "172.15.255.255",  // Just below 172.16.0.0/12
+        "172.32.0.1",      // Just above 172.16.0.0/12
         "192.167.255.255", // Just below 192.168.0.0/16
-        "192.169.0.1",    // Just above 192.168.0.0/16
+        "192.169.0.1",     // Just above 192.168.0.0/16
     ];
 
     for addr in public_addrs {
@@ -340,12 +337,15 @@ fn test_private_ipv4_boundary_addresses() {
 
         // These should not be rejected as private network (may fail DNS in tests)
         match result {
-            Ok(_) => {},
-            Err(UrlValidationError::DnsFailed(_)) => {},
+            Ok(_) => {}
+            Err(UrlValidationError::DnsFailed(_)) => {}
             Err(UrlValidationError::PrivateNetwork(msg)) => {
-                panic!("Public address {} should not be rejected as private: {}", addr, msg);
+                panic!(
+                    "Public address {} should not be rejected as private: {}",
+                    addr, msg
+                );
             }
-            Err(_) => {},
+            Err(_) => {}
         }
     }
 }

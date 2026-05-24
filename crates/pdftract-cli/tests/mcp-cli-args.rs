@@ -24,13 +24,27 @@ fn test_stdio_and_bind_mutually_exclusive() {
         .expect("Failed to execute pdftract mcp --stdio --bind");
 
     // Should fail with exit code 2 (clap's error exit code)
-    assert_eq!(output.status.code(), Some(2), "Expected exit code 2, got {:?}", output.status.code());
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "Expected exit code 2, got {:?}",
+        output.status.code()
+    );
 
     // Error message should mention both flags
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("--stdio"), "Error message should mention --stdio");
-    assert!(stderr.contains("--bind"), "Error message should mention --bind");
-    assert!(stderr.contains("cannot be used"), "Error message should mention conflict");
+    assert!(
+        stderr.contains("--stdio"),
+        "Error message should mention --stdio"
+    );
+    assert!(
+        stderr.contains("--bind"),
+        "Error message should mention --bind"
+    );
+    assert!(
+        stderr.contains("cannot be used"),
+        "Error message should mention conflict"
+    );
 }
 
 /// Test that `pdftract mcp` (no flags) parses successfully.
@@ -45,12 +59,21 @@ fn test_default_to_stdio() {
         .expect("Failed to execute pdftract mcp --help");
 
     // Should succeed
-    assert!(output.status.success(), "pdftract mcp --help should succeed");
+    assert!(
+        output.status.success(),
+        "pdftract mcp --help should succeed"
+    );
 
     // Help text should mention the default behavior
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("default"), "Help should mention default transport mode");
-    assert!(stdout.contains("stdio"), "Help should mention stdio transport");
+    assert!(
+        stdout.contains("default"),
+        "Help should mention default transport mode"
+    );
+    assert!(
+        stdout.contains("stdio"),
+        "Help should mention stdio transport"
+    );
 }
 
 /// Test that `pdftract mcp --stdio` parses successfully.
@@ -67,7 +90,10 @@ fn test_stdio_flag_valid() {
 
     // Note: --help overrides the subcommand, so this succeeds
     // In actual use, --stdio would start the stdio server
-    assert!(output.status.success(), "pdftract mcp --stdio --help should succeed");
+    assert!(
+        output.status.success(),
+        "pdftract mcp --stdio --help should succeed"
+    );
 }
 
 /// Test that `pdftract mcp --bind ADDR` parses successfully.
@@ -85,7 +111,10 @@ fn test_bind_flag_valid() {
 
     // Note: --help overrides the subcommand, so this succeeds
     // In actual use, --bind would start the HTTP server
-    assert!(output.status.success(), "pdftract mcp --bind ADDR --help should succeed");
+    assert!(
+        output.status.success(),
+        "pdftract mcp --bind ADDR --help should succeed"
+    );
 }
 
 /// Test that the help text mentions ADR-006 and the mutual exclusion rationale.
@@ -99,10 +128,16 @@ fn test_help_mentions_adr_006() {
         .output()
         .expect("Failed to execute pdftract mcp --help");
 
-    assert!(output.status.success(), "pdftract mcp --help should succeed");
+    assert!(
+        output.status.success(),
+        "pdftract mcp --help should succeed"
+    );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     // Help text should mention ADR-006 and the rationale
     assert!(stdout.contains("ADR-006"), "Help should mention ADR-006");
-    assert!(stdout.contains("mutually exclusive"), "Help should mention mutual exclusion");
+    assert!(
+        stdout.contains("mutually exclusive"),
+        "Help should mention mutual exclusion"
+    );
 }

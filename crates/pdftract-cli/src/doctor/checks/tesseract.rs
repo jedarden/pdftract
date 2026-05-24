@@ -1,5 +1,5 @@
-use std::process::Command;
 use super::super::{Check, CheckResult, CheckStatus, DoctorCtx};
+use std::process::Command;
 
 /// Check: tesseract installation and version
 ///
@@ -14,9 +14,7 @@ impl Check for TesseractCheck {
     }
 
     fn run(&self, _ctx: &DoctorCtx) -> CheckResult {
-        let output = Command::new("tesseract")
-            .arg("--version")
-            .output();
+        let output = Command::new("tesseract").arg("--version").output();
 
         match output {
             Ok(output) => {
@@ -61,16 +59,17 @@ impl Check for TesseractCheck {
                 CheckResult {
                     name: self.name(),
                     status: CheckStatus::Warn,
-                    detail: format!("tesseract binary found but version could not be parsed: {}", version_output.trim()),
+                    detail: format!(
+                        "tesseract binary found but version could not be parsed: {}",
+                        version_output.trim()
+                    ),
                 }
             }
-            Err(e) => {
-                CheckResult {
-                    name: self.name(),
-                    status: CheckStatus::Fail,
-                    detail: format!("tesseract not found: {}", e),
-                }
-            }
+            Err(e) => CheckResult {
+                name: self.name(),
+                status: CheckStatus::Fail,
+                detail: format!("tesseract not found: {}", e),
+            },
         }
     }
 }

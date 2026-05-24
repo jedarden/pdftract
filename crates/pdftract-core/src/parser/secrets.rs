@@ -16,7 +16,7 @@
 //! CI should run: `rg "expose_secret\(\)" crates/ --type rust` and fail the
 //! build if any matches are found outside of these approved locations.
 
-use secrecy::{SecretString, ExposeSecret};
+use secrecy::{ExposeSecret, SecretString};
 use sha2::{Digest, Sha256};
 
 /// A fingerprint of a secret value for use in audit logs.
@@ -91,7 +91,10 @@ mod tests {
     fn test_fingerprint_display() {
         let fp = SecretFingerprint::from_str("test");
         let display = format!("{}", fp);
-        assert!(!display.contains("test"), "fingerprint doesn't contain secret");
+        assert!(
+            !display.contains("test"),
+            "fingerprint doesn't contain secret"
+        );
         assert_eq!(display.len(), 64, "SHA-256 produces 64 hex chars");
     }
 }

@@ -135,12 +135,18 @@ impl CodeGenerator {
                     return Ok(contract);
                 }
                 Err(e) => {
-                    eprintln!("Warning: Failed to parse SDK contract from {:?}: {}", contract_path, e);
+                    eprintln!(
+                        "Warning: Failed to parse SDK contract from {:?}: {}",
+                        contract_path, e
+                    );
                     eprintln!("Falling back to hardcoded contract");
                 }
             }
         } else {
-            eprintln!("Warning: SDK contract file not found at {:?}, using hardcoded contract", contract_path);
+            eprintln!(
+                "Warning: SDK contract file not found at {:?}, using hardcoded contract",
+                contract_path
+            );
         }
 
         // Hardcoded fallback contract
@@ -155,7 +161,9 @@ impl CodeGenerator {
         let mut errors = Vec::new();
 
         // Parse method signatures from the Method surface section
-        let _method_sig_re = Regex::new(r"\*\*([a-z_]+)\*\*\s*\n\s*- Signature: [`']?([a-zA-Z0-9_<>():?,\s]+)[`']?").unwrap();
+        let _method_sig_re =
+            Regex::new(r"\*\*([a-z_]+)\*\*\s*\n\s*- Signature: [`']?([a-zA-Z0-9_<>():?,\s]+)[`']?")
+                .unwrap();
         let _method_table_re = Regex::new(r"\| [`']?([a-z_]+)[`']?\|").unwrap();
 
         // Parse method table for CLI mappings
@@ -170,18 +178,129 @@ impl CodeGenerator {
 
         // Method definitions with their details
         let method_patterns = [
-            ("extract", "Extract", "extract", "extract", "Document", "ExtractOptions", "Extract structured data from a PDF", false, false, 0),
-            ("extract_text", "ExtractText", "extract_text", "extract", "string", "ExtractOptions", "Extract plain text from a PDF", true, false, 0),
-            ("extract_markdown", "ExtractMarkdown", "extract_markdown", "extract", "string", "ExtractOptions", "Extract Markdown-formatted text from a PDF", true, false, 0),
-            ("extract_stream", "ExtractStream", "extract_stream", "extract", "Page", "ExtractOptions", "Extract pages from a PDF as a stream", false, false, 0),
-            ("search", "Search", "search", "grep", "Match", "SearchOptions", "Search for text in a PDF", false, false, 0),
-            ("get_metadata", "GetMetadata", "get_metadata", "extract", "Metadata", "BaseOptions", "Get metadata from a PDF", false, false, 0),
-            ("hash", "Hash", "hash", "hash", "Fingerprint", "BaseOptions", "Compute hash fingerprint of a PDF", false, false, 0),
-            ("classify", "Classify", "classify", "classify", "Classification", "", "Classify a PDF document", false, false, 0),
-            ("verify_receipt", "VerifyReceipt", "verify_receipt", "verify-receipt", "bool", "", "Verify a receipt", false, true, 2),
+            (
+                "extract",
+                "Extract",
+                "extract",
+                "extract",
+                "Document",
+                "ExtractOptions",
+                "Extract structured data from a PDF",
+                false,
+                false,
+                0,
+            ),
+            (
+                "extract_text",
+                "ExtractText",
+                "extract_text",
+                "extract",
+                "string",
+                "ExtractOptions",
+                "Extract plain text from a PDF",
+                true,
+                false,
+                0,
+            ),
+            (
+                "extract_markdown",
+                "ExtractMarkdown",
+                "extract_markdown",
+                "extract",
+                "string",
+                "ExtractOptions",
+                "Extract Markdown-formatted text from a PDF",
+                true,
+                false,
+                0,
+            ),
+            (
+                "extract_stream",
+                "ExtractStream",
+                "extract_stream",
+                "extract",
+                "Page",
+                "ExtractOptions",
+                "Extract pages from a PDF as a stream",
+                false,
+                false,
+                0,
+            ),
+            (
+                "search",
+                "Search",
+                "search",
+                "grep",
+                "Match",
+                "SearchOptions",
+                "Search for text in a PDF",
+                false,
+                false,
+                0,
+            ),
+            (
+                "get_metadata",
+                "GetMetadata",
+                "get_metadata",
+                "extract",
+                "Metadata",
+                "BaseOptions",
+                "Get metadata from a PDF",
+                false,
+                false,
+                0,
+            ),
+            (
+                "hash",
+                "Hash",
+                "hash",
+                "hash",
+                "Fingerprint",
+                "BaseOptions",
+                "Compute hash fingerprint of a PDF",
+                false,
+                false,
+                0,
+            ),
+            (
+                "classify",
+                "Classify",
+                "classify",
+                "classify",
+                "Classification",
+                "",
+                "Classify a PDF document",
+                false,
+                false,
+                0,
+            ),
+            (
+                "verify_receipt",
+                "VerifyReceipt",
+                "verify_receipt",
+                "verify-receipt",
+                "bool",
+                "",
+                "Verify a receipt",
+                false,
+                true,
+                2,
+            ),
         ];
 
-        for (name, camel_name, snake_name, cli_flag, return_type, options_type, description, returns_string, uses_string_params, string_param_count) in method_patterns {
+        for (
+            name,
+            camel_name,
+            snake_name,
+            cli_flag,
+            return_type,
+            options_type,
+            description,
+            returns_string,
+            uses_string_params,
+            string_param_count,
+        ) in method_patterns
+        {
             methods.push(Method {
                 name: name.to_string(),
                 camel_name: camel_name.to_string(),
@@ -199,20 +318,28 @@ impl CodeGenerator {
 
         // Parse error mapping table from the Error mapping section
         let error_mapping_start = content.find("## Error mapping").unwrap_or(0);
-        let error_mapping_end = content.find("### Per-language base exception types").unwrap_or(content.len());
+        let error_mapping_end = content
+            .find("### Per-language base exception types")
+            .unwrap_or(content.len());
         let error_mapping_section = content[error_mapping_start..error_mapping_end].to_string();
 
         // The error table has the format: | Exit code | Meaning | Native exception |
         // We need to find the table header and then parse the rows
-        let error_re = Regex::new(r"\|\s*(\d+)\s*\|\s*([^|]+?)\s*\|\s*`?([a-zA-Z]+)`?\s*\|").unwrap();
+        let error_re =
+            Regex::new(r"\|\s*(\d+)\s*\|\s*([^|]+?)\s*\|\s*`?([a-zA-Z]+)`?\s*\|").unwrap();
         for cap in error_re.captures_iter(&error_mapping_section) {
-            if let (Some(exit_code_str), Some(meaning), Some(exception_name)) = (
-                cap.get(1), cap.get(2), cap.get(3)
-            ) {
+            if let (Some(exit_code_str), Some(meaning), Some(exception_name)) =
+                (cap.get(1), cap.get(2), cap.get(3))
+            {
                 if let Ok(exit_code) = exit_code_str.as_str().parse::<i32>() {
                     let name = exception_name.as_str().trim().to_string();
                     // Skip the generic "any other non-zero" entry and malformed matches
-                    if !name.contains("any other") && name.chars().next().map_or(false, |c| c.is_ascii_alphabetic()) {
+                    if !name.contains("any other")
+                        && name
+                            .chars()
+                            .next()
+                            .map_or(false, |c| c.is_ascii_alphabetic())
+                    {
                         errors.push(Error {
                             exit_code,
                             exception_name: name,
@@ -367,7 +494,8 @@ impl CodeGenerator {
                 Error {
                     exit_code: 3,
                     exception_name: "EncryptionError".to_string(),
-                    description: "The PDF is encrypted and password is missing or wrong".to_string(),
+                    description: "The PDF is encrypted and password is missing or wrong"
+                        .to_string(),
                 },
                 Error {
                     exit_code: 4,
@@ -418,11 +546,18 @@ impl CodeGenerator {
         let template_dir = PathBuf::from("templates/sdk-skeleton").join(lang.template_dir());
 
         if !template_dir.exists() {
-            anyhow::bail!("Template directory for {:?} does not exist: {:?}", lang, template_dir);
+            anyhow::bail!(
+                "Template directory for {:?} does not exist: {:?}",
+                lang,
+                template_dir
+            );
         }
 
         // Walk the template directory and render each file
-        for entry in WalkDir::new(&template_dir).into_iter().filter_map(|e| e.ok()) {
+        for entry in WalkDir::new(&template_dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
             let path = entry.path();
             if path.is_dir() {
                 continue;
@@ -451,7 +586,8 @@ impl CodeGenerator {
 
             // Register template if it contains Tera syntax
             if template_content.contains("{{") || template_content.contains("{%") {
-                self.tera.add_raw_template(&template_name, &template_content)?;
+                self.tera
+                    .add_raw_template(&template_name, &template_content)?;
             }
 
             // Build context
@@ -488,7 +624,10 @@ impl CodeGenerator {
     /// Files that should be excluded from validation comparison.
     fn should_exclude_from_validation(path: &Path) -> bool {
         let file_name = path.file_name().and_then(|n| n.to_str());
-        matches!(file_name, Some("GENERATED") | Some(".codegen-version") | Some(".gitignore"))
+        matches!(
+            file_name,
+            Some("GENERATED") | Some(".codegen-version") | Some(".gitignore")
+        )
     }
 
     /// Validates an existing SDK against the current generator output.
@@ -502,7 +641,10 @@ impl CodeGenerator {
         let mut differences = Vec::new();
 
         // Compare generated files with existing SDK
-        for entry in WalkDir::new(temp_dir.path()).into_iter().filter_map(|e| e.ok()) {
+        for entry in WalkDir::new(temp_dir.path())
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
             let path = entry.path();
             if path.is_dir() {
                 continue;

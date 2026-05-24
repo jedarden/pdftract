@@ -9,14 +9,16 @@
 //! `PageIter` which yields pages lazily without materializing the entire page tree.
 //! Use `PdfExtractor::pages()` to get an iterator that extracts each page on-demand.
 
-use crate::fingerprint::{CatalogFlags, ContentStreamData, FingerprintInput, PageFingerprintData, compute_fingerprint};
+use crate::fingerprint::{
+    compute_fingerprint, CatalogFlags, ContentStreamData, FingerprintInput, PageFingerprintData,
+};
 use crate::parser::catalog::{parse_catalog, Catalog};
-use crate::parser::pages::{flatten_page_tree, PageDict, LazyPageIter};
+use crate::parser::pages::{flatten_page_tree, LazyPageIter, PageDict};
 use crate::parser::stream::{FileSource, PdfSource};
-use crate::parser::xref::{XrefResolver, load_xref_with_prev_chain, XrefSection};
+use crate::parser::xref::{load_xref_with_prev_chain, XrefResolver, XrefSection};
 use crate::receipts::verifier::SpanData;
-use anyhow::{Context, Result, anyhow};
-use serde::{Serialize, Deserialize};
+use anyhow::{anyhow, Context, Result};
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 /// Parse a PDF file and return the document components needed for verification.
@@ -35,14 +37,19 @@ use std::path::Path;
 /// # Returns
 ///
 /// A tuple of (fingerprint, catalog, pages, resolver)
-pub fn parse_pdf_file(pdf_path: &std::path::Path) -> Result<(String, Catalog, Vec<crate::parser::pages::PageDict>, XrefResolver)> {
+pub fn parse_pdf_file(
+    pdf_path: &std::path::Path,
+) -> Result<(
+    String,
+    Catalog,
+    Vec<crate::parser::pages::PageDict>,
+    XrefResolver,
+)> {
     // Open the PDF file
-    let source = FileSource::open(pdf_path)
-        .context("Failed to open PDF file")?;
+    let source = FileSource::open(pdf_path).context("Failed to open PDF file")?;
 
     // Find the startxref offset
-    let startxref_offset = find_startxref(&source)
-        .context("Failed to find startxref offset")?;
+    let startxref_offset = find_startxref(&source).context("Failed to find startxref offset")?;
 
     // Load the xref table
     let xref_section = load_xref_with_prev_chain(&source, startxref_offset);
@@ -51,29 +58,30 @@ pub fn parse_pdf_file(pdf_path: &std::path::Path) -> Result<(String, Catalog, Ve
     let resolver = XrefResolver::from_section(xref_section.clone());
 
     // Get the root reference from trailer
-    let root_ref = xref_section.trailer
+    let root_ref = xref_section
+        .trailer
         .as_ref()
         .and_then(|trailer| trailer.get("Root"))
         .and_then(|obj| obj.as_ref())
         .ok_or_else(|| anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref)
-        .map_err(|diagnostics| {
-            let msg = diagnostics.first()
-                .map(|d| d.message.as_ref())
-                .unwrap_or("unknown error");
-            anyhow!("Failed to parse catalog: {}", msg)
-        })?;
+    let catalog = parse_catalog(&resolver, root_ref).map_err(|diagnostics| {
+        let msg = diagnostics
+            .first()
+            .map(|d| d.message.as_ref())
+            .unwrap_or("unknown error");
+        anyhow!("Failed to parse catalog: {}", msg)
+    })?;
 
     // Flatten the page tree
-    let pages = flatten_page_tree(&resolver, catalog.pages_ref)
-        .map_err(|diagnostics| {
-            let msg = diagnostics.first()
-                .map(|d| d.message.as_ref())
-                .unwrap_or("unknown error");
-            anyhow!("Failed to flatten page tree: {}", msg)
-        })?;
+    let pages = flatten_page_tree(&resolver, catalog.pages_ref).map_err(|diagnostics| {
+        let msg = diagnostics
+            .first()
+            .map(|d| d.message.as_ref())
+            .unwrap_or("unknown error");
+        anyhow!("Failed to flatten page tree: {}", msg)
+    })?;
 
     // Build fingerprint input
     let fingerprint_input = build_fingerprint_input(&catalog, &pages, &xref_section);
@@ -92,11 +100,13 @@ fn find_startxref(source: &dyn PdfSource) -> Result<u64> {
     let scan_start = len.saturating_sub(1024);
     let scan_end = len;
 
-    let tail_data = source.read_at(scan_start as u64, scan_end - scan_start)
+    let tail_data = source
+        .read_at(scan_start as u64, scan_end - scan_start)
         .context("Failed to read PDF tail")?;
 
     // Find "startxref" in the tail data
-    let startxref_pos = tail_data.windows(9)
+    let startxref_pos = tail_data
+        .windows(9)
         .rposition(|w| w == b"startxref")
         .ok_or_else(|| anyhow!("startxref not found in PDF"))?;
 
@@ -105,21 +115,25 @@ fn find_startxref(source: &dyn PdfSource) -> Result<u64> {
     let offset_data = &tail_data[startxref_pos + 9..];
 
     // Skip leading whitespace (space, \r, \n, \t)
-    let offset_start = offset_data.iter()
+    let offset_start = offset_data
+        .iter()
         .position(|&b| !matches!(b, b' ' | b'\r' | b'\n' | b'\t'))
         .unwrap_or(offset_data.len());
 
     let offset_data_trimmed = &offset_data[offset_start..];
 
     // Find the newline after the offset
-    let newline_pos = offset_data_trimmed.iter()
+    let newline_pos = offset_data_trimmed
+        .iter()
         .position(|&b| b == b'\n' || b == b'\r')
         .unwrap_or(offset_data_trimmed.len());
 
     let offset_str = std::str::from_utf8(&offset_data_trimmed[..newline_pos])
         .context("startxref offset is not valid UTF-8")?;
 
-    let offset: u64 = offset_str.trim().parse()
+    let offset: u64 = offset_str
+        .trim()
+        .parse()
         .context("startxref offset is not a valid number")?;
 
     Ok(offset)
@@ -133,24 +147,31 @@ fn build_fingerprint_input(
 ) -> FingerprintInput {
     let page_count = pages.len() as u32;
 
-    let fingerprint_pages = pages.iter().map(|page| {
-        PageFingerprintData {
-            content_streams: page.contents.iter()
-                .map(|&obj_ref| ContentStreamData::Indirect(obj_ref))
-                .collect(),
-            resources: None, // TODO: convert ResourceDict to PdfDict
-            media_box: page.media_box,
-            crop_box: page.crop_box,
-            rotate: page.rotate,
-        }
-    }).collect();
+    let fingerprint_pages = pages
+        .iter()
+        .map(|page| {
+            PageFingerprintData {
+                content_streams: page
+                    .contents
+                    .iter()
+                    .map(|&obj_ref| ContentStreamData::Indirect(obj_ref))
+                    .collect(),
+                resources: None, // TODO: convert ResourceDict to PdfDict
+                media_box: page.media_box,
+                crop_box: page.crop_box,
+                rotate: page.rotate,
+            }
+        })
+        .collect();
 
     // Build catalog flags
     let catalog_flags = CatalogFlags {
         is_encrypted: false, // TODO: detect encryption
         contains_javascript: catalog.open_action.is_some() || catalog.aa.is_some(),
         contains_xfa: false, // TODO: detect XFA
-        ocg_present: catalog.oc_properties.as_ref()
+        ocg_present: catalog
+            .oc_properties
+            .as_ref()
             .map(|props| props.present)
             .unwrap_or(false),
     };
@@ -186,8 +207,11 @@ pub fn extract_spans_from_page(
 
     // Check page index bounds
     if page_index >= pages.len() {
-        return Err(anyhow!("Page index {} out of bounds (document has {} pages)",
-            page_index, pages.len()));
+        return Err(anyhow!(
+            "Page index {} out of bounds (document has {} pages)",
+            page_index,
+            pages.len()
+        ));
     }
 
     let page = &pages[page_index];
@@ -260,12 +284,11 @@ impl PdfExtractor {
         let path = pdf_path.as_ref();
 
         // Open the PDF file
-        let source = FileSource::open(path)
-            .context("Failed to open PDF file")?;
+        let source = FileSource::open(path).context("Failed to open PDF file")?;
 
         // Find the startxref offset
-        let startxref_offset = find_startxref(&source)
-            .context("Failed to find startxref offset")?;
+        let startxref_offset =
+            find_startxref(&source).context("Failed to find startxref offset")?;
 
         // Load the xref table
         let xref_section = load_xref_with_prev_chain(&source, startxref_offset);
@@ -274,20 +297,21 @@ impl PdfExtractor {
         let resolver = XrefResolver::from_section(xref_section.clone());
 
         // Get the root reference from trailer
-        let root_ref = xref_section.trailer
+        let root_ref = xref_section
+            .trailer
             .as_ref()
             .and_then(|trailer| trailer.get("Root"))
             .and_then(|obj| obj.as_ref())
             .ok_or_else(|| anyhow!("No /Root reference in trailer"))?;
 
         // Parse the catalog
-        let catalog = parse_catalog(&resolver, root_ref)
-            .map_err(|diagnostics| {
-                let msg = diagnostics.first()
-                    .map(|d| d.message.as_ref())
-                    .unwrap_or("unknown error");
-                anyhow!("Failed to parse catalog: {}", msg)
-            })?;
+        let catalog = parse_catalog(&resolver, root_ref).map_err(|diagnostics| {
+            let msg = diagnostics
+                .first()
+                .map(|d| d.message.as_ref())
+                .unwrap_or("unknown error");
+            anyhow!("Failed to parse catalog: {}", msg)
+        })?;
 
         // Build fingerprint input (without full page tree for lazy extraction)
         let fingerprint = compute_fingerprint_lazy(&catalog, &xref_section);
@@ -406,12 +430,17 @@ impl PdfExtractor {
     /// This method extracts one page without materializing the entire document.
     /// Content streams are decoded and the result is returned.
     pub fn extract_page(&self, page_index: usize) -> Result<PageExtraction> {
-        let pages = self.pages.as_ref()
+        let pages = self
+            .pages
+            .as_ref()
             .ok_or_else(|| anyhow!("Pages not materialized. Call materialize_pages() first."))?;
 
         if page_index >= pages.len() {
-            return Err(anyhow!("Page index {} out of bounds (document has {} pages)",
-                page_index, pages.len()));
+            return Err(anyhow!(
+                "Page index {} out of bounds (document has {} pages)",
+                page_index,
+                pages.len()
+            ));
         }
 
         let page = &pages[page_index];
@@ -489,7 +518,8 @@ impl<'a> Iterator for PageIter<'a> {
             match LazyPageIter::new(&self.extractor.resolver, self.extractor.catalog.pages_ref) {
                 Ok(iter) => self.lazy_iter = Some(iter),
                 Err(diagnostics) => {
-                    let msg = diagnostics.first()
+                    let msg = diagnostics
+                        .first()
                         .map(|d| d.message.as_ref())
                         .unwrap_or("unknown error");
                     return Some(Err(anyhow!("Failed to create lazy page iterator: {}", msg)));
@@ -518,11 +548,16 @@ impl<'a> Iterator for PageIter<'a> {
                 Some(result)
             }
             Some(Err(diagnostics)) => {
-                let msg = diagnostics.first()
+                let msg = diagnostics
+                    .first()
                     .map(|d| d.message.as_ref())
                     .unwrap_or("unknown error");
                 self.index += 1;
-                Some(Err(anyhow!("Error extracting page {}: {}", self.index - 1, msg)))
+                Some(Err(anyhow!(
+                    "Error extracting page {}: {}",
+                    self.index - 1,
+                    msg
+                )))
             }
             None => None,
         }
@@ -547,7 +582,9 @@ pub(crate) fn compute_fingerprint_lazy(catalog: &Catalog, _xref_section: &XrefSe
             is_encrypted: false,
             contains_javascript: catalog.open_action.is_some() || catalog.aa.is_some(),
             contains_xfa: false,
-            ocg_present: catalog.oc_properties.as_ref()
+            ocg_present: catalog
+                .oc_properties
+                .as_ref()
                 .map(|props| props.present)
                 .unwrap_or(false),
         },
@@ -559,8 +596,8 @@ pub(crate) fn compute_fingerprint_lazy(catalog: &Catalog, _xref_section: &XrefSe
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
     use std::fs::File;
+    use std::io::Write;
 
     /// Create a minimal valid PDF for testing.
     fn create_minimal_pdf(path: &std::path::Path) -> Result<()> {

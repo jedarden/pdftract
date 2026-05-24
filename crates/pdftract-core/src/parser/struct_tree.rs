@@ -26,14 +26,14 @@
 //! - Inline: Span, Quote, Note, Reference, BibEntry, Code, Link, Annot, Ruby, RB, RT, RP, Warichu, WT, WP
 //! - Illustration: Figure, Formula, Form
 
+use crate::diagnostics::{DiagCode, Diagnostic};
+use crate::parser::catalog::{MarkInfo, ReadingOrderAlgorithm};
+use crate::parser::marked_content::CoverageResult;
 use crate::parser::object::{ObjRef, PdfObject};
 use crate::parser::xref::XrefResolver;
-use crate::parser::catalog::{MarkInfo, ReadingOrderAlgorithm};
-use crate::diagnostics::{Diagnostic, DiagCode};
-use crate::parser::marked_content::CoverageResult;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 use std::rc::Rc;
+use std::sync::Arc;
 
 /// Result type for structure tree parsing.
 pub type Result<T> = std::result::Result<T, Vec<Diagnostic>>;
@@ -232,8 +232,16 @@ impl StructureType {
 
     /// Check if this is a heading type.
     pub fn is_heading(&self) -> bool {
-        matches!(self, StructureType::H | StructureType::H1 | StructureType::H2 |
-                 StructureType::H3 | StructureType::H4 | StructureType::H5 | StructureType::H6)
+        matches!(
+            self,
+            StructureType::H
+                | StructureType::H1
+                | StructureType::H2
+                | StructureType::H3
+                | StructureType::H4
+                | StructureType::H5
+                | StructureType::H6
+        )
     }
 
     /// Get the heading level (1-6) for heading types.
@@ -376,10 +384,12 @@ impl ParentTreeResolver {
         let parent_tree_obj = match struct_tree_root.as_dict() {
             Some(dict) => dict.get("ParentTree"),
             None => {
-                resolver_impl.diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                    DiagCode::StructMissingKey,
-                    "StructTreeRoot is not a dictionary".to_string(),
-                ));
+                resolver_impl
+                    .diagnostics
+                    .push(Diagnostic::with_dynamic_no_offset(
+                        DiagCode::StructMissingKey,
+                        "StructTreeRoot is not a dictionary".to_string(),
+                    ));
                 return resolver_impl;
             }
         };
@@ -397,10 +407,12 @@ impl ParentTreeResolver {
             Some(ref_obj) => match resolver.resolve(ref_obj) {
                 Ok(obj) => obj,
                 Err(e) => {
-                    resolver_impl.diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                        DiagCode::StructUnexpectedEof,
-                        format!("Failed to resolve ParentTree reference {}: {}", ref_obj, e),
-                    ));
+                    resolver_impl
+                        .diagnostics
+                        .push(Diagnostic::with_dynamic_no_offset(
+                            DiagCode::StructUnexpectedEof,
+                            format!("Failed to resolve ParentTree reference {}: {}", ref_obj, e),
+                        ));
                     return resolver_impl;
                 }
             },
@@ -423,7 +435,10 @@ impl ParentTreeResolver {
     ///
     /// A map from MCID to StructElem node, plus a set of orphan MCIDs (those present
     /// in content but not claimed by any StructElem).
-    pub fn resolve_page(&self, struct_parents: Option<i32>) -> (HashMap<u32, Rc<StructElemNode>>, Vec<u32>) {
+    pub fn resolve_page(
+        &self,
+        struct_parents: Option<i32>,
+    ) -> (HashMap<u32, Rc<StructElemNode>>, Vec<u32>) {
         let struct_parents = match struct_parents {
             Some(sp) => sp,
             None => {
@@ -542,7 +557,7 @@ impl ParentTreeResolver {
         struct_parents: Option<i32>,
         all_mcids: &std::collections::HashSet<u32>,
     ) -> crate::parser::marked_content::CoverageResult {
-        use crate::parser::marked_content::{compute_coverage_from_sets};
+        use crate::parser::marked_content::compute_coverage_from_sets;
 
         // Resolve MCIDs to StructElems
         let (claimed_map, _orphans) = self.resolve_page(struct_parents);
@@ -634,13 +649,11 @@ pub fn check_coverage_for_pages(
     let mut any_fallback = false;
 
     for (page_index, struct_parents, all_mcids) in pages_with_mcids {
-
         // Compute coverage using ParentTreeResolver
-        let coverage_result = struct_tree.parent_tree.compute_coverage(
-            *page_index,
-            *struct_parents,
-            &all_mcids,
-        );
+        let coverage_result =
+            struct_tree
+                .parent_tree
+                .compute_coverage(*page_index, *struct_parents, &all_mcids);
 
         // Apply Suspects mode to determine actual fallback behavior
         let coverage_result = coverage_result.with_suspects_mode(suspects_mode);
@@ -691,14 +704,23 @@ pub fn check_coverage_for_pages(
 /// * `resolver` - The xref resolver
 /// * `node_obj` - The root node of the number tree
 /// * `parent_resolver` - The ParentTreeResolver to populate
-fn walk_number_tree(resolver: &XrefResolver, node_obj: &PdfObject, parent_resolver: &mut ParentTreeResolver) {
+fn walk_number_tree(
+    resolver: &XrefResolver,
+    node_obj: &PdfObject,
+    parent_resolver: &mut ParentTreeResolver,
+) {
     let dict = match node_obj.as_dict() {
         Some(d) => d,
         None => {
-            parent_resolver.diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                DiagCode::StructInvalidType,
-                format!("Number tree node is not a dictionary (type: {})", node_obj.type_name()),
-            ));
+            parent_resolver
+                .diagnostics
+                .push(Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructInvalidType,
+                    format!(
+                        "Number tree node is not a dictionary (type: {})",
+                        node_obj.type_name()
+                    ),
+                ));
             return;
         }
     };
@@ -718,10 +740,12 @@ fn walk_number_tree(resolver: &XrefResolver, node_obj: &PdfObject, parent_resolv
                     match resolver.resolve(kid_ref) {
                         Ok(kid_node) => walk_number_tree(resolver, &kid_node, parent_resolver),
                         Err(e) => {
-                            parent_resolver.diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                                DiagCode::StructUnexpectedEof,
-                                format!("Failed to resolve number tree kid {}: {}", kid_ref, e),
-                            ));
+                            parent_resolver
+                                .diagnostics
+                                .push(Diagnostic::with_dynamic_no_offset(
+                                    DiagCode::StructUnexpectedEof,
+                                    format!("Failed to resolve number tree kid {}: {}", kid_ref, e),
+                                ));
                         }
                     }
                 } else {
@@ -731,10 +755,12 @@ fn walk_number_tree(resolver: &XrefResolver, node_obj: &PdfObject, parent_resolv
         }
     } else {
         // Neither /Nums nor /Kids - invalid number tree node
-        parent_resolver.diagnostics.push(Diagnostic::with_dynamic_no_offset(
-            DiagCode::StructMissingKey,
-            "Number tree node has neither /Nums nor /Kids".to_string(),
-        ));
+        parent_resolver
+            .diagnostics
+            .push(Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructMissingKey,
+                "Number tree node has neither /Nums nor /Kids".to_string(),
+            ));
     }
 }
 
@@ -746,10 +772,12 @@ fn process_nums_array(nums_obj: &PdfObject, parent_resolver: &mut ParentTreeReso
     let nums = match nums_obj.as_array() {
         Some(arr) => arr.as_ref(),
         None => {
-            parent_resolver.diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                DiagCode::StructInvalidType,
-                format!("/Nums is not an array (type: {})", nums_obj.type_name()),
-            ));
+            parent_resolver
+                .diagnostics
+                .push(Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructInvalidType,
+                    format!("/Nums is not an array (type: {})", nums_obj.type_name()),
+                ));
             return;
         }
     };
@@ -762,12 +790,17 @@ fn process_nums_array(nums_obj: &PdfObject, parent_resolver: &mut ParentTreeReso
 
         // Extract the key (must be an integer)
         let key = match key_obj.as_int() {
-            Some(k) => k as i32,  // Convert i64 to i32 for the HashMap key
+            Some(k) => k as i32, // Convert i64 to i32 for the HashMap key
             None => {
-                parent_resolver.diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                    DiagCode::StructInvalidType,
-                    format!("Number tree key is not an integer (type: {})", key_obj.type_name()),
-                ));
+                parent_resolver
+                    .diagnostics
+                    .push(Diagnostic::with_dynamic_no_offset(
+                        DiagCode::StructInvalidType,
+                        format!(
+                            "Number tree key is not an integer (type: {})",
+                            key_obj.type_name()
+                        ),
+                    ));
                 continue;
             }
         };
@@ -777,12 +810,19 @@ fn process_nums_array(nums_obj: &PdfObject, parent_resolver: &mut ParentTreeReso
             PdfObject::Array(arr) => {
                 // Array of refs (for pages)
                 // Null entries are preserved as ObjRef { object: 0 } to mark orphan MCIDs
-                let refs: Vec<ObjRef> = arr.as_ref()
+                let refs: Vec<ObjRef> = arr
+                    .as_ref()
                     .iter()
                     .map(|o| match o {
                         PdfObject::Ref(r) => *r,
-                        PdfObject::Null => ObjRef { object: 0, generation: 0 },
-                        _ => ObjRef { object: 0, generation: 0 }, // Invalid ref treated as null
+                        PdfObject::Null => ObjRef {
+                            object: 0,
+                            generation: 0,
+                        },
+                        _ => ObjRef {
+                            object: 0,
+                            generation: 0,
+                        }, // Invalid ref treated as null
                     })
                     .collect();
                 ParentTreeEntry::Array(refs)
@@ -796,10 +836,15 @@ fn process_nums_array(nums_obj: &PdfObject, parent_resolver: &mut ParentTreeReso
                 ParentTreeEntry::Array(Vec::new())
             }
             _ => {
-                parent_resolver.diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                    DiagCode::StructInvalidType,
-                    format!("Number tree value has unsupported type: {}", value_obj.type_name()),
-                ));
+                parent_resolver
+                    .diagnostics
+                    .push(Diagnostic::with_dynamic_no_offset(
+                        DiagCode::StructInvalidType,
+                        format!(
+                            "Number tree value has unsupported type: {}",
+                            value_obj.type_name()
+                        ),
+                    ));
                 continue;
             }
         };
@@ -809,10 +854,13 @@ fn process_nums_array(nums_obj: &PdfObject, parent_resolver: &mut ParentTreeReso
 
     // Check for trailing element (odd-length array)
     if !chunks.remainder().is_empty() {
-        parent_resolver.diagnostics.push(Diagnostic::with_dynamic_no_offset(
-            DiagCode::StructInvalidType,
-            "Number tree /Nums array has odd length (trailing element without value)".to_string(),
-        ));
+        parent_resolver
+            .diagnostics
+            .push(Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructInvalidType,
+                "Number tree /Nums array has odd length (trailing element without value)"
+                    .to_string(),
+            ));
     }
 }
 
@@ -900,7 +948,12 @@ impl RoleMap {
     /// This method detects cycles in the RoleMap (e.g., A -> B -> A).
     /// If a cycle is detected, a warning diagnostic is emitted and
     /// `StructureType::NonStruct` is returned.
-    fn resolve(&self, type_name: &str, diagnostics: &mut Vec<Diagnostic>, visited: &mut HashSet<String>) -> StructureType {
+    fn resolve(
+        &self,
+        type_name: &str,
+        diagnostics: &mut Vec<Diagnostic>,
+        visited: &mut HashSet<String>,
+    ) -> StructureType {
         // Check for cycles
         if visited.contains(type_name) {
             diagnostics.push(Diagnostic::with_dynamic_no_offset(
@@ -954,7 +1007,10 @@ impl Default for RoleMap {
 /// - Applies RoleMap normalization to all element types
 /// - Tracks /Lang inheritance through the tree
 /// - Extracts /ActualText, /Alt, and other attributes
-pub fn parse_struct_tree(resolver: &XrefResolver, struct_tree_root_ref: ObjRef) -> Result<StructTreeRoot> {
+pub fn parse_struct_tree(
+    resolver: &XrefResolver,
+    struct_tree_root_ref: ObjRef,
+) -> Result<StructTreeRoot> {
     let mut diagnostics = Vec::new();
     let mut root = StructTreeRoot::new();
 
@@ -976,7 +1032,10 @@ pub fn parse_struct_tree(resolver: &XrefResolver, struct_tree_root_ref: ObjRef) 
         None => {
             diagnostics.push(Diagnostic::with_dynamic_no_offset(
                 DiagCode::StructInvalidType,
-                format!("StructTreeRoot is not a dictionary (type: {})", root_obj.type_name()),
+                format!(
+                    "StructTreeRoot is not a dictionary (type: {})",
+                    root_obj.type_name()
+                ),
             ));
             return Err(diagnostics);
         }
@@ -993,7 +1052,10 @@ pub fn parse_struct_tree(resolver: &XrefResolver, struct_tree_root_ref: ObjRef) 
                 Err(e) => {
                     diagnostics.push(Diagnostic::with_dynamic_no_offset(
                         DiagCode::StructUnexpectedEof,
-                        format!("Failed to resolve RoleMap reference {}: {}", role_map_ref, e),
+                        format!(
+                            "Failed to resolve RoleMap reference {}: {}",
+                            role_map_ref, e
+                        ),
                     ));
                     // Use empty RoleMap (already initialized in new())
                 }
@@ -1027,8 +1089,8 @@ pub fn parse_struct_tree(resolver: &XrefResolver, struct_tree_root_ref: ObjRef) 
         &mut diagnostics,
         &mut visited,
         &mut struct_elems,
-        None,  // No parent lang at root
-        None,  // No parent actual_text at root
+        None, // No parent lang at root
+        None, // No parent actual_text at root
     );
 
     // Store the struct_elems map and set it on the ParentTreeResolver
@@ -1102,9 +1164,7 @@ fn parse_kid_entry(
 ) -> Option<Kid> {
     match entry {
         // Integer MCID
-        PdfObject::Integer(mcid) if *mcid >= 0 => {
-            Some(Kid::Mcid(*mcid as u32))
-        }
+        PdfObject::Integer(mcid) if *mcid >= 0 => Some(Kid::Mcid(*mcid as u32)),
 
         // Indirect reference to StructElem
         PdfObject::Ref(obj_ref) => {
@@ -1137,7 +1197,10 @@ fn parse_kid_entry(
                         let page = dict.get("Pg").and_then(|p| p.as_ref())?;
                         let mcid = dict.get("MCID").and_then(|m| m.as_int())?;
                         if mcid >= 0 {
-                            return Some(Kid::Mcr { page, mcid: mcid as u32 });
+                            return Some(Kid::Mcr {
+                                page,
+                                mcid: mcid as u32,
+                            });
                         }
                         return None;
                     }
@@ -1177,7 +1240,10 @@ fn parse_kid_entry(
                     let page = dict.get("Pg").and_then(|p| p.as_ref())?;
                     let mcid = dict.get("MCID").and_then(|m| m.as_int())?;
                     if mcid >= 0 {
-                        return Some(Kid::Mcr { page, mcid: mcid as u32 });
+                        return Some(Kid::Mcr {
+                            page,
+                            mcid: mcid as u32,
+                        });
                     }
                     return None;
                 }
@@ -1201,7 +1267,7 @@ fn parse_kid_entry(
                 struct_elems,
                 parent_lang,
                 parent_actual_text,
-                None,  // No ObjRef for direct dict
+                None, // No ObjRef for direct dict
             )?;
             Some(Kid::Element(Box::new(elem_node)))
         }
@@ -1270,14 +1336,18 @@ fn parse_struct_elem(
     }
 
     // Extract /ActualText (overrides glyph text, optional)
-    let actual_text = dict.get("ActualText").and_then(|a| a.as_string())
+    let actual_text = dict
+        .get("ActualText")
+        .and_then(|a| a.as_string())
         .and_then(|bytes| std::str::from_utf8(bytes).ok().map(|s| s.to_string()));
 
     // Use parent's actual_text if we don't have our own
     node.actual_text = actual_text.or_else(|| parent_actual_text.map(|s| s.to_string()));
 
     // Extract /Lang (language tag, inherits from parent)
-    let lang = dict.get("Lang").and_then(|l| l.as_string())
+    let lang = dict
+        .get("Lang")
+        .and_then(|l| l.as_string())
         .and_then(|bytes| std::str::from_utf8(bytes).ok().map(|s| s.to_string()));
 
     // Use our own lang or inherit from parent
@@ -1400,10 +1470,9 @@ impl BlockKind {
     /// which are handled specially (inline within parent blocks, descended without
     /// emitting, or suppressed entirely).
     pub fn is_emitted(&self) -> bool {
-        !matches!(self,
-            BlockKind::Inline
-            | BlockKind::StructuralContainer
-            | BlockKind::Artifact
+        !matches!(
+            self,
+            BlockKind::Inline | BlockKind::StructuralContainer | BlockKind::Artifact
         )
     }
 
@@ -1488,9 +1557,9 @@ pub fn structure_type_to_block_kind(std_type: StructureType) -> BlockKind {
         StructureType::NonStruct => BlockKind::StructuralContainer,
         StructureType::Private => BlockKind::StructuralContainer,
         StructureType::Index => BlockKind::StructuralContainer,
-        StructureType::TR => BlockKind::StructuralContainer,   // Table row - container
-        StructureType::TH => BlockKind::StructuralContainer,   // Table header cell
-        StructureType::TD => BlockKind::StructuralContainer,   // Table data cell
+        StructureType::TR => BlockKind::StructuralContainer, // Table row - container
+        StructureType::TH => BlockKind::StructuralContainer, // Table header cell
+        StructureType::TD => BlockKind::StructuralContainer, // Table data cell
         StructureType::THead => BlockKind::StructuralContainer, // Table head group
         StructureType::TBody => BlockKind::StructuralContainer, // Table body group
         StructureType::TFoot => BlockKind::StructuralContainer, // Table foot group
@@ -1557,7 +1626,8 @@ impl MappingResult {
         let diagnostic = if matches!(block_kind, BlockKind::Unknown) {
             Some(Diagnostic::with_dynamic_no_offset(
                 DiagCode::StructInvalidType,
-                "Unknown structure type after RoleMap resolution, falling back to paragraph".to_string(),
+                "Unknown structure type after RoleMap resolution, falling back to paragraph"
+                    .to_string(),
             ))
         } else {
             None
@@ -1634,7 +1704,10 @@ mod tests {
         assert_eq!(StructureType::from_name("H1"), StructureType::H1);
         assert_eq!(StructureType::from_name("Table"), StructureType::Table);
         assert_eq!(StructureType::from_name("Figure"), StructureType::Figure);
-        assert_eq!(StructureType::from_name("UnknownType"), StructureType::Unknown);
+        assert_eq!(
+            StructureType::from_name("UnknownType"),
+            StructureType::Unknown
+        );
     }
 
     #[test]
@@ -1684,13 +1757,22 @@ mod tests {
         let mut visited = HashSet::new();
 
         // Standard type resolves directly
-        assert_eq!(role_map.resolve("P", &mut diagnostics, &mut visited), StructureType::P);
+        assert_eq!(
+            role_map.resolve("P", &mut diagnostics, &mut visited),
+            StructureType::P
+        );
 
         // Mapped type resolves through RoleMap
-        assert_eq!(role_map.resolve("Heading1", &mut diagnostics, &mut visited), StructureType::H1);
+        assert_eq!(
+            role_map.resolve("Heading1", &mut diagnostics, &mut visited),
+            StructureType::H1
+        );
 
         // Unknown type returns Unknown
-        assert_eq!(role_map.resolve("FooBar", &mut diagnostics, &mut visited), StructureType::Unknown);
+        assert_eq!(
+            role_map.resolve("FooBar", &mut diagnostics, &mut visited),
+            StructureType::Unknown
+        );
     }
 
     #[test]
@@ -1707,7 +1789,10 @@ mod tests {
         let mut visited = HashSet::new();
 
         // CustomA should resolve to H1 through the chain
-        assert_eq!(role_map.resolve("CustomA", &mut diagnostics, &mut visited), StructureType::H1);
+        assert_eq!(
+            role_map.resolve("CustomA", &mut diagnostics, &mut visited),
+            StructureType::H1
+        );
         assert!(diagnostics.is_empty()); // No diagnostics for successful chain resolution
     }
 
@@ -1725,7 +1810,10 @@ mod tests {
         let mut visited = HashSet::new();
 
         // Should detect the cycle and return NonStruct
-        assert_eq!(role_map.resolve("CustomA", &mut diagnostics, &mut visited), StructureType::NonStruct);
+        assert_eq!(
+            role_map.resolve("CustomA", &mut diagnostics, &mut visited),
+            StructureType::NonStruct
+        );
         assert!(!diagnostics.is_empty()); // Should have cycle diagnostic
         assert!(diagnostics.iter().any(|d| d.message.contains("cycle")));
     }
@@ -1802,17 +1890,21 @@ mod tests {
         // Create child StructElem with Word's "Heading1" type
         let mut child_dict = PdfDict::new();
         child_dict.insert(intern("S"), PdfObject::Name(intern("Heading1")));
-        child_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Integer(0), // MCID
-        ])));
+        child_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(0), // MCID
+            ])),
+        );
         let child_ref = ObjRef::new(11, 0);
         resolver.cache_object(child_ref, PdfObject::Dict(Box::new(child_dict)));
 
         // Create StructTreeRoot
         let mut root_dict = PdfDict::new();
-        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(child_ref),
-        ])));
+        root_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(child_ref)])),
+        );
         root_dict.insert(intern("RoleMap"), PdfObject::Ref(role_map_ref));
         resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
 
@@ -1842,33 +1934,42 @@ mod tests {
         // Parent with /Lang
         let mut parent_dict = PdfDict::new();
         parent_dict.insert(intern("S"), PdfObject::Name(intern("Div")));
-        parent_dict.insert(intern("Lang"), PdfObject::String(Box::new(b"en-US".to_vec())));
+        parent_dict.insert(
+            intern("Lang"),
+            PdfObject::String(Box::new(b"en-US".to_vec())),
+        );
         let parent_ref = ObjRef::new(11, 0);
         resolver.cache_object(parent_ref, PdfObject::Dict(Box::new(parent_dict)));
 
         // Child without /Lang (should inherit)
         let mut child_dict = PdfDict::new();
         child_dict.insert(intern("S"), PdfObject::Name(intern("P")));
-        child_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Integer(0),
-        ])));
+        child_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Integer(0)])),
+        );
         let child_ref = ObjRef::new(12, 0);
         resolver.cache_object(child_ref, PdfObject::Dict(Box::new(child_dict)));
 
         // Create parent's /K with child
         let mut parent_with_k = PdfDict::new();
         parent_with_k.insert(intern("S"), PdfObject::Name(intern("Div")));
-        parent_with_k.insert(intern("Lang"), PdfObject::String(Box::new(b"en-US".to_vec())));
-        parent_with_k.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(child_ref),
-        ])));
+        parent_with_k.insert(
+            intern("Lang"),
+            PdfObject::String(Box::new(b"en-US".to_vec())),
+        );
+        parent_with_k.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(child_ref)])),
+        );
         resolver.cache_object(parent_ref, PdfObject::Dict(Box::new(parent_with_k)));
 
         // Create StructTreeRoot
         let mut root_dict = PdfDict::new();
-        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(parent_ref),
-        ])));
+        root_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(parent_ref)])),
+        );
         resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
 
         // Parse and verify
@@ -1900,32 +2001,41 @@ mod tests {
         // Parent with /ActualText
         let mut parent_dict = PdfDict::new();
         parent_dict.insert(intern("S"), PdfObject::Name(intern("Div")));
-        parent_dict.insert(intern("ActualText"), PdfObject::String(Box::new(b"Parent text".to_vec())));
+        parent_dict.insert(
+            intern("ActualText"),
+            PdfObject::String(Box::new(b"Parent text".to_vec())),
+        );
         let parent_ref = ObjRef::new(11, 0);
 
         // Child without /ActualText (should inherit parent's)
         let mut child_dict = PdfDict::new();
         child_dict.insert(intern("S"), PdfObject::Name(intern("P")));
-        child_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Integer(0),
-        ])));
+        child_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Integer(0)])),
+        );
         let child_ref = ObjRef::new(12, 0);
         resolver.cache_object(child_ref, PdfObject::Dict(Box::new(child_dict)));
 
         // Create parent's /K with child
         let mut parent_with_k = PdfDict::new();
         parent_with_k.insert(intern("S"), PdfObject::Name(intern("Div")));
-        parent_with_k.insert(intern("ActualText"), PdfObject::String(Box::new(b"Parent text".to_vec())));
-        parent_with_k.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(child_ref),
-        ])));
+        parent_with_k.insert(
+            intern("ActualText"),
+            PdfObject::String(Box::new(b"Parent text".to_vec())),
+        );
+        parent_with_k.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(child_ref)])),
+        );
         resolver.cache_object(parent_ref, PdfObject::Dict(Box::new(parent_with_k)));
 
         // Create StructTreeRoot
         let mut root_dict = PdfDict::new();
-        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(parent_ref),
-        ])));
+        root_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(parent_ref)])),
+        );
         resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
 
         // Parse and verify
@@ -1964,9 +2074,10 @@ mod tests {
 
         // Create StructTreeRoot with MCR kid
         let mut root_dict = PdfDict::new();
-        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(mcr_ref),
-        ])));
+        root_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(mcr_ref)])),
+        );
         resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
 
         // Parse and verify
@@ -2000,9 +2111,10 @@ mod tests {
 
         // Create StructTreeRoot with OBJR kid
         let mut root_dict = PdfDict::new();
-        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(objr_ref),
-        ])));
+        root_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(objr_ref)])),
+        );
         resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
 
         // Parse and verify
@@ -2028,9 +2140,10 @@ mod tests {
 
         // Create StructTreeRoot with MCID kid
         let mut root_dict = PdfDict::new();
-        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Integer(123),
-        ])));
+        root_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Integer(123)])),
+        );
         resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
 
         // Parse and verify
@@ -2088,12 +2201,30 @@ mod tests {
     #[test]
     fn test_block_kind_heading_all_levels() {
         // Test all heading levels 1-6
-        assert_eq!(structure_type_to_block_kind(StructureType::H1), BlockKind::Heading { level: 1 });
-        assert_eq!(structure_type_to_block_kind(StructureType::H2), BlockKind::Heading { level: 2 });
-        assert_eq!(structure_type_to_block_kind(StructureType::H3), BlockKind::Heading { level: 3 });
-        assert_eq!(structure_type_to_block_kind(StructureType::H4), BlockKind::Heading { level: 4 });
-        assert_eq!(structure_type_to_block_kind(StructureType::H5), BlockKind::Heading { level: 5 });
-        assert_eq!(structure_type_to_block_kind(StructureType::H6), BlockKind::Heading { level: 6 });
+        assert_eq!(
+            structure_type_to_block_kind(StructureType::H1),
+            BlockKind::Heading { level: 1 }
+        );
+        assert_eq!(
+            structure_type_to_block_kind(StructureType::H2),
+            BlockKind::Heading { level: 2 }
+        );
+        assert_eq!(
+            structure_type_to_block_kind(StructureType::H3),
+            BlockKind::Heading { level: 3 }
+        );
+        assert_eq!(
+            structure_type_to_block_kind(StructureType::H4),
+            BlockKind::Heading { level: 4 }
+        );
+        assert_eq!(
+            structure_type_to_block_kind(StructureType::H5),
+            BlockKind::Heading { level: 5 }
+        );
+        assert_eq!(
+            structure_type_to_block_kind(StructureType::H6),
+            BlockKind::Heading { level: 6 }
+        );
     }
 
     #[test]
@@ -2292,7 +2423,11 @@ mod tests {
         assert_eq!(result.block_kind, BlockKind::Unknown);
         assert!(result.is_emitted); // Unknown types ARE emitted (as paragraph)
         assert!(result.diagnostic.is_some()); // Should have diagnostic
-        assert!(result.diagnostic.unwrap().message.contains("Unknown structure type"));
+        assert!(result
+            .diagnostic
+            .unwrap()
+            .message
+            .contains("Unknown structure type"));
     }
 
     #[test]
@@ -2382,7 +2517,11 @@ mod tests {
 
         for std_type in inline_types {
             let kind = structure_type_to_block_kind(std_type);
-            assert!(!kind.is_emitted(), "Type {:?} should not be emitted", std_type);
+            assert!(
+                !kind.is_emitted(),
+                "Type {:?} should not be emitted",
+                std_type
+            );
         }
     }
 
@@ -2430,16 +2569,17 @@ mod tests {
                 PdfObject::Ref(struct_elem2_ref),
             ])),
             PdfObject::Integer(1),
-            PdfObject::Array(Box::new(vec![
-                PdfObject::Ref(struct_elem3_ref),
-            ])),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(struct_elem3_ref)])),
         ]));
 
         // Wrap in a StructTreeRoot-like structure with /ParentTree
         let mut parent_tree_dict = PdfDict::new();
         parent_tree_dict.insert(intern("Nums"), nums_array);
         let mut root_dict = PdfDict::new();
-        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        root_dict.insert(
+            intern("ParentTree"),
+            PdfObject::Dict(Box::new(parent_tree_dict)),
+        );
         let root_obj = PdfObject::Dict(Box::new(root_dict));
 
         // Parse
@@ -2484,7 +2624,10 @@ mod tests {
         let mut parent_tree_dict = PdfDict::new();
         parent_tree_dict.insert(intern("Nums"), nums_array);
         let mut root_dict = PdfDict::new();
-        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        root_dict.insert(
+            intern("ParentTree"),
+            PdfObject::Dict(Box::new(parent_tree_dict)),
+        );
         let root_obj = PdfObject::Dict(Box::new(root_dict));
 
         // Parse
@@ -2510,7 +2653,7 @@ mod tests {
             PdfObject::Integer(0),
             PdfObject::Array(Box::new(vec![
                 PdfObject::Ref(struct_elem_ref),
-                PdfObject::Null,  // Null entry (orphan MCID)
+                PdfObject::Null, // Null entry (orphan MCID)
                 PdfObject::Ref(struct_elem_ref),
             ])),
         ]));
@@ -2519,7 +2662,10 @@ mod tests {
         let mut parent_tree_dict = PdfDict::new();
         parent_tree_dict.insert(intern("Nums"), nums_array);
         let mut root_dict = PdfDict::new();
-        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        root_dict.insert(
+            intern("ParentTree"),
+            PdfObject::Dict(Box::new(parent_tree_dict)),
+        );
         let root_obj = PdfObject::Dict(Box::new(root_dict));
 
         // Parse
@@ -2527,7 +2673,9 @@ mod tests {
 
         // Populate struct_elems map with mock nodes
         let mock_node = Rc::new(StructElemNode::new("P".to_string(), StructureType::P));
-        parent_resolver.struct_elems.insert(struct_elem_ref, mock_node);
+        parent_resolver
+            .struct_elems
+            .insert(struct_elem_ref, mock_node);
 
         // Resolve page and check orphans
         let (mcid_map, orphans) = parent_resolver.resolve_page(Some(0));
@@ -2550,40 +2698,55 @@ mod tests {
         let leaf1_ref = ObjRef::new(100, 0);
         let struct_elem1_ref = ObjRef::new(10, 0);
         let mut leaf1_with_limits = PdfDict::new();
-        leaf1_with_limits.insert(intern("Nums"), PdfObject::Array(Box::new(vec![
-            PdfObject::Integer(0),
-            PdfObject::Array(Box::new(vec![PdfObject::Ref(struct_elem1_ref)])),
-        ])));
-        leaf1_with_limits.insert(intern("Limits"), PdfObject::Array(Box::new(vec![
-            PdfObject::Integer(0),
-            PdfObject::Integer(0),
-        ])));
+        leaf1_with_limits.insert(
+            intern("Nums"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(0),
+                PdfObject::Array(Box::new(vec![PdfObject::Ref(struct_elem1_ref)])),
+            ])),
+        );
+        leaf1_with_limits.insert(
+            intern("Limits"),
+            PdfObject::Array(Box::new(vec![PdfObject::Integer(0), PdfObject::Integer(0)])),
+        );
         resolver.cache_object(leaf1_ref, PdfObject::Dict(Box::new(leaf1_with_limits)));
 
         // Create leaf node 2
         let leaf2_ref = ObjRef::new(101, 0);
         let struct_elem2_ref = ObjRef::new(11, 0);
         let mut leaf2_with_limits = PdfDict::new();
-        leaf2_with_limits.insert(intern("Nums"), PdfObject::Array(Box::new(vec![
-            PdfObject::Integer(10),
-            PdfObject::Array(Box::new(vec![PdfObject::Ref(struct_elem2_ref)])),
-        ])));
-        leaf2_with_limits.insert(intern("Limits"), PdfObject::Array(Box::new(vec![
-            PdfObject::Integer(10),
-            PdfObject::Integer(10),
-        ])));
+        leaf2_with_limits.insert(
+            intern("Nums"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(10),
+                PdfObject::Array(Box::new(vec![PdfObject::Ref(struct_elem2_ref)])),
+            ])),
+        );
+        leaf2_with_limits.insert(
+            intern("Limits"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(10),
+                PdfObject::Integer(10),
+            ])),
+        );
         resolver.cache_object(leaf2_ref, PdfObject::Dict(Box::new(leaf2_with_limits)));
 
         // Create ParentTree root node with /Kids
         let mut parent_tree_dict = PdfDict::new();
-        parent_tree_dict.insert(intern("Kids"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(leaf1_ref),
-            PdfObject::Ref(leaf2_ref),
-        ])));
+        parent_tree_dict.insert(
+            intern("Kids"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Ref(leaf1_ref),
+                PdfObject::Ref(leaf2_ref),
+            ])),
+        );
 
         // Wrap in a StructTreeRoot-like structure with /ParentTree
         let mut root_dict = PdfDict::new();
-        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        root_dict.insert(
+            intern("ParentTree"),
+            PdfObject::Dict(Box::new(parent_tree_dict)),
+        );
         let root_obj = PdfObject::Dict(Box::new(root_dict));
 
         // Parse
@@ -2624,7 +2787,9 @@ mod tests {
         let struct_elem_ref = ObjRef::new(50, 0);
 
         // Insert a single ref entry (for annotations)
-        resolver_impl.entries.insert(7, ParentTreeEntry::Single(struct_elem_ref));
+        resolver_impl
+            .entries
+            .insert(7, ParentTreeEntry::Single(struct_elem_ref));
 
         // Resolve annotation
         let result = resolver_impl.resolve_annotation(Some(7));
@@ -2646,16 +2811,18 @@ mod tests {
         let struct_elem_ref = ObjRef::new(60, 0);
 
         // Insert an array entry (should be for pages, but test fallback)
-        resolver_impl.entries.insert(8, ParentTreeEntry::Array(vec![
-            struct_elem_ref,
-        ]));
+        resolver_impl
+            .entries
+            .insert(8, ParentTreeEntry::Array(vec![struct_elem_ref]));
 
         // Resolve annotation - should use first array element
         let result = resolver_impl.resolve_annotation(Some(8));
         assert_eq!(result, Some(struct_elem_ref));
 
         // Empty array
-        resolver_impl.entries.insert(9, ParentTreeEntry::Array(vec![]));
+        resolver_impl
+            .entries
+            .insert(9, ParentTreeEntry::Array(vec![]));
         let result = resolver_impl.resolve_annotation(Some(9));
         assert_eq!(result, None);
     }
@@ -2666,7 +2833,7 @@ mod tests {
         let resolver = XrefResolver::new();
 
         let nums_array = PdfObject::Array(Box::new(vec![
-            PdfObject::Name(intern("invalid")),  // Non-integer key
+            PdfObject::Name(intern("invalid")), // Non-integer key
             PdfObject::Array(Box::new(vec![])),
         ]));
 
@@ -2674,7 +2841,10 @@ mod tests {
         let mut parent_tree_dict = PdfDict::new();
         parent_tree_dict.insert(intern("Nums"), nums_array);
         let mut root_dict = PdfDict::new();
-        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        root_dict.insert(
+            intern("ParentTree"),
+            PdfObject::Dict(Box::new(parent_tree_dict)),
+        );
         let root_obj = PdfObject::Dict(Box::new(root_dict));
 
         // Parse
@@ -2682,7 +2852,10 @@ mod tests {
 
         // Should have diagnostic
         assert!(!parent_resolver.diagnostics.is_empty());
-        assert!(parent_resolver.diagnostics.iter().any(|d| d.message.contains("not an integer")));
+        assert!(parent_resolver
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("not an integer")));
     }
 
     #[test]
@@ -2693,14 +2866,17 @@ mod tests {
         let nums_array = PdfObject::Array(Box::new(vec![
             PdfObject::Integer(0),
             PdfObject::Array(Box::new(vec![])),
-            PdfObject::Integer(1),  // Trailing element without value
+            PdfObject::Integer(1), // Trailing element without value
         ]));
 
         // Wrap in a StructTreeRoot-like structure with /ParentTree
         let mut parent_tree_dict = PdfDict::new();
         parent_tree_dict.insert(intern("Nums"), nums_array);
         let mut root_dict = PdfDict::new();
-        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        root_dict.insert(
+            intern("ParentTree"),
+            PdfObject::Dict(Box::new(parent_tree_dict)),
+        );
         let root_obj = PdfObject::Dict(Box::new(root_dict));
 
         // Parse
@@ -2708,7 +2884,10 @@ mod tests {
 
         // Should have diagnostic
         assert!(!parent_resolver.diagnostics.is_empty());
-        assert!(parent_resolver.diagnostics.iter().any(|d| d.message.contains("odd length")));
+        assert!(parent_resolver
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("odd length")));
     }
 
     #[test]
@@ -2718,14 +2897,17 @@ mod tests {
 
         let nums_array = PdfObject::Array(Box::new(vec![
             PdfObject::Integer(0),
-            PdfObject::Bool(true),  // Unsupported value type
+            PdfObject::Bool(true), // Unsupported value type
         ]));
 
         // Wrap in a StructTreeRoot-like structure with /ParentTree
         let mut parent_tree_dict = PdfDict::new();
         parent_tree_dict.insert(intern("Nums"), nums_array);
         let mut root_dict = PdfDict::new();
-        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        root_dict.insert(
+            intern("ParentTree"),
+            PdfObject::Dict(Box::new(parent_tree_dict)),
+        );
         let root_obj = PdfObject::Dict(Box::new(root_dict));
 
         // Parse
@@ -2733,7 +2915,10 @@ mod tests {
 
         // Should have diagnostic
         assert!(!parent_resolver.diagnostics.is_empty());
-        assert!(parent_resolver.diagnostics.iter().any(|d| d.message.contains("unsupported type")));
+        assert!(parent_resolver
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("unsupported type")));
     }
 
     #[test]
@@ -2758,14 +2943,17 @@ mod tests {
         // Test diagnostic when node is not a dictionary
         let resolver = XrefResolver::new();
 
-        let root_obj = PdfObject::Integer(42);  // Not a dict
+        let root_obj = PdfObject::Integer(42); // Not a dict
 
         // Parse
         let parent_resolver = ParentTreeResolver::parse(&resolver, &root_obj);
 
         // Should have diagnostic
         assert!(!parent_resolver.diagnostics.is_empty());
-        assert!(parent_resolver.diagnostics.iter().any(|d| d.message.contains("not a dictionary")));
+        assert!(parent_resolver
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("not a dictionary")));
     }
 
     #[test]
@@ -2778,9 +2966,7 @@ mod tests {
         let struct_elem_ref = ObjRef::new(10, 0);
         let parent_tree_nums = PdfObject::Array(Box::new(vec![
             PdfObject::Integer(0),
-            PdfObject::Array(Box::new(vec![
-                PdfObject::Ref(struct_elem_ref),
-            ])),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(struct_elem_ref)])),
         ]));
 
         // ParentTree must be a dictionary with /Nums, not an array directly
@@ -2789,7 +2975,10 @@ mod tests {
 
         let mut root_dict = PdfDict::new();
         root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![])));
-        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        root_dict.insert(
+            intern("ParentTree"),
+            PdfObject::Dict(Box::new(parent_tree_dict)),
+        );
         resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
 
         // Parse struct tree
@@ -2816,9 +3005,10 @@ mod tests {
         // Create body paragraph StructElem that the annotation will reference
         let mut body_dict = PdfDict::new();
         body_dict.insert(intern("S"), PdfObject::Name(intern("P")));
-        body_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Integer(0),
-        ])));
+        body_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Integer(0)])),
+        );
         let body_ref = ObjRef::new(10, 0);
         resolver.cache_object(body_ref, PdfObject::Dict(Box::new(body_dict)));
 
@@ -2829,12 +3019,12 @@ mod tests {
             // Page 0's ParentTree entry (array of StructElem refs)
             PdfObject::Integer(0),
             PdfObject::Array(Box::new(vec![
-                PdfObject::Ref(body_ref),  // MCID 0 -> body paragraph
-                PdfObject::Null,             // MCID 1 -> orphan (null entry)
+                PdfObject::Ref(body_ref), // MCID 0 -> body paragraph
+                PdfObject::Null,          // MCID 1 -> orphan (null entry)
             ])),
             // Annotation's ParentTree entry (single StructElem ref)
             PdfObject::Integer(100),
-            PdfObject::Ref(body_ref),  // Annotation /StructParent=100 -> body paragraph
+            PdfObject::Ref(body_ref), // Annotation /StructParent=100 -> body paragraph
         ]));
 
         let mut parent_tree_dict = PdfDict::new();
@@ -2842,10 +3032,14 @@ mod tests {
 
         // Create StructTreeRoot
         let mut root_dict = PdfDict::new();
-        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(body_ref),
-        ])));
-        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        root_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(body_ref)])),
+        );
+        root_dict.insert(
+            intern("ParentTree"),
+            PdfObject::Dict(Box::new(parent_tree_dict)),
+        );
         resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
 
         // Parse struct tree
@@ -2871,7 +3065,10 @@ mod tests {
 
         // Verify the referenced StructElem is actually in the tree
         assert!(tree.struct_elems.contains_key(&body_ref));
-        assert_eq!(tree.struct_elems.get(&body_ref).unwrap().std_type, StructureType::P);
+        assert_eq!(
+            tree.struct_elems.get(&body_ref).unwrap().std_type,
+            StructureType::P
+        );
     }
 
     #[test]
@@ -2884,17 +3081,19 @@ mod tests {
         // Create two StructElems with /K arrays containing MCIDs
         let mut elem1_dict = PdfDict::new();
         elem1_dict.insert(intern("S"), PdfObject::Name(intern("P")));
-        elem1_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Integer(0),
-        ])));
+        elem1_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Integer(0)])),
+        );
         let elem1_ref = ObjRef::new(10, 0);
         resolver.cache_object(elem1_ref, PdfObject::Dict(Box::new(elem1_dict)));
 
         let mut elem2_dict = PdfDict::new();
         elem2_dict.insert(intern("S"), PdfObject::Name(intern("H1")));
-        elem2_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Integer(2),
-        ])));
+        elem2_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Integer(2)])),
+        );
         let elem2_ref = ObjRef::new(11, 0);
         resolver.cache_object(elem2_ref, PdfObject::Dict(Box::new(elem2_dict)));
 
@@ -2914,11 +3113,17 @@ mod tests {
 
         // Add StructElems to /K array so they get parsed into struct_elems
         let mut root_dict = PdfDict::new();
-        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(elem1_ref),
-            PdfObject::Ref(elem2_ref),
-        ])));
-        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        root_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Ref(elem1_ref),
+                PdfObject::Ref(elem2_ref),
+            ])),
+        );
+        root_dict.insert(
+            intern("ParentTree"),
+            PdfObject::Dict(Box::new(parent_tree_dict)),
+        );
         resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
 
         // Parse struct tree
@@ -2949,11 +3154,14 @@ mod tests {
         // Create a StructElem
         let mut elem_dict = PdfDict::new();
         elem_dict.insert(intern("S"), PdfObject::Name(intern("P")));
-        elem_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Integer(0),
-            PdfObject::Integer(1),
-            PdfObject::Integer(2),
-        ])));
+        elem_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(0),
+                PdfObject::Integer(1),
+                PdfObject::Integer(2),
+            ])),
+        );
         let elem_ref = ObjRef::new(10, 0);
         resolver.cache_object(elem_ref, PdfObject::Dict(Box::new(elem_dict)));
 
@@ -2971,10 +3179,14 @@ mod tests {
         parent_tree_dict.insert(intern("Nums"), parent_tree_nums);
 
         let mut root_dict = PdfDict::new();
-        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(elem_ref),
-        ])));
-        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        root_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(elem_ref)])),
+        );
+        root_dict.insert(
+            intern("ParentTree"),
+            PdfObject::Dict(Box::new(parent_tree_dict)),
+        );
         resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
 
         // Parse struct tree
@@ -3007,9 +3219,10 @@ mod tests {
         // Create a StructElem
         let mut elem_dict = PdfDict::new();
         elem_dict.insert(intern("S"), PdfObject::Name(intern("P")));
-        elem_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Integer(0),
-        ])));
+        elem_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Integer(0)])),
+        );
         let elem_ref = ObjRef::new(10, 0);
         resolver.cache_object(elem_ref, PdfObject::Dict(Box::new(elem_dict)));
 
@@ -3034,10 +3247,14 @@ mod tests {
         parent_tree_dict.insert(intern("Nums"), parent_tree_nums);
 
         let mut root_dict = PdfDict::new();
-        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(elem_ref),
-        ])));
-        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        root_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(elem_ref)])),
+        );
+        root_dict.insert(
+            intern("ParentTree"),
+            PdfObject::Dict(Box::new(parent_tree_dict)),
+        );
         resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
 
         // Parse struct tree
@@ -3070,9 +3287,10 @@ mod tests {
         // Create a StructElem
         let mut elem_dict = PdfDict::new();
         elem_dict.insert(intern("S"), PdfObject::Name(intern("P")));
-        elem_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Integer(0),
-        ])));
+        elem_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Integer(0)])),
+        );
         let elem_ref = ObjRef::new(10, 0);
         resolver.cache_object(elem_ref, PdfObject::Dict(Box::new(elem_dict)));
 
@@ -3097,10 +3315,14 @@ mod tests {
         parent_tree_dict.insert(intern("Nums"), parent_tree_nums);
 
         let mut root_dict = PdfDict::new();
-        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(elem_ref),
-        ])));
-        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        root_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(elem_ref)])),
+        );
+        root_dict.insert(
+            intern("ParentTree"),
+            PdfObject::Dict(Box::new(parent_tree_dict)),
+        );
         resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
 
         // Parse struct tree
@@ -3132,7 +3354,10 @@ mod tests {
         // Empty StructTreeRoot
         let mut root_dict = PdfDict::new();
         root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![])));
-        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(PdfDict::new())));
+        root_dict.insert(
+            intern("ParentTree"),
+            PdfObject::Dict(Box::new(PdfDict::new())),
+        );
         resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
 
         // Parse struct tree
@@ -3150,7 +3375,10 @@ mod tests {
         assert_eq!(coverage.claimed_mcids, 0);
         assert_eq!(coverage.coverage, 0.0);
         assert!(coverage.should_fallback); // No MCIDs = fallback
-        assert!(coverage.fallback_diagnostic().unwrap().contains("no marked-content sequences"));
+        assert!(coverage
+            .fallback_diagnostic()
+            .unwrap()
+            .contains("no marked-content sequences"));
     }
 
     #[test]
@@ -3162,9 +3390,10 @@ mod tests {
         // Create a StructElem
         let mut elem_dict = PdfDict::new();
         elem_dict.insert(intern("S"), PdfObject::Name(intern("P")));
-        elem_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Integer(0),
-        ])));
+        elem_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Integer(0)])),
+        );
         let elem_ref = ObjRef::new(10, 0);
         resolver.cache_object(elem_ref, PdfObject::Dict(Box::new(elem_dict)));
 
@@ -3189,10 +3418,14 @@ mod tests {
         parent_tree_dict.insert(intern("Nums"), parent_tree_nums);
 
         let mut root_dict = PdfDict::new();
-        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(elem_ref),
-        ])));
-        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        root_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(elem_ref)])),
+        );
+        root_dict.insert(
+            intern("ParentTree"),
+            PdfObject::Dict(Box::new(parent_tree_dict)),
+        );
         resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
 
         // Parse struct tree
@@ -3224,9 +3457,10 @@ mod tests {
         // Create a StructElem
         let mut elem_dict = PdfDict::new();
         elem_dict.insert(intern("S"), PdfObject::Name(intern("P")));
-        elem_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Integer(0),
-        ])));
+        elem_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Integer(0)])),
+        );
         let elem_ref = ObjRef::new(10, 0);
         resolver.cache_object(elem_ref, PdfObject::Dict(Box::new(elem_dict)));
 
@@ -3238,7 +3472,7 @@ mod tests {
                 PdfObject::Ref(elem_ref),
                 PdfObject::Ref(elem_ref),
                 PdfObject::Null, // MCID 2 is null (orphan)
-                // MCIDs 3 and 4 don't exist in ParentTree at all
+                                 // MCIDs 3 and 4 don't exist in ParentTree at all
             ])),
         ]));
 
@@ -3246,10 +3480,14 @@ mod tests {
         parent_tree_dict.insert(intern("Nums"), parent_tree_nums);
 
         let mut root_dict = PdfDict::new();
-        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(elem_ref),
-        ])));
-        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        root_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(elem_ref)])),
+        );
+        root_dict.insert(
+            intern("ParentTree"),
+            PdfObject::Dict(Box::new(parent_tree_dict)),
+        );
         resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
 
         // Parse struct tree
@@ -3284,9 +3522,10 @@ mod tests {
         // Create a StructElem
         let mut elem_dict = PdfDict::new();
         elem_dict.insert(intern("S"), PdfObject::Name(intern("P")));
-        elem_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Integer(0),
-        ])));
+        elem_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Integer(0)])),
+        );
         let elem_ref = ObjRef::new(10, 0);
         resolver.cache_object(elem_ref, PdfObject::Dict(Box::new(elem_dict)));
 
@@ -3311,10 +3550,14 @@ mod tests {
         parent_tree_dict.insert(intern("Nums"), parent_tree_nums);
 
         let mut root_dict = PdfDict::new();
-        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(elem_ref),
-        ])));
-        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        root_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(elem_ref)])),
+        );
+        root_dict.insert(
+            intern("ParentTree"),
+            PdfObject::Dict(Box::new(parent_tree_dict)),
+        );
         resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
 
         // Parse struct tree
@@ -3330,15 +3573,20 @@ mod tests {
         };
 
         // Pages with MCID data: (page_index, struct_parents, mcid_set)
-        let pages_with_mcids: Vec<(usize, Option<i32>, std::collections::HashSet<u32>)> = vec![
-            (0, Some(0), (0..10u32).collect::<std::collections::HashSet<_>>())
-        ];
+        let pages_with_mcids: Vec<(usize, Option<i32>, std::collections::HashSet<u32>)> = vec![(
+            0,
+            Some(0),
+            (0..10u32).collect::<std::collections::HashSet<_>>(),
+        )];
 
         // Check coverage
         let coverage_result = check_coverage_for_pages(&tree, &mark_info, &pages_with_mcids);
 
         // Suspects false means we trust the tree regardless of coverage
-        assert_eq!(coverage_result.reading_order_algorithm, ReadingOrderAlgorithm::StructTree);
+        assert_eq!(
+            coverage_result.reading_order_algorithm,
+            ReadingOrderAlgorithm::StructTree
+        );
         assert!(coverage_result.diagnostics.is_empty()); // No diagnostics when Suspects false
         assert_eq!(coverage_result.page_results.len(), 1);
         assert!((coverage_result.page_results[0].coverage - 0.50).abs() < f64::EPSILON);
@@ -3354,17 +3602,15 @@ mod tests {
         // Create a StructElem
         let mut elem_dict = PdfDict::new();
         elem_dict.insert(intern("S"), PdfObject::Name(intern("P")));
-        elem_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Integer(0),
-        ])));
+        elem_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Integer(0)])),
+        );
         let elem_ref = ObjRef::new(10, 0);
         resolver.cache_object(elem_ref, PdfObject::Dict(Box::new(elem_dict)));
 
         // ParentTree with 20 MCIDs, 19 claimed (95% coverage)
-        let mut refs = vec![
-            PdfObject::Ref(elem_ref);
-            19
-        ];
+        let mut refs = vec![PdfObject::Ref(elem_ref); 19];
         refs.push(PdfObject::Null); // MCID 19 is orphan
 
         let parent_tree_nums = PdfObject::Array(Box::new(vec![
@@ -3376,10 +3622,14 @@ mod tests {
         parent_tree_dict.insert(intern("Nums"), parent_tree_nums);
 
         let mut root_dict = PdfDict::new();
-        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(elem_ref),
-        ])));
-        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        root_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(elem_ref)])),
+        );
+        root_dict.insert(
+            intern("ParentTree"),
+            PdfObject::Dict(Box::new(parent_tree_dict)),
+        );
         resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
 
         // Parse struct tree
@@ -3395,13 +3645,20 @@ mod tests {
         };
 
         // Pages with MCID data: (page_index, struct_parents, mcid_set)
-        let pages_with_mcids = vec![(0, Some(0), (0..20u32).collect::<std::collections::HashSet<_>>())];
+        let pages_with_mcids = vec![(
+            0,
+            Some(0),
+            (0..20u32).collect::<std::collections::HashSet<_>>(),
+        )];
 
         // Check coverage
         let coverage_result = check_coverage_for_pages(&tree, &mark_info, &pages_with_mcids);
 
         // 95% >= 80%, so use StructTree
-        assert_eq!(coverage_result.reading_order_algorithm, ReadingOrderAlgorithm::StructTree);
+        assert_eq!(
+            coverage_result.reading_order_algorithm,
+            ReadingOrderAlgorithm::StructTree
+        );
         assert!(coverage_result.diagnostics.is_empty()); // No diagnostics when above threshold
         assert_eq!(coverage_result.page_results.len(), 1);
         assert!((coverage_result.page_results[0].coverage - 0.95).abs() < f64::EPSILON);
@@ -3417,9 +3674,10 @@ mod tests {
         // Create a StructElem
         let mut elem_dict = PdfDict::new();
         elem_dict.insert(intern("S"), PdfObject::Name(intern("P")));
-        elem_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Integer(0),
-        ])));
+        elem_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Integer(0)])),
+        );
         let elem_ref = ObjRef::new(10, 0);
         resolver.cache_object(elem_ref, PdfObject::Dict(Box::new(elem_dict)));
 
@@ -3444,10 +3702,14 @@ mod tests {
         parent_tree_dict.insert(intern("Nums"), parent_tree_nums);
 
         let mut root_dict = PdfDict::new();
-        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(elem_ref),
-        ])));
-        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        root_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(elem_ref)])),
+        );
+        root_dict.insert(
+            intern("ParentTree"),
+            PdfObject::Dict(Box::new(parent_tree_dict)),
+        );
         resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
 
         // Parse struct tree
@@ -3463,27 +3725,39 @@ mod tests {
         };
 
         // Pages with MCID data: (page_index, struct_parents, mcid_set)
-        let pages_with_mcids: Vec<(usize, Option<i32>, std::collections::HashSet<u32>)> = vec![
-            (0, Some(0), (0..10u32).collect::<std::collections::HashSet<_>>())
-        ];
+        let pages_with_mcids: Vec<(usize, Option<i32>, std::collections::HashSet<u32>)> = vec![(
+            0,
+            Some(0),
+            (0..10u32).collect::<std::collections::HashSet<_>>(),
+        )];
 
         // Check coverage
         let coverage_result = check_coverage_for_pages(&tree, &mark_info, &pages_with_mcids);
 
         // 60% < 80%, so fall back to XY-cut
-        assert_eq!(coverage_result.reading_order_algorithm, ReadingOrderAlgorithm::XyCut);
+        assert_eq!(
+            coverage_result.reading_order_algorithm,
+            ReadingOrderAlgorithm::XyCut
+        );
         assert!(!coverage_result.diagnostics.is_empty()); // Diagnostic emitted for fallback
         assert_eq!(coverage_result.diagnostics.len(), 1);
-        assert_eq!(coverage_result.diagnostics[0].code, DiagCode::StructIncompleteCoverage);
+        assert_eq!(
+            coverage_result.diagnostics[0].code,
+            DiagCode::StructIncompleteCoverage
+        );
         assert!(coverage_result.diagnostics[0].message.contains("Page 0"));
         assert!(coverage_result.diagnostics[0].message.contains("60.0%"));
         assert!(coverage_result.diagnostics[0].message.contains("6/10"));
-        assert!(coverage_result.diagnostics[0].message.contains("falling back to XY-cut"));
+        assert!(coverage_result.diagnostics[0]
+            .message
+            .contains("falling back to XY-cut"));
 
         assert_eq!(coverage_result.page_results.len(), 1);
         assert!((coverage_result.page_results[0].coverage - 0.60).abs() < f64::EPSILON);
         assert!(coverage_result.page_results[0].should_fallback); // Fallback at 60%
-        assert!(coverage_result.page_results[0].fallback_diagnostic().is_some());
+        assert!(coverage_result.page_results[0]
+            .fallback_diagnostic()
+            .is_some());
     }
 
     #[test]
@@ -3495,25 +3769,20 @@ mod tests {
         // Create a StructElem
         let mut elem_dict = PdfDict::new();
         elem_dict.insert(intern("S"), PdfObject::Name(intern("P")));
-        elem_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Integer(0),
-        ])));
+        elem_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Integer(0)])),
+        );
         let elem_ref = ObjRef::new(10, 0);
         resolver.cache_object(elem_ref, PdfObject::Dict(Box::new(elem_dict)));
 
         // ParentTree for struct_parents=0 (high coverage: 90%)
-        let high_refs = vec![
-            PdfObject::Ref(elem_ref);
-            9
-        ];
+        let high_refs = vec![PdfObject::Ref(elem_ref); 9];
         let mut high_refs_with_null = high_refs;
         high_refs_with_null.push(PdfObject::Null);
 
         // ParentTree for struct_parents=1 (low coverage: 60%)
-        let low_refs = vec![
-            PdfObject::Ref(elem_ref);
-            6
-        ];
+        let low_refs = vec![PdfObject::Ref(elem_ref); 6];
         let mut low_refs_with_null = low_refs;
         for _ in 0..4 {
             low_refs_with_null.push(PdfObject::Null);
@@ -3530,10 +3799,14 @@ mod tests {
         parent_tree_dict.insert(intern("Nums"), parent_tree_nums);
 
         let mut root_dict = PdfDict::new();
-        root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(elem_ref),
-        ])));
-        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(parent_tree_dict)));
+        root_dict.insert(
+            intern("K"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(elem_ref)])),
+        );
+        root_dict.insert(
+            intern("ParentTree"),
+            PdfObject::Dict(Box::new(parent_tree_dict)),
+        );
         resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
 
         // Parse struct tree
@@ -3550,15 +3823,26 @@ mod tests {
 
         // Two pages: page 0 has 90% coverage, page 1 has 60% coverage
         let pages_with_mcids = vec![
-            (0, Some(0), (0..10u32).collect::<std::collections::HashSet<_>>()), // 90% coverage
-            (1, Some(1), (0..10u32).collect::<std::collections::HashSet<_>>()), // 60% coverage (triggers fallback)
+            (
+                0,
+                Some(0),
+                (0..10u32).collect::<std::collections::HashSet<_>>(),
+            ), // 90% coverage
+            (
+                1,
+                Some(1),
+                (0..10u32).collect::<std::collections::HashSet<_>>(),
+            ), // 60% coverage (triggers fallback)
         ];
 
         // Check coverage
         let coverage_result = check_coverage_for_pages(&tree, &mark_info, &pages_with_mcids);
 
         // One page triggers fallback, so whole document uses XY-cut
-        assert_eq!(coverage_result.reading_order_algorithm, ReadingOrderAlgorithm::XyCut);
+        assert_eq!(
+            coverage_result.reading_order_algorithm,
+            ReadingOrderAlgorithm::XyCut
+        );
         assert_eq!(coverage_result.diagnostics.len(), 1); // One diagnostic for page 1
         assert!(coverage_result.diagnostics[0].message.contains("Page 1"));
 
@@ -3579,7 +3863,10 @@ mod tests {
         // Empty StructTreeRoot
         let mut root_dict = PdfDict::new();
         root_dict.insert(intern("K"), PdfObject::Array(Box::new(vec![])));
-        root_dict.insert(intern("ParentTree"), PdfObject::Dict(Box::new(PdfDict::new())));
+        root_dict.insert(
+            intern("ParentTree"),
+            PdfObject::Dict(Box::new(PdfDict::new())),
+        );
         resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
 
         // Parse struct tree
@@ -3601,9 +3888,14 @@ mod tests {
         let coverage_result = check_coverage_for_pages(&tree, &mark_info, &pages_with_mcids);
 
         // No marked content = fallback to XY-cut
-        assert_eq!(coverage_result.reading_order_algorithm, ReadingOrderAlgorithm::XyCut);
+        assert_eq!(
+            coverage_result.reading_order_algorithm,
+            ReadingOrderAlgorithm::XyCut
+        );
         assert_eq!(coverage_result.diagnostics.len(), 1);
-        assert!(coverage_result.diagnostics[0].message.contains("no marked-content sequences"));
+        assert!(coverage_result.diagnostics[0]
+            .message
+            .contains("no marked-content sequences"));
 
         assert_eq!(coverage_result.page_results.len(), 1);
         assert_eq!(coverage_result.page_results[0].coverage, 0.0);

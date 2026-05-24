@@ -254,10 +254,7 @@ mod tests {
     #[test]
     fn test_union_bboxes_nested() {
         // Small box inside larger box
-        let bboxes = vec![
-            [0.0, 0.0, 100.0, 100.0],
-            [25.0, 25.0, 75.0, 75.0],
-        ];
+        let bboxes = vec![[0.0, 0.0, 100.0, 100.0], [25.0, 25.0, 75.0, 75.0]];
         let result = union_bboxes(&bboxes);
         // Union should be the larger box
         assert_eq!(result, Some([0.0, 0.0, 100.0, 100.0]));
@@ -266,10 +263,7 @@ mod tests {
     #[test]
     fn test_union_bboxes_disjoint() {
         // Two disjoint boxes
-        let bboxes = vec![
-            [0.0, 0.0, 50.0, 50.0],
-            [100.0, 100.0, 150.0, 150.0],
-        ];
+        let bboxes = vec![[0.0, 0.0, 50.0, 50.0], [100.0, 100.0, 150.0, 150.0]];
         let result = union_bboxes(&bboxes);
         assert_eq!(result, Some([0.0, 0.0, 150.0, 150.0]));
     }

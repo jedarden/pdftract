@@ -62,7 +62,11 @@ impl AgeHistogram {
 
     /// Total entries in histogram.
     pub fn total(&self) -> u64 {
-        self.less_than_1h + self.less_than_1d + self.less_than_7d + self.less_than_30d + self.greater_than_30d
+        self.less_than_1h
+            + self.less_than_1d
+            + self.less_than_7d
+            + self.less_than_30d
+            + self.greater_than_30d
     }
 
     /// Get percentage for a bucket.
@@ -114,32 +118,31 @@ pub fn compute_stats(cache_dir: &Path) -> Result<CacheStats> {
     let mut oldest_mtime = None;
     let mut newest_mtime = None;
 
-    for prefix1_entry in fs::read_dir(cache_dir)?
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path().is_dir()
-                && e.file_name().to_string_lossy().len() == 2
-                && e.file_name().to_string_lossy().chars().all(|c| c.is_ascii_hexdigit())
-        })
-    {
+    for prefix1_entry in fs::read_dir(cache_dir)?.filter_map(|e| e.ok()).filter(|e| {
+        e.path().is_dir()
+            && e.file_name().to_string_lossy().len() == 2
+            && e.file_name()
+                .to_string_lossy()
+                .chars()
+                .all(|c| c.is_ascii_hexdigit())
+    }) {
         let prefix1_dir = prefix1_entry.path();
 
-        for prefix2_entry in prefix1_dir.read_dir()?
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path().is_dir()
-                    && e.file_name().to_string_lossy().len() == 2
-                    && e.file_name()
-                        .to_string_lossy()
-                        .chars()
-                        .all(|c| c.is_ascii_hexdigit())
-            })
-        {
+        for prefix2_entry in prefix1_dir.read_dir()?.filter_map(|e| e.ok()).filter(|e| {
+            e.path().is_dir()
+                && e.file_name().to_string_lossy().len() == 2
+                && e.file_name()
+                    .to_string_lossy()
+                    .chars()
+                    .all(|c| c.is_ascii_hexdigit())
+        }) {
             let prefix2_dir = prefix2_entry.path();
 
-            for fp_entry in prefix2_dir.read_dir()?.filter_map(|e| e.ok()).filter(|e| {
-                e.path().is_dir()
-            }) {
+            for fp_entry in prefix2_dir
+                .read_dir()?
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().is_dir())
+            {
                 let fp_dir = fp_entry.path();
 
                 for entry in fp_dir.read_dir()?.filter_map(|e| e.ok()) {
@@ -155,10 +158,14 @@ pub fn compute_stats(cache_dir: &Path) -> Result<CacheStats> {
                                     if let Ok(modified) = metadata.modified() {
                                         if let Ok(duration) = modified.duration_since(UNIX_EPOCH) {
                                             let mtime_secs = duration.as_secs();
-                                            if oldest_mtime.is_none() || Some(mtime_secs) < oldest_mtime {
+                                            if oldest_mtime.is_none()
+                                                || Some(mtime_secs) < oldest_mtime
+                                            {
                                                 oldest_mtime = Some(mtime_secs);
                                             }
-                                            if newest_mtime.is_none() || Some(mtime_secs) > newest_mtime {
+                                            if newest_mtime.is_none()
+                                                || Some(mtime_secs) > newest_mtime
+                                            {
                                                 newest_mtime = Some(mtime_secs);
                                             }
 
@@ -211,15 +218,15 @@ pub fn display_stats(stats: &CacheStats) {
     };
 
     println!("Entries: {}", stats.entry_count);
-    println!("Total size: {:.1} MiB compressed / {:.1} GiB uncompressed ({:.1}x ratio)",
+    println!(
+        "Total size: {:.1} MiB compressed / {:.1} GiB uncompressed ({:.1}x ratio)",
         compressed_mb,
         uncompressed_mb / 1024.0,
         ratio
     );
-    println!("Hit ratio (since last clear): {:.1}% ({} hits / {} total)",
-        hit_ratio,
-        stats.hits,
-        stats.total_accesses
+    println!(
+        "Hit ratio (since last clear): {:.1}% ({} hits / {} total)",
+        hit_ratio, stats.hits, stats.total_accesses
     );
 
     if let Some(oldest) = stats.oldest_entry_age_seconds {
@@ -245,7 +252,8 @@ pub fn display_stats(stats: &CacheStats) {
     }
 
     let h = &stats.age_histogram;
-    println!("Age histogram: <1h: {:.1}%, <1d: {:.1}%, <7d: {:.1}%, <30d: {:.1}%, >30d: {:.1}%",
+    println!(
+        "Age histogram: <1h: {:.1}%, <1d: {:.1}%, <7d: {:.1}%, <30d: {:.1}%, >30d: {:.1}%",
         h.percentage(h.less_than_1h),
         h.percentage(h.less_than_1d),
         h.percentage(h.less_than_7d),
@@ -314,32 +322,31 @@ pub fn clear_cache(cache_dir: &Path, yes: bool) -> Result<()> {
 
     // Delete all entry files (preserve index.json and sentinel)
     let mut deleted = 0;
-    for prefix1_entry in fs::read_dir(cache_dir)?
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path().is_dir()
-                && e.file_name().to_string_lossy().len() == 2
-                && e.file_name().to_string_lossy().chars().all(|c| c.is_ascii_hexdigit())
-        })
-    {
+    for prefix1_entry in fs::read_dir(cache_dir)?.filter_map(|e| e.ok()).filter(|e| {
+        e.path().is_dir()
+            && e.file_name().to_string_lossy().len() == 2
+            && e.file_name()
+                .to_string_lossy()
+                .chars()
+                .all(|c| c.is_ascii_hexdigit())
+    }) {
         let prefix1_dir = prefix1_entry.path();
 
-        for prefix2_entry in prefix1_dir.read_dir()?
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path().is_dir()
-                    && e.file_name().to_string_lossy().len() == 2
-                    && e.file_name()
-                        .to_string_lossy()
-                        .chars()
-                        .all(|c| c.is_ascii_hexdigit())
-            })
-        {
+        for prefix2_entry in prefix1_dir.read_dir()?.filter_map(|e| e.ok()).filter(|e| {
+            e.path().is_dir()
+                && e.file_name().to_string_lossy().len() == 2
+                && e.file_name()
+                    .to_string_lossy()
+                    .chars()
+                    .all(|c| c.is_ascii_hexdigit())
+        }) {
             let prefix2_dir = prefix2_entry.path();
 
-            for fp_entry in prefix2_dir.read_dir()?.filter_map(|e| e.ok()).filter(|e| {
-                e.path().is_dir()
-            }) {
+            for fp_entry in prefix2_dir
+                .read_dir()?
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().is_dir())
+            {
                 let fp_dir = fp_entry.path();
 
                 // Delete all files in the fingerprint directory
@@ -383,8 +390,10 @@ pub fn clear_cache(cache_dir: &Path, yes: bool) -> Result<()> {
 pub fn purge_cache_older_than(cache_dir: &Path, duration_str: &str) -> Result<()> {
     use humantime::parse_duration;
 
-    let duration = parse_duration(duration_str)
-        .context(format!("Invalid duration '{}'. Use formats like '30d', '7d', '1h'", duration_str))?;
+    let duration = parse_duration(duration_str).context(format!(
+        "Invalid duration '{}'. Use formats like '30d', '7d', '1h'",
+        duration_str
+    ))?;
 
     let cutoff_secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -394,32 +403,31 @@ pub fn purge_cache_older_than(cache_dir: &Path, duration_str: &str) -> Result<()
 
     let mut deleted = 0;
 
-    for prefix1_entry in fs::read_dir(cache_dir)?
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path().is_dir()
-                && e.file_name().to_string_lossy().len() == 2
-                && e.file_name().to_string_lossy().chars().all(|c| c.is_ascii_hexdigit())
-        })
-    {
+    for prefix1_entry in fs::read_dir(cache_dir)?.filter_map(|e| e.ok()).filter(|e| {
+        e.path().is_dir()
+            && e.file_name().to_string_lossy().len() == 2
+            && e.file_name()
+                .to_string_lossy()
+                .chars()
+                .all(|c| c.is_ascii_hexdigit())
+    }) {
         let prefix1_dir = prefix1_entry.path();
 
-        for prefix2_entry in prefix1_dir.read_dir()?
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path().is_dir()
-                    && e.file_name().to_string_lossy().len() == 2
-                    && e.file_name()
-                        .to_string_lossy()
-                        .chars()
-                        .all(|c| c.is_ascii_hexdigit())
-            })
-        {
+        for prefix2_entry in prefix1_dir.read_dir()?.filter_map(|e| e.ok()).filter(|e| {
+            e.path().is_dir()
+                && e.file_name().to_string_lossy().len() == 2
+                && e.file_name()
+                    .to_string_lossy()
+                    .chars()
+                    .all(|c| c.is_ascii_hexdigit())
+        }) {
             let prefix2_dir = prefix2_entry.path();
 
-            for fp_entry in prefix2_dir.read_dir()?.filter_map(|e| e.ok()).filter(|e| {
-                e.path().is_dir()
-            }) {
+            for fp_entry in prefix2_dir
+                .read_dir()?
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().is_dir())
+            {
                 let fp_dir = fp_entry.path();
 
                 for entry in fp_dir.read_dir()?.filter_map(|e| e.ok()) {
@@ -474,8 +482,10 @@ pub fn purge_cache_older_than(cache_dir: &Path, duration_str: &str) -> Result<()
 pub fn purge_cache_version(_cache_dir: &Path, version_constraint: &str) -> Result<()> {
     use semver::VersionReq;
 
-    let _req = VersionReq::parse(version_constraint)
-        .context(format!("Invalid version constraint '{}'", version_constraint))?;
+    let _req = VersionReq::parse(version_constraint).context(format!(
+        "Invalid version constraint '{}'",
+        version_constraint
+    ))?;
 
     // For now, this is a no-op since we don't track extraction versions per entry
     // This would require extending the cache entry metadata
@@ -488,32 +498,31 @@ pub fn purge_cache_version(_cache_dir: &Path, version_constraint: &str) -> Resul
 fn count_entries(cache_dir: &Path) -> Result<u64> {
     let mut count = 0;
 
-    for prefix1_entry in fs::read_dir(cache_dir)?
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path().is_dir()
-                && e.file_name().to_string_lossy().len() == 2
-                && e.file_name().to_string_lossy().chars().all(|c| c.is_ascii_hexdigit())
-        })
-    {
+    for prefix1_entry in fs::read_dir(cache_dir)?.filter_map(|e| e.ok()).filter(|e| {
+        e.path().is_dir()
+            && e.file_name().to_string_lossy().len() == 2
+            && e.file_name()
+                .to_string_lossy()
+                .chars()
+                .all(|c| c.is_ascii_hexdigit())
+    }) {
         let prefix1_dir = prefix1_entry.path();
 
-        for prefix2_entry in prefix1_dir.read_dir()?
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path().is_dir()
-                    && e.file_name().to_string_lossy().len() == 2
-                    && e.file_name()
-                        .to_string_lossy()
-                        .chars()
-                        .all(|c| c.is_ascii_hexdigit())
-            })
-        {
+        for prefix2_entry in prefix1_dir.read_dir()?.filter_map(|e| e.ok()).filter(|e| {
+            e.path().is_dir()
+                && e.file_name().to_string_lossy().len() == 2
+                && e.file_name()
+                    .to_string_lossy()
+                    .chars()
+                    .all(|c| c.is_ascii_hexdigit())
+        }) {
             let prefix2_dir = prefix2_entry.path();
 
-            for fp_entry in prefix2_dir.read_dir()?.filter_map(|e| e.ok()).filter(|e| {
-                e.path().is_dir()
-            }) {
+            for fp_entry in prefix2_dir
+                .read_dir()?
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().is_dir())
+            {
                 let fp_dir = fp_entry.path();
 
                 for entry in fp_dir.read_dir()?.filter_map(|e| e.ok()) {
@@ -659,8 +668,16 @@ mod tests {
         let fp_dir = cache_dir.join("e7").join("a1").join(fp);
         fs::create_dir_all(&fp_dir).unwrap();
 
-        fs::write(fp_dir.join(format!("{}-1000.json.zst", opts)), b"x".repeat(1000)).unwrap();
-        fs::write(fp_dir.join(format!("{}-2000.json.zst", opts)), b"x".repeat(2000)).unwrap();
+        fs::write(
+            fp_dir.join(format!("{}-1000.json.zst", opts)),
+            b"x".repeat(1000),
+        )
+        .unwrap();
+        fs::write(
+            fp_dir.join(format!("{}-2000.json.zst", opts)),
+            b"x".repeat(2000),
+        )
+        .unwrap();
 
         let count = count_entries(cache_dir).unwrap();
         assert_eq!(count, 2);

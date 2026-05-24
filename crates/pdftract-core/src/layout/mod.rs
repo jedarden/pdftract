@@ -12,6 +12,6 @@ pub mod caption;
 pub mod line;
 pub mod readability;
 
-pub use caption::{Block, PageContext, classify_caption, classify_page_captions};
-pub use line::{Line, LineDirection, compute_baseline, union_bboxes, HasBBox};
+pub use caption::{classify_caption, classify_page_captions, Block, PageContext};
+pub use line::{compute_baseline, union_bboxes, HasBBox, Line, LineDirection};
 pub use readability::{aggregate_page_readability, ScoredSpan};

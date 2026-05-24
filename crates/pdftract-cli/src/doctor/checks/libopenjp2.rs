@@ -1,5 +1,5 @@
-use std::process::Command;
 use super::super::{Check, CheckResult, CheckStatus, DoctorCtx};
+use std::process::Command;
 
 /// Check: libopenjp2 installation (JPEG2000 decoding)
 ///
@@ -14,17 +14,13 @@ impl Check for Libopenjp2Check {
 
     fn run(&self, _ctx: &DoctorCtx) -> CheckResult {
         // First check if pkg-config exists
-        let pkg_check = Command::new("pkg-config")
-            .arg("--version")
-            .output();
+        let pkg_check = Command::new("pkg-config").arg("--version").output();
 
         let pkg_available = pkg_check.is_ok();
 
         if !pkg_available {
             // Fallback: try ldconfig -p | grep openjp2
-            let ldconfig = Command::new("ldconfig")
-                .arg("-p")
-                .output();
+            let ldconfig = Command::new("ldconfig").arg("-p").output();
 
             if let Ok(output) = ldconfig {
                 let stdout = String::from_utf8_lossy(&output.stdout);
@@ -32,7 +28,8 @@ impl Check for Libopenjp2Check {
                     return CheckResult {
                         name: self.name(),
                         status: CheckStatus::Ok,
-                        detail: "libopenjp2 found via ldconfig (pkg-config unavailable)".to_string(),
+                        detail: "libopenjp2 found via ldconfig (pkg-config unavailable)"
+                            .to_string(),
                     };
                 }
             }
@@ -69,20 +66,16 @@ impl Check for Libopenjp2Check {
                     detail,
                 }
             }
-            Ok(_) => {
-                CheckResult {
-                    name: self.name(),
-                    status: CheckStatus::Fail,
-                    detail: "libopenjp2 not found (pkg-config --exists libopenjp2 failed)".to_string(),
-                }
-            }
-            Err(e) => {
-                CheckResult {
-                    name: self.name(),
-                    status: CheckStatus::Fail,
-                    detail: format!("pkg-config check failed: {}", e),
-                }
-            }
+            Ok(_) => CheckResult {
+                name: self.name(),
+                status: CheckStatus::Fail,
+                detail: "libopenjp2 not found (pkg-config --exists libopenjp2 failed)".to_string(),
+            },
+            Err(e) => CheckResult {
+                name: self.name(),
+                status: CheckStatus::Fail,
+                detail: format!("pkg-config check failed: {}", e),
+            },
         }
     }
 }

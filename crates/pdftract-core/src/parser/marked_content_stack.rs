@@ -6,7 +6,7 @@
 //! Per PDF spec section 14.5, the marked-content stack is independent of the
 //! graphics state stack — q/Q operators do not affect it.
 
-use crate::diagnostics::{Diagnostic, DiagCode};
+use crate::diagnostics::{DiagCode, Diagnostic};
 
 /// Maximum depth of marked-content stack (prevents stack overflow).
 const MAX_MC_DEPTH: usize = 64;
@@ -73,7 +73,11 @@ impl MarkedContentStack {
         if self.stack.len() >= MAX_MC_DEPTH {
             self.diagnostics.push(Diagnostic::with_dynamic_no_offset(
                 DiagCode::MarkedContentDepthExceeded,
-                format!("Marked-content stack depth {} exceeds limit {}", self.stack.len() + 1, MAX_MC_DEPTH),
+                format!(
+                    "Marked-content stack depth {} exceeds limit {}",
+                    self.stack.len() + 1,
+                    MAX_MC_DEPTH
+                ),
             ));
             false
         } else {
@@ -89,7 +93,11 @@ impl MarkedContentStack {
         if self.stack.len() >= MAX_MC_DEPTH {
             self.diagnostics.push(Diagnostic::with_dynamic_no_offset(
                 DiagCode::MarkedContentDepthExceeded,
-                format!("Marked-content stack depth {} exceeds limit {}", self.stack.len() + 1, MAX_MC_DEPTH),
+                format!(
+                    "Marked-content stack depth {} exceeds limit {}",
+                    self.stack.len() + 1,
+                    MAX_MC_DEPTH
+                ),
             ));
             false
         } else {
@@ -117,9 +125,7 @@ impl MarkedContentStack {
     ///
     /// Returns the MCID of the topmost frame that has one.
     pub fn innermost_mcid(&self) -> Option<u32> {
-        self.stack.iter()
-            .rev()
-            .find_map(|frame| frame.mcid)
+        self.stack.iter().rev().find_map(|frame| frame.mcid)
     }
 
     /// Get the innermost (top) frame, if any.
@@ -247,7 +253,10 @@ mod tests {
         assert!(!stack.push_bmc("overflow".to_string()));
         assert_eq!(stack.depth(), MAX_MC_DEPTH);
         assert!(!stack.diagnostics().is_empty());
-        assert_eq!(stack.diagnostics().last().unwrap().code, DiagCode::MarkedContentDepthExceeded);
+        assert_eq!(
+            stack.diagnostics().last().unwrap().code,
+            DiagCode::MarkedContentDepthExceeded
+        );
     }
 
     #[test]

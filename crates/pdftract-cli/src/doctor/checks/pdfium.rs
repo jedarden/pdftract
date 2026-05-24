@@ -73,17 +73,18 @@ impl Check for PdfiumCheck {
                     CheckResult {
                         name: self.name(),
                         status: CheckStatus::Warn,
-                        detail: format!("pdfium {} found (< 6555: may have compatibility issues), {}", version, source),
+                        detail: format!(
+                            "pdfium {} found (< 6555: may have compatibility issues), {}",
+                            version, source
+                        ),
                     }
                 }
             }
-            Err(e) => {
-                CheckResult {
-                    name: self.name(),
-                    status: CheckStatus::Fail,
-                    detail: format!("pdfium not found: {}", e),
-                }
-            }
+            Err(e) => CheckResult {
+                name: self.name(),
+                status: CheckStatus::Fail,
+                detail: format!("pdfium not found: {}", e),
+            },
         }
     }
 }

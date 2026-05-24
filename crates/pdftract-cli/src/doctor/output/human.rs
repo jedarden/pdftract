@@ -1,7 +1,7 @@
 //! Human-readable table output for doctor subcommand
 
-use anyhow::Result;
 use crate::doctor::{CheckResult, CheckStatus};
+use anyhow::Result;
 use std::io::{IsTerminal, Write};
 
 /// Options for text output

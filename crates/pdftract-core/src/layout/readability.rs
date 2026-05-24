@@ -234,10 +234,7 @@ mod tests {
 
     #[test]
     fn test_empty_strings() {
-        let spans = vec![
-            TestSpan::new("", 0.5),
-            TestSpan::new("", 0.8),
-        ];
+        let spans = vec![TestSpan::new("", 0.5), TestSpan::new("", 0.8)];
         // All empty -> total_chars = 0 -> return 0.0
         assert_eq!(aggregate_page_readability(&spans), 0.0);
     }
@@ -282,10 +279,7 @@ mod tests {
 
     #[test]
     fn test_all_zero_scores() {
-        let spans = vec![
-            TestSpan::new("a", 0.0),
-            TestSpan::new("b", 0.0),
-        ];
+        let spans = vec![TestSpan::new("a", 0.0), TestSpan::new("b", 0.0)];
         assert_eq!(aggregate_page_readability(&spans), 0.0);
     }
 
@@ -304,7 +298,10 @@ mod tests {
             TestSpan::new("b".repeat(10), 0.5),
         ];
 
-        assert_eq!(aggregate_page_readability(&spans1), aggregate_page_readability(&spans2));
+        assert_eq!(
+            aggregate_page_readability(&spans1),
+            aggregate_page_readability(&spans2)
+        );
     }
 
     #[test]
@@ -328,8 +325,8 @@ mod tests {
     fn test_zero_width_joiner() {
         // Test zero-width joiner and combining marks
         let spans = vec![
-            TestSpan::new("café", 0.9),  // 4 chars: c a f é
-            TestSpan::new("नमस्ते", 0.8),  // 6 chars (Hindi namaste)
+            TestSpan::new("café", 0.9), // 4 chars: c a f é
+            TestSpan::new("नमस्ते", 0.8), // 6 chars (Hindi namaste)
         ];
         // Total = 10 chars, half = 5
         // Cumsum after first = 4, not > 5

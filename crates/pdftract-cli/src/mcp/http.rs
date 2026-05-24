@@ -24,7 +24,6 @@
 use crate::mcp::framing::{BatchMessage, ErrorObject, Id, Notification, Request, Response};
 use crate::mcp::tools;
 use anyhow::{anyhow, Context, Result};
-use subtle::ConstantTimeEq;
 use axum::{
     body::Body,
     extract::{DefaultBodyLimit, Request as AxumRequest, State},
@@ -40,6 +39,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use subtle::ConstantTimeEq;
 use tokio::sync::broadcast;
 
 /// Default maximum request body size (256 MB)
@@ -75,7 +75,11 @@ pub struct McpServerState {
 
 impl McpServerState {
     /// Create a new MCP server state.
-    pub fn new(auth_token: Option<SecretString>, max_upload_mb: Option<usize>, root: Option<PathBuf>) -> Self {
+    pub fn new(
+        auth_token: Option<SecretString>,
+        max_upload_mb: Option<usize>,
+        root: Option<PathBuf>,
+    ) -> Self {
         let max_body_bytes = max_upload_mb.unwrap_or(DEFAULT_MAX_UPLOAD_MB) * 1024 * 1024;
         let notify_tx = broadcast::channel(100).0; // Channel size 100 for buffered notifications
 
@@ -96,7 +100,9 @@ impl McpServerState {
     pub fn broadcast_notification(&self, notification: Notification) -> usize {
         // recv_count is the number of receivers that got the message
         // (before it was dropped due to channel overflow or lag)
-        self.notify_tx.send(notification).map_or(0, |recv_count| recv_count)
+        self.notify_tx
+            .send(notification)
+            .map_or(0, |recv_count| recv_count)
     }
 
     /// Get the current number of active SSE clients.
@@ -162,9 +168,7 @@ pub async fn run_server(
     eprintln!();
 
     // Run the server
-    axum::serve(listener, app)
-        .await
-        .context("Server error")?;
+    axum::serve(listener, app).await.context("Server error")?;
 
     Ok(())
 }
@@ -199,16 +203,12 @@ async fn handle_post_request(
     }
 
     // Parse the request body as either a single Request or a Batch
-    let batch_result: std::result::Result<BatchMessage, _> =
-        serde_json::from_str(&body);
+    let batch_result: std::result::Result<BatchMessage, _> = serde_json::from_str(&body);
 
     let batch = match batch_result {
         Ok(batch) => batch,
         Err(_) => {
-            return error_response(
-                StatusCode::BAD_REQUEST,
-                ErrorObject::invalid_request(),
-            );
+            return error_response(StatusCode::BAD_REQUEST, ErrorObject::invalid_request());
         }
     };
 
@@ -237,10 +237,7 @@ async fn handle_post_request(
 ///
 /// Returns a long-lived SSE connection that receives server notifications.
 /// Sends a keepalive comment every 30 seconds.
-async fn handle_sse(
-    State(state): State<McpServerState>,
-    headers: HeaderMap,
-) -> AxumResponse {
+async fn handle_sse(State(state): State<McpServerState>, headers: HeaderMap) -> AxumResponse {
     // Check authentication first
     match check_auth(&state, &headers) {
         Ok(()) => {}
@@ -257,7 +254,8 @@ async fn handle_sse(
                 "error": "Maximum concurrent clients exceeded",
                 "limit": MAX_SSE_CLIENTS,
             })),
-        ).into_response();
+        )
+            .into_response();
     }
 
     // Subscribe to the broadcast channel
@@ -321,11 +319,13 @@ async fn handle_sse(
     };
 
     // Return SSE response with appropriate headers
-    Sse::new(stream).keep_alive(
-        axum::response::sse::KeepAlive::new()
-            .interval(Duration::from_secs(SSE_KEEPALIVE_SECS))
-            .text("keepalive"),
-    ).into_response()
+    Sse::new(stream)
+        .keep_alive(
+            axum::response::sse::KeepAlive::new()
+                .interval(Duration::from_secs(SSE_KEEPALIVE_SECS))
+                .text("keepalive"),
+        )
+        .into_response()
 }
 
 /// GET /health handler - health check endpoint.
@@ -393,9 +393,7 @@ fn check_auth(
     headers: &HeaderMap,
 ) -> std::result::Result<(), AxumResponse> {
     if let Some(token) = &state.auth_token {
-        let auth_header = headers
-            .get("Authorization")
-            .and_then(|v| v.to_str().ok());
+        let auth_header = headers.get("Authorization").and_then(|v| v.to_str().ok());
 
         match auth_header {
             Some(header) if header.starts_with("Bearer ") => {
@@ -408,8 +406,12 @@ fn check_auth(
                 } else {
                     let mut response = (
                         StatusCode::UNAUTHORIZED,
-                        Json(Response::error(Id::Null, ErrorObject::new(-32001, "Invalid authentication token"))),
-                    ).into_response();
+                        Json(Response::error(
+                            Id::Null,
+                            ErrorObject::new(-32001, "Invalid authentication token"),
+                        )),
+                    )
+                        .into_response();
                     response.headers_mut().insert(
                         "WWW-Authenticate",
                         HeaderValue::from_static("Bearer realm=\"pdftract\""),
@@ -420,8 +422,12 @@ fn check_auth(
             _ => {
                 let mut response = (
                     StatusCode::UNAUTHORIZED,
-                    Json(Response::error(Id::Null, ErrorObject::new(-32001, "Missing authentication token"))),
-                ).into_response();
+                    Json(Response::error(
+                        Id::Null,
+                        ErrorObject::new(-32001, "Missing authentication token"),
+                    )),
+                )
+                    .into_response();
                 response.headers_mut().insert(
                     "WWW-Authenticate",
                     HeaderValue::from_static("Bearer realm=\"pdftract\""),
@@ -435,7 +441,11 @@ fn check_auth(
 }
 
 /// Handle a single JSON-RPC request and return a response.
-fn handle_request(request: Request, registry: &tools::ToolRegistry, root: Option<&std::path::Path>) -> Response {
+fn handle_request(
+    request: Request,
+    registry: &tools::ToolRegistry,
+    root: Option<&std::path::Path>,
+) -> Response {
     let id = request.request_id();
 
     match request.method.as_str() {
@@ -463,20 +473,29 @@ fn handle_request(request: Request, registry: &tools::ToolRegistry, root: Option
             let params = match request.params {
                 Some(p) => p,
                 None => {
-                    return Response::error(id, ErrorObject::invalid_params()
-                        .with_data(json!({"reason": "Missing params"})));
+                    return Response::error(
+                        id,
+                        ErrorObject::invalid_params()
+                            .with_data(json!({"reason": "Missing params"})),
+                    );
                 }
             };
 
             let tool_name = match params.get("name").and_then(|v| v.as_str()) {
                 Some(name) => name,
                 None => {
-                    return Response::error(id, ErrorObject::invalid_params()
-                        .with_data(json!({"reason": "Missing or invalid 'name' field"})));
+                    return Response::error(
+                        id,
+                        ErrorObject::invalid_params()
+                            .with_data(json!({"reason": "Missing or invalid 'name' field"})),
+                    );
                 }
             };
 
-            let arguments = params.get("arguments").cloned().unwrap_or(Value::Object(serde_json::Map::new()));
+            let arguments = params
+                .get("arguments")
+                .cloned()
+                .unwrap_or(Value::Object(serde_json::Map::new()));
 
             // Look up the tool in the registry
             let tool = match registry.get(tool_name) {
@@ -488,12 +507,17 @@ fn handle_request(request: Request, registry: &tools::ToolRegistry, root: Option
 
             // Execute the tool with observability logging
             let start = std::time::Instant::now();
-            let log_path = arguments.get("path").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let log_path = arguments
+                .get("path")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
 
             let result = tool.execute(arguments, log_path.as_deref(), root);
 
             let duration_ms = start.elapsed().as_millis();
-            let response_size = result.as_ref().ok()
+            let response_size = result
+                .as_ref()
+                .ok()
                 .map(|v| serde_json::to_vec(v).unwrap_or_default().len())
                 .unwrap_or(0);
 
@@ -503,13 +527,9 @@ fn handle_request(request: Request, registry: &tools::ToolRegistry, root: Option
             let path_or_hash = log_path.unwrap_or_else(|| "<unknown>".to_string());
             let error_code = result.as_ref().err().map(|e| e.code.to_string());
 
-            eprintln!("{} tool={} path={} duration_ms={} response_size_bytes={} error_code={:?}",
-                timestamp,
-                tool_name,
-                path_or_hash,
-                duration_ms,
-                response_size,
-                error_code,
+            eprintln!(
+                "{} tool={} path={} duration_ms={} response_size_bytes={} error_code={:?}",
+                timestamp, tool_name, path_or_hash, duration_ms, response_size, error_code,
             );
 
             match result {
@@ -647,7 +667,10 @@ mod tests {
         // No token configured, so any headers should pass
         assert!(check_auth(&state, &headers).is_ok());
 
-        headers.insert("Authorization", HeaderValue::from_static("Bearer irrelevant"));
+        headers.insert(
+            "Authorization",
+            HeaderValue::from_static("Bearer irrelevant"),
+        );
         assert!(check_auth(&state, &headers).is_ok());
     }
 
@@ -657,7 +680,10 @@ mod tests {
         let state = McpServerState::new(Some(token), None, None);
         let mut headers = HeaderMap::new();
 
-        headers.insert("Authorization", HeaderValue::from_static("Bearer correct-token"));
+        headers.insert(
+            "Authorization",
+            HeaderValue::from_static("Bearer correct-token"),
+        );
         assert!(check_auth(&state, &headers).is_ok());
     }
 
@@ -667,7 +693,10 @@ mod tests {
         let state = McpServerState::new(Some(token), None, None);
         let mut headers = HeaderMap::new();
 
-        headers.insert("Authorization", HeaderValue::from_static("Bearer wrong-token"));
+        headers.insert(
+            "Authorization",
+            HeaderValue::from_static("Bearer wrong-token"),
+        );
         let result = check_auth(&state, &headers);
         assert!(result.is_err());
         if let Err(resp) = result {
@@ -774,7 +803,10 @@ mod tests {
             ratio <= 5,
             "Token comparison appears to be non-constant-time: \
              early mismatch={:?}, late mismatch={:?}, correct={:?}, ratio={}",
-            median_early, median_late, median_correct, ratio
+            median_early,
+            median_late,
+            median_correct,
+            ratio
         );
 
         // Also verify that the correct token actually returns true
@@ -801,7 +833,10 @@ mod tests {
 
         // Test 2: Token that is much longer
         let mut headers_long = HeaderMap::new();
-        headers_long.insert("Authorization", HeaderValue::from_static("Bearer this-token-is-much-longer-than-the-correct-one"));
+        headers_long.insert(
+            "Authorization",
+            HeaderValue::from_static("Bearer this-token-is-much-longer-than-the-correct-one"),
+        );
 
         let iterations = 1000;
         let mut times_short = Vec::with_capacity(iterations);
@@ -840,7 +875,9 @@ mod tests {
             ratio <= 3,
             "Token comparison appears to leak length information: \
              short={:?}, long={:?}, ratio={}",
-            median_short, median_long, ratio
+            median_short,
+            median_long,
+            ratio
         );
     }
 }

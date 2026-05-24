@@ -1,5 +1,5 @@
-use pdftract_core::parser::xref;
 use pdftract_core::parser::stream::{MemorySource, PdfSource};
+use pdftract_core::parser::xref;
 use std::fs::File;
 use std::io::Read;
 
@@ -12,7 +12,10 @@ fn main() {
 
     // Find startxref BEFORE moving buffer
     let search_bytes = &buffer[buffer.len().saturating_sub(1024)..];
-    let pos = search_bytes.windows(9).rposition(|w| w == b"startxref").unwrap();
+    let pos = search_bytes
+        .windows(9)
+        .rposition(|w| w == b"startxref")
+        .unwrap();
     let start = buffer.len().saturating_sub(1024) + pos + 9;
 
     // Skip whitespace
@@ -31,21 +34,24 @@ fn main() {
 
     // Now create source
     let source = MemorySource::new(buffer);
-    
+
     println!("startxref offset: {}", start_offset);
-    
+
     let xref_section = xref::load_xref_with_prev_chain(&source, start_offset);
-    
+
     println!("Has trailer: {}", xref_section.trailer.is_some());
-    
+
     if let Some(trailer) = &xref_section.trailer {
         println!("Trailer keys: {:?}", trailer.keys().collect::<Vec<_>>());
         println!("Root entry: {:?}", trailer.get("Root"));
         println!("Size entry: {:?}", trailer.get("Size"));
     }
-    
+
     println!("Diagnostics count: {}", xref_section.diagnostics.len());
     for diag in &xref_section.diagnostics {
-        println!("  - {}: {} at byte_offset {:?}", diag.code, diag.message, diag.byte_offset);
+        println!(
+            "  - {}: {} at byte_offset {:?}",
+            diag.code, diag.message, diag.byte_offset
+        );
     }
 }

@@ -3,9 +3,9 @@
 //! This module provides the parser that converts tokens from the lexer
 //! into PDF objects.
 
-use super::types::{intern, ObjRef, PdfDict, PdfObject, PdfStream, PdfIndirect};
+use super::types::{intern, ObjRef, PdfDict, PdfIndirect, PdfObject, PdfStream};
+use crate::diagnostics::{DiagCode, Diagnostic as Diag};
 use crate::parser::lexer::{Lexer, Token};
-use crate::diagnostics::{Diagnostic as Diag, DiagCode};
 
 /// Maximum nesting depth for dictionaries and arrays.
 ///
@@ -233,7 +233,10 @@ impl<'a> ObjectParser<'a> {
                                         // Missing value - insert PdfNull
                                         self.diagnostics.push(Diag::with_dynamic_no_offset(
                                             DiagCode::StructInvalidDictValue,
-                                            format!("Dictionary key '{}' has no value, inserting null", key),
+                                            format!(
+                                                "Dictionary key '{}' has no value, inserting null",
+                                                key
+                                            ),
                                         ));
                                         dict.insert(key, PdfObject::Null);
                                         break; // End of dict
@@ -258,7 +261,10 @@ impl<'a> ObjectParser<'a> {
                                 ));
                                 // Skip the invalid token and the next token (would-be value)
                                 let _ = self.lexer.next_token();
-                                if !matches!(self.lexer.peek_token(), Some(Token::DictEnd) | Some(Token::Eof) | None) {
+                                if !matches!(
+                                    self.lexer.peek_token(),
+                                    Some(Token::DictEnd) | Some(Token::Eof) | None
+                                ) {
                                     let _ = self.lexer.next_token();
                                 }
                                 expecting_key = true;
@@ -281,13 +287,18 @@ impl<'a> ObjectParser<'a> {
             let offset = self.lexer.position();
 
             // Try to get /Length from the dict
-            let len_hint = dict.get("Length").and_then(|obj| obj.as_int()).map(|i| i as u64);
+            let len_hint = dict
+                .get("Length")
+                .and_then(|obj| obj.as_int())
+                .map(|i| i as u64);
 
             // Skip the stream body
             self.skip_stream_body(len_hint);
 
             // Parse the stream object
-            return Some(PdfObject::Stream(Box::new(PdfStream::new(dict, offset, len_hint))));
+            return Some(PdfObject::Stream(Box::new(PdfStream::new(
+                dict, offset, len_hint,
+            ))));
         }
 
         Some(PdfObject::Dict(Box::new(dict)))
@@ -315,7 +326,10 @@ impl<'a> ObjectParser<'a> {
             if actual_skipped < len_usize {
                 self.diagnostics.push(Diag::with_dynamic_no_offset(
                     DiagCode::StructUnexpectedEof,
-                    format!("Stream truncated at EOF: expected {} bytes, got {}", len, actual_skipped),
+                    format!(
+                        "Stream truncated at EOF: expected {} bytes, got {}",
+                        len, actual_skipped
+                    ),
                 ));
             }
         } else {
@@ -337,7 +351,10 @@ impl<'a> ObjectParser<'a> {
             Some(other) => {
                 self.diagnostics.push(Diag::with_dynamic_no_offset(
                     DiagCode::StructUnexpectedByte,
-                    format!("Expected endstream keyword after stream body, found {:?}", other),
+                    format!(
+                        "Expected endstream keyword after stream body, found {:?}",
+                        other
+                    ),
                 ));
                 // Try to recover by scanning forward for EndStream
                 self.scan_to_endstream();
@@ -639,7 +656,10 @@ impl<'a> ObjectParser<'a> {
                 }
                 // Now we're at the end of the first integer (object number)
                 // Skip the digits of the object number (and optional minus sign)
-                while scan_back > 0 && (remaining[scan_back - 1].is_ascii_digit() || remaining[scan_back - 1] == b'-') {
+                while scan_back > 0
+                    && (remaining[scan_back - 1].is_ascii_digit()
+                        || remaining[scan_back - 1] == b'-')
+                {
                     scan_back -= 1;
                 }
                 // scan_back now points to the start of the object number
@@ -738,11 +758,14 @@ mod tests {
     fn test_parse_array_of_integers() {
         let mut parser = ObjectParser::new(b"[ 1 2 3 ]");
         let obj = parser.parse_direct_object();
-        assert_eq!(obj, Some(PdfObject::Array(Box::new(vec![
-            PdfObject::Integer(1),
-            PdfObject::Integer(2),
-            PdfObject::Integer(3),
-        ]))));
+        assert_eq!(
+            obj,
+            Some(PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(1),
+                PdfObject::Integer(2),
+                PdfObject::Integer(3),
+            ])))
+        );
     }
 
     #[test]
@@ -825,7 +848,9 @@ mod tests {
             assert_eq!(dict.len(), 1);
             assert_eq!(dict.get("Type"), Some(&PdfObject::Null));
             let diags = parser.take_diagnostics();
-            assert!(diags.iter().any(|d| d.code == DiagCode::StructInvalidDictValue));
+            assert!(diags
+                .iter()
+                .any(|d| d.code == DiagCode::StructInvalidDictValue));
         } else {
             panic!("Expected dict, got {:?}", obj);
         }
@@ -838,7 +863,9 @@ mod tests {
         if let Some(PdfObject::Dict(dict)) = obj {
             assert_eq!(dict.len(), 0);
             let diags = parser.take_diagnostics();
-            assert!(diags.iter().any(|d| d.code == DiagCode::StructInvalidDictKey));
+            assert!(diags
+                .iter()
+                .any(|d| d.code == DiagCode::StructInvalidDictKey));
         } else {
             panic!("Expected dict, got {:?}", obj);
         }
@@ -925,7 +952,9 @@ mod tests {
 
         // Should have emitted STRUCT_DEPTH_EXCEEDED diagnostic
         let diags = parser.take_diagnostics();
-        assert!(diags.iter().any(|d| d.code == DiagCode::StructDepthExceeded));
+        assert!(diags
+            .iter()
+            .any(|d| d.code == DiagCode::StructDepthExceeded));
     }
 
     #[test]
@@ -950,7 +979,9 @@ mod tests {
 
         // Should have emitted STRUCT_INVALID_DICT_VALUE diagnostic for missing value
         let diags = parser.take_diagnostics();
-        assert!(diags.iter().any(|d| d.code == DiagCode::StructInvalidDictValue));
+        assert!(diags
+            .iter()
+            .any(|d| d.code == DiagCode::StructInvalidDictValue));
     }
 
     #[test]
@@ -961,7 +992,9 @@ mod tests {
         // Should return PdfNull with diagnostic
         assert_eq!(obj, Some(PdfObject::Null));
         let diags = parser.take_diagnostics();
-        assert!(diags.iter().any(|d| d.code == DiagCode::StructInvalidIndirectHeader));
+        assert!(diags
+            .iter()
+            .any(|d| d.code == DiagCode::StructInvalidIndirectHeader));
     }
 
     #[test]
@@ -997,7 +1030,11 @@ mod tests {
                 Just("true".to_string()),
                 Just("false".to_string()),
                 any::<i64>().prop_map(|n| n.to_string()),
-                any::<f64>().prop_map(|f| if f.is_finite() { f.to_string() } else { "0.0".to_string() }),
+                any::<f64>().prop_map(|f| if f.is_finite() {
+                    f.to_string()
+                } else {
+                    "0.0".to_string()
+                }),
                 // Names
                 "[a-zA-Z]{1,10}".prop_map(|s| format!("/{}", s)),
                 // Strings
@@ -1108,7 +1145,9 @@ mod tests {
 
         // Should have emitted STRUCT_INTEGER_OVERFLOW diagnostic
         let diags = parser.take_diagnostics();
-        assert!(diags.iter().any(|d| d.code == DiagCode::StructIntegerOverflow));
+        assert!(diags
+            .iter()
+            .any(|d| d.code == DiagCode::StructIntegerOverflow));
     }
 
     #[test]
@@ -1123,7 +1162,9 @@ mod tests {
 
         // Should have emitted STRUCT_INTEGER_OVERFLOW diagnostic
         let diags = parser.take_diagnostics();
-        assert!(diags.iter().any(|d| d.code == DiagCode::StructIntegerOverflow));
+        assert!(diags
+            .iter()
+            .any(|d| d.code == DiagCode::StructIntegerOverflow));
     }
 
     #[test]
@@ -1137,7 +1178,9 @@ mod tests {
 
         // Should have emitted STRUCT_INVALID_INDIRECT_HEADER diagnostic
         let diags = parser.take_diagnostics();
-        assert!(diags.iter().any(|d| d.code == DiagCode::StructInvalidIndirectHeader));
+        assert!(diags
+            .iter()
+            .any(|d| d.code == DiagCode::StructInvalidIndirectHeader));
     }
 
     #[test]
@@ -1150,7 +1193,9 @@ mod tests {
 
         // Should have emitted STRUCT_INVALID_INDIRECT_HEADER diagnostic
         let diags = parser.take_diagnostics();
-        assert!(diags.iter().any(|d| d.code == DiagCode::StructInvalidIndirectHeader));
+        assert!(diags
+            .iter()
+            .any(|d| d.code == DiagCode::StructInvalidIndirectHeader));
     }
 
     #[test]

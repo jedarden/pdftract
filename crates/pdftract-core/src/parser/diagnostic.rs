@@ -101,7 +101,12 @@ impl Diagnostic {
     }
 
     /// Create a new diagnostic with a specific code.
-    pub fn new_with_code(code: DiagCode, severity: Severity, phase: impl Into<String>, message: impl Into<String>) -> Self {
+    pub fn new_with_code(
+        code: DiagCode,
+        severity: Severity,
+        phase: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
         Diagnostic {
             code,
             severity,
@@ -131,7 +136,11 @@ impl Diagnostic {
     }
 
     /// Create an error diagnostic with a specific code.
-    pub fn error_with_code(code: DiagCode, phase: impl Into<String>, message: impl Into<String>) -> Self {
+    pub fn error_with_code(
+        code: DiagCode,
+        phase: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
         Diagnostic {
             code,
             severity: Severity::Error,

@@ -1,8 +1,8 @@
 //! Doctor subcommand - environment health checks
 
 use anyhow::Result;
-use std::path::PathBuf;
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::path::PathBuf;
 
 // Private checks module
 mod checks;
@@ -179,9 +179,12 @@ pub fn run(opts: DoctorOptions) -> Result<()> {
     if opts.json {
         output::output_json(&results);
     } else {
-        output::output_text(&results, &output::TextOptions {
-            no_color: opts.no_color,
-        })?;
+        output::output_text(
+            &results,
+            &output::TextOptions {
+                no_color: opts.no_color,
+            },
+        )?;
     }
 
     // Determine exit code per plan section 6.10 line 2520-2521:

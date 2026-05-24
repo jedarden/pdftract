@@ -7,9 +7,9 @@
 //! containing all resources from its ancestor /Pages nodes, with per-key
 //! last-write-wins semantics at the page level.
 
-use crate::parser::object::{ObjRef, PdfObject, PdfDict, intern};
-use std::sync::Arc;
+use crate::parser::object::{intern, ObjRef, PdfDict, PdfObject};
 use indexmap::IndexMap;
+use std::sync::Arc;
 
 /// A merged resource dictionary for a page.
 ///
@@ -290,8 +290,8 @@ mod tests {
 
         assert_eq!(merged.fonts.len(), 3);
         assert_eq!(merged.fonts.get(&intern("F1")), Some(&ObjRef::new(10, 0))); // Overridden
-        assert_eq!(merged.fonts.get(&intern("F2")), Some(&ObjRef::new(2, 0)));  // Inherited
-        assert_eq!(merged.fonts.get(&intern("F3")), Some(&ObjRef::new(3, 0)));  // New
+        assert_eq!(merged.fonts.get(&intern("F2")), Some(&ObjRef::new(2, 0))); // Inherited
+        assert_eq!(merged.fonts.get(&intern("F3")), Some(&ObjRef::new(3, 0))); // New
     }
 
     #[test]
@@ -307,8 +307,14 @@ mod tests {
         let merged = merge_resources(&ancestor, &PdfObject::Dict(Box::new(child_resources)));
 
         assert_eq!(merged.xobjects.len(), 2);
-        assert_eq!(merged.xobjects.get(&intern("Im1")), Some(&ObjRef::new(5, 0)));
-        assert_eq!(merged.xobjects.get(&intern("Im2")), Some(&ObjRef::new(6, 0)));
+        assert_eq!(
+            merged.xobjects.get(&intern("Im1")),
+            Some(&ObjRef::new(5, 0))
+        );
+        assert_eq!(
+            merged.xobjects.get(&intern("Im2")),
+            Some(&ObjRef::new(6, 0))
+        );
     }
 
     #[test]
@@ -321,11 +327,14 @@ mod tests {
 
         // Inline color space array: [/CalRGB << /Gamma [1 1 1] >>]
         let mut gamma_arr = PdfDict::new();
-        gamma_arr.insert(intern("Gamma"), PdfObject::Array(Box::new(vec![
-            PdfObject::Integer(1),
-            PdfObject::Integer(1),
-            PdfObject::Integer(1),
-        ])));
+        gamma_arr.insert(
+            intern("Gamma"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(1),
+                PdfObject::Integer(1),
+                PdfObject::Integer(1),
+            ])),
+        );
 
         child_cs.insert(
             intern("CS1"),

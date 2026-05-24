@@ -56,9 +56,7 @@ impl FontFingerprint {
         let mut hasher = Sha256::new();
         hasher.update(font_program_bytes);
         let hash = hasher.finalize();
-        Self {
-            hash: hash.into(),
-        }
+        Self { hash: hash.into() }
     }
 
     /// Get the underlying hash bytes.
@@ -90,10 +88,7 @@ impl FontFingerprint {
 ///
 /// The hash is computed on the first call and cached in an Arc for subsequent
 /// calls. Do NOT call this function repeatedly for the same font without caching.
-pub fn lookup_font_fingerprint(
-    font_program_bytes: &[u8],
-    gid: u16,
-) -> Option<char> {
+pub fn lookup_font_fingerprint(font_program_bytes: &[u8], gid: u16) -> Option<char> {
     // Compute the fingerprint
     let fingerprint = FontFingerprint::compute(font_program_bytes);
 
@@ -101,7 +96,8 @@ pub fn lookup_font_fingerprint(
     let entries = FONT_FINGERPRINTS.get(fingerprint.as_bytes())?;
 
     // Find the glyph ID in the entries
-    let codepoint = entries.iter()
+    let codepoint = entries
+        .iter()
         .find(|(entry_gid, _)| *entry_gid == gid)
         .map(|(_, cp)| *cp)?;
 
@@ -146,7 +142,8 @@ impl CachedFingerprint {
         }
 
         let entries = FONT_FINGERPRINTS.get(self.fingerprint.as_bytes())?;
-        let codepoint = entries.iter()
+        let codepoint = entries
+            .iter()
             .find(|(entry_gid, _)| *entry_gid == gid)
             .map(|(_, cp)| *cp)?;
 
@@ -216,7 +213,10 @@ mod tests {
         let cached1 = CachedFingerprint::from_font_program(data);
         let cached2 = CachedFingerprint::from_font_program(data);
 
-        assert_eq!(cached1.fingerprint().as_bytes(), cached2.fingerprint().as_bytes());
+        assert_eq!(
+            cached1.fingerprint().as_bytes(),
+            cached2.fingerprint().as_bytes()
+        );
         assert_eq!(cached1.is_known(), cached2.is_known());
     }
 

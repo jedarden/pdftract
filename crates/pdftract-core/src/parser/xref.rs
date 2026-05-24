@@ -5,11 +5,11 @@
 //! - Xref resolver for indirect object resolution
 //! - Handling of object streams and circular reference detection
 
+use crate::diagnostics::{DiagCode, Diagnostic as Diag};
+use crate::parser::object::{ObjRef, ObjectParser, PdfDict, PdfObject, PdfStream};
+use crate::parser::stream::{MemorySource, PdfSource};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
-use crate::parser::object::{ObjRef, PdfObject, PdfDict, PdfStream, ObjectParser};
-use crate::parser::stream::{PdfSource, MemorySource};
-use crate::diagnostics::{Diagnostic as Diag, DiagCode};
 
 // Use memchr for SIMD-accelerated byte searching in forward_scan_xref
 use memchr::{memchr, memchr_iter};
@@ -151,7 +151,10 @@ pub fn merge_hybrid(traditional: XrefSection, stream: XrefSection) -> XrefSectio
             // Conflict: both tables have this object
             // Check for Free/InUse conflict and emit diagnostic
             let trad_is_free = matches!(trad_entry, XrefEntry::Free { .. });
-            let stream_is_inuse = matches!(stream_entry, XrefEntry::InUse { .. } | XrefEntry::Compressed { .. });
+            let stream_is_inuse = matches!(
+                stream_entry,
+                XrefEntry::InUse { .. } | XrefEntry::Compressed { .. }
+            );
 
             if trad_is_free && stream_is_inuse {
                 result.diagnostics.push(Diag::with_dynamic(
@@ -247,7 +250,8 @@ impl XrefResolver {
 
     /// Check if a resolution is in progress (for circular reference detection).
     pub fn is_resolving(&self, obj_ref: ObjRef) -> bool {
-        self.resolving.read()
+        self.resolving
+            .read()
             .map(|guard| guard.contains(&obj_ref))
             .unwrap_or(false)
     }
@@ -306,7 +310,9 @@ impl XrefResolver {
         }
 
         // Look up the xref entry
-        let _entry = self.entries.get(&obj_ref.object)
+        let _entry = self
+            .entries
+            .get(&obj_ref.object)
             .ok_or_else(|| ResolveError::NotFound(obj_ref))?;
 
         // Stub: return Null for now
@@ -332,7 +338,11 @@ impl XrefResolver {
     ///
     /// # Returns
     /// The resolved PdfObject, or an error if resolution fails
-    pub fn resolve_with_source(&self, obj_ref: ObjRef, source: &dyn PdfSource) -> ResolveResult<PdfObject> {
+    pub fn resolve_with_source(
+        &self,
+        obj_ref: ObjRef,
+        source: &dyn PdfSource,
+    ) -> ResolveResult<PdfObject> {
         use crate::parser::object::ObjectParser;
 
         // Check for circular reference
@@ -357,7 +367,9 @@ impl XrefResolver {
         }
 
         // Look up the xref entry
-        let entry = self.entries.get(&obj_ref.object)
+        let entry = self
+            .entries
+            .get(&obj_ref.object)
             .ok_or_else(|| ResolveError::NotFound(obj_ref))?;
 
         match entry {
@@ -371,8 +383,9 @@ impl XrefResolver {
 
                 // Read the object from the file
                 // Read up to 4KB starting from the offset
-                let bytes = source.read_at(*offset, 4096)
-                    .map_err(|e| ResolveError::Io(format!("Failed to read object at offset {}: {}", offset, e)))?;
+                let bytes = source.read_at(*offset, 4096).map_err(|e| {
+                    ResolveError::Io(format!("Failed to read object at offset {}: {}", offset, e))
+                })?;
 
                 // Parse the indirect object
                 let mut parser = ObjectParser::new(&bytes);
@@ -381,7 +394,9 @@ impl XrefResolver {
                 // We need to verify that the parsed object number matches
                 if let Some(indirect) = parser.parse_indirect_object() {
                     // Verify the object number and generation match
-                    if indirect.id.object != obj_ref.object || indirect.id.generation != obj_ref.generation {
+                    if indirect.id.object != obj_ref.object
+                        || indirect.id.generation != obj_ref.generation
+                    {
                         self.finish_resolving(obj_ref);
                         return Err(ResolveError::NotFound(obj_ref));
                     }
@@ -601,7 +616,11 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
             let line_bytes = source.read_at(subsection_start, header_line.len() + 2).ok();
             let line_ending_len = if let Some(chunk) = line_bytes {
                 if chunk.get(header_line.len()) == Some(&b'\r') {
-                    if chunk.get(header_line.len() + 1) == Some(&b'\n') { 2 } else { 1 }
+                    if chunk.get(header_line.len() + 1) == Some(&b'\n') {
+                        2
+                    } else {
+                        1
+                    }
                 } else if chunk.get(header_line.len()) == Some(&b'\n') {
                     1
                 } else {
@@ -645,7 +664,11 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
         let line_bytes = source.read_at(subsection_start, header_line.len() + 2).ok();
         let line_ending_len = if let Some(chunk) = line_bytes {
             if chunk.get(header_line.len()) == Some(&b'\r') {
-                if chunk.get(header_line.len() + 1) == Some(&b'\n') { 2 } else { 1 }
+                if chunk.get(header_line.len() + 1) == Some(&b'\n') {
+                    2
+                } else {
+                    1
+                }
             } else if chunk.get(header_line.len()) == Some(&b'\n') {
                 1
             } else {
@@ -689,11 +712,23 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
 
             // Try to parse as 20-byte entry first
             let parsed = if entry_bytes.len() >= 20 {
-                parse_xref_entry(&entry_bytes[..20], obj_start + entries_parsed, entry_start, stride, &mut result.diagnostics)
+                parse_xref_entry(
+                    &entry_bytes[..20],
+                    obj_start + entries_parsed,
+                    entry_start,
+                    stride,
+                    &mut result.diagnostics,
+                )
             } else {
                 // Try 19-byte entry for buggy producers
                 stride = 19;
-                parse_xref_entry(&entry_bytes[..19], obj_start + entries_parsed, entry_start, stride, &mut result.diagnostics)
+                parse_xref_entry(
+                    &entry_bytes[..19],
+                    obj_start + entries_parsed,
+                    entry_start,
+                    stride,
+                    &mut result.diagnostics,
+                )
             };
 
             match parsed {
@@ -804,8 +839,20 @@ fn parse_xref_entry(
 
     let entry_type = parts[2].chars().next();
     match entry_type {
-        Some('n') | Some('N') => Some((obj_nr, XrefEntry::InUse { offset: first_field, gen_nr })),
-        Some('f') | Some('F') => Some((obj_nr, XrefEntry::Free { next_free: first_field as u32, gen_nr })),
+        Some('n') | Some('N') => Some((
+            obj_nr,
+            XrefEntry::InUse {
+                offset: first_field,
+                gen_nr,
+            },
+        )),
+        Some('f') | Some('F') => Some((
+            obj_nr,
+            XrefEntry::Free {
+                next_free: first_field as u32,
+                gen_nr,
+            },
+        )),
         _ => {
             diagnostics.push(Diag::with_dynamic(
                 DiagCode::XrefInvalidEntry,
@@ -870,11 +917,7 @@ fn read_line_at(source: &dyn PdfSource, mut pos: u64) -> Option<String> {
 /// Read a line from the source, updating the position.
 ///
 /// Returns None on EOF or error.
-fn read_line(
-    source: &dyn PdfSource,
-    pos: &mut u64,
-    diagnostics: &mut Vec<Diag>,
-) -> Option<String> {
+fn read_line(source: &dyn PdfSource, pos: &mut u64, diagnostics: &mut Vec<Diag>) -> Option<String> {
     let line = read_line_at(source, *pos)?;
     // Advance position past the line (including line ending)
     // We need to find the actual line ending length
@@ -950,7 +993,8 @@ fn parse_trailer_dict(
                                     depth -= 1;
                                     if depth == 0 {
                                         // Found the end of the dict
-                                        let end_offset = dict_start_offset + chunk_pos + j as u64 + 2;
+                                        let end_offset =
+                                            dict_start_offset + chunk_pos + j as u64 + 2;
                                         dict_end_offset = Some(end_offset);
                                         break;
                                     }
@@ -1149,16 +1193,25 @@ pub fn forward_scan_xref(source: &dyn PdfSource, is_linearized: bool) -> XrefSec
                                 next == b'\n' || next == b'\r' || next == b' ' || next == b'\t'
                             } else {
                                 // At chunk boundary - check next chunk for this rare case
-                                check_trailing_whitespace(source, chunk_offset + abs_space_idx + 3, source_len)
+                                check_trailing_whitespace(
+                                    source,
+                                    chunk_offset + abs_space_idx + 3,
+                                    source_len,
+                                )
                             };
 
                             if has_trailing_ws {
                                 let obj_offset = chunk_offset + abs_space_idx;
-                                if let Some((obj_num, gen_num)) = parse_obj_header_at(source, obj_offset) {
-                                    result.entries.insert(obj_num, XrefEntry::InUse {
-                                        offset: obj_offset,
-                                        gen_nr: gen_num,
-                                    });
+                                if let Some((obj_num, gen_num)) =
+                                    parse_obj_header_at(source, obj_offset)
+                                {
+                                    result.entries.insert(
+                                        obj_num,
+                                        XrefEntry::InUse {
+                                            offset: obj_offset,
+                                            gen_nr: gen_num,
+                                        },
+                                    );
                                     entries_found += 1;
                                 }
                             }
@@ -1236,10 +1289,13 @@ fn forward_scan_memory(data: &[u8], source_len: u64) -> XrefSection {
                 if has_trailing_ws {
                     let obj_offset = abs_space_idx;
                     if let Some((obj_num, gen_num)) = parse_obj_header_at_memory(data, obj_offset) {
-                        result.entries.insert(obj_num, XrefEntry::InUse {
-                            offset: obj_offset,
-                            gen_nr: gen_num,
-                        });
+                        result.entries.insert(
+                            obj_num,
+                            XrefEntry::InUse {
+                                offset: obj_offset,
+                                gen_nr: gen_num,
+                            },
+                        );
                         entries_found += 1;
                     }
                 }
@@ -1412,12 +1468,17 @@ fn forward_scan_trailer(source: &dyn PdfSource) -> Option<PdfDict> {
         let chunk = source.read_at(pos, to_read).ok()?;
 
         // Search for "trailer" in this chunk
-        if let Some(idx) = chunk.windows(TRAILER_KEYWORD.len()).position(|w| w == TRAILER_KEYWORD) {
+        if let Some(idx) = chunk
+            .windows(TRAILER_KEYWORD.len())
+            .position(|w| w == TRAILER_KEYWORD)
+        {
             let trailer_offset = pos + idx as u64;
 
             // Verify it's at a token boundary (preceded by whitespace or start)
             let valid_boundary = if idx > 0 {
-                chunk[idx - 1].is_ascii_whitespace() || chunk[idx - 1] == b'\n' || chunk[idx - 1] == b'\r'
+                chunk[idx - 1].is_ascii_whitespace()
+                    || chunk[idx - 1] == b'\n'
+                    || chunk[idx - 1] == b'\r'
             } else {
                 pos == scan_start // At start of scan area
             };
@@ -1551,9 +1612,7 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
     // Extract /W [type_w obj_w gen_w] (required)
     let field_widths = match stream.dict.get("W") {
         Some(PdfObject::Array(arr)) => {
-            let widths: Vec<i64> = arr.iter()
-                .filter_map(|o| o.as_int())
-                .collect();
+            let widths: Vec<i64> = arr.iter().filter_map(|o| o.as_int()).collect();
             if widths.len() != 3 {
                 result.diagnostics.push(Diag::with_dynamic(
                     DiagCode::XrefInvalidStreamFormat,
@@ -1746,7 +1805,10 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
                     result.diagnostics.push(Diag::with_dynamic(
                         DiagCode::XrefInvalidStreamEntry,
                         stream_obj_offset,
-                        format!("Invalid xref entry type {} for object {}", entry_type, obj_nr),
+                        format!(
+                            "Invalid xref entry type {} for object {}",
+                            entry_type, obj_nr
+                        ),
                     ));
                     XrefEntry::Free {
                         next_free: 0,
@@ -1757,7 +1819,10 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
 
             // Only add in-use and compressed entries to the result
             // Free entries are ignored per pdftract spec
-            if matches!(entry, XrefEntry::InUse { .. } | XrefEntry::Compressed { .. }) {
+            if matches!(
+                entry,
+                XrefEntry::InUse { .. } | XrefEntry::Compressed { .. }
+            ) {
                 result.add_entry(obj_nr, entry);
             }
 
@@ -2109,11 +2174,9 @@ fn load_single_xref(source: &dyn PdfSource, offset: u64) -> XrefSection {
     if is_hybrid_trailer(traditional.trailer.as_ref()) {
         // Extract the /XRefStm offset
         let xrefstm_offset = traditional.trailer.as_ref().and_then(|trailer| {
-            trailer.get("XRefStm").and_then(|obj| {
-                match obj {
-                    PdfObject::Integer(n) if *n >= 0 => Some(*n as u64),
-                    _ => None,
-                }
+            trailer.get("XRefStm").and_then(|obj| match obj {
+                PdfObject::Integer(n) if *n >= 0 => Some(*n as u64),
+                _ => None,
             })
         });
 
@@ -2221,11 +2284,9 @@ pub fn load_xref_with_prev_chain(source: &dyn PdfSource, start_offset: u64) -> X
 
         // Extract /Prev offset from trailer
         let prev_offset = current.trailer.as_ref().and_then(|trailer| {
-            trailer.get("Prev").and_then(|obj| {
-                match obj {
-                    PdfObject::Integer(n) if *n > 0 => Some(*n as u64),
-                    _ => None,
-                }
+            trailer.get("Prev").and_then(|obj| match obj {
+                PdfObject::Integer(n) if *n > 0 => Some(*n as u64),
+                _ => None,
             })
         });
 
@@ -2237,7 +2298,11 @@ pub fn load_xref_with_prev_chain(source: &dyn PdfSource, start_offset: u64) -> X
                     diagnostics.push(Diag::with_dynamic(
                         DiagCode::StructInvalidPrevOffset,
                         offset,
-                        format!("/Prev offset {} exceeds file size {}; ignoring /Prev key", prev, file_size).into(),
+                        format!(
+                            "/Prev offset {} exceeds file size {}; ignoring /Prev key",
+                            prev, file_size
+                        )
+                        .into(),
                     ));
                     // Remove the invalid /Prev key from trailer
                     if let Some(ref mut trailer) = current.trailer {
@@ -2322,14 +2387,23 @@ mod tests {
     #[test]
     fn test_add_entry() {
         let mut resolver = XrefResolver::new();
-        resolver.add_entry(1, XrefEntry::InUse { offset: 100, gen_nr: 0 });
+        resolver.add_entry(
+            1,
+            XrefEntry::InUse {
+                offset: 100,
+                gen_nr: 0,
+            },
+        );
         assert_eq!(resolver.len(), 1);
     }
 
     #[test]
     fn test_get_entry() {
         let mut resolver = XrefResolver::new();
-        let entry = XrefEntry::InUse { offset: 100, gen_nr: 0 };
+        let entry = XrefEntry::InUse {
+            offset: 100,
+            gen_nr: 0,
+        };
         resolver.add_entry(1, entry.clone());
         assert_eq!(resolver.get_entry(1), Some(&entry));
     }
@@ -2385,7 +2459,13 @@ mod tests {
     #[test]
     fn test_xref_section_add_entry() {
         let mut section = XrefSection::new();
-        section.add_entry(1, XrefEntry::InUse { offset: 100, gen_nr: 0 });
+        section.add_entry(
+            1,
+            XrefEntry::InUse {
+                offset: 100,
+                gen_nr: 0,
+            },
+        );
         assert_eq!(section.len(), 1);
         assert!(section.entries.contains_key(&1));
     }
@@ -2400,41 +2480,88 @@ mod tests {
 
     #[test]
     fn test_xref_entry_in_use() {
-        let entry = XrefEntry::InUse { offset: 1000, gen_nr: 5 };
-        assert!(matches!(entry, XrefEntry::InUse { offset: 1000, gen_nr: 5 }));
+        let entry = XrefEntry::InUse {
+            offset: 1000,
+            gen_nr: 5,
+        };
+        assert!(matches!(
+            entry,
+            XrefEntry::InUse {
+                offset: 1000,
+                gen_nr: 5
+            }
+        ));
     }
 
     #[test]
     fn test_xref_entry_free() {
-        let entry = XrefEntry::Free { next_free: 42, gen_nr: 1 };
-        assert!(matches!(entry, XrefEntry::Free { next_free: 42, gen_nr: 1 }));
+        let entry = XrefEntry::Free {
+            next_free: 42,
+            gen_nr: 1,
+        };
+        assert!(matches!(
+            entry,
+            XrefEntry::Free {
+                next_free: 42,
+                gen_nr: 1
+            }
+        ));
     }
 
     #[test]
     fn test_xref_entry_compressed() {
-        let entry = XrefEntry::Compressed { obj_stm_nr: 10, index: 5 };
-        assert!(matches!(entry, XrefEntry::Compressed { obj_stm_nr: 10, index: 5 }));
+        let entry = XrefEntry::Compressed {
+            obj_stm_nr: 10,
+            index: 5,
+        };
+        assert!(matches!(
+            entry,
+            XrefEntry::Compressed {
+                obj_stm_nr: 10,
+                index: 5
+            }
+        ));
     }
 
     #[test]
     fn test_xref_resolver_from_section() {
         let mut section = XrefSection::new();
-        section.add_entry(1, XrefEntry::InUse { offset: 100, gen_nr: 0 });
-        section.add_entry(2, XrefEntry::InUse { offset: 200, gen_nr: 0 });
+        section.add_entry(
+            1,
+            XrefEntry::InUse {
+                offset: 100,
+                gen_nr: 0,
+            },
+        );
+        section.add_entry(
+            2,
+            XrefEntry::InUse {
+                offset: 200,
+                gen_nr: 0,
+            },
+        );
 
         let resolver = XrefResolver::from_section(section);
         assert_eq!(resolver.len(), 2);
-        assert_eq!(resolver.get_entry(1), Some(&XrefEntry::InUse { offset: 100, gen_nr: 0 }));
-        assert_eq!(resolver.get_entry(2), Some(&XrefEntry::InUse { offset: 200, gen_nr: 0 }));
+        assert_eq!(
+            resolver.get_entry(1),
+            Some(&XrefEntry::InUse {
+                offset: 100,
+                gen_nr: 0
+            })
+        );
+        assert_eq!(
+            resolver.get_entry(2),
+            Some(&XrefEntry::InUse {
+                offset: 200,
+                gen_nr: 0
+            })
+        );
     }
 
     #[test]
     fn test_xref_diagnostic_static() {
-        let diag = Diag::with_static(
-            DiagCode::XrefInvalidHeader,
-            100,
-            "test message",
-        );
+        let diag = Diag::with_static(DiagCode::XrefInvalidHeader, 100, "test message");
         assert_eq!(diag.byte_offset, Some(100));
         assert_eq!(diag.message.as_ref(), "test message");
         assert!(matches!(diag.code, DiagCode::XrefInvalidHeader));
@@ -2472,12 +2599,48 @@ trailer\n<< /Size 6 >>\n";
         assert_eq!(result.len(), 6);
 
         // Check specific entries
-        assert_eq!(result.entries.get(&0), Some(&XrefEntry::Free { next_free: 0, gen_nr: 65535 }));
-        assert_eq!(result.entries.get(&1), Some(&XrefEntry::InUse { offset: 17, gen_nr: 0 }));
-        assert_eq!(result.entries.get(&2), Some(&XrefEntry::InUse { offset: 81, gen_nr: 0 }));
-        assert_eq!(result.entries.get(&3), Some(&XrefEntry::Free { next_free: 0, gen_nr: 7 }));
-        assert_eq!(result.entries.get(&4), Some(&XrefEntry::InUse { offset: 331, gen_nr: 0 }));
-        assert_eq!(result.entries.get(&5), Some(&XrefEntry::InUse { offset: 409, gen_nr: 0 }));
+        assert_eq!(
+            result.entries.get(&0),
+            Some(&XrefEntry::Free {
+                next_free: 0,
+                gen_nr: 65535
+            })
+        );
+        assert_eq!(
+            result.entries.get(&1),
+            Some(&XrefEntry::InUse {
+                offset: 17,
+                gen_nr: 0
+            })
+        );
+        assert_eq!(
+            result.entries.get(&2),
+            Some(&XrefEntry::InUse {
+                offset: 81,
+                gen_nr: 0
+            })
+        );
+        assert_eq!(
+            result.entries.get(&3),
+            Some(&XrefEntry::Free {
+                next_free: 0,
+                gen_nr: 7
+            })
+        );
+        assert_eq!(
+            result.entries.get(&4),
+            Some(&XrefEntry::InUse {
+                offset: 331,
+                gen_nr: 0
+            })
+        );
+        assert_eq!(
+            result.entries.get(&5),
+            Some(&XrefEntry::InUse {
+                offset: 409,
+                gen_nr: 0
+            })
+        );
 
         // Trailer should be present (empty dict for now)
         assert!(result.trailer.is_some());
@@ -2498,9 +2661,27 @@ trailer\r\n<< /Size 3 >>\r\n";
         // Should have parsed 3 entries (all objects 0-2, including free entry)
         // Free entries are tracked for /Prev chain merge semantics
         assert_eq!(result.len(), 3);
-        assert_eq!(result.entries.get(&0), Some(&XrefEntry::Free { next_free: 0, gen_nr: 65535 }));
-        assert_eq!(result.entries.get(&1), Some(&XrefEntry::InUse { offset: 15, gen_nr: 0 }));
-        assert_eq!(result.entries.get(&2), Some(&XrefEntry::InUse { offset: 78, gen_nr: 0 }));
+        assert_eq!(
+            result.entries.get(&0),
+            Some(&XrefEntry::Free {
+                next_free: 0,
+                gen_nr: 65535
+            })
+        );
+        assert_eq!(
+            result.entries.get(&1),
+            Some(&XrefEntry::InUse {
+                offset: 15,
+                gen_nr: 0
+            })
+        );
+        assert_eq!(
+            result.entries.get(&2),
+            Some(&XrefEntry::InUse {
+                offset: 78,
+                gen_nr: 0
+            })
+        );
     }
 
     #[test]
@@ -2518,10 +2699,28 @@ trailer\n<< /Size 3 >>\n";
         // Should have parsed 3 entries (all objects 0-2, including free entry)
         // Free entries are tracked for /Prev chain merge semantics
         assert_eq!(result.len(), 3);
-        assert_eq!(result.entries.get(&0), Some(&XrefEntry::Free { next_free: 0, gen_nr: 65535 }));
+        assert_eq!(
+            result.entries.get(&0),
+            Some(&XrefEntry::Free {
+                next_free: 0,
+                gen_nr: 65535
+            })
+        );
         assert_eq!(result.len(), 2);
-        assert_eq!(result.entries.get(&1), Some(&XrefEntry::InUse { offset: 15, gen_nr: 0 }));
-        assert_eq!(result.entries.get(&2), Some(&XrefEntry::InUse { offset: 78, gen_nr: 0 }));
+        assert_eq!(
+            result.entries.get(&1),
+            Some(&XrefEntry::InUse {
+                offset: 15,
+                gen_nr: 0
+            })
+        );
+        assert_eq!(
+            result.entries.get(&2),
+            Some(&XrefEntry::InUse {
+                offset: 78,
+                gen_nr: 0
+            })
+        );
     }
 
     #[test]
@@ -2547,8 +2746,20 @@ trailer\n<< /Size 102 >>\n";
         assert!(result.entries.contains_key(&101));
 
         // Check offset for object 100
-        assert_eq!(result.entries.get(&100), Some(&XrefEntry::InUse { offset: 200, gen_nr: 0 }));
-        assert_eq!(result.entries.get(&101), Some(&XrefEntry::InUse { offset: 300, gen_nr: 0 }));
+        assert_eq!(
+            result.entries.get(&100),
+            Some(&XrefEntry::InUse {
+                offset: 200,
+                gen_nr: 0
+            })
+        );
+        assert_eq!(
+            result.entries.get(&101),
+            Some(&XrefEntry::InUse {
+                offset: 300,
+                gen_nr: 0
+            })
+        );
     }
 
     #[test]
@@ -2566,11 +2777,20 @@ trailer\n<< /Size 4 >>\n";
 
         // Should have parsed at least the valid entry
         assert!(result.len() >= 1);
-        assert_eq!(result.entries.get(&1), Some(&XrefEntry::InUse { offset: 15, gen_nr: 0 }));
+        assert_eq!(
+            result.entries.get(&1),
+            Some(&XrefEntry::InUse {
+                offset: 15,
+                gen_nr: 0
+            })
+        );
 
         // Should have emitted a diagnostic for the bad entry
         assert!(!result.diagnostics.is_empty());
-        assert!(result.diagnostics.iter().any(|d| d.code == DiagCode::XrefInvalidEntry));
+        assert!(result
+            .diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::XrefInvalidEntry));
     }
 
     #[test]
@@ -2586,7 +2806,10 @@ trailer\n<< /Size 3 >>\n";
         let result = parse_traditional_xref(&source, 0);
 
         // Should emit diagnostic for object 0 not being free
-        assert!(result.diagnostics.iter().any(|d| d.code == DiagCode::XrefObjectZeroNotFree));
+        assert!(result
+            .diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::XrefObjectZeroNotFree));
     }
 
     #[test]
@@ -2605,7 +2828,10 @@ trailer\n<< /Size 3 >>\n";
         assert!(result.trailer.is_none());
 
         // Should emit diagnostic about missing trailer
-        assert!(result.diagnostics.iter().any(|d| d.code == DiagCode::XrefTrailerNotFound));
+        assert!(result
+            .diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::XrefTrailerNotFound));
     }
 
     #[test]
@@ -2642,7 +2868,16 @@ trailer\n<< /Size 3 >>\n";
         let diagnostics = &mut Vec::new();
 
         let result = parse_xref_entry(entry, 1, 100, 20, diagnostics);
-        assert_eq!(result, Some((1, XrefEntry::InUse { offset: 15, gen_nr: 0 })));
+        assert_eq!(
+            result,
+            Some((
+                1,
+                XrefEntry::InUse {
+                    offset: 15,
+                    gen_nr: 0
+                }
+            ))
+        );
         assert!(diagnostics.is_empty());
     }
 
@@ -2652,7 +2887,16 @@ trailer\n<< /Size 3 >>\n";
         let diagnostics = &mut Vec::new();
 
         let result = parse_xref_entry(entry, 0, 100, 20, diagnostics);
-        assert_eq!(result, Some((0, XrefEntry::Free { next_free: 0, gen_nr: 65535 })));
+        assert_eq!(
+            result,
+            Some((
+                0,
+                XrefEntry::Free {
+                    next_free: 0,
+                    gen_nr: 65535
+                }
+            ))
+        );
         assert!(diagnostics.is_empty());
     }
 
@@ -2784,7 +3028,10 @@ trailer\n<< /Size 3 >>\n";
         assert!(result.entries.contains_key(&3));
 
         // Check for XREF_REPAIRED diagnostic
-        assert!(result.diagnostics.iter().any(|d| d.code == DiagCode::XrefRepaired));
+        assert!(result
+            .diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::XrefRepaired));
     }
 
     #[test]
@@ -2800,9 +3047,27 @@ trailer\n<< /Size 3 >>\n";
         assert_eq!(result.len(), 3);
 
         // Check generation numbers
-        assert_eq!(result.entries.get(&1), Some(&XrefEntry::InUse { offset: 0, gen_nr: 0 }));
-        assert_eq!(result.entries.get(&2), Some(&XrefEntry::InUse { offset: 35, gen_nr: 5 }));
-        assert_eq!(result.entries.get(&3), Some(&XrefEntry::InUse { offset: 70, gen_nr: 65535 }));
+        assert_eq!(
+            result.entries.get(&1),
+            Some(&XrefEntry::InUse {
+                offset: 0,
+                gen_nr: 0
+            })
+        );
+        assert_eq!(
+            result.entries.get(&2),
+            Some(&XrefEntry::InUse {
+                offset: 35,
+                gen_nr: 5
+            })
+        );
+        assert_eq!(
+            result.entries.get(&3),
+            Some(&XrefEntry::InUse {
+                offset: 70,
+                gen_nr: 65535
+            })
+        );
     }
 
     #[test]
@@ -2817,7 +3082,10 @@ trailer\n<< /Size 3 >>\n";
         assert_eq!(result.len(), 0);
 
         // Should have LINEARIZED_NO_FORWARD_SCAN diagnostic
-        assert!(result.diagnostics.iter().any(|d| d.code == DiagCode::XrefLinearizedNoForwardScan));
+        assert!(result
+            .diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::XrefLinearizedNoForwardScan));
     }
 
     #[test]
@@ -3020,23 +3288,18 @@ trailer\n<< /Size 3 >>\n";
         // Use the helper function to build the xref stream fixture
         let raw_entries: Vec<u8> = vec![
             // Obj 0: type=0 (free), next_free=0, gen=65535
-            0, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF,
-            // Obj 1: type=1, offset=1000, gen=0
-            1, 0x00, 0x00, 0x03, 0xE8, 0x00, 0x00,
-            // Obj 2: type=1, offset=2000, gen=0
-            1, 0x00, 0x00, 0x07, 0xD0, 0x00, 0x00,
-            // Obj 3: type=1, offset=3000, gen=0
-            1, 0x00, 0x00, 0x0B, 0xB8, 0x00, 0x00,
-            // Obj 4: type=1, offset=4000, gen=0
-            1, 0x00, 0x00, 0x0F, 0xA0, 0x00, 0x00,
-            // Obj 5: type=1, offset=5000, gen=0
+            0, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, // Obj 1: type=1, offset=1000, gen=0
+            1, 0x00, 0x00, 0x03, 0xE8, 0x00, 0x00, // Obj 2: type=1, offset=2000, gen=0
+            1, 0x00, 0x00, 0x07, 0xD0, 0x00, 0x00, // Obj 3: type=1, offset=3000, gen=0
+            1, 0x00, 0x00, 0x0B, 0xB8, 0x00, 0x00, // Obj 4: type=1, offset=4000, gen=0
+            1, 0x00, 0x00, 0x0F, 0xA0, 0x00, 0x00, // Obj 5: type=1, offset=5000, gen=0
             1, 0x00, 0x00, 0x13, 0x88, 0x00, 0x00,
         ];
 
         let xref_stream_data = build_xref_stream_fixture(
-            &[1, 4, 2],                // /W
-            6,                          // /Size
-            Some(&[0, 6]),              // /Index
+            &[1, 4, 2],    // /W
+            6,             // /Size
+            Some(&[0, 6]), // /Index
             &[
                 &raw_entries[0..7],
                 &raw_entries[7..14],
@@ -3060,11 +3323,41 @@ trailer\n<< /Size 3 >>\n";
         assert_eq!(result.len(), 5);
 
         // Check specific entries
-        assert_eq!(result.entries.get(&1), Some(&XrefEntry::InUse { offset: 1000, gen_nr: 0 }));
-        assert_eq!(result.entries.get(&2), Some(&XrefEntry::InUse { offset: 2000, gen_nr: 0 }));
-        assert_eq!(result.entries.get(&3), Some(&XrefEntry::InUse { offset: 3000, gen_nr: 0 }));
-        assert_eq!(result.entries.get(&4), Some(&XrefEntry::InUse { offset: 4000, gen_nr: 0 }));
-        assert_eq!(result.entries.get(&5), Some(&XrefEntry::InUse { offset: 5000, gen_nr: 0 }));
+        assert_eq!(
+            result.entries.get(&1),
+            Some(&XrefEntry::InUse {
+                offset: 1000,
+                gen_nr: 0
+            })
+        );
+        assert_eq!(
+            result.entries.get(&2),
+            Some(&XrefEntry::InUse {
+                offset: 2000,
+                gen_nr: 0
+            })
+        );
+        assert_eq!(
+            result.entries.get(&3),
+            Some(&XrefEntry::InUse {
+                offset: 3000,
+                gen_nr: 0
+            })
+        );
+        assert_eq!(
+            result.entries.get(&4),
+            Some(&XrefEntry::InUse {
+                offset: 4000,
+                gen_nr: 0
+            })
+        );
+        assert_eq!(
+            result.entries.get(&5),
+            Some(&XrefEntry::InUse {
+                offset: 5000,
+                gen_nr: 0
+            })
+        );
 
         // Trailer should be present
         assert!(result.trailer.is_some());
@@ -3077,9 +3370,9 @@ trailer\n<< /Size 3 >>\n";
         // Second subsection: objects 100, 101
 
         let xref_stream_data = build_xref_stream_fixture(
-            &[1, 4, 2],                // /W
-            102,                        // /Size (highest obj + 1)
-            Some(&[0, 3, 100, 2]),      // /Index
+            &[1, 4, 2],            // /W
+            102,                   // /Size (highest obj + 1)
+            Some(&[0, 3, 100, 2]), // /Index
             &[
                 // First subsection (0-2)
                 &[0, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF], // Obj 0: free
@@ -3102,8 +3395,20 @@ trailer\n<< /Size 3 >>\n";
         assert!(result.entries.contains_key(&101));
 
         // Check offsets
-        assert_eq!(result.entries.get(&1), Some(&XrefEntry::InUse { offset: 1000, gen_nr: 0 }));
-        assert_eq!(result.entries.get(&100), Some(&XrefEntry::InUse { offset: 65536, gen_nr: 0 }));
+        assert_eq!(
+            result.entries.get(&1),
+            Some(&XrefEntry::InUse {
+                offset: 1000,
+                gen_nr: 0
+            })
+        );
+        assert_eq!(
+            result.entries.get(&100),
+            Some(&XrefEntry::InUse {
+                offset: 65536,
+                gen_nr: 0
+            })
+        );
     }
 
     #[test]
@@ -3112,9 +3417,9 @@ trailer\n<< /Size 3 >>\n";
         // Entry format: type(1) + offset(4) + generation(0) = 5 bytes per entry
 
         let xref_stream_data = build_xref_stream_fixture(
-            &[1, 4, 0],                // /W (gen width = 0)
-            3,                          // /Size
-            None,                       // /Index (default [0 3])
+            &[1, 4, 0], // /W (gen width = 0)
+            3,          // /Size
+            None,       // /Index (default [0 3])
             &[
                 &[0, 0x00, 0x00, 0x00, 0x00], // Obj 0: type=0, offset=0
                 &[1, 0x00, 0x00, 0x03, 0xE8], // Obj 1: type=1, offset=1000
@@ -3129,8 +3434,20 @@ trailer\n<< /Size 3 >>\n";
         assert_eq!(result.len(), 2);
 
         // Check entries - generation should be 0 (default)
-        assert_eq!(result.entries.get(&1), Some(&XrefEntry::InUse { offset: 1000, gen_nr: 0 }));
-        assert_eq!(result.entries.get(&2), Some(&XrefEntry::InUse { offset: 2000, gen_nr: 0 }));
+        assert_eq!(
+            result.entries.get(&1),
+            Some(&XrefEntry::InUse {
+                offset: 1000,
+                gen_nr: 0
+            })
+        );
+        assert_eq!(
+            result.entries.get(&2),
+            Some(&XrefEntry::InUse {
+                offset: 2000,
+                gen_nr: 0
+            })
+        );
     }
 
     #[test]
@@ -3140,9 +3457,9 @@ trailer\n<< /Size 3 >>\n";
         // Type 2: obj_field = ObjStm object number, gen_field = index in ObjStm
 
         let xref_stream_data = build_xref_stream_fixture(
-            &[1, 4, 2],                // /W
-            4,                          // /Size
-            None,                       // /Index (default [0 4])
+            &[1, 4, 2], // /W
+            4,          // /Size
+            None,       // /Index (default [0 4])
             &[
                 &[0, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF], // Obj 0: free
                 &[1, 0x00, 0x00, 0x03, 0xE8, 0x00, 0x00], // Obj 1: type=1, offset=1000
@@ -3158,11 +3475,29 @@ trailer\n<< /Size 3 >>\n";
         assert_eq!(result.len(), 3);
 
         // Check type-1 entry
-        assert_eq!(result.entries.get(&1), Some(&XrefEntry::InUse { offset: 1000, gen_nr: 0 }));
+        assert_eq!(
+            result.entries.get(&1),
+            Some(&XrefEntry::InUse {
+                offset: 1000,
+                gen_nr: 0
+            })
+        );
 
         // Check type-2 entries
-        assert_eq!(result.entries.get(&2), Some(&XrefEntry::Compressed { obj_stm_nr: 10, index: 5 }));
-        assert_eq!(result.entries.get(&3), Some(&XrefEntry::Compressed { obj_stm_nr: 11, index: 10 }));
+        assert_eq!(
+            result.entries.get(&2),
+            Some(&XrefEntry::Compressed {
+                obj_stm_nr: 10,
+                index: 5
+            })
+        );
+        assert_eq!(
+            result.entries.get(&3),
+            Some(&XrefEntry::Compressed {
+                obj_stm_nr: 11,
+                index: 10
+            })
+        );
     }
 
     #[test]
@@ -3172,8 +3507,8 @@ trailer\n<< /Size 3 >>\n";
 
         // Build the xref stream with /Predictor using the helper
         let xref_stream_data = build_xref_stream_fixture_with_predictor(
-            &[1, 4, 2],                // /W
-            3,                          // /Size
+            &[1, 4, 2], // /W
+            3,          // /Size
             &[
                 // Obj 0: type=0 (free)
                 &[0, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF],
@@ -3199,9 +3534,9 @@ trailer\n<< /Size 3 >>\n";
         // Should emit diagnostic and treat as free
 
         let xref_stream_data = build_xref_stream_fixture(
-            &[1, 4, 2],                // /W
-            3,                          // /Size
-            None,                       // /Index
+            &[1, 4, 2], // /W
+            3,          // /Size
+            None,       // /Index
             &[
                 &[0, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF], // Obj 0: type=0 (free)
                 &[5, 0x00, 0x00, 0x03, 0xE8, 0x00, 0x00], // Obj 1: type=5 (INVALID!)
@@ -3214,25 +3549,35 @@ trailer\n<< /Size 3 >>\n";
 
         // Should have parsed 1 in-use entry (object 2)
         assert_eq!(result.len(), 1);
-        assert_eq!(result.entries.get(&2), Some(&XrefEntry::InUse { offset: 2000, gen_nr: 0 }));
+        assert_eq!(
+            result.entries.get(&2),
+            Some(&XrefEntry::InUse {
+                offset: 2000,
+                gen_nr: 0
+            })
+        );
 
         // Should have emitted a diagnostic for invalid type
-        assert!(result.diagnostics.iter().any(|d| d.code == DiagCode::XrefInvalidStreamEntry));
+        assert!(result
+            .diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::XrefInvalidStreamEntry));
     }
 
     #[test]
     fn test_parse_xref_stream_missing_size() {
         // Test handling of missing /Size
 
-        let xref_stream_data = build_xref_stream_fixture_missing_size(
-            &[1, 4, 2],
-        );
+        let xref_stream_data = build_xref_stream_fixture_missing_size(&[1, 4, 2]);
 
         let source = MemorySource::new(xref_stream_data);
         let result = parse_xref_stream(&source, 0);
 
         // Should have emitted diagnostic about missing /Size
-        assert!(result.diagnostics.iter().any(|d| d.code == DiagCode::XrefInvalidStreamFormat));
+        assert!(result
+            .diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::XrefInvalidStreamFormat));
     }
 
     #[test]
@@ -3240,9 +3585,9 @@ trailer\n<< /Size 3 >>\n";
         // Test handling of invalid /W array (wrong length)
 
         let xref_stream_data = build_xref_stream_fixture(
-            &[1, 4],                    // /W (only 2 elements - invalid!)
-            3,                          // /Size
-            None,                       // /Index
+            &[1, 4], // /W (only 2 elements - invalid!)
+            3,       // /Size
+            None,    // /Index
             &[
                 &[0, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF],
                 &[1, 0x00, 0x00, 0x03, 0xE8, 0x00, 0x00],
@@ -3254,7 +3599,10 @@ trailer\n<< /Size 3 >>\n";
         let result = parse_xref_stream(&source, 0);
 
         // Should have emitted diagnostic about invalid /W
-        assert!(result.diagnostics.iter().any(|d| d.code == DiagCode::XrefInvalidStreamFormat));
+        assert!(result
+            .diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::XrefInvalidStreamFormat));
     }
 
     #[test]
@@ -3285,8 +3633,7 @@ trailer\n<< /Size 3 >>\n";
     fn test_debug_xref_stream_parsing() {
         // Debug test to see what's being parsed
         let raw_entries: Vec<u8> = vec![
-            0, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF,
-            1, 0x00, 0x00, 0x03, 0xE8, 0x00, 0x00,
+            0, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 1, 0x00, 0x00, 0x03, 0xE8, 0x00, 0x00,
         ];
 
         let xref_stream_data = build_xref_stream_fixture(
@@ -3312,8 +3659,13 @@ trailer\n<< /Size 3 >>\n";
             if let PdfObject::Stream(stream) = &ind.obj {
                 use crate::parser::stream::{decode_stream, ExtractionOptions};
                 let source = MemorySource::new(xref_stream_data);
-                let decoded = decode_stream(&stream, &source, &ExtractionOptions::default(), &mut 0);
-                eprintln!("Decoded stream data ({} bytes): {:?}", decoded.len(), decoded);
+                let decoded =
+                    decode_stream(&stream, &source, &ExtractionOptions::default(), &mut 0);
+                eprintln!(
+                    "Decoded stream data ({} bytes): {:?}",
+                    decoded.len(),
+                    decoded
+                );
             }
         }
     }
@@ -3372,7 +3724,9 @@ trailer\n<< /Size 3 >>\n";
         // /W
         obj_bytes.push_str("/W [");
         for (i, w) in field_widths.iter().enumerate() {
-            if i > 0 { obj_bytes.push(' '); }
+            if i > 0 {
+                obj_bytes.push(' ');
+            }
             obj_bytes.push_str(&w.to_string());
         }
         obj_bytes.push_str("] ");
@@ -3381,7 +3735,9 @@ trailer\n<< /Size 3 >>\n";
         if let Some(idx) = index {
             obj_bytes.push_str("/Index [");
             for (i, v) in idx.iter().enumerate() {
-                if i > 0 { obj_bytes.push(' '); }
+                if i > 0 {
+                    obj_bytes.push(' ');
+                }
                 obj_bytes.push_str(&v.to_string());
             }
             obj_bytes.push_str("] ");
@@ -3428,7 +3784,9 @@ trailer\n<< /Size 3 >>\n";
         // /W (but NO /Size!)
         obj_bytes.push_str("/W [");
         for (i, w) in field_widths.iter().enumerate() {
-            if i > 0 { obj_bytes.push(' '); }
+            if i > 0 {
+                obj_bytes.push(' ');
+            }
             obj_bytes.push_str(&w.to_string());
         }
         obj_bytes.push_str("] ");
@@ -3479,7 +3837,9 @@ trailer\n<< /Size 3 >>\n";
         // /W
         obj_bytes.push_str("/W [");
         for (i, w) in field_widths.iter().enumerate() {
-            if i > 0 { obj_bytes.push(' '); }
+            if i > 0 {
+                obj_bytes.push(' ');
+            }
             obj_bytes.push_str(&w.to_string());
         }
         obj_bytes.push_str("] ");
@@ -3508,23 +3868,59 @@ trailer\n<< /Size 3 >>\n";
     fn test_merge_hybrid_traditional_priority() {
         // Critical test: traditional entries override stream entries for same object numbers
         let mut traditional = XrefSection::new();
-        traditional.add_entry(1, XrefEntry::InUse { offset: 1000, gen_nr: 0 });
-        traditional.add_entry(2, XrefEntry::InUse { offset: 2000, gen_nr: 0 });
+        traditional.add_entry(
+            1,
+            XrefEntry::InUse {
+                offset: 1000,
+                gen_nr: 0,
+            },
+        );
+        traditional.add_entry(
+            2,
+            XrefEntry::InUse {
+                offset: 2000,
+                gen_nr: 0,
+            },
+        );
 
         let mut stream = XrefSection::new();
         // Stream has different offset for object 1 (should be ignored)
-        stream.add_entry(1, XrefEntry::InUse { offset: 9999, gen_nr: 0 });
+        stream.add_entry(
+            1,
+            XrefEntry::InUse {
+                offset: 9999,
+                gen_nr: 0,
+            },
+        );
         // Stream has object 3 (gap fill - should be added)
-        stream.add_entry(3, XrefEntry::Compressed { obj_stm_nr: 10, index: 5 });
+        stream.add_entry(
+            3,
+            XrefEntry::Compressed {
+                obj_stm_nr: 10,
+                index: 5,
+            },
+        );
 
         let merged = merge_hybrid(traditional, stream);
 
         assert!(merged.is_hybrid);
         assert_eq!(merged.len(), 3);
         // Object 1 should use traditional offset
-        assert_eq!(merged.entries.get(&1), Some(&XrefEntry::InUse { offset: 1000, gen_nr: 0 }));
+        assert_eq!(
+            merged.entries.get(&1),
+            Some(&XrefEntry::InUse {
+                offset: 1000,
+                gen_nr: 0
+            })
+        );
         // Object 3 should be added from stream
-        assert_eq!(merged.entries.get(&3), Some(&XrefEntry::Compressed { obj_stm_nr: 10, index: 5 }));
+        assert_eq!(
+            merged.entries.get(&3),
+            Some(&XrefEntry::Compressed {
+                obj_stm_nr: 10,
+                index: 5
+            })
+        );
     }
 
     #[test]
@@ -3532,32 +3928,83 @@ trailer\n<< /Size 3 >>\n";
         // Free/InUse conflict: traditional Free + stream InUse → Free (traditional wins)
 
         let mut traditional = XrefSection::new();
-        traditional.add_entry(1, XrefEntry::Free { next_free: 0, gen_nr: 65535 });
+        traditional.add_entry(
+            1,
+            XrefEntry::Free {
+                next_free: 0,
+                gen_nr: 65535,
+            },
+        );
 
         let mut stream = XrefSection::new();
-        stream.add_entry(1, XrefEntry::InUse { offset: 5000, gen_nr: 0 });
+        stream.add_entry(
+            1,
+            XrefEntry::InUse {
+                offset: 5000,
+                gen_nr: 0,
+            },
+        );
 
         let merged = merge_hybrid(traditional, stream);
 
         assert!(merged.is_hybrid);
         // Should have emitted STRUCT_HYBRID_CONFLICT diagnostic
-        assert!(merged.diagnostics.iter().any(|d| matches!(d.code, DiagCode::StructHybridConflict)));
+        assert!(merged
+            .diagnostics
+            .iter()
+            .any(|d| matches!(d.code, DiagCode::StructHybridConflict)));
         // Traditional Free wins
-        assert_eq!(merged.entries.get(&1), Some(&XrefEntry::Free { next_free: 0, gen_nr: 65535 }));
+        assert_eq!(
+            merged.entries.get(&1),
+            Some(&XrefEntry::Free {
+                next_free: 0,
+                gen_nr: 65535
+            })
+        );
     }
 
     #[test]
     fn test_merge_hybrid_gap_fill() {
         // Stream-only type-2 entries fill gaps not covered by traditional table
         let mut traditional = XrefSection::new();
-        traditional.add_entry(1, XrefEntry::InUse { offset: 1000, gen_nr: 0 });
-        traditional.add_entry(5, XrefEntry::InUse { offset: 5000, gen_nr: 0 });
+        traditional.add_entry(
+            1,
+            XrefEntry::InUse {
+                offset: 1000,
+                gen_nr: 0,
+            },
+        );
+        traditional.add_entry(
+            5,
+            XrefEntry::InUse {
+                offset: 5000,
+                gen_nr: 0,
+            },
+        );
 
         let mut stream = XrefSection::new();
         // Objects 2, 3, 4 are only in stream (gap fill)
-        stream.add_entry(2, XrefEntry::Compressed { obj_stm_nr: 10, index: 0 });
-        stream.add_entry(3, XrefEntry::Compressed { obj_stm_nr: 10, index: 1 });
-        stream.add_entry(4, XrefEntry::Compressed { obj_stm_nr: 10, index: 2 });
+        stream.add_entry(
+            2,
+            XrefEntry::Compressed {
+                obj_stm_nr: 10,
+                index: 0,
+            },
+        );
+        stream.add_entry(
+            3,
+            XrefEntry::Compressed {
+                obj_stm_nr: 10,
+                index: 1,
+            },
+        );
+        stream.add_entry(
+            4,
+            XrefEntry::Compressed {
+                obj_stm_nr: 10,
+                index: 2,
+            },
+        );
 
         let merged = merge_hybrid(traditional, stream);
 
@@ -3567,7 +4014,13 @@ trailer\n<< /Size 3 >>\n";
         assert!(merged.entries.contains_key(&2));
         assert!(merged.entries.contains_key(&3));
         assert!(merged.entries.contains_key(&4));
-        assert_eq!(merged.entries.get(&2), Some(&XrefEntry::Compressed { obj_stm_nr: 10, index: 0 }));
+        assert_eq!(
+            merged.entries.get(&2),
+            Some(&XrefEntry::Compressed {
+                obj_stm_nr: 10,
+                index: 0
+            })
+        );
     }
 
     #[test]
@@ -3632,8 +4085,20 @@ trailer\n<< /Size 3 >>\n";
         let traditional = XrefSection::new();
 
         let mut stream = XrefSection::new();
-        stream.add_entry(1, XrefEntry::Compressed { obj_stm_nr: 10, index: 0 });
-        stream.add_entry(2, XrefEntry::Compressed { obj_stm_nr: 10, index: 1 });
+        stream.add_entry(
+            1,
+            XrefEntry::Compressed {
+                obj_stm_nr: 10,
+                index: 0,
+            },
+        );
+        stream.add_entry(
+            2,
+            XrefEntry::Compressed {
+                obj_stm_nr: 10,
+                index: 1,
+            },
+        );
 
         let merged = merge_hybrid(traditional, stream);
 
@@ -3647,7 +4112,13 @@ trailer\n<< /Size 3 >>\n";
     fn test_merge_hybrid_traditional_only() {
         // Edge case: stream is empty, traditional has entries
         let mut traditional = XrefSection::new();
-        traditional.add_entry(1, XrefEntry::InUse { offset: 1000, gen_nr: 0 });
+        traditional.add_entry(
+            1,
+            XrefEntry::InUse {
+                offset: 1000,
+                gen_nr: 0,
+            },
+        );
 
         let stream = XrefSection::new();
 
@@ -3655,7 +4126,13 @@ trailer\n<< /Size 3 >>\n";
 
         assert!(merged.is_hybrid);
         assert_eq!(merged.len(), 1);
-        assert_eq!(merged.entries.get(&1), Some(&XrefEntry::InUse { offset: 1000, gen_nr: 0 }));
+        assert_eq!(
+            merged.entries.get(&1),
+            Some(&XrefEntry::InUse {
+                offset: 1000,
+                gen_nr: 0
+            })
+        );
     }
 
     #[test]
@@ -3663,10 +4140,22 @@ trailer\n<< /Size 3 >>\n";
         // Simple proptest-style test: verify merge_hybrid doesn't panic with basic inputs
         for obj_nr in 0u32..10 {
             let mut traditional = XrefSection::new();
-            traditional.add_entry(obj_nr, XrefEntry::InUse { offset: obj_nr as u64 * 100, gen_nr: 0 });
+            traditional.add_entry(
+                obj_nr,
+                XrefEntry::InUse {
+                    offset: obj_nr as u64 * 100,
+                    gen_nr: 0,
+                },
+            );
 
             let mut stream = XrefSection::new();
-            stream.add_entry(obj_nr + 100, XrefEntry::Compressed { obj_stm_nr: 10, index: obj_nr });
+            stream.add_entry(
+                obj_nr + 100,
+                XrefEntry::Compressed {
+                    obj_stm_nr: 10,
+                    index: obj_nr,
+                },
+            );
 
             let merged = merge_hybrid(traditional, stream);
             assert!(merged.is_hybrid);
@@ -3695,7 +4184,11 @@ trailer\n<< /Size 3 >>\n";
         let pdf_data = b"%PDF-1.4\n1 0 obj\n<< /Linearized 1.0\n/L 162\n/H [1234 56]\n/E 100\n/N 10\n/T 200\n/O 5 >>\nendobj\nxref\n0 1\n0000000000 65535 f\ntrailer\n<< /Size 2 >>\nstartxref\n300\n%%%%EOF";
 
         // Verify the /L value matches actual length
-        assert_eq!(pdf_data.len() as u64, 162, "Test data /L value should match actual length");
+        assert_eq!(
+            pdf_data.len() as u64,
+            162,
+            "Test data /L value should match actual length"
+        );
 
         let source = MemorySource::new(pdf_data.to_vec());
 
@@ -3730,7 +4223,10 @@ trailer\n<< /Size 3 >>\n";
         let source = MemorySource::new(pdf_data.to_vec());
 
         let result = detect_linearization(&source);
-        assert!(result.is_none(), "Linearized PDF with size mismatch should return None");
+        assert!(
+            result.is_none(),
+            "Linearized PDF with size mismatch should return None"
+        );
     }
 
     #[test]
@@ -3740,12 +4236,19 @@ trailer\n<< /Size 3 >>\n";
         let pdf_data = b"%PDF-1.4\n1 0 obj\n<< /Linearized 1.0\n/L 77\n/E 100\n/N 10\n/T 200\n/O 5 >>\nendobj\n";
 
         // Verify the /L value matches actual length
-        assert_eq!(pdf_data.len() as u64, 77, "Test data /L value should match actual length");
+        assert_eq!(
+            pdf_data.len() as u64,
+            77,
+            "Test data /L value should match actual length"
+        );
 
         let source = MemorySource::new(pdf_data.to_vec());
 
         let result = detect_linearization(&source);
-        assert!(result.is_some(), "Linearized PDF without /H should be detected");
+        assert!(
+            result.is_some(),
+            "Linearized PDF without /H should be detected"
+        );
 
         let lin_info = result.unwrap();
         assert_eq!(lin_info.hint_stream_offset, None);
@@ -3756,40 +4259,112 @@ trailer\n<< /Size 3 >>\n";
     fn test_merge_linearized_xrefs() {
         // Test merging first-page and full xrefs
         let mut first_page = XrefSection::new();
-        first_page.add_entry(1, XrefEntry::InUse { offset: 100, gen_nr: 0 });
-        first_page.add_entry(5, XrefEntry::InUse { offset: 500, gen_nr: 0 });
+        first_page.add_entry(
+            1,
+            XrefEntry::InUse {
+                offset: 100,
+                gen_nr: 0,
+            },
+        );
+        first_page.add_entry(
+            5,
+            XrefEntry::InUse {
+                offset: 500,
+                gen_nr: 0,
+            },
+        );
 
         let mut full = XrefSection::new();
         // Same entry - full should win
-        full.add_entry(1, XrefEntry::InUse { offset: 150, gen_nr: 0 }); // Different offset
-        // New entry only in full
-        full.add_entry(2, XrefEntry::InUse { offset: 200, gen_nr: 0 });
-        full.add_entry(3, XrefEntry::InUse { offset: 300, gen_nr: 0 });
+        full.add_entry(
+            1,
+            XrefEntry::InUse {
+                offset: 150,
+                gen_nr: 0,
+            },
+        ); // Different offset
+           // New entry only in full
+        full.add_entry(
+            2,
+            XrefEntry::InUse {
+                offset: 200,
+                gen_nr: 0,
+            },
+        );
+        full.add_entry(
+            3,
+            XrefEntry::InUse {
+                offset: 300,
+                gen_nr: 0,
+            },
+        );
 
         let merged = merge_linearized_xrefs(first_page, full);
 
         assert_eq!(merged.len(), 4);
         // Full xref's entry for object 1 should win (offset 150, not 100)
-        assert_eq!(merged.entries.get(&1), Some(&XrefEntry::InUse { offset: 150, gen_nr: 0 }));
-        assert_eq!(merged.entries.get(&2), Some(&XrefEntry::InUse { offset: 200, gen_nr: 0 }));
-        assert_eq!(merged.entries.get(&3), Some(&XrefEntry::InUse { offset: 300, gen_nr: 0 }));
-        assert_eq!(merged.entries.get(&5), Some(&XrefEntry::InUse { offset: 500, gen_nr: 0 }));
+        assert_eq!(
+            merged.entries.get(&1),
+            Some(&XrefEntry::InUse {
+                offset: 150,
+                gen_nr: 0
+            })
+        );
+        assert_eq!(
+            merged.entries.get(&2),
+            Some(&XrefEntry::InUse {
+                offset: 200,
+                gen_nr: 0
+            })
+        );
+        assert_eq!(
+            merged.entries.get(&3),
+            Some(&XrefEntry::InUse {
+                offset: 300,
+                gen_nr: 0
+            })
+        );
+        assert_eq!(
+            merged.entries.get(&5),
+            Some(&XrefEntry::InUse {
+                offset: 500,
+                gen_nr: 0
+            })
+        );
     }
 
     #[test]
     fn test_merge_linearized_xrefs_conflict_free_vs_inuse() {
         // Test merging where first-page has Free and full has InUse
         let mut first_page = XrefSection::new();
-        first_page.add_entry(1, XrefEntry::Free { next_free: 2, gen_nr: 0 });
+        first_page.add_entry(
+            1,
+            XrefEntry::Free {
+                next_free: 2,
+                gen_nr: 0,
+            },
+        );
 
         let mut full = XrefSection::new();
-        full.add_entry(1, XrefEntry::InUse { offset: 100, gen_nr: 0 });
+        full.add_entry(
+            1,
+            XrefEntry::InUse {
+                offset: 100,
+                gen_nr: 0,
+            },
+        );
 
         let merged = merge_linearized_xrefs(first_page, full);
 
         assert_eq!(merged.len(), 1);
         // Full xref's InUse should win over first-page's Free
-        assert_eq!(merged.entries.get(&1), Some(&XrefEntry::InUse { offset: 100, gen_nr: 0 }));
+        assert_eq!(
+            merged.entries.get(&1),
+            Some(&XrefEntry::InUse {
+                offset: 100,
+                gen_nr: 0
+            })
+        );
     }
 
     #[test]
@@ -3798,14 +4373,38 @@ trailer\n<< /Size 3 >>\n";
         let first_page = XrefSection::new();
 
         let mut full = XrefSection::new();
-        full.add_entry(1, XrefEntry::InUse { offset: 100, gen_nr: 0 });
-        full.add_entry(2, XrefEntry::InUse { offset: 200, gen_nr: 0 });
+        full.add_entry(
+            1,
+            XrefEntry::InUse {
+                offset: 100,
+                gen_nr: 0,
+            },
+        );
+        full.add_entry(
+            2,
+            XrefEntry::InUse {
+                offset: 200,
+                gen_nr: 0,
+            },
+        );
 
         let merged = merge_linearized_xrefs(first_page, full);
 
         assert_eq!(merged.len(), 2);
-        assert_eq!(merged.entries.get(&1), Some(&XrefEntry::InUse { offset: 100, gen_nr: 0 }));
-        assert_eq!(merged.entries.get(&2), Some(&XrefEntry::InUse { offset: 200, gen_nr: 0 }));
+        assert_eq!(
+            merged.entries.get(&1),
+            Some(&XrefEntry::InUse {
+                offset: 100,
+                gen_nr: 0
+            })
+        );
+        assert_eq!(
+            merged.entries.get(&2),
+            Some(&XrefEntry::InUse {
+                offset: 200,
+                gen_nr: 0
+            })
+        );
     }
 
     #[test]
@@ -3851,7 +4450,10 @@ trailer\n<< /Size 3 >>\n";
 
         let result = detect_linearization(&source);
         // Should return None because /L (300) != actual size
-        assert!(result.is_none(), "Incrementally updated linearized PDF should fall through");
+        assert!(
+            result.is_none(),
+            "Incrementally updated linearized PDF should fall through"
+        );
     }
 
     // /Prev chain tests
@@ -3928,19 +4530,54 @@ trailer\n<< /Size 3 >>\n";
         let result = load_xref_with_prev_chain(&source, rev3_offset);
 
         // Verify all 6 entries are present (including object 0)
-        assert_eq!(result.len(), 6, "Should have entries for objects 0-5, got {}", result.len());
+        assert_eq!(
+            result.len(),
+            6,
+            "Should have entries for objects 0-5, got {}",
+            result.len()
+        );
 
         // Verify LATEST values win:
         // Object 1: unchanged from rev1 (offset 100)
-        assert_eq!(result.entries.get(&1), Some(&XrefEntry::InUse { offset: 100, gen_nr: 0 }));
+        assert_eq!(
+            result.entries.get(&1),
+            Some(&XrefEntry::InUse {
+                offset: 100,
+                gen_nr: 0
+            })
+        );
         // Object 2: rev2 value (offset 250) overrides rev1 (offset 200)
-        assert_eq!(result.entries.get(&2), Some(&XrefEntry::InUse { offset: 250, gen_nr: 1 }));
+        assert_eq!(
+            result.entries.get(&2),
+            Some(&XrefEntry::InUse {
+                offset: 250,
+                gen_nr: 1
+            })
+        );
         // Object 3: rev3 value (offset 350) overrides rev1 (offset 300)
-        assert_eq!(result.entries.get(&3), Some(&XrefEntry::InUse { offset: 350, gen_nr: 2 }));
+        assert_eq!(
+            result.entries.get(&3),
+            Some(&XrefEntry::InUse {
+                offset: 350,
+                gen_nr: 2
+            })
+        );
         // Object 4: added in rev2 (offset 400)
-        assert_eq!(result.entries.get(&4), Some(&XrefEntry::InUse { offset: 400, gen_nr: 0 }));
+        assert_eq!(
+            result.entries.get(&4),
+            Some(&XrefEntry::InUse {
+                offset: 400,
+                gen_nr: 0
+            })
+        );
         // Object 5: added in rev3 (offset 500)
-        assert_eq!(result.entries.get(&5), Some(&XrefEntry::InUse { offset: 500, gen_nr: 0 }));
+        assert_eq!(
+            result.entries.get(&5),
+            Some(&XrefEntry::InUse {
+                offset: 500,
+                gen_nr: 0
+            })
+        );
 
         // Trailer should be from rev3 (latest)
         assert!(result.trailer.is_some());
@@ -4004,7 +4641,13 @@ trailer\n<< /Size 3 >>\n";
         let result = load_xref_with_prev_chain(&source, rev4_offset);
 
         // Object 7 should be Free (freed in rev4)
-        assert_eq!(result.entries.get(&7), Some(&XrefEntry::Free { next_free: 0, gen_nr: 2 }));
+        assert_eq!(
+            result.entries.get(&7),
+            Some(&XrefEntry::Free {
+                next_free: 0,
+                gen_nr: 2
+            })
+        );
     }
 
     /// Test object added only in latest revision.
@@ -4038,7 +4681,13 @@ trailer\n<< /Size 3 >>\n";
         let result = load_xref_with_prev_chain(&source, rev2_offset);
 
         // Object 99 should be present (added in rev2)
-        assert_eq!(result.entries.get(&99), Some(&XrefEntry::InUse { offset: 9900, gen_nr: 0 }));
+        assert_eq!(
+            result.entries.get(&99),
+            Some(&XrefEntry::InUse {
+                offset: 9900,
+                gen_nr: 0
+            })
+        );
     }
 
     /// Test that trailer is from latest revision.
@@ -4108,19 +4757,28 @@ trailer\n<< /Size 3 >>\n";
         let rev3_offset = 400u64;
 
         // Rev1: /Prev points to rev3 (creating cycle)
-        let rev1 = format!("xref\n0 1\n\
+        let rev1 = format!(
+            "xref\n0 1\n\
             0000000000 65535 f \n\
-            trailer\n<< /Size 1 /Prev {} >>\n", rev3_offset);
+            trailer\n<< /Size 1 /Prev {} >>\n",
+            rev3_offset
+        );
 
         // Rev2: /Prev points to rev1
-        let rev2 = format!("xref\n0 1\n\
+        let rev2 = format!(
+            "xref\n0 1\n\
             0000000000 65535 f \n\
-            trailer\n<< /Size 1 /Prev {} >>\n", rev1_offset);
+            trailer\n<< /Size 1 /Prev {} >>\n",
+            rev1_offset
+        );
 
         // Rev3 (start): /Prev points to rev2
-        let rev3 = format!("xref\n0 1\n\
+        let rev3 = format!(
+            "xref\n0 1\n\
             0000000000 65535 f \n\
-            trailer\n<< /Size 1 /Prev {} >>\n", rev2_offset);
+            trailer\n<< /Size 1 /Prev {} >>\n",
+            rev2_offset
+        );
 
         // Pad file to rev1_offset
         while file_data.len() < rev1_offset as usize {
@@ -4142,7 +4800,10 @@ trailer\n<< /Size 3 >>\n";
         let result = load_xref_with_prev_chain(&source, rev3_offset);
 
         // Should emit STRUCT_CIRCULAR_REF diagnostic
-        assert!(result.diagnostics.iter().any(|d| d.code == DiagCode::StructCircularRef));
+        assert!(result
+            .diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::StructCircularRef));
     }
 
     /// Test depth limit enforcement.
@@ -4170,7 +4831,8 @@ trailer\n<< /Size 3 >>\n";
             }
 
             let prev_offset = if i > 0 { offsets[i - 1] } else { 0 };
-            let rev = String::from_utf8_lossy(base_xref).replace("{prev}", &prev_offset.to_string());
+            let rev =
+                String::from_utf8_lossy(base_xref).replace("{prev}", &prev_offset.to_string());
             file_data.extend_from_slice(rev.as_bytes());
         }
 
@@ -4180,7 +4842,10 @@ trailer\n<< /Size 3 >>\n";
         let result = load_xref_with_prev_chain(&source, start_offset);
 
         // Should emit STRUCT_DEPTH_EXCEEDED diagnostic
-        assert!(result.diagnostics.iter().any(|d| d.code == DiagCode::StructDepthExceeded));
+        assert!(result
+            .diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::StructDepthExceeded));
     }
 
     /// Test /Prev offset pointing beyond file size.
@@ -4208,7 +4873,10 @@ trailer\n<< /Size 3 >>\n";
         let result = load_xref_with_prev_chain(&source, rev2_offset);
 
         // Should emit STRUCT_INVALID_PREV_OFFSET diagnostic
-        assert!(result.diagnostics.iter().any(|d| d.code == DiagCode::StructInvalidPrevOffset));
+        assert!(result
+            .diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::StructInvalidPrevOffset));
 
         // /Prev should be removed from trailer
         let trailer = result.trailer.as_ref().unwrap();
@@ -4233,7 +4901,10 @@ trailer\n<< /Size 3 >>\n";
         let result = load_xref_with_prev_chain(&source, offset);
 
         // Should not follow /Prev 0, should just return this single revision
-        assert!(!result.diagnostics.iter().any(|d| d.code == DiagCode::StructInvalidPrevOffset));
+        assert!(!result
+            .diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::StructInvalidPrevOffset));
     }
 
     /// Test negative /Prev treated as "no previous revision".
@@ -4254,7 +4925,10 @@ trailer\n<< /Size 3 >>\n";
         let result = load_xref_with_prev_chain(&source, offset);
 
         // Should not follow negative /Prev
-        assert!(!result.diagnostics.iter().any(|d| d.code == DiagCode::StructInvalidPrevOffset));
+        assert!(!result
+            .diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::StructInvalidPrevOffset));
     }
 
     /// Test hybrid file in /Prev chain.

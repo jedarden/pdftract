@@ -116,9 +116,7 @@ impl Comparator {
                     if act.as_i64().map_or(true, |v| v < min) {
                         return ComparisonResult::Fail(format!(
                             "{}: value {} is less than minimum {}",
-                            path,
-                            act,
-                            min
+                            path, act, min
                         ));
                     }
                 }
@@ -126,9 +124,7 @@ impl Comparator {
                     if act.as_i64().map_or(true, |v| v > max) {
                         return ComparisonResult::Fail(format!(
                             "{}: value {} is greater than maximum {}",
-                            path,
-                            act,
-                            max
+                            path, act, max
                         ));
                     }
                 }
@@ -145,7 +141,11 @@ impl Comparator {
             }
             // String constraints
             (serde_json::Value::String(act), serde_json::Value::Object(exp)) => {
-                if let Some(min_len) = exp.get("min_length").and_then(|v| v.as_u64()).map(|v| v as usize) {
+                if let Some(min_len) = exp
+                    .get("min_length")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as usize)
+                {
                     if act.len() < min_len {
                         return ComparisonResult::Fail(format!(
                             "{}: string length {} is less than minimum {}",
@@ -198,10 +198,7 @@ impl Comparator {
                 if a == e {
                     ComparisonResult::Pass
                 } else {
-                    ComparisonResult::Fail(format!(
-                        "{}: expected {:?}, got {:?}",
-                        path, e, a
-                    ))
+                    ComparisonResult::Fail(format!("{}: expected {:?}, got {:?}", path, e, a))
                 }
             }
         }
@@ -251,10 +248,7 @@ impl Comparator {
                 if a == e {
                     ComparisonResult::Pass
                 } else {
-                    ComparisonResult::Fail(format!(
-                        "{}: value mismatch: {:?} vs {:?}",
-                        path, a, e
-                    ))
+                    ComparisonResult::Fail(format!("{}: value mismatch: {:?} vs {:?}", path, a, e))
                 }
             }
         }
@@ -332,11 +326,7 @@ impl MockPdftractSdk {
         }))
     }
 
-    fn extract_text(
-        &self,
-        _fixture: &str,
-        _options: &serde_json::Value,
-    ) -> Result<String, String> {
+    fn extract_text(&self, _fixture: &str, _options: &serde_json::Value) -> Result<String, String> {
         Ok("Sample extracted text with Abstract and Introduction sections.".to_string())
     }
 
@@ -474,7 +464,8 @@ impl ConformanceRunner {
 
         match self.execute_test(test_case) {
             Ok(actual) => {
-                match Comparator::compare_with_tolerances(&actual, &test_case.expected, &tolerances) {
+                match Comparator::compare_with_tolerances(&actual, &test_case.expected, &tolerances)
+                {
                     ComparisonResult::Pass => TestResult {
                         id: test_case.id.clone(),
                         status: TestStatus::Pass,
@@ -524,29 +515,21 @@ impl ConformanceRunner {
                     "errors": []
                 }))
             }
-            "extract_text" => {
-                Ok(serde_json::json!({
-                    "output_type": "string",
-                    "value": "Sample text with Abstract"
-                }))
-            }
-            "extract_markdown" => {
-                Ok(serde_json::json!({
-                    "output_type": "string",
-                    "value": "# Sample\n\n| Col1 | Col2 |\n"
-                }))
-            }
-            "search" => {
-                Ok(serde_json::json!({
-                    "output_type": "iterator",
-                    "matches": [{"page": 0, "text": "Abstract"}]
-                }))
-            }
-            "get_metadata" => {
-                Ok(serde_json::json!({
-                    "metadata": {"page_count": 1, "has_title": true}
-                }))
-            }
+            "extract_text" => Ok(serde_json::json!({
+                "output_type": "string",
+                "value": "Sample text with Abstract"
+            })),
+            "extract_markdown" => Ok(serde_json::json!({
+                "output_type": "string",
+                "value": "# Sample\n\n| Col1 | Col2 |\n"
+            })),
+            "search" => Ok(serde_json::json!({
+                "output_type": "iterator",
+                "matches": [{"page": 0, "text": "Abstract"}]
+            })),
+            "get_metadata" => Ok(serde_json::json!({
+                "metadata": {"page_count": 1, "has_title": true}
+            })),
             _ => Err(format!("Method '{}' not implemented", test_case.method)),
         }
     }
@@ -554,14 +537,8 @@ impl ConformanceRunner {
     fn schema_version_too_old(&self, required: &str) -> bool {
         let current = self.sdk.schema_version();
         // Simple semver comparison
-        let current_parts: Vec<u32> = current
-            .split('.')
-            .filter_map(|s| s.parse().ok())
-            .collect();
-        let required_parts: Vec<u32> = required
-            .split('.')
-            .filter_map(|s| s.parse().ok())
-            .collect();
+        let current_parts: Vec<u32> = current.split('.').filter_map(|s| s.parse().ok()).collect();
+        let required_parts: Vec<u32> = required.split('.').filter_map(|s| s.parse().ok()).collect();
 
         if current_parts.len() < 2 || required_parts.len() < 2 {
             return false;
@@ -653,13 +630,20 @@ mod tests {
         );
 
         let report = runner.run().unwrap();
-        let skipped_count = report.results.iter().filter(|r| matches!(r.status, TestStatus::Skip)).count();
+        let skipped_count = report
+            .results
+            .iter()
+            .filter(|r| matches!(r.status, TestStatus::Skip))
+            .count();
 
         assert!(
             skipped_count > 0,
             "Should skip tests for unsupported features"
         );
-        println!("Skipped {} tests due to unsupported features", skipped_count);
+        println!(
+            "Skipped {} tests due to unsupported features",
+            skipped_count
+        );
     }
 
     #[test]

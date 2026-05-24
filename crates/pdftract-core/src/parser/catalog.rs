@@ -4,10 +4,10 @@
 //! including Pages, Outlines, MarkInfo, StructTreeRoot, AcroForm, Names,
 //! Metadata, PageLabels, OCProperties, OpenAction, AA, and Version entries.
 
-use crate::parser::object::{ObjRef, PdfObject, intern};
-use crate::parser::xref::XrefResolver;
-use crate::diagnostics::{Diagnostic, DiagCode};
+use crate::diagnostics::{DiagCode, Diagnostic};
+use crate::parser::object::{intern, ObjRef, PdfObject};
 use crate::parser::ocg::{parse_oc_properties, OcProperties};
+use crate::parser::xref::XrefResolver;
 
 /// Result type for catalog parsing.
 pub type Result<T> = std::result::Result<T, Vec<Diagnostic>>;
@@ -150,9 +150,19 @@ impl PageLabelStyle {
 
         let mut result = String::new();
         let values = [
-            (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"),
-            (100, "C"), (90, "XC"), (50, "L"), (40, "XL"),
-            (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I"),
+            (1000, "M"),
+            (900, "CM"),
+            (500, "D"),
+            (400, "CD"),
+            (100, "C"),
+            (90, "XC"),
+            (50, "L"),
+            (40, "XL"),
+            (10, "X"),
+            (9, "IX"),
+            (5, "V"),
+            (4, "IV"),
+            (1, "I"),
         ];
 
         for (val, sym) in values {
@@ -208,24 +218,26 @@ impl PageLabel {
     fn parse(obj: &PdfObject) -> Option<Self> {
         let dict = obj.as_dict()?;
 
-        let style = dict.get("S")
+        let style = dict
+            .get("S")
             .and_then(|o| o.as_name())
             .and_then(PageLabelStyle::from_name)
             .unwrap_or(PageLabelStyle::Decimal);
 
-        let prefix = dict.get("P")
-            .and_then(|o| {
-                // Prefix can be either a String or a Name
-                o.as_string()
-                    .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok())
-                    .or_else(|| o.as_name().map(|s| s.to_string()))
-            });
+        let prefix = dict.get("P").and_then(|o| {
+            // Prefix can be either a String or a Name
+            o.as_string()
+                .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok())
+                .or_else(|| o.as_name().map(|s| s.to_string()))
+        });
 
-        let start = dict.get("St")
-            .and_then(|o| o.as_int())
-            .unwrap_or(1);
+        let start = dict.get("St").and_then(|o| o.as_int()).unwrap_or(1);
 
-        Some(PageLabel { style, prefix, start })
+        Some(PageLabel {
+            style,
+            prefix,
+            start,
+        })
     }
 
     /// Format a label for a given page index.
@@ -332,7 +344,8 @@ impl PageLabelsTree {
     ///
     /// Returns the label for the most recent key <= page_index.
     pub fn get_label(&self, page_index: i64) -> Option<&PageLabel> {
-        self.get_label_with_start(page_index).map(|(label, _)| label)
+        self.get_label_with_start(page_index)
+            .map(|(label, _)| label)
     }
 
     /// Get all labels as a slice.
@@ -402,7 +415,8 @@ impl Catalog {
 
     /// Add a diagnostic to the catalog.
     fn emit_diagnostic(&mut self, code: DiagCode, message: String) {
-        self.diagnostics.push(Diagnostic::with_dynamic_no_offset(code, message));
+        self.diagnostics
+            .push(Diagnostic::with_dynamic_no_offset(code, message));
     }
 }
 
@@ -476,7 +490,10 @@ pub fn parse_catalog(resolver: &XrefResolver, root_ref: ObjRef) -> Result<Catalo
             // Emit STRUCT_MISSING_KEY diagnostic and return empty catalog
             diagnostics.push(Diagnostic::with_dynamic_no_offset(
                 DiagCode::StructMissingKey,
-                format!("STRUCT_MISSING_KEY: /Pages is not a reference (type: {})", other.type_name()),
+                format!(
+                    "STRUCT_MISSING_KEY: /Pages is not a reference (type: {})",
+                    other.type_name()
+                ),
             ));
             catalog.diagnostics = diagnostics;
             return Ok(catalog);
@@ -624,11 +641,26 @@ mod tests {
 
     #[test]
     fn test_page_label_style_from_name() {
-        assert_eq!(PageLabelStyle::from_name("D"), Some(PageLabelStyle::Decimal));
-        assert_eq!(PageLabelStyle::from_name("R"), Some(PageLabelStyle::RomanUppercase));
-        assert_eq!(PageLabelStyle::from_name("r"), Some(PageLabelStyle::RomanLowercase));
-        assert_eq!(PageLabelStyle::from_name("A"), Some(PageLabelStyle::LettersUppercase));
-        assert_eq!(PageLabelStyle::from_name("a"), Some(PageLabelStyle::LettersLowercase));
+        assert_eq!(
+            PageLabelStyle::from_name("D"),
+            Some(PageLabelStyle::Decimal)
+        );
+        assert_eq!(
+            PageLabelStyle::from_name("R"),
+            Some(PageLabelStyle::RomanUppercase)
+        );
+        assert_eq!(
+            PageLabelStyle::from_name("r"),
+            Some(PageLabelStyle::RomanLowercase)
+        );
+        assert_eq!(
+            PageLabelStyle::from_name("A"),
+            Some(PageLabelStyle::LettersUppercase)
+        );
+        assert_eq!(
+            PageLabelStyle::from_name("a"),
+            Some(PageLabelStyle::LettersLowercase)
+        );
         assert_eq!(PageLabelStyle::from_name("X"), None);
     }
 
@@ -687,26 +719,56 @@ mod tests {
         let mut tree = PageLabelsTree::new();
 
         // Page 0-2: roman numerals (i, ii, iii)
-        tree.labels.push((0, PageLabel {
-            style: PageLabelStyle::RomanLowercase,
-            prefix: None,
-            start: 1,
-        }));
+        tree.labels.push((
+            0,
+            PageLabel {
+                style: PageLabelStyle::RomanLowercase,
+                prefix: None,
+                start: 1,
+            },
+        ));
 
         // Page 3+: decimal (1, 2, 3, ...)
-        tree.labels.push((3, PageLabel {
-            style: PageLabelStyle::Decimal,
-            prefix: None,
-            start: 1,
-        }));
+        tree.labels.push((
+            3,
+            PageLabel {
+                style: PageLabelStyle::Decimal,
+                prefix: None,
+                start: 1,
+            },
+        ));
 
         // Test lookups using format_absolute for correct relative indexing
-        assert_eq!(tree.get_label_with_start(0).map(|(l, start)| l.format_absolute(0, start)), Some("i".to_string()));
-        assert_eq!(tree.get_label_with_start(1).map(|(l, start)| l.format_absolute(1, start)), Some("ii".to_string()));
-        assert_eq!(tree.get_label_with_start(2).map(|(l, start)| l.format_absolute(2, start)), Some("iii".to_string()));
-        assert_eq!(tree.get_label_with_start(3).map(|(l, start)| l.format_absolute(3, start)), Some("1".to_string()));
-        assert_eq!(tree.get_label_with_start(4).map(|(l, start)| l.format_absolute(4, start)), Some("2".to_string()));
-        assert_eq!(tree.get_label_with_start(5).map(|(l, start)| l.format_absolute(5, start)), Some("3".to_string()));
+        assert_eq!(
+            tree.get_label_with_start(0)
+                .map(|(l, start)| l.format_absolute(0, start)),
+            Some("i".to_string())
+        );
+        assert_eq!(
+            tree.get_label_with_start(1)
+                .map(|(l, start)| l.format_absolute(1, start)),
+            Some("ii".to_string())
+        );
+        assert_eq!(
+            tree.get_label_with_start(2)
+                .map(|(l, start)| l.format_absolute(2, start)),
+            Some("iii".to_string())
+        );
+        assert_eq!(
+            tree.get_label_with_start(3)
+                .map(|(l, start)| l.format_absolute(3, start)),
+            Some("1".to_string())
+        );
+        assert_eq!(
+            tree.get_label_with_start(4)
+                .map(|(l, start)| l.format_absolute(4, start)),
+            Some("2".to_string())
+        );
+        assert_eq!(
+            tree.get_label_with_start(5)
+                .map(|(l, start)| l.format_absolute(5, start)),
+            Some("3".to_string())
+        );
     }
 
     #[test]
@@ -782,7 +844,10 @@ mod tests {
         // Empty catalog should have pages_ref = ObjRef::new(0, 0) from Default
         assert_eq!(catalog.pages_ref, ObjRef::new(0, 0));
         // Should have STRUCT_MISSING_KEY diagnostic
-        assert!(catalog.diagnostics.iter().any(|d| d.message.contains("STRUCT_MISSING_KEY")));
+        assert!(catalog
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("STRUCT_MISSING_KEY")));
     }
 
     #[test]
@@ -926,22 +991,40 @@ mod tests {
     fn test_page_labels_tree_with_prefix() {
         let mut tree = PageLabelsTree::new();
 
-        tree.labels.push((0, PageLabel {
-            style: PageLabelStyle::RomanLowercase,
-            prefix: Some("front-".to_string()),
-            start: 1,
-        }));
+        tree.labels.push((
+            0,
+            PageLabel {
+                style: PageLabelStyle::RomanLowercase,
+                prefix: Some("front-".to_string()),
+                start: 1,
+            },
+        ));
 
-        tree.labels.push((3, PageLabel {
-            style: PageLabelStyle::Decimal,
-            prefix: None,
-            start: 1,
-        }));
+        tree.labels.push((
+            3,
+            PageLabel {
+                style: PageLabelStyle::Decimal,
+                prefix: None,
+                start: 1,
+            },
+        ));
 
         // Test with prefix using format_absolute for correct relative indexing
-        assert_eq!(tree.get_label_with_start(0).map(|(l, start)| l.format_absolute(0, start)), Some("front-i".to_string()));
-        assert_eq!(tree.get_label_with_start(1).map(|(l, start)| l.format_absolute(1, start)), Some("front-ii".to_string()));
-        assert_eq!(tree.get_label_with_start(3).map(|(l, start)| l.format_absolute(3, start)), Some("1".to_string()));
+        assert_eq!(
+            tree.get_label_with_start(0)
+                .map(|(l, start)| l.format_absolute(0, start)),
+            Some("front-i".to_string())
+        );
+        assert_eq!(
+            tree.get_label_with_start(1)
+                .map(|(l, start)| l.format_absolute(1, start)),
+            Some("front-ii".to_string())
+        );
+        assert_eq!(
+            tree.get_label_with_start(3)
+                .map(|(l, start)| l.format_absolute(3, start)),
+            Some("1".to_string())
+        );
     }
 
     // Phase 7.1.4 Coverage Check Tests
@@ -955,9 +1038,18 @@ mod tests {
 
     #[test]
     fn test_reading_order_algorithm_from_str() {
-        assert_eq!(ReadingOrderAlgorithm::from_str("struct_tree"), Some(ReadingOrderAlgorithm::StructTree));
-        assert_eq!(ReadingOrderAlgorithm::from_str("xy_cut"), Some(ReadingOrderAlgorithm::XyCut));
-        assert_eq!(ReadingOrderAlgorithm::from_str("docstrum"), Some(ReadingOrderAlgorithm::Docstrum));
+        assert_eq!(
+            ReadingOrderAlgorithm::from_str("struct_tree"),
+            Some(ReadingOrderAlgorithm::StructTree)
+        );
+        assert_eq!(
+            ReadingOrderAlgorithm::from_str("xy_cut"),
+            Some(ReadingOrderAlgorithm::XyCut)
+        );
+        assert_eq!(
+            ReadingOrderAlgorithm::from_str("docstrum"),
+            Some(ReadingOrderAlgorithm::Docstrum)
+        );
         assert_eq!(ReadingOrderAlgorithm::from_str("unknown"), None);
         assert_eq!(ReadingOrderAlgorithm::from_str(""), None);
     }
@@ -1030,12 +1122,25 @@ mod proptests {
             Just(PdfObject::Null),
             any::<bool>().prop_map(PdfObject::Bool),
             any::<i64>().prop_map(PdfObject::Integer),
-            any::<f64>().prop_map(|f| if f.is_finite() { PdfObject::Real(f) } else { PdfObject::Real(0.0) }),
+            any::<f64>().prop_map(|f| if f.is_finite() {
+                PdfObject::Real(f)
+            } else {
+                PdfObject::Real(0.0)
+            }),
             prop::collection::vec(any::<u8>(), 0..100).prop_map(|v| PdfObject::String(Box::new(v))),
             "[a-zA-Z]{1,20}".prop_map(|s| PdfObject::Name(intern(&s))),
             prop::collection::vec(any::<u8>(), 0..100).prop_map(|bytes| {
                 // Try to create a valid name from the bytes
-                let name: String = bytes.iter().map(|&b| if b.is_ascii_alphanumeric() { b as char } else { '_' }).collect();
+                let name: String = bytes
+                    .iter()
+                    .map(|&b| {
+                        if b.is_ascii_alphanumeric() {
+                            b as char
+                        } else {
+                            '_'
+                        }
+                    })
+                    .collect();
                 PdfObject::Name(intern(&name))
             }),
         ]
@@ -1043,14 +1148,13 @@ mod proptests {
 
     /// Strategy to generate arbitrary dictionaries for catalog fuzzing.
     fn arb_catalog_dict() -> impl Strategy<Value = indexmap::IndexMap<Arc<str>, PdfObject>> {
-        prop::collection::hash_map("[a-zA-Z]{1,10}", arb_pdf_object(0), 0..10)
-            .prop_map(|map| {
-                let mut index_map = indexmap::IndexMap::new();
-                for (k, v) in map {
-                    index_map.insert(k.into(), v);
-                }
-                index_map
-            })
+        prop::collection::hash_map("[a-zA-Z]{1,10}", arb_pdf_object(0), 0..10).prop_map(|map| {
+            let mut index_map = indexmap::IndexMap::new();
+            for (k, v) in map {
+                index_map.insert(k.into(), v);
+            }
+            index_map
+        })
     }
 
     proptest! {

@@ -1,5 +1,5 @@
-use std::process::Command;
 use super::super::{Check, CheckResult, CheckStatus, DoctorCtx};
+use std::process::Command;
 
 /// Check: tesseract language availability
 ///
@@ -14,9 +14,7 @@ impl Check for TesseractLangsCheck {
     }
 
     fn run(&self, ctx: &DoctorCtx) -> CheckResult {
-        let output = Command::new("tesseract")
-            .arg("--list-langs")
-            .output();
+        let output = Command::new("tesseract").arg("--list-langs").output();
 
         match output {
             Ok(output) => {
@@ -24,7 +22,10 @@ impl Check for TesseractLangsCheck {
                     return CheckResult {
                         name: self.name(),
                         status: CheckStatus::Fail,
-                        detail: format!("tesseract --list-langs failed: {}", String::from_utf8_lossy(&output.stderr)),
+                        detail: format!(
+                            "tesseract --list-langs failed: {}",
+                            String::from_utf8_lossy(&output.stderr)
+                        ),
                     };
                 }
 
@@ -52,7 +53,10 @@ impl Check for TesseractLangsCheck {
                     return CheckResult {
                         name: self.name(),
                         status: CheckStatus::Fail,
-                        detail: format!("Required language 'eng' not found. Installed: {:?}", installed_langs),
+                        detail: format!(
+                            "Required language 'eng' not found. Installed: {:?}",
+                            installed_langs
+                        ),
                     };
                 }
 
@@ -60,7 +64,10 @@ impl Check for TesseractLangsCheck {
                     return CheckResult {
                         name: self.name(),
                         status: CheckStatus::Warn,
-                        detail: format!("Requested languages not found: {:?}. Installed: {:?}", missing_required, installed_langs),
+                        detail: format!(
+                            "Requested languages not found: {:?}. Installed: {:?}",
+                            missing_required, installed_langs
+                        ),
                     };
                 }
 
@@ -70,13 +77,11 @@ impl Check for TesseractLangsCheck {
                     detail: format!("All required languages present: {:?}", installed_langs),
                 }
             }
-            Err(e) => {
-                CheckResult {
-                    name: self.name(),
-                    status: CheckStatus::Fail,
-                    detail: format!("tesseract --list-langs failed: {}", e),
-                }
-            }
+            Err(e) => CheckResult {
+                name: self.name(),
+                status: CheckStatus::Fail,
+                detail: format!("tesseract --list-langs failed: {}", e),
+            },
         }
     }
 }

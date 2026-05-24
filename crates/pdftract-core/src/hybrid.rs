@@ -22,7 +22,7 @@
 //!
 //! IoU = area(A ∩ B) / area(A ∪ B)
 
-use crate::classify::{CellIndex, PageClassification, PageClass};
+use crate::classify::{CellIndex, PageClass, PageClassification};
 use image::{GrayImage, ImageBuffer, Luma};
 use std::collections::BTreeSet;
 
@@ -42,13 +42,15 @@ pub struct Span {
     pub text: String,
 }
 
-/// Source of a span - either vector extraction or OCR.
+/// Source of a span - either vector extraction, OCR, or assisted OCR.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpanSource {
     /// Text extracted from content stream (Phase 3).
     Vector,
     /// Text extracted via OCR (Phase 5).
     Ocr,
+    /// Text extracted via assisted OCR with position validation (Phase 5.5).
+    OcrAssisted,
 }
 
 impl Span {
@@ -70,6 +72,11 @@ impl Span {
     /// Create a span with OCR source.
     pub fn ocr(bbox: [f64; 4], confidence: f32, text: String) -> Self {
         Self::new(bbox, confidence, SpanSource::Ocr, text)
+    }
+
+    /// Create a span with assisted OCR source (position-validated).
+    pub fn ocr_assisted(bbox: [f64; 4], confidence: f32, text: String) -> Self {
+        Self::new(bbox, confidence, SpanSource::OcrAssisted, text)
     }
 
     /// Get the width of the span's bbox.
@@ -191,11 +198,15 @@ pub fn merge_vector_and_ocr_spans(vector_spans: &[Span], ocr_spans: &[Span]) -> 
 
         // Primary sort: Y (top to bottom = descending Y in PDF coordinates)
         // Note: In PDF coordinates, Y=0 is at the bottom, so higher Y means higher on page
-        b_center_y.partial_cmp(&a_center_y).unwrap_or(std::cmp::Ordering::Equal)
+        b_center_y
+            .partial_cmp(&a_center_y)
+            .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| {
                 let a_center_x = (a.bbox[0] + a.bbox[2]) / 2.0;
                 let b_center_x = (b.bbox[0] + b.bbox[2]) / 2.0;
-                a_center_x.partial_cmp(&b_center_x).unwrap_or(std::cmp::Ordering::Equal)
+                a_center_x
+                    .partial_cmp(&b_center_x)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             })
     });
 
@@ -279,11 +290,10 @@ pub fn get_hybrid_cells(classification: &PageClassification) -> Vec<CellIndex> {
     }
 
     match &classification.hybrid_cells {
-        Some(cells) => {
-            cells.iter()
-                .map(|&flat| CellIndex::from_flat(flat))
-                .collect()
-        }
+        Some(cells) => cells
+            .iter()
+            .map(|&flat| CellIndex::from_flat(flat))
+            .collect(),
         None => Vec::new(),
     }
 }
@@ -323,7 +333,8 @@ pub fn compute_cell_crops(
     let cell_width = page_width / 8.0;
     let cell_height = page_height / 8.0;
 
-    cells.iter()
+    cells
+        .iter()
         .map(|cell| {
             // Cell coordinates in PDF space
             // col 0 = left, row 0 = top
@@ -357,7 +368,12 @@ pub trait OcrCallback: Send + Sync {
     /// # Returns
     ///
     /// A vector of OCR spans found in this cell, or an error if OCR fails.
-    fn ocr_cell(&self, cell_image: &GrayImage, cell: CellIndex, dpi: u32) -> Result<Vec<Span>, String>;
+    fn ocr_cell(
+        &self,
+        cell_image: &GrayImage,
+        cell: CellIndex,
+        dpi: u32,
+    ) -> Result<Vec<Span>, String>;
 }
 
 /// Mock OCR callback for testing that tracks call counts.
@@ -369,8 +385,14 @@ struct MockOcrCallback {
 
 #[cfg(test)]
 impl OcrCallback for MockOcrCallback {
-    fn ocr_cell(&self, _cell_image: &GrayImage, _cell: CellIndex, _dpi: u32) -> Result<Vec<Span>, String> {
-        self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    fn ocr_cell(
+        &self,
+        _cell_image: &GrayImage,
+        _cell: CellIndex,
+        _dpi: u32,
+    ) -> Result<Vec<Span>, String> {
+        self.call_count
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok(self.output_spans.clone())
     }
 }
@@ -441,13 +463,7 @@ pub fn process_hybrid_page(
     // For each hybrid cell: crop and run OCR
     for cell in hybrid_cells {
         // Crop the cell from the rendered page
-        let cell_image = crop_cell_from_page(
-            page_image,
-            page_width_pt,
-            page_height_pt,
-            cell,
-            dpi,
-        );
+        let cell_image = crop_cell_from_page(page_image, page_width_pt, page_height_pt, cell, dpi);
 
         // Run OCR on this cell
         match ocr_callback.ocr_cell(&cell_image, cell, dpi) {
@@ -510,7 +526,12 @@ mod tests {
 
     #[test]
     fn test_span_new() {
-        let span = Span::new([10.0, 20.0, 50.0, 40.0], 0.9, SpanSource::Vector, "test".to_string());
+        let span = Span::new(
+            [10.0, 20.0, 50.0, 40.0],
+            0.9,
+            SpanSource::Vector,
+            "test".to_string(),
+        );
         assert_eq!(span.bbox, [10.0, 20.0, 50.0, 40.0]);
         assert_eq!(span.confidence, 0.9);
         assert_eq!(span.source, SpanSource::Vector);
@@ -541,12 +562,12 @@ mod tests {
 
     #[test]
     fn test_merge_no_overlap() {
-        let vector = vec![
-            Span::vector([0.0, 0.0, 10.0, 10.0], 0.9, "vector".to_string()),
-        ];
-        let ocr = vec![
-            Span::ocr([20.0, 20.0, 30.0, 30.0], 0.8, "ocr".to_string()),
-        ];
+        let vector = vec![Span::vector(
+            [0.0, 0.0, 10.0, 10.0],
+            0.9,
+            "vector".to_string(),
+        )];
+        let ocr = vec![Span::ocr([20.0, 20.0, 30.0, 30.0], 0.8, "ocr".to_string())];
 
         let result = merge_vector_and_ocr_spans(&vector, &ocr);
         assert_eq!(result.len(), 2);
@@ -555,9 +576,11 @@ mod tests {
     #[test]
     fn test_merge_iou_06_vector_kept() {
         // IoU = 0.6 > 0.5, vector confidence >= 0.5 -> vector kept, OCR dropped
-        let vector = vec![
-            Span::vector([0.0, 0.0, 100.0, 100.0], 0.9, "vector text".to_string()),
-        ];
+        let vector = vec![Span::vector(
+            [0.0, 0.0, 100.0, 100.0],
+            0.9,
+            "vector text".to_string(),
+        )];
         let ocr = vec![
             // OCR overlaps by 60%: intersection 60x100, union (10000 + 10000 - 6000) = 14000
             // bbox [40, 0, 100, 100] overlaps [0, 0, 100, 100] by 60x100
@@ -573,9 +596,11 @@ mod tests {
     #[test]
     fn test_merge_iou_03_both_kept() {
         // IoU = 0.3 < 0.5 -> both kept
-        let vector = vec![
-            Span::vector([0.0, 0.0, 100.0, 100.0], 0.9, "vector".to_string()),
-        ];
+        let vector = vec![Span::vector(
+            [0.0, 0.0, 100.0, 100.0],
+            0.9,
+            "vector".to_string(),
+        )];
         let ocr = vec![
             // OCR overlaps by 30%: [70, 0, 100, 100] overlaps [0, 0, 100, 100] by 30x100
             Span::ocr([70.0, 0.0, 100.0, 100.0], 0.7, "ocr".to_string()),
@@ -591,16 +616,20 @@ mod tests {
     #[test]
     fn test_merge_iou_06_low_vector_confidence_ocr_kept() {
         // IoU = 0.6 > 0.5, but vector confidence < 0.5 -> OCR kept
-        let vector = vec![
-            Span::vector([0.0, 0.0, 100.0, 100.0], 0.2, "bad vector".to_string()),
-        ];
-        let ocr = vec![
-            Span::ocr([40.0, 0.0, 100.0, 100.0], 0.7, "ocr text".to_string()),
-        ];
+        let vector = vec![Span::vector(
+            [0.0, 0.0, 100.0, 100.0],
+            0.2,
+            "bad vector".to_string(),
+        )];
+        let ocr = vec![Span::ocr(
+            [40.0, 0.0, 100.0, 100.0],
+            0.7,
+            "ocr text".to_string(),
+        )];
 
         let result = merge_vector_and_ocr_spans(&vector, &ocr);
         assert_eq!(result.len(), 2); // Both kept because vector confidence is low
-        // Verify both are present
+                                     // Verify both are present
         assert!(result.iter().any(|s| s.source == SpanSource::Vector));
         assert!(result.iter().any(|s| s.source == SpanSource::Ocr));
     }
@@ -621,10 +650,7 @@ mod tests {
 
     #[test]
     fn test_get_hybrid_cells_non_hybrid() {
-        let classification = PageClassification::new(
-            crate::classify::PageClass::Vector,
-            0.9,
-        );
+        let classification = PageClassification::new(crate::classify::PageClass::Vector, 0.9);
         assert!(get_hybrid_cells(&classification).is_empty());
     }
 
@@ -648,7 +674,7 @@ mod tests {
     #[test]
     fn test_compute_cell_crops() {
         let mut cells = BTreeSet::new();
-        cells.insert(0);  // row 0, col 0 (top-left)
+        cells.insert(0); // row 0, col 0 (top-left)
         cells.insert(63); // row 7, col 7 (bottom-right)
 
         let classification = PageClassification::hybrid(0.75, cells);
@@ -691,7 +717,7 @@ mod tests {
 
         // Cell should be 1/8 of page dimensions
         assert_eq!(cell.width(), 100); // 800 / 8
-        assert_eq!(cell.height(), 75);  // 600 / 8
+        assert_eq!(cell.height(), 75); // 600 / 8
     }
 
     #[test]
@@ -712,9 +738,11 @@ mod tests {
 
     #[test]
     fn test_merge_multiple_ocr_spans() {
-        let vector = vec![
-            Span::vector([0.0, 0.0, 100.0, 100.0], 0.9, "vector".to_string()),
-        ];
+        let vector = vec![Span::vector(
+            [0.0, 0.0, 100.0, 100.0],
+            0.9,
+            "vector".to_string(),
+        )];
         let ocr = vec![
             Span::ocr([200.0, 0.0, 300.0, 100.0], 0.8, "ocr1".to_string()),
             Span::ocr([400.0, 0.0, 500.0, 100.0], 0.8, "ocr2".to_string()),
@@ -756,7 +784,11 @@ mod tests {
         // Create mock OCR callback that tracks call count
         let call_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let mock_spans = vec![
-            Span::ocr([50.0, 100.0, 200.0, 120.0], 0.8, "Scanned Text 1".to_string()),
+            Span::ocr(
+                [50.0, 100.0, 200.0, 120.0],
+                0.8,
+                "Scanned Text 1".to_string(),
+            ),
             Span::ocr([50.0, 50.0, 200.0, 70.0], 0.8, "Scanned Text 2".to_string()),
         ];
         let mock_ocr = MockOcrCallback {
@@ -780,8 +812,11 @@ mod tests {
 
         // Verify OCR was called exactly 48 times (6 rows * 8 cols)
         // NOT 64 times (full page)
-        assert_eq!(call_count.load(std::sync::atomic::Ordering::SeqCst), 48,
-            "OCR should run only on scanned cells (48), not entire page (64)");
+        assert_eq!(
+            call_count.load(std::sync::atomic::Ordering::SeqCst),
+            48,
+            "OCR should run only on scanned cells (48), not entire page (64)"
+        );
 
         // Verify result contains both vector and OCR spans
         assert!(result.iter().any(|s| s.source == SpanSource::Vector));
@@ -806,9 +841,11 @@ mod tests {
         let classification = PageClassification::hybrid(0.75, cells);
 
         // Create vector spans that overlap with OCR region
-        let vector_spans = vec![
-            Span::vector([50.0, 50.0, 150.0, 70.0], 0.9, "Vector Text".to_string()),
-        ];
+        let vector_spans = vec![Span::vector(
+            [50.0, 50.0, 150.0, 70.0],
+            0.9,
+            "Vector Text".to_string(),
+        )];
 
         // Create mock OCR that produces overlapping text (IoU > 0.5)
         // OCR bbox [40, 40, 160, 80] overlaps vector bbox [50, 50, 150, 70]
@@ -820,9 +857,11 @@ mod tests {
         // Intersection = [50, 50, 150, 70] = 100 * 20 = 2000
         // Union = (110*30) + (100*20) - 2000 = 3300 + 2000 - 2000 = 3300
         // IoU = 2000 / 3300 = 0.606 > 0.5
-        let mock_spans = vec![
-            Span::ocr([45.0, 45.0, 155.0, 75.0], 0.7, "OCR Text".to_string()),
-        ];
+        let mock_spans = vec![Span::ocr(
+            [45.0, 45.0, 155.0, 75.0],
+            0.7,
+            "OCR Text".to_string(),
+        )];
         let call_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let mock_ocr = MockOcrCallback {
             call_count,
@@ -845,7 +884,11 @@ mod tests {
 
         // With IoU > 0.5 and vector confidence >= 0.5, vector should win
         // Result should have only 1 span (the vector span)
-        assert_eq!(result.len(), 1, "Should have only 1 span after merge (vector wins)");
+        assert_eq!(
+            result.len(),
+            1,
+            "Should have only 1 span after merge (vector wins)"
+        );
         assert_eq!(result[0].source, SpanSource::Vector);
         assert_eq!(result[0].text, "Vector Text");
     }
@@ -860,14 +903,18 @@ mod tests {
         let classification = PageClassification::hybrid(0.75, cells);
 
         // Vector span with low confidence
-        let vector_spans = vec![
-            Span::vector([50.0, 50.0, 150.0, 70.0], 0.2, "Bad Vector".to_string()),
-        ];
+        let vector_spans = vec![Span::vector(
+            [50.0, 50.0, 150.0, 70.0],
+            0.2,
+            "Bad Vector".to_string(),
+        )];
 
         // OCR span with high confidence, overlapping vector
-        let mock_spans = vec![
-            Span::ocr([45.0, 45.0, 155.0, 75.0], 0.7, "Good OCR".to_string()),
-        ];
+        let mock_spans = vec![Span::ocr(
+            [45.0, 45.0, 155.0, 75.0],
+            0.7,
+            "Good OCR".to_string(),
+        )];
         let call_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let mock_ocr = MockOcrCallback {
             call_count,
@@ -888,7 +935,11 @@ mod tests {
 
         // With IoU > 0.5 but vector confidence < 0.5, OCR should be kept
         // Result should have 2 spans (both vector and OCR kept)
-        assert_eq!(result.len(), 2, "Both vector and OCR should be kept when vector confidence is low");
+        assert_eq!(
+            result.len(),
+            2,
+            "Both vector and OCR should be kept when vector confidence is low"
+        );
         assert!(result.iter().any(|s| s.source == SpanSource::Vector));
         assert!(result.iter().any(|s| s.source == SpanSource::Ocr));
     }
@@ -898,9 +949,11 @@ mod tests {
         // Test that non-hybrid classifications return only vector spans
 
         let classification = PageClassification::new(PageClass::Vector, 0.9);
-        let vector_spans = vec![
-            Span::vector([50.0, 50.0, 150.0, 70.0], 0.9, "Vector Only".to_string()),
-        ];
+        let vector_spans = vec![Span::vector(
+            [50.0, 50.0, 150.0, 70.0],
+            0.9,
+            "Vector Only".to_string(),
+        )];
 
         let call_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let mock_ocr = MockOcrCallback {
@@ -934,9 +987,11 @@ mod tests {
         // Test hybrid classification with empty hybrid_cells
 
         let classification = PageClassification::hybrid(0.75, BTreeSet::new());
-        let vector_spans = vec![
-            Span::vector([50.0, 50.0, 150.0, 70.0], 0.9, "Vector".to_string()),
-        ];
+        let vector_spans = vec![Span::vector(
+            [50.0, 50.0, 150.0, 70.0],
+            0.9,
+            "Vector".to_string(),
+        )];
 
         let call_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let mock_ocr = MockOcrCallback {

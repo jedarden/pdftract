@@ -12,12 +12,12 @@
 //!
 //! This module is only available when both `ocr` and `full-render` features are enabled.
 
-use crate::diagnostics::{Diagnostic, DiagCode};
+use crate::diagnostics::{DiagCode, Diagnostic};
 use image::{GrayImage, Luma};
 use pdfium_render::prelude::*;
 use std::sync::{Arc, Mutex};
-use tracing::{debug, warn};
 use std::thread::LocalKey;
+use tracing::{debug, warn};
 
 /// Result type for PDFium rendering operations.
 pub type Result<T> = std::result::Result<T, Vec<Diagnostic>>;
@@ -76,10 +76,13 @@ thread_local! {
 ///
 /// Returns `None` if PDFium initialization failed (e.g., native library not found).
 fn get_pdfium() -> Option<Arc<Pdfium>> {
-    PDFIUM_INSTANCE.try_with(|instance| {
-        let mut guard = instance.lock().unwrap();
-        guard.get_or_init()
-    }).ok().flatten()
+    PDFIUM_INSTANCE
+        .try_with(|instance| {
+            let mut guard = instance.lock().unwrap();
+            guard.get_or_init()
+        })
+        .ok()
+        .flatten()
 }
 
 /// Check if the full-render feature is available at runtime.
@@ -119,11 +122,7 @@ pub fn has_full_render() -> bool {
 /// - PDFium fails to load the document
 /// - The page index is out of bounds
 /// - Rendering fails
-pub fn render_page_via_pdfium(
-    pdf_bytes: &[u8],
-    page_index: usize,
-    dpi: u32,
-) -> Result<GrayImage> {
+pub fn render_page_via_pdfium(pdf_bytes: &[u8], page_index: usize, dpi: u32) -> Result<GrayImage> {
     let mut diagnostics = Vec::new();
 
     // Get the thread-local PDFium instance
@@ -155,7 +154,10 @@ pub fn render_page_via_pdfium(
     if page_index as i32 >= page_count {
         diagnostics.push(Diagnostic::with_dynamic_no_offset(
             DiagCode::StructMissingKey,
-            format!("Page index {} out of bounds (document has {} pages)", page_index, page_count),
+            format!(
+                "Page index {} out of bounds (document has {} pages)",
+                page_index, page_count
+            ),
         ));
         return Err(diagnostics);
     }

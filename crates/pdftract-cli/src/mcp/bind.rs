@@ -105,11 +105,17 @@ mod tests {
         // Non-loopback addresses should fail without a token
         let result = check_bind_security("0.0.0.0:8080", false);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("requires --auth-token-file"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("requires --auth-token-file"));
 
         let result = check_bind_security("192.168.1.1:3000", false);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("requires --auth-token-file"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("requires --auth-token-file"));
     }
 
     #[test]

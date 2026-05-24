@@ -22,16 +22,18 @@
 //! - [`compression`] — Zstandard compression/decompression for cache entries
 //! - [`metadata`] — Cache index.json and metadata handling (TODO: 6.9.3)
 
+pub mod compression;
 pub mod key;
 pub mod layout;
-pub mod compression;
-pub mod multi_process;
 pub mod lru;
+pub mod multi_process;
 
 pub use key::CacheKey;
-pub use layout::{entry_path, CacheIndex, CURRENT_SCHEMA_VERSION, increment_hit_counter, increment_miss_counter};
-pub use multi_process::{Reader, Writer, cleanup_stale_temp_files};
+pub use layout::{
+    entry_path, increment_hit_counter, increment_miss_counter, CacheIndex, CURRENT_SCHEMA_VERSION,
+};
 pub use lru::Lru;
+pub use multi_process::{cleanup_stale_temp_files, Reader, Writer};
 
 use crate::extract::ExtractionResult;
 use crate::options::ExtractionOptions;
@@ -44,7 +46,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[derive(Debug)]
 pub enum CacheLookupResult {
     /// Cache hit: entry found and deserialized successfully
-    Hit { result: ExtractionResult, age_seconds: u64 },
+    Hit {
+        result: ExtractionResult,
+        age_seconds: u64,
+    },
     /// Cache miss: entry not found or corrupt (will be overwritten)
     Miss,
     /// Cache skipped: cache not configured or disabled
@@ -126,7 +131,10 @@ pub fn extract_with_cache(
                 Ok(result) => {
                     // Cache hit - increment counter and touch the entry
                     let _ = increment_hit_counter(cache_dir);
-                    let lru = Lru::new(cache_dir, cache_size_bytes.unwrap_or(lru::DEFAULT_CACHE_SIZE_BYTES));
+                    let lru = Lru::new(
+                        cache_dir,
+                        cache_size_bytes.unwrap_or(lru::DEFAULT_CACHE_SIZE_BYTES),
+                    );
                     let _ = lru.touch(&fingerprint, &key.opts_hash);
                     return Ok((result, "hit".to_string(), Some(age_seconds)));
                 }
@@ -154,7 +162,8 @@ pub fn extract_with_cache(
             match compression::encode(&json_data) {
                 Ok(compressed) => {
                     let writer = Writer::new(cache_dir);
-                    let _ = writer.write(&fingerprint, &key.opts_hash, compressed.len(), &compressed);
+                    let _ =
+                        writer.write(&fingerprint, &key.opts_hash, compressed.len(), &compressed);
 
                     // Update index entry count and total bytes
                     if let Ok(mut index) = layout::load_index(cache_dir) {
@@ -165,7 +174,10 @@ pub fn extract_with_cache(
                     }
 
                     // Trigger LRU eviction if needed
-                    let lru = Lru::new(cache_dir, cache_size_bytes.unwrap_or(lru::DEFAULT_CACHE_SIZE_BYTES));
+                    let lru = Lru::new(
+                        cache_dir,
+                        cache_size_bytes.unwrap_or(lru::DEFAULT_CACHE_SIZE_BYTES),
+                    );
                     let _ = lru.maybe_evict();
                 }
                 Err(_) => {

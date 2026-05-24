@@ -53,7 +53,10 @@ impl Segment {
         let (y0, y1) = if y0 <= y1 { (y0, y1) } else { (y1, y0) };
 
         Some(Self {
-            x0, y0, x1, y1,
+            x0,
+            y0,
+            x1,
+            y1,
             orientation,
         })
     }
@@ -62,7 +65,10 @@ impl Segment {
     pub fn horizontal(y: f32, x0: f32, x1: f32) -> Self {
         let (x0, x1) = if x0 <= x1 { (x0, x1) } else { (x1, x0) };
         Self {
-            x0, y0: y, x1, y1: y,
+            x0,
+            y0: y,
+            x1,
+            y1: y,
             orientation: SegmentOrientation::Horizontal,
         }
     }
@@ -71,7 +77,10 @@ impl Segment {
     pub fn vertical(x: f32, y0: f32, y1: f32) -> Self {
         let (y0, y1) = if y0 <= y1 { (y0, y1) } else { (y1, y0) };
         Self {
-            x0: x, y0, x1: x, y1,
+            x0: x,
+            y0,
+            x1: x,
+            y1,
             orientation: SegmentOrientation::Vertical,
         }
     }
@@ -94,8 +103,10 @@ impl Segment {
         match (self.orientation, other.orientation) {
             (SegmentOrientation::Horizontal, SegmentOrientation::Vertical) => {
                 // Self is horizontal, other is vertical
-                if other.x0 >= self.x0 - epsilon && other.x0 <= self.x1 + epsilon
-                    && self.y0 >= other.y0 - epsilon && self.y0 <= other.y1 + epsilon
+                if other.x0 >= self.x0 - epsilon
+                    && other.x0 <= self.x1 + epsilon
+                    && self.y0 >= other.y0 - epsilon
+                    && self.y0 <= other.y1 + epsilon
                 {
                     Some((other.x0, self.y0))
                 } else {
@@ -104,8 +115,10 @@ impl Segment {
             }
             (SegmentOrientation::Vertical, SegmentOrientation::Horizontal) => {
                 // Self is vertical, other is horizontal
-                if self.x0 >= other.x0 - epsilon && self.x0 <= other.x1 + epsilon
-                    && other.y0 >= self.y0 - epsilon && other.y0 <= self.y1 + epsilon
+                if self.x0 >= other.x0 - epsilon
+                    && self.x0 <= other.x1 + epsilon
+                    && other.y0 >= self.y0 - epsilon
+                    && other.y0 <= self.y1 + epsilon
                 {
                     Some((self.x0, other.y0))
                 } else {
@@ -135,7 +148,10 @@ impl Segment {
     /// Returns a new segment covering the union of both x or y ranges.
     /// Assumes segments are collinear and oriented the same way.
     pub fn merge(&self, other: &Segment) -> Segment {
-        assert_eq!(self.orientation, other.orientation, "Cannot merge segments with different orientations");
+        assert_eq!(
+            self.orientation, other.orientation,
+            "Cannot merge segments with different orientations"
+        );
 
         match self.orientation {
             SegmentOrientation::Horizontal => {

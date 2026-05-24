@@ -19,7 +19,7 @@
 
 use std::collections::HashMap;
 
-use crate::diagnostics::{Diagnostic, DiagCode};
+use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::parser::lexer::Lexer;
 use crate::parser::lexer::Token;
 
@@ -49,7 +49,9 @@ impl std::fmt::Display for CMapError {
             CMapError::UnexpectedToken(msg) => write!(f, "unexpected token: {}", msg),
             CMapError::InvalidHexString(msg) => write!(f, "invalid hex string: {}", msg),
             CMapError::InvalidRange => write!(f, "invalid range: lo > hi"),
-            CMapError::ArrayLengthMismatch => write!(f, "bfrange array length does not match range"),
+            CMapError::ArrayLengthMismatch => {
+                write!(f, "bfrange array length does not match range")
+            }
             CMapError::MissingKeyword(kw) => write!(f, "missing expected keyword: {}", kw),
             CMapError::EmptyCMap => write!(f, "CMap contains no mappings"),
         }
@@ -686,7 +688,9 @@ mod tests {
 
         assert_eq!(map.len(), 1);
         assert!(!diags.is_empty());
-        assert!(diags.iter().any(|d| d.message.as_ref().contains("odd number of bytes")));
+        assert!(diags
+            .iter()
+            .any(|d| d.message.as_ref().contains("odd number of bytes")));
     }
 
     #[test]

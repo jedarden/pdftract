@@ -3,8 +3,8 @@
 //! This module implements the two-byte-prefix directory scheme that keeps
 //! any single directory under 65K entries even at millions of cached entries.
 
-use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
 /// Current cache schema version.
 ///
@@ -86,7 +86,9 @@ pub fn entry_path(
     compressed_size: usize,
 ) -> PathBuf {
     // Strip the "pdftract-v1:" prefix to get the raw hex fingerprint
-    let fp = fingerprint.strip_prefix(FINGERPRINT_PREFIX).unwrap_or(fingerprint);
+    let fp = fingerprint
+        .strip_prefix(FINGERPRINT_PREFIX)
+        .unwrap_or(fingerprint);
 
     // Validate fingerprint is at least 4 chars (for the two-byte prefixes)
     assert!(
@@ -121,7 +123,9 @@ pub fn entry_path(
 ///
 /// Path in the format `<cache_dir>/<fp[0:2]>/<fp[2:4]>/<full_fp>`
 pub fn fingerprint_dir(cache_dir: &Path, fingerprint: &str) -> PathBuf {
-    let fp = fingerprint.strip_prefix(FINGERPRINT_PREFIX).unwrap_or(fingerprint);
+    let fp = fingerprint
+        .strip_prefix(FINGERPRINT_PREFIX)
+        .unwrap_or(fingerprint);
     assert!(
         fp.len() >= 4,
         "Fingerprint must be at least 4 characters long, got: {}",
@@ -225,7 +229,8 @@ pub fn load_index(cache_dir: &Path) -> Result<Option<CacheIndex>, anyhow::Error>
         return Err(anyhow::anyhow!(
             "Cache schema version mismatch: expected {}, got {}. \
              Please clear the cache with 'pdftract cache clear' and re-populate.",
-            CURRENT_SCHEMA_VERSION, index.schema_version
+            CURRENT_SCHEMA_VERSION,
+            index.schema_version
         ));
     }
 
@@ -297,9 +302,11 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    const TEST_FINGERPRINT: &str = "pdftract-v1:e7a1f3deadbeef00000000000000000000000000000000000000000000000000";
+    const TEST_FINGERPRINT: &str =
+        "pdftract-v1:e7a1f3deadbeef00000000000000000000000000000000000000000000000000";
     const TEST_FINGERPRINT_SHORT: &str = "pdftract-v1:e7a1";
-    const TEST_OPTS_HASH: &str = "9b21c0ffee0000000000000000000000000000000000000000000000000000000";
+    const TEST_OPTS_HASH: &str =
+        "9b21c0ffee0000000000000000000000000000000000000000000000000000000";
 
     #[test]
     fn test_entry_path_basic() {
@@ -333,10 +340,7 @@ mod tests {
         assert_eq!(path2.parent(), Some(fp_dir.as_path()));
 
         // But different filenames
-        assert_ne!(
-            path1.file_name(),
-            path2.file_name()
-        );
+        assert_ne!(path1.file_name(), path2.file_name());
     }
 
     #[test]
@@ -354,12 +358,24 @@ mod tests {
         // Check via components: skip root + cache, first prefix is e7
         let mut components1 = path1.components().skip(2);
         let mut components2 = path2.components().skip(2);
-        assert_eq!(components1.next(), Some(std::path::Component::Normal(std::ffi::OsStr::new("e7"))));
-        assert_eq!(components2.next(), Some(std::path::Component::Normal(std::ffi::OsStr::new("e7"))));
+        assert_eq!(
+            components1.next(),
+            Some(std::path::Component::Normal(std::ffi::OsStr::new("e7")))
+        );
+        assert_eq!(
+            components2.next(),
+            Some(std::path::Component::Normal(std::ffi::OsStr::new("e7")))
+        );
 
         // But different second-level directories
-        assert_eq!(components1.next(), Some(std::path::Component::Normal(std::ffi::OsStr::new("a1"))));
-        assert_eq!(components2.next(), Some(std::path::Component::Normal(std::ffi::OsStr::new("b2"))));
+        assert_eq!(
+            components1.next(),
+            Some(std::path::Component::Normal(std::ffi::OsStr::new("a1")))
+        );
+        assert_eq!(
+            components2.next(),
+            Some(std::path::Component::Normal(std::ffi::OsStr::new("b2")))
+        );
     }
 
     #[test]
@@ -367,7 +383,8 @@ mod tests {
         let cache_dir = Path::new("/cache");
         let fp_dir = fingerprint_dir(cache_dir, TEST_FINGERPRINT);
 
-        let expected = "/cache/e7/a1/e7a1f3deadbeef00000000000000000000000000000000000000000000000000";
+        let expected =
+            "/cache/e7/a1/e7a1f3deadbeef00000000000000000000000000000000000000000000000000";
         assert_eq!(fp_dir, PathBuf::from(expected));
     }
 
@@ -378,14 +395,21 @@ mod tests {
 
         // Should use the available chars: e7/a1/e7a1/...
         let mut components = path.components().skip(2);
-        assert_eq!(components.next(), Some(std::path::Component::Normal(std::ffi::OsStr::new("e7"))));
-        assert_eq!(components.next(), Some(std::path::Component::Normal(std::ffi::OsStr::new("a1"))));
+        assert_eq!(
+            components.next(),
+            Some(std::path::Component::Normal(std::ffi::OsStr::new("e7")))
+        );
+        assert_eq!(
+            components.next(),
+            Some(std::path::Component::Normal(std::ffi::OsStr::new("a1")))
+        );
     }
 
     #[test]
     fn test_parse_opts_hash_from_filename() {
         // Valid filename
-        let filename = "e7a1f3deadbeef00000000000000000000000000000000000000000000000000-12387.json.zst";
+        let filename =
+            "e7a1f3deadbeef00000000000000000000000000000000000000000000000000-12387.json.zst";
         let opts_hash = parse_opts_hash_from_filename(filename);
         assert_eq!(
             opts_hash,
@@ -404,12 +428,14 @@ mod tests {
 
     #[test]
     fn test_parse_size_from_filename() {
-        let filename = "e7a1f3deadbeef00000000000000000000000000000000000000000000000000-12387.json.zst";
+        let filename =
+            "e7a1f3deadbeef00000000000000000000000000000000000000000000000000-12387.json.zst";
         let size = parse_size_from_filename(filename);
         assert_eq!(size, Some(12387));
 
         // Different size
-        let filename2 = "e7a1f3deadbeef00000000000000000000000000000000000000000000000000-999.json.zst";
+        let filename2 =
+            "e7a1f3deadbeef00000000000000000000000000000000000000000000000000-999.json.zst";
         let size2 = parse_size_from_filename(filename2);
         assert_eq!(size2, Some(999));
 
@@ -525,7 +551,11 @@ mod tests {
         // Convert to string and check length
         let path_str = path.to_str().unwrap();
         // POSIX max path length is typically 4096
-        assert!(path_str.len() < 4096, "Path length {} exceeds 4096", path_str.len());
+        assert!(
+            path_str.len() < 4096,
+            "Path length {} exceeds 4096",
+            path_str.len()
+        );
 
         // Our paths should be much shorter in practice
         // Typical case: /cache + 2 + 2 + 64 + 64 + ~20 = ~154 bytes
@@ -554,8 +584,14 @@ mod tests {
 
         // Should still work: /cache/e7/a1/e7a1f3...
         let mut components = path.components().skip(2);
-        assert_eq!(components.next(), Some(std::path::Component::Normal(std::ffi::OsStr::new("e7"))));
-        assert_eq!(components.next(), Some(std::path::Component::Normal(std::ffi::OsStr::new("a1"))));
+        assert_eq!(
+            components.next(),
+            Some(std::path::Component::Normal(std::ffi::OsStr::new("e7")))
+        );
+        assert_eq!(
+            components.next(),
+            Some(std::path::Component::Normal(std::ffi::OsStr::new("a1")))
+        );
     }
 
     #[test]

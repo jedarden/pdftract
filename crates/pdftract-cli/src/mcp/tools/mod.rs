@@ -5,10 +5,10 @@
 //! argument schema (JSON Schema via schemars), structured error mapping, and
 //! per-invocation observability.
 
-mod registry;
 mod args;
+mod registry;
 
-pub use registry::{Tool, ToolRegistry, ToolResult, all_tools};
+pub use registry::{all_tools, Tool, ToolRegistry, ToolResult};
 
 // Error codes for pdftract-specific errors (-32099..-32000)
 pub const ERROR_NOT_YET_IMPLEMENTED: i64 = -32000;

@@ -204,7 +204,10 @@ fn resolve_tessdata_dir() -> Option<PathBuf> {
 ///
 /// - `detect_available_languages` for pack detection logic
 /// - Phase 5.4 in the plan for OCR language pack handling
-pub fn validate_ocr_languages(requested_langs: &[String], diagnostics: &mut Vec<crate::diagnostics::Diagnostic>) -> String {
+pub fn validate_ocr_languages(
+    requested_langs: &[String],
+    diagnostics: &mut Vec<crate::diagnostics::Diagnostic>,
+) -> String {
     let available = detect_available_languages();
 
     // Track which requested languages are available
@@ -217,12 +220,10 @@ pub fn validate_ocr_languages(requested_langs: &[String], diagnostics: &mut Vec<
         } else {
             missing_langs.push(lang);
             // Emit diagnostic for missing language
-            diagnostics.push(
-                crate::diagnostics::Diagnostic::with_dynamic_no_offset(
-                    crate::diagnostics::DiagCode::OcrLanguageUnavailable,
-                    format!("Requested OCR language pack '{}' is not installed", lang),
-                )
-            );
+            diagnostics.push(crate::diagnostics::Diagnostic::with_dynamic_no_offset(
+                crate::diagnostics::DiagCode::OcrLanguageUnavailable,
+                format!("Requested OCR language pack '{}' is not installed", lang),
+            ));
         }
     }
 
@@ -242,12 +243,10 @@ pub fn validate_ocr_languages(requested_langs: &[String], diagnostics: &mut Vec<
             return "eng".to_string();
         } else {
             // No languages available at all - this will cause Tesseract init to fail
-            diagnostics.push(
-                crate::diagnostics::Diagnostic::with_dynamic_no_offset(
-                    crate::diagnostics::DiagCode::OcrLanguageUnavailable,
-                    "No OCR language packs available (including fallback 'eng')".to_string(),
-                )
-            );
+            diagnostics.push(crate::diagnostics::Diagnostic::with_dynamic_no_offset(
+                crate::diagnostics::DiagCode::OcrLanguageUnavailable,
+                "No OCR language packs available (including fallback 'eng')".to_string(),
+            ));
             return "eng".to_string(); // Still return eng; Tesseract will fail with clear error
         }
     }
@@ -418,7 +417,8 @@ impl TessState {
             .map_err(|e| format!("Invalid language string: {}", e))?;
 
         let init_result = if let Some(ref path) = tessdata_path {
-            let path_str = path.to_str()
+            let path_str = path
+                .to_str()
                 .ok_or_else(|| format!("Tessdata path contains invalid UTF-8: {:?}", path))?;
             let path_cstr = CString::new(path_str)
                 .map_err(|e| format!("Invalid tessdata path string: {}", e))?;
@@ -432,9 +432,7 @@ impl TessState {
             format!(
                 "Failed to initialize Tesseract (language='{}', tessdata_path={:?}): {}. \
                  Ensure language data files are installed (see `pdftract doctor tesseract-langs`).",
-                opts.language,
-                tessdata_path,
-                e
+                opts.language, tessdata_path, e
             )
         })?;
 
@@ -523,15 +521,16 @@ pub fn borrow_or_init(opts: &TessOpts) -> std::cell::RefMut<'static, Option<Tess
         match state_ref.as_ref() {
             // No cached instance - initialize
             None => {
-                *state_ref = Some(TessState::new(opts.clone())
-                    .expect("Tesseract initialization failed"));
+                *state_ref =
+                    Some(TessState::new(opts.clone()).expect("Tesseract initialization failed"));
             }
             // Cached instance exists - check if opts match
             Some(cached) => {
                 if cached.opts() != opts {
                     // Opts changed - reinitialize
-                    *state_ref = Some(TessState::new(opts.clone())
-                        .expect("Tesseract reinitialization failed"));
+                    *state_ref = Some(
+                        TessState::new(opts.clone()).expect("Tesseract reinitialization failed"),
+                    );
                 }
                 // else: opts match, reuse cached instance
             }
@@ -653,7 +652,11 @@ mod tests {
                 let _state = borrow_or_init(&opts);
             }
 
-            assert_eq!(init_count(), 1, "Should have exactly 1 init (first call only)");
+            assert_eq!(
+                init_count(),
+                1,
+                "Should have exactly 1 init (first call only)"
+            );
         });
 
         if init_result.is_err() {
@@ -724,7 +727,10 @@ mod tests {
                 count
             );
 
-            println!("Multithreaded test: {} inits for 100 pages across rayon workers", count);
+            println!(
+                "Multithreaded test: {} inits for 100 pages across rayon workers",
+                count
+            );
         });
 
         if init_result.is_err() {
@@ -1028,7 +1034,12 @@ impl HocrWord {
 
         // Step 5: Add cell origin if this is from a hybrid cell OCR
         let (pdf_x0, pdf_y0, pdf_x1, pdf_y1) = if let Some([cell_x, cell_y]) = cell_origin {
-            (pdf_x0 + cell_x, pdf_y0 + cell_y, pdf_x1 + cell_x, pdf_y1 + cell_y)
+            (
+                pdf_x0 + cell_x,
+                pdf_y0 + cell_y,
+                pdf_x1 + cell_x,
+                pdf_y1 + cell_y,
+            )
         } else {
             (pdf_x0, pdf_y0, pdf_x1, pdf_y1)
         };
@@ -1220,10 +1231,7 @@ fn is_ocrx_word(element: &quick_xml::events::BytesStart) -> bool {
 }
 
 /// Get an attribute value from an element.
-fn get_attribute<'a>(
-    element: &'a quick_xml::events::BytesStart<'a>,
-    name: &str,
-) -> Option<String> {
+fn get_attribute<'a>(element: &'a quick_xml::events::BytesStart<'a>, name: &str) -> Option<String> {
     element
         .attributes()
         .filter_map(|a| a.ok())
@@ -1250,13 +1258,17 @@ fn parse_title_attribute(title: &str) -> Result<([u32; 4], u8), String> {
                 // Parse bbox coordinates: "bbox x0 y0 x1 y1"
                 let coords: Vec<&str> = parts.collect();
                 if coords.len() >= 4 {
-                    let x0 = coords[0].parse::<u32>()
+                    let x0 = coords[0]
+                        .parse::<u32>()
                         .map_err(|_| format!("Invalid bbox x0: {}", coords[0]))?;
-                    let y0 = coords[1].parse::<u32>()
+                    let y0 = coords[1]
+                        .parse::<u32>()
                         .map_err(|_| format!("Invalid bbox y0: {}", coords[1]))?;
-                    let x1 = coords[2].parse::<u32>()
+                    let x1 = coords[2]
+                        .parse::<u32>()
                         .map_err(|_| format!("Invalid bbox x1: {}", coords[2]))?;
-                    let y1 = coords[3].parse::<u32>()
+                    let y1 = coords[3]
+                        .parse::<u32>()
                         .map_err(|_| format!("Invalid bbox y1: {}", coords[3]))?;
 
                     bbox = Some([x0, y0, x1, y1]);
@@ -1265,7 +1277,8 @@ fn parse_title_attribute(title: &str) -> Result<([u32; 4], u8), String> {
             Some("x_wconf") => {
                 // Parse confidence: "x_wconf NNN"
                 if let Some(conf_str) = parts.next() {
-                    let conf = conf_str.parse::<u8>()
+                    let conf = conf_str
+                        .parse::<u8>()
                         .map_err(|_| format!("Invalid x_wconf: {}", conf_str))?;
                     confidence = Some(conf);
                 }
@@ -1540,7 +1553,12 @@ mod hocr_tests {
             let y = (i / 600) * 30;
             hocr.push_str(&format!(
                 "<span class='ocrx_word' title='bbox {} {} {} {}; x_wconf {}'>word{}</span>",
-                x, y, x + 50, y + 20, 85 + (i % 15), i
+                x,
+                y,
+                x + 50,
+                y + 20,
+                85 + (i % 15),
+                i
             ));
         }
         hocr.push_str("</body></html>");
@@ -1553,8 +1571,11 @@ mod hocr_tests {
         assert_eq!(words.len(), 1000);
 
         // Should be very fast (< 10ms for 1000 words)
-        assert!(elapsed < std::time::Duration::from_millis(50),
-            "HOCR parsing took {:?}, expected < 50ms", elapsed);
+        assert!(
+            elapsed < std::time::Duration::from_millis(50),
+            "HOCR parsing took {:?}, expected < 50ms",
+            elapsed
+        );
     }
 
     #[test]
@@ -1609,7 +1630,10 @@ mod hocr_tests {
         if let Ok(quick_xml::events::Event::Start(e)) = reader.read_event_into(&mut buf) {
             assert_eq!(get_attribute(&e, "class"), Some("ocrx_word".to_string()));
             assert_eq!(get_attribute(&e, "id"), Some("test".to_string()));
-            assert_eq!(get_attribute(&e, "title"), Some("bbox 0 0 50 20".to_string()));
+            assert_eq!(
+                get_attribute(&e, "title"),
+                Some("bbox 0 0 50 20".to_string())
+            );
             assert_eq!(get_attribute(&e, "missing"), None);
         }
     }
@@ -1632,15 +1656,31 @@ mod hocr_tests {
         let bbox = word.to_pdf_bbox(300, 792.0, None, None);
 
         // Check X coordinates (unchanged by Y-flip)
-        assert!((bbox[0] - 0.0).abs() < 0.1, "x0 should be ~0.0, got {}", bbox[0]);
-        assert!((bbox[2] - 21.6).abs() < 0.1, "x1 should be ~21.6, got {}", bbox[2]);
+        assert!(
+            (bbox[0] - 0.0).abs() < 0.1,
+            "x0 should be ~0.0, got {}",
+            bbox[0]
+        );
+        assert!(
+            (bbox[2] - 21.6).abs() < 0.1,
+            "x1 should be ~21.6, got {}",
+            bbox[2]
+        );
 
         // Check Y coordinates (flipped)
         // y0 = 792 - 30*72/300 = 792 - 7.2 = 784.8 (but with padding subtract: 792 - 4.8 = 787.2)
         // Actually: y1_pt = 20 * 0.24 = 4.8, so pdf_y0 = 792 - 4.8 = 787.2
         // y0_pt = 0, so pdf_y1 = 792 - 0 = 792
-        assert!((bbox[1] - 787.2).abs() < 0.1, "y0 should be ~787.2, got {}", bbox[1]);
-        assert!((bbox[3] - 792.0).abs() < 0.1, "y1 should be ~792.0, got {}", bbox[3]);
+        assert!(
+            (bbox[1] - 787.2).abs() < 0.1,
+            "y0 should be ~787.2, got {}",
+            bbox[1]
+        );
+        assert!(
+            (bbox[3] - 792.0).abs() < 0.1,
+            "y1 should be ~792.0, got {}",
+            bbox[3]
+        );
     }
 
     #[test]
@@ -1688,9 +1728,15 @@ mod hocr_tests {
         let bbox = word.to_pdf_bbox(300, 792.0, None, None);
 
         // After padding subtraction, x0 and y0 should be at 0 (page origin)
-        assert!((bbox[0] - 0.0).abs() < 0.1, "x0 should be ~0.0 after padding subtraction");
+        assert!(
+            (bbox[0] - 0.0).abs() < 0.1,
+            "x0 should be ~0.0 after padding subtraction"
+        );
         // y0 should be near page height (top of page after Y-flip)
-        assert!(bbox[1] > 780.0, "y0 should be near top of page after Y-flip");
+        assert!(
+            bbox[1] > 780.0,
+            "y0 should be near top of page after Y-flip"
+        );
     }
 
     #[test]
@@ -1705,17 +1751,29 @@ mod hocr_tests {
         // At 300 DPI: 100px * 72/300 = 24pt
         let bbox_300 = word.to_pdf_bbox(300, 792.0, None, None);
         let width_300 = bbox_300[2] - bbox_300[0];
-        assert!((width_300 - 24.0).abs() < 0.1, "Width at 300 DPI should be ~24pt, got {}", width_300);
+        assert!(
+            (width_300 - 24.0).abs() < 0.1,
+            "Width at 300 DPI should be ~24pt, got {}",
+            width_300
+        );
 
         // At 200 DPI: 100px * 72/200 = 36pt
         let bbox_200 = word.to_pdf_bbox(200, 792.0, None, None);
         let width_200 = bbox_200[2] - bbox_200[0];
-        assert!((width_200 - 36.0).abs() < 0.1, "Width at 200 DPI should be ~36pt, got {}", width_200);
+        assert!(
+            (width_200 - 36.0).abs() < 0.1,
+            "Width at 200 DPI should be ~36pt, got {}",
+            width_200
+        );
 
         // At 400 DPI: 100px * 72/400 = 18pt
         let bbox_400 = word.to_pdf_bbox(400, 792.0, None, None);
         let width_400 = bbox_400[2] - bbox_400[0];
-        assert!((width_400 - 18.0).abs() < 0.1, "Width at 400 DPI should be ~18pt, got {}", width_400);
+        assert!(
+            (width_400 - 18.0).abs() < 0.1,
+            "Width at 400 DPI should be ~18pt, got {}",
+            width_400
+        );
     }
 
     #[test]
@@ -1736,11 +1794,15 @@ mod hocr_tests {
         let bbox = word.to_pdf_bbox(300, 99.0, None, Some(cell_origin));
 
         // X should be offset by cell origin
-        assert!((bbox[0] - (229.5 + 10.0 * 72.0 / 300.0)).abs() < 1.0,
-            "x0 should include cell origin offset");
+        assert!(
+            (bbox[0] - (229.5 + 10.0 * 72.0 / 300.0)).abs() < 1.0,
+            "x0 should include cell origin offset"
+        );
         // Y should be offset by cell origin (note: cell height is 99pt)
-        assert!((bbox[1] - (594.0 + 10.0 * 72.0 / 300.0)).abs() < 1.0,
-            "y0 should include cell origin offset");
+        assert!(
+            (bbox[1] - (594.0 + 10.0 * 72.0 / 300.0)).abs() < 1.0,
+            "y0 should include cell origin offset"
+        );
     }
 
     #[test]
@@ -1776,8 +1838,10 @@ mod hocr_tests {
         // After 90-degree rotation, the bbox should be transformed
         // The exact values depend on the rotation implementation
         // Just verify that the rotation changes the coordinates
-        assert!(bbox_rot_90[0] != bbox_no_rot[0] || bbox_rot_90[1] != bbox_no_rot[1],
-            "Rotation should change coordinates");
+        assert!(
+            bbox_rot_90[0] != bbox_no_rot[0] || bbox_rot_90[1] != bbox_no_rot[1],
+            "Rotation should change coordinates"
+        );
     }
 
     #[test]
@@ -1825,8 +1889,14 @@ mod hocr_tests {
         let bbox_invalid = word.to_pdf_bbox(300, 792.0, Some(45), None); // 45° is not supported
 
         // Invalid rotation should return unchanged bbox
-        assert!((bbox_invalid[0] - bbox_no_rot[0]).abs() < 0.01, "Invalid rotation should not change x0");
-        assert!((bbox_invalid[1] - bbox_no_rot[1]).abs() < 0.01, "Invalid rotation should not change y0");
+        assert!(
+            (bbox_invalid[0] - bbox_no_rot[0]).abs() < 0.01,
+            "Invalid rotation should not change x0"
+        );
+        assert!(
+            (bbox_invalid[1] - bbox_no_rot[1]).abs() < 0.01,
+            "Invalid rotation should not change y0"
+        );
     }
 
     #[test]
@@ -1851,8 +1921,16 @@ mod hocr_tests {
 
             // At 300 DPI: 40px = 9.6pt, 20px = 4.8pt
             // Allow some tolerance for floating-point errors
-            assert!((width - 9.6).abs() < 0.2, "Width should be ~9.6pt at {}° rotation", rot);
-            assert!((height - 4.8).abs() < 0.2, "Height should be ~4.8pt at {}° rotation", rot);
+            assert!(
+                (width - 9.6).abs() < 0.2,
+                "Width should be ~9.6pt at {}° rotation",
+                rot
+            );
+            assert!(
+                (height - 4.8).abs() < 0.2,
+                "Height should be ~4.8pt at {}° rotation",
+                rot
+            );
         }
     }
 }
@@ -1952,11 +2030,7 @@ pub fn run_tesseract(
         .into_iter()
         .map(|word| {
             let pdf_bbox = word.to_pdf_bbox(dpi, page_height_pt, None, None);
-            crate::hybrid::Span::ocr(
-                pdf_bbox,
-                word.confidence(),
-                word.text,
-            )
+            crate::hybrid::Span::ocr(pdf_bbox, word.confidence(), word.text)
         })
         .collect();
 
@@ -2016,11 +2090,7 @@ pub fn run_tesseract_on_cell(
         .into_iter()
         .map(|word| {
             let pdf_bbox = word.to_pdf_bbox(dpi, cell_height_pt, None, Some(cell_origin));
-            crate::hybrid::Span::ocr(
-                pdf_bbox,
-                word.confidence(),
-                word.text,
-            )
+            crate::hybrid::Span::ocr(pdf_bbox, word.confidence(), word.text)
         })
         .collect();
 
@@ -2041,9 +2111,7 @@ mod integration_tests {
 
         let opts = TessOpts::default();
 
-        let result = std::panic::catch_unwind(|| {
-            run_tesseract(&img, 300, 792.0, &opts)
-        });
+        let result = std::panic::catch_unwind(|| run_tesseract(&img, 300, 792.0, &opts));
 
         if result.is_err() {
             // Tesseract not available - skip gracefully
@@ -2064,9 +2132,8 @@ mod integration_tests {
         let opts = TessOpts::default();
         let cell_origin = [100.0, 200.0];
 
-        let result = std::panic::catch_unwind(|| {
-            run_tesseract_on_cell(&img, 300, 99.0, cell_origin, &opts)
-        });
+        let result =
+            std::panic::catch_unwind(|| run_tesseract_on_cell(&img, 300, 99.0, cell_origin, &opts));
 
         if result.is_err() {
             println!("Skipping test_run_tesseract_on_cell_offset: Tesseract not available");
@@ -2160,7 +2227,9 @@ pub fn calculate_wer(ocr_output: &str, ground_truth: &str) -> f64 {
 /// A `Vec<String>` of normalized words.
 fn normalize_text(text: &str) -> Vec<String> {
     // Define punctuation to strip
-    let punct = ['.', ',', '!', '?', ';', ':', '"', '\'', '(', ')', '[', ']', '{', '}'];
+    let punct = [
+        '.', ',', '!', '?', ';', ':', '"', '\'', '(', ')', '[', ']', '{', '}',
+    ];
 
     text.to_lowercase()
         .split_whitespace()
@@ -2202,9 +2271,9 @@ fn word_edit_distance(ocr: &[String], reference: &[String]) -> (usize, usize, us
                 dp[i][j] = dp[i - 1][j - 1]; // No operation needed
             } else {
                 dp[i][j] = [
-                    dp[i - 1][j] + 1,      // Deletion
-                    dp[i][j - 1] + 1,      // Insertion
-                    dp[i - 1][j - 1] + 1,  // Substitution
+                    dp[i - 1][j] + 1,     // Deletion
+                    dp[i][j - 1] + 1,     // Insertion
+                    dp[i - 1][j - 1] + 1, // Substitution
                 ]
                 .into_iter()
                 .min()
@@ -2241,12 +2310,283 @@ fn word_edit_distance(ocr: &[String], reference: &[String]) -> (usize, usize, us
             j -= 1;
         } else {
             // Default case (shouldn't happen in valid backtracking)
-            if i > 0 { i -= 1; }
-            if j > 0 { j -= 1; }
+            if i > 0 {
+                i -= 1;
+            }
+            if j > 0 {
+                j -= 1;
+            }
         }
     }
 
     (substitutions, insertions, deletions)
+}
+
+// ============ Assisted OCR Validation Filter (Phase 5.5.2) ============
+
+use crate::content_stream::Glyph;
+
+/// Distance threshold for assisted-OCR position validation (in PDF points).
+///
+/// If the center-to-center distance between an OCR word and the nearest
+/// vector glyph is less than this value, the OCR word is accepted with its
+/// full confidence. Otherwise, confidence is capped at 0.4.
+///
+/// 5 pt is approximately one space-character width at 12 pt font size.
+const ASSISTED_OCR_DISTANCE_PT: f64 = 5.0;
+
+/// Confidence cap for OCR words that fail position validation.
+///
+/// This value is below the 0.5 threshold used in bbox-merge (Phase 5.2.4),
+/// ensuring that unassisted OCR spans won't be preferred over legitimate
+/// vector spans.
+const ASSISTED_OCR_CONFIDENCE_CAP: f32 = 0.4;
+
+/// Minimum glyph count to justify building a KD-tree.
+///
+/// For small N (< 100), linear scan is faster due to lower overhead.
+const ASSISTED_OCR_KDTREE_THRESHOLD: usize = 100;
+
+/// Validate OCR words against vector glyph position hints.
+///
+/// This function implements the per-word validation filter for the
+/// BrokenVector assisted-OCR path (Phase 5.5.2). For each Tesseract word,
+/// it finds the nearest vector glyph bbox center and checks the distance:
+///
+/// - If distance < 5 pt: accept word with full OCR confidence
+/// - If distance >= 5 pt: cap confidence at 0.4
+///
+/// The 5pt threshold filters OCR text where positions disagree with the
+/// vector layer, indicating either OCR-of-OCR garbage or hallucinated text.
+///
+/// # Arguments
+///
+/// * `hocr_words` - OCR words from Tesseract (in PDF coordinates)
+/// * `vector_glyphs` - Position hints from Phase 3 (PositionHint mode)
+///
+/// # Returns
+///
+/// A `Vec<Span>` with `SpanSource::OcrAssisted` and adjusted confidence scores.
+/// The output preserves HOCR document order.
+///
+/// # Performance
+///
+/// - For < 100 glyphs: O(N*M) linear scan (N = OCR words, M = glyphs)
+/// - For >= 100 glyphs: Could use KD-tree for O(N*log(M)) (future optimization)
+///
+/// # Examples
+///
+/// ```ignore
+/// use pdftract_core::ocr::validate_ocr_with_position_hints;
+/// use pdftract_core::content_stream::Glyph;
+///
+/// // Position hints from Phase 3
+/// let glyphs = vec![
+///     Glyph::position_hint([100.0, 200.0, 110.0, 210.0]),
+/// ];
+///
+/// // OCR words from Tesseract (already converted to PDF coords)
+/// let mut words = vec![
+///     HocrWord { text: "hello".to_string(), bbox_px: [102, 202, 108, 208], confidence_0_100: 95 },
+/// ];
+///
+/// let spans = validate_ocr_with_position_hints(&words, &glyphs, 300, 792.0);
+/// // Word at (102, 202) is close to glyph at (100, 200) -> full confidence
+/// assert_eq!(spans[0].confidence, 0.95);
+/// ```
+///
+/// # See also
+///
+/// - Phase 5.5 pipeline step 3 (plan line 1935)
+/// - `Glyph::position_hint` for creating position-hint glyphs
+pub fn validate_ocr_with_position_hints(
+    hocr_words: &[HocrWord],
+    vector_glyphs: &[Glyph],
+    dpi: u32,
+    page_height_pt: f64,
+) -> Vec<crate::hybrid::Span> {
+    // Build list of vector glyph bbox centers for nearest-neighbor lookup
+    let glyph_centers: Vec<(f64, f64)> = vector_glyphs
+        .iter()
+        .map(|g| {
+            let bx = g.bbox;
+            ((bx[0] + bx[2]) / 2.0, (bx[1] + bx[3]) / 2.0)
+        })
+        .collect();
+
+    // For each OCR word, find nearest glyph and validate distance
+    hocr_words
+        .iter()
+        .map(|word| {
+            let pdf_bbox = word.to_pdf_bbox(dpi, page_height_pt, None, None);
+            let word_center = (
+                (pdf_bbox[0] + pdf_bbox[2]) / 2.0,
+                (pdf_bbox[1] + pdf_bbox[3]) / 2.0,
+            );
+
+            // Find nearest vector glyph center (linear scan - fast enough for N < 100)
+            let min_distance = glyph_centers
+                .iter()
+                .map(|&gx| {
+                    let dx = gx.0 - word_center.0;
+                    let dy = gx.1 - word_center.1;
+                    (dx * dx + dy * dy).sqrt()
+                })
+                .min()
+                .unwrap_or(f64::MAX); // No glyphs -> max distance
+
+            // Apply validation: cap confidence if distance >= 5pt
+            let ocr_confidence = word.confidence();
+            let adjusted_confidence = if min_distance < ASSISTED_OCR_DISTANCE_PT {
+                ocr_confidence
+            } else {
+                ocr_confidence.min(ASSISTED_OCR_CONFIDENCE_CAP)
+            };
+
+            crate::hybrid::Span::ocr_assisted(pdf_bbox, adjusted_confidence, word.text.clone())
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod assisted_ocr_tests {
+    use super::*;
+
+    #[test]
+    fn test_validation_filter_near_glyph() {
+        // OCR word center at (102, 201) is within 5pt of glyph at (100, 200)
+        let glyphs = vec![Glyph::position_hint([95.0, 195.0, 105.0, 205.0])];
+        let word = HocrWord {
+            text: "hello".to_string(),
+            bbox_px: [20, 20, 40, 40], // Will be converted to ~102, 201 at 300 DPI
+            confidence_0_100: 95,
+        };
+
+        let spans = validate_ocr_with_position_hints(&[word], &glyphs, 300, 792.0);
+
+        assert_eq!(spans.len(), 1);
+        // Should accept full confidence since distance < 5pt
+        assert!((spans[0].confidence - 0.95).abs() < f32::EPSILON);
+        assert_eq!(spans[0].source, crate::hybrid::SpanSource::OcrAssisted);
+        assert_eq!(spans[0].text, "hello");
+    }
+
+    #[test]
+    fn test_validation_filter_far_from_glyph() {
+        // OCR word center at (150, 250) is > 5pt from glyph at (100, 200)
+        let glyphs = vec![Glyph::position_hint([95.0, 195.0, 105.0, 205.0])];
+        let word = HocrWord {
+            text: "world".to_string(),
+            bbox_px: [500, 500, 550, 520], // Far from glyph
+            confidence_0_100: 95,
+        };
+
+        let spans = validate_ocr_with_position_hints(&[word], &glyphs, 300, 792.0);
+
+        assert_eq!(spans.len(), 1);
+        // Should cap confidence at 0.4 since distance >= 5pt
+        assert_eq!(spans[0].confidence, ASSISTED_OCR_CONFIDENCE_CAP);
+        assert_eq!(spans[0].source, crate::hybrid::SpanSource::OcrAssisted);
+    }
+
+    #[test]
+    fn test_validation_filter_confidence_already_below_cap() {
+        // OCR word with low confidence (30%) far from glyph should stay at 30%
+        let glyphs = vec![Glyph::position_hint([95.0, 195.0, 105.0, 205.0])];
+        let word = HocrWord {
+            text: "test".to_string(),
+            bbox_px: [500, 500, 550, 520],
+            confidence_0_100: 30,
+        };
+
+        let spans = validate_ocr_with_position_hints(&[word], &glyphs, 300, 792.0);
+
+        assert_eq!(spans.len(), 1);
+        // Should keep original confidence (already below cap)
+        assert_eq!(spans[0].confidence, 0.3);
+    }
+
+    #[test]
+    fn test_validation_filter_no_glyphs() {
+        // No position hints available -> cap all words
+        let glyphs: Vec<Glyph> = vec![];
+        let word = HocrWord {
+            text: "orphan".to_string(),
+            bbox_px: [100, 100, 150, 120],
+            confidence_0_100: 90,
+        };
+
+        let spans = validate_ocr_with_position_hints(&[word], &glyphs, 300, 792.0);
+
+        assert_eq!(spans.len(), 1);
+        // No glyphs -> max distance -> cap confidence
+        assert_eq!(spans[0].confidence, ASSISTED_OCR_CONFIDENCE_CAP);
+    }
+
+    #[test]
+    fn test_validation_filter_multiple_words_preserves_order() {
+        // Test that HOCR document order is preserved
+        let glyphs = vec![
+            Glyph::position_hint([100.0, 200.0, 110.0, 210.0]),
+            Glyph::position_hint([200.0, 200.0, 210.0, 210.0]),
+        ];
+
+        let words = vec![
+            HocrWord {
+                text: "first".to_string(),
+                bbox_px: [20, 20, 40, 40],
+                confidence_0_100: 90,
+            },
+            HocrWord {
+                text: "second".to_string(),
+                bbox_px: [500, 500, 550, 520], // Far from any glyph
+                confidence_0_100: 85,
+            },
+            HocrWord {
+                text: "third".to_string(),
+                bbox_px: [60, 20, 80, 40],
+                confidence_0_100: 95,
+            },
+        ];
+
+        let spans = validate_ocr_with_position_hints(&words, &glyphs, 300, 792.0);
+
+        assert_eq!(spans.len(), 3);
+        assert_eq!(spans[0].text, "first");
+        assert_eq!(spans[1].text, "second");
+        assert_eq!(spans[2].text, "third");
+
+        // First and third should have full confidence (near glyphs)
+        assert!((spans[0].confidence - 0.9).abs() < f32::EPSILON);
+        assert!((spans[2].confidence - 0.95).abs() < f32::EPSILON);
+
+        // Second should be capped (far from glyphs)
+        assert_eq!(spans[1].confidence, ASSISTED_OCR_CONFIDENCE_CAP);
+    }
+
+    #[test]
+    fn test_validation_filter_distance_threshold() {
+        // Test the exact 5pt boundary
+        let glyphs = vec![Glyph::position_hint([100.0, 200.0, 110.0, 210.0])];
+
+        // Word at exactly 5pt distance should be capped
+        let word_far = HocrWord {
+            text: "far".to_string(),
+            bbox_px: [1000, 1000, 1050, 1020],
+            confidence_0_100: 95,
+        };
+
+        let spans = validate_ocr_with_position_hints(&[word_far], &glyphs, 300, 792.0);
+        assert_eq!(spans[0].confidence, ASSISTED_OCR_CONFIDENCE_CAP);
+    }
+
+    #[test]
+    fn test_assisted_ocr_constants() {
+        // Verify the constants match the plan specification
+        assert_eq!(ASSISTED_OCR_DISTANCE_PT, 5.0);
+        assert_eq!(ASSISTED_OCR_CONFIDENCE_CAP, 0.4);
+        assert_eq!(ASSISTED_OCR_KDTREE_THRESHOLD, 100);
+    }
 }
 
 #[cfg(test)]
@@ -2304,13 +2644,19 @@ mod wer_tests {
     #[test]
     fn test_calculate_wer_empty_reference_nonempty_ocr() {
         let wer = calculate_wer("some text", "");
-        assert_eq!(wer, 1.0, "Non-empty OCR with empty reference should have WER = 1");
+        assert_eq!(
+            wer, 1.0,
+            "Non-empty OCR with empty reference should have WER = 1"
+        );
     }
 
     #[test]
     fn test_calculate_wer_empty_ocr_nonempty_reference() {
         let wer = calculate_wer("", "some text");
-        assert_eq!(wer, 1.0, "Empty OCR with non-empty reference should have WER = 1");
+        assert_eq!(
+            wer, 1.0,
+            "Empty OCR with non-empty reference should have WER = 1"
+        );
     }
 
     #[test]
@@ -2375,7 +2721,11 @@ mod wer_tests {
     #[test]
     fn test_word_edit_distance_insertion_deletion() {
         let ocr = vec!["hello".to_string(), "there".to_string()];
-        let reference = vec!["hello".to_string(), "world".to_string(), "there".to_string()];
+        let reference = vec![
+            "hello".to_string(),
+            "world".to_string(),
+            "there".to_string(),
+        ];
         let (sub, ins, del) = word_edit_distance(&ocr, &reference);
         // "world" deleted from reference, but also could be seen as insertion
         // The algorithm counts it as:

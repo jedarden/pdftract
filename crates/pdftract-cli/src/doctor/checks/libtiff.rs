@@ -1,5 +1,5 @@
-use std::process::Command;
 use super::super::{Check, CheckResult, CheckStatus, DoctorCtx};
+use std::process::Command;
 
 /// Check: libtiff installation (CCITT fax decoding)
 ///
@@ -14,17 +14,13 @@ impl Check for LibtiffCheck {
 
     fn run(&self, _ctx: &DoctorCtx) -> CheckResult {
         // First check if pkg-config exists
-        let pkg_check = Command::new("pkg-config")
-            .arg("--version")
-            .output();
+        let pkg_check = Command::new("pkg-config").arg("--version").output();
 
         let pkg_available = pkg_check.is_ok();
 
         if !pkg_available {
             // Fallback: try ldconfig -p | grep tiff
-            let ldconfig = Command::new("ldconfig")
-                .arg("-p")
-                .output();
+            let ldconfig = Command::new("ldconfig").arg("-p").output();
 
             if let Ok(output) = ldconfig {
                 let stdout = String::from_utf8_lossy(&output.stdout);
@@ -69,20 +65,16 @@ impl Check for LibtiffCheck {
                     detail,
                 }
             }
-            Ok(_) => {
-                CheckResult {
-                    name: self.name(),
-                    status: CheckStatus::Fail,
-                    detail: "libtiff not found (pkg-config --exists libtiff-4 failed)".to_string(),
-                }
-            }
-            Err(e) => {
-                CheckResult {
-                    name: self.name(),
-                    status: CheckStatus::Fail,
-                    detail: format!("pkg-config check failed: {}", e),
-                }
-            }
+            Ok(_) => CheckResult {
+                name: self.name(),
+                status: CheckStatus::Fail,
+                detail: "libtiff not found (pkg-config --exists libtiff-4 failed)".to_string(),
+            },
+            Err(e) => CheckResult {
+                name: self.name(),
+                status: CheckStatus::Fail,
+                detail: format!("pkg-config check failed: {}", e),
+            },
         }
     }
 }

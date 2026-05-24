@@ -1,5 +1,5 @@
-use std::process::Command;
 use super::super::{Check, CheckResult, CheckStatus, DoctorCtx};
+use std::process::Command;
 
 /// Check: leptonica installation (transitive Tesseract dependency)
 ///
@@ -15,17 +15,13 @@ impl Check for LeptonicaCheck {
 
     fn run(&self, _ctx: &DoctorCtx) -> CheckResult {
         // First check if pkg-config exists
-        let pkg_check = Command::new("pkg-config")
-            .arg("--version")
-            .output();
+        let pkg_check = Command::new("pkg-config").arg("--version").output();
 
         let pkg_available = pkg_check.is_ok();
 
         if !pkg_available {
             // Fallback: try ldconfig -p | grep lept
-            let ldconfig = Command::new("ldconfig")
-                .arg("-p")
-                .output();
+            let ldconfig = Command::new("ldconfig").arg("-p").output();
 
             if let Ok(output) = ldconfig {
                 let stdout = String::from_utf8_lossy(&output.stdout);
@@ -68,14 +64,20 @@ impl Check for LeptonicaCheck {
                         CheckResult {
                             name: self.name(),
                             status: CheckStatus::Warn,
-                            detail: format!("leptonica {} found (< 1.79: may have compatibility issues)", version),
+                            detail: format!(
+                                "leptonica {} found (< 1.79: may have compatibility issues)",
+                                version
+                            ),
                         }
                     }
                 } else {
                     CheckResult {
                         name: self.name(),
                         status: CheckStatus::Warn,
-                        detail: format!("leptonica {} found but version could not be parsed", version_str),
+                        detail: format!(
+                            "leptonica {} found but version could not be parsed",
+                            version_str
+                        ),
                     }
                 }
             }
@@ -87,13 +89,11 @@ impl Check for LeptonicaCheck {
                     detail: format!("leptonica not found: {}", stderr.trim()),
                 }
             }
-            Err(e) => {
-                CheckResult {
-                    name: self.name(),
-                    status: CheckStatus::Fail,
-                    detail: format!("pkg-config check failed: {}", e),
-                }
-            }
+            Err(e) => CheckResult {
+                name: self.name(),
+                status: CheckStatus::Fail,
+                detail: format!("pkg-config check failed: {}", e),
+            },
         }
     }
 }

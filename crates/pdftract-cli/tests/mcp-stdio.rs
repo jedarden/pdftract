@@ -25,7 +25,10 @@ fn spawn_mcp_stdio() -> std::process::Child {
 }
 
 /// Helper to write a framed JSON-RPC message to stdin.
-fn write_framed_message(stdin: &mut std::process::ChildStdin, json_body: &str) -> std::io::Result<()> {
+fn write_framed_message(
+    stdin: &mut std::process::ChildStdin,
+    json_body: &str,
+) -> std::io::Result<()> {
     let header = format!("Content-Length: {}\r\n\r\n", json_body.len());
     stdin.write_all(header.as_bytes())?;
     stdin.write_all(json_body.as_bytes())?;
@@ -52,13 +55,20 @@ fn read_framed_response<R: Read>(reader: &mut BufReader<R>) -> std::io::Result<O
         }
 
         if let Some(value) = line.strip_prefix("Content-Length:") {
-            content_length = Some(value.trim().parse::<usize>()
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?);
+            content_length = Some(
+                value
+                    .trim()
+                    .parse::<usize>()
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?,
+            );
         }
     }
 
     let content_length = content_length.ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::InvalidData, "Missing Content-Length header")
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Missing Content-Length header",
+        )
     })?;
 
     let mut buffer = vec![0u8; content_length];
@@ -98,8 +108,8 @@ fn test_tools_list_roundtrip() {
     assert!(response.contains(r#""result""#));
 
     // Verify it's valid JSON
-    let parsed: serde_json::Value = serde_json::from_str(&response)
-        .expect("Response is not valid JSON");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&response).expect("Response is not valid JSON");
 
     assert_eq!(parsed["jsonrpc"], "2.0");
     assert_eq!(parsed["id"], 1);
@@ -135,7 +145,11 @@ fn test_eof_clean_shutdown() {
         }
     };
 
-    assert!(status.success(), "Process did not exit cleanly: {:?}", status);
+    assert!(
+        status.success(),
+        "Process did not exit cleanly: {:?}",
+        status
+    );
 }
 
 /// Test that a parse error returns -32700 with id: null.
@@ -186,8 +200,7 @@ fn test_parse_error_recovery() {
     {
         let stdout = child.stdout.as_mut().expect("Failed to open stdout");
         let mut reader = BufReader::new(stdout);
-        read_framed_response(&mut reader)
-            .expect("Failed to read error response");
+        read_framed_response(&mut reader).expect("Failed to read error response");
     }
 
     // Now send a valid request
@@ -253,18 +266,24 @@ fn test_stdout_json_rpc_only() {
     child.kill().ok();
 
     // Verify stdout is valid framed JSON-RPC
-    assert!(response.contains(r#"{"jsonrpc":"2.0""#), "Missing JSON-RPC response");
+    assert!(
+        response.contains(r#"{"jsonrpc":"2.0""#),
+        "Missing JSON-RPC response"
+    );
     assert!(response.contains(r#""result""#), "Missing result field");
 
     // Verify stderr contains logs (logs go to stderr, not stdout)
     // The startup banner or other logs should be in stderr
-    let stderr_has_logs = !stderr_output.is_empty() ||
-        stderr_output.contains("pdftract") ||
-        stderr_output.contains("stdio") ||
-        stderr_output.contains("MCP") ||
-        stderr_output.contains("Signal");
-    assert!(stderr_has_logs || stderr_output.is_empty(),
-            "Stderr should contain logs, got: {}", stderr_output);
+    let stderr_has_logs = !stderr_output.is_empty()
+        || stderr_output.contains("pdftract")
+        || stderr_output.contains("stdio")
+        || stderr_output.contains("MCP")
+        || stderr_output.contains("Signal");
+    assert!(
+        stderr_has_logs || stderr_output.is_empty(),
+        "Stderr should contain logs, got: {}",
+        stderr_output
+    );
 }
 
 /// Test timing: request-response should complete within 50ms.
@@ -291,8 +310,11 @@ fn test_request_response_timing() {
     }
     let elapsed = start.elapsed();
 
-    assert!(elapsed < Duration::from_millis(100),
-            "Request-response took {:?}, expected < 50ms", elapsed);
+    assert!(
+        elapsed < Duration::from_millis(100),
+        "Request-response took {:?}, expected < 50ms",
+        elapsed
+    );
 
     // Clean shutdown
     drop(child.stdin.take());
@@ -362,7 +384,10 @@ fn test_notification_no_response() {
     // Notifications don't get responses, so we shouldn't see data immediately
     // (unless there's buffering from a previous request)
     // For this test, we just verify the process is still alive
-    assert!(child.try_wait().unwrap().is_none(), "Process died unexpectedly");
+    assert!(
+        child.try_wait().unwrap().is_none(),
+        "Process died unexpectedly"
+    );
 
     // Clean shutdown
     drop(child.stdin.take());

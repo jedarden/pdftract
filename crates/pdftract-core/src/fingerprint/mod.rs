@@ -103,10 +103,18 @@ impl CatalogFlags {
     /// Encode the flags into a single byte.
     fn encode(&self) -> u8 {
         let mut byte = 0u8;
-        if self.is_encrypted { byte |= 1 << 0; }
-        if self.contains_javascript { byte |= 1 << 1; }
-        if self.contains_xfa { byte |= 1 << 2; }
-        if self.ocg_present { byte |= 1 << 3; }
+        if self.is_encrypted {
+            byte |= 1 << 0;
+        }
+        if self.contains_javascript {
+            byte |= 1 << 1;
+        }
+        if self.contains_xfa {
+            byte |= 1 << 2;
+        }
+        if self.ocg_present {
+            byte |= 1 << 3;
+        }
         byte
     }
 }
@@ -193,9 +201,7 @@ fn hash_content_streams(streams: &[ContentStreamData], resolver: &XrefResolver) 
                     _ => Vec::new(),
                 }
             }
-            ContentStreamData::Direct(bytes) => {
-                normalize_content_bytes(bytes)
-            }
+            ContentStreamData::Direct(bytes) => normalize_content_bytes(bytes),
         };
         hasher.update(&bytes);
     }
@@ -409,24 +415,22 @@ fn hash_extgstate(gs_obj: &PdfObject) -> [u8; 32] {
 /// - Rotate as 4-byte BE i32
 ///
 /// NaN/Inf values are canonicalized to 0 and emit STRUCT_INVALID_GEOMETRY diagnostics.
-fn hash_page_geometry(
-    media_box: &[f64; 4],
-    crop_box: Option<&[f64; 4]>,
-    rotate: i32,
-) -> [u8; 32] {
+fn hash_page_geometry(media_box: &[f64; 4], crop_box: Option<&[f64; 4]>, rotate: i32) -> [u8; 32] {
     let mut hasher = Sha256::new();
     let mut diagnostics: Option<Vec<Diagnostic>> = None;
 
     // MediaBox: 4 coordinates, 8 bytes each = 32 bytes
     for coord in media_box {
-        let canonical = crate::fingerprint::canonicalize::canonicalize_f64(*coord, &mut diagnostics);
+        let canonical =
+            crate::fingerprint::canonicalize::canonicalize_f64(*coord, &mut diagnostics);
         hasher.update(&canonical.to_be_bytes());
     }
 
     // CropBox: if present, same format
     if let Some(crop) = crop_box {
         for coord in crop {
-            let canonical = crate::fingerprint::canonicalize::canonicalize_f64(*coord, &mut diagnostics);
+            let canonical =
+                crate::fingerprint::canonicalize::canonicalize_f64(*coord, &mut diagnostics);
             hasher.update(&canonical.to_be_bytes());
         }
     }
@@ -491,11 +495,7 @@ fn hash_structure_tree(struct_ref: ObjRef, resolver: &XrefResolver) -> [u8; 32] 
 }
 
 /// Recursively hash structure tree elements.
-fn hash_structure_elements(
-    dict: &PdfDict,
-    hasher: &mut Sha256,
-    resolver: &XrefResolver,
-) {
+fn hash_structure_elements(dict: &PdfDict, hasher: &mut Sha256, resolver: &XrefResolver) {
     // Extract and hash relevant keys: /S, /Lang, /Alt, /ActualText
     let keys_to_hash = ["S", "Lang", "Alt", "ActualText"];
 
@@ -533,7 +533,13 @@ fn hash_structure_elements(
 fn serialize_pdf_object_canonical(obj: &PdfObject) -> Vec<u8> {
     match obj {
         PdfObject::Null => b"null".to_vec(),
-        PdfObject::Bool(b) => if *b { b"true".to_vec() } else { b"false".to_vec() },
+        PdfObject::Bool(b) => {
+            if *b {
+                b"true".to_vec()
+            } else {
+                b"false".to_vec()
+            }
+        }
         PdfObject::Integer(i) => i.to_string().into_bytes(),
         PdfObject::Real(r) => {
             // Serialize with consistent precision
@@ -578,9 +584,7 @@ fn serialize_pdf_object_canonical(obj: &PdfObject) -> Vec<u8> {
             result.extend_from_slice(b" stream");
             result
         }
-        PdfObject::Indirect(i) => {
-            format!("{} {} obj", i.id.object, i.id.generation).into_bytes()
-        }
+        PdfObject::Indirect(i) => format!("{} {} obj", i.id.object, i.id.generation).into_bytes(),
     }
 }
 
@@ -665,7 +669,7 @@ mod tests {
     fn test_round_to_fixed_4dp_critical_cases() {
         // Test edge cases from plan
         assert_eq!(round_to_fixed_4dp(0.00005), 0); // 0.5 rounds to even (0)
-        // Note: 0.00015 * 10000 = 1.4999... due to float representation, so rounds to 1
+                                                    // Note: 0.00015 * 10000 = 1.4999... due to float representation, so rounds to 1
         assert_eq!(round_to_fixed_4dp(0.00015), 1); // 1.4999... rounds to 1
 
         // Test negative banker's rounding
@@ -678,24 +682,42 @@ mod tests {
         assert_eq!(serialize_pdf_object_canonical(&PdfObject::Null), b"null");
 
         // Boolean
-        assert_eq!(serialize_pdf_object_canonical(&PdfObject::Bool(true)), b"true");
-        assert_eq!(serialize_pdf_object_canonical(&PdfObject::Bool(false)), b"false");
+        assert_eq!(
+            serialize_pdf_object_canonical(&PdfObject::Bool(true)),
+            b"true"
+        );
+        assert_eq!(
+            serialize_pdf_object_canonical(&PdfObject::Bool(false)),
+            b"false"
+        );
 
         // Integer
-        assert_eq!(serialize_pdf_object_canonical(&PdfObject::Integer(42)), b"42");
+        assert_eq!(
+            serialize_pdf_object_canonical(&PdfObject::Integer(42)),
+            b"42"
+        );
 
         // Real
         let real_bytes = serialize_pdf_object_canonical(&PdfObject::Real(3.14159));
         assert!(real_bytes.starts_with(b"3.14159"));
 
         // String
-        assert_eq!(serialize_pdf_object_canonical(&PdfObject::String(Box::new(vec![b'H', b'i']))), b"(Hi)");
+        assert_eq!(
+            serialize_pdf_object_canonical(&PdfObject::String(Box::new(vec![b'H', b'i']))),
+            b"(Hi)"
+        );
 
         // Escaped string
-        assert_eq!(serialize_pdf_object_canonical(&PdfObject::String(Box::new(vec![b'(', b')']))), b"(\\(\\))");
+        assert_eq!(
+            serialize_pdf_object_canonical(&PdfObject::String(Box::new(vec![b'(', b')']))),
+            b"(\\(\\))"
+        );
 
         // Name
-        assert_eq!(serialize_pdf_object_canonical(&PdfObject::Name(Arc::from("Type"))), b"/Type");
+        assert_eq!(
+            serialize_pdf_object_canonical(&PdfObject::Name(Arc::from("Type"))),
+            b"/Type"
+        );
 
         // Reference
         let ref_obj = PdfObject::Ref(ObjRef::new(42, 0));
@@ -830,7 +852,10 @@ mod tests {
         let fp1 = compute_fingerprint(&input1, &resolver);
         let fp2 = compute_fingerprint(&input2, &resolver);
 
-        assert_ne!(fp1, fp2, "Different page counts should produce different fingerprints");
+        assert_ne!(
+            fp1, fp2,
+            "Different page counts should produce different fingerprints"
+        );
     }
 
     #[test]
@@ -868,7 +893,10 @@ mod tests {
         let fp1 = compute_fingerprint(&input1, &resolver);
         let fp2 = compute_fingerprint(&input2, &resolver);
 
-        assert_ne!(fp1, fp2, "Different geometry should produce different fingerprints");
+        assert_ne!(
+            fp1, fp2,
+            "Different geometry should produce different fingerprints"
+        );
     }
 
     #[test]
@@ -909,7 +937,10 @@ mod tests {
         let fp1 = compute_fingerprint(&input1, &resolver);
         let fp2 = compute_fingerprint(&input2, &resolver);
 
-        assert_ne!(fp1, fp2, "Different catalog flags should produce different fingerprints");
+        assert_ne!(
+            fp1, fp2,
+            "Different catalog flags should produce different fingerprints"
+        );
     }
 
     #[test]
@@ -941,7 +972,11 @@ mod tests {
         let fingerprint = compute_fingerprint(&input, &resolver);
 
         let regex = Regex::new(r"^pdftract-v1:[0-9a-f]{64}$").unwrap();
-        assert!(regex.is_match(&fingerprint), "Fingerprint '{}' must match INV-13 format", fingerprint);
+        assert!(
+            regex.is_match(&fingerprint),
+            "Fingerprint '{}' must match INV-13 format",
+            fingerprint
+        );
     }
 
     #[test]
@@ -955,20 +990,26 @@ mod tests {
             let resolver = XrefResolver::new();
             let input = FingerprintInput {
                 page_count,
-                pages: (0..page_count).map(|_| PageFingerprintData {
-                    content_streams: vec![],
-                    resources: None,
-                    media_box: [0.0, 0.0, 612.0, 792.0],
-                    crop_box: None,
-                    rotate: 0,
-                }).collect(),
+                pages: (0..page_count)
+                    .map(|_| PageFingerprintData {
+                        content_streams: vec![],
+                        resources: None,
+                        media_box: [0.0, 0.0, 612.0, 792.0],
+                        crop_box: None,
+                        rotate: 0,
+                    })
+                    .collect(),
                 struct_tree_root_ref: None,
                 is_tagged: false,
                 catalog_flags: CatalogFlags::default(),
             };
 
             let fingerprint = compute_fingerprint(&input, &resolver);
-            assert!(regex.is_match(&fingerprint), "Fingerprint '{}' must match INV-13 format", fingerprint);
+            assert!(
+                regex.is_match(&fingerprint),
+                "Fingerprint '{}' must match INV-13 format",
+                fingerprint
+            );
         }
     }
 
@@ -1016,7 +1057,10 @@ mod tests {
         let hash1 = hash_resource_dict(Some(&resources1), &resolver);
         let hash2 = hash_resource_dict(Some(&resources2), &resolver);
 
-        assert_eq!(hash1, hash2, "Resource dict hash should be independent of insertion order");
+        assert_eq!(
+            hash1, hash2,
+            "Resource dict hash should be independent of insertion order"
+        );
     }
 
     #[test]
@@ -1029,13 +1073,15 @@ mod tests {
         let resolver = XrefResolver::new();
         let input = FingerprintInput {
             page_count,
-            pages: (0..page_count).map(|_| PageFingerprintData {
-                content_streams: vec![],
-                resources: None,
-                media_box: [0.0, 0.0, 612.0, 792.0],
-                crop_box: None,
-                rotate: 0,
-            }).collect(),
+            pages: (0..page_count)
+                .map(|_| PageFingerprintData {
+                    content_streams: vec![],
+                    resources: None,
+                    media_box: [0.0, 0.0, 612.0, 792.0],
+                    crop_box: None,
+                    rotate: 0,
+                })
+                .collect(),
             struct_tree_root_ref: None,
             is_tagged: false,
             catalog_flags: CatalogFlags::default(),
@@ -1046,6 +1092,10 @@ mod tests {
         let duration = start.elapsed();
 
         // Performance requirement: < 100 ms for 100-page PDF
-        assert!(duration.as_millis() < 100, "Fingerprint computation for 100-page PDF took {} ms, should be < 100 ms", duration.as_millis());
+        assert!(
+            duration.as_millis() < 100,
+            "Fingerprint computation for 100-page PDF took {} ms, should be < 100 ms",
+            duration.as_millis()
+        );
     }
 }

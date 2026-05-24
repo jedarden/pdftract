@@ -9,4 +9,4 @@
 pub mod associated_files;
 
 // Re-export key types for convenience
-pub use associated_files::{AssociatedFileEntry, walk_af_array};
+pub use associated_files::{walk_af_array, AssociatedFileEntry};

@@ -479,20 +479,17 @@ impl<'de> Deserialize<'de> for BatchMessage {
                 // Deserialize each array element as a Request
                 let mut reqs = Vec::with_capacity(arr.len());
                 for item in arr {
-                    let req = Request::deserialize(item)
-                        .map_err(serde::de::Error::custom)?;
+                    let req = Request::deserialize(item).map_err(serde::de::Error::custom)?;
                     reqs.push(req);
                 }
                 Ok(BatchMessage::Batch(reqs))
             }
             Value::Object(obj) => {
-                let req = Request::deserialize(Value::Object(obj))
-                    .map_err(serde::de::Error::custom)?;
+                let req =
+                    Request::deserialize(Value::Object(obj)).map_err(serde::de::Error::custom)?;
                 Ok(BatchMessage::Single(req))
             }
-            _ => Err(serde::de::Error::custom(
-                "expected JSON object or array",
-            )),
+            _ => Err(serde::de::Error::custom("expected JSON object or array")),
         }
     }
 }
@@ -586,7 +583,11 @@ mod tests {
     fn test_batch_round_trip() {
         let reqs = vec![
             Request::new("tools/list", None, Some(Id::Number(1))),
-            Request::new("tools/call", Some(Value::Object(serde_json::Map::new())), Some(Id::Number(2))),
+            Request::new(
+                "tools/call",
+                Some(Value::Object(serde_json::Map::new())),
+                Some(Id::Number(2)),
+            ),
             Request::new("prompts/list", None, Some(Id::String("abc".to_string()))),
         ];
         let batch = BatchMessage::Batch(reqs.clone());

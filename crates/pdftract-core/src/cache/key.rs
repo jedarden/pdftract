@@ -151,9 +151,7 @@ fn canonical_json_value(value: &Value) -> Value {
             }
             Value::Object(sorted.into_iter().collect())
         }
-        Value::Array(arr) => {
-            Value::Array(arr.iter().map(canonical_json_value).collect())
-        }
+        Value::Array(arr) => Value::Array(arr.iter().map(canonical_json_value).collect()),
         // Numbers: preserve integer representation, canonicalize floats
         Value::Number(n) => {
             if n.is_i64() || n.is_u64() {
@@ -253,7 +251,10 @@ mod tests {
         let json_str = canonical.to_string();
         let ev_pos = json_str.find("extraction_version").unwrap();
         let receipts_pos = json_str.find("receipts").unwrap();
-        assert!(ev_pos < receipts_pos, "Keys should be sorted lexicographically");
+        assert!(
+            ev_pos < receipts_pos,
+            "Keys should be sorted lexicographically"
+        );
     }
 
     #[test]
@@ -335,8 +336,8 @@ mod tests {
         let key2 = CacheKey::new("fp", &opts);
 
         // Same key should hash the same
-        use std::hash::{Hash, Hasher};
         use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
 
         let mut h1 = DefaultHasher::new();
         key1.hash(&mut h1);
@@ -361,8 +362,11 @@ mod tests {
         assert!(key.opts_hash.chars().all(|c| c.is_ascii_hexdigit()));
 
         // hex::encode produces lowercase hex (0-9, a-f), verify no uppercase letters
-        assert!(key.opts_hash.chars().all(|c| !c.is_ascii_uppercase()),
-            "Hash should be lowercase hex: {}", key.opts_hash);
+        assert!(
+            key.opts_hash.chars().all(|c| !c.is_ascii_uppercase()),
+            "Hash should be lowercase hex: {}",
+            key.opts_hash
+        );
     }
 
     #[test]
@@ -376,8 +380,10 @@ mod tests {
         let key1 = CacheKey::new("fp", &opts1);
         let key2 = CacheKey::new("fp", &opts2);
 
-        assert_eq!(key1.opts_hash, key2.opts_hash,
-            "Same logical request should produce same key");
+        assert_eq!(
+            key1.opts_hash, key2.opts_hash,
+            "Same logical request should produce same key"
+        );
     }
 
     #[test]
@@ -388,8 +394,10 @@ mod tests {
         let key_off = CacheKey::new("fp", &opts_off);
         let key_lite = CacheKey::new("fp", &opts_lite);
 
-        assert_ne!(key_off.opts_hash, key_lite.opts_hash,
-            "Different logical requests should produce different keys");
+        assert_ne!(
+            key_off.opts_hash, key_lite.opts_hash,
+            "Different logical requests should produce different keys"
+        );
     }
 
     // Acceptance criteria tests for Phase 6.9.2
@@ -408,8 +416,10 @@ mod tests {
         let key1 = CacheKey::new("fp", &opts1);
         let key2 = CacheKey::new("fp", &opts2);
 
-        assert_eq!(key1.opts_hash, key2.opts_hash,
-            "Same effective values should produce same hash");
+        assert_eq!(
+            key1.opts_hash, key2.opts_hash,
+            "Same effective values should produce same hash"
+        );
     }
 
     #[test]
@@ -421,8 +431,10 @@ mod tests {
         let key_off = CacheKey::new("fp", &opts_off);
         let key_lite = CacheKey::new("fp", &opts_lite);
 
-        assert_ne!(key_off.opts_hash, key_lite.opts_hash,
-            "Toggling receipts from off to lite should change hash");
+        assert_ne!(
+            key_off.opts_hash, key_lite.opts_hash,
+            "Toggling receipts from off to lite should change hash"
+        );
     }
 
     #[test]
@@ -442,8 +454,10 @@ mod tests {
             hex::encode(hash)
         };
 
-        assert_ne!(key_v1, key_v2,
-            "Different pdftract version should produce different hash");
+        assert_ne!(
+            key_v1, key_v2,
+            "Different pdftract version should produce different hash"
+        );
     }
 
     #[test]
@@ -463,8 +477,10 @@ mod tests {
         let canon1 = canonical_json(&val1);
         let canon2 = canonical_json(&val2);
 
-        assert_eq!(canon1, canon2,
-            "Different insertion orders should produce same canonical JSON");
+        assert_eq!(
+            canon1, canon2,
+            "Different insertion orders should produce same canonical JSON"
+        );
 
         // Keys should be sorted
         assert!(canon1.contains("\"a\":2"));
@@ -489,8 +505,7 @@ mod tests {
         let canon1 = canonical_json(&val1);
         let canon2 = canonical_json(&val2);
 
-        assert_eq!(canon1, canon2,
-            "0.5 and 0.500 should serialize identically");
+        assert_eq!(canon1, canon2, "0.5 and 0.500 should serialize identically");
 
         // Both should serialize to 0.5 (shortest representation)
         assert!(canon1.contains("\"x\":0.5"));
@@ -499,11 +514,7 @@ mod tests {
     #[test]
     fn test_acceptance_float_canonical_edge_cases() {
         // Test various float representations
-        let test_cases = vec![
-            (1.0, "1.00"),
-            (0.1, "0.100"),
-            (1.5, "1.500"),
-        ];
+        let test_cases = vec![(1.0, "1.00"), (0.1, "0.100"), (1.5, "1.500")];
 
         for (val1, val2_str) in test_cases {
             let mut map1 = Map::new();
@@ -519,8 +530,11 @@ mod tests {
             let canon1 = canonical_json(&val1_json);
             let canon2 = canonical_json(&val2_json);
 
-            assert_eq!(canon1, canon2,
-                "{} and {} should serialize identically", val1, val2_str);
+            assert_eq!(
+                canon1, canon2,
+                "{} and {} should serialize identically",
+                val1, val2_str
+            );
         }
     }
 
@@ -540,8 +554,10 @@ mod tests {
         let opts3 = ExtractionOptions::with_receipts(ReceiptsMode::Lite);
         let key3 = CacheKey::new("fp", &opts3);
 
-        assert_ne!(key1.opts_hash, key3.opts_hash,
-            "Invariant: same logical request → same key, different request → different key");
+        assert_ne!(
+            key1.opts_hash, key3.opts_hash,
+            "Invariant: same logical request → same key, different request → different key"
+        );
     }
 
     #[test]
@@ -562,8 +578,7 @@ mod tests {
         let canon1 = canonical_json(&Value::Object(outer1));
         let canon2 = canonical_json(&Value::Object(outer2));
 
-        assert_eq!(canon1, canon2,
-            "Nested objects should have sorted keys");
+        assert_eq!(canon1, canon2, "Nested objects should have sorted keys");
     }
 
     #[test]

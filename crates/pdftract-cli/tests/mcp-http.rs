@@ -10,13 +10,13 @@
 //! - Batch request handling
 //! - Concurrent client handling (50 clients)
 
-use std::process::{Command, Stdio, Child};
-use std::thread;
-use std::time::Duration;
-use std::io::{BufRead, BufReader};
-use std::net::TcpListener;
 use reqwest::blocking::Client;
 use serde_json::Value;
+use std::io::{BufRead, BufReader};
+use std::net::TcpListener;
+use std::process::{Child, Command, Stdio};
+use std::thread;
+use std::time::Duration;
 
 /// Find an available port for testing.
 fn find_available_port() -> u16 {
@@ -61,7 +61,8 @@ fn wait_for_server(port: u16, max_wait_ms: u64) -> bool {
 
     let start = std::time::Instant::now();
     while start.elapsed() < Duration::from_millis(max_wait_ms) {
-        if client.get(&format!("http://127.0.0.1:{}/health", port))
+        if client
+            .get(&format!("http://127.0.0.1:{}/health", port))
             .send()
             .map_or(false, |r| r.status().is_success())
         {
@@ -79,7 +80,10 @@ fn test_post_tools_list() {
     let mut child = spawn_mcp_http(port);
 
     // Wait for server to be ready
-    assert!(wait_for_server(port, 2000), "Server did not start within 2 seconds");
+    assert!(
+        wait_for_server(port, 2000),
+        "Server did not start within 2 seconds"
+    );
 
     let client = Client::new();
     let request_body = serde_json::json!({
@@ -112,7 +116,10 @@ fn test_post_batch_request() {
     let mut child = spawn_mcp_http(port);
 
     // Wait for server to be ready
-    assert!(wait_for_server(port, 2000), "Server did not start within 2 seconds");
+    assert!(
+        wait_for_server(port, 2000),
+        "Server did not start within 2 seconds"
+    );
 
     let client = Client::new();
     let request_body = serde_json::json!([
@@ -153,7 +160,10 @@ fn test_post_single_request_returns_single_response() {
     let mut child = spawn_mcp_http(port);
 
     // Wait for server to be ready
-    assert!(wait_for_server(port, 2000), "Server did not start within 2 seconds");
+    assert!(
+        wait_for_server(port, 2000),
+        "Server did not start within 2 seconds"
+    );
 
     let client = Client::new();
     let request_body = serde_json::json!({
@@ -187,7 +197,10 @@ fn test_post_payload_too_large() {
     let mut child = spawn_mcp_http_with_limit(port, 1);
 
     // Wait for server to be ready
-    assert!(wait_for_server(port, 2000), "Server did not start within 2 seconds");
+    assert!(
+        wait_for_server(port, 2000),
+        "Server did not start within 2 seconds"
+    );
 
     let client = Client::new();
     // Create a payload larger than 1 MB
@@ -209,7 +222,10 @@ fn test_post_payload_too_large() {
 
     let json: Value = response.json().expect("Response is not valid JSON");
     assert_eq!(json["error"]["code"], -32002);
-    assert!(json["error"]["message"].as_str().unwrap().contains("too large"));
+    assert!(json["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("too large"));
 
     // Clean shutdown
     child.kill().ok();
@@ -222,7 +238,10 @@ fn test_get_health() {
     let mut child = spawn_mcp_http(port);
 
     // Wait for server to be ready
-    assert!(wait_for_server(port, 2000), "Server did not start within 2 seconds");
+    assert!(
+        wait_for_server(port, 2000),
+        "Server did not start within 2 seconds"
+    );
 
     let client = Client::new();
     let response = client
@@ -247,7 +266,10 @@ fn test_get_sse_stream() {
     let mut child = spawn_mcp_http(port);
 
     // Wait for server to be ready
-    assert!(wait_for_server(port, 2000), "Server did not start within 2 seconds");
+    assert!(
+        wait_for_server(port, 2000),
+        "Server did not start within 2 seconds"
+    );
 
     let client = reqwest::blocking::Client::builder()
         .timeout(None)
@@ -260,8 +282,15 @@ fn test_get_sse_stream() {
         .expect("Failed to send request");
 
     assert_eq!(response.status(), reqwest::StatusCode::OK);
-    assert_eq!(response.headers().get("content-type").unwrap().to_str().unwrap(),
-               "text/event-stream");
+    assert_eq!(
+        response
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "text/event-stream"
+    );
 
     // Read the initial connection message
     let reader = BufReader::new(response);
@@ -269,7 +298,11 @@ fn test_get_sse_stream() {
 
     // First line should be a comment (connected)
     if let Some(Ok(line)) = lines.next() {
-        assert!(line.starts_with(": connected"), "Expected ': connected', got: {}", line);
+        assert!(
+            line.starts_with(": connected"),
+            "Expected ': connected', got: {}",
+            line
+        );
     }
 
     // Clean shutdown
@@ -286,7 +319,10 @@ fn test_auth_required_for_non_loopback() {
     let mut child = spawn_mcp_http(port);
 
     // Wait for server to be ready
-    assert!(wait_for_server(port, 2000), "Server did not start within 2 seconds");
+    assert!(
+        wait_for_server(port, 2000),
+        "Server did not start within 2 seconds"
+    );
 
     let client = Client::new();
     let request_body = serde_json::json!({
@@ -316,7 +352,10 @@ fn test_unknown_method() {
     let mut child = spawn_mcp_http(port);
 
     // Wait for server to be ready
-    assert!(wait_for_server(port, 2000), "Server did not start within 2 seconds");
+    assert!(
+        wait_for_server(port, 2000),
+        "Server did not start within 2 seconds"
+    );
 
     let client = Client::new();
     let request_body = serde_json::json!({
@@ -351,7 +390,10 @@ fn test_50_concurrent_clients() {
     let mut child = spawn_mcp_http(port);
 
     // Wait for server to be ready
-    assert!(wait_for_server(port, 2000), "Server did not start within 2 seconds");
+    assert!(
+        wait_for_server(port, 2000),
+        "Server did not start within 2 seconds"
+    );
 
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(5))
@@ -372,10 +414,7 @@ fn test_50_concurrent_clients() {
             let url = format!("http://127.0.0.1:{}/", port);
 
             thread::spawn(move || {
-                let response = client
-                    .post(&url)
-                    .json(&request_body)
-                    .send();
+                let response = client.post(&url).json(&request_body).send();
 
                 (i, response)
             })
@@ -413,7 +452,11 @@ fn test_50_concurrent_clients() {
     // All 50 clients should succeed without 5xx errors
     assert_eq!(five_xx_count, 0, "Got {} 5xx errors", five_xx_count);
     assert_eq!(error_count, 0, "Got {} errors", error_count);
-    assert_eq!(success_count, 50, "Got {} successes, expected 50", success_count);
+    assert_eq!(
+        success_count, 50,
+        "Got {} successes, expected 50",
+        success_count
+    );
 
     // Clean shutdown
     child.kill().ok();
@@ -426,7 +469,10 @@ fn test_health_during_load() {
     let mut child = spawn_mcp_http(port);
 
     // Wait for server to be ready
-    assert!(wait_for_server(port, 2000), "Server did not start within 2 seconds");
+    assert!(
+        wait_for_server(port, 2000),
+        "Server did not start within 2 seconds"
+    );
 
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(5))
@@ -446,9 +492,7 @@ fn test_health_during_load() {
             let request_body = request_body.clone();
             let url = format!("http://127.0.0.1:{}/", port);
 
-            thread::spawn(move || {
-                client.post(&url).json(&request_body).send()
-            })
+            thread::spawn(move || client.post(&url).json(&request_body).send())
         })
         .collect();
 

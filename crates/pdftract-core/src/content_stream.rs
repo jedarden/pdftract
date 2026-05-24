@@ -673,8 +673,14 @@ mod tests {
         // Verify both modes complete successfully
         // The actual 10% speedup comes from skipping ToUnicode lookup
         // which is implemented in the process_string function
-        assert!(normal_duration.as_nanos() > 0, "Normal mode should complete");
-        assert!(hint_duration.as_nanos() > 0, "PositionHint mode should complete");
+        assert!(
+            normal_duration.as_nanos() > 0,
+            "Normal mode should complete"
+        );
+        assert!(
+            hint_duration.as_nanos() > 0,
+            "PositionHint mode should complete"
+        );
 
         // In practice, PositionHint is faster because it skips ToUnicode lookup.
         // This test verifies the code paths work correctly; for actual

@@ -3,9 +3,9 @@
 //! This module handles the conversion from detected table structures
 //! (GridCandidate, Cell) to the JSON output format (TableJson, RowJson, CellJson).
 
-use crate::schema::{TableJson, RowJson, CellJson};
-use crate::table::{GridCandidate, Cell};
+use crate::schema::{CellJson, RowJson, TableJson};
 use crate::table::cell::TableSpan;
+use crate::table::{Cell, GridCandidate};
 use anyhow::Result;
 
 /// Distance from page edge to consider a table as "continued" (50 pt).
@@ -40,7 +40,8 @@ pub fn grid_to_table_json(
     let rows = build_rows_from_cells(cells, grid);
 
     // Count header rows (should already be set on cells)
-    let header_rows = cells.iter()
+    let header_rows = cells
+        .iter()
         .filter(|c| c.is_header_row)
         .map(|c| c.row)
         .collect::<std::collections::HashSet<_>>()
@@ -67,7 +68,8 @@ pub fn grid_to_table_json(
 ///
 /// Groups cells by row index and creates RowJson for each.
 fn build_rows_from_cells(cells: &[Cell], grid: &GridCandidate) -> Vec<RowJson> {
-    let mut row_map: std::collections::HashMap<usize, Vec<&Cell>> = std::collections::HashMap::new();
+    let mut row_map: std::collections::HashMap<usize, Vec<&Cell>> =
+        std::collections::HashMap::new();
 
     // Group cells by row
     for cell in cells {
@@ -79,7 +81,8 @@ fn build_rows_from_cells(cells: &[Cell], grid: &GridCandidate) -> Vec<RowJson> {
     for row_idx in 0..grid.row_count() {
         if let Some(row_cells) = row_map.get(&row_idx) {
             // Convert cells to CellJson and sort by column
-            let mut cells_json: Vec<CellJson> = row_cells.iter()
+            let mut cells_json: Vec<CellJson> = row_cells
+                .iter()
                 .map(|c| cell_to_cell_json(c, grid))
                 .collect();
 
@@ -90,8 +93,7 @@ fn build_rows_from_cells(cells: &[Cell], grid: &GridCandidate) -> Vec<RowJson> {
             let row_bbox = compute_row_bbox(&cells_json);
 
             // Check if this is a header row (all cells are header cells or first cell is header)
-            let is_header = !cells_json.is_empty() &&
-                cells_json.iter().all(|c| c.is_header_row);
+            let is_header = !cells_json.is_empty() && cells_json.iter().all(|c| c.is_header_row);
 
             rows.push(RowJson {
                 bbox: row_bbox,
@@ -111,7 +113,9 @@ fn cell_to_cell_json(cell: &Cell, _grid: &GridCandidate) -> CellJson {
     let spans = Vec::new();
 
     // Concatenate text from all spans in the cell
-    let text = cell.content.iter()
+    let text = cell
+        .content
+        .iter()
         .map(|s| s.text.as_str())
         .collect::<Vec<_>>()
         .join(" ");
@@ -252,7 +256,9 @@ fn columns_similar(grid1: &GridCandidate, grid2: &GridCandidate) -> bool {
     }
 
     // Compute RMSE
-    let sum_sq_error: f32 = grid1.col_xs.iter()
+    let sum_sq_error: f32 = grid1
+        .col_xs
+        .iter()
         .zip(grid2.col_xs.iter())
         .map(|(x1, x2)| (x1 - x2).powi(2))
         .sum();
@@ -272,9 +278,12 @@ mod tests {
     fn test_grid_to_table_json_basic() {
         // Create a simple 2x2 grid
         let intersections = vec![
-            (50.0, 100.0), (150.0, 100.0),
-            (50.0, 200.0), (150.0, 200.0),
-            (50.0, 300.0), (150.0, 300.0),
+            (50.0, 100.0),
+            (150.0, 100.0),
+            (50.0, 200.0),
+            (150.0, 200.0),
+            (50.0, 300.0),
+            (150.0, 300.0),
         ];
 
         let grid = GridCandidate::from_intersections(intersections, vec![]).unwrap();
@@ -297,21 +306,32 @@ mod tests {
 
     #[test]
     fn test_build_rows_from_cells() {
-        let grid = GridCandidate::from_intersections(vec![
-            (50.0, 100.0), (150.0, 100.0),
-            (50.0, 200.0), (150.0, 200.0),
-            (50.0, 300.0), (150.0, 300.0),
-        ], vec![]).unwrap();
+        let grid = GridCandidate::from_intersections(
+            vec![
+                (50.0, 100.0),
+                (150.0, 100.0),
+                (50.0, 200.0),
+                (150.0, 200.0),
+                (50.0, 300.0),
+                (150.0, 300.0),
+            ],
+            vec![],
+        )
+        .unwrap();
 
         let mut cell1 = Cell::new([50.0, 200.0, 150.0, 300.0], 0, 0);
-        cell1.content = vec![
-            TableSpan::new([50.0, 210.0, 90.0, 220.0], "Row1Col1".to_string(), "Helvetica".to_string())
-        ];
+        cell1.content = vec![TableSpan::new(
+            [50.0, 210.0, 90.0, 220.0],
+            "Row1Col1".to_string(),
+            "Helvetica".to_string(),
+        )];
 
         let mut cell2 = Cell::new([150.0, 200.0, 250.0, 300.0], 0, 1);
-        cell2.content = vec![
-            TableSpan::new([160.0, 210.0, 190.0, 220.0], "Row1Col2".to_string(), "Helvetica".to_string())
-        ];
+        cell2.content = vec![TableSpan::new(
+            [160.0, 210.0, 190.0, 220.0],
+            "Row1Col2".to_string(),
+            "Helvetica".to_string(),
+        )];
 
         let rows = build_rows_from_cells(&[cell1, cell2], &grid);
 
@@ -323,31 +343,63 @@ mod tests {
 
     #[test]
     fn test_columns_similar_identical() {
-        let grid1 = GridCandidate::from_intersections(vec![
-            (50.0, 100.0), (150.0, 100.0), (250.0, 100.0),
-            (50.0, 200.0), (150.0, 200.0), (250.0, 200.0),
-        ], vec![]).unwrap();
+        let grid1 = GridCandidate::from_intersections(
+            vec![
+                (50.0, 100.0),
+                (150.0, 100.0),
+                (250.0, 100.0),
+                (50.0, 200.0),
+                (150.0, 200.0),
+                (250.0, 200.0),
+            ],
+            vec![],
+        )
+        .unwrap();
 
-        let grid2 = GridCandidate::from_intersections(vec![
-            (50.0, 100.0), (150.0, 100.0), (250.0, 100.0),
-            (50.0, 200.0), (150.0, 200.0), (250.0, 200.0),
-        ], vec![]).unwrap();
+        let grid2 = GridCandidate::from_intersections(
+            vec![
+                (50.0, 100.0),
+                (150.0, 100.0),
+                (250.0, 100.0),
+                (50.0, 200.0),
+                (150.0, 200.0),
+                (250.0, 200.0),
+            ],
+            vec![],
+        )
+        .unwrap();
 
         assert!(columns_similar(&grid1, &grid2));
     }
 
     #[test]
     fn test_columns_similar_small_difference() {
-        let grid1 = GridCandidate::from_intersections(vec![
-            (50.0, 100.0), (150.0, 100.0), (250.0, 100.0),
-            (50.0, 200.0), (150.0, 200.0), (250.0, 200.0),
-        ], vec![]).unwrap();
+        let grid1 = GridCandidate::from_intersections(
+            vec![
+                (50.0, 100.0),
+                (150.0, 100.0),
+                (250.0, 100.0),
+                (50.0, 200.0),
+                (150.0, 200.0),
+                (250.0, 200.0),
+            ],
+            vec![],
+        )
+        .unwrap();
 
         // 2 pt shift in column positions
-        let grid2 = GridCandidate::from_intersections(vec![
-            (52.0, 100.0), (152.0, 100.0), (252.0, 100.0),
-            (52.0, 200.0), (152.0, 200.0), (252.0, 200.0),
-        ], vec![]).unwrap();
+        let grid2 = GridCandidate::from_intersections(
+            vec![
+                (52.0, 100.0),
+                (152.0, 100.0),
+                (252.0, 100.0),
+                (52.0, 200.0),
+                (152.0, 200.0),
+                (252.0, 200.0),
+            ],
+            vec![],
+        )
+        .unwrap();
 
         // RMSE = 2.0 < 5.0, should be similar
         assert!(columns_similar(&grid1, &grid2));
@@ -355,16 +407,32 @@ mod tests {
 
     #[test]
     fn test_columns_similar_large_difference() {
-        let grid1 = GridCandidate::from_intersections(vec![
-            (50.0, 100.0), (150.0, 100.0), (250.0, 100.0),
-            (50.0, 200.0), (150.0, 200.0), (250.0, 200.0),
-        ], vec![]).unwrap();
+        let grid1 = GridCandidate::from_intersections(
+            vec![
+                (50.0, 100.0),
+                (150.0, 100.0),
+                (250.0, 100.0),
+                (50.0, 200.0),
+                (150.0, 200.0),
+                (250.0, 200.0),
+            ],
+            vec![],
+        )
+        .unwrap();
 
         // 10 pt shift in column positions
-        let grid2 = GridCandidate::from_intersections(vec![
-            (60.0, 100.0), (160.0, 100.0), (260.0, 100.0),
-            (60.0, 200.0), (160.0, 200.0), (260.0, 200.0),
-        ], vec![]).unwrap();
+        let grid2 = GridCandidate::from_intersections(
+            vec![
+                (60.0, 100.0),
+                (160.0, 100.0),
+                (260.0, 100.0),
+                (60.0, 200.0),
+                (160.0, 200.0),
+                (260.0, 200.0),
+            ],
+            vec![],
+        )
+        .unwrap();
 
         // RMSE = 10.0 > 5.0, should NOT be similar
         assert!(!columns_similar(&grid1, &grid2));
@@ -372,15 +440,24 @@ mod tests {
 
     #[test]
     fn test_columns_similar_different_count() {
-        let grid1 = GridCandidate::from_intersections(vec![
-            (50.0, 100.0), (150.0, 100.0), (250.0, 100.0),
-            (50.0, 200.0), (150.0, 200.0), (250.0, 200.0),
-        ], vec![]).unwrap();
+        let grid1 = GridCandidate::from_intersections(
+            vec![
+                (50.0, 100.0),
+                (150.0, 100.0),
+                (250.0, 100.0),
+                (50.0, 200.0),
+                (150.0, 200.0),
+                (250.0, 200.0),
+            ],
+            vec![],
+        )
+        .unwrap();
 
-        let grid2 = GridCandidate::from_intersections(vec![
-            (50.0, 100.0), (150.0, 100.0),
-            (50.0, 200.0), (150.0, 200.0),
-        ], vec![]).unwrap();
+        let grid2 = GridCandidate::from_intersections(
+            vec![(50.0, 100.0), (150.0, 100.0), (50.0, 200.0), (150.0, 200.0)],
+            vec![],
+        )
+        .unwrap();
 
         assert!(!columns_similar(&grid1, &grid2));
     }
@@ -388,18 +465,32 @@ mod tests {
     #[test]
     fn test_detect_two_page_tables_basic() {
         // Page 0: table ending at y=40 (within 50 pt of page bottom at 0)
-        let grid0 = GridCandidate::from_intersections(vec![
-            (50.0, 40.0), (150.0, 40.0),
-            (50.0, 100.0), (150.0, 100.0),
-            (50.0, 150.0), (150.0, 150.0),
-        ], vec![]).unwrap();
+        let grid0 = GridCandidate::from_intersections(
+            vec![
+                (50.0, 40.0),
+                (150.0, 40.0),
+                (50.0, 100.0),
+                (150.0, 100.0),
+                (50.0, 150.0),
+                (150.0, 150.0),
+            ],
+            vec![],
+        )
+        .unwrap();
 
         // Page 1: table starting at y=750 (within 50 pt of page top at 792)
-        let grid1 = GridCandidate::from_intersections(vec![
-            (50.0, 750.0), (150.0, 750.0),
-            (50.0, 800.0), (150.0, 800.0),
-            (50.0, 850.0), (150.0, 850.0),
-        ], vec![]).unwrap();
+        let grid1 = GridCandidate::from_intersections(
+            vec![
+                (50.0, 750.0),
+                (150.0, 750.0),
+                (50.0, 800.0),
+                (150.0, 800.0),
+                (50.0, 850.0),
+                (150.0, 850.0),
+            ],
+            vec![],
+        )
+        .unwrap();
 
         let all_tables = vec![vec![grid0], vec![grid1]];
         let page_heights = vec![792.0, 792.0];
@@ -416,16 +507,18 @@ mod tests {
     #[test]
     fn test_detect_two_page_tables_no_continuation() {
         // Page 0: table ending at y=200 (NOT within 50 pt of page bottom)
-        let grid0 = GridCandidate::from_intersections(vec![
-            (50.0, 200.0), (150.0, 200.0),
-            (50.0, 300.0), (150.0, 300.0),
-        ], vec![]).unwrap();
+        let grid0 = GridCandidate::from_intersections(
+            vec![(50.0, 200.0), (150.0, 200.0), (50.0, 300.0), (150.0, 300.0)],
+            vec![],
+        )
+        .unwrap();
 
         // Page 1: table starting at y=700 (NOT within 50 pt of page top)
-        let grid1 = GridCandidate::from_intersections(vec![
-            (50.0, 700.0), (150.0, 700.0),
-            (50.0, 800.0), (150.0, 800.0),
-        ], vec![]).unwrap();
+        let grid1 = GridCandidate::from_intersections(
+            vec![(50.0, 700.0), (150.0, 700.0), (50.0, 800.0), (150.0, 800.0)],
+            vec![],
+        )
+        .unwrap();
 
         let all_tables = vec![vec![grid0], vec![grid1]];
         let page_heights = vec![792.0, 792.0];
@@ -440,16 +533,34 @@ mod tests {
     #[test]
     fn test_detect_two_page_tables_different_column_count() {
         // Page 0: 2-column table ending near page bottom
-        let grid0 = GridCandidate::from_intersections(vec![
-            (50.0, 40.0), (150.0, 40.0), (250.0, 40.0),
-            (50.0, 100.0), (150.0, 100.0), (250.0, 100.0),
-        ], vec![]).unwrap();
+        let grid0 = GridCandidate::from_intersections(
+            vec![
+                (50.0, 40.0),
+                (150.0, 40.0),
+                (250.0, 40.0),
+                (50.0, 100.0),
+                (150.0, 100.0),
+                (250.0, 100.0),
+            ],
+            vec![],
+        )
+        .unwrap();
 
         // Page 1: 3-column table starting near page top
-        let grid1 = GridCandidate::from_intersections(vec![
-            (50.0, 750.0), (150.0, 750.0), (250.0, 750.0), (350.0, 750.0),
-            (50.0, 800.0), (150.0, 800.0), (250.0, 800.0), (350.0, 800.0),
-        ], vec![]).unwrap();
+        let grid1 = GridCandidate::from_intersections(
+            vec![
+                (50.0, 750.0),
+                (150.0, 750.0),
+                (250.0, 750.0),
+                (350.0, 750.0),
+                (50.0, 800.0),
+                (150.0, 800.0),
+                (250.0, 800.0),
+                (350.0, 800.0),
+            ],
+            vec![],
+        )
+        .unwrap();
 
         let all_tables = vec![vec![grid0], vec![grid1]];
         let page_heights = vec![792.0, 792.0];
@@ -463,15 +574,24 @@ mod tests {
 
     #[test]
     fn test_cell_to_cell_json_text_concatenation() {
-        let grid = GridCandidate::from_intersections(vec![
-            (50.0, 100.0), (150.0, 100.0),
-            (50.0, 200.0), (150.0, 200.0),
-        ], vec![]).unwrap();
+        let grid = GridCandidate::from_intersections(
+            vec![(50.0, 100.0), (150.0, 100.0), (50.0, 200.0), (150.0, 200.0)],
+            vec![],
+        )
+        .unwrap();
 
         let mut cell = Cell::new([50.0, 100.0, 150.0, 200.0], 0, 0);
         cell.content = vec![
-            TableSpan::new([50.0, 150.0, 90.0, 160.0], "Hello".to_string(), "Helvetica".to_string()),
-            TableSpan::new([50.0, 140.0, 90.0, 150.0], "World".to_string(), "Helvetica".to_string()),
+            TableSpan::new(
+                [50.0, 150.0, 90.0, 160.0],
+                "Hello".to_string(),
+                "Helvetica".to_string(),
+            ),
+            TableSpan::new(
+                [50.0, 140.0, 90.0, 150.0],
+                "World".to_string(),
+                "Helvetica".to_string(),
+            ),
         ];
 
         let cell_json = cell_to_cell_json(&cell, &grid);

@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::diagnostics::{Diagnostic, DiagCode};
+use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::font::embedded::{EmbeddedFont, OpenTypeMetrics};
 use crate::font::FontKind;
 use crate::parser::object::types::{PdfDict, PdfObject};
@@ -230,7 +230,13 @@ impl Type0Font {
 
         // Load CIDToGIDMap for CIDFontType2
         let cid_to_gid_map = if subtype == FontKind::CIDFontType2 {
-            Some(Self::load_cid_to_gid_map(cidfont_dict, source, opts, doc_counter, &mut diagnostics)?)
+            Some(Self::load_cid_to_gid_map(
+                cidfont_dict,
+                source,
+                opts,
+                doc_counter,
+                &mut diagnostics,
+            )?)
         } else {
             None
         };
@@ -432,8 +438,12 @@ impl Type0Font {
                 font_dict.insert(
                     crate::parser::object::types::intern("/Subtype"),
                     match subtype {
-                        FontKind::CIDFontType0 => PdfObject::Name(crate::parser::object::types::intern("/CIDFontType0")),
-                        FontKind::CIDFontType2 => PdfObject::Name(crate::parser::object::types::intern("/CIDFontType2")),
+                        FontKind::CIDFontType0 => {
+                            PdfObject::Name(crate::parser::object::types::intern("/CIDFontType0"))
+                        }
+                        FontKind::CIDFontType2 => {
+                            PdfObject::Name(crate::parser::object::types::intern("/CIDFontType2"))
+                        }
                         _ => return Err(Type0Error::UnsupportedSubtype(format!("{:?}", subtype))),
                     },
                 );
@@ -716,9 +726,7 @@ mod tests {
         font_dict.insert(intern("/BaseFont"), PdfObject::Name(intern("Type0Font")));
         font_dict.insert(
             intern("/DescendantFonts"),
-            PdfObject::Array(Box::new(vec![PdfObject::Dict(Box::new(
-                cidfont_dict,
-            ))])),
+            PdfObject::Array(Box::new(vec![PdfObject::Dict(Box::new(cidfont_dict))])),
         );
 
         let source = MemorySource::new(vec![]);
@@ -745,9 +753,7 @@ mod tests {
         font_dict.insert(intern("/Subtype"), PdfObject::Name(intern("/Type0")));
         font_dict.insert(
             intern("/DescendantFonts"),
-            PdfObject::Array(Box::new(vec![PdfObject::Dict(Box::new(
-                cidfont_dict,
-            ))])),
+            PdfObject::Array(Box::new(vec![PdfObject::Dict(Box::new(cidfont_dict))])),
         );
 
         let source = MemorySource::new(vec![]);
@@ -781,9 +787,7 @@ mod tests {
         font_dict.insert(intern("/Subtype"), PdfObject::Name(intern("/Type0")));
         font_dict.insert(
             intern("/DescendantFonts"),
-            PdfObject::Array(Box::new(vec![PdfObject::Dict(Box::new(
-                cidfont_dict,
-            ))])),
+            PdfObject::Array(Box::new(vec![PdfObject::Dict(Box::new(cidfont_dict))])),
         );
 
         let source = MemorySource::new(vec![]);
@@ -809,9 +813,7 @@ mod tests {
         font_dict.insert(intern("/Subtype"), PdfObject::Name(intern("/Type0")));
         font_dict.insert(
             intern("/DescendantFonts"),
-            PdfObject::Array(Box::new(vec![PdfObject::Dict(Box::new(
-                cidfont_dict,
-            ))])),
+            PdfObject::Array(Box::new(vec![PdfObject::Dict(Box::new(cidfont_dict))])),
         );
 
         let source = MemorySource::new(vec![]);
@@ -880,9 +882,7 @@ mod tests {
         font_dict.insert(intern("/Subtype"), PdfObject::Name(intern("/Type0")));
         font_dict.insert(
             intern("/DescendantFonts"),
-            PdfObject::Array(Box::new(vec![PdfObject::Dict(Box::new(
-                cidfont_dict,
-            ))])),
+            PdfObject::Array(Box::new(vec![PdfObject::Dict(Box::new(cidfont_dict))])),
         );
 
         let source = MemorySource::new(vec![]);
@@ -917,9 +917,7 @@ mod tests {
         font_dict.insert(intern("/Subtype"), PdfObject::Name(intern("/Type0")));
         font_dict.insert(
             intern("/DescendantFonts"),
-            PdfObject::Array(Box::new(vec![PdfObject::Dict(Box::new(
-                cidfont_dict,
-            ))])),
+            PdfObject::Array(Box::new(vec![PdfObject::Dict(Box::new(cidfont_dict))])),
         );
 
         let source = MemorySource::new(vec![]);
@@ -947,9 +945,7 @@ mod tests {
         font_dict.insert(intern("/Subtype"), PdfObject::Name(intern("/Type0")));
         font_dict.insert(
             intern("/DescendantFonts"),
-            PdfObject::Array(Box::new(vec![PdfObject::Dict(Box::new(
-                cidfont_dict,
-            ))])),
+            PdfObject::Array(Box::new(vec![PdfObject::Dict(Box::new(cidfont_dict))])),
         );
 
         let source = MemorySource::new(vec![]);
@@ -996,9 +992,7 @@ mod tests {
         font_dict.insert(intern("/BaseFont"), PdfObject::Name(intern("Type0Font")));
         font_dict.insert(
             intern("/DescendantFonts"),
-            PdfObject::Array(Box::new(vec![PdfObject::Dict(Box::new(
-                cidfont_dict,
-            ))])),
+            PdfObject::Array(Box::new(vec![PdfObject::Dict(Box::new(cidfont_dict))])),
         );
 
         let opts = ExtractionOptions::default();
@@ -1057,9 +1051,7 @@ mod tests {
         font_dict.insert(intern("/BaseFont"), PdfObject::Name(intern("Type0Font")));
         font_dict.insert(
             intern("/DescendantFonts"),
-            PdfObject::Array(Box::new(vec![PdfObject::Dict(Box::new(
-                cidfont_dict,
-            ))])),
+            PdfObject::Array(Box::new(vec![PdfObject::Dict(Box::new(cidfont_dict))])),
         );
 
         let opts = ExtractionOptions::default();
@@ -1073,7 +1065,9 @@ mod tests {
 
         // Check that the CIDTOGIDMAP_TRUNCATED diagnostic was emitted
         let diagnostics = font.diagnostics();
-        assert!(diagnostics.iter().any(|d| d.code == DiagCode::FontCidtogidmapTruncated));
+        assert!(diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::FontCidtogidmapTruncated));
 
         // Verify the array has 2 elements (5 bytes / 2 = 2 GIDs, trailing byte discarded)
         if let Some(CIDToGIDMap::Array(arr)) = &font.descendant.cid_to_gid_map {

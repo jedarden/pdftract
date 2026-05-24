@@ -3,7 +3,7 @@
 //! Extracts tables by analyzing path segments (horizontal and vertical lines)
 //! from PDF content streams and reconstructing grid structures.
 
-use super::{PageContext, GridCandidate, Segment, SegmentOrientation};
+use super::{GridCandidate, PageContext, Segment, SegmentOrientation};
 use crate::parser::lexer::Lexer;
 use std::collections::{HashMap, HashSet};
 
@@ -271,7 +271,10 @@ impl TableDetector {
                             // Show text: Tj (string)
                             if in_text_block {
                                 // Record position at current text origin
-                                positions.push(TextPosition { x0: tm[4], y0: tm[5] });
+                                positions.push(TextPosition {
+                                    x0: tm[4],
+                                    y0: tm[5],
+                                });
                             }
                             operand_stack.clear(); // Tj consumes the string operand
                         }
@@ -279,7 +282,10 @@ impl TableDetector {
                             // Show text with individual glyph positioning: TJ (array)
                             if in_text_block {
                                 // Record position
-                                positions.push(TextPosition { x0: tm[4], y0: tm[5] });
+                                positions.push(TextPosition {
+                                    x0: tm[4],
+                                    y0: tm[5],
+                                });
                             }
                             operand_stack.clear(); // TJ consumes the array operand
                         }
@@ -289,7 +295,10 @@ impl TableDetector {
                                 tm[4] = tlm[4];
                                 tm[5] = tlm[5]; // Approximate
                                 tlm = tm;
-                                positions.push(TextPosition { x0: tm[4], y0: tm[5] });
+                                positions.push(TextPosition {
+                                    x0: tm[4],
+                                    y0: tm[5],
+                                });
                             }
                             operand_stack.clear();
                         }
@@ -301,7 +310,10 @@ impl TableDetector {
                                 tm[4] = tlm[4];
                                 tm[5] = tlm[5]; // Approximate
                                 tlm = tm;
-                                positions.push(TextPosition { x0: tm[4], y0: tm[5] });
+                                positions.push(TextPosition {
+                                    x0: tm[4],
+                                    y0: tm[5],
+                                });
                             }
                         }
                         _ => {
@@ -330,7 +342,8 @@ impl TableDetector {
         }
 
         let mut sorted_positions = positions.to_vec();
-        sorted_positions.sort_by(|a, b| a.x0.partial_cmp(&b.x0).unwrap_or(std::cmp::Ordering::Equal));
+        sorted_positions
+            .sort_by(|a, b| a.x0.partial_cmp(&b.x0).unwrap_or(std::cmp::Ordering::Equal));
 
         let mut clusters: Vec<Vec<TextPosition>> = Vec::new();
         let mut current_cluster = vec![sorted_positions[0]];
@@ -418,7 +431,9 @@ impl TableDetector {
         // Build grid for each y range
         let mut grids = Vec::new();
         for (y_top, y_bottom) in y_ranges {
-            if let Some(grid) = self.build_single_borderless_grid(column_buckets, y_top, y_bottom, all_positions) {
+            if let Some(grid) =
+                self.build_single_borderless_grid(column_buckets, y_top, y_bottom, all_positions)
+            {
                 grids.push(grid);
             }
         }
@@ -477,7 +492,7 @@ impl TableDetector {
             row_ys: row_ys_sorted,
             col_xs,
             segments: Vec::new(), // No segments for borderless tables
-            header_rows: 0, // Initialized to 0; set after header detection
+            header_rows: 0,       // Initialized to 0; set after header detection
         })
     }
 
@@ -491,10 +506,7 @@ impl TableDetector {
         for &(key, ref positions) in column_buckets {
             for pos in positions {
                 let y_key = (pos.y0 / X0_TOLERANCE).round() as i32;
-                y_to_columns
-                    .entry(y_key)
-                    .or_insert_with(Vec::new)
-                    .push(key);
+                y_to_columns.entry(y_key).or_insert_with(Vec::new).push(key);
             }
         }
 
@@ -586,9 +598,10 @@ impl TableDetector {
                                     // Rectangle emits 4 segments: top, right, bottom, left
                                     // Note: PDF rectangle is [x y w h] where y is bottom
                                     segments.push(Segment::horizontal(y + h, x, x + w)); // top
-                                    segments.push(Segment::vertical(x + w, y, y + h));  // right
-                                    segments.push(Segment::horizontal(y, x, x + w));    // bottom
-                                    segments.push(Segment::vertical(x, y, y + h));      // left
+                                    segments.push(Segment::vertical(x + w, y, y + h)); // right
+                                    segments.push(Segment::horizontal(y, x, x + w)); // bottom
+                                    segments.push(Segment::vertical(x, y, y + h));
+                                    // left
                                 }
                             }
                         }
@@ -656,8 +669,13 @@ impl TableDetector {
     /// Cluster collinear segments of the given orientation.
     ///
     /// Returns a vector of merged segments, one per cluster.
-    fn cluster_segments(&self, segments: &[Segment], orientation: SegmentOrientation) -> Vec<Segment> {
-        let filtered: Vec<_> = segments.iter()
+    fn cluster_segments(
+        &self,
+        segments: &[Segment],
+        orientation: SegmentOrientation,
+    ) -> Vec<Segment> {
+        let filtered: Vec<_> = segments
+            .iter()
             .filter(|s| s.orientation == orientation)
             .cloned()
             .collect();
@@ -742,7 +760,11 @@ impl TableDetector {
     }
 
     /// Build grid candidates from intersection points.
-    fn build_grids(&self, intersections: Vec<(f32, f32)>, segments: Vec<Segment>) -> Vec<GridCandidate> {
+    fn build_grids(
+        &self,
+        intersections: Vec<(f32, f32)>,
+        segments: Vec<Segment>,
+    ) -> Vec<GridCandidate> {
         let mut grids = Vec::new();
 
         // For now, create one grid from all intersections
@@ -763,9 +785,9 @@ mod tests {
     use crate::parser::pages::PageDict;
 
     fn make_page(_content: &[u8]) -> PageDict {
-        use std::sync::Arc;
         use crate::parser::object::ObjRef;
         use crate::parser::resources::ResourceDict;
+        use std::sync::Arc;
 
         PageDict {
             obj_ref: ObjRef::new(1, 0),
@@ -856,7 +878,10 @@ mod tests {
         let ctx = PageContext::new(&page, content);
 
         let segments = detector.collect_segments(&ctx);
-        assert!(segments.is_empty(), "Segments inside text objects should be filtered");
+        assert!(
+            segments.is_empty(),
+            "Segments inside text objects should be filtered"
+        );
     }
 
     #[test]
@@ -869,7 +894,11 @@ mod tests {
         let ctx = PageContext::new(&page, content);
 
         let segments = detector.collect_segments(&ctx);
-        assert_eq!(segments.len(), 1, "Segments should be collected when filtering is disabled");
+        assert_eq!(
+            segments.len(),
+            1,
+            "Segments should be collected when filtering is disabled"
+        );
     }
 
     #[test]
@@ -1173,10 +1202,22 @@ mod tests {
     fn test_group_by_x0_tolerance() {
         let detector = TableDetector::new();
         let positions = vec![
-            TextPosition { x0: 50.0, y0: 700.0 },
-            TextPosition { x0: 51.0, y0: 650.0 }, // Within 2 pt tolerance
-            TextPosition { x0: 52.0, y0: 600.0 }, // Within 2 pt tolerance
-            TextPosition { x0: 150.0, y0: 700.0 }, // Different column
+            TextPosition {
+                x0: 50.0,
+                y0: 700.0,
+            },
+            TextPosition {
+                x0: 51.0,
+                y0: 650.0,
+            }, // Within 2 pt tolerance
+            TextPosition {
+                x0: 52.0,
+                y0: 600.0,
+            }, // Within 2 pt tolerance
+            TextPosition {
+                x0: 150.0,
+                y0: 700.0,
+            }, // Different column
         ];
 
         let buckets = detector.group_by_x0(&positions);
@@ -1193,21 +1234,57 @@ mod tests {
     fn test_find_row_candidates_basic() {
         let detector = TableDetector::new();
         let column_buckets = vec![
-            (0, vec![
-                TextPosition { x0: 50.0, y0: 700.0 },
-                TextPosition { x0: 50.0, y0: 650.0 },
-                TextPosition { x0: 50.0, y0: 600.0 },
-            ]),
-            (25, vec![
-                TextPosition { x0: 150.0, y0: 700.0 },
-                TextPosition { x0: 150.0, y0: 650.0 },
-                TextPosition { x0: 150.0, y0: 600.0 },
-            ]),
-            (50, vec![
-                TextPosition { x0: 250.0, y0: 700.0 },
-                TextPosition { x0: 250.0, y0: 650.0 },
-                TextPosition { x0: 250.0, y0: 600.0 },
-            ]),
+            (
+                0,
+                vec![
+                    TextPosition {
+                        x0: 50.0,
+                        y0: 700.0,
+                    },
+                    TextPosition {
+                        x0: 50.0,
+                        y0: 650.0,
+                    },
+                    TextPosition {
+                        x0: 50.0,
+                        y0: 600.0,
+                    },
+                ],
+            ),
+            (
+                25,
+                vec![
+                    TextPosition {
+                        x0: 150.0,
+                        y0: 700.0,
+                    },
+                    TextPosition {
+                        x0: 150.0,
+                        y0: 650.0,
+                    },
+                    TextPosition {
+                        x0: 150.0,
+                        y0: 600.0,
+                    },
+                ],
+            ),
+            (
+                50,
+                vec![
+                    TextPosition {
+                        x0: 250.0,
+                        y0: 700.0,
+                    },
+                    TextPosition {
+                        x0: 250.0,
+                        y0: 650.0,
+                    },
+                    TextPosition {
+                        x0: 250.0,
+                        y0: 600.0,
+                    },
+                ],
+            ),
         ];
 
         let rows = detector.find_row_candidates(&column_buckets);
@@ -1224,14 +1301,32 @@ mod tests {
         let detector = TableDetector::new();
         // Column 1 has positions that don't align with other columns
         let column_buckets = vec![
-            (0, vec![
-                TextPosition { x0: 50.0, y0: 700.0 },
-                TextPosition { x0: 50.0, y0: 685.0 }, // Different y
-                TextPosition { x0: 50.0, y0: 670.0 }, // Different y
-            ]),
-            (25, vec![
-                TextPosition { x0: 150.0, y0: 700.0 }, // Only aligns with first
-            ]),
+            (
+                0,
+                vec![
+                    TextPosition {
+                        x0: 50.0,
+                        y0: 700.0,
+                    },
+                    TextPosition {
+                        x0: 50.0,
+                        y0: 685.0,
+                    }, // Different y
+                    TextPosition {
+                        x0: 50.0,
+                        y0: 670.0,
+                    }, // Different y
+                ],
+            ),
+            (
+                25,
+                vec![
+                    TextPosition {
+                        x0: 150.0,
+                        y0: 700.0,
+                    }, // Only aligns with first
+                ],
+            ),
         ];
 
         let is_reflow = detector.is_single_column_reflow(&column_buckets);
@@ -1244,16 +1339,40 @@ mod tests {
         let detector = TableDetector::new();
         // All columns have good alignment
         let column_buckets = vec![
-            (0, vec![
-                TextPosition { x0: 50.0, y0: 700.0 },
-                TextPosition { x0: 50.0, y0: 650.0 },
-                TextPosition { x0: 50.0, y0: 600.0 },
-            ]),
-            (25, vec![
-                TextPosition { x0: 150.0, y0: 700.0 },
-                TextPosition { x0: 150.0, y0: 650.0 },
-                TextPosition { x0: 150.0, y0: 600.0 },
-            ]),
+            (
+                0,
+                vec![
+                    TextPosition {
+                        x0: 50.0,
+                        y0: 700.0,
+                    },
+                    TextPosition {
+                        x0: 50.0,
+                        y0: 650.0,
+                    },
+                    TextPosition {
+                        x0: 50.0,
+                        y0: 600.0,
+                    },
+                ],
+            ),
+            (
+                25,
+                vec![
+                    TextPosition {
+                        x0: 150.0,
+                        y0: 700.0,
+                    },
+                    TextPosition {
+                        x0: 150.0,
+                        y0: 650.0,
+                    },
+                    TextPosition {
+                        x0: 150.0,
+                        y0: 600.0,
+                    },
+                ],
+            ),
         ];
 
         let is_reflow = detector.is_single_column_reflow(&column_buckets);

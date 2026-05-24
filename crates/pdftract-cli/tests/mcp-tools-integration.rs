@@ -105,7 +105,10 @@ fn test_phase_7_stub_tools_return_not_implemented() {
     let registry = tools::all_tools();
 
     let stub_tools = [
-        ("get_table", serde_json::json!({"path": "test.pdf", "page": 0, "table_index": 0})),
+        (
+            "get_table",
+            serde_json::json!({"path": "test.pdf", "page": 0, "table_index": 0}),
+        ),
         ("get_form_fields", serde_json::json!({"path": "test.pdf"})),
         ("get_attachments", serde_json::json!({"path": "test.pdf"})),
         ("classify", serde_json::json!({"path": "test.pdf"})),
@@ -161,7 +164,10 @@ fn test_extract_tool_with_real_pdf() {
 
     let result = tool.execute(args, None, None);
     if let Err(ref e) = result {
-        eprintln!("Error from tool: code={}, message={}, data={:?}", e.code, e.message, e.data);
+        eprintln!(
+            "Error from tool: code={}, message={}, data={:?}",
+            e.code, e.message, e.data
+        );
     }
     assert!(result.is_ok(), "Tool should succeed: {:?}", result);
 
@@ -210,7 +216,10 @@ fn test_path_resolution() {
 
     // Also check using CARGO_MANIFEST_DIR
     if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
-        let abs_path = format!("{}/{}", manifest_dir, "../../tests/sdk-conformance/fixtures/large/100pages.pdf");
+        let abs_path = format!(
+            "{}/{}",
+            manifest_dir, "../../tests/sdk-conformance/fixtures/large/100pages.pdf"
+        );
         let exists = std::path::Path::new(&abs_path).exists();
         println!("Absolute path '{}' exists: {}", abs_path, exists);
     }
@@ -252,7 +261,10 @@ fn test_encrypted_pdf_returns_pdf_encrypted_error() {
 
     // Debug: print the result if it succeeds unexpectedly
     if let Ok(ref response) = result {
-        eprintln!("Unexpected success on encrypted PDF: {}", serde_json::to_string_pretty(response).unwrap());
+        eprintln!(
+            "Unexpected success on encrypted PDF: {}",
+            serde_json::to_string_pretty(response).unwrap()
+        );
     }
 
     assert!(result.is_err(), "Encrypted PDF should return error");

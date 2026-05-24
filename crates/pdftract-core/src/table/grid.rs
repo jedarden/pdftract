@@ -57,18 +57,14 @@ impl GridCandidate {
         }
 
         // Extract distinct y coordinates (row boundaries)
-        let mut row_ys: Vec<f32> = intersections.iter()
-            .map(|&(_, y)| y)
-            .collect::<Vec<_>>();
+        let mut row_ys: Vec<f32> = intersections.iter().map(|&(_, y)| y).collect::<Vec<_>>();
 
         // Sort descending (PDF y increases upward) and deduplicate
         row_ys.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
         row_ys.dedup_by(|a, b| (*a - *b).abs() < EPSILON);
 
         // Extract distinct x coordinates (column boundaries)
-        let mut col_xs: Vec<f32> = intersections.iter()
-            .map(|&(x, _)| x)
-            .collect::<Vec<_>>();
+        let mut col_xs: Vec<f32> = intersections.iter().map(|&(x, _)| x).collect::<Vec<_>>();
 
         // Sort ascending (left to right) and deduplicate
         col_xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
@@ -189,10 +185,7 @@ mod tests {
     #[test]
     fn test_grid_single_row() {
         // Single row (2 horizontal lines, 2 vertical lines)
-        let intersections = vec![
-            (50.0, 100.0), (150.0, 100.0),
-            (50.0, 200.0), (150.0, 200.0),
-        ];
+        let intersections = vec![(50.0, 100.0), (150.0, 100.0), (50.0, 200.0), (150.0, 200.0)];
 
         let grid = GridCandidate::from_intersections(intersections, vec![]).unwrap();
         assert_eq!(grid.row_count(), 1);
@@ -203,9 +196,15 @@ mod tests {
     #[test]
     fn test_cell_bbox() {
         let intersections = vec![
-            (50.0, 100.0), (150.0, 100.0), (250.0, 100.0),
-            (50.0, 200.0), (150.0, 200.0), (250.0, 200.0),
-            (50.0, 300.0), (150.0, 300.0), (250.0, 300.0),
+            (50.0, 100.0),
+            (150.0, 100.0),
+            (250.0, 100.0),
+            (50.0, 200.0),
+            (150.0, 200.0),
+            (250.0, 200.0),
+            (50.0, 300.0),
+            (150.0, 300.0),
+            (250.0, 300.0),
         ];
 
         let grid = GridCandidate::from_intersections(intersections, vec![]).unwrap();
@@ -230,10 +229,7 @@ mod tests {
             Segment::vertical(50.0, 100.0, 200.0),
         ];
 
-        let intersections = vec![
-            (50.0, 100.0), (150.0, 100.0),
-            (50.0, 200.0), (150.0, 200.0),
-        ];
+        let intersections = vec![(50.0, 100.0), (150.0, 100.0), (50.0, 200.0), (150.0, 200.0)];
 
         let grid = GridCandidate::from_intersections(intersections, segments).unwrap();
         assert_eq!(grid.segments.len(), 2);

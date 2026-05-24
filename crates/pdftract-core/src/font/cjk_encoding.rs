@@ -275,7 +275,7 @@ mod tests {
     fn test_malformed_no_panic() {
         // Test various malformed inputs that should not panic
         let malformed_inputs: Vec<&[u8]> = vec![
-            &[0xFF], // Invalid lead byte in Shift-JIS
+            &[0xFF],       // Invalid lead byte in Shift-JIS
             &[0x80, 0x80], // Invalid sequence in GB18030
             &[0xFE, 0xFF], // Invalid in Big5
             &[0xFF, 0xFF], // Invalid in EUC-KR

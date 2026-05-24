@@ -15,7 +15,7 @@ use std::path::Path;
 #[cfg(feature = "ocr")]
 fn tesseract_available() -> bool {
     // Try to initialize Tesseract - if it fails, skip the test
-    use pdftract_core::ocr::{TessOpts, borrow_or_init};
+    use pdftract_core::ocr::{borrow_or_init, TessOpts};
 
     std::panic::catch_unwind(|| {
         let opts = TessOpts::default();
@@ -69,8 +69,8 @@ fn test_clean_lorem_ipsum_wer() {
     }
 
     // Read ground truth
-    let ground_truth = std::fs::read_to_string(ground_truth_path)
-        .expect("Failed to read ground truth");
+    let ground_truth =
+        std::fs::read_to_string(ground_truth_path).expect("Failed to read ground truth");
 
     // In a real test, we would:
     // 1. Render the PDF at 300 DPI
@@ -80,7 +80,10 @@ fn test_clean_lorem_ipsum_wer() {
 
     // For now, just verify the ground truth is valid
     assert!(!ground_truth.is_empty(), "Ground truth should not be empty");
-    assert!(ground_truth.len() > 1000, "Ground truth should have substantial content");
+    assert!(
+        ground_truth.len() > 1000,
+        "Ground truth should have substantial content"
+    );
 
     // Simulate perfect OCR for now
     let ocr_output = &ground_truth;
@@ -109,16 +112,28 @@ fn test_multilang_eng_fra_wer() {
         return;
     }
 
-    let ground_truth = std::fs::read_to_string(ground_truth_path)
-        .expect("Failed to read ground truth");
+    let ground_truth =
+        std::fs::read_to_string(ground_truth_path).expect("Failed to read ground truth");
 
     // Verify both English and French text are present
-    assert!(ground_truth.to_lowercase().contains("english"), "Should contain English text");
-    assert!(ground_truth.to_lowercase().contains("french"), "Should contain French text");
+    assert!(
+        ground_truth.to_lowercase().contains("english"),
+        "Should contain English text"
+    );
+    assert!(
+        ground_truth.to_lowercase().contains("french"),
+        "Should contain French text"
+    );
 
     // Verify common words from each language
-    assert!(ground_truth.contains("the") || ground_truth.contains("quick"), "Should contain English words");
-    assert!(ground_truth.contains("le") || ground_truth.contains("la"), "Should contain French words");
+    assert!(
+        ground_truth.contains("the") || ground_truth.contains("quick"),
+        "Should contain English words"
+    );
+    assert!(
+        ground_truth.contains("le") || ground_truth.contains("la"),
+        "Should contain French words"
+    );
 }
 
 /// Test run_tesseract returns spans with valid structure.
@@ -130,8 +145,8 @@ fn test_run_tesseract_span_structure() {
         return;
     }
 
-    use pdftract_core::ocr::{run_tesseract, TessOpts};
     use image::{GrayImage, ImageBuffer, Luma};
+    use pdftract_core::ocr::{run_tesseract, TessOpts};
 
     // Create a simple test image with some text
     // (In practice, you'd use a real image with text)
@@ -147,7 +162,10 @@ fn test_run_tesseract_span_structure() {
     // Just verify the structure is correct
     for span in spans {
         assert!(span.bbox.len() == 4, "Span bbox should have 4 coordinates");
-        assert!(span.confidence >= 0.0 && span.confidence <= 1.0, "Confidence should be in [0, 1]");
+        assert!(
+            span.confidence >= 0.0 && span.confidence <= 1.0,
+            "Confidence should be in [0, 1]"
+        );
     }
 }
 
@@ -162,7 +180,10 @@ fn test_wer_threshold_validation() {
     let ocr_one_error = "Lorem ipsum dolor sit amet consectetur adipiscing elit"; // Same
     let ocr_bad = "Xxxxx xxxxx xxxxx xxxx xxxx xxxxxxxxxxx xxxxxxxxx xxxx"; // All wrong
 
-    assert!(calculate_wer(ocr_perfect, clean_text) < 0.02, "Perfect match should pass 2% threshold");
+    assert!(
+        calculate_wer(ocr_perfect, clean_text) < 0.02,
+        "Perfect match should pass 2% threshold"
+    );
 
     // With one substitution in 10 words
     let ocr_one_sub = "Lorem ipsum dolor sit amet consectetur adipiscing elix";
@@ -183,8 +204,14 @@ fn test_performance_10_pages() {
     let fixture_dir = Path::new("tests/fixtures/ocr/perf_10_page");
 
     // Verify fixture structure exists
-    assert!(fixture_dir.exists(), "Performance fixture directory should exist");
-    assert!(fixture_dir.join("ground_truth.txt").exists(), "Ground truth should exist");
+    assert!(
+        fixture_dir.exists(),
+        "Performance fixture directory should exist"
+    );
+    assert!(
+        fixture_dir.join("ground_truth.txt").exists(),
+        "Ground truth should exist"
+    );
 
     // Check that all page files exist
     for i in 1..=10 {
@@ -200,8 +227,8 @@ fn test_performance_10_pages() {
 #[test]
 #[cfg_attr(not(feature = "ocr"), ignore)]
 fn test_full_page_coordinate_conversion() {
-    use pdftract_core::ocr::{run_tesseract, TessOpts};
     use image::{GrayImage, ImageBuffer, Luma};
+    use pdftract_core::ocr::{run_tesseract, TessOpts};
 
     if !tesseract_available() {
         println!("Skipping: Tesseract not available");
@@ -230,8 +257,8 @@ fn test_full_page_coordinate_conversion() {
 #[test]
 #[cfg_attr(not(feature = "ocr"), ignore)]
 fn test_cell_coordinate_conversion() {
-    use pdftract_core::ocr::run_tesseract_on_cell;
     use image::{GrayImage, ImageBuffer, Luma};
+    use pdftract_core::ocr::run_tesseract_on_cell;
 
     if !tesseract_available() {
         println!("Skipping: Tesseract not available");
@@ -260,7 +287,7 @@ fn test_cell_coordinate_conversion() {
 #[test]
 #[cfg_attr(not(feature = "ocr"), ignore)]
 fn test_language_validation() {
-    use pdftract_core::ocr::{validate_ocr_languages, detect_available_languages};
+    use pdftract_core::ocr::{detect_available_languages, validate_ocr_languages};
 
     let available = detect_available_languages();
 
@@ -284,7 +311,10 @@ fn test_language_validation() {
     // Should fall back to eng if available, or return the missing lang (causing init failure)
     if available.contains("eng") {
         assert_eq!(result, "eng", "Should fall back to eng");
-        assert!(!diagnostics.is_empty(), "Should emit diagnostic for missing language");
+        assert!(
+            !diagnostics.is_empty(),
+            "Should emit diagnostic for missing language"
+        );
     }
 }
 

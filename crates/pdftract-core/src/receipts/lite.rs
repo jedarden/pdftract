@@ -67,7 +67,8 @@ mod tests {
     fn test_lite_size_benchmark() {
         // Benchmark: verify receipt sizes are reasonable
         // In a real document, all receipts share the same pdf_fingerprint
-        let pdf_fingerprint = "pdftract-v1:a7f3b8c4d2e1f6a9b5c3d8e7f4a2b1c9d6e3f8a7b4c2d9e6f3a8b7c4d1e9f6a3b8";
+        let pdf_fingerprint =
+            "pdftract-v1:a7f3b8c4d2e1f6a9b5c3d8e7f4a2b1c9d6e3f8a7b4c2d9e6f3a8b7c4d1e9f6a3b8";
         let mut total_size = 0;
 
         for i in 0..100 {

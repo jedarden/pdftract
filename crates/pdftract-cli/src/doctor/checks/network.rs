@@ -1,5 +1,5 @@
-use std::time::Duration;
 use super::super::{Check, CheckResult, CheckStatus, DoctorCtx};
+use std::time::Duration;
 
 /// Check: network reachability (remote source feature)
 ///
@@ -43,20 +43,31 @@ impl Check for NetworkCheck {
                         CheckResult {
                             name: self.name(),
                             status: CheckStatus::Warn,
-                            detail: format!("Network reachable but slow: {} in {:.2}s", status, elapsed.as_secs_f64()),
+                            detail: format!(
+                                "Network reachable but slow: {} in {:.2}s",
+                                status,
+                                elapsed.as_secs_f64()
+                            ),
                         }
                     } else {
                         CheckResult {
                             name: self.name(),
                             status: CheckStatus::Ok,
-                            detail: format!("Network reachable: {} in {:.2}s", status, elapsed.as_secs_f64()),
+                            detail: format!(
+                                "Network reachable: {} in {:.2}s",
+                                status,
+                                elapsed.as_secs_f64()
+                            ),
                         }
                     }
                 } else if status >= 300 && status < 400 {
                     CheckResult {
                         name: self.name(),
                         status: CheckStatus::Warn,
-                        detail: format!("Network returned redirect: {} (may indicate proxy or redirect loop)", status),
+                        detail: format!(
+                            "Network returned redirect: {} (may indicate proxy or redirect loop)",
+                            status
+                        ),
                     }
                 } else {
                     CheckResult {
@@ -66,13 +77,11 @@ impl Check for NetworkCheck {
                     }
                 }
             }
-            Err(e) => {
-                CheckResult {
-                    name: self.name(),
-                    status: CheckStatus::Fail,
-                    detail: e,
-                }
-            }
+            Err(e) => CheckResult {
+                name: self.name(),
+                status: CheckStatus::Fail,
+                detail: e,
+            },
         }
     }
 }

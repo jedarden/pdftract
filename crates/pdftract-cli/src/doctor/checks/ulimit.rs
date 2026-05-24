@@ -12,7 +12,7 @@ pub struct UlimitCheck;
 impl UlimitCheck {
     #[cfg(unix)]
     fn get_rlimit_nofile() -> Result<u64, String> {
-        use libc::{rlimit, RLIMIT_NOFILE, getrlimit};
+        use libc::{getrlimit, rlimit, RLIMIT_NOFILE};
 
         unsafe {
             let mut limits = rlimit {
@@ -49,7 +49,10 @@ impl Check for UlimitCheck {
                         CheckResult {
                             name: self.name(),
                             status: CheckStatus::Warn,
-                            detail: format!("File descriptor limit: {} (recommended: >= 1024)", limit),
+                            detail: format!(
+                                "File descriptor limit: {} (recommended: >= 1024)",
+                                limit
+                            ),
                         }
                     } else {
                         CheckResult {
@@ -59,13 +62,11 @@ impl Check for UlimitCheck {
                         }
                     }
                 }
-                Err(e) => {
-                    CheckResult {
-                        name: self.name(),
-                        status: CheckStatus::Warn,
-                        detail: format!("Could not read ulimit: {}", e),
-                    }
-                }
+                Err(e) => CheckResult {
+                    name: self.name(),
+                    status: CheckStatus::Warn,
+                    detail: format!("Could not read ulimit: {}", e),
+                },
             }
         }
 

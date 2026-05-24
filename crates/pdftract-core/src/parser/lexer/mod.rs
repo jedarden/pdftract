@@ -3,7 +3,7 @@
 //! This module provides the lexer that converts raw PDF byte sequences into tokens.
 //! PDF is byte-oriented; position tracking is byte-level, not character-level.
 
-use crate::diagnostics::{Diagnostic as Diag, DiagCode};
+use crate::diagnostics::{DiagCode, Diagnostic as Diag};
 use std::str::FromStr;
 
 /// Token produced by the PDF lexer.
@@ -386,7 +386,10 @@ impl<'a> Lexer<'a> {
     /// Internal: Skip whitespace and comments.
     fn skip_whitespace_and_comments(&mut self) {
         loop {
-            let had_whitespace = self.bytes.first().map_or(false, |&b| Self::is_pdf_whitespace(b));
+            let had_whitespace = self
+                .bytes
+                .first()
+                .map_or(false, |&b| Self::is_pdf_whitespace(b));
             let had_comment = self.bytes.first() == Some(&b'%');
 
             self.consume_whitespace();
@@ -398,7 +401,11 @@ impl<'a> Lexer<'a> {
             }
             // If we consumed a comment, there might be more whitespace after it
             // If we consumed whitespace, there might be a comment after it
-            if self.bytes.first().map_or(true, |&b| !Self::is_pdf_whitespace(b) && b != b'%') {
+            if self
+                .bytes
+                .first()
+                .map_or(true, |&b| !Self::is_pdf_whitespace(b) && b != b'%')
+            {
                 break;
             }
         }
@@ -411,7 +418,9 @@ impl<'a> Lexer<'a> {
         // Check for "true"
         if self.bytes.starts_with(b"true") {
             let next_after = self.bytes.get(4);
-            if next_after.map_or(true, |&b| Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)) {
+            if next_after.map_or(true, |&b| {
+                Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)
+            }) {
                 self.advance(4);
                 return Some(Token::Bool(true));
             }
@@ -419,7 +428,9 @@ impl<'a> Lexer<'a> {
         // Check for "trailer"
         if self.bytes.starts_with(b"trailer") {
             let next_after = self.bytes.get(7);
-            if next_after.map_or(true, |&b| Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)) {
+            if next_after.map_or(true, |&b| {
+                Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)
+            }) {
                 self.advance(7);
                 return Some(Token::Keyword(b"trailer".to_vec()));
             }
@@ -432,7 +443,9 @@ impl<'a> Lexer<'a> {
         // Check for "false"
         if self.bytes.starts_with(b"false") {
             let next_after = self.bytes.get(5);
-            if next_after.map_or(true, |&b| Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)) {
+            if next_after.map_or(true, |&b| {
+                Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)
+            }) {
                 self.advance(5);
                 return Some(Token::Bool(false));
             }
@@ -445,7 +458,9 @@ impl<'a> Lexer<'a> {
         // Check for "xref"
         if self.bytes.starts_with(b"xref") {
             let next_after = self.bytes.get(4);
-            if next_after.map_or(true, |&b| Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)) {
+            if next_after.map_or(true, |&b| {
+                Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)
+            }) {
                 self.advance(4);
                 return Some(Token::Keyword(b"xref".to_vec()));
             }
@@ -458,7 +473,9 @@ impl<'a> Lexer<'a> {
         // Check for "%%EOF" - the PDF end-of-file marker
         if self.bytes.starts_with(b"%%EOF") {
             let next_after = self.bytes.get(5);
-            if next_after.map_or(true, |&b| Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)) {
+            if next_after.map_or(true, |&b| {
+                Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)
+            }) {
                 self.advance(5);
                 return Some(Token::Keyword(b"%%EOF".to_vec()));
             }
@@ -609,7 +626,10 @@ impl<'a> Lexer<'a> {
                     self.diagnostics.push(Diag::with_dynamic(
                         DiagCode::StructIntegerOverflow,
                         start as u64,
-                        format!("Integer '{}' exceeds i64 range, clamped to i64::MAX", num_str),
+                        format!(
+                            "Integer '{}' exceeds i64 range, clamped to i64::MAX",
+                            num_str
+                        ),
                     ));
                     self.advance(consumed);
                     Some(Token::Integer(i64::MAX))
@@ -959,7 +979,9 @@ impl<'a> Lexer<'a> {
         // Check for "stream"
         if self.bytes.starts_with(b"stream") {
             let next_after = self.bytes.get(6);
-            if next_after.map_or(true, |&b| Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)) {
+            if next_after.map_or(true, |&b| {
+                Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)
+            }) {
                 self.advance(6);
                 // Validate stream header: must be followed by \n or \r\n
                 // PDF spec 7.3.8.1: stream keyword must be followed by \n or \r\n
@@ -996,7 +1018,9 @@ impl<'a> Lexer<'a> {
         // Check for "startxref"
         if self.bytes.starts_with(b"startxref") {
             let next_after = self.bytes.get(10);
-            if next_after.map_or(true, |&b| Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)) {
+            if next_after.map_or(true, |&b| {
+                Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)
+            }) {
                 self.advance(10);
                 return Some(Token::Keyword(b"startxref".to_vec()));
             }
@@ -1009,7 +1033,9 @@ impl<'a> Lexer<'a> {
         // Check for "endstream"
         if self.bytes.starts_with(b"endstream") {
             let next_after = self.bytes.get(9);
-            if next_after.map_or(true, |&b| Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)) {
+            if next_after.map_or(true, |&b| {
+                Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)
+            }) {
                 self.advance(9);
                 return Some(Token::EndStream);
             }
@@ -1017,7 +1043,9 @@ impl<'a> Lexer<'a> {
         // Check for "endobj"
         if self.bytes.starts_with(b"endobj") {
             let next_after = self.bytes.get(7);
-            if next_after.map_or(true, |&b| Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)) {
+            if next_after.map_or(true, |&b| {
+                Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)
+            }) {
                 self.advance(7);
                 return Some(Token::EndObj);
             }
@@ -1030,7 +1058,9 @@ impl<'a> Lexer<'a> {
         // Check for "obj"
         if self.bytes.starts_with(b"obj") {
             let next_after = self.bytes.get(3);
-            if next_after.map_or(true, |&b| Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)) {
+            if next_after.map_or(true, |&b| {
+                Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)
+            }) {
                 self.advance(3);
                 return Some(Token::Obj);
             }
@@ -1042,7 +1072,9 @@ impl<'a> Lexer<'a> {
     fn lex_r_keyword(&mut self) -> Option<Token> {
         // Check for "R" (indirect reference)
         let next_after = self.bytes.get(1);
-        if next_after.map_or(true, |&b| Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)) {
+        if next_after.map_or(true, |&b| {
+            Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)
+        }) {
             self.advance(1);
             Some(Token::IndirectRef)
         } else {
@@ -1054,7 +1086,9 @@ impl<'a> Lexer<'a> {
         // Check for "null"
         if self.bytes.starts_with(b"null") {
             let next_after = self.bytes.get(4);
-            if next_after.map_or(true, |&b| Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)) {
+            if next_after.map_or(true, |&b| {
+                Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)
+            }) {
                 self.advance(4);
                 return Some(Token::Null);
             }
@@ -1205,8 +1239,13 @@ mod tests {
         let mut lexer = Lexer::new(b"stream body");
         assert_eq!(lexer.next_token(), Some(Token::Stream));
         let diags = lexer.take_diagnostics();
-        assert!(!diags.is_empty(), "Should emit diagnostic for stream without proper line ending");
-        assert!(diags.iter().any(|d| d.code == DiagCode::StructInvalidStreamHeader));
+        assert!(
+            !diags.is_empty(),
+            "Should emit diagnostic for stream without proper line ending"
+        );
+        assert!(diags
+            .iter()
+            .any(|d| d.code == DiagCode::StructInvalidStreamHeader));
     }
 
     #[test]
@@ -1247,7 +1286,10 @@ mod tests {
     #[test]
     fn string_literal_simple_text() {
         let mut lexer = Lexer::new(b"(Hello World)");
-        assert_eq!(lexer.next_token(), Some(Token::String(b"Hello World".to_vec())));
+        assert_eq!(
+            lexer.next_token(),
+            Some(Token::String(b"Hello World".to_vec()))
+        );
         assert_eq!(lexer.next_token(), Some(Token::Eof));
     }
 
@@ -1274,14 +1316,20 @@ mod tests {
     #[test]
     fn string_literal_escape_tab() {
         let mut lexer = Lexer::new(b"(col1\\tcol2)");
-        assert_eq!(lexer.next_token(), Some(Token::String(b"col1\tcol2".to_vec())));
+        assert_eq!(
+            lexer.next_token(),
+            Some(Token::String(b"col1\tcol2".to_vec()))
+        );
         assert_eq!(lexer.next_token(), Some(Token::Eof));
     }
 
     #[test]
     fn string_literal_escape_backspace() {
         let mut lexer = Lexer::new(b"(abc\\bdef)");
-        assert_eq!(lexer.next_token(), Some(Token::String(b"abc\x08def".to_vec())));
+        assert_eq!(
+            lexer.next_token(),
+            Some(Token::String(b"abc\x08def".to_vec()))
+        );
         assert_eq!(lexer.next_token(), Some(Token::Eof));
     }
 
@@ -1298,21 +1346,30 @@ mod tests {
     #[test]
     fn string_literal_escape_backslash() {
         let mut lexer = Lexer::new(b"(path\\\\file)");
-        assert_eq!(lexer.next_token(), Some(Token::String(b"path\\file".to_vec())));
+        assert_eq!(
+            lexer.next_token(),
+            Some(Token::String(b"path\\file".to_vec()))
+        );
         assert_eq!(lexer.next_token(), Some(Token::Eof));
     }
 
     #[test]
     fn string_literal_escape_left_paren() {
         let mut lexer = Lexer::new(b"(\\(nested))");
-        assert_eq!(lexer.next_token(), Some(Token::String(b"(nested)".to_vec())));
+        assert_eq!(
+            lexer.next_token(),
+            Some(Token::String(b"(nested)".to_vec()))
+        );
         assert_eq!(lexer.next_token(), Some(Token::Eof));
     }
 
     #[test]
     fn string_literal_escape_right_paren() {
         let mut lexer = Lexer::new(b"(\\)not_end)");
-        assert_eq!(lexer.next_token(), Some(Token::String(b")not_end".to_vec())));
+        assert_eq!(
+            lexer.next_token(),
+            Some(Token::String(b")not_end".to_vec()))
+        );
         assert_eq!(lexer.next_token(), Some(Token::Eof));
     }
 
@@ -1340,7 +1397,10 @@ mod tests {
     #[test]
     fn string_literal_octal_escape_non_octal_following() {
         let mut lexer = Lexer::new(b"(abc\\10A)");
-        assert_eq!(lexer.next_token(), Some(Token::String(b"abc\x08A".to_vec())));
+        assert_eq!(
+            lexer.next_token(),
+            Some(Token::String(b"abc\x08A".to_vec()))
+        );
         assert_eq!(lexer.next_token(), Some(Token::Eof));
     }
 
@@ -1443,7 +1503,10 @@ mod tests {
     fn hex_string_mixed_case() {
         let mut lexer = Lexer::new(b"<aBcD>");
         // aB=0xAB, cD=0xCD
-        assert_eq!(lexer.next_token(), Some(Token::String(b"\xAB\xCD".to_vec())));
+        assert_eq!(
+            lexer.next_token(),
+            Some(Token::String(b"\xAB\xCD".to_vec()))
+        );
         assert_eq!(lexer.next_token(), Some(Token::Eof));
     }
 
@@ -1459,7 +1522,10 @@ mod tests {
     fn hex_string_odd_length_multiple_nibbles() {
         let mut lexer = Lexer::new(b"<48657>");
         // 48=0x48, 65=0x65, 7=0x70 (dangling nibble becomes HIGH nibble with LOW nibble 0)
-        assert_eq!(lexer.next_token(), Some(Token::String(b"\x48\x65\x70".to_vec())));
+        assert_eq!(
+            lexer.next_token(),
+            Some(Token::String(b"\x48\x65\x70".to_vec()))
+        );
         assert_eq!(lexer.next_token(), Some(Token::Eof));
     }
 
@@ -1501,7 +1567,10 @@ mod tests {
     #[test]
     fn hex_string_all_zero_bytes() {
         let mut lexer = Lexer::new(b"<000000>");
-        assert_eq!(lexer.next_token(), Some(Token::String(b"\x00\x00\x00".to_vec())));
+        assert_eq!(
+            lexer.next_token(),
+            Some(Token::String(b"\x00\x00\x00".to_vec()))
+        );
         assert_eq!(lexer.next_token(), Some(Token::Eof));
     }
 
@@ -1579,15 +1648,16 @@ mod tests {
         use proptest::prelude::*;
 
         // Generate random byte sequences that start with < (but not << to avoid dict start)
-        let test_strategy = prop::collection::vec(prop::num::u8::ANY, 0..1000).prop_map(|mut bytes| {
-            // Ensure the input starts with '<' but NOT '<<'
-            // Insert '<' at the start, and ensure the second byte is not '<'
-            bytes.insert(0, b'<');
-            if bytes.len() > 1 && bytes[1] == b'<' {
-                bytes[1] = b'>'; // Change second byte to something non-'<'
-            }
-            bytes
-        });
+        let test_strategy =
+            prop::collection::vec(prop::num::u8::ANY, 0..1000).prop_map(|mut bytes| {
+                // Ensure the input starts with '<' but NOT '<<'
+                // Insert '<' at the start, and ensure the second byte is not '<'
+                bytes.insert(0, b'<');
+                if bytes.len() > 1 && bytes[1] == b'<' {
+                    bytes[1] = b'>'; // Change second byte to something non-'<'
+                }
+                bytes
+            });
 
         proptest!(|(bytes in test_strategy)| {
             // This should never panic
@@ -1621,9 +1691,8 @@ mod tests {
         }
 
         // Generate valid hex strings and test roundtrip
-        let test_strategy = prop::collection::vec(prop::num::u8::ANY, 0..100).prop_map(|bytes| {
-            encode_hex_string(&bytes)
-        });
+        let test_strategy = prop::collection::vec(prop::num::u8::ANY, 0..100)
+            .prop_map(|bytes| encode_hex_string(&bytes));
 
         proptest!(|(encoded in test_strategy)| {
             let mut lexer = Lexer::new(&encoded);
@@ -1650,11 +1719,12 @@ mod tests {
     fn proptest_string_never_panics_on_random_bytes() {
         use proptest::prelude::*;
 
-        let test_strategy = prop::collection::vec(prop::num::u8::ANY, 0..1000).prop_map(|mut bytes| {
-            // Ensure the input starts with '(' to trigger string lexing
-            bytes.insert(0, b'(');
-            bytes
-        });
+        let test_strategy =
+            prop::collection::vec(prop::num::u8::ANY, 0..1000).prop_map(|mut bytes| {
+                // Ensure the input starts with '(' to trigger string lexing
+                bytes.insert(0, b'(');
+                bytes
+            });
 
         proptest!(|(bytes in test_strategy)| {
             // This should never panic
@@ -1670,14 +1740,17 @@ mod tests {
         // Strategy for generating valid literal strings
         // We generate bytes that can appear in a PDF string and wrap them in parens
         let test_strategy = prop::collection::vec(
-            prop::num::u8::ANY
-                .prop_filter("avoid unprintable and special chars that make testing hard", |&b| {
+            prop::num::u8::ANY.prop_filter(
+                "avoid unprintable and special chars that make testing hard",
+                |&b| {
                     // Allow most bytes, but filter out some that make roundtripping difficult
                     // We include parens but balance them manually
                     !matches!(b, 0x00 | 0x01..=0x08 | 0x0B | 0x0E..=0x1F)
-                }),
+                },
+            ),
             0..100,
-        ).prop_map(|mut bytes| {
+        )
+        .prop_map(|mut bytes| {
             // Balance parentheses: for every '(' we add a ')'
             let mut depth = 0i32;
             let mut result = Vec::new();
@@ -1814,7 +1887,10 @@ mod tests {
             panic!("Expected Name token");
         }
         let diags = lexer.take_diagnostics();
-        assert!(diags.is_empty(), "Expected no diagnostics for exactly 127 bytes");
+        assert!(
+            diags.is_empty(),
+            "Expected no diagnostics for exactly 127 bytes"
+        );
     }
 
     #[test]
@@ -1834,7 +1910,10 @@ mod tests {
             panic!("Expected Name token");
         }
         let diags = lexer.take_diagnostics();
-        assert!(diags.is_empty(), "Expected no diagnostics: 124 A's + #41 = 127 raw bytes");
+        assert!(
+            diags.is_empty(),
+            "Expected no diagnostics: 124 A's + #41 = 127 raw bytes"
+        );
     }
 
     #[test]
@@ -1964,11 +2043,12 @@ mod tests {
     fn name_proptest_never_panics_on_random_bytes() {
         use proptest::prelude::*;
 
-        let test_strategy = prop::collection::vec(prop::num::u8::ANY, 0..1000).prop_map(|mut bytes| {
-            // Ensure the input starts with '/' to trigger name lexing
-            bytes.insert(0, b'/');
-            bytes
-        });
+        let test_strategy =
+            prop::collection::vec(prop::num::u8::ANY, 0..1000).prop_map(|mut bytes| {
+                // Ensure the input starts with '/' to trigger name lexing
+                bytes.insert(0, b'/');
+                bytes
+            });
 
         proptest!(|(bytes in test_strategy)| {
             // This should never panic
@@ -1981,10 +2061,11 @@ mod tests {
     fn name_proptest_always_produces_valid_token() {
         use proptest::prelude::*;
 
-        let test_strategy = prop::collection::vec(prop::num::u8::ANY, 0..1000).prop_map(|mut bytes| {
-            bytes.insert(0, b'/');
-            bytes
-        });
+        let test_strategy =
+            prop::collection::vec(prop::num::u8::ANY, 0..1000).prop_map(|mut bytes| {
+                bytes.insert(0, b'/');
+                bytes
+            });
 
         proptest!(|(bytes in test_strategy)| {
             let mut lexer = Lexer::new(&bytes);
@@ -2142,7 +2223,9 @@ mod tests {
         assert!(matches!(token, Some(Token::Integer(0)) | Some(Token::Null)));
         let diags = lexer.take_diagnostics();
         assert!(!diags.is_empty());
-        assert!(diags.iter().any(|d| d.code == DiagCode::StructInvalidNumber));
+        assert!(diags
+            .iter()
+            .any(|d| d.code == DiagCode::StructInvalidNumber));
     }
 
     #[test]
@@ -2159,10 +2242,15 @@ mod tests {
         let mut lexer = Lexer::new(b"1.2.3");
         let token = lexer.next_token();
         // Should consume up to second dot and emit diagnostic
-        assert!(matches!(token, Some(Token::Integer(0)) | Some(Token::Real(_))));
+        assert!(matches!(
+            token,
+            Some(Token::Integer(0)) | Some(Token::Real(_))
+        ));
         let diags = lexer.take_diagnostics();
         assert!(!diags.is_empty());
-        assert!(diags.iter().any(|d| d.code == DiagCode::StructInvalidNumber));
+        assert!(diags
+            .iter()
+            .any(|d| d.code == DiagCode::StructInvalidNumber));
     }
 
     #[test]
@@ -2173,7 +2261,9 @@ mod tests {
         assert!(matches!(token, Some(Token::Integer(0)) | Some(Token::Null)));
         let diags = lexer.take_diagnostics();
         assert!(!diags.is_empty());
-        assert!(diags.iter().any(|d| d.code == DiagCode::StructInvalidNumber));
+        assert!(diags
+            .iter()
+            .any(|d| d.code == DiagCode::StructInvalidNumber));
     }
 
     #[test]
@@ -2191,16 +2281,20 @@ mod tests {
         use proptest::prelude::*;
 
         // Generate random byte sequences starting with numeric characters
-        let test_strategy = prop::collection::vec(prop::num::u8::ANY, 0..1000).prop_map(|mut bytes| {
-            // Ensure the input starts with a numeric-start character (+, -, ., 0-9)
-            if bytes.is_empty() {
-                bytes.push(b'1');
-            } else {
-                let numeric_starts = [b'+', b'-', b'.', b'0', b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9'];
-                bytes[0] = numeric_starts[bytes[0] as usize % numeric_starts.len()];
-            }
-            bytes
-        });
+        let test_strategy =
+            prop::collection::vec(prop::num::u8::ANY, 0..1000).prop_map(|mut bytes| {
+                // Ensure the input starts with a numeric-start character (+, -, ., 0-9)
+                if bytes.is_empty() {
+                    bytes.push(b'1');
+                } else {
+                    let numeric_starts = [
+                        b'+', b'-', b'.', b'0', b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8',
+                        b'9',
+                    ];
+                    bytes[0] = numeric_starts[bytes[0] as usize % numeric_starts.len()];
+                }
+                bytes
+            });
 
         proptest!(|(bytes in test_strategy)| {
             // This should never panic

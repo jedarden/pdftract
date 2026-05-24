@@ -373,14 +373,14 @@ pub fn cleanup_stale_temp_files(cache_dir: &Path) -> io::Result<()> {
     let _cleaned = 0;
 
     // Walk the two-byte prefix directories
-    for prefix1_entry in fs::read_dir(cache_dir)?
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path().is_dir()
-                && e.file_name().to_string_lossy().len() == 2
-                && e.file_name().to_string_lossy().chars().all(|c| c.is_ascii_hexdigit())
-        })
-    {
+    for prefix1_entry in fs::read_dir(cache_dir)?.filter_map(|e| e.ok()).filter(|e| {
+        e.path().is_dir()
+            && e.file_name().to_string_lossy().len() == 2
+            && e.file_name()
+                .to_string_lossy()
+                .chars()
+                .all(|c| c.is_ascii_hexdigit())
+    }) {
         let prefix1_dir = prefix1_entry.path();
 
         // Walk the second-level prefix directories
@@ -391,14 +391,15 @@ pub fn cleanup_stale_temp_files(cache_dir: &Path) -> io::Result<()> {
                     .to_string_lossy()
                     .chars()
                     .all(|c| c.is_ascii_hexdigit())
-        })
-        {
+        }) {
             let prefix2_dir = prefix2_entry.path();
 
             // Walk the fingerprint directories
-            for fp_entry in prefix2_dir.read_dir()?.filter_map(|e| e.ok()).filter(|e| {
-                e.path().is_dir()
-            }) {
+            for fp_entry in prefix2_dir
+                .read_dir()?
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().is_dir())
+            {
                 let fp_dir = fp_entry.path();
 
                 // Walk the entry files
@@ -413,7 +414,8 @@ pub fn cleanup_stale_temp_files(cache_dir: &Path) -> io::Result<()> {
                                 if let Ok(metadata) = path.metadata() {
                                     if let Ok(modified) = metadata.modified() {
                                         if let Ok(duration) = modified.duration_since(UNIX_EPOCH) {
-                                            let age_seconds = now.saturating_sub(duration.as_secs());
+                                            let age_seconds =
+                                                now.saturating_sub(duration.as_secs());
 
                                             if age_seconds > TEMP_FILE_MAX_AGE_SECONDS {
                                                 // Delete stale temp file
@@ -441,7 +443,8 @@ mod tests {
     use std::time::Duration;
     use tempfile::TempDir;
 
-    const TEST_FINGERPRINT: &str = "pdftract-v1:e7a1f3deadbeef00000000000000000000000000000000000000000000000000";
+    const TEST_FINGERPRINT: &str =
+        "pdftract-v1:e7a1f3deadbeef00000000000000000000000000000000000000000000000000";
     const TEST_OPTS_HASH: &str = "9b21c0ffee000000000000000000000000000000000000000000000000000000";
     const TEST_DATA: &[u8] = b"test cache entry data";
 
@@ -458,12 +461,19 @@ mod tests {
         let compressed = compress_data(TEST_DATA);
 
         writer
-            .write(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len(), &compressed)
+            .write(
+                TEST_FINGERPRINT,
+                TEST_OPTS_HASH,
+                compressed.len(),
+                &compressed,
+            )
             .unwrap();
 
         // Verify the entry exists
         let reader = Reader::new(cache_dir);
-        let result = reader.read(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len()).unwrap();
+        let result = reader
+            .read(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len())
+            .unwrap();
         assert_eq!(result, TEST_DATA);
     }
 
@@ -493,7 +503,12 @@ mod tests {
 
         // Write entry
         writer
-            .write(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len(), &compressed)
+            .write(
+                TEST_FINGERPRINT,
+                TEST_OPTS_HASH,
+                compressed.len(),
+                &compressed,
+            )
             .unwrap();
 
         // Now it exists
@@ -509,12 +524,22 @@ mod tests {
         let compressed = compress_data(TEST_DATA);
 
         // Parent directories don't exist yet
-        let entry = entry_path(cache_dir, TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len());
+        let entry = entry_path(
+            cache_dir,
+            TEST_FINGERPRINT,
+            TEST_OPTS_HASH,
+            compressed.len(),
+        );
         assert!(!entry.exists());
 
         // Write should create parent directories
         writer
-            .write(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len(), &compressed)
+            .write(
+                TEST_FINGERPRINT,
+                TEST_OPTS_HASH,
+                compressed.len(),
+                &compressed,
+            )
             .unwrap();
 
         assert!(entry.exists());
@@ -535,19 +560,32 @@ mod tests {
 
         let handle1 = thread::spawn(move || {
             let writer = Writer::new(&cache_dir1);
-            writer.write(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed_size, &compressed1)
+            writer.write(
+                TEST_FINGERPRINT,
+                TEST_OPTS_HASH,
+                compressed_size,
+                &compressed1,
+            )
         });
 
         let handle2 = thread::spawn(move || {
             let writer = Writer::new(&cache_dir2);
-            writer.write(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed_size, &compressed2)
+            writer.write(
+                TEST_FINGERPRINT,
+                TEST_OPTS_HASH,
+                compressed_size,
+                &compressed2,
+            )
         });
 
         // Both should succeed (no deadlock)
         let result1 = handle1.join().unwrap();
         let result2 = handle2.join().unwrap();
 
-        assert!(result1.is_ok() || result2.is_ok(), "At least one writer should succeed");
+        assert!(
+            result1.is_ok() || result2.is_ok(),
+            "At least one writer should succeed"
+        );
 
         // The final entry should be valid (one of the two)
         let reader = Reader::new(&cache_dir);
@@ -594,9 +632,9 @@ mod tests {
             // Need to find the actual compressed size
             let entry_path_buf = entry_path(&cache_dir, &fp, &opts, 0);
             let entry_dir = entry_path_buf.parent().unwrap();
-            let _found = fs::read_dir(entry_dir).unwrap().any(|e| {
-                e.ok().filter(|f| f.path().is_file()).is_some()
-            });
+            let _found = fs::read_dir(entry_dir)
+                .unwrap()
+                .any(|e| e.ok().filter(|f| f.path().is_file()).is_some());
 
             assert!(_found, "Entry {} should exist", i);
         }
@@ -612,10 +650,20 @@ mod tests {
 
         // Write a valid entry
         writer
-            .write(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len(), &compressed)
+            .write(
+                TEST_FINGERPRINT,
+                TEST_OPTS_HASH,
+                compressed.len(),
+                &compressed,
+            )
             .unwrap();
 
-        let entry = entry_path(cache_dir, TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len());
+        let entry = entry_path(
+            cache_dir,
+            TEST_FINGERPRINT,
+            TEST_OPTS_HASH,
+            compressed.len(),
+        );
 
         // Corrupt the entry by truncating it
         {
@@ -647,7 +695,12 @@ mod tests {
         let compressed = compress_data(TEST_DATA);
 
         // Create a temp file manually
-        let entry = entry_path(cache_dir, TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len());
+        let entry = entry_path(
+            cache_dir,
+            TEST_FINGERPRINT,
+            TEST_OPTS_HASH,
+            compressed.len(),
+        );
         let temp_path = writer.temp_path(&entry);
 
         // Create parent directory first
@@ -678,7 +731,12 @@ mod tests {
         let compressed = compress_data(TEST_DATA);
 
         // Create a recent temp file
-        let entry = entry_path(cache_dir, TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len());
+        let entry = entry_path(
+            cache_dir,
+            TEST_FINGERPRINT,
+            TEST_OPTS_HASH,
+            compressed.len(),
+        );
         let temp_path = writer.temp_path(&entry);
 
         // Create parent directory first
@@ -723,7 +781,12 @@ mod tests {
 
         let writer = Writer::new(cache_dir);
         let compressed = compress_data(TEST_DATA);
-        let entry = entry_path(cache_dir, TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len());
+        let entry = entry_path(
+            cache_dir,
+            TEST_FINGERPRINT,
+            TEST_OPTS_HASH,
+            compressed.len(),
+        );
 
         // Generate multiple temp paths
         let path1 = writer.temp_path(&entry);
@@ -754,7 +817,12 @@ mod tests {
 
         // This should work normally
         writer
-            .write(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len(), &compressed)
+            .write(
+                TEST_FINGERPRINT,
+                TEST_OPTS_HASH,
+                compressed.len(),
+                &compressed,
+            )
             .unwrap();
 
         // Verify the entry exists
@@ -838,7 +906,8 @@ mod tests {
                 thread::spawn(move || {
                     for iter in 0..NUM_ITERATIONS {
                         for (key_idx, (fp, opts)) in keys.iter().enumerate() {
-                            let data = format!("process {} iteration {} key {}", proc_id, iter, key_idx);
+                            let data =
+                                format!("process {} iteration {} key {}", proc_id, iter, key_idx);
                             let compressed = compress_data(data.as_bytes());
                             let size = compressed.len();
 
@@ -871,9 +940,9 @@ mod tests {
             let entry_path_buf = entry_path(&cache_dir, fp, opts, 0);
             let fp_dir = entry_path_buf.parent().unwrap();
             if fp_dir.exists() {
-                let _found = fs::read_dir(fp_dir).unwrap().any(|e| {
-                    e.ok().filter(|f| f.path().is_file()).is_some()
-                });
+                let _found = fs::read_dir(fp_dir)
+                    .unwrap()
+                    .any(|e| e.ok().filter(|f| f.path().is_file()).is_some());
                 // At least one entry should exist for this key
                 // (may have multiple versions due to concurrent writes)
             }
@@ -923,12 +992,22 @@ mod tests {
 
         let handle1 = thread::spawn(move || {
             let writer = Writer::new(&cache_dir1);
-            writer.write(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed_size, &compressed1)
+            writer.write(
+                TEST_FINGERPRINT,
+                TEST_OPTS_HASH,
+                compressed_size,
+                &compressed1,
+            )
         });
 
         let handle2 = thread::spawn(move || {
             let writer = Writer::new(&cache_dir2);
-            writer.write(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed_size, &compressed2)
+            writer.write(
+                TEST_FINGERPRINT,
+                TEST_OPTS_HASH,
+                compressed_size,
+                &compressed2,
+            )
         });
 
         // Both should succeed without deadlock
@@ -941,7 +1020,10 @@ mod tests {
         // Final entry should be valid
         let reader = Reader::new(&cache_dir);
         let result = reader.read(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed_size);
-        assert!(result.is_ok(), "Entry should be readable after concurrent writes");
+        assert!(
+            result.is_ok(),
+            "Entry should be readable after concurrent writes"
+        );
     }
 
     #[test]
@@ -960,7 +1042,12 @@ mod tests {
                 let compressed = compressed.clone();
                 thread::spawn(move || {
                     let writer = Writer::new(&cache_dir);
-                    writer.write(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed_size, &compressed)
+                    writer.write(
+                        TEST_FINGERPRINT,
+                        TEST_OPTS_HASH,
+                        compressed_size,
+                        &compressed,
+                    )
                 })
             })
             .collect();
@@ -1006,11 +1093,21 @@ mod tests {
         let compressed = compress_data(TEST_DATA);
 
         writer
-            .write(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len(), &compressed)
+            .write(
+                TEST_FINGERPRINT,
+                TEST_OPTS_HASH,
+                compressed.len(),
+                &compressed,
+            )
             .unwrap();
 
         // Corrupt the entry
-        let entry = entry_path(cache_dir, TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len());
+        let entry = entry_path(
+            cache_dir,
+            TEST_FINGERPRINT,
+            TEST_OPTS_HASH,
+            compressed.len(),
+        );
         fs::write(&entry, b"corrupted data").unwrap();
 
         // Read should detect corruption, delete entry, and return error

@@ -10,10 +10,10 @@
 //! - Inheritance is "last-write-wins" at each level (child overrides parent)
 //! - If a required inheritable attribute is missing and not inherited, use a safe default
 
-use crate::parser::object::{ObjRef, PdfObject, PdfDict, intern};
+use crate::diagnostics::{DiagCode, Diagnostic};
+use crate::parser::object::{intern, ObjRef, PdfDict, PdfObject};
+use crate::parser::resources::{merge_resources, ResourceDict};
 use crate::parser::xref::XrefResolver;
-use crate::diagnostics::{Diagnostic, DiagCode};
-use crate::parser::resources::{ResourceDict, merge_resources};
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -156,7 +156,10 @@ fn count_pages_walk(
     if depth > MAX_PAGES_DEPTH {
         diagnostics.push(Diagnostic::with_dynamic_no_offset(
             DiagCode::StructDepthExceeded,
-            format!("STRUCT_DEPTH_EXCEEDED: /Pages nesting exceeds {} levels", MAX_PAGES_DEPTH),
+            format!(
+                "STRUCT_DEPTH_EXCEEDED: /Pages nesting exceeds {} levels",
+                MAX_PAGES_DEPTH
+            ),
         ));
         return 0;
     }
@@ -165,7 +168,10 @@ fn count_pages_walk(
     if visited.contains(&node_ref) {
         diagnostics.push(Diagnostic::with_dynamic_no_offset(
             DiagCode::StructCircularRef,
-            format!("STRUCT_CIRCULAR_REF: /Pages node {} already visited", node_ref),
+            format!(
+                "STRUCT_CIRCULAR_REF: /Pages node {} already visited",
+                node_ref
+            ),
         ));
         return 0;
     }
@@ -190,9 +196,7 @@ fn count_pages_walk(
         }
     };
 
-    let node_type = dict.get("Type")
-        .and_then(|o| o.as_name())
-        .unwrap_or("");
+    let node_type = dict.get("Type").and_then(|o| o.as_name()).unwrap_or("");
 
     match node_type {
         "Page" => {
@@ -226,7 +230,8 @@ fn count_pages_walk(
                     PdfObject::Ref(ref_) => *ref_,
                     PdfObject::Dict(_) => {
                         // Direct dictionary - count as a page if it's a /Page
-                        let kid_type = kid.as_dict()
+                        let kid_type = kid
+                            .as_dict()
                             .and_then(|d| d.get("Type"))
                             .and_then(|o| o.as_name())
                             .unwrap_or("");
@@ -241,7 +246,7 @@ fn count_pages_walk(
             }
             total
         }
-        _ => 0
+        _ => 0,
     }
 }
 
@@ -297,7 +302,8 @@ pub fn flatten_page_tree(resolver: &XrefResolver, pages_ref: ObjRef) -> Result<V
     };
 
     // Extract /Count if present (for validation later)
-    let declared_count = pages_obj.as_dict()
+    let declared_count = pages_obj
+        .as_dict()
         .and_then(|d| d.get("Count"))
         .and_then(|o| o.as_int())
         .unwrap_or(0);
@@ -359,7 +365,10 @@ fn walk_page_tree(
     if depth > MAX_PAGES_DEPTH {
         diagnostics.push(Diagnostic::with_dynamic_no_offset(
             DiagCode::StructDepthExceeded,
-            format!("STRUCT_DEPTH_EXCEEDED: /Pages nesting exceeds {} levels", MAX_PAGES_DEPTH),
+            format!(
+                "STRUCT_DEPTH_EXCEEDED: /Pages nesting exceeds {} levels",
+                MAX_PAGES_DEPTH
+            ),
         ));
         return Vec::new();
     }
@@ -373,9 +382,7 @@ fn walk_page_tree(
     };
 
     // Check /Type to determine if this is /Pages or /Page
-    let node_type = dict.get("Type")
-        .and_then(|o| o.as_name())
-        .unwrap_or("");
+    let node_type = dict.get("Type").and_then(|o| o.as_name()).unwrap_or("");
 
     // Save the inherited state before merging this node's attributes
     let parent_inherited = inherited.clone();
@@ -423,7 +430,10 @@ fn walk_page_tree(
                         if visited.contains(ref_) {
                             diagnostics.push(Diagnostic::with_dynamic_no_offset(
                                 DiagCode::StructCircularRef,
-                                format!("STRUCT_CIRCULAR_REF: /Pages node {} already visited", ref_),
+                                format!(
+                                    "STRUCT_CIRCULAR_REF: /Pages node {} already visited",
+                                    ref_
+                                ),
                             ));
                             continue;
                         }
@@ -434,7 +444,10 @@ fn walk_page_tree(
                             Err(e) => {
                                 diagnostics.push(Diagnostic::with_dynamic_no_offset(
                                     DiagCode::StructMissingKey,
-                                    format!("STRUCT_MISSING_KEY: Failed to resolve /Kids entry {}: {}", ref_, e),
+                                    format!(
+                                        "STRUCT_MISSING_KEY: Failed to resolve /Kids entry {}: {}",
+                                        ref_, e
+                                    ),
                                 ));
                                 continue;
                             }
@@ -479,7 +492,11 @@ fn walk_page_tree(
 ///
 /// Per PDF spec 7.7.3.4, only MediaBox, CropBox, Resources, and Rotate are inheritable.
 /// This function updates the `inherited` accumulator with any values present in `dict`.
-fn merge_inherited_attrs(dict: &PdfDict, inherited: &mut InheritedAttrs, diagnostics: &mut Vec<Diagnostic>) {
+fn merge_inherited_attrs(
+    dict: &PdfDict,
+    inherited: &mut InheritedAttrs,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
     // MediaBox (inheritable)
     if let Some(mb) = parse_rect(dict.get("MediaBox")) {
         inherited.media_box = Some(mb);
@@ -501,7 +518,10 @@ fn merge_inherited_attrs(dict: &PdfDict, inherited: &mut InheritedAttrs, diagnos
         if rot % 90 != 0 {
             diagnostics.push(Diagnostic::with_dynamic_no_offset(
                 DiagCode::PageInvalidRotate,
-                format!("STRUCT_INVALID_ROTATE: /Rotate value {} is not a multiple of 90", rot),
+                format!(
+                    "STRUCT_INVALID_ROTATE: /Rotate value {} is not a multiple of 90",
+                    rot
+                ),
             ));
             // Clamp to nearest multiple of 90 (floor toward negative infinity)
             inherited.rotate = ((rot as f64 / 90.0).floor() as i64 * 90) as i32;
@@ -515,7 +535,11 @@ fn merge_inherited_attrs(dict: &PdfDict, inherited: &mut InheritedAttrs, diagnos
 ///
 /// This function extracts all page-level attributes, substituting defaults for
 /// missing values and emitting diagnostics where appropriate.
-fn build_page_dict(page_obj: &PdfObject, inherited: &InheritedAttrs, diagnostics: &mut Vec<Diagnostic>) -> PageDict {
+fn build_page_dict(
+    page_obj: &PdfObject,
+    inherited: &InheritedAttrs,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> PageDict {
     let dict = match page_obj.as_dict() {
         Some(d) => d,
         None => {
@@ -578,7 +602,10 @@ fn build_page_dict(page_obj: &PdfObject, inherited: &InheritedAttrs, diagnostics
             diagnostics.push(Diagnostic::with_dynamic(
                 DiagCode::PageInvalidRotate,
                 0,
-                format!("Page {} has /Rotate value {} (not a multiple of 90)", obj_ref, rot),
+                format!(
+                    "Page {} has /Rotate value {} (not a multiple of 90)",
+                    obj_ref, rot
+                ),
             ));
             // Clamp to nearest multiple of 90 (floor toward negative infinity)
             rotate = ((rot as f64 / 90.0).floor() as i64 * 90) as i32;
@@ -602,20 +629,20 @@ fn build_page_dict(page_obj: &PdfObject, inherited: &InheritedAttrs, diagnostics
 
     // Annots: collect array of references
     let annots = if let Some(PdfObject::Array(arr)) = dict.get("Annots") {
-        arr.iter()
-            .filter_map(|o| o.as_ref())
-            .collect()
+        arr.iter().filter_map(|o| o.as_ref()).collect()
     } else {
         Vec::new()
     };
 
     // ActualText (from tagged PDF)
-    let actual_text = dict.get("ActualText")
+    let actual_text = dict
+        .get("ActualText")
         .and_then(|o| o.as_string())
         .and_then(|s| String::from_utf8(s.to_vec()).ok());
 
     // Lang (language identifier)
-    let lang = dict.get("Lang")
+    let lang = dict
+        .get("Lang")
         .and_then(|o| o.as_string())
         .and_then(|s| String::from_utf8(s.to_vec()).ok());
 
@@ -623,7 +650,8 @@ fn build_page_dict(page_obj: &PdfObject, inherited: &InheritedAttrs, diagnostics
     let aa = dict.get("AA").cloned();
 
     // StructParents: for StructTree MCID resolution (Phase 7.1.4)
-    let struct_parents = dict.get("StructParents")
+    let struct_parents = dict
+        .get("StructParents")
         .and_then(|o| o.as_int())
         .map(|i| i as i32);
 
@@ -654,10 +682,22 @@ fn parse_rect(obj: Option<&PdfObject>) -> Option<[f64; 4]> {
         return None;
     }
 
-    let x1 = arr[0].as_int().map(|i| i as f64).or_else(|| arr[0].as_real())?;
-    let y1 = arr[1].as_int().map(|i| i as f64).or_else(|| arr[1].as_real())?;
-    let x2 = arr[2].as_int().map(|i| i as f64).or_else(|| arr[2].as_real())?;
-    let y2 = arr[3].as_int().map(|i| i as f64).or_else(|| arr[3].as_real())?;
+    let x1 = arr[0]
+        .as_int()
+        .map(|i| i as f64)
+        .or_else(|| arr[0].as_real())?;
+    let y1 = arr[1]
+        .as_int()
+        .map(|i| i as f64)
+        .or_else(|| arr[1].as_real())?;
+    let x2 = arr[2]
+        .as_int()
+        .map(|i| i as f64)
+        .or_else(|| arr[2].as_real())?;
+    let y2 = arr[3]
+        .as_int()
+        .map(|i| i as f64)
+        .or_else(|| arr[3].as_real())?;
 
     Some([x1, y1, x2, y2])
 }
@@ -673,11 +713,7 @@ fn parse_contents_array(obj: Option<&PdfObject>) -> Vec<ObjRef> {
     match obj {
         None => Vec::new(),
         Some(PdfObject::Ref(ref_)) => vec![*ref_],
-        Some(PdfObject::Array(arr)) => {
-            arr.iter()
-                .filter_map(|o| o.as_ref())
-                .collect()
-        }
+        Some(PdfObject::Array(arr)) => arr.iter().filter_map(|o| o.as_ref()).collect(),
         Some(PdfObject::Stream(_)) => {
             // Direct stream is illegal - should be indirect
             // Return empty; diagnostics would be emitted by parser
@@ -771,7 +807,10 @@ mod tests {
     #[test]
     fn test_parse_contents_single_ref() {
         let ref_obj = PdfObject::Ref(ObjRef::new(10, 0));
-        assert_eq!(parse_contents_array(Some(&ref_obj)), vec![ObjRef::new(10, 0)]);
+        assert_eq!(
+            parse_contents_array(Some(&ref_obj)),
+            vec![ObjRef::new(10, 0)]
+        );
     }
 
     #[test]
@@ -780,10 +819,10 @@ mod tests {
             PdfObject::Ref(ObjRef::new(10, 0)),
             PdfObject::Ref(ObjRef::new(11, 0)),
         ]));
-        assert_eq!(parse_contents_array(Some(&arr)), vec![
-            ObjRef::new(10, 0),
-            ObjRef::new(11, 0),
-        ]);
+        assert_eq!(
+            parse_contents_array(Some(&arr)),
+            vec![ObjRef::new(10, 0), ObjRef::new(11, 0),]
+        );
     }
 
     #[test]
@@ -831,13 +870,16 @@ mod tests {
         let mut grandparent_dict = grandparent.as_dict().unwrap().clone();
         grandparent_dict.insert(
             intern("Kids"),
-            PdfObject::Array(Box::new(vec![PdfObject::Ref(parent_ref)]))
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(parent_ref)])),
         );
 
         let mut parent_dict = parent.as_dict().unwrap().clone();
         parent_dict.insert(
             intern("Kids"),
-            PdfObject::Array(Box::new(vec![PdfObject::Ref(page1_ref), PdfObject::Ref(page2_ref)]))
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Ref(page1_ref),
+                PdfObject::Ref(page2_ref),
+            ])),
         );
 
         resolver.cache_object(grandparent_ref, PdfObject::Dict(Box::new(grandparent_dict)));
@@ -861,11 +903,7 @@ mod tests {
         let pages_ref = ObjRef::new(1, 0);
 
         // /Pages with no MediaBox
-        let pages = make_pages_dict(
-            vec![make_page_dict(None, None)],
-            1,
-            None,
-        );
+        let pages = make_pages_dict(vec![make_page_dict(None, None)], 1, None);
 
         resolver.cache_object(pages_ref, pages);
 
@@ -960,7 +998,7 @@ mod tests {
         // /Count says 5, but we only have 1 page
         let pages = make_pages_dict(
             vec![make_page_dict(Some(DEFAULT_MEDIABOX), None)],
-            5,  // Wrong count
+            5, // Wrong count
             Some(DEFAULT_MEDIABOX),
         );
 
@@ -992,22 +1030,31 @@ mod tests {
         // Create child2 with a valid page and a reference to child1 (creating cycle)
         let mut child2_dict = PdfDict::new();
         child2_dict.insert(intern("Type"), PdfObject::Name(intern("Pages")));
-        child2_dict.insert(intern("Kids"), PdfObject::Array(Box::new(vec![
-            PdfObject::Ref(page_ref),
-            PdfObject::Ref(child1_ref),  // This will cause a cycle
-        ])));
+        child2_dict.insert(
+            intern("Kids"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Ref(page_ref),
+                PdfObject::Ref(child1_ref), // This will cause a cycle
+            ])),
+        );
         child2_dict.insert(intern("Count"), PdfObject::Integer(2));
 
         // Create child1 that references child2 (the other half of the cycle)
         let mut child1_dict = PdfDict::new();
         child1_dict.insert(intern("Type"), PdfObject::Name(intern("Pages")));
-        child1_dict.insert(intern("Kids"), PdfObject::Array(Box::new(vec![PdfObject::Ref(child2_ref)])));
+        child1_dict.insert(
+            intern("Kids"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(child2_ref)])),
+        );
         child1_dict.insert(intern("Count"), PdfObject::Integer(1));
 
         // Create parent that references child1
         let mut parent_dict = PdfDict::new();
         parent_dict.insert(intern("Type"), PdfObject::Name(intern("Pages")));
-        parent_dict.insert(intern("Kids"), PdfObject::Array(Box::new(vec![PdfObject::Ref(child1_ref)])));
+        parent_dict.insert(
+            intern("Kids"),
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(child1_ref)])),
+        );
         parent_dict.insert(intern("Count"), PdfObject::Integer(2));
         parent_dict.insert(intern("MediaBox"), make_rect_array(DEFAULT_MEDIABOX));
 
@@ -1043,7 +1090,10 @@ mod tests {
         grandparent.insert(intern("Type"), PdfObject::Name(intern("Pages")));
         grandparent.insert(intern("Kids"), PdfObject::Array(Box::new(vec![])));
         grandparent.insert(intern("Count"), PdfObject::Integer(2));
-        grandparent.insert(intern("Resources"), PdfObject::Dict(Box::new(grandparent_resources)));
+        grandparent.insert(
+            intern("Resources"),
+            PdfObject::Dict(Box::new(grandparent_resources)),
+        );
         grandparent.insert(intern("MediaBox"), make_rect_array(DEFAULT_MEDIABOX));
 
         // Parent /Pages adds /F2
@@ -1057,7 +1107,10 @@ mod tests {
         parent.insert(intern("Type"), PdfObject::Name(intern("Pages")));
         parent.insert(intern("Kids"), PdfObject::Array(Box::new(vec![])));
         parent.insert(intern("Count"), PdfObject::Integer(2));
-        parent.insert(intern("Resources"), PdfObject::Dict(Box::new(parent_resources)));
+        parent.insert(
+            intern("Resources"),
+            PdfObject::Dict(Box::new(parent_resources)),
+        );
 
         // Page 1 adds /F3 and overrides /F1
         let page1_ref = ObjRef::new(3, 0);
@@ -1070,7 +1123,10 @@ mod tests {
         let mut page1 = PdfDict::new();
         page1.insert(intern("Type"), PdfObject::Name(intern("Page")));
         page1.insert(intern("MediaBox"), make_rect_array(DEFAULT_MEDIABOX));
-        page1.insert(intern("Resources"), PdfObject::Dict(Box::new(page1_resources)));
+        page1.insert(
+            intern("Resources"),
+            PdfObject::Dict(Box::new(page1_resources)),
+        );
 
         // Page 2 has no resources (should inherit all)
         let page2_ref = ObjRef::new(4, 0);
@@ -1082,13 +1138,16 @@ mod tests {
         let mut grandparent_dict = grandparent.clone();
         grandparent_dict.insert(
             intern("Kids"),
-            PdfObject::Array(Box::new(vec![PdfObject::Ref(parent_ref)]))
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(parent_ref)])),
         );
 
         let mut parent_dict = parent.clone();
         parent_dict.insert(
             intern("Kids"),
-            PdfObject::Array(Box::new(vec![PdfObject::Ref(page1_ref), PdfObject::Ref(page2_ref)]))
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Ref(page1_ref),
+                PdfObject::Ref(page2_ref),
+            ])),
         );
 
         resolver.cache_object(grandparent_ref, PdfObject::Dict(Box::new(grandparent_dict)));
@@ -1103,18 +1162,39 @@ mod tests {
 
         // Page 1: should have F1 (overridden), F2 (inherited), F3 (new), Im1 (inherited)
         assert_eq!(pages_vec[0].resources.fonts.len(), 3);
-        assert_eq!(pages_vec[0].resources.fonts.get(&intern("F1")), Some(&ObjRef::new(15, 0))); // Overridden
-        assert_eq!(pages_vec[0].resources.fonts.get(&intern("F2")), Some(&ObjRef::new(11, 0))); // Inherited from parent
-        assert_eq!(pages_vec[0].resources.fonts.get(&intern("F3")), Some(&ObjRef::new(12, 0))); // New on page
+        assert_eq!(
+            pages_vec[0].resources.fonts.get(&intern("F1")),
+            Some(&ObjRef::new(15, 0))
+        ); // Overridden
+        assert_eq!(
+            pages_vec[0].resources.fonts.get(&intern("F2")),
+            Some(&ObjRef::new(11, 0))
+        ); // Inherited from parent
+        assert_eq!(
+            pages_vec[0].resources.fonts.get(&intern("F3")),
+            Some(&ObjRef::new(12, 0))
+        ); // New on page
         assert_eq!(pages_vec[0].resources.xobjects.len(), 1);
-        assert_eq!(pages_vec[0].resources.xobjects.get(&intern("Im1")), Some(&ObjRef::new(20, 0))); // Inherited from grandparent
+        assert_eq!(
+            pages_vec[0].resources.xobjects.get(&intern("Im1")),
+            Some(&ObjRef::new(20, 0))
+        ); // Inherited from grandparent
 
         // Page 2: should have all inherited resources (F1, F2, Im1)
         assert_eq!(pages_vec[1].resources.fonts.len(), 2);
-        assert_eq!(pages_vec[1].resources.fonts.get(&intern("F1")), Some(&ObjRef::new(10, 0))); // From grandparent
-        assert_eq!(pages_vec[1].resources.fonts.get(&intern("F2")), Some(&ObjRef::new(11, 0))); // From parent
+        assert_eq!(
+            pages_vec[1].resources.fonts.get(&intern("F1")),
+            Some(&ObjRef::new(10, 0))
+        ); // From grandparent
+        assert_eq!(
+            pages_vec[1].resources.fonts.get(&intern("F2")),
+            Some(&ObjRef::new(11, 0))
+        ); // From parent
         assert_eq!(pages_vec[1].resources.xobjects.len(), 1);
-        assert_eq!(pages_vec[1].resources.xobjects.get(&intern("Im1")), Some(&ObjRef::new(20, 0))); // From grandparent
+        assert_eq!(
+            pages_vec[1].resources.xobjects.get(&intern("Im1")),
+            Some(&ObjRef::new(20, 0))
+        ); // From grandparent
     }
 
     #[test]
@@ -1134,7 +1214,10 @@ mod tests {
         parent.insert(intern("Type"), PdfObject::Name(intern("Pages")));
         parent.insert(intern("Kids"), PdfObject::Array(Box::new(vec![])));
         parent.insert(intern("Count"), PdfObject::Integer(2));
-        parent.insert(intern("Resources"), PdfObject::Dict(Box::new(parent_resources)));
+        parent.insert(
+            intern("Resources"),
+            PdfObject::Dict(Box::new(parent_resources)),
+        );
         parent.insert(intern("MediaBox"), make_rect_array(DEFAULT_MEDIABOX));
 
         // Two pages without /Resources
@@ -1152,7 +1235,10 @@ mod tests {
         let mut parent_dict = parent.clone();
         parent_dict.insert(
             intern("Kids"),
-            PdfObject::Array(Box::new(vec![PdfObject::Ref(page1_ref), PdfObject::Ref(page2_ref)]))
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Ref(page1_ref),
+                PdfObject::Ref(page2_ref),
+            ])),
         );
 
         resolver.cache_object(parent_ref, PdfObject::Dict(Box::new(parent_dict)));
@@ -1166,13 +1252,22 @@ mod tests {
 
         // Both pages should have inherited F1 from parent
         assert_eq!(pages_vec[0].resources.fonts.len(), 1);
-        assert_eq!(pages_vec[0].resources.fonts.get(&intern("F1")), Some(&ObjRef::new(10, 0)));
+        assert_eq!(
+            pages_vec[0].resources.fonts.get(&intern("F1")),
+            Some(&ObjRef::new(10, 0))
+        );
         assert_eq!(pages_vec[1].resources.fonts.len(), 1);
-        assert_eq!(pages_vec[1].resources.fonts.get(&intern("F1")), Some(&ObjRef::new(10, 0)));
+        assert_eq!(
+            pages_vec[1].resources.fonts.get(&intern("F1")),
+            Some(&ObjRef::new(10, 0))
+        );
 
         // Verify Arc pointer sharing: when pages have no resources,
         // they should share the same Arc instance (memory efficiency)
-        assert!(Arc::ptr_eq(&pages_vec[0].resources, &pages_vec[1].resources));
+        assert!(Arc::ptr_eq(
+            &pages_vec[0].resources,
+            &pages_vec[1].resources
+        ));
     }
 
     #[test]
@@ -1187,7 +1282,10 @@ mod tests {
         root.insert(intern("Type"), PdfObject::Name(intern("Pages")));
         root.insert(intern("Kids"), PdfObject::Array(Box::new(vec![])));
         root.insert(intern("Count"), PdfObject::Integer(1));
-        root.insert(intern("Resources"), PdfObject::Dict(Box::new(root_resources)));
+        root.insert(
+            intern("Resources"),
+            PdfObject::Dict(Box::new(root_resources)),
+        );
         root.insert(intern("MediaBox"), make_rect_array(DEFAULT_MEDIABOX));
 
         // Page without /Resources
@@ -1200,7 +1298,7 @@ mod tests {
         let mut root_dict = root.clone();
         root_dict.insert(
             intern("Kids"),
-            PdfObject::Array(Box::new(vec![PdfObject::Ref(page_ref)]))
+            PdfObject::Array(Box::new(vec![PdfObject::Ref(page_ref)])),
         );
 
         resolver.cache_object(root_ref, PdfObject::Dict(Box::new(root_dict)));
@@ -1253,7 +1351,10 @@ impl<'a> LazyPageIter<'a> {
     /// Create a new lazy page iterator starting from the given /Pages reference.
     ///
     /// This resolves the root /Pages node and initializes the traversal stack.
-    pub fn new(resolver: &'a XrefResolver, pages_ref: ObjRef) -> std::result::Result<Self, Vec<Diagnostic>> {
+    pub fn new(
+        resolver: &'a XrefResolver,
+        pages_ref: ObjRef,
+    ) -> std::result::Result<Self, Vec<Diagnostic>> {
         let mut visited = HashSet::new();
         let mut diagnostics = Vec::new();
 
@@ -1309,7 +1410,10 @@ impl<'a> Iterator for LazyPageIter<'a> {
             if self.stack.len() > MAX_PAGES_DEPTH as usize {
                 self.diagnostics.push(Diagnostic::with_dynamic_no_offset(
                     DiagCode::StructDepthExceeded,
-                    format!("STRUCT_DEPTH_EXCEEDED: /Pages nesting exceeds {} levels", MAX_PAGES_DEPTH),
+                    format!(
+                        "STRUCT_DEPTH_EXCEEDED: /Pages nesting exceeds {} levels",
+                        MAX_PAGES_DEPTH
+                    ),
                 ));
                 continue;
             }
@@ -1322,9 +1426,7 @@ impl<'a> Iterator for LazyPageIter<'a> {
                 }
             };
 
-            let node_type = dict.get("Type")
-                .and_then(|o| o.as_name())
-                .unwrap_or("");
+            let node_type = dict.get("Type").and_then(|o| o.as_name()).unwrap_or("");
 
             // Save the inherited state before merging this node's attributes
             let parent_inherited = inherited.clone();
@@ -1369,7 +1471,11 @@ impl<'a> Iterator for LazyPageIter<'a> {
                     // We need to push kids[kid_idx+1..] first, then process kid at kid_idx
                     if kid_idx + 1 < kids_array.len() {
                         // Clone node before moving it to avoid borrow checker error
-                        self.stack.push((node.clone(), pages_parent_inherited.clone(), kid_idx + 1));
+                        self.stack.push((
+                            node.clone(),
+                            pages_parent_inherited.clone(),
+                            kid_idx + 1,
+                        ));
                     }
 
                     // Push the current kid onto stack
@@ -1383,7 +1489,10 @@ impl<'a> Iterator for LazyPageIter<'a> {
                                 if self.visited.contains(ref_) {
                                     self.diagnostics.push(Diagnostic::with_dynamic_no_offset(
                                         DiagCode::StructCircularRef,
-                                        format!("STRUCT_CIRCULAR_REF: /Pages node {} already visited", ref_),
+                                        format!(
+                                            "STRUCT_CIRCULAR_REF: /Pages node {} already visited",
+                                            ref_
+                                        ),
                                     ));
                                     inherited = parent_inherited;
                                     continue;
@@ -1445,12 +1554,15 @@ mod proptests {
         dict.insert(intern("Kids"), PdfObject::Array(Box::new(kids)));
         dict.insert(intern("Count"), PdfObject::Integer(count));
         if let Some(mb) = media_box {
-            dict.insert(intern("MediaBox"), PdfObject::Array(Box::new(vec![
-                PdfObject::Real(mb[0]),
-                PdfObject::Real(mb[1]),
-                PdfObject::Real(mb[2]),
-                PdfObject::Real(mb[3]),
-            ])));
+            dict.insert(
+                intern("MediaBox"),
+                PdfObject::Array(Box::new(vec![
+                    PdfObject::Real(mb[0]),
+                    PdfObject::Real(mb[1]),
+                    PdfObject::Real(mb[2]),
+                    PdfObject::Real(mb[3]),
+                ])),
+            );
         }
         PdfObject::Dict(Box::new(dict))
     }
@@ -1460,12 +1572,15 @@ mod proptests {
         let mut dict = PdfDict::new();
         dict.insert(intern("Type"), PdfObject::Name(intern("Page")));
         if let Some(mb) = media_box {
-            dict.insert(intern("MediaBox"), PdfObject::Array(Box::new(vec![
-                PdfObject::Real(mb[0]),
-                PdfObject::Real(mb[1]),
-                PdfObject::Real(mb[2]),
-                PdfObject::Real(mb[3]),
-            ])));
+            dict.insert(
+                intern("MediaBox"),
+                PdfObject::Array(Box::new(vec![
+                    PdfObject::Real(mb[0]),
+                    PdfObject::Real(mb[1]),
+                    PdfObject::Real(mb[2]),
+                    PdfObject::Real(mb[3]),
+                ])),
+            );
         }
         if let Some(rot) = rotate {
             dict.insert(intern("Rotate"), PdfObject::Integer(rot));
@@ -1485,36 +1600,46 @@ mod proptests {
             prop::option::of(-1000i64..1000),
             prop::option::of(arb_rect()),
             prop::option::of(arb_rect()),
-        ).prop_map(|(media_box, rotate, crop_box, bleed_box)| {
-            let mut dict = PdfDict::new();
-            dict.insert(intern("Type"), PdfObject::Name(intern("Page")));
-            dict.insert(intern("MediaBox"), PdfObject::Array(Box::new(vec![
-                PdfObject::Real(media_box[0]),
-                PdfObject::Real(media_box[1]),
-                PdfObject::Real(media_box[2]),
-                PdfObject::Real(media_box[3]),
-            ])));
-            if let Some(rot) = rotate {
-                dict.insert(intern("Rotate"), PdfObject::Integer(rot));
-            }
-            if let Some(cb) = crop_box {
-                dict.insert(intern("CropBox"), PdfObject::Array(Box::new(vec![
-                    PdfObject::Real(cb[0]),
-                    PdfObject::Real(cb[1]),
-                    PdfObject::Real(cb[2]),
-                    PdfObject::Real(cb[3]),
-                ])));
-            }
-            if let Some(bb) = bleed_box {
-                dict.insert(intern("BleedBox"), PdfObject::Array(Box::new(vec![
-                    PdfObject::Real(bb[0]),
-                    PdfObject::Real(bb[1]),
-                    PdfObject::Real(bb[2]),
-                    PdfObject::Real(bb[3]),
-                ])));
-            }
-            dict
-        })
+        )
+            .prop_map(|(media_box, rotate, crop_box, bleed_box)| {
+                let mut dict = PdfDict::new();
+                dict.insert(intern("Type"), PdfObject::Name(intern("Page")));
+                dict.insert(
+                    intern("MediaBox"),
+                    PdfObject::Array(Box::new(vec![
+                        PdfObject::Real(media_box[0]),
+                        PdfObject::Real(media_box[1]),
+                        PdfObject::Real(media_box[2]),
+                        PdfObject::Real(media_box[3]),
+                    ])),
+                );
+                if let Some(rot) = rotate {
+                    dict.insert(intern("Rotate"), PdfObject::Integer(rot));
+                }
+                if let Some(cb) = crop_box {
+                    dict.insert(
+                        intern("CropBox"),
+                        PdfObject::Array(Box::new(vec![
+                            PdfObject::Real(cb[0]),
+                            PdfObject::Real(cb[1]),
+                            PdfObject::Real(cb[2]),
+                            PdfObject::Real(cb[3]),
+                        ])),
+                    );
+                }
+                if let Some(bb) = bleed_box {
+                    dict.insert(
+                        intern("BleedBox"),
+                        PdfObject::Array(Box::new(vec![
+                            PdfObject::Real(bb[0]),
+                            PdfObject::Real(bb[1]),
+                            PdfObject::Real(bb[2]),
+                            PdfObject::Real(bb[3]),
+                        ])),
+                    );
+                }
+                dict
+            })
     }
 
     /// Strategy to generate /Pages dictionaries with direct /Kids.
@@ -1527,9 +1652,10 @@ mod proptests {
             dict.insert(intern("Count"), PdfObject::Integer(0));
 
             if let Some(page) = maybe_page {
-                dict.insert(intern("Kids"), PdfObject::Array(Box::new(vec![
-                    PdfObject::Dict(Box::new(page))
-                ])));
+                dict.insert(
+                    intern("Kids"),
+                    PdfObject::Array(Box::new(vec![PdfObject::Dict(Box::new(page))])),
+                );
                 dict.insert(intern("Count"), PdfObject::Integer(1));
             } else {
                 dict.insert(intern("Kids"), PdfObject::Array(Box::new(vec![])));

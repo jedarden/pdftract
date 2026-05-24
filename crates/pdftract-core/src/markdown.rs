@@ -46,8 +46,10 @@ use std::sync::OnceLock;
 fn anchor_regex() -> &'static Regex {
     static REGEX: OnceLock<Regex> = OnceLock::new();
     REGEX.get_or_init(|| {
-        Regex::new(r"<!--\s*pdftract:\s*page=(\d+)\s+block=(\d+)\s+bbox=\[([\d.,]+)\]\s+kind=(\w+)\s*-->")
-            .expect("invalid ANCHOR_REGEX")
+        Regex::new(
+            r"<!--\s*pdftract:\s*page=(\d+)\s+block=(\d+)\s+bbox=\[([\d.,]+)\]\s+kind=(\w+)\s*-->",
+        )
+        .expect("invalid ANCHOR_REGEX")
     })
 }
 
@@ -71,7 +73,12 @@ pub struct Anchor {
 impl Anchor {
     /// Create a new anchor from components.
     pub fn new(page: usize, block: usize, bbox: [f32; 4], kind: String) -> Self {
-        Self { page, block, bbox, kind }
+        Self {
+            page,
+            block,
+            bbox,
+            kind,
+        }
     }
 
     /// Format this anchor as an HTML comment.
@@ -90,7 +97,13 @@ impl Anchor {
     pub fn to_comment(&self) -> String {
         format!(
             "<!-- pdftract: page={} block={} bbox=[{:.1},{:.1},{:.1},{:.1}] kind={} -->",
-            self.page, self.block, self.bbox[0], self.bbox[1], self.bbox[2], self.bbox[3], self.kind
+            self.page,
+            self.block,
+            self.bbox[0],
+            self.bbox[1],
+            self.bbox[2],
+            self.bbox[3],
+            self.kind
         )
     }
 }
@@ -194,7 +207,12 @@ fn parse_bbox(s: &str) -> Option<[f32; 4]> {
 /// # Returns
 ///
 /// A markdown string with optional anchor.
-pub fn block_to_markdown(block: &BlockJson, page_index: usize, block_index: usize, include_anchor: bool) -> String {
+pub fn block_to_markdown(
+    block: &BlockJson,
+    page_index: usize,
+    block_index: usize,
+    include_anchor: bool,
+) -> String {
     let mut result = String::new();
 
     // Add anchor comment if requested
@@ -202,7 +220,12 @@ pub fn block_to_markdown(block: &BlockJson, page_index: usize, block_index: usiz
         let anchor = Anchor::new(
             page_index,
             block_index,
-            [block.bbox[0] as f32, block.bbox[1] as f32, block.bbox[2] as f32, block.bbox[3] as f32],
+            [
+                block.bbox[0] as f32,
+                block.bbox[1] as f32,
+                block.bbox[2] as f32,
+                block.bbox[3] as f32,
+            ],
             block.kind.clone(),
         );
         result.push_str(&anchor.to_comment());
@@ -251,7 +274,12 @@ pub fn block_to_markdown(block: &BlockJson, page_index: usize, block_index: usiz
 /// # Returns
 ///
 /// A markdown string with all blocks from the page.
-pub fn page_to_markdown(blocks: &[BlockJson], page_index: usize, include_anchor: bool, include_page_break: bool) -> String {
+pub fn page_to_markdown(
+    blocks: &[BlockJson],
+    page_index: usize,
+    include_anchor: bool,
+    include_page_break: bool,
+) -> String {
     let mut result = String::new();
 
     for (block_index, block) in blocks.iter().enumerate() {
@@ -288,15 +316,26 @@ mod tests {
     fn test_anchor_to_comment() {
         let anchor = Anchor::new(3, 12, [72.0, 640.5, 540.0, 672.0], "heading".to_string());
         let comment = anchor.to_comment();
-        assert_eq!(comment, "<!-- pdftract: page=3 block=12 bbox=[72.0,640.5,540.0,672.0] kind=heading -->");
+        assert_eq!(
+            comment,
+            "<!-- pdftract: page=3 block=12 bbox=[72.0,640.5,540.0,672.0] kind=heading -->"
+        );
     }
 
     #[test]
     fn test_anchor_to_comment_round_bbox() {
-        let anchor = Anchor::new(0, 0, [72.123, 640.567, 540.999, 672.111], "paragraph".to_string());
+        let anchor = Anchor::new(
+            0,
+            0,
+            [72.123, 640.567, 540.999, 672.111],
+            "paragraph".to_string(),
+        );
         let comment = anchor.to_comment();
         // Should be rounded to 1 decimal place
-        assert_eq!(comment, "<!-- pdftract: page=0 block=0 bbox=[72.1,640.6,541.0,672.1] kind=paragraph -->");
+        assert_eq!(
+            comment,
+            "<!-- pdftract: page=0 block=0 bbox=[72.1,640.6,541.0,672.1] kind=paragraph -->"
+        );
     }
 
     #[test]
@@ -342,16 +381,23 @@ Some text."#;
 
     #[test]
     fn test_parse_anchors_whitespace_tolerant() {
-        let md = r#"<!--  pdftract:  page=0  block=0  bbox=[72.0,640.5,540.0,672.0]  kind=heading  -->"#;
+        let md =
+            r#"<!--  pdftract:  page=0  block=0  bbox=[72.0,640.5,540.0,672.0]  kind=heading  -->"#;
         let anchors = parse_anchors(md);
         assert_eq!(anchors.len(), 1);
     }
 
     #[test]
     fn test_parse_bbox() {
-        assert_eq!(parse_bbox("72.0,640.5,540.0,672.0"), Some([72.0, 640.5, 540.0, 672.0]));
+        assert_eq!(
+            parse_bbox("72.0,640.5,540.0,672.0"),
+            Some([72.0, 640.5, 540.0, 672.0])
+        );
         assert_eq!(parse_bbox("0,0,100,100"), Some([0.0, 0.0, 100.0, 100.0]));
-        assert_eq!(parse_bbox("72.0, 640.5, 540.0, 672.0"), Some([72.0, 640.5, 540.0, 672.0])); // with spaces
+        assert_eq!(
+            parse_bbox("72.0, 640.5, 540.0, 672.0"),
+            Some([72.0, 640.5, 540.0, 672.0])
+        ); // with spaces
         assert_eq!(parse_bbox("invalid"), None);
         assert_eq!(parse_bbox("1,2,3"), None); // too few values
         assert_eq!(parse_bbox("1,2,3,4,5"), None); // too many values
@@ -369,7 +415,9 @@ Some text."#;
         };
 
         let md = block_to_markdown(&block, 0, 0, true);
-        assert!(md.contains("<!-- pdftract: page=0 block=0 bbox=[72.0,640.5,540.0,672.0] kind=heading -->"));
+        assert!(md.contains(
+            "<!-- pdftract: page=0 block=0 bbox=[72.0,640.5,540.0,672.0] kind=heading -->"
+        ));
         assert!(md.contains("## Chapter 1"));
     }
 
@@ -438,16 +486,14 @@ Some text."#;
 
     #[test]
     fn test_roundtrip_extract_and_parse() {
-        let blocks = vec![
-            BlockJson {
-                kind: "heading".to_string(),
-                text: "Chapter 1".to_string(),
-                bbox: [72.0, 640.5, 540.0, 672.0],
-                level: Some(2),
-                table_index: None,
-                receipt: None,
-            },
-        ];
+        let blocks = vec![BlockJson {
+            kind: "heading".to_string(),
+            text: "Chapter 1".to_string(),
+            bbox: [72.0, 640.5, 540.0, 672.0],
+            level: Some(2),
+            table_index: None,
+            receipt: None,
+        }];
 
         let md = page_to_markdown(&blocks, 3, true, false);
         let anchors = parse_anchors(&md);

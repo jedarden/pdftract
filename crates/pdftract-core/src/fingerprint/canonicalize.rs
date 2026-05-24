@@ -15,7 +15,7 @@
 //! - **Resource dicts**: Dictionary keys are sorted lexicographically for
 //!   deterministic serialization regardless of insertion order
 
-use crate::diagnostics::{Diagnostic, DiagCode};
+use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::parser::lexer::{Lexer, Token};
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -355,10 +355,19 @@ pub fn hash_resource_dict_canonical(resources: Option<&PdfDict>) -> [u8; 32] {
 
     if let Some(resources) = resources {
         // Namespaces to iterate in lexical order
-        let namespaces = ["/Font", "/XObject", "/ExtGState", "/ColorSpace", "/Pattern", "/Shading", "/Properties"];
-        let mut sorted_namespaces: Vec<_> = namespaces.iter().filter_map(|&ns| {
-            resources.get(ns).and_then(|v| v.as_dict()).map(|d| (ns, d))
-        }).collect();
+        let namespaces = [
+            "/Font",
+            "/XObject",
+            "/ExtGState",
+            "/ColorSpace",
+            "/Pattern",
+            "/Shading",
+            "/Properties",
+        ];
+        let mut sorted_namespaces: Vec<_> = namespaces
+            .iter()
+            .filter_map(|&ns| resources.get(ns).and_then(|v| v.as_dict()).map(|d| (ns, d)))
+            .collect();
 
         // Sort namespaces lexicographically (they're already mostly sorted, but ensure)
         sorted_namespaces.sort_by_key(|&(ns, _)| ns);
@@ -416,7 +425,7 @@ mod tests {
 
         // Test edge cases from plan
         assert_eq!(canonicalize_f64(0.00005, &mut diags), 0); // 0.5 rounds to even (0)
-        // Note: 0.00015 * 10000 = 1.4999... due to float representation, so rounds to 1
+                                                              // Note: 0.00015 * 10000 = 1.4999... due to float representation, so rounds to 1
         assert_eq!(canonicalize_f64(0.00015, &mut diags), 1); // 1.4999... rounds to 1
 
         // Test negative banker's rounding
@@ -579,7 +588,10 @@ mod tests {
         let hash1 = hash_resource_dict_canonical(Some(&resources1));
         let hash2 = hash_resource_dict_canonical(Some(&resources2));
 
-        assert_eq!(hash1, hash2, "Resource dict hash should be independent of insertion order");
+        assert_eq!(
+            hash1, hash2,
+            "Resource dict hash should be independent of insertion order"
+        );
     }
 
     #[test]

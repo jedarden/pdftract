@@ -14,7 +14,7 @@
 use std::sync::Arc;
 
 use crate::diagnostics::{DiagCode, Diagnostic};
-use crate::parser::object::types::{PdfObject, PdfDict};
+use crate::parser::object::types::{PdfDict, PdfObject};
 
 include!(concat!(env!("OUT_DIR"), "/named_encodings.rs"));
 
@@ -135,7 +135,9 @@ pub struct DifferencesOverlay {
 impl DifferencesOverlay {
     /// Create an empty overlay.
     pub fn new() -> Self {
-        Self { entries: Vec::new() }
+        Self {
+            entries: Vec::new(),
+        }
     }
 
     /// Parse a /Differences array into an overlay.
@@ -344,7 +346,8 @@ impl FontEncoding {
         }
 
         // Fall back to base encoding
-        self.base.and_then(|enc| enc.glyph_name(code).map(|s| Arc::from(s)))
+        self.base
+            .and_then(|enc| enc.glyph_name(code).map(|s| Arc::from(s)))
     }
 
     /// Check if this encoding has a differences overlay.
@@ -388,15 +391,36 @@ mod tests {
 
     #[test]
     fn test_from_name() {
-        assert_eq!(NamedEncoding::from_name("WinAnsiEncoding"), Some(NamedEncoding::WinAnsi));
-        assert_eq!(NamedEncoding::from_name("MacRomanEncoding"), Some(NamedEncoding::MacRoman));
-        assert_eq!(NamedEncoding::from_name("MacExpertEncoding"), Some(NamedEncoding::MacExpert));
-        assert_eq!(NamedEncoding::from_name("StandardEncoding"), Some(NamedEncoding::Standard));
-        assert_eq!(NamedEncoding::from_name("SymbolEncoding"), Some(NamedEncoding::Symbol));
-        assert_eq!(NamedEncoding::from_name("ZapfDingbatsEncoding"), Some(NamedEncoding::ZapfDingbats));
+        assert_eq!(
+            NamedEncoding::from_name("WinAnsiEncoding"),
+            Some(NamedEncoding::WinAnsi)
+        );
+        assert_eq!(
+            NamedEncoding::from_name("MacRomanEncoding"),
+            Some(NamedEncoding::MacRoman)
+        );
+        assert_eq!(
+            NamedEncoding::from_name("MacExpertEncoding"),
+            Some(NamedEncoding::MacExpert)
+        );
+        assert_eq!(
+            NamedEncoding::from_name("StandardEncoding"),
+            Some(NamedEncoding::Standard)
+        );
+        assert_eq!(
+            NamedEncoding::from_name("SymbolEncoding"),
+            Some(NamedEncoding::Symbol)
+        );
+        assert_eq!(
+            NamedEncoding::from_name("ZapfDingbatsEncoding"),
+            Some(NamedEncoding::ZapfDingbats)
+        );
 
         // Test with leading slash
-        assert_eq!(NamedEncoding::from_name("/WinAnsiEncoding"), Some(NamedEncoding::WinAnsi));
+        assert_eq!(
+            NamedEncoding::from_name("/WinAnsiEncoding"),
+            Some(NamedEncoding::WinAnsi)
+        );
 
         // Test unknown encoding
         assert_eq!(NamedEncoding::from_name("UnknownEncoding"), None);
@@ -513,7 +537,10 @@ mod tests {
 
         assert_eq!(overlay.get(255), Some(Arc::from("a")));
         assert_eq!(diagnostics.len(), 1);
-        assert_eq!(diagnostics[0].code, DiagCode::FontEncodingDifferenceOutOfRange);
+        assert_eq!(
+            diagnostics[0].code,
+            DiagCode::FontEncodingDifferenceOutOfRange
+        );
     }
 
     #[test]
@@ -529,7 +556,10 @@ mod tests {
 
         assert_eq!(overlay.get(0), Some(Arc::from("a")));
         assert_eq!(diagnostics.len(), 1);
-        assert_eq!(diagnostics[0].code, DiagCode::FontEncodingDifferenceOutOfRange);
+        assert_eq!(
+            diagnostics[0].code,
+            DiagCode::FontEncodingDifferenceOutOfRange
+        );
     }
 
     #[test]
@@ -602,7 +632,9 @@ mod tests {
     fn test_font_encoding_unknown_glyph_name() {
         // Differences can contain arbitrary glyph names not in AGL
         let mut differences = DifferencesOverlay::new();
-        differences.entries.push((0x20, Arc::from("ArbitraryCustomGlyph")));
+        differences
+            .entries
+            .push((0x20, Arc::from("ArbitraryCustomGlyph")));
 
         let enc = FontEncoding {
             base: None,
@@ -610,7 +642,10 @@ mod tests {
         };
 
         // Should return the custom name, not None
-        assert_eq!(enc.glyph_name_for(0x20), Some(Arc::from("ArbitraryCustomGlyph")));
+        assert_eq!(
+            enc.glyph_name_for(0x20),
+            Some(Arc::from("ArbitraryCustomGlyph"))
+        );
     }
 
     #[test]

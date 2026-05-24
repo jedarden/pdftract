@@ -106,14 +106,18 @@ fn parse_algorithmic(name: &str) -> Option<char> {
     if let Some(rest) = name.strip_prefix("uni") {
         // uniXXXX - exactly 4 hex digits
         if rest.len() == 4 && rest.chars().all(|c| c.is_ascii_hexdigit()) {
-            return u32::from_str_radix(rest, 16).ok().and_then(|c| char::from_u32(c));
+            return u32::from_str_radix(rest, 16)
+                .ok()
+                .and_then(|c| char::from_u32(c));
         }
     }
 
     if let Some(rest) = name.strip_prefix('u') {
         // uXXXXXX - up to 6 hex digits
         if rest.len() <= 6 && rest.chars().all(|c| c.is_ascii_hexdigit()) {
-            return u32::from_str_radix(rest, 16).ok().and_then(|c| char::from_u32(c));
+            return u32::from_str_radix(rest, 16)
+                .ok()
+                .and_then(|c| char::from_u32(c));
         }
     }
 

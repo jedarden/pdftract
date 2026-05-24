@@ -330,8 +330,8 @@ mod tests {
     #[test]
     fn test_compute_content_hash_nfc_normalization() {
         // NFC and NFD forms should produce the same hash
-        let nfc_text = "café";  // U+00E9 (composed)
-        let nfd_text: String = "cafe\u{0301}".nfd().collect();  // decomposed
+        let nfc_text = "café"; // U+00E9 (composed)
+        let nfd_text: String = "cafe\u{0301}".nfd().collect(); // decomposed
 
         let hash_nfc = compute_content_hash(nfc_text);
         let hash_nfd = compute_content_hash(&nfd_text);
@@ -344,7 +344,7 @@ mod tests {
         assert_eq!(parse_semver("1.0.0"), Some((1, 0, 0)));
         assert_eq!(parse_semver("1.2.3"), Some((1, 2, 3)));
         assert_eq!(parse_semver("0.1.0"), Some((0, 1, 0)));
-        assert_eq!(parse_semver("1.0"), Some((1, 0, 0)));  // patch defaults to 0
+        assert_eq!(parse_semver("1.0"), Some((1, 0, 0))); // patch defaults to 0
     }
 
     #[test]
@@ -443,7 +443,7 @@ mod tests {
         // Span with bbox far from receipt bbox
         let spans = vec![SpanData {
             text: "Hello, world!".to_string(),
-            bbox: [500.0, 600.0, 700.0, 620.0],  // Far away, low IoU
+            bbox: [500.0, 600.0, 700.0, 620.0], // Far away, low IoU
         }];
 
         let result = verify_receipt(&receipt, &spans, "pdftract-v1:abc123");
@@ -486,11 +486,11 @@ mod tests {
         let spans = vec![
             SpanData {
                 text: "Wrong text".to_string(),
-                bbox: [100.0, 200.0, 300.0, 220.0],  // Perfect bbox match
+                bbox: [100.0, 200.0, 300.0, 220.0], // Perfect bbox match
             },
             SpanData {
                 text: "Hello, world!".to_string(),
-                bbox: [105.0, 200.0, 295.0, 220.0],  // Slightly offset but >90% IoU
+                bbox: [105.0, 200.0, 295.0, 220.0], // Slightly offset but >90% IoU
             },
         ];
 
@@ -499,7 +499,7 @@ mod tests {
         // Should succeed because the best-IoU span (first one) is selected
         // Actually wait - this will fail because the best-IoU span has wrong text!
         // Let me reconsider this test...
-        assert!(!result.is_ok());  // Best IoU span has wrong content
+        assert!(!result.is_ok()); // Best IoU span has wrong content
         assert_eq!(result.exit_code(), 12);
     }
 
@@ -518,7 +518,7 @@ mod tests {
         // To get IoU < 0.9, we need minimal overlap
         let spans = vec![SpanData {
             text: "Hello, world!".to_string(),
-            bbox: [250.0, 200.0, 350.0, 220.0],  // Only 50 pixel overlap (50*20=1000), IoU = 1000/7000 ≈ 0.14
+            bbox: [250.0, 200.0, 350.0, 220.0], // Only 50 pixel overlap (50*20=1000), IoU = 1000/7000 ≈ 0.14
         }];
 
         let result = verify_receipt(&receipt, &spans, "pdftract-v1:abc123");
@@ -552,11 +552,11 @@ mod tests {
             "pdftract-v1:abc123".to_string(),
             0,
             [100.0, 200.0, 300.0, 220.0],
-            "café",  // NFC: U+00E9
+            "café", // NFC: U+00E9
         );
 
         // Span with NFD text should still verify
-        let nfd_text: String = "cafe\u{0301}".nfd().collect();  // NFD: e + combining acute
+        let nfd_text: String = "cafe\u{0301}".nfd().collect(); // NFD: e + combining acute
         let spans = vec![SpanData {
             text: nfd_text,
             bbox: [100.0, 200.0, 300.0, 220.0],

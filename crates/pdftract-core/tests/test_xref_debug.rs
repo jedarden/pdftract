@@ -1,7 +1,7 @@
 //! Debug test for xref parsing issues
 
-use pdftract_core::parser::xref::{load_xref_with_prev_chain};
 use pdftract_core::parser::stream::{FileSource, PdfSource};
+use pdftract_core::parser::xref::load_xref_with_prev_chain;
 
 #[test]
 fn test_debug_xref_parsing() {
@@ -17,10 +17,13 @@ fn test_debug_xref_parsing() {
 
     // Find startxref
     let file_len = source.len().unwrap() as usize;
-    let tail_data = source.read_at(file_len.saturating_sub(1024) as u64, 1024).unwrap();
+    let tail_data = source
+        .read_at(file_len.saturating_sub(1024) as u64, 1024)
+        .unwrap();
 
     // Find "startxref" in the tail data
-    let startxref_pos = tail_data.windows(9)
+    let startxref_pos = tail_data
+        .windows(9)
         .rposition(|w| w == b"startxref")
         .expect("startxref not found");
 
@@ -28,14 +31,16 @@ fn test_debug_xref_parsing() {
     let offset_data = &tail_data[startxref_pos + 9..];
 
     // Skip leading whitespace
-    let offset_start = offset_data.iter()
+    let offset_start = offset_data
+        .iter()
         .position(|&b| !matches!(b, b' ' | b'\r' | b'\n' | b'\t'))
         .unwrap_or(offset_data.len());
 
     let offset_data_trimmed = &offset_data[offset_start..];
 
     // Find the newline after the offset
-    let newline_pos = offset_data_trimmed.iter()
+    let newline_pos = offset_data_trimmed
+        .iter()
         .position(|&b| b == b'\n' || b == b'\r')
         .unwrap_or(offset_data_trimmed.len());
 
