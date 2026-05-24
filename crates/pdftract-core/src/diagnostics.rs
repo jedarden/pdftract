@@ -806,6 +806,48 @@ pub enum DiagCode {
     ///
     /// Phase origin: 6.9
     CacheWriteFailed,
+
+    // === MARKED_CONTENT_* codes ===
+
+    /// EMC operator without matching BMC/BDC
+    ///
+    /// Emitted when an EMC operator is encountered with an empty marked-content stack.
+    /// The EMC is ignored and extraction continues.
+    ///
+    /// Phase origin: 3.4
+    EmcWithoutBmc,
+
+    /// Marked-content stack depth exceeded
+    ///
+    /// Emitted when BMC/BDC nesting exceeds the maximum depth of 64. The excess
+    /// frame is discarded and extraction continues.
+    ///
+    /// Phase origin: 3.4
+    MarkedContentDepthExceeded,
+
+    /// Unknown marked-content property name
+    ///
+    /// Emitted when a BDC operator references a property name that doesn't exist
+    /// in the page's /Properties dictionary. The MCID is set to None.
+    ///
+    /// Phase origin: 3.4
+    UnknownMarkedContentProps,
+
+    /// Invalid BDC operand
+    ///
+    /// Emitted when a BDC operator's second operand is neither a dictionary nor
+    /// a name. The MCID is set to None.
+    ///
+    /// Phase origin: 3.4
+    StructInvalidBdcOperand,
+
+    /// MCID redefined in same scope
+    ///
+    /// Emitted when multiple /MCID keys appear in the same BDC property dict
+    /// (illegal but seen in the wild). The last value wins.
+    ///
+    /// Phase origin: 3.4
+    McidRedefined,
 }
 
 impl DiagCode {
@@ -920,6 +962,13 @@ impl DiagCode {
 
             // CACHE_*
             DiagCode::CacheEntryCorrupt | DiagCode::CacheWriteFailed => "CACHE",
+
+            // MARKED_CONTENT_*
+            DiagCode::EmcWithoutBmc
+            | DiagCode::MarkedContentDepthExceeded
+            | DiagCode::UnknownMarkedContentProps
+            | DiagCode::StructInvalidBdcOperand
+            | DiagCode::McidRedefined => "MARKED_CONTENT",
         }
     }
 
@@ -1009,6 +1058,11 @@ impl DiagCode {
             DiagCode::McpPathTraversal => "MCP_PATH_TRAVERSAL",
             DiagCode::CacheEntryCorrupt => "CACHE_ENTRY_CORRUPT",
             DiagCode::CacheWriteFailed => "CACHE_WRITE_FAILED",
+            DiagCode::EmcWithoutBmc => "EMC_WITHOUT_BMC",
+            DiagCode::MarkedContentDepthExceeded => "MARKED_CONTENT_DEPTH_EXCEEDED",
+            DiagCode::UnknownMarkedContentProps => "UNKNOWN_MARKED_CONTENT_PROPS",
+            DiagCode::StructInvalidBdcOperand => "STRUCT_INVALID_BDC_OPERAND",
+            DiagCode::McidRedefined => "MCID_REDEFINED",
         }
     }
 
@@ -1018,7 +1072,12 @@ impl DiagCode {
         match self {
             DiagCode::XrefRepaired
             | DiagCode::LayoutTaggedPdfDeferred
-            | DiagCode::StructIncompleteCoverage => Severity::Info,
+            | DiagCode::StructIncompleteCoverage
+            | DiagCode::EmcWithoutBmc
+            | DiagCode::MarkedContentDepthExceeded
+            | DiagCode::UnknownMarkedContentProps
+            | DiagCode::StructInvalidBdcOperand
+            | DiagCode::McidRedefined => Severity::Info,
 
             DiagCode::StructInvalidName
             | DiagCode::StructInvalidHex
@@ -1118,6 +1177,15 @@ impl DiagCode {
                 | DiagCode::RemoteTlsFailed
                 | DiagCode::RemoteDnsFailed
         )
+    }
+
+    /// Check if this diagnostic code should be logged to stderr.
+    ///
+    /// By default, only Warning and higher are logged. Info diagnostics are
+    /// only logged in verbose mode.
+    #[inline]
+    pub const fn should_log(self) -> bool {
+        matches!(self.severity(), Severity::Warning | Severity::Error | Severity::Fatal)
     }
 }
 

@@ -16,6 +16,8 @@ pub mod resources;
 pub mod ocg;
 pub mod struct_tree;
 pub mod marked_content;
+pub mod marked_content_stack;
+pub mod marked_content_operators;
 
 // Re-export from the unified diagnostics module (Phase 1.6)
 pub use crate::diagnostics::{Diagnostic, Severity, DiagCode, ObjRef};
@@ -40,6 +42,8 @@ pub use struct_tree::{
 pub use marked_content::{
     McidTracker, CoverageResult, compute_coverage, compute_coverage_from_sets,
 };
+pub use marked_content_stack::{MarkedContentFrame, MarkedContentStack};
+pub use marked_content_operators::{parse_bmc, parse_bdc, parse_emc};
 pub use stream::{
     StreamDecoder, FlateDecoder, ASCII85Decoder, ASCIIHexDecoder, CryptDecoder, PassthroughDecoder,
     normalize_filter_name, get_decoder, FilterError, DEFAULT_MAX_DECOMPRESS_BYTES,

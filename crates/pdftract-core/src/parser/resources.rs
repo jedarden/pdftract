@@ -82,6 +82,13 @@ impl ResourceDict {
             + self.properties.len()
             + self.proc_set.len()
     }
+
+    /// Look up a property in the /Properties namespace.
+    ///
+    /// Returns the ObjRef to the property dictionary if found, None otherwise.
+    pub fn lookup_properties(&self, name: &str) -> Option<ObjRef> {
+        self.properties.get(name).copied()
+    }
 }
 
 /// Merge a child /Resources dictionary into an ancestor ResourceDict.
