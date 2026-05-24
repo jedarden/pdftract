@@ -1,0 +1,39 @@
+name: Scientific Paper
+type: scientific_paper
+threshold: 0.6
+predicates:
+  - kind: text_contains
+    pattern: abstract
+    weight: 0.25
+    case_sensitive: false
+    min_hits: 1
+
+  - kind: text_contains
+    pattern: references
+    weight: 0.2
+    case_sensitive: false
+    min_hits: 1
+
+  - kind: text_contains
+    pattern: introduction
+    weight: 0.1
+    case_sensitive: false
+    min_hits: 1
+
+  - kind: structural_has_math_operators
+    weight: 0.15
+
+  - kind: page_count_in_range
+    min: 4
+    max: 30
+    weight: 0.1
+
+  - kind: heading_depth_at_least
+    depth: 2
+    weight: 0.1
+
+  - kind: text_contains
+    pattern: et al.
+    weight: 0.1
+    case_sensitive: false
+    min_hits: 1

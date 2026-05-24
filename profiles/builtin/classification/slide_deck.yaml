@@ -1,0 +1,32 @@
+name: Slide Deck Presentation
+type: slide_deck
+threshold: 0.6
+predicates:
+  - kind: page_count_in_range
+    min: 5
+    max: 150
+    weight: 0.25
+
+  - kind: heading_depth_at_least
+    depth: 1
+    weight: 0.2
+
+  - kind: text_contains
+    pattern: slides
+    weight: 0.15
+    case_sensitive: false
+    min_hits: 1
+
+  - kind: font_diversity_in_range
+    min: 2
+    max: 8
+    weight: 0.15
+
+  - kind: text_contains
+    pattern: presentation
+    weight: 0.15
+    case_sensitive: false
+    min_hits: 1
+
+  - kind: structural_has_bullet_lists
+    weight: 0.1

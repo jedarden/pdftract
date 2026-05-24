@@ -1,0 +1,36 @@
+name: Legal Filing
+type: legal_filing
+threshold: 0.6
+predicates:
+  - kind: text_contains
+    pattern: court
+    weight: 0.25
+    case_sensitive: false
+    min_hits: 1
+
+  - kind: text_contains
+    pattern: plaintiff
+    weight: 0.2
+    case_sensitive: false
+    min_hits: 1
+
+  - kind: text_contains
+    pattern: defendant
+    weight: 0.2
+    case_sensitive: false
+    min_hits: 1
+
+  - kind: has_footer_page_numbers
+    weight: 0.15
+
+  - kind: text_contains
+    pattern: docket
+    weight: 0.1
+    case_sensitive: false
+    min_hits: 1
+
+  - kind: text_contains
+    pattern: filing
+    weight: 0.1
+    case_sensitive: false
+    min_hits: 1

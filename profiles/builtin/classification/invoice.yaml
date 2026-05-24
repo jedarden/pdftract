@@ -1,0 +1,42 @@
+name: Standard Invoice
+type: invoice
+threshold: 0.6
+predicates:
+  - kind: text_contains
+    pattern: invoice
+    weight: 0.3
+    case_sensitive: false
+    min_hits: 1
+
+  - kind: text_contains
+    pattern: total
+    weight: 0.2
+    case_sensitive: false
+    min_hits: 1
+
+  - kind: text_contains
+    pattern: subtotal
+    weight: 0.15
+    case_sensitive: false
+    min_hits: 1
+
+  - kind: structural_has_table
+    weight: 0.15
+    min_count: 1
+
+  - kind: page_count_in_range
+    min: 1
+    max: 5
+    weight: 0.1
+
+  - kind: text_contains
+    pattern: due date
+    weight: 0.05
+    case_sensitive: false
+    min_hits: 1
+
+  - kind: text_contains
+    pattern: payment terms
+    weight: 0.05
+    case_sensitive: false
+    min_hits: 1

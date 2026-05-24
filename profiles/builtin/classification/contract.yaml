@@ -1,0 +1,36 @@
+name: Legal Contract
+type: contract
+threshold: 0.6
+predicates:
+  - kind: text_contains
+    pattern: whereas
+    weight: 0.25
+    case_sensitive: false
+    min_hits: 1
+
+  - kind: text_contains
+    pattern: agreement
+    weight: 0.2
+    case_sensitive: false
+    min_hits: 1
+
+  - kind: text_contains
+    pattern: party
+    weight: 0.15
+    case_sensitive: false
+    min_hits: 1
+
+  - kind: heading_depth_at_least
+    depth: 2
+    weight: 0.15
+
+  - kind: page_count_in_range
+    min: 2
+    max: 50
+    weight: 0.15
+
+  - kind: text_contains
+    pattern: terms and conditions
+    weight: 0.1
+    case_sensitive: false
+    min_hits: 1

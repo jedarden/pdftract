@@ -1,0 +1,35 @@
+name: Bank Statement
+type: bank_statement
+threshold: 0.6
+predicates:
+  - kind: text_contains
+    pattern: statement
+    weight: 0.25
+    case_sensitive: false
+    min_hits: 1
+
+  - kind: text_contains
+    pattern: transaction
+    weight: 0.2
+    case_sensitive: false
+    min_hits: 1
+
+  - kind: structural_has_table
+    weight: 0.2
+    min_count: 1
+
+  - kind: text_matches_regex
+    pattern: '[\$€£¥]\d'
+    weight: 0.15
+    min_hits: 2
+
+  - kind: page_count_in_range
+    min: 1
+    max: 20
+    weight: 0.1
+
+  - kind: text_contains
+    pattern: balance
+    weight: 0.1
+    case_sensitive: false
+    min_hits: 1

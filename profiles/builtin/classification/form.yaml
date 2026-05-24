@@ -1,0 +1,29 @@
+name: Form Document
+type: form
+threshold: 0.6
+predicates:
+  - kind: structural_has_form_field
+    weight: 0.4
+
+  - kind: text_contains
+    pattern: form
+    weight: 0.2
+    case_sensitive: false
+    min_hits: 1
+
+  - kind: page_count_in_range
+    min: 1
+    max: 10
+    weight: 0.15
+
+  - kind: text_contains
+    pattern: application
+    weight: 0.15
+    case_sensitive: false
+    min_hits: 1
+
+  - kind: text_contains
+    pattern: please complete
+    weight: 0.1
+    case_sensitive: false
+    min_hits: 1
