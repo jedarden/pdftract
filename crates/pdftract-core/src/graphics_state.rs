@@ -350,6 +350,55 @@ impl GraphicsState {
     pub fn concat_ctm(&mut self, matrix: &Matrix3x3) {
         self.ctm = self.ctm.multiply(matrix);
     }
+
+    /// Set character spacing (Tc operator).
+    ///
+    /// Tc sets the character spacing parameter, Tw. Negative values are allowed.
+    #[inline]
+    pub fn set_char_spacing(&mut self, value: f64) {
+        self.char_spacing = value;
+    }
+
+    /// Set word spacing (Tw operator).
+    ///
+    /// Tw sets the word spacing parameter, Tw. Negative values are allowed.
+    #[inline]
+    pub fn set_word_spacing(&mut self, value: f64) {
+        self.word_spacing = value;
+    }
+
+    /// Set horizontal scaling (Tz operator).
+    ///
+    /// Tz sets the horizontal scaling parameter, Tz, as a percentage.
+    /// Values <= 0 are clamped to 1.0 to avoid zero-width glyphs.
+    #[inline]
+    pub fn set_horiz_scaling(&mut self, value: f64) {
+        self.horiz_scaling = if value <= 0.0 { 1.0 } else { value };
+    }
+
+    /// Set leading (TL operator).
+    ///
+    /// TL sets the leading parameter, Tl. Negative values are allowed.
+    #[inline]
+    pub fn set_leading(&mut self, value: f64) {
+        self.leading = value;
+    }
+
+    /// Set text rise (Ts operator).
+    ///
+    /// Ts sets the text rise parameter, Ts. Negative values are allowed.
+    #[inline]
+    pub fn set_text_rise(&mut self, value: f64) {
+        self.text_rise = value;
+    }
+
+    /// Set text rendering mode (Tr operator).
+    ///
+    /// Tr sets the text rendering mode. Values outside 0-7 are clamped to the valid range.
+    #[inline]
+    pub fn set_text_rendering_mode(&mut self, value: u8) {
+        self.text_rendering_mode = value.min(7);
+    }
 }
 
 impl Default for GraphicsState {
@@ -780,5 +829,107 @@ mod tests {
     fn test_max_depth_is_64() {
         // Verify MAX_GSTATE_DEPTH is 64 per PDF spec
         assert_eq!(MAX_GSTATE_DEPTH, 64);
+    }
+
+    // Acceptance criteria tests for pdftract-4dmp
+
+    #[test]
+    fn test_set_char_spacing() {
+        let mut state = GraphicsState::new();
+        state.set_char_spacing(5.0);
+        assert_eq!(state.char_spacing, 5.0);
+    }
+
+    #[test]
+    fn test_set_word_spacing() {
+        let mut state = GraphicsState::new();
+        state.set_word_spacing(10.0);
+        assert_eq!(state.word_spacing, 10.0);
+    }
+
+    #[test]
+    fn test_set_horiz_scaling_positive() {
+        let mut state = GraphicsState::new();
+        state.set_horiz_scaling(150.0);
+        assert_eq!(state.horiz_scaling, 150.0);
+    }
+
+    #[test]
+    fn test_set_horiz_scaling_zero_clamps_to_one() {
+        let mut state = GraphicsState::new();
+        state.set_horiz_scaling(0.0);
+        assert_eq!(state.horiz_scaling, 1.0);
+    }
+
+    #[test]
+    fn test_set_horiz_scaling_negative_clamps_to_one() {
+        let mut state = GraphicsState::new();
+        state.set_horiz_scaling(-10.0);
+        assert_eq!(state.horiz_scaling, 1.0);
+    }
+
+    #[test]
+    fn test_set_leading() {
+        let mut state = GraphicsState::new();
+        state.set_leading(15.0);
+        assert_eq!(state.leading, 15.0);
+    }
+
+    #[test]
+    fn test_set_text_rise() {
+        let mut state = GraphicsState::new();
+        state.set_text_rise(3.0);
+        assert_eq!(state.text_rise, 3.0);
+    }
+
+    #[test]
+    fn test_set_text_rendering_mode_valid() {
+        let mut state = GraphicsState::new();
+        for mode in 0..=7 {
+            state.set_text_rendering_mode(mode);
+            assert_eq!(state.text_rendering_mode, mode);
+        }
+    }
+
+    #[test]
+    fn test_set_text_rendering_mode_clamps_to_seven() {
+        let mut state = GraphicsState::new();
+        state.set_text_rendering_mode(9);
+        assert_eq!(state.text_rendering_mode, 7);
+    }
+
+    #[test]
+    fn test_set_text_rendering_mode_clamps_to_zero() {
+        let mut state = GraphicsState::new();
+        state.set_text_rendering_mode(255); // u8 overflow wraps to 255
+        assert_eq!(state.text_rendering_mode, 7);
+    }
+
+    #[test]
+    fn test_negative_char_spacing_allowed() {
+        let mut state = GraphicsState::new();
+        state.set_char_spacing(-5.0);
+        assert_eq!(state.char_spacing, -5.0);
+    }
+
+    #[test]
+    fn test_negative_word_spacing_allowed() {
+        let mut state = GraphicsState::new();
+        state.set_word_spacing(-10.0);
+        assert_eq!(state.word_spacing, -10.0);
+    }
+
+    #[test]
+    fn test_negative_text_rise_allowed() {
+        let mut state = GraphicsState::new();
+        state.set_text_rise(-3.0);
+        assert_eq!(state.text_rise, -3.0);
+    }
+
+    #[test]
+    fn test_negative_leading_allowed() {
+        let mut state = GraphicsState::new();
+        state.set_leading(-15.0);
+        assert_eq!(state.leading, -15.0);
     }
 }

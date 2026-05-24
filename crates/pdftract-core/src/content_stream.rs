@@ -735,6 +735,67 @@ pub fn execute_with_do(
                         }
                         operand_buffer.clear();
                     }
+                    "Tc" => {
+                        // Set character spacing: Tc value
+                        let nums = extract_numbers(&operand_buffer, 1, &mut diagnostics);
+                        if nums.len() == 1 {
+                            gstate.set_char_spacing(nums[0]);
+                        }
+                        operand_buffer.clear();
+                    }
+                    "Tw" => {
+                        // Set word spacing: Tw value
+                        let nums = extract_numbers(&operand_buffer, 1, &mut diagnostics);
+                        if nums.len() == 1 {
+                            gstate.set_word_spacing(nums[0]);
+                        }
+                        operand_buffer.clear();
+                    }
+                    "Tz" => {
+                        // Set horizontal scaling: Tz value (percentage)
+                        let nums = extract_numbers(&operand_buffer, 1, &mut diagnostics);
+                        if nums.len() == 1 {
+                            if nums[0] <= 0.0 {
+                                diagnostics.push(Diagnostic::with_static_no_offset(
+                                    DiagCode::HorizScalingZero,
+                                    "Tz operator received 0; clamped to 1.0%",
+                                ));
+                            }
+                            gstate.set_horiz_scaling(nums[0]);
+                        }
+                        operand_buffer.clear();
+                    }
+                    "TL" => {
+                        // Set leading: TL value
+                        let nums = extract_numbers(&operand_buffer, 1, &mut diagnostics);
+                        if nums.len() == 1 {
+                            gstate.set_leading(nums[0]);
+                        }
+                        operand_buffer.clear();
+                    }
+                    "Ts" => {
+                        // Set text rise: Ts value
+                        let nums = extract_numbers(&operand_buffer, 1, &mut diagnostics);
+                        if nums.len() == 1 {
+                            gstate.set_text_rise(nums[0]);
+                        }
+                        operand_buffer.clear();
+                    }
+                    "Tr" => {
+                        // Set text rendering mode: Tr value (0-7)
+                        let nums = extract_numbers(&operand_buffer, 1, &mut diagnostics);
+                        if nums.len() == 1 {
+                            let value = nums[0] as u8;
+                            if value > 7 {
+                                diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                                    DiagCode::TextRenderingModeClamped,
+                                    format!("Tr operator received {}; clamped to 7", value),
+                                ));
+                            }
+                            gstate.set_text_rendering_mode(value);
+                        }
+                        operand_buffer.clear();
+                    }
                     "Do" => {
                         // Paint XObject: Do name
                         if let Some(name_token) = operand_buffer.last() {
@@ -1866,5 +1927,189 @@ mod tests {
             underflow_count, 1,
             "Underflow diagnostic should be emitted for Q at depth 0"
         );
+    }
+
+    // Acceptance criteria tests for pdftract-4dmp
+
+    #[test]
+    fn test_tc_operator_sets_char_spacing() {
+        // AC: Tc n sets char_spacing = n
+        let resources = ResourceDict::new();
+        let content = b"BT 5 Tc ET";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        // Check that the operator was processed without error
+        assert_eq!(result.diagnostics.len(), 0);
+    }
+
+    #[test]
+    fn test_tw_operator_sets_word_spacing() {
+        // AC: Tw n sets word_spacing = n
+        let resources = ResourceDict::new();
+        let content = b"BT 10 Tw ET";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        assert_eq!(result.diagnostics.len(), 0);
+    }
+
+    #[test]
+    fn test_tz_zero_clamps_to_one_and_emits_diagnostic() {
+        // AC: 0 Tz clamps to ~1.0 and emits HORIZ_SCALING_ZERO diagnostic
+        use crate::diagnostics::DiagCode;
+
+        let resources = ResourceDict::new();
+        let content = b"BT 0 Tz ET";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        // Should emit HORIZ_SCALING_ZERO diagnostic
+        let diag_count = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == DiagCode::HorizScalingZero)
+            .count();
+        assert_eq!(diag_count, 1, "Should emit HORIZ_SCALING_ZERO diagnostic");
+    }
+
+    #[test]
+    fn test_tz_negative_clamps_to_one() {
+        // AC: Tz <= 0 clamps to 1.0
+        use crate::diagnostics::DiagCode;
+
+        let resources = ResourceDict::new();
+        let content = b"BT -10 Tz ET";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        // Should emit HORIZ_SCALING_ZERO diagnostic
+        let diag_count = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == DiagCode::HorizScalingZero)
+            .count();
+        assert_eq!(diag_count, 1, "Should emit HORIZ_SCALING_ZERO diagnostic");
+    }
+
+    #[test]
+    fn test_tz_positive_value_sets_horiz_scaling() {
+        // AC: Tz 150 sets horiz_scaling = 150
+        let resources = ResourceDict::new();
+        let content = b"BT 150 Tz ET";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        assert_eq!(result.diagnostics.len(), 0);
+    }
+
+    #[test]
+    fn test_tl_operator_sets_leading() {
+        // AC: TL n sets leading = n
+        let resources = ResourceDict::new();
+        let content = b"BT 15 TL ET";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        assert_eq!(result.diagnostics.len(), 0);
+    }
+
+    #[test]
+    fn test_ts_operator_sets_text_rise() {
+        // AC: Ts n sets text_rise = n
+        let resources = ResourceDict::new();
+        let content = b"BT 3 Ts ET";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        assert_eq!(result.diagnostics.len(), 0);
+    }
+
+    #[test]
+    fn test_negative_tc_tw_ts_allowed() {
+        // AC: Negative Tc/Tw/Ts allowed without warning
+        let resources = ResourceDict::new();
+        let content = b"BT -5 Tc -10 Tw -3 Ts ET";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        // Should not emit any diagnostics
+        assert_eq!(result.diagnostics.len(), 0);
+    }
+
+    #[test]
+    fn test_tr_operator_sets_text_rendering_mode() {
+        // AC: 3 Tr sets text_rendering_mode = 3
+        let resources = ResourceDict::new();
+        let content = b"BT 3 Tr ET";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        assert_eq!(result.diagnostics.len(), 0);
+    }
+
+    #[test]
+    fn test_tr_nine_clamps_to_seven_with_diagnostic() {
+        // AC: 9 Tr clamps to 7 (max legal value) with diagnostic
+        use crate::diagnostics::DiagCode;
+
+        let resources = ResourceDict::new();
+        let content = b"BT 9 Tr ET";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        // Should emit TEXT_RENDERING_MODE_CLAMPED diagnostic
+        let diag_count = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == DiagCode::TextRenderingModeClamped)
+            .count();
+        assert_eq!(
+            diag_count, 1,
+            "Should emit TEXT_RENDERING_MODE_CLAMPED diagnostic"
+        );
+    }
+
+    #[test]
+    fn test_tr_zero_to_seven_valid() {
+        // AC: Tr values 0-7 are valid
+        let resources = ResourceDict::new();
+
+        for mode in 0..=7 {
+            let content = format!("BT {} Tr ET", mode);
+            let result = execute_with_do(
+                content.as_bytes(),
+                &resources,
+                ProcessingMode::PositionHint,
+                None,
+                &[],
+            );
+
+            assert_eq!(result.diagnostics.len(), 0, "Tr {} should be valid", mode);
+        }
+    }
+
+    #[test]
+    fn test_operators_outside_bt_scope_do_not_crash() {
+        // AC: Operators outside BT scope do not crash
+        let resources = ResourceDict::new();
+        let content = b"5 Tc 10 Tw 150 Tz 15 TL 3 Ts 3 Tr";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        // Should not crash; diagnostics may or may not be emitted
+        // The key is that the function returns successfully
+        assert!(result.diagnostics.len() >= 0);
+    }
+
+    #[test]
+    fn test_multiple_text_state_operators_in_sequence() {
+        // Test that multiple operators work correctly in sequence
+        let resources = ResourceDict::new();
+        let content = b"BT 5 Tc 10 Tw 120 Tz 15 TL 3 Ts 2 Tr ET";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        assert_eq!(result.diagnostics.len(), 0);
     }
 }

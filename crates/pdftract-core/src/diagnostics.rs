@@ -781,6 +781,22 @@ pub enum DiagCode {
     /// Phase origin: 3.1
     CmDegenerate,
 
+    /// Horizontal scaling set to zero (Tz 0)
+    ///
+    /// Emitted when the Tz operator receives 0, which would make glyphs zero-width.
+    /// The value is clamped to 1.0% to avoid breaking word boundary detection.
+    ///
+    /// Phase origin: 3.1
+    HorizScalingZero,
+
+    /// Text rendering mode clamped to valid range (0-7)
+    ///
+    /// Emitted when the Tr operator receives a value outside 0-7. The value is
+    /// clamped to the nearest valid value (0 or 7).
+    ///
+    /// Phase origin: 3.1
+    TextRenderingModeClamped,
+
     // === LAYOUT_* codes ===
     /// Tagged PDF StructTree deferred to Phase 7
     ///
@@ -996,7 +1012,9 @@ impl DiagCode {
             | DiagCode::GstateStackUnderflow
             | DiagCode::GstateBtEtMismatch
             | DiagCode::CmArgCount
-            | DiagCode::CmDegenerate => "GSTATE",
+            | DiagCode::CmDegenerate
+            | DiagCode::HorizScalingZero
+            | DiagCode::TextRenderingModeClamped => "GSTATE",
 
             // LAYOUT_*
             DiagCode::LayoutTaggedPdfDeferred
@@ -1105,6 +1123,8 @@ impl DiagCode {
             DiagCode::GstateBtEtMismatch => "GSTATE_BT_ET_MISMATCH",
             DiagCode::CmArgCount => "CM_ARG_COUNT",
             DiagCode::CmDegenerate => "CM_DEGENERATE",
+            DiagCode::HorizScalingZero => "HORIZ_SCALING_ZERO",
+            DiagCode::TextRenderingModeClamped => "TEXT_RENDERING_MODE_CLAMPED",
             DiagCode::LayoutTaggedPdfDeferred => "TAGGED_PDF_STRUCT_TREE_DEFERRED",
             DiagCode::LayoutReadingOrderAmbiguous => "LAYOUT_READING_ORDER_AMBIGUOUS",
             DiagCode::LayoutLowReadability => "LAYOUT_LOW_READABILITY",
@@ -1202,6 +1222,8 @@ impl DiagCode {
             | DiagCode::GstateBtEtMismatch
             | DiagCode::CmArgCount
             | DiagCode::CmDegenerate
+            | DiagCode::HorizScalingZero
+            | DiagCode::TextRenderingModeClamped
             | DiagCode::LayoutReadingOrderAmbiguous
             | DiagCode::LayoutLowReadability
             | DiagCode::CacheEntryCorrupt
@@ -1911,6 +1933,22 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         recoverable: true,
         phase: "3.1",
         suggested_action: "The cm operator received a degenerate matrix; clamped to identity",
+    },
+    DiagInfo {
+        code: DiagCode::HorizScalingZero,
+        category: "GSTATE",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "3.1",
+        suggested_action: "The Tz operator received 0; clamped to 1.0% to avoid zero-width glyphs",
+    },
+    DiagInfo {
+        code: DiagCode::TextRenderingModeClamped,
+        category: "GSTATE",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "3.1",
+        suggested_action: "The Tr operator received a value outside 0-7; clamped to valid range",
     },
     // === LAYOUT_* codes ===
     DiagInfo {
