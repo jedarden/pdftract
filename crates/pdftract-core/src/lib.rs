@@ -7,6 +7,7 @@
 pub mod attachment;
 pub mod cache;
 pub mod classify;
+pub mod content_stream;
 pub mod diagnostics;
 pub mod document;
 #[cfg(feature = "ocr")]
