@@ -7,6 +7,30 @@ use super::{PageContext, GridCandidate, Segment, SegmentOrientation};
 use crate::parser::lexer::Lexer;
 use std::collections::{HashMap, HashSet};
 
+/// Tolerance for x0 alignment in borderless detection (2.0 pt).
+const X0_TOLERANCE: f32 = 2.0;
+
+/// Minimum number of spans per column candidate.
+const MIN_SPANS_PER_COLUMN: usize = 3;
+
+/// Minimum number of columns for a valid table.
+const MIN_COLUMNS: usize = 3;
+
+/// Minimum number of rows for a valid table.
+const MIN_ROWS: usize = 3;
+
+/// Maximum vertical gap between rows (100 pt).
+const MAX_VERTICAL_GAP: f32 = 100.0;
+
+/// A text position extracted from the content stream.
+#[derive(Debug, Clone, Copy)]
+struct TextPosition {
+    /// X coordinate of the text origin.
+    x0: f32,
+    /// Y coordinate of the text origin.
+    y0: f32,
+}
+
 /// Epsilon tolerance for collinearity detection (1.0 pt).
 const EPSILON: f32 = 1.0;
 
@@ -78,6 +102,390 @@ impl TableDetector {
 
         // Step 4: Build grids from intersections
         self.build_grids(intersections, segments)
+    }
+
+    /// Detect borderless tables using x0 alignment heuristic.
+    ///
+    /// This method analyzes text positioning to find tables without ruling lines:
+    /// 1. Collect text positions from content stream
+    /// 2. Group by x0 positions (within tolerance)
+    /// 3. Find column candidates (3+ spans at same x0)
+    /// 4. Find row candidates (y positions with multiple columns)
+    /// 5. Validate and build grid candidates
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - The page context containing page dict and content bytes
+    ///
+    /// # Returns
+    ///
+    /// A vector of grid candidates representing detected borderless tables.
+    pub fn detect_borderless(&self, ctx: &PageContext) -> Vec<GridCandidate> {
+        // Step 1: Collect text positions from content stream
+        let text_positions = self.collect_text_positions(ctx);
+
+        if text_positions.is_empty() {
+            return Vec::new();
+        }
+
+        // Step 2: Group by x0 positions (within tolerance)
+        let column_buckets = self.group_by_x0(&text_positions);
+
+        // Step 3: Find column candidates (3+ spans at same x0)
+        let column_candidates: Vec<_> = column_buckets
+            .into_iter()
+            .filter(|(_, positions)| positions.len() >= MIN_SPANS_PER_COLUMN)
+            .collect();
+
+        if column_candidates.len() < MIN_COLUMNS {
+            return Vec::new();
+        }
+
+        // Step 4: Find row candidates
+        let row_candidates = self.find_row_candidates(&column_candidates);
+
+        if row_candidates.len() < MIN_ROWS {
+            return Vec::new();
+        }
+
+        // Step 5: Build grid from candidates
+        self.build_borderless_grid(&column_candidates, &row_candidates, &text_positions)
+    }
+
+    /// Collect text positions from the content stream.
+    ///
+    /// Parses Tm, Td, TD, T*, Tj, TJ, ', " operators to track text positions.
+    fn collect_text_positions(&self, ctx: &PageContext) -> Vec<TextPosition> {
+        let mut positions = Vec::new();
+        let mut lexer = Lexer::new(ctx.content_bytes);
+
+        let mut operand_stack: Vec<f32> = Vec::new();
+
+        // Current text matrix (Tm) and line matrix (Tlm)
+        let mut tm: [f32; 6] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]; // Identity matrix
+        let mut tlm: [f32; 6] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+        let mut in_text_block = false;
+
+        while let Some(token) = lexer.next_token() {
+            match token {
+                crate::parser::lexer::Token::Integer(n) => {
+                    operand_stack.push(n as f32);
+                }
+                crate::parser::lexer::Token::Real(r) => {
+                    operand_stack.push(r as f32);
+                }
+                crate::parser::lexer::Token::Keyword(ref op) => {
+                    match op.as_slice() {
+                        b"BT" => {
+                            // Begin text block
+                            in_text_block = true;
+                            // Reset Tm and Tlm to identity
+                            tm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+                            tlm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+                        }
+                        b"ET" => {
+                            // End text block
+                            in_text_block = false;
+                        }
+                        b"Tm" => {
+                            // Set text matrix: Tm (operands: a b c d e f)
+                            if operand_stack.len() >= 6 {
+                                for i in 0..6 {
+                                    tm[i] = operand_stack[operand_stack.len() - 6 + i];
+                                }
+                                operand_stack.truncate(operand_stack.len() - 6);
+                                tlm = tm; // Tm also sets Tlm
+                            }
+                        }
+                        b"Td" => {
+                            // Move text position: Td (tx ty)
+                            if operand_stack.len() >= 2 {
+                                let ty = operand_stack.pop().unwrap();
+                                let tx = operand_stack.pop().unwrap();
+                                // Td: Tm = Tlm * [1 0 0 1 tx ty]
+                                tm[0] = tlm[0];
+                                tm[1] = tlm[1];
+                                tm[2] = tlm[2];
+                                tm[3] = tlm[3];
+                                tm[4] = tlm[0] * tx + tlm[2] * ty + tlm[4];
+                                tm[5] = tlm[1] * tx + tlm[3] * ty + tlm[5];
+                                tlm = tm; // Td also updates Tlm to the new Tm
+                            }
+                        }
+                        b"TD" => {
+                            // Move text position and set leading: TD (tx ty)
+                            if operand_stack.len() >= 2 {
+                                let ty = operand_stack.pop().unwrap();
+                                let tx = operand_stack.pop().unwrap();
+                                // TD: Tl = -ty, then Td
+                                // For position tracking, same as Td
+                                tm[0] = tlm[0];
+                                tm[1] = tlm[1];
+                                tm[2] = tlm[2];
+                                tm[3] = tlm[3];
+                                tm[4] = tlm[0] * tx + tlm[2] * ty + tlm[4];
+                                tm[5] = tlm[1] * tx + tlm[3] * ty + tlm[5];
+                                tlm = tm;
+                            }
+                        }
+                        b"T*" => {
+                            // Move to start of next line
+                            // T*: Td (0 Tl)
+                            // Tm[4] = Tlm[4], Tm[5] = Tlm[5] - Tl
+                            // We don't track Tl, so approximate by using current y
+                            tm[4] = tlm[4];
+                            tm[5] = tlm[5]; // This is approximate; would need Tl for exact
+                            tlm = tm;
+                        }
+                        b"Tj" => {
+                            // Show text: Tj (string)
+                            if in_text_block {
+                                // Record position at current text origin
+                                positions.push(TextPosition { x0: tm[4], y0: tm[5] });
+                            }
+                            operand_stack.clear(); // Tj consumes the string operand
+                        }
+                        b"TJ" => {
+                            // Show text with individual glyph positioning: TJ (array)
+                            if in_text_block {
+                                // Record position
+                                positions.push(TextPosition { x0: tm[4], y0: tm[5] });
+                            }
+                            operand_stack.clear(); // TJ consumes the array operand
+                        }
+                        b"'" => {
+                            // Move to next line and show text: ' (string)
+                            if in_text_block {
+                                tm[4] = tlm[4];
+                                tm[5] = tlm[5]; // Approximate
+                                tlm = tm;
+                                positions.push(TextPosition { x0: tm[4], y0: tm[5] });
+                            }
+                            operand_stack.clear();
+                        }
+                        b"\"" => {
+                            // Set word and character spacing, move to next line, show text
+                            // " (tw tc s) -> we just track position
+                            if in_text_block && operand_stack.len() >= 3 {
+                                operand_stack.truncate(operand_stack.len() - 3);
+                                tm[4] = tlm[4];
+                                tm[5] = tlm[5]; // Approximate
+                                tlm = tm;
+                                positions.push(TextPosition { x0: tm[4], y0: tm[5] });
+                            }
+                        }
+                        _ => {
+                            // Other operators - clear operand stack
+                            operand_stack.clear();
+                        }
+                    }
+                }
+                _ => {
+                    // Other tokens - ignore
+                }
+            }
+        }
+
+        positions
+    }
+
+    /// Group text positions by x0 coordinate within tolerance.
+    ///
+    /// Uses clustering: positions are grouped if their x0 values are within
+    /// X0_TOLERANCE of each other. This is more accurate than fixed-width
+    /// bucketing for detecting aligned columns.
+    fn group_by_x0(&self, positions: &[TextPosition]) -> HashMap<i32, Vec<TextPosition>> {
+        if positions.is_empty() {
+            return HashMap::new();
+        }
+
+        let mut sorted_positions = positions.to_vec();
+        sorted_positions.sort_by(|a, b| a.x0.partial_cmp(&b.x0).unwrap_or(std::cmp::Ordering::Equal));
+
+        let mut clusters: Vec<Vec<TextPosition>> = Vec::new();
+        let mut current_cluster = vec![sorted_positions[0]];
+
+        for pos in &sorted_positions[1..] {
+            if (pos.x0 - current_cluster[0].x0).abs() <= X0_TOLERANCE {
+                // Within tolerance of cluster center, add to current cluster
+                current_cluster.push(*pos);
+            } else {
+                // Start new cluster
+                clusters.push(current_cluster);
+                current_cluster = vec![*pos];
+            }
+        }
+        clusters.push(current_cluster);
+
+        // Convert to HashMap with sequential keys
+        let mut buckets: HashMap<i32, Vec<TextPosition>> = HashMap::new();
+        for (i, cluster) in clusters.into_iter().enumerate() {
+            buckets.insert(i as i32, cluster);
+        }
+
+        buckets
+    }
+
+    /// Find row candidates from column buckets.
+    ///
+    /// A row candidate is a y position where >= 2 column candidates have spans.
+    fn find_row_candidates(&self, column_buckets: &[(i32, Vec<TextPosition>)]) -> Vec<f32> {
+        // Build a map of y positions to column count
+        let mut y_to_column_count: HashMap<i32, HashSet<i32>> = HashMap::new();
+
+        for &(key, ref positions) in column_buckets {
+            for pos in positions {
+                // Round y to nearest integer for grouping (same tolerance as x0)
+                let y_key = (pos.y0 / X0_TOLERANCE).round() as i32;
+                y_to_column_count
+                    .entry(y_key)
+                    .or_insert_with(HashSet::new)
+                    .insert(key);
+            }
+        }
+
+        // Extract y positions that have multiple columns
+        let mut row_ys: Vec<f32> = y_to_column_count
+            .into_iter()
+            .filter(|(_, cols)| cols.len() >= 2)
+            .map(|(y_key, _)| (y_key as f32) * X0_TOLERANCE)
+            .collect();
+
+        // Sort descending (PDF y increases upward)
+        row_ys.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+        row_ys
+    }
+
+    /// Build a borderless grid from column and row candidates.
+    fn build_borderless_grid(
+        &self,
+        column_buckets: &[(i32, Vec<TextPosition>)],
+        row_ys: &[f32],
+        all_positions: &[TextPosition],
+    ) -> Vec<GridCandidate> {
+        if row_ys.is_empty() || column_buckets.is_empty() {
+            return Vec::new();
+        }
+
+        // Find contiguous y ranges (no gap > MAX_VERTICAL_GAP)
+        let mut y_ranges = Vec::new();
+        let mut current_range_start = row_ys[0];
+        let mut current_range_end = row_ys[0];
+
+        for &y in row_ys.iter().skip(1) {
+            if (current_range_end - y).abs() <= MAX_VERTICAL_GAP {
+                // Extend current range
+                current_range_end = y.min(current_range_end);
+            } else {
+                // Start new range
+                y_ranges.push((current_range_start, current_range_end));
+                current_range_start = y;
+                current_range_end = y;
+            }
+        }
+        y_ranges.push((current_range_start, current_range_end));
+
+        // Build grid for each y range
+        let mut grids = Vec::new();
+        for (y_top, y_bottom) in y_ranges {
+            if let Some(grid) = self.build_single_borderless_grid(column_buckets, y_top, y_bottom, all_positions) {
+                grids.push(grid);
+            }
+        }
+
+        grids
+    }
+
+    /// Build a single borderless grid for a specific y range.
+    fn build_single_borderless_grid(
+        &self,
+        column_buckets: &[(i32, Vec<TextPosition>)],
+        y_top: f32,
+        y_bottom: f32,
+        all_positions: &[TextPosition],
+    ) -> Option<GridCandidate> {
+        // Get sorted column x positions
+        let mut col_xs: Vec<f32> = column_buckets
+            .iter()
+            .map(|(key, _)| (*key as f32) * X0_TOLERANCE)
+            .collect();
+        col_xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Filter rows to within y range (use integer keys for deduplication)
+        let row_ys: Vec<f32> = all_positions
+            .iter()
+            .map(|p| p.y0)
+            .filter(|&y| y <= y_top && y >= y_bottom)
+            .map(|y| (y / X0_TOLERANCE).round() as i32)
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .map(|y_key| (y_key as f32) * X0_TOLERANCE)
+            .collect::<Vec<_>>();
+
+        let mut row_ys_sorted = row_ys.clone();
+        row_ys_sorted.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+
+        if row_ys_sorted.len() < MIN_ROWS || col_xs.len() < MIN_COLUMNS {
+            return None;
+        }
+
+        // Compute bounding box
+        let x0 = col_xs.first().copied()?;
+        let x1 = col_xs.last().copied()?;
+        let y0 = row_ys_sorted.last().copied()?; // Bottom
+        let y1 = row_ys_sorted.first().copied()?; // Top
+
+        // Reject if spans suggest single-column paragraph reflow
+        if self.is_single_column_reflow(column_buckets) {
+            return None;
+        }
+
+        let bbox = [x0, y0, x1, y1];
+
+        Some(GridCandidate {
+            bbox,
+            row_ys: row_ys_sorted,
+            col_xs,
+            segments: Vec::new(), // No segments for borderless tables
+        })
+    }
+
+    /// Check if the pattern suggests single-column paragraph reflow.
+    ///
+    /// Returns true if any column candidate's spans are all on consecutive
+    /// lines without aligned neighbors in any other column candidate.
+    fn is_single_column_reflow(&self, column_buckets: &[(i32, Vec<TextPosition>)]) -> bool {
+        // Build a map of y positions to column keys
+        let mut y_to_columns: HashMap<i32, Vec<i32>> = HashMap::new();
+        for &(key, ref positions) in column_buckets {
+            for pos in positions {
+                let y_key = (pos.y0 / X0_TOLERANCE).round() as i32;
+                y_to_columns
+                    .entry(y_key)
+                    .or_insert_with(Vec::new)
+                    .push(key);
+            }
+        }
+
+        // For each column, check if its y positions lack multi-column alignment
+        for &(_key, ref positions) in column_buckets {
+            let mut aligned_count = 0;
+            for pos in positions {
+                let y_key = (pos.y0 / X0_TOLERANCE).round() as i32;
+                if let Some(cols) = y_to_columns.get(&y_key) {
+                    if cols.len() >= 2 {
+                        aligned_count += 1;
+                    }
+                }
+            }
+            // If most spans in this column are not aligned with other columns, reject
+            // "Most" means more than half, so we check if aligned_count * 2 < positions.len()
+            if aligned_count * 2 < positions.len() {
+                return true;
+            }
+        }
+
+        false
     }
 
     /// Collect horizontal and vertical path segments from content stream.
@@ -557,5 +965,288 @@ mod tests {
         // Current implementation creates one grid from all intersections
         // A full implementation would detect separate regions
         assert!(!grids.is_empty());
+    }
+
+    // Borderless table detection tests
+
+    #[test]
+    fn test_detect_borderless_empty_content() {
+        let detector = TableDetector::new();
+        let page = make_page(b"");
+        let ctx = PageContext::new(&page, b"");
+
+        let grids = detector.detect_borderless(&ctx);
+        assert!(grids.is_empty());
+    }
+
+    #[test]
+    fn test_detect_borderless_no_text_block() {
+        let detector = TableDetector::new();
+        let page = make_page(b"");
+        // Content without text block (only path operators)
+        let content = b"50 100 m 150 100 l S";
+        let ctx = PageContext::new(&page, content);
+
+        let grids = detector.detect_borderless(&ctx);
+        assert!(grids.is_empty());
+    }
+
+    #[test]
+    fn test_detect_borderless_paragraph_rejected() {
+        // Single column text should be rejected (not a table)
+        let detector = TableDetector::new();
+        let page = make_page(b"");
+
+        // Simulate a paragraph with left-aligned text at x=50
+        // Multiple lines but all at same x0
+        let content = b"\
+            BT \
+            50 700 Td (Line 1) Tj \
+            0 -15 Td (Line 2) Tj \
+            0 -15 Td (Line 3) Tj \
+            0 -15 Td (Line 4) Tj \
+            ET";
+
+        let ctx = PageContext::new(&page, content);
+        let grids = detector.detect_borderless(&ctx);
+
+        // Should not detect a table (only 1 column)
+        assert!(grids.is_empty());
+    }
+
+    #[test]
+    fn test_detect_borderless_one_row_pseudo_table_rejected() {
+        // Single row with multiple columns should be rejected (< 3 rows)
+        let detector = TableDetector::new();
+        let page = make_page(b"");
+
+        // Simulate one row with 3 columns
+        let content = b"\
+            BT \
+            50 700 Td (Col1) Tj \
+            100 700 Td (Col2) Tj \
+            150 700 Td (Col3) Tj \
+            ET";
+
+        let ctx = PageContext::new(&page, content);
+        let grids = detector.detect_borderless(&ctx);
+
+        // Should not detect a table (only 1 row)
+        assert!(grids.is_empty());
+    }
+
+    #[test]
+    fn test_detect_borderless_3x3_table_accepted() {
+        // Critical test: 3 rows x 3 columns borderless table
+        let detector = TableDetector::new();
+        let page = make_page(b"");
+
+        // Simulate a 3x3 table with aligned columns
+        // Column 1 at x=50, Column 2 at x=150, Column 3 at x=250
+        // Rows at y=700, 650, 600
+        let content = b"\
+            BT \
+            50 700 Td (R1C1) Tj 100 0 Td (R1C2) Tj 100 0 Td (R1C3) Tj \
+            -200 -50 Td (R2C1) Tj 100 0 Td (R2C2) Tj 100 0 Td (R2C3) Tj \
+            -200 -50 Td (R3C1) Tj 100 0 Td (R3C2) Tj 100 0 Td (R3C3) Tj \
+            ET";
+
+        let ctx = PageContext::new(&page, content);
+        let grids = detector.detect_borderless(&ctx);
+
+        // Should detect a table
+        assert_eq!(grids.len(), 1);
+        assert_eq!(grids[0].row_count(), 2); // 3 rows = 2 intervals
+        assert_eq!(grids[0].col_count(), 2); // 3 columns = 2 intervals
+        assert_eq!(grids[0].cell_count(), 4);
+        // Verify segments are empty for borderless tables
+        assert!(grids[0].segments.is_empty());
+    }
+
+    #[test]
+    fn test_detect_borderless_vertical_gap_test() {
+        // Two separate tables with a large vertical gap (> 100 pt)
+        let detector = TableDetector::new();
+        let page = make_page(b"");
+
+        // First table at y=700, 650, 600
+        // Second table at y=400, 350, 300
+        // Gap = 600 - 400 = 200 pt > 100 pt threshold
+        let content = b"\
+            BT \
+            50 700 Td (R1C1) Tj 100 0 Td (R1C2) Tj 100 0 Td (R1C3) Tj \
+            -200 -50 Td (R2C1) Tj 100 0 Td (R2C2) Tj 100 0 Td (R2C3) Tj \
+            -200 -50 Td (R3C1) Tj 100 0 Td (R3C2) Tj 100 0 Td (R3C3) Tj \
+            ET \
+            BT \
+            50 400 Td (R1C1) Tj 100 0 Td (R1C2) Tj 100 0 Td (R1C3) Tj \
+            -200 -50 Td (R2C1) Tj 100 0 Td (R2C2) Tj 100 0 Td (R2C3) Tj \
+            -200 -50 Td (R3C1) Tj 100 0 Td (R3C2) Tj 100 0 Td (R3C3) Tj \
+            ET";
+
+        let ctx = PageContext::new(&page, content);
+        let grids = detector.detect_borderless(&ctx);
+
+        // Should detect two separate tables
+        assert_eq!(grids.len(), 2);
+    }
+
+    #[test]
+    fn test_collect_text_positions_basic() {
+        let detector = TableDetector::new();
+        let page = make_page(b"");
+
+        // Basic text positioning with Tm and Tj
+        let content = b"BT 1 0 0 1 50 700 Tm (Hello) Tj ET";
+        let ctx = PageContext::new(&page, content);
+
+        let positions = detector.collect_text_positions(&ctx);
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].x0, 50.0);
+        assert_eq!(positions[0].y0, 700.0);
+    }
+
+    #[test]
+    fn test_collect_text_positions_with_td() {
+        let detector = TableDetector::new();
+        let page = make_page(b"");
+
+        // Text positioning with Td
+        let content = b"BT 50 700 Td (Hello) Tj 100 0 Td (World) Tj ET";
+        let ctx = PageContext::new(&page, content);
+
+        let positions = detector.collect_text_positions(&ctx);
+        assert_eq!(positions.len(), 2);
+        // First position at (50, 700)
+        assert_eq!(positions[0].x0, 50.0);
+        assert_eq!(positions[0].y0, 700.0);
+        // Second position at (150, 700) - Td adds to current position
+        // The actual x position depends on Tm calculation
+    }
+
+    #[test]
+    fn test_collect_text_positions_with_tj() {
+        let detector = TableDetector::new();
+        let page = make_page(b"");
+
+        // Text positioning with TJ (array)
+        let content = b"BT 50 700 Td [(Hello) 100 (World)] TJ ET";
+        let ctx = PageContext::new(&page, content);
+
+        let positions = detector.collect_text_positions(&ctx);
+        // Should record position for TJ operator
+        assert!(!positions.is_empty());
+    }
+
+    #[test]
+    fn test_group_by_x0_tolerance() {
+        let detector = TableDetector::new();
+        let positions = vec![
+            TextPosition { x0: 50.0, y0: 700.0 },
+            TextPosition { x0: 51.0, y0: 650.0 }, // Within 2 pt tolerance
+            TextPosition { x0: 52.0, y0: 600.0 }, // Within 2 pt tolerance
+            TextPosition { x0: 150.0, y0: 700.0 }, // Different column
+        ];
+
+        let buckets = detector.group_by_x0(&positions);
+        // x0=50, 51, 52 should be in same bucket (within tolerance)
+        // x0=150 should be in different bucket
+        assert_eq!(buckets.len(), 2);
+        // One bucket should have 3 positions, one should have 1
+        let counts: Vec<_> = buckets.values().map(|v| v.len()).collect();
+        assert!(counts.contains(&3));
+        assert!(counts.contains(&1));
+    }
+
+    #[test]
+    fn test_find_row_candidates_basic() {
+        let detector = TableDetector::new();
+        let column_buckets = vec![
+            (0, vec![
+                TextPosition { x0: 50.0, y0: 700.0 },
+                TextPosition { x0: 50.0, y0: 650.0 },
+                TextPosition { x0: 50.0, y0: 600.0 },
+            ]),
+            (25, vec![
+                TextPosition { x0: 150.0, y0: 700.0 },
+                TextPosition { x0: 150.0, y0: 650.0 },
+                TextPosition { x0: 150.0, y0: 600.0 },
+            ]),
+            (50, vec![
+                TextPosition { x0: 250.0, y0: 700.0 },
+                TextPosition { x0: 250.0, y0: 650.0 },
+                TextPosition { x0: 250.0, y0: 600.0 },
+            ]),
+        ];
+
+        let rows = detector.find_row_candidates(&column_buckets);
+        // Should find 3 row positions (700, 650, 600)
+        assert_eq!(rows.len(), 3);
+        // Rows should be sorted descending
+        assert_eq!(rows[0], 700.0);
+        assert_eq!(rows[1], 650.0);
+        assert_eq!(rows[2], 600.0);
+    }
+
+    #[test]
+    fn test_is_single_column_reflow_true() {
+        let detector = TableDetector::new();
+        // Column 1 has positions that don't align with other columns
+        let column_buckets = vec![
+            (0, vec![
+                TextPosition { x0: 50.0, y0: 700.0 },
+                TextPosition { x0: 50.0, y0: 685.0 }, // Different y
+                TextPosition { x0: 50.0, y0: 670.0 }, // Different y
+            ]),
+            (25, vec![
+                TextPosition { x0: 150.0, y0: 700.0 }, // Only aligns with first
+            ]),
+        ];
+
+        let is_reflow = detector.is_single_column_reflow(&column_buckets);
+        // First column has mostly non-aligned positions, should be detected as reflow
+        assert!(is_reflow);
+    }
+
+    #[test]
+    fn test_is_single_column_reflow_false() {
+        let detector = TableDetector::new();
+        // All columns have good alignment
+        let column_buckets = vec![
+            (0, vec![
+                TextPosition { x0: 50.0, y0: 700.0 },
+                TextPosition { x0: 50.0, y0: 650.0 },
+                TextPosition { x0: 50.0, y0: 600.0 },
+            ]),
+            (25, vec![
+                TextPosition { x0: 150.0, y0: 700.0 },
+                TextPosition { x0: 150.0, y0: 650.0 },
+                TextPosition { x0: 150.0, y0: 600.0 },
+            ]),
+        ];
+
+        let is_reflow = detector.is_single_column_reflow(&column_buckets);
+        // Good alignment across all rows, not a reflow
+        assert!(!is_reflow);
+    }
+
+    #[test]
+    fn test_borderless_table_has_empty_segments() {
+        // Borderless tables should not have segments (no ruling lines)
+        let detector = TableDetector::new();
+        let page = make_page(b"");
+
+        let content = b"\
+            BT \
+            50 700 Td (R1C1) Tj 100 0 Td (R1C2) Tj 100 0 Td (R1C3) Tj \
+            -200 -50 Td (R2C1) Tj 100 0 Td (R2C2) Tj 100 0 Td (R2C3) Tj \
+            -200 -50 Td (R3C1) Tj 100 0 Td (R3C2) Tj 100 0 Td (R3C3) Tj \
+            ET";
+
+        let ctx = PageContext::new(&page, content);
+        let grids = detector.detect_borderless(&ctx);
+
+        assert!(!grids.is_empty());
+        assert!(grids[0].segments.is_empty());
     }
 }

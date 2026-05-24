@@ -1,13 +1,21 @@
 //! Table detection and structure reconstruction.
 //!
-//! This module implements line-based table detection from PDF content streams.
-//! Per Phase 7.2 of the plan, table detection extracts bordered tables by:
+//! This module implements table detection from PDF content streams using two methods:
+//!
+//! ## Line-based detection (7.2.1)
+//! For bordered tables with ruling lines:
 //! 1. Collecting horizontal and vertical path segments from stroke operators
 //! 2. Clustering collinear segments within epsilon tolerance
 //! 3. Finding intersection points between horizontal and vertical segments
 //! 4. Building candidate grids from the intersections
 //!
-//! Borderless table detection (via alignment heuristics) is deferred to 7.2.2.
+//! ## Borderless detection (7.2.2)
+//! For tables without ruling lines, using x0 alignment heuristics:
+//! 1. Collect text positions from content stream (Tm, Td, TD, T*, Tj, TJ operators)
+//! 2. Group by x0 positions (within 2.0 pt tolerance)
+//! 3. Find column candidates (3+ spans at same x0 on different y positions)
+//! 4. Find row candidates (y positions where >= 2 column candidates have spans)
+//! 5. Validate: 3+ rows AND 3+ columns, contiguous y range, no gap > 100 pt
 
 mod detector;
 mod segment;
