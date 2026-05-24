@@ -22,6 +22,12 @@ CLEAN_WER_THRESHOLD=2.0
 MULTILANG_WER_THRESHOLD=3.0
 PERF_TIMEOUT_SECONDS=30
 
+# BrokenVector WER delta thresholds
+# Assisted OCR should be at least 1% better than blind OCR on aligned fixture
+BROKENVECTOR_ALIGNED_DELTA_THRESHOLD=1.0
+# Assisted OCR should not regress significantly on misaligned fixture (within 0.5%)
+BROKENVECTOR_MISALIGNED_DELTA_THRESHOLD=0.5
+
 # Fixture directories
 FIXTURE_DIR="tests/fixtures/ocr"
 CLEAN_FIXTURE="$FIXTURE_DIR/clean_lorem_ipsum"
@@ -254,6 +260,82 @@ test_performance_fixture() {
     rm -f "$ocr_output"
 }
 
+# Test BrokenVector aligned fixture
+test_brokenvector_aligned_fixture() {
+    log_info "Testing BrokenVector aligned fixture..."
+
+    local pdf="$FIXTURE_DIR/brokenvector_aligned/source.pdf"
+    local gt="$FIXTURE_DIR/brokenvector_aligned/ground_truth.txt"
+    local ocr_output="/tmp/brokenvector_aligned_ocr_output.txt"
+
+    if ! check_pdf_fixture "$pdf" "brokenvector_aligned"; then
+        log_warn "Skipping BrokenVector aligned fixture test"
+        return 0
+    fi
+
+    # Run assisted OCR (normal extraction for BrokenVector pages)
+    if ! run_ocr "$pdf" "$ocr_output" "eng"; then
+        log_error "BrokenVector aligned fixture OCR failed"
+        ((FAILED++))
+        return 1
+    fi
+
+    local wer=$(calculate_wer "$ocr_output" "$gt")
+    local wer_percent=$(echo "$wer * 100" | bc -l)
+
+    log_info "  Assisted OCR WER: $wer_percent%"
+
+    # For aligned fixture, we expect WER < 2% (assisted OCR should work well)
+    local expected_wer=2.0
+    if (( $(echo "$wer <= $expected_wer / 100" | bc -l) )); then
+        log_info "  ✓ PASS: WER ${wer_percent}% < ${expected_wer}%"
+        ((PASSED++))
+    else
+        log_error "  ✗ FAIL: WER ${wer_percent}% >= ${expected_wer}%"
+        ((FAILED++))
+    fi
+
+    rm -f "$ocr_output"
+}
+
+# Test BrokenVector misaligned fixture
+test_brokenvector_misaligned_fixture() {
+    log_info "Testing BrokenVector misaligned fixture..."
+
+    local pdf="$FIXTURE_DIR/brokenvector_misaligned/source.pdf"
+    local gt="$FIXTURE_DIR/brokenvector_misaligned/ground_truth.txt"
+    local ocr_output="/tmp/brokenvector_misaligned_ocr_output.txt"
+
+    if ! check_pdf_fixture "$pdf" "brokenvector_misaligned"; then
+        log_warn "Skipping BrokenVector misaligned fixture test"
+        return 0
+    fi
+
+    # Run assisted OCR (normal extraction for BrokenVector pages)
+    if ! run_ocr "$pdf" "$ocr_output" "eng"; then
+        log_error "BrokenVector misaligned fixture OCR failed"
+        ((FAILED++))
+        return 1
+    fi
+
+    local wer=$(calculate_wer "$ocr_output" "$gt")
+    local wer_percent=$(echo "$wer * 100" | bc -l)
+
+    log_info "  Assisted OCR WER: $wer_percent%"
+
+    # For misaligned fixture, we expect WER < 5% (should not regress too badly)
+    local expected_wer=5.0
+    if (( $(echo "$wer <= $expected_wer / 100" | bc -l) )); then
+        log_info "  ✓ PASS: WER ${wer_percent}% < ${expected_wer}%"
+        ((PASSED++))
+    else
+        log_error "  ✗ FAIL: WER ${wer_percent}% >= ${expected_wer}%"
+        ((FAILED++))
+    fi
+
+    rm -f "$ocr_output"
+}
+
 # Main execution
 main() {
     log_info "=== WER CI Gate ==="
@@ -261,6 +343,8 @@ main() {
     log_info "  Clean fixture: WER < ${CLEAN_WER_THRESHOLD}%"
     log_info "  Multi-language: WER < ${MULTILANG_WER_THRESHOLD}%"
     log_info "  Performance: < ${PERF_TIMEOUT_SECONDS}s"
+    log_info "  BrokenVector aligned: WER < 2.0% (assisted OCR)"
+    log_info "  BrokenVector misaligned: WER < 5.0% (assisted OCR)"
     echo ""
 
     # Check if pdftract CLI exists
@@ -276,6 +360,10 @@ main() {
     test_multilang_fixture
     echo ""
     test_performance_fixture
+    echo ""
+    test_brokenvector_aligned_fixture
+    echo ""
+    test_brokenvector_misaligned_fixture
     echo ""
 
     # Summary

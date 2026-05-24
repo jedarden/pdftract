@@ -226,6 +226,8 @@ bash scripts/check-provenance.sh
 | classifier/scientific_paper/48.pdf | scripts/generate_test_corpus.py | MIT-0 | 2026-05-17 | fcb2d43e4aeeeb3fa87741667bd5a086582a9427d5546898264a87b89f1b3d7a | Synthetic scientific_paper test data |
 | classifier/scientific_paper/49.pdf | scripts/generate_test_corpus.py | MIT-0 | 2026-05-17 | 4e557da27f89a94386e62201eca8d4468ac4da882f7c9a46f2034312f0908f7c | Synthetic scientific_paper test data |
 | classifier/scientific_paper/50.pdf | scripts/generate_test_corpus.py | MIT-0 | 2026-05-17 | 1b4111e80b01ae70bb2f8aac910adc866d188cef406aedad487fcdcaed477308 | Synthetic scientific_paper test data |
+| ocr/brokenvector_aligned/source.pdf | xtask generate-brokenvector-fixtures | MIT-0 | 2026-05-24 | 5a11a3f76e7b0d12542cbfec751a12aa988adba3688a7628ea9fb3fec190babe | BrokenVector fixture with correctly-positioned invisible text layer |
+| ocr/brokenvector_misaligned/source.pdf | xtask generate-brokenvector-fixtures | MIT-0 | 2026-05-24 | 0a8e1a0d4e64c16ef655bd82d1958235c183f27cdefb3d3672a9cc2733bb245c | BrokenVector fixture with text layer offset by (10pt, 5pt) |
 | malformed/corrupt_xref.pdf | scripts/generate_test_corpus.py | MIT-0 | 2026-05-20 | 48977100af674feeaea80e4f0a0a45bf576a406286e0123c78e12cc6fce38ff3 | Synthetic malformed PDF for testing xref corruption handling |
 | malformed/circular_ref.pdf | scripts/generate_test_corpus.py | MIT-0 | 2026-05-20 | eafbbd82100c0f838b76df5956b606b12513df9725b2a16674ca4c81435a6d45 | Synthetic malformed PDF for testing circular reference handling |
 | malformed/stream_bomb.pdf | scripts/generate_test_corpus.py | MIT-0 | 2026-05-20 | a1d5df84d9a9476f65ba26213fbf9d6402a7876471bc198307c46d28171844ee | Synthetic malformed PDF for testing malicious stream handling |

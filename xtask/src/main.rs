@@ -104,6 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("  doc-profiles                     Generate README skeletons for all profiles");
         eprintln!("  generate-stress-pdfs            Generate stress-test PDFs for memory ceiling testing");
         eprintln!("  generate-page-class-fixtures    Generate page classification test fixtures");
+        eprintln!("  generate-brokenvector-fixtures  Generate BrokenVector OCR test fixtures");
         eprintln!("  gen-schema                      Generate JSON Schema from Rust output types");
         eprintln!(
             "  gen-shape-db                    Generate glyph shape database from font files"
@@ -140,6 +141,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         "generate-page-class-fixtures" => {
             generate_page_class_fixtures()?;
+            Ok(())
+        }
+        "generate-brokenvector-fixtures" => {
+            generate_brokenvector_fixtures()?;
             Ok(())
         }
         "gen-schema" => {
@@ -1503,6 +1508,212 @@ fn generate_hybrid_pdf(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     );
 
     Ok(())
+}
+
+/// Generate BrokenVector OCR test fixtures for assisted-OCR testing.
+///
+/// This function creates two PDF/A fixtures:
+/// 1. Aligned: Text layer at correct positions (assisted OCR should outperform blind OCR)
+/// 2. Misaligned: Text layer offset by (10pt, 5pt) (assisted OCR should not regress)
+///
+/// Each fixture includes:
+/// - A visible scan image (Lorem Ipsum text at 300 DPI)
+/// - An invisible text layer (Tr=3) with controllable positioning
+/// - Ground truth text file
+fn generate_brokenvector_fixtures() -> Result<(), Box<dyn std::error::Error>> {
+    println!("==========================================");
+    println!("Generating BrokenVector OCR Fixtures");
+    println!("==========================================");
+
+    let workspace_root = find_workspace_root();
+    let fixtures_dir = workspace_root.join("tests/fixtures/ocr");
+    fs::create_dir_all(&fixtures_dir)?;
+
+    let lorem_ipsum = r#"Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
+
+Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+
+The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs. How vexingly quick daft zebras jump!
+
+Sphinx of black quartz, judge my vow. The five boxing wizards jump quickly."#;
+
+    // 1. Generate aligned fixture
+    println!("\n1. Generating aligned BrokenVector fixture...");
+    let aligned_dir = fixtures_dir.join("brokenvector_aligned");
+    fs::create_dir_all(&aligned_dir)?;
+
+    // Create ground truth
+    let gt_path = aligned_dir.join("ground_truth.txt");
+    fs::write(&gt_path, lorem_ipsum.trim())?;
+
+    // Create PDF with invisible text layer at correct positions
+    let pdf_path = aligned_dir.join("source.pdf");
+    create_brokenvector_pdf(&pdf_path, lorem_ipsum, 0.0, 0.0)?;
+    println!(
+        "  Created: brokenvector_aligned/source.pdf ({:.2} KB)",
+        fs::metadata(&pdf_path)?.len() as f64 / 1024.0
+    );
+
+    // 2. Generate misaligned fixture
+    println!("\n2. Generating misaligned BrokenVector fixture...");
+    let misaligned_dir = fixtures_dir.join("brokenvector_misaligned");
+    fs::create_dir_all(&misaligned_dir)?;
+
+    // Create ground truth
+    let gt_path = misaligned_dir.join("ground_truth.txt");
+    fs::write(&gt_path, lorem_ipsum.trim())?;
+
+    // Create PDF with invisible text layer offset by (10pt, 5pt)
+    let pdf_path = misaligned_dir.join("source.pdf");
+    create_brokenvector_pdf(&pdf_path, lorem_ipsum, 10.0, 5.0)?;
+    println!(
+        "  Created: brokenvector_misaligned/source.pdf ({:.2} KB)",
+        fs::metadata(&pdf_path)?.len() as f64 / 1024.0
+    );
+
+    println!("\n==========================================");
+    println!("BrokenVector OCR Fixtures Generated");
+    println!("==========================================");
+
+    Ok(())
+}
+
+/// Create a BrokenVector PDF with invisible text layer.
+///
+/// # Arguments
+///
+/// * `output_path` - Where to save the PDF
+/// * `text` - The text content to embed
+/// * `offset_x` - Horizontal offset in points (0.0 for aligned, 10.0 for misaligned)
+/// * `offset_y` - Vertical offset in points (0.0 for aligned, 5.0 for misaligned)
+fn create_brokenvector_pdf(
+    output_path: &Path,
+    text: &str,
+    offset_x: f64,
+    offset_y: f64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use lopdf::{Dictionary, Document, Object, Stream};
+
+    let mut doc = Document::with_version("1.5");
+
+    // Create font
+    let mut font_dict = Dictionary::new();
+    font_dict.set("Type", "Font");
+    font_dict.set("Subtype", "Type1");
+    font_dict.set("BaseFont", "Helvetica");
+    let font_id = doc.add_object(font_dict);
+
+    // Resources
+    let mut resources = Dictionary::new();
+    let mut font_resources = Dictionary::new();
+    font_resources.set("F1", font_id);
+    resources.set("Font", font_resources);
+
+    // Create a simple 1x1 white pixel image to represent the scan
+    let image_data = vec![255u8; 4];
+    let image_stream = Stream::new(
+        dictionary! {
+            "Type" => "XObject",
+            "Subtype" => "Image",
+            "Width" => 1,
+            "Height" => 1,
+            "BitsPerComponent" => 8,
+            "ColorSpace" => "DeviceRGB",
+            "Length" => image_data.len() as i32,
+        },
+        image_data,
+    );
+    let image_id = doc.add_object(image_stream);
+
+    let mut xobject = Dictionary::new();
+    xobject.set("Im1", image_id);
+    resources.set("XObject", xobject);
+
+    // Build content stream with:
+    // 1. Draw image (representing the scan)
+    // 2. Draw invisible text (Tr=3) at offset positions
+    let mut content = String::from("q 612 792 scale /Im1 Do Q\n");
+
+    // Add invisible text with offset
+    content.push_str("BT /F1 12 Tf ");
+    content.push_str(&format!("{} Tr ", 3)); // Tr=3 = invisible text
+
+    let mut y_position = 750.0 + offset_y;
+    let x_start = 50.0 + offset_x;
+    let line_height = 18.0;
+
+    for line in text.trim().split('\n') {
+        if y_position < 50.0 {
+            content.push_str("ET BT /F1 12 Tf 3 Tr ");
+            y_position = 750.0 + offset_y;
+        }
+
+        // PDF text strings need proper escaping
+        let escaped_line = escape_pdf_string(line);
+        content.push_str(&format!("{} {} Td ({}) Tj ", x_start, y_position, escaped_line));
+        y_position -= line_height;
+    }
+
+    content.push_str("ET");
+
+    let content_bytes = content.as_bytes();
+    let mut content_dict = Dictionary::new();
+    content_dict.set("Length", content_bytes.len() as i32);
+    let content_stream = Stream::new(content_dict, content_bytes.to_vec());
+    let content_id = doc.add_object(content_stream);
+
+    // Page dictionary
+    let page_dict = dictionary! {
+        "Type" => "Page",
+        "MediaBox" => vec![0.0.into(), 0.0.into(), 612.0.into(), 792.0.into()],
+        "Contents" => content_id,
+        "Resources" => resources,
+    };
+    let page_id = doc.add_object(page_dict);
+
+    // Pages tree
+    let pages_id = doc.add_object(dictionary! {
+        "Type" => "Pages",
+        "Count" => 1,
+        "Kids" => vec![page_id.into()],
+    });
+
+    // Update page with parent reference
+    let mut page_obj = doc.get_object(page_id)?.as_dict().cloned()?;
+    page_obj.set("Parent", pages_id);
+    doc.objects.insert(page_id, Object::Dictionary(page_obj));
+
+    // Catalog
+    let catalog_id = doc.add_object(dictionary! {
+        "Type" => "Catalog",
+        "Pages" => pages_id,
+    });
+    doc.trailer.set("Root", catalog_id);
+
+    // Save PDF
+    doc.save(output_path)?;
+
+    Ok(())
+}
+
+/// Escape a string for use in a PDF text literal.
+///
+/// PDF strings use parentheses for delimiters and require escaping
+/// of special characters: backslash, parentheses, and some control chars.
+fn escape_pdf_string(s: &str) -> String {
+    let mut result = String::with_capacity(s.len() * 2);
+    for c in s.chars() {
+        match c {
+            '\\' => result.push_str("\\\\"),
+            '(' => result.push_str("\\("),
+            ')' => result.push_str("\\)"),
+            '\n' => result.push_str("\\n"),
+            '\r' => result.push_str("\\r"),
+            '\t' => result.push_str("\\t"),
+            _ => result.push(c),
+        }
+    }
+    result
 }
 
 /// Generate glyph shape database from font files.
