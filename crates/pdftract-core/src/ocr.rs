@@ -11,6 +11,9 @@
 
 #![cfg(feature = "ocr")]
 
+/// OCR preprocessing operations (Phase 5.3).
+pub mod preprocessing;
+
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::ffi::CString;

@@ -69,6 +69,8 @@ pub use hybrid::{
     merge_vector_and_ocr_spans, CellCrop, Span, SpanSource,
 };
 #[cfg(feature = "ocr")]
+pub use ocr::preprocessing::{histogram_stretch, histogram_stretch_if_needed, PreprocError};
+#[cfg(feature = "ocr")]
 pub use ocr::{
     borrow_or_init, calculate_wer, detect_available_languages, init_count, parse_hocr,
     reset_init_count, run_tesseract, run_tesseract_on_cell, validate_ocr_languages, HocrWord,
