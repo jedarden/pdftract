@@ -1,60 +1,17 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "ExtractionResult",
-  "description": "Result of a PDF extraction operation.\n\nContains the extracted pages, spans, blocks, and metadata.",
-  "type": "object",
-  "properties": {
-    "fingerprint": {
-      "description": "The PDF fingerprint (for receipt generation).",
-      "type": "string"
-    },
-    "metadata": {
-      "description": "Metadata about the extraction.",
-      "$ref": "#/$defs/ExtractionMetadata"
-    },
-    "pages": {
-      "description": "Extracted pages, each containing spans and blocks.",
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/PageResult"
-      }
-    },
-    "signatures": {
-      "description": "Digital signatures extracted from the document.\n\nThis array contains all signature fields discovered in the AcroForm,\nincluding both signed and unsigned (blank) signature fields.\nEmpty when the PDF has no signature fields.",
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/SignatureJson"
-      }
-    },
-    "form_fields": {
-      "description": "Interactive form fields extracted from the document.\n\nThis array contains all form fields from the AcroForm and/or XFA data.\nFields are sorted alphabetically by name. When both AcroForm and XFA\nare present, XFA values take precedence on collision.\nEmpty when the PDF has no form fields.",
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/FormFieldJson"
-      }
-    }
-  },
-  "required": [
-    "fingerprint",
-    "pages",
-    "metadata",
-    "signatures",
-    "form_fields"
-  ],
   "$defs": {
     "BlockJson": {
       "description": "JSON representation of a structural block.\n\nA block is a higher-level semantic unit composed of one or more\nspans. Examples include paragraphs, headings, list items, and\ntable cells.",
-      "type": "object",
       "properties": {
         "bbox": {
           "description": "Bounding box in PDF user-space points.\n\nFormat: `[x0, y0, x1, y1]` where (x0, y0) is the bottom-left\ncorner and (x1, y1) is the top-right corner.",
-          "type": "array",
           "items": {
-            "type": "number",
-            "format": "double"
+            "format": "double",
+            "type": "number"
           },
           "maxItems": 4,
-          "minItems": 4
+          "minItems": 4,
+          "type": "array"
         },
         "kind": {
           "description": "The block kind/type.\n\nCommon values: \"paragraph\", \"heading\", \"list\", \"table\", \"figure\".",
@@ -62,16 +19,15 @@
         },
         "level": {
           "description": "Optional heading level (1-6) for \"heading\" kind blocks.\n\nThis field is present only for heading blocks. For paragraphs\nand other block types, it is `null`.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
           "type": [
             "integer",
             "null"
-          ],
-          "format": "uint8",
-          "maximum": 255,
-          "minimum": 0
+          ]
         },
         "receipt": {
-          "description": "Optional cryptographic receipt for verification.\n\nThis field is present when `--receipts=lite` or `--receipts=svg`\nis enabled. When receipts are disabled, the field is `null`.",
           "anyOf": [
             {
               "$ref": "#/$defs/Receipt"
@@ -79,16 +35,17 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Optional cryptographic receipt for verification.\n\nThis field is present when `--receipts=lite` or `--receipts=svg`\nis enabled. When receipts are disabled, the field is `null`."
         },
         "table_index": {
           "description": "Optional table index for \"table\" kind blocks.\n\nThis field is present only for table blocks and points to the\ncorresponding entry in the page's `tables` array.",
+          "format": "uint",
+          "minimum": 0,
           "type": [
             "integer",
             "null"
-          ],
-          "format": "uint",
-          "minimum": 0
+          ]
         },
         "text": {
           "description": "The concatenated text content of all spans in the block.",
@@ -99,34 +56,34 @@
         "kind",
         "text",
         "bbox"
-      ]
+      ],
+      "type": "object"
     },
     "CellJson": {
       "description": "JSON representation of a table cell.\n\nA cell represents a single unit within a table row, containing\nits text content, bounding box, and position information.",
-      "type": "object",
       "properties": {
         "bbox": {
           "description": "Bounding box in PDF user-space points.\n\nFormat: `[x0, y0, x1, y1]` where (x0, y0) is the bottom-left\ncorner and (x1, y1) is the top-right corner.",
-          "type": "array",
           "items": {
-            "type": "number",
-            "format": "double"
+            "format": "double",
+            "type": "number"
           },
           "maxItems": 4,
-          "minItems": 4
+          "minItems": 4,
+          "type": "array"
         },
         "col": {
           "description": "Zero-based column index within the table.",
-          "type": "integer",
           "format": "uint",
-          "minimum": 0
+          "minimum": 0,
+          "type": "integer"
         },
         "colspan": {
-          "description": "Number of columns this cell spans (default 1).\n\nValues greater than 1 indicate a merged cell that spans\nmultiple columns horizontally.",
-          "type": "integer",
-          "format": "uint32",
           "default": 1,
-          "minimum": 0
+          "description": "Number of columns this cell spans (default 1).\n\nValues greater than 1 indicate a merged cell that spans\nmultiple columns horizontally.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
         },
         "is_header_row": {
           "description": "Whether this cell is in a header row.\n\nHeader cells are typically rendered differently (bold, centered)\nand may be reused when tables span multiple pages.",
@@ -134,25 +91,25 @@
         },
         "row": {
           "description": "Zero-based row index within the table.",
-          "type": "integer",
           "format": "uint",
-          "minimum": 0
+          "minimum": 0,
+          "type": "integer"
         },
         "rowspan": {
-          "description": "Number of rows this cell spans (default 1).\n\nValues greater than 1 indicate a merged cell that spans\nmultiple rows vertically.",
-          "type": "integer",
-          "format": "uint32",
           "default": 1,
-          "minimum": 0
+          "description": "Number of rows this cell spans (default 1).\n\nValues greater than 1 indicate a merged cell that spans\nmultiple rows vertically.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
         },
         "spans": {
           "description": "References to spans in the page's `spans` array.\n\nThese indices point to the spans that make up this cell's content.",
-          "type": "array",
           "items": {
-            "type": "integer",
             "format": "uint",
-            "minimum": 0
-          }
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
         },
         "text": {
           "description": "The concatenated text content of all spans in the cell.",
@@ -166,26 +123,42 @@
         "row",
         "col",
         "is_header_row"
-      ]
+      ],
+      "type": "object"
+    },
+    "ChoiceValueJson": {
+      "anyOf": [
+        {
+          "description": "Single selected option.",
+          "type": "string"
+        },
+        {
+          "description": "Multiple selected options.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      ],
+      "description": "Choice field value representation.\n\nChoice fields can have either a single selected value or multiple\nselected values (for multi-select list boxes)."
     },
     "ExtractionMetadata": {
       "description": "Metadata about the extraction process.",
-      "type": "object",
       "properties": {
         "block_count": {
           "description": "Number of blocks extracted.",
-          "type": "integer",
           "format": "uint",
-          "minimum": 0
+          "minimum": 0,
+          "type": "integer"
         },
         "cache_age_seconds": {
           "description": "Cache entry age in seconds (only present when cache_status == \"hit\")",
+          "format": "uint64",
+          "minimum": 0,
           "type": [
             "integer",
             "null"
-          ],
-          "format": "uint64",
-          "minimum": 0
+          ]
         },
         "cache_status": {
           "description": "Cache status: \"hit\", \"miss\", or \"skipped\"",
@@ -196,22 +169,22 @@
         },
         "diagnostics": {
           "description": "Diagnostics emitted during extraction (coverage warnings, etc.)",
-          "type": "array",
           "items": {
             "type": "string"
-          }
+          },
+          "type": "array"
         },
         "error_count": {
           "description": "Number of pages that failed to extract.",
-          "type": "integer",
           "format": "uint",
-          "minimum": 0
+          "minimum": 0,
+          "type": "integer"
         },
         "page_count": {
           "description": "Total number of pages in the document.",
-          "type": "integer",
           "format": "uint",
-          "minimum": 0
+          "minimum": 0,
+          "type": "integer"
         },
         "reading_order_algorithm": {
           "description": "Reading order algorithm used for this extraction.",
@@ -221,14 +194,14 @@
           ]
         },
         "receipts_mode": {
-          "description": "Receipts mode used for this extraction.",
-          "$ref": "#/$defs/ReceiptsMode"
+          "$ref": "#/$defs/ReceiptsMode",
+          "description": "Receipts mode used for this extraction."
         },
         "span_count": {
           "description": "Number of spans extracted.",
-          "type": "integer",
           "format": "uint",
-          "minimum": 0
+          "minimum": 0,
+          "type": "integer"
         }
       },
       "required": [
@@ -238,18 +211,204 @@
         "block_count",
         "error_count",
         "diagnostics"
+      ],
+      "type": "object"
+    },
+    "FormFieldJson": {
+      "description": "JSON representation of a form field.\n\nThis struct represents a single interactive form field from the PDF's\nAcroForm or XFA data, including its type, value, and metadata.\n\nPer the plan (Phase 7.4), form fields are extracted from both AcroForm\nand XFA sources, with XFA values taking precedence on collision.",
+      "properties": {
+        "default": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FormFieldValueJson"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The default value (/DV entry) if present.\n\nMatches the structure of `value` but represents the field's default state."
+        },
+        "max_length": {
+          "description": "Maximum length for text fields (/MaxLen entry).\nOnly present for text fields that have a max length set.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "multi_select": {
+          "description": "Whether this choice field supports multiple selections (bit 21 of /Ff).\nOnly present for choice fields.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "multiline": {
+          "description": "Whether this text field supports multiple lines (bit 13 of /Ff).\nOnly present for text fields.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "The absolute (dot-joined) field name from the AcroForm.\nExample: \"employer_signature\" or \"form.employee_sig\"",
+          "type": "string"
+        },
+        "options": {
+          "description": "Available options for choice fields.\n\nEach option is a [export_value, display_name] pair.\nOnly present for choice fields.",
+          "items": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "page_index": {
+          "description": "Zero-based page index where this field's widget appears.\n\nNone if the field has no visual representation (form-only field).",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "pushbutton": {
+          "description": "Whether this button is a pushbutton (bit 26 of /Ff).\nOnly present for button fields.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "radio": {
+          "description": "Whether this button is a radio button (bit 25 of /Ff).\nOnly present for button fields.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "read_only": {
+          "description": "Whether this field is read-only (bit 1 of /Ff flags).",
+          "type": "boolean"
+        },
+        "rect": {
+          "description": "Bounding box in PDF user-space points.\n\nFormat: [x0, y0, x1, y1] where (x0, y0) is the bottom-left corner.\nNone if the field has no visual appearance.",
+          "items": {
+            "format": "float",
+            "type": "number"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "required": {
+          "description": "Whether this field is required (bit 2 of /Ff flags).",
+          "type": "boolean"
+        },
+        "selected": {
+          "description": "Selected state for button fields.\nTrue = checked/selected, False = unchecked.\nOnly present for button fields.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "state_name": {
+          "description": "Appearance state name for button fields.\nE.g., \"Yes\", \"Off\", or custom state names.\nOnly present for button fields.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "$ref": "#/$defs/FormFieldTypeJson",
+          "description": "The field type variant (text, button, choice, or signature)."
+        },
+        "value": {
+          "$ref": "#/$defs/FormFieldValueJson",
+          "description": "The current value of the form field.\n\nThis field's structure varies by field_type:\n- text: string value\n- button: boolean selected state\n- choice: string or array of strings (for multi-select)\n- signature: signature reference number (or null if unsigned)"
+        }
+      },
+      "required": [
+        "name",
+        "type",
+        "value",
+        "required",
+        "read_only"
+      ],
+      "type": "object"
+    },
+    "FormFieldTypeJson": {
+      "description": "Form field type discriminator.\n\nThis enum uses serde's \"tag\" representation to produce a JSON string\nindicating the field type.",
+      "oneOf": [
+        {
+          "const": "text",
+          "description": "Text field (/FT /Tx) - single-line or multi-line text input.",
+          "type": "string"
+        },
+        {
+          "const": "button",
+          "description": "Button field (/FT /Btn) - pushbutton, checkbox, or radio button.",
+          "type": "string"
+        },
+        {
+          "const": "choice",
+          "description": "Choice field (/FT /Ch) - dropdown or list box.",
+          "type": "string"
+        },
+        {
+          "const": "signature",
+          "description": "Signature field (/FT /Sig) - digital signature field.",
+          "type": "string"
+        }
       ]
+    },
+    "FormFieldValueJson": {
+      "anyOf": [
+        {
+          "description": "Text field value (string or null).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "Button field value (boolean selected state).",
+          "type": "boolean"
+        },
+        {
+          "$ref": "#/$defs/ChoiceValueJson",
+          "description": "Choice field value (single string or array of strings for multi-select)."
+        },
+        {
+          "description": "Signature field value (signature reference number or null).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      ],
+      "description": "Form field value representation.\n\nThis enum captures the current value of a form field, with the variant\ntype matching the field_type."
     },
     "PageResult": {
       "description": "Result for a single page.",
-      "type": "object",
       "properties": {
         "blocks": {
           "description": "Extracted blocks (semantic units like paragraphs, headings).",
-          "type": "array",
           "items": {
             "$ref": "#/$defs/BlockJson"
-          }
+          },
+          "type": "array"
         },
         "error": {
           "description": "Error message if extraction failed for this page.",
@@ -260,23 +419,23 @@
         },
         "index": {
           "description": "0-based page index.",
-          "type": "integer",
           "format": "uint",
-          "minimum": 0
+          "minimum": 0,
+          "type": "integer"
         },
         "spans": {
           "description": "Extracted spans (text fragments with consistent styling).",
-          "type": "array",
           "items": {
             "$ref": "#/$defs/SpanJson"
-          }
+          },
+          "type": "array"
         },
         "tables": {
           "description": "Extracted tables (cell-level structure).\n\nThis array provides detailed table structure with rows and cells.\nTable blocks in the `blocks` array reference entries here via `table_index`.",
-          "type": "array",
           "items": {
             "$ref": "#/$defs/TableJson"
-          }
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -284,21 +443,21 @@
         "spans",
         "blocks",
         "tables"
-      ]
+      ],
+      "type": "object"
     },
     "Receipt": {
       "description": "A visual citation receipt for extracted text.\n\nReceipts provide cryptographic proof that a piece of extracted text\noriginated from a specific region in a specific PDF. They can be\nverified independently by re-running pdftract on the original file.\n\n# Lite mode\n\nIn lite mode, `svg_clip` is `None` and the JSON output does not\ninclude the key at all (via `skip_serializing_if`). This keeps\nreceipts small (~120-180 bytes) for high-volume use cases like\nRAG citation pipelines.\n\n# SVG mode\n\nIn SVG mode, `svg_clip` contains a self-contained SVG element\nthat renders only the glyphs whose bboxes fall within the receipt\nbbox. The SVG is normalized to the bbox coordinate system and\ncan be rendered standalone in any browser.\n\n# Example\n\n```json\n{\n  \"pdf_fingerprint\": \"pdftract-v1:a7f3...\",\n  \"page_index\": 14,\n  \"bbox\": [220.0, 412.0, 412.0, 432.0],\n  \"content_hash\": \"sha256:9b21...\",\n  \"extraction_version\": \"1.0.0\"\n}\n```",
-      "type": "object",
       "properties": {
         "bbox": {
           "description": "Bounding box in PDF user-space points.\n\nFormat: `[x0, y0, x1, y1]` where:\n- x0, y0: bottom-left corner\n- x1, y1: top-right corner\n- Units: PDF points (1/72 inch)\n\nThis is a copy of the parent span's bbox, included so the\nreceipt is self-contained.",
-          "type": "array",
           "items": {
-            "type": "number",
-            "format": "double"
+            "format": "double",
+            "type": "number"
           },
           "maxItems": 4,
-          "minItems": 4
+          "minItems": 4,
+          "type": "array"
         },
         "content_hash": {
           "description": "SHA-256 hash of the NFC-normalized text content.\n\nFormat: `\"sha256:\" + hex(SHA-256)`.\n\nThe text is normalized to NFC form before hashing to ensure\nstability across platforms that may use different Unicode\nnormalization forms (e.g., macOS HFS+/APFS sometimes round-trips\nthrough NFD).",
@@ -310,9 +469,9 @@
         },
         "page_index": {
           "description": "0-based page index in the source PDF.\n\nMatches the page_index in the extraction schema.",
-          "type": "integer",
           "format": "uint",
-          "minimum": 0
+          "minimum": 0,
+          "type": "integer"
         },
         "pdf_fingerprint": {
           "description": "Phase 1.7 fingerprint of the source PDF.\n\nFormat: `\"pdftract-v1:\" + hex(SHA-256)`.\nThe verifier compares this string literally (not parsed).",
@@ -332,48 +491,48 @@
         "bbox",
         "content_hash",
         "extraction_version"
-      ]
+      ],
+      "type": "object"
     },
     "ReceiptsMode": {
       "description": "Receipt generation mode.\n\nControls whether visual citation receipts are generated during extraction.",
       "oneOf": [
         {
+          "const": "off",
           "description": "No receipts generated (default).",
-          "type": "string",
-          "const": "off"
+          "type": "string"
         },
         {
+          "const": "lite",
           "description": "Lite mode: minimal receipts (~120 bytes each) with fingerprint, page index, bbox, and content hash.",
-          "type": "string",
-          "const": "lite"
+          "type": "string"
         },
         {
+          "const": "svg",
           "description": "SVG mode: extended receipts that include an SVG clip rendering the glyphs.",
-          "type": "string",
-          "const": "svg"
+          "type": "string"
         }
       ]
     },
     "RowJson": {
       "description": "JSON representation of a table row.\n\nA row contains a sequence of cells that form a horizontal strip\nin the table.",
-      "type": "object",
       "properties": {
         "bbox": {
           "description": "Bounding box in PDF user-space points.\n\nFormat: `[x0, y0, x1, y1]` where (x0, y0) is the bottom-left\ncorner and (x1, y1) is the top-right corner.",
-          "type": "array",
           "items": {
-            "type": "number",
-            "format": "double"
+            "format": "double",
+            "type": "number"
           },
           "maxItems": 4,
-          "minItems": 4
+          "minItems": 4,
+          "type": "array"
         },
         "cells": {
           "description": "Cells in this row, ordered left-to-right.",
-          "type": "array",
           "items": {
             "$ref": "#/$defs/CellJson"
-          }
+          },
+          "type": "array"
         },
         "is_header": {
           "description": "Whether this row is a header row.\n\nHeader rows are typically repeated when tables span multiple pages.",
@@ -384,143 +543,31 @@
         "bbox",
         "cells",
         "is_header"
-      ]
-    },
-    "SpanJson": {
-      "description": "JSON representation of a text span.\n\nA span is the smallest unit of extracted text, representing a\ncontiguous run of text with consistent font and styling.",
-      "type": "object",
-      "properties": {
-        "bbox": {
-          "description": "Bounding box in PDF user-space points.\n\nFormat: `[x0, y0, x1, y1]` where (x0, y0) is the bottom-left\ncorner and (x1, y1) is the top-right corner.",
-          "type": "array",
-          "items": {
-            "type": "number",
-            "format": "double"
-          },
-          "maxItems": 4,
-          "minItems": 4
-        },
-        "confidence": {
-          "description": "Optional confidence score (0.0 to 1.0).\n\nThis field is present when OCR is used or when the extraction\nhas uncertainty about the text. When confidence is not applicable,\nthis field is `null`.",
-          "type": [
-            "number",
-            "null"
-          ],
-          "format": "double"
-        },
-        "font": {
-          "description": "Font name or identifier.",
-          "type": "string"
-        },
-        "receipt": {
-          "description": "Optional cryptographic receipt for verification.\n\nThis field is present when `--receipts=lite` or `--receipts=svg`\nis enabled. When receipts are disabled, the field is `null`.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Receipt"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "size": {
-          "description": "Font size in points.",
-          "type": "number",
-          "format": "double"
-        },
-        "text": {
-          "description": "The extracted text content.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "text",
-        "bbox",
-        "font",
-        "size"
-      ]
-    },
-    "TableJson": {
-      "description": "JSON representation of a table.\n\nTables are emitted in parallel with table blocks - the block\nprovides the concatenated text and position, while the TableJson\nprovides full cell-level structure.",
-      "type": "object",
-      "properties": {
-        "bbox": {
-          "description": "Bounding box in PDF user-space points.\n\nFormat: `[x0, y0, x1, y1]` where (x0, y0) is the bottom-left\ncorner and (x1, y1) is the top-right corner.",
-          "type": "array",
-          "items": {
-            "type": "number",
-            "format": "double"
-          },
-          "maxItems": 4,
-          "minItems": 4
-        },
-        "continued": {
-          "description": "Whether this table continues on the next page.\n\nSet to `true` when a table is split across pages and this\npage contains the first part.",
-          "type": "boolean"
-        },
-        "continued_from_prev": {
-          "description": "Whether this table is a continuation from the previous page.\n\nSet to `true` when a table is split across pages and this\npage contains a subsequent part.",
-          "type": "boolean"
-        },
-        "detection_method": {
-          "description": "Detection method used to identify this table.\n\n- \"line_based\": Table detected via ruling lines (borders)\n- \"borderless\": Table detected via x0 alignment heuristics",
-          "type": "string"
-        },
-        "header_rows": {
-          "description": "Number of contiguous header rows at the top of the table.\n\nHeader rows are typically repeated when tables span multiple pages.",
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0
-        },
-        "id": {
-          "description": "Unique identifier for this table (e.g., \"table_0\").",
-          "type": "string"
-        },
-        "page_index": {
-          "description": "Zero-based page index where this table appears.",
-          "type": "integer",
-          "format": "uint",
-          "minimum": 0
-        },
-        "rows": {
-          "description": "Rows in this table, ordered top-to-bottom.",
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/RowJson"
-          }
-        }
-      },
-      "required": [
-        "id",
-        "bbox",
-        "rows",
-        "header_rows",
-        "detection_method",
-        "continued",
-        "continued_from_prev",
-        "page_index"
-      ]
+      ],
+      "type": "object"
     },
     "SignatureJson": {
       "description": "JSON representation of a digital signature.\n\nThis struct represents a signature extracted from a PDF signature field,\nincluding signer identity, timestamp, and coverage information.\n\nPer the plan (Phase 7.3), pdftract does NOT perform cryptographic validation\nin v1. The `validation_status` field is always \"not_checked\" — future versions\nmay add \"valid\", \"invalid\", or \"indeterminate\" as cryptographic validation\nis implemented.",
-      "type": "object",
       "properties": {
         "byte_range": {
           "description": "The /ByteRange array defining which bytes of the file are signed.\n\nFormat: array of 4 integers [offset, length, offset, length] defining two byte ranges.\nNone if /ByteRange is missing or malformed.",
-          "type": "array",
           "items": {
-            "type": "integer",
             "format": "uint64",
-            "minimum": 0
-          }
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
         },
         "coverage_fraction": {
           "description": "Fraction of the file covered by the signature (0.0 to 1.0).\n\nComputed as `(byte_range[1] + byte_range[3]) / file_size`.\nNone if /ByteRange is missing, malformed, or file_size is unknown.\n\nValues < 1.0 indicate partial signatures (a common red flag for tampered docs).",
+          "format": "double",
           "type": [
             "number",
             "null"
-          ],
-          "format": "double"
+          ]
         },
         "field_name": {
           "description": "The absolute (dot-joined) field name from the AcroForm.\nExample: \"employer_signature\" or \"form.employee_sig\"",
@@ -560,185 +607,182 @@
         },
         "validation_status": {
           "description": "Validation status — always \"not_checked\" in v1.\n\nFuture versions may add \"valid\", \"invalid\", \"indeterminate\" as cryptographic\nvalidation is implemented. This is a string enum for schema stability.",
-          "type": "string",
-          "enum": ["not_checked"]
+          "type": "string"
         }
       },
       "required": [
         "field_name",
         "signer_name",
         "validation_status"
-      ]
+      ],
+      "type": "object"
     },
-    "FormFieldJson": {
-      "description": "JSON representation of a form field.\n\nThis struct represents a single interactive form field from the PDF's\nAcroForm or XFA data, including its type, value, and metadata.\n\nPer the plan (Phase 7.4), form fields are extracted from both AcroForm\nand XFA sources, with XFA values taking precedence on collision.",
-      "type": "object",
+    "SpanJson": {
+      "description": "JSON representation of a text span.\n\nA span is the smallest unit of extracted text, representing a\ncontiguous run of text with consistent font and styling.\n\n# TODO: Phase 6.1 - Add confidence_source field\n\nWhen the `confidence_source` field is added to the schema (per plan line 363, 1662),\nit should include \"ocr-fallback\" as a valid value for spans emitted via\nPhase 5.5.3 region-level fallback. The internal `SpanSource::OcrFallback` variant\nin `hybrid.rs` maps to this value.",
       "properties": {
-        "name": {
-          "description": "The absolute (dot-joined) field name from the AcroForm.\nExample: \"employer_signature\" or \"form.employee_sig\"",
-          "type": "string"
+        "bbox": {
+          "description": "Bounding box in PDF user-space points.\n\nFormat: `[x0, y0, x1, y1]` where (x0, y0) is the bottom-left\ncorner and (x1, y1) is the top-right corner.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "type": "array"
         },
-        "type": {
-          "description": "The field type variant (text, button, choice, or signature).",
-          "type": "string",
-          "enum": ["text", "button", "choice", "signature"]
-        },
-        "value": {
-          "description": "The current value of the form field.\n\nThis field's structure varies by field_type:\n- text: string value\n- button: boolean selected state\n- choice: string or array of strings (for multi-select)\n- signature: signature reference number (or null if unsigned)",
-          "anyOf": [
-            {
-              "type": "string",
-              "description": "Text field value (null if empty/absent)"
-            },
-            {
-              "type": "null",
-              "description": "Null value for empty text or unsigned signature"
-            },
-            {
-              "type": "boolean",
-              "description": "Button field selected state"
-            },
-            {
-              "type": "string",
-              "description": "Choice field single selected value"
-            },
-            {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "Choice field multiple selected values"
-            },
-            {
-              "type": "integer",
-              "description": "Signature reference number",
-              "minimum": 0
-            }
+        "column": {
+          "description": "Column index (0-based) assigned by Phase 4.3 column detection.\n\nThis field is `None` for spans outside any detected column\n(e.g., full-width headings, inter-column gaps).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
           ]
         },
-        "default": {
-          "description": "The default value (/DV entry) if present.\n\nMatches the structure of `value` but represents the field's default state.",
+        "confidence": {
+          "description": "Optional confidence score (0.0 to 1.0).\n\nThis field is present when OCR is used or when the extraction\nhas uncertainty about the text. When confidence is not applicable,\nthis field is `null`.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "font": {
+          "description": "Font name or identifier.",
+          "type": "string"
+        },
+        "receipt": {
           "anyOf": [
             {
-              "type": "string"
+              "$ref": "#/$defs/Receipt"
             },
             {
               "type": "null"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
             }
-          ]
-        },
-        "page_index": {
-          "description": "Zero-based page index where this field's widget appears.\n\nNone if the field has no visual representation (form-only field).",
-          "type": [
-            "integer",
-            "null"
           ],
-          "minimum": 0
+          "description": "Optional cryptographic receipt for verification.\n\nThis field is present when `--receipts=lite` or `--receipts=svg`\nis enabled. When receipts are disabled, the field is `null`."
         },
-        "rect": {
-          "description": "Bounding box in PDF user-space points.\n\nFormat: [x0, y0, x1, y1] where (x0, y0) is the bottom-left corner.\nNone if the field has no visual appearance.",
-          "type": [
-            "array",
-            "null"
-          ],
-          "items": {
-            "type": "number",
-            "format": "float"
-          },
-          "minItems": 4,
-          "maxItems": 4
+        "size": {
+          "description": "Font size in points.",
+          "format": "double",
+          "type": "number"
         },
-        "required": {
-          "description": "Whether this field is required (bit 2 of /Ff flags).",
-          "type": "boolean"
-        },
-        "read_only": {
-          "description": "Whether this field is read-only (bit 1 of /Ff flags).",
-          "type": "boolean"
-        },
-        "multiline": {
-          "description": "Whether this text field supports multiple lines (bit 13 of /Ff).\nOnly present for text fields.",
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "max_length": {
-          "description": "Maximum length for text fields (/MaxLen entry).\nOnly present for text fields that have a max length set.",
-          "type": [
-            "integer",
-            "null"
-          ],
-          "format": "uint32",
-          "minimum": 0
-        },
-        "options": {
-          "description": "Available options for choice fields.\n\nEach option is a [export_value, display_name] pair.\nOnly present for choice fields.",
-          "type": [
-            "array",
-            "null"
-          ],
-          "items": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "minItems": 2,
-            "maxItems": 2
-          }
-        },
-        "multi_select": {
-          "description": "Whether this choice field supports multiple selections (bit 21 of /Ff).\nOnly present for choice fields.",
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "selected": {
-          "description": "Selected state for button fields.\nTrue = checked/selected, False = unchecked.\nOnly present for button fields.",
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "state_name": {
-          "description": "Appearance state name for button fields.\nE.g., \"Yes\", \"Off\", or custom state names.\nOnly present for button fields.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "pushbutton": {
-          "description": "Whether this button is a pushbutton (bit 26 of /Ff).\nOnly present for button fields.",
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "radio": {
-          "description": "Whether this button is a radio button (bit 25 of /Ff).\nOnly present for button fields.",
-          "type": [
-            "boolean",
-            "null"
-          ]
+        "text": {
+          "description": "The extracted text content.",
+          "type": "string"
         }
       },
       "required": [
-        "name",
-        "type",
-        "value",
-        "required",
-        "read_only"
-      ]
+        "text",
+        "bbox",
+        "font",
+        "size"
+      ],
+      "type": "object"
+    },
+    "TableJson": {
+      "description": "JSON representation of a table.\n\nTables are emitted in parallel with table blocks - the block\nprovides the concatenated text and position, while the TableJson\nprovides full cell-level structure.",
+      "properties": {
+        "bbox": {
+          "description": "Bounding box in PDF user-space points.\n\nFormat: `[x0, y0, x1, y1]` where (x0, y0) is the bottom-left\ncorner and (x1, y1) is the top-right corner.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "type": "array"
+        },
+        "continued": {
+          "description": "Whether this table continues on the next page.\n\nSet to `true` when a table is split across pages and this\npage contains the first part.",
+          "type": "boolean"
+        },
+        "continued_from_prev": {
+          "description": "Whether this table is a continuation from the previous page.\n\nSet to `true` when a table is split across pages and this\npage contains a subsequent part.",
+          "type": "boolean"
+        },
+        "detection_method": {
+          "description": "Detection method used to identify this table.\n\n- \"line_based\": Table detected via ruling lines (borders)\n- \"borderless\": Table detected via x0 alignment heuristics",
+          "type": "string"
+        },
+        "header_rows": {
+          "description": "Number of contiguous header rows at the top of the table.\n\nHeader rows are typically repeated when tables span multiple pages.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "description": "Unique identifier for this table (e.g., \"table_0\").",
+          "type": "string"
+        },
+        "page_index": {
+          "description": "Zero-based page index where this table appears.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rows": {
+          "description": "Rows in this table, ordered top-to-bottom.",
+          "items": {
+            "$ref": "#/$defs/RowJson"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "bbox",
+        "rows",
+        "header_rows",
+        "detection_method",
+        "continued",
+        "continued_from_prev",
+        "page_index"
+      ],
+      "type": "object"
     }
-  }
+  },
+  "$id": "https://pdftract.com/schema/v1.0/pdftract.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "JSON Schema for pdftract PDF extraction output v1.0. This schema defines the structure of extraction results including pages, spans, blocks, tables, form fields, signatures, and metadata.",
+  "properties": {
+    "fingerprint": {
+      "description": "The PDF fingerprint (for receipt generation).",
+      "type": "string"
+    },
+    "form_fields": {
+      "description": "Interactive form fields extracted from the document.\n\nThis array contains all form fields from the AcroForm and/or XFA data.\nFields are sorted alphabetically by name. When both AcroForm and XFA\nare present, XFA values take precedence on collision.\nEmpty when the PDF has no form fields.",
+      "items": {
+        "$ref": "#/$defs/FormFieldJson"
+      },
+      "type": "array"
+    },
+    "metadata": {
+      "$ref": "#/$defs/ExtractionMetadata",
+      "description": "Metadata about the extraction."
+    },
+    "pages": {
+      "description": "Extracted pages, each containing spans and blocks.",
+      "items": {
+        "$ref": "#/$defs/PageResult"
+      },
+      "type": "array"
+    },
+    "signatures": {
+      "description": "Digital signatures extracted from the document.\n\nThis array contains all signature fields discovered in the AcroForm,\nincluding both signed and unsigned (blank) signature fields.\nEmpty when the PDF has no signature fields.",
+      "items": {
+        "$ref": "#/$defs/SignatureJson"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "fingerprint",
+    "pages",
+    "metadata",
+    "signatures",
+    "form_fields"
+  ],
+  "title": "pdftract Output v1.0",
+  "type": "object"
 }

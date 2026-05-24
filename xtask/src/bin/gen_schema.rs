@@ -4,10 +4,12 @@
 //! extraction output, which is checked into the repository at
 //! docs/schema/v1.0/pdftract.schema.json.
 //!
-//! Usage: cargo run --bin gen_schema
+//! Usage: cargo run --manifest-path=xtask/Cargo.toml --bin gen_schema
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+use serde_json::Value;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Find the workspace root
@@ -67,7 +69,55 @@ fn generate_schema() -> String {
 
     let schema = schema_for!(ExtractionResult);
 
-    // Convert to JSON string
-    // The schema_for! macro already includes the $schema field
-    serde_json::to_string_pretty(&schema).expect("Failed to serialize schema")
+    // Convert to JSON value
+    let mut value = serde_json::to_value(&schema).expect("Failed to serialize schema");
+
+    // Set $id, title, and description on the root schema object
+    if let Some(obj) = value.as_object_mut() {
+        // Set $id to stable URL
+        obj.insert("$id".to_string(), Value::String(
+            "https://pdftract.com/schema/v1.0/pdftract.schema.json".to_string()
+        ));
+
+        // Update title
+        obj.insert("title".to_string(), Value::String(
+            "pdftract Output v1.0".to_string()
+        ));
+
+        // Update description
+        obj.insert("description".to_string(), Value::String(
+            "JSON Schema for pdftract PDF extraction output v1.0. \
+            This schema defines the structure of extraction results including pages, \
+            spans, blocks, tables, form fields, signatures, and metadata."
+            .to_string()
+        ));
+    }
+
+    // Sort keys recursively for stable ordering
+    let sorted = sort_keys_recursive(value);
+
+    // Serialize with pretty printing
+    serde_json::to_string_pretty(&sorted).expect("Failed to serialize sorted schema")
+}
+
+/// Recursively sort all object keys alphabetically for stable diff output.
+///
+/// This function walks the entire JSON value tree and sorts all object keys
+/// in BTreeMap order, ensuring that regenerating the schema produces
+/// byte-identical output.
+fn sort_keys_recursive(value: Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut sorted = BTreeMap::new();
+            for (k, v) in map {
+                sorted.insert(k, sort_keys_recursive(v));
+            }
+            Value::Object(sorted.into_iter().collect())
+        }
+        Value::Array(arr) => {
+            let sorted: Vec<Value> = arr.into_iter().map(sort_keys_recursive).collect();
+            Value::Array(sorted)
+        }
+        _ => value,
+    }
 }

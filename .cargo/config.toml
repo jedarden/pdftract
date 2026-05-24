@@ -14,6 +14,9 @@ cr = "check --release"
 t = "test"
 tr = "test --release"
 
+# xtask aliases (invoke via --manifest-path to avoid workspace issues)
+gen-schema = "run --manifest-path=xtask/Cargo.toml --bin gen_schema"
+
 # Profile for CI property tests (nextest with proptest)
 [profile.ci-proptest]
 inherits = "release"
