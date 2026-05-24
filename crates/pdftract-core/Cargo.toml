@@ -11,6 +11,7 @@ publish = true
 anyhow = { workspace = true }
 hex = "0.4"
 image = { version = "0.25", optional = true }
+leptonica-plumbing = { version = "1.4", optional = true }
 pdfium-render = { version = "0.9", optional = true }
 indexmap = "2.2"
 flate2 = { workspace = true }
@@ -34,7 +35,7 @@ tracing = { workspace = true }
 default = ["serde"]
 serde = ["dep:serde", "dep:serde_json"]
 receipts = []  # Enable visual citation receipts (SVG clip generation)
-ocr = ["dep:image"]  # Enable OCR path (image compositing)
+ocr = ["dep:image", "dep:leptonica-plumbing"]  # Enable OCR path (image compositing + preprocessing)
 full-render = ["dep:pdfium-render", "ocr"]  # Enable PDFium-based rendering (requires ocr)
 proptest = []
 fuzzing = []  # Enable cfg(fuzzing) for fuzz harnesses

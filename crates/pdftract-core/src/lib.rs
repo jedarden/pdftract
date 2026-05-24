@@ -10,6 +10,8 @@ pub mod diagnostics;
 #[cfg(feature = "ocr")]
 pub mod dpi;
 pub mod document;
+#[cfg(feature = "ocr")]
+pub mod preprocess;
 pub mod extract;
 pub mod fingerprint;
 pub mod font;

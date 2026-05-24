@@ -621,6 +621,15 @@ pub enum DiagCode {
     /// Phase origin: 5.2.1
     ImgUnsupportedFormat,
 
+    /// Deskew angle out of detectable range
+    ///
+    /// Emitted when pixDeskew cannot detect a dominant text angle because the
+    /// actual skew exceeds the search range (typically +/- 15 degrees). The image
+    /// is returned unchanged without rotation.
+    ///
+    /// Phase origin: 5.3.1
+    ImgDeskewOutOfRange,
+
     /// Stream data truncated
     ///
     /// Emitted when a stream has less data than expected based on its declared
@@ -827,7 +836,8 @@ impl DiagCode {
 
             // IMG_*
             DiagCode::ImgSoftmaskUnsupported
-            | DiagCode::ImgUnsupportedFormat => "IMG",
+            | DiagCode::ImgUnsupportedFormat
+            | DiagCode::ImgDeskewOutOfRange => "IMG",
 
             // REMOTE_*
             DiagCode::RemoteFetchInterrupted
@@ -916,6 +926,7 @@ impl DiagCode {
             DiagCode::OcrBrokenVectorUnavailable => "OCR_BROKENVECTOR_UNAVAILABLE",
             DiagCode::ImgSoftmaskUnsupported => "IMG_SOFTMASK_UNSUPPORTED",
             DiagCode::ImgUnsupportedFormat => "IMG_UNSUPPORTED_FORMAT",
+            DiagCode::ImgDeskewOutOfRange => "IMG_DESKEW_OUT_OF_RANGE",
             DiagCode::StreamTruncated => "STREAM_TRUNCATED",
             DiagCode::RemoteFetchInterrupted => "REMOTE_FETCH_INTERRUPTED",
             DiagCode::RemoteNoRangeSupport => "REMOTE_NO_RANGE_SUPPORT",
@@ -995,6 +1006,7 @@ impl DiagCode {
             | DiagCode::OcrBrokenVectorUnavailable
             | DiagCode::ImgSoftmaskUnsupported
             | DiagCode::ImgUnsupportedFormat
+            | DiagCode::ImgDeskewOutOfRange
             | DiagCode::StreamTruncated
             | DiagCode::RemoteNoRangeSupport
             | DiagCode::GstateStackOverflow
@@ -1505,6 +1517,14 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         recoverable: true,
         phase: "5.2.1",
         suggested_action: "Image format or bits-per-component not supported; image is skipped",
+    },
+    DiagInfo {
+        code: DiagCode::ImgDeskewOutOfRange,
+        category: "IMG",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "5.3.1",
+        suggested_action: "Skew angle exceeds detection range (typically +/- 15 deg); image returned unchanged",
     },
     DiagInfo {
         code: DiagCode::StreamTruncated,
