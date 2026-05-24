@@ -122,6 +122,37 @@ enum Commands {
         cache_command: CacheCommands,
     },
     /// Start the HTTP server for extraction
+    ///
+    /// ## Concurrency
+    ///
+    /// The server uses a two-level concurrency architecture:
+    ///
+    /// - **tokio**: Per-request concurrency via the async executor. Each HTTP request
+    ///   is handled asynchronously on tokio's multi-threaded runtime.
+    /// - **rayon**: Per-document parallelism within each extraction. PDF pages are
+    ///   processed in parallel using rayon's work-stealing thread pool.
+    ///
+    /// The bridge between async (tokio) and sync (rayon) is `tokio::task::spawn_blocking`.
+    /// Each POST handler wraps the synchronous extraction call in `spawn_blocking`, which
+    /// runs the work on tokio's blocking thread pool (separate from the async reactor).
+    ///
+    /// This design ensures:
+    /// - The async reactor is never blocked by extraction work
+    /// - Multiple PDFs can be extracted concurrently (one per request)
+    /// - Within each PDF, pages are processed in parallel (rayon)
+    /// - Thread pools are sized appropriately (tokio: 512 blocking threads; rayon: num_cpus)
+    ///
+    /// ## Endpoints
+    ///
+    /// - `POST /extract` - Extract PDF and return JSON with metadata
+    /// - `POST /extract/text` - Extract PDF and return plain text
+    /// - `POST /extract/stream` - Extract PDF and return streaming NDJSON
+    /// - `GET /health` - Health check (responds within 100ms even during concurrent extractions)
+    ///
+    /// ## Cache
+    ///
+    /// Cache is optional. When enabled, extracted results are stored on disk and reused
+    /// for identical PDFs. Cache status is reported via the `X-Pdftract-Cache` response header.
     Serve {
         /// Bind address (e.g., "127.0.0.1:8080", "[::1]:9000", "0.0.0.0:3000")
         #[arg(short, long, default_value = "127.0.0.1:8080")]
