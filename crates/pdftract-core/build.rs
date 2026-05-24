@@ -9,6 +9,7 @@ fn main() {
     println!("cargo:rerun-if-changed=build/font-fingerprints.json");
     println!("cargo:rerun-if-changed=build/predefined-cmaps/");
     println!("cargo:rerun-if-changed=build/glyph-shapes.json");
+    println!("cargo:rerun-if-changed=build/wordlist-en-20k.txt");
 
     let out_dir = env::var("OUT_DIR").unwrap();
     let out_path = Path::new(&out_dir);
@@ -35,6 +36,10 @@ fn main() {
     // Generate glyph shape database
     let shapes_path = Path::new("build/glyph-shapes.json");
     generate_shape_db(out_path, shapes_path);
+
+    // Generate English wordlist
+    let wordlist_path = Path::new("build/wordlist-en-20k.txt");
+    generate_wordlist(out_path, wordlist_path);
 }
 
 fn generate_std14_metrics(out_dir: &Path, metrics_path: &Path) {
@@ -758,3 +763,122 @@ const _: () = assert!(SHAPE_TABLE.len() == FREQ_TABLE.len());
     fs::write(Path::new(out_dir).join("shape_db.rs"), rust_code)
         .expect("Failed to write shape_db.rs");
 }
+
+/// Generate English wordlist phf::Set from wordlist-en-20k.txt.
+///
+/// Reads build/wordlist-en-20k.txt and emits a compile-time phf::Set
+/// containing ~20,000 common English words for dictionary coverage
+/// scoring in readability analysis.
+///
+/// # Format
+///
+/// One lowercase word per line, sorted by frequency (most common first).
+/// Words must be ASCII only, 1-30 characters.
+///
+/// # Source
+///
+/// google-10000-english 20k.txt (frequency-sorted English word list)
+fn generate_wordlist(out_dir: &Path, wordlist_path: &Path) {
+    // Check if the wordlist file exists
+    if !wordlist_path.exists() {
+        // Emit a build warning and empty set
+        println!(
+            "cargo:warning=wordlist-en-20k.txt not found at {}, generating empty wordlist",
+            wordlist_path.display()
+        );
+        let rust_code = r#"
+// Auto-generated English wordlist.
+// Source: build/wordlist-en-20k.txt (not found - empty wordlist)
+// Do not edit manually.
+
+/// English wordlist: empty (wordlist-en-20k.txt not found).
+pub static EN_WORDLIST_20K: phf::Set<&'static str> = phf::Set::empty();
+"#;
+        fs::write(Path::new(out_dir).join("wordlist.rs"), rust_code)
+            .expect("Failed to write wordlist.rs");
+        return;
+    }
+
+    let wordlist_content = fs::read_to_string(wordlist_path)
+        .unwrap_or_else(|_| panic!("Failed to read {}", wordlist_path.display()));
+
+    // Validate and collect words
+    let mut words = Vec::new();
+    let mut line_num = 0;
+
+    for line in wordlist_content.lines() {
+        line_num += 1;
+        let word = line.trim();
+
+        // Skip empty lines
+        if word.is_empty() {
+            continue;
+        }
+
+        // Validate: ASCII only, lowercase, length 1-30
+        if !word.is_ascii() {
+            panic!(
+                "wordlist-en-20k.txt:{}: non-ASCII word: {}",
+                line_num, word
+            );
+        }
+        if word != word.to_lowercase() {
+            panic!(
+                "wordlist-en-20k.txt:{}: non-lowercase word: {}",
+                line_num, word
+            );
+        }
+        if !(1..=30).contains(&word.len()) {
+            panic!(
+                "wordlist-en-20k.txt:{}: word length {} outside range [1, 30]: {}",
+                line_num,
+                word.len(),
+                word
+            );
+        }
+
+        words.push(word);
+    }
+
+    // Build phf::Set
+    let mut set_builder = phf_codegen::Set::new();
+
+    for word in &words {
+        set_builder.entry(word);
+    }
+
+    let rust_code = format!(
+        r#"
+// Auto-generated English wordlist.
+// Source: build/wordlist-en-20k.txt
+// Do not edit manually.
+//
+// A compile-time phf::Set of ~20,000 common English words, sorted by
+// frequency. Used for dictionary coverage scoring in readability analysis.
+//
+// Word count: {}
+
+/// English wordlist: 20,000 most common English words.
+///
+/// Lookup is O(1) via phf's perfect hash function. Words are lowercase
+/// ASCII only, length 1-30 characters.
+///
+/// # Example
+///
+/// ```
+/// use pdftract_core::layout::wordlist::EN_WORDLIST_20K;
+///
+/// assert!(EN_WORDLIST_20K.contains("the"));
+/// assert!(EN_WORDLIST_20K.contains("computer"));
+/// assert!(!EN_WORDLIST_20K.contains("xyzqwerty"));
+/// ```
+pub static EN_WORDLIST_20K: phf::Set<&'static str> = {};
+"#,
+        words.len(),
+        set_builder.build()
+    );
+
+    fs::write(Path::new(out_dir).join("wordlist.rs"), rust_code)
+        .expect("Failed to write wordlist.rs");
+}
+
