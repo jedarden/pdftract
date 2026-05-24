@@ -27,8 +27,10 @@ pub use fingerprint::{lookup_font_fingerprint, CachedFingerprint, FontFingerprin
 pub use predefined_cmap::{
     from_name as predefined_cmap_from_name, CharacterCollection, PredefinedCMap,
 };
-pub use resolver::{resolve_unicode, Font, FontId, ResolvedGlyph, ResolverCache, UnicodeSource};
-pub use shape::{hamming_distance, phash_glyph};
+pub use resolver::{
+    resolve_type3, resolve_unicode, Font, FontId, ResolvedGlyph, ResolverCache, UnicodeSource,
+};
+pub use shape::{hamming_distance, lookup_shape, phash_glyph, ShapeEntry, ShapeMatch};
 pub use type0::{CIDToGIDMap, DescendantCIDFont, Type0Font};
 pub use type3::Type3Font;
 

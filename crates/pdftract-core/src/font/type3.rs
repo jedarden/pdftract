@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use dashmap::DashMap;
 
-use crate::diagnostics::{Diagnostic, DiagCode};
+use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::font::encoding::FontEncoding;
 use crate::graphics_state::Matrix3x3;
 use crate::parser::object::types::{ObjRef, PdfDict, PdfObject};
@@ -161,14 +161,20 @@ impl Type3Font {
                 PdfObject::Stream(_) => {
                     diagnostics.push(Diagnostic::with_dynamic_no_offset(
                         DiagCode::FontParseFailed,
-                        format!("/CharProcs entry '{}' is direct stream, not reference; skipping", glyph_name),
+                        format!(
+                            "/CharProcs entry '{}' is direct stream, not reference; skipping",
+                            glyph_name
+                        ),
                     ));
                     continue;
                 }
                 _ => {
                     diagnostics.push(Diagnostic::with_dynamic_no_offset(
                         DiagCode::FontParseFailed,
-                        format!("/CharProcs entry '{}' is not a stream reference; skipping", glyph_name),
+                        format!(
+                            "/CharProcs entry '{}' is not a stream reference; skipping",
+                            glyph_name
+                        ),
                     ));
                     continue;
                 }
@@ -183,10 +189,7 @@ impl Type3Font {
     /// Load /FirstChar and /LastChar.
     ///
     /// Defaults to (0, 0) if missing.
-    fn load_char_range(
-        font_dict: &PdfDict,
-        _diagnostics: &mut Vec<Diagnostic>,
-    ) -> (u8, u8) {
+    fn load_char_range(font_dict: &PdfDict, _diagnostics: &mut Vec<Diagnostic>) -> (u8, u8) {
         let first_char = font_dict
             .get("/FirstChar")
             .and_then(|obj| obj.as_int())
@@ -215,7 +218,9 @@ impl Type3Font {
         diagnostics: &mut Vec<Diagnostic>,
     ) -> Vec<f64> {
         let expected_len = if last_char >= first_char {
-            (last_char - first_char + 1) as usize
+            // Cast to usize before arithmetic to avoid overflow
+            // when last_char = 255 and first_char = 0
+            (last_char as usize - first_char as usize + 1)
         } else {
             0
         };
@@ -282,10 +287,7 @@ impl Type3Font {
     /// Load /FontMatrix.
     ///
     /// Defaults to `[0.001 0 0 0.001 0 0]` if missing (the Type 3 default per spec).
-    fn load_font_matrix(
-        font_dict: &PdfDict,
-        _diagnostics: &mut Vec<Diagnostic>,
-    ) -> Matrix3x3 {
+    fn load_font_matrix(font_dict: &PdfDict, _diagnostics: &mut Vec<Diagnostic>) -> Matrix3x3 {
         let default_matrix = Matrix3x3::from_pdf_array([0.001, 0.0, 0.0, 0.001, 0.0, 0.0]);
 
         let matrix_obj = match font_dict.get("/FontMatrix") {
@@ -305,7 +307,10 @@ impl Type3Font {
             if i >= 6 {
                 break;
             }
-            values[i] = elem.as_real().or(elem.as_int().map(|i| i as f64)).unwrap_or(0.0);
+            values[i] = elem
+                .as_real()
+                .or(elem.as_int().map(|i| i as f64))
+                .unwrap_or(0.0);
         }
 
         Matrix3x3::from_pdf_array(values)
@@ -365,7 +370,9 @@ impl Type3Font {
     ///
     /// Returns None if the glyph is not in the cache.
     pub fn get_cached_bitmap(&self, glyph_name: &str) -> Option<[u8; 1024]> {
-        self.raster_cache.get(glyph_name).map(|entry| *entry.value())
+        self.raster_cache
+            .get(glyph_name)
+            .map(|entry| *entry.value())
     }
 
     /// Cache a rasterized bitmap for a glyph.
@@ -420,17 +427,14 @@ mod tests {
     fn test_type3_with_char_procs() {
         // Create /CharProcs dictionary
         let mut char_procs_dict = PdfDict::new();
-        char_procs_dict.insert(
-            intern("/A"),
-            PdfObject::Ref(ObjRef::new(10, 0)),
-        );
-        char_procs_dict.insert(
-            intern("/B"),
-            PdfObject::Ref(ObjRef::new(11, 0)),
-        );
+        char_procs_dict.insert(intern("/A"), PdfObject::Ref(ObjRef::new(10, 0)));
+        char_procs_dict.insert(intern("/B"), PdfObject::Ref(ObjRef::new(11, 0)));
 
         let mut font_dict = PdfDict::new();
-        font_dict.insert(intern("/CharProcs"), PdfObject::Dict(Box::new(char_procs_dict)));
+        font_dict.insert(
+            intern("/CharProcs"),
+            PdfObject::Dict(Box::new(char_procs_dict)),
+        );
         font_dict.insert(intern("/FirstChar"), PdfObject::Integer(0));
         font_dict.insert(intern("/LastChar"), PdfObject::Integer(1));
         font_dict.insert(
@@ -462,7 +466,7 @@ mod tests {
         font_dict.insert(
             intern("/Widths"),
             PdfObject::Array(Box::new(vec![
-                PdfObject::Integer(500), // code 32
+                PdfObject::Integer(500),  // code 32
                 PdfObject::Integer(1000), // code 33
             ])),
         );
@@ -547,7 +551,10 @@ mod tests {
         assert_eq!(font.widths[4], 0.0); // Padded
         assert_eq!(font.widths[5], 0.0); // Padded
 
-        assert!(font.diagnostics.iter().any(|d| d.code == DiagCode::FontType3WidthsLengthMismatch));
+        assert!(font
+            .diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::FontType3WidthsLengthMismatch));
     }
 
     #[test]
@@ -580,7 +587,10 @@ mod tests {
         assert_eq!(font.widths[1], 600.0);
         assert_eq!(font.widths[2], 700.0);
 
-        assert!(font.diagnostics.iter().any(|d| d.code == DiagCode::FontType3WidthsLengthMismatch));
+        assert!(font
+            .diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::FontType3WidthsLengthMismatch));
     }
 
     #[test]
@@ -596,7 +606,10 @@ mod tests {
         assert_eq!(font.widths.len(), 6);
         assert!(font.widths.iter().all(|&w| w == 0.0));
 
-        assert!(font.diagnostics.iter().any(|d| d.code == DiagCode::FontParseFailed));
+        assert!(font
+            .diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::FontParseFailed));
     }
 
     #[test]
@@ -610,7 +623,10 @@ mod tests {
 
         // Should have empty char_procs
         assert_eq!(font.glyph_count(), 0);
-        assert!(font.diagnostics.iter().any(|d| d.code == DiagCode::FontParseFailed));
+        assert!(font
+            .diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::FontParseFailed));
     }
 
     #[test]
@@ -662,17 +678,17 @@ mod tests {
     fn test_arbitrary_glyph_names() {
         // Type3 fonts can have arbitrary glyph names
         let mut char_procs_dict = PdfDict::new();
-        char_procs_dict.insert(
-            intern("/CustomGlyph1"),
-            PdfObject::Ref(ObjRef::new(10, 0)),
-        );
+        char_procs_dict.insert(intern("/CustomGlyph1"), PdfObject::Ref(ObjRef::new(10, 0)));
         char_procs_dict.insert(
             intern("/MySpecialGlyph"),
             PdfObject::Ref(ObjRef::new(11, 0)),
         );
 
         let mut font_dict = PdfDict::new();
-        font_dict.insert(intern("/CharProcs"), PdfObject::Dict(Box::new(char_procs_dict)));
+        font_dict.insert(
+            intern("/CharProcs"),
+            PdfObject::Dict(Box::new(char_procs_dict)),
+        );
         font_dict.insert(intern("/FirstChar"), PdfObject::Integer(0));
         font_dict.insert(intern("/LastChar"), PdfObject::Integer(0));
 
@@ -695,6 +711,9 @@ mod tests {
 
         let font = Type3Font::load(&font_dict);
 
-        assert_eq!(font.encoding.base_encoding(), Some(crate::font::encoding::NamedEncoding::WinAnsi));
+        assert_eq!(
+            font.encoding.base_encoding(),
+            Some(crate::font::encoding::NamedEncoding::WinAnsi)
+        );
     }
 }

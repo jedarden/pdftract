@@ -10,17 +10,20 @@
 //! The resolver maintains a per-font LRU cache of resolved glyphs and emits
 //! the GLYPH_UNMAPPED diagnostic exactly once per (font, code) miss.
 
-use std::sync::Arc;
 use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 use dashmap::DashMap;
 use smallvec::SmallVec;
 
-use crate::diagnostics::{Diagnostic, DiagCode};
+use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::font::agl::{unicode_for_glyph_name, unicode_for_glyph_name_multi};
 use crate::font::cmap::ToUnicodeMap;
 use crate::font::encoding::FontEncoding;
 use crate::font::fingerprint::CachedFingerprint;
+use crate::font::shape::{lookup_shape, phash_glyph};
+use crate::font::type3::Type3Font;
+use crate::font::type3_rasterizer::rasterize_type3_glyph;
 
 /// A loaded PDF font with encoding resolution capabilities.
 ///
@@ -464,6 +467,203 @@ fn resolve_level4(
     ResolvedGlyph::failure()
 }
 
+/// Resolve a Type 3 font character code to Unicode using the Type 3-specific chain.
+///
+/// Type 3 fonts use a modified fallback chain:
+/// - Level 1: ToUnicode CMap (same as regular fonts)
+/// - Level 2: Encoding + AGL (same as regular fonts)
+/// - Level 3: SKIPPED (Type 3 fonts have no embedded program)
+/// - Level 4: Shape recognition (rasterize glyph + pHash + shape DB lookup)
+///
+/// # Arguments
+///
+/// * `font` - The Type3 font containing the glyph
+/// * `to_unicode` - Optional ToUnicode CMap (Level 1)
+/// * `char_code` - Character code (single byte for Type 3)
+/// * `diagnostics` - Diagnostics list for emitting GLYPH_UNMAPPED
+///
+/// # Returns
+///
+/// A `ResolvedGlyph` containing the mapped characters, source, and confidence.
+///
+/// # Type 3 Resolution Chain
+///
+/// 1. **Level 1 (ToUnicode)**: Try the `/ToUnicode` CMap if present.
+///    If found and non-empty, return with confidence 1.0.
+///
+/// 2. **Level 2 (AGL)**: Try `/Encoding` → glyph name → AGL lookup.
+///    If found, return with confidence 0.9.
+///
+/// 3. **Level 3 (SKIPPED)**: Type 3 fonts have no embedded font program,
+///    so fingerprint-based lookup is not applicable.
+///
+/// 4. **Level 4 (Shape)**: Rasterize the glyph content stream to a 32×32 bitmap,
+///    compute pHash, and look up in the shape database. Returns with confidence 0.7
+///    if a match is found (Hamming distance ≤ 8).
+///
+/// 5. **Failure**: If all levels fail, return U+FFFD with confidence 0.0
+///    and emit TYPE3_GLYPH_UNMAPPED diagnostic.
+///
+/// # Special Cases
+///
+/// - Arbitrary glyph names: If Level 2 returns a glyph name that's not in AGL,
+///   escalate to Level 4 (shape recognition).
+/// - Missing glyph in /CharProcs: Escalate to Level 4 with a warning diagnostic.
+/// - No ToUnicode and no Encoding: Skip directly to Level 4.
+pub fn resolve_type3(
+    font: &Type3Font,
+    to_unicode: Option<&ToUnicodeMap>,
+    char_code: u8,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> ResolvedGlyph {
+    // Level 1: ToUnicode CMap
+    let char_code_slice = [char_code];
+    let result = resolve_level1(&char_code_slice, to_unicode);
+
+    if !result.is_failure() {
+        return result;
+    }
+
+    // Level 2: Encoding + AGL
+    let encoding = &font.encoding;
+    let result = resolve_level2(&char_code_slice, Some(encoding));
+
+    if !result.is_failure() {
+        return result;
+    }
+
+    // Check if we have a glyph name from encoding that's not in AGL
+    // This is the heuristic for "arbitrary glyph name" that requires L4
+    let glyph_name_for_l4 = encoding.glyph_name_for(char_code);
+
+    // Level 3: SKIPPED for Type 3 fonts (no embedded program)
+    // Per the plan: "Type 3 fonts have no embedded program; L3 fingerprinting not applicable"
+
+    // Level 4: Shape recognition
+    #[cfg(feature = "shape-db")]
+    {
+        let result = resolve_type3_level4(font, char_code, glyph_name_for_l4, diagnostics);
+        if !result.is_failure() {
+            return result;
+        }
+
+        // All levels failed
+        diagnostics.push(Diagnostic::with_dynamic_no_offset(
+            DiagCode::FontGlyphUnmapped,
+            format!(
+                "Type3 font: character code 0x{:02X} could not be resolved to Unicode",
+                char_code
+            ),
+        ));
+        ResolvedGlyph::failure()
+    }
+    #[cfg(not(feature = "shape-db"))]
+    {
+        // Level 4 not available, emit miss and return failure
+        diagnostics.push(Diagnostic::with_dynamic_no_offset(
+            DiagCode::FontGlyphUnmapped,
+            format!(
+                "Type3 font: character code 0x{:02X} could not be resolved (shape recognition disabled)",
+                char_code
+            ),
+        ));
+        ResolvedGlyph::failure()
+    }
+}
+
+/// Level 4 shape recognition for Type 3 fonts.
+///
+/// Rasterizes the glyph content stream to a 32×32 bitmap, computes pHash,
+/// and looks up the shape in the database.
+///
+/// # Arguments
+///
+/// * `font` - The Type3 font containing the glyph
+/// * `char_code` - Character code (single byte)
+/// * `glyph_name` - Optional glyph name from encoding (for diagnostics)
+/// * `diagnostics` - Diagnostics list
+///
+/// # Returns
+///
+/// A `ResolvedGlyph` with confidence 0.7 if a shape match is found,
+/// otherwise a failure result.
+#[cfg(feature = "shape-db")]
+fn resolve_type3_level4(
+    font: &Type3Font,
+    char_code: u8,
+    glyph_name: Option<Arc<str>>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> ResolvedGlyph {
+    // Get the glyph name from encoding if we don't have it
+    let glyph_name = match glyph_name {
+        Some(name) => name,
+        None => match font.encoding.glyph_name_for(char_code) {
+            Some(name) => name,
+            None => {
+                // No glyph name available - can't rasterize
+                diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                    DiagCode::FontGlyphUnmapped,
+                    format!(
+                        "Type3 font: character code 0x{:02X} has no glyph name in encoding",
+                        char_code
+                    ),
+                ));
+                return ResolvedGlyph::failure();
+            }
+        },
+    };
+
+    // Check if glyph exists in /CharProcs
+    if !font.has_glyph(&glyph_name) {
+        diagnostics.push(Diagnostic::with_dynamic_no_offset(
+            DiagCode::FontGlyphUnmapped,
+            format!(
+                "Type3 font: glyph '{}' not found in /CharProcs for code 0x{:02X}",
+                glyph_name, char_code
+            ),
+        ));
+        return ResolvedGlyph::failure();
+    }
+
+    // Rasterize the glyph to a 32×32 bitmap
+    let bitmap = match rasterize_type3_glyph(font, &glyph_name) {
+        Some(bm) => bm,
+        None => {
+            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                DiagCode::FontGlyphUnmapped,
+                format!(
+                    "Type3 font: failed to rasterize glyph '{}' for code 0x{:02X}",
+                    glyph_name, char_code
+                ),
+            ));
+            return ResolvedGlyph::failure();
+        }
+    };
+
+    // Compute pHash
+    let phash = phash_glyph(&bitmap);
+
+    // Look up in shape database
+    match lookup_shape(phash) {
+        Some(matched) if matched.is_acceptable() => ResolvedGlyph::new(
+            SmallVec::from_slice(&[matched.ch]),
+            UnicodeSource::ShapeMatch,
+        ),
+        Some(matched) => {
+            // Match found but outside threshold - emit diagnostic and fall through
+            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                DiagCode::FontGlyphUnmapped,
+                format!(
+                    "Type3 font: shape match for '{}' (code 0x{:02X}) found but distance {} exceeds threshold",
+                    glyph_name, char_code, matched.distance
+                ),
+            ));
+            ResolvedGlyph::failure()
+        }
+        None => ResolvedGlyph::failure(),
+    }
+}
+
 /// Emit the GLYPH_UNMAPPED diagnostic exactly once per (font, code) miss.
 fn emit_miss_diagnostic(
     font_id: FontId,
@@ -477,10 +677,7 @@ fn emit_miss_diagnostic(
     }
 
     // Format char_code as hex string
-    let hex_string: String = char_code
-        .iter()
-        .map(|b| format!("{:02X}", b))
-        .collect();
+    let hex_string: String = char_code.iter().map(|b| format!("{:02X}", b)).collect();
 
     let message = format!(
         "Character code {} could not be resolved to Unicode (font ID: {:?})",
@@ -553,7 +750,10 @@ mod tests {
         cache.insert(font_id, &char_code, &result);
         let cached = cache.get(font_id, &char_code);
         assert!(cached.is_some());
-        assert_eq!(cached.unwrap().chars, SmallVec::<[char; 4]>::from_slice(&['A']));
+        assert_eq!(
+            cached.unwrap().chars,
+            SmallVec::<[char; 4]>::from_slice(&['A'])
+        );
     }
 
     #[test]
@@ -768,5 +968,112 @@ mod tests {
         let result = resolve_unicode(&font, &[0x41], None, &mut diagnostics);
 
         assert!(result.is_failure());
+    }
+
+    #[test]
+    fn test_resolve_type3_with_tounicode() {
+        // Type 3 font with ToUnicode mapping code 0x41 -> 'A'
+        let mut diagnostics = Vec::new();
+        let mut font_dict = crate::parser::object::types::PdfDict::new();
+        font_dict.insert(
+            crate::parser::object::types::intern("/Subtype"),
+            crate::parser::object::types::PdfObject::Name(crate::parser::object::types::intern(
+                "/Type3",
+            )),
+        );
+        font_dict.insert(
+            crate::parser::object::types::intern("/FirstChar"),
+            crate::parser::object::types::PdfObject::Integer(0),
+        );
+        font_dict.insert(
+            crate::parser::object::types::intern("/LastChar"),
+            crate::parser::object::types::PdfObject::Integer(255),
+        );
+
+        let font = Type3Font::load(&font_dict);
+
+        // Create ToUnicode CMap with 0x41 -> 'A'
+        let cmap_data = b"beginbfchar 1 <41> <0041> endbfchar";
+        let cmap = parse_to_unicode(cmap_data);
+
+        let result = resolve_type3(&font, Some(&cmap), 0x41, &mut diagnostics);
+
+        assert!(!result.is_failure());
+        assert_eq!(result.chars.as_slice(), ['A']);
+        assert_eq!(result.source, UnicodeSource::ToUnicode);
+        assert_eq!(result.confidence, 1.0);
+        assert!(diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_resolve_type3_with_agl() {
+        // Type 3 font with standard glyph name 'A' via Encoding, no ToUnicode
+        let mut diagnostics = Vec::new();
+        let mut font_dict = crate::parser::object::types::PdfDict::new();
+        font_dict.insert(
+            crate::parser::object::types::intern("/Subtype"),
+            crate::parser::object::types::PdfObject::Name(crate::parser::object::types::intern(
+                "/Type3",
+            )),
+        );
+        font_dict.insert(
+            crate::parser::object::types::intern("/Encoding"),
+            crate::parser::object::types::PdfObject::Name(crate::parser::object::types::intern(
+                "/WinAnsiEncoding",
+            )),
+        );
+        font_dict.insert(
+            crate::parser::object::types::intern("/FirstChar"),
+            crate::parser::object::types::PdfObject::Integer(0),
+        );
+        font_dict.insert(
+            crate::parser::object::types::intern("/LastChar"),
+            crate::parser::object::types::PdfObject::Integer(255),
+        );
+
+        let font = Type3Font::load(&font_dict);
+
+        // No ToUnicode, use encoding + AGL
+        let result = resolve_type3(&font, None, 0x41, &mut diagnostics);
+
+        // 0x41 in WinAnsi is 'A' which maps to 'A' via AGL
+        assert!(!result.is_failure());
+        assert_eq!(result.chars.as_slice(), ['A']);
+        assert_eq!(result.source, UnicodeSource::Agl);
+        assert_eq!(result.confidence, 0.9);
+    }
+
+    #[test]
+    fn test_resolve_type3_fallback_to_fffd() {
+        // Type 3 font with arbitrary glyph name and no ToUnicode
+        // Should fall through all levels and return U+FFFD
+        let mut diagnostics = Vec::new();
+        let mut font_dict = crate::parser::object::types::PdfDict::new();
+        font_dict.insert(
+            crate::parser::object::types::intern("/Subtype"),
+            crate::parser::object::types::PdfObject::Name(crate::parser::object::types::intern(
+                "/Type3",
+            )),
+        );
+        font_dict.insert(
+            crate::parser::object::types::intern("/FirstChar"),
+            crate::parser::object::types::PdfObject::Integer(0),
+        );
+        font_dict.insert(
+            crate::parser::object::types::intern("/LastChar"),
+            crate::parser::object::types::PdfObject::Integer(255),
+        );
+
+        let font = Type3Font::load(&font_dict);
+
+        // No ToUnicode, encoding has no glyph for 0x41, no /CharProcs
+        let result = resolve_type3(&font, None, 0x41, &mut diagnostics);
+
+        assert!(result.is_failure());
+        assert_eq!(result.chars.as_slice(), ['\u{FFFD}']);
+        assert_eq!(result.source, UnicodeSource::Unknown);
+        assert_eq!(result.confidence, 0.0);
+        // Should have emitted diagnostic
+        assert!(!diagnostics.is_empty());
     }
 }

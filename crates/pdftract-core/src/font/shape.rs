@@ -1,8 +1,7 @@
 //! Perceptual hash (pHash) implementation for glyph shape recognition.
 //!
-//! This module implements the pHash algorithm for comparing glyph shapes.
-//! It produces a 64-bit hash that is robust to minor rendering differences
-//! between fonts of the same character.
+//! This module implements the pHash algorithm for comparing glyph shapes
+//! and looking up glyphs in the shape database.
 //!
 //! # Algorithm
 //!
@@ -25,6 +24,48 @@
 //! - Plan section: Phase 2.5 Glyph Shape Database (line 1420)
 
 use std::f32;
+
+/// Shape database entry with pHash and associated character.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShapeEntry {
+    /// Perceptual hash of the glyph shape
+    pub phash: u64,
+    /// Unicode character this shape represents
+    pub ch: char,
+}
+
+impl ShapeEntry {
+    /// Create a new shape entry.
+    pub const fn new(phash: u64, ch: char) -> Self {
+        Self { phash, ch }
+    }
+}
+
+/// Result of a shape database lookup.
+///
+/// Contains the matched character and the Hamming distance
+/// between the query hash and the matched entry.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ShapeMatch {
+    /// The matched Unicode character
+    pub ch: char,
+    /// Hamming distance between query and match (0-64)
+    pub distance: u32,
+}
+
+impl ShapeMatch {
+    /// Create a new shape match result.
+    pub fn new(ch: char, distance: u32) -> Self {
+        Self { ch, distance }
+    }
+
+    /// Check if this match is within the acceptable threshold.
+    ///
+    /// Per the plan, Hamming distance ≤ 8 indicates a similar shape.
+    pub fn is_acceptable(&self) -> bool {
+        self.distance <= 8
+    }
+}
 
 /// DCT size: 32×32 input bitmap
 const DCT_SIZE: usize = 32;
@@ -217,6 +258,83 @@ pub fn hamming_distance(a: u64, b: u64) -> u32 {
     (a ^ b).count_ones()
 }
 
+/// Look up a glyph shape in the shape database by perceptual hash.
+///
+/// This function performs a linear scan over the shape database to find
+/// the closest matching glyph shape. The database is a compile-time sorted
+/// slice of (pHash, char) pairs.
+///
+/// # Algorithm
+///
+/// 1. Scan all entries in the database
+/// 2. Compute Hamming distance for each entry
+/// 3. Collect entries with distance ≤ 8
+/// 4. Return the entry with minimum distance
+/// 5. If no entry within threshold, return None
+///
+/// # Arguments
+///
+/// * `query_hash` - The pHash of the glyph to look up
+///
+/// # Returns
+///
+/// `Some(ShapeMatch)` if a match is found within the Hamming threshold,
+/// `None` otherwise.
+///
+/// # Performance
+///
+/// Per the plan: ~5,000 entries × ~8 ns per XOR+popcount ≈ 40 µs worst-case.
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::font::shape::lookup_shape;
+///
+/// // Look up a glyph by its pHash
+/// if let Some(matched) = lookup_shape(0x1234567890ABCDEF) {
+///     if matched.is_acceptable() {
+///         println!("Matched char: {} (distance: {})", matched.ch, matched.distance);
+///     }
+/// }
+/// ```
+pub fn lookup_shape(query_hash: u64) -> Option<ShapeMatch> {
+    // Get the shape database from the build-generated module
+    let db = shape_database();
+
+    // Linear scan: find all entries within Hamming threshold
+    let mut best_match: Option<ShapeMatch> = None;
+    let mut best_distance = u32::MAX;
+
+    for entry in db.iter() {
+        let distance = hamming_distance(query_hash, entry.phash);
+
+        // Only consider matches within the threshold
+        if distance <= 8 {
+            // Update best match if this is closer
+            if distance < best_distance {
+                best_distance = distance;
+                best_match = Some(ShapeMatch::new(entry.ch, distance));
+
+                // Distance 0 is perfect match, can't do better
+                if distance == 0 {
+                    break;
+                }
+            }
+        }
+    }
+
+    best_match
+}
+
+/// Get the shape database slice.
+///
+/// Returns a slice of (pHash, char) entries sorted by pHash.
+/// This is a stub that returns an empty slice; the actual database
+/// will be generated from build/glyph-shapes.json in a future bead.
+fn shape_database() -> &'static [ShapeEntry] {
+    &[]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -362,5 +480,38 @@ mod tests {
             hash1, hash2,
             "Different shapes should produce different hashes"
         );
+    }
+
+    #[test]
+    fn test_shape_entry_new() {
+        let entry = ShapeEntry::new(0x1234567890ABCDEF, 'A');
+        assert_eq!(entry.phash, 0x1234567890ABCDEF);
+        assert_eq!(entry.ch, 'A');
+    }
+
+    #[test]
+    fn test_shape_match_new() {
+        let matched = ShapeMatch::new('X', 5);
+        assert_eq!(matched.ch, 'X');
+        assert_eq!(matched.distance, 5);
+    }
+
+    #[test]
+    fn test_shape_match_is_acceptable() {
+        // Distance ≤ 8 is acceptable
+        assert!(ShapeMatch::new('A', 0).is_acceptable());
+        assert!(ShapeMatch::new('A', 5).is_acceptable());
+        assert!(ShapeMatch::new('A', 8).is_acceptable());
+
+        // Distance > 8 is not acceptable
+        assert!(!ShapeMatch::new('A', 9).is_acceptable());
+        assert!(!ShapeMatch::new('A', 12).is_acceptable());
+        assert!(!ShapeMatch::new('A', 64).is_acceptable());
+    }
+
+    #[test]
+    fn test_lookup_shape_empty_database() {
+        // With empty database, should return None
+        assert_eq!(lookup_shape(0x1234567890ABCDEF), None);
     }
 }
