@@ -9,6 +9,7 @@
 //! - data-confidence: the confidence score (0.0-1.0)
 //! - data-font: the font name
 //! - data-size: the font size in points
+//! - data-span-index: the span's index in the page (for JSON-tree navigation)
 
 use pdftract_core::schema::SpanJson;
 
@@ -37,8 +38,9 @@ use pdftract_core::schema::SpanJson;
 /// - `data-confidence`: confidence score or empty string
 /// - `data-font`: font name (XML-escaped)
 /// - `data-size`: font size in points
+/// - `data-span-index`: the span's index in the page (for JSON-tree navigation)
 pub fn render_spans(spans: &[SpanJson]) -> Vec<String> {
-    spans.iter().map(|span| {
+    spans.iter().enumerate().map(|(index, span)| {
         let [x0, y0, x1, y1] = span.bbox;
         let width = x1 - x0;
         let height = y1 - y0;
@@ -49,8 +51,8 @@ pub fn render_spans(spans: &[SpanJson]) -> Vec<String> {
         let data_confidence = escape_xml_attr(&confidence_str);
 
         format!(
-            r#"<rect x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" fill="none" stroke="{}" stroke-width="1" class="span-rect" data-text="{}" data-confidence="{}" data-font="{}" data-size="{}" />"#,
-            x0, y0, width, height, stroke, data_text, data_confidence, data_font, span.size
+            r#"<rect x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" fill="none" stroke="{}" stroke-width="1" class="span-rect" data-text="{}" data-confidence="{}" data-font="{}" data-size="{}" data-span-index="{}" />"#,
+            x0, y0, width, height, stroke, data_text, data_confidence, data_font, span.size, index
         )
     }).collect()
 }
@@ -141,6 +143,7 @@ mod tests {
         assert!(rect.contains(r#"data-font="Helvetica""#));
         assert!(rect.contains(r#"data-size="12""#));
         assert!(rect.contains(r#"data-confidence="""#)); // empty string for None
+        assert!(rect.contains(r#"data-span-index="0""#));
     }
 
     #[test]
@@ -199,6 +202,45 @@ mod tests {
         assert!(rect.contains("data-font=\"Times &quot;Roman&quot;\""));
         assert!(rect.contains("data-confidence=\"0.85\""));
         assert!(rect.contains("data-size=\"14\""));
+        assert!(rect.contains("data-span-index=\"0\""));
+    }
+
+    #[test]
+    fn test_render_spans_span_index() {
+        let spans = vec![
+            SpanJson {
+                text: "First".to_string(),
+                bbox: [0.0, 0.0, 50.0, 10.0],
+                font: "Arial".to_string(),
+                size: 10.0,
+                confidence: None,
+                receipt: None,
+            },
+            SpanJson {
+                text: "Second".to_string(),
+                bbox: [60.0, 0.0, 120.0, 10.0],
+                font: "Arial".to_string(),
+                size: 10.0,
+                confidence: None,
+                receipt: None,
+            },
+            SpanJson {
+                text: "Third".to_string(),
+                bbox: [130.0, 0.0, 180.0, 10.0],
+                font: "Arial".to_string(),
+                size: 10.0,
+                confidence: None,
+                receipt: None,
+            },
+        ];
+
+        let output = render_spans(&spans);
+        assert_eq!(output.len(), 3);
+
+        // Check that each span has the correct index
+        assert!(output[0].contains("data-span-index=\"0\""));
+        assert!(output[1].contains("data-span-index=\"1\""));
+        assert!(output[2].contains("data-span-index=\"2\""));
     }
 
     #[test]

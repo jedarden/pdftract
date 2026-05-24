@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inspector JSON-Tree Click Navigation Demo</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Left panel: SVG canvas */
+        #canvas {
+            flex: 1;
+            background: #f5f5f5;
+            position: relative;
+            overflow: auto;
+            padding: 20px;
+        }
+
+        #canvas svg {
+            background: white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        /* Span rectangles - clickable */
+        .span-rect {
+            cursor: pointer;
+            transition: stroke-width 0.1s;
+        }
+
+        .span-rect:hover {
+            stroke-width: 2 !important;
+        }
+
+        /* Right panel: JSON tree */
+        #json-tree {
+            width: 400px;
+            background: white;
+            border-left: 1px solid #ddd;
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        #json-tree h2 {
+            font-size: 16px;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #eee;
+        }
+
+        /* JSON tree styling */
+        details {
+            margin-left: 16px;
+            margin-bottom: 4px;
+        }
+
+        summary {
+            cursor: pointer;
+            font-size: 13px;
+            padding: 2px 4px;
+            border-radius: 2px;
+        }
+
+        summary:hover {
+            background: #f0f0f0;
+        }
+
+        .span-entry {
+            padding: 4px 8px;
+            margin: 2px 0;
+            border-radius: 3px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .span-entry:hover {
+            background: #f0f0f0;
+        }
+
+        /* Highlighted class for click navigation */
+        .highlighted {
+            background: #ffff99 !important;
+            animation: highlight-pulse 0.5s ease-out;
+        }
+
+        @keyframes highlight-pulse {
+            0% { background: #ffff00; }
+            100% { background: #ffff99; }
+        }
+
+        /* Collapsed state for tree panel */
+        .collapsed #json-tree {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- Left panel: SVG canvas with spans -->
+    <div id="canvas">
+        <svg width="600" height="400" viewBox="0 0 600 400">
+            <!-- Sample spans with data-span-index attributes -->
+            <rect x="50" y="50" width="100" height="20" fill="none" stroke="#22c55e" stroke-width="1"
+                  class="span-rect" data-text="Hello World" data-confidence="0.95" data-span-index="0" />
+            <rect x="50" y="80" width="80" height="20" fill="none" stroke="#22c55e" stroke-width="1"
+                  class="span-rect" data-text="Foo Bar" data-confidence="0.88" data-span-index="1" />
+            <rect x="50" y="110" width="120" height="20" fill="none" stroke="#eab308" stroke-width="1"
+                  class="span-rect" data-text="Low Confidence" data-confidence="0.65" data-span-index="2" />
+            <rect x="50" y="140" width="90" height="20" fill="none" stroke="#ef4444" stroke-width="1"
+                  class="span-rect" data-text="Very Low" data-confidence="0.3" data-span-index="3" />
+            <rect x="50" y="170" width="110" height="20" fill="none" stroke="#94a3b8" stroke-width="1"
+                  class="span-rect" data-text="Direct Extract" data-confidence="" data-span-index="4" />
+        </svg>
+    </div>
+
+    <!-- Right panel: JSON tree -->
+    <div id="json-tree">
+        <h2>Page JSON Tree</h2>
+        <div id="tree-content"></div>
+    </div>
+
+    <script>
+        // Sample page data (normally from /api/page/{i})
+        const pageData = {
+            page_index: 0,
+            width: 600,
+            height: 400,
+            spans: [
+                { text: "Hello World", bbox: [50, 50, 150, 70], confidence: 0.95, font: "Arial", size: 12 },
+                { text: "Foo Bar", bbox: [50, 80, 130, 100], confidence: 0.88, font: "Arial", size: 12 },
+                { text: "Low Confidence", bbox: [50, 110, 170, 130], confidence: 0.65, font: "Arial", size: 12 },
+                { text: "Very Low", bbox: [50, 140, 140, 160], confidence: 0.3, font: "Arial", size: 12 },
+                { text: "Direct Extract", bbox: [50, 170, 160, 190], confidence: null, font: "Arial", size: 12 }
+            ]
+        };
+
+        // Build JSON tree once on page load
+        function buildJsonTree(data, container) {
+            const root = document.createElement('div');
+
+            // Page metadata
+            const pageDetails = document.createElement('details');
+            pageDetails.open = true;
+            pageDetails.innerHTML = `
+                <summary>page (index: ${data.page_index})</summary>
+            `;
+            root.appendChild(pageDetails);
+
+            const pageContent = document.createElement('div');
+            pageDetails.appendChild(pageContent);
+
+            // Width/height
+            pageContent.innerHTML += `
+                <details style="margin-left: 16px;">
+                    <summary>width: ${data.width}</summary>
+                </details>
+                <details style="margin-left: 16px;">
+                    <summary>height: ${data.height}</summary>
+                </details>
+            `;
+
+            // Spans array
+            const spansDetails = document.createElement('details');
+            spansDetails.open = true;
+            spansDetails.innerHTML = `<summary>spans (${data.spans.length} items)</summary>`;
+            pageContent.appendChild(spansDetails);
+
+            const spansContent = document.createElement('div');
+            spansDetails.appendChild(spansContent);
+
+            // Each span entry
+            data.spans.forEach((span, index) => {
+                const spanEntry = document.createElement('div');
+                spanEntry.className = 'span-entry';
+                spanEntry.id = `span-${index}`;
+                spanEntry.setAttribute('data-span-index', index);
+
+                const confDisplay = span.confidence !== null
+                    ? `confidence: ${span.confidence.toFixed(2)}`
+                    : 'confidence: null';
+
+                spanEntry.innerHTML = `
+                    <span style="color: #666;">[${index}]</span>
+                    <strong>"${escapeHtml(span.text)}"</strong>
+                    <span style="color: #888; font-size: 11px;">${confDisplay}</span>
+                `;
+
+                spansContent.appendChild(spanEntry);
+            });
+
+            container.appendChild(root);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Click handler for span rectangles
+        function handleSpanClick(event) {
+            const rect = event.target;
+            const spanIndex = rect.getAttribute('data-span-index');
+
+            if (spanIndex === null) return;
+
+            // Locate the matching element in the JSON tree
+            const treeEntry = document.getElementById(`span-${spanIndex}`);
+            if (!treeEntry) return;
+
+            // Open all ancestor <details> elements
+            let parent = treeEntry.parentElement;
+            while (parent) {
+                if (parent.tagName === 'DETAILS') {
+                    parent.open = true;
+                }
+                parent = parent.parentElement;
+            }
+
+            // Scroll to the element
+            treeEntry.scrollIntoView({
+                behavior: 'smooth',
+                block: 'center'
+            });
+
+            // Add highlighted class
+            treeEntry.classList.add('highlighted');
+
+            // Remove after 2 seconds
+            setTimeout(() => {
+                treeEntry.classList.remove('highlighted');
+            }, 2000);
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            // Build JSON tree
+            const treeContainer = document.getElementById('tree-content');
+            buildJsonTree(pageData, treeContainer);
+
+            // Attach click handlers to all span rects
+            const spanRects = document.querySelectorAll('.span-rect');
+            spanRects.forEach(rect => {
+                rect.addEventListener('click', handleSpanClick);
+            });
+
+            // Make span entries also clickable (reverse navigation)
+            const spanEntries = document.querySelectorAll('.span-entry');
+            spanEntries.forEach((entry, index) => {
+                entry.addEventListener('click', () => {
+                    const rect = document.querySelector(`.span-rect[data-span-index="${index}"]`);
+                    if (rect) {
+                        rect.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        rect.style.strokeWidth = '3';
+                        setTimeout(() => {
+                            rect.style.strokeWidth = '1';
+                        }, 1000);
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>
