@@ -11,6 +11,8 @@ pub mod diagnostics;
 pub mod dpi;
 pub mod document;
 #[cfg(feature = "ocr")]
+pub mod ocr;
+#[cfg(feature = "ocr")]
 pub mod preprocess;
 pub mod extract;
 pub mod fingerprint;
@@ -44,5 +46,7 @@ pub use table::{TableDetector, PageContext as TablePageContext, GridCandidate};
 pub use dpi::{Pdf1Filter, FontSizeSpan, select_dpi};
 #[cfg(feature = "ocr")]
 pub use hybrid::{Span, SpanSource, compute_iou, merge_vector_and_ocr_spans, crop_cell_from_page, get_hybrid_cells, compute_cell_crops, CellCrop};
+#[cfg(feature = "ocr")]
+pub use ocr::{TessOpts, borrow_or_init, init_count, reset_init_count};
 #[cfg(feature = "ocr")]
 pub use preprocess::{ImageSource, add_border_padding, normalize_contrast, binarize_otsu, binarize_sauvola, denoise_median, preprocess, deskew};

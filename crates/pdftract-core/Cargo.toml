@@ -13,6 +13,7 @@ hex = "0.4"
 image = { version = "0.25", optional = true }
 leptonica-plumbing = { version = "1.4", optional = true }
 pdfium-render = { version = "0.9", optional = true }
+tesseract = { version = "0.15", optional = true }
 indexmap = "2.2"
 flate2 = { workspace = true }
 lzw = { workspace = true }

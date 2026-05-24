@@ -2354,6 +2354,7 @@ dependencies = [
  "sha2",
  "smallvec",
  "tempfile",
+ "tesseract",
  "thiserror 1.0.69",
  "tracing",
  "ttf-parser 0.24.1",
@@ -3541,6 +3542,40 @@ checksum = "21bebf2b7c9e0a515f6e0f8c51dc0f8e4696391e6f1ff30379559f8365fb0df7"
 dependencies = [
  "rustix 0.38.44",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "tesseract"
+version = "0.15.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "28e64963c0b5582cf02ed5d8b4798f8c48ea9812ed2b19ed653cb976e7daa351"
+dependencies = [
+ "tesseract-plumbing",
+ "tesseract-sys",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "tesseract-plumbing"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ed025d755abb7f5af8d16cd5663742a08c8ae7c4032c8bf4b70c51d412fe378"
+dependencies = [
+ "leptonica-plumbing",
+ "tesseract-sys",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "tesseract-sys"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e1297ece7aa841bd33a4f80046a6682c4e58fca0f8600e868d822359eef7bde"
+dependencies = [
+ "bindgen",
+ "leptonica-sys",
+ "pkg-config",
+ "vcpkg",
 ]
 
 [[package]]
