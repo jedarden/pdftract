@@ -16,6 +16,10 @@ test = true
 name = "generate_lzw_fixtures"
 path = "../../tests/fixtures/generate_lzw_fixtures_main.rs"
 
+[[bin]]
+name = "generate_preprocess_fixtures"
+path = "../../tests/fixtures/preprocess/generate_fixtures_main.rs"
+
 [lib]
 name = "pdftract_cli"
 path = "src/lib.rs"
@@ -34,6 +38,7 @@ clap = { version = "4.5", features = ["derive"] }
 dirs = "5.0"
 hyper = { version = "1.0", features = ["full"] }
 hyper-util = { version = "0.1", features = ["full"] }
+image = "0.24"
 http-body-util = "0.1"
 humantime = "2.1"
 libloading = { version = "0.8", optional = true }
@@ -103,3 +108,4 @@ serde_yaml = "0.9"
 jsonschema = "0.18"
 reqwest = { version = "0.12", features = ["blocking", "json", "rustls-tls"], default-features = false }
 schemars = { version = "0.8", features = ["derive"] }
+image = "0.24"
