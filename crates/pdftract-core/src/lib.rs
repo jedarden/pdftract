@@ -42,6 +42,7 @@ pub use render::pdfium_path::has_full_render;
 pub mod schema;
 pub mod semaphore;
 pub mod signature;
+pub mod span_flags;
 pub mod table;
 
 // Re-export key types for convenience
