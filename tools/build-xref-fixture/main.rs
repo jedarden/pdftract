@@ -4,7 +4,7 @@
 //! for testing the pdftract xref resolver.
 
 use std::fs::File;
-use std::io::{BufWriter, Write, Seek};
+use std::io::{BufWriter, Seek, Write};
 use std::path::PathBuf;
 use std::process;
 
@@ -83,17 +83,23 @@ impl Generator {
             }
             FixtureType::TruncatedAfterXref => {
                 // Start with well-formed, then truncate
-                let base_path = self.output_dir.join(FixtureType::WellFormedTraditional.name());
+                let base_path = self
+                    .output_dir
+                    .join(FixtureType::WellFormedTraditional.name());
                 self.generate_truncated(&base_path, &output_path);
             }
             FixtureType::StartxrefOffByOne => {
                 // Start with well-formed, then modify startxref
-                let base_path = self.output_dir.join(FixtureType::WellFormedTraditional.name());
+                let base_path = self
+                    .output_dir
+                    .join(FixtureType::WellFormedTraditional.name());
                 self.generate_startxref_off_by_one(&base_path, &output_path);
             }
             FixtureType::CorruptXrefEntry => {
                 // Start with well-formed, then corrupt one entry
-                let base_path = self.output_dir.join(FixtureType::WellFormedTraditional.name());
+                let base_path = self
+                    .output_dir
+                    .join(FixtureType::WellFormedTraditional.name());
                 self.generate_corrupt_entry(&base_path, &output_path);
             }
             FixtureType::CircularPrev => {
@@ -163,8 +169,8 @@ impl Generator {
         writeln!(w, "xref").unwrap();
         writeln!(w, "0 6").unwrap();
         writeln!(w, "0000000000 65535 f ").unwrap();
-        writeln!(w, "0000000017 00000 n ").unwrap();  // Object 1
-        writeln!(w, "0000000082 00000 n ").unwrap();  // Object 2
+        writeln!(w, "0000000017 00000 n ").unwrap(); // Object 1
+        writeln!(w, "0000000082 00000 n ").unwrap(); // Object 2
         writeln!(w, "0000000160 00000 n ").unwrap(); // Object 3
         writeln!(w, "0000000269 00000 n ").unwrap(); // Object 4
         writeln!(w, "0000000341 00000 n ").unwrap(); // Object 5
@@ -251,12 +257,12 @@ impl Generator {
         // Entry 5: type 1 (in-use), offset=348, gen=0
         let xref_data = [
             // Type=1 byte, Offset=4 bytes (big-endian), Gen=2 bytes (big-endian)
-            0u8, 0, 0, 0, 0, 255, 255,     // Entry 0: free
-            1, 0, 0, 0, 17, 0, 0,           // Entry 1: in-use at offset 17
-            1, 0, 0, 0, 82, 0, 0,           // Entry 2: in-use at offset 82
-            1, 0, 0, 0, 160, 0, 0,          // Entry 3: in-use at offset 160
-            1, 0, 0, 1, 13, 0, 0,           // Entry 4: in-use at offset 269
-            1, 0, 0, 1, 92, 0, 0,           // Entry 5: in-use at offset 348 (this stream itself)
+            0u8, 0, 0, 0, 0, 255, 255, // Entry 0: free
+            1, 0, 0, 0, 17, 0, 0, // Entry 1: in-use at offset 17
+            1, 0, 0, 0, 82, 0, 0, // Entry 2: in-use at offset 82
+            1, 0, 0, 0, 160, 0, 0, // Entry 3: in-use at offset 160
+            1, 0, 0, 1, 13, 0, 0, // Entry 4: in-use at offset 269
+            1, 0, 0, 1, 92, 0, 0, // Entry 5: in-use at offset 348 (this stream itself)
         ];
 
         w.write_all(&xref_data).unwrap();
@@ -326,13 +332,13 @@ impl Generator {
 
         // Xref stream data with one overlapping entry (object 6)
         let xref_data = [
-            0u8, 0, 0, 0, 0, 255, 255,     // Entry 0: free
-            0, 0, 0, 0, 0, 0, 0,            // Entry 1: free (overlaps traditional)
-            0, 0, 0, 0, 0, 0, 0,            // Entry 2: free
-            0, 0, 0, 0, 0, 0, 0,            // Entry 3: free
-            0, 0, 0, 0, 0, 0, 0,            // Entry 4: free
-            0, 0, 0, 0, 0, 0, 0,            // Entry 5: free
-            1, 0, 0, 1, 244, 0, 0,          // Entry 6: new object in stream only (offset 500)
+            0u8, 0, 0, 0, 0, 255, 255, // Entry 0: free
+            0, 0, 0, 0, 0, 0, 0, // Entry 1: free (overlaps traditional)
+            0, 0, 0, 0, 0, 0, 0, // Entry 2: free
+            0, 0, 0, 0, 0, 0, 0, // Entry 3: free
+            0, 0, 0, 0, 0, 0, 0, // Entry 4: free
+            0, 0, 0, 0, 0, 0, 0, // Entry 5: free
+            1, 0, 0, 1, 244, 0, 0, // Entry 6: new object in stream only (offset 500)
         ];
 
         w.write_all(&xref_data).unwrap();
@@ -351,8 +357,8 @@ impl Generator {
         writeln!(w, "xref").unwrap();
         writeln!(w, "0 6").unwrap();
         writeln!(w, "0000000000 65535 f ").unwrap();
-        writeln!(w, "0000000017 00000 n ").unwrap();  // Object 1 (overlaps with stream's free entry)
-        writeln!(w, "0000000082 00000 n ").unwrap();  // Object 2
+        writeln!(w, "0000000017 00000 n ").unwrap(); // Object 1 (overlaps with stream's free entry)
+        writeln!(w, "0000000082 00000 n ").unwrap(); // Object 2
         writeln!(w, "0000000160 00000 n ").unwrap(); // Object 3
         writeln!(w, "0000000269 00000 n ").unwrap(); // Object 4
         writeln!(w, "0000000341 00000 n ").unwrap(); // Object 5
@@ -361,7 +367,7 @@ impl Generator {
         writeln!(w, "trailer").unwrap();
         writeln!(w, "<< /Size 7").unwrap();
         writeln!(w, "   /Root 1 0 R").unwrap();
-        writeln!(w, "   /XRefStm 341").unwrap();  // Points to object 5 (xref stream)
+        writeln!(w, "   /XRefStm 341").unwrap(); // Points to object 5 (xref stream)
         writeln!(w, ">>").unwrap();
 
         // startxref
@@ -457,8 +463,8 @@ impl Generator {
         // Second xref + trailer with /Prev
         writeln!(w, "xref").unwrap();
         writeln!(w, "5 2").unwrap();
-        writeln!(w, "0000000341 00001 n ").unwrap();  // Object 5, gen 1
-        writeln!(w, "0000000382 00000 n ").unwrap();  // Object 6, gen 0
+        writeln!(w, "0000000341 00001 n ").unwrap(); // Object 5, gen 1
+        writeln!(w, "0000000382 00000 n ").unwrap(); // Object 6, gen 0
 
         writeln!(w, "trailer").unwrap();
         writeln!(w, "<< /Size 7").unwrap();
@@ -482,7 +488,7 @@ impl Generator {
         // Third xref + trailer with /Prev
         writeln!(w, "xref").unwrap();
         writeln!(w, "5 1").unwrap();
-        writeln!(w, "0000000433 00002 n ").unwrap();  // Object 5, gen 2
+        writeln!(w, "0000000433 00002 n ").unwrap(); // Object 5, gen 2
 
         writeln!(w, "trailer").unwrap();
         writeln!(w, "<< /Size 7").unwrap();
@@ -512,12 +518,12 @@ impl Generator {
         // Linearized dictionary (object 1)
         writeln!(w, "1 0 obj").unwrap();
         writeln!(w, "<< /Linearized 1.0").unwrap();
-        writeln!(w, "   /L 10000").unwrap();  // Placeholder file length
-        writeln!(w, "   /H [1010 50]").unwrap();  // Hint stream offset/length
-        writeln!(w, "   /O 4").unwrap();  // First page object number
-        writeln!(w, "   /E 500").unwrap();  // End of first page
-        writeln!(w, "   /N 50").unwrap();  // Number of pages
-        writeln!(w, "   /T 6000").unwrap();  // Offset of first-page xref
+        writeln!(w, "   /L 10000").unwrap(); // Placeholder file length
+        writeln!(w, "   /H [1010 50]").unwrap(); // Hint stream offset/length
+        writeln!(w, "   /O 4").unwrap(); // First page object number
+        writeln!(w, "   /E 500").unwrap(); // End of first page
+        writeln!(w, "   /N 50").unwrap(); // Number of pages
+        writeln!(w, "   /T 6000").unwrap(); // Offset of first-page xref
         writeln!(w, ">>").unwrap();
         writeln!(w, "endobj").unwrap();
 
@@ -530,11 +536,8 @@ impl Generator {
         writeln!(w, "stream").unwrap();
         // Minimal xref data for first page objects
         let first_page_xref = [
-            0u8, 0, 0, 0, 0, 255, 255,
-            1, 0, 0, 0, 17, 0, 0,
-            1, 0, 0, 0, 120, 0, 0,
-            1, 0, 0, 0, 210, 0, 0,
-            1, 0, 0, 1, 44, 0, 0,
+            0u8, 0, 0, 0, 0, 255, 255, 1, 0, 0, 0, 17, 0, 0, 1, 0, 0, 0, 120, 0, 0, 1, 0, 0, 0,
+            210, 0, 0, 1, 0, 0, 1, 44, 0, 0,
         ];
         w.write_all(&first_page_xref).unwrap();
         writeln!(w, "\nendstream").unwrap();
@@ -598,7 +601,9 @@ impl Generator {
         });
 
         // Find the xref keyword
-        let xref_pos = base_data.windows(4).rposition(|w| w == b"xref")
+        let xref_pos = base_data
+            .windows(4)
+            .rposition(|w| w == b"xref")
             .expect("xref keyword not found in base file");
 
         // Truncate just before the xref table
@@ -621,17 +626,19 @@ impl Generator {
         });
 
         // Find "startxref" and modify the offset after it
-        let startxref_pos = base_data.windows(9).rposition(|w| w == b"startxref")
+        let startxref_pos = base_data
+            .windows(9)
+            .rposition(|w| w == b"startxref")
             .expect("startxref keyword not found in base file");
 
         // Parse the offset after startxref
         let after_startxref = &base_data[startxref_pos + 9..];
-        let offset_str_end = after_startxref.iter()
+        let offset_str_end = after_startxref
+            .iter()
             .position(|&b| b == b'\n' || b == b'\r')
             .unwrap_or(after_startxref.len());
 
-        let offset_str = std::str::from_utf8(&after_startxref[..offset_str_end])
-            .unwrap_or("0");
+        let offset_str = std::str::from_utf8(&after_startxref[..offset_str_end]).unwrap_or("0");
 
         if let Ok(mut offset) = offset_str.parse::<u64>() {
             // Modify offset by +1
@@ -665,14 +672,17 @@ impl Generator {
         });
 
         // Find the xref table
-        let xref_pos = base_data.windows(4).rposition(|w| w == b"xref")
+        let xref_pos = base_data
+            .windows(4)
+            .rposition(|w| w == b"xref")
             .expect("xref keyword not found in base file");
 
         // Find the first xref entry (after "0 6\n")
         let entries_start = xref_pos + 4;
 
         // Find the first newline after the subsection header
-        let header_end = base_data[entries_start..].iter()
+        let header_end = base_data[entries_start..]
+            .iter()
             .position(|&b| b == b'\n')
             .map(|p| entries_start + p)
             .unwrap_or(entries_start);
@@ -736,10 +746,10 @@ impl Generator {
             writeln!(w_b, "trailer").unwrap();
             writeln!(w_b, "<< /Size 4").unwrap();
             writeln!(w_b, "   /Root 1 0 R").unwrap();
-            writeln!(w_b, ">>").unwrap();  // /Prev will be added later
+            writeln!(w_b, ">>").unwrap(); // /Prev will be added later
 
             writeln!(w_b, "startxref").unwrap();
-            writeln!(w_b, "0").unwrap();  // Placeholder
+            writeln!(w_b, "0").unwrap(); // Placeholder
             writeln!(w_b, "%%EOF").unwrap();
             w_b.flush().unwrap();
         }
@@ -763,7 +773,7 @@ impl Generator {
         writeln!(w, "trailer").unwrap();
         writeln!(w, "<< /Size 4").unwrap();
         writeln!(w, "   /Root 1 0 R").unwrap();
-        writeln!(w, "   /Prev {}", xref_b_offset).unwrap();  // Points to Xref B
+        writeln!(w, "   /Prev {}", xref_b_offset).unwrap(); // Points to Xref B
         writeln!(w, ">>").unwrap();
 
         writeln!(w, "startxref").unwrap();
@@ -781,7 +791,7 @@ impl Generator {
         writeln!(w, "trailer").unwrap();
         writeln!(w, "<< /Size 4").unwrap();
         writeln!(w, "   /Root 1 0 R").unwrap();
-        writeln!(w, "   /Prev {}", xref_a_offset).unwrap();  // Points back to Xref A
+        writeln!(w, "   /Prev {}", xref_a_offset).unwrap(); // Points back to Xref A
         writeln!(w, ">>").unwrap();
 
         writeln!(w, "startxref").unwrap();

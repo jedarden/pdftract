@@ -5,17 +5,16 @@
 
 mod xref_helpers;
 
-use std::path::{Path, PathBuf};
-use std::fs;
 use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
 
-use pdftract_core::parser::xref::{
-    XrefEntry, XrefSection, parse_traditional_xref, parse_xref_stream,
-    forward_scan_xref, load_xref_with_prev_chain, detect_linearization,
-    load_xref_linearized, merge_hybrid,
-};
-use pdftract_core::parser::stream::{MemorySource, PdfSource};
 use pdftract_core::diagnostics::Diagnostic;
+use pdftract_core::parser::stream::{MemorySource, PdfSource};
+use pdftract_core::parser::xref::{
+    detect_linearization, forward_scan_xref, load_xref_linearized, load_xref_with_prev_chain,
+    merge_hybrid, parse_traditional_xref, parse_xref_stream, XrefEntry, XrefSection,
+};
 
 /// Fixture directory containing the test PDF files.
 const FIXTURE_DIR: &str = "../../tests/xref/fixtures";
@@ -117,24 +116,22 @@ fn find_startxref(source: &MemorySource) -> u64 {
 
     // Read the last 1KB
     let scan_start = file_len.saturating_sub(1024);
-    let tail_data = source.read_at(scan_start, (file_len - scan_start) as usize).unwrap_or_default();
+    let tail_data = source
+        .read_at(scan_start, (file_len - scan_start) as usize)
+        .unwrap_or_default();
 
     // Convert to string and search for startxref
     let tail_str = String::from_utf8_lossy(&tail_data);
 
     // Find "startxref" keyword
-    let startxref_pos = tail_str.find("startxref")
-        .unwrap_or_else(|| {
-            // If not found, return 0 to trigger fallback strategies
-            return 0;
-        });
+    let startxref_pos = tail_str.find("startxref").unwrap_or_else(|| {
+        // If not found, return 0 to trigger fallback strategies
+        return 0;
+    });
 
     // Parse the offset after "startxref"
     let after_startxref = &tail_str[startxref_pos + "startxref".len()..];
-    let offset_str = after_startxref
-        .split_whitespace()
-        .next()
-        .unwrap_or("0");
+    let offset_str = after_startxref.split_whitespace().next().unwrap_or("0");
 
     let offset: u64 = offset_str.parse().unwrap_or(0);
 
@@ -147,10 +144,7 @@ fn find_startxref(source: &MemorySource) -> u64 {
 }
 
 /// Compare parsed xref result against golden file.
-fn compare_with_golden(
-    fixture_path: &Path,
-    result: &XrefSection,
-) -> Result<(), String> {
+fn compare_with_golden(fixture_path: &Path, result: &XrefSection) -> Result<(), String> {
     let golden_path = fixture_path.with_extension(EXPECTED_EXT.trim_start_matches('.'));
 
     // Check if we should bless (overwrite) the golden file
@@ -165,7 +159,11 @@ fn compare_with_golden(
                 let key_count = t.keys().count();
                 serde_json::json!({ "key_count": key_count })
             }),
-            diagnostics: result.diagnostics.iter().map(DiagnosticJson::from).collect(),
+            diagnostics: result
+                .diagnostics
+                .iter()
+                .map(DiagnosticJson::from)
+                .collect(),
         };
 
         let golden_json = serde_json::to_string_pretty(&golden)
@@ -216,22 +214,30 @@ fn compare_with_golden(
 }
 
 /// Helper function to convert XrefEntry map to JSON-serializable format.
-fn convert_xref_entries(entries: &std::collections::HashMap<u32, XrefEntry>) -> HashMap<String, XrefEntryJson> {
-    entries.iter().map(|(k, v)| {
-        let key = k.to_string();
-        let json = match v {
-            XrefEntry::Free { next_free, gen_nr } => {
-                XrefEntryJson::Free { next_free: *next_free, gen_nr: *gen_nr }
-            }
-            XrefEntry::InUse { offset, gen_nr } => {
-                XrefEntryJson::InUse { offset: *offset, gen_nr: *gen_nr }
-            }
-            XrefEntry::Compressed { obj_stm_nr, index } => {
-                XrefEntryJson::Compressed { obj_stm_nr: *obj_stm_nr, index: *index }
-            }
-        };
-        (key, json)
-    }).collect()
+fn convert_xref_entries(
+    entries: &std::collections::HashMap<u32, XrefEntry>,
+) -> HashMap<String, XrefEntryJson> {
+    entries
+        .iter()
+        .map(|(k, v)| {
+            let key = k.to_string();
+            let json = match v {
+                XrefEntry::Free { next_free, gen_nr } => XrefEntryJson::Free {
+                    next_free: *next_free,
+                    gen_nr: *gen_nr,
+                },
+                XrefEntry::InUse { offset, gen_nr } => XrefEntryJson::InUse {
+                    offset: *offset,
+                    gen_nr: *gen_nr,
+                },
+                XrefEntry::Compressed { obj_stm_nr, index } => XrefEntryJson::Compressed {
+                    obj_stm_nr: *obj_stm_nr,
+                    index: *index,
+                },
+            };
+            (key, json)
+        })
+        .collect()
 }
 
 /// Test all fixtures in the fixture directory.
@@ -240,7 +246,10 @@ fn test_xref_fixtures() {
     let fixture_dir = Path::new(FIXTURE_DIR);
 
     if !fixture_dir.exists() {
-        eprintln!("Warning: Fixture directory {:?} does not exist. Skipping tests.", fixture_dir);
+        eprintln!(
+            "Warning: Fixture directory {:?} does not exist. Skipping tests.",
+            fixture_dir
+        );
         return;
     }
 
@@ -256,7 +265,8 @@ fn test_xref_fixtures() {
             continue;
         }
 
-        let fixture_name = path.file_name()
+        let fixture_name = path
+            .file_name()
             .and_then(|s| s.to_str())
             .unwrap_or("unknown");
 
@@ -279,18 +289,24 @@ fn test_forward_scan_recovery() {
     let fixture_path = Path::new(FIXTURE_DIR).join("truncated_after_xref.pdf");
 
     if !fixture_path.exists() {
-        eprintln!("Warning: Fixture {:?} does not exist. Skipping test.", fixture_path);
+        eprintln!(
+            "Warning: Fixture {:?} does not exist. Skipping test.",
+            fixture_path
+        );
         return;
     }
 
     let result = parse_fixture_xref(&fixture_path);
 
     // Should have recovered some entries via forward scan
-    assert!(!result.entries.is_empty(), "Forward scan should recover some xref entries");
+    assert!(
+        !result.entries.is_empty(),
+        "Forward scan should recover some xref entries"
+    );
 
     // Should emit XREF_REPAIRED diagnostic
-    use xref_helpers::assert_diagnostic;
     use pdftract_core::diagnostics::DiagCode;
+    use xref_helpers::assert_diagnostic;
     assert_diagnostic(&result.diagnostics, DiagCode::XrefRepaired);
 }
 
@@ -300,15 +316,18 @@ fn test_prev_chain_depth_limit() {
     let fixture_path = Path::new(FIXTURE_DIR).join("deep_prev_chain.pdf");
 
     if !fixture_path.exists() {
-        eprintln!("Warning: Fixture {:?} does not exist. Skipping test.", fixture_path);
+        eprintln!(
+            "Warning: Fixture {:?} does not exist. Skipping test.",
+            fixture_path
+        );
         return;
     }
 
     let result = parse_fixture_xref(&fixture_path);
 
     // Should emit STRUCT_DEPTH_EXCEEDED diagnostic
-    use xref_helpers::assert_diagnostic;
     use pdftract_core::diagnostics::DiagCode;
+    use xref_helpers::assert_diagnostic;
     assert_diagnostic(&result.diagnostics, DiagCode::StructDepthExceeded);
 }
 
@@ -318,14 +337,17 @@ fn test_circular_prev_detection() {
     let fixture_path = Path::new(FIXTURE_DIR).join("circular_prev.pdf");
 
     if !fixture_path.exists() {
-        eprintln!("Warning: Fixture {:?} does not exist. Skipping test.", fixture_path);
+        eprintln!(
+            "Warning: Fixture {:?} does not exist. Skipping test.",
+            fixture_path
+        );
         return;
     }
 
     let result = parse_fixture_xref(&fixture_path);
 
     // Should emit STRUCT_CIRCULAR_REF diagnostic
-    use xref_helpers::assert_diagnostic;
     use pdftract_core::diagnostics::DiagCode;
+    use xref_helpers::assert_diagnostic;
     assert_diagnostic(&result.diagnostics, DiagCode::StructCircularRef);
 }

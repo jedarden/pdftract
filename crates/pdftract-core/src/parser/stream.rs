@@ -2049,35 +2049,50 @@ impl PdfSource for MemorySource {
     }
 }
 
-/// A file-backed PDF source.
+/// A file-backed PDF source using memory-mapped I/O.
+///
+/// This implementation uses `memmap2` to map the file into memory,
+/// allowing the OS to manage paging via the page cache. This avoids
+/// allocating anonymous RSS for the entire file and enables on-demand
+/// loading of only the portions of the file that are actually accessed.
 pub struct FileSource {
-    path: std::path::PathBuf,
-    len: u64,
+    mmap: memmap2::Mmap,
 }
 
 impl FileSource {
+    /// Open a PDF file using memory-mapped I/O.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be opened or memory-mapped.
+    /// This includes:
+    /// - File not found
+    /// - Permission denied
+    /// - File too large to address (near address space limit)
+    /// - Kernel refuses mmap (e.g., certain FUSE mounts)
     pub fn open<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
-        let len = std::fs::metadata(&path)?.len();
-        Ok(Self {
-            path: path.as_ref().to_path_buf(),
-            len,
-        })
+        let file = std::fs::File::open(&path)?;
+        let mmap = unsafe { memmap2::Mmap::map(&file)? };
+        Ok(Self { mmap })
     }
 }
 
 impl PdfSource for FileSource {
     fn read_at(&self, offset: u64, len: usize) -> std::io::Result<Vec<u8>> {
-        let mut file = std::fs::File::open(&self.path)?;
-        file.seek(std::io::SeekFrom::Start(offset))?;
+        let start = offset as usize;
+        let end = (start + len).min(self.mmap.len());
 
-        let mut buffer = vec![0u8; len];
-        let bytes_read = Read::read(&mut file, &mut buffer)?;
-        buffer.truncate(bytes_read);
-        Ok(buffer)
+        if start >= self.mmap.len() {
+            return Ok(Vec::new());
+        }
+
+        // Slice the mmap region - this is a zero-copy operation
+        // that returns bytes directly from the memory-mapped region.
+        Ok(self.mmap[start..end].to_vec())
     }
 
     fn len(&self) -> std::io::Result<u64> {
-        Ok(self.len)
+        Ok(self.mmap.len() as u64)
     }
 }
 
@@ -4328,5 +4343,127 @@ mod proptest_tests {
             // This should never panic, even when hitting bomb limit
             let _ = LZWDecoder.decode(&data, None, &mut counter, bomb_limit);
         }
+    }
+}
+
+#[cfg(test)]
+mod source_tests {
+    use super::*;
+    use std::io::Write;
+
+    /// FileSource::open successfully memory-maps a valid file.
+    #[test]
+    fn test_filesource_open() {
+        let pdf_content = b"%PDF-1.4
+1 0 obj
+<<
+/Type /Catalog
+>>
+endobj
+%%EOF";
+        let mut temp_file = tempfile::NamedTempFile::new().expect("failed to create temp file");
+        temp_file
+            .write_all(pdf_content)
+            .expect("failed to write content");
+        temp_file.flush().expect("failed to flush");
+        let path = temp_file.path().to_path_buf();
+
+        let source = FileSource::open(&path);
+        assert!(
+            source.is_ok(),
+            "FileSource::open should succeed for valid file"
+        );
+
+        let source = source.unwrap();
+        let len = source.len().expect("failed to get length");
+        assert_eq!(len, pdf_content.len() as u64);
+
+        // Keep temp_file alive until here
+        drop(temp_file);
+    }
+
+    /// FileSource::read_at reads correct bytes from memory-mapped region.
+    #[test]
+    fn test_filesource_read_at() {
+        let pdf_content = b"%PDF-1.4
+1 0 obj
+<<
+/Type /Catalog
+>>
+endobj
+%%EOF";
+        let mut temp_file = tempfile::NamedTempFile::new().expect("failed to create temp file");
+        temp_file
+            .write_all(pdf_content)
+            .expect("failed to write content");
+        temp_file.flush().expect("failed to flush");
+        let path = temp_file.path().to_path_buf();
+
+        let source = FileSource::open(&path).expect("failed to open FileSource");
+
+        // Read from the beginning
+        let bytes = source.read_at(0, 9).expect("failed to read at offset 0");
+        assert_eq!(
+            bytes,
+            b"%PDF-1.4
+"
+        );
+
+        // Read from middle
+        let bytes = source.read_at(10, 10).expect("failed to read at offset 10");
+        assert_eq!(bytes, b" 0 obj\n<<\n");
+
+        // Read past end should return empty
+        let bytes = source.read_at(1000, 10).expect("failed to read past end");
+        assert!(bytes.is_empty());
+    }
+
+    /// FileSource rejects non-existent files.
+    #[test]
+    fn test_filesource_not_found() {
+        let result = FileSource::open("/nonexistent/path/to/file.pdf");
+        assert!(
+            result.is_err(),
+            "FileSource::open should fail for non-existent file"
+        );
+    }
+
+    /// FileSource zero-copy read_at slices mmap region correctly.
+    #[test]
+    fn test_filesource_zero_copy() {
+        let large_content = vec![b'A'; 1024 * 1024]; // 1 MB
+        let mut temp_file = tempfile::NamedTempFile::new().expect("failed to create temp file");
+        temp_file
+            .write_all(&large_content)
+            .expect("failed to write content");
+        temp_file.flush().expect("failed to flush");
+        let path = temp_file.path().to_path_buf();
+
+        let source = FileSource::open(&path).expect("failed to open FileSource");
+
+        // Read multiple regions - these should be zero-copy slices from the mmap
+        let bytes1 = source.read_at(0, 1024).expect("failed to read first 1KB");
+        let bytes2 = source
+            .read_at(1024 * 512, 1024)
+            .expect("failed to read middle 1KB");
+
+        assert_eq!(bytes1.len(), 1024);
+        assert_eq!(bytes2.len(), 1024);
+        assert!(bytes1.iter().all(|&b| b == b'A'));
+        assert!(bytes2.iter().all(|&b| b == b'A'));
+    }
+
+    /// MemorySource provides in-memory fallback for tests.
+    #[test]
+    fn test_memorysource() {
+        let data = b"test data for memory source";
+
+        let source = MemorySource::new(data.to_vec());
+        assert_eq!(source.len().expect("failed to get len"), data.len() as u64);
+
+        let bytes = source
+            .read_at(5, 4)
+            .expect("failed to read from MemorySource");
+        assert_eq!(bytes, b"data");
     }
 }

@@ -51,7 +51,6 @@
 //! 3. **Document the limit**: Comment why the specific limit was chosen
 //! 4. **Skip on unsupported platforms**: Use `#[cfg_attr(not(target_os = "windows"), test)]`
 
-
 /// Result type for memory-guarded test execution.
 pub type MemoryGuardResult<T> = Result<T, MemoryGuardError>;
 
@@ -303,10 +302,7 @@ mod tests {
         });
 
         assert!(result.is_err());
-        assert!(matches!(
-            result,
-            Err(MemoryGuardError::ClosureError(_))
-        ));
+        assert!(matches!(result, Err(MemoryGuardError::ClosureError(_))));
     }
 
     #[cfg_attr(not(target_os = "windows"), test)]
@@ -339,5 +335,4 @@ mod tests {
             Ok::<_, String>(()) // Succeeds, should panic
         });
     }
-
 }

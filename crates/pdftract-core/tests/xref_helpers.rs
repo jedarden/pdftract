@@ -139,7 +139,11 @@ mod tests {
 
     #[test]
     fn test_assert_diagnostic_passes() {
-        let diagnostics = vec![Diagnostic::with_static(DiagCode::StructInvalidName, 100, "test")];
+        let diagnostics = vec![Diagnostic::with_static(
+            DiagCode::StructInvalidName,
+            100,
+            "test",
+        )];
         // Should not panic
         assert_diagnostic(&diagnostics, DiagCode::StructInvalidName);
     }
@@ -147,13 +151,21 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_assert_diagnostic_panics() {
-        let diagnostics = vec![Diagnostic::with_static(DiagCode::StructInvalidName, 100, "test")];
+        let diagnostics = vec![Diagnostic::with_static(
+            DiagCode::StructInvalidName,
+            100,
+            "test",
+        )];
         assert_diagnostic(&diagnostics, DiagCode::StructInvalidHex);
     }
 
     #[test]
     fn test_assert_diagnostic_in_range_passes() {
-        let diagnostics = vec![Diagnostic::with_static(DiagCode::StructInvalidName, 100, "test")];
+        let diagnostics = vec![Diagnostic::with_static(
+            DiagCode::StructInvalidName,
+            100,
+            "test",
+        )];
         // Should not panic
         assert_diagnostic_in_range(&diagnostics, DiagCode::StructInvalidName, 50..=150);
     }
@@ -161,7 +173,11 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_assert_diagnostic_in_range_panics() {
-        let diagnostics = vec![Diagnostic::with_static(DiagCode::StructInvalidName, 100, "test")];
+        let diagnostics = vec![Diagnostic::with_static(
+            DiagCode::StructInvalidName,
+            100,
+            "test",
+        )];
         assert_diagnostic_in_range(&diagnostics, DiagCode::StructInvalidName, 150..=200);
     }
 

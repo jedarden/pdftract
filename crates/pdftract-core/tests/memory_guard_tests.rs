@@ -41,9 +41,7 @@ fn test_oversized_decompression_fails_gracefully() {
 
         // Try to read more data than the limit allows
         let mut buffer = Vec::new();
-        cursor
-            .read_to_end(&mut buffer)
-            .map_err(|e| e.to_string())?;
+        cursor.read_to_end(&mut buffer).map_err(|e| e.to_string())?;
 
         // Simulate attempting to allocate an oversized buffer
         buffer.try_reserve(500_000_000).map_err(|e| e.to_string())?;
@@ -88,7 +86,11 @@ fn test_try_reserve_propagates_failure() {
     assert!(result.is_err());
     match result {
         Err(memory_guard::MemoryGuardError::ClosureError(msg)) => {
-            assert!(msg.contains("allocation") || msg.contains("memory"), "Error should mention allocation: {}", msg);
+            assert!(
+                msg.contains("allocation") || msg.contains("memory"),
+                "Error should mention allocation: {}",
+                msg
+            );
         }
         _ => panic!("Expected ClosureError, got {:?}", result),
     }
@@ -174,9 +176,7 @@ fn test_nested_allocations_under_limit() {
     use memory_guard::assert_succeeds_under_memory_limit;
 
     let count = assert_succeeds_under_memory_limit(100 * 1024 * 1024, || {
-        let outer: Vec<Vec<u8>> = (0..100)
-            .map(|i| vec![i as u8; 10_000])
-            .collect();
+        let outer: Vec<Vec<u8>> = (0..100).map(|i| vec![i as u8; 10_000]).collect();
         Ok::<_, String>(outer.len())
     });
 
