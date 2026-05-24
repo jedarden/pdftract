@@ -8,28 +8,30 @@ pub mod attachment;
 pub mod cache;
 pub mod classify;
 pub mod diagnostics;
-#[cfg(feature = "remote")]
-pub mod url_validation;
-#[cfg(feature = "ocr")]
-pub mod dpi;
 pub mod document;
 #[cfg(feature = "ocr")]
-pub mod ocr;
-#[cfg(feature = "ocr")]
-pub mod preprocess;
+pub mod dpi;
 pub mod extract;
 pub mod fingerprint;
 pub mod font;
-pub mod layout;
 pub mod graphics_state;
 #[cfg(feature = "ocr")]
 pub mod hybrid;
+pub mod layout;
 pub mod markdown;
+#[cfg(feature = "ocr")]
+pub mod ocr;
 pub mod options;
 pub mod parser;
+#[cfg(feature = "ocr")]
+pub mod preprocess;
+#[cfg(feature = "profiles")]
+pub mod profiles;
 pub mod receipts;
 #[cfg(feature = "ocr")]
 pub mod render;
+#[cfg(feature = "remote")]
+pub mod url_validation;
 
 // Re-export has_full_render for runtime feature detection
 #[cfg(all(feature = "ocr", feature = "full-render"))]
@@ -40,24 +42,32 @@ pub mod signature;
 pub mod table;
 
 // Re-export key types for convenience
-pub use document::{PdfExtractor, PageIter, PageExtraction};
-pub use extract::{extract_pdf, extract_pdf_ndjson, ExtractionResult, PageResult, ExtractionMetadata};
-pub use font::std14::{Std14Metrics, NamedEncoding, get_std14_metrics};
-pub use markdown::{Anchor, parse_anchors, block_to_markdown, page_to_markdown};
+pub use document::{PageExtraction, PageIter, PdfExtractor};
+pub use extract::{
+    extract_pdf, extract_pdf_ndjson, ExtractionMetadata, ExtractionResult, PageResult,
+};
+pub use font::std14::{get_std14_metrics, NamedEncoding, Std14Metrics};
+pub use markdown::{block_to_markdown, page_to_markdown, parse_anchors, Anchor};
 pub use options::{ExtractionOptions, ReceiptsMode};
-pub use parser::pages::{LazyPageIter, PageDict, DEFAULT_MEDIABOX, count_pages_tree};
-pub use schema::{SpanJson, BlockJson, ExtractionQuality, TableJson, RowJson, CellJson, SpanRef};
-pub use table::{TableDetector, PageContext as TablePageContext, GridCandidate};
+pub use parser::pages::{count_pages_tree, LazyPageIter, PageDict, DEFAULT_MEDIABOX};
+pub use schema::{BlockJson, CellJson, ExtractionQuality, RowJson, SpanJson, SpanRef, TableJson};
+pub use table::{GridCandidate, PageContext as TablePageContext, TableDetector};
 
 #[cfg(feature = "ocr")]
-pub use dpi::{Pdf1Filter, FontSizeSpan, select_dpi};
+pub use dpi::{select_dpi, FontSizeSpan, Pdf1Filter};
 #[cfg(feature = "ocr")]
-pub use hybrid::{Span, SpanSource, compute_iou, merge_vector_and_ocr_spans, crop_cell_from_page, get_hybrid_cells, compute_cell_crops, CellCrop};
-#[cfg(feature = "ocr")]
-pub use ocr::{
-    TessOpts, borrow_or_init, init_count, reset_init_count, validate_ocr_languages,
-    detect_available_languages, HocrWord, parse_hocr, run_tesseract, run_tesseract_on_cell,
-    calculate_wer,
+pub use hybrid::{
+    compute_cell_crops, compute_iou, crop_cell_from_page, get_hybrid_cells,
+    merge_vector_and_ocr_spans, CellCrop, Span, SpanSource,
 };
 #[cfg(feature = "ocr")]
-pub use preprocess::{ImageSource, add_border_padding, normalize_contrast, binarize_otsu, binarize_sauvola, denoise_median, preprocess, deskew};
+pub use ocr::{
+    borrow_or_init, calculate_wer, detect_available_languages, init_count, parse_hocr,
+    reset_init_count, run_tesseract, run_tesseract_on_cell, validate_ocr_languages, HocrWord,
+    TessOpts,
+};
+#[cfg(feature = "ocr")]
+pub use preprocess::{
+    add_border_padding, binarize_otsu, binarize_sauvola, denoise_median, deskew,
+    normalize_contrast, preprocess, ImageSource,
+};

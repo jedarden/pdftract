@@ -1,7 +1,7 @@
-use std::path::Path;
-use std::fs;
-use walkdir::WalkDir;
 use super::super::{Check, CheckResult, CheckStatus, DoctorCtx};
+use std::fs;
+use std::path::Path;
+use walkdir::WalkDir;
 
 /// Check: profile search path (profiles feature)
 ///
@@ -11,62 +11,80 @@ use super::super::{Check, CheckResult, CheckStatus, DoctorCtx};
 pub struct ProfilePathCheck;
 
 impl ProfilePathCheck {
-    /// Forbidden keys in profile YAML (case-insensitive)
-    const FORBIDDEN_KEYS: &'static [&'static str] = &[
-        "password",
-        "token",
-        "secret",
-        "api_key",
-        "apikey",
-        "private_key",
-        "privatekey",
-    ];
-
     fn check_profile_file(path: &Path) -> Result<(), String> {
-        let content = fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read: {}", e))?;
+        let content = fs::read_to_string(path).map_err(|e| format!("Failed to read: {}", e))?;
 
         // Parse as YAML
-        let value: serde_yaml::Value = serde_yaml::from_str(&content)
-            .map_err(|e| format!("YAML parse error: {}", e))?;
+        let value: serde_yaml::Value =
+            serde_yaml::from_str(&content).map_err(|e| format!("YAML parse error: {}", e))?;
 
-        // Check for forbidden keys
-        if let Err(e) = Self::check_forbidden_keys(&value, path) {
-            return Err(e);
+        // Check for forbidden keys using the enhanced detection
+        #[cfg(feature = "profiles")]
+        {
+            if let Err(e) = pdftract_core::profiles::check_forbidden_keys(&value, "", &content) {
+                return Err(format!(
+                    "PROFILE_SECRETS_FORBIDDEN: {} at {} (line {})",
+                    e.key, e.path, e.line
+                ));
+            }
+        }
+
+        // Fallback check for when profiles feature is disabled (legacy behavior)
+        #[cfg(not(feature = "profiles"))]
+        {
+            if let Err(e) = Self::check_forbidden_keys_legacy(&value, path) {
+                return Err(e);
+            }
         }
 
         Ok(())
     }
 
-    fn check_forbidden_keys(value: &serde_yaml::Value, path: &Path) -> Result<(), String> {
-        match value {
-            serde_yaml::Value::Mapping(map) => {
-                for (key, _value) in map {
-                    if let Some(key_str) = key.as_str() {
-                        let key_lower = key_str.to_lowercase();
+    /// Legacy forbidden key check (used when profiles feature is disabled)
+    ///
+    /// This is the original implementation with a limited set of forbidden keys.
+    fn check_forbidden_keys_legacy(value: &serde_yaml::Value, path: &Path) -> Result<(), String> {
+        const FORBIDDEN_KEYS: &[&str] = &[
+            "password",
+            "token",
+            "secret",
+            "api_key",
+            "apikey",
+            "private_key",
+            "privatekey",
+        ];
 
-                        if Self::FORBIDDEN_KEYS.contains(&key_lower.as_str()) {
-                            return Err(format!(
-                                "PROFILE_SECRETS_FORBIDDEN: found forbidden key '{}' in {}",
-                                key_str,
-                                path.display()
-                            ));
+        fn check(value: &serde_yaml::Value) -> Result<(), String> {
+            match value {
+                serde_yaml::Value::Mapping(map) => {
+                    for (key, _value) in map {
+                        if let Some(key_str) = key.as_str() {
+                            let key_lower = key_str.to_lowercase();
+
+                            if FORBIDDEN_KEYS.contains(&key_lower.as_str()) {
+                                return Err(format!(
+                                    "PROFILE_SECRETS_FORBIDDEN: found forbidden key '{}'",
+                                    key_str
+                                ));
+                            }
                         }
-                    }
 
-                    // Recurse into nested values
-                    Self::check_forbidden_keys(_value, path)?;
+                        // Recurse into nested values
+                        check(_value)?;
+                    }
                 }
-            }
-            serde_yaml::Value::Sequence(seq) => {
-                for item in seq {
-                    Self::check_forbidden_keys(item, path)?;
+                serde_yaml::Value::Sequence(seq) => {
+                    for item in seq {
+                        check(item)?;
+                    }
                 }
+                _ => {}
             }
-            _ => {}
+
+            Ok(())
         }
 
-        Ok(())
+        check(value)
     }
 }
 
@@ -90,7 +108,10 @@ impl Check for ProfilePathCheck {
             return CheckResult {
                 name: self.name(),
                 status: CheckStatus::Warn,
-                detail: format!("Profile directory does not exist: {}", profile_dir.display()),
+                detail: format!(
+                    "Profile directory does not exist: {}",
+                    profile_dir.display()
+                ),
             };
         }
 
@@ -112,7 +133,6 @@ impl Check for ProfilePathCheck {
         let mut errors = vec![];
 
         for entry in &entries {
-
             let path = entry.path();
 
             if path.extension().and_then(|s| s.to_str()) == Some("yaml")
@@ -121,7 +141,7 @@ impl Check for ProfilePathCheck {
                 yaml_count += 1;
 
                 if let Err(e) = Self::check_profile_file(&path) {
-                    errors.push(e);
+                    errors.push(format!("{}: {}", path.display(), e));
                 }
             }
         }
@@ -148,7 +168,11 @@ impl Check for ProfilePathCheck {
             CheckResult {
                 name: self.name(),
                 status: CheckStatus::Ok,
-                detail: format!("All {} profile(s) valid at {}", yaml_count, profile_dir.display()),
+                detail: format!(
+                    "All {} profile(s) valid at {}",
+                    yaml_count,
+                    profile_dir.display()
+                ),
             }
         }
     }
@@ -173,11 +197,20 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let path = Path::new("test.yaml");
-        let result = ProfilePathCheck::check_forbidden_keys(&value, path);
 
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("PROFILE_SECRETS_FORBIDDEN"));
-        assert!(result.unwrap_err().contains("password"));
+        #[cfg(feature = "profiles")]
+        {
+            let result = pdftract_core::profiles::check_forbidden_keys(&value, "", yaml);
+            assert!(result.is_err());
+            assert!(result.unwrap_err().key.contains("password"));
+        }
+
+        #[cfg(not(feature = "profiles"))]
+        {
+            let result = ProfilePathCheck::check_forbidden_keys_legacy(&value, path);
+            assert!(result.is_err());
+            assert!(result.unwrap_err().contains("PROFILE_SECRETS_FORBIDDEN"));
+        }
     }
 
     #[test]
@@ -189,9 +222,44 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let path = Path::new("test.yaml");
-        let result = ProfilePathCheck::check_forbidden_keys(&value, path);
 
-        assert!(result.is_err());
+        #[cfg(feature = "profiles")]
+        {
+            let result = pdftract_core::profiles::check_forbidden_keys(&value, "", yaml);
+            assert!(result.is_err());
+        }
+
+        #[cfg(not(feature = "profiles"))]
+        {
+            let result = ProfilePathCheck::check_forbidden_keys_legacy(&value, path);
+            assert!(result.is_err());
+        }
+    }
+
+    #[test]
+    fn test_check_forbidden_keys_separator_variants() {
+        let yaml = r#"
+        api_key: "[REDACTED]"
+        apiKey: "[REDACTED]"
+        api-key: "sk-5555555555"
+        "#;
+
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+
+        #[cfg(feature = "profiles")]
+        {
+            let result = pdftract_core::profiles::check_forbidden_keys(&value, "", yaml);
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(err.path.contains("api"));
+        }
+
+        #[cfg(not(feature = "profiles"))]
+        {
+            let path = Path::new("test.yaml");
+            let result = ProfilePathCheck::check_forbidden_keys_legacy(&value, path);
+            assert!(result.is_err());
+        }
     }
 
     #[test]
@@ -201,13 +269,23 @@ mod tests {
         threshold: 0.85
         rules:
           - name: "rule1"
+        vendor_api: "https://api.example.com"
         "#;
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let path = Path::new("test.yaml");
-        let result = ProfilePathCheck::check_forbidden_keys(&value, path);
 
-        assert!(result.is_ok());
+        #[cfg(feature = "profiles")]
+        {
+            let result = pdftract_core::profiles::check_forbidden_keys(&value, "", yaml);
+            assert!(result.is_ok());
+        }
+
+        #[cfg(not(feature = "profiles"))]
+        {
+            let result = ProfilePathCheck::check_forbidden_keys_legacy(&value, path);
+            assert!(result.is_ok());
+        }
     }
 
     #[test]
@@ -215,10 +293,14 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let profile_path = temp_dir.path().join("valid.yaml");
 
-        fs::write(&profile_path, r#"
+        fs::write(
+            &profile_path,
+            r#"
         name: "test_profile"
         threshold: 0.9
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
 
         let ctx = DoctorCtx {
             requested_langs: vec![],
@@ -236,10 +318,14 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let profile_path = temp_dir.path().join("invalid.yaml");
 
-        fs::write(&profile_path, r#"
+        fs::write(
+            &profile_path,
+            r#"
         name: "test_profile"
         api_key: "[REDACTED]"
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
 
         let ctx = DoctorCtx {
             requested_langs: vec![],
@@ -251,5 +337,67 @@ mod tests {
         let result = ProfilePathCheck.run(&ctx);
         assert!(matches!(result.status, CheckStatus::Fail));
         assert!(result.detail.contains("PROFILE_SECRETS_FORBIDDEN"));
+    }
+
+    #[test]
+    fn test_profile_check_detects_auth_token() {
+        let temp_dir = TempDir::new().unwrap();
+        let profile_path = temp_dir.path().join("invalid.yaml");
+
+        fs::write(
+            &profile_path,
+            r#"
+        name: "test_profile"
+        auth_token: "Bearer xyz"
+        "#,
+        )
+        .unwrap();
+
+        let ctx = DoctorCtx {
+            requested_langs: vec![],
+            cache_dir: None,
+            profile_dir: Some(temp_dir.path().to_path_buf()),
+            features: Default::default(),
+        };
+
+        let result = ProfilePathCheck.run(&ctx);
+
+        #[cfg(feature = "profiles")]
+        assert!(matches!(result.status, CheckStatus::Fail));
+
+        #[cfg(not(feature = "profiles"))]
+        assert!(matches!(result.status, CheckStatus::Ok)); // Legacy check doesn't catch auth_token
+    }
+
+    #[test]
+    fn test_profile_check_detects_nested_secrets() {
+        let temp_dir = TempDir::new().unwrap();
+        let profile_path = temp_dir.path().join("invalid.yaml");
+
+        fs::write(
+            &profile_path,
+            r#"
+        name: "test_profile"
+        extraction:
+          fields:
+            credentials: "user:pass"
+        "#,
+        )
+        .unwrap();
+
+        let ctx = DoctorCtx {
+            requested_langs: vec![],
+            cache_dir: None,
+            profile_dir: Some(temp_dir.path().to_path_buf()),
+            features: Default::default(),
+        };
+
+        let result = ProfilePathCheck.run(&ctx);
+
+        #[cfg(feature = "profiles")]
+        assert!(matches!(result.status, CheckStatus::Fail));
+
+        #[cfg(not(feature = "profiles"))]
+        assert!(matches!(result.status, CheckStatus::Ok)); // Legacy check doesn't catch credentials
     }
 }

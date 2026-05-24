@@ -82,7 +82,7 @@ full-render = ["dep:libloading", "pdftract-core/full-render"]
 # Remote HTTP source support
 remote = ["dep:ureq"]
 # Document profiles
-profiles = ["dep:serde_yaml"]
+profiles = ["dep:serde_yaml", "pdftract-core/profiles"]
 # HTTP serve mode
 serve = []
 # MCP server mode

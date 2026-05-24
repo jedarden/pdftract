@@ -37,6 +37,7 @@ dashmap = "6.1"
 smallvec = "1.13"
 encoding_rs = { version = "0.8", optional = true }
 quick-xml = { version = "0.36", optional = true }
+serde_yaml = { version = "0.9", optional = true }
 
 [features]
 default = ["serde"]
@@ -46,6 +47,7 @@ receipts = []  # Enable visual citation receipts (SVG clip generation)
 ocr = ["dep:image", "dep:leptonica-plumbing", "dep:quick-xml"]  # Enable OCR path (image compositing + preprocessing + HOCR parsing)
 full-render = ["dep:pdfium-render", "ocr"]  # Enable PDFium-based rendering (requires ocr)
 remote = ["dep:url"]  # Enable remote HTTP source (Phase 1.8)
+profiles = ["dep:serde_yaml"]  # Enable extraction profiles (Phase 7.10)
 proptest = []
 fuzzing = []  # Enable cfg(fuzzing) for fuzz harnesses
 shape-db = []  # Enable glyph shape database (Level 4 encoding fallback)

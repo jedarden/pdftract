@@ -851,6 +851,17 @@ pub enum DiagCode {
     ///
     /// Phase origin: 3.4
     McidRedefined,
+
+    // === PROFILE_* codes ===
+    /// Profile YAML contains forbidden secret keys
+    ///
+    /// Emitted when a profile YAML file contains keys that suggest credentials
+    /// or secrets (password, token, secret, api_key, etc.) at any depth.
+    /// This prevents accidental publication of secrets in profile files that
+    /// are checked into source control.
+    ///
+    /// Phase origin: 7.10
+    ProfileSecretsForbidden,
 }
 
 impl DiagCode {
@@ -974,6 +985,9 @@ impl DiagCode {
             | DiagCode::UnknownMarkedContentProps
             | DiagCode::StructInvalidBdcOperand
             | DiagCode::McidRedefined => "MARKED_CONTENT",
+
+            // PROFILE_*
+            DiagCode::ProfileSecretsForbidden => "PROFILE",
         }
     }
 
@@ -1070,6 +1084,7 @@ impl DiagCode {
             DiagCode::UnknownMarkedContentProps => "UNKNOWN_MARKED_CONTENT_PROPS",
             DiagCode::StructInvalidBdcOperand => "STRUCT_INVALID_BDC_OPERAND",
             DiagCode::McidRedefined => "MCID_REDEFINED",
+            DiagCode::ProfileSecretsForbidden => "PROFILE_SECRETS_FORBIDDEN",
         }
     }
 
@@ -1164,7 +1179,8 @@ impl DiagCode {
             | DiagCode::RemoteFetchInterrupted
             | DiagCode::RemoteUrlPrivateNetwork
             | DiagCode::McpToolInvalidParams
-            | DiagCode::McpPathTraversal => Severity::Error,
+            | DiagCode::McpPathTraversal
+            | DiagCode::ProfileSecretsForbidden => Severity::Error,
 
             DiagCode::EncryptionUnsupported
             | DiagCode::EncryptionWrongPassword
@@ -1862,6 +1878,15 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         recoverable: true,
         phase: "6.9",
         suggested_action: "Check available disk space; extraction succeeded but the result wasn't cached",
+    },
+    // === PROFILE_* codes ===
+    DiagInfo {
+        code: DiagCode::ProfileSecretsForbidden,
+        category: "PROFILE",
+        severity: Severity::Error,
+        recoverable: true,
+        phase: "7.10",
+        suggested_action: "Remove the forbidden key from the profile YAML. Keys like password, token, secret, api_key are not allowed in profiles checked into source control.",
     },
 ];
 
