@@ -630,6 +630,15 @@ pub enum DiagCode {
     /// Phase origin: 4.7
     OcrBrokenVectorUnavailable,
 
+    /// Requested OCR language pack not available
+    ///
+    /// Emitted when a requested language pack is not installed. Extraction proceeds
+    /// with eng fallback if available. Run `pdftract doctor tesseract-langs` to
+    /// verify installed languages.
+    ///
+    /// Phase origin: 5.4
+    OcrLanguageUnavailable,
+
     /// Image soft mask not supported in direct compositing path
     ///
     /// Emitted when an image XObject has a /SMask entry. Direct compositing
@@ -863,7 +872,8 @@ impl DiagCode {
             | DiagCode::OcrJpxUnsupported
             | DiagCode::OcrCcittUnsupported
             | DiagCode::OcrTesseractFailed
-            | DiagCode::OcrBrokenVectorUnavailable => "OCR",
+            | DiagCode::OcrBrokenVectorUnavailable
+            | DiagCode::OcrLanguageUnavailable => "OCR",
 
             // IMG_*
             DiagCode::ImgSoftmaskUnsupported
@@ -959,6 +969,7 @@ impl DiagCode {
             DiagCode::OcrCcittUnsupported => "OCR_CCITT_UNSUPPORTED",
             DiagCode::OcrTesseractFailed => "OCR_TESSERACT_FAILED",
             DiagCode::OcrBrokenVectorUnavailable => "OCR_BROKENVECTOR_UNAVAILABLE",
+            DiagCode::OcrLanguageUnavailable => "OCR_LANGUAGE_UNAVAILABLE",
             DiagCode::ImgSoftmaskUnsupported => "IMG_SOFTMASK_UNSUPPORTED",
             DiagCode::ImgUnsupportedFormat => "IMG_UNSUPPORTED_FORMAT",
             DiagCode::ImgDeskewOutOfRange => "IMG_DESKEW_OUT_OF_RANGE",
@@ -1041,6 +1052,7 @@ impl DiagCode {
             | DiagCode::OcrCcittUnsupported
             | DiagCode::OcrTesseractFailed
             | DiagCode::OcrBrokenVectorUnavailable
+            | DiagCode::OcrLanguageUnavailable
             | DiagCode::ImgSoftmaskUnsupported
             | DiagCode::ImgUnsupportedFormat
             | DiagCode::ImgDeskewOutOfRange
@@ -1565,6 +1577,14 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         recoverable: true,
         phase: "4.7",
         suggested_action: "Build with --features ocr to enable OCR recovery on broken-vector pages",
+    },
+    DiagInfo {
+        code: DiagCode::OcrLanguageUnavailable,
+        category: "OCR",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "5.4",
+        suggested_action: "Requested language pack not installed; extraction proceeded with eng fallback. Run 'pdftract doctor tesseract-langs' to verify installed languages.",
     },
     // === IMG_* codes ===
     DiagInfo {

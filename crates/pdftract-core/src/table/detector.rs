@@ -104,6 +104,36 @@ impl TableDetector {
         self.build_grids(intersections, segments)
     }
 
+    /// Detect tables on a page using both line-based and borderless pipelines.
+    ///
+    /// This is the main entry point for table detection (7.2 coordinator).
+    /// It runs both detection pipelines and combines the results:
+    /// 1. Line-based detection for bordered tables (m/l/S, re/S, re/f operators)
+    /// 2. Borderless detection for tables without ruling lines (x0 alignment heuristic)
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - The page context containing page dict and content bytes
+    ///
+    /// # Returns
+    ///
+    /// A vector of grid candidates representing all detected tables.
+    pub fn detect(&self, ctx: &PageContext) -> Vec<GridCandidate> {
+        let mut all_grids = Vec::new();
+
+        // Step 1: Run line-based detection (primary pipeline)
+        let line_based = self.detect_line_based(ctx);
+        all_grids.extend(line_based);
+
+        // Step 2: Run borderless detection (secondary pipeline)
+        // Note: In a full implementation, we would skip regions already
+        // covered by line-based tables to avoid duplicates.
+        let borderless = self.detect_borderless(ctx);
+        all_grids.extend(borderless);
+
+        all_grids
+    }
+
     /// Detect borderless tables using x0 alignment heuristic.
     ///
     /// This method analyzes text positioning to find tables without ruling lines:

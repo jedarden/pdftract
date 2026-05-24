@@ -1,0 +1,345 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://pdftract.ardenone.com/schemas/v1.0/pdftract.schema.json",
+  "title": "PDFtract Extraction Output Schema v1.0",
+  "description": "JSON output schema for PDF text and structure extraction",
+  "type": "object",
+  "required": ["fingerprint", "schema_version", "pages", "metadata"],
+  "properties": {
+    "fingerprint": {
+      "type": "string",
+      "description": "PDF fingerprint for verification (format: pdftract-v1:<hex>)"
+    },
+    "schema_version": {
+      "type": "string",
+      "description": "Schema version (e.g., '1.0')",
+      "enum": ["1.0"]
+    },
+    "pages": {
+      "type": "array",
+      "description": "Extracted pages",
+      "items": {
+        "$ref": "#/definitions/page"
+      }
+    },
+    "metadata": {
+      "$ref": "#/definitions/metadata"
+    }
+  },
+  "definitions": {
+    "page": {
+      "type": "object",
+      "required": ["index", "spans", "blocks", "tables"],
+      "properties": {
+        "index": {
+          "type": "integer",
+          "description": "0-based page index"
+        },
+        "spans": {
+          "type": "array",
+          "description": "Extracted text spans",
+          "items": {
+            "$ref": "#/definitions/span"
+          }
+        },
+        "blocks": {
+          "type": "array",
+          "description": "Extracted structural blocks",
+          "items": {
+            "$ref": "#/definitions/block"
+          }
+        },
+        "tables": {
+          "type": "array",
+          "description": "Extracted tables (cell-level structure)",
+          "items": {
+            "$ref": "#/definitions/table"
+          }
+        },
+        "error": {
+          "type": "string",
+          "description": "Error message if extraction failed for this page"
+        }
+      }
+    },
+    "span": {
+      "type": "object",
+      "required": ["text", "bbox", "font", "size"],
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "The extracted text content"
+        },
+        "bbox": {
+          "type": "array",
+          "description": "Bounding box in PDF user-space points [x0, y0, x1, y1]",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "font": {
+          "type": "string",
+          "description": "Font name or identifier"
+        },
+        "size": {
+          "type": "number",
+          "description": "Font size in points"
+        },
+        "confidence": {
+          "type": "number",
+          "description": "Confidence score (0.0 to 1.0) for OCR text",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "receipt": {
+          "$ref": "#/definitions/receipt"
+        }
+      }
+    },
+    "block": {
+      "type": "object",
+      "required": ["kind", "text", "bbox"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "description": "Block kind/type",
+          "enum": ["paragraph", "heading", "list", "table", "figure"]
+        },
+        "text": {
+          "type": "string",
+          "description": "The concatenated text content of all spans in the block"
+        },
+        "bbox": {
+          "type": "array",
+          "description": "Bounding box in PDF user-space points [x0, y0, x1, y1]",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "level": {
+          "type": "integer",
+          "description": "Heading level (1-6) for 'heading' kind blocks",
+          "minimum": 1,
+          "maximum": 6
+        },
+        "table_index": {
+          "type": "integer",
+          "description": "Table index for 'table' kind blocks (points to tables array)",
+          "minimum": 0
+        },
+        "receipt": {
+          "$ref": "#/definitions/receipt"
+        }
+      }
+    },
+    "table": {
+      "type": "object",
+      "required": ["id", "bbox", "rows", "header_rows", "detection_method", "continued", "continued_from_prev", "page_index"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for this table (e.g., 'table_0')"
+        },
+        "bbox": {
+          "type": "array",
+          "description": "Bounding box in PDF user-space points [x0, y0, x1, y1]",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "rows": {
+          "type": "array",
+          "description": "Rows in this table, ordered top-to-bottom",
+          "items": {
+            "$ref": "#/definitions/row"
+          }
+        },
+        "header_rows": {
+          "type": "integer",
+          "description": "Number of contiguous header rows at the top of the table",
+          "minimum": 0
+        },
+        "detection_method": {
+          "type": "string",
+          "description": "Detection method used to identify this table",
+          "enum": ["line_based", "borderless"]
+        },
+        "continued": {
+          "type": "boolean",
+          "description": "Whether this table continues on the next page"
+        },
+        "continued_from_prev": {
+          "type": "boolean",
+          "description": "Whether this table is a continuation from the previous page"
+        },
+        "page_index": {
+          "type": "integer",
+          "description": "Zero-based page index where this table appears",
+          "minimum": 0
+        }
+      }
+    },
+    "row": {
+      "type": "object",
+      "required": ["bbox", "cells", "is_header"],
+      "properties": {
+        "bbox": {
+          "type": "array",
+          "description": "Bounding box in PDF user-space points [x0, y0, x1, y1]",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "cells": {
+          "type": "array",
+          "description": "Cells in this row, ordered left-to-right",
+          "items": {
+            "$ref": "#/definitions/cell"
+          }
+        },
+        "is_header": {
+          "type": "boolean",
+          "description": "Whether this row is a header row"
+        }
+      }
+    },
+    "cell": {
+      "type": "object",
+      "required": ["bbox", "text", "spans", "row", "col", "rowspan", "colspan", "is_header_row"],
+      "properties": {
+        "bbox": {
+          "type": "array",
+          "description": "Bounding box in PDF user-space points [x0, y0, x1, y1]",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "text": {
+          "type": "string",
+          "description": "The concatenated text content of all spans in the cell"
+        },
+        "spans": {
+          "type": "array",
+          "description": "References to spans in the page's spans array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "row": {
+          "type": "integer",
+          "description": "Zero-based row index within the table",
+          "minimum": 0
+        },
+        "col": {
+          "type": "integer",
+          "description": "Zero-based column index within the table",
+          "minimum": 0
+        },
+        "rowspan": {
+          "type": "integer",
+          "description": "Number of rows this cell spans (default 1)",
+          "minimum": 1
+        },
+        "colspan": {
+          "type": "integer",
+          "description": "Number of columns this cell spans (default 1)",
+          "minimum": 1
+        },
+        "is_header_row": {
+          "type": "boolean",
+          "description": "Whether this cell is in a header row"
+        }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "required": ["pdf_fingerprint", "page_index", "bbox", "content_hash", "extraction_version"],
+      "properties": {
+        "pdf_fingerprint": {
+          "type": "string",
+          "description": "The PDF fingerprint"
+        },
+        "page_index": {
+          "type": "integer",
+          "description": "The page index"
+        },
+        "bbox": {
+          "type": "array",
+          "description": "Bounding box in PDF user-space points [x0, y0, x1, y1]",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "content_hash": {
+          "type": "string",
+          "description": "SHA-256 hash of the content"
+        },
+        "extraction_version": {
+          "type": "string",
+          "description": "Version string of the extractor"
+        },
+        "svg_clip": {
+          "type": "string",
+          "description": "SVG clip path for verification (present only in SvgClip mode)"
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["page_count", "span_count", "block_count"],
+      "properties": {
+        "page_count": {
+          "type": "integer",
+          "description": "Total number of pages in the document"
+        },
+        "span_count": {
+          "type": "integer",
+          "description": "Number of spans extracted"
+        },
+        "block_count": {
+          "type": "integer",
+          "description": "Number of blocks extracted"
+        },
+        "cache_status": {
+          "type": "string",
+          "description": "Cache status: 'hit', 'miss', or 'skipped'",
+          "enum": ["hit", "miss", "skipped"]
+        },
+        "cache_age_seconds": {
+          "type": "integer",
+          "description": "Cache entry age in seconds (only present when cache_status == 'hit')",
+          "minimum": 0
+        },
+        "error_count": {
+          "type": "integer",
+          "description": "Number of pages that failed to extract",
+          "minimum": 0
+        },
+        "reading_order_algorithm": {
+          "type": "string",
+          "description": "Reading order algorithm used for this extraction",
+          "enum": ["struct_tree", "xy_cut"]
+        },
+        "diagnostics": {
+          "type": "array",
+          "description": "Diagnostics emitted during extraction",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

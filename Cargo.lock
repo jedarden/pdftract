@@ -2332,6 +2332,7 @@ dependencies = [
  "chrono",
  "criterion",
  "dashmap",
+ "encoding_rs",
  "filetime",
  "flate2",
  "hex",

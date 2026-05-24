@@ -435,7 +435,7 @@ impl PdfExtractor {
 ///
 /// This struct contains the minimal data needed for one page,
 /// designed to be dropped immediately after serialization.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PageExtraction {
     /// 0-based page index
     pub index: usize,

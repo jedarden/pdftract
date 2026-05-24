@@ -15,6 +15,7 @@
 //! - 1: extraction failed (PDF unreadable, encrypted without password, etc.)
 
 use crate::receipts::Receipt;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use unicode_normalization::UnicodeNormalization;
 
@@ -187,7 +188,7 @@ pub fn check_version_compatibility(
 ///
 /// This represents a single text span extracted from a PDF page,
 /// with enough information to compute IoU and content hash.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpanData {
     /// The extracted text content.
     pub text: String,

@@ -21,11 +21,16 @@ mod detector;
 mod segment;
 mod grid;
 mod cell;
+mod output;
 
 pub use detector::TableDetector;
 pub use segment::{Segment, SegmentOrientation};
 pub use grid::GridCandidate;
 pub use cell::{Cell, TableSpan, detect_merged_cells};
+pub use output::{grid_to_table_json, detect_two_page_tables};
+
+// Re-export cell types for use in extract module
+pub use cell::Cell as TableCell;
 
 use crate::parser::pages::PageDict;
 

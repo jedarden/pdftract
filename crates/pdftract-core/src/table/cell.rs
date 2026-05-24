@@ -16,6 +16,13 @@ use serde::{Deserialize, Serialize};
 /// from reordering spans on the same line.
 const Y_BUCKET_SIZE: f64 = 2.0;
 
+/// Edge presence threshold for merged cell detection (80%).
+///
+/// An interior edge is considered "present" if at least 80% of its
+/// expected length is covered by clustered segments. This tolerates
+/// broken/dashed rules typical in PDFs exported from spreadsheets.
+const EDGE_PRESENCE_THRESHOLD: f32 = 0.8;
+
 /// Bold indicator patterns in PostScript font names.
 ///
 /// These patterns are used to detect bold fonts when the ForceBold flag
@@ -202,6 +209,299 @@ pub fn count_header_rows(cells: &[Cell], row_count: usize) -> u32 {
     }
 
     header_count
+}
+
+/// Detect and apply merged cells (rowspan/colspan) by examining missing interior edges.
+///
+/// This function implements merged cell detection (7.2.5) by checking which interior
+/// grid edges are present vs. missing. When the interior edge between two adjacent
+/// grid cells is absent, the cells are merged.
+///
+/// # Algorithm
+///
+/// 1. For each interior cell (not on the grid boundary), enumerate the four edges
+///    that should bound it (top, bottom, left, right).
+/// 2. An edge is "present" if at least 80% of its expected length is covered by
+///    clustered segments from the grid.
+/// 3. Missing right edge between cells (i, j) and (i+1, j) -> colspan extension.
+/// 4. Missing bottom edge between cells (i, j) and (i, j+1) -> rowspan extension.
+/// 5. Iterate until no more merges can be applied (transitive merges).
+/// 6. Absorbed cells are excluded from the final Vec<Cell>.
+///
+/// # Arguments
+///
+/// * `cells` - The cells to merge (from `assign_spans_to_cells`)
+/// * `grid` - The grid candidate with row/col boundaries and segments
+///
+/// # Returns
+///
+/// A tuple of (merged_cells, diagnostics):
+/// - `merged_cells`: Cells with rowspan/colspan applied, absorbed cells removed
+/// - `diagnostics`: Diagnostic messages about merge operations
+///
+/// # Borderless Tables
+///
+/// For borderless tables (grid.segments is empty), this function returns the
+/// original cells unchanged with a diagnostic indicating that merged cell
+/// detection is a NO-OP for borderless tables.
+pub fn detect_merged_cells(
+    mut cells: Vec<Cell>,
+    grid: &super::GridCandidate,
+) -> (Vec<Cell>, Vec<String>) {
+    let mut diagnostics = Vec::new();
+
+    // Borderless tables have no segments to infer from - NO-OP with diagnostic
+    if grid.segments.is_empty() {
+        diagnostics.push(
+            "merged_cell_detection_skipped: borderless table has no segments for edge inference".to_string()
+        );
+        return (cells, diagnostics);
+    }
+
+    let row_count = grid.row_count();
+    let col_count = grid.col_count();
+
+    // Track which cells have been absorbed (removed from output)
+    // Index is row * col_count + col
+    let mut absorbed = vec![vec![false; col_count]; row_count];
+
+    // Track merges in a loop until no more merges can be applied
+    let mut merges_applied = true;
+    while merges_applied {
+        merges_applied = false;
+
+        // Check each cell for merge opportunities
+        for row in 0..row_count {
+            for col in 0..col_count {
+                // Skip if this cell was already absorbed
+                if absorbed[row][col] {
+                    continue;
+                }
+
+                // Find the cell at this position to get current colspan/rowspan
+                let cell_idx = cells.iter().position(|c| c.row == row && c.col == col);
+                let cell_colspan = cell_idx.and_then(|idx| Some(cells[idx].colspan as usize)).unwrap_or(1);
+                let cell_rowspan = cell_idx.and_then(|idx| Some(cells[idx].rowspan as usize)).unwrap_or(1);
+
+                // Check right edge (colspan) - check at the merged boundary
+                let next_col = col + cell_colspan;
+                if next_col < col_count && !absorbed[row][next_col] {
+                    if !is_vertical_edge_present(grid, next_col, row, row + 1) {
+                        // Missing right edge - merge with cell to the right
+                        merge_cells_right(&mut cells, &mut absorbed, row, col, col_count, &mut diagnostics);
+                        merges_applied = true;
+                        // After merging, this cell may have absorbed more, so continue
+                        // but don't check other directions for this cell in this iteration
+                        continue;
+                    }
+                }
+
+                // Check bottom edge (rowspan) - check at the merged boundary
+                let next_row = row + cell_rowspan;
+                if next_row < row_count && !absorbed[next_row][col] {
+                    if !is_horizontal_edge_present(grid, next_row, col, col + 1) {
+                        // Missing bottom edge - merge with cell below
+                        merge_cells_down(&mut cells, &mut absorbed, row, col, col_count, &mut diagnostics);
+                        merges_applied = true;
+                        continue;
+                    }
+                }
+            }
+        }
+    }
+
+    // Remove absorbed cells from the output
+    let merged_cells: Vec<Cell> = cells.into_iter()
+        .filter(|c| !absorbed[c.row][c.col])
+        .collect();
+
+    (merged_cells, diagnostics)
+}
+
+/// Check if a vertical edge at a given x coordinate is present between two rows.
+///
+/// The edge is present if at least 80% of its length is covered by vertical segments.
+fn is_vertical_edge_present(
+    grid: &super::GridCandidate,
+    edge_x_idx: usize,  // Index of the vertical line in col_xs
+    row_start: usize,   // Starting row index (inclusive)
+    row_end: usize,     // Ending row index (exclusive)
+) -> bool {
+    let x = grid.col_xs[edge_x_idx];
+    let y_top = grid.row_ys[row_start];
+    let y_bottom = grid.row_ys[row_end];
+    let expected_length = (y_top - y_bottom).abs();
+
+    if expected_length < 0.1 {
+        return true; // Degenerate edge, consider present
+    }
+
+    // Find all vertical segments that are collinear with this edge
+    let mut covered_length = 0.0;
+    const EPSILON: f32 = 1.0;
+
+    for segment in &grid.segments {
+        if segment.orientation != super::SegmentOrientation::Vertical {
+            continue;
+        }
+
+        // Check if segment is collinear (same x within epsilon)
+        if (segment.x0 - x).abs() > EPSILON {
+            continue;
+        }
+
+        // Check if segment overlaps with the expected edge range
+        let seg_y0 = segment.y0.max(y_bottom);
+        let seg_y1 = segment.y1.min(y_top);
+
+        if seg_y1 > seg_y0 {
+            covered_length += seg_y1 - seg_y0;
+        }
+    }
+
+    covered_length / expected_length >= EDGE_PRESENCE_THRESHOLD
+}
+
+/// Check if a horizontal edge at a given y coordinate is present between two columns.
+///
+/// The edge is present if at least 80% of its length is covered by horizontal segments.
+fn is_horizontal_edge_present(
+    grid: &super::GridCandidate,
+    edge_y_idx: usize,  // Index of the horizontal line in row_ys
+    col_start: usize,   // Starting column index (inclusive)
+    col_end: usize,     // Ending column index (exclusive)
+) -> bool {
+    let y = grid.row_ys[edge_y_idx];
+    let x_left = grid.col_xs[col_start];
+    let x_right = grid.col_xs[col_end];
+    let expected_length = x_right - x_left;
+
+    if expected_length < 0.1 {
+        return true; // Degenerate edge, consider present
+    }
+
+    // Find all horizontal segments that are collinear with this edge
+    let mut covered_length = 0.0;
+    const EPSILON: f32 = 1.0;
+
+    for segment in &grid.segments {
+        if segment.orientation != super::SegmentOrientation::Horizontal {
+            continue;
+        }
+
+        // Check if segment is collinear (same y within epsilon)
+        if (segment.y0 - y).abs() > EPSILON {
+            continue;
+        }
+
+        // Check if segment overlaps with the expected edge range
+        let seg_x0 = segment.x0.max(x_left);
+        let seg_x1 = segment.x1.min(x_right);
+
+        if seg_x1 > seg_x0 {
+            covered_length += seg_x1 - seg_x0;
+        }
+    }
+
+    covered_length / expected_length >= EDGE_PRESENCE_THRESHOLD
+}
+
+/// Merge cell at (row, col) with cell to its right at the merged boundary.
+///
+/// Updates the surviving cell's colspan and bbox, marks the absorbed cell.
+fn merge_cells_right(
+    cells: &mut Vec<Cell>,
+    absorbed: &mut Vec<Vec<bool>>,
+    row: usize,
+    col: usize,
+    col_count: usize,
+    diagnostics: &mut Vec<String>,
+) {
+    // Find the surviving cell
+    let survivor_idx = cells.iter().position(|c| c.row == row && c.col == col && !absorbed[row][col]);
+
+    if let Some(s_idx) = survivor_idx {
+        // Find the furthest column this cell already spans to
+        let current_colspan = cells[s_idx].colspan as usize;
+        let next_col = col + current_colspan;
+
+        if next_col >= col_count || absorbed[row][next_col] {
+            return; // Already absorbed or out of bounds
+        }
+
+        // Find the cell to absorb at the merged boundary
+        let target_idx = cells.iter().position(|c| c.row == row && c.col == next_col && !absorbed[row][next_col]);
+        if let Some(t_idx) = target_idx {
+            // Clone data before mutating cells
+            let absorbed_content = cells[t_idx].content.clone();
+            let absorbed_bbox = cells[t_idx].bbox[2];
+            let absorbed_colspan = cells[t_idx].colspan;
+
+            // Update survivor's colspan and bbox (add the target's colspan, not just 1)
+            cells[s_idx].colspan += absorbed_colspan;
+            cells[s_idx].bbox[2] = absorbed_bbox; // Expand x1
+
+            // Transfer content from absorbed cell to survivor
+            cells[s_idx].content.extend(absorbed_content);
+
+            // Mark absorbed cell
+            absorbed[row][next_col] = true;
+
+            diagnostics.push(format!(
+                "merged_cells: cell ({},{}) colspan={} absorbed cell ({},{})",
+                row, col, cells[s_idx].colspan, row, next_col
+            ));
+        }
+    }
+}
+
+/// Merge cell at (row, col) with cell below it at the merged boundary.
+///
+/// Updates the surviving cell's rowspan and bbox, marks the absorbed cell.
+fn merge_cells_down(
+    cells: &mut Vec<Cell>,
+    absorbed: &mut Vec<Vec<bool>>,
+    row: usize,
+    col: usize,
+    col_count: usize,
+    diagnostics: &mut Vec<String>,
+) {
+    // Find the surviving cell
+    let survivor_idx = cells.iter().position(|c| c.row == row && c.col == col && !absorbed[row][col]);
+
+    if let Some(s_idx) = survivor_idx {
+        // Find the furthest row this cell already spans to
+        let current_rowspan = cells[s_idx].rowspan as usize;
+        let next_row = row + current_rowspan;
+
+        if next_row >= absorbed.len() || absorbed[next_row][col] {
+            return; // Already absorbed or out of bounds
+        }
+
+        // Find the cell to absorb at the merged boundary
+        let target_idx = cells.iter().position(|c| c.row == next_row && c.col == col && !absorbed[next_row][col]);
+        if let Some(t_idx) = target_idx {
+            // Clone data before mutating cells
+            let absorbed_content = cells[t_idx].content.clone();
+            let absorbed_bbox_y0 = cells[t_idx].bbox[1];
+            let absorbed_rowspan = cells[t_idx].rowspan;
+
+            // Update survivor's rowspan and bbox (add the target's rowspan, not just 1)
+            cells[s_idx].rowspan += absorbed_rowspan;
+            cells[s_idx].bbox[1] = absorbed_bbox_y0; // Expand y0 downward
+
+            // Transfer content from absorbed cell to survivor
+            cells[s_idx].content.extend(absorbed_content);
+
+            // Mark absorbed cell
+            absorbed[next_row][col] = true;
+
+            diagnostics.push(format!(
+                "merged_cells: cell ({},{}) rowspan={} absorbed cell ({},{})",
+                row, col, cells[s_idx].rowspan, next_row, col
+            ));
+        }
+    }
 }
 
 /// A text span for table cell assignment.
@@ -1320,5 +1620,431 @@ mod tests {
 
         // Should count 1 header row (bold signal)
         assert_eq!(count_header_rows(&cells, 2), 1);
+    }
+
+    // Merged cell detection tests (7.2.5)
+
+    #[test]
+    fn test_detect_merged_cells_borderless_table_noop() {
+        // Borderless tables have no segments - should NO-OP with diagnostic
+        let intersections = vec![
+            (50.0, 100.0), (150.0, 100.0), (250.0, 100.0),
+            (50.0, 200.0), (150.0, 200.0), (250.0, 200.0),
+            (50.0, 300.0), (150.0, 300.0), (250.0, 300.0),
+        ];
+
+        let mut grid = GridCandidate::from_intersections(intersections, vec![]).unwrap();
+        // Borderless table has no segments
+        grid.segments = vec![];
+
+        let cells = vec![
+            Cell::new([50.0, 200.0, 150.0, 300.0], 0, 0),
+            Cell::new([150.0, 200.0, 250.0, 300.0], 0, 1),
+            Cell::new([50.0, 100.0, 150.0, 200.0], 1, 0),
+            Cell::new([150.0, 100.0, 250.0, 200.0], 1, 1),
+        ];
+
+        let (merged, diagnostics) = detect_merged_cells(cells, &grid);
+
+        // All cells should remain (no merges)
+        assert_eq!(merged.len(), 4);
+        assert_eq!(merged[0].colspan, 1);
+        assert_eq!(merged[0].rowspan, 1);
+
+        // Should have diagnostic about borderless table
+        assert!(diagnostics.iter().any(|d| d.contains("merged_cell_detection_skipped")));
+    }
+
+    #[test]
+    fn debug_test_colspan_3() {
+        // Debug test to understand what's happening
+        let mut intersections = Vec::new();
+        for &y in &[300.0, 200.0, 100.0] {
+            for &x in &[50.0, 150.0, 250.0, 350.0, 450.0] {
+                intersections.push((x, y));
+            }
+        }
+
+        let segments = vec![
+            crate::table::Segment::horizontal(300.0, 50.0, 450.0),
+            crate::table::Segment::horizontal(200.0, 50.0, 450.0),
+            crate::table::Segment::horizontal(100.0, 50.0, 450.0),
+            crate::table::Segment::vertical(50.0, 100.0, 300.0),
+            crate::table::Segment::vertical(450.0, 100.0, 300.0),
+            crate::table::Segment::vertical(350.0, 100.0, 300.0),  // Full height
+        ];
+
+        let grid = GridCandidate::from_intersections(intersections, segments).unwrap();
+
+        println!("Grid: {} rows x {} cols", grid.row_count(), grid.col_count());
+        println!("row_ys: {:?}", grid.row_ys);
+        println!("col_xs: {:?}", grid.col_xs);
+
+        let cells = vec![
+            Cell::new([50.0, 200.0, 150.0, 300.0], 0, 0),
+            Cell::new([150.0, 200.0, 250.0, 300.0], 0, 1),
+            Cell::new([250.0, 200.0, 350.0, 300.0], 0, 2),
+            Cell::new([350.0, 200.0, 450.0, 300.0], 0, 3),
+            Cell::new([50.0, 100.0, 150.0, 200.0], 1, 0),
+            Cell::new([150.0, 100.0, 250.0, 200.0], 1, 1),
+            Cell::new([250.0, 100.0, 350.0, 200.0], 1, 2),
+            Cell::new([350.0, 100.0, 450.0, 200.0], 1, 3),
+        ];
+
+        let (merged, diagnostics) = detect_merged_cells(cells, &grid);
+
+        println!("\nMerged cells: {}", merged.len());
+        for cell in &merged {
+            println!("  cell ({},{}) colspan={} rowspan={}", cell.row, cell.col, cell.colspan, cell.rowspan);
+        }
+        println!("\nDiagnostics:");
+        for d in diagnostics {
+            println!("  {}", d);
+        }
+    }
+
+    #[test]
+    fn test_detect_merged_cells_colspan_3_critical_test() {
+        // Critical test from plan: merged header cell spanning 3 columns
+        // Grid: 4 columns x 2 rows
+        // Top row has merged cell (colspan=3) and one normal cell
+        // Vertical edge at col_xs[1] and col_xs[2] are missing in row 0
+
+        let mut intersections = Vec::new();
+        for &y in &[300.0, 200.0, 100.0] {
+            for &x in &[50.0, 150.0, 250.0, 350.0, 450.0] {
+                intersections.push((x, y));
+            }
+        }
+
+        // Create segments: all grid edges EXCEPT the vertical edges at x=150 and x=250 in row 0
+        // This creates a merged cell from col 0 to col 2 (colspan=3) in row 0 only
+        let segments = vec![
+            // Horizontal edges (all present)
+            crate::table::Segment::horizontal(300.0, 50.0, 450.0),  // Top edge
+            crate::table::Segment::horizontal(200.0, 50.0, 450.0),  // Middle edge
+            crate::table::Segment::horizontal(100.0, 50.0, 450.0),  // Bottom edge
+            // Vertical edges
+            crate::table::Segment::vertical(50.0, 100.0, 300.0),    // Left edge (full height)
+            crate::table::Segment::vertical(450.0, 100.0, 300.0),   // Right edge (full height)
+            crate::table::Segment::vertical(350.0, 100.0, 300.0),   // Edge between cols 2-3 (full height)
+            crate::table::Segment::vertical(150.0, 100.0, 200.0),   // Edge between cols 0-1 (row 1 only)
+            crate::table::Segment::vertical(250.0, 100.0, 200.0),   // Edge between cols 1-2 (row 1 only)
+            // MISSING: vertical edges at x=150 and x=250 in row 0 (creates merged cell in row 0)
+        ];
+
+        let grid = GridCandidate::from_intersections(intersections, segments).unwrap();
+
+        let cells = vec![
+            Cell::new([50.0, 200.0, 150.0, 300.0], 0, 0),
+            Cell::new([150.0, 200.0, 250.0, 300.0], 0, 1),
+            Cell::new([250.0, 200.0, 350.0, 300.0], 0, 2),
+            Cell::new([350.0, 200.0, 450.0, 300.0], 0, 3),
+            Cell::new([50.0, 100.0, 150.0, 200.0], 1, 0),
+            Cell::new([150.0, 100.0, 250.0, 200.0], 1, 1),
+            Cell::new([250.0, 100.0, 350.0, 200.0], 1, 2),
+            Cell::new([350.0, 100.0, 450.0, 200.0], 1, 3),
+        ];
+
+        let (merged, diagnostics) = detect_merged_cells(cells, &grid);
+
+        // Should have 6 cells (3 absorbed in top row)
+        assert_eq!(merged.len(), 6);
+
+        // Find the merged cell
+        let merged_cell = merged.iter().find(|c| c.row == 0 && c.col == 0).unwrap();
+        assert_eq!(merged_cell.colspan, 3);
+        assert_eq!(merged_cell.rowspan, 1);
+        assert_eq!(merged_cell.bbox[2], 350.0); // x1 expanded to cover absorbed cells
+
+        // Other cells should be normal
+        let cell_r0c3 = merged.iter().find(|c| c.row == 0 && c.col == 3).unwrap();
+        assert_eq!(cell_r0c3.colspan, 1);
+
+        // Should have diagnostic messages about merges
+        assert!(diagnostics.iter().any(|d| d.contains("merged_cells")));
+    }
+
+    #[test]
+    fn test_detect_merged_cells_pure_rowspan() {
+        // Test pure rowspan (vertical merge)
+        // Grid: 3 columns x 3 rows
+        // Left column has merged cell (rowspan=2)
+
+        let mut intersections = Vec::new();
+        for &y in &[300.0, 200.0, 100.0] {
+            for &x in &[50.0, 150.0, 250.0, 350.0] {
+                intersections.push((x, y));
+            }
+        }
+
+        // Create segments: all edges EXCEPT the horizontal edge at y=200 in column 0
+        let segments = vec![
+            // Horizontal edges
+            crate::table::Segment::horizontal(300.0, 50.0, 350.0),  // Top edge
+            crate::table::Segment::horizontal(200.0, 150.0, 350.0), // Middle edge (missing in col 0)
+            crate::table::Segment::horizontal(100.0, 50.0, 350.0),  // Bottom edge
+            // Vertical edges
+            crate::table::Segment::vertical(50.0, 100.0, 300.0),    // Left edge
+            crate::table::Segment::vertical(150.0, 100.0, 300.0),   // Col divider 1
+            crate::table::Segment::vertical(250.0, 100.0, 300.0),   // Col divider 2
+            crate::table::Segment::vertical(350.0, 100.0, 300.0),   // Right edge
+        ];
+
+        let grid = GridCandidate::from_intersections(intersections, segments).unwrap();
+
+        let cells = vec![
+            Cell::new([50.0, 200.0, 150.0, 300.0], 0, 0),
+            Cell::new([150.0, 200.0, 250.0, 300.0], 0, 1),
+            Cell::new([250.0, 200.0, 350.0, 300.0], 0, 2),
+            Cell::new([50.0, 100.0, 150.0, 200.0], 1, 0),
+            Cell::new([150.0, 100.0, 250.0, 200.0], 1, 1),
+            Cell::new([250.0, 100.0, 350.0, 200.0], 1, 2),
+        ];
+
+        let (merged, _diagnostics) = detect_merged_cells(cells, &grid);
+
+        // Should have 5 cells (1 absorbed)
+        assert_eq!(merged.len(), 5);
+
+        // Find the merged cell
+        let merged_cell = merged.iter().find(|c| c.row == 0 && c.col == 0).unwrap();
+        assert_eq!(merged_cell.rowspan, 2);
+        assert_eq!(merged_cell.colspan, 1);
+        assert_eq!(merged_cell.bbox[1], 100.0); // y0 expanded downward
+    }
+
+    #[test]
+    fn test_detect_merged_cells_diagonal_merge() {
+        // Test diagonal merge (rowspan=2, colspan=2)
+        // Grid: 3 columns x 2 rows
+        // Top-left has merged cell covering 2x2 region
+
+        let mut intersections = Vec::new();
+        for &y in &[300.0, 200.0, 100.0] {
+            for &x in &[50.0, 150.0, 250.0, 350.0] {
+                intersections.push((x, y));
+            }
+        }
+
+        // Create segments: missing interior edges in top-left 2x2 region
+        // Row 0: [200, 300], Row 1: [100, 200]
+        // Col 0: [50, 150], Col 1: [150, 250], Col 2: [250, 350]
+        let segments = vec![
+            // Horizontal edges (missing middle divider in top-left)
+            crate::table::Segment::horizontal(300.0, 50.0, 350.0),  // Top edge (y=300)
+            crate::table::Segment::horizontal(200.0, 250.0, 350.0), // Middle edge (y=200, missing in cols 0-1)
+            crate::table::Segment::horizontal(100.0, 50.0, 350.0),  // Bottom edge (y=100)
+            // Vertical edges (missing middle divider in top-left)
+            crate::table::Segment::vertical(50.0, 100.0, 300.0),    // Left edge (x=50)
+            crate::table::Segment::vertical(250.0, 200.0, 300.0),   // Middle vertical (x=250, missing in rows 0-1)
+            crate::table::Segment::vertical(350.0, 100.0, 300.0),   // Right edge (x=350)
+        ];
+
+        let grid = GridCandidate::from_intersections(intersections, segments).unwrap();
+
+        let cells = vec![
+            Cell::new([50.0, 200.0, 150.0, 300.0], 0, 0),
+            Cell::new([150.0, 200.0, 250.0, 300.0], 0, 1),
+            Cell::new([250.0, 200.0, 350.0, 300.0], 0, 2),
+            Cell::new([50.0, 100.0, 150.0, 200.0], 1, 0),
+            Cell::new([150.0, 100.0, 250.0, 200.0], 1, 1),
+            Cell::new([250.0, 100.0, 350.0, 200.0], 1, 2),
+        ];
+
+        let (merged, _diagnostics) = detect_merged_cells(cells, &grid);
+
+        // Should have 3 cells:
+        // - (0,0) with rowspan=2, colspan=2 (absorbs (0,1), (1,0), (1,1))
+        // - (0,2) normal
+        // - (1,2) normal
+        assert_eq!(merged.len(), 3);
+
+        // Find the diagonal merged cell
+        let merged_cell = merged.iter().find(|c| c.row == 0 && c.col == 0).unwrap();
+        assert_eq!(merged_cell.rowspan, 2);
+        assert_eq!(merged_cell.colspan, 2);
+        assert_eq!(merged_cell.bbox[1], 100.0); // y0 expanded
+        assert_eq!(merged_cell.bbox[2], 250.0); // x1 expanded
+    }
+
+    #[test]
+    fn test_detect_merged_cells_no_merges_complete_grid() {
+        // Test that a complete grid with all edges present results in no merges
+        let mut intersections = Vec::new();
+        for &y in &[300.0, 200.0, 100.0] {
+            for &x in &[50.0, 150.0, 250.0, 350.0] {
+                intersections.push((x, y));
+            }
+        }
+
+        // All edges present
+        let segments = vec![
+            crate::table::Segment::horizontal(300.0, 50.0, 350.0),
+            crate::table::Segment::horizontal(200.0, 50.0, 350.0),
+            crate::table::Segment::horizontal(100.0, 50.0, 350.0),
+            crate::table::Segment::vertical(50.0, 100.0, 300.0),
+            crate::table::Segment::vertical(150.0, 100.0, 300.0),
+            crate::table::Segment::vertical(250.0, 100.0, 300.0),
+            crate::table::Segment::vertical(350.0, 100.0, 300.0),
+        ];
+
+        let grid = GridCandidate::from_intersections(intersections, segments).unwrap();
+
+        let cells = vec![
+            Cell::new([50.0, 200.0, 150.0, 300.0], 0, 0),
+            Cell::new([150.0, 200.0, 250.0, 300.0], 0, 1),
+            Cell::new([250.0, 200.0, 350.0, 300.0], 0, 2),
+            Cell::new([50.0, 100.0, 150.0, 200.0], 1, 0),
+            Cell::new([150.0, 100.0, 250.0, 200.0], 1, 1),
+            Cell::new([250.0, 100.0, 350.0, 200.0], 1, 2),
+        ];
+
+        let (merged, diagnostics) = detect_merged_cells(cells, &grid);
+
+        // All cells should remain with no merges
+        assert_eq!(merged.len(), 6);
+        for cell in &merged {
+            assert_eq!(cell.rowspan, 1);
+            assert_eq!(cell.colspan, 1);
+        }
+
+        // No merge diagnostics
+        assert!(!diagnostics.iter().any(|d| d.contains("merged_cells")));
+    }
+
+    #[test]
+    fn test_is_vertical_edge_present_full_coverage() {
+        // Test that a fully covered edge is detected as present
+        let mut intersections = Vec::new();
+        for &y in &[300.0, 200.0, 100.0] {
+            for &x in &[50.0, 150.0, 250.0] {
+                intersections.push((x, y));
+            }
+        }
+
+        // Full coverage vertical edge at x=150
+        let segments = vec![
+            crate::table::Segment::vertical(150.0, 100.0, 300.0),
+        ];
+
+        let grid = GridCandidate::from_intersections(intersections, segments).unwrap();
+
+        // Edge at x=150 between rows 0-1 should be present (100% coverage)
+        assert!(is_vertical_edge_present(&grid, 1, 0, 1));
+    }
+
+    #[test]
+    fn test_is_vertical_edge_present_partial_coverage_below_threshold() {
+        // Test that a partially covered edge (<80%) is detected as absent
+        let mut intersections = Vec::new();
+        for &y in &[300.0, 200.0, 100.0] {
+            for &x in &[50.0, 150.0, 250.0] {
+                intersections.push((x, y));
+            }
+        }
+
+        // Partial coverage (50% of edge length)
+        let segments = vec![
+            crate::table::Segment::vertical(150.0, 200.0, 250.0), // Only covers 50pt of 100pt edge
+        ];
+
+        let grid = GridCandidate::from_intersections(intersections, segments).unwrap();
+
+        // Edge at x=150 between rows 0-1 should be absent (50% < 80% threshold)
+        assert!(!is_vertical_edge_present(&grid, 1, 0, 1));
+    }
+
+    #[test]
+    fn test_is_horizontal_edge_present_full_coverage() {
+        // Test that a fully covered horizontal edge is detected as present
+        let mut intersections = Vec::new();
+        for &y in &[300.0, 200.0, 100.0] {
+            for &x in &[50.0, 150.0, 250.0] {
+                intersections.push((x, y));
+            }
+        }
+
+        // Full coverage horizontal edge at y=200
+        let segments = vec![
+            crate::table::Segment::horizontal(200.0, 50.0, 250.0),
+        ];
+
+        let grid = GridCandidate::from_intersections(intersections, segments).unwrap();
+
+        // Edge at y=200 between cols 0-1 should be present (100% coverage)
+        assert!(is_horizontal_edge_present(&grid, 1, 0, 1));
+    }
+
+    #[test]
+    fn test_is_horizontal_edge_present_partial_coverage_above_threshold() {
+        // Test that a partially covered edge (>80%) is detected as present
+        let mut intersections = Vec::new();
+        for &y in &[300.0, 200.0, 100.0] {
+            for &x in &[50.0, 150.0, 250.0] {
+                intersections.push((x, y));
+            }
+        }
+
+        // Partial coverage (85% of edge length - 85pt of 100pt)
+        let segments = vec![
+            crate::table::Segment::horizontal(200.0, 50.0, 185.0), // Covers 85% of edge
+        ];
+
+        let grid = GridCandidate::from_intersections(intersections, segments).unwrap();
+
+        // Edge at y=200 between cols 0-1 should be present (85% >= 80% threshold)
+        assert!(is_horizontal_edge_present(&grid, 1, 0, 1));
+    }
+
+    #[test]
+    fn test_detect_merged_cells_transitive_merge() {
+        // Test transitive merges: cell (0,0) absorbs (0,1), then absorbs (0,2), then absorbs (0,3)
+        // Grid: 4 columns x 2 rows
+        // NO interior vertical edges (all cells in each row should merge)
+
+        let mut intersections = Vec::new();
+        for &y in &[300.0, 200.0, 100.0] {
+            for &x in &[50.0, 150.0, 250.0, 350.0, 450.0] {
+                intersections.push((x, y));
+            }
+        }
+
+        // Missing ALL interior vertical edges (no edges at x=150, 250, 350)
+        let segments = vec![
+            crate::table::Segment::horizontal(300.0, 50.0, 450.0),
+            crate::table::Segment::horizontal(200.0, 50.0, 450.0),
+            crate::table::Segment::horizontal(100.0, 50.0, 450.0),
+            crate::table::Segment::vertical(50.0, 100.0, 300.0),    // Left edge only
+            crate::table::Segment::vertical(450.0, 100.0, 300.0),   // Right edge only
+        ];
+
+        let grid = GridCandidate::from_intersections(intersections, segments).unwrap();
+
+        let cells = vec![
+            Cell::new([50.0, 200.0, 150.0, 300.0], 0, 0),
+            Cell::new([150.0, 200.0, 250.0, 300.0], 0, 1),
+            Cell::new([250.0, 200.0, 350.0, 300.0], 0, 2),
+            Cell::new([350.0, 200.0, 450.0, 300.0], 0, 3),
+            Cell::new([50.0, 100.0, 150.0, 200.0], 1, 0),
+            Cell::new([150.0, 100.0, 250.0, 200.0], 1, 1),
+            Cell::new([250.0, 100.0, 350.0, 200.0], 1, 2),
+            Cell::new([350.0, 100.0, 450.0, 200.0], 1, 3),
+        ];
+
+        let (merged, _diagnostics) = detect_merged_cells(cells, &grid);
+
+        // Should have 2 cells (6 absorbed: 3 in row 0, 3 in row 1)
+        // - (0,0) colspan=4
+        // - (1,0) colspan=4
+        assert_eq!(merged.len(), 2);
+
+        let merged_cell_r0 = merged.iter().find(|c| c.row == 0 && c.col == 0).unwrap();
+        assert_eq!(merged_cell_r0.colspan, 4);
+        assert_eq!(merged_cell_r0.bbox[2], 450.0); // x1 expanded to cover all 4 columns
+
+        let merged_cell_r1 = merged.iter().find(|c| c.row == 1 && c.col == 0).unwrap();
+        assert_eq!(merged_cell_r1.colspan, 4);
+        assert_eq!(merged_cell_r1.bbox[2], 450.0);
     }
 }

@@ -39,7 +39,7 @@ pub use extract::{extract_pdf, extract_pdf_ndjson, ExtractionResult, PageResult,
 pub use font::std14::{Std14Metrics, NamedEncoding, get_std14_metrics};
 pub use options::{ExtractionOptions, ReceiptsMode};
 pub use parser::pages::{LazyPageIter, PageDict, DEFAULT_MEDIABOX, count_pages_tree};
-pub use schema::{SpanJson, BlockJson, ExtractionQuality};
+pub use schema::{SpanJson, BlockJson, ExtractionQuality, TableJson, RowJson, CellJson, SpanRef};
 pub use table::{TableDetector, PageContext as TablePageContext, GridCandidate};
 
 #[cfg(feature = "ocr")]

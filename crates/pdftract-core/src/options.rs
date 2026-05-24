@@ -116,6 +116,33 @@ pub struct ExtractionOptions {
     /// - Median font size < 7.0 pt: 400 DPI (fine print)
     /// - Otherwise: 300 DPI (standard body text)
     pub ocr_dpi_override: Option<u32>,
+    /// OCR language codes to load for Tesseract (Phase 5.4).
+    ///
+    /// Each language code corresponds to a `<code>.traineddata` file in the
+    /// tessdata directory. Multiple languages can be specified for multi-language
+    /// documents; Tesseract will attempt recognition with all loaded languages.
+    ///
+    /// Default: vec!["eng"] (English)
+    ///
+    /// # Language codes
+    ///
+    /// ISO 639-2/3 codes are used: "eng" (English), "fra" (French), "deu" (German),
+    /// "spa" (Spanish), "jpn" (Japanese), "chi_sim" (Simplified Chinese), etc.
+    ///
+    /// # Missing language handling
+    ///
+    /// If a requested language pack is not installed, extraction proceeds with
+    /// an OCR_LANGUAGE_UNAVAILABLE diagnostic and falls back to eng if available.
+    /// Run `pdftract doctor tesseract-langs` to verify installed languages.
+    ///
+    /// # Docker image variants
+    ///
+    /// - `pdftract:default`: No language packs bundled (OCR not available)
+    /// - `pdftract:ocr`: Bundles eng + common languages (~150 MB)
+    /// - `pdftract:full`: Bundles all 100+ languages (~600 MB)
+    ///
+    /// See docs/notes/ocr-language-packs.md for the full distribution strategy.
+    pub ocr_language: Vec<String>,
 }
 
 impl Default for ExtractionOptions {
@@ -126,6 +153,7 @@ impl Default for ExtractionOptions {
             memory_budget_mb: Self::default_memory_budget_mb(),
             full_render: false,
             ocr_dpi_override: None,
+            ocr_language: vec!["eng".to_string()],
         }
     }
 }
@@ -158,6 +186,7 @@ impl ExtractionOptions {
         Self {
             receipts,
             ocr_dpi_override: None,
+            ocr_language: vec!["eng".to_string()],
             ..Default::default()
         }
     }
@@ -167,6 +196,7 @@ impl ExtractionOptions {
         Ok(Self {
             receipts: ReceiptsMode::from_str(receipts)?,
             ocr_dpi_override: None,
+            ocr_language: vec!["eng".to_string()],
             ..Default::default()
         })
     }
@@ -185,6 +215,7 @@ impl ExtractionOptions {
             max_parallel_pages: max_parallel_pages.max(1),
             memory_budget_mb: memory_budget_mb.max(64),
             ocr_dpi_override: None,
+            ocr_language: vec!["eng".to_string()],
             ..Default::default()
         }
     }
@@ -323,5 +354,25 @@ mod tests {
         // memory_budget_mb should be at least 64
         let opts = ExtractionOptions::with_parallelism(4, 0);
         assert_eq!(opts.memory_budget_mb, 64);
+    }
+
+    #[test]
+    fn test_extraction_options_default_ocr_language() {
+        let opts = ExtractionOptions::default();
+        assert_eq!(opts.ocr_language, vec!["eng"]);
+    }
+
+    #[test]
+    fn test_extraction_options_serialize_ocr_language() {
+        let json = "{\"ocr_language\":[\"eng\",\"fra\"]}";
+        let opts: ExtractionOptions = serde_json::from_str(json).unwrap();
+        assert_eq!(opts.ocr_language, vec!["eng", "fra"]);
+    }
+
+    #[test]
+    fn test_extraction_options_deserialize_ocr_language_default() {
+        let json = "{}";
+        let opts: ExtractionOptions = serde_json::from_str(json).unwrap();
+        assert_eq!(opts.ocr_language, vec!["eng"]);
     }
 }
