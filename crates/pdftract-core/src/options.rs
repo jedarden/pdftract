@@ -4,11 +4,14 @@
 //! including the receipts mode for cryptographic provenance tracking.
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "schemars")]
+use schemars::JsonSchema;
 
 /// Receipt generation mode.
 ///
 /// Controls whether visual citation receipts are generated during extraction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum ReceiptsMode {
     /// No receipts generated (default).

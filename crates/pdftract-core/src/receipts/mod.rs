@@ -26,6 +26,8 @@ pub mod svg;
 pub mod verifier;
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "schemars")]
+use schemars::JsonSchema;
 
 /// A visual citation receipt for extracted text.
 ///
@@ -59,6 +61,7 @@ use serde::{Deserialize, Serialize};
 /// }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Receipt {
     /// Phase 1.7 fingerprint of the source PDF.
     ///

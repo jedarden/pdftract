@@ -28,6 +28,8 @@ use anyhow::{Context, Result};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+#[cfg(feature = "schemars")]
+use schemars::JsonSchema;
 use std::sync::Arc;
 use crate::parser::stream::FileSource;
 
@@ -102,6 +104,7 @@ fn decode_page_content_streams(
 ///
 /// Contains the extracted pages, spans, blocks, and metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ExtractionResult {
     /// The PDF fingerprint (for receipt generation).
     pub fingerprint: String,
@@ -113,6 +116,7 @@ pub struct ExtractionResult {
 
 /// Result for a single page.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct PageResult {
     /// 0-based page index.
     pub index: usize,
@@ -177,6 +181,7 @@ impl From<PageResultInternal> for PageResult {
 
 /// Metadata about the extraction process.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ExtractionMetadata {
     /// Total number of pages in the document.
     pub page_count: usize,

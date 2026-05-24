@@ -1,345 +1,489 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://pdftract.ardenone.com/schemas/v1.0/pdftract.schema.json",
-  "title": "PDFtract Extraction Output Schema v1.0",
-  "description": "JSON output schema for PDF text and structure extraction",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ExtractionResult",
+  "description": "Result of a PDF extraction operation.\n\nContains the extracted pages, spans, blocks, and metadata.",
   "type": "object",
-  "required": ["fingerprint", "schema_version", "pages", "metadata"],
   "properties": {
     "fingerprint": {
-      "type": "string",
-      "description": "PDF fingerprint for verification (format: pdftract-v1:<hex>)"
-    },
-    "schema_version": {
-      "type": "string",
-      "description": "Schema version (e.g., '1.0')",
-      "enum": ["1.0"]
-    },
-    "pages": {
-      "type": "array",
-      "description": "Extracted pages",
-      "items": {
-        "$ref": "#/definitions/page"
-      }
+      "description": "The PDF fingerprint (for receipt generation).",
+      "type": "string"
     },
     "metadata": {
-      "$ref": "#/definitions/metadata"
+      "description": "Metadata about the extraction.",
+      "$ref": "#/$defs/ExtractionMetadata"
+    },
+    "pages": {
+      "description": "Extracted pages, each containing spans and blocks.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PageResult"
+      }
     }
   },
-  "definitions": {
-    "page": {
+  "required": [
+    "fingerprint",
+    "pages",
+    "metadata"
+  ],
+  "$defs": {
+    "BlockJson": {
+      "description": "JSON representation of a structural block.\n\nA block is a higher-level semantic unit composed of one or more\nspans. Examples include paragraphs, headings, list items, and\ntable cells.",
       "type": "object",
-      "required": ["index", "spans", "blocks", "tables"],
       "properties": {
-        "index": {
-          "type": "integer",
-          "description": "0-based page index"
-        },
-        "spans": {
-          "type": "array",
-          "description": "Extracted text spans",
-          "items": {
-            "$ref": "#/definitions/span"
-          }
-        },
-        "blocks": {
-          "type": "array",
-          "description": "Extracted structural blocks",
-          "items": {
-            "$ref": "#/definitions/block"
-          }
-        },
-        "tables": {
-          "type": "array",
-          "description": "Extracted tables (cell-level structure)",
-          "items": {
-            "$ref": "#/definitions/table"
-          }
-        },
-        "error": {
-          "type": "string",
-          "description": "Error message if extraction failed for this page"
-        }
-      }
-    },
-    "span": {
-      "type": "object",
-      "required": ["text", "bbox", "font", "size"],
-      "properties": {
-        "text": {
-          "type": "string",
-          "description": "The extracted text content"
-        },
         "bbox": {
+          "description": "Bounding box in PDF user-space points.\n\nFormat: `[x0, y0, x1, y1]` where (x0, y0) is the bottom-left\ncorner and (x1, y1) is the top-right corner.",
           "type": "array",
-          "description": "Bounding box in PDF user-space points [x0, y0, x1, y1]",
           "items": {
-            "type": "number"
+            "type": "number",
+            "format": "double"
           },
-          "minItems": 4,
-          "maxItems": 4
+          "maxItems": 4,
+          "minItems": 4
         },
-        "font": {
-          "type": "string",
-          "description": "Font name or identifier"
-        },
-        "size": {
-          "type": "number",
-          "description": "Font size in points"
-        },
-        "confidence": {
-          "type": "number",
-          "description": "Confidence score (0.0 to 1.0) for OCR text",
-          "minimum": 0.0,
-          "maximum": 1.0
-        },
-        "receipt": {
-          "$ref": "#/definitions/receipt"
-        }
-      }
-    },
-    "block": {
-      "type": "object",
-      "required": ["kind", "text", "bbox"],
-      "properties": {
         "kind": {
-          "type": "string",
-          "description": "Block kind/type",
-          "enum": ["paragraph", "heading", "list", "table", "figure"]
-        },
-        "text": {
-          "type": "string",
-          "description": "The concatenated text content of all spans in the block"
-        },
-        "bbox": {
-          "type": "array",
-          "description": "Bounding box in PDF user-space points [x0, y0, x1, y1]",
-          "items": {
-            "type": "number"
-          },
-          "minItems": 4,
-          "maxItems": 4
+          "description": "The block kind/type.\n\nCommon values: \"paragraph\", \"heading\", \"list\", \"table\", \"figure\".",
+          "type": "string"
         },
         "level": {
-          "type": "integer",
-          "description": "Heading level (1-6) for 'heading' kind blocks",
-          "minimum": 1,
-          "maximum": 6
-        },
-        "table_index": {
-          "type": "integer",
-          "description": "Table index for 'table' kind blocks (points to tables array)",
+          "description": "Optional heading level (1-6) for \"heading\" kind blocks.\n\nThis field is present only for heading blocks. For paragraphs\nand other block types, it is `null`.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint8",
+          "maximum": 255,
           "minimum": 0
         },
         "receipt": {
-          "$ref": "#/definitions/receipt"
-        }
-      }
-    },
-    "table": {
-      "type": "object",
-      "required": ["id", "bbox", "rows", "header_rows", "detection_method", "continued", "continued_from_prev", "page_index"],
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for this table (e.g., 'table_0')"
+          "description": "Optional cryptographic receipt for verification.\n\nThis field is present when `--receipts=lite` or `--receipts=svg`\nis enabled. When receipts are disabled, the field is `null`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Receipt"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
-        "bbox": {
-          "type": "array",
-          "description": "Bounding box in PDF user-space points [x0, y0, x1, y1]",
-          "items": {
-            "type": "number"
-          },
-          "minItems": 4,
-          "maxItems": 4
-        },
-        "rows": {
-          "type": "array",
-          "description": "Rows in this table, ordered top-to-bottom",
-          "items": {
-            "$ref": "#/definitions/row"
-          }
-        },
-        "header_rows": {
-          "type": "integer",
-          "description": "Number of contiguous header rows at the top of the table",
+        "table_index": {
+          "description": "Optional table index for \"table\" kind blocks.\n\nThis field is present only for table blocks and points to the\ncorresponding entry in the page's `tables` array.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
           "minimum": 0
-        },
-        "detection_method": {
-          "type": "string",
-          "description": "Detection method used to identify this table",
-          "enum": ["line_based", "borderless"]
-        },
-        "continued": {
-          "type": "boolean",
-          "description": "Whether this table continues on the next page"
-        },
-        "continued_from_prev": {
-          "type": "boolean",
-          "description": "Whether this table is a continuation from the previous page"
-        },
-        "page_index": {
-          "type": "integer",
-          "description": "Zero-based page index where this table appears",
-          "minimum": 0
-        }
-      }
-    },
-    "row": {
-      "type": "object",
-      "required": ["bbox", "cells", "is_header"],
-      "properties": {
-        "bbox": {
-          "type": "array",
-          "description": "Bounding box in PDF user-space points [x0, y0, x1, y1]",
-          "items": {
-            "type": "number"
-          },
-          "minItems": 4,
-          "maxItems": 4
-        },
-        "cells": {
-          "type": "array",
-          "description": "Cells in this row, ordered left-to-right",
-          "items": {
-            "$ref": "#/definitions/cell"
-          }
-        },
-        "is_header": {
-          "type": "boolean",
-          "description": "Whether this row is a header row"
-        }
-      }
-    },
-    "cell": {
-      "type": "object",
-      "required": ["bbox", "text", "spans", "row", "col", "rowspan", "colspan", "is_header_row"],
-      "properties": {
-        "bbox": {
-          "type": "array",
-          "description": "Bounding box in PDF user-space points [x0, y0, x1, y1]",
-          "items": {
-            "type": "number"
-          },
-          "minItems": 4,
-          "maxItems": 4
         },
         "text": {
-          "type": "string",
-          "description": "The concatenated text content of all spans in the cell"
-        },
-        "spans": {
+          "description": "The concatenated text content of all spans in the block.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "text",
+        "bbox"
+      ]
+    },
+    "CellJson": {
+      "description": "JSON representation of a table cell.\n\nA cell represents a single unit within a table row, containing\nits text content, bounding box, and position information.",
+      "type": "object",
+      "properties": {
+        "bbox": {
+          "description": "Bounding box in PDF user-space points.\n\nFormat: `[x0, y0, x1, y1]` where (x0, y0) is the bottom-left\ncorner and (x1, y1) is the top-right corner.",
           "type": "array",
-          "description": "References to spans in the page's spans array",
           "items": {
-            "type": "integer"
-          }
-        },
-        "row": {
-          "type": "integer",
-          "description": "Zero-based row index within the table",
-          "minimum": 0
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 4,
+          "minItems": 4
         },
         "col": {
+          "description": "Zero-based column index within the table.",
           "type": "integer",
-          "description": "Zero-based column index within the table",
+          "format": "uint",
+          "minimum": 0
+        },
+        "colspan": {
+          "description": "Number of columns this cell spans (default 1).\n\nValues greater than 1 indicate a merged cell that spans\nmultiple columns horizontally.",
+          "type": "integer",
+          "format": "uint32",
+          "default": 1,
+          "minimum": 0
+        },
+        "is_header_row": {
+          "description": "Whether this cell is in a header row.\n\nHeader cells are typically rendered differently (bold, centered)\nand may be reused when tables span multiple pages.",
+          "type": "boolean"
+        },
+        "row": {
+          "description": "Zero-based row index within the table.",
+          "type": "integer",
+          "format": "uint",
           "minimum": 0
         },
         "rowspan": {
+          "description": "Number of rows this cell spans (default 1).\n\nValues greater than 1 indicate a merged cell that spans\nmultiple rows vertically.",
           "type": "integer",
-          "description": "Number of rows this cell spans (default 1)",
-          "minimum": 1
+          "format": "uint32",
+          "default": 1,
+          "minimum": 0
         },
-        "colspan": {
-          "type": "integer",
-          "description": "Number of columns this cell spans (default 1)",
-          "minimum": 1
-        },
-        "is_header_row": {
-          "type": "boolean",
-          "description": "Whether this cell is in a header row"
-        }
-      }
-    },
-    "receipt": {
-      "type": "object",
-      "required": ["pdf_fingerprint", "page_index", "bbox", "content_hash", "extraction_version"],
-      "properties": {
-        "pdf_fingerprint": {
-          "type": "string",
-          "description": "The PDF fingerprint"
-        },
-        "page_index": {
-          "type": "integer",
-          "description": "The page index"
-        },
-        "bbox": {
+        "spans": {
+          "description": "References to spans in the page's `spans` array.\n\nThese indices point to the spans that make up this cell's content.",
           "type": "array",
-          "description": "Bounding box in PDF user-space points [x0, y0, x1, y1]",
           "items": {
-            "type": "number"
-          },
-          "minItems": 4,
-          "maxItems": 4
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
         },
-        "content_hash": {
-          "type": "string",
-          "description": "SHA-256 hash of the content"
-        },
-        "extraction_version": {
-          "type": "string",
-          "description": "Version string of the extractor"
-        },
-        "svg_clip": {
-          "type": "string",
-          "description": "SVG clip path for verification (present only in SvgClip mode)"
+        "text": {
+          "description": "The concatenated text content of all spans in the cell.",
+          "type": "string"
         }
-      }
+      },
+      "required": [
+        "bbox",
+        "text",
+        "spans",
+        "row",
+        "col",
+        "is_header_row"
+      ]
     },
-    "metadata": {
+    "ExtractionMetadata": {
+      "description": "Metadata about the extraction process.",
       "type": "object",
-      "required": ["page_count", "span_count", "block_count"],
       "properties": {
-        "page_count": {
-          "type": "integer",
-          "description": "Total number of pages in the document"
-        },
-        "span_count": {
-          "type": "integer",
-          "description": "Number of spans extracted"
-        },
         "block_count": {
+          "description": "Number of blocks extracted.",
           "type": "integer",
-          "description": "Number of blocks extracted"
-        },
-        "cache_status": {
-          "type": "string",
-          "description": "Cache status: 'hit', 'miss', or 'skipped'",
-          "enum": ["hit", "miss", "skipped"]
+          "format": "uint",
+          "minimum": 0
         },
         "cache_age_seconds": {
-          "type": "integer",
-          "description": "Cache entry age in seconds (only present when cache_status == 'hit')",
+          "description": "Cache entry age in seconds (only present when cache_status == \"hit\")",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
           "minimum": 0
         },
-        "error_count": {
-          "type": "integer",
-          "description": "Number of pages that failed to extract",
-          "minimum": 0
-        },
-        "reading_order_algorithm": {
-          "type": "string",
-          "description": "Reading order algorithm used for this extraction",
-          "enum": ["struct_tree", "xy_cut"]
+        "cache_status": {
+          "description": "Cache status: \"hit\", \"miss\", or \"skipped\"",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "diagnostics": {
+          "description": "Diagnostics emitted during extraction (coverage warnings, etc.)",
           "type": "array",
-          "description": "Diagnostics emitted during extraction",
           "items": {
             "type": "string"
           }
+        },
+        "error_count": {
+          "description": "Number of pages that failed to extract.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "page_count": {
+          "description": "Total number of pages in the document.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "reading_order_algorithm": {
+          "description": "Reading order algorithm used for this extraction.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "receipts_mode": {
+          "description": "Receipts mode used for this extraction.",
+          "$ref": "#/$defs/ReceiptsMode"
+        },
+        "span_count": {
+          "description": "Number of spans extracted.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
         }
-      }
+      },
+      "required": [
+        "page_count",
+        "receipts_mode",
+        "span_count",
+        "block_count",
+        "error_count",
+        "diagnostics"
+      ]
+    },
+    "PageResult": {
+      "description": "Result for a single page.",
+      "type": "object",
+      "properties": {
+        "blocks": {
+          "description": "Extracted blocks (semantic units like paragraphs, headings).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BlockJson"
+          }
+        },
+        "error": {
+          "description": "Error message if extraction failed for this page.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "index": {
+          "description": "0-based page index.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "spans": {
+          "description": "Extracted spans (text fragments with consistent styling).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SpanJson"
+          }
+        },
+        "tables": {
+          "description": "Extracted tables (cell-level structure).\n\nThis array provides detailed table structure with rows and cells.\nTable blocks in the `blocks` array reference entries here via `table_index`.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TableJson"
+          }
+        }
+      },
+      "required": [
+        "index",
+        "spans",
+        "blocks",
+        "tables"
+      ]
+    },
+    "Receipt": {
+      "description": "A visual citation receipt for extracted text.\n\nReceipts provide cryptographic proof that a piece of extracted text\noriginated from a specific region in a specific PDF. They can be\nverified independently by re-running pdftract on the original file.\n\n# Lite mode\n\nIn lite mode, `svg_clip` is `None` and the JSON output does not\ninclude the key at all (via `skip_serializing_if`). This keeps\nreceipts small (~120-180 bytes) for high-volume use cases like\nRAG citation pipelines.\n\n# SVG mode\n\nIn SVG mode, `svg_clip` contains a self-contained SVG element\nthat renders only the glyphs whose bboxes fall within the receipt\nbbox. The SVG is normalized to the bbox coordinate system and\ncan be rendered standalone in any browser.\n\n# Example\n\n```json\n{\n  \"pdf_fingerprint\": \"pdftract-v1:a7f3...\",\n  \"page_index\": 14,\n  \"bbox\": [220.0, 412.0, 412.0, 432.0],\n  \"content_hash\": \"sha256:9b21...\",\n  \"extraction_version\": \"1.0.0\"\n}\n```",
+      "type": "object",
+      "properties": {
+        "bbox": {
+          "description": "Bounding box in PDF user-space points.\n\nFormat: `[x0, y0, x1, y1]` where:\n- x0, y0: bottom-left corner\n- x1, y1: top-right corner\n- Units: PDF points (1/72 inch)\n\nThis is a copy of the parent span's bbox, included so the\nreceipt is self-contained.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 4,
+          "minItems": 4
+        },
+        "content_hash": {
+          "description": "SHA-256 hash of the NFC-normalized text content.\n\nFormat: `\"sha256:\" + hex(SHA-256)`.\n\nThe text is normalized to NFC form before hashing to ensure\nstability across platforms that may use different Unicode\nnormalization forms (e.g., macOS HFS+/APFS sometimes round-trips\nthrough NFD).",
+          "type": "string"
+        },
+        "extraction_version": {
+          "description": "The pdftract version that produced this receipt.\n\nFormat: semver string (e.g., \"1.0.0\", \"1.0.0-rc.1\").\nTaken from `CARGO_PKG_VERSION` at compile time.",
+          "type": "string"
+        },
+        "page_index": {
+          "description": "0-based page index in the source PDF.\n\nMatches the page_index in the extraction schema.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "pdf_fingerprint": {
+          "description": "Phase 1.7 fingerprint of the source PDF.\n\nFormat: `\"pdftract-v1:\" + hex(SHA-256)`.\nThe verifier compares this string literally (not parsed).",
+          "type": "string"
+        },
+        "svg_clip": {
+          "description": "Optional SVG clip rendering the glyphs in this receipt.\n\n- `None` in lite mode (the key is omitted from JSON entirely)\n- `Some(svg)` in SVG mode, where `svg` is a self-contained SVG element\n\nThe SVG coordinate system is normalized to the bbox itself,\nso it renders correctly in isolation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "pdf_fingerprint",
+        "page_index",
+        "bbox",
+        "content_hash",
+        "extraction_version"
+      ]
+    },
+    "ReceiptsMode": {
+      "description": "Receipt generation mode.\n\nControls whether visual citation receipts are generated during extraction.",
+      "oneOf": [
+        {
+          "description": "No receipts generated (default).",
+          "type": "string",
+          "const": "off"
+        },
+        {
+          "description": "Lite mode: minimal receipts (~120 bytes each) with fingerprint, page index, bbox, and content hash.",
+          "type": "string",
+          "const": "lite"
+        },
+        {
+          "description": "SVG mode: extended receipts that include an SVG clip rendering the glyphs.",
+          "type": "string",
+          "const": "svg"
+        }
+      ]
+    },
+    "RowJson": {
+      "description": "JSON representation of a table row.\n\nA row contains a sequence of cells that form a horizontal strip\nin the table.",
+      "type": "object",
+      "properties": {
+        "bbox": {
+          "description": "Bounding box in PDF user-space points.\n\nFormat: `[x0, y0, x1, y1]` where (x0, y0) is the bottom-left\ncorner and (x1, y1) is the top-right corner.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 4,
+          "minItems": 4
+        },
+        "cells": {
+          "description": "Cells in this row, ordered left-to-right.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CellJson"
+          }
+        },
+        "is_header": {
+          "description": "Whether this row is a header row.\n\nHeader rows are typically repeated when tables span multiple pages.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "bbox",
+        "cells",
+        "is_header"
+      ]
+    },
+    "SpanJson": {
+      "description": "JSON representation of a text span.\n\nA span is the smallest unit of extracted text, representing a\ncontiguous run of text with consistent font and styling.",
+      "type": "object",
+      "properties": {
+        "bbox": {
+          "description": "Bounding box in PDF user-space points.\n\nFormat: `[x0, y0, x1, y1]` where (x0, y0) is the bottom-left\ncorner and (x1, y1) is the top-right corner.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 4,
+          "minItems": 4
+        },
+        "confidence": {
+          "description": "Optional confidence score (0.0 to 1.0).\n\nThis field is present when OCR is used or when the extraction\nhas uncertainty about the text. When confidence is not applicable,\nthis field is `null`.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "font": {
+          "description": "Font name or identifier.",
+          "type": "string"
+        },
+        "receipt": {
+          "description": "Optional cryptographic receipt for verification.\n\nThis field is present when `--receipts=lite` or `--receipts=svg`\nis enabled. When receipts are disabled, the field is `null`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Receipt"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "size": {
+          "description": "Font size in points.",
+          "type": "number",
+          "format": "double"
+        },
+        "text": {
+          "description": "The extracted text content.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "bbox",
+        "font",
+        "size"
+      ]
+    },
+    "TableJson": {
+      "description": "JSON representation of a table.\n\nTables are emitted in parallel with table blocks - the block\nprovides the concatenated text and position, while the TableJson\nprovides full cell-level structure.",
+      "type": "object",
+      "properties": {
+        "bbox": {
+          "description": "Bounding box in PDF user-space points.\n\nFormat: `[x0, y0, x1, y1]` where (x0, y0) is the bottom-left\ncorner and (x1, y1) is the top-right corner.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 4,
+          "minItems": 4
+        },
+        "continued": {
+          "description": "Whether this table continues on the next page.\n\nSet to `true` when a table is split across pages and this\npage contains the first part.",
+          "type": "boolean"
+        },
+        "continued_from_prev": {
+          "description": "Whether this table is a continuation from the previous page.\n\nSet to `true` when a table is split across pages and this\npage contains a subsequent part.",
+          "type": "boolean"
+        },
+        "detection_method": {
+          "description": "Detection method used to identify this table.\n\n- \"line_based\": Table detected via ruling lines (borders)\n- \"borderless\": Table detected via x0 alignment heuristics",
+          "type": "string"
+        },
+        "header_rows": {
+          "description": "Number of contiguous header rows at the top of the table.\n\nHeader rows are typically repeated when tables span multiple pages.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "id": {
+          "description": "Unique identifier for this table (e.g., \"table_0\").",
+          "type": "string"
+        },
+        "page_index": {
+          "description": "Zero-based page index where this table appears.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "rows": {
+          "description": "Rows in this table, ordered top-to-bottom.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RowJson"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "bbox",
+        "rows",
+        "header_rows",
+        "detection_method",
+        "continued",
+        "continued_from_prev",
+        "page_index"
+      ]
     }
   }
 }

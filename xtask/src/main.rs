@@ -104,17 +104,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("  doc-profiles                     Generate README skeletons for all profiles");
         eprintln!("  generate-stress-pdfs            Generate stress-test PDFs for memory ceiling testing");
         eprintln!("  generate-page-class-fixtures    Generate page classification test fixtures");
+        eprintln!("  gen-schema                      Generate JSON Schema from Rust output types");
         eprintln!("  memory-ceiling                  Run memory ceiling tests against perf/malformed corpora");
         std::process::exit(1);
     }
 
-    match args[1].as_str() {
+    let result = match args[1].as_str() {
         "doc-profile" => {
             if args.len() < 3 {
                 eprintln!("Usage: xtask doc-profile <profile-name>");
                 std::process::exit(1);
             }
             generate_profile_readme(&args[2])?;
+            Ok(())
         }
         "doc-profiles" => {
             let profiles_dir = find_workspace_root().join("profiles/builtin");
@@ -127,20 +129,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
+            Ok(())
         }
         "generate-stress-pdfs" => {
             generate_stress_pdfs()?;
+            Ok(())
         }
         "generate-page-class-fixtures" => {
             generate_page_class_fixtures()?;
+            Ok(())
+        }
+        "gen-schema" => {
+            gen_schema()?;
+            Ok(())
         }
         "memory-ceiling" => {
             run_memory_ceiling_tests()?;
+            Ok(())
         }
         _ => {
             eprintln!("Unknown command: {}", args[1]);
             std::process::exit(1);
         }
+    };
+
+    result
+}
+
+/// Generate JSON Schema from Rust output types.
+///
+/// Delegates to the gen_schema binary.
+fn gen_schema() -> Result<(), Box<dyn std::error::Error>> {
+    // Invoke the gen_schema binary
+    let status = std::process::Command::new("cargo")
+        .args(["run", "--bin", "gen_schema"])
+        .current_dir(find_workspace_root())
+        .status()?;
+
+    if !status.success() {
+        return Err(format!("gen_schema failed with exit code: {:?}", status.code()).into());
     }
 
     Ok(())

@@ -21,6 +21,7 @@ regex = "1.10"
 secrecy = { workspace = true }
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1.0", optional = true }
+schemars = { version = "1.2", features = ["derive"], optional = true }
 sha2 = "0.10"
 thiserror = { workspace = true }
 memchr = { workspace = true }
@@ -38,7 +39,8 @@ quick-xml = { version = "0.36", optional = true }
 
 [features]
 default = ["serde"]
-serde = ["dep:serde", "dep:serde_json"]
+serde = ["dep:serde", "dep:serde_json", "dep:schemars"]
+schemars = ["dep:schemars", "serde"]
 receipts = []  # Enable visual citation receipts (SVG clip generation)
 ocr = ["dep:image", "dep:leptonica-plumbing", "dep:quick-xml"]  # Enable OCR path (image compositing + preprocessing + HOCR parsing)
 full-render = ["dep:pdfium-render", "ocr"]  # Enable PDFium-based rendering (requires ocr)

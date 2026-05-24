@@ -18,6 +18,8 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+#[cfg(feature = "schemars")]
+use schemars::JsonSchema;
 
 use crate::receipts::Receipt;
 
@@ -26,6 +28,7 @@ use crate::receipts::Receipt;
 /// A span is the smallest unit of extracted text, representing a
 /// contiguous run of text with consistent font and styling.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct SpanJson {
     /// The extracted text content.
     pub text: String,
@@ -64,6 +67,7 @@ pub struct SpanJson {
 /// spans. Examples include paragraphs, headings, list items, and
 /// table cells.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BlockJson {
     /// The block kind/type.
     ///
@@ -112,6 +116,7 @@ pub type SpanRef = usize;
 /// A cell represents a single unit within a table row, containing
 /// its text content, bounding box, and position information.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct CellJson {
     /// Bounding box in PDF user-space points.
     ///
@@ -163,6 +168,7 @@ fn default_one() -> u32 {
 /// A row contains a sequence of cells that form a horizontal strip
 /// in the table.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct RowJson {
     /// Bounding box in PDF user-space points.
     ///
@@ -185,6 +191,7 @@ pub struct RowJson {
 /// provides the concatenated text and position, while the TableJson
 /// provides full cell-level structure.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct TableJson {
     /// Unique identifier for this table (e.g., "table_0").
     pub id: String,
@@ -231,6 +238,7 @@ pub struct TableJson {
 /// in the root metadata (full JSON mode). It provides aggregate
 /// quality signals across all pages.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ExtractionQuality {
     /// Overall quality assessment: "high", "medium", "low", or "none".
     ///
