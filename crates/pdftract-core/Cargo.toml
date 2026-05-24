@@ -42,6 +42,7 @@ full-render = ["dep:pdfium-render", "ocr"]  # Enable PDFium-based rendering (req
 proptest = []
 fuzzing = []  # Enable cfg(fuzzing) for fuzz harnesses
 shape-db = []  # Enable glyph shape database (Level 4 encoding fallback)
+cjk = []  # Enable CJK text extraction via predefined CMap registry (~1.2 MB binary size increase)
 
 [dev-dependencies]
 chrono = "0.4"

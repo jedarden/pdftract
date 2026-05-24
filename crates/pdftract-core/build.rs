@@ -7,6 +7,7 @@ fn main() {
     println!("cargo:rerun-if-changed=build/named-encodings.json");
     println!("cargo:rerun-if-changed=build/agl.json");
     println!("cargo:rerun-if-changed=build/font-fingerprints.json");
+    println!("cargo:rerun-if-changed=build/predefined-cmaps/");
 
     let out_dir = env::var("OUT_DIR").unwrap();
     let out_path = Path::new(&out_dir);
@@ -26,6 +27,9 @@ fn main() {
     // Generate font fingerprint phf map
     let fingerprints_path = Path::new("build/font-fingerprints.json");
     generate_font_fingerprints(out_path, fingerprints_path);
+
+    // Generate predefined CMap registry
+    generate_predefined_cmaps(out_path);
 }
 
 fn generate_std14_metrics(out_dir: &Path, metrics_path: &Path) {
@@ -421,4 +425,161 @@ fn hex_decode_to_array(hex: &str) -> [u8; 32] {
 fn is_valid_unicode_scalar(cp: u32) -> bool {
     // Unicode scalar values: 0x0..=0xD7FF, 0xE000..=0x10FFFF
     (0x0..=0xD7FF).contains(&cp) || (0xE000..=0x10FFFF).contains(&cp)
+}
+
+/// Generate predefined CMap CID->Unicode mappings.
+///
+/// Reads JSON files from build/predefined-cmaps/ and generates phf maps
+/// for CID->Unicode lookups. The JSON files contain mappings from CIDs
+/// to their Unicode codepoint(s).
+fn generate_predefined_cmaps(out_dir: &Path) {
+    let predefined_cmaps_dir = Path::new("build/predefined-cmaps");
+
+    // Generate each character collection
+    generate_collection_cmap(out_dir, predefined_cmaps_dir, "adobe-japan1", "japan1");
+    generate_collection_cmap(out_dir, predefined_cmaps_dir, "adobe-gb1", "gb1");
+    generate_collection_cmap(out_dir, predefined_cmaps_dir, "adobe-cns1", "cns1");
+    generate_collection_cmap(out_dir, predefined_cmaps_dir, "adobe-korea1", "korea1");
+}
+
+/// Generate a single character collection's CMap module.
+fn generate_collection_cmap(out_dir: &Path, base_dir: &Path, json_name: &str, module_name: &str) {
+    let json_path = base_dir.join(format!("{}.json", json_name));
+    let out_path = out_dir.join(format!("predefined_cmap_{}.rs", module_name));
+
+    // Check if the JSON file exists
+    if !json_path.exists() {
+        // Generate a stub implementation
+        let rust_code = format!(r#"
+// Auto-generated {collection} CID to Unicode mapping.
+//
+// Source: {json_name}.json (not found - stub implementation)
+// Do not edit manually.
+
+/// Look up a CID in the {collection} character collection.
+///
+/// Returns None if the CID is not assigned in {collection} or if the
+/// predefined CMap data file is missing.
+pub fn cid_to_unicode(cid: u32) -> Option<&'static [char]> {{
+    let _ = cid;
+    None
+}}
+"#,
+            collection = module_name.to_uppercase(),
+            json_name = json_name,
+        );
+
+        fs::write(&out_path, rust_code)
+            .expect(&format!("Failed to write {}", out_path.display()));
+        return;
+    }
+
+    let json_content = fs::read_to_string(&json_path)
+        .expect(&format!("Failed to read {}", json_path.display()));
+
+    let data: serde_json::Value = serde_json::from_str(&json_content)
+        .expect(&format!("Failed to parse {}", json_path.display()));
+
+    // Build phf map
+    let mut map_builder = phf_codegen::Map::new();
+    let mut arrays = String::new();
+
+    if let Some(mappings) = data.as_object() {
+        for (cid_str, unicode_value) in mappings {
+            let cid: u32 = cid_str.parse()
+                .expect(&format!("Invalid CID key: {}", cid_str));
+
+            // Parse the Unicode value
+            if let Some(unicode_str) = unicode_value.as_str() {
+                let chars = parse_unicode_value(unicode_str);
+
+                // Generate array name
+                let array_ident = format!("CID_{}_{}", module_name.to_uppercase(), cid);
+
+                // Build the array
+                let char_literals: Vec<String> = chars.iter()
+                    .map(|c| format!("'\\u{{{:04X}}}'", *c as u32))
+                    .collect();
+
+                arrays.push_str(&format!(r#"
+static {}: &[char] = &[{}];
+"#,
+                    array_ident,
+                    char_literals.join(", ")
+                ));
+
+                // Use u32 key as decimal literal
+                map_builder.entry(cid, &format!("&{}", array_ident));
+            }
+        }
+    }
+
+    let rust_code = format!(r#"
+// Auto-generated {collection} CID to Unicode mapping.
+//
+// Source: {json_name}.json
+// Do not edit manually.
+
+{arrays}
+
+/// Look up a CID in the {collection} character collection.
+///
+/// Returns None if the CID is not assigned in {collection}.
+pub fn cid_to_unicode(cid: u32) -> Option<&'static [char]> {{
+    static MAP: phf::Map<u32, &'static [char]> = {map};
+
+    // CIDs are 16-bit in these collections, but we use u32 for the API
+    if cid <= u16::MAX as u32 {{
+        MAP.get(&cid).copied()
+    }} else {{
+        None
+    }}
+}}
+"#,
+        collection = module_name.to_uppercase(),
+        json_name = json_name,
+        arrays = arrays,
+        map = map_builder.build(),
+    );
+
+    fs::write(&out_path, rust_code)
+        .expect(&format!("Failed to write {}", out_path.display()));
+}
+
+/// Parse a Unicode value from JSON to a Vec<char>.
+///
+/// The JSON value can be:
+/// - A single Unicode escape like "A" (A)
+/// - Multiple Unicode escapes for ligatures like "fi" (fi)
+fn parse_unicode_value(s: &str) -> Vec<char> {
+    let mut chars = Vec::new();
+    let mut chars_iter = s.chars();
+
+    while let Some(c) = chars_iter.next() {
+        if c == '\\' {
+            // Expect \uXXXX
+            if chars_iter.next() == Some('u') {
+                // Read 4 hex digits
+                let mut hex_str = String::new();
+                for _ in 0..4 {
+                    if let Some(hex_c) = chars_iter.next() {
+                        hex_str.push(hex_c);
+                    }
+                }
+
+                if let Ok(codepoint) = u32::from_str_radix(&hex_str, 16) {
+                    if let Some(unicode_char) = char::from_u32(codepoint) {
+                        chars.push(unicode_char);
+                    }
+                }
+            }
+        }
+    }
+
+    if chars.is_empty() && !s.is_empty() {
+        // Fallback: try to parse as direct character
+        chars.extend(s.chars());
+    }
+
+    chars
 }

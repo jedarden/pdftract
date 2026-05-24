@@ -11,6 +11,7 @@ pub mod encoding;
 pub mod agl;
 pub mod fingerprint;
 pub mod resolver;
+pub mod predefined_cmap;
 
 pub use embedded::{EmbeddedFont, FontMetrics, EmptyFontMetrics, GlyphBbox};
 pub use type0::{Type0Font, DescendantCIDFont, CIDToGIDMap};
@@ -19,6 +20,7 @@ pub use encoding::{NamedEncoding, DifferencesOverlay, FontEncoding};
 pub use agl::{unicode_for_glyph_name, unicode_for_glyph_name_multi};
 pub use fingerprint::{FontFingerprint, CachedFingerprint, lookup_font_fingerprint};
 pub use resolver::{FontId, UnicodeSource, ResolvedGlyph, ResolverCache, Font, resolve_unicode};
+pub use predefined_cmap::{PredefinedCMap, from_name as predefined_cmap_from_name, CharacterCollection};
 
 use crate::parser::object::types::{PdfDict, PdfObject};
 
