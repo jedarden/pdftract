@@ -6,6 +6,7 @@ use std::path::PathBuf;
 mod cache_cmd;
 mod codegen;
 mod doctor;
+mod grep;
 mod mcp;
 mod password;
 mod serve;
@@ -114,6 +115,8 @@ enum Commands {
         #[arg(long)]
         md_anchors: bool,
     },
+    /// Search for text patterns in PDF files with bounding-box results
+    Grep(grep::GrepArgs),
     /// Verify a receipt against a PDF file
     VerifyReceipt(verify_receipt::VerifyReceiptCommand),
     /// Manage the extraction cache
@@ -362,6 +365,12 @@ fn main() -> Result<()> {
                 no_cache,
                 md_anchors,
             ) {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Grep(args) => {
+            if let Err(e) = grep::run_grep(args) {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }

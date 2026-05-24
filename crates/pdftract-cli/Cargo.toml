@@ -45,6 +45,8 @@ hyper-util = { version = "0.1", features = ["full"] }
 image = "0.24"
 http-body-util = "0.1"
 humantime = "2.1"
+indicatif = { version = "0.17", optional = true }
+num_cpus = "1"
 libloading = { version = "0.8", optional = true }
 lzw = { workspace = true }
 multer = "3"
@@ -90,7 +92,7 @@ mcp = []
 # Inspector web viewer
 inspect = []
 # Folder grep mode
-grep = []
+grep = ["dep:indicatif"]
 # Content-addressed cache
 cache = []
 # Visual citation receipts
