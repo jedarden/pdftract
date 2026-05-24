@@ -25,6 +25,9 @@
 
 use std::f32;
 
+// Include the build-generated shape database
+include!(concat!(env!("OUT_DIR"), "/shape_db.rs"));
+
 /// Shape database entry with pHash and associated character.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ShapeEntry {
@@ -305,15 +308,15 @@ pub fn lookup_shape(query_hash: u64) -> Option<ShapeMatch> {
     let mut best_match: Option<ShapeMatch> = None;
     let mut best_distance = u32::MAX;
 
-    for entry in db.iter() {
-        let distance = hamming_distance(query_hash, entry.phash);
+    for &(entry_hash, ch) in db.iter() {
+        let distance = hamming_distance(query_hash, entry_hash);
 
         // Only consider matches within the threshold
         if distance <= 8 {
             // Update best match if this is closer
             if distance < best_distance {
                 best_distance = distance;
-                best_match = Some(ShapeMatch::new(entry.ch, distance));
+                best_match = Some(ShapeMatch::new(ch, distance));
 
                 // Distance 0 is perfect match, can't do better
                 if distance == 0 {
@@ -329,10 +332,9 @@ pub fn lookup_shape(query_hash: u64) -> Option<ShapeMatch> {
 /// Get the shape database slice.
 ///
 /// Returns a slice of (pHash, char) entries sorted by pHash.
-/// This is a stub that returns an empty slice; the actual database
-/// will be generated from build/glyph-shapes.json in a future bead.
-fn shape_database() -> &'static [ShapeEntry] {
-    &[]
+/// This is generated from build/glyph-shapes.json via build.rs.
+fn shape_database() -> &'static [(u64, char)] {
+    SHAPE_TABLE
 }
 
 #[cfg(test)]
@@ -513,5 +515,28 @@ mod tests {
     fn test_lookup_shape_empty_database() {
         // With empty database, should return None
         assert_eq!(lookup_shape(0x1234567890ABCDEF), None);
+    }
+
+    #[test]
+    fn test_shape_database_generated() {
+        // Verify that the generated shape database is accessible
+        // This test will pass if glyph-shapes.json exists and was processed
+        let db = shape_database();
+
+        // If glyph-shapes.json was present, we should have entries
+        // If not, db will be empty (both cases are valid)
+        if !db.is_empty() {
+            // Verify entries are sorted by pHash
+            for i in 1..db.len() {
+                assert!(
+                    db[i].0 >= db[i - 1].0,
+                    "SHAPE_TABLE not sorted: index {} has {:016x}, index {} has {:016x}",
+                    i - 1,
+                    db[i - 1].0,
+                    i,
+                    db[i].0
+                );
+            }
+        }
     }
 }

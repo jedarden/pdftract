@@ -8,6 +8,7 @@ fn main() {
     println!("cargo:rerun-if-changed=build/agl.json");
     println!("cargo:rerun-if-changed=build/font-fingerprints.json");
     println!("cargo:rerun-if-changed=build/predefined-cmaps/");
+    println!("cargo:rerun-if-changed=build/glyph-shapes.json");
 
     let out_dir = env::var("OUT_DIR").unwrap();
     let out_path = Path::new(&out_dir);
@@ -30,6 +31,10 @@ fn main() {
 
     // Generate predefined CMap registry
     generate_predefined_cmaps(out_path);
+
+    // Generate glyph shape database
+    let shapes_path = Path::new("build/glyph-shapes.json");
+    generate_shape_db(out_path, shapes_path);
 }
 
 fn generate_std14_metrics(out_dir: &Path, metrics_path: &Path) {
@@ -607,4 +612,148 @@ fn parse_unicode_value(s: &str) -> Vec<char> {
     }
 
     chars
+}
+
+/// Generate glyph shape database from glyph-shapes.json.
+///
+/// Reads build/glyph-shapes.json and emits two parallel static arrays:
+/// - SHAPE_TABLE: &'static [(u64, char)] sorted by pHash
+/// - FREQ_TABLE: &'static [(u64, u32)] for frequency ranks (same order as SHAPE_TABLE)
+///
+/// # JSON format
+///
+/// Array of entries:
+/// ```json
+/// {
+///   "phash_hex": "0123456789abcdef",
+///   "char": "A",
+///   "source_font": "font.ttf",
+///   "frequency_rank": 1
+/// }
+/// ```
+fn generate_shape_db(out_dir: &Path, shapes_path: &Path) {
+    // Resolve shapes_path relative to the workspace root
+    // build.rs runs from the crate directory, but the build/ dir is at workspace root
+    // We can find the workspace root by going up from the crate directory
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_dir.ancestors().nth(2).unwrap_or(crate_dir); // workspace is usually 2 levels up
+    let actual_shapes_path = workspace_root.join("build").join("glyph-shapes.json");
+
+    // Check if the JSON file exists
+    if !actual_shapes_path.exists() {
+        // Emit a build warning and empty tables
+        println!(
+            "cargo:warning=glyph-shapes.json not found at {}, generating empty shape database",
+            actual_shapes_path.display()
+        );
+        let rust_code = r#"
+// Auto-generated glyph shape database.
+// Source: build/glyph-shapes.json (not found - empty database)
+// Do not edit manually.
+
+/// Shape database: empty (run `cargo xtask gen-shape-db` to generate).
+pub static SHAPE_TABLE: &[(u64, char)] = &[];
+
+/// Frequency table: empty (run `cargo xtask gen-shape-db` to generate).
+pub static FREQ_TABLE: &[(u64, u32)] = &[];
+
+/// Compile-time assertion that tables are parallel.
+const _: () = assert!(SHAPE_TABLE.len() == FREQ_TABLE.len());
+"#;
+        fs::write(Path::new(out_dir).join("shape_db.rs"), rust_code)
+            .expect("Failed to write shape_db.rs");
+        return;
+    }
+
+    let json_content =
+        fs::read_to_string(&actual_shapes_path).expect("Failed to read glyph-shapes.json");
+
+    let data: serde_json::Value =
+        serde_json::from_str(&json_content).expect("Failed to parse glyph-shapes.json");
+
+    let entries = data.as_array().expect("glyph-shapes.json must be an array");
+
+    // Parse and sort entries by pHash
+    let mut sorted_entries: Vec<(u64, char, u32)> = Vec::new();
+
+    for (idx, entry) in entries.iter().enumerate() {
+        let phash_hex = entry
+            .get("phash_hex")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        let phash = u64::from_str_radix(phash_hex, 16)
+            .unwrap_or_else(|e| panic!("Invalid phash_hex at index {}: {}", idx, e));
+
+        let char_str = entry.get("char").and_then(|v| v.as_str()).unwrap_or("");
+
+        let ch = char_str
+            .chars()
+            .next()
+            .unwrap_or_else(|| panic!("Empty char field at index {}", idx));
+
+        let freq_rank = entry
+            .get("frequency_rank")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+
+        sorted_entries.push((phash, ch, freq_rank));
+    }
+
+    // Sort by pHash ascending
+    sorted_entries.sort_by(|a, b| a.0.cmp(&b.0));
+
+    // Check for duplicate pHash entries
+    for i in 1..sorted_entries.len() {
+        if sorted_entries[i].0 == sorted_entries[i - 1].0 {
+            eprintln!(
+                "Warning: duplicate pHash {:016x} at indices {} and {}",
+                sorted_entries[i].0,
+                i - 1,
+                i
+            );
+        }
+    }
+
+    // Generate SHAPE_TABLE entries
+    let mut shape_entries = Vec::new();
+    for &(phash, ch, _) in &sorted_entries {
+        // Use Rust's Debug formatter which produces valid char literals
+        // e.g. 'a', '\n', '\u{1f600}'
+        let char_literal = format!("{:?}", ch);
+        shape_entries.push(format!("(0x{:016x}, {})", phash, char_literal));
+    }
+
+    // Generate FREQ_TABLE entries
+    let mut freq_entries = Vec::new();
+    for &(phash, _, freq) in &sorted_entries {
+        freq_entries.push(format!("(0x{:016x}, {})", phash, freq));
+    }
+
+    let rust_code = format!(
+        r#"
+// Auto-generated glyph shape database.
+// Source: build/glyph-shapes.json
+// Do not edit manually.
+
+/// Shape database: pHash -> character mapping sorted by pHash.
+pub static SHAPE_TABLE: &[(u64, char)] = &[
+{}
+];
+
+/// Frequency table: pHash -> frequency rank (same order as SHAPE_TABLE).
+/// Higher rank = more common character.
+pub static FREQ_TABLE: &[(u64, u32)] = &[
+{}
+];
+
+/// Compile-time assertion that tables have the same length.
+const _: () = assert!(SHAPE_TABLE.len() == FREQ_TABLE.len());
+"#,
+        shape_entries.join(",\n    "),
+        freq_entries.join(",\n    ")
+    );
+
+    fs::write(Path::new(out_dir).join("shape_db.rs"), rust_code)
+        .expect("Failed to write shape_db.rs");
 }
