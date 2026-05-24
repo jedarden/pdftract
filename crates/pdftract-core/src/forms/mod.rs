@@ -10,15 +10,19 @@
 //! - **Discovery** (7.4.1): Walk `/Fields` recursively, filter to all field types
 //! - **Type-specific extraction** (7.4.2): Extract type-specific values (Tx, Btn, Ch)
 //! - **XFA parsing** (7.4.3): Parse XFA XML streams for hybrid forms
+//! - **Combiner** (7.4.4): Merge AcroForm and XFA fields with XFA-wins precedence
 //!
 //! ## Reuse
 //!
 //! The `walk_acroform_fields` function is designed for reuse by Phase 7.3 (signature
 //! discovery), which filters its output to `/FT /Sig` fields only.
 
+pub mod combiner;
 pub mod xfa;
 
 pub use xfa::{extract_xfa_fields, XfaField};
+
+pub use combiner::{combine, ChoiceValue, FormFieldValue};
 
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::parser::catalog::Catalog;

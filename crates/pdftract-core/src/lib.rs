@@ -52,7 +52,9 @@ pub use extract::{
     PageResult,
 };
 pub use font::std14::{get_std14_metrics, NamedEncoding, Std14Metrics};
-pub use forms::{walk_acroform_fields, AcroFieldType, AcroFormField};
+pub use forms::{
+    combine, walk_acroform_fields, AcroFieldType, AcroFormField, ChoiceValue, FormFieldValue,
+};
 pub use markdown::{block_to_markdown, page_to_markdown, parse_anchors, Anchor};
 pub use options::{ExtractionOptions, ReceiptsMode};
 pub use parser::pages::{count_pages_tree, LazyPageIter, PageDict, DEFAULT_MEDIABOX};
