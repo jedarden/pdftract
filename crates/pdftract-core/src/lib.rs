@@ -8,6 +8,8 @@ pub mod attachment;
 pub mod cache;
 pub mod classify;
 pub mod diagnostics;
+#[cfg(feature = "remote")]
+pub mod url_validation;
 #[cfg(feature = "ocr")]
 pub mod dpi;
 pub mod document;

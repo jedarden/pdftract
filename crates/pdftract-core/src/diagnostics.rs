@@ -713,6 +713,15 @@ pub enum DiagCode {
     /// Phase origin: 1.8
     RemoteDnsFailed,
 
+    /// URL targets private network (SSRF protection)
+    ///
+    /// Emitted when a URL targets a private or loopback address (RFC 1918, IPv6 ULA,
+    /// link-local, localhost, or cloud metadata endpoint). This prevents SSRF attacks.
+    /// The request is denied unless --allow-private-networks is set.
+    ///
+    /// Phase origin: 1.8
+    RemoteUrlPrivateNetwork,
+
     // === GSTATE_* codes ===
 
     /// Graphics state stack overflow
@@ -893,7 +902,8 @@ impl DiagCode {
             DiagCode::RemoteFetchInterrupted
             | DiagCode::RemoteNoRangeSupport
             | DiagCode::RemoteTlsFailed
-            | DiagCode::RemoteDnsFailed => "REMOTE",
+            | DiagCode::RemoteDnsFailed
+            | DiagCode::RemoteUrlPrivateNetwork => "REMOTE",
 
             // GSTATE_*
             DiagCode::GstateStackOverflow
@@ -988,6 +998,7 @@ impl DiagCode {
             DiagCode::RemoteNoRangeSupport => "REMOTE_NO_RANGE_SUPPORT",
             DiagCode::RemoteTlsFailed => "REMOTE_TLS_FAILED",
             DiagCode::RemoteDnsFailed => "REMOTE_DNS_FAILED",
+            DiagCode::RemoteUrlPrivateNetwork => "REMOTE_URL_PRIVATE_NETWORK",
             DiagCode::GstateStackOverflow => "GSTATE_STACK_OVERFLOW",
             DiagCode::GstateStackUnderflow => "GSTATE_STACK_UNDERFLOW",
             DiagCode::GstateBtEtMismatch => "GSTATE_BT_ET_MISMATCH",
@@ -1083,6 +1094,7 @@ impl DiagCode {
             DiagCode::StreamBomb
             | DiagCode::PageOutOfRange
             | DiagCode::RemoteFetchInterrupted
+            | DiagCode::RemoteUrlPrivateNetwork
             | DiagCode::McpToolInvalidParams
             | DiagCode::McpPathTraversal => Severity::Error,
 
@@ -1662,6 +1674,14 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         recoverable: false,
         phase: "1.8",
         suggested_action: "The hostname could not be resolved; check the URL",
+    },
+    DiagInfo {
+        code: DiagCode::RemoteUrlPrivateNetwork,
+        category: "REMOTE",
+        severity: Severity::Error,
+        recoverable: false,
+        phase: "1.8",
+        suggested_action: "URL targets a private network address. Use --allow-private-networks to enable (WARNING: security risk in multi-tenant deployments)",
     },
     // === GSTATE_* codes ===
     DiagInfo {

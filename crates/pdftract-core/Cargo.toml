@@ -11,6 +11,7 @@ publish = true
 anyhow = { workspace = true }
 hex = "0.4"
 image = { version = "0.25", optional = true }
+url = { version = "2.5", optional = true }
 leptonica-plumbing = { version = "1.4", optional = true }
 pdfium-render = { version = "0.9", optional = true }
 tesseract = { version = "0.15", optional = true }
@@ -44,6 +45,7 @@ schemars = ["dep:schemars", "serde"]
 receipts = []  # Enable visual citation receipts (SVG clip generation)
 ocr = ["dep:image", "dep:leptonica-plumbing", "dep:quick-xml"]  # Enable OCR path (image compositing + preprocessing + HOCR parsing)
 full-render = ["dep:pdfium-render", "ocr"]  # Enable PDFium-based rendering (requires ocr)
+remote = ["dep:url"]  # Enable remote HTTP source (Phase 1.8)
 proptest = []
 fuzzing = []  # Enable cfg(fuzzing) for fuzz harnesses
 shape-db = []  # Enable glyph shape database (Level 4 encoding fallback)
