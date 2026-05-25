@@ -938,7 +938,7 @@
       "description": "Form field value representation.\n\nThis enum captures the current value of a form field, with the variant\ntype matching the field_type."
     },
     "PageResult": {
-      "description": "Result for a single page.",
+      "description": "Result for a single page.\n\nContains page geometry, classification, and content arrays (spans, blocks, tables, annotations).",
       "properties": {
         "annotations": {
           "description": "Non-link annotations on this page (highlights, notes, stamps, etc.).\n\nThis array contains all non-link annotations extracted from the page's\n/Annots array. Annotations are sorted deterministically by position\n(y0 descending, then x0 ascending) for stable output.",
@@ -961,10 +961,34 @@
             "null"
           ]
         },
+        "height": {
+          "description": "Page height in points (1/72 inch).",
+          "format": "float",
+          "minimum": 0,
+          "type": "number"
+        },
         "index": {
           "description": "0-based page index.",
           "format": "uint",
           "minimum": 0,
+          "type": "integer"
+        },
+        "page_label": {
+          "description": "Human-readable label from PDF /PageLabels number tree (e.g., \"iv\", \"A-3\").\n\nAbsent (null) if the PDF defines no page labels.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "page_number": {
+          "description": "One-based page number (= page_index + 1).\n\nEmitted as a convenience for human-facing display. For programmatic\naccess, use page_index instead.",
+          "format": "uint",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "rotation": {
+          "description": "Page rotation in degrees clockwise (0, 90, 180, or 270).",
+          "enum": [0, 90, 180, 270],
           "type": "integer"
         },
         "spans": {
@@ -980,13 +1004,37 @@
             "$ref": "#/$defs/TableJson"
           },
           "type": "array"
+        },
+        "type": {
+          "description": "Page classification from the page classifier.\n\nOne of: \"text\", \"scanned\", \"mixed\", \"broken_vector\", \"blank\", \"figure_only\".",
+          "enum": [
+            "text",
+            "scanned",
+            "mixed",
+            "broken_vector",
+            "blank",
+            "figure_only"
+          ],
+          "type": "string"
+        },
+        "width": {
+          "description": "Page width in points (1/72 inch).",
+          "format": "float",
+          "minimum": 0,
+          "type": "number"
         }
       },
       "required": [
         "index",
+        "page_number",
+        "width",
+        "height",
+        "rotation",
+        "type",
         "spans",
         "blocks",
-        "tables"
+        "tables",
+        "annotations"
       ],
       "type": "object"
     },

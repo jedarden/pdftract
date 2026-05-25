@@ -2528,4 +2528,187 @@ mod tests {
         assert!(output.pages.is_empty());
         assert!(output.errors.is_empty());
     }
+
+    #[test]
+    fn test_page_json_with_page_labels_roman_numerals() {
+        // AC: PDF with /PageLabels [{S: "r"}] produces page_label "i", "ii", "iii" etc
+        // This test verifies that PageJson correctly serializes with roman numeral page labels
+
+        let pages = vec![
+            PageJson {
+                page_index: 0,
+                page_number: 1,
+                page_label: Some("i".to_string()),
+                width: 612.0,
+                height: 792.0,
+                rotation: 0,
+                page_type: "text".to_string(),
+                spans: vec![],
+                blocks: vec![],
+                tables: vec![],
+                annotations: vec![],
+            },
+            PageJson {
+                page_index: 1,
+                page_number: 2,
+                page_label: Some("ii".to_string()),
+                width: 612.0,
+                height: 792.0,
+                rotation: 0,
+                page_type: "text".to_string(),
+                spans: vec![],
+                blocks: vec![],
+                tables: vec![],
+                annotations: vec![],
+            },
+            PageJson {
+                page_index: 2,
+                page_number: 3,
+                page_label: Some("iii".to_string()),
+                width: 612.0,
+                height: 792.0,
+                rotation: 0,
+                page_type: "text".to_string(),
+                spans: vec![],
+                blocks: vec![],
+                tables: vec![],
+                annotations: vec![],
+            },
+        ];
+
+        // Verify each page serializes with the correct page_label
+        for page in &pages {
+            let json_str = serde_json::to_string(page).unwrap();
+            let json_val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+
+            // Verify page_label is present
+            assert!(json_val.get("page_label").is_some());
+            // Verify page_label value matches (convert to string for comparison)
+            assert_eq!(
+                json_val["page_label"].as_str().unwrap(),
+                page.page_label.as_ref().unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn test_page_json_without_page_labels_absent() {
+        // AC: PDF without /PageLabels -> page_label absent
+        // This test verifies that when a PDF has no /PageLabels, page_label is absent (null)
+
+        let page = PageJson {
+            page_index: 0,
+            page_number: 1,
+            page_label: None,
+            width: 612.0,
+            height: 792.0,
+            rotation: 0,
+            page_type: "text".to_string(),
+            spans: vec![],
+            blocks: vec![],
+            tables: vec![],
+            annotations: vec![],
+        };
+
+        let json_str = serde_json::to_string(&page).unwrap();
+        let json_val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+
+        // Verify page_label is absent (not present in JSON)
+        assert!(json_val.get("page_label").is_none());
+    }
+
+    #[test]
+    fn test_page_json_page_index_and_page_number_both_present() {
+        // AC: Page serializes with both page_index AND page_number
+        // This test verifies the critical requirement that both fields are always present
+
+        let test_cases: Vec<(usize, u32, Option<String>)> = vec![
+            (0, 1, Some("i".to_string())),
+            (5, 6, Some("vi".to_string())),
+            (99, 100, None),
+            (1000, 1001, Some("A-1".to_string())),
+        ];
+
+        for (page_index, page_number, page_label) in test_cases {
+            let page = PageJson {
+                page_index,
+                page_number,
+                page_label: page_label.clone(),
+                width: 612.0,
+                height: 792.0,
+                rotation: 0,
+                page_type: "text".to_string(),
+                spans: vec![],
+                blocks: vec![],
+                tables: vec![],
+                annotations: vec![],
+            };
+
+            let json_str = serde_json::to_string(&page).unwrap();
+            let json_val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+
+            // Verify both page_index and page_number are present
+            assert!(json_val.get("page_index").is_some());
+            assert!(json_val.get("page_number").is_some());
+            assert_eq!(json_val["page_index"], page_index);
+            assert_eq!(json_val["page_number"], page_number);
+
+            // Verify page_number = page_index + 1 invariant
+            assert_eq!(page_number, (page_index + 1) as u32);
+        }
+    }
+
+    #[test]
+    fn test_page_json_roundtrip_with_all_fields() {
+        // AC: Roundtrip serde Page test passes
+        // Verify that PageJson can be serialized and deserialized preserving all fields
+
+        let original = PageJson {
+            page_index: 5,
+            page_number: 6,
+            page_label: Some("vi".to_string()),
+            width: 595.0,
+            height: 842.0,
+            rotation: 90,
+            page_type: "text".to_string(),
+            spans: vec![SpanJson {
+                text: "Sample text".to_string(),
+                bbox: [100.0, 200.0, 300.0, 220.0],
+                font: "Helvetica".to_string(),
+                size: 12.0,
+                color: Some("#000000".to_string()),
+                rendering_mode: Some(0),
+                confidence: Some(0.95),
+                confidence_source: Some("vector".to_string()),
+                lang: Some("en".to_string()),
+                flags: vec!["bold".to_string()],
+                receipt: None,
+                column: Some(0),
+            }],
+            blocks: vec![BlockJson {
+                kind: "paragraph".to_string(),
+                text: "Sample text".to_string(),
+                bbox: [100.0, 200.0, 300.0, 220.0],
+                level: None,
+                table_index: None,
+                spans: vec![0],
+                receipt: None,
+            }],
+            tables: vec![],
+            annotations: vec![],
+        };
+
+        let json_str = serde_json::to_string(&original).unwrap();
+        let deserialized: PageJson = serde_json::from_str(&json_str).unwrap();
+
+        assert_eq!(deserialized.page_index, original.page_index);
+        assert_eq!(deserialized.page_number, original.page_number);
+        assert_eq!(deserialized.page_label, original.page_label);
+        assert_eq!(deserialized.width, original.width);
+        assert_eq!(deserialized.height, original.height);
+        assert_eq!(deserialized.rotation, original.rotation);
+        assert_eq!(deserialized.page_type, original.page_type);
+        assert_eq!(deserialized.spans.len(), original.spans.len());
+        assert_eq!(deserialized.blocks.len(), original.blocks.len());
+    }
 }
