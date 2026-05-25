@@ -22,6 +22,7 @@
 //! - `svg_clip`: Optional SVG rendering (only in SVG mode)
 
 pub mod lite;
+pub mod ocr_fallback;
 pub mod svg;
 pub mod verifier;
 

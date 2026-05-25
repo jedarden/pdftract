@@ -13,6 +13,12 @@
 //! 4. Generate SVG path elements with fill colors from glyph styles
 //! 5. Wrap in a self-contained SVG element with normalized viewBox
 //!
+//! # OCR Fallback
+//!
+//! When glyphs have no font outlines available (OCR-sourced or Type 3 fonts),
+//! the generator falls back to embedding a base64-encoded PNG raster via
+//! the ocr_fallback module. The resulting SVG includes `data-source="ocr"`.
+//!
 //! # Coordinate system
 //!
 //! PDF user space uses a bottom-left origin (y increases upward).
@@ -23,6 +29,18 @@
 //! - svg_y = bbox.y1 - pdf_y
 
 use std::fmt::Write;
+
+/// Source of a glyph's visual representation.
+///
+/// Indicates whether the glyph has vector outlines available
+/// or requires OCR fallback rasterization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlyphSource {
+    /// Vector outlines available via ttf-parser.
+    Vector,
+    /// OCR-sourced or Type 3 font, requires raster fallback.
+    Ocr,
+}
 
 /// A placeholder for Phase 3 glyph data.
 ///
@@ -42,6 +60,9 @@ pub struct Glyph {
 
     /// Fill color in CSS format (e.g., "#000000" or "rgb(0,0,0)").
     pub fill_color: String,
+
+    /// Source of this glyph's visual data.
+    pub source: GlyphSource,
 }
 
 /// A placeholder for Phase 3 font data.
@@ -77,15 +98,52 @@ pub struct GlyphList {
 pub struct SvgGenerator {
     glyphs: Vec<Glyph>,
     fonts: Vec<FontFace>,
+    /// PDF bytes for OCR fallback (optional).
+    pdf_bytes: Option<Vec<u8>>,
+    /// Page index for OCR fallback (optional).
+    page_index: Option<usize>,
 }
 
 impl SvgGenerator {
     /// Create a new SVG generator from a glyph list.
+    ///
+    /// For OCR fallback support, also pass the PDF bytes and page index.
     pub fn new(glyph_list: GlyphList) -> Self {
         Self {
             glyphs: glyph_list.glyphs,
             fonts: glyph_list.fonts,
+            pdf_bytes: None,
+            page_index: None,
         }
+    }
+
+    /// Set the PDF context for OCR fallback.
+    ///
+    /// When set, the generator will use OCR fallback for glyphs
+    /// without vector outlines.
+    pub fn with_pdf_context(mut self, pdf_bytes: Vec<u8>, page_index: usize) -> Self {
+        self.pdf_bytes = Some(pdf_bytes);
+        self.page_index = Some(page_index);
+        self
+    }
+
+    /// Check if any glyph in the bbox requires OCR fallback.
+    fn needs_ocr_fallback(&self, bbox: [f64; 4]) -> bool {
+        for glyph in &self.glyphs {
+            let center_x = (glyph.bbox[0] + glyph.bbox[2]) / 2.0;
+            let center_y = (glyph.bbox[1] + glyph.bbox[3]) / 2.0;
+
+            if center_x >= bbox[0]
+                && center_x <= bbox[2]
+                && center_y >= bbox[1]
+                && center_y <= bbox[3]
+            {
+                if glyph.source == GlyphSource::Ocr {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     /// Generate an SVG clip for the given bbox.
@@ -98,6 +156,37 @@ impl SvgGenerator {
     ///
     /// A self-contained SVG document as a string.
     pub fn generate(&self, bbox: [f64; 4]) -> String {
+        // Check if OCR fallback is needed
+        if self.needs_ocr_fallback(bbox) {
+            #[cfg(all(feature = "receipts", feature = "full-render"))]
+            {
+                if let (Some(pdf_bytes), Some(page_index)) = (&self.pdf_bytes, self.page_index) {
+                    match crate::receipts::ocr_fallback::generate_ocr_fallback_svg(
+                        pdf_bytes, page_index, bbox,
+                    ) {
+                        Ok(svg) => return svg,
+                        Err(e) => {
+                            // Fallback failed; emit warning and return empty SVG
+                            eprintln!(
+                                "SVG receipt for OCR span requires full-render feature; emitting lite-mode receipt instead: {}",
+                                e
+                            );
+                            return self.generate_empty_svg(bbox);
+                        }
+                    }
+                }
+            }
+
+            #[cfg(not(all(feature = "receipts", feature = "full-render")))]
+            {
+                eprintln!(
+                    "SVG receipt for OCR span requires full-render feature; emitting lite-mode receipt instead"
+                );
+                return self.generate_empty_svg(bbox);
+            }
+        }
+
+        // Vector path generation
         let width = bbox[2] - bbox[0];
         let height = bbox[3] - bbox[1];
 
@@ -150,6 +239,18 @@ impl SvgGenerator {
 
         svg.push_str("</svg>");
         svg
+    }
+
+    /// Generate an empty SVG placeholder when OCR fallback is unavailable.
+    fn generate_empty_svg(&self, bbox: [f64; 4]) -> String {
+        let width = bbox[2] - bbox[0];
+        let height = bbox[3] - bbox[1];
+
+        format!(
+            r#"<svg viewBox="0 0 {} {}" xmlns="http://www.w3.org/2000/svg"></svg>"#,
+            round_coord(width),
+            round_coord(height)
+        )
     }
 
     /// Extract SVG path data for a single glyph.
@@ -259,7 +360,7 @@ pub fn pdf_color_to_css(color_type: &str, components: &[f64]) -> String {
             }
         }
         "DeviceGray" | "Gray" => {
-            if components.len() >= 1 {
+            if !components.is_empty() {
                 let v = (components[0] * 255.0).round() as u8;
                 format!("#{:02X}{:02X}{:02X}", v, v, v)
             } else {
@@ -364,12 +465,14 @@ mod tests {
                     bbox: [10.0, 10.0, 30.0, 30.0], // Center at (20, 20) - inside
                     font_id: 0,
                     fill_color: "#000000".to_string(),
+                    source: GlyphSource::Vector,
                 },
                 Glyph {
                     gid: 1,
                     bbox: [110.0, 110.0, 130.0, 130.0], // Center at (120, 120) - outside
                     font_id: 0,
                     fill_color: "#000000".to_string(),
+                    source: GlyphSource::Vector,
                 },
             ],
             fonts: vec![],
@@ -483,18 +586,21 @@ mod tests {
                     bbox: [10.0, 10.0, 30.0, 30.0],
                     font_id: 0,
                     fill_color: "#FF0000".to_string(),
+                    source: GlyphSource::Vector,
                 },
                 Glyph {
                     gid: 1,
                     bbox: [40.0, 10.0, 60.0, 30.0],
                     font_id: 0,
                     fill_color: "#FF0000".to_string(),
+                    source: GlyphSource::Vector,
                 },
                 Glyph {
                     gid: 2,
                     bbox: [10.0, 40.0, 30.0, 60.0],
                     font_id: 0,
                     fill_color: "#0000FF".to_string(),
+                    source: GlyphSource::Vector,
                 },
             ],
             fonts: vec![],
@@ -518,6 +624,7 @@ mod tests {
                 bbox: [50.0, 400.0, 100.0, 450.0],
                 font_id: 0,
                 fill_color: "#000000".to_string(),
+                source: GlyphSource::Vector,
             }],
             fonts: vec![FontFace {
                 data: font_data.to_vec(),
@@ -544,12 +651,14 @@ mod tests {
                     bbox: [50.0, 400.0, 100.0, 450.0],
                     font_id: 0,
                     fill_color: "#FF0000".to_string(),
+                    source: GlyphSource::Vector,
                 },
                 Glyph {
                     gid: 37, // 'B' in DejaVu Sans
                     bbox: [110.0, 400.0, 160.0, 450.0],
                     font_id: 0,
                     fill_color: "#0000FF".to_string(),
+                    source: GlyphSource::Vector,
                 },
             ],
             fonts: vec![FontFace {
@@ -589,18 +698,21 @@ mod tests {
                     bbox: [50.0, 400.0, 100.0, 450.0],
                     font_id: 0,
                     fill_color: "#000000".to_string(),
+                    source: GlyphSource::Vector,
                 },
                 Glyph {
                     gid: 0, // .notdef glyph, may have no outline
                     bbox: [110.0, 400.0, 160.0, 450.0],
                     font_id: 0,
                     fill_color: "#000000".to_string(),
+                    source: GlyphSource::Vector,
                 },
                 Glyph {
                     gid: 9999, // Out of range glyph ID
                     bbox: [170.0, 400.0, 220.0, 450.0],
                     font_id: 0,
                     fill_color: "#000000".to_string(),
+                    source: GlyphSource::Vector,
                 },
             ],
             fonts: vec![FontFace {
@@ -627,6 +739,7 @@ mod tests {
                 bbox: [50.0, 400.0, 100.0, 450.0],
                 font_id: 0,
                 fill_color: "#000000".to_string(),
+                source: GlyphSource::Vector,
             }],
             fonts: vec![FontFace {
                 data: font_data.to_vec(),
@@ -671,12 +784,14 @@ mod tests {
                         bbox: [50.0, 400.0, 70.0, 420.0],
                         font_id: 0,
                         fill_color: "#000000".to_string(),
+                        source: GlyphSource::Vector,
                     },
                     Glyph {
                         gid: 68, // 'a'
                         bbox: [75.0, 400.0, 90.0, 420.0],
                         font_id: 0,
                         fill_color: "#000000".to_string(),
+                        source: GlyphSource::Vector,
                     },
                 ],
                 fonts: vec![FontFace {
