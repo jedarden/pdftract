@@ -823,6 +823,30 @@ pub enum DiagCode {
     /// Phase origin: 3.1
     FontSizeZeroOrNegative,
 
+    /// BT operator nested inside another BT block
+    ///
+    /// Emitted when BT is called while already inside a text block. The inner
+    /// BT resets text matrices to identity and execution continues.
+    ///
+    /// Phase origin: 3.1
+    BtNested,
+
+    /// ET operator without matching BT
+    ///
+    /// Emitted when ET is called outside a text block (no preceding BT).
+    /// The operator is ignored and no text matrices are discarded.
+    ///
+    /// Phase origin: 3.1
+    EtWithoutBt,
+
+    /// Text-show operator outside BT/ET block
+    ///
+    /// Emitted when a text-showing operator (Tj, TJ, ', \") is called outside
+    /// a BT/ET block. The operator produces no glyphs.
+    ///
+    /// Phase origin: 3.1
+    TextShowOutsideBt,
+
     // === LAYOUT_* codes ===
     /// Tagged PDF StructTree deferred to Phase 7
     ///
@@ -1043,7 +1067,10 @@ impl DiagCode {
             | DiagCode::TextRenderingModeClamped
             | DiagCode::TstarZeroLeading
             | DiagCode::FontResourceNotFound
-            | DiagCode::FontSizeZeroOrNegative => "GSTATE",
+            | DiagCode::FontSizeZeroOrNegative
+            | DiagCode::BtNested
+            | DiagCode::EtWithoutBt
+            | DiagCode::TextShowOutsideBt => "GSTATE",
 
             // LAYOUT_*
             DiagCode::LayoutTaggedPdfDeferred
@@ -1157,6 +1184,9 @@ impl DiagCode {
             DiagCode::TstarZeroLeading => "TSTAR_ZERO_LEADING",
             DiagCode::FontResourceNotFound => "FONT_RESOURCE_NOT_FOUND",
             DiagCode::FontSizeZeroOrNegative => "FONT_SIZE_ZERO_OR_NEGATIVE",
+            DiagCode::BtNested => "BT_NESTED",
+            DiagCode::EtWithoutBt => "ET_WITHOUT_BT",
+            DiagCode::TextShowOutsideBt => "TEXT_SHOW_OUTSIDE_BT",
             DiagCode::LayoutTaggedPdfDeferred => "TAGGED_PDF_STRUCT_TREE_DEFERRED",
             DiagCode::LayoutReadingOrderAmbiguous => "LAYOUT_READING_ORDER_AMBIGUOUS",
             DiagCode::LayoutLowReadability => "LAYOUT_LOW_READABILITY",
@@ -1259,6 +1289,9 @@ impl DiagCode {
             | DiagCode::TstarZeroLeading
             | DiagCode::FontResourceNotFound
             | DiagCode::FontSizeZeroOrNegative
+            | DiagCode::BtNested
+            | DiagCode::EtWithoutBt
+            | DiagCode::TextShowOutsideBt
             | DiagCode::LayoutReadingOrderAmbiguous
             | DiagCode::LayoutLowReadability
             | DiagCode::CacheEntryCorrupt
@@ -2008,6 +2041,30 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         recoverable: true,
         phase: "3.1",
         suggested_action: "The Tf operator received a font_size <= 0; clamped to 1.0 to avoid zero-height glyphs",
+    },
+    DiagInfo {
+        code: DiagCode::BtNested,
+        category: "GSTATE",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "3.1",
+        suggested_action: "BT operator called while already inside a text block; text matrices reset to identity",
+    },
+    DiagInfo {
+        code: DiagCode::EtWithoutBt,
+        category: "GSTATE",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "3.1",
+        suggested_action: "ET operator called without a matching BT; operator ignored",
+    },
+    DiagInfo {
+        code: DiagCode::TextShowOutsideBt,
+        category: "GSTATE",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "3.1",
+        suggested_action: "Text-showing operator (Tj, TJ, ', \") called outside BT/ET block; no glyphs produced",
     },
     // === LAYOUT_* codes ===
     DiagInfo {

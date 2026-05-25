@@ -399,12 +399,27 @@ pub fn process_with_mode(
 
                 match keyword {
                     "BT" => {
+                        if in_text_block {
+                            // BT nested inside another BT block
+                            diagnostics.push(Diagnostic::with_static_no_offset(
+                                DiagCode::BtNested,
+                                "BT operator called while already inside a text block",
+                            ));
+                        }
                         in_text_block = true;
                         text_matrix.reset();
                         operand_buffer.clear();
                     }
                     "ET" => {
-                        in_text_block = false;
+                        if !in_text_block {
+                            // ET without matching BT
+                            diagnostics.push(Diagnostic::with_static_no_offset(
+                                DiagCode::EtWithoutBt,
+                                "ET operator called without a matching BT",
+                            ));
+                        } else {
+                            in_text_block = false;
+                        }
                         operand_buffer.clear();
                     }
                     "Tm" => {
@@ -472,6 +487,12 @@ pub fn process_with_mode(
                                     );
                                 }
                             }
+                        } else {
+                            // Tj outside BT/ET block
+                            diagnostics.push(Diagnostic::with_static_no_offset(
+                                DiagCode::TextShowOutsideBt,
+                                "Tj operator called outside BT/ET block",
+                            ));
                         }
                         operand_buffer.clear();
                     }
@@ -494,6 +515,12 @@ pub fn process_with_mode(
                                 }
                             };
                             glyphs.push(glyph);
+                        } else {
+                            // TJ outside BT/ET block
+                            diagnostics.push(Diagnostic::with_static_no_offset(
+                                DiagCode::TextShowOutsideBt,
+                                "TJ operator called outside BT/ET block",
+                            ));
                         }
                         operand_buffer.clear();
                     }
@@ -514,6 +541,12 @@ pub fn process_with_mode(
                                     );
                                 }
                             }
+                        } else {
+                            // Quote operator outside BT/ET block
+                            diagnostics.push(Diagnostic::with_static_no_offset(
+                                DiagCode::TextShowOutsideBt,
+                                "' operator called outside BT/ET block",
+                            ));
                         }
                         operand_buffer.clear();
                     }
@@ -534,6 +567,12 @@ pub fn process_with_mode(
                                     );
                                 }
                             }
+                        } else if !in_text_block {
+                            // Double-quote operator outside BT/ET block
+                            diagnostics.push(Diagnostic::with_static_no_offset(
+                                DiagCode::TextShowOutsideBt,
+                                "\" operator called outside BT/ET block",
+                            ));
                         }
                         operand_buffer.clear();
                     }
@@ -834,13 +873,28 @@ pub fn execute_with_do(
                         operand_buffer.clear();
                     }
                     "BT" => {
+                        if in_text_block {
+                            // BT nested inside another BT block
+                            diagnostics.push(Diagnostic::with_static_no_offset(
+                                DiagCode::BtNested,
+                                "BT operator called while already inside a text block",
+                            ));
+                        }
                         in_text_block = true;
                         gstate.begin_text();
                         operand_buffer.clear();
                     }
                     "ET" => {
-                        in_text_block = false;
-                        gstate.end_text();
+                        if !in_text_block {
+                            // ET without matching BT
+                            diagnostics.push(Diagnostic::with_static_no_offset(
+                                DiagCode::EtWithoutBt,
+                                "ET operator called without a matching BT",
+                            ));
+                        } else {
+                            in_text_block = false;
+                            gstate.end_text();
+                        }
                         operand_buffer.clear();
                     }
                     "Tm" => {
@@ -956,6 +1010,12 @@ pub fn execute_with_do(
                                     );
                                 }
                             }
+                        } else {
+                            // Tj outside BT/ET block
+                            diagnostics.push(Diagnostic::with_static_no_offset(
+                                DiagCode::TextShowOutsideBt,
+                                "Tj operator called outside BT/ET block",
+                            ));
                         }
                         operand_buffer.clear();
                     }
@@ -979,6 +1039,12 @@ pub fn execute_with_do(
                                 }
                             };
                             glyphs.push(glyph);
+                        } else {
+                            // TJ outside BT/ET block
+                            diagnostics.push(Diagnostic::with_static_no_offset(
+                                DiagCode::TextShowOutsideBt,
+                                "TJ operator called outside BT/ET block",
+                            ));
                         }
                         operand_buffer.clear();
                     }
@@ -999,6 +1065,12 @@ pub fn execute_with_do(
                                     );
                                 }
                             }
+                        } else {
+                            // Quote operator outside BT/ET block
+                            diagnostics.push(Diagnostic::with_static_no_offset(
+                                DiagCode::TextShowOutsideBt,
+                                "' operator called outside BT/ET block",
+                            ));
                         }
                         operand_buffer.clear();
                     }
@@ -1019,6 +1091,12 @@ pub fn execute_with_do(
                                     );
                                 }
                             }
+                        } else if !in_text_block {
+                            // Double-quote operator outside BT/ET block
+                            diagnostics.push(Diagnostic::with_static_no_offset(
+                                DiagCode::TextShowOutsideBt,
+                                "\" operator called outside BT/ET block",
+                            ));
                         }
                         operand_buffer.clear();
                     }
@@ -2222,8 +2300,8 @@ mod tests {
         let mut state = GraphicsState::new();
         state.begin_text();
         state.set_leading(0.0); // Set leading to 0
-        // Note: next_line() itself doesn't emit diagnostic, it's emitted by the content stream processor
-        // This test verifies the leading value is correctly tracked
+                                // Note: next_line() itself doesn't emit diagnostic, it's emitted by the content stream processor
+                                // This test verifies the leading value is correctly tracked
         assert_eq!(state.leading, 0.0);
     }
 
@@ -2240,22 +2318,19 @@ mod tests {
             .iter()
             .filter(|d| d.code == DiagCode::FontResourceNotFound)
             .count();
-        assert_eq!(diag_count, 1, "Should emit FONT_RESOURCE_NOT_FOUND diagnostic");
+        assert_eq!(
+            diag_count, 1,
+            "Should emit FONT_RESOURCE_NOT_FOUND diagnostic"
+        );
     }
 
     #[test]
     fn test_tf_with_zero_size_clamps_to_one() {
         // AC: Tf with font_size <= 0 clamps to 1.0 and emits FONT_SIZE_ZERO_OR_NEGATIVE diagnostic
-        use crate::graphics_state::GraphicsState;
         use crate::font::Font;
+        use crate::graphics_state::GraphicsState;
         let mut state = GraphicsState::new();
-        let font = Font::new(
-            crate::font::FontId::from_usize(1),
-            None,
-            None,
-            None,
-            false,
-        );
+        let font = Font::new(crate::font::FontId::from_usize(1), None, None, None, false);
         state.set_font(std::sync::Arc::new(font), 0.0); // size = 0
         assert_eq!(state.font_size, 1.0, "Should clamp to 1.0");
     }
@@ -2263,16 +2338,10 @@ mod tests {
     #[test]
     fn test_tf_with_negative_size_clamps_to_one() {
         // AC: Tf with font_size <= 0 clamps to 1.0
-        use crate::graphics_state::GraphicsState;
         use crate::font::Font;
+        use crate::graphics_state::GraphicsState;
         let mut state = GraphicsState::new();
-        let font = Font::new(
-            crate::font::FontId::from_usize(1),
-            None,
-            None,
-            None,
-            false,
-        );
+        let font = Font::new(crate::font::FontId::from_usize(1), None, None, None, false);
         state.set_font(std::sync::Arc::new(font), -5.0); // size < 0
         assert_eq!(state.font_size, 1.0, "Should clamp to 1.0");
     }
@@ -2364,6 +2433,188 @@ mod tests {
             .iter()
             .filter(|d| d.code == DiagCode::FontSizeZeroOrNegative)
             .count();
-        assert_eq!(diag_count, 1, "Should emit FONT_SIZE_ZERO_OR_NEGATIVE diagnostic");
+        assert_eq!(
+            diag_count, 1,
+            "Should emit FONT_SIZE_ZERO_OR_NEGATIVE diagnostic"
+        );
+    }
+
+    // Acceptance criteria tests for pdftract-1vxh (BT/ET text object lifecycle)
+
+    #[test]
+    fn test_bt_nested_emits_diagnostic() {
+        // AC: BT inside BT emits BT_NESTED diagnostic
+        let resources = ResourceDict::new();
+        let content = b"BT (Hello) Tj BT (World) Tj ET ET";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        // Should emit BT_NESTED diagnostic
+        let diag_count = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == DiagCode::BtNested)
+            .count();
+        assert_eq!(diag_count, 1, "Should emit BT_NESTED diagnostic");
+    }
+
+    #[test]
+    fn test_et_without_bt_emits_diagnostic() {
+        // AC: ET without matching BT emits ET_WITHOUT_BT diagnostic
+        let resources = ResourceDict::new();
+        let content = b"ET";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        // Should emit ET_WITHOUT_BT diagnostic
+        let diag_count = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == DiagCode::EtWithoutBt)
+            .count();
+        assert_eq!(diag_count, 1, "Should emit ET_WITHOUT_BT diagnostic");
+    }
+
+    #[test]
+    fn test_et_without_bt_no_op() {
+        // AC: ET without matching BT is a no-op (doesn't crash or change state)
+        let resources = ResourceDict::new();
+        let content = b"ET BT (Test) Tj ET";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        // Should still be able to process text after the stray ET
+        assert_eq!(result.glyphs.len(), 1);
+    }
+
+    #[test]
+    fn test_tj_without_bt_emits_diagnostic() {
+        // AC: Tj outside BT/ET emits TEXT_SHOW_OUTSIDE_BT diagnostic
+        let resources = ResourceDict::new();
+        let content = b"(Hello) Tj";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        // Should emit TEXT_SHOW_OUTSIDE_BT diagnostic
+        let diag_count = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == DiagCode::TextShowOutsideBt)
+            .count();
+        assert_eq!(diag_count, 1, "Should emit TEXT_SHOW_OUTSIDE_BT diagnostic");
+        // Should produce no glyphs
+        assert_eq!(result.glyphs.len(), 0);
+    }
+
+    #[test]
+    fn test_tj_without_bt_no_glyphs() {
+        // AC: Tj outside BT/ET produces no glyphs
+        let resources = ResourceDict::new();
+        let content = b"(Hello) Tj (World) Tj";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        // Should produce no glyphs
+        assert_eq!(result.glyphs.len(), 0);
+        // Should emit two TEXT_SHOW_OUTSIDE_BT diagnostics
+        let diag_count = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == DiagCode::TextShowOutsideBt)
+            .count();
+        assert_eq!(diag_count, 2);
+    }
+
+    #[test]
+    fn test_tj_inside_bt_works() {
+        // AC: Tj inside BT/ET produces glyphs
+        let resources = ResourceDict::new();
+        let content = b"BT (Hello) Tj ET";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        // Should produce one glyph
+        assert_eq!(result.glyphs.len(), 1);
+        // Should not emit TEXT_SHOW_OUTSIDE_BT diagnostic
+        let diag_count = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == DiagCode::TextShowOutsideBt)
+            .count();
+        assert_eq!(diag_count, 0);
+    }
+
+    #[test]
+    fn test_tj_between_blocks_emits_diagnostic() {
+        // AC: Tj between BT/ET blocks emits TEXT_SHOW_OUTSIDE_BT
+        let resources = ResourceDict::new();
+        let content = b"BT (First) Tj ET (Between) Tj BT (Second) Tj ET";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        // Should produce two glyphs (one from each block)
+        assert_eq!(result.glyphs.len(), 2);
+        // Should emit one TEXT_SHOW_OUTSIDE_BT diagnostic for the middle Tj
+        let diag_count = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == DiagCode::TextShowOutsideBt)
+            .count();
+        assert_eq!(diag_count, 1);
+    }
+
+    #[test]
+    fn test_nested_bt_resets_matrices() {
+        // AC: Nested BT resets text matrices to identity
+        let resources = ResourceDict::new();
+        let content = b"BT 100 200 Td BT (Test) Tj ET ET";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        // The nested BT should reset matrices, so the glyph should be near origin
+        // not at (100, 200) where the first Td would have placed it
+        assert!(result.glyphs.len(), 1);
+        // The bbox should be near origin (0, 0) because nested BT reset to identity
+        // Allow some tolerance for font size
+        assert!(result.glyphs[0].bbox[0] < 20.0); // x should be small (near 0)
+        assert!(result.glyphs[0].bbox[1] < 20.0); // y should be small (near 0)
+    }
+
+    #[test]
+    fn test_process_with_mode_bt_nested_emits_diagnostic() {
+        // AC: process_with_mode also emits BT_NESTED diagnostic
+        let resources = ResourceDict::new();
+        let content = b"BT (Hello) Tj BT (World) Tj ET ET";
+
+        let result = process_with_mode(content, &resources, ProcessingMode::PositionHint, None);
+
+        // Should be an error result with diagnostics
+        assert!(result.is_err());
+        let diagnostics = result.unwrap_err();
+        // Should emit BT_NESTED diagnostic
+        let diag_count = diagnostics
+            .iter()
+            .filter(|d| d.code == DiagCode::BtNested)
+            .count();
+        assert_eq!(diag_count, 1, "Should emit BT_NESTED diagnostic");
+    }
+
+    #[test]
+    fn test_process_with_mode_tj_without_bt_emits_diagnostic() {
+        // AC: process_with_mode also emits TEXT_SHOW_OUTSIDE_BT diagnostic
+        let resources = ResourceDict::new();
+        let content = b"(Hello) Tj";
+
+        let result = process_with_mode(content, &resources, ProcessingMode::PositionHint, None);
+
+        // Should be an error result with diagnostics
+        assert!(result.is_err());
+        let diagnostics = result.unwrap_err();
+        // Should emit TEXT_SHOW_OUTSIDE_BT diagnostic
+        let diag_count = diagnostics
+            .iter()
+            .filter(|d| d.code == DiagCode::TextShowOutsideBt)
+            .count();
+        assert_eq!(diag_count, 1, "Should emit TEXT_SHOW_OUTSIDE_BT diagnostic");
     }
 }
