@@ -231,6 +231,7 @@ bash scripts/check-provenance.sh
 | malformed/corrupt_xref.pdf | scripts/generate_test_corpus.py | MIT-0 | 2026-05-20 | 48977100af674feeaea80e4f0a0a45bf576a406286e0123c78e12cc6fce38ff3 | Synthetic malformed PDF for testing xref corruption handling |
 | malformed/circular_ref.pdf | scripts/generate_test_corpus.py | MIT-0 | 2026-05-20 | eafbbd82100c0f838b76df5956b606b12513df9725b2a16674ca4c81435a6d45 | Synthetic malformed PDF for testing circular reference handling |
 | malformed/stream_bomb.pdf | scripts/generate_test_corpus.py | MIT-0 | 2026-05-20 | a1d5df84d9a9476f65ba26213fbf9d6402a7876471bc198307c46d28171844ee | Synthetic malformed PDF for testing malicious stream handling |
+| malformed/bomb-10k-2g.pdf | tests/fixtures/malformed/gen_bomb.py | MIT-0 | 2026-05-25 | 52d49ca6856d3f4fea9c4ef8abbdce1fc29cc61e6bd93dfb96c539f58f1cd152 | TH-01 decompression bomb test fixture (10KB -> 10MB, 1000:1 ratio) |
 | malformed/empty.pdf | scripts/generate_test_corpus.py | MIT-0 | 2026-05-20 | e5c62df5dab5c87b6a015ef3d43597074d1eec433b15f51aec63b8582d0e4ab4 | Synthetic malformed PDF for testing empty file handling |
 | malformed/malformed_array.pdf | scripts/generate_test_corpus.py | MIT-0 | 2026-05-20 | 6991b678c7cdc514beba4f53fe5073807432db0a14ee3756a19c0e4b2bc5ab52 | Synthetic malformed PDF for testing malformed array handling |
 | malformed/malformed_dictionary.pdf | scripts/generate_test_corpus.py | MIT-0 | 2026-05-20 | 48e54bf83495348af43e7ea2f7fcd81266f9b8720cfd416dd3cb6ff03331b225 | Synthetic malformed PDF for testing malformed dictionary handling |
