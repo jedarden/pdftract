@@ -6,6 +6,10 @@ use std::path::PathBuf;
 mod matcher;
 pub use matcher::{MatchRange, Matcher};
 
+// Event and JSON output module
+mod event;
+pub use event::{CountEvent, FileOnlyEvent, JsonSink, MatchEvent};
+
 /// Progress reporting mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProgressMode {

@@ -1,0 +1,97 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://pdftract.jedarden.com/schemas/v1.0/grep-jsonl.schema.json",
+  "title": "pdftract grep JSON-Lines output",
+  "description": "One match per line in JSON format. Each line is a separate JSON object with match metadata.",
+  "type": "object",
+  "anyOf": [
+    {
+      "$ref": "#/definitions/MatchEvent"
+    },
+    {
+      "$ref": "#/definitions/FileOnlyEvent"
+    },
+    {
+      "$ref": "#/definitions/CountEvent"
+    }
+  ],
+  "definitions": {
+    "MatchEvent": {
+      "description": "A single grep match with full metadata (default output mode)",
+      "type": "object",
+      "required": ["path", "page_index", "bbox", "match_text", "span_text", "pdf_fingerprint"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to the PDF file (relative if input was relative, absolute if input was absolute)"
+        },
+        "page_index": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "0-based page index (machine convention; human output flips to 1-based)"
+        },
+        "bbox": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 4,
+          "maxItems": 4,
+          "description": "Bounding box in PDF user-space coordinates [x0, y0, x1, y1]"
+        },
+        "match_text": {
+          "type": "string",
+          "description": "The matched text substring"
+        },
+        "span_text": {
+          "type": "string",
+          "description": "The full span text containing the match"
+        },
+        "span_confidence": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Confidence score (0.0 to 1.0). Omitted (null) if not applicable (e.g., non-OCR text or NaN/Infinity values)."
+        },
+        "pdf_fingerprint": {
+          "type": "string",
+          "pattern": "^pdftract-v1:[0-9a-f]{64}$",
+          "description": "PDF structural fingerprint for deduplication across runs"
+        },
+        "crosses_spans": {
+          "type": "boolean",
+          "description": "Whether the match crosses multiple spans. Omitted when false to keep typical lines short."
+        }
+      }
+    },
+    "FileOnlyEvent": {
+      "description": "File-only event emitted with -l (files-with-matches) flag",
+      "type": "object",
+      "required": ["path"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to the PDF file with at least one match"
+        }
+      },
+      "additionalProperties": false
+    },
+    "CountEvent": {
+      "description": "Count event emitted with -c (count) flag",
+      "type": "object",
+      "required": ["path", "count"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to the PDF file"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of matches in this file"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

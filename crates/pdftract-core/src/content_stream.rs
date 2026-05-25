@@ -2573,7 +2573,7 @@ mod tests {
 
         // The nested BT should reset matrices, so the glyph should be near origin
         // not at (100, 200) where the first Td would have placed it
-        assert!(result.glyphs.len(), 1);
+        assert_eq!(result.glyphs.len(), 1);
         // The bbox should be near origin (0, 0) because nested BT reset to identity
         // Allow some tolerance for font size
         assert!(result.glyphs[0].bbox[0] < 20.0); // x should be small (near 0)
