@@ -10,6 +10,7 @@
 //! The returned Vec<String> contains SVG elements that are placed inside
 //! a `<g class="layer-<name>">` group in the final output.
 
+pub mod anchors;
 pub mod blocks;
 pub mod confidence_heatmap;
 pub mod reading_order;
