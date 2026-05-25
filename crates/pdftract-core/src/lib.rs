@@ -49,6 +49,7 @@ pub mod semaphore;
 pub mod signature;
 pub mod span_flags;
 pub mod table;
+pub mod threads;
 
 // Re-export key types for convenience
 pub use confidence::ConfidenceSource;

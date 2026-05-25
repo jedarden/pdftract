@@ -389,6 +389,8 @@ pub struct Catalog {
     pub aa: Option<PdfObject>,
     /// PDF version override from catalog (optional)
     pub version: Option<String>,
+    /// Reference to /Threads array (optional, article threads)
+    pub threads_ref: Option<ObjRef>,
     /// Diagnostics emitted during parsing
     pub diagnostics: Vec<Diagnostic>,
 }
@@ -409,6 +411,7 @@ impl Catalog {
             open_action: None,
             aa: None,
             version: None,
+            threads_ref: None,
             diagnostics: Vec::new(),
         }
     }
@@ -437,6 +440,7 @@ impl Default for Catalog {
             open_action: None,
             aa: None,
             version: None,
+            threads_ref: None,
             diagnostics: Vec::new(),
         }
     }
@@ -572,6 +576,11 @@ pub fn parse_catalog(resolver: &XrefResolver, root_ref: ObjRef) -> Result<Catalo
         } else if let Some(version_name) = version_obj.as_name() {
             catalog.version = Some(version_name.to_string());
         }
+    }
+
+    // Extract /Threads (optional, article threads)
+    if let Some(PdfObject::Ref(threads_ref)) = catalog_dict.get("Threads") {
+        catalog.threads_ref = Some(*threads_ref);
     }
 
     catalog.diagnostics = diagnostics;
