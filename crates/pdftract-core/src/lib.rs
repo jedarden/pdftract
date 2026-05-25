@@ -26,6 +26,7 @@ pub mod markdown;
 #[cfg(feature = "ocr")]
 pub mod ocr;
 pub mod options;
+pub mod page_class;
 pub mod parser;
 #[cfg(feature = "ocr")]
 pub mod preprocess;
@@ -61,6 +62,7 @@ pub use markdown::{
     block_to_markdown, form_fields_to_markdown, page_to_markdown, parse_anchors, Anchor,
 };
 pub use options::{ExtractionOptions, ReceiptsMode};
+pub use page_class::PageClass;
 pub use parser::pages::{count_pages_tree, LazyPageIter, PageDict, DEFAULT_MEDIABOX};
 pub use schema::{BlockJson, CellJson, ExtractionQuality, RowJson, SpanJson, SpanRef, TableJson};
 pub use table::{GridCandidate, PageContext as TablePageContext, TableDetector};
