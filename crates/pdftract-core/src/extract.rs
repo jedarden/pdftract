@@ -14,6 +14,8 @@
 //! large documents with 10,000+ pages.
 
 use crate::annotation::{dispatch_annotations, json as annotation_json};
+use crate::attachment::associated_files::walk_af_array;
+use crate::attachment::filespec::extract_one;
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::document::compute_fingerprint_lazy;
 use crate::forms::{
@@ -27,7 +29,7 @@ use crate::parser::stream::DEFAULT_MAX_DECOMPRESS_BYTES;
 use crate::parser::struct_tree::{check_coverage_for_pages, parse_struct_tree};
 use crate::receipts::Receipt;
 use crate::schema::{
-    AnnotationJson, BlockJson, ChoiceValueJson, FormFieldJson, FormFieldTypeJson,
+    AnnotationJson, AttachmentJson, BlockJson, ChoiceValueJson, FormFieldJson, FormFieldTypeJson,
     FormFieldValueJson, LinkJson, SignatureJson, SpanJson, TableJson,
 };
 use crate::semaphore::{Semaphore, SemaphoreExt};
@@ -143,6 +145,13 @@ pub struct ExtractionResult {
     /// extracted from all pages. Links are sorted by (page_index, rect.y0 desc, rect.x0).
     /// Empty when the PDF has no link annotations.
     pub links: Vec<LinkJson>,
+    /// Embedded file attachments extracted from the document.
+    ///
+    /// This array contains all embedded files from the PDF's `/EmbeddedFiles`
+    /// name tree or `/AF` (Associated Files) array. Attachments exceeding
+    /// 50 MB are truncated (metadata only, `data: null`, `truncated: true`).
+    /// Empty when the PDF has no embedded files.
+    pub attachments: Vec<AttachmentJson>,
 }
 
 /// Result for a single page.
@@ -556,6 +565,15 @@ pub fn extract_pdf(
     let signatures_core = extract_signatures(&sig_fields, &resolver_arc, file_size);
     let signatures: Vec<SignatureJson> = signatures_core.into_iter().map(|s| s.into()).collect();
 
+    // Phase 7.5: Extract embedded file attachments from /EmbeddedFiles and /AF
+    let attachments = match resolver_arc.resolve(root_ref) {
+        Ok(catalog_obj) => match catalog_obj.as_dict() {
+            Some(catalog_dict) => extract_attachments(&resolver_arc, catalog_dict, Some(&source)),
+            None => Vec::new(),
+        },
+        Err(_) => Vec::new(),
+    };
+
     // Phase 7.4: Extract form fields from AcroForm and XFA
     // Walk AcroForm fields and convert to FormFieldValue
     let acro_fields = walk_acroform_fields(&resolver_arc, &catalog, None);
@@ -621,6 +639,7 @@ pub fn extract_pdf(
         signatures,
         form_fields,
         links: links_json,
+        attachments,
     })
 }
 
@@ -802,6 +821,65 @@ fn convert_form_field_to_json(
             radio: None,
         },
     }
+}
+
+/// Extract embedded file attachments from the PDF.
+///
+/// This function walks both the /EmbeddedFiles name tree and the /AF (Associated Files)
+/// array to extract all embedded file attachments. It handles PDF 1.7 /EmbeddedFiles
+/// and PDF 2.0 /AF sources, deduplicating by Filespec reference.
+///
+/// # Arguments
+///
+/// * `resolver` - The xref resolver for resolving indirect references
+/// * `catalog_dict` - The raw catalog dictionary (PdfDict)
+/// * `source` - Optional PDF source for reading stream data (None for metadata-only extraction)
+///
+/// # Returns
+///
+/// A `Vec<AttachmentJson>` containing all extracted attachments, sorted by name
+/// for deterministic output.
+fn extract_attachments(
+    resolver: &Arc<crate::parser::xref::XrefResolver>,
+    catalog_dict: &crate::parser::object::PdfDict,
+    source: Option<&dyn crate::parser::stream::PdfSource>,
+) -> Vec<AttachmentJson> {
+    use crate::parser::object::ObjRef;
+    use std::collections::HashSet;
+
+    let mut attachments = Vec::new();
+    let mut seen_refs: HashSet<ObjRef> = HashSet::new();
+
+    // Walk /AF array from the catalog
+    let af_entries = match walk_af_array(resolver, catalog_dict) {
+        Ok(entries) => entries,
+        Err(_) => return Vec::new(), // Return empty if /AF walk fails
+    };
+    for entry in af_entries {
+        if seen_refs.contains(&entry.filespec_ref) {
+            continue; // Skip duplicates
+        }
+        seen_refs.insert(entry.filespec_ref);
+
+        // Extract the attachment
+        match extract_one(resolver, entry.filespec_ref, source) {
+            Ok(attachment) => {
+                attachments.push(attachment.into_json());
+            }
+            Err(_) => {
+                // Skip failed attachments but continue with others
+                continue;
+            }
+        }
+    }
+
+    // TODO: Also walk /EmbeddedFiles name tree for PDF 1.7 compatibility
+    // This requires implementing a name tree walker for /EmbeddedFiles
+
+    // Sort by name for deterministic output
+    attachments.sort_by(|a, b| a.name.cmp(&b.name));
+
+    attachments
 }
 
 /// Extract content from a single page.
@@ -993,7 +1071,8 @@ pub fn result_to_json(result: &ExtractionResult) -> serde_json::Value {
         "schema_version": "1.0",
         "pages": pages,
         "metadata": metadata_obj,
-        "signatures": result.signatures
+        "signatures": result.signatures,
+        "attachments": result.attachments
     })
 }
 

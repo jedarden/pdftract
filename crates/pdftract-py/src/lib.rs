@@ -7,6 +7,10 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use std::path::Path;
 
+// Import base64 for decoding attachment data in PyO3 bindings
+use base64::engine::general_purpose::STANDARD;
+use base64::engine::Engine;
+
 // Type alias for PyO3 owned references
 type PyResultAny<'py> = PyResult<Py<PyAny>>;
 
@@ -15,7 +19,9 @@ mod extract_stream;
 use extract_stream::{extract_stream_fn, StreamIterator};
 
 // Re-export core types and functions
-use pdftract_core::{extract_pdf, extract_pdf_streaming, ExtractionOptions, PageResult, TableJson};
+use pdftract_core::{
+    extract_pdf, extract_pdf_streaming, AttachmentJson, ExtractionOptions, PageResult, TableJson,
+};
 
 // ============================================================================
 // Exception hierarchy
@@ -256,6 +262,14 @@ fn extract<'py>(py: Python<'py>, path: &str, kwargs: Option<&PyDict>) -> PyResul
         .collect();
     dict.set_item("pages", pages?)?;
 
+    // Add attachments (with base64 data decoded to bytes)
+    let attachments: PyResult<Vec<Py<PyAny>>> = result
+        .attachments
+        .into_iter()
+        .map(|attachment| attachment_to_py(py, attachment))
+        .collect();
+    dict.set_item("attachments", attachments?)?;
+
     Ok(dict.clone().into())
 }
 
@@ -480,6 +494,40 @@ fn table_to_py<'py>(py: Python<'py>, table: TableJson) -> PyResultAny<'py> {
     dict.set_item("continued", table.continued)?;
     dict.set_item("continued_from_prev", table.continued_from_prev)?;
     dict.set_item("page_index", table.page_index)?;
+
+    Ok(dict.clone().into())
+}
+
+fn attachment_to_py<'py>(py: Python<'py>, attachment: AttachmentJson) -> PyResultAny<'py> {
+    let dict = PyDict::new(py);
+
+    dict.set_item("name", attachment.name)?;
+    dict.set_item("description", attachment.description)?;
+    dict.set_item("mime_type", attachment.mime_type)?;
+    dict.set_item("size", attachment.size)?;
+    dict.set_item("created", attachment.created)?;
+    dict.set_item("modified", attachment.modified)?;
+    dict.set_item("checksum_md5", attachment.checksum_md5)?;
+    dict.set_item("truncated", attachment.truncated)?;
+
+    // Convert base64 data to bytes (PyO3 will decode the base64 string)
+    if let Some(base64_data) = attachment.data {
+        use base64::engine::general_purpose::STANDARD;
+        use base64::engine::Engine;
+
+        match STANDARD.decode(&base64_data) {
+            Ok(bytes) => {
+                let py_bytes = pyo3::types::PyBytes::new(py, &bytes);
+                dict.set_item("data", py_bytes)?;
+            }
+            Err(_) => {
+                // If base64 decoding fails, set data to None
+                dict.set_item("data", py.None())?;
+            }
+        }
+    } else {
+        dict.set_item("data", py.None())?;
+    }
 
     Ok(dict.clone().into())
 }

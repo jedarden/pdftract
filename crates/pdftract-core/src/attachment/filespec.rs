@@ -19,6 +19,13 @@ use crate::parser::object::ObjRef;
 use crate::parser::stream::{ExtractionOptions, PdfSource, DEFAULT_MAX_DECOMPRESS_BYTES};
 use crate::parser::xref::XrefResolver;
 
+use base64::engine::Engine;
+
+/// Base64 encoder for attachment content (RFC 4648 standard alphabet with padding).
+///
+/// Uses the standard base64 alphabet (+ and /) with = padding and no line breaks.
+const BASE64_ENGINE: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
+
 /// Maximum attachment size before truncation (50 MB per plan 7.5.3).
 const MAX_ATTACHMENT_SIZE: u64 = 50 * 1024 * 1024;
 
@@ -64,6 +71,44 @@ impl AttachmentBuilder {
             checksum_md5: None,
             content: Vec::new(),
             truncated: false,
+        }
+    }
+
+    /// Convert to the JSON schema type with base64 encoding.
+    ///
+    /// This method converts the intermediate `AttachmentBuilder` to the final
+    /// `AttachmentJson` type that is serialized to JSON output. It handles:
+    /// - Base64 encoding of content (RFC 4648 standard alphabet)
+    /// - Setting `data: None` when truncated
+    /// - Populating `size` from the original content length
+    ///
+    /// Per plan 7.5.3, the 50 MB size limit is enforced during extraction,
+    /// so this method only needs to encode the content that's already been
+    /// truncated if necessary.
+    ///
+    /// # Returns
+    ///
+    /// A `crate::schema::AttachmentJson` ready for JSON serialization.
+    pub fn into_json(self) -> crate::schema::AttachmentJson {
+        let data = if self.truncated || self.content.is_empty() {
+            None
+        } else {
+            Some(BASE64_ENGINE.encode(&self.content))
+        };
+
+        // Use the size from /Params if available, otherwise use the actual content length
+        let size = self.size.unwrap_or(self.content.len() as u64);
+
+        crate::schema::AttachmentJson {
+            name: self.name,
+            description: self.description,
+            mime_type: self.mime_type,
+            size,
+            created: self.created,
+            modified: self.modified,
+            checksum_md5: self.checksum_md5,
+            data,
+            truncated: self.truncated,
         }
     }
 }
@@ -610,7 +655,8 @@ mod tests {
 
     #[test]
     fn test_extract_filename_uf_preferred() {
-        let filespec_bytes = b"\xFE\xFFT\x00e\x00s\x00t\x00.\x00t\x00x\x00t"; // UTF-16BE BOM + "Test.txt"
+        // UTF-16BE BOM (0xFE 0xFF) + "Test.txt" in big-endian
+        let filespec_bytes = b"\xFE\xFF\x00T\x00e\x00s\x00t\x00.\x00t\x00x\x00t";
         let decoded = decode_pdf_string(filespec_bytes);
         assert_eq!(decoded, "Test.txt");
     }
@@ -648,7 +694,8 @@ mod tests {
 
     #[test]
     fn test_decode_pdf_string_utf16be_bom() {
-        let bytes = b"\xFE\xFFH\x00e\x00l\x00l\x00o\x00"; // "Hello" in UTF-16BE
+        // UTF-16BE BOM (0xFE 0xFF) + "Hello" in big-endian
+        let bytes = b"\xFE\xFF\x00H\x00e\x00l\x00l\x00o";
         let decoded = decode_pdf_string(bytes);
         assert_eq!(decoded, "Hello");
     }

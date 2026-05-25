@@ -12,6 +12,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 anyhow = "1"
+base64 = "0.22"
 pdftract-core = { path = "../pdftract-core" }
 pyo3 = { version = "0.20", features = ["extension-module"] }
 

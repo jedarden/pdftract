@@ -69,7 +69,9 @@ pub use markdown::{
 pub use options::{ExtractionOptions, ReceiptsMode};
 pub use page_class::{page_type_string, PageClass, PageClassification};
 pub use parser::pages::{count_pages_tree, LazyPageIter, PageDict, DEFAULT_MEDIABOX};
-pub use schema::{BlockJson, CellJson, ExtractionQuality, RowJson, SpanJson, SpanRef, TableJson};
+pub use schema::{
+    AttachmentJson, BlockJson, CellJson, ExtractionQuality, RowJson, SpanJson, SpanRef, TableJson,
+};
 pub use table::{GridCandidate, PageContext as TablePageContext, TableDetector};
 
 #[cfg(feature = "ocr")]
