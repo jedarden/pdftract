@@ -21,6 +21,59 @@ use crate::font::Font;
 /// Maximum depth of graphics state stack (per PDF spec section 8.4).
 const MAX_GSTATE_DEPTH: usize = 64;
 
+/// Color space identifier for tracking current fill/stroke color space.
+///
+/// Per PDF spec section 8.6.5, color spaces determine how color values are interpreted.
+/// The cs/CS operators set the current color space for non-stroking/stroking operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColorSpace {
+    /// DeviceGray color space (1 component)
+    DeviceGray,
+    /// DeviceRGB color space (3 components)
+    DeviceRGB,
+    /// DeviceCMYK color space (4 components)
+    DeviceCMYK,
+    /// Pattern color space (special handling)
+    Pattern,
+    /// ICCBased color space (profile-based, treated as Other)
+    ICCBased,
+    /// Indexed color space (color lookup table, treated as Other)
+    Indexed,
+    /// CalRGB color space (CIE-based CalRGB, treated as Other)
+    CalRGB,
+    /// CalGray color space (CIE-based CalGray, treated as Other)
+    CalGray,
+    /// DeviceN color space (multi-component, treated as Other)
+    DeviceN,
+    /// Separation color space (spot color with tint transform)
+    Separation,
+    /// Unknown or custom color space
+    Other,
+}
+
+impl ColorSpace {
+    /// Get the number of color components for this color space.
+    ///
+    /// Returns the number of numeric arguments expected by sc/scn operators.
+    /// For Pattern, returns 0 (pattern names are not numeric components).
+    /// For unknown spaces, returns 0 (treated as Other).
+    pub fn component_count(&self) -> usize {
+        match self {
+            ColorSpace::DeviceGray => 1,
+            ColorSpace::DeviceRGB => 3,
+            ColorSpace::DeviceCMYK => 4,
+            ColorSpace::Pattern => 0,
+            ColorSpace::ICCBased
+            | ColorSpace::Indexed
+            | ColorSpace::CalRGB
+            | ColorSpace::CalGray
+            | ColorSpace::DeviceN
+            | ColorSpace::Separation
+            | ColorSpace::Other => 0,
+        }
+    }
+}
+
 /// Color space and value for text extraction output.
 ///
 /// Per PDF spec, color spaces include DeviceGray, DeviceRGB, DeviceCMYK,
@@ -278,6 +331,10 @@ pub struct GraphicsState {
     pub fill_color: Color,
     /// Stroke color
     pub stroke_color: Color,
+    /// Current fill color space (for sc/scn operators)
+    fill_color_space: ColorSpace,
+    /// Current stroke color space (for SC/SCN operators)
+    stroke_color_space: ColorSpace,
 }
 
 impl std::fmt::Debug for GraphicsState {
@@ -297,6 +354,8 @@ impl std::fmt::Debug for GraphicsState {
             .field("text_rendering_mode", &self.text_rendering_mode)
             .field("fill_color", &self.fill_color)
             .field("stroke_color", &self.stroke_color)
+            .field("fill_color_space", &self.fill_color_space)
+            .field("stroke_color_space", &self.stroke_color_space)
             .finish()
     }
 }
@@ -324,6 +383,8 @@ impl GraphicsState {
     /// - text_rendering_mode: 0
     /// - fill_color: DeviceGray(0.0) (black per PDF spec)
     /// - stroke_color: DeviceGray(0.0) (black per PDF spec)
+    /// - fill_color_space: DeviceGray (default per PDF spec)
+    /// - stroke_color_space: DeviceGray (default per PDF spec)
     #[inline]
     pub fn initial() -> Self {
         Self {
@@ -340,6 +401,8 @@ impl GraphicsState {
             text_rendering_mode: 0,
             fill_color: Color::DeviceGray(0.0),
             stroke_color: Color::DeviceGray(0.0),
+            fill_color_space: ColorSpace::DeviceGray,
+            stroke_color_space: ColorSpace::DeviceGray,
         }
     }
 
@@ -462,6 +525,182 @@ impl GraphicsState {
     pub fn end_text(&mut self) {
         self.text_matrix = Matrix3x3::identity();
         self.text_line_matrix = Matrix3x3::identity();
+    }
+
+    // Color-setting operators (rg RG g G k K cs CS sc SC scn SCN)
+
+    /// Set fill color to DeviceGray (g operator).
+    #[inline]
+    pub fn set_fill_gray(&mut self, gray: f32) {
+        self.fill_color = Color::DeviceGray(gray);
+        self.fill_color_space = ColorSpace::DeviceGray;
+    }
+
+    /// Set stroke color to DeviceGray (G operator).
+    #[inline]
+    pub fn set_stroke_gray(&mut self, gray: f32) {
+        self.stroke_color = Color::DeviceGray(gray);
+        self.stroke_color_space = ColorSpace::DeviceGray;
+    }
+
+    /// Set fill color to DeviceRGB (rg operator).
+    #[inline]
+    pub fn set_fill_rgb(&mut self, r: f32, g: f32, b: f32) {
+        self.fill_color = Color::DeviceRGB([r, g, b]);
+        self.fill_color_space = ColorSpace::DeviceRGB;
+    }
+
+    /// Set stroke color to DeviceRGB (RG operator).
+    #[inline]
+    pub fn set_stroke_rgb(&mut self, r: f32, g: f32, b: f32) {
+        self.stroke_color = Color::DeviceRGB([r, g, b]);
+        self.stroke_color_space = ColorSpace::DeviceRGB;
+    }
+
+    /// Set fill color to DeviceCMYK (k operator).
+    #[inline]
+    pub fn set_fill_cmyk(&mut self, c: f32, m: f32, y: f32, k: f32) {
+        self.fill_color = Color::DeviceCMYK([c, m, y, k]);
+        self.fill_color_space = ColorSpace::DeviceCMYK;
+    }
+
+    /// Set stroke color to DeviceCMYK (K operator).
+    #[inline]
+    pub fn set_stroke_cmyk(&mut self, c: f32, m: f32, y: f32, k: f32) {
+        self.stroke_color = Color::DeviceCMYK([c, m, y, k]);
+        self.stroke_color_space = ColorSpace::DeviceCMYK;
+    }
+
+    /// Set fill color space (cs operator).
+    #[inline]
+    pub fn set_fill_color_space(&mut self, color_space: ColorSpace) {
+        self.fill_color_space = color_space;
+    }
+
+    /// Set stroke color space (CS operator).
+    #[inline]
+    pub fn set_stroke_color_space(&mut self, color_space: ColorSpace) {
+        self.stroke_color_space = color_space;
+    }
+
+    /// Set fill color in current color space (sc operator).
+    ///
+    /// The numeric components are interpreted based on the current fill_color_space.
+    /// For DeviceGray: [gray]
+    /// For DeviceRGB: [r, g, b]
+    /// For DeviceCMYK: [c, m, y, k]
+    /// For other spaces: sets Color::Other
+    #[inline]
+    pub fn set_fill_color(&mut self, components: &[f32]) {
+        self.fill_color = match self.fill_color_space {
+            ColorSpace::DeviceGray => {
+                if components.len() >= 1 {
+                    Color::DeviceGray(components[0])
+                } else {
+                    Color::Other
+                }
+            }
+            ColorSpace::DeviceRGB => {
+                if components.len() >= 3 {
+                    Color::DeviceRGB([components[0], components[1], components[2]])
+                } else {
+                    Color::Other
+                }
+            }
+            ColorSpace::DeviceCMYK => {
+                if components.len() >= 4 {
+                    Color::DeviceCMYK([components[0], components[1], components[2], components[3]])
+                } else {
+                    Color::Other
+                }
+            }
+            _ => Color::Other,
+        };
+    }
+
+    /// Set stroke color in current color space (SC operator).
+    ///
+    /// Same as set_fill_color but for stroke.
+    #[inline]
+    pub fn set_stroke_color(&mut self, components: &[f32]) {
+        self.stroke_color = match self.stroke_color_space {
+            ColorSpace::DeviceGray => {
+                if components.len() >= 1 {
+                    Color::DeviceGray(components[0])
+                } else {
+                    Color::Other
+                }
+            }
+            ColorSpace::DeviceRGB => {
+                if components.len() >= 3 {
+                    Color::DeviceRGB([components[0], components[1], components[2]])
+                } else {
+                    Color::Other
+                }
+            }
+            ColorSpace::DeviceCMYK => {
+                if components.len() >= 4 {
+                    Color::DeviceCMYK([components[0], components[1], components[2], components[3]])
+                } else {
+                    Color::Other
+                }
+            }
+            _ => Color::Other,
+        };
+    }
+
+    /// Set fill color with optional pattern/spot name (scn operator).
+    ///
+    /// If a name is provided and the current color space is Separation,
+    /// sets Color::Spot with the name and first component as tint.
+    /// Otherwise behaves like set_fill_color.
+    #[inline]
+    pub fn set_fill_color_named(&mut self, components: &[f32], name: Option<&str>) {
+        if let Some(colorant_name) = name {
+            // For Separation color spaces, treat as Spot color
+            if self.fill_color_space == ColorSpace::Separation {
+                let tint = if components.len() >= 1 {
+                    components[0]
+                } else {
+                    1.0
+                };
+                self.fill_color = Color::Spot(Arc::from(colorant_name), tint);
+                return;
+            }
+            // Pattern color space
+            if self.fill_color_space == ColorSpace::Pattern {
+                self.fill_color = Color::Other;
+                return;
+            }
+        }
+        // Fall back to numeric-only behavior
+        self.set_fill_color(components);
+    }
+
+    /// Set stroke color with optional pattern/spot name (SCN operator).
+    ///
+    /// Same as set_fill_color_named but for stroke.
+    #[inline]
+    pub fn set_stroke_color_named(&mut self, components: &[f32], name: Option<&str>) {
+        if let Some(colorant_name) = name {
+            // For Separation color spaces, treat as Spot color
+            if self.stroke_color_space == ColorSpace::Separation {
+                let tint = if components.len() >= 1 {
+                    components[0]
+                } else {
+                    1.0
+                };
+                self.stroke_color = Color::Spot(Arc::from(colorant_name), tint);
+                return;
+            }
+            // Pattern color space
+            if self.stroke_color_space == ColorSpace::Pattern {
+                self.stroke_color = Color::Other;
+                return;
+            }
+        }
+        // Fall back to numeric-only behavior
+        self.set_stroke_color(components);
     }
 }
 
@@ -995,5 +1234,190 @@ mod tests {
         let mut state = GraphicsState::new();
         state.set_leading(-15.0);
         assert_eq!(state.leading, -15.0);
+    }
+
+    // Acceptance criteria tests for pdftract-4ubed (color operators)
+
+    #[test]
+    fn test_color_space_component_count() {
+        // AC: DeviceGray has 1 component
+        assert_eq!(ColorSpace::DeviceGray.component_count(), 1);
+        // AC: DeviceRGB has 3 components
+        assert_eq!(ColorSpace::DeviceRGB.component_count(), 3);
+        // AC: DeviceCMYK has 4 components
+        assert_eq!(ColorSpace::DeviceCMYK.component_count(), 4);
+        // AC: Pattern has 0 components (uses names, not numbers)
+        assert_eq!(ColorSpace::Pattern.component_count(), 0);
+        // AC: Other spaces have 0 components
+        assert_eq!(ColorSpace::ICCBased.component_count(), 0);
+        assert_eq!(ColorSpace::Indexed.component_count(), 0);
+        assert_eq!(ColorSpace::Other.component_count(), 0);
+    }
+
+    #[test]
+    fn test_set_fill_gray() {
+        let mut state = GraphicsState::new();
+        state.set_fill_gray(0.5);
+        assert_eq!(state.fill_color, Color::DeviceGray(0.5));
+        assert_eq!(state.fill_color_space, ColorSpace::DeviceGray);
+    }
+
+    #[test]
+    fn test_set_stroke_gray() {
+        let mut state = GraphicsState::new();
+        state.set_stroke_gray(0.5);
+        assert_eq!(state.stroke_color, Color::DeviceGray(0.5));
+        assert_eq!(state.stroke_color_space, ColorSpace::DeviceGray);
+    }
+
+    #[test]
+    fn test_set_fill_rgb() {
+        let mut state = GraphicsState::new();
+        state.set_fill_rgb(0.5, 0.5, 0.5);
+        assert_eq!(state.fill_color, Color::DeviceRGB([0.5, 0.5, 0.5]));
+        assert_eq!(state.fill_color_space, ColorSpace::DeviceRGB);
+    }
+
+    #[test]
+    fn test_set_stroke_rgb() {
+        let mut state = GraphicsState::new();
+        state.set_stroke_rgb(1.0, 0.0, 0.0);
+        assert_eq!(state.stroke_color, Color::DeviceRGB([1.0, 0.0, 0.0]));
+        assert_eq!(state.stroke_color_space, ColorSpace::DeviceRGB);
+    }
+
+    #[test]
+    fn test_set_fill_cmyk() {
+        let mut state = GraphicsState::new();
+        state.set_fill_cmyk(0.1, 0.2, 0.3, 0.4);
+        assert_eq!(state.fill_color, Color::DeviceCMYK([0.1, 0.2, 0.3, 0.4]));
+        assert_eq!(state.fill_color_space, ColorSpace::DeviceCMYK);
+    }
+
+    #[test]
+    fn test_set_stroke_cmyk() {
+        let mut state = GraphicsState::new();
+        state.set_stroke_cmyk(0.1, 0.2, 0.3, 0.4);
+        assert_eq!(state.stroke_color, Color::DeviceCMYK([0.1, 0.2, 0.3, 0.4]));
+        assert_eq!(state.stroke_color_space, ColorSpace::DeviceCMYK);
+    }
+
+    #[test]
+    fn test_set_fill_color_space() {
+        let mut state = GraphicsState::new();
+        state.set_fill_color_space(ColorSpace::DeviceRGB);
+        assert_eq!(state.fill_color_space, ColorSpace::DeviceRGB);
+    }
+
+    #[test]
+    fn test_set_stroke_color_space() {
+        let mut state = GraphicsState::new();
+        state.set_stroke_color_space(ColorSpace::Pattern);
+        assert_eq!(state.stroke_color_space, ColorSpace::Pattern);
+    }
+
+    #[test]
+    fn test_set_fill_color_device_gray() {
+        let mut state = GraphicsState::new();
+        state.set_fill_color_space(ColorSpace::DeviceGray);
+        state.set_fill_color(&[0.5]);
+        assert_eq!(state.fill_color, Color::DeviceGray(0.5));
+    }
+
+    #[test]
+    fn test_set_fill_color_device_rgb() {
+        let mut state = GraphicsState::new();
+        state.set_fill_color_space(ColorSpace::DeviceRGB);
+        state.set_fill_color(&[1.0, 0.0, 0.0]);
+        assert_eq!(state.fill_color, Color::DeviceRGB([1.0, 0.0, 0.0]));
+    }
+
+    #[test]
+    fn test_set_fill_color_device_cmyk() {
+        let mut state = GraphicsState::new();
+        state.set_fill_color_space(ColorSpace::DeviceCMYK);
+        state.set_fill_color(&[0.1, 0.2, 0.3, 0.4]);
+        assert_eq!(state.fill_color, Color::DeviceCMYK([0.1, 0.2, 0.3, 0.4]));
+    }
+
+    #[test]
+    fn test_set_fill_color_insufficient_components() {
+        let mut state = GraphicsState::new();
+        state.set_fill_color_space(ColorSpace::DeviceRGB);
+        // Only 2 components for DeviceRGB (needs 3)
+        state.set_fill_color(&[1.0, 0.0]);
+        assert_eq!(state.fill_color, Color::Other);
+    }
+
+    #[test]
+    fn test_set_fill_color_unknown_colorspace() {
+        let mut state = GraphicsState::new();
+        state.set_fill_color_space(ColorSpace::ICCBased);
+        state.set_fill_color(&[0.5]);
+        assert_eq!(state.fill_color, Color::Other);
+    }
+
+    #[test]
+    fn test_set_fill_color_named_spot() {
+        let mut state = GraphicsState::new();
+        state.set_fill_color_space(ColorSpace::Separation);
+        state.set_fill_color_named(&[0.5], Some("PANTONE"));
+        assert_eq!(state.fill_color, Color::Spot(Arc::from("PANTONE"), 0.5));
+    }
+
+    #[test]
+    fn test_set_fill_color_named_spot_default_tint() {
+        let mut state = GraphicsState::new();
+        state.set_fill_color_space(ColorSpace::Separation);
+        // No tint value, defaults to 1.0
+        state.set_fill_color_named(&[], Some("PANTONE"));
+        assert_eq!(state.fill_color, Color::Spot(Arc::from("PANTONE"), 1.0));
+    }
+
+    #[test]
+    fn test_set_fill_color_named_pattern() {
+        let mut state = GraphicsState::new();
+        state.set_fill_color_space(ColorSpace::Pattern);
+        state.set_fill_color_named(&[], Some("Pattern1"));
+        // Pattern color space always sets Color::Other
+        assert_eq!(state.fill_color, Color::Other);
+    }
+
+    #[test]
+    fn test_set_fill_color_named_fallback_to_numeric() {
+        let mut state = GraphicsState::new();
+        state.set_fill_color_space(ColorSpace::DeviceRGB);
+        // No name provided, falls back to numeric-only behavior
+        state.set_fill_color_named(&[1.0, 0.0, 0.0], None);
+        assert_eq!(state.fill_color, Color::DeviceRGB([1.0, 0.0, 0.0]));
+    }
+
+    #[test]
+    fn test_initial_fill_color_is_black() {
+        let state = GraphicsState::initial();
+        assert_eq!(state.fill_color, Color::DeviceGray(0.0));
+        assert_eq!(state.fill_color_space, ColorSpace::DeviceGray);
+    }
+
+    #[test]
+    fn test_initial_stroke_color_is_black() {
+        let state = GraphicsState::initial();
+        assert_eq!(state.stroke_color, Color::DeviceGray(0.0));
+        assert_eq!(state.stroke_color_space, ColorSpace::DeviceGray);
+    }
+
+    #[test]
+    fn test_graphics_state_clone_preserves_colors() {
+        let mut state1 = GraphicsState::new();
+        state1.set_fill_rgb(1.0, 0.0, 0.0);
+        state1.set_stroke_cmyk(0.1, 0.2, 0.3, 0.4);
+        state1.set_fill_color_space(ColorSpace::DeviceRGB);
+        state1.set_stroke_color_space(ColorSpace::DeviceCMYK);
+
+        let state2 = state1.clone();
+        assert_eq!(state2.fill_color, Color::DeviceRGB([1.0, 0.0, 0.0]));
+        assert_eq!(state2.stroke_color, Color::DeviceCMYK([0.1, 0.2, 0.3, 0.4]));
+        assert_eq!(state2.fill_color_space, ColorSpace::DeviceRGB);
+        assert_eq!(state2.stroke_color_space, ColorSpace::DeviceCMYK);
     }
 }

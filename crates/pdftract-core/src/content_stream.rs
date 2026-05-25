@@ -27,7 +27,7 @@
 //! on typical content streams. This is measured by the acceptance criteria tests.
 
 use crate::diagnostics::{DiagCode, Diagnostic};
-use crate::graphics_state::Matrix3x3;
+use crate::graphics_state::ColorSpace;
 use crate::parser::lexer::Lexer;
 use crate::parser::lexer::Token;
 use crate::parser::marked_content_stack::MarkedContentStack;
@@ -834,6 +834,147 @@ pub fn execute_with_do(
                         }
                         operand_buffer.clear();
                     }
+                    // Color operators (g G rg RG k K cs CS sc SC scn SCN)
+                    "g" => {
+                        // Set fill color to DeviceGray: g gray
+                        let nums = extract_numbers(&operand_buffer, 1, &mut diagnostics);
+                        if nums.len() == 1 {
+                            gstate.set_fill_gray(nums[0] as f32);
+                        }
+                        operand_buffer.clear();
+                    }
+                    "G" => {
+                        // Set stroke color to DeviceGray: G gray
+                        let nums = extract_numbers(&operand_buffer, 1, &mut diagnostics);
+                        if nums.len() == 1 {
+                            gstate.set_stroke_gray(nums[0] as f32);
+                        }
+                        operand_buffer.clear();
+                    }
+                    "rg" => {
+                        // Set fill color to DeviceRGB: rg r g b
+                        let nums = extract_numbers(&operand_buffer, 3, &mut diagnostics);
+                        if nums.len() == 3 {
+                            gstate.set_fill_rgb(nums[0] as f32, nums[1] as f32, nums[2] as f32);
+                        }
+                        operand_buffer.clear();
+                    }
+                    "RG" => {
+                        // Set stroke color to DeviceRGB: RG r g b
+                        let nums = extract_numbers(&operand_buffer, 3, &mut diagnostics);
+                        if nums.len() == 3 {
+                            gstate.set_stroke_rgb(nums[0] as f32, nums[1] as f32, nums[2] as f32);
+                        }
+                        operand_buffer.clear();
+                    }
+                    "k" => {
+                        // Set fill color to DeviceCMYK: k c m y k
+                        let nums = extract_numbers(&operand_buffer, 4, &mut diagnostics);
+                        if nums.len() == 4 {
+                            gstate.set_fill_cmyk(
+                                nums[0] as f32,
+                                nums[1] as f32,
+                                nums[2] as f32,
+                                nums[3] as f32,
+                            );
+                        }
+                        operand_buffer.clear();
+                    }
+                    "K" => {
+                        // Set stroke color to DeviceCMYK: K c m y k
+                        let nums = extract_numbers(&operand_buffer, 4, &mut diagnostics);
+                        if nums.len() == 4 {
+                            gstate.set_stroke_cmyk(
+                                nums[0] as f32,
+                                nums[1] as f32,
+                                nums[2] as f32,
+                                nums[3] as f32,
+                            );
+                        }
+                        operand_buffer.clear();
+                    }
+                    "cs" => {
+                        // Set fill color space: cs /Name
+                        if let Some(name_token) = operand_buffer.last() {
+                            if let Token::Name(name_bytes) = name_token {
+                                if let Ok(name_str) = std::str::from_utf8(name_bytes) {
+                                    let color_space = parse_color_space(name_str);
+                                    gstate.set_fill_color_space(color_space);
+                                }
+                            }
+                        }
+                        operand_buffer.clear();
+                    }
+                    "CS" => {
+                        // Set stroke color space: CS /Name
+                        if let Some(name_token) = operand_buffer.last() {
+                            if let Token::Name(name_bytes) = name_token {
+                                if let Ok(name_str) = std::str::from_utf8(name_bytes) {
+                                    let color_space = parse_color_space(name_str);
+                                    gstate.set_stroke_color_space(color_space);
+                                }
+                            }
+                        }
+                        operand_buffer.clear();
+                    }
+                    "sc" => {
+                        // Set fill color in current color space: sc n1 n2 ...
+                        let nums = extract_numbers(&operand_buffer, 0, &mut diagnostics);
+                        let components: Vec<f32> = nums.iter().map(|&n| n as f32).collect();
+                        gstate.set_fill_color(&components);
+                        operand_buffer.clear();
+                    }
+                    "SC" => {
+                        // Set stroke color in current color space: SC n1 n2 ...
+                        let nums = extract_numbers(&operand_buffer, 0, &mut diagnostics);
+                        let components: Vec<f32> = nums.iter().map(|&n| n as f32).collect();
+                        gstate.set_stroke_color(&components);
+                        operand_buffer.clear();
+                    }
+                    "scn" => {
+                        // Set fill color with optional name: scn n1 ... [/Name]
+                        let mut nums = Vec::new();
+                        let mut name: Option<String> = None;
+
+                        for token in &operand_buffer {
+                            match token {
+                                Token::Integer(n) => nums.push(*n as f32),
+                                Token::Real(f) => nums.push(*f as f32),
+                                Token::Name(name_bytes) => {
+                                    if let Ok(name_str) = std::str::from_utf8(name_bytes) {
+                                        name = Some(name_str.to_string());
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+
+                        let name_ref = name.as_deref();
+                        gstate.set_fill_color_named(&nums, name_ref);
+                        operand_buffer.clear();
+                    }
+                    "SCN" => {
+                        // Set stroke color with optional name: SCN n1 ... [/Name]
+                        let mut nums = Vec::new();
+                        let mut name: Option<String> = None;
+
+                        for token in &operand_buffer {
+                            match token {
+                                Token::Integer(n) => nums.push(*n as f32),
+                                Token::Real(f) => nums.push(*f as f32),
+                                Token::Name(name_bytes) => {
+                                    if let Ok(name_str) = std::str::from_utf8(name_bytes) {
+                                        name = Some(name_str.to_string());
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+
+                        let name_ref = name.as_deref();
+                        gstate.set_stroke_color_named(&nums, name_ref);
+                        operand_buffer.clear();
+                    }
                     "Do" => {
                         // Paint XObject: Do name
                         if let Some(name_token) = operand_buffer.last() {
@@ -1286,6 +1427,33 @@ fn get_form_matrix(dict: &PdfDict) -> crate::graphics_state::Matrix3x3 {
             }
         }
         _ => crate::graphics_state::Matrix3x3::identity(),
+    }
+}
+
+/// Parse a color space name to a ColorSpace enum.
+///
+/// Handles standard PDF color space names:
+/// - DeviceGray, DeviceRGB, DeviceCMYK (Device color spaces)
+/// - Pattern (Pattern color space)
+/// - ICCBased, Indexed, CalRGB, CalGray (CIE-based color spaces)
+/// - DeviceN, Separation (Special color spaces)
+/// - Unknown names map to ColorSpace::Other
+fn parse_color_space(name: &str) -> ColorSpace {
+    // Strip leading slash if present
+    let name = name.trim_start_matches('/');
+
+    match name {
+        "DeviceGray" => ColorSpace::DeviceGray,
+        "DeviceRGB" => ColorSpace::DeviceRGB,
+        "DeviceCMYK" => ColorSpace::DeviceCMYK,
+        "Pattern" => ColorSpace::Pattern,
+        "ICCBased" => ColorSpace::ICCBased,
+        "Indexed" => ColorSpace::Indexed,
+        "CalRGB" => ColorSpace::CalRGB,
+        "CalGray" => ColorSpace::CalGray,
+        "DeviceN" => ColorSpace::DeviceN,
+        "Separation" => ColorSpace::Separation,
+        _ => ColorSpace::Other,
     }
 }
 
