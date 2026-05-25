@@ -99,6 +99,106 @@ pub enum PageClass {
     BrokenVector,
 }
 
+impl PageClass {
+    /// Returns the JSON output string for this page type.
+    ///
+    /// Maps internal enum values to the schema's `page_type` field.
+    pub fn as_type_str(&self) -> &'static str {
+        match self {
+            PageClass::Vector => "text",
+            PageClass::Scanned => "scanned",
+            PageClass::Hybrid => "mixed",
+            PageClass::BrokenVector => "broken_vector",
+        }
+    }
+
+    /// Check if this page class is eligible for BrokenVector escalation.
+    ///
+    /// Only Vector pages can be escalated to BrokenVector based on readability.
+    /// Scanned and Hybrid pages are already handled by other paths.
+    pub fn can_escalate_to_broken_vector(&self) -> bool {
+        matches!(self, PageClass::Vector)
+    }
+}
+
+/// Compute the canonical page_type string for the JSON schema output.
+///
+/// This function implements the stable mapping from (PageClass, ocr_succeeded, has_text, has_images)
+/// to the page_type string emitted in the 6.1 JSON schema. The mapping is frozen per INV-9.
+///
+/// # Mapping Table
+///
+/// | class           | ocr_succeeded | has_text | has_images | page_type        |
+/// |-----------------|---------------|----------|------------|------------------|
+/// | Vector          | -             | -        | -          | "text"           |
+/// | Scanned         | -             | -        | -          | "scanned"        |
+/// | Hybrid          | -             | -        | -          | "mixed"          |
+/// | BrokenVector    | false         | -        | -          | "broken_vector"  |
+/// | BrokenVector    | true          | -        | -          | "scanned"        | // post-OCR recovery
+/// | (any)           | -             | false    | false      | "blank"          | // overrides class
+/// | (any)           | -             | false    | true       | "figure_only"    | // overrides class
+///
+/// # Precedence Rules
+///
+/// 1. **Override checks first**: If `has_text == false` and `has_images == false`, return "blank".
+///    If `has_text == false` and `has_images == true`, return "figure_only".
+///    These overrides apply regardless of the PageClass value.
+/// 2. **Class-based mapping**: If no override applies, map based on PageClass:
+///    - Vector → "text"
+///    - Scanned → "scanned"
+///    - Hybrid → "mixed"
+///    - BrokenVector with `ocr_succeeded == true` → "scanned" (post-OCR recovery)
+///    - BrokenVector with `ocr_succeeded == false` → "broken_vector"
+///
+/// # Arguments
+///
+/// * `class` - The PageClass from Phase 5.1 classification
+/// * `ocr_succeeded` - Whether OCR successfully recovered text (only relevant for BrokenVector)
+/// * `has_text` - Whether the page contains any text glyphs
+/// * `has_images` - Whether the page contains any images
+///
+/// # Returns
+///
+/// The canonical page_type string as a static str. This string is guaranteed to be
+/// one of the six values in the 6.1 JSON schema enum: "text", "scanned", "mixed",
+/// "broken_vector", "blank", or "figure_only".
+///
+/// # INV-9 Stable Taxonomy
+///
+/// The page_type strings are FROZEN by the 6.1 schema version. Any change requires
+/// a schema_version bump and a downstream migration plan. Do not modify this function
+/// without updating the JSON schema and plan.md.
+pub fn page_type_string(
+    class: PageClass,
+    ocr_succeeded: bool,
+    has_text: bool,
+    has_images: bool,
+) -> &'static str {
+    // Override checks take precedence over class-based mapping.
+    // These represent the "blank" and "figure_only" page types which are
+    // determined solely by content presence, not by classification.
+    if !has_text && !has_images {
+        return "blank";
+    }
+    if !has_text && has_images {
+        return "figure_only";
+    }
+
+    // Class-based mapping (applies when has_text == true or the override didn't match).
+    match class {
+        PageClass::Vector => "text",
+        PageClass::Scanned => "scanned",
+        PageClass::Hybrid => "mixed",
+        PageClass::BrokenVector => {
+            if ocr_succeeded {
+                "scanned" // Post-OCR recovery: treated as scanned
+            } else {
+                "broken_vector"
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -277,5 +377,258 @@ mod page_classification_tests {
         assert!(vector_with_cells.hybrid_cells.is_some());
 
         // In production code, callers should enforce: hybrid_cells.is_some() ⇔ class == Hybrid
+    }
+}
+
+#[cfg(test)]
+mod page_type_string_tests {
+    use super::*;
+
+    #[test]
+    fn test_page_type_string_vector() {
+        // AC: Vector → "text"
+        assert_eq!(
+            page_type_string(PageClass::Vector, false, true, false),
+            "text"
+        );
+        assert_eq!(
+            page_type_string(PageClass::Vector, true, true, false),
+            "text"
+        );
+        assert_eq!(
+            page_type_string(PageClass::Vector, false, true, true),
+            "text"
+        );
+    }
+
+    #[test]
+    fn test_page_type_string_scanned() {
+        // AC: Scanned → "scanned"
+        assert_eq!(
+            page_type_string(PageClass::Scanned, false, true, false),
+            "scanned"
+        );
+        assert_eq!(
+            page_type_string(PageClass::Scanned, true, true, false),
+            "scanned"
+        );
+    }
+
+    #[test]
+    fn test_page_type_string_hybrid() {
+        // AC: Hybrid → "mixed"
+        assert_eq!(
+            page_type_string(PageClass::Hybrid, false, true, true),
+            "mixed"
+        );
+        assert_eq!(
+            page_type_string(PageClass::Hybrid, true, true, true),
+            "mixed"
+        );
+    }
+
+    #[test]
+    fn test_page_type_string_broken_vector_ocr_failed() {
+        // AC: BrokenVector + ocr_succeeded=false → "broken_vector"
+        assert_eq!(
+            page_type_string(PageClass::BrokenVector, false, true, false),
+            "broken_vector"
+        );
+        assert_eq!(
+            page_type_string(PageClass::BrokenVector, false, true, true),
+            "broken_vector"
+        );
+    }
+
+    #[test]
+    fn test_page_type_string_broken_vector_ocr_succeeded() {
+        // AC: BrokenVector + ocr_succeeded=true → "scanned" (post-OCR recovery)
+        assert_eq!(
+            page_type_string(PageClass::BrokenVector, true, true, false),
+            "scanned"
+        );
+        assert_eq!(
+            page_type_string(PageClass::BrokenVector, true, true, true),
+            "scanned"
+        );
+    }
+
+    #[test]
+    fn test_page_type_string_blank_override() {
+        // AC: has_text=false + has_images=false → "blank" (overrides class)
+        assert_eq!(
+            page_type_string(PageClass::Vector, false, false, false),
+            "blank"
+        );
+        assert_eq!(
+            page_type_string(PageClass::Scanned, false, false, false),
+            "blank"
+        );
+        assert_eq!(
+            page_type_string(PageClass::Hybrid, false, false, false),
+            "blank"
+        );
+        assert_eq!(
+            page_type_string(PageClass::BrokenVector, false, false, false),
+            "blank"
+        );
+        assert_eq!(
+            page_type_string(PageClass::BrokenVector, true, false, false),
+            "blank"
+        );
+    }
+
+    #[test]
+    fn test_page_type_string_figure_only_override() {
+        // AC: has_text=false + has_images=true → "figure_only" (overrides class)
+        assert_eq!(
+            page_type_string(PageClass::Vector, false, false, true),
+            "figure_only"
+        );
+        assert_eq!(
+            page_type_string(PageClass::Scanned, false, false, true),
+            "figure_only"
+        );
+        assert_eq!(
+            page_type_string(PageClass::Hybrid, false, false, true),
+            "figure_only"
+        );
+        assert_eq!(
+            page_type_string(PageClass::BrokenVector, false, false, true),
+            "figure_only"
+        );
+        assert_eq!(
+            page_type_string(PageClass::BrokenVector, true, false, true),
+            "figure_only"
+        );
+    }
+
+    #[test]
+    fn test_page_type_string_exhaustive_combinations() {
+        // AC: Every combination from the mapping table produces the documented string
+        // 4 classes × 2 ocr_succeeded × 2 has_text × 2 has_images = 32 cases
+
+        let all_classes = [
+            PageClass::Vector,
+            PageClass::Scanned,
+            PageClass::Hybrid,
+            PageClass::BrokenVector,
+        ];
+
+        for &class in &all_classes {
+            for &ocr_succeeded in &[false, true] {
+                for &has_text in &[false, true] {
+                    for &has_images in &[false, true] {
+                        let result = page_type_string(class, ocr_succeeded, has_text, has_images);
+
+                        // Verify result is one of the six valid enum values
+                        assert!(
+                            matches!(
+                                result,
+                                "text" | "scanned" | "mixed" | "broken_vector" | "blank" | "figure_only"
+                            ),
+                            "Invalid page_type: '{}' for class={:?}, ocr={}, has_text={}, has_images={}",
+                            result,
+                            class,
+                            ocr_succeeded,
+                            has_text,
+                            has_images
+                        );
+
+                        // Verify override rules
+                        if !has_text && !has_images {
+                            assert_eq!(result, "blank");
+                        } else if !has_text && has_images {
+                            assert_eq!(result, "figure_only");
+                        } else {
+                            // Class-based mapping
+                            match class {
+                                PageClass::Vector => assert_eq!(result, "text"),
+                                PageClass::Scanned => assert_eq!(result, "scanned"),
+                                PageClass::Hybrid => assert_eq!(result, "mixed"),
+                                PageClass::BrokenVector => {
+                                    if ocr_succeeded {
+                                        assert_eq!(result, "scanned");
+                                    } else {
+                                        assert_eq!(result, "broken_vector");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_page_type_enum_schema_set() {
+        // Schema list test asserting page_type enum exactly equals
+        // { text, scanned, mixed, broken_vector, blank, figure_only }
+        let expected = [
+            "text",
+            "scanned",
+            "mixed",
+            "broken_vector",
+            "blank",
+            "figure_only",
+        ];
+
+        // Verify all expected values are produced by page_type_string
+        let mut found = std::collections::HashSet::new();
+        let all_classes = [
+            PageClass::Vector,
+            PageClass::Scanned,
+            PageClass::Hybrid,
+            PageClass::BrokenVector,
+        ];
+
+        for &class in &all_classes {
+            for &ocr_succeeded in &[false, true] {
+                for &has_text in &[false, true] {
+                    for &has_images in &[false, true] {
+                        let result = page_type_string(class, ocr_succeeded, has_text, has_images);
+                        found.insert(result);
+                    }
+                }
+            }
+        }
+
+        // Verify all expected values are present
+        for &expected_value in &expected {
+            assert!(
+                found.contains(expected_value),
+                "Expected page_type '{}' not found in output set",
+                expected_value
+            );
+        }
+
+        // Verify no unexpected values are present
+        assert_eq!(
+            found.len(),
+            expected.len(),
+            "page_type set has unexpected values: {:?}",
+            found
+        );
+    }
+
+    #[test]
+    fn test_page_class_as_type_str() {
+        assert_eq!(PageClass::Vector.as_type_str(), "text");
+        assert_eq!(PageClass::Scanned.as_type_str(), "scanned");
+        assert_eq!(PageClass::Hybrid.as_type_str(), "mixed");
+        assert_eq!(PageClass::BrokenVector.as_type_str(), "broken_vector");
+    }
+
+    #[test]
+    fn test_page_class_can_escalate_to_broken_vector() {
+        // AC: Vector pages can escalate to BrokenVector
+        assert!(PageClass::Vector.can_escalate_to_broken_vector());
+        // AC: Scanned pages cannot escalate
+        assert!(!PageClass::Scanned.can_escalate_to_broken_vector());
+        // AC: Hybrid pages cannot escalate
+        assert!(!PageClass::Hybrid.can_escalate_to_broken_vector());
+        // AC: BrokenVector pages cannot escalate (already there)
+        assert!(!PageClass::BrokenVector.can_escalate_to_broken_vector());
     }
 }
