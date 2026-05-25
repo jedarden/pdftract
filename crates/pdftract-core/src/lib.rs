@@ -50,6 +50,7 @@ pub mod semaphore;
 pub mod signature;
 pub mod span_flags;
 pub mod table;
+pub mod text;
 pub mod threads;
 
 // Re-export key types for convenience
@@ -74,6 +75,7 @@ pub use schema::{
     AttachmentJson, BlockJson, CellJson, ExtractionQuality, RowJson, SpanJson, SpanRef, TableJson,
 };
 pub use table::{GridCandidate, PageContext as TablePageContext, TableDetector};
+pub use text::{serialize_page_text, TextOptions};
 
 #[cfg(feature = "ocr")]
 pub use dpi::{select_dpi, FontSizeSpan, Pdf1Filter};
