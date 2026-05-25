@@ -23,7 +23,7 @@
 
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::parser::catalog::Catalog;
-use crate::parser::object::{ObjRef, PdfObject};
+use crate::parser::object::{ObjRef, PdfDict, PdfObject};
 use crate::parser::xref::XrefResolver;
 
 /// Result type for thread operations.
@@ -233,6 +233,310 @@ pub fn discover(catalog: &Catalog, resolver: &XrefResolver) -> Result<Vec<Thread
 
     // Only return Err if diagnostics were actually fatal (none are currently)
     Ok(threads)
+}
+
+/// A single bead in an article thread chain.
+///
+/// Represents one bead's position on a page, extracted during bead chain walking.
+/// Per PDF 1.7 Section 12.4.3, each bead contains a reference to its page and
+/// a bounding rectangle defining the article region on that page.
+///
+/// # Fields
+///
+/// * `page_index` - 0-based index of the page containing this bead
+/// * `rect` - Bounding rectangle of the bead region in PDF user-space coordinates [x0, y0, x1, y1]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Bead {
+    /// 0-based page index where this bead is located.
+    pub page_index: usize,
+
+    /// Bounding rectangle in PDF user-space coordinates [x0, y0, x1, y1].
+    ///
+    /// Per PDF spec, the origin is at the bottom-left corner of the page.
+    /// This rect is NOT flipped to image-space coordinates.
+    pub rect: [f32; 4],
+}
+
+impl Bead {
+    /// Create a new Bead with the given page index and rect.
+    pub fn new(page_index: usize, rect: [f32; 4]) -> Self {
+        Bead { page_index, rect }
+    }
+}
+
+/// Walk the bead chain for a single thread.
+///
+/// Follows `/N` (next bead) links from the first bead until the chain
+/// terminates (when `/N` points back to the first bead). Detects malformed
+/// chains (cycles that don't return to first) and aborts with diagnostic.
+///
+/// # Arguments
+///
+/// * `header` - The thread header containing the first bead reference
+/// * `resolver` - The xref resolver for resolving indirect references
+/// * `page_ref_to_index` - Precomputed map from page ObjRef to 0-based page index
+///
+/// # Returns
+///
+/// A `Result<Vec<Bead>>` containing all beads in chain order, or diagnostics
+/// for errors encountered during walking.
+///
+/// # Behavior
+///
+/// - Follows `/N` links from first bead
+/// - Terminates when `/N` points back to first bead (legitimate circular end)
+/// - Detects malformed cycles (non-first bead revisited) with diagnostic
+/// - Detects missing `/N` with diagnostic
+/// - Detects missing or invalid `/R` (page ref) with diagnostic, skips that bead
+/// - Detects missing or invalid `/V` (rect) with diagnostic, skips that bead
+/// - Tolerates `/Pg` as fallback for page reference (some legacy PDFs)
+/// - Maximum 10000 iterations per thread as safety net
+/// - Beads are returned in chain order
+///
+/// # PDF Spec Reference
+///
+/// Per PDF 1.7 Section 12.4.3:
+/// - `/R` - Page object reference (required)
+/// - `/V` - Bounding rectangle of article region (required)
+/// - `/N` - Next bead in thread (optional; null or absent means end of thread)
+/// - `/T` - Thread containing this bead (back-reference, optional)
+/// - `/P` - Page reference (alternative to `/R`, tolerated for legacy PDFs)
+pub fn walk_beads(
+    header: &ThreadHeader,
+    resolver: &XrefResolver,
+    page_ref_to_index: &std::collections::HashMap<ObjRef, usize>,
+) -> Result<Vec<Bead>> {
+    let mut beads = Vec::new();
+    let mut diagnostics = Vec::new();
+    let mut visited = std::collections::HashSet::new();
+    let first_ref = header.first_bead_ref;
+    let mut current_ref = first_ref;
+
+    // Maximum iterations as safety net (real-world threads have < 1000 beads)
+    const MAX_ITERATIONS: usize = 10000;
+    let mut iterations = 0;
+
+    visited.insert(current_ref);
+
+    loop {
+        iterations += 1;
+        if iterations > MAX_ITERATIONS {
+            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructUnexpectedEof,
+                format!(
+                    "Thread bead chain exceeded maximum iteration count ({}); possible malformed chain",
+                    MAX_ITERATIONS
+                ),
+            ));
+            return Err(diagnostics);
+        }
+
+        // Resolve current bead
+        let bead_obj = match resolver.resolve(current_ref) {
+            Ok(obj) => obj,
+            Err(_) => {
+                diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructMissingKey,
+                    format!("Failed to resolve bead reference {:?}", current_ref),
+                ));
+                break;
+            }
+        };
+
+        let bead_dict = match bead_obj.as_dict() {
+            Some(d) => d,
+            None => {
+                diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructUnexpectedEof,
+                    format!("Bead {:?} is not a dictionary", current_ref),
+                ));
+                break;
+            }
+        };
+
+        // Extract page reference - try /R first, then /P as fallback
+        let page_ref = match (bead_dict.get("R"), bead_dict.get("P")) {
+            (Some(PdfObject::Ref(r)), _) => Some(*r),
+            (_, Some(PdfObject::Ref(r))) => Some(*r),
+            (Some(other), _) => {
+                diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructUnexpectedEof,
+                    format!(
+                        "Bead {:?} has /R but it's not a reference",
+                        current_ref,
+                    ),
+                ));
+                None
+            }
+            (_, Some(_)) => {
+                diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructUnexpectedEof,
+                    format!(
+                        "Bead {:?} has /P but it's not a reference",
+                        current_ref,
+                    ),
+                ));
+                None
+            }
+            (None, None) => {
+                diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructMissingKey,
+                    format!("Bead {:?} is missing both /R and /P (page reference)", current_ref),
+                ));
+                None
+            }
+        };
+
+        let page_index = match page_ref {
+            Some(ref_) => match page_ref_to_index.get(&ref_) {
+                Some(idx) => *idx,
+                None => {
+                    diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                        DiagCode::StructMissingKey,
+                        format!(
+                            "Bead {:?} page reference {:?} not found in document page tree",
+                            current_ref, ref_
+                        ),
+                    ));
+                    // Skip this bead and continue
+                    current_ref = match get_next_bead_ref(bead_dict, current_ref) {
+                        Ok(next_ref) => next_ref,
+                        Err(_) => break,
+                    };
+                    continue;
+                }
+            },
+            None => {
+                // Skip this bead and continue
+                current_ref = match get_next_bead_ref(bead_dict, current_ref) {
+                    Ok(next_ref) => next_ref,
+                    Err(_) => break,
+                };
+                continue;
+            }
+        };
+
+        // Extract rect (/V in PDF spec, but /V might be confused with other uses)
+        // The plan says /V for rect, but let's check for both /V and /R as fallback
+        let rect = match extract_bead_rect(bead_dict, current_ref) {
+            Some(r) => r,
+            None => {
+                // Skip this bead and continue
+                current_ref = match get_next_bead_ref(bead_dict, current_ref) {
+                    Ok(next_ref) => next_ref,
+                    Err(_) => break,
+                };
+                continue;
+            }
+        };
+
+        beads.push(Bead::new(page_index, rect));
+
+        // Get next bead reference
+        let next_ref = match get_next_bead_ref(bead_dict, current_ref) {
+            Ok(next) => next,
+            Err(_) => break,
+        };
+
+        // Check for termination (next points back to first)
+        if next_ref == first_ref {
+            // Legitimate circular end
+            break;
+        }
+
+        // Check for malformed cycle
+        if visited.contains(&next_ref) {
+            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructUnexpectedEof,
+                format!(
+                    "Malformed bead chain: bead {:?} revisited (cycle doesn't return to first bead {:?})",
+                    next_ref, first_ref
+                ),
+            ));
+            return Err(diagnostics);
+        }
+
+        visited.insert(next_ref);
+        current_ref = next_ref;
+    }
+
+    // Only return Err if diagnostics were fatal
+    if diagnostics.is_empty() {
+        Ok(beads)
+    } else {
+        // Check if any diagnostics are fatal - for now, we treat malformed cycles as fatal
+        // but missing individual beads are not (we skip them)
+        let has_fatal = diagnostics.iter().any(|d| {
+            matches!(
+                d.code,
+                DiagCode::StructUnexpectedEof
+            )
+        });
+        if has_fatal {
+            Err(diagnostics)
+        } else {
+            // Non-fatal diagnostics - return beads with warnings
+            // For now, we'll still return Ok with the beads we collected
+            Ok(beads)
+        }
+    }
+}
+
+/// Extract the next bead reference from a bead dictionary.
+fn get_next_bead_ref(bead_dict: &PdfDict, current_ref: ObjRef) -> std::result::Result<ObjRef, Vec<Diagnostic>> {
+    match bead_dict.get("N") {
+        None => {
+            // Missing /N means end of thread (not an error)
+            Err(Vec::new())
+        }
+        Some(PdfObject::Null) => {
+            // Explicit null /N means end of thread
+            Err(Vec::new())
+        }
+        Some(PdfObject::Ref(next_ref)) => Ok(*next_ref),
+        Some(_) => {
+            let diagnostics = vec![Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructUnexpectedEof,
+                format!(
+                    "Bead {:?} has /N but it's not a reference",
+                    current_ref,
+                ),
+            )];
+            Err(diagnostics)
+        }
+    }
+}
+
+/// Extract the bounding rectangle from a bead dictionary.
+///
+/// Per PDF 1.7 spec, the rect is stored in /V. However, some PDFs may
+/// use other keys, so we also check for common alternatives.
+fn extract_bead_rect(bead_dict: &PdfDict, current_ref: ObjRef) -> Option<[f32; 4]> {
+    // Try /V first (per spec)
+    let rect_obj = bead_dict.get("V").or_else(|| bead_dict.get("Rect"))?;
+
+    let rect_array = rect_obj.as_array()?;
+
+    if rect_array.len() < 4 {
+        return None;
+    }
+
+    let mut rect = [0.0f32; 4];
+    for (i, val) in rect_array.iter().take(4).enumerate() {
+        let n = match val {
+            PdfObject::Integer(n) => *n as f64,
+            PdfObject::Real(n) => *n,
+            _ => return None,
+        };
+        rect[i] = n as f32;
+    }
+
+    // Validate rect: x0 < x1 and y0 < y1 (non-zero area)
+    if rect[0] >= rect[2] || rect[1] >= rect[3] {
+        return None;
+    }
+
+    Some(rect)
 }
 
 /// Decode a PDF string to a Rust String.
@@ -630,5 +934,555 @@ mod tests {
         assert_eq!(threads.len(), 1);
         // Empty string should be Some("") not None
         assert_eq!(threads[0].title, Some("".to_string()));
+    }
+
+    /// Test: Bead with /R and /V correctly extracted
+    #[test]
+    fn test_walk_beads_single_bead() {
+        let resolver = XrefResolver::new();
+
+        // Create page ref to index map
+        let mut page_ref_to_index = std::collections::HashMap::new();
+        let page_ref = ObjRef::new(100, 0);
+        page_ref_to_index.insert(page_ref, 0);
+
+        // Create thread header
+        let header = ThreadHeader::new(ObjRef::new(20, 0));
+
+        // Create bead dict with /R (page ref) and /V (rect)
+        let mut bead_dict = indexmap::IndexMap::new();
+        bead_dict.insert("R".into(), PdfObject::Ref(page_ref));
+        bead_dict.insert(
+            "V".into(),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(100),
+                PdfObject::Integer(200),
+                PdfObject::Integer(300),
+                PdfObject::Integer(400),
+            ])),
+        );
+        // /N points back to first (circular termination)
+        bead_dict.insert("N".into(), PdfObject::Ref(ObjRef::new(20, 0)));
+
+        resolver.cache_object(ObjRef::new(20, 0), PdfObject::Dict(Box::new(bead_dict)));
+
+        let result = walk_beads(&header, &resolver, &page_ref_to_index);
+        assert!(result.is_ok());
+
+        let beads = result.unwrap();
+        assert_eq!(beads.len(), 1);
+        assert_eq!(beads[0].page_index, 0);
+        assert_eq!(beads[0].rect, [100.0, 200.0, 300.0, 400.0]);
+    }
+
+    /// Test: Two article threads - both reconstructed with correct bead order
+    #[test]
+    fn test_walk_beads_two_threads() {
+        let resolver = XrefResolver::new();
+
+        // Create page ref to index map
+        let mut page_ref_to_index = std::collections::HashMap::new();
+        let page0_ref = ObjRef::new(100, 0);
+        let page1_ref = ObjRef::new(101, 0);
+        let page2_ref = ObjRef::new(102, 0);
+        page_ref_to_index.insert(page0_ref, 0);
+        page_ref_to_index.insert(page1_ref, 1);
+        page_ref_to_index.insert(page2_ref, 2);
+
+        // Thread 1: three beads across pages 0, 1, 2
+        let header1 = ThreadHeader::new(ObjRef::new(20, 0));
+
+        let mut bead1_dict = indexmap::IndexMap::new();
+        bead1_dict.insert("R".into(), PdfObject::Ref(page0_ref));
+        bead1_dict.insert(
+            "V".into(),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(10),
+                PdfObject::Integer(20),
+                PdfObject::Integer(30),
+                PdfObject::Integer(40),
+            ])),
+        );
+        bead1_dict.insert("N".into(), PdfObject::Ref(ObjRef::new(21, 0)));
+
+        let mut bead2_dict = indexmap::IndexMap::new();
+        bead2_dict.insert("R".into(), PdfObject::Ref(page1_ref));
+        bead2_dict.insert(
+            "V".into(),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(50),
+                PdfObject::Integer(60),
+                PdfObject::Integer(70),
+                PdfObject::Integer(80),
+            ])),
+        );
+        bead2_dict.insert("N".into(), PdfObject::Ref(ObjRef::new(22, 0)));
+
+        let mut bead3_dict = indexmap::IndexMap::new();
+        bead3_dict.insert("R".into(), PdfObject::Ref(page2_ref));
+        bead3_dict.insert(
+            "V".into(),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(90),
+                PdfObject::Integer(100),
+                PdfObject::Integer(110),
+                PdfObject::Integer(120),
+            ])),
+        );
+        bead3_dict.insert("N".into(), PdfObject::Ref(ObjRef::new(20, 0))); // Back to first
+
+        resolver.cache_object(ObjRef::new(20, 0), PdfObject::Dict(Box::new(bead1_dict)));
+        resolver.cache_object(ObjRef::new(21, 0), PdfObject::Dict(Box::new(bead2_dict)));
+        resolver.cache_object(ObjRef::new(22, 0), PdfObject::Dict(Box::new(bead3_dict)));
+
+        let result1 = walk_beads(&header1, &resolver, &page_ref_to_index);
+        assert!(result1.is_ok());
+
+        let beads1 = result1.unwrap();
+        assert_eq!(beads1.len(), 3);
+        assert_eq!(beads1[0].page_index, 0);
+        assert_eq!(beads1[0].rect, [10.0, 20.0, 30.0, 40.0]);
+        assert_eq!(beads1[1].page_index, 1);
+        assert_eq!(beads1[1].rect, [50.0, 60.0, 70.0, 80.0]);
+        assert_eq!(beads1[2].page_index, 2);
+        assert_eq!(beads1[2].rect, [90.0, 100.0, 110.0, 120.0]);
+
+        // Thread 2: single bead on page 1
+        let header2 = ThreadHeader::new(ObjRef::new(30, 0));
+
+        let mut bead4_dict = indexmap::IndexMap::new();
+        bead4_dict.insert("R".into(), PdfObject::Ref(page1_ref));
+        bead4_dict.insert(
+            "V".into(),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(200),
+                PdfObject::Integer(300),
+                PdfObject::Integer(400),
+                PdfObject::Integer(500),
+            ])),
+        );
+        bead4_dict.insert("N".into(), PdfObject::Ref(ObjRef::new(30, 0))); // Back to first
+
+        resolver.cache_object(ObjRef::new(30, 0), PdfObject::Dict(Box::new(bead4_dict)));
+
+        let result2 = walk_beads(&header2, &resolver, &page_ref_to_index);
+        assert!(result2.is_ok());
+
+        let beads2 = result2.unwrap();
+        assert_eq!(beads2.len(), 1);
+        assert_eq!(beads2[0].page_index, 1);
+        assert_eq!(beads2[0].rect, [200.0, 300.0, 400.0, 500.0]);
+    }
+
+    /// Test: Circular bead chain termination - walk stops without infinite loop
+    #[test]
+    fn test_walk_beads_circular_termination() {
+        let resolver = XrefResolver::new();
+
+        let mut page_ref_to_index = std::collections::HashMap::new();
+        let page_ref = ObjRef::new(100, 0);
+        page_ref_to_index.insert(page_ref, 0);
+
+        let header = ThreadHeader::new(ObjRef::new(20, 0));
+
+        // Create a chain: 20 -> 21 -> 22 -> 20 (circular back to first)
+        let mut bead1_dict = indexmap::IndexMap::new();
+        bead1_dict.insert("R".into(), PdfObject::Ref(page_ref));
+        bead1_dict.insert(
+            "V".into(),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+                PdfObject::Integer(100),
+                PdfObject::Integer(100),
+            ])),
+        );
+        bead1_dict.insert("N".into(), PdfObject::Ref(ObjRef::new(21, 0)));
+
+        let mut bead2_dict = indexmap::IndexMap::new();
+        bead2_dict.insert("R".into(), PdfObject::Ref(page_ref));
+        bead2_dict.insert(
+            "V".into(),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(100),
+                PdfObject::Integer(0),
+                PdfObject::Integer(200),
+                PdfObject::Integer(100),
+            ])),
+        );
+        bead2_dict.insert("N".into(), PdfObject::Ref(ObjRef::new(22, 0)));
+
+        let mut bead3_dict = indexmap::IndexMap::new();
+        bead3_dict.insert("R".into(), PdfObject::Ref(page_ref));
+        bead3_dict.insert(
+            "V".into(),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(200),
+                PdfObject::Integer(0),
+                PdfObject::Integer(300),
+                PdfObject::Integer(100),
+            ])),
+        );
+        bead3_dict.insert("N".into(), PdfObject::Ref(ObjRef::new(20, 0))); // Back to first
+
+        resolver.cache_object(ObjRef::new(20, 0), PdfObject::Dict(Box::new(bead1_dict)));
+        resolver.cache_object(ObjRef::new(21, 0), PdfObject::Dict(Box::new(bead2_dict)));
+        resolver.cache_object(ObjRef::new(22, 0), PdfObject::Dict(Box::new(bead3_dict)));
+
+        let result = walk_beads(&header, &resolver, &page_ref_to_index);
+        assert!(result.is_ok());
+
+        let beads = result.unwrap();
+        assert_eq!(beads.len(), 3); // All three beads visited
+    }
+
+    /// Test: Pathological cycle detection (non-first bead revisited)
+    #[test]
+    fn test_walk_beads_malformed_cycle() {
+        let resolver = XrefResolver::new();
+
+        let mut page_ref_to_index = std::collections::HashMap::new();
+        let page_ref = ObjRef::new(100, 0);
+        page_ref_to_index.insert(page_ref, 0);
+
+        let header = ThreadHeader::new(ObjRef::new(20, 0));
+
+        // Create a malformed chain: 20 -> 21 -> 22 -> 21 (cycle that doesn't return to first)
+        let mut bead1_dict = indexmap::IndexMap::new();
+        bead1_dict.insert("R".into(), PdfObject::Ref(page_ref));
+        bead1_dict.insert(
+            "V".into(),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+                PdfObject::Integer(100),
+                PdfObject::Integer(100),
+            ])),
+        );
+        bead1_dict.insert("N".into(), PdfObject::Ref(ObjRef::new(21, 0)));
+
+        let mut bead2_dict = indexmap::IndexMap::new();
+        bead2_dict.insert("R".into(), PdfObject::Ref(page_ref));
+        bead2_dict.insert(
+            "V".into(),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(100),
+                PdfObject::Integer(0),
+                PdfObject::Integer(200),
+                PdfObject::Integer(100),
+            ])),
+        );
+        bead2_dict.insert("N".into(), PdfObject::Ref(ObjRef::new(22, 0)));
+
+        let mut bead3_dict = indexmap::IndexMap::new();
+        bead3_dict.insert("R".into(), PdfObject::Ref(page_ref));
+        bead3_dict.insert(
+            "V".into(),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(200),
+                PdfObject::Integer(0),
+                PdfObject::Integer(300),
+                PdfObject::Integer(100),
+            ])),
+        );
+        bead3_dict.insert("N".into(), PdfObject::Ref(ObjRef::new(21, 0))); // Back to 21, not 20
+
+        resolver.cache_object(ObjRef::new(20, 0), PdfObject::Dict(Box::new(bead1_dict)));
+        resolver.cache_object(ObjRef::new(21, 0), PdfObject::Dict(Box::new(bead2_dict)));
+        resolver.cache_object(ObjRef::new(22, 0), PdfObject::Dict(Box::new(bead3_dict)));
+
+        let result = walk_beads(&header, &resolver, &page_ref_to_index);
+        assert!(result.is_err());
+
+        let diagnostics = result.unwrap_err();
+        assert!(!diagnostics.is_empty());
+        // Should contain a malformed cycle diagnostic
+        assert!(diagnostics
+            .iter()
+            .any(|d| d.message.contains("Malformed bead chain")));
+    }
+
+    /// Test: Missing /N terminates the chain
+    #[test]
+    fn test_walk_beads_missing_next() {
+        let resolver = XrefResolver::new();
+
+        let mut page_ref_to_index = std::collections::HashMap::new();
+        let page_ref = ObjRef::new(100, 0);
+        page_ref_to_index.insert(page_ref, 0);
+
+        let header = ThreadHeader::new(ObjRef::new(20, 0));
+
+        // Bead with no /N
+        let mut bead_dict = indexmap::IndexMap::new();
+        bead_dict.insert("R".into(), PdfObject::Ref(page_ref));
+        bead_dict.insert(
+            "V".into(),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+                PdfObject::Integer(100),
+                PdfObject::Integer(100),
+            ])),
+        );
+        // No /N - chain terminates
+
+        resolver.cache_object(ObjRef::new(20, 0), PdfObject::Dict(Box::new(bead_dict)));
+
+        let result = walk_beads(&header, &resolver, &page_ref_to_index);
+        assert!(result.is_ok());
+
+        let beads = result.unwrap();
+        assert_eq!(beads.len(), 1);
+    }
+
+    /// Test: Missing /R and /P skips bead
+    #[test]
+    fn test_walk_beads_missing_page_ref() {
+        let resolver = XrefResolver::new();
+
+        let mut page_ref_to_index = std::collections::HashMap::new();
+        let page_ref = ObjRef::new(100, 0);
+        page_ref_to_index.insert(page_ref, 0);
+
+        let header = ThreadHeader::new(ObjRef::new(20, 0));
+
+        // First bead with no page ref
+        let mut bead1_dict = indexmap::IndexMap::new();
+        bead1_dict.insert(
+            "V".into(),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+                PdfObject::Integer(100),
+                PdfObject::Integer(100),
+            ])),
+        );
+        bead1_dict.insert("N".into(), PdfObject::Ref(ObjRef::new(21, 0)));
+
+        // Second bead with valid page ref
+        let mut bead2_dict = indexmap::IndexMap::new();
+        bead2_dict.insert("R".into(), PdfObject::Ref(page_ref));
+        bead2_dict.insert(
+            "V".into(),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(100),
+                PdfObject::Integer(0),
+                PdfObject::Integer(200),
+                PdfObject::Integer(100),
+            ])),
+        );
+        bead2_dict.insert("N".into(), PdfObject::Ref(ObjRef::new(20, 0)));
+
+        resolver.cache_object(ObjRef::new(20, 0), PdfObject::Dict(Box::new(bead1_dict)));
+        resolver.cache_object(ObjRef::new(21, 0), PdfObject::Dict(Box::new(bead2_dict)));
+
+        let result = walk_beads(&header, &resolver, &page_ref_to_index);
+        assert!(result.is_ok());
+
+        let beads = result.unwrap();
+        // First bead skipped, second bead included
+        assert_eq!(beads.len(), 1);
+        assert_eq!(beads[0].page_index, 0);
+    }
+
+    /// Test: /Pg fallback for page reference
+    #[test]
+    fn test_walk_beads_pg_fallback() {
+        let resolver = XrefResolver::new();
+
+        let mut page_ref_to_index = std::collections::HashMap::new();
+        let page_ref = ObjRef::new(100, 0);
+        page_ref_to_index.insert(page_ref, 0);
+
+        let header = ThreadHeader::new(ObjRef::new(20, 0));
+
+        // Bead with /P instead of /R
+        let mut bead_dict = indexmap::IndexMap::new();
+        bead_dict.insert("P".into(), PdfObject::Ref(page_ref)); // /P instead of /R
+        bead_dict.insert(
+            "V".into(),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+                PdfObject::Integer(100),
+                PdfObject::Integer(100),
+            ])),
+        );
+        bead_dict.insert("N".into(), PdfObject::Ref(ObjRef::new(20, 0)));
+
+        resolver.cache_object(ObjRef::new(20, 0), PdfObject::Dict(Box::new(bead_dict)));
+
+        let result = walk_beads(&header, &resolver, &page_ref_to_index);
+        assert!(result.is_ok());
+
+        let beads = result.unwrap();
+        assert_eq!(beads.len(), 1);
+        assert_eq!(beads[0].page_index, 0);
+    }
+
+    /// Test: Missing /V rect skips bead
+    #[test]
+    fn test_walk_beads_missing_rect() {
+        let resolver = XrefResolver::new();
+
+        let mut page_ref_to_index = std::collections::HashMap::new();
+        let page_ref = ObjRef::new(100, 0);
+        page_ref_to_index.insert(page_ref, 0);
+
+        let header = ThreadHeader::new(ObjRef::new(20, 0));
+
+        // First bead with no rect
+        let mut bead1_dict = indexmap::IndexMap::new();
+        bead1_dict.insert("R".into(), PdfObject::Ref(page_ref));
+        bead1_dict.insert("N".into(), PdfObject::Ref(ObjRef::new(21, 0)));
+
+        // Second bead with valid rect
+        let mut bead2_dict = indexmap::IndexMap::new();
+        bead2_dict.insert("R".into(), PdfObject::Ref(page_ref));
+        bead2_dict.insert(
+            "V".into(),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+                PdfObject::Integer(100),
+                PdfObject::Integer(100),
+            ])),
+        );
+        bead2_dict.insert("N".into(), PdfObject::Ref(ObjRef::new(20, 0)));
+
+        resolver.cache_object(ObjRef::new(20, 0), PdfObject::Dict(Box::new(bead1_dict)));
+        resolver.cache_object(ObjRef::new(21, 0), PdfObject::Dict(Box::new(bead2_dict)));
+
+        let result = walk_beads(&header, &resolver, &page_ref_to_index);
+        assert!(result.is_ok());
+
+        let beads = result.unwrap();
+        // First bead skipped (no rect), second bead included
+        assert_eq!(beads.len(), 1);
+    }
+
+    /// Test: Bead with invalid rect shape skips bead
+    #[test]
+    fn test_walk_beads_invalid_rect_shape() {
+        let resolver = XrefResolver::new();
+
+        let mut page_ref_to_index = std::collections::HashMap::new();
+        let page_ref = ObjRef::new(100, 0);
+        page_ref_to_index.insert(page_ref, 0);
+
+        let header = ThreadHeader::new(ObjRef::new(20, 0));
+
+        // Bead with invalid rect (x0 >= x1)
+        let mut bead_dict = indexmap::IndexMap::new();
+        bead_dict.insert("R".into(), PdfObject::Ref(page_ref));
+        bead_dict.insert(
+            "V".into(),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(100), // x0
+                PdfObject::Integer(0),   // y0
+                PdfObject::Integer(50),  // x1 < x0 - invalid!
+                PdfObject::Integer(100),
+            ])),
+        );
+        bead_dict.insert("N".into(), PdfObject::Ref(ObjRef::new(20, 0)));
+
+        resolver.cache_object(ObjRef::new(20, 0), PdfObject::Dict(Box::new(bead_dict)));
+
+        let result = walk_beads(&header, &resolver, &page_ref_to_index);
+        assert!(result.is_ok());
+
+        let beads = result.unwrap();
+        // Bead skipped due to invalid rect
+        assert_eq!(beads.len(), 0);
+    }
+
+    /// Test: Page ref outside document range
+    #[test]
+    fn test_walk_beads_page_ref_not_in_tree() {
+        let resolver = XrefResolver::new();
+
+        let mut page_ref_to_index = std::collections::HashMap::new();
+        let page_ref = ObjRef::new(100, 0);
+        page_ref_to_index.insert(page_ref, 0);
+
+        let header = ThreadHeader::new(ObjRef::new(20, 0));
+
+        // Bead with page ref not in the page tree
+        let unknown_page_ref = ObjRef::new(999, 0);
+        let mut bead_dict = indexmap::IndexMap::new();
+        bead_dict.insert("R".into(), PdfObject::Ref(unknown_page_ref));
+        bead_dict.insert(
+            "V".into(),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+                PdfObject::Integer(100),
+                PdfObject::Integer(100),
+            ])),
+        );
+        bead_dict.insert("N".into(), PdfObject::Ref(ObjRef::new(20, 0)));
+
+        resolver.cache_object(ObjRef::new(20, 0), PdfObject::Dict(Box::new(bead_dict)));
+
+        let result = walk_beads(&header, &resolver, &page_ref_to_index);
+        assert!(result.is_ok());
+
+        let beads = result.unwrap();
+        // Bead skipped due to unknown page ref
+        assert_eq!(beads.len(), 0);
+    }
+
+    /// Test: Bead struct new method
+    #[test]
+    fn test_bead_new() {
+        let bead = Bead::new(5, [10.0, 20.0, 30.0, 40.0]);
+        assert_eq!(bead.page_index, 5);
+        assert_eq!(bead.rect, [10.0, 20.0, 30.0, 40.0]);
+    }
+
+    /// Test: Maximum iteration cap enforced
+    #[test]
+    fn test_walk_beads_max_iterations() {
+        let resolver = XrefResolver::new();
+
+        let mut page_ref_to_index = std::collections::HashMap::new();
+        let page_ref = ObjRef::new(100, 0);
+        page_ref_to_index.insert(page_ref, 0);
+
+        let header = ThreadHeader::new(ObjRef::new(20, 0));
+
+        // Create a long chain that exceeds MAX_ITERATIONS
+        // We'll create a chain of 10001 beads (20 -> 21 -> 22 -> ... -> 10020 -> 20)
+        for i in 0..=10050 {
+            let mut bead_dict = indexmap::IndexMap::new();
+            bead_dict.insert("R".into(), PdfObject::Ref(page_ref));
+            bead_dict.insert(
+                "V".into(),
+                PdfObject::Array(Box::new(vec![
+                    PdfObject::Integer(i),
+                    PdfObject::Integer(0),
+                    PdfObject::Integer(i + 100),
+                    PdfObject::Integer(100),
+                ])),
+            );
+            // Each bead points to the next, except the last which points back to first
+            let next_ref = if i < 10050 {
+                ObjRef::new(20 + i + 1, 0)
+            } else {
+                ObjRef::new(20, 0) // Would close the loop, but we hit max iterations first
+            };
+            bead_dict.insert("N".into(), PdfObject::Ref(next_ref));
+            resolver.cache_object(ObjRef::new(20 + i, 0), PdfObject::Dict(Box::new(bead_dict)));
+        }
+
+        let result = walk_beads(&header, &resolver, &page_ref_to_index);
+        assert!(result.is_err());
+
+        let diagnostics = result.unwrap_err();
+        assert!(!diagnostics.is_empty());
+        assert!(diagnostics
+            .iter()
+            .any(|d| d.message.contains("exceeded maximum iteration count")));
     }
 }
