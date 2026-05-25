@@ -582,6 +582,382 @@ impl From<Signature> for SignatureJson {
     }
 }
 
+/// JSON representation of a diagnostic error.
+///
+/// This struct wraps the internal Diagnostic type for JSON serialization,
+/// providing stable error codes and human-readable messages for consumers.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct DiagnosticJson {
+    /// Stable string identifier for this diagnostic (e.g., "FONT_GLYPH_UNMAPPED").
+    pub code: String,
+
+    /// Human-readable description of the diagnostic.
+    pub message: String,
+
+    /// Severity level: "info", "warning", "error", or "fatal".
+    pub severity: String,
+
+    /// Page index where this diagnostic occurred, or `null` for document-level events.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page_index: Option<usize>,
+
+    /// PDF object reference where the issue originated, if applicable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<ObjectLocationJson>,
+}
+
+/// JSON representation of a PDF object reference.
+///
+/// Identifies a specific PDF indirect object by its object and generation numbers.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct ObjectLocationJson {
+    /// Object number (zero-based index in the xref table).
+    pub object_number: u32,
+
+    /// Generation number (incremented on each save).
+    pub generation_number: u16,
+}
+
+/// JSON representation of an outline node (bookmark).
+///
+/// Represents a single node in the document's outline hierarchy, with support
+/// for nested children via the `children` field.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct OutlineNode {
+    /// The outline title text (decoded to UTF-8).
+    pub title: String,
+
+    /// Hierarchical level in the outline tree (0-based, root is 0).
+    pub level: u8,
+
+    /// Zero-based page index this outline points to, if resolved.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page_index: Option<u32>,
+
+    /// Destination type and coordinates within the page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub destination: Option<DestinationJson>,
+
+    /// Nested child outlines (empty array for leaf nodes).
+    #[serde(default)]
+    pub children: Vec<OutlineNode>,
+}
+
+/// JSON representation of a destination anchor.
+///
+/// Describes a specific location within a PDF page.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct DestinationJson {
+    /// Destination type: "xyz", "fit", "fith", "fitv", "fitr", "fitb", "fitbh", "fitbv".
+    #[serde(rename = "type")]
+    pub dest_type: String,
+
+    /// Left coordinate (user-space points), present for "xyz", "fitv", "fitr", "fitbv".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left: Option<f64>,
+
+    /// Top coordinate (user-space points), present for "xyz", "fith", "fitr", "fitbh".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top: Option<f64>,
+
+    /// Right coordinate (user-space points), present only for "fitr".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right: Option<f64>,
+
+    /// Bottom coordinate (user-space points), present only for "fitr".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bottom: Option<f64>,
+
+    /// Zoom factor, present only for "xyz".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zoom: Option<f64>,
+}
+
+/// JSON representation of document metadata.
+///
+/// Contains all standard PDF document information dictionary fields along
+/// with derived signals from the document catalog.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct DocumentMetadata {
+    /// PDF /Title - document title.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+
+    /// PDF /Author - name of the person who created the document.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+
+    /// PDF /Subject - subject matter summary.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
+
+    /// PDF /Keywords - space- or comma-delimited keyword list.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub keywords: Option<String>,
+
+    /// PDF /Creator - the authoring application (e.g., "Microsoft Word 2019").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub creator: Option<String>,
+
+    /// PDF /Producer - the PDF-writing library (e.g., "Acrobat Distiller 23.0").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub producer: Option<String>,
+
+    /// PDF /CreationDate - ISO-8601 string from /CreationDate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub creation_date: Option<String>,
+
+    /// PDF /ModDate - ISO-8601 string from /ModDate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modification_date: Option<String>,
+
+    /// Total number of pages in the document.
+    pub page_count: u32,
+
+    /// PDF version (e.g., "1.7", "2.0").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pdf_version: Option<String>,
+
+    /// True if /MarkInfo /Marked: true is present.
+    pub is_tagged: bool,
+
+    /// True if document is encrypted.
+    pub is_encrypted: bool,
+
+    /// PDF/A or PDF/UA conformance level.
+    ///
+    /// One of: "none", "PDF-A-1a", "PDF-A-1b", "PDF-A-2a", "PDF-A-2b", "PDF-A-2u",
+    /// "PDF-A-3a", "PDF-A-3b", "PDF-A-3u", "PDF-UA-1", "PDF-UA-2", "PDF-X-1a".
+    #[serde(default = "default_conformance")]
+    pub conformance: String,
+
+    /// True if JavaScript actions are present in the document.
+    pub contains_javascript: bool,
+
+    /// True if XFA forms are present.
+    pub contains_xfa: bool,
+
+    /// True if optional content groups (layers) are present.
+    pub ocg_present: bool,
+
+    /// Heuristic string identifying the producing application.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generator: Option<String>,
+}
+
+fn default_conformance() -> String {
+    "none".to_string()
+}
+
+/// Placeholder for Phase 7 article threads.
+///
+/// This type is reserved for future use and currently has no fields.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct ThreadJson {
+    // Reserved for Phase 7.1
+}
+
+/// Placeholder for Phase 7 embedded file attachments.
+///
+/// This type is reserved for future use and currently has no fields.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct AttachmentJson {
+    // Reserved for Phase 7.5
+}
+
+/// Placeholder for Phase 7 document-scoped hyperlinks.
+///
+/// This type is reserved for future use and currently has no fields.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct LinkJson {
+    // Reserved for Phase 7.6
+}
+
+/// JSON representation of a single page.
+///
+/// Contains all page-level fields including geometry, classification,
+/// and content arrays (spans, blocks, tables, annotations).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct PageJson {
+    /// Zero-based page index, canonical for programmatic use.
+    ///
+    /// This is the stable identifier used in all internal references.
+    pub page_index: usize,
+
+    /// One-based page number (= page_index + 1).
+    ///
+    /// Emitted as a convenience for human-facing display. For programmatic
+    /// access, use page_index instead.
+    pub page_number: u32,
+
+    /// Human-readable label from PDF /PageLabels number tree.
+    ///
+    /// Examples: "iv", "A-3", "1". Null if the PDF defines no page labels.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page_label: Option<String>,
+
+    /// Page width in points (1/72 inch).
+    pub width: f32,
+
+    /// Page height in points (1/72 inch).
+    pub height: f32,
+
+    /// Page rotation in degrees clockwise (0, 90, 180, or 270).
+    pub rotation: u16,
+
+    /// Page classification from the page classifier.
+    ///
+    /// One of: "text", "scanned", "mixed", "broken_vector", "blank", "figure_only".
+    #[serde(rename = "type")]
+    pub page_type: String,
+
+    /// Text spans (atomic units with consistent font and styling).
+    #[serde(default)]
+    pub spans: Vec<SpanJson>,
+
+    /// Semantic blocks (paragraphs, headings, lists, tables, etc.).
+    #[serde(default)]
+    pub blocks: Vec<BlockJson>,
+
+    /// Parallel table structure objects.
+    #[serde(default)]
+    pub tables: Vec<TableJson>,
+
+    /// Page-level annotations (highlights, stamps, notes, links).
+    ///
+    /// Empty until Phase 7.2; always present as an array.
+    #[serde(default)]
+    pub annotations: Vec<AnnotationJson>,
+}
+
+/// Placeholder for Phase 7 annotations.
+///
+/// This type is reserved for future use. Annotations include highlights,
+/// stamps, sticky notes, and links.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct AnnotationJson {
+    /// Annotation subtype (e.g., "Text", "Highlight", "Link", "Stamp").
+    #[serde(rename = "type")]
+    pub subtype: String,
+
+    /// Bounding box in PDF user-space points.
+    pub bbox: [f32; 4],
+}
+
+/// Top-level output structure for PDF extraction.
+///
+/// This is the canonical JSON output format, containing document-level
+/// metadata and an array of page objects.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct Output {
+    /// Schema version identifier (e.g., "1.0").
+    #[serde(rename = "schema_version")]
+    pub schema_version: &'static str,
+
+    /// Document-level metadata.
+    pub metadata: DocumentMetadata,
+
+    /// Document outline (bookmark tree).
+    ///
+    /// Empty array if no bookmarks are present.
+    #[serde(default)]
+    pub outline: Vec<OutlineNode>,
+
+    /// Article thread chains.
+    ///
+    /// Empty until Phase 7.1; always present as an array.
+    #[serde(default)]
+    pub threads: Vec<ThreadJson>,
+
+    /// Embedded file attachments.
+    ///
+    /// Empty until Phase 7.5; always present as an array.
+    #[serde(default)]
+    pub attachments: Vec<AttachmentJson>,
+
+    /// Digital signature metadata.
+    ///
+    /// Empty until Phase 7.3; always present as an array.
+    #[serde(default)]
+    pub signatures: Vec<SignatureJson>,
+
+    /// AcroForm/XFA form fields.
+    ///
+    /// Empty until Phase 7.4; always present as an array.
+    #[serde(default)]
+    pub form_fields: Vec<FormFieldJson>,
+
+    /// Document-scoped hyperlinks.
+    ///
+    /// Empty until Phase 7.6; always present as an array.
+    #[serde(default)]
+    pub links: Vec<LinkJson>,
+
+    /// Page objects array.
+    pub pages: Vec<PageJson>,
+
+    /// Aggregate extraction quality metrics.
+    pub extraction_quality: ExtractionQuality,
+
+    /// All diagnostics emitted during extraction.
+    #[serde(default)]
+    pub errors: Vec<DiagnosticJson>,
+}
+
+impl Output {
+    /// Create a new empty Output structure.
+    pub fn new() -> Self {
+        Output {
+            schema_version: "1.0",
+            metadata: DocumentMetadata {
+                title: None,
+                author: None,
+                subject: None,
+                keywords: None,
+                creator: None,
+                producer: None,
+                creation_date: None,
+                modification_date: None,
+                page_count: 0,
+                pdf_version: None,
+                is_tagged: false,
+                is_encrypted: false,
+                conformance: default_conformance(),
+                contains_javascript: false,
+                contains_xfa: false,
+                ocg_present: false,
+                generator: None,
+            },
+            outline: Vec::new(),
+            threads: Vec::new(),
+            attachments: Vec::new(),
+            signatures: Vec::new(),
+            form_fields: Vec::new(),
+            links: Vec::new(),
+            pages: Vec::new(),
+            extraction_quality: ExtractionQuality::new(),
+            errors: Vec::new(),
+        }
+    }
+}
+
+impl Default for Output {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -617,6 +993,7 @@ mod tests {
             size: 10.0,
             confidence: Some(0.95),
             receipt: None,
+            column: None,
         };
 
         let json = serde_json::to_string(&span).unwrap();
@@ -639,6 +1016,7 @@ mod tests {
             size: 12.0,
             confidence: None,
             receipt: Some(receipt),
+            column: None,
         };
 
         let json = serde_json::to_string(&span).unwrap();
@@ -717,6 +1095,7 @@ mod tests {
             size: 12.0,
             confidence: None,
             receipt: None,
+            column: None,
         };
 
         let json = serde_json::to_string(&span).unwrap();
@@ -1260,5 +1639,420 @@ mod tests {
         assert_eq!(deserialized.byte_range, sig.byte_range);
         assert_eq!(deserialized.coverage_fraction, sig.coverage_fraction);
         assert_eq!(deserialized.validation_status, sig.validation_status);
+    }
+
+    #[test]
+    fn test_output_empty_serialization() {
+        // Critical test: serialize empty Output -> JSON has all document-level keys
+        let output = Output::new();
+        let json_str = serde_json::to_string(&output).unwrap();
+        let json_val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+
+        // Verify all document-level keys are present
+        assert!(json_val.get("schema_version").is_some());
+        assert_eq!(json_val["schema_version"], "1.0");
+        assert!(json_val.get("metadata").is_some());
+        assert!(json_val.get("outline").is_some());
+        assert!(json_val.get("threads").is_some());
+        assert!(json_val.get("attachments").is_some());
+        assert!(json_val.get("signatures").is_some());
+        assert!(json_val.get("form_fields").is_some());
+        assert!(json_val.get("links").is_some());
+        assert!(json_val.get("pages").is_some());
+        assert!(json_val.get("extraction_quality").is_some());
+        assert!(json_val.get("errors").is_some());
+    }
+
+    #[test]
+    fn test_output_phase7_placeholders_present() {
+        // Critical test: Phase 7 placeholder fields present as empty arrays
+        let output = Output::new();
+        let json_str = serde_json::to_string(&output).unwrap();
+        let json_val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+
+        // Verify Phase 7 placeholder fields are present and empty
+        assert!(json_val["threads"].is_array());
+        assert_eq!(json_val["threads"].as_array().unwrap().len(), 0);
+        assert!(json_val["attachments"].is_array());
+        assert_eq!(json_val["attachments"].as_array().unwrap().len(), 0);
+        assert!(json_val["signatures"].is_array());
+        assert_eq!(json_val["signatures"].as_array().unwrap().len(), 0);
+        assert!(json_val["form_fields"].is_array());
+        assert_eq!(json_val["form_fields"].as_array().unwrap().len(), 0);
+        assert!(json_val["links"].is_array());
+        assert_eq!(json_val["links"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_document_metadata_optional_fields_skipped() {
+        // Test that optional metadata fields are omitted when None
+        let metadata = DocumentMetadata {
+            title: None,
+            author: None,
+            subject: None,
+            keywords: None,
+            creator: None,
+            producer: None,
+            creation_date: None,
+            modification_date: None,
+            page_count: 10,
+            pdf_version: None,
+            is_tagged: false,
+            is_encrypted: false,
+            conformance: "none".to_string(),
+            contains_javascript: false,
+            contains_xfa: false,
+            ocg_present: false,
+            generator: None,
+        };
+
+        let json_str = serde_json::to_string(&metadata).unwrap();
+        let json_val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+
+        // Optional string fields should not be present when None
+        assert!(json_val.get("title").is_none());
+        assert!(json_val.get("author").is_none());
+        assert!(json_val.get("subject").is_none());
+        assert!(json_val.get("keywords").is_none());
+        assert!(json_val.get("creator").is_none());
+        assert!(json_val.get("producer").is_none());
+        assert!(json_val.get("creation_date").is_none());
+        assert!(json_val.get("modification_date").is_none());
+        assert!(json_val.get("pdf_version").is_none());
+        assert!(json_val.get("generator").is_none());
+
+        // Required fields should be present
+        assert_eq!(json_val["page_count"], 10);
+        assert_eq!(json_val["is_tagged"], false);
+        assert_eq!(json_val["is_encrypted"], false);
+        assert_eq!(json_val["conformance"], "none");
+    }
+
+    #[test]
+    fn test_document_metadata_with_all_fields() {
+        // Test serialization with all fields populated
+        let metadata = DocumentMetadata {
+            title: Some("Test Document".to_string()),
+            author: Some("John Doe".to_string()),
+            subject: Some("Test Subject".to_string()),
+            keywords: Some("test, example".to_string()),
+            creator: Some("Test App".to_string()),
+            producer: Some("pdftract".to_string()),
+            creation_date: Some("2023-01-15T00:00:00Z".to_string()),
+            modification_date: Some("2023-01-16T00:00:00Z".to_string()),
+            page_count: 5,
+            pdf_version: Some("1.7".to_string()),
+            is_tagged: true,
+            is_encrypted: false,
+            conformance: "PDF-A-1b".to_string(),
+            contains_javascript: true,
+            contains_xfa: false,
+            ocg_present: false,
+            generator: Some("pdftract v0.1.0".to_string()),
+        };
+
+        let json_str = serde_json::to_string(&metadata).unwrap();
+        let json_val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+
+        assert_eq!(json_val["title"], "Test Document");
+        assert_eq!(json_val["author"], "John Doe");
+        assert_eq!(json_val["subject"], "Test Subject");
+        assert_eq!(json_val["keywords"], "test, example");
+        assert_eq!(json_val["creator"], "Test App");
+        assert_eq!(json_val["producer"], "pdftract");
+        assert_eq!(json_val["creation_date"], "2023-01-15T00:00:00Z");
+        assert_eq!(json_val["modification_date"], "2023-01-16T00:00:00Z");
+        assert_eq!(json_val["page_count"], 5);
+        assert_eq!(json_val["pdf_version"], "1.7");
+        assert_eq!(json_val["is_tagged"], true);
+        assert_eq!(json_val["is_encrypted"], false);
+        assert_eq!(json_val["conformance"], "PDF-A-1b");
+        assert_eq!(json_val["contains_javascript"], true);
+        assert_eq!(json_val["contains_xfa"], false);
+        assert_eq!(json_val["ocg_present"], false);
+        assert_eq!(json_val["generator"], "pdftract v0.1.0");
+    }
+
+    #[test]
+    fn test_outline_node_serialization() {
+        // Test outline node serialization
+        let outline = OutlineNode {
+            title: "Chapter 1".to_string(),
+            level: 0,
+            page_index: Some(5),
+            destination: Some(DestinationJson {
+                dest_type: "fit".to_string(),
+                left: None,
+                top: None,
+                right: None,
+                bottom: None,
+                zoom: None,
+            }),
+            children: vec![],
+        };
+
+        let json_str = serde_json::to_string(&outline).unwrap();
+        let json_val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+
+        assert_eq!(json_val["title"], "Chapter 1");
+        assert_eq!(json_val["level"], 0);
+        assert_eq!(json_val["page_index"], 5);
+        assert!(json_val["destination"].is_some());
+        assert_eq!(json_val["destination"]["type"], "fit");
+        assert!(json_val["children"].is_array());
+        assert_eq!(json_val["children"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_outline_node_nested() {
+        // Test nested outline structure
+        let outline = OutlineNode {
+            title: "Chapter 1".to_string(),
+            level: 0,
+            page_index: Some(1),
+            destination: None,
+            children: vec![
+                OutlineNode {
+                    title: "Section 1.1".to_string(),
+                    level: 1,
+                    page_index: Some(2),
+                    destination: None,
+                    children: vec![],
+                },
+                OutlineNode {
+                    title: "Section 1.2".to_string(),
+                    level: 1,
+                    page_index: Some(5),
+                    destination: None,
+                    children: vec![],
+                },
+            ],
+        };
+
+        let json_str = serde_json::to_string(&outline).unwrap();
+        let json_val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+
+        assert_eq!(json_val["title"], "Chapter 1");
+        assert_eq!(json_val["level"], 0);
+        assert_eq!(json_val["children"].as_array().unwrap().len(), 2);
+        assert_eq!(json_val["children"][0]["title"], "Section 1.1");
+        assert_eq!(json_val["children"][0]["level"], 1);
+        assert_eq!(json_val["children"][1]["title"], "Section 1.2");
+    }
+
+    #[test]
+    fn test_destination_json_xyz() {
+        // Test XYZ destination (most common)
+        let dest = DestinationJson {
+            dest_type: "xyz".to_string(),
+            left: Some(100.0),
+            top: Some(700.0),
+            right: None,
+            bottom: None,
+            zoom: Some(1.5),
+        };
+
+        let json_str = serde_json::to_string(&dest).unwrap();
+        let json_val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+
+        assert_eq!(json_val["type"], "xyz");
+        assert_eq!(json_val["left"], 100.0);
+        assert_eq!(json_val["top"], 700.0);
+        assert_eq!(json_val["zoom"], 1.5);
+        assert!(json_val.get("right").is_none());
+        assert!(json_val.get("bottom").is_none());
+    }
+
+    #[test]
+    fn test_page_json_minimal() {
+        // Test minimal page JSON (blank page)
+        let page = PageJson {
+            page_index: 0,
+            page_number: 1,
+            page_label: None,
+            width: 612.0,
+            height: 792.0,
+            rotation: 0,
+            page_type: "blank".to_string(),
+            spans: vec![],
+            blocks: vec![],
+            tables: vec![],
+            annotations: vec![],
+        };
+
+        let json_str = serde_json::to_string(&page).unwrap();
+        let json_val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+
+        assert_eq!(json_val["page_index"], 0);
+        assert_eq!(json_val["page_number"], 1);
+        assert!(json_val.get("page_label").is_none());
+        assert_eq!(json_val["width"], 612.0);
+        assert_eq!(json_val["height"], 792.0);
+        assert_eq!(json_val["rotation"], 0);
+        assert_eq!(json_val["type"], "blank");
+        assert!(json_val["spans"].as_array().unwrap().is_empty());
+        assert!(json_val["blocks"].as_array().unwrap().is_empty());
+        assert!(json_val["tables"].as_array().unwrap().is_empty());
+        assert!(json_val["annotations"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_page_json_with_content() {
+        // Test page with spans and blocks
+        let page = PageJson {
+            page_index: 2,
+            page_number: 3,
+            page_label: Some("iii".to_string()),
+            width: 595.0,
+            height: 842.0,
+            rotation: 90,
+            page_type: "text".to_string(),
+            spans: vec![
+                SpanJson {
+                    text: "Hello ".to_string(),
+                    bbox: [100.0, 700.0, 150.0, 710.0],
+                    font: "Helvetica".to_string(),
+                    size: 12.0,
+                    confidence: None,
+                    receipt: None,
+                    column: None,
+                },
+                SpanJson {
+                    text: "World".to_string(),
+                    bbox: [150.0, 700.0, 200.0, 710.0],
+                    font: "Helvetica".to_string(),
+                    size: 12.0,
+                    confidence: None,
+                    receipt: None,
+                    column: None,
+                },
+            ],
+            blocks: vec![BlockJson {
+                kind: "paragraph".to_string(),
+                text: "Hello World".to_string(),
+                bbox: [100.0, 700.0, 200.0, 710.0],
+                level: None,
+                table_index: None,
+                receipt: None,
+            }],
+            tables: vec![],
+            annotations: vec![],
+        };
+
+        let json_str = serde_json::to_string(&page).unwrap();
+        let json_val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+
+        assert_eq!(json_val["page_index"], 2);
+        assert_eq!(json_val["page_number"], 3);
+        assert_eq!(json_val["page_label"], "iii");
+        assert_eq!(json_val["spans"].as_array().unwrap().len(), 2);
+        assert_eq!(json_val["blocks"].as_array().unwrap().len(), 1);
+        assert_eq!(json_val["spans"][0]["text"], "Hello ");
+        assert_eq!(json_val["blocks"][0]["kind"], "paragraph");
+    }
+
+    #[test]
+    fn test_diagnostic_json_serialization() {
+        // Test diagnostic error JSON serialization
+        let diag = DiagnosticJson {
+            code: "FONT_GLYPH_UNMAPPED".to_string(),
+            message: "Glyph could not be mapped to Unicode".to_string(),
+            severity: "warning".to_string(),
+            page_index: Some(5),
+            location: Some(ObjectLocationJson {
+                object_number: 42,
+                generation_number: 0,
+            }),
+        };
+
+        let json_str = serde_json::to_string(&diag).unwrap();
+        let json_val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+
+        assert_eq!(json_val["code"], "FONT_GLYPH_UNMAPPED");
+        assert_eq!(json_val["message"], "Glyph could not be mapped to Unicode");
+        assert_eq!(json_val["severity"], "warning");
+        assert_eq!(json_val["page_index"], 5);
+        assert!(json_val["location"].is_some());
+        assert_eq!(json_val["location"]["object_number"], 42);
+        assert_eq!(json_val["location"]["generation_number"], 0);
+    }
+
+    #[test]
+    fn test_diagnostic_json_document_level() {
+        // Test document-level diagnostic (no page_index)
+        let diag = DiagnosticJson {
+            code: "XREF_REPAIRED".to_string(),
+            message: "Xref was reconstructed via forward scan".to_string(),
+            severity: "info".to_string(),
+            page_index: None,
+            location: None,
+        };
+
+        let json_str = serde_json::to_string(&diag).unwrap();
+        let json_val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+
+        assert_eq!(json_val["code"], "XREF_REPAIRED");
+        assert_eq!(json_val["severity"], "info");
+        assert!(json_val.get("page_index").is_none());
+        assert!(json_val.get("location").is_none());
+    }
+
+    #[test]
+    fn test_output_roundtrip() {
+        // Critical test: roundtrip serde test passes
+        let mut output = Output::new();
+        output.metadata.title = Some("Test Document".to_string());
+        output.metadata.page_count = 3;
+        output.pages.push(PageJson {
+            page_index: 0,
+            page_number: 1,
+            page_label: None,
+            width: 612.0,
+            height: 792.0,
+            rotation: 0,
+            page_type: "text".to_string(),
+            spans: vec![],
+            blocks: vec![],
+            tables: vec![],
+            annotations: vec![],
+        });
+        output.errors.push(DiagnosticJson {
+            code: "TEST_WARNING".to_string(),
+            message: "Test warning message".to_string(),
+            severity: "warning".to_string(),
+            page_index: Some(0),
+            location: None,
+        });
+
+        let json_str = serde_json::to_string(&output).unwrap();
+        let deserialized: Output = serde_json::from_str(&json_str).unwrap();
+
+        assert_eq!(deserialized.schema_version, "1.0");
+        assert_eq!(
+            deserialized.metadata.title,
+            Some("Test Document".to_string())
+        );
+        assert_eq!(deserialized.metadata.page_count, 3);
+        assert_eq!(deserialized.pages.len(), 1);
+        assert_eq!(deserialized.pages[0].page_index, 0);
+        assert_eq!(deserialized.errors.len(), 1);
+        assert_eq!(deserialized.errors[0].code, "TEST_WARNING");
+    }
+
+    #[test]
+    fn test_schema_version_static() {
+        // Verify schema_version is a static string
+        let output = Output::new();
+        assert_eq!(output.schema_version, "1.0");
+    }
+
+    #[test]
+    fn test_output_default_impl() {
+        // Test Default implementation for Output
+        let output = Output::default();
+        assert_eq!(output.schema_version, "1.0");
+        assert_eq!(output.metadata.page_count, 0);
+        assert!(output.pages.is_empty());
+        assert!(output.errors.is_empty());
     }
 }
