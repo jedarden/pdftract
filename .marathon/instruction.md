@@ -81,9 +81,18 @@ bf claim <bead-id> --model claude-code-glm-4.7 --harness needle --harness-versio
    cargo clippy --all-targets -- -D warnings
    cargo fmt
    cargo nextest run        # NEVER bare `cargo test` — see CLAUDE.md "Test hygiene".
-                            # nextest kills hung tests via .config/nextest.toml slow-timeout.
+                            # nextest kills hung tests via .config/nextest.toml terminate-after.
                             # If nextest is unavailable: timeout --kill-after=30s 600s cargo test --all-targets
    ```
+   **This ban covers narrow / iterative runs too** — to exercise a single test or package,
+   filter *through nextest*; never run a bare `cargo test -p … --lib …`:
+   ```bash
+   cargo nextest run -E 'test(buffer)'         # by test-name substring
+   cargo nextest run -p pdftract-core buffer   # by package + filter
+   ```
+   (On 2026-05-25 a bare `cargo test --package pdftract-core --lib buffer` hung and stalled
+   the loop ~5h — it bypassed the nextest timeout. Ad-hoc runs are exactly where the guard
+   matters; a "quick check" with bare `cargo test` is the trap.)
    If the run is killed by a timeout (nextest `TIMEOUT`/`TERMINATED`, or `timeout` exit 124),
    a test hung — fix it; never close the bead claiming the tests passed.
 
