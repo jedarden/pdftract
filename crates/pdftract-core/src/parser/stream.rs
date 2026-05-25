@@ -1043,13 +1043,130 @@ impl StreamDecoder for CryptDecoder {
     }
 }
 
+/// RunLengthDecode filter (RLE compression).
+///
+/// Per PDF spec 7.4.5:
+/// - Length byte 0-127: copy next (len+1) bytes literally
+/// - Length byte 128: end of data
+/// - Length byte 129-255: repeat next byte (257-len) times
+///
+/// This is a simple compression scheme used for bitmap data and some
+/// content streams. The algorithm is byte-oriented and handles
+/// truncated input gracefully per INV-8.
+#[derive(Debug, Clone, Copy)]
+pub struct RunLengthDecoder;
+
+impl RunLengthDecoder {
+    /// Decode RunLength-encoded data.
+    ///
+    /// Per PDF spec 7.4.5, the length byte determines the action:
+    /// - 0..=127: copy the next (len+1) bytes literally
+    /// - 128: end of data (EOD marker)
+    /// - 129..=255: repeat the next byte (257-len) times (range 2..=128)
+    ///
+    /// Unexpected EOF mid-run returns partial bytes decoded so far
+    /// (INV-8: never panic on malformed input).
+    fn decode_internal(input: &[u8], doc_counter: &mut u64, max_bytes: u64) -> Vec<u8> {
+        let mut output = Vec::new();
+        let mut iter = input.iter().copied();
+
+        while let Some(len_byte) = iter.next() {
+            match len_byte {
+                0..=127 => {
+                    // Copy next (len+1) bytes literally
+                    let copy_count = (len_byte + 1) as usize;
+
+                    // Check bomb limit
+                    if *doc_counter + copy_count as u64 > max_bytes {
+                        // Bomb limit exceeded - copy what we can and stop
+                        let remaining = (max_bytes - *doc_counter) as usize;
+                        let to_copy = remaining.min(copy_count);
+                        for _ in 0..to_copy {
+                            if let Some(byte) = iter.next() {
+                                output.push(byte);
+                                *doc_counter += 1;
+                            } else {
+                                break; // EOF reached
+                            }
+                        }
+                        break; // Stop decoding
+                    }
+
+                    // Copy bytes
+                    for _ in 0..copy_count {
+                        match iter.next() {
+                            Some(byte) => output.push(byte),
+                            None => break, // Truncated input - stop here
+                        }
+                    }
+                    *doc_counter += copy_count as u64;
+                }
+                128 => {
+                    // End of data marker
+                    break;
+                }
+                129..=255 => {
+                    // Repeat next byte (257 - len) times
+                    // 129 -> 128 repeats, ..., 255 -> 2 repeats
+                    let repeat_count = (257 - len_byte as usize) as usize;
+
+                    // Get the byte to repeat
+                    let byte = match iter.next() {
+                        Some(b) => b,
+                        None => break, // Truncated input - no byte to repeat
+                    };
+
+                    // Check bomb limit
+                    if *doc_counter + repeat_count as u64 > max_bytes {
+                        // Bomb limit exceeded - repeat what we can and stop
+                        let remaining = (max_bytes - *doc_counter) as usize;
+                        let to_repeat = remaining.min(repeat_count);
+                        for _ in 0..to_repeat {
+                            output.push(byte);
+                            *doc_counter += 1;
+                        }
+                        break; // Stop decoding
+                    }
+
+                    // Repeat the byte
+                    for _ in 0..repeat_count {
+                        output.push(byte);
+                    }
+                    *doc_counter += repeat_count as u64;
+                }
+            }
+        }
+
+        output
+    }
+}
+
+impl StreamDecoder for RunLengthDecoder {
+    fn decode(
+        &self,
+        input: &[u8],
+        _params: Option<&PdfObject>,
+        doc_counter: &mut u64,
+        max_bytes: u64,
+    ) -> Result<Vec<u8>, FilterError> {
+        if input.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        Ok(Self::decode_internal(input, doc_counter, max_bytes))
+    }
+
+    fn name(&self) -> &'static str {
+        "RunLengthDecode"
+    }
+}
+
 /// Passthrough decoder for filters we don't decode (DCTDecode, JBIG2Decode, etc.).
 ///
 /// Returns the raw bytes unchanged. Used for:
 /// - DCTDecode (JPEG) - pass raw JPEG bytes
 /// - JBIG2Decode - pass raw JBIG2 bytes
 /// - JPXDecode - pass raw JPEG2000 bytes
-/// - RunLengthDecode - pass raw bytes (TODO: implement)
 /// - Crypt with /Identity
 #[derive(Debug, Clone, Copy)]
 pub struct PassthroughDecoder {
@@ -1379,7 +1496,7 @@ pub fn get_decoder(name: &str) -> Option<Box<dyn StreamDecoder>> {
         "JBIG2Decode" => Some(Box::new(PassthroughDecoder::new("JBIG2Decode"))),
         "JPXDecode" => Some(Box::new(PassthroughDecoder::new("JPXDecode"))),
         "CCITTFaxDecode" => Some(Box::new(CCITTFaxDecoder)),
-        "RunLengthDecode" => Some(Box::new(PassthroughDecoder::new("RunLengthDecode"))), // TODO: implement RunLength
+        "RunLengthDecode" => Some(Box::new(RunLengthDecoder)),
         _ => None,
     }
 }
@@ -2556,6 +2673,177 @@ mod tests {
         // The exact amount depends on how much data could be decoded
         // before hitting the truncation
         assert!(!decoded.is_empty() || decoded.is_empty()); // Either way is fine - no panic
+    }
+
+    #[test]
+    fn test_runlength_decode_literal_copy() {
+        // Literal copy: input [3, 65, 66, 67, 68] (len=3 means copy 4 bytes)
+        // Per PDF spec: 0-127 means copy next (len+1) bytes literally
+        let input = vec![3, 65, 66, 67, 68]; // len=3, copy 4 bytes: A, B, C, D
+        let mut counter = 0;
+        let result =
+            RunLengthDecoder.decode(&input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output, vec![65, 66, 67, 68]);
+    }
+
+    #[test]
+    fn test_runlength_decode_repeat() {
+        // Repeat: input [254, 65] (len=254 means repeat 3 times)
+        // Per PDF spec: 129-255 means repeat next byte (257-len) times
+        // 257 - 254 = 3
+        let input = vec![254, 65]; // Repeat 'A' 3 times
+        let mut counter = 0;
+        let result =
+            RunLengthDecoder.decode(&input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output, vec![65, 65, 65]);
+    }
+
+    #[test]
+    fn test_runlength_decode_eod() {
+        // EOD: input [128, 65, 66, 67] stops at the 128 byte
+        // Per PDF spec: 128 is end-of-data marker
+        let input = vec![128, 65, 66, 67]; // 128 = EOD, subsequent bytes ignored
+        let mut counter = 0;
+        let result =
+            RunLengthDecoder.decode(&input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output, vec![]); // Empty output - stopped at EOD
+    }
+
+    #[test]
+    fn test_runlength_decode_truncated_input() {
+        // Truncated input: [5, 65, 66] (expected copy of 6 bytes, only 2 available)
+        // Per INV-8: emit partial bytes decoded, no panic
+        let input = vec![5, 65, 66]; // len=5 means copy 6 bytes, but only 2 available
+        let mut counter = 0;
+        let result =
+            RunLengthDecoder.decode(&input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        // Should emit the partial bytes available
+        assert_eq!(output, vec![65, 66]);
+    }
+
+    #[test]
+    fn test_runlength_decode_truncated_repeat() {
+        // Truncated repeat: [200] (repeat 57 times, but no byte to repeat)
+        // 257 - 200 = 57, but no byte follows
+        let input = vec![200];
+        let mut counter = 0;
+        let result =
+            RunLengthDecoder.decode(&input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        // No byte to repeat, so empty output
+        assert_eq!(output, vec![]);
+    }
+
+    #[test]
+    fn test_runlength_decode_empty_input() {
+        // Empty input should produce empty output
+        let input = vec![];
+        let mut counter = 0;
+        let result =
+            RunLengthDecoder.decode(&input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output.len(), 0);
+    }
+
+    #[test]
+    fn test_runlength_decode_max_repeat() {
+        // Maximum repeat count: len=129 -> repeat 128 times
+        // 257 - 129 = 128
+        let input = vec![129, 88]; // Repeat 'X' 128 times
+        let mut counter = 0;
+        let result =
+            RunLengthDecoder.decode(&input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output.len(), 128);
+        assert!(output.iter().all(|&b| b == 88));
+    }
+
+    #[test]
+    fn test_runlength_decode_min_repeat() {
+        // Minimum repeat count: len=255 -> repeat 2 times
+        // 257 - 255 = 2
+        let input = vec![255, 90]; // Repeat 'Z' 2 times
+        let mut counter = 0;
+        let result =
+            RunLengthDecoder.decode(&input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output, vec![90, 90]);
+    }
+
+    #[test]
+    fn test_runlength_decode_mixed_literal_and_repeat() {
+        // Mixed literal and repeat operations
+        // len=2 -> copy 3 bytes (A, B, C)
+        // len=250 -> repeat next byte 7 times (D x 7)
+        let input = vec![2, 65, 66, 67, 250, 68];
+        let mut counter = 0;
+        let result =
+            RunLengthDecoder.decode(&input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output, vec![65, 66, 67, 68, 68, 68, 68, 68, 68, 68]);
+    }
+
+    #[test]
+    fn test_runlength_decode_bomb_limit() {
+        // Test that bomb limit is enforced
+        // len=100 -> copy 101 bytes, but limit is 10
+        let input = vec![100, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74];
+        let mut counter = 0;
+        let limit = 10; // Only allow 10 bytes
+        let result = RunLengthDecoder.decode(&input, None, &mut counter, limit);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(output.len() <= 10); // Should truncate at bomb limit
+    }
+
+    #[test]
+    fn test_runlength_decode_zero_literal() {
+        // len=0 means copy 1 byte
+        let input = vec![0, 65];
+        let mut counter = 0;
+        let result =
+            RunLengthDecoder.decode(&input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output, vec![65]);
+    }
+
+    #[test]
+    fn test_runlength_decode_max_literal() {
+        // len=127 means copy 128 bytes
+        let mut input = vec![127];
+        input.extend_from_slice(&[65; 128]); // Copy 128 'A' bytes
+        let mut counter = 0;
+        let result =
+            RunLengthDecoder.decode(&input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output.len(), 128);
+        assert!(output.iter().all(|&b| b == 65));
+    }
+
+    #[test]
+    fn test_runlength_decode_name() {
+        assert_eq!(RunLengthDecoder.name(), "RunLengthDecode");
+    }
+
+    #[test]
+    fn test_runlength_decode_normalize_filter_name() {
+        assert_eq!(normalize_filter_name("RL"), "RunLengthDecode");
+        assert_eq!(normalize_filter_name("RunLengthDecode"), "RunLengthDecode");
     }
 
     #[test]
