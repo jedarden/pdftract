@@ -9,6 +9,7 @@ pub mod atomic_file_writer;
 pub mod attachment;
 pub mod cache;
 pub mod classify;
+pub mod confidence;
 pub mod content_stream;
 pub mod diagnostics;
 pub mod document;
@@ -26,6 +27,7 @@ pub mod markdown;
 #[cfg(feature = "ocr")]
 pub mod ocr;
 pub mod options;
+pub mod output;
 pub mod page_class;
 pub mod parser;
 #[cfg(feature = "ocr")]
@@ -49,6 +51,7 @@ pub mod span_flags;
 pub mod table;
 
 // Re-export key types for convenience
+pub use confidence::ConfidenceSource;
 pub use document::{PageExtraction, PageIter, PdfExtractor};
 pub use extract::{
     extract_pdf, extract_pdf_ndjson, extract_pdf_streaming, ExtractionMetadata, ExtractionResult,
