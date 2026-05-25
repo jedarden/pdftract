@@ -25,7 +25,7 @@ pub use code::{
     classify_code, classify_page_code_blocks, is_fixed_pitch_flag, is_monospace_font_name,
     is_monospace_span, MonospaceSpan,
 };
-pub use columns::{assign_columns_to_lines, assign_columns_to_spans, Column};
+pub use columns::{assign_columns_to_lines, assign_columns_to_spans, build_x0_histogram, Column};
 pub use correction::{detect_and_repair_mojibake, repair_hyphenation, HyphenableSpan};
 pub use line::{
     cluster_spans_into_lines, compute_baseline, group_lines_into_blocks, union_bboxes, BlockInput,

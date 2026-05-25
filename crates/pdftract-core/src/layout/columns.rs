@@ -4,6 +4,109 @@
 //! based on confirmed column x_ranges.
 
 use std::collections::HashMap;
+use tracing::warn;
+
+/// Build a histogram of x0 coordinates for column detection.
+///
+/// Returns a `Vec<u32>` of length `ceil(page_width)`, indexed by x0 (rounded to
+/// nearest integer point). Each span contributes 1 to the bucket at its x0.
+///
+/// # Arguments
+///
+/// * `spans` - Spans to histogram (must have bbox accessible)
+/// * `page_width` - Page width in points
+///
+/// # Returns
+///
+/// A histogram where `hist[i]` is the count of spans whose x0 rounds to i.
+///
+/// # Behavior
+///
+/// - For each span: `idx = span.bbox[0].round() as usize`
+/// - Clamp idx to `[0, hist.len() - 1]`
+/// - x0 < 0: clamped to 0, diagnostic logged
+/// - x0 > page_width: clamped to last bucket, diagnostic logged
+/// - Empty spans: returns Vec of zeros
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::layout::columns::build_x0_histogram;
+///
+/// let spans: Vec<[f32; 4]> = vec![
+///     [100.0, 0.0, 200.0, 10.0], // x0=100
+///     [100.0, 0.0, 200.0, 10.0], // x0=100
+///     [200.0, 0.0, 300.0, 10.0], // x0=200
+///     [200.0, 0.0, 300.0, 10.0], // x0=200
+///     [300.0, 0.0, 400.0, 10.0], // x0=300
+/// ];
+/// let hist = build_x0_histogram(&spans, 612.0);
+/// assert_eq!(hist[100], 2);
+/// assert_eq!(hist[200], 2);
+/// assert_eq!(hist[300], 1);
+/// ```
+pub fn build_x0_histogram<S>(spans: &[S], page_width: f32) -> Vec<u32>
+where
+    S: HasBBox,
+{
+    let hist_len = page_width.ceil() as usize;
+    let mut hist = vec![0u32; hist_len];
+
+    for span in spans {
+        let x0 = span.bbox()[0];
+        let idx = x0.round() as usize;
+
+        // Clamp and emit diagnostics for out-of-bounds x0
+        if idx >= hist_len {
+            if x0 < 0.0 {
+                warn!("build_x0_histogram: x0={} < 0, clamping to bucket 0", x0);
+                hist[0] += 1;
+            } else {
+                // x0 >= page_width
+                warn!(
+                    "build_x0_histogram: x0={} >= page_width={}, clamping to bucket {}",
+                    x0,
+                    page_width,
+                    hist_len.saturating_sub(1)
+                );
+                if !hist.is_empty() {
+                    hist[hist_len - 1] += 1;
+                }
+            }
+        } else {
+            hist[idx] += 1;
+        }
+    }
+
+    hist
+}
+
+/// Trait for types with a bounding box for histogram building.
+///
+/// This is a simplified version of the trait used in column assignment,
+/// returning `[f32; 4]` for compatibility with the histogram function.
+pub trait HasBBox {
+    /// Get the bounding box [x0, y0, x1, y1] in PDF user space.
+    fn bbox(&self) -> [f32; 4];
+}
+
+// Implement HasBBox for common types
+impl HasBBox for [f32; 4] {
+    fn bbox(&self) -> [f32; 4] {
+        *self
+    }
+}
+
+impl HasBBox for [f64; 4] {
+    fn bbox(&self) -> [f32; 4] {
+        [
+            self[0] as f32,
+            self[1] as f32,
+            self[2] as f32,
+            self[3] as f32,
+        ]
+    }
+}
 
 /// A confirmed column with its x_range and index.
 ///
@@ -417,5 +520,101 @@ mod tests {
 
         // Should be assigned to col 0 based on x0
         assert_eq!(spans[0].column, Some(0));
+    }
+
+    #[test]
+    fn test_build_x0_histogram_single_span() {
+        // 1 span at x0=100, page_width=612: hist[100] == 1
+        let spans: Vec<[f32; 4]> = vec![[100.0, 0.0, 200.0, 10.0]];
+        let hist = build_x0_histogram(&spans, 612.0);
+
+        assert_eq!(hist.len(), 612);
+        assert_eq!(hist[100], 1);
+        // All other buckets should be 0
+        assert_eq!(hist[0], 0);
+        assert_eq!(hist[99], 0);
+        assert_eq!(hist[101], 0);
+    }
+
+    #[test]
+    fn test_build_x0_histogram_multiple_spans() {
+        // 5 spans at x0=100,100,200,200,300: hist[100]==2, hist[200]==2, hist[300]==1
+        let spans: Vec<[f32; 4]> = vec![
+            [100.0, 0.0, 200.0, 10.0],
+            [100.0, 0.0, 200.0, 10.0],
+            [200.0, 0.0, 300.0, 10.0],
+            [200.0, 0.0, 300.0, 10.0],
+            [300.0, 0.0, 400.0, 10.0],
+        ];
+        let hist = build_x0_histogram(&spans, 612.0);
+
+        assert_eq!(hist[100], 2);
+        assert_eq!(hist[200], 2);
+        assert_eq!(hist[300], 1);
+        // Other buckets should be 0
+        assert_eq!(hist[0], 0);
+        assert_eq!(hist[99], 0);
+        assert_eq!(hist[101], 0);
+        assert_eq!(hist[299], 0);
+    }
+
+    #[test]
+    fn test_build_x0_histogram_clamp_negative_x0() {
+        // Span at x0=-5: clamped to hist[0], diagnostic
+        let spans: Vec<[f32; 4]> = vec![[-5.0, 0.0, 100.0, 10.0]];
+        let hist = build_x0_histogram(&spans, 612.0);
+
+        // Should be clamped to bucket 0
+        assert_eq!(hist[0], 1);
+        assert_eq!(hist[1], 0);
+    }
+
+    #[test]
+    fn test_build_x0_histogram_clamp_overflow_x0() {
+        // Span at x0 > page_width: clamped to last bucket, diagnostic
+        let spans: Vec<[f32; 4]> = vec![[700.0, 0.0, 800.0, 10.0]];
+        let hist = build_x0_histogram(&spans, 612.0);
+
+        // Should be clamped to last bucket (611)
+        assert_eq!(hist[611], 1);
+    }
+
+    #[test]
+    fn test_build_x0_histogram_empty_spans() {
+        // Empty spans: returns Vec of zeros
+        let spans: Vec<[f32; 4]> = vec![];
+        let hist = build_x0_histogram(&spans, 612.0);
+
+        assert_eq!(hist.len(), 612);
+        // All buckets should be 0
+        for &count in &hist {
+            assert_eq!(count, 0);
+        }
+    }
+
+    #[test]
+    fn test_build_x0_histogram_rounding() {
+        // Test that x0 is rounded to nearest integer
+        let spans: Vec<[f32; 4]> = vec![
+            [100.4, 0.0, 200.0, 10.0], // rounds to 100
+            [100.6, 0.0, 200.0, 10.0], // rounds to 101
+            [99.5, 0.0, 200.0, 10.0],  // rounds to 100 (round half to even in Rust)
+            [99.6, 0.0, 200.0, 10.0],  // rounds to 100
+        ];
+        let hist = build_x0_histogram(&spans, 612.0);
+
+        // 100.4 -> 100, 100.6 -> 101, 99.5 -> 100, 99.6 -> 100
+        assert_eq!(hist[100], 3);
+        assert_eq!(hist[101], 1);
+    }
+
+    #[test]
+    fn test_build_x0_histogram_a4_page() {
+        // Test with A4 page width (595pt)
+        let spans: Vec<[f32; 4]> = vec![[100.0, 0.0, 200.0, 10.0]];
+        let hist = build_x0_histogram(&spans, 595.0);
+
+        assert_eq!(hist.len(), 595);
+        assert_eq!(hist[100], 1);
     }
 }
