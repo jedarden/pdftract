@@ -36,7 +36,7 @@
 //! ```
 
 use crate::schema::{
-    BlockJson, ChoiceValueJson, FormFieldJson, FormFieldTypeJson, FormFieldValueJson,
+    BlockJson, ChoiceValueJson, FormFieldJson, FormFieldTypeJson, FormFieldValueJson, SpanJson,
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -590,4 +590,424 @@ fn format_value_json(value: &FormFieldValueJson) -> String {
 /// Escape pipe characters for markdown table cells.
 fn escape_pipe(s: &str) -> String {
     s.replace('|', "\\|")
+}
+
+/// Convert a span to markdown with inline styling based on flags.
+///
+/// This function implements Phase 6.5 inline span styling, translating
+/// span flag bitmask values to Markdown inline syntax.
+///
+/// # Styling Rules
+///
+/// - Bold (bit 0) → `**text**`
+/// - Italic (bit 1) → `*text*`
+/// - Bold + Italic → `***text***`
+/// - Subscript (bit 3) → `<sub>text</sub>`
+/// - Superscript (bit 4) → `<sup>text</sup>`
+/// - Smallcaps (bit 2) → `<span style="font-variant: small-caps">text</span>`
+/// - Color-only differences: no styling emitted
+///
+/// # Arguments
+///
+/// * `span` - The span to convert
+///
+/// # Returns
+///
+/// A markdown string with appropriate inline styling applied.
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::schema::SpanJson;
+/// use pdftract_core::markdown::span_to_markdown;
+///
+/// let mut span = SpanJson {
+///     text: "important text".to_string(),
+///     flags: vec!["bold".to_string()],
+///     ..Default::default()
+/// };
+///
+/// let md = span_to_markdown(&span);
+/// assert_eq!(md, "**important text**");
+/// ```
+///
+/// ```
+/// // H₂O example: subscript
+/// let mut span = SpanJson {
+///     text: "2".to_string(),
+///     flags: vec!["subscript".to_string()],
+///     ..Default::default()
+/// };
+///
+/// let md = span_to_markdown(&span);
+/// assert_eq!(md, "<sub>2</sub>");
+/// ```
+///
+/// ```
+/// // 4th example: superscript
+/// let mut span = SpanJson {
+///     text: "th".to_string(),
+///     flags: vec!["superscript".to_string()],
+///     ..Default::default()
+/// };
+///
+/// let md = span_to_markdown(&span);
+/// assert_eq!(md, "<sup>th</sup>");
+/// ```
+///
+/// ```
+/// // Bold + italic combination
+/// let mut span = SpanJson {
+///     text: "emphasized".to_string(),
+///     flags: vec!["bold".to_string(), "italic".to_string()],
+///     ..Default::default()
+/// };
+///
+/// let md = span_to_markdown(&span);
+/// assert_eq!(md, "***emphasized***");
+/// ```
+///
+/// ```
+/// // Special character escaping
+/// let mut span = SpanJson {
+///     text: "1*2".to_string(),
+///     flags: vec![],
+///     ..Default::default()
+/// };
+///
+/// let md = span_to_markdown(&span);
+/// assert_eq!(md, "1\\*2");
+/// ```
+pub fn span_to_markdown(span: &SpanJson) -> String {
+    // Get the text content
+    let text = &span.text;
+
+    // Skip whitespace-only spans (no point styling whitespace)
+    if text.trim().is_empty() {
+        return text.clone();
+    }
+
+    // Check for each flag in the flags Vec<String>
+    let has_bold = span.flags.contains(&"bold".to_string());
+    let has_italic = span.flags.contains(&"italic".to_string());
+    let has_subscript = span.flags.contains(&"subscript".to_string());
+    let has_superscript = span.flags.contains(&"superscript".to_string());
+    let has_smallcaps = span.flags.contains(&"smallcaps".to_string());
+
+    // Color-only differences: emit no styling (just return escaped text)
+    // This is checked by seeing if none of the style flags are present
+    let has_any_style = has_bold || has_italic || has_subscript || has_superscript || has_smallcaps;
+
+    if !has_any_style {
+        // No styling flags, just escape and return
+        return escape_markdown_inline(text);
+    }
+
+    // Escape the text first (before wrapping in styling)
+    let escaped = escape_markdown_inline(text);
+
+    // Build the styled output
+    let mut result = String::new();
+
+    // Combination order:
+    // - Bold + italic wrapper (***text***) goes outermost
+    // - Smallcaps span wraps script tags (<span><sup>text</sup></span>)
+    // - Script tags go inside smallcaps (if both present)
+    // This order: **<span><sup>text</sup></span>** or **<sub>text</sub>** (if no smallcaps)
+
+    // Bold + italic wrapper (***text***)
+    if has_bold && has_italic {
+        result.push_str("***");
+    } else if has_bold {
+        result.push_str("**");
+    } else if has_italic {
+        result.push_str("*");
+    }
+
+    // Smallcaps wrapper (outer relative to scripts)
+    if has_smallcaps {
+        result.push_str("<span style=\"font-variant: small-caps\">");
+    }
+
+    // Script tags (sub/sup) go inside smallcaps
+    if has_subscript {
+        result.push_str("<sub>");
+    } else if has_superscript {
+        result.push_str("<sup>");
+    }
+
+    // Add the escaped text
+    result.push_str(&escaped);
+
+    // Close wrappers in reverse order
+    if has_subscript {
+        result.push_str("</sub>");
+    } else if has_superscript {
+        result.push_str("</sup>");
+    }
+
+    if has_smallcaps {
+        result.push_str("</span>");
+    }
+
+    if has_bold && has_italic {
+        result.push_str("***");
+    } else if has_bold {
+        result.push_str("**");
+    } else if has_italic {
+        result.push_str("*");
+    }
+
+    result
+}
+
+/// Escape special Markdown characters in inline text.
+///
+/// This function escapes characters that have special meaning in Markdown
+/// to prevent unintended formatting. Per CommonMark spec, these characters
+/// are escaped to prevent them from being interpreted as Markdown syntax.
+///
+/// # Characters Escaped
+///
+/// The following characters are escaped with a backslash:
+/// - `\` (backslash itself - must be escaped to avoid interpretation)
+/// - `` ` `` (code span)
+/// - `*` (emphasis/strong)
+/// - `_` (emphasis)
+/// - `[` (link start)
+/// - `]` (link end)
+/// - `(` (link destination start)
+/// - `)` (link destination end)
+/// - `#` (ATX heading)
+/// - `!` (image)
+/// - `+` (list marker)
+/// - `<` (HTML tag/auto-link)
+/// - `>` (blockquote)
+///
+/// # Characters NOT Escaped
+///
+/// - `-` (hyphen) - only special at start of line for lists/HR
+/// - `.` (period) - only special as part of list marker like "1."
+/// - `=` (equals) - not special in CommonMark
+///
+/// # Arguments
+///
+/// * `s` - The string to escape
+///
+/// # Returns
+///
+/// A string with special characters escaped.
+fn escape_markdown_inline(s: &str) -> String {
+    let mut result = String::with_capacity(s.len() * 2);
+
+    for c in s.chars() {
+        match c {
+            '\\' | '`' | '*' | '_' | '[' | ']' | '(' | ')' | '#' | '!' | '+' | '<' | '>' => {
+                result.push('\\');
+                result.push(c);
+            }
+            _ => result.push(c),
+        }
+    }
+
+    result
+}
+
+#[cfg(test)]
+mod span_tests {
+    use super::*;
+
+    /// Helper function to create a test span with the given text and flags.
+    /// All other fields are set to reasonable defaults for testing.
+    fn make_test_span(text: &str, flags: &[&str]) -> SpanJson {
+        SpanJson {
+            text: text.to_string(),
+            bbox: [0.0, 0.0, 100.0, 20.0],
+            font: "Helvetica".to_string(),
+            size: 12.0,
+            color: None,
+            rendering_mode: None,
+            confidence: None,
+            confidence_source: None,
+            lang: None,
+            flags: flags.iter().map(|s| s.to_string()).collect(),
+            receipt: None,
+            column: None,
+        }
+    }
+
+    #[test]
+    fn test_span_to_markdown_bold() {
+        let span = make_test_span("important", &["bold"]);
+        assert_eq!(span_to_markdown(&span), "**important**");
+    }
+
+    #[test]
+    fn test_span_to_markdown_italic() {
+        let span = make_test_span("emphasized", &["italic"]);
+        assert_eq!(span_to_markdown(&span), "*emphasized*");
+    }
+
+    #[test]
+    fn test_span_to_markdown_bold_italic() {
+        // Critical test: bold + italic span emitted as ***text***
+        let span = make_test_span("very important", &["bold", "italic"]);
+        assert_eq!(span_to_markdown(&span), "***very important***");
+    }
+
+    #[test]
+    fn test_span_to_markdown_subscript() {
+        let span = make_test_span("2", &["subscript"]);
+        assert_eq!(span_to_markdown(&span), "<sub>2</sub>");
+    }
+
+    #[test]
+    fn test_span_to_markdown_superscript() {
+        let span = make_test_span("th", &["superscript"]);
+        assert_eq!(span_to_markdown(&span), "<sup>th</sup>");
+    }
+
+    #[test]
+    fn test_span_to_markdown_smallcaps() {
+        let span = make_test_span("CAPS", &["smallcaps"]);
+        assert_eq!(
+            span_to_markdown(&span),
+            "<span style=\"font-variant: small-caps\">CAPS</span>"
+        );
+    }
+
+    #[test]
+    fn test_span_to_markdown_no_flags() {
+        // Color-only difference or no styling: no styling emitted
+        let span = make_test_span("plain text", &[]);
+        assert_eq!(span_to_markdown(&span), "plain text");
+    }
+
+    #[test]
+    fn test_span_to_markdown_special_chars_escaped() {
+        // Special chars escaped: span text "1*2" -> "1\*2"
+        let span = make_test_span("1*2", &[]);
+        assert_eq!(span_to_markdown(&span), "1\\*2");
+    }
+
+    #[test]
+    fn test_span_to_markdown_bold_subscript_combination() {
+        // Bold + subscript: **<sub>text</sub>**
+        let span = make_test_span("ion", &["bold", "subscript"]);
+        assert_eq!(span_to_markdown(&span), "**<sub>ion</sub>**");
+    }
+
+    #[test]
+    fn test_span_to_markdown_bold_superscript_combination() {
+        // Bold + superscript: **<sup>text</sup>**
+        let span = make_test_span("st", &["bold", "superscript"]);
+        assert_eq!(span_to_markdown(&span), "**<sup>st</sup>**");
+    }
+
+    #[test]
+    fn test_span_to_markdown_italic_subscript_combination() {
+        // Italic + subscript: *<sub>text</sub>*
+        let span = make_test_span("ion", &["italic", "subscript"]);
+        assert_eq!(span_to_markdown(&span), "*<sub>ion</sub>*");
+    }
+
+    #[test]
+    fn test_span_to_markdown_all_flags() {
+        // All flags: bold + italic + smallcaps + superscript
+        let span = make_test_span("X", &["bold", "italic", "smallcaps", "superscript"]);
+        assert_eq!(
+            span_to_markdown(&span),
+            "***<span style=\"font-variant: small-caps\"><sup>X</sup></span>***"
+        );
+    }
+
+    #[test]
+    fn test_span_to_markdown_whitespace_only() {
+        // Empty/whitespace-only spans emit unwrapped
+        let span = make_test_span("   ", &["bold"]);
+        assert_eq!(span_to_markdown(&span), "   ");
+    }
+
+    #[test]
+    fn test_span_to_markdown_empty_string() {
+        let span = make_test_span("", &["bold"]);
+        assert_eq!(span_to_markdown(&span), "");
+    }
+
+    #[test]
+    fn test_escape_markdown_inline_asterisk() {
+        assert_eq!(escape_markdown_inline("1*2"), "1\\*2");
+    }
+
+    #[test]
+    fn test_escape_markdown_inline_underscore() {
+        assert_eq!(escape_markdown_inline("hello_world"), "hello\\_world");
+    }
+
+    #[test]
+    fn test_escape_markdown_inline_backtick() {
+        assert_eq!(escape_markdown_inline("code`here"), "code\\`here");
+    }
+
+    #[test]
+    fn test_escape_markdown_inline_brackets() {
+        assert_eq!(escape_markdown_inline("[link]"), "\\[link\\]");
+    }
+
+    #[test]
+    fn test_escape_markdown_inline_multiple_special() {
+        assert_eq!(escape_markdown_inline("*_[link]*"), "\\*\\_\\[link\\]\\*");
+    }
+
+    #[test]
+    fn test_escape_markdown_inline_backslash() {
+        assert_eq!(escape_markdown_inline("C:\\path"), "C:\\\\path");
+    }
+
+    #[test]
+    fn test_escape_markdown_inline_hash() {
+        assert_eq!(escape_markdown_inline("#heading"), "\\#heading");
+    }
+
+    #[test]
+    fn test_escape_markdown_inline_plus_minus() {
+        assert_eq!(escape_markdown_inline("+/-"), "\\+/-");
+    }
+
+    #[test]
+    fn test_escape_markdown_inline_less_greater() {
+        // < and > are escaped (HTML tags/auto-links)
+        assert_eq!(escape_markdown_inline("<tag>"), "\\<tag\\>");
+    }
+
+    #[test]
+    fn test_span_to_markdown_bold_with_asterisk_in_text() {
+        // Bold text containing asterisks should be escaped
+        let span = make_test_span("2*2=4", &["bold"]);
+        assert_eq!(span_to_markdown(&span), "**2\\*2=4**");
+    }
+
+    #[test]
+    fn test_span_to_markdown_subscript_with_special_chars() {
+        // Subscript with special characters
+        let span = make_test_span("2+", &["subscript"]);
+        assert_eq!(span_to_markdown(&span), "<sub>2\\+</sub>");
+    }
+
+    #[test]
+    fn test_span_to_markdown_superscript_with_special_chars() {
+        // Superscript with special characters
+        let span = make_test_span("n-1", &["superscript"]);
+        assert_eq!(span_to_markdown(&span), "<sup>n-1</sup>");
+    }
+
+    #[test]
+    fn test_span_to_markdown_smallcaps_with_special_chars() {
+        // Smallcaps with underscore
+        let span = make_test_span("HELLO_WORLD", &["smallcaps"]);
+        assert_eq!(
+            span_to_markdown(&span),
+            "<span style=\"font-variant: small-caps\">HELLO\\_WORLD</span>"
+        );
+    }
 }
