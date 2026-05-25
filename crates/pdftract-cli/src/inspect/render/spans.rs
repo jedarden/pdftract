@@ -166,6 +166,7 @@ mod tests {
                 size: 10.0,
                 confidence,
                 receipt: None,
+                column: None,
             }];
 
             let output = render_spans(&spans);
@@ -189,6 +190,7 @@ mod tests {
             size: 14.0,
             confidence: Some(0.85),
             receipt: None,
+            column: None,
         }];
 
         let output = render_spans(&spans);
@@ -212,6 +214,7 @@ mod tests {
                 size: 10.0,
                 confidence: None,
                 receipt: None,
+                column: None,
             },
             SpanJson {
                 text: "Second".to_string(),
@@ -220,6 +223,7 @@ mod tests {
                 size: 10.0,
                 confidence: None,
                 receipt: None,
+                column: None,
             },
             SpanJson {
                 text: "Third".to_string(),
@@ -228,6 +232,7 @@ mod tests {
                 size: 10.0,
                 confidence: None,
                 receipt: None,
+                column: None,
             },
         ];
 
@@ -250,6 +255,7 @@ mod tests {
                 size: 10.0,
                 confidence: Some(0.9), // green
                 receipt: None,
+                column: None,
             },
             SpanJson {
                 text: "Second".to_string(),
@@ -258,6 +264,7 @@ mod tests {
                 size: 10.0,
                 confidence: Some(0.6), // yellow
                 receipt: None,
+                column: None,
             },
             SpanJson {
                 text: "Third".to_string(),
@@ -266,6 +273,7 @@ mod tests {
                 size: 10.0,
                 confidence: Some(0.3), // red
                 receipt: None,
+                column: None,
             },
         ];
 
@@ -287,6 +295,7 @@ mod tests {
             size: 12.0,
             confidence: None,
             receipt: None,
+            column: None,
         }];
 
         let output = render_spans(&spans);
@@ -327,6 +336,7 @@ mod tests {
             size: 12.5,
             confidence: None,
             receipt: None,
+            column: None,
         }];
 
         let output = render_spans(&spans);
@@ -348,6 +358,7 @@ mod tests {
             size: 12.0,
             confidence: Some(0.95),
             receipt: None,
+            column: None,
         }];
 
         let output = render_spans(&spans);
