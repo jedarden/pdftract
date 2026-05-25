@@ -16,7 +16,9 @@
   - [inspect](./cli/inspect.md)
   - [mcp](./cli/mcp.md)
 
-- [JSON Schema Reference](./schema/README.md)
+- [JSON Schema Reference](./json-schema-reference.md)
+
+- [Schema Details](./schema/README.md)
   - [Output Format](./schema/output-format.md)
   - [Block Types](./schema/block-types.md)
   - [Metadata](./schema/metadata.md)
