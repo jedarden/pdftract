@@ -1,0 +1,11 @@
+{
+  "description": "/BBox value 99999999999999999 overflows i32",
+  "expected_diagnostics": [
+    {
+      "code": "STRUCT_OVERFLOW",
+      "min_count": 1,
+      "description": "Integer overflow in /BBox value should emit diagnostic"
+    }
+  ],
+  "expected_behavior": "value clamped to i32::MAX, no panic"
+}

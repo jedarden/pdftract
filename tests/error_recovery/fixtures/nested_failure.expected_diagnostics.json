@@ -1,0 +1,22 @@
+{
+  "description": "Every page has at least one diagnostic",
+  "expected_diagnostics": [
+    {
+      "code": "STRUCT_MISSING_KEY",
+      "min_count": 1,
+      "description": "Page 1 missing MediaBox"
+    },
+    {
+      "code": "STRUCT_INVALID_NAME",
+      "min_count": 1,
+      "description": "Page 2 has invalid name in resources"
+    },
+    {
+      "code": "CIRCULAR_REFERENCE",
+      "min_count": 1,
+      "description": "Page 3 has circular reference"
+    }
+  ],
+  "expected_pages": "3",
+  "expected_behavior": "all pages extracted, ~3 diagnostics"
+}

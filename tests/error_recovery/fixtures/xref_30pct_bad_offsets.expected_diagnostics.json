@@ -1,0 +1,11 @@
+{
+  "description": "100-object PDF where 30 xref entries point to wrong offsets",
+  "expected_diagnostics": [
+    {
+      "code": "STRUCT_INVALID_XREF_ENTRY",
+      "min_count": 30,
+      "description": "Objects 71-100 have bad xref offsets"
+    }
+  ],
+  "expected_objects": "at least 70 objects extracted successfully"
+}

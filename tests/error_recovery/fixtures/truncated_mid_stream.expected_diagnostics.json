@@ -1,0 +1,11 @@
+{
+  "description": "FlateDecode stream truncated mid-decompression",
+  "expected_diagnostics": [
+    {
+      "code": "STREAM_DECODE_ERROR",
+      "min_count": 1,
+      "description": "Truncated FlateDecode stream should emit STREAM_DECODE_ERROR"
+    }
+  ],
+  "expected_behavior": "partial output returned, no panic"
+}

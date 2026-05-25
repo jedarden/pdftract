@@ -1,0 +1,12 @@
+{
+  "description": "10 pages with NO /MediaBox at any level",
+  "expected_diagnostics": [
+    {
+      "code": "STRUCT_MISSING_KEY",
+      "min_count": 10,
+      "description": "Each page should emit STRUCT_MISSING_KEY for missing MediaBox"
+    }
+  ],
+  "expected_pages": "10",
+  "expected_default_mediabox": "612x792 letter size for all pages"
+}

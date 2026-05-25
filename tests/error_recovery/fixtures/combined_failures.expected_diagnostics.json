@@ -1,0 +1,22 @@
+{
+  "description": "Combines multiple failure modes: truncated EOF, missing MediaBox, integer overflow, circular ref",
+  "expected_diagnostics": [
+    {
+      "code": "STRUCT_MISSING_KEY",
+      "min_count": 1,
+      "description": "Page 1 missing MediaBox"
+    },
+    {
+      "code": "STRUCT_OVERFLOW",
+      "min_count": 1,
+      "description": "Integer overflow in /Length"
+    },
+    {
+      "code": "CIRCULAR_REFERENCE",
+      "min_count": 1,
+      "description": "Circular reference on page 2"
+    }
+  ],
+  "expected_pages": "at least 1",
+  "expected_behavior": "no panic, recovery continues"
+}

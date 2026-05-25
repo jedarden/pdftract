@@ -1,0 +1,11 @@
+{
+  "description": "Object 5 is missing its endobj marker",
+  "expected_diagnostics": [
+    {
+      "code": "STRUCT_INVALID_XREF_ENTRY",
+      "min_count": 1,
+      "description": "Parser should detect object 5 is malformed and recover"
+    }
+  ],
+  "expected_objects": "at least 6 objects parsed (objects 6+ should still be accessible)"
+}

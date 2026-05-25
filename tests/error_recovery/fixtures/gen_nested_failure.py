@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+"""Generate nested_failure.pdf - every page has at least one diagnostic."""
+
+PDF_CONTENT = b"""%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R] /Count 3 >>
+endobj
+3 0 obj
+% Page 1: Missing MediaBox
+<< /Type /Page /Parent 2 0 R /Contents 6 0 R /Resources << >> >>
+endobj
+4 0 obj
+% Page 2: Invalid name in resources
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 6 0 R /Resources << /Font << /F# 7 0 R >> >> >>
+endobj
+5 0 obj
+% Page 3: Circular reference in contents
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 5 0 R /Resources << >> >>
+endobj
+6 0 obj
+<< /Length 44 >>
+stream
+BT
+/F1 12 Tf
+100 700 Td
+(Test) Tj
+ET
+endstream
+endobj
+7 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 8
+0000000000 65535 f
+0000000009 00000 n
+0000000058 00000 n
+0000000131 00000 n
+0000000248 00000 n
+0000000385 00000 n
+0000000542 00000 n
+0000000635 00000 n
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+728
+%%EOF
+"""
+
+with open('nested_failure.pdf', 'wb') as f:
+    f.write(PDF_CONTENT)
+
+print("Generated nested_failure.pdf")
+print("Page 1: Missing MediaBox (STRUCT_MISSING_KEY)")
+print("Page 2: Invalid name in resources (STRUCT_INVALID_NAME)")
+print("Page 3: Circular reference (CIRCULAR_REFERENCE)")
+print("Expected: >= 3 pages extracted, ~3 diagnostics")

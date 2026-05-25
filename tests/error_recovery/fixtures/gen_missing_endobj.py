@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+"""Generate missing_endobj.pdf - a PDF where object 5 is missing its endobj marker."""
+
+PDF_CONTENT = b"""%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R] /Count 3 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 6 0 R /Resources << /Font << /F1 7 0 R >> >> >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 6 0 R /Resources << /Font << /F1 7 0 R >> >> >>
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 6 0 R /Resources << /Font << /F1 7 0 R >> >> >>
+6 0 obj
+<< /Length 44 >>
+stream
+BT
+/F1 12 Tf
+100 700 Td
+(Page 6) Tj
+ET
+endstream
+endobj
+7 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 8
+0000000000 65535 f
+0000000009 00000 n
+0000000058 00000 n
+0000000131 00000 n
+0000000274 00000 n
+0000000417 00000 n
+0000000560 00000 n
+0000000643 00000 n
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+718
+%%EOF
+"""
+
+with open('missing_endobj.pdf', 'wb') as f:
+    f.write(PDF_CONTENT)
+
+print("Generated missing_endobj.pdf")
+print("Object 5 is missing its 'endobj' marker - parser should recover and parse objects 6+")
