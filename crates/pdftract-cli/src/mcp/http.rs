@@ -23,7 +23,7 @@
 
 use crate::mcp::framing::{BatchMessage, ErrorObject, Id, Notification, Request, Response};
 use crate::mcp::tools;
-use crate::middleware::{AuditState, audit_middleware};
+use crate::middleware::{audit_middleware, AuditState};
 use anyhow::{anyhow, Context, Result};
 use axum::{
     body::Body,
@@ -144,16 +144,21 @@ pub async fn run_server(
 ) -> Result<()> {
     // Create audit log writer if specified
     let audit_writer = if let Some(ref path) = audit_log {
-        Some(AuditLogWriter::open(path).context(format!(
-            "Failed to open audit log: {}",
-            path.display()
-        ))?)
+        Some(
+            AuditLogWriter::open(path)
+                .context(format!("Failed to open audit log: {}", path.display()))?,
+        )
     } else {
         None
     };
 
     // Create the shared server state
-    let state = McpServerState::new(auth_token, max_upload_mb, root.map(|p| p.to_path_buf()), audit_writer);
+    let state = McpServerState::new(
+        auth_token,
+        max_upload_mb,
+        root.map(|p| p.to_path_buf()),
+        audit_writer,
+    );
     let max_body_bytes = state.max_body_bytes;
 
     // Build the router

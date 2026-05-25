@@ -2,4 +2,4 @@
 
 pub mod audit;
 
-pub use audit::{AuditState, audit_middleware};
+pub use audit::{audit_middleware, AuditState};

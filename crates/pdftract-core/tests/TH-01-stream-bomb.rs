@@ -62,18 +62,34 @@ fn test_bomb_default_cap_allows_reasonable_decompression() {
 
     // Decompress with default cap (512 MB)
     let mut counter = 0u64;
-    let result = FlateDecoder.decode(&compressed, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+    let result = FlateDecoder.decode(
+        &compressed,
+        None,
+        &mut counter,
+        DEFAULT_MAX_DECOMPRESS_BYTES,
+    );
 
     // Should succeed without error
-    assert!(result.is_ok(), "decompression should succeed with default cap");
+    assert!(
+        result.is_ok(),
+        "decompression should succeed with default cap"
+    );
 
     let decompressed = result.unwrap();
 
     // Should get the full 10 MB
-    assert_eq!(decompressed.len(), 10 * 1024 * 1024_usize, "should decompress to 10 MB");
+    assert_eq!(
+        decompressed.len(),
+        10 * 1024 * 1024_usize,
+        "should decompress to 10 MB"
+    );
 
     // Counter should reflect the decompressed size
-    assert_eq!(counter, 10 * 1024 * 1024_u64, "counter should match decompressed size");
+    assert_eq!(
+        counter,
+        10 * 1024 * 1024_u64,
+        "counter should match decompressed size"
+    );
 }
 
 /// Test case 2: Lowered cap triggers STREAM_BOMB abort
@@ -95,7 +111,10 @@ fn test_bomb_lowered_cap_triggers_stream_bomb() {
     let result = FlateDecoder.decode(&compressed, None, &mut counter, bomb_cap);
 
     // Should still succeed (but with partial data)
-    assert!(result.is_ok(), "decompression should succeed (with partial data)");
+    assert!(
+        result.is_ok(),
+        "decompression should succeed (with partial data)"
+    );
 
     let decompressed = result.unwrap();
 
@@ -108,7 +127,11 @@ fn test_bomb_lowered_cap_triggers_stream_bomb() {
     );
 
     // We should have gotten exactly the cap (the decoder stops at the limit)
-    assert_eq!(decompressed.len(), bomb_cap as usize, "should be truncated to exactly the cap");
+    assert_eq!(
+        decompressed.len(),
+        bomb_cap as usize,
+        "should be truncated to exactly the cap"
+    );
 
     // Counter should be at the cap
     assert_eq!(counter, bomb_cap, "counter should be at the cap");
@@ -141,8 +164,12 @@ fn test_bomb_fixture_has_high_compression_ratio() {
         ratio
     );
 
-    println!("Bomb fixture: {} bytes compressed -> {} bytes decompressed ({}:1 ratio)",
-        compressed.len(), decompressed.len(), ratio);
+    println!(
+        "Bomb fixture: {} bytes compressed -> {} bytes decompressed ({}:1 ratio)",
+        compressed.len(),
+        decompressed.len(),
+        ratio
+    );
 }
 
 /// Test case 4: Incremental decompression stops at bomb limit
@@ -180,8 +207,11 @@ fn test_bomb_limit_checked_incrementally() {
     let decompressed = result.unwrap();
 
     // With incremental checking, we should get exactly 64 KB
-    assert_eq!(decompressed.len(), tiny_cap as usize,
-        "incremental checking should truncate exactly at the cap");
+    assert_eq!(
+        decompressed.len(),
+        tiny_cap as usize,
+        "incremental checking should truncate exactly at the cap"
+    );
 
     // The counter should also be at the cap
     assert_eq!(counter, tiny_cap);
@@ -225,7 +255,11 @@ fn test_bomb_limit_truncation_behavior() {
     let decompressed = result.unwrap();
 
     // The returned data should be truncated to the cap
-    assert_eq!(decompressed.len(), cap as usize, "should be truncated to cap");
+    assert_eq!(
+        decompressed.len(),
+        cap as usize,
+        "should be truncated to cap"
+    );
 
     // The counter should reflect how much was "decompressed"
     assert_eq!(counter, cap);

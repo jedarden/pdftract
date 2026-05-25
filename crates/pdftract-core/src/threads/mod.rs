@@ -600,6 +600,32 @@ fn decode_pdfdocencoding(bytes: &[u8]) -> Option<String> {
     Some(bytes.iter().map(|&b| b as char).collect())
 }
 
+/// Convert a `ThreadHeader` and `Bead` chain to JSON output format.
+///
+/// This function constructs a `ThreadJson` from the internal thread representation,
+/// combining the thread header metadata with the walked bead chain.
+///
+/// # Arguments
+///
+/// * `header` - The thread header containing metadata from /I
+/// * `beads` - The walked bead chain from `walk_beads`
+///
+/// # Returns
+///
+/// A `ThreadJson` ready for JSON serialization.
+pub fn thread_to_json(header: &ThreadHeader, beads: &[Bead]) -> crate::schema::ThreadJson {
+    crate::schema::ThreadJson {
+        title: header.title.clone(),
+        author: header.author.clone(),
+        subject: header.subject.clone(),
+        keywords: header.keywords.clone(),
+        beads: beads.iter().map(|bead| crate::schema::BeadJson {
+            page_index: bead.page_index,
+            rect: bead.rect,
+        }).collect(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

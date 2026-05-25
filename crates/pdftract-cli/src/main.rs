@@ -473,7 +473,14 @@ fn main() -> Result<()> {
             max_upload_mb,
             audit_log,
         } => {
-            if let Err(e) = cmd_serve(bind, cache_dir, &cache_size, no_cache, max_upload_mb, audit_log) {
+            if let Err(e) = cmd_serve(
+                bind,
+                cache_dir,
+                &cache_size,
+                no_cache,
+                max_upload_mb,
+                audit_log,
+            ) {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }

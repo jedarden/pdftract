@@ -36,7 +36,8 @@
 //! ```
 
 use crate::schema::{
-    BlockJson, ChoiceValueJson, FormFieldJson, FormFieldTypeJson, FormFieldValueJson, SpanJson,
+    BeadJson, BlockJson, ChoiceValueJson, FormFieldJson, FormFieldTypeJson, FormFieldValueJson, SpanJson,
+    ThreadJson,
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -592,6 +593,128 @@ fn escape_pipe(s: &str) -> String {
     s.replace('|', "\\|")
 }
 
+/// Generate a markdown footer section for article threads.
+///
+/// This function creates a formatted markdown section listing all article
+/// threads with their metadata and page ranges. Only emits the section
+/// when threads count > 0.
+///
+/// # Arguments
+///
+/// * `threads` - The threads to include in the footer
+///
+/// # Returns
+///
+/// A markdown string with an article threads section, or an empty string if no threads.
+///
+/// # Example
+///
+/// ```ignore
+/// use pdftract_core::markdown::threads_to_markdown;
+/// use pdftract_core::schema::{ThreadJson, BeadJson};
+///
+/// let threads = vec![
+///     ThreadJson {
+///         title: Some("Main Article".to_string()),
+///         author: Some("John Doe".to_string()),
+///         subject: None,
+///         keywords: None,
+///         beads: vec![
+///             BeadJson { page_index: 0, rect: [100.0, 200.0, 300.0, 220.0] },
+///             BeadJson { page_index: 1, rect: [100.0, 500.0, 300.0, 520.0] },
+///         ],
+///     },
+/// ];
+///
+/// let md = threads_to_markdown(&threads);
+/// assert!(md.contains("## Article Threads"));
+/// assert!(md.contains("1. *Main Article* (John Doe) - pages 0-1 (2 beads)"));
+/// ```
+pub fn threads_to_markdown(threads: &[ThreadJson]) -> String {
+    if threads.is_empty() {
+        return String::new();
+    }
+
+    let mut result = String::from("\n\n## Article Threads\n\n");
+
+    for (i, thread) in threads.iter().enumerate() {
+        // Build the thread title line
+        let title = thread.title.as_deref().unwrap_or("(Untitled)");
+        let author = thread.author.as_deref().unwrap_or("");
+
+        // Collapse contiguous page ranges
+        let page_ranges = collapse_page_ranges(&thread.beads);
+
+        // Format: "1. *Title* (Author) - pages 0-1, 3-5 (3 beads)"
+        result.push_str(&format!(
+            "{}. *{}* ({}) - {} ({} beads)\n",
+            i + 1,
+            title,
+            author,
+            page_ranges,
+            thread.beads.len()
+        ));
+    }
+
+    result
+}
+
+/// Collapse contiguous page indices into ranges.
+///
+/// Given a list of beads with page indices, this function collapses
+/// contiguous sequences into ranges for more compact display.
+///
+/// # Arguments
+///
+/// * `beads` - The beads to collapse into page ranges
+///
+/// # Returns
+///
+/// A string like "pages 0-1, 3-5" representing the page ranges.
+fn collapse_page_ranges(beads: &[BeadJson]) -> String {
+    if beads.is_empty() {
+        return "no pages".to_string();
+    }
+
+    let mut ranges = Vec::new();
+    let mut start = beads[0].page_index;
+    let mut end = beads[0].page_index;
+
+    for bead in beads.iter().skip(1) {
+        // Skip duplicate page indices
+        if bead.page_index == end {
+            continue;
+        }
+
+        if bead.page_index == end + 1 {
+            // Contiguous, extend the range
+            end = bead.page_index;
+        } else {
+            // Gap, emit the current range
+            ranges.push((start, end));
+            start = bead.page_index;
+            end = bead.page_index;
+        }
+    }
+
+    // Emit the last range
+    ranges.push((start, end));
+
+    // Format ranges
+    let parts: Vec<String> = ranges
+        .iter()
+        .map(|&(s, e)| {
+            if s == e {
+                format!("{}", s)
+            } else {
+                format!("{}-{}", s, e)
+            }
+        })
+        .collect();
+
+    format!("pages {}", parts.join(", "))
+}
+
 /// Convert a span to markdown with inline styling based on flags.
 ///
 /// This function implements Phase 6.5 inline span styling, translating
@@ -1009,5 +1132,116 @@ mod span_tests {
             span_to_markdown(&span),
             "<span style=\"font-variant: small-caps\">HELLO\\_WORLD</span>"
         );
+    }
+
+    #[test]
+    fn test_threads_to_markdown_empty() {
+        // Empty threads list returns empty string
+        let threads: Vec<ThreadJson> = vec![];
+        assert_eq!(threads_to_markdown(&threads), "");
+    }
+
+    #[test]
+    fn test_threads_to_markdown_single_thread() {
+        // Single thread with multiple beads
+        let threads = vec![ThreadJson {
+            title: Some("Main Article".to_string()),
+            author: Some("John Doe".to_string()),
+            subject: None,
+            keywords: None,
+            beads: vec![
+                BeadJson { page_index: 0, rect: [100.0, 200.0, 300.0, 220.0] },
+                BeadJson { page_index: 1, rect: [100.0, 500.0, 300.0, 520.0] },
+            ],
+        }];
+
+        let md = threads_to_markdown(&threads);
+        assert!(md.contains("## Article Threads"));
+        assert!(md.contains("1. *Main Article* (John Doe) - pages 0-1 (2 beads)"));
+    }
+
+    #[test]
+    fn test_threads_to_markdown_multiple_threads() {
+        // Multiple threads with various metadata
+        let threads = vec![
+            ThreadJson {
+                title: Some("Introduction".to_string()),
+                author: Some("Jane Smith".to_string()),
+                subject: None,
+                keywords: None,
+                beads: vec![BeadJson { page_index: 0, rect: [50.0, 100.0, 250.0, 120.0] }],
+            },
+            ThreadJson {
+                title: Some("Main Content".to_string()),
+                author: None,
+                subject: Some("Chapter 1".to_string()),
+                keywords: Some("test, example".to_string()),
+                beads: vec![
+                    BeadJson { page_index: 1, rect: [50.0, 400.0, 250.0, 420.0] },
+                    BeadJson { page_index: 2, rect: [50.0, 100.0, 250.0, 120.0] },
+                ],
+            },
+        ];
+
+        let md = threads_to_markdown(&threads);
+        assert!(md.contains("1. *Introduction* (Jane Smith) - pages 0 (1 beads)"));
+        assert!(md.contains("2. *Main Content* () - pages 1-2 (2 beads)"));
+    }
+
+    #[test]
+    fn test_threads_to_markdown_untitled_thread() {
+        // Thread with no title
+        let threads = vec![ThreadJson {
+            title: None,
+            author: None,
+            subject: None,
+            keywords: None,
+            beads: vec![BeadJson { page_index: 5, rect: [100.0, 200.0, 300.0, 220.0] }],
+        }];
+
+        let md = threads_to_markdown(&threads);
+        assert!(md.contains("1. *(Untitled)* () - pages 5 (1 beads)"));
+    }
+
+    #[test]
+    fn test_collapse_page_ranges_single_page() {
+        // Single bead
+        let beads = vec![BeadJson { page_index: 3, rect: [0.0, 0.0, 100.0, 20.0] }];
+        assert_eq!(collapse_page_ranges(&beads), "pages 3");
+    }
+
+    #[test]
+    fn test_collapse_page_ranges_contiguous() {
+        // Contiguous pages
+        let beads = vec![
+            BeadJson { page_index: 0, rect: [0.0, 0.0, 100.0, 20.0] },
+            BeadJson { page_index: 1, rect: [0.0, 0.0, 100.0, 20.0] },
+            BeadJson { page_index: 2, rect: [0.0, 0.0, 100.0, 20.0] },
+        ];
+        assert_eq!(collapse_page_ranges(&beads), "pages 0-2");
+    }
+
+    #[test]
+    fn test_collapse_page_ranges_gaps() {
+        // Pages with gaps
+        let beads = vec![
+            BeadJson { page_index: 0, rect: [0.0, 0.0, 100.0, 20.0] },
+            BeadJson { page_index: 2, rect: [0.0, 0.0, 100.0, 20.0] },
+            BeadJson { page_index: 5, rect: [0.0, 0.0, 100.0, 20.0] },
+        ];
+        assert_eq!(collapse_page_ranges(&beads), "pages 0, 2, 5");
+    }
+
+    #[test]
+    fn test_collapse_page_ranges_mixed() {
+        // Mixed contiguous and gaps
+        let beads = vec![
+            BeadJson { page_index: 0, rect: [0.0, 0.0, 100.0, 20.0] },
+            BeadJson { page_index: 1, rect: [0.0, 0.0, 100.0, 20.0] },
+            BeadJson { page_index: 3, rect: [0.0, 0.0, 100.0, 20.0] },
+            BeadJson { page_index: 4, rect: [0.0, 0.0, 100.0, 20.0] },
+            BeadJson { page_index: 4, rect: [0.0, 0.0, 100.0, 20.0] },
+        ];
+        assert_eq!(collapse_page_ranges(&beads), "pages 0-1, 3-4");
     }
 }

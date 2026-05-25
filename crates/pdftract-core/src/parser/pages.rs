@@ -723,6 +723,45 @@ fn parse_contents_array(obj: Option<&PdfObject>) -> Vec<ObjRef> {
     }
 }
 
+/// Build a map from page ObjRef to 0-based page index.
+///
+/// This function walks the page tree and creates a HashMap that maps
+/// each page's object reference to its 0-based index in document order.
+/// This is useful for features like thread bead chain walking that need
+/// to resolve page references to page indices.
+///
+/// # Arguments
+///
+/// * `catalog` - The document catalog containing the /Pages reference
+/// * `resolver` - The xref resolver for resolving indirect references
+///
+/// # Returns
+///
+/// A HashMap<ObjRef, usize> mapping page references to their 0-based indices.
+///
+/// # Behavior
+///
+/// - Empty /Pages tree: returns empty HashMap
+/// - Pages are indexed in document order (left-to-right depth-first traversal)
+/// - Missing or unresolvable pages are skipped
+pub fn build_page_ref_to_index(
+    catalog: &crate::parser::catalog::Catalog,
+    resolver: &XrefResolver,
+) -> std::collections::HashMap<ObjRef, usize> {
+    use std::collections::HashMap;
+
+    let mut page_ref_to_index = HashMap::new();
+
+    // Flatten the page tree to get all pages in order
+    if let Ok(pages) = flatten_page_tree(resolver, catalog.pages_ref) {
+        for (index, page) in pages.iter().enumerate() {
+            page_ref_to_index.insert(page.obj_ref, index);
+        }
+    }
+
+    page_ref_to_index
+}
+
 #[cfg(test)]
 fn make_pages_dict(kids: Vec<PdfObject>, count: i64, media_box: Option<[f64; 4]>) -> PdfObject {
     let mut dict = PdfDict::new();

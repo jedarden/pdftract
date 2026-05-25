@@ -72,7 +72,8 @@ pub use options::{ExtractionOptions, ReceiptsMode};
 pub use page_class::{page_type_string, PageClass, PageClassification};
 pub use parser::pages::{count_pages_tree, LazyPageIter, PageDict, DEFAULT_MEDIABOX};
 pub use schema::{
-    AttachmentJson, BlockJson, CellJson, ExtractionQuality, RowJson, SpanJson, SpanRef, TableJson,
+    AttachmentJson, BeadJson, BlockJson, CellJson, ExtractionQuality, RowJson, SpanJson, SpanRef, TableJson,
+    ThreadJson,
 };
 pub use table::{GridCandidate, PageContext as TablePageContext, TableDetector};
 pub use text::{serialize_page_text, TextOptions};
@@ -85,7 +86,9 @@ pub use hybrid::{
     merge_vector_and_ocr_spans, CellCrop, Span, SpanSource,
 };
 #[cfg(feature = "ocr")]
-pub use ocr::preprocessing::{histogram_stretch, histogram_stretch_if_needed, otsu_binarize, PreprocError};
+pub use ocr::preprocessing::{
+    histogram_stretch, histogram_stretch_if_needed, otsu_binarize, PreprocError,
+};
 #[cfg(feature = "ocr")]
 pub use ocr::{
     borrow_or_init, calculate_wer, detect_available_languages, init_count, parse_hocr,

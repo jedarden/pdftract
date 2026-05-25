@@ -796,13 +796,77 @@ fn default_conformance() -> String {
     "none".to_string()
 }
 
-/// Placeholder for Phase 7 article threads.
+/// A single bead in an article thread chain.
 ///
-/// This type is reserved for future use and currently has no fields.
+/// Represents one bead's position on a page, extracted during bead chain walking.
+/// Per PDF 1.7 Section 12.4.3, each bead contains a reference to its page and
+/// a bounding rectangle defining the article region on that page.
+///
+/// # Fields
+///
+/// * `page_index` - 0-based index of the page containing this bead
+/// * `rect` - Bounding rectangle of the bead region in PDF user-space coordinates [x0, y0, x1, y1]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct BeadJson {
+    /// 0-based page index where this bead is located.
+    pub page_index: usize,
+
+    /// Bounding rectangle in PDF user-space coordinates [x0, y0, x1, y1].
+    ///
+    /// Per PDF spec, the origin is at the bottom-left corner of the page.
+    /// This rect is NOT flipped to image-space coordinates.
+    pub rect: [f32; 4],
+}
+
+/// JSON representation of an article thread.
+///
+/// Represents a single article thread from the PDF's /Threads array,
+/// including metadata from the thread info dict (/I) and the complete
+/// bead chain walked from the first bead.
+///
+/// Per the plan (Phase 7.7), threads are extracted and emitted at the
+/// document level in the `/threads` array. The bead chain is walked by
+/// following `/N` (next bead) links from the first bead until termination.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ThreadJson {
-    // Reserved for Phase 7.1
+    /// Thread title from /I/Title.
+    ///
+    /// - `Some("")` if /I/Title is present but empty string
+    /// - `None` if /I is missing or /Title is absent
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+
+    /// Thread author from /I/Author.
+    ///
+    /// - `Some("")` if /I/Author is present but empty string
+    /// - `None` if /I is missing or /Author is absent
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+
+    /// Thread subject from /I/Subject.
+    ///
+    /// - `Some("")` if /I/Subject is present but empty string
+    /// - `None` if /I is missing or /Subject is absent
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
+
+    /// Thread keywords from /I/Keywords.
+    ///
+    /// Per PDF spec, this is a comma-separated convention (not an array).
+    /// - `Some("")` if /I/Keywords is present but empty string
+    /// - `None` if /I is missing or /Keywords is absent
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub keywords: Option<String>,
+
+    /// Beads in this thread chain, in traversal order.
+    ///
+    /// Each bead represents a region on a page that is part of this article.
+    /// The beads are ordered by following `/N` (next bead) links from the
+    /// first bead through the chain until termination.
+    #[serde(default)]
+    pub beads: Vec<BeadJson>,
 }
 
 /// JSON representation of an embedded file attachment.

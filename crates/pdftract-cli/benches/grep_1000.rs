@@ -124,10 +124,7 @@ impl BenchmarkResult {
         // 50 MB/s gate
         let throughput = self.calculate_throughput();
         if throughput < 50.0 {
-            return Err(format!(
-                "Throughput {} MB/s below 50 MB/s gate",
-                throughput
-            ));
+            return Err(format!("Throughput {} MB/s below 50 MB/s gate", throughput));
         }
 
         // TODO: Add pdfgrep and pdftotext+ripgrep comparisons
@@ -183,7 +180,12 @@ fn count_corpus_files() -> usize {
         .map(|entries| {
             entries
                 .filter_map(|e| e.ok())
-                .filter(|e| e.path().extension().map(|ext| ext == "pdf").unwrap_or(false))
+                .filter(|e| {
+                    e.path()
+                        .extension()
+                        .map(|ext| ext == "pdf")
+                        .unwrap_or(false)
+                })
                 .count()
         })
         .unwrap_or(0)
@@ -224,7 +226,11 @@ fn run_benchmark() -> Result<BenchmarkResult, String> {
         });
     }
 
-    eprintln!("Benchmark corpus: {} files, {} MB", files_total, bytes_total / 1024 / 1024);
+    eprintln!(
+        "Benchmark corpus: {} files, {} MB",
+        files_total,
+        bytes_total / 1024 / 1024
+    );
 
     // TODO: Run actual grep search
     // For now, this is a placeholder that simulates the benchmark structure

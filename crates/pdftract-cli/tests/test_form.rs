@@ -35,13 +35,7 @@ fn profile_path() -> PathBuf {
 }
 
 /// Form fixture names
-const FORM_FIXTURES: &[&str] = &[
-    "irs_1040",
-    "w2",
-    "i9",
-    "expense_report",
-    "intake_form",
-];
+const FORM_FIXTURES: &[&str] = &["irs_1040", "w2", "i9", "expense_report", "intake_form"];
 
 /// Expected output file suffix
 const EXPECTED_SUFFIX: &str = "-expected.json";
@@ -71,8 +65,14 @@ fn test_form_profile_exists() {
         content.contains("priority:"),
         "Profile missing 'priority' key"
     );
-    assert!(content.contains("threshold:"), "Profile missing 'threshold' key");
-    assert!(content.contains("predicates:"), "Profile missing 'predicates' key");
+    assert!(
+        content.contains("threshold:"),
+        "Profile missing 'threshold' key"
+    );
+    assert!(
+        content.contains("predicates:"),
+        "Profile missing 'predicates' key"
+    );
 
     // Verify form profile has type: form
     assert!(content.contains("type:"), "Profile missing 'type' key");
@@ -91,10 +91,7 @@ fn test_form_fixture_structure() {
 
     // Verify README.md exists
     let readme_path = fixture_dir.join("README.md");
-    assert!(
-        readme_path.exists(),
-        "Missing README.md in form fixtures"
-    );
+    assert!(readme_path.exists(), "Missing README.md in form fixtures");
 
     // Verify PROVENANCE.md exists
     let provenance_path = fixture_dir.join("PROVENANCE.md");
@@ -165,10 +162,12 @@ fn test_form_fixture_structure() {
         );
 
         // Verify document_type_confidence is present and valid
-        let confidence = json.pointer("/metadata/document_type_confidence").expect(&format!(
-            "Missing /metadata/document_type_confidence in {}",
-            expected_path.display()
-        ));
+        let confidence = json
+            .pointer("/metadata/document_type_confidence")
+            .expect(&format!(
+                "Missing /metadata/document_type_confidence in {}",
+                expected_path.display()
+            ));
 
         assert!(
             confidence.as_f64().is_some(),
@@ -240,7 +239,10 @@ fn test_form_profile_schema() {
 
     let predicate_kinds: Vec<String> = predicates
         .iter()
-        .filter_map(|p| p.get("kind").and_then(|k| k.as_str().map(|s| s.to_string())))
+        .filter_map(|p| {
+            p.get("kind")
+                .and_then(|k| k.as_str().map(|s| s.to_string()))
+        })
         .collect();
 
     assert!(
@@ -272,8 +274,8 @@ fn test_form_profile_is_degenerate() {
     // but the extraction profile (classification/form.yaml) should have
     // profile_fields: {} (empty object)
 
-    let extraction_profile_path = workspace_root()
-        .join("profiles/builtin/classification/form.yaml");
+    let extraction_profile_path =
+        workspace_root().join("profiles/builtin/classification/form.yaml");
 
     assert!(
         extraction_profile_path.exists(),
@@ -281,8 +283,8 @@ fn test_form_profile_is_degenerate() {
         extraction_profile_path.display()
     );
 
-    let extraction_content = fs::read_to_string(extraction_profile_path)
-        .expect("Failed to read extraction profile");
+    let extraction_content =
+        fs::read_to_string(extraction_profile_path).expect("Failed to read extraction profile");
 
     // Parse YAML to verify profile_fields is empty
     let yaml_value: serde_yaml::Value =

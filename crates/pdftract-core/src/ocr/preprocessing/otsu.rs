@@ -123,10 +123,8 @@ mod tests {
         // Verify foreground/background separation:
         // - Left half (dark) should become 0 (black)
         // - Right half (light) should become 255 (white)
-        let left_half_is_black = (0..100)
-            .all(|x| binary.get_pixel(x, 100)[0] == 0);
-        let right_half_is_white = (100..200)
-            .all(|x| binary.get_pixel(x, 100)[0] == 255);
+        let left_half_is_black = (0..100).all(|x| binary.get_pixel(x, 100)[0] == 0);
+        let right_half_is_white = (100..200).all(|x| binary.get_pixel(x, 100)[0] == 255);
 
         assert!(
             left_half_is_black,
@@ -180,7 +178,11 @@ mod tests {
         // Should still produce binary output (all 0 or all 255)
         for pixel in binary_dark.pixels() {
             let val = pixel[0];
-            assert!(val == 0 || val == 255, "Uniform dark image should binarize to 0 or 255, got {}", val);
+            assert!(
+                val == 0 || val == 255,
+                "Uniform dark image should binarize to 0 or 255, got {}",
+                val
+            );
         }
 
         // Test 2: Uniform light image
@@ -191,7 +193,11 @@ mod tests {
         let binary_light = otsu_binarize(&light_img);
         for pixel in binary_light.pixels() {
             let val = pixel[0];
-            assert!(val == 0 || val == 255, "Uniform light image should binarize to 0 or 255, got {}", val);
+            assert!(
+                val == 0 || val == 255,
+                "Uniform light image should binarize to 0 or 255, got {}",
+                val
+            );
         }
 
         // Test 3: Very narrow histogram (values in [100, 101])
@@ -209,7 +215,11 @@ mod tests {
         // Should still produce binary output without panic
         for pixel in binary_narrow.pixels() {
             let val = pixel[0];
-            assert!(val == 0 || val == 255, "Narrow histogram image should binarize to 0 or 255, got {}", val);
+            assert!(
+                val == 0 || val == 255,
+                "Narrow histogram image should binarize to 0 or 255, got {}",
+                val
+            );
         }
     }
 
@@ -254,7 +264,9 @@ mod tests {
                 assert!(
                     pixel == 0 || pixel == 255,
                     "Tri-modal image should still produce binary output, got {} at ({}, {})",
-                    pixel, x, y
+                    pixel,
+                    x,
+                    y
                 );
             }
         }
@@ -278,7 +290,7 @@ mod tests {
         for line in 0..10 {
             let y = 30 + line * 25;
             for x in 50..350 {
-                img.put_pixel(x, y, Luma([40]));   // Dark text
+                img.put_pixel(x, y, Luma([40])); // Dark text
                 img.put_pixel(x, y + 1, Luma([40]));
                 img.put_pixel(x, y + 2, Luma([40]));
             }
@@ -293,7 +305,9 @@ mod tests {
                 assert!(
                     pixel == 0 || pixel == 255,
                     "Text-like image should produce binary output, got {} at ({}, {})",
-                    pixel, x, y
+                    pixel,
+                    x,
+                    y
                 );
             }
         }
@@ -302,7 +316,11 @@ mod tests {
         // Check a text line pixel
         assert_eq!(binary.get_pixel(100, 31)[0], 0, "Text line should be black");
         // Check background pixel
-        assert_eq!(binary.get_pixel(100, 20)[0], 255, "Background should be white");
+        assert_eq!(
+            binary.get_pixel(100, 20)[0],
+            255,
+            "Background should be white"
+        );
     }
 
     /// Test: Otsu on small image (edge case for dimensions)

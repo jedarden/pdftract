@@ -37,15 +37,19 @@ use pdftract_core::layout::columns::Column;
 /// - `data-x0`: the column's left x-coordinate
 /// - `data-x1`: the column's right x-coordinate
 pub fn render_columns(columns: &[Column], page_height: f32) -> Vec<String> {
-    columns.iter().enumerate().flat_map(|(idx, col)| {
-        let left_color = boundary_color(idx, true);
-        let right_color = boundary_color(idx, false);
+    columns
+        .iter()
+        .enumerate()
+        .flat_map(|(idx, col)| {
+            let left_color = boundary_color(idx, true);
+            let right_color = boundary_color(idx, false);
 
-        vec![
-            render_left_boundary(col, page_height, left_color),
-            render_right_boundary(col, page_height, right_color),
-        ]
-    }).collect()
+            vec![
+                render_left_boundary(col, page_height, left_color),
+                render_right_boundary(col, page_height, right_color),
+            ]
+        })
+        .collect()
 }
 
 /// Render the left boundary (x0) of a column.
@@ -83,7 +87,11 @@ fn boundary_color(column_index: usize, is_left: bool) -> &'static str {
     ];
 
     let (light, dark) = PALETTE[column_index % PALETTE.len()];
-    if is_left { light } else { dark }
+    if is_left {
+        light
+    } else {
+        dark
+    }
 }
 
 #[cfg(test)]
@@ -153,19 +161,30 @@ mod tests {
         let result = render_columns(&columns, 792.0);
 
         // Check that colors cycle correctly
-        let left_colors: Vec<&str> = result.iter()
+        let left_colors: Vec<&str> = result
+            .iter()
             .step_by(2)
             .filter(|s| s.contains("column-left"))
             .map(|s| {
-                if s.contains("#06b6d4") { "#06b6d4" }
-                else if s.contains("#d946ef") { "#d946ef" }
-                else if s.contains("#facc15") { "#facc15" }
-                else if s.contains("#22c55e") { "#22c55e" }
-                else if s.contains("#f97316") { "#f97316" }
-                else if s.contains("#3b82f6") { "#3b82f6" }
-                else if s.contains("#a855f7") { "#a855f7" }
-                else if s.contains("#f43f5e") { "#f43f5e" }
-                else { "unknown" }
+                if s.contains("#06b6d4") {
+                    "#06b6d4"
+                } else if s.contains("#d946ef") {
+                    "#d946ef"
+                } else if s.contains("#facc15") {
+                    "#facc15"
+                } else if s.contains("#22c55e") {
+                    "#22c55e"
+                } else if s.contains("#f97316") {
+                    "#f97316"
+                } else if s.contains("#3b82f6") {
+                    "#3b82f6"
+                } else if s.contains("#a855f7") {
+                    "#a855f7"
+                } else if s.contains("#f43f5e") {
+                    "#f43f5e"
+                } else {
+                    "unknown"
+                }
             })
             .collect();
 

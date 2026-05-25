@@ -43,6 +43,7 @@
 //! - `EXTRACTION_ERROR`: PDF parsing or extraction failure
 //! - `INTERNAL_PANIC`: spawn_blocking task panicked (indicates a bug)
 
+use crate::middleware::{audit_middleware, AuditState};
 use anyhow::{Context, Result};
 use axum::{
     body::Body,
@@ -57,7 +58,6 @@ use pdftract_core::audit::AuditLogWriter;
 use pdftract_core::cache;
 use pdftract_core::extract::{extract_pdf, extract_pdf_ndjson, result_to_json};
 use pdftract_core::options::{ExtractionOptions, ReceiptsMode};
-use crate::middleware::{AuditState, audit_middleware};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -174,15 +174,20 @@ pub async fn run(
 
     // Create audit log writer if specified
     let audit_writer = if let Some(ref path) = audit_log {
-        Some(AuditLogWriter::open(path).context(format!(
-            "Failed to open audit log: {}",
-            path.display()
-        ))?)
+        Some(
+            AuditLogWriter::open(path)
+                .context(format!("Failed to open audit log: {}", path.display()))?,
+        )
     } else {
         None
     };
 
-    let state = ServeState::new(cache_dir.clone(), cache_size_bytes, cache_disabled, audit_writer);
+    let state = ServeState::new(
+        cache_dir.clone(),
+        cache_size_bytes,
+        cache_disabled,
+        audit_writer,
+    );
 
     let max_body_bytes = max_upload_mb * 1024 * 1024;
 

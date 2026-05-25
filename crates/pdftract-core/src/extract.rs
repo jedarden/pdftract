@@ -30,7 +30,7 @@ use crate::parser::struct_tree::{check_coverage_for_pages, parse_struct_tree};
 use crate::receipts::Receipt;
 use crate::schema::{
     AnnotationJson, AttachmentJson, BlockJson, ChoiceValueJson, FormFieldJson, FormFieldTypeJson,
-    FormFieldValueJson, LinkJson, SignatureJson, SpanJson, TableJson,
+    FormFieldValueJson, LinkJson, SignatureJson, SpanJson, TableJson, ThreadJson,
 };
 use crate::semaphore::{Semaphore, SemaphoreExt};
 use crate::signature::{discover, extract_signatures};
@@ -152,6 +152,13 @@ pub struct ExtractionResult {
     /// 50 MB are truncated (metadata only, `data: null`, `truncated: true`).
     /// Empty when the PDF has no embedded files.
     pub attachments: Vec<AttachmentJson>,
+    /// Article thread chains extracted from the document.
+    ///
+    /// This array contains all article threads from the PDF's `/Threads` array.
+    /// Each thread includes metadata from the thread info dict (/I) and the
+    /// complete bead chain walked from the first bead. Empty when the PDF has
+    /// no article threads.
+    pub threads: Vec<ThreadJson>,
 }
 
 /// Result for a single page.
@@ -622,6 +629,34 @@ pub fn extract_pdf(
         .map(|(name, value)| convert_form_field_to_json(name, value, &resolver_arc, &catalog))
         .collect();
 
+    // Phase 7.7: Extract article thread chains
+    // Discover thread headers from /Threads array and walk bead chains
+    use crate::parser::pages::build_page_ref_to_index;
+    use crate::threads::{discover as discover_threads, thread_to_json, walk_beads};
+
+    // Build page ref to index map for bead chain walking
+    let page_ref_to_index = build_page_ref_to_index(&catalog, &resolver_arc);
+
+    // Discover thread headers from /Threads array
+    let thread_headers = match discover_threads(&catalog, &resolver_arc) {
+        Ok(headers) => headers,
+        Err(_) => Vec::new(), // Return empty on error
+    };
+
+    // Walk bead chains for each thread and convert to JSON
+    let mut threads_json = Vec::new();
+    for header in &thread_headers {
+        match walk_beads(header, &resolver_arc, &page_ref_to_index) {
+            Ok(beads) => {
+                threads_json.push(thread_to_json(header, &beads));
+            }
+            Err(_) => {
+                // Skip threads with malformed bead chains but continue processing others
+                continue;
+            }
+        }
+    }
+
     Ok(ExtractionResult {
         fingerprint,
         pages: extracted_pages,
@@ -640,6 +675,7 @@ pub fn extract_pdf(
         form_fields,
         links: links_json,
         attachments,
+        threads: threads_json,
     })
 }
 

@@ -20,7 +20,8 @@ use extract_stream::{extract_stream_fn, StreamIterator};
 
 // Re-export core types and functions
 use pdftract_core::{
-    extract_pdf, extract_pdf_streaming, AttachmentJson, ExtractionOptions, PageResult, TableJson,
+    extract_pdf, extract_pdf_streaming, AttachmentJson, BeadJson, ExtractionOptions, PageResult,
+    TableJson, ThreadJson,
 };
 
 // ============================================================================
@@ -194,39 +195,6 @@ fn kwargs_to_options(kwargs: Option<&PyDict>) -> PyResult<ExtractionOptions> {
 }
 
 // ============================================================================
-// PyO3 module definition
-// ============================================================================
-
-#[pymodule]
-fn pdftract(_py: Python, m: &PyModule) -> PyResult<()> {
-    // Add exception classes
-    m.add_class::<PyPdftractError>()?;
-    m.add_class::<PyCorruptPdfError>()?;
-    m.add_class::<PyEncryptionError>()?;
-    m.add_class::<PySourceUnreachableError>()?;
-    m.add_class::<PyRemoteFetchInterruptedError>()?;
-    m.add_class::<PyTlsError>()?;
-    m.add_class::<PyReceiptVerifyError>()?;
-    m.add_class::<PyUnsupportedOperationError>()?;
-
-    // Add extract_stream function
-    m.add_function(wrap_pyfunction!(extract_stream_fn, m)?)?;
-    m.add_class::<StreamIterator>()?;
-
-    // Add main extraction function
-    m.add_function(wrap_pyfunction!(extract, m)?)?;
-    m.add_function(wrap_pyfunction!(extract_text, m)?)?;
-    m.add_function(wrap_pyfunction!(extract_markdown, m)?)?;
-    m.add_function(wrap_pyfunction!(search, m)?)?;
-    m.add_function(wrap_pyfunction!(get_metadata, m)?)?;
-    m.add_function(wrap_pyfunction!(hash, m)?)?;
-    m.add_function(wrap_pyfunction!(classify, m)?)?;
-    m.add_function(wrap_pyfunction!(verify_receipt, m)?)?;
-
-    Ok(())
-}
-
-// ============================================================================
 // Contract method: extract
 // ============================================================================
 
@@ -234,7 +202,8 @@ fn pdftract(_py: Python, m: &PyModule) -> PyResult<()> {
 ///
 /// Returns a Document object containing pages with spans, blocks, and tables.
 #[pyfunction]
-fn extract<'py>(py: Python<'py>, path: &str, kwargs: Option<&PyDict>) -> PyResultAny<'py> {
+#[pyo3(name = "extract")]
+fn extract_py<'py>(py: Python<'py>, path: &str, kwargs: Option<&PyDict>) -> PyResultAny<'py> {
     let opts = kwargs_to_options(kwargs)?;
     let pdf_path = Path::new(path);
 
@@ -270,6 +239,47 @@ fn extract<'py>(py: Python<'py>, path: &str, kwargs: Option<&PyDict>) -> PyResul
         .collect();
     dict.set_item("attachments", attachments?)?;
 
+    // Add threads (as Python list of dicts)
+    let threads: PyResult<Vec<Py<PyAny>>> = result
+        .threads
+        .into_iter()
+        .map(|thread| thread_to_py(py, thread))
+        .collect();
+    dict.set_item("threads", threads?)?;
+
+    Ok(dict.clone().into())
+}
+
+/// Convert a Bead to a Python dict with two keys (page_index, rect).
+///
+/// Per the bead spec, beads are simple 2-key dicts for compactness.
+fn bead_to_py<'py>(py: Python<'py>, bead: BeadJson) -> PyResultAny<'py> {
+    let dict = PyDict::new(py);
+    dict.set_item("page_index", bead.page_index)?;
+    dict.set_item("rect", bead.rect)?;
+    Ok(dict.clone().into())
+}
+
+/// Convert a Thread to a Python dict with title, author, subject, keywords, and beads.
+///
+/// This converts the full ThreadJson structure to a Python dict, including
+/// the list of beads (each bead is a 2-key dict via bead_to_py).
+fn thread_to_py<'py>(py: Python<'py>, thread: ThreadJson) -> PyResultAny<'py> {
+    let dict = PyDict::new(py);
+
+    dict.set_item("title", thread.title)?;
+    dict.set_item("author", thread.author)?;
+    dict.set_item("subject", thread.subject)?;
+    dict.set_item("keywords", thread.keywords)?;
+
+    // Convert beads to Python list of 2-key dicts
+    let beads: PyResult<Vec<Py<PyAny>>> = thread
+        .beads
+        .into_iter()
+        .map(|bead| bead_to_py(py, bead))
+        .collect();
+    dict.set_item("beads", beads?)?;
+
     Ok(dict.clone().into())
 }
 
@@ -279,7 +289,7 @@ fn extract<'py>(py: Python<'py>, path: &str, kwargs: Option<&PyDict>) -> PyResul
 
 #[pyfunction]
 fn extract_text(py: Python, path: &str, kwargs: Option<&PyDict>) -> PyResult<String> {
-    let result = extract(py, path, kwargs)?;
+    let result = extract_py(py, path, kwargs)?;
     let dict = result.downcast::<PyDict>(py)?;
     let pages = dict
         .get_item("pages")?
@@ -347,7 +357,7 @@ fn search<'py>(
 
 #[pyfunction]
 fn get_metadata<'py>(py: Python<'py>, path: &str, kwargs: Option<&PyDict>) -> PyResultAny<'py> {
-    let result = extract(py, path, kwargs)?;
+    let result = extract_py(py, path, kwargs)?;
     let dict = result.downcast::<PyDict>(py)?;
     let metadata = dict.get_item("metadata")?.unwrap();
     Ok(metadata.clone().into())
@@ -530,4 +540,37 @@ fn attachment_to_py<'py>(py: Python<'py>, attachment: AttachmentJson) -> PyResul
     }
 
     Ok(dict.clone().into())
+}
+
+// ============================================================================
+// PyO3 module definition
+// ============================================================================
+
+#[pymodule]
+fn pdftract(_py: Python, m: &PyModule) -> PyResult<()> {
+    // Add exception classes
+    m.add_class::<PyPdftractError>()?;
+    m.add_class::<PyCorruptPdfError>()?;
+    m.add_class::<PyEncryptionError>()?;
+    m.add_class::<PySourceUnreachableError>()?;
+    m.add_class::<PyRemoteFetchInterruptedError>()?;
+    m.add_class::<PyTlsError>()?;
+    m.add_class::<PyReceiptVerifyError>()?;
+    m.add_class::<PyUnsupportedOperationError>()?;
+
+    // Add extract_stream function
+    m.add_function(wrap_pyfunction!(extract_stream_fn, m)?)?;
+    m.add_class::<StreamIterator>()?;
+
+    // Add main extraction function
+    m.add_function(wrap_pyfunction!(extract_py, m)?)?;
+    m.add_function(wrap_pyfunction!(extract_text, m)?)?;
+    m.add_function(wrap_pyfunction!(extract_markdown, m)?)?;
+    m.add_function(wrap_pyfunction!(search, m)?)?;
+    m.add_function(wrap_pyfunction!(get_metadata, m)?)?;
+    m.add_function(wrap_pyfunction!(hash, m)?)?;
+    m.add_function(wrap_pyfunction!(classify, m)?)?;
+    m.add_function(wrap_pyfunction!(verify_receipt, m)?)?;
+
+    Ok(())
 }
