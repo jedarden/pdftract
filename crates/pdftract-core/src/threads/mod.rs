@@ -360,14 +360,14 @@ pub fn walk_beads(
             (_, Some(PdfObject::Ref(r))) => Some(*r),
             (Some(other), _) => {
                 diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                    DiagCode::StructUnexpectedEof,
+                    DiagCode::StructMissingKey,
                     format!("Bead {:?} has /R but it's not a reference", current_ref,),
                 ));
                 None
             }
             (_, Some(_)) => {
                 diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                    DiagCode::StructUnexpectedEof,
+                    DiagCode::StructMissingKey,
                     format!("Bead {:?} has /P but it's not a reference", current_ref,),
                 ));
                 None
@@ -388,27 +388,33 @@ pub fn walk_beads(
             Some(ref_) => match page_ref_to_index.get(&ref_) {
                 Some(idx) => *idx,
                 None => {
-                    diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                        DiagCode::StructMissingKey,
-                        format!(
-                            "Bead {:?} page reference {:?} not found in document page tree",
-                            current_ref, ref_
-                        ),
-                    ));
                     // Skip this bead and continue
-                    current_ref = match get_next_bead_ref(bead_dict, current_ref) {
+                    let next_ref = match get_next_bead_ref(bead_dict, current_ref) {
                         Ok(next_ref) => next_ref,
                         Err(_) => break,
                     };
+                    if !check_and_handle_termination(
+                        next_ref,
+                        first_ref,
+                        &visited,
+                        &mut diagnostics,
+                    ) {
+                        break;
+                    }
+                    current_ref = next_ref;
                     continue;
                 }
             },
             None => {
                 // Skip this bead and continue
-                current_ref = match get_next_bead_ref(bead_dict, current_ref) {
+                let next_ref = match get_next_bead_ref(bead_dict, current_ref) {
                     Ok(next_ref) => next_ref,
                     Err(_) => break,
                 };
+                if !check_and_handle_termination(next_ref, first_ref, &visited, &mut diagnostics) {
+                    break;
+                }
+                current_ref = next_ref;
                 continue;
             }
         };
@@ -419,10 +425,14 @@ pub fn walk_beads(
             Some(r) => r,
             None => {
                 // Skip this bead and continue
-                current_ref = match get_next_bead_ref(bead_dict, current_ref) {
+                let next_ref = match get_next_bead_ref(bead_dict, current_ref) {
                     Ok(next_ref) => next_ref,
                     Err(_) => break,
                 };
+                if !check_and_handle_termination(next_ref, first_ref, &visited, &mut diagnostics) {
+                    break;
+                }
+                current_ref = next_ref;
                 continue;
             }
         };
@@ -435,22 +445,8 @@ pub fn walk_beads(
             Err(_) => break,
         };
 
-        // Check for termination (next points back to first)
-        if next_ref == first_ref {
-            // Legitimate circular end
+        if !check_and_handle_termination(next_ref, first_ref, &visited, &mut diagnostics) {
             break;
-        }
-
-        // Check for malformed cycle
-        if visited.contains(&next_ref) {
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                DiagCode::StructUnexpectedEof,
-                format!(
-                    "Malformed bead chain: bead {:?} revisited (cycle doesn't return to first bead {:?})",
-                    next_ref, first_ref
-                ),
-            ));
-            return Err(diagnostics);
         }
 
         visited.insert(next_ref);
@@ -474,6 +470,37 @@ pub fn walk_beads(
             Ok(beads)
         }
     }
+}
+
+/// Check for termination or malformed cycle after getting the next bead reference.
+///
+/// Returns true if the walk should continue, false if it should terminate (either
+/// legitimately or due to a malformed cycle).
+fn check_and_handle_termination(
+    next_ref: ObjRef,
+    first_ref: ObjRef,
+    visited: &std::collections::HashSet<ObjRef>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> bool {
+    // Check for termination (next points back to first)
+    if next_ref == first_ref {
+        // Legitimate circular end
+        return false;
+    }
+
+    // Check for malformed cycle
+    if visited.contains(&next_ref) {
+        diagnostics.push(Diagnostic::with_dynamic_no_offset(
+            DiagCode::StructUnexpectedEof,
+            format!(
+                "Malformed bead chain: bead {:?} revisited (cycle doesn't return to first bead {:?})",
+                next_ref, first_ref
+            ),
+        ));
+        return false;
+    }
+
+    true
 }
 
 /// Extract the next bead reference from a bead dictionary.
@@ -665,10 +692,11 @@ mod tests {
         let mut threads_array = Vec::new();
         threads_array.push(PdfObject::Ref(thread_ref));
 
-        let mut threads_dict = indexmap::IndexMap::new();
-        threads_dict.insert("Threads".into(), PdfObject::Array(Box::new(threads_array)));
-
-        resolver.cache_object(ObjRef::new(10, 0), PdfObject::Dict(Box::new(threads_dict)));
+        // catalog.threads_ref should point directly to the array, not a dict
+        resolver.cache_object(
+            ObjRef::new(10, 0),
+            PdfObject::Array(Box::new(threads_array)),
+        );
         resolver.cache_object(thread_ref, PdfObject::Dict(Box::new(thread_dict)));
 
         let result = discover(&catalog, &resolver);
@@ -740,10 +768,11 @@ mod tests {
         threads_array.push(PdfObject::Ref(thread2_ref));
         threads_array.push(PdfObject::Ref(thread3_ref));
 
-        let mut threads_dict = indexmap::IndexMap::new();
-        threads_dict.insert("Threads".into(), PdfObject::Array(Box::new(threads_array)));
-
-        resolver.cache_object(ObjRef::new(10, 0), PdfObject::Dict(Box::new(threads_dict)));
+        // catalog.threads_ref should point directly to the array, not a dict
+        resolver.cache_object(
+            ObjRef::new(10, 0),
+            PdfObject::Array(Box::new(threads_array)),
+        );
         resolver.cache_object(thread1_ref, PdfObject::Dict(Box::new(thread1_dict)));
         resolver.cache_object(thread2_ref, PdfObject::Dict(Box::new(thread2_dict)));
         resolver.cache_object(thread3_ref, PdfObject::Dict(Box::new(thread3_dict)));
@@ -802,10 +831,11 @@ mod tests {
         threads_array.push(PdfObject::Ref(thread_ref));
         threads_array.push(PdfObject::Ref(thread2_ref));
 
-        let mut threads_dict = indexmap::IndexMap::new();
-        threads_dict.insert("Threads".into(), PdfObject::Array(Box::new(threads_array)));
-
-        resolver.cache_object(ObjRef::new(10, 0), PdfObject::Dict(Box::new(threads_dict)));
+        // catalog.threads_ref should point directly to the array, not a dict
+        resolver.cache_object(
+            ObjRef::new(10, 0),
+            PdfObject::Array(Box::new(threads_array)),
+        );
         resolver.cache_object(thread_ref, PdfObject::Dict(Box::new(thread_dict)));
         resolver.cache_object(thread2_ref, PdfObject::Dict(Box::new(thread2_dict)));
 
@@ -835,9 +865,9 @@ mod tests {
         // UTF-16BE with BOM: "日本語" (Japanese)
         let utf16_bytes = &[
             0xFE, 0xFF, // BOM
-            0x65, 0xE5, // 日
-            0x67, 0x9C, // 本
-            0x9E, 0x8A, // 語
+            0x65, 0xE5, // 日 (U+65E5)
+            0x67, 0x2C, // 本 (U+672C)
+            0x8A, 0x9E, // 語 (U+8A9E)
         ];
         let mut info = indexmap::IndexMap::new();
         info.insert(
@@ -849,10 +879,11 @@ mod tests {
         let mut threads_array = Vec::new();
         threads_array.push(PdfObject::Ref(thread_ref));
 
-        let mut threads_dict = indexmap::IndexMap::new();
-        threads_dict.insert("Threads".into(), PdfObject::Array(Box::new(threads_array)));
-
-        resolver.cache_object(ObjRef::new(10, 0), PdfObject::Dict(Box::new(threads_dict)));
+        // catalog.threads_ref should point directly to the array, not a dict
+        resolver.cache_object(
+            ObjRef::new(10, 0),
+            PdfObject::Array(Box::new(threads_array)),
+        );
         resolver.cache_object(thread_ref, PdfObject::Dict(Box::new(thread_dict)));
 
         let result = discover(&catalog, &resolver);
@@ -915,10 +946,11 @@ mod tests {
         let mut threads_array = Vec::new();
         threads_array.push(PdfObject::Ref(thread_ref));
 
-        let mut threads_dict = indexmap::IndexMap::new();
-        threads_dict.insert("Threads".into(), PdfObject::Array(Box::new(threads_array)));
-
-        resolver.cache_object(ObjRef::new(10, 0), PdfObject::Dict(Box::new(threads_dict)));
+        // catalog.threads_ref should point directly to the array, not a dict
+        resolver.cache_object(
+            ObjRef::new(10, 0),
+            PdfObject::Array(Box::new(threads_array)),
+        );
         resolver.cache_object(thread_ref, PdfObject::Dict(Box::new(thread_dict)));
 
         let result = discover(&catalog, &resolver);
@@ -1467,7 +1499,10 @@ mod tests {
                 ObjRef::new(20, 0) // Would close the loop, but we hit max iterations first
             };
             bead_dict.insert("N".into(), PdfObject::Ref(next_ref));
-            resolver.cache_object(ObjRef::new((20 + i) as u32, 0), PdfObject::Dict(Box::new(bead_dict)));
+            resolver.cache_object(
+                ObjRef::new((20 + i) as u32, 0),
+                PdfObject::Dict(Box::new(bead_dict)),
+            );
         }
 
         let result = walk_beads(&header, &resolver, &page_ref_to_index);
