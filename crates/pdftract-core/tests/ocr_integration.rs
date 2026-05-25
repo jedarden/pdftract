@@ -12,20 +12,28 @@
 use std::path::Path;
 
 /// Only run these tests if Tesseract is available.
-#[cfg(feature = "ocr")]
 fn tesseract_available() -> bool {
-    // Try to initialize Tesseract - if it fails, skip the test
-    use pdftract_core::ocr::{borrow_or_init, TessOpts};
+    #[cfg(feature = "ocr")]
+    {
+        // Try to initialize Tesseract - if it fails, skip the test
+        use pdftract_core::ocr::{borrow_or_init, TessOpts};
 
-    std::panic::catch_unwind(|| {
-        let opts = TessOpts::default();
-        let _state = borrow_or_init(&opts);
-    })
-    .is_ok()
+        std::panic::catch_unwind(|| {
+            let opts = TessOpts::default();
+            let _state = borrow_or_init(&opts);
+        })
+        .is_ok()
+    }
+
+    #[cfg(not(feature = "ocr"))]
+    {
+        false
+    }
 }
 
 /// Test that calculate_wer produces correct results on known inputs.
 #[test]
+#[cfg(feature = "ocr")]
 fn test_wer_calculation_known_inputs() {
     use pdftract_core::ocr::calculate_wer;
 
@@ -47,7 +55,7 @@ fn test_wer_calculation_known_inputs() {
 ///
 /// This is a critical acceptance test from Phase 5.4.5.
 #[test]
-#[cfg_attr(not(feature = "ocr"), ignore)]
+#[cfg(feature = "ocr")]
 #[ignore] // Requires manual fixture generation
 fn test_clean_lorem_ipsum_wer() {
     if !tesseract_available() {
@@ -94,7 +102,7 @@ fn test_clean_lorem_ipsum_wer() {
 
 /// Integration test: Verify multi-language fixture works correctly.
 #[test]
-#[cfg_attr(not(feature = "ocr"), ignore)]
+#[cfg(feature = "ocr")]
 #[ignore] // Requires manual fixture generation
 fn test_multilang_eng_fra_wer() {
     if !tesseract_available() {
@@ -138,7 +146,7 @@ fn test_multilang_eng_fra_wer() {
 
 /// Test run_tesseract returns spans with valid structure.
 #[test]
-#[cfg_attr(not(feature = "ocr"), ignore)]
+#[cfg(feature = "ocr")]
 fn test_run_tesseract_span_structure() {
     if !tesseract_available() {
         println!("Skipping: Tesseract not available");
@@ -171,6 +179,7 @@ fn test_run_tesseract_span_structure() {
 
 /// Test WER threshold validation helper.
 #[test]
+#[cfg(feature = "ocr")]
 fn test_wer_threshold_validation() {
     use pdftract_core::ocr::calculate_wer;
 
@@ -193,7 +202,7 @@ fn test_wer_threshold_validation() {
 
 /// Performance test: Verify 10-page fixture can be processed in reasonable time.
 #[test]
-#[cfg_attr(not(feature = "ocr"), ignore)]
+#[cfg(feature = "ocr")]
 #[ignore] // Requires manual fixture generation
 fn test_performance_10_pages() {
     if !tesseract_available() {
@@ -225,7 +234,7 @@ fn test_performance_10_pages() {
 
 /// Test coordinate conversion for full-page OCR.
 #[test]
-#[cfg_attr(not(feature = "ocr"), ignore)]
+#[cfg(feature = "ocr")]
 fn test_full_page_coordinate_conversion() {
     use image::{GrayImage, ImageBuffer, Luma};
     use pdftract_core::ocr::{run_tesseract, TessOpts};
@@ -255,7 +264,7 @@ fn test_full_page_coordinate_conversion() {
 
 /// Test cell OCR coordinate conversion.
 #[test]
-#[cfg_attr(not(feature = "ocr"), ignore)]
+#[cfg(feature = "ocr")]
 fn test_cell_coordinate_conversion() {
     use image::{GrayImage, ImageBuffer, Luma};
     use pdftract_core::ocr::run_tesseract_on_cell;
@@ -285,7 +294,7 @@ fn test_cell_coordinate_conversion() {
 
 /// Test language validation with diagnostics.
 #[test]
-#[cfg_attr(not(feature = "ocr"), ignore)]
+#[cfg(feature = "ocr")]
 fn test_language_validation() {
     use pdftract_core::ocr::{detect_available_languages, validate_ocr_languages};
 
@@ -320,6 +329,7 @@ fn test_language_validation() {
 
 /// Test multi-language string construction.
 #[test]
+#[cfg(feature = "ocr")]
 fn test_multi_language_string() {
     use pdftract_core::ocr::validate_ocr_languages;
 

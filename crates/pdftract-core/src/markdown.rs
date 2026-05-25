@@ -310,6 +310,7 @@ mod tests {
             bbox,
             level: None,
             table_index: None,
+            spans: vec![],
             receipt: None,
         }
     }
@@ -413,6 +414,7 @@ Some text."#;
             bbox: [72.0, 640.5, 540.0, 672.0],
             level: Some(2),
             table_index: None,
+            spans: vec![],
             receipt: None,
         };
 
@@ -494,6 +496,7 @@ Some text."#;
             bbox: [72.0, 640.5, 540.0, 672.0],
             level: Some(2),
             table_index: None,
+            spans: vec![],
             receipt: None,
         }];
 

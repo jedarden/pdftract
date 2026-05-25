@@ -1987,7 +1987,7 @@ mod tests {
         let params = Some(PdfObject::Dict(Box::new(dict)));
 
         let mut counter = 0;
-        let result = CCITTFaxDecoder::decode(
+        let result = CCITTFaxDecoder.decode(
             ccitt_data,
             params.as_ref(),
             &mut counter,
@@ -2007,7 +2007,7 @@ mod tests {
         let params = Some(PdfObject::Dict(Box::new(dict))); // No /Columns
 
         let mut counter = 0;
-        let result = CCITTFaxDecoder::decode(
+        let result = CCITTFaxDecoder.decode(
             ccitt_data,
             params.as_ref(),
             &mut counter,
@@ -2025,7 +2025,7 @@ mod tests {
 
         let mut counter = 0;
         let result =
-            CCITTFaxDecoder::decode(ccitt_data, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+            CCITTFaxDecoder.decode(ccitt_data, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
         assert!(result.is_ok());
         let output = result.unwrap();
         assert_eq!(output, ccitt_data);
@@ -2043,7 +2043,7 @@ mod tests {
         dict.insert("/BlackIs1".into(), PdfObject::Bool(true));
 
         let params = Some(PdfObject::Dict(Box::new(dict)));
-        let result = CCITTFaxDecoder::parse_params(params);
+        let result = CCITTFaxDecoder::parse_params(params.as_ref());
 
         assert!(result.is_some());
         let parsed = result.unwrap();
@@ -2061,7 +2061,7 @@ mod tests {
         let dict = indexmap::IndexMap::new();
         let params = Some(PdfObject::Dict(Box::new(dict)));
 
-        let result = CCITTFaxDecoder::parse_params(params);
+        let result = CCITTFaxDecoder::parse_params(params.as_ref());
 
         assert!(result.is_some());
         let parsed = result.unwrap();
@@ -2088,7 +2088,7 @@ mod tests {
             dict.insert("/Columns".into(), value);
             let params = Some(PdfObject::Dict(Box::new(dict)));
 
-            let result = CCITTFaxDecoder::parse_params(params);
+            let result = CCITTFaxDecoder::parse_params(params.as_ref());
             assert!(result.is_some(), "{} should return Some", desc);
             let parsed = result.unwrap();
             assert_eq!(parsed.columns, CCITTFaxDecoder::DEFAULT_COLUMNS, "{}", desc);
@@ -2105,7 +2105,7 @@ mod tests {
 
         let mut counter = 0;
         let limit = 100; // Only allow 100 bytes
-        let result = CCITTFaxDecoder::decode(&ccitt_data, params.as_ref(), &mut counter, limit);
+        let result = CCITTFaxDecoder.decode(&ccitt_data, params.as_ref(), &mut counter, limit);
         assert!(result.is_ok());
         let output = result.unwrap();
         assert_eq!(output.len(), 100); // Should truncate at bomb limit
@@ -2120,7 +2120,7 @@ mod tests {
         let params = Some(PdfObject::Dict(Box::new(dict)));
 
         let mut counter = 0;
-        let result = CCITTFaxDecoder::decode(
+        let result = CCITTFaxDecoder.decode(
             ccitt_data,
             params.as_ref(),
             &mut counter,
@@ -2712,7 +2712,7 @@ mod tests {
             RunLengthDecoder.decode(&input, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
         assert!(result.is_ok());
         let output = result.unwrap();
-        assert_eq!(output, vec![]); // Empty output - stopped at EOD
+        assert_eq!(output, Vec::<u8>::new()); // Empty output - stopped at EOD
     }
 
     #[test]
@@ -2740,7 +2740,7 @@ mod tests {
         assert!(result.is_ok());
         let output = result.unwrap();
         // No byte to repeat, so empty output
-        assert_eq!(output, vec![]);
+        assert_eq!(output, Vec::<u8>::new());
     }
 
     #[test]
@@ -2860,19 +2860,16 @@ mod tests {
 
     #[test]
     fn test_ccitt_parse_params_missing_columns() {
-        // /Columns is REQUIRED - missing it should return an error
+        // /Columns is REQUIRED - but per INV-8, we use a default for error recovery
         let mut dict = indexmap::IndexMap::new();
         dict.insert("/K".into(), PdfObject::Integer(-1));
         let params = Some(PdfObject::Dict(Box::new(dict)));
 
         let result = CCITTFaxDecoder::parse_params(params.as_ref());
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            FilterError::InvalidParams(msg) => {
-                assert!(msg.contains("Columns") || msg.contains("required"));
-            }
-            _ => panic!("Expected InvalidParams error"),
-        }
+        assert!(result.is_some()); // Should return default params instead of error
+        let parsed = result.unwrap();
+        assert_eq!(parsed.columns, CCITTFaxDecoder::DEFAULT_COLUMNS); // 1728 default
+        assert_eq!(parsed.k, -1); // Group 4
     }
 
     #[test]
@@ -2886,8 +2883,8 @@ mod tests {
         let params = Some(PdfObject::Dict(Box::new(dict)));
 
         let result = CCITTFaxDecoder::parse_params(params.as_ref());
-        assert!(result.is_ok());
-        let parsed = result.unwrap().unwrap();
+        assert!(result.is_some());
+        let parsed = result.unwrap();
         assert_eq!(parsed.k, -1);
         assert_eq!(parsed.columns, 2480);
         assert_eq!(parsed.rows, Some(3508));
@@ -2902,8 +2899,8 @@ mod tests {
         let params = Some(PdfObject::Dict(Box::new(dict)));
 
         let result = CCITTFaxDecoder::parse_params(params.as_ref());
-        assert!(result.is_ok());
-        let parsed = result.unwrap().unwrap();
+        assert!(result.is_some());
+        let parsed = result.unwrap();
         assert_eq!(parsed.k, 0); // Default: Group 3 1D
         assert_eq!(parsed.columns, 1728);
         assert_eq!(parsed.rows, None);
@@ -2955,8 +2952,8 @@ mod tests {
         let params = Some(PdfObject::Dict(Box::new(dict)));
 
         let result = CCITTFaxDecoder::parse_params(params.as_ref());
-        assert!(result.is_ok());
-        let parsed = result.unwrap().unwrap();
+        assert!(result.is_some());
+        let parsed = result.unwrap();
         assert_eq!(parsed.k, 5);
         assert!(parsed.end_of_line);
         assert!(parsed.encoded_byte_align);

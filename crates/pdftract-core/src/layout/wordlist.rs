@@ -154,6 +154,10 @@ mod tests {
 
         // 1000 iterations * 4 words = 4000 lookups
         // Should be well under 1 second even on slow machines
-        assert!(duration.as_millis() < 1000, "lookup too slow: {:?}", duration);
+        assert!(
+            duration.as_millis() < 1000,
+            "lookup too slow: {:?}",
+            duration
+        );
     }
 }

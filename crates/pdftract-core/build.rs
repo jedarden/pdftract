@@ -817,10 +817,7 @@ pub static EN_WORDLIST_20K: phf::Set<&'static str> = phf::Set::empty();
 
         // Validate: ASCII only, lowercase, length 1-30
         if !word.is_ascii() {
-            panic!(
-                "wordlist-en-20k.txt:{}: non-ASCII word: {}",
-                line_num, word
-            );
+            panic!("wordlist-en-20k.txt:{}: non-ASCII word: {}", line_num, word);
         }
         if word != word.to_lowercase() {
             panic!(
@@ -881,4 +878,3 @@ pub static EN_WORDLIST_20K: phf::Set<&'static str> = {};
     fs::write(Path::new(out_dir).join("wordlist.rs"), rust_code)
         .expect("Failed to write wordlist.rs");
 }
-

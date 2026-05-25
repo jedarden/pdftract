@@ -1,0 +1,15 @@
+{
+  "metadata": {
+    "document_type": "form",
+    "document_type_confidence": 0.88,
+    "document_type_reasons": [
+      "Text pattern match: 'Form I-9'",
+      "Text pattern match: 'Employment Eligibility Verification'",
+      "Text pattern match: 'Please complete'",
+      "Structural signal: has_form_field_layout"
+    ],
+    "profile_name": "form",
+    "profile_version": "1.0.0",
+    "profile_fields": {}
+  }
+}

@@ -77,6 +77,8 @@ fn test_suspects_true_fallback_to_xy_cut() {
         memory_budget_mb: 512,
         full_render: false,
         ocr_dpi_override: None,
+        ocr_language: vec!["eng".to_string()],
+        markdown_anchors: false,
     };
 
     let result = extract_pdf(&fixture_path, &options);
@@ -130,6 +132,8 @@ fn test_suspects_false_trusts_tree() {
         memory_budget_mb: 512,
         full_render: false,
         ocr_dpi_override: None,
+        ocr_language: vec!["eng".to_string()],
+        markdown_anchors: false,
     };
 
     let result = extract_pdf(&fixture_path, &options);
@@ -181,6 +185,8 @@ fn test_suspects_true_high_coverage_no_fallback() {
         memory_budget_mb: 512,
         full_render: false,
         ocr_dpi_override: None,
+        ocr_language: vec!["eng".to_string()],
+        markdown_anchors: false,
     };
 
     let result = extract_pdf(&fixture_path, &options);

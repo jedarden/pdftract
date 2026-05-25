@@ -1,39 +1,42 @@
 # nextest configuration for pdftract
 #
 # Profiles:
-# - ci: CI test runner with JUnit output, 60s slow test timeout, retry on flaky
+# - default: used by bare `cargo nextest run` (the marathon's gate). Kills hung tests.
+# - ci: CI test runner with JUnit output, retry on flaky, kills hung tests
 # - ci-proptest: Property test profile with higher timeouts and no retries
 #
 # Usage:
+#   cargo nextest run                  # default profile
 #   cargo nextest run --profile ci
 #   cargo nextest run --profile ci-proptest --features proptest --proptest
 #
 # For JUnit output: cargo nextest run --profile ci --message-format junit
+#
+# IMPORTANT: every profile sets `slow-timeout` WITH `terminate-after`. Bare `slow-timeout`
+# only *warns* that a test is slow — it never stops it. `terminate-after = N` KILLS a test
+# still running after period × N. This is the safety net that stopped a single hung test
+# (a spawned `pdftract mcp` server that never exited) from wedging the runner and stalling
+# the marathon loop for hours. Do NOT remove `terminate-after`. See CLAUDE.md "Test hygiene".
 
 [store]
 # Nextest test data location (default: target/nextest)
 dir = "target"
 
+[profile.default]
+# Marathon-safety default. A test still running after 30s × 2 = 60s is KILLED and the run
+# fails, instead of freezing the loop. 60s is ample for unit + integration tests here.
+slow-timeout = { period = "30s", terminate-after = 2 }
+fail-fast = false
+
 [profile.ci]
-# CI profile: fast failure, JUnit output, retries for flaky tests
-# Status: "fail-fast" - stop on first failure
-# Retry: 1 retry on known-flaky tests (those marked with [rstest]
-# or identified by nextest as flaky)
+# CI profile: JUnit output, 1 retry for flaky tests. Killed after 60s × 3 = 180s.
 fail-fast = true
 retries = 1
-
-# Test execution timeout (60 seconds for slow tests)
-slow-timeout = "60s"
+slow-timeout = { period = "60s", terminate-after = 3 }
 
 [profile.ci-proptest]
-# Property test profile: higher timeouts, no retries (proptest failures are deterministic)
-# Status: "fail-fast" - stop on first failure
-# No retries: proptest minimization is deterministic, retries waste CI time
+# Property test profile: higher timeout for proptest shrinks, no retries (deterministic).
+# Killed after 120s × 3 = 360s — generous, but still bounded so a wedged shrink can't hang CI.
 fail-fast = true
 retries = 0
-
-# Test execution timeout (120 seconds for proptest shrinks)
-slow-timeout = "120s"
-
-# No JUnit output for proptest (use cargo nextest's native output)
-
+slow-timeout = { period = "120s", terminate-after = 3 }

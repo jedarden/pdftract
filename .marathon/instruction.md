@@ -38,6 +38,27 @@ canonical: epics/coordinators depend on their leaf tasks and close LAST — work
 If a bead was attempted before (check `git log` for its ID), continue from the prior
 work rather than starting over.
 
+#### If the ready queue is empty — audit the plan, don't go idle
+
+If `bf ready --limit 5` returns **nothing eligible** (empty queue, or only beads you cannot
+progress — e.g. ones needing human/ADB access), do NOT exit idle. The seeded beads are not
+the whole job — **the plan is**. Run a plan-vs-artifacts gap audit and refill the queue:
+
+1. Walk `docs/plan/plan.md` section by section.
+2. For each planned item — operator, struct/field, subcommand, JSON schema, invariant
+   (INV-N), threat (TH-NN), acceptance criterion — verify it actually exists *and works* in
+   the tree: grep for the symbol under `crates/` / `src/`, read the module, run its test.
+3. For every planned-but-missing, stubbed, or incomplete item that is **not already an open
+   bead** (check `bf list --status open | grep`), create one:
+   ```bash
+   bf create --title "plan-gap: <plan §/line ref> — <what's missing>" --type task --priority <0-3> \
+     --description "Plan: <line range/§>. Gap evidence: <absent symbol / missing or failing test>. Acceptance: <what done looks like>."
+   ```
+   Use `bf batch` `dep_add_blocker` to wire dependencies if the gap blocks/depends on existing beads.
+4. `bf sync --flush-only`, then re-run `bf ready --limit 5` and pick the highest-impact new bead.
+
+The work is truly done only when a **full** plan audit finds zero gaps — then say so and exit.
+
 ### 2. Claim
 
 ```bash
@@ -59,8 +80,12 @@ bf claim <bead-id> --model claude-code-glm-4.7 --harness needle --harness-versio
    cargo check --all-targets
    cargo clippy --all-targets -- -D warnings
    cargo fmt
-   cargo nextest run        # (or `cargo test` if nextest unavailable)
+   cargo nextest run        # NEVER bare `cargo test` — see CLAUDE.md "Test hygiene".
+                            # nextest kills hung tests via .config/nextest.toml slow-timeout.
+                            # If nextest is unavailable: timeout --kill-after=30s 600s cargo test --all-targets
    ```
+   If the run is killed by a timeout (nextest `TIMEOUT`/`TERMINATED`, or `timeout` exit 124),
+   a test hung — fix it; never close the bead claiming the tests passed.
 
 ### 4. Commit, push, close
 

@@ -361,27 +361,24 @@ pub fn walk_beads(
             (Some(other), _) => {
                 diagnostics.push(Diagnostic::with_dynamic_no_offset(
                     DiagCode::StructUnexpectedEof,
-                    format!(
-                        "Bead {:?} has /R but it's not a reference",
-                        current_ref,
-                    ),
+                    format!("Bead {:?} has /R but it's not a reference", current_ref,),
                 ));
                 None
             }
             (_, Some(_)) => {
                 diagnostics.push(Diagnostic::with_dynamic_no_offset(
                     DiagCode::StructUnexpectedEof,
-                    format!(
-                        "Bead {:?} has /P but it's not a reference",
-                        current_ref,
-                    ),
+                    format!("Bead {:?} has /P but it's not a reference", current_ref,),
                 ));
                 None
             }
             (None, None) => {
                 diagnostics.push(Diagnostic::with_dynamic_no_offset(
                     DiagCode::StructMissingKey,
-                    format!("Bead {:?} is missing both /R and /P (page reference)", current_ref),
+                    format!(
+                        "Bead {:?} is missing both /R and /P (page reference)",
+                        current_ref
+                    ),
                 ));
                 None
             }
@@ -466,12 +463,9 @@ pub fn walk_beads(
     } else {
         // Check if any diagnostics are fatal - for now, we treat malformed cycles as fatal
         // but missing individual beads are not (we skip them)
-        let has_fatal = diagnostics.iter().any(|d| {
-            matches!(
-                d.code,
-                DiagCode::StructUnexpectedEof
-            )
-        });
+        let has_fatal = diagnostics
+            .iter()
+            .any(|d| matches!(d.code, DiagCode::StructUnexpectedEof));
         if has_fatal {
             Err(diagnostics)
         } else {
@@ -483,7 +477,10 @@ pub fn walk_beads(
 }
 
 /// Extract the next bead reference from a bead dictionary.
-fn get_next_bead_ref(bead_dict: &PdfDict, current_ref: ObjRef) -> std::result::Result<ObjRef, Vec<Diagnostic>> {
+fn get_next_bead_ref(
+    bead_dict: &PdfDict,
+    current_ref: ObjRef,
+) -> std::result::Result<ObjRef, Vec<Diagnostic>> {
     match bead_dict.get("N") {
         None => {
             // Missing /N means end of thread (not an error)
@@ -497,10 +494,7 @@ fn get_next_bead_ref(bead_dict: &PdfDict, current_ref: ObjRef) -> std::result::R
         Some(_) => {
             let diagnostics = vec![Diagnostic::with_dynamic_no_offset(
                 DiagCode::StructUnexpectedEof,
-                format!(
-                    "Bead {:?} has /N but it's not a reference",
-                    current_ref,
-                ),
+                format!("Bead {:?} has /N but it's not a reference", current_ref,),
             )];
             Err(diagnostics)
         }
@@ -1468,12 +1462,12 @@ mod tests {
             );
             // Each bead points to the next, except the last which points back to first
             let next_ref = if i < 10050 {
-                ObjRef::new(20 + i + 1, 0)
+                ObjRef::new((20 + i + 1) as u32, 0)
             } else {
                 ObjRef::new(20, 0) // Would close the loop, but we hit max iterations first
             };
             bead_dict.insert("N".into(), PdfObject::Ref(next_ref));
-            resolver.cache_object(ObjRef::new(20 + i, 0), PdfObject::Dict(Box::new(bead_dict)));
+            resolver.cache_object(ObjRef::new((20 + i) as u32, 0), PdfObject::Dict(Box::new(bead_dict)));
         }
 
         let result = walk_beads(&header, &resolver, &page_ref_to_index);

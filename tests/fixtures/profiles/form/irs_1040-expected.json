@@ -1,0 +1,13 @@
+{
+  "metadata": {
+    "document_type": "form",
+    "document_type_confidence": 0.85,
+    "document_type_reasons": [
+      "Text pattern match: 'Form 1040'",
+      "Structural signal: has_form_field_layout"
+    ],
+    "profile_name": "form",
+    "profile_version": "1.0.0",
+    "profile_fields": {}
+  }
+}

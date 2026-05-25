@@ -97,6 +97,51 @@ For each bead:
 
 If acceptance criteria contain WARN items due to environmental issues (missing CLI tools, transient infra, etc.), document them clearly in the close reason and the verification note. The bead may still close if the WARNs are infra-related and out of scope. PASS the substantive criteria; WARN the infra ones; FAIL only true blockers.
 
+## Test hygiene — never let a hung test stall the loop
+
+On 2026-05-24 one test froze the entire marathon for ~5.5 hours. The TH-03 test
+`test_case_3_ipv4_loopback_without_token` spawned a real `pdftract mcp` **server**
+subprocess with `Stdio::piped()`, never drained its stdout/stderr, and relied on a bare
+`child.kill()` / `child.wait()` for cleanup. The `wait()` blocked indefinitely (0% CPU),
+which hung `cargo test`, which kept the marathon's stdout pipe open — so `launcher.sh`
+never advanced to the next bead. The worker made it worse by spawning four overlapping
+`cargo test` retries and orphaning all of them. Prevent recurrence:
+
+1. **Run tests through `cargo nextest run`, NEVER bare `cargo test`.** nextest isolates each
+   test in its own process and enforces the per-test `slow-timeout` in `.config/nextest.toml`
+   (`terminate-after` is set, so an overrunning test is *killed*, turning a freeze into a
+   normal failure). If nextest is genuinely unavailable, wrap the fallback in a hard
+   wall-clock timeout so a hang can never wedge the loop:
+   ```bash
+   timeout --kill-after=30s 600s cargo test --all-targets 2>&1 | tail -80
+   ```
+   `timeout` exit code 124 — or a nextest `TIMEOUT`/`TERMINATED` line — means a test hung.
+   Find and fix it. **Never close a bead claiming "tests pass" when the run was killed by a
+   timeout, and never claim success on a tree that does not compile.**
+
+2. **A test that spawns a process or binds a socket MUST clean up deterministically:**
+   - Kill the child from an RAII guard whose `Drop` runs `kill()` + a *bounded* wait, so
+     cleanup fires even on panic or early return — do not rely on a trailing
+     `let _ = child.kill(); let _ = child.wait();`.
+   - Bound every wait with the existing `wait_with_timeout` helper. A bare `child.wait()` on
+     a server that outlives the signal blocks forever.
+   - Give the child `Stdio::null()` (or drain its pipes on a thread). A long-running server
+     left with undrained `Stdio::piped()` blocks on a full pipe and wedges both ends — this
+     is exactly what hung TH-03.
+   - Bind servers to port `:0` and read back the chosen port, so reruns never collide on a
+     fixed port still held by a leaked process.
+
+3. **Never spawn overlapping retries of a hanging command.** If `cargo nextest`/`cargo test`
+   does not return, the runner is wedged — kill it and its whole tree before doing anything
+   else; do NOT launch a second run on top of it:
+   ```bash
+   pkill -f 'pdftract mcp'; pkill -f 'TH-0'; pkill -f 'cargo test'   # then investigate
+   ```
+
+4. **Leave no orphans when the iteration ends.** Before closing the bead and exiting,
+   confirm nothing you spawned is still alive — `pgrep -af 'pdftract mcp|TH_0|TH-0'` must be
+   empty.
+
 ## What NOT to do (anti-loops)
 
 The worker that ran before YOU did this loop and wasted hours:

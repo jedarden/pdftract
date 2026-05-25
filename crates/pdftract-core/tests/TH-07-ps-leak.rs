@@ -54,7 +54,8 @@ mod tests {
 
         // Should exit with code 64 (usage error)
         assert_eq!(
-            output.status.code(), Some(64),
+            output.status.code(),
+            Some(64),
             "Expected exit code 64, got {:?}",
             output.status.code()
         );
@@ -99,7 +100,8 @@ mod tests {
 
         // Should NOT exit with code 64 (may succeed or fail with password error 66)
         assert_ne!(
-            output.status.code(), Some(64),
+            output.status.code(),
+            Some(64),
             "Should not exit with 64 when opt-in is set, stderr: {}",
             stderr
         );
@@ -123,7 +125,8 @@ mod tests {
             .arg("-c")
             .arg(&format!(
                 "echo '{}' | pdftract extract --password-stdin {} --output -",
-                TEST_PASSWORD, fixture_path.display()
+                TEST_PASSWORD,
+                fixture_path.display()
             ))
             .output()
             .expect("Failed to execute pdftract with --password-stdin");
@@ -131,7 +134,8 @@ mod tests {
         // The command should execute (may fail with password error if PDF is actually encrypted)
         // but should NOT exit with 64
         assert_ne!(
-            output.status.code(), Some(64),
+            output.status.code(),
+            Some(64),
             "--password-stdin should not be rejected, got exit code {:?}",
             output.status.code()
         );
@@ -152,7 +156,8 @@ mod tests {
 
         // Should NOT exit with code 64
         assert_ne!(
-            output.status.code(), Some(64),
+            output.status.code(),
+            Some(64),
             "PDFTRACT_PASSWORD should not be rejected, got exit code {:?}",
             output.status.code()
         );
@@ -199,7 +204,10 @@ mod tests {
                     break;
                 }
                 Err(_) if i < max_retries - 1 => continue,
-                Err(e) => panic!("Failed to read {} after {} retries: {}", cmdline_path, max_retries, e),
+                Err(e) => panic!(
+                    "Failed to read {} after {} retries: {}",
+                    cmdline_path, max_retries, e
+                ),
             }
         }
 

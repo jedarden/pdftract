@@ -105,20 +105,23 @@ impl AuditLogWriter {
     /// - "-" or "/dev/stdout": writes to stdout
     /// - "/dev/stderr": writes to stderr
     pub fn open(path: &Path) -> Result<Self> {
-        let writer: Box<dyn Write + Send> = if path == Path::new("-") || path == Path::new("/dev/stdout") {
-            // Redirect to stdout (but we need a separate handle for the audit log)
-            // For stdout, we use a separate fd
-            Box::new(File::create("/dev/stdout").context("Failed to open stdout")?)
-        } else if path == Path::new("/dev/stderr") {
-            Box::new(File::create("/dev/stderr").context("Failed to open stderr")?)
-        } else {
-            // Regular file
-            Box::new(File::options()
-                .create(true)
-                .append(true)
-                .open(path)
-                .with_context(|| format!("Failed to open audit log: {}", path.display()))?)
-        };
+        let writer: Box<dyn Write + Send> =
+            if path == Path::new("-") || path == Path::new("/dev/stdout") {
+                // Redirect to stdout (but we need a separate handle for the audit log)
+                // For stdout, we use a separate fd
+                Box::new(File::create("/dev/stdout").context("Failed to open stdout")?)
+            } else if path == Path::new("/dev/stderr") {
+                Box::new(File::create("/dev/stderr").context("Failed to open stderr")?)
+            } else {
+                // Regular file
+                Box::new(
+                    File::options()
+                        .create(true)
+                        .append(true)
+                        .open(path)
+                        .with_context(|| format!("Failed to open audit log: {}", path.display()))?,
+                )
+            };
 
         Ok(Self {
             writer: Mutex::new(BufWriter::new(writer)),
@@ -131,9 +134,10 @@ impl AuditLogWriter {
     /// The write is flushed immediately for crash safety.
     pub fn write_record(&self, record: &AuditRecord) -> Result<()> {
         let json = serde_json::to_string(record).context("Failed to serialize audit record")?;
-        let mut writer = self.writer.lock().map_err(|e| {
-            anyhow::anyhow!("Audit log writer lock poisoned: {}", e)
-        })?;
+        let mut writer = self
+            .writer
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Audit log writer lock poisoned: {}", e))?;
         writeln!(writer, "{}", json).context("Failed to write audit record")?;
         writer.flush().context("Failed to flush audit record")?;
         Ok(())
@@ -182,8 +186,7 @@ mod tests {
 
     #[test]
     fn test_audit_record_with_client_ip() {
-        let record = AuditRecord::new("extract", None, 100, "ok")
-            .with_client_ip("10.0.0.1");
+        let record = AuditRecord::new("extract", None, 100, "ok").with_client_ip("10.0.0.1");
         assert_eq!(record.client_ip, Some("10.0.0.1".to_string()));
     }
 

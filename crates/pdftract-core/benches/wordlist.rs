@@ -8,7 +8,9 @@ use pdftract_core::layout::wordlist::is_english_word;
 
 fn bench_common_words(c: &mut Criterion) {
     // Most common words (should be fastest due to frequency sorting)
-    let common_words = vec!["the", "of", "and", "to", "a", "in", "is", "you", "that", "it"];
+    let common_words = vec![
+        "the", "of", "and", "to", "a", "in", "is", "you", "that", "it",
+    ];
 
     let mut group = c.benchmark_group("wordlist/common");
 
@@ -54,7 +56,14 @@ fn bench_negative_lookups(c: &mut Criterion) {
 fn bench_mixed_lookups(c: &mut Criterion) {
     // Mix of positive and negative lookups
     let words = vec![
-        "the", "computer", "xyzqwerty", "document", "of", "abcdefg", "and", "program",
+        "the",
+        "computer",
+        "xyzqwerty",
+        "document",
+        "of",
+        "abcdefg",
+        "and",
+        "program",
     ];
 
     let mut group = c.benchmark_group("wordlist/mixed");

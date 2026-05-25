@@ -136,6 +136,7 @@ pub fn format_json(output: &ClassificationOutput, pretty: bool) -> String {
 }
 
 /// Convert ProfileType to string for JSON output.
+#[cfg(feature = "profiles")]
 fn profile_type_to_string(profile_type: ProfileType) -> String {
     match profile_type {
         ProfileType::Invoice => "invoice".to_string(),
@@ -240,6 +241,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "profiles")]
     fn test_profile_type_to_string() {
         assert_eq!(profile_type_to_string(ProfileType::Invoice), "invoice");
         assert_eq!(profile_type_to_string(ProfileType::Receipt), "receipt");

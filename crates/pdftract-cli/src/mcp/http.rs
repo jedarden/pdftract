@@ -614,7 +614,7 @@ mod tests {
     #[test]
     fn test_mcp_server_state_creation() {
         let token = SecretString::new("test-token".into());
-        let state = McpServerState::new(Some(token), Some(10), None);
+        let state = McpServerState::new(Some(token), Some(10), None, None);
 
         assert_eq!(state.max_body_bytes, 10 * 1024 * 1024);
         assert_eq!(state.client_count(), 0);
@@ -623,7 +623,7 @@ mod tests {
 
     #[test]
     fn test_mcp_server_state_no_token() {
-        let state = McpServerState::new(None, None, None);
+        let state = McpServerState::new(None, None, None, None);
 
         assert_eq!(state.max_body_bytes, DEFAULT_MAX_UPLOAD_MB * 1024 * 1024);
         assert_eq!(state.client_count(), 0);
@@ -632,7 +632,7 @@ mod tests {
 
     #[test]
     fn test_mcp_server_state_broadcast() {
-        let state = McpServerState::new(None, None, None);
+        let state = McpServerState::new(None, None, None, None);
         let notification = Notification::new("test/notification", None);
 
         // Broadcast with no clients should return 0
@@ -683,7 +683,7 @@ mod tests {
 
     #[test]
     fn test_check_auth_no_token_configured() {
-        let state = McpServerState::new(None, None, None);
+        let state = McpServerState::new(None, None, None, None);
         let mut headers = HeaderMap::new();
 
         // No token configured, so any headers should pass
@@ -699,7 +699,7 @@ mod tests {
     #[test]
     fn test_check_auth_valid_token() {
         let token = SecretString::new("correct-token".into());
-        let state = McpServerState::new(Some(token), None, None);
+        let state = McpServerState::new(Some(token), None, None, None);
         let mut headers = HeaderMap::new();
 
         headers.insert(
@@ -712,7 +712,7 @@ mod tests {
     #[test]
     fn test_check_auth_invalid_token() {
         let token = SecretString::new("correct-token".into());
-        let state = McpServerState::new(Some(token), None, None);
+        let state = McpServerState::new(Some(token), None, None, None);
         let mut headers = HeaderMap::new();
 
         headers.insert(
@@ -729,7 +729,7 @@ mod tests {
     #[test]
     fn test_check_auth_missing_token() {
         let token = SecretString::new("correct-token".into());
-        let state = McpServerState::new(Some(token), None, None);
+        let state = McpServerState::new(Some(token), None, None, None);
         let headers = HeaderMap::new();
 
         let result = check_auth(&state, &headers);
@@ -743,7 +743,7 @@ mod tests {
     #[test]
     fn test_check_auth_malformed_header() {
         let token = SecretString::new("correct-token".into());
-        let state = McpServerState::new(Some(token), None, None);
+        let state = McpServerState::new(Some(token), None, None, None);
         let mut headers = HeaderMap::new();
 
         // Missing "Bearer " prefix
@@ -847,7 +847,7 @@ mod tests {
         use std::time::Instant;
 
         let token = SecretString::new("correct-token-32-bytes-long!".into());
-        let state = McpServerState::new(Some(token), None, None);
+        let state = McpServerState::new(Some(token), None, None, None);
 
         // Test 1: Token that is much shorter
         let mut headers_short = HeaderMap::new();

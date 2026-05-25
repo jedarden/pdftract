@@ -1,0 +1,14 @@
+{
+  "metadata": {
+    "document_type": "form",
+    "document_type_confidence": 0.86,
+    "document_type_reasons": [
+      "Text pattern match: 'Intake Form'",
+      "Text pattern match: 'Please complete all fields'",
+      "Structural signal: has_form_field_layout"
+    ],
+    "profile_name": "form",
+    "profile_version": "1.0.0",
+    "profile_fields": {}
+  }
+}

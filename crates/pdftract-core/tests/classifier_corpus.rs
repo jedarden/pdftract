@@ -133,8 +133,13 @@ fn parse_manifest() -> Vec<ManifestEntry> {
 
     // Skip test if corpus not present (e.g., in CI without test data)
     if !manifest_path.exists() {
-        eprintln!("SKIPPED: Classifier corpus not found at {}", manifest_path.display());
-        eprintln!("To run this test, generate the corpus using: python3 scripts/generate_test_corpus.py");
+        eprintln!(
+            "SKIPPED: Classifier corpus not found at {}",
+            manifest_path.display()
+        );
+        eprintln!(
+            "To run this test, generate the corpus using: python3 scripts/generate_test_corpus.py"
+        );
         std::process::exit(0); // Exit with success since this is expected in some environments
     }
 
@@ -373,7 +378,8 @@ fn test_classifier_reproducibility() {
         match (result1, result2) {
             (Some(r1), Some(r2)) => {
                 assert_eq!(
-                    r1, r2,
+                    r1,
+                    r2,
                     "Classification not reproducible for {}",
                     full_path.display()
                 );
@@ -383,7 +389,10 @@ fn test_classifier_reproducibility() {
                 continue;
             }
             _ => {
-                panic!("Inconsistent classification results for {}", full_path.display());
+                panic!(
+                    "Inconsistent classification results for {}",
+                    full_path.display()
+                );
             }
         }
     }

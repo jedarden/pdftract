@@ -1,0 +1,14 @@
+{
+  "metadata": {
+    "document_type": "form",
+    "document_type_confidence": 0.80,
+    "document_type_reasons": [
+      "Text pattern match: 'Expense Report'",
+      "Text pattern match: 'itemized expenses'",
+      "Structural signal: has_form_field_layout"
+    ],
+    "profile_name": "form",
+    "profile_version": "1.0.0",
+    "profile_fields": {}
+  }
+}
