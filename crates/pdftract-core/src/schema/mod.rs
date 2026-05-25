@@ -643,6 +643,10 @@ pub struct DiagnosticJson {
     /// PDF object reference where the issue originated, if applicable.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<ObjectLocationJson>,
+
+    /// Optional hint for resolving the diagnostic (e.g., "Install Tesseract for OCR recovery").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
 }
 
 /// JSON representation of a PDF object reference.
@@ -801,13 +805,78 @@ pub struct ThreadJson {
     // Reserved for Phase 7.1
 }
 
-/// Placeholder for Phase 7 embedded file attachments.
+/// JSON representation of an embedded file attachment.
 ///
-/// This type is reserved for future use and currently has no fields.
+/// Represents a single embedded file extracted from the PDF's
+/// `/EmbeddedFiles` name tree or `/AF` (Associated Files) array.
+///
+/// Per the plan (Phase 7.5.3), attachments exceeding 50 MB are truncated
+/// (metadata only, `data: null`, `truncated: true`). The `data` field
+/// contains base64-encoded content using RFC 4648 standard alphabet with
+/// padding and no line breaks.
+///
+/// The JSON Schema declares `contentEncoding: base64` for the `data` field,
+/// enabling JSON Schema validators and code generation tools to understand
+/// the encoding.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct AttachmentJson {
-    // Reserved for Phase 7.5
+    /// Attachment filename from /UF (Unicode, preferred) or /F (system-independent).
+    pub name: String,
+
+    /// Description from /Desc (None if absent, not empty string).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    /// MIME type from stream /Subtype (None if absent, no guessing from extension).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+
+    /// Original decoded size in bytes (always populated, even when truncated).
+    ///
+    /// This is the size of the attachment content before base64 encoding.
+    /// When `truncated: true`, this represents the full original size that
+    /// was not included in the output.
+    pub size: u64,
+
+    /// Creation date from /Params /CreationDate as ISO 8601 string (None if absent).
+    ///
+    /// Format: "YYYY-MM-DDTHH:MM:SS+HH:MM" or "YYYY-MM-DDTHH:MM:SSZ"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created: Option<String>,
+
+    /// Modification date from /Params /ModDate as ISO 8601 string (None if absent).
+    ///
+    /// Format: "YYYY-MM-DDTHH:MM:SS+HH:MM" or "YYYY-MM-DDTHH:MM:SSZ"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modified: Option<String>,
+
+    /// MD5 checksum from /Params /CheckSum as hex string (None if absent).
+    ///
+    /// Per PDF spec, /CheckSum is a 16-byte binary string (MD5), hex-encoded
+    /// as 32 lowercase hex characters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checksum_md5: Option<String>,
+
+    /// Base64-encoded attachment content (null if truncated or empty).
+    ///
+    /// Per JSON Schema, this field has `contentEncoding: base64`, indicating
+    /// the string is base64-encoded binary data. Downstream tools can use this
+    /// information to automatically decode the content.
+    ///
+    /// - `Some(base64_string)` when content <= 50 MB
+    /// - `None` when `truncated: true` (content too large)
+    ///
+    /// In the Python API (PyO3), this field is returned as a `bytes` object
+    /// (PyO3 automatically decodes the base64 string).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<String>,
+
+    /// Whether the attachment content was truncated due to the 50 MB size limit.
+    ///
+    /// When `true`, the `data` field is `None` and only metadata is included.
+    /// The `size` field still reflects the original full size.
+    pub truncated: bool,
 }
 
 /// JSON representation of a hyperlink annotation.
@@ -2263,6 +2332,7 @@ mod tests {
                 object_number: 42,
                 generation_number: 0,
             }),
+            hint: None,
         };
 
         let json_str = serde_json::to_string(&diag).unwrap();
@@ -2275,6 +2345,8 @@ mod tests {
         assert!(!json_val["location"].is_null());
         assert_eq!(json_val["location"]["object_number"], 42);
         assert_eq!(json_val["location"]["generation_number"], 0);
+        // hint is None, so it should be omitted from JSON
+        assert!(json_val.get("hint").is_none() || json_val["hint"].is_null());
     }
 
     #[test]
@@ -2286,6 +2358,7 @@ mod tests {
             severity: "info".to_string(),
             page_index: None,
             location: None,
+            hint: None,
         };
 
         let json_str = serde_json::to_string(&diag).unwrap();
@@ -2322,6 +2395,7 @@ mod tests {
             severity: "warning".to_string(),
             page_index: Some(0),
             location: None,
+            hint: None,
         });
 
         // Critical test: roundtrip serde test passes
@@ -2334,10 +2408,7 @@ mod tests {
         // Note: Full roundtrip deserialization requires static lifetime due to schema_version field
 
         assert_eq!(output.schema_version, "1.0");
-        assert_eq!(
-            output.metadata.title,
-            Some("Test Document".to_string())
-        );
+        assert_eq!(output.metadata.title, Some("Test Document".to_string()));
         assert_eq!(output.metadata.page_count, 3);
         assert_eq!(output.pages.len(), 1);
         assert_eq!(output.pages[0].page_index, 0);

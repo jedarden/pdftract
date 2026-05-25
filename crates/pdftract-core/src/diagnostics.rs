@@ -945,6 +945,14 @@ pub enum DiagCode {
     /// Phase origin: 3.4
     McidRedefined,
 
+    /// Image sources mixed in unexpected way
+    ///
+    /// Emitted when a page contains both vector and raster images in an
+    /// unexpected combination that may affect extraction quality.
+    ///
+    /// Phase origin: 5.3.2
+    ImgSourceMixed,
+
     // === PROFILE_* codes ===
     /// Profile YAML contains forbidden secret keys
     ///
@@ -955,6 +963,34 @@ pub enum DiagCode {
     ///
     /// Phase origin: 7.10
     ProfileSecretsForbidden,
+
+    /// Profile YAML is invalid or malformed
+    ///
+    /// Emitted when a profile YAML file cannot be parsed or contains
+    /// invalid values for expected fields.
+    ///
+    /// Phase origin: 5.6.2
+    ProfileInvalid,
+
+    // === REPAIR_* codes ===
+    /// Xref repaired from backwards scan
+    ///
+    /// Emitted when the xref table was reconstructed by scanning backwards
+    /// from the end of the file (EC-07 recovery strategy). This indicates
+    /// the file's xref was corrupted or missing.
+    ///
+    /// Phase origin: 1.3
+    RepairRescuedFromBackwardsXref,
+
+    // === SECURITY_* codes ===
+    /// JavaScript present in PDF (never executed)
+    ///
+    /// Emitted when a PDF contains embedded JavaScript in /AA, /OpenAction, /JS,
+    /// or form field /A entries. The JavaScript is NEVER executed by pdftract;
+    /// its presence is flagged for security review.
+    ///
+    /// Phase origin: 1.2
+    SecurityJavascriptPresent,
 }
 
 impl DiagCode {
@@ -1048,7 +1084,8 @@ impl DiagCode {
             // IMG_*
             DiagCode::ImgSoftmaskUnsupported
             | DiagCode::ImgUnsupportedFormat
-            | DiagCode::ImgDeskewOutOfRange => "IMG",
+            | DiagCode::ImgDeskewOutOfRange
+            | DiagCode::ImgSourceMixed => "IMG",
 
             // REMOTE_*
             DiagCode::RemoteFetchInterrupted
@@ -1091,7 +1128,13 @@ impl DiagCode {
             | DiagCode::McidRedefined => "MARKED_CONTENT",
 
             // PROFILE_*
-            DiagCode::ProfileSecretsForbidden => "PROFILE",
+            DiagCode::ProfileSecretsForbidden | DiagCode::ProfileInvalid => "PROFILE",
+
+            // REPAIR_*
+            DiagCode::RepairRescuedFromBackwardsXref => "REPAIR",
+
+            // SECURITY_*
+            DiagCode::SecurityJavascriptPresent => "SECURITY",
         }
     }
 
@@ -1168,6 +1211,7 @@ impl DiagCode {
             DiagCode::ImgSoftmaskUnsupported => "IMG_SOFTMASK_UNSUPPORTED",
             DiagCode::ImgUnsupportedFormat => "IMG_UNSUPPORTED_FORMAT",
             DiagCode::ImgDeskewOutOfRange => "IMG_DESKEW_OUT_OF_RANGE",
+            DiagCode::ImgSourceMixed => "IMG_SOURCE_MIXED",
             DiagCode::StreamTruncated => "STREAM_TRUNCATED",
             DiagCode::RemoteFetchInterrupted => "REMOTE_FETCH_INTERRUPTED",
             DiagCode::RemoteNoRangeSupport => "REMOTE_NO_RANGE_SUPPORT",
@@ -1200,6 +1244,9 @@ impl DiagCode {
             DiagCode::StructInvalidBdcOperand => "STRUCT_INVALID_BDC_OPERAND",
             DiagCode::McidRedefined => "MCID_REDEFINED",
             DiagCode::ProfileSecretsForbidden => "PROFILE_SECRETS_FORBIDDEN",
+            DiagCode::ProfileInvalid => "PROFILE_INVALID",
+            DiagCode::RepairRescuedFromBackwardsXref => "REPAIR_RESCUED_FROM_BACKWARDS_XREF",
+            DiagCode::SecurityJavascriptPresent => "JAVASCRIPT_PRESENT",
         }
     }
 
@@ -1208,13 +1255,15 @@ impl DiagCode {
     pub const fn severity(self) -> Severity {
         match self {
             DiagCode::XrefRepaired
+            | DiagCode::RepairRescuedFromBackwardsXref
             | DiagCode::LayoutTaggedPdfDeferred
             | DiagCode::StructIncompleteCoverage
             | DiagCode::EmcWithoutBmc
             | DiagCode::MarkedContentDepthExceeded
             | DiagCode::UnknownMarkedContentProps
             | DiagCode::StructInvalidBdcOperand
-            | DiagCode::McidRedefined => Severity::Info,
+            | DiagCode::McidRedefined
+            | DiagCode::SecurityJavascriptPresent => Severity::Info,
 
             DiagCode::StructInvalidName
             | DiagCode::StructInvalidHex
@@ -1277,6 +1326,7 @@ impl DiagCode {
             | DiagCode::ImgSoftmaskUnsupported
             | DiagCode::ImgUnsupportedFormat
             | DiagCode::ImgDeskewOutOfRange
+            | DiagCode::ImgSourceMixed
             | DiagCode::StreamTruncated
             | DiagCode::RemoteNoRangeSupport
             | DiagCode::GstateStackOverflow
@@ -1306,7 +1356,8 @@ impl DiagCode {
             | DiagCode::RemoteUrlPrivateNetwork
             | DiagCode::McpToolInvalidParams
             | DiagCode::McpPathTraversal
-            | DiagCode::ProfileSecretsForbidden => Severity::Error,
+            | DiagCode::ProfileSecretsForbidden
+            | DiagCode::ProfileInvalid => Severity::Error,
 
             DiagCode::EncryptionUnsupported
             | DiagCode::EncryptionWrongPassword
@@ -1913,6 +1964,14 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         suggested_action: "Skew angle exceeds detection range (typically +/- 15 deg); image returned unchanged",
     },
     DiagInfo {
+        code: DiagCode::ImgSourceMixed,
+        category: "IMG",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "5.3.2",
+        suggested_action: "Page contains both vector and raster images in an unexpected combination; extraction quality may be degraded",
+    },
+    DiagInfo {
         code: DiagCode::StreamTruncated,
         category: "STREAM",
         severity: Severity::Warning,
@@ -2133,6 +2192,32 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         recoverable: true,
         phase: "7.10",
         suggested_action: "Remove the forbidden key from the profile YAML. Keys like password, token, secret, api_key are not allowed in profiles checked into source control.",
+    },
+    DiagInfo {
+        code: DiagCode::ProfileInvalid,
+        category: "PROFILE",
+        severity: Severity::Error,
+        recoverable: true,
+        phase: "5.6.2",
+        suggested_action: "Fix the profile YAML syntax or values. Refer to the profile schema for valid options.",
+    },
+    // === REPAIR_* codes ===
+    DiagInfo {
+        code: DiagCode::RepairRescuedFromBackwardsXref,
+        category: "REPAIR",
+        severity: Severity::Info,
+        recoverable: true,
+        phase: "1.3",
+        suggested_action: "None — the xref was reconstructed by scanning backwards from end of file; output may be incomplete on truncated files",
+    },
+    // === SECURITY_* codes ===
+    DiagInfo {
+        code: DiagCode::SecurityJavascriptPresent,
+        category: "SECURITY",
+        severity: Severity::Info,
+        recoverable: true,
+        phase: "1.2",
+        suggested_action: "The PDF contains embedded JavaScript. Review the document metadata.javascript_actions array for details. pdftract never executes embedded JS.",
     },
 ];
 
@@ -2527,5 +2612,175 @@ mod tests {
             "Diagnostic is larger than expected: {} bytes",
             size
         );
+    }
+}
+
+use std::sync::{Arc, Mutex};
+
+/// Thread-safe collector for diagnostics emitted during PDF extraction.
+///
+/// `DiagnosticsCollector` provides a synchronized wrapper around a vector of
+/// diagnostics, allowing multiple threads (e.g., rayon parallel iterators) to
+/// emit diagnostics concurrently without data races.
+///
+/// # Example
+///
+/// ```rust
+/// use pdftract_core::diagnostics::{DiagnosticsCollector, DiagCode};
+///
+/// let collector = DiagnosticsCollector::new();
+/// collector.emit(DiagCode::FontNotFound);
+/// let diagnostics = collector.into_vec();
+/// ```
+#[derive(Clone, Debug)]
+pub struct DiagnosticsCollector {
+    inner: Arc<Mutex<Vec<Diagnostic>>>,
+}
+
+impl DiagnosticsCollector {
+    /// Create a new empty diagnostics collector.
+    #[inline]
+    pub fn new() -> Self {
+        DiagnosticsCollector {
+            inner: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    /// Emit a diagnostic with the given code.
+    ///
+    /// This is a convenience method that creates a diagnostic with the default
+    /// message and no byte offset.
+    #[inline]
+    pub fn emit(&self, code: DiagCode) {
+        let mut diagnostics = self.inner.lock().unwrap();
+        diagnostics.push(Diagnostic::with_dynamic_no_offset(
+            code,
+            format!("{} diagnostic emitted", code.name()),
+        ));
+    }
+
+    /// Emit a diagnostic with the given code and byte offset.
+    #[inline]
+    pub fn emit_with_offset(&self, code: DiagCode, offset: u64) {
+        let mut diagnostics = self.inner.lock().unwrap();
+        diagnostics.push(Diagnostic::with_dynamic(
+            code,
+            offset,
+            format!("{} diagnostic emitted", code.name()),
+        ));
+    }
+
+    /// Emit a diagnostic with the given code and custom message.
+    #[inline]
+    pub fn emit_with_message(&self, code: DiagCode, message: String) {
+        let mut diagnostics = self.inner.lock().unwrap();
+        diagnostics.push(Diagnostic::with_dynamic_no_offset(code, message));
+    }
+
+    /// Consume the collector and return the underlying vector of diagnostics.
+    #[inline]
+    pub fn into_vec(self) -> Vec<Diagnostic> {
+        Arc::try_unwrap(self.inner)
+            .expect("DiagnosticsCollector has multiple owners")
+            .into_inner()
+            .unwrap()
+    }
+
+    /// Get a reference to the underlying vector of diagnostics.
+    #[inline]
+    pub fn get(&self) -> Vec<Diagnostic> {
+        let diagnostics = self.inner.lock().unwrap();
+        diagnostics.clone()
+    }
+
+    /// Get the number of diagnostics collected so far.
+    #[inline]
+    pub fn len(&self) -> usize {
+        let diagnostics = self.inner.lock().unwrap();
+        diagnostics.len()
+    }
+
+    /// Check if no diagnostics have been collected.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+impl Default for DiagnosticsCollector {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod collector_tests {
+    use super::*;
+
+    #[test]
+    fn test_collector_new() {
+        let collector = DiagnosticsCollector::new();
+        assert!(collector.is_empty());
+        assert_eq!(collector.len(), 0);
+    }
+
+    #[test]
+    fn test_collector_emit() {
+        let collector = DiagnosticsCollector::new();
+        collector.emit(DiagCode::FontNotFound);
+        assert_eq!(collector.len(), 1);
+        let diagnostics = collector.into_vec();
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].code, DiagCode::FontNotFound);
+    }
+
+    #[test]
+    fn test_collector_emit_with_offset() {
+        let collector = DiagnosticsCollector::new();
+        collector.emit_with_offset(DiagCode::StructInvalidName, 42);
+        let diagnostics = collector.into_vec();
+        assert_eq!(diagnostics[0].byte_offset, Some(42));
+    }
+
+    #[test]
+    fn test_collector_emit_with_message() {
+        let collector = DiagnosticsCollector::new();
+        collector.emit_with_message(DiagCode::StreamDecodeError, "custom message".to_string());
+        let diagnostics = collector.into_vec();
+        assert_eq!(diagnostics[0].message.as_ref(), "custom message");
+    }
+
+    #[test]
+    fn test_collector_clone() {
+        let collector = DiagnosticsCollector::new();
+        let collector2 = collector.clone();
+        collector.emit(DiagCode::FontNotFound);
+        assert_eq!(collector2.len(), 1);
+    }
+
+    #[test]
+    fn test_collector_thread_safety() {
+        use std::thread;
+        let collector = DiagnosticsCollector::new();
+        let handles: Vec<_> = (0..4)
+            .map(|i| {
+                let collector = collector.clone();
+                thread::spawn(move || {
+                    collector.emit(DiagCode::FontNotFound);
+                    collector.emit_with_offset(DiagCode::StructInvalidName, i as u64);
+                })
+            })
+            .collect();
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        // Each of 4 threads emitted 2 diagnostics
+        assert_eq!(collector.len(), 8);
+
+        let diagnostics = collector.into_vec();
+        assert_eq!(diagnostics.len(), 8);
     }
 }
