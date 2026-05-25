@@ -4,6 +4,7 @@
 //! a local web server that renders PDF extraction results with
 //! interactive debugging overlays.
 
+pub mod api;
 pub mod args;
 pub mod inspect;
 pub mod render;

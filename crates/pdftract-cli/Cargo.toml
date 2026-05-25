@@ -45,6 +45,7 @@ atty = "0.2"
 terminal_size = "0.3"
 async-stream = "0.3"
 axum = { version = "0.7", features = ["json", "multipart"] }
+base64 = { workspace = true }
 bytes = "1"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.5", features = ["derive"] }

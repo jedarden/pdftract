@@ -3,8 +3,9 @@
 //! Implements Phase 7.9.1: inspect subcommand with extraction pipeline,
 //! axum server, and browser launcher.
 
+use super::api;
 use super::args::InspectArgs;
-use crate::middleware::{AuditState, audit_middleware};
+use crate::middleware::{audit_middleware, AuditState};
 use anyhow::{Context, Result};
 use axum::{extract::State, response::Html, routing::get, Router};
 use pdftract_core::audit::AuditLogWriter;
@@ -68,10 +69,10 @@ pub async fn run(args: InspectArgs) -> Result<()> {
 
     // Create audit log writer if specified
     let audit_writer = if let Some(ref path) = args.audit_log {
-        Some(AuditLogWriter::open(path).context(format!(
-            "Failed to open audit log: {}",
-            path.display()
-        ))?)
+        Some(
+            AuditLogWriter::open(path)
+                .context(format!("Failed to open audit log: {}", path.display()))?,
+        )
     } else {
         None
     };
@@ -145,13 +146,24 @@ fn extract_document(path: &Path) -> Result<JsonValue> {
 /// Create the axum router for the inspector with audit middleware.
 fn create_router_with_audit(state: InspectorState) -> Router {
     let audit_state = state.audit.clone();
+    let state_arc = Arc::new(Mutex::new(state));
+
     Router::new()
+        // Index page
         .route("/", get(index_handler))
+        // API endpoints (Phase 7.9.2)
+        .route("/api/document", get(api::api_document))
+        .route("/api/page/:i", get(api::api_page))
+        .route("/api/page/:i/svg", get(api::api_page_svg))
+        .route("/api/page/:i/thumbnail", get(api::api_page_thumbnail))
+        .route("/api/raster/:i.png", get(api::api_raster))
+        .route("/api/search", get(api::api_search))
+        // Audit middleware
         .layer(axum::middleware::from_fn_with_state(
             audit_state,
             audit_middleware,
         ))
-        .with_state(Arc::new(Mutex::new(state)))
+        .with_state(state_arc)
 }
 
 /// Handler for the index page.
