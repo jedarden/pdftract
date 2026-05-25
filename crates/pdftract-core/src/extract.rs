@@ -13,6 +13,7 @@
 //! processing. This ensures peak RSS stays flat across page count, even for
 //! large documents with 10,000+ pages.
 
+use crate::annotation::{dispatch_annotations, json as annotation_json};
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::document::compute_fingerprint_lazy;
 use crate::forms::{
@@ -26,8 +27,8 @@ use crate::parser::stream::DEFAULT_MAX_DECOMPRESS_BYTES;
 use crate::parser::struct_tree::{check_coverage_for_pages, parse_struct_tree};
 use crate::receipts::Receipt;
 use crate::schema::{
-    BlockJson, ChoiceValueJson, FormFieldJson, FormFieldTypeJson, FormFieldValueJson,
-    SignatureJson, SpanJson, TableJson,
+    AnnotationJson, BlockJson, ChoiceValueJson, FormFieldJson, FormFieldTypeJson,
+    FormFieldValueJson, LinkJson, SignatureJson, SpanJson, TableJson,
 };
 use crate::semaphore::{Semaphore, SemaphoreExt};
 use crate::signature::{discover, extract_signatures};
@@ -41,6 +42,7 @@ use rayon::prelude::*;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::cmp::Ordering;
 use std::sync::Arc;
 
 #[cfg(feature = "receipts")]
@@ -135,6 +137,12 @@ pub struct ExtractionResult {
     /// are present, XFA values take precedence on collision.
     /// Empty when the PDF has no form fields.
     pub form_fields: Vec<FormFieldJson>,
+    /// Document-scoped hyperlinks extracted from the document.
+    ///
+    /// This array contains all link annotations (URI and internal destination links)
+    /// extracted from all pages. Links are sorted by (page_index, rect.y0 desc, rect.x0).
+    /// Empty when the PDF has no link annotations.
+    pub links: Vec<LinkJson>,
 }
 
 /// Result for a single page.
@@ -152,6 +160,13 @@ pub struct PageResult {
     /// This array provides detailed table structure with rows and cells.
     /// Table blocks in the `blocks` array reference entries here via `table_index`.
     pub tables: Vec<TableJson>,
+    /// Page-level annotations (highlights, stamps, notes, etc.).
+    ///
+    /// This array contains all non-link annotations on this page.
+    /// Annotations are sorted by (rect.y0 desc, rect.x0) for deterministic output.
+    /// Empty when the page has no annotations.
+    #[serde(default)]
+    pub annotations: Vec<AnnotationJson>,
     /// Error message if extraction failed for this page.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
@@ -184,6 +199,8 @@ struct PageResultInternal {
     pub blocks: Vec<BlockJson>,
     /// Extracted tables with grid information.
     pub tables: Vec<TableWithGrid>,
+    /// Page-level annotations (highlights, stamps, notes, etc.).
+    pub annotations: Vec<AnnotationJson>,
     /// Error message if extraction failed for this page.
     pub error: Option<String>,
     /// Page media box height for two-page detection.
@@ -197,6 +214,7 @@ impl From<PageResultInternal> for PageResult {
             spans: internal.spans,
             blocks: internal.blocks,
             tables: internal.tables.into_iter().map(|t| t.json).collect(),
+            annotations: internal.annotations,
             error: internal.error,
         }
     }
@@ -342,9 +360,61 @@ pub fn extract_pdf(
     // Create a semaphore to bound the number of in-flight pages
     let semaphore = Arc::new(Semaphore::new(options.max_parallel_pages));
 
-    // Process pages sequentially from the lazy iterator.
-    // Each page is extracted, added to results, and then dropped.
-    // This ensures decoded streams are never held resident across pages.
+    // First, collect all PageDict objects for annotation extraction
+    // We need these before extracting content so we can dispatch annotations once
+    let mut all_pages: Vec<crate::parser::pages::PageDict> = Vec::new();
+    loop {
+        match page_iter.next() {
+            Some(Ok(page_dict)) => {
+                all_pages.push(page_dict);
+            }
+            Some(Err(_)) | None => {
+                // End of pages or error - stop collecting
+                break;
+            }
+        }
+    }
+
+    // Phase 7.6: Extract annotations and links from all pages
+    // Walk all pages and extract annotations by subtype
+    //
+    // Note: For now, we pass None for dests_dict and names_dests_ref.
+    // A full implementation would resolve /Catalog /Dests and /Catalog /Names /Dests
+    // to support named destination resolution. This is sufficient for URI links
+    // and explicit destination arrays.
+    let (link_annotations, annotations) = dispatch_annotations(
+        &resolver_arc,
+        &all_pages,
+        None, // dests_dict
+        None, // names_dests_ref
+    );
+
+    // Convert links to JSON format and sort by (page_index, rect.y0 desc, rect.x0)
+    let mut links_json: Vec<LinkJson> = link_annotations
+        .iter()
+        .map(|link| annotation_json::link_to_json(link, &None))
+        .collect();
+    annotation_json::sort_links(&mut links_json);
+
+    // Convert annotations to JSON format and group by page
+    let mut annotations_by_page: std::collections::HashMap<usize, Vec<AnnotationJson>> =
+        std::collections::HashMap::new();
+
+    for annot in &annotations {
+        let json = annotation_json::annotation_to_json(annot);
+        let page_idx = annot.common.page_index;
+        annotations_by_page
+            .entry(page_idx)
+            .or_insert_with(Vec::new)
+            .push(json);
+    }
+
+    // Sort annotations within each page by (rect.y0 desc, rect.x0)
+    for page_annotations in annotations_by_page.values_mut() {
+        annotation_json::sort_annotations(page_annotations);
+    }
+
+    // Now process pages for content extraction (re-using the collected pages)
     let mut extracted_pages = Vec::new();
     let mut total_spans = 0;
     let mut total_blocks = 0;
@@ -358,35 +428,8 @@ pub fn extract_pdf(
         Vec::new();
     let needs_coverage_check = catalog.mark_info.requires_coverage_check() && struct_tree.is_some();
 
-    while let Some(page_result) = page_iter.next() {
-        let page_dict = match page_result {
-            Ok(p) => p,
-            Err(diagnostics) => {
-                // Emit diagnostics as error pages
-                let msg = diagnostics
-                    .first()
-                    .map(|d| d.message.as_ref())
-                    .unwrap_or("unknown error");
-                error_count += 1;
-                let page_height = 792.0; // Default height for error pages
-                page_heights.push(page_height);
-                extracted_pages.push(PageResultInternal {
-                    index: page_count,
-                    spans: vec![],
-                    blocks: vec![],
-                    tables: vec![],
-                    error: Some(msg.to_string()),
-                    page_height,
-                });
-                // Still record page data for coverage check (even on error)
-                if needs_coverage_check {
-                    pages_with_mcids.push((page_count, None, std::collections::HashSet::new()));
-                }
-                page_count += 1;
-                continue;
-            }
-        };
-
+    // Process pages for content extraction
+    for (page_index, page_dict) in all_pages.into_iter().enumerate() {
         // Get page height for two-page table detection
         let [_x0, _y0, _x1, y1] = page_dict.media_box;
         let page_height = (y1 - page_dict.media_box[1]).max(0.0);
@@ -410,19 +453,22 @@ pub fn extract_pdf(
 
             // Record page data for coverage check
             let mcid_set = tracker.mcid_set().clone();
-            pages_with_mcids.push((page_count, struct_parents, mcid_set));
+            pages_with_mcids.push((page_index, struct_parents, mcid_set));
 
             // Drop decoded_streams and tracker to free memory
             drop(decoded_streams);
             // tracker dropped implicitly
         }
 
+        // Get the annotations for this page (already sorted)
+        let page_annotations = annotations_by_page.remove(&page_index).unwrap_or_default();
+
         // Extract this page with lazy stream decoding.
         // Content streams are decoded, processed, and dropped immediately.
         let extract_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             extract_page_from_dict(
                 &fingerprint_arc,
-                page_count,
+                page_index,
                 &page_dict,
                 &options_arc,
                 Some(&source),
@@ -431,18 +477,20 @@ pub fn extract_pdf(
         }));
 
         match extract_result {
-            Ok(Ok(page)) => {
+            Ok(Ok(mut page)) => {
                 total_spans += page.spans.len();
                 total_blocks += page.blocks.len();
+                page.annotations = page_annotations;
                 extracted_pages.push(page);
             }
             Ok(Err(e)) => {
                 error_count += 1;
                 extracted_pages.push(PageResultInternal {
-                    index: page_count,
+                    index: page_index,
                     spans: vec![],
                     blocks: vec![],
                     tables: vec![],
+                    annotations: page_annotations,
                     error: Some(e.to_string()),
                     page_height,
                 });
@@ -450,11 +498,12 @@ pub fn extract_pdf(
             Err(_) => {
                 error_count += 1;
                 extracted_pages.push(PageResultInternal {
-                    index: page_count,
+                    index: page_index,
                     spans: vec![],
                     blocks: vec![],
                     tables: vec![],
-                    error: Some(format!("Page {} extraction panicked", page_count)),
+                    annotations: page_annotations,
+                    error: Some(format!("Page {} extraction panicked", page_index)),
                     page_height,
                 });
             }
@@ -571,6 +620,7 @@ pub fn extract_pdf(
         },
         signatures,
         form_fields,
+        links: links_json,
     })
 }
 
@@ -834,6 +884,7 @@ fn extract_page(
         spans: vec![span],
         blocks: vec![block],
         tables: vec![],
+        annotations: vec![],
         error: None,
     })
 }
@@ -1376,6 +1427,7 @@ where
                     spans: vec![],
                     blocks: vec![],
                     tables: vec![],
+                    annotations: vec![],
                     error: Some(msg.to_string()),
                 };
                 if !callback(&error_page) {
@@ -1434,6 +1486,7 @@ where
                     spans: vec![],
                     blocks: vec![],
                     tables: vec![],
+                    annotations: vec![],
                     error: Some(e.to_string()),
                 }
             }
@@ -1444,6 +1497,7 @@ where
                     spans: vec![],
                     blocks: vec![],
                     tables: vec![],
+                    annotations: vec![],
                     error: Some(format!("Page {} extraction panicked", page_count)),
                 }
             }
@@ -1687,6 +1741,7 @@ fn extract_page_from_dict(
         spans: vec![span],
         blocks,
         tables,
+        annotations: vec![],
         error: None,
         page_height,
     })

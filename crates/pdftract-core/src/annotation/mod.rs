@@ -13,6 +13,7 @@
 //! The `AnnotationCommon` struct is shared by both link and annotation extractors,
 //! ensuring consistent parsing of common fields like dates, colors, and strings.
 
+pub mod json;
 pub mod links;
 pub mod other;
 

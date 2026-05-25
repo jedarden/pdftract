@@ -1,5 +1,265 @@
 {
   "$defs": {
+    "AnnotationJson": {
+      "description": "JSON representation of a PDF annotation.\n\nThis struct represents a non-link annotation from a PDF page, such as\nhighlights, text notes, stamps, free text, ink drawings, lines, polygons,\nand file attachments.\n\nPer the plan (Phase 7.6.3), annotations are extracted after links and\nform fields, with sorting for deterministic output.",
+      "properties": {
+        "author": {
+          "description": "The annotation's author from the /T entry.\n\nNone if /T is missing or not a string.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "color": {
+          "description": "The color array from /C as RGB/Grayscale components.\n\nNone if /C is missing. Length is 1 (grayscale), 3 (RGB), or 4 (CMYK).",
+          "items": {
+            "format": "float",
+            "type": "number"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "contents": {
+          "description": "The annotation's content text from /Contents.\n\nNone if /Contents is missing or not a string.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "modified": {
+          "description": "The modification date from /M as an ISO 8601 string.\n\nNone if /M is missing, malformed, or fails to parse.\nFormat: \"YYYY-MM-DDTHH:MM:SS+HH:MM\" or \"YYYY-MM-DDTHH:MM:SSZ\"",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name_id": {
+          "description": "The name identifier from /NM.\n\nNone if /NM is missing.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "opacity": {
+          "description": "The opacity from /CA.\n\nNone if /CA is missing.",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "rect": {
+          "description": "The bounding rectangle [x0, y0, x1, y1] in PDF user-space units.\n\nNone if the /Rect entry is missing or invalid.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "specific": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnnotationSpecificJson"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Subtype-specific fields.\n\nPresent only for annotation types that have additional data beyond\nthe common fields. For unsupported subtypes, this is null."
+        },
+        "subject": {
+          "description": "The subject from /Subj.\n\nNone if /Subj is missing.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "description": "The annotation subtype (e.g., \"Highlight\", \"Text\", \"Stamp\", \"FreeText\", \"Ink\", \"Line\", \"Polygon\", \"FileAttachment\").",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "AnnotationSpecificJson": {
+      "description": "Subtype-specific annotation fields.\n\nThis enum captures the additional data present in specific annotation subtypes.",
+      "oneOf": [
+        {
+          "description": "Text markup annotations (Highlight, Underline, StrikeOut, Squiggly).\n\nContains the quadpoint arrays defining the marked regions.",
+          "properties": {
+            "quads": {
+              "description": "Array of quadpoint arrays [x0, y0, x1, y1, x2, y2, x3, y3] defining the marked regions.\n\nEach quad defines a quadrilateral region in PDF user-space coordinates.",
+              "items": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 8,
+                "minItems": 8,
+                "type": "array"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "quads"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Stamp annotations.\n\nContains the stamp name from /Name.",
+          "properties": {
+            "name": {
+              "description": "The stamp name (e.g., \"Approved\", \"Draft\", \"Confidential\").",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Free text annotations.\n\nContains the default appearance string from /DA.",
+          "properties": {
+            "da": {
+              "description": "The default appearance string.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "da"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Text annotations (sticky notes).\n\nContains the open state and state information.",
+          "properties": {
+            "open": {
+              "description": "Whether the note is initially open.",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "state": {
+              "description": "The annotation state from /State (e.g., \"Reviewed\", \"Accepted\").",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "state_model": {
+              "description": "The state model from /StateModel (e.g., \"Marked\", \"Review\").",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        {
+          "description": "Ink annotations (hand-drawn sketches).\n\nContains the stroke paths.",
+          "properties": {
+            "strokes": {
+              "description": "Array of stroke paths, where each stroke is an array of points.\n\nEach point is [x, y] in PDF user-space coordinates.",
+              "items": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "strokes"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Line annotations.\n\nContains the line endpoints.",
+          "properties": {
+            "endpoints": {
+              "description": "The line endpoints as [[x0, y0], [x1, y1]].",
+              "items": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            }
+          },
+          "required": [
+            "endpoints"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Polygon annotations.\n\nContains the polygon vertices.",
+          "properties": {
+            "vertices": {
+              "description": "Array of [x, y] vertices defining the polygon.\n\nEach vertex is in PDF user-space coordinates.",
+              "items": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "vertices"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "File attachment annotations.\n\nContains the file specification reference.",
+          "properties": {
+            "fs_ref": {
+              "description": "The file specification reference number.\n\nComputed as (object_number << 16 | generation_number) as u32.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "fs_ref"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "BlockJson": {
       "description": "JSON representation of a structural block.\n\nA block is a higher-level semantic unit composed of one or more\nspans. Examples include paragraphs, headings, list items, and\ntable cells.",
       "properties": {
@@ -141,6 +401,215 @@
         }
       ],
       "description": "Choice field value representation.\n\nChoice fields can have either a single selected value or multiple\nselected values (for multi-select list boxes)."
+    },
+    "DestArrayJson": {
+      "description": "Explicit destination array for internal links.\n\nThis struct represents an explicit destination in a PDF, which specifies\na target page and how that page should be displayed (fit type).",
+      "properties": {
+        "dest": {
+          "$ref": "#/$defs/DestTypeJson",
+          "description": "The fit type and associated coordinates for this destination."
+        },
+        "page_index": {
+          "description": "Zero-based page index for this destination.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "page_index",
+        "dest"
+      ],
+      "type": "object"
+    },
+    "DestTypeJson": {
+      "description": "Destination fit type enum.\n\nThis enum defines how a page should be displayed when navigating to\na destination. It corresponds to the PDF destination fit types.",
+      "oneOf": [
+        {
+          "description": "XYZ destination with optional left, top, and zoom.\n\nDisplay the page with the coordinates (left, top) positioned at the\nupper-left corner of the window and the page contents magnified by\nthe factor zoom. A null value for any of left, top, or zoom indicates\nthat the current value of that parameter should be retained unchanged.",
+          "properties": {
+            "left": {
+              "description": "The left coordinate in PDF user-space units.\n\nNull indicates the current left position should be retained.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "top": {
+              "description": "The top coordinate in PDF user-space units.\n\nNull indicates the current top position should be retained.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "zoom": {
+              "description": "The zoom factor.\n\nNull indicates the current zoom level should be retained.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        {
+          "const": "Fit",
+          "description": "Fit destination — display the page with its contents magnified\njust enough to fit the entire page within the window both horizontally\nand vertically.",
+          "type": "string"
+        },
+        {
+          "description": "FitH destination with optional top coordinate.\n\nDisplay the page with the top coordinate positioned at the top edge\nof the window and the contents magnified just enough to fit the entire\nwidth of the page within the window.",
+          "properties": {
+            "top": {
+              "description": "The top coordinate in PDF user-space units.\n\nNull indicates the current top position should be retained.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        {
+          "description": "FitV destination with optional left coordinate.\n\nDisplay the page with the left coordinate positioned at the left edge\nof the window and the contents magnified just enough to fit the entire\nheight of the page within the window.",
+          "properties": {
+            "left": {
+              "description": "The left coordinate in PDF user-space units.\n\nNull indicates the current left position should be retained.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        {
+          "description": "FitR destination with bounding rectangle.\n\nDisplay the page with the specified rectangle magnified just enough\nto fit the entire rectangle within the window both horizontally and\nvertically.",
+          "properties": {
+            "bottom": {
+              "description": "The bottom coordinate in PDF user-space units.",
+              "format": "double",
+              "type": "number"
+            },
+            "left": {
+              "description": "The left coordinate in PDF user-space units.",
+              "format": "double",
+              "type": "number"
+            },
+            "right": {
+              "description": "The right coordinate in PDF user-space units.",
+              "format": "double",
+              "type": "number"
+            },
+            "top": {
+              "description": "The top coordinate in PDF user-space units.",
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "left",
+            "bottom",
+            "right",
+            "top"
+          ],
+          "type": "object"
+        },
+        {
+          "const": "FitB",
+          "description": "FitB destination — display the page with its contents magnified\njust enough to fit its bounding box entirely within the window both\nhorizontally and vertically.",
+          "type": "string"
+        },
+        {
+          "description": "FitBH destination with optional top coordinate.\n\nDisplay the page with the top coordinate positioned at the top edge\nof the window and the contents magnified just enough to fit the entire\nwidth of its bounding box within the window.",
+          "properties": {
+            "top": {
+              "description": "The top coordinate in PDF user-space units.\n\nNull indicates the current top position should be retained.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        {
+          "description": "FitBV destination with optional left coordinate.\n\nDisplay the page with the left coordinate positioned at the left edge\nof the window and the contents magnified just enough to fit the entire\nheight of its bounding box within the window.",
+          "properties": {
+            "left": {
+              "description": "The left coordinate in PDF user-space units.\n\nNull indicates the current left position should be retained.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [],
+          "type": "object"
+        }
+      ]
+    },
+    "LinkJson": {
+      "description": "JSON representation of a PDF link annotation.\n\nThis struct represents a hyperlink from a PDF page, which can point to\na URI, a named destination, or an explicit destination array.\n\nPer the plan (Phase 7.6.2), links are extracted and sorted deterministically\nfor stable output.",
+      "properties": {
+        "dest": {
+          "description": "Named destination string (e.g., \"Chapter1\").\n\nNone if the link is not a named destination link.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dest_array": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DestArrayJson"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Explicit destination array with page index and fit type.\n\nNone if the link is not an explicit destination link."
+        },
+        "page_index": {
+          "description": "Zero-based page index containing this link.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rect": {
+          "description": "The bounding rectangle [x0, y0, x1, y1] in PDF user-space units.\n\nFormat: [x0, y0, x1, y1] where (x0, y0) is the bottom-left corner and\n(x1, y1) is the top-right corner.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "type": "array"
+        },
+        "uri": {
+          "description": "URI string for external links.\n\nNone if the link is not a URI link.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "page_index",
+        "rect"
+      ],
+      "type": "object"
     },
     "ExtractionMetadata": {
       "description": "Metadata about the extraction process.",
@@ -403,6 +872,13 @@
     "PageResult": {
       "description": "Result for a single page.",
       "properties": {
+        "annotations": {
+          "description": "Non-link annotations on this page (highlights, notes, stamps, etc.).\n\nThis array contains all non-link annotations extracted from the page's\n/Annots array. Annotations are sorted deterministically by position\n(y0 descending, then x0 ascending) for stable output.",
+          "items": {
+            "$ref": "#/$defs/AnnotationJson"
+          },
+          "type": "array"
+        },
         "blocks": {
           "description": "Extracted blocks (semantic units like paragraphs, headings).",
           "items": {
@@ -757,6 +1233,13 @@
       },
       "type": "array"
     },
+    "links": {
+      "description": "Hyperlink annotations extracted from the document.\n\nThis array contains all link annotations from all pages, sorted\ndeterministically by page_index and position for stable output.\nEmpty when the PDF has no link annotations.",
+      "items": {
+        "$ref": "#/$defs/LinkJson"
+      },
+      "type": "array"
+    },
     "metadata": {
       "$ref": "#/$defs/ExtractionMetadata",
       "description": "Metadata about the extraction."
@@ -781,7 +1264,8 @@
     "pages",
     "metadata",
     "signatures",
-    "form_fields"
+    "form_fields",
+    "links"
   ],
   "title": "pdftract Output v1.0",
   "type": "object"
