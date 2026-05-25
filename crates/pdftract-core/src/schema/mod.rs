@@ -719,6 +719,28 @@ pub struct DestinationJson {
     pub zoom: Option<f64>,
 }
 
+/// JSON representation of a JavaScript action found in a PDF.
+///
+/// Represents a single JavaScript action discovered during extraction.
+/// Per TH-04, pdftract NEVER executes embedded JavaScript; this struct
+/// surfaces the JS for downstream security review.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct JavascriptActionJson {
+    /// Location of the JavaScript action in the PDF structure.
+    ///
+    /// Examples: "catalog.openaction", "page.0.aa.O", "page.1.annot.0.A".
+    /// The format is: <scope>.<index>.<path> where scope is "catalog" or "page",
+    /// index is the page number (for pages), and path is the dot-joined entry path.
+    pub location: String,
+
+    /// Truncated excerpt of the JavaScript code (first 200 characters).
+    ///
+    /// The excerpt is JSON-escaped and HTML-escaped if rendered in a web context.
+    /// This field contains the raw JS text for review, NOT executable code.
+    pub code_excerpt: String,
+}
+
 /// JSON representation of document metadata.
 ///
 /// Contains all standard PDF document information dictionary fields along
@@ -780,6 +802,13 @@ pub struct DocumentMetadata {
 
     /// True if JavaScript actions are present in the document.
     pub contains_javascript: bool,
+
+    /// JavaScript actions found in the document.
+    ///
+    /// Per TH-04, this array contains all discovered JavaScript actions
+    /// with their location and code excerpt. Empty when no JS is present.
+    #[serde(default)]
+    pub javascript_actions: Vec<JavascriptActionJson>,
 
     /// True if XFA forms are present.
     pub contains_xfa: bool,
@@ -1313,6 +1342,7 @@ impl Output {
                 is_encrypted: false,
                 conformance: default_conformance(),
                 contains_javascript: false,
+                javascript_actions: Vec::new(),
                 contains_xfa: false,
                 ocg_present: false,
                 generator: None,
@@ -2123,6 +2153,7 @@ mod tests {
             is_encrypted: false,
             conformance: "none".to_string(),
             contains_javascript: false,
+            javascript_actions: Vec::new(),
             contains_xfa: false,
             ocg_present: false,
             generator: None,
@@ -2168,6 +2199,7 @@ mod tests {
             is_encrypted: false,
             conformance: "PDF-A-1b".to_string(),
             contains_javascript: true,
+            javascript_actions: Vec::new(),
             contains_xfa: false,
             ocg_present: false,
             generator: Some("pdftract v0.1.0".to_string()),

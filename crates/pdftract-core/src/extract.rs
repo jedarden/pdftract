@@ -30,7 +30,7 @@ use crate::parser::struct_tree::{check_coverage_for_pages, parse_struct_tree};
 use crate::receipts::Receipt;
 use crate::schema::{
     AnnotationJson, AttachmentJson, BlockJson, ChoiceValueJson, FormFieldJson, FormFieldTypeJson,
-    FormFieldValueJson, LinkJson, SignatureJson, SpanJson, TableJson, ThreadJson,
+    FormFieldValueJson, JavascriptActionJson, LinkJson, SignatureJson, SpanJson, TableJson, ThreadJson,
 };
 use crate::semaphore::{Semaphore, SemaphoreExt};
 use crate::signature::{discover, extract_signatures};
@@ -159,6 +159,14 @@ pub struct ExtractionResult {
     /// complete bead chain walked from the first bead. Empty when the PDF has
     /// no article threads.
     pub threads: Vec<ThreadJson>,
+    /// JavaScript actions detected in the document.
+    ///
+    /// Per TH-04, this array contains all discovered JavaScript actions
+    /// with their location and code excerpt. pdftract NEVER executes
+    /// embedded JavaScript; this is for downstream security review.
+    /// Empty when no JavaScript is present.
+    #[serde(default)]
+    pub javascript_actions: Vec<JavascriptActionJson>,
 }
 
 /// Result for a single page.
@@ -167,6 +175,31 @@ pub struct ExtractionResult {
 pub struct PageResult {
     /// 0-based page index.
     pub index: usize,
+    /// 1-based page number (= index + 1).
+    ///
+    /// Emitted as a convenience for human-facing display. For programmatic
+    /// access, use index instead.
+    pub page_number: u32,
+    /// Human-readable label from PDF /PageLabels number tree.
+    ///
+    /// Examples: "iv", "A-3", "1". Null if the PDF defines no page labels.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page_label: Option<String>,
+    /// Page width in points (1/72 inch).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub width: Option<f32>,
+    /// Page height in points (1/72 inch).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<f32>,
+    /// Page rotation in degrees clockwise (0, 90, 180, or 270).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rotation: Option<u16>,
+    /// Page classification from the page classifier.
+    ///
+    /// One of: "text", "scanned", "mixed", "broken_vector", "blank", "figure_only".
+    #[serde(rename = "type")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page_type: Option<String>,
     /// Extracted spans (text fragments with consistent styling).
     pub spans: Vec<SpanJson>,
     /// Extracted blocks (semantic units like paragraphs, headings).
@@ -227,6 +260,12 @@ impl From<PageResultInternal> for PageResult {
     fn from(internal: PageResultInternal) -> Self {
         PageResult {
             index: internal.index,
+            page_number: (internal.index + 1) as u32,
+            page_label: None,
+            width: None,
+            height: None,
+            rotation: None,
+            page_type: None,
             spans: internal.spans,
             blocks: internal.blocks,
             tables: internal.tables.into_iter().map(|t| t.json).collect(),
@@ -444,6 +483,10 @@ pub fn extract_pdf(
         Vec::new();
     let needs_coverage_check = catalog.mark_info.requires_coverage_check() && struct_tree.is_some();
 
+    // Save a clone of pages for JavaScript detection later
+    // We need to clone because all_pages will be consumed in the loop
+    let pages_for_js_detection = all_pages.clone();
+
     // Process pages for content extraction
     for (page_index, page_dict) in all_pages.into_iter().enumerate() {
         // Get page height for two-page table detection
@@ -657,6 +700,26 @@ pub fn extract_pdf(
         }
     }
 
+    // TH-04: Detect JavaScript actions in the document
+    // This checks /OpenAction, /AA, page /AA, and annotation /A entries
+    use crate::javascript::detect_javascript;
+    let (js_actions, js_diagnostics) = detect_javascript(&catalog, &pages_for_js_detection, &resolver_arc);
+
+    // Convert JavascriptAction to JavascriptActionJson
+    let javascript_actions: Vec<JavascriptActionJson> = js_actions
+        .into_iter()
+        .map(|action| JavascriptActionJson {
+            location: action.location,
+            code_excerpt: action.code_excerpt,
+        })
+        .collect();
+
+    // Add JavaScript detection diagnostics to the error list
+    let mut all_diagnostics_with_js = all_diagnostics;
+    for diag in js_diagnostics {
+        all_diagnostics_with_js.push(diag.message.as_ref().to_string());
+    }
+
     Ok(ExtractionResult {
         fingerprint,
         pages: extracted_pages,
@@ -669,13 +732,14 @@ pub fn extract_pdf(
             cache_age_seconds: None,
             error_count,
             reading_order_algorithm: Some(final_reading_order_algorithm.as_str().to_string()),
-            diagnostics: all_diagnostics,
+            diagnostics: all_diagnostics_with_js,
         },
         signatures,
         form_fields,
         links: links_json,
         attachments,
         threads: threads_json,
+        javascript_actions,
     })
 }
 
@@ -995,6 +1059,12 @@ fn extract_page(
 
     Ok(PageResult {
         index: page_index,
+        page_number: (page_index + 1) as u32,
+        page_label: None,
+        width: None,
+        height: None,
+        rotation: None,
+        page_type: None,
         spans: vec![span],
         blocks: vec![block],
         tables: vec![],
@@ -1108,7 +1178,11 @@ pub fn result_to_json(result: &ExtractionResult) -> serde_json::Value {
         "pages": pages,
         "metadata": metadata_obj,
         "signatures": result.signatures,
-        "attachments": result.attachments
+        "form_fields": result.form_fields,
+        "links": result.links,
+        "attachments": result.attachments,
+        "threads": result.threads,
+        "javascript_actions": result.javascript_actions
     })
 }
 
@@ -1539,6 +1613,12 @@ where
                 error_count += 1;
                 let error_page = PageResult {
                     index: page_count,
+                    page_number: (page_count + 1) as u32,
+                    page_label: None,
+                    width: None,
+                    height: None,
+                    rotation: None,
+                    page_type: None,
                     spans: vec![],
                     blocks: vec![],
                     tables: vec![],
@@ -1598,6 +1678,12 @@ where
                 error_count += 1;
                 PageResult {
                     index: page_count,
+                    page_number: (page_count + 1) as u32,
+                    page_label: None,
+                    width: None,
+                    height: None,
+                    rotation: None,
+                    page_type: None,
                     spans: vec![],
                     blocks: vec![],
                     tables: vec![],
@@ -1609,6 +1695,12 @@ where
                 error_count += 1;
                 PageResult {
                     index: page_count,
+                    page_number: (page_count + 1) as u32,
+                    page_label: None,
+                    width: None,
+                    height: None,
+                    rotation: None,
+                    page_type: None,
                     spans: vec![],
                     blocks: vec![],
                     tables: vec![],

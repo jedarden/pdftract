@@ -9,6 +9,7 @@ pub mod atomic_file_writer;
 pub mod attachment;
 pub mod audit;
 pub mod cache;
+pub mod javascript;
 pub mod classify;
 pub mod confidence;
 pub mod content_stream;
