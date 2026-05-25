@@ -16,5 +16,5 @@ pub mod frames;
 pub mod pipeline;
 
 pub use buffer::OutOfOrderBuffer;
-pub use frames::{FooterFrame, HeaderFrame, PageFrame};
+pub use frames::{write_frame, FooterFrame, HeaderFrame, NdjsonFrame, PageFrame};
 pub use pipeline::extract_streaming;
