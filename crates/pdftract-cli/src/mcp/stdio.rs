@@ -383,7 +383,7 @@ fn handle_request(
 /// - A message cannot be read or parsed
 /// - A response cannot be written
 /// - stdin/stdout is not a TTY (but this is expected for stdio mode)
-pub fn run(root: Option<&Path>) -> Result<()> {
+pub fn run(root: Option<&Path>, audit_log: Option<&std::path::Path>) -> Result<()> {
     // Set up panic hook FIRST (before any potential panics)
     setup_panic_hook();
 
@@ -392,6 +392,21 @@ pub fn run(root: Option<&Path>) -> Result<()> {
 
     // Initialize stdout writer (only way to write to stdout in stdio mode)
     init_stdout();
+
+    // Create audit log writer if specified (stdio mode: audit goes to stderr)
+    let _audit_writer = if let Some(path) = audit_log {
+        if path == std::path::Path::new("/dev/stderr") {
+            // For stdio mode, /dev/stderr is the implicit audit destination
+            eprintln!("Audit log: stderr (stdio mode)");
+            Some(pdftract_core::audit::AuditLogWriter::open(path)?)
+        } else {
+            eprintln!("Audit log: {}", path.display());
+            Some(pdftract_core::audit::AuditLogWriter::open(path)?)
+        }
+    } else {
+        eprintln!("Audit log: disabled");
+        None
+    };
 
     // Create the tool registry with the root path
     let registry = tools::all_tools();

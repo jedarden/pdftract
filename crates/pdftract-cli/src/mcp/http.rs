@@ -23,6 +23,7 @@
 
 use crate::mcp::framing::{BatchMessage, ErrorObject, Id, Notification, Request, Response};
 use crate::mcp::tools;
+use crate::middleware::{AuditState, audit_middleware};
 use anyhow::{anyhow, Context, Result};
 use axum::{
     body::Body,
@@ -32,6 +33,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use pdftract_core::audit::AuditLogWriter;
 use secrecy::{ExposeSecret, SecretString};
 use serde_json::{json, Value};
 use std::net::SocketAddr;
@@ -71,6 +73,9 @@ pub struct McpServerState {
 
     /// Root directory for path-traversal protection (canonicalized at startup)
     root: Option<PathBuf>,
+
+    /// Audit log state
+    pub audit: AuditState,
 }
 
 impl McpServerState {
@@ -79,6 +84,7 @@ impl McpServerState {
         auth_token: Option<SecretString>,
         max_upload_mb: Option<usize>,
         root: Option<PathBuf>,
+        audit_writer: Option<AuditLogWriter>,
     ) -> Self {
         let max_body_bytes = max_upload_mb.unwrap_or(DEFAULT_MAX_UPLOAD_MB) * 1024 * 1024;
         let notify_tx = broadcast::channel(100).0; // Channel size 100 for buffered notifications
@@ -90,6 +96,7 @@ impl McpServerState {
             client_count: Arc::new(AtomicUsize::new(0)),
             tool_registry: Arc::new(tools::all_tools()),
             root,
+            audit: AuditState::new(audit_writer),
         }
     }
 
@@ -133,9 +140,20 @@ pub async fn run_server(
     auth_token: Option<SecretString>,
     max_upload_mb: Option<usize>,
     root: Option<&std::path::Path>,
+    audit_log: Option<std::path::PathBuf>,
 ) -> Result<()> {
+    // Create audit log writer if specified
+    let audit_writer = if let Some(ref path) = audit_log {
+        Some(AuditLogWriter::open(path).context(format!(
+            "Failed to open audit log: {}",
+            path.display()
+        ))?)
+    } else {
+        None
+    };
+
     // Create the shared server state
-    let state = McpServerState::new(auth_token, max_upload_mb, root.map(|p| p.to_path_buf()));
+    let state = McpServerState::new(auth_token, max_upload_mb, root.map(|p| p.to_path_buf()), audit_writer);
     let max_body_bytes = state.max_body_bytes;
 
     // Build the router
@@ -146,6 +164,10 @@ pub async fn run_server(
         .route("/", post(handle_post_request))
         .route("/sse", get(handle_sse))
         .route("/health", get(handle_health))
+        .layer(axum::middleware::from_fn_with_state(
+            state.audit.clone(),
+            audit_middleware,
+        ))
         .with_state(state)
         .layer(DefaultBodyLimit::max(256 * 1024 * 1024)) // 256 MB hard limit
         .layer(axum::middleware::from_fn(logging_middleware));

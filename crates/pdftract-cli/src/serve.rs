@@ -53,9 +53,11 @@ use axum::{
     Router,
 };
 use bytes;
+use pdftract_core::audit::AuditLogWriter;
 use pdftract_core::cache;
 use pdftract_core::extract::{extract_pdf, extract_pdf_ndjson, result_to_json};
 use pdftract_core::options::{ExtractionOptions, ReceiptsMode};
+use crate::middleware::{AuditState, audit_middleware};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -78,11 +80,18 @@ pub struct CacheState {
 pub struct ServeState {
     /// Cache configuration
     pub cache: Arc<Mutex<CacheState>>,
+    /// Audit log state
+    pub audit: AuditState,
 }
 
 impl ServeState {
     /// Create a new serve state.
-    pub fn new(cache_dir: Option<PathBuf>, cache_size_bytes: u64, cache_disabled: bool) -> Self {
+    pub fn new(
+        cache_dir: Option<PathBuf>,
+        cache_size_bytes: u64,
+        cache_disabled: bool,
+        audit_writer: Option<AuditLogWriter>,
+    ) -> Self {
         let cache = CacheState {
             cache_dir,
             cache_size_bytes,
@@ -90,6 +99,7 @@ impl ServeState {
         };
         Self {
             cache: Arc::new(Mutex::new(cache)),
+            audit: AuditState::new(audit_writer),
         }
     }
 }
@@ -151,15 +161,28 @@ struct ExtractParams {
 /// * `cache_size_bytes` — Cache size limit in bytes
 /// * `cache_disabled` — Whether cache is globally disabled
 /// * `max_upload_mb` — Maximum request body size in MB
+/// * `audit_log` — Optional audit log file path
 pub async fn run(
     bind_addr: String,
     cache_dir: Option<PathBuf>,
     cache_size_bytes: u64,
     cache_disabled: bool,
     max_upload_mb: usize,
+    audit_log: Option<PathBuf>,
 ) -> Result<()> {
     let cache_dir_for_logging = cache_dir.as_deref();
-    let state = ServeState::new(cache_dir.clone(), cache_size_bytes, cache_disabled);
+
+    // Create audit log writer if specified
+    let audit_writer = if let Some(ref path) = audit_log {
+        Some(AuditLogWriter::open(path).context(format!(
+            "Failed to open audit log: {}",
+            path.display()
+        ))?)
+    } else {
+        None
+    };
+
+    let state = ServeState::new(cache_dir.clone(), cache_size_bytes, cache_disabled, audit_writer);
 
     let max_body_bytes = max_upload_mb * 1024 * 1024;
 
@@ -169,6 +192,10 @@ pub async fn run(
         .route("/extract/text", post(extract_text_handler))
         .route("/extract/stream", post(extract_stream_handler))
         .route("/health", get(health_handler))
+        .layer(axum::middleware::from_fn_with_state(
+            state.audit.clone(),
+            audit_middleware,
+        ))
         .layer(DefaultBodyLimit::max(max_body_bytes))
         .layer(RequestBodyLimitLayer::new(max_body_bytes))
         .with_state(state);
@@ -186,6 +213,9 @@ pub async fn run(
         );
     } else {
         eprintln!("Cache disabled");
+    }
+    if let Some(ref path) = audit_log {
+        eprintln!("Audit log: {}", path.display());
     }
 
     axum::serve(listener, app)

@@ -11,6 +11,7 @@ mod doctor;
 mod grep;
 mod inspect;
 mod mcp;
+mod middleware;
 mod password;
 mod serve;
 mod verify_receipt;
@@ -219,6 +220,10 @@ enum Commands {
         /// Maximum request body size in MB (default: 256)
         #[arg(long, default_value = "256")]
         max_upload_mb: usize,
+
+        /// Write per-request audit log to FILE (NDJSON; use "-" for stdout)
+        #[arg(long, value_name = "FILE")]
+        audit_log: Option<PathBuf>,
     },
     /// Start the MCP (Model Context Protocol) server
     ///
@@ -258,6 +263,10 @@ enum Commands {
         /// trust-the-caller mode (no path-check applied).
         #[arg(long, value_name = "DIR")]
         root: Option<PathBuf>,
+
+        /// Write per-request audit log to FILE (NDJSON; use "-" for stdout, "/dev/stderr" for stderr)
+        #[arg(long, value_name = "FILE")]
+        audit_log: Option<PathBuf>,
     },
     /// Check environment health and dependencies
     ///
@@ -462,8 +471,9 @@ fn main() -> Result<()> {
             cache_size,
             no_cache,
             max_upload_mb,
+            audit_log,
         } => {
-            if let Err(e) = cmd_serve(bind, cache_dir, &cache_size, no_cache, max_upload_mb) {
+            if let Err(e) = cmd_serve(bind, cache_dir, &cache_size, no_cache, max_upload_mb, audit_log) {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
@@ -481,6 +491,7 @@ fn main() -> Result<()> {
             auth_token,
             max_upload_mb,
             root,
+            audit_log,
         } => {
             // Per ADR-006: exactly one transport must be selected.
             // If neither --stdio nor --bind is specified, default to stdio mode.
@@ -510,7 +521,7 @@ fn main() -> Result<()> {
 
             if use_stdio {
                 // stdio mode (default for Claude Desktop, Claude Code, etc.)
-                if let Err(e) = mcp::run_stdio(root_path.as_deref()) {
+                if let Err(e) = mcp::run_stdio(root_path.as_deref(), audit_log.as_deref()) {
                     eprintln!("Error: {}", e);
                     std::process::exit(1);
                 }
@@ -523,6 +534,7 @@ fn main() -> Result<()> {
                     auth_token,
                     Some(max_upload_mb),
                     root_path,
+                    audit_log,
                 ) {
                     eprintln!("Error: {}", e);
                     std::process::exit(1);
@@ -1429,6 +1441,7 @@ fn cmd_serve(
     cache_size: &str,
     no_cache: bool,
     max_upload_mb: usize,
+    audit_log: Option<PathBuf>,
 ) -> Result<()> {
     // Parse cache size
     let cache_size_bytes = parse_size(cache_size)?;
@@ -1452,6 +1465,7 @@ fn cmd_serve(
             cache_size_bytes,
             no_cache,
             max_upload_mb,
+            audit_log,
         ))
 }
 

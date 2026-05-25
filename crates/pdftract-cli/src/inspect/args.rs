@@ -40,6 +40,10 @@ pub struct InspectArgs {
     /// When provided, the inspector shows side-by-side comparison.
     #[arg(long, value_name = "FILE")]
     pub compare: Option<PathBuf>,
+
+    /// Write per-request audit log to FILE (NDJSON; use "-" for stdout, "/dev/stderr" for stderr)
+    #[arg(long, value_name = "FILE")]
+    pub audit_log: Option<PathBuf>,
 }
 
 impl InspectArgs {
@@ -107,6 +111,7 @@ mod tests {
             auth_token: None,
             no_open: false,
             compare: None,
+            audit_log: None,
         };
         assert!(args.validate().is_err());
     }
@@ -120,6 +125,7 @@ mod tests {
             auth_token: None,
             no_open: false,
             compare: None,
+            audit_log: None,
         };
         assert!(args.validate().is_err());
     }
@@ -133,6 +139,7 @@ mod tests {
             auth_token: Some("secret".to_string()),
             no_open: false,
             compare: None,
+            audit_log: None,
         };
         // This would succeed if the file exists
         // (we're not checking file existence in this unit test)
@@ -147,6 +154,7 @@ mod tests {
             auth_token: None,
             no_open: false,
             compare: None,
+            audit_log: None,
         };
         let addr = args.parse_bind().unwrap();
         assert!(addr.is_loopback());
@@ -161,6 +169,7 @@ mod tests {
             auth_token: None,
             no_open: false,
             compare: None,
+            audit_log: None,
         };
         assert_eq!(args.server_url(), "http://127.0.0.1:8080/");
     }

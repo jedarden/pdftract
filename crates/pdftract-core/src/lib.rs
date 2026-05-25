@@ -5,6 +5,7 @@
 //! text extraction engines.
 
 pub mod annotation;
+pub mod audit;
 pub mod atomic_file_writer;
 pub mod attachment;
 pub mod cache;

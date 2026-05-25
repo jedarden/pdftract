@@ -4,8 +4,10 @@
 //! axum server, and browser launcher.
 
 use super::args::InspectArgs;
+use crate::middleware::{AuditState, audit_middleware};
 use anyhow::{Context, Result};
 use axum::{extract::State, response::Html, routing::get, Router};
+use pdftract_core::audit::AuditLogWriter;
 use pdftract_core::extract::{extract_pdf, result_to_json};
 use pdftract_core::options::ExtractionOptions;
 use serde_json::Value as JsonValue;
@@ -22,6 +24,8 @@ pub struct InspectorState {
     pub document_b: Option<JsonValue>,
     /// Authentication token for non-loopback binds
     pub auth_token: Option<String>,
+    /// Audit log state
+    pub audit: AuditState,
 }
 
 /// Run the inspector subcommand.
@@ -62,15 +66,26 @@ pub async fn run(args: InspectArgs) -> Result<()> {
         None
     };
 
+    // Create audit log writer if specified
+    let audit_writer = if let Some(ref path) = args.audit_log {
+        Some(AuditLogWriter::open(path).context(format!(
+            "Failed to open audit log: {}",
+            path.display()
+        ))?)
+    } else {
+        None
+    };
+
     // Step 4: Build inspector state
     let state = InspectorState {
         document_a,
         document_b,
         auth_token: args.auth_token.clone(),
+        audit: AuditState::new(audit_writer),
     };
 
-    // Step 5: Build axum router
-    let app = create_router(state);
+    // Step 5: Build axum router with audit middleware
+    let app = create_router_with_audit(state);
 
     // Step 6: Start server
     let bind_addr = args.parse_bind()?;
@@ -79,6 +94,9 @@ pub async fn run(args: InspectArgs) -> Result<()> {
 
     eprintln!("Inspector running at {}", server_url);
     eprintln!("Press Ctrl-C to stop");
+    if let Some(ref path) = args.audit_log {
+        eprintln!("Audit log: {}", path.display());
+    }
 
     // Spawn the server task
     let server_handle = tokio::spawn(async move {
@@ -124,10 +142,15 @@ fn extract_document(path: &Path) -> Result<JsonValue> {
     Ok(json)
 }
 
-/// Create the axum router for the inspector.
-fn create_router(state: InspectorState) -> Router {
+/// Create the axum router for the inspector with audit middleware.
+fn create_router_with_audit(state: InspectorState) -> Router {
+    let audit_state = state.audit.clone();
     Router::new()
         .route("/", get(index_handler))
+        .layer(axum::middleware::from_fn_with_state(
+            audit_state,
+            audit_middleware,
+        ))
         .with_state(Arc::new(Mutex::new(state)))
 }
 

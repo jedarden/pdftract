@@ -18,6 +18,7 @@ use std::path::Path;
 /// * `auth_token` - Optional bearer token value (deprecated, requires PDFTRACT_INSECURE_CLI_TOKEN=1)
 /// * `max_upload_mb` - Optional maximum request body size in MB (default 256)
 /// * `root` - Optional root directory for path-traversal protection
+/// * `audit_log` - Optional audit log file path
 ///
 /// # Returns
 /// * Ok(()) if the server started successfully
@@ -28,6 +29,7 @@ pub fn run(
     auth_token: Option<String>,
     max_upload_mb: Option<usize>,
     root: Option<std::path::PathBuf>,
+    audit_log: Option<std::path::PathBuf>,
 ) -> Result<()> {
     // Resolve the bearer token
     let token_result: Option<(SecretString, AuthSource)> = match auth::resolve_token(
@@ -77,6 +79,7 @@ pub fn run(
         token,
         max_upload_mb,
         root.as_deref(),
+        audit_log,
     ))?;
 
     Ok(())
