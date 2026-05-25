@@ -28,6 +28,10 @@ path = "../../tests/gen_lexer_golden.rs"
 name = "build-xref-fixture"
 path = "../../tools/build-xref-fixture/main.rs"
 
+[[bench]]
+name = "grep_1000"
+harness = false
+
 [lib]
 name = "pdftract_cli"
 path = "src/lib.rs"
@@ -120,3 +124,5 @@ jsonschema = "0.18"
 reqwest = { version = "0.12", features = ["blocking", "json", "rustls-tls", "multipart"], default-features = false }
 schemars = { version = "0.8", features = ["derive"] }
 image = "0.24"
+chrono = { version = "0.4", features = ["serde"] }
+ criterion = "0.5"

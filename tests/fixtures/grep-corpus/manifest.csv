@@ -1,0 +1,7 @@
+# grep-corpus manifest
+# Format: filename,size_bytes,expected_matches_for_pattern_the
+#
+# This file documents the expected properties of each PDF in the corpus.
+# Used by the benchmark to validate correctness.
+#
+# TODO: Populate with actual corpus data (blocks on 7.8.x grep implementation)

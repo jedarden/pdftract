@@ -2356,6 +2356,7 @@ dependencies = [
  "bytes",
  "chrono",
  "clap",
+ "criterion",
  "dirs",
  "http-body-util",
  "humantime",
