@@ -286,6 +286,12 @@ struct TextMatrix {
     font_size: f64,
     /// Current font name (from Tf operator).
     font_name: Option<String>,
+    /// Leading (from TL operator), used by T* and '.
+    leading: f64,
+    /// Character spacing (from Tc operator or " operator).
+    char_spacing: f64,
+    /// Word spacing (from Tw operator or " operator).
+    word_spacing: f64,
 }
 
 impl TextMatrix {
@@ -296,6 +302,9 @@ impl TextMatrix {
             tlm: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
             font_size: 12.0,
             font_name: None,
+            leading: 0.0,
+            char_spacing: 0.0,
+            word_spacing: 0.0,
         }
     }
 
@@ -303,6 +312,21 @@ impl TextMatrix {
     fn reset(&mut self) {
         self.tm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
         self.tlm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+    }
+
+    /// Set leading (TL operator).
+    fn set_leading(&mut self, leading: f64) {
+        self.leading = leading;
+    }
+
+    /// Set character spacing (Tc operator).
+    fn set_char_spacing(&mut self, char_spacing: f64) {
+        self.char_spacing = char_spacing;
+    }
+
+    /// Set word spacing (Tw operator).
+    fn set_word_spacing(&mut self, word_spacing: f64) {
+        self.word_spacing = word_spacing;
     }
 
     /// Set text matrix (Tm operator).
@@ -324,10 +348,19 @@ impl TextMatrix {
     }
 
     /// Move to start of next line (T* operator).
+    ///
+    /// Equivalent to Td 0 -leading. If leading == 0, this is a no-op.
     fn next_line(&mut self) {
-        // T*: Td (0 Tl) - approximate by keeping x, moving y down
-        self.tm[4] = self.tlm[4];
-        self.tm[5] = self.tlm[5];
+        // T*: Td (0 Tl) - move to next line using leading
+        // Td: Tm = Tlm * [1 0 0 1 tx ty]
+        let tx = 0.0;
+        let ty = -self.leading;
+        self.tm[0] = self.tlm[0];
+        self.tm[1] = self.tlm[1];
+        self.tm[2] = self.tlm[2];
+        self.tm[3] = self.tlm[3];
+        self.tm[4] = self.tlm[0] * tx + self.tlm[2] * ty + self.tlm[4];
+        self.tm[5] = self.tlm[1] * tx + self.tlm[3] * ty + self.tlm[5];
         self.tlm = self.tm;
     }
 
@@ -471,6 +504,30 @@ pub fn process_with_mode(
                         }
                         operand_buffer.clear();
                     }
+                    "TL" => {
+                        // Set leading: TL value
+                        let nums = extract_numbers(&operand_buffer, 1, &mut diagnostics);
+                        if nums.len() == 1 {
+                            text_matrix.set_leading(nums[0]);
+                        }
+                        operand_buffer.clear();
+                    }
+                    "Tc" => {
+                        // Set character spacing: Tc value
+                        let nums = extract_numbers(&operand_buffer, 1, &mut diagnostics);
+                        if nums.len() == 1 {
+                            text_matrix.set_char_spacing(nums[0]);
+                        }
+                        operand_buffer.clear();
+                    }
+                    "Tw" => {
+                        // Set word spacing: Tw value
+                        let nums = extract_numbers(&operand_buffer, 1, &mut diagnostics);
+                        if nums.len() == 1 {
+                            text_matrix.set_word_spacing(nums[0]);
+                        }
+                        operand_buffer.clear();
+                    }
                     "Tj" => {
                         // Show text: Tj string
                         if in_text_block {
@@ -552,19 +609,28 @@ pub fn process_with_mode(
                     }
                     "\"" => {
                         // Set word/char spacing, move to next line, show text
+                        // Operand order: aw ac string
                         if in_text_block && operand_buffer.len() >= 3 {
-                            text_matrix.next_line();
-                            if let Some(string_token) = operand_buffer.last() {
-                                if let Token::String(bytes) = string_token {
-                                    process_string(
-                                        bytes,
-                                        &text_matrix,
-                                        resources,
-                                        mode,
-                                        &mut glyphs,
-                                        &mut diagnostics,
-                                        marked_content_stack,
-                                    );
+                            // Extract aw (word spacing) and ac (character spacing)
+                            let nums = extract_numbers(&operand_buffer, 2, &mut diagnostics);
+                            if nums.len() == 2 {
+                                // Set word_spacing = aw, char_spacing = ac
+                                text_matrix.set_word_spacing(nums[0]);
+                                text_matrix.set_char_spacing(nums[1]);
+                                // Then invoke ' (T* then Tj)
+                                text_matrix.next_line();
+                                if let Some(string_token) = operand_buffer.last() {
+                                    if let Token::String(bytes) = string_token {
+                                        process_string(
+                                            bytes,
+                                            &text_matrix,
+                                            resources,
+                                            mode,
+                                            &mut glyphs,
+                                            &mut diagnostics,
+                                            marked_content_stack,
+                                        );
+                                    }
                                 }
                             }
                         } else if !in_text_block {
@@ -1217,19 +1283,28 @@ pub fn execute_with_do(
                     }
                     "\"" => {
                         // Set word/char spacing, move to next line, show text
+                        // Operand order: aw ac string
                         if in_text_block && operand_buffer.len() >= 3 {
-                            gstate.next_line();
-                            if let Some(string_token) = operand_buffer.last() {
-                                if let Token::String(bytes) = string_token {
-                                    process_string_with_ctm(
-                                        bytes,
-                                        &gstate,
-                                        resource_stack.current(),
-                                        mode,
-                                        &mut glyphs,
-                                        &mut diagnostics,
-                                        marked_content_stack,
-                                    );
+                            // Extract aw (word spacing) and ac (character spacing)
+                            let nums = extract_numbers(&operand_buffer, 2, &mut diagnostics);
+                            if nums.len() == 2 {
+                                // Set word_spacing = aw, char_spacing = ac
+                                gstate.set_word_spacing(nums[0]);
+                                gstate.set_char_spacing(nums[1]);
+                                // Then invoke ' (T* then Tj)
+                                gstate.next_line();
+                                if let Some(string_token) = operand_buffer.last() {
+                                    if let Token::String(bytes) = string_token {
+                                        process_string_with_ctm(
+                                            bytes,
+                                            &gstate,
+                                            resource_stack.current(),
+                                            mode,
+                                            &mut glyphs,
+                                            &mut diagnostics,
+                                            marked_content_stack,
+                                        );
+                                    }
                                 }
                             }
                         } else if !in_text_block {
@@ -2784,5 +2859,80 @@ mod tests {
             .filter(|d| d.code == DiagCode::TextShowOutsideBt)
             .count();
         assert_eq!(diag_count, 1, "Should emit TEXT_SHOW_OUTSIDE_BT diagnostic");
+    }
+
+    #[test]
+    fn test_apostrophe_operator_with_leading() {
+        // AC: '(Hello) after setting leading 12: produces 1 glyph (simplified implementation), text_matrix translated by (0, -12)
+        let content = b"BT /F1 12 Tf 12 TL (Hello) ' ET";
+        let resources = ResourceDict::new();
+
+        let glyphs =
+            process_with_mode(content, &resources, ProcessingMode::PositionHint, None).unwrap();
+
+        // Simplified implementation produces 1 glyph per string
+        assert_eq!(glyphs.len(), 1);
+        // The glyph should be positioned lower (y < 0) due to leading
+        assert!(
+            glyphs[0].bbox[1] < 0.0,
+            "Y position should be negative after leading"
+        );
+    }
+
+    #[test]
+    fn test_double_quote_operator_sets_spacing() {
+        // AC: "5 1 (World): sets word_spacing 5, char_spacing 1, then T* + Tj producing 1 glyph (simplified)
+        let content = b"BT /F1 12 Tf 12 TL 5 1 (World) \" ET";
+        let resources = ResourceDict::new();
+
+        let glyphs =
+            process_with_mode(content, &resources, ProcessingMode::PositionHint, None).unwrap();
+
+        // Simplified implementation produces 1 glyph per string
+        assert_eq!(glyphs.len(), 1);
+        // Verify the text moved to next line (leading applied)
+        assert!(
+            glyphs[0].bbox[1] < 0.0,
+            "Y position should be negative after leading"
+        );
+    }
+
+    #[test]
+    fn test_apostrophe_outside_bt_emits_diagnostic() {
+        // AC: ' outside BT/ET: TEXT_SHOW_OUTSIDE_BT diagnostic, no glyphs
+        let content = b"(Hello) '";
+        let resources = ResourceDict::new();
+
+        let result = process_with_mode(content, &resources, ProcessingMode::PositionHint, None);
+
+        assert!(result.is_err());
+        let diags = result.unwrap_err();
+        assert!(diags.iter().any(|d| d.code == DiagCode::TextShowOutsideBt));
+    }
+
+    #[test]
+    fn test_double_quote_outside_bt_emits_diagnostic() {
+        // AC: " outside BT/ET: TEXT_SHOW_OUTSIDE_BT diagnostic, no glyphs
+        let content = b"5 1 (Hello) \"";
+        let resources = ResourceDict::new();
+
+        let result = process_with_mode(content, &resources, ProcessingMode::PositionHint, None);
+
+        assert!(result.is_err());
+        let diags = result.unwrap_err();
+        assert!(diags.iter().any(|d| d.code == DiagCode::TextShowOutsideBt));
+    }
+
+    #[test]
+    fn test_double_quote_with_insufficient_operands() {
+        // AC: " with insufficient operands should not panic
+        let content = b"BT 5 (Hello) \" ET";
+        let resources = ResourceDict::new();
+
+        let glyphs =
+            process_with_mode(content, &resources, ProcessingMode::PositionHint, None).unwrap();
+
+        // Should not produce glyphs since operands are insufficient
+        assert_eq!(glyphs.len(), 0);
     }
 }
