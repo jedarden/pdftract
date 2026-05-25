@@ -796,7 +796,12 @@ fn extract_page(
         bbox: span_bbox,
         font: "Unknown".to_string(),
         size: 12.0,
+        color: None,
+        rendering_mode: None,
         confidence: None,
+        confidence_source: None,
+        lang: None,
+        flags: vec![],
         receipt,
         column: None,
     };
@@ -820,6 +825,7 @@ fn extract_page(
         bbox: block_bbox,
         level: None,
         table_index: None,
+        spans: vec![],
         receipt: block_receipt,
     };
 
@@ -1609,7 +1615,12 @@ fn extract_page_from_dict(
         bbox: span_bbox,
         font: "Unknown".to_string(),
         size: 12.0,
+        color: None,
+        rendering_mode: None,
         confidence: None,
+        confidence_source: None,
+        lang: None,
+        flags: vec![],
         receipt,
         column: None,
     };
@@ -1643,6 +1654,7 @@ fn extract_page_from_dict(
             bbox: table_bbox,
             level: None,
             table_index: Some(table_idx),
+            spans: vec![],
             receipt: table_receipt,
         });
     }
@@ -1666,6 +1678,7 @@ fn extract_page_from_dict(
         bbox: block_bbox,
         level: None,
         table_index: None,
+        spans: vec![],
         receipt: block_receipt,
     });
 

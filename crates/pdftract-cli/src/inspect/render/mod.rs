@@ -12,6 +12,7 @@
 
 pub mod anchors;
 pub mod blocks;
+pub mod columns;
 pub mod confidence_heatmap;
 pub mod reading_order;
 pub mod spans;

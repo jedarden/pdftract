@@ -133,6 +133,7 @@ mod tests {
             bbox: [0.0, 100.0, 50.0, 120.0],
             level: None,
             table_index: None,
+            spans: vec![],
             receipt: None,
         }];
         let order = vec![0];
@@ -149,6 +150,7 @@ mod tests {
                 bbox: [0.0, 100.0, 50.0, 120.0],
                 level: None,
                 table_index: None,
+                spans: vec![],
                 receipt: None,
             },
             BlockJson {
@@ -157,6 +159,7 @@ mod tests {
                 bbox: [60.0, 80.0, 110.0, 100.0],
                 level: None,
                 table_index: None,
+                spans: vec![],
                 receipt: None,
             },
         ];
@@ -193,6 +196,7 @@ mod tests {
                 bbox: [0.0, 100.0, 50.0, 120.0],
                 level: None,
                 table_index: None,
+                spans: vec![],
                 receipt: None,
             },
             BlockJson {
@@ -201,6 +205,7 @@ mod tests {
                 bbox: [60.0, 80.0, 110.0, 100.0],
                 level: None,
                 table_index: None,
+                spans: vec![],
                 receipt: None,
             },
             BlockJson {
@@ -209,6 +214,7 @@ mod tests {
                 bbox: [120.0, 60.0, 170.0, 80.0],
                 level: None,
                 table_index: None,
+                spans: vec![],
                 receipt: None,
             },
         ];
@@ -239,6 +245,7 @@ mod tests {
                 bbox: [0.0, 100.0, 50.0, 120.0],
                 level: None,
                 table_index: None,
+                spans: vec![],
                 receipt: None,
             },
             BlockJson {
@@ -247,6 +254,7 @@ mod tests {
                 bbox: [100.0, 100.0, 150.0, 120.0],
                 level: None,
                 table_index: None,
+                spans: vec![],
                 receipt: None,
             },
             BlockJson {
@@ -255,6 +263,7 @@ mod tests {
                 bbox: [0.0, 80.0, 50.0, 100.0],
                 level: None,
                 table_index: None,
+                spans: vec![],
                 receipt: None,
             },
             BlockJson {
@@ -263,6 +272,7 @@ mod tests {
                 bbox: [100.0, 80.0, 150.0, 100.0],
                 level: None,
                 table_index: None,
+                spans: vec![],
                 receipt: None,
             },
         ];
@@ -291,6 +301,7 @@ mod tests {
                 bbox: [0.0, 100.0 - i as f64, 50.0, 120.0 - i as f64],
                 level: None,
                 table_index: None,
+                spans: vec![],
                 receipt: None,
             })
             .collect();
@@ -312,6 +323,7 @@ mod tests {
             bbox: [100.0, 200.0, 300.0, 250.0],
             level: None,
             table_index: None,
+            spans: vec![],
             receipt: None,
         };
 
@@ -328,6 +340,7 @@ mod tests {
             bbox: [0.0, 0.0, 1.0, 1.0],
             level: None,
             table_index: None,
+            spans: vec![],
             receipt: None,
         };
 
@@ -345,6 +358,7 @@ mod tests {
                 bbox: [0.0, 100.0, 50.0, 120.0],
                 level: None,
                 table_index: None,
+                spans: vec![],
                 receipt: None,
             },
             BlockJson {
@@ -353,6 +367,7 @@ mod tests {
                 bbox: [60.0, 80.0, 110.0, 100.0],
                 level: None,
                 table_index: None,
+                spans: vec![],
                 receipt: None,
             },
         ];
@@ -375,6 +390,7 @@ mod tests {
                 bbox: [0.0, 100.0, 50.0, 120.0],
                 level: None,
                 table_index: None,
+                spans: vec![],
                 receipt: None,
             },
             BlockJson {
@@ -383,6 +399,7 @@ mod tests {
                 bbox: [60.0, 80.0, 110.0, 100.0],
                 level: None,
                 table_index: None,
+                spans: vec![],
                 receipt: None,
             },
         ];

@@ -132,6 +132,7 @@ mod tests {
             bbox,
             level: None,
             table_index: None,
+            spans: vec![],
             receipt: None,
         }
     }
