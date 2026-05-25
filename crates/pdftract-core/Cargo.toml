@@ -12,6 +12,7 @@ anyhow = { workspace = true }
 base64 = { workspace = true }
 hex = "0.4"
 image = { version = "0.25", optional = true }
+imageproc = { version = "0.26", optional = true }
 url = { version = "2.5", optional = true }
 leptonica-plumbing = { version = "1.4", optional = true }
 pdfium-render = { version = "0.9", optional = true }
@@ -49,7 +50,7 @@ default = ["serde"]
 serde = ["dep:serde", "dep:serde_json", "dep:schemars"]
 schemars = ["dep:schemars", "serde"]
 receipts = []  # Enable visual citation receipts (SVG clip generation)
-ocr = ["dep:image", "dep:leptonica-plumbing", "dep:quick-xml"]  # Enable OCR path (image compositing + preprocessing + HOCR parsing)
+ocr = ["dep:image", "dep:imageproc", "dep:leptonica-plumbing", "dep:quick-xml"]  # Enable OCR path (image compositing + preprocessing + HOCR parsing)
 full-render = ["dep:pdfium-render", "ocr"]  # Enable PDFium-based rendering (requires ocr)
 remote = ["dep:url"]  # Enable remote HTTP source (Phase 1.8)
 profiles = ["dep:serde_yaml"]  # Enable extraction profiles (Phase 7.10)

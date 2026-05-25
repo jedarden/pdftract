@@ -6,6 +6,8 @@
 
 pub mod contrast;
 pub mod denoise;
+pub mod otsu;
 
 pub use contrast::{histogram_stretch, histogram_stretch_if_needed, PreprocError};
 pub use denoise::median_denoise;
+pub use otsu::otsu_binarize;
