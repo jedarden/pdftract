@@ -81,6 +81,10 @@ pub use schema::{
 };
 pub use table::{GridCandidate, PageContext as TablePageContext, TableDetector};
 pub use text::{serialize_page_text, TextOptions};
+pub use word_boundary::{TextState, WordBoundaryDetector, WordBoundaryManager};
+
+// Re-export Phase 3 Glyph types (pdftract-4j0ub)
+pub use glyph::{emit_glyph, new_raw_glyph_list, Glyph};
 
 #[cfg(feature = "ocr")]
 pub use dpi::{select_dpi, FontSizeSpan, Pdf1Filter};
