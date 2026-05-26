@@ -309,7 +309,7 @@ mod page_classification_tests {
     fn test_page_classification_debug_assert_fires_on_invalid_confidence() {
         // Unit test: debug_assert fires on confidence = 1.5 in dev build
         // This test only runs in debug builds where debug_assert! is active
-        PageClassification::new(PageClass::Vector, 1.5, None);
+        let _ = PageClassification::new(PageClass::Vector, 1.5, None);
     }
 
     #[test]

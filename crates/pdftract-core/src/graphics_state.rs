@@ -980,7 +980,8 @@ mod tests {
     #[test]
     fn test_color_device_rgb_clamped() {
         let color = Color::DeviceRGB([1.5, -0.5, 0.5]);
-        assert_eq!(color.to_css_hex(), Some("#ff8080".into()));
+        // R: 1.5 -> 1.0 -> ff, G: -0.5 -> 0.0 -> 00, B: 0.5 -> 0.5 -> 80
+        assert_eq!(color.to_css_hex(), Some("#ff0080".into()));
     }
 
     // Tests for matrix operations
