@@ -100,6 +100,31 @@ impl ResourceStack {
         None
     }
 
+    /// Look up a color space name in the current resource scope.
+    ///
+    /// Searches from innermost to outermost (shadowing semantics).
+    /// Returns the PdfObject (which may be a name or an array).
+    pub fn lookup_color_space(&self, name: &str) -> Option<PdfObject> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(cs) = scope.color_spaces.get(name) {
+                return Some(cs.clone());
+            }
+        }
+        None
+    }
+
+    /// Look up an ExtGState name in the current resource scope.
+    ///
+    /// Searches from innermost to outermost (shadowing semantics).
+    pub fn lookup_ext_gstate(&self, name: &str) -> Option<ObjRef> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(&ext_gstate_ref) = scope.ext_gstates.get(name) {
+                return Some(ext_gstate_ref);
+            }
+        }
+        None
+    }
+
     /// Get the current (innermost) resource dictionary.
     pub fn current(&self) -> &ResourceDict {
         // This should never fail since we always push at least one scope
@@ -3595,5 +3620,135 @@ mod tests {
         assert_eq!(glyphs[0].bbox, [20.0, 80.0, 30.0, 90.0]);
 
         assert!(diagnostics.is_empty());
+    }
+
+    // Additional ResourceStack tests for bead pdftract-2qoee (lookup_color_space, lookup_ext_gstate)
+
+    #[test]
+    fn test_resource_stack_lookup_color_space_shadowing() {
+        use PdfObject::{Array, Name};
+
+        let mut page_resources = ResourceDict::new();
+        page_resources.color_spaces.insert(
+            Arc::from("CS1"),
+            Name(Arc::from("/DeviceRGB")),
+        );
+
+        let mut form_resources = ResourceDict::new();
+        form_resources
+            .color_spaces
+            .insert(Arc::from("CS1"), Array(Box::new(vec![])));
+
+        let mut stack = ResourceStack::new(page_resources);
+        stack.push(Some(form_resources));
+
+        // Should resolve to form's /CS1 (shadowing page's)
+        let result = stack.lookup_color_space("CS1");
+        assert!(result.is_some());
+        if let Some(Array(_)) = result {
+            // Got form's CS1 (Array)
+        } else {
+            panic!("Expected form's Array CS1, got {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_resource_stack_lookup_color_space_fallback_to_page() {
+        use PdfObject::Name;
+
+        let mut page_resources = ResourceDict::new();
+        page_resources.color_spaces.insert(
+            Arc::from("CS1"),
+            Name(Arc::from("/DeviceRGB")),
+        );
+
+        let mut stack = ResourceStack::new(page_resources);
+
+        // Form has no /Resources (push None)
+        stack.push(None);
+
+        // Should resolve to page's /CS1
+        let result = stack.lookup_color_space("CS1");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_resource_stack_lookup_color_space_form_with_empty_dict() {
+        // Page has /CS1, form has /Resources but empty /ColorSpace → inherits from page
+        // Per PDF spec: when a form has /Resources but a specific subdict is missing,
+        // it inherits from the parent scope (not a failure).
+        use PdfObject::Name;
+
+        let mut page_resources = ResourceDict::new();
+        page_resources.color_spaces.insert(
+            Arc::from("CS1"),
+            Name(Arc::from("/DeviceRGB")),
+        );
+
+        let form_resources = ResourceDict::new(); // Empty /ColorSpace dict
+
+        let mut stack = ResourceStack::new(page_resources);
+        stack.push(Some(form_resources));
+
+        // Should find page's /CS1 (inheritance from parent scope)
+        let result = stack.lookup_color_space("CS1");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_resource_stack_lookup_ext_gstate_shadowing() {
+        let mut page_resources = ResourceDict::new();
+        page_resources
+            .ext_gstates
+            .insert(Arc::from("GS1"), ObjRef { object: 5, generation: 0 });
+
+        let mut form_resources = ResourceDict::new();
+        form_resources
+            .ext_gstates
+            .insert(Arc::from("GS1"), ObjRef { object: 15, generation: 0 });
+
+        let mut stack = ResourceStack::new(page_resources);
+        stack.push(Some(form_resources));
+
+        // Should resolve to form's /GS1 (shadowing page's)
+        let result = stack.lookup_ext_gstate("GS1");
+        assert_eq!(result, Some(ObjRef { object: 15, generation: 0 }));
+    }
+
+    #[test]
+    fn test_resource_stack_lookup_ext_gstate_fallback_to_page() {
+        let mut page_resources = ResourceDict::new();
+        page_resources
+            .ext_gstates
+            .insert(Arc::from("GS1"), ObjRef { object: 5, generation: 0 });
+
+        let mut stack = ResourceStack::new(page_resources);
+
+        // Form has no /Resources (push None)
+        stack.push(None);
+
+        // Should resolve to page's /GS1
+        let result = stack.lookup_ext_gstate("GS1");
+        assert_eq!(result, Some(ObjRef { object: 5, generation: 0 }));
+    }
+
+    #[test]
+    fn test_resource_stack_lookup_ext_gstate_form_with_empty_dict() {
+        // Page has /GS1, form has /Resources but empty /ExtGState → inherits from page
+        // Per PDF spec: when a form has /Resources but a specific subdict is missing,
+        // it inherits from the parent scope (not a failure).
+        let mut page_resources = ResourceDict::new();
+        page_resources
+            .ext_gstates
+            .insert(Arc::from("GS1"), ObjRef { object: 5, generation: 0 });
+
+        let form_resources = ResourceDict::new(); // Empty /ExtGState dict
+
+        let mut stack = ResourceStack::new(page_resources);
+        stack.push(Some(form_resources));
+
+        // Should find page's /GS1 (inheritance from parent scope)
+        let result = stack.lookup_ext_gstate("GS1");
+        assert_eq!(result, Some(ObjRef { object: 5, generation: 0 }));
     }
 }
