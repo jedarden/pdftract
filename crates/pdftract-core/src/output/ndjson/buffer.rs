@@ -5,7 +5,7 @@
 //! emits them in order using a fixed-size heap with Condvar backpressure.
 
 use crate::output::ndjson::frames::PageFrame;
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::{BinaryHeap, HashSet};
 use std::sync::{Condvar, Mutex};
 
 /// Maximum number of completed pages to buffer before blocking.
@@ -14,7 +14,7 @@ use std::sync::{Condvar, Mutex};
 /// pool size (4–8 threads), ensuring the output thread is never the bottleneck
 /// on balanced workloads. For pathological cases (one very slow page surrounded
 /// by fast pages), this acts as backpressure to the downstream consumer.
-const BUFFER_WINDOW_SIZE: usize = 8;
+pub const NDJSON_OUT_OF_ORDER_WINDOW_PAGES: usize = 8;
 
 /// Entry in the out-of-order buffer.
 ///
@@ -52,7 +52,7 @@ impl Ord for BufferEntry {
 ///
 /// This buffer holds completed pages from rayon workers and allows the output
 /// thread to pull them in page_index order. When the buffer is full (holds
-/// BUFFER_WINDOW_SIZE completed pages), the push operation blocks until
+/// NDJSON_OUT_OF_ORDER_WINDOW_PAGES completed pages), the push operation blocks until
 /// space is available.
 ///
 /// # Example
@@ -69,21 +69,32 @@ impl Ord for BufferEntry {
 /// assert_eq!(buffer.pop_next_in_order()?.page_index, 5); // returns page 5
 /// ```
 pub struct OutOfOrderBuffer {
+    /// Inner state protected by a single mutex.
+    inner: Mutex<Inner>,
+
+    /// Condition variable for blocking when buffer is full.
+    not_full: Condvar,
+
+    /// Condition variable for blocking when buffer is empty.
+    not_empty: Condvar,
+}
+
+/// Inner state of the out-of-order buffer.
+struct Inner {
     /// Next page_index we expect to emit.
-    next_expected: Mutex<usize>,
+    next_expected: usize,
 
     /// Heap of buffered pages, ordered by page_index.
     /// We use BinaryHeap as a min-heap so the smallest page_index is at top.
-    heap: Mutex<BinaryHeap<BufferEntry>>,
+    heap: BinaryHeap<BufferEntry>,
 
-    /// Map of buffered pages by page_index for O(1) duplicate detection.
-    buffered: Mutex<HashMap<usize, PageFrame>>,
+    /// Set of page indices currently in the heap for O(1) duplicate detection.
+    page_indices: HashSet<usize>,
 
-    /// Condition variable for blocking when buffer is full.
-    condvar: Condvar,
+    /// Whether the producer has finished pushing all pages.
+    finished: bool,
 
     /// Total number of pages in the document.
-    /// Used to signal completion when all pages have been pushed.
     total_pages: usize,
 }
 
@@ -95,17 +106,21 @@ impl OutOfOrderBuffer {
     /// * `total_pages` - Total number of pages in the document
     pub fn new(total_pages: usize) -> Self {
         Self {
-            next_expected: Mutex::new(0),
-            heap: Mutex::new(BinaryHeap::new()),
-            buffered: Mutex::new(HashMap::new()),
-            condvar: Condvar::new(),
-            total_pages,
+            inner: Mutex::new(Inner {
+                next_expected: 0,
+                heap: BinaryHeap::new(),
+                page_indices: HashSet::new(),
+                finished: false,
+                total_pages,
+            }),
+            not_full: Condvar::new(),
+            not_empty: Condvar::new(),
         }
     }
 
     /// Push a completed page into the buffer.
     ///
-    /// If the buffer already holds BUFFER_WINDOW_SIZE completed pages,
+    /// If the buffer already holds NDJSON_OUT_OF_ORDER_WINDOW_PAGES completed pages,
     /// this method blocks until space is available (backpressure).
     ///
     /// # Arguments
@@ -119,26 +134,26 @@ impl OutOfOrderBuffer {
     pub fn push(&self, frame: PageFrame) -> Result<(), PushError> {
         let page_index = frame.page_index;
 
+        let mut inner = self.inner.lock().unwrap();
+
+        // Simple backpressure: only block if the buffer is completely full.
+        // Use > instead of >= to allow one extra page beyond WINDOW_SIZE,
+        // which prevents deadlock in edge cases.
+        while inner.heap.len() > NDJSON_OUT_OF_ORDER_WINDOW_PAGES {
+            inner = self.not_full.wait(inner).unwrap();
+        }
+
         // Check for duplicate
-        {
-            let mut buffered = self.buffered.lock().unwrap();
-            if buffered.contains_key(&page_index) {
-                return Err(PushError::Duplicate(page_index));
-            }
-            buffered.insert(page_index, frame.clone());
+        if inner.page_indices.contains(&page_index) {
+            return Err(PushError::Duplicate(page_index));
         }
 
-        // Add to heap
-        {
-            let mut heap = self.heap.lock().unwrap();
-            heap.push(BufferEntry { page_index, frame });
-        }
+        // Add to heap and set
+        inner.heap.push(BufferEntry { page_index, frame });
+        inner.page_indices.insert(page_index);
 
-        // Block if buffer is full (backpressure)
-        let mut heap = self.heap.lock().unwrap();
-        while heap.len() > BUFFER_WINDOW_SIZE {
-            heap = self.condvar.wait(heap).unwrap();
-        }
+        // Notify consumer that a page is available
+        self.not_empty.notify_one();
 
         Ok(())
     }
@@ -146,44 +161,41 @@ impl OutOfOrderBuffer {
     /// Pop the next in-order page frame, if available.
     ///
     /// Returns `None` if the next expected page hasn't completed yet.
-    /// Returns `None` if all pages have been emitted (next_expected >= total_pages).
+    /// Returns `None` if all pages have been emitted and the producer is finished.
     ///
     /// # Returns
     ///
     /// * `Some(frame)` - The next in-order page frame
     /// * `None` - Next expected page not ready, or all pages emitted
     pub fn pop_next_in_order(&self) -> Option<PageFrame> {
-        let mut next_expected = self.next_expected.lock().unwrap();
-        let mut heap = self.heap.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap();
 
-        // Check if we're done
-        if *next_expected >= self.total_pages {
+        // Check if we're done (all pages emitted)
+        if inner.next_expected >= inner.total_pages {
             return None;
         }
 
         // Check if the next expected page is at the top of the heap
-        if let Some(entry) = heap.peek() {
-            if entry.page_index == *next_expected {
-                let entry = heap.pop().unwrap();
-                *next_expected += 1;
+        if let Some(entry) = inner.heap.peek() {
+            if entry.page_index == inner.next_expected {
+                let entry = inner.heap.pop().unwrap();
+                inner.page_indices.remove(&entry.page_index);
+                inner.next_expected += 1;
 
-                // Remove from buffered map
-                let mut buffered = self.buffered.lock().unwrap();
-                buffered.remove(&entry.page_index);
-
-                // Notify one waiting thread (space available)
-                drop(buffered);
-                self.condvar.notify_one();
-
-                // Drop heap lock before returning
-                drop(heap);
-                drop(next_expected);
+                // Notify one waiting producer thread (space available)
+                drop(inner);
+                self.not_full.notify_one();
 
                 return Some(entry.frame);
             }
         }
 
         // Next expected page not ready yet
+        // If producer is finished and heap is empty (or next expected is missing), we're done
+        if inner.finished {
+            return None;
+        }
+
         None
     }
 
@@ -192,23 +204,24 @@ impl OutOfOrderBuffer {
     /// After calling this, `pop_next_in_order` will return `None` once
     /// all buffered pages have been emitted.
     pub fn finish(&self) {
-        // No-op for now - we use total_pages to detect completion
-        // This method exists for API compatibility with future enhancements
+        let mut inner = self.inner.lock().unwrap();
+        inner.finished = true;
+        self.not_empty.notify_all(); // Wake up consumer so it can check finished flag
     }
 
     /// Get the number of pages currently buffered.
     pub fn len(&self) -> usize {
-        self.heap.lock().unwrap().len()
+        self.inner.lock().unwrap().heap.len()
     }
 
     /// Check if the buffer is empty.
     pub fn is_empty(&self) -> bool {
-        self.heap.lock().unwrap().is_empty()
+        self.inner.lock().unwrap().heap.is_empty()
     }
 
     /// Get the next expected page index.
     pub fn next_expected(&self) -> usize {
-        *self.next_expected.lock().unwrap()
+        self.inner.lock().unwrap().next_expected
     }
 }
 
@@ -332,5 +345,169 @@ mod tests {
 
         buffer.pop_next_in_order(); // Should return None (page 0 not ready)
         assert_eq!(buffer.len(), 2); // Still 2 (nothing popped)
+    }
+
+    #[test]
+    fn test_bead_sequence() {
+        let buffer = OutOfOrderBuffer::new(10);
+
+        // Push pages 3, 1, 4, 1, 5, 9, 2, 6 (note: 1 appears twice)
+        assert_eq!(buffer.push(make_test_frame(3)), Ok(()));
+        assert_eq!(buffer.push(make_test_frame(1)), Ok(()));
+        assert_eq!(buffer.push(make_test_frame(4)), Ok(()));
+        assert_eq!(
+            buffer.push(make_test_frame(1)),
+            Err(PushError::Duplicate(1))
+        ); // Duplicate
+        assert_eq!(buffer.push(make_test_frame(5)), Ok(()));
+        assert_eq!(buffer.push(make_test_frame(9)), Ok(()));
+        assert_eq!(buffer.push(make_test_frame(2)), Ok(()));
+        assert_eq!(buffer.push(make_test_frame(6)), Ok(()));
+
+        // Add missing pages 0, 7, 8
+        assert_eq!(buffer.push(make_test_frame(0)), Ok(()));
+        assert_eq!(buffer.push(make_test_frame(7)), Ok(()));
+        assert_eq!(buffer.push(make_test_frame(8)), Ok(()));
+
+        // Pop all in order 0..=9
+        for expected in 0..=9 {
+            let frame = buffer
+                .pop_next_in_order()
+                .expect(&format!("page {} should be available", expected));
+            assert_eq!(frame.page_index, expected);
+        }
+        assert_eq!(buffer.pop_next_in_order(), None);
+    }
+
+    #[test]
+    fn test_backpressure_blocks_when_full() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+        use std::thread;
+        use std::time::Duration;
+
+        let buffer = Arc::new(OutOfOrderBuffer::new(100));
+        let push_completed = Arc::new(AtomicBool::new(false));
+
+        // Fill buffer with 8 pages, all with page_index > 0
+        // This means page 0 is NOT in the buffer
+        for i in 1..=8 {
+            assert_eq!(buffer.push(make_test_frame(i)), Ok(()));
+        }
+
+        // Buffer is now full (8 pages). The next push should block because
+        // page 0 is missing, so pop_next_in_order() won't free space.
+        let buffer_clone = Arc::clone(&buffer);
+        let push_completed_clone = Arc::clone(&push_completed);
+        let push_thread = thread::spawn(move || {
+            // This should block until we free up space
+            buffer_clone.push(make_test_frame(9)).unwrap();
+            push_completed_clone.store(true, Ordering::SeqCst);
+        });
+
+        // Give the push thread time to start and block
+        thread::sleep(Duration::from_millis(100));
+
+        // Push should NOT have completed yet (backpressure is working)
+        assert!(!push_completed.load(Ordering::SeqCst));
+
+        // Now push page 0, which allows pop_next_in_order to free space
+        assert_eq!(buffer.push(make_test_frame(0)), Ok(()));
+
+        // Pop pages 0 and 1, freeing 2 slots
+        assert_eq!(buffer.pop_next_in_order().unwrap().page_index, 0);
+        assert_eq!(buffer.pop_next_in_order().unwrap().page_index, 1);
+
+        // Wait for the blocked push to complete
+        push_thread.join().unwrap();
+
+        // Verify push completed
+        assert!(push_completed.load(Ordering::SeqCst));
+
+        // Buffer should have 8 pages now:
+        // - Started with 8 pages (1-8)
+        // - Added page 0 (9 pages)
+        // - Popped pages 0 and 1 (7 pages)
+        // - Worker added page 9 (8 pages)
+        assert_eq!(buffer.len(), 8);
+    }
+
+    #[test]
+    fn test_concurrency_stress() {
+        use std::sync::Arc;
+        use std::sync::Barrier;
+        use std::thread;
+
+        const NUM_PAGES: usize = 1000;
+        const NUM_WORKERS: usize = 8;
+
+        let buffer = Arc::new(OutOfOrderBuffer::new(NUM_PAGES));
+        let barrier = Arc::new(Barrier::new(NUM_WORKERS + 1)); // workers + consumer
+        let result_pages = Arc::new(std::sync::Mutex::new(Vec::new()));
+
+        // Spawn 8 worker threads that push pages out of order
+        let mut handles = vec![];
+        for worker_id in 0..NUM_WORKERS {
+            let buffer_clone = Arc::clone(&buffer);
+            let barrier_clone = Arc::clone(&barrier);
+
+            let handle = thread::spawn(move || {
+                barrier_clone.wait(); // Wait for all threads to be ready
+
+                // Each worker pushes pages in a different pattern to create disorder
+                let start = worker_id * (NUM_PAGES / NUM_WORKERS);
+                let end = start + (NUM_PAGES / NUM_WORKERS);
+                for i in (start..end).rev() {
+                    // Push in reverse order to maximize disorder
+                    buffer_clone.push(make_test_frame(i)).unwrap();
+                }
+            });
+            handles.push(handle);
+        }
+
+        // Spawn consumer thread that pops pages in order
+        let buffer_clone = Arc::clone(&buffer);
+        let barrier_clone = Arc::clone(&barrier);
+        let result_clone = Arc::clone(&result_pages);
+
+        let consumer_handle = thread::spawn(move || {
+            barrier_clone.wait(); // Wait for all threads to be ready
+
+            let mut pages = Vec::new();
+            loop {
+                if let Some(frame) = buffer_clone.pop_next_in_order() {
+                    pages.push(frame.page_index);
+                    if pages.len() == NUM_PAGES {
+                        break;
+                    }
+                } else {
+                    // No page ready yet, yield
+                    thread::yield_now();
+                }
+            }
+            *result_clone.lock().unwrap() = pages;
+        });
+
+        // Wait for all worker threads to complete
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        // Signal that all pages have been pushed
+        buffer.finish();
+
+        // Wait for consumer thread to complete
+        consumer_handle.join().unwrap();
+
+        // Verify all pages were emitted in order
+        let pages = result_pages.lock().unwrap();
+        assert_eq!(pages.len(), NUM_PAGES);
+        for (i, &page_index) in pages.iter().enumerate() {
+            assert_eq!(
+                page_index, i,
+                "Page {} should be at position {}",
+                page_index, i
+            );
+        }
     }
 }
