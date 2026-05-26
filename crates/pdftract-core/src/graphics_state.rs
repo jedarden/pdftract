@@ -527,6 +527,16 @@ impl GraphicsState {
         self.text_line_matrix = Matrix3x3::identity();
     }
 
+    /// Translate the text matrix horizontally (for TJ operator kerning).
+    ///
+    /// This is used by the TJ operator to adjust the text position by
+    /// the kerning amount: `text_matrix = translate(tx, 0) * text_matrix`.
+    #[inline]
+    pub fn translate_text(&mut self, tx: f64) {
+        let translation = Matrix3x3::translate(tx, 0.0);
+        self.text_matrix = translation.multiply(&self.text_matrix);
+    }
+
     // Color-setting operators (rg RG g G k K cs CS sc SC scn SCN)
 
     /// Set fill color to DeviceGray (g operator).

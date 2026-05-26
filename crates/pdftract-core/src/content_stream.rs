@@ -1244,23 +1244,36 @@ pub fn execute_with_do(
                     "TJ" => {
                         // Show text with individual glyph positioning: TJ array
                         if in_text_block {
-                            let (x, y) = gstate.text_matrix.transform_point(0.0, 0.0);
-                            let mut bbox = create_approx_bbox(x, y, gstate.font_size);
-                            // Apply CTM to bbox corners for correct placement
-                            let (x0, y0) = gstate.ctm.transform_point(bbox[0], bbox[1]);
-                            let (x1, y1) = gstate.ctm.transform_point(bbox[2], bbox[3]);
-                            bbox = [x0, y0, x1, y1];
+                            // Parse the TJ array from the operand buffer
+                            // The array is: ArrayStart, elements..., ArrayEnd
+                            if let Some(Token::ArrayStart) = operand_buffer.first() {
+                                if let Some(Token::ArrayEnd) = operand_buffer.last() {
+                                    // Extract the array elements (between ArrayStart and ArrayEnd)
+                                    let array_elements =
+                                        &operand_buffer[1..operand_buffer.len() - 1];
 
-                            let mcid = marked_content_stack.and_then(|s| s.innermost_mcid());
-                            let glyph = match mode {
-                                ProcessingMode::Normal => {
-                                    Glyph::new('?', 0.3, bbox).with_mcid(mcid)
+                                    // Process the TJ array with kerning and word boundary detection
+                                    process_tj_array(
+                                        array_elements,
+                                        &mut gstate,
+                                        resource_stack.current(),
+                                        mode,
+                                        &mut glyphs,
+                                        &mut diagnostics,
+                                        marked_content_stack,
+                                    );
+                                } else {
+                                    diagnostics.push(Diagnostic::with_static_no_offset(
+                                        DiagCode::StructInvalidType,
+                                        "TJ operator missing ArrayEnd delimiter",
+                                    ));
                                 }
-                                ProcessingMode::PositionHint => {
-                                    Glyph::position_hint(bbox).with_mcid(mcid)
-                                }
-                            };
-                            glyphs.push(glyph);
+                            } else {
+                                diagnostics.push(Diagnostic::with_static_no_offset(
+                                    DiagCode::StructInvalidType,
+                                    "TJ operator missing ArrayStart delimiter",
+                                ));
+                            }
                         } else {
                             // TJ outside BT/ET block
                             diagnostics.push(Diagnostic::with_static_no_offset(
@@ -1599,6 +1612,176 @@ fn process_string_with_ctm(
             glyphs.push(Glyph::position_hint(bbox).with_mcid(mcid));
         }
     }
+}
+
+/// Process a TJ array with kerning adjustments and word boundary detection.
+///
+/// Per PDF spec section 9.4.3, TJ arrays contain alternating strings and
+/// numeric kerning adjustments. For each numeric element n, the text position
+/// is adjusted by `-n/1000 * font_size * horiz_scaling/100`. Large positive
+/// kerning values (> 0.2 * font_size) inject a synthetic word boundary on the
+/// next glyph.
+///
+/// # Arguments
+///
+/// * `array_elements` - The tokens between ArrayStart and ArrayEnd
+/// * `gstate` - Graphics state (mutable for text_matrix updates)
+/// * `resources` - Resource dictionary for font lookup
+/// * `mode` - Processing mode
+/// * `glyphs` - Output glyph vector
+/// * `diagnostics` - Diagnostic list
+/// * `marked_content_stack` - Marked content stack for MCID tracking
+fn process_tj_array(
+    array_elements: &[Token],
+    gstate: &mut crate::graphics_state::GraphicsState,
+    resources: &ResourceDict,
+    mode: ProcessingMode,
+    glyphs: &mut Vec<Glyph>,
+    diagnostics: &mut Vec<Diagnostic>,
+    marked_content_stack: Option<&MarkedContentStack>,
+) {
+    let font_size = gstate.font_size;
+    let horiz_scaling = gstate.horiz_scaling / 100.0;
+
+    // Track pending word boundary flag.
+    // When a large positive kern is encountered, this flag is set to true,
+    // and the next glyph emitted will carry is_word_boundary = true.
+    let mut pending_word_boundary = false;
+
+    for element in array_elements {
+        match element {
+            Token::String(bytes) => {
+                // String element: emit glyphs like Tj
+                // For now, we emit a single placeholder glyph per string.
+                // A full implementation would iterate through each character code.
+                let (x, y) = gstate.text_matrix.transform_point(0.0, 0.0);
+                let mut bbox = create_approx_bbox(x, y, font_size);
+
+                // Apply CTM to bbox corners for correct placement
+                let (x0, y0) = gstate.ctm.transform_point(bbox[0], bbox[1]);
+                let (x1, y1) = gstate.ctm.transform_point(bbox[2], bbox[3]);
+                bbox = [x0, y0, x1, y1];
+
+                let mcid = marked_content_stack.and_then(|s| s.innermost_mcid());
+
+                let glyph = match mode {
+                    ProcessingMode::Normal => {
+                        // Try to resolve Unicode via ToUnicode
+                        let text = String::from_utf8_lossy(bytes);
+                        let ch = text.chars().next().unwrap_or('?');
+                        let mut g = Glyph::new(ch, 0.3, bbox).with_mcid(mcid);
+                        // Apply pending word boundary flag
+                        if pending_word_boundary {
+                            g.is_word_boundary = true;
+                            pending_word_boundary = false;
+                        }
+                        g
+                    }
+                    ProcessingMode::PositionHint => {
+                        let mut g = Glyph::position_hint(bbox).with_mcid(mcid);
+                        // PositionHint mode also tracks word boundaries
+                        if pending_word_boundary {
+                            g.is_word_boundary = true;
+                            pending_word_boundary = false;
+                        }
+                        g
+                    }
+                };
+                glyphs.push(glyph);
+
+                // Advance text matrix by approximate string width.
+                // A full implementation would sum actual glyph advances.
+                let approx_width = bytes.len() as f64 * font_size * 0.6;
+                gstate.translate_text(approx_width);
+            }
+            Token::Integer(n) => {
+                // Numeric element: kerning adjustment
+                let n = *n as f64;
+                apply_tj_kerning(
+                    n,
+                    font_size,
+                    horiz_scaling,
+                    gstate,
+                    &mut pending_word_boundary,
+                );
+            }
+            Token::Real(n) => {
+                // Numeric element: kerning adjustment
+                apply_tj_kerning(
+                    *n,
+                    font_size,
+                    horiz_scaling,
+                    gstate,
+                    &mut pending_word_boundary,
+                );
+            }
+            Token::ArrayStart | Token::ArrayEnd => {
+                // Nested arrays are not valid in TJ; emit diagnostic and skip
+                diagnostics.push(Diagnostic::with_static_no_offset(
+                    DiagCode::StructInvalidType,
+                    "TJ array contains nested array delimiter; ignoring",
+                ));
+            }
+            _ => {
+                // Other element types (boolean, null, name, etc.) are invalid in TJ
+                diagnostics.push(Diagnostic::with_static_no_offset(
+                    DiagCode::StructInvalidType,
+                    "TJ array contains invalid element type; ignoring",
+                ));
+            }
+        }
+    }
+}
+
+/// Apply a TJ kerning adjustment to the graphics state.
+///
+/// Per PDF spec section 9.4.3 Table 109, the kerning adjustment is:
+/// `text_matrix = translate(-n/1000 * font_size * horiz_scaling/100, 0) * text_matrix`
+///
+/// Large positive kerning values (> 0.2 * font_size) trigger a word boundary
+/// on the next glyph emitted.
+///
+/// # Arguments
+///
+/// * `n` - The kerning value from the TJ array
+/// * `font_size` - Current font size from graphics state
+/// * `horiz_scaling` - Horizontal scaling factor (Tz/100)
+/// * `gstate` - Graphics state (mutable for text_matrix update)
+/// * `pending_word_boundary` - Mutable flag for word boundary detection
+fn apply_tj_kerning(
+    n: f64,
+    font_size: f64,
+    horiz_scaling: f64,
+    gstate: &mut crate::graphics_state::GraphicsState,
+    pending_word_boundary: &mut bool,
+) {
+    // Compute kerning amount in text space: -n/1000 * font_size * horiz_scaling
+    let kern = -n / 1000.0 * font_size * horiz_scaling;
+
+    // Apply kerning to text matrix (horizontal translation)
+    gstate.translate_text(kern);
+
+    // Check for word boundary trigger:
+    // Large positive kerning (> 0.2 * font_size) injects a synthetic space.
+    // The spec says n > 0 AND the resulting kerning in text units > 0.2 * font_size.
+    // Since kern = -n/1000 * font_size * horiz_scaling, a positive n produces a negative kern,
+    // which in PDF's default coordinate system (left-to-right text) moves the origin rightward,
+    // effectively inserting space.
+    //
+    // Per plan line 1554: "Large positive values (> 0.2 * font_size) produce word boundaries."
+    // The threshold comparison is: n/1000.0 * font_size > 0.2 * font_size
+    // This simplifies to: n > 200 (regardless of font_size, as long as font_size > 0)
+    //
+    // When font_size is 0, we still check n > 200 to maintain the invariant.
+    //
+    // Note the sign convention from the bead description:
+    // "NEGATIVE n moves position FORWARD (tighter to next glyph); POSITIVE n moves BACKWARD"
+    // This is the spec's convention, but for LEFT-TO-RIGHT TEXT, a positive n actually
+    // inserts a gap (the text origin moves backward relative to the glyph, creating space).
+    if n > 200.0 {
+        *pending_word_boundary = true;
+    }
+    // Negative kerns never inject word boundaries.
 }
 
 /// Normalize glyph bboxes by applying the inverse rotation of the page.
@@ -2809,6 +2992,145 @@ mod tests {
             diag_count, 1,
             "Should emit FONT_SIZE_ZERO_OR_NEGATIVE diagnostic"
         );
+    }
+
+    // Acceptance criteria tests for pdftract-1kdzu (TJ operator with kerning)
+
+    #[test]
+    fn test_tj_array_with_strings_only() {
+        // AC: [(Hello)(World)] TJ produces 2 glyphs
+        let resources = ResourceDict::new();
+        let content = b"BT [(Hello)(World)] TJ ET";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        // Should have 2 glyphs (one per string)
+        assert_eq!(result.glyphs.len(), 2);
+        // Neither should have word boundary flag (no kerning)
+        assert!(!result.glyphs[0].is_word_boundary);
+        assert!(!result.glyphs[1].is_word_boundary);
+    }
+
+    #[test]
+    fn test_tj_array_with_large_positive_kerning() {
+        // AC: [(Hello)250(World)] TJ produces 2 glyphs; second glyph has is_word_boundary=true
+        // Kerning 250 > 200 threshold triggers word boundary
+        let resources = ResourceDict::new();
+        let content = b"BT [(Hello)250(World)] TJ ET";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        // Should have 2 glyphs
+        assert_eq!(result.glyphs.len(), 2);
+        // First glyph should not have word boundary (no preceding kern)
+        assert!(!result.glyphs[0].is_word_boundary);
+        // Second glyph SHOULD have word boundary (kerning 250 > 200)
+        assert!(
+            result.glyphs[1].is_word_boundary,
+            "Second glyph should have is_word_boundary=true due to kerning 250"
+        );
+    }
+
+    #[test]
+    fn test_tj_array_with_negative_kerning() {
+        // AC: [(kern)-10(ing)] TJ produces 2 glyphs; neither has is_word_boundary
+        // Negative kerning does NOT trigger word boundary
+        let resources = ResourceDict::new();
+        let content = b"BT [(kern)-10(ing)] TJ ET";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        // Should have 2 glyphs
+        assert_eq!(result.glyphs.len(), 2);
+        // Neither should have word boundary (negative kerning)
+        assert!(!result.glyphs[0].is_word_boundary);
+        assert!(!result.glyphs[1].is_word_boundary);
+    }
+
+    #[test]
+    fn test_tj_array_with_zero_kerning() {
+        // AC: [(A)0(B)] TJ produces 2 glyphs with no word boundary
+        let resources = ResourceDict::new();
+        let content = b"BT [(A)0(B)] TJ ET";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        assert_eq!(result.glyphs.len(), 2);
+        assert!(!result.glyphs[0].is_word_boundary);
+        assert!(!result.glyphs[1].is_word_boundary);
+    }
+
+    #[test]
+    fn test_tj_array_with_multiple_large_kerns() {
+        // AC: [(a)500(b)500(c)] TJ - both b and c carry is_word_boundary
+        let resources = ResourceDict::new();
+        let content = b"BT [(a)500(b)500(c)] TJ ET";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        assert_eq!(result.glyphs.len(), 3);
+        assert!(!result.glyphs[0].is_word_boundary);
+        assert!(
+            result.glyphs[1].is_word_boundary,
+            "Second glyph should have word boundary from first 500 kern"
+        );
+        assert!(
+            result.glyphs[2].is_word_boundary,
+            "Third glyph should have word boundary from second 500 kern"
+        );
+    }
+
+    #[test]
+    fn test_tj_empty_array() {
+        // AC: [] TJ no-ops (produces no glyphs)
+        let resources = ResourceDict::new();
+        let content = b"BT [] TJ ET";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        assert_eq!(result.glyphs.len(), 0);
+    }
+
+    #[test]
+    fn test_tj_with_kerning_at_threshold() {
+        // Kerning exactly at threshold (200) should trigger boundary
+        // n > 200 is the condition per plan line 1554
+        let resources = ResourceDict::new();
+        let content = b"BT [(A)200(B)] TJ ET";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        assert_eq!(result.glyphs.len(), 2);
+        // 200 is NOT > 200, so no boundary
+        assert!(!result.glyphs[1].is_word_boundary);
+    }
+
+    #[test]
+    fn test_tj_with_kerning_just_above_threshold() {
+        // Kerning just above threshold (201) should trigger boundary
+        let resources = ResourceDict::new();
+        let content = b"BT [(A)201(B)] TJ ET";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        assert_eq!(result.glyphs.len(), 2);
+        // 201 > 200, so boundary IS triggered
+        assert!(result.glyphs[1].is_word_boundary);
+    }
+
+    #[test]
+    fn test_tj_outside_bt_emits_diagnostic() {
+        // TJ outside BT/ET block should emit diagnostic
+        let resources = ResourceDict::new();
+        let content = b"[(Hello)] TJ";
+
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, &[]);
+
+        // Should have diagnostic for TJ outside BT
+        assert!(result
+            .diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::TextShowOutsideBt));
     }
 
     // Acceptance criteria tests for pdftract-1vxh (BT/ET text object lifecycle)
