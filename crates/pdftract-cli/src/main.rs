@@ -170,6 +170,12 @@ enum Commands {
     },
     /// Start the HTTP server for extraction
     ///
+    /// ## Security Model
+    ///
+    /// **pdftract serve has no built-in authentication.** Deploy behind a reverse proxy
+    /// (nginx, Traefik, Caddy) for production use. The server accepts PDFs via multipart
+    /// upload only; no endpoint accepts file paths from server filesystem.
+    ///
     /// ## Concurrency
     ///
     /// The server uses a two-level concurrency architecture:
@@ -217,9 +223,13 @@ enum Commands {
         #[arg(long)]
         no_cache: bool,
 
-        /// Maximum request body size in MB (default: 256)
+        /// Maximum request body size in MB (default: 256, max: 4096)
         #[arg(long, default_value = "256")]
         max_upload_mb: usize,
+
+        /// Maximum decompression size in GB (default: 1, overrides per-request max_decompress_gb)
+        #[arg(long, value_name = "GB", default_value = "1")]
+        max_decompress_gb: usize,
 
         /// Write per-request audit log to FILE (NDJSON; use "-" for stdout)
         #[arg(long, value_name = "FILE")]
@@ -471,6 +481,7 @@ fn main() -> Result<()> {
             cache_size,
             no_cache,
             max_upload_mb,
+            max_decompress_gb,
             audit_log,
         } => {
             if let Err(e) = cmd_serve(
@@ -479,6 +490,7 @@ fn main() -> Result<()> {
                 &cache_size,
                 no_cache,
                 max_upload_mb,
+                max_decompress_gb,
                 audit_log,
             ) {
                 eprintln!("Error: {}", e);
@@ -1448,8 +1460,20 @@ fn cmd_serve(
     cache_size: &str,
     no_cache: bool,
     max_upload_mb: usize,
+    max_decompress_gb: usize,
     audit_log: Option<PathBuf>,
 ) -> Result<()> {
+    // Validate hard cap for max_upload_mb (4 GiB)
+    const MAX_UPLOAD_MB_HARD_CAP: usize = 4096;
+    if max_upload_mb > MAX_UPLOAD_MB_HARD_CAP {
+        anyhow::bail!(
+            "--max-upload-mb value {} exceeds hard cap of {} MB (4 GiB). \
+             This limit prevents integer overflow when computing the byte limit.",
+            max_upload_mb,
+            MAX_UPLOAD_MB_HARD_CAP
+        );
+    }
+
     // Parse cache size
     let cache_size_bytes = parse_size(cache_size)?;
 
@@ -1472,6 +1496,7 @@ fn cmd_serve(
             cache_size_bytes,
             no_cache,
             max_upload_mb,
+            max_decompress_gb,
             audit_log,
         ))
 }

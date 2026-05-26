@@ -24,13 +24,14 @@ use crate::forms::{
 use crate::options::{ExtractionOptions, ReceiptsMode};
 use crate::parser::catalog::ReadingOrderAlgorithm;
 use crate::parser::marked_content::{track_mcids_from_content_stream, McidTracker};
-use crate::parser::stream::{FileSource, PdfSource};
 use crate::parser::stream::DEFAULT_MAX_DECOMPRESS_BYTES;
+use crate::parser::stream::{FileSource, PdfSource};
 use crate::parser::struct_tree::{check_coverage_for_pages, parse_struct_tree};
 use crate::receipts::Receipt;
 use crate::schema::{
     AnnotationJson, AttachmentJson, BlockJson, ChoiceValueJson, FormFieldJson, FormFieldTypeJson,
-    FormFieldValueJson, JavascriptActionJson, LinkJson, SignatureJson, SpanJson, TableJson, ThreadJson,
+    FormFieldValueJson, JavascriptActionJson, LinkJson, SignatureJson, SpanJson, TableJson,
+    ThreadJson,
 };
 use crate::semaphore::{Semaphore, SemaphoreExt};
 use crate::signature::{discover, extract_signatures};
@@ -368,13 +369,15 @@ pub fn extract_pdf(
         .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource)).map_err(|diagnostics| {
-        let msg = diagnostics
-            .first()
-            .map(|d| d.message.as_ref())
-            .unwrap_or("unknown error");
-        anyhow::anyhow!("Failed to parse catalog: {}", msg)
-    })?;
+    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource)).map_err(
+        |diagnostics| {
+            let msg = diagnostics
+                .first()
+                .map(|d| d.message.as_ref())
+                .unwrap_or("unknown error");
+            anyhow::anyhow!("Failed to parse catalog: {}", msg)
+        },
+    )?;
 
     // Build fingerprint input (without full page tree for lazy extraction)
     let fingerprint = compute_fingerprint_lazy(&catalog, &xref_section);
@@ -703,7 +706,8 @@ pub fn extract_pdf(
     // TH-04: Detect JavaScript actions in the document
     // This checks /OpenAction, /AA, page /AA, and annotation /A entries
     use crate::javascript::detect_javascript;
-    let (js_actions, js_diagnostics) = detect_javascript(&catalog, &pages_for_js_detection, &resolver_arc);
+    let (js_actions, js_diagnostics) =
+        detect_javascript(&catalog, &pages_for_js_detection, &resolver_arc);
 
     // Convert JavascriptAction to JavascriptActionJson
     let javascript_actions: Vec<JavascriptActionJson> = js_actions
@@ -1249,13 +1253,15 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
         .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource)).map_err(|diagnostics| {
-        let msg = diagnostics
-            .first()
-            .map(|d| d.message.as_ref())
-            .unwrap_or("unknown error");
-        anyhow::anyhow!("Failed to parse catalog: {}", msg)
-    })?;
+    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource)).map_err(
+        |diagnostics| {
+            let msg = diagnostics
+                .first()
+                .map(|d| d.message.as_ref())
+                .unwrap_or("unknown error");
+            anyhow::anyhow!("Failed to parse catalog: {}", msg)
+        },
+    )?;
 
     // Phase 4.5: Determine reading order algorithm
     // For v0.1.0-v0.3.0: Tagged PDFs emit TAGGED_PDF_STRUCT_TREE_DEFERRED and use XY-cut
@@ -1544,13 +1550,15 @@ where
         .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource)).map_err(|diagnostics| {
-        let msg = diagnostics
-            .first()
-            .map(|d| d.message.as_ref())
-            .unwrap_or("unknown error");
-        anyhow::anyhow!("Failed to parse catalog: {}", msg)
-    })?;
+    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource)).map_err(
+        |diagnostics| {
+            let msg = diagnostics
+                .first()
+                .map(|d| d.message.as_ref())
+                .unwrap_or("unknown error");
+            anyhow::anyhow!("Failed to parse catalog: {}", msg)
+        },
+    )?;
 
     // Wrap resolver in Arc for sharing across threads
     let resolver_arc = Arc::new(resolver);

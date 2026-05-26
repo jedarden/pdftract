@@ -36,8 +36,8 @@
 //! ```
 
 use crate::schema::{
-    BeadJson, BlockJson, ChoiceValueJson, FormFieldJson, FormFieldTypeJson, FormFieldValueJson, SpanJson,
-    ThreadJson,
+    BeadJson, BlockJson, ChoiceValueJson, FormFieldJson, FormFieldTypeJson, FormFieldValueJson,
+    SpanJson, ThreadJson,
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -1150,8 +1150,14 @@ mod span_tests {
             subject: None,
             keywords: None,
             beads: vec![
-                BeadJson { page_index: 0, rect: [100.0, 200.0, 300.0, 220.0] },
-                BeadJson { page_index: 1, rect: [100.0, 500.0, 300.0, 520.0] },
+                BeadJson {
+                    page_index: 0,
+                    rect: [100.0, 200.0, 300.0, 220.0],
+                },
+                BeadJson {
+                    page_index: 1,
+                    rect: [100.0, 500.0, 300.0, 520.0],
+                },
             ],
         }];
 
@@ -1169,7 +1175,10 @@ mod span_tests {
                 author: Some("Jane Smith".to_string()),
                 subject: None,
                 keywords: None,
-                beads: vec![BeadJson { page_index: 0, rect: [50.0, 100.0, 250.0, 120.0] }],
+                beads: vec![BeadJson {
+                    page_index: 0,
+                    rect: [50.0, 100.0, 250.0, 120.0],
+                }],
             },
             ThreadJson {
                 title: Some("Main Content".to_string()),
@@ -1177,8 +1186,14 @@ mod span_tests {
                 subject: Some("Chapter 1".to_string()),
                 keywords: Some("test, example".to_string()),
                 beads: vec![
-                    BeadJson { page_index: 1, rect: [50.0, 400.0, 250.0, 420.0] },
-                    BeadJson { page_index: 2, rect: [50.0, 100.0, 250.0, 120.0] },
+                    BeadJson {
+                        page_index: 1,
+                        rect: [50.0, 400.0, 250.0, 420.0],
+                    },
+                    BeadJson {
+                        page_index: 2,
+                        rect: [50.0, 100.0, 250.0, 120.0],
+                    },
                 ],
             },
         ];
@@ -1196,7 +1211,10 @@ mod span_tests {
             author: None,
             subject: None,
             keywords: None,
-            beads: vec![BeadJson { page_index: 5, rect: [100.0, 200.0, 300.0, 220.0] }],
+            beads: vec![BeadJson {
+                page_index: 5,
+                rect: [100.0, 200.0, 300.0, 220.0],
+            }],
         }];
 
         let md = threads_to_markdown(&threads);
@@ -1206,7 +1224,10 @@ mod span_tests {
     #[test]
     fn test_collapse_page_ranges_single_page() {
         // Single bead
-        let beads = vec![BeadJson { page_index: 3, rect: [0.0, 0.0, 100.0, 20.0] }];
+        let beads = vec![BeadJson {
+            page_index: 3,
+            rect: [0.0, 0.0, 100.0, 20.0],
+        }];
         assert_eq!(collapse_page_ranges(&beads), "pages 3");
     }
 
@@ -1214,9 +1235,18 @@ mod span_tests {
     fn test_collapse_page_ranges_contiguous() {
         // Contiguous pages
         let beads = vec![
-            BeadJson { page_index: 0, rect: [0.0, 0.0, 100.0, 20.0] },
-            BeadJson { page_index: 1, rect: [0.0, 0.0, 100.0, 20.0] },
-            BeadJson { page_index: 2, rect: [0.0, 0.0, 100.0, 20.0] },
+            BeadJson {
+                page_index: 0,
+                rect: [0.0, 0.0, 100.0, 20.0],
+            },
+            BeadJson {
+                page_index: 1,
+                rect: [0.0, 0.0, 100.0, 20.0],
+            },
+            BeadJson {
+                page_index: 2,
+                rect: [0.0, 0.0, 100.0, 20.0],
+            },
         ];
         assert_eq!(collapse_page_ranges(&beads), "pages 0-2");
     }
@@ -1225,9 +1255,18 @@ mod span_tests {
     fn test_collapse_page_ranges_gaps() {
         // Pages with gaps
         let beads = vec![
-            BeadJson { page_index: 0, rect: [0.0, 0.0, 100.0, 20.0] },
-            BeadJson { page_index: 2, rect: [0.0, 0.0, 100.0, 20.0] },
-            BeadJson { page_index: 5, rect: [0.0, 0.0, 100.0, 20.0] },
+            BeadJson {
+                page_index: 0,
+                rect: [0.0, 0.0, 100.0, 20.0],
+            },
+            BeadJson {
+                page_index: 2,
+                rect: [0.0, 0.0, 100.0, 20.0],
+            },
+            BeadJson {
+                page_index: 5,
+                rect: [0.0, 0.0, 100.0, 20.0],
+            },
         ];
         assert_eq!(collapse_page_ranges(&beads), "pages 0, 2, 5");
     }
@@ -1236,11 +1275,26 @@ mod span_tests {
     fn test_collapse_page_ranges_mixed() {
         // Mixed contiguous and gaps
         let beads = vec![
-            BeadJson { page_index: 0, rect: [0.0, 0.0, 100.0, 20.0] },
-            BeadJson { page_index: 1, rect: [0.0, 0.0, 100.0, 20.0] },
-            BeadJson { page_index: 3, rect: [0.0, 0.0, 100.0, 20.0] },
-            BeadJson { page_index: 4, rect: [0.0, 0.0, 100.0, 20.0] },
-            BeadJson { page_index: 4, rect: [0.0, 0.0, 100.0, 20.0] },
+            BeadJson {
+                page_index: 0,
+                rect: [0.0, 0.0, 100.0, 20.0],
+            },
+            BeadJson {
+                page_index: 1,
+                rect: [0.0, 0.0, 100.0, 20.0],
+            },
+            BeadJson {
+                page_index: 3,
+                rect: [0.0, 0.0, 100.0, 20.0],
+            },
+            BeadJson {
+                page_index: 4,
+                rect: [0.0, 0.0, 100.0, 20.0],
+            },
+            BeadJson {
+                page_index: 4,
+                rect: [0.0, 0.0, 100.0, 20.0],
+            },
         ];
         assert_eq!(collapse_page_ranges(&beads), "pages 0-1, 3-4");
     }

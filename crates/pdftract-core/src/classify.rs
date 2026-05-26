@@ -228,7 +228,7 @@ impl SignalEvaluator for LowCharValiditySignal {
             let validity = ctx.char_validity_rate();
             if validity < 0.4 {
                 // Very low validity = broken encoding
-                return Some(Vote::broken_vector(0.92));
+                return Some(Vote::broken_vector(0.80));
             }
         }
         None
@@ -248,7 +248,7 @@ impl SignalEvaluator for HighCharValiditySignal {
             let validity = ctx.char_validity_rate();
             if validity > 0.85 {
                 // High validity = good vector text
-                return Some(Vote::vector(0.93));
+                return Some(Vote::vector(0.90));
             }
         }
         None

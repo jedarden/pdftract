@@ -6,8 +6,8 @@
 
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::parser::object::{intern, ObjRef, PdfObject};
-use crate::parser::stream::PdfSource;
 use crate::parser::ocg::{parse_oc_properties, OcProperties};
+use crate::parser::stream::PdfSource;
 use crate::parser::xref::XrefResolver;
 
 /// Result type for catalog parsing.

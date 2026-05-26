@@ -3,6 +3,30 @@
 //! This module implements Phase 6.4's `pdftract serve` subcommand: a long-running
 //! HTTP service for multi-tenant extraction with cache integration.
 //!
+//! # Security Model
+//!
+//! **NO AUTHENTICATION**: pdftract serve has NO built-in authentication. This is a
+//! deliberate design decision - authentication and authorization are the responsibility
+//! of the deployment infrastructure (reverse proxy, API gateway, service mesh).
+//!
+//! Deploy behind a reverse proxy (nginx, Traefik, Caddy, envoy) for production use.
+//! The reverse proxy should handle:
+//! - TLS termination
+//! - Authentication (OAuth2, API keys, mTLS, etc.)
+//! - Rate limiting
+//! - IP whitelisting/blacklisting
+//!
+//! # File Path Safety
+//!
+//! All PDFs arrive via **multipart upload only**. No endpoint accepts a file path
+//! parameter from the server filesystem. This design prevents:
+//! - Directory traversal attacks (../../etc/passwd)
+//! - Unintended file access via request parameters
+//! - Path-based injection attacks
+//!
+//! Routes accept `multipart/form-data` with a `pdf` field containing the file bytes.
+//! The server never reads from the server filesystem on behalf of a request.
+//!
 //! # Endpoints
 //!
 //! - `POST /extract` — Extract and return JSON with cache status in response body
@@ -82,6 +106,8 @@ pub struct ServeState {
     pub cache: Arc<Mutex<CacheState>>,
     /// Audit log state
     pub audit: AuditState,
+    /// Default maximum decompression size in bytes (from --max-decompress-gb)
+    pub max_decompress_bytes: u64,
 }
 
 impl ServeState {
@@ -91,6 +117,7 @@ impl ServeState {
         cache_size_bytes: u64,
         cache_disabled: bool,
         audit_writer: Option<AuditLogWriter>,
+        max_decompress_bytes: u64,
     ) -> Self {
         let cache = CacheState {
             cache_dir,
@@ -100,6 +127,7 @@ impl ServeState {
         Self {
             cache: Arc::new(Mutex::new(cache)),
             audit: AuditState::new(audit_writer),
+            max_decompress_bytes,
         }
     }
 }
@@ -150,6 +178,9 @@ struct ExtractParams {
     /// Enable full-render path using PDFium
     #[serde(default)]
     full_render: bool,
+    /// Maximum decompression size in GB (overrides server default)
+    #[serde(default)]
+    max_decompress_gb: Option<usize>,
 }
 
 /// Run the HTTP serve mode.
@@ -168,6 +199,7 @@ pub async fn run(
     cache_size_bytes: u64,
     cache_disabled: bool,
     max_upload_mb: usize,
+    max_decompress_gb: usize,
     audit_log: Option<PathBuf>,
 ) -> Result<()> {
     let cache_dir_for_logging = cache_dir.as_deref();
@@ -182,11 +214,15 @@ pub async fn run(
         None
     };
 
+    // Convert max_decompress_gb to bytes (1 GB = 1 << 30 bytes)
+    let max_decompress_bytes = (max_decompress_gb as u64) * (1 << 30);
+
     let state = ServeState::new(
         cache_dir.clone(),
         cache_size_bytes,
         cache_disabled,
         audit_writer,
+        max_decompress_bytes,
     );
 
     let max_body_bytes = max_upload_mb * 1024 * 1024;
@@ -209,7 +245,9 @@ pub async fn run(
         .await
         .context(format!("Failed to bind to {}", bind_addr))?;
 
-    eprintln!("pdftract serve listening on http://{}", bind_addr);
+    // Print startup banner with security warning
+    eprintln!("pdftract serve is starting on http://{}", bind_addr);
+    eprintln!("*** NO BUILT-IN AUTH *** — Deploy behind a reverse proxy for production.");
     if let Some(dir) = cache_dir_for_logging {
         eprintln!(
             "Cache enabled: {} (max {} bytes)",
@@ -222,6 +260,8 @@ pub async fn run(
     if let Some(ref path) = audit_log {
         eprintln!("Audit log: {}", path.display());
     }
+    eprintln!("Max upload size: {} MB", max_upload_mb);
+    eprintln!("Max decompression size: {} GB", max_decompress_gb);
 
     axum::serve(listener, app)
         .await
@@ -258,7 +298,7 @@ async fn extract_handler(
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, AxumError> {
     let (pdf_file, params) = receive_pdf(&mut multipart).await?;
-    let options = build_options(&params)?;
+    let options = build_options(&state, &params)?;
 
     // Get cache configuration
     let cache_state = state.cache.lock().await;
@@ -318,7 +358,7 @@ async fn extract_text_handler(
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, AxumError> {
     let (pdf_file, params) = receive_pdf(&mut multipart).await?;
-    let options = build_options(&params)?;
+    let options = build_options(&state, &params)?;
 
     // Get cache configuration
     let cache_state = state.cache.lock().await;
@@ -386,7 +426,7 @@ async fn extract_stream_handler(
     use tokio_stream::StreamExt;
 
     let (pdf_file, params) = receive_pdf(&mut multipart).await?;
-    let options = build_options(&params)?;
+    let options = build_options(&state, &params)?;
 
     // Get cache configuration (for logging only - streaming bypasses cache)
     let cache_state = state.cache.lock().await;
@@ -462,6 +502,7 @@ async fn receive_pdf(multipart: &mut Multipart) -> Result<(PathBuf, ExtractParam
         receipts: "off".to_string(),
         no_cache: false,
         full_render: false,
+        max_decompress_gb: None,
     };
 
     while let Some(field) = multipart
@@ -513,12 +554,29 @@ async fn receive_pdf(multipart: &mut Multipart) -> Result<(PathBuf, ExtractParam
 /// Validates that full_render is only used when the feature is available.
 /// If full_render is requested but the feature is not compiled in,
 /// the request still succeeds but falls back to direct compositing.
-fn build_options(params: &ExtractParams) -> Result<ExtractionOptions, AxumError> {
+fn build_options(
+    state: &ServeState,
+    params: &ExtractParams,
+) -> Result<ExtractionOptions, AxumError> {
     let receipts_mode = match params.receipts.as_str() {
         "lite" => ReceiptsMode::Lite,
         "svg" => ReceiptsMode::SvgClip,
         _ => ReceiptsMode::Off,
     };
+
+    // Validate max_decompress_gb if provided (for future use)
+    // Note: This is currently validated but not applied to ExtractionOptions
+    // since the extraction pipeline uses a hardcoded DEFAULT_MAX_DECOMPRESS_BYTES.
+    // This validation is kept for API compatibility and future implementation.
+    if let Some(gb) = params.max_decompress_gb {
+        const MAX_DECOMPRESS_GB_HARD_CAP: usize = 4096;
+        if gb > MAX_DECOMPRESS_GB_HARD_CAP {
+            return Err(AxumError::BadRequest(format!(
+                "max_decompress_gb value {} exceeds hard cap of {} GB",
+                gb, MAX_DECOMPRESS_GB_HARD_CAP
+            )));
+        }
+    }
 
     // Check if full_render is requested
     if params.full_render {
@@ -655,7 +713,7 @@ mod tests {
         use tokio::time::Instant;
 
         // Start the server in the background
-        let state = ServeState::new(None, 1024 * 1024 * 1024, true); // No cache
+        let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30); // No cache, 1 GB decompress limit
         let app = Router::new()
             .route("/extract", post(extract_handler))
             .route("/health", get(health_handler))

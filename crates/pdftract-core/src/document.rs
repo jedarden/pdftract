@@ -66,13 +66,15 @@ pub fn parse_pdf_file(
         .ok_or_else(|| anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource)).map_err(|diagnostics| {
-        let msg = diagnostics
-            .first()
-            .map(|d| d.message.as_ref())
-            .unwrap_or("unknown error");
-        anyhow!("Failed to parse catalog: {}", msg)
-    })?;
+    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource)).map_err(
+        |diagnostics| {
+            let msg = diagnostics
+                .first()
+                .map(|d| d.message.as_ref())
+                .unwrap_or("unknown error");
+            anyhow!("Failed to parse catalog: {}", msg)
+        },
+    )?;
 
     // Flatten the page tree
     let pages = flatten_page_tree(&resolver, catalog.pages_ref).map_err(|diagnostics| {
@@ -305,13 +307,15 @@ impl PdfExtractor {
             .ok_or_else(|| anyhow!("No /Root reference in trailer"))?;
 
         // Parse the catalog
-        let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource)).map_err(|diagnostics| {
-            let msg = diagnostics
-                .first()
-                .map(|d| d.message.as_ref())
-                .unwrap_or("unknown error");
-            anyhow!("Failed to parse catalog: {}", msg)
-        })?;
+        let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource)).map_err(
+            |diagnostics| {
+                let msg = diagnostics
+                    .first()
+                    .map(|d| d.message.as_ref())
+                    .unwrap_or("unknown error");
+                anyhow!("Failed to parse catalog: {}", msg)
+            },
+        )?;
 
         // Build fingerprint input (without full page tree for lazy extraction)
         let fingerprint = compute_fingerprint_lazy(&catalog, &xref_section);

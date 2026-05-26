@@ -3629,10 +3629,9 @@ mod tests {
         use PdfObject::{Array, Name};
 
         let mut page_resources = ResourceDict::new();
-        page_resources.color_spaces.insert(
-            Arc::from("CS1"),
-            Name(Arc::from("/DeviceRGB")),
-        );
+        page_resources
+            .color_spaces
+            .insert(Arc::from("CS1"), Name(Arc::from("/DeviceRGB")));
 
         let mut form_resources = ResourceDict::new();
         form_resources
@@ -3657,10 +3656,9 @@ mod tests {
         use PdfObject::Name;
 
         let mut page_resources = ResourceDict::new();
-        page_resources.color_spaces.insert(
-            Arc::from("CS1"),
-            Name(Arc::from("/DeviceRGB")),
-        );
+        page_resources
+            .color_spaces
+            .insert(Arc::from("CS1"), Name(Arc::from("/DeviceRGB")));
 
         let mut stack = ResourceStack::new(page_resources);
 
@@ -3680,10 +3678,9 @@ mod tests {
         use PdfObject::Name;
 
         let mut page_resources = ResourceDict::new();
-        page_resources.color_spaces.insert(
-            Arc::from("CS1"),
-            Name(Arc::from("/DeviceRGB")),
-        );
+        page_resources
+            .color_spaces
+            .insert(Arc::from("CS1"), Name(Arc::from("/DeviceRGB")));
 
         let form_resources = ResourceDict::new(); // Empty /ColorSpace dict
 
@@ -3698,29 +3695,47 @@ mod tests {
     #[test]
     fn test_resource_stack_lookup_ext_gstate_shadowing() {
         let mut page_resources = ResourceDict::new();
-        page_resources
-            .ext_gstates
-            .insert(Arc::from("GS1"), ObjRef { object: 5, generation: 0 });
+        page_resources.ext_gstates.insert(
+            Arc::from("GS1"),
+            ObjRef {
+                object: 5,
+                generation: 0,
+            },
+        );
 
         let mut form_resources = ResourceDict::new();
-        form_resources
-            .ext_gstates
-            .insert(Arc::from("GS1"), ObjRef { object: 15, generation: 0 });
+        form_resources.ext_gstates.insert(
+            Arc::from("GS1"),
+            ObjRef {
+                object: 15,
+                generation: 0,
+            },
+        );
 
         let mut stack = ResourceStack::new(page_resources);
         stack.push(Some(form_resources));
 
         // Should resolve to form's /GS1 (shadowing page's)
         let result = stack.lookup_ext_gstate("GS1");
-        assert_eq!(result, Some(ObjRef { object: 15, generation: 0 }));
+        assert_eq!(
+            result,
+            Some(ObjRef {
+                object: 15,
+                generation: 0
+            })
+        );
     }
 
     #[test]
     fn test_resource_stack_lookup_ext_gstate_fallback_to_page() {
         let mut page_resources = ResourceDict::new();
-        page_resources
-            .ext_gstates
-            .insert(Arc::from("GS1"), ObjRef { object: 5, generation: 0 });
+        page_resources.ext_gstates.insert(
+            Arc::from("GS1"),
+            ObjRef {
+                object: 5,
+                generation: 0,
+            },
+        );
 
         let mut stack = ResourceStack::new(page_resources);
 
@@ -3729,7 +3744,13 @@ mod tests {
 
         // Should resolve to page's /GS1
         let result = stack.lookup_ext_gstate("GS1");
-        assert_eq!(result, Some(ObjRef { object: 5, generation: 0 }));
+        assert_eq!(
+            result,
+            Some(ObjRef {
+                object: 5,
+                generation: 0
+            })
+        );
     }
 
     #[test]
@@ -3738,9 +3759,13 @@ mod tests {
         // Per PDF spec: when a form has /Resources but a specific subdict is missing,
         // it inherits from the parent scope (not a failure).
         let mut page_resources = ResourceDict::new();
-        page_resources
-            .ext_gstates
-            .insert(Arc::from("GS1"), ObjRef { object: 5, generation: 0 });
+        page_resources.ext_gstates.insert(
+            Arc::from("GS1"),
+            ObjRef {
+                object: 5,
+                generation: 0,
+            },
+        );
 
         let form_resources = ResourceDict::new(); // Empty /ExtGState dict
 
@@ -3749,6 +3774,12 @@ mod tests {
 
         // Should find page's /GS1 (inheritance from parent scope)
         let result = stack.lookup_ext_gstate("GS1");
-        assert_eq!(result, Some(ObjRef { object: 5, generation: 0 }));
+        assert_eq!(
+            result,
+            Some(ObjRef {
+                object: 5,
+                generation: 0
+            })
+        );
     }
 }

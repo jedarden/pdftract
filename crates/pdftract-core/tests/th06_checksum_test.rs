@@ -83,7 +83,8 @@ fn test_tampering_detection() {
     assert!(
         !output.status.success(),
         "Build should fail when checksums don't match.\nstdout:\n{}\nstderr:\n{}",
-        stdout, stderr
+        stdout,
+        stderr
     );
 
     // The error message should mention checksum verification

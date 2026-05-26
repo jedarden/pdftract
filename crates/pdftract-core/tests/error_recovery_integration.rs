@@ -34,10 +34,7 @@ struct ExpectedDiagnostic {
 
 /// Helper: assert diagnostic count is at least threshold
 fn assert_diagnostic_count_at_least(diagnostics: &[String], code: &str, min_count: usize) {
-    let actual_count = diagnostics
-        .iter()
-        .filter(|d| d.contains(code))
-        .count();
+    let actual_count = diagnostics.iter().filter(|d| d.contains(code)).count();
 
     assert!(
         actual_count >= min_count,
@@ -83,15 +80,17 @@ fn test_xref_30pct_bad_offsets() {
 
     let result = assert_no_panic("test_xref_30pct_bad_offsets", || {
         // Read the PDF
-        let pdf_data = fs::read(&fixture_path)
-            .expect("fixture should exist");
+        let pdf_data = fs::read(&fixture_path).expect("fixture should exist");
 
         // TODO: Extract with pdftract once API is available
         // For now, verify the fixture exists and is valid PDF structure
         assert!(pdf_data.starts_with(b"%PDF-"), "Should be a valid PDF");
 
         // Verify expected diagnostics structure
-        assert!(!expected.expected_diagnostics.is_empty(), "Should have expected diagnostics");
+        assert!(
+            !expected.expected_diagnostics.is_empty(),
+            "Should have expected diagnostics"
+        );
 
         // The actual extraction and diagnostic verification will be added
         // once the pdftract extraction API is integrated into this test.
@@ -110,19 +109,25 @@ fn test_missing_mediabox_all_pages() {
     let expected = load_expected_diagnostics(&fixture_path);
 
     let result = assert_no_panic("test_missing_mediabox_all_pages", || {
-        let pdf_data = fs::read(&fixture_path)
-            .expect("fixture should exist");
+        let pdf_data = fs::read(&fixture_path).expect("fixture should exist");
 
         assert!(pdf_data.starts_with(b"%PDF-"), "Should be a valid PDF");
 
         // Verify expected: 10 pages with STRUCT_MISSING_KEY
-        let mediabox_diags: Vec<_> = expected.expected_diagnostics
+        let mediabox_diags: Vec<_> = expected
+            .expected_diagnostics
             .iter()
             .filter(|d| d.code.contains("MISSING_KEY"))
             .collect();
 
-        assert!(!mediabox_diags.is_empty(), "Should expect STRUCT_MISSING_KEY diagnostics");
-        assert_eq!(mediabox_diags[0].min_count, 10, "Should expect 10 STRUCT_MISSING_KEY diagnostics");
+        assert!(
+            !mediabox_diags.is_empty(),
+            "Should expect STRUCT_MISSING_KEY diagnostics"
+        );
+        assert_eq!(
+            mediabox_diags[0].min_count, 10,
+            "Should expect 10 STRUCT_MISSING_KEY diagnostics"
+        );
     });
 
     assert!(result.is_ok(), "Test should not panic");
@@ -138,13 +143,15 @@ fn test_missing_endobj() {
     let expected = load_expected_diagnostics(&fixture_path);
 
     let result = assert_no_panic("test_missing_endobj", || {
-        let pdf_data = fs::read(&fixture_path)
-            .expect("fixture should exist");
+        let pdf_data = fs::read(&fixture_path).expect("fixture should exist");
 
         assert!(pdf_data.starts_with(b"%PDF-"), "Should be a valid PDF");
 
         // Verify expected diagnostics structure
-        assert!(!expected.expected_diagnostics.is_empty(), "Should have expected diagnostics");
+        assert!(
+            !expected.expected_diagnostics.is_empty(),
+            "Should have expected diagnostics"
+        );
     });
 
     assert!(result.is_ok(), "Test should not panic");
@@ -160,18 +167,21 @@ fn test_truncated_mid_stream() {
     let expected = load_expected_diagnostics(&fixture_path);
 
     let result = assert_no_panic("test_truncated_mid_stream", || {
-        let pdf_data = fs::read(&fixture_path)
-            .expect("fixture should exist");
+        let pdf_data = fs::read(&fixture_path).expect("fixture should exist");
 
         assert!(pdf_data.starts_with(b"%PDF-"), "Should be a valid PDF");
 
         // Verify expected: STREAM_DECODE_ERROR
-        let stream_diags: Vec<_> = expected.expected_diagnostics
+        let stream_diags: Vec<_> = expected
+            .expected_diagnostics
             .iter()
             .filter(|d| d.code.contains("STREAM_DECODE"))
             .collect();
 
-        assert!(!stream_diags.is_empty(), "Should expect STREAM_DECODE_ERROR diagnostic");
+        assert!(
+            !stream_diags.is_empty(),
+            "Should expect STREAM_DECODE_ERROR diagnostic"
+        );
     });
 
     assert!(result.is_ok(), "Test should not panic");
@@ -187,18 +197,21 @@ fn test_int_overflow_bbox() {
     let expected = load_expected_diagnostics(&fixture_path);
 
     let result = assert_no_panic("test_int_overflow_bbox", || {
-        let pdf_data = fs::read(&fixture_path)
-            .expect("fixture should exist");
+        let pdf_data = fs::read(&fixture_path).expect("fixture should exist");
 
         assert!(pdf_data.starts_with(b"%PDF-"), "Should be a valid PDF");
 
         // Verify expected: STRUCT_OVERFLOW or similar
-        let overflow_diags: Vec<_> = expected.expected_diagnostics
+        let overflow_diags: Vec<_> = expected
+            .expected_diagnostics
             .iter()
             .filter(|d| d.code.contains("OVERFLOW"))
             .collect();
 
-        assert!(!overflow_diags.is_empty(), "Should expect OVERFLOW diagnostic");
+        assert!(
+            !overflow_diags.is_empty(),
+            "Should expect OVERFLOW diagnostic"
+        );
     });
 
     assert!(result.is_ok(), "Test should not panic");
@@ -214,13 +227,15 @@ fn test_nested_failure() {
     let expected = load_expected_diagnostics(&fixture_path);
 
     let result = assert_no_panic("test_nested_failure", || {
-        let pdf_data = fs::read(&fixture_path)
-            .expect("fixture should exist");
+        let pdf_data = fs::read(&fixture_path).expect("fixture should exist");
 
         assert!(pdf_data.starts_with(b"%PDF-"), "Should be a valid PDF");
 
         // Verify expected: at least 3 different diagnostic types
-        assert!(expected.expected_diagnostics.len() >= 3, "Should expect >= 3 diagnostic types");
+        assert!(
+            expected.expected_diagnostics.len() >= 3,
+            "Should expect >= 3 diagnostic types"
+        );
     });
 
     assert!(result.is_ok(), "Test should not panic");
@@ -238,20 +253,27 @@ fn test_combined_failures() {
     let expected = load_expected_diagnostics(&fixture_path);
 
     let result = assert_no_panic("test_combined_failures", || {
-        let pdf_data = fs::read(&fixture_path)
-            .expect("fixture should exist");
+        let pdf_data = fs::read(&fixture_path).expect("fixture should exist");
 
         assert!(pdf_data.starts_with(b"%PDF-"), "Should be a valid PDF");
 
         // Verify expected: multiple failure modes
-        assert!(expected.expected_diagnostics.len() >= 3, "Should expect >= 3 diagnostic types");
+        assert!(
+            expected.expected_diagnostics.len() >= 3,
+            "Should expect >= 3 diagnostic types"
+        );
 
         // Verify description mentions combined failures
-        assert!(expected.description.contains("combines") || expected.description.contains("multiple"),
-                "Should describe combined failure modes");
+        assert!(
+            expected.description.contains("combines") || expected.description.contains("multiple"),
+            "Should describe combined failure modes"
+        );
     });
 
-    assert!(result.is_ok(), "Test should not panic - this is the keystone INV-8 test");
+    assert!(
+        result.is_ok(),
+        "Test should not panic - this is the keystone INV-8 test"
+    );
 }
 
 /// INV-8 verification: run all fixtures through catch_unwind to ensure zero panics
@@ -273,12 +295,20 @@ fn test_inv_8_no_panics_across_all_fixtures() {
         let fixture_path = fixture_path(fixture_name);
 
         let result = assert_no_panic(fixture_name, || {
-            let pdf_data = fs::read(&fixture_path)
-                .expect(&format!("{} should exist", fixture_name));
+            let pdf_data =
+                fs::read(&fixture_path).expect(&format!("{} should exist", fixture_name));
 
-            assert!(pdf_data.starts_with(b"%PDF-"), "{} should be a valid PDF", fixture_name);
+            assert!(
+                pdf_data.starts_with(b"%PDF-"),
+                "{} should be a valid PDF",
+                fixture_name
+            );
         });
 
-        assert!(result.is_ok(), "{}: INV-8 violation - panic detected", fixture_name);
+        assert!(
+            result.is_ok(),
+            "{}: INV-8 violation - panic detected",
+            fixture_name
+        );
     }
 }

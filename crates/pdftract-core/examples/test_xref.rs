@@ -1,14 +1,12 @@
-use pdftract_core::parser::stream::{MemorySource, PdfSource};
+use pdftract_core::parser::stream::MemorySource;
 use pdftract_core::parser::xref;
-use std::fs::File;
-use std::io::Read;
 
 fn main() {
     let path = "tests/fixtures/tagged-suspects-false.pdf";
 
-    let mut file = File::open(path).unwrap();
+    let mut file = std::fs::File::open(path).unwrap();
     let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer).unwrap();
+    std::io::Read::read_to_end(&mut file, &mut buffer).unwrap();
 
     // Find startxref BEFORE moving buffer
     let search_bytes = &buffer[buffer.len().saturating_sub(1024)..];
@@ -37,21 +35,23 @@ fn main() {
 
     println!("startxref offset: {}", start_offset);
 
-    let xref_section = xref::load_xref_with_prev_chain(&source, start_offset);
-
-    println!("Has trailer: {}", xref_section.trailer.is_some());
-
-    if let Some(trailer) = &xref_section.trailer {
-        println!("Trailer keys: {:?}", trailer.keys().collect::<Vec<_>>());
-        println!("Root entry: {:?}", trailer.get("Root"));
-        println!("Size entry: {:?}", trailer.get("Size"));
+    // Try traditional xref parsing
+    let traditional = xref::parse_traditional_xref(&source, start_offset);
+    println!("Traditional xref:");
+    println!("  Entries: {}", traditional.entries.len());
+    println!("  Has trailer: {}", traditional.trailer.is_some());
+    println!("  Diagnostics: {}", traditional.diagnostics.len());
+    for diag in &traditional.diagnostics {
+        println!("    - {:?}: {}", diag.code, diag.message);
     }
 
-    println!("Diagnostics count: {}", xref_section.diagnostics.len());
+    // Try full xref loading
+    let xref_section = xref::load_xref_with_prev_chain(&source, start_offset);
+    println!("\nFull xref loading:");
+    println!("  Entries: {}", xref_section.entries.len());
+    println!("  Has trailer: {}", xref_section.trailer.is_some());
+    println!("  Diagnostics: {}", xref_section.diagnostics.len());
     for diag in &xref_section.diagnostics {
-        println!(
-            "  - {}: {} at byte_offset {:?}",
-            diag.code, diag.message, diag.byte_offset
-        );
+        println!("    - {:?}: {}", diag.code, diag.message);
     }
 }

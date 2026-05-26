@@ -1,16 +1,14 @@
-use pdftract_core::parser::stream::{MemorySource, PdfSource};
+use pdftract_core::parser::stream::MemorySource;
 use pdftract_core::parser::xref;
-use std::fs::File;
-use std::io::Read;
 
 fn main() {
     let path = "tests/fixtures/tagged-suspects-false.pdf";
 
-    let mut file = File::open(path).unwrap();
+    let mut file = std::fs::File::open(path).unwrap();
     let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer).unwrap();
+    std::io::Read::read_to_end(&mut file, &mut buffer).unwrap();
 
-    // Find startxref BEFORE moving buffer
+    // Find startxref
     let search_bytes = &buffer[buffer.len().saturating_sub(1024)..];
     let pos = search_bytes
         .windows(9)
@@ -32,26 +30,30 @@ fn main() {
     let offset_str = std::str::from_utf8(&buffer[offset_start..offset_end]).unwrap();
     let start_offset: u64 = offset_str.parse().unwrap();
 
-    // Now create source
     let source = MemorySource::new(buffer);
-
-    println!("startxref offset: {}", start_offset);
-
     let xref_section = xref::load_xref_with_prev_chain(&source, start_offset);
 
+    println!("Entries: {}", xref_section.entries.len());
     println!("Has trailer: {}", xref_section.trailer.is_some());
 
-    if let Some(trailer) = &xref_section.trailer {
+    if let Some(ref trailer) = xref_section.trailer {
         println!("Trailer keys: {:?}", trailer.keys().collect::<Vec<_>>());
-        println!("Root entry: {:?}", trailer.get("Root"));
-        println!("Size entry: {:?}", trailer.get("Size"));
-    }
 
-    println!("Diagnostics count: {}", xref_section.diagnostics.len());
-    for diag in &xref_section.diagnostics {
-        println!(
-            "  - {}: {} at byte_offset {:?}",
-            diag.code, diag.message, diag.byte_offset
-        );
+        if let Some(root_obj) = trailer.get("Root") {
+            println!("Root object: {:?}", root_obj);
+
+            // Try to resolve the reference
+            if let pdftract_core::parser::object::types::PdfObject::Ref(ref_obj_ref) = root_obj {
+                println!("Root reference: {:?}", ref_obj_ref);
+
+                let resolver =
+                    pdftract_core::parser::xref::XrefResolver::from_section(xref_section.clone());
+
+                match resolver.resolve(*ref_obj_ref) {
+                    Ok(resolved) => println!("Resolved root: {:?}", resolved),
+                    Err(e) => println!("Failed to resolve root reference: {:?}", e),
+                }
+            }
+        }
     }
 }

@@ -15,7 +15,9 @@ fn main() {
     // Verify build-time data file checksums (TH-06 supply-chain gate)
     if let Err(e) = verify_checksums() {
         eprintln!("cargo:warning=Checksum verification failed: {}", e);
-        eprintln!("cargo:warning=Build-time data files may have been tampered with or need regeneration.");
+        eprintln!(
+            "cargo:warning=Build-time data files may have been tampered with or need regeneration."
+        );
         eprintln!("cargo:warning=To regenerate CHECKSUMS.sha256, run: cd crates/pdftract-core/build && sha256sum std14-metrics.json named-encodings.json agl.json font-fingerprints.json wordlist-en-20k.txt predefined-cmaps/*.json > CHECKSUMS.sha256 && sha256sum ../../../build/glyph-shapes.json >> CHECKSUMS.sha256");
         panic!("Checksum verification failed - aborting build");
     }
@@ -902,7 +904,10 @@ fn verify_checksums() -> Result<(), String> {
 
     let checksums_path = Path::new("build/CHECKSUMS.sha256");
     if !checksums_path.exists() {
-        return Err(format!("CHECKSUMS.sha256 not found at {}", checksums_path.display()));
+        return Err(format!(
+            "CHECKSUMS.sha256 not found at {}",
+            checksums_path.display()
+        ));
     }
 
     let checksums_file = fs::File::open(checksums_path)
@@ -973,17 +978,18 @@ fn verify_checksums() -> Result<(), String> {
 ///
 /// Hex-encoded checksum string (64 hex characters).
 fn compute_sha256(path: &Path) -> Result<String, String> {
-    use std::io::Read;
     use sha2::{Digest, Sha256};
+    use std::io::Read;
 
-    let mut file = fs::File::open(path)
-        .map_err(|e| format!("Failed to open {}: {}", path.display(), e))?;
+    let mut file =
+        fs::File::open(path).map_err(|e| format!("Failed to open {}: {}", path.display(), e))?;
 
     let mut hasher = Sha256::new();
     let mut buffer = [0u8; 8192];
 
     loop {
-        let n = file.read(&mut buffer)
+        let n = file
+            .read(&mut buffer)
             .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
         if n == 0 {
             break;

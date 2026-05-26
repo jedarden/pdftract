@@ -619,10 +619,13 @@ pub fn thread_to_json(header: &ThreadHeader, beads: &[Bead]) -> crate::schema::T
         author: header.author.clone(),
         subject: header.subject.clone(),
         keywords: header.keywords.clone(),
-        beads: beads.iter().map(|bead| crate::schema::BeadJson {
-            page_index: bead.page_index,
-            rect: bead.rect,
-        }).collect(),
+        beads: beads
+            .iter()
+            .map(|bead| crate::schema::BeadJson {
+                page_index: bead.page_index,
+                rect: bead.rect,
+            })
+            .collect(),
     }
 }
 

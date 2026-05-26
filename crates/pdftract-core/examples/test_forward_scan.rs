@@ -2,8 +2,7 @@
 // This is a standalone test file to verify the forward scan implementation
 
 use pdftract_core::parser::stream::MemorySource;
-use pdftract_core::parser::xref::{forward_scan_xref, XrefEntry, XrefSection};
-use std::collections::HashMap;
+use pdftract_core::parser::xref::{forward_scan_xref, XrefEntry};
 
 fn main() {
     println!("Testing forward_scan_xref implementation...\n");
@@ -64,7 +63,7 @@ fn main() {
         "  Has LINEARIZED_NO_FORWARD_SCAN diagnostic: {}",
         result.diagnostics.iter().any(|d| matches!(
             d.code,
-            pdftract_core::parser::xref::XrefDiagCode::LinearizedNoForwardScan
+            pdftract_core::diagnostics::DiagCode::XrefLinearizedNoForwardScan
         ))
     );
     println!("  ✓ PASSED\n");
@@ -96,12 +95,10 @@ fn main() {
     let source = MemorySource::new(pdf_data.to_vec());
     let result = forward_scan_xref(&source, false);
 
-    let has_repaired_diagnostic = result.diagnostics.iter().any(|d| {
-        matches!(
-            d.code,
-            pdftract_core::parser::xref::XrefDiagCode::XrefRepaired
-        )
-    });
+    let has_repaired_diagnostic = result
+        .diagnostics
+        .iter()
+        .any(|d| matches!(d.code, pdftract_core::diagnostics::DiagCode::XrefRepaired));
     println!(
         "  Has XREF_REPAIRED diagnostic: {}",
         has_repaired_diagnostic

@@ -6,7 +6,7 @@
 
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::parser::catalog::Catalog;
-use crate::parser::object::{PdfObject, ObjRef};
+use crate::parser::object::{ObjRef, PdfObject};
 use crate::parser::xref::XrefResolver;
 use std::sync::Arc;
 
@@ -48,12 +48,7 @@ pub fn detect_javascript(
 
     // Check catalog /OpenAction
     if let Some(open_action) = &catalog.open_action {
-        check_object_for_js(
-            open_action,
-            "catalog.openaction",
-            &mut actions,
-            resolver,
-        );
+        check_object_for_js(open_action, "catalog.openaction", &mut actions, resolver);
     }
 
     // Check catalog /AA (additional actions)
@@ -67,21 +62,21 @@ pub fn detect_javascript(
 
         // Check page /AA
         if let Some(page_aa) = &page.aa {
-            check_aa_for_js(page_aa, &format!("{}.aa", page_prefix), &mut actions, resolver);
+            check_aa_for_js(
+                page_aa,
+                &format!("{}.aa", page_prefix),
+                &mut actions,
+                resolver,
+            );
         }
 
         // Check page annotations for /A (action) entries
         if !page.annots.is_empty() {
             // Wrap the annots Vec in a PdfObject::Array for the checker
             let annot_array_obj = PdfObject::Array(Box::new(
-                page.annots.iter().map(|&r| PdfObject::Ref(r)).collect()
+                page.annots.iter().map(|&r| PdfObject::Ref(r)).collect(),
             ));
-            check_annotations_for_js(
-                &annot_array_obj,
-                &page_prefix,
-                &mut actions,
-                resolver,
-            );
+            check_annotations_for_js(&annot_array_obj, &page_prefix, &mut actions, resolver);
         }
     }
 

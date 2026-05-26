@@ -61,13 +61,22 @@ fn test_javascript_detection() {
         .map(|action| action.location.as_str())
         .collect();
 
-    assert!(locations.contains(&"catalog.openaction"), "Missing catalog.openaction");
+    assert!(
+        locations.contains(&"catalog.openaction"),
+        "Missing catalog.openaction"
+    );
     assert!(locations.contains(&"page.0.aa.o"), "Missing page.0.aa.o");
-    assert!(locations.contains(&"page.1.annot.0.a"), "Missing page.1.annot.0.a");
+    assert!(
+        locations.contains(&"page.1.annot.0.a"),
+        "Missing page.1.annot.0.a"
+    );
 
     // Verify each action has a code excerpt (truncated to 200 chars)
     for action in &extraction_result.javascript_actions {
-        assert!(!action.code_excerpt.is_empty(), "Code excerpt should not be empty");
+        assert!(
+            !action.code_excerpt.is_empty(),
+            "Code excerpt should not be empty"
+        );
         assert!(
             action.code_excerpt.len() <= 200,
             "Code excerpt should be truncated to 200 characters"
@@ -77,7 +86,9 @@ fn test_javascript_detection() {
     // Assert JAVASCRIPT_PRESENT diagnostic was emitted
     let diagnostics = &extraction_result.metadata.diagnostics;
     assert!(
-        diagnostics.iter().any(|d| d.contains("JAVASCRIPT_PRESENT") || d.contains("JavaScript action")),
+        diagnostics
+            .iter()
+            .any(|d| d.contains("JAVASCRIPT_PRESENT") || d.contains("JavaScript action")),
         "Expected JAVASCRIPT_PRESENT diagnostic"
     );
 }
@@ -111,7 +122,9 @@ fn test_no_javascript() {
     // Assert JAVASCRIPT_PRESENT diagnostic was NOT emitted
     let diagnostics = &extraction_result.metadata.diagnostics;
     assert!(
-        !diagnostics.iter().any(|d| d.contains("JAVASCRIPT_PRESENT") || d.contains("JavaScript action")),
+        !diagnostics
+            .iter()
+            .any(|d| d.contains("JAVASCRIPT_PRESENT") || d.contains("JavaScript action")),
         "Should not emit JAVASCRIPT_PRESENT diagnostic"
     );
 }
@@ -134,7 +147,10 @@ fn test_no_js_engine_in_deps() {
 
     // Placeholder: always pass for now
     // TODO: Implement actual cargo tree parsing or CI check
-    assert!(true, "Manual review required: no JS engines (boa, deno_core, v8, quickjs) in dependencies");
+    assert!(
+        true,
+        "Manual review required: no JS engines (boa, deno_core, v8, quickjs) in dependencies"
+    );
 }
 
 #[cfg(test)]

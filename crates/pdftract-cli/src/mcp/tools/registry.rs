@@ -281,7 +281,11 @@ fn open_pdf(
             let resolver = parser::xref::XrefResolver::from_section(xref_section.clone());
 
             // Try to parse the catalog
-            let catalog_result = catalog::parse_catalog(&resolver, *root_ref, Some(&source as &dyn pdftract_core::parser::stream::PdfSource));
+            let catalog_result = catalog::parse_catalog(
+                &resolver,
+                *root_ref,
+                Some(&source as &dyn pdftract_core::parser::stream::PdfSource),
+            );
 
             match catalog_result {
                 Ok(catalog) => {
