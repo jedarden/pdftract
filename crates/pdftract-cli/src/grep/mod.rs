@@ -10,6 +10,10 @@ pub use matcher::{MatchRange, Matcher};
 mod event;
 pub use event::{CountEvent, FileOnlyEvent, JsonSink, MatchEvent};
 
+// Path expansion module
+mod expand;
+pub use expand::{expand_paths, FileWorkItem, PathOrUrl};
+
 /// Progress reporting mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProgressMode {
@@ -207,26 +211,58 @@ pub struct GrepConfig {
     pub quiet: bool,
 }
 
+/// Check if the remote feature is enabled at compile time.
+const REMOTE_ENABLED: bool = cfg!(feature = "remote");
+
+/// Produce work items from grep arguments.
+///
+/// This is the public entry point for path expansion. It takes the validated
+/// GrepConfig and expands the paths into a stream of FileWorkItem.
+///
+/// # Arguments
+/// * `config` - Validated grep configuration
+///
+/// # Returns
+/// An iterator of FileWorkItem and the total bytes (for progress reporting).
+///
+/// # Errors
+/// Returns an error if path expansion fails.
+pub fn produce_work_items(config: &GrepConfig) -> Result<(Vec<FileWorkItem>, u64)> {
+    expand_paths(&config.paths, REMOTE_ENABLED)
+}
+
 /// Run the grep command
 pub fn run_grep(args: GrepArgs) -> Result<()> {
     // Validate and normalize arguments
     let config = args.validate()?;
 
-    // For now, just print the configuration
+    // Expand paths into work items
+    let (work_items, bytes_total) = produce_work_items(&config)?;
+
+    // For now, just print the work items
     // TODO: Implement the actual grep logic in subsequent beads (7.8.2-7.8.10)
     if !config.quiet {
-        eprintln!("pdftract grep: mode not yet implemented");
+        eprintln!(
+            "pdftract grep: found {} PDF files ({} bytes total)",
+            work_items.len(),
+            bytes_total
+        );
         eprintln!("Pattern: {}", config.pattern);
-        eprintln!("Paths: {:?}", config.paths);
         eprintln!(
             "Match mode: {}",
             if config.use_regex { "regex" } else { "literal" }
         );
-        eprintln!("Case-insensitive: {}", config.ignore_case);
-        eprintln!("Word boundaries: {}", config.word_regexp);
-        eprintln!("Invert match: {}", config.invert_match);
+
+        // Print first few files as a preview
+        for (i, item) in work_items.iter().take(5).enumerate() {
+            eprintln!("  {}. {}", i + 1, item.path.display());
+        }
+        if work_items.len() > 5 {
+            eprintln!("  ... and {} more", work_items.len() - 5);
+        }
     }
 
+    // Exit with "not yet implemented" status
     std::process::exit(2);
 }
 

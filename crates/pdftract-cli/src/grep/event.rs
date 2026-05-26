@@ -34,7 +34,7 @@ pub struct MatchEvent {
     /// Confidence score (0.0 to 1.0) or null if not applicable
     ///
     /// NaN/Infinity values are replaced with null during serialization
-    #[serde(skip_serializing_if = "is_confidence_valid")]
+    #[serde(skip_serializing_if = "should_skip_confidence")]
     pub span_confidence: f32,
 
     /// PDF structural fingerprint for deduplication across runs
@@ -137,12 +137,12 @@ pub struct CountEvent {
     pub count: usize,
 }
 
-/// Helper function to skip serializing confidence when it's NaN.
+/// Helper function to skip serializing confidence when it's NaN or Infinity.
 ///
-/// serde doesn't support NaN in JSON by default, so we replace it with null
-/// by checking validity before serialization.
-fn is_confidence_valid(confidence: &f32) -> bool {
-    confidence.is_finite()
+/// serde doesn't support NaN in JSON by default, so we skip it by returning true
+/// when the value is not finite. The skip_serializing_if attribute skips when true.
+fn should_skip_confidence(confidence: &f32) -> bool {
+    !confidence.is_finite()
 }
 
 /// Helper function to skip serializing crosses_spans when false.
@@ -404,13 +404,13 @@ mod tests {
     }
 
     #[test]
-    fn test_is_confidence_valid() {
-        assert!(is_confidence_valid(&0.5));
-        assert!(is_confidence_valid(&0.0));
-        assert!(is_confidence_valid(&1.0));
-        assert!(!is_confidence_valid(&f32::NAN));
-        assert!(!is_confidence_valid(&f32::INFINITY));
-        assert!(!is_confidence_valid(&f32::NEG_INFINITY));
+    fn test_should_skip_confidence() {
+        assert!(!should_skip_confidence(&0.5));
+        assert!(!should_skip_confidence(&0.0));
+        assert!(!should_skip_confidence(&1.0));
+        assert!(should_skip_confidence(&f32::NAN));
+        assert!(should_skip_confidence(&f32::INFINITY));
+        assert!(should_skip_confidence(&f32::NEG_INFINITY));
     }
 
     #[test]
