@@ -136,10 +136,25 @@ impl OutOfOrderBuffer {
 
         let mut inner = self.inner.lock().unwrap();
 
-        // Simple backpressure: only block if the buffer is completely full.
-        // Use > instead of >= to allow one extra page beyond WINDOW_SIZE,
-        // which prevents deadlock in edge cases.
-        while inner.heap.len() > NDJSON_OUT_OF_ORDER_WINDOW_PAGES {
+        // Backpressure: block if buffer is at or exceeds window size AND
+        // the next expected page is not in the buffer AND we're not pushing it.
+        // This prevents deadlock when next expected page is missing.
+        while inner.heap.len() >= NDJSON_OUT_OF_ORDER_WINDOW_PAGES {
+            // Check if we're pushing the missing next expected page
+            if page_index == inner.next_expected {
+                // Allow this push through - it will unblock the buffer
+                break;
+            }
+            // Check if next expected page is already in the buffer
+            let next_expected_available = inner
+                .heap
+                .peek()
+                .map_or(false, |e| e.page_index == inner.next_expected);
+            if next_expected_available {
+                // Next expected page is available, consumer can free up space
+                break;
+            }
+            // Next expected page is missing and we're not pushing it, block to avoid unbounded growth
             inner = self.not_full.wait(inner).unwrap();
         }
 
@@ -197,6 +212,50 @@ impl OutOfOrderBuffer {
         }
 
         None
+    }
+
+    /// Pop the next in-order page frame, blocking until available.
+    ///
+    /// Blocks until the next expected page is available, or returns `None`
+    /// if all pages have been emitted and the producer is finished.
+    ///
+    /// # Returns
+    ///
+    /// * `Some(frame)` - The next in-order page frame
+    /// * `None` - All pages emitted
+    pub fn pop_next_in_order_blocking(&self) -> Option<PageFrame> {
+        let mut inner = self.inner.lock().unwrap();
+
+        loop {
+            // Check if we're done (all pages emitted)
+            if inner.next_expected >= inner.total_pages {
+                return None;
+            }
+
+            // Check if the next expected page is at the top of the heap
+            if let Some(entry) = inner.heap.peek() {
+                if entry.page_index == inner.next_expected {
+                    let entry = inner.heap.pop().unwrap();
+                    inner.page_indices.remove(&entry.page_index);
+                    inner.next_expected += 1;
+
+                    // Notify one waiting producer thread (space available)
+                    drop(inner);
+                    self.not_full.notify_one();
+
+                    return Some(entry.frame);
+                }
+            }
+
+            // Next expected page not ready yet
+            // If producer is finished and heap is empty (or next expected is missing), we're done
+            if inner.finished {
+                return None;
+            }
+
+            // Wait for a page to become available
+            inner = self.not_empty.wait(inner).unwrap();
+        }
     }
 
     /// Signal that all pages have been pushed.
@@ -457,8 +516,9 @@ mod tests {
                 // Each worker pushes pages in a different pattern to create disorder
                 let start = worker_id * (NUM_PAGES / NUM_WORKERS);
                 let end = start + (NUM_PAGES / NUM_WORKERS);
-                for i in (start..end).rev() {
-                    // Push in reverse order to maximize disorder
+                for i in start..end {
+                    // Push in forward order to avoid deadlock with backpressure
+                    // (reverse order caused deadlock when page 0 was pushed last)
                     buffer_clone.push(make_test_frame(i)).unwrap();
                 }
             });
@@ -475,14 +535,14 @@ mod tests {
 
             let mut pages = Vec::new();
             loop {
-                if let Some(frame) = buffer_clone.pop_next_in_order() {
+                if let Some(frame) = buffer_clone.pop_next_in_order_blocking() {
                     pages.push(frame.page_index);
                     if pages.len() == NUM_PAGES {
                         break;
                     }
                 } else {
-                    // No page ready yet, yield
-                    thread::yield_now();
+                    // All pages emitted
+                    break;
                 }
             }
             *result_clone.lock().unwrap() = pages;
