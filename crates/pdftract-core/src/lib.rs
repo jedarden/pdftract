@@ -9,7 +9,6 @@ pub mod atomic_file_writer;
 pub mod attachment;
 pub mod audit;
 pub mod cache;
-pub mod javascript;
 pub mod classify;
 pub mod confidence;
 pub mod content_stream;
@@ -17,13 +16,17 @@ pub mod diagnostics;
 pub mod document;
 #[cfg(feature = "ocr")]
 pub mod dpi;
+#[cfg(feature = "decrypt")]
+pub mod encryption;
 pub mod extract;
 pub mod fingerprint;
 pub mod font;
 pub mod forms;
+pub mod glyph;
 pub mod graphics_state;
 #[cfg(feature = "ocr")]
 pub mod hybrid;
+pub mod javascript;
 pub mod layout;
 pub mod markdown;
 #[cfg(feature = "ocr")]
@@ -39,6 +42,7 @@ pub mod profiles;
 pub mod receipts;
 #[cfg(feature = "ocr")]
 pub mod render;
+pub mod text;
 #[cfg(feature = "remote")]
 pub mod url_validation;
 pub mod word_boundary;
@@ -51,7 +55,6 @@ pub mod semaphore;
 pub mod signature;
 pub mod span_flags;
 pub mod table;
-pub mod text;
 pub mod threads;
 
 // Re-export key types for convenience
@@ -73,8 +76,8 @@ pub use options::{ExtractionOptions, ReceiptsMode};
 pub use page_class::{page_type_string, PageClass, PageClassification};
 pub use parser::pages::{count_pages_tree, LazyPageIter, PageDict, DEFAULT_MEDIABOX};
 pub use schema::{
-    AttachmentJson, BeadJson, BlockJson, CellJson, ExtractionQuality, RowJson, SpanJson, SpanRef, TableJson,
-    ThreadJson,
+    AttachmentJson, BeadJson, BlockJson, CellJson, ExtractionQuality, RowJson, SpanJson, SpanRef,
+    TableJson, ThreadJson,
 };
 pub use table::{GridCandidate, PageContext as TablePageContext, TableDetector};
 pub use text::{serialize_page_text, TextOptions};
