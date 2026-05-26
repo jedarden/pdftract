@@ -66,7 +66,7 @@ pub fn parse_pdf_file(
         .ok_or_else(|| anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref).map_err(|diagnostics| {
+    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource)).map_err(|diagnostics| {
         let msg = diagnostics
             .first()
             .map(|d| d.message.as_ref())
@@ -305,7 +305,7 @@ impl PdfExtractor {
             .ok_or_else(|| anyhow!("No /Root reference in trailer"))?;
 
         // Parse the catalog
-        let catalog = parse_catalog(&resolver, root_ref).map_err(|diagnostics| {
+        let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource)).map_err(|diagnostics| {
             let msg = diagnostics
                 .first()
                 .map(|d| d.message.as_ref())

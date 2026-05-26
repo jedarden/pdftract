@@ -24,7 +24,7 @@ use crate::forms::{
 use crate::options::{ExtractionOptions, ReceiptsMode};
 use crate::parser::catalog::ReadingOrderAlgorithm;
 use crate::parser::marked_content::{track_mcids_from_content_stream, McidTracker};
-use crate::parser::stream::FileSource;
+use crate::parser::stream::{FileSource, PdfSource};
 use crate::parser::stream::DEFAULT_MAX_DECOMPRESS_BYTES;
 use crate::parser::struct_tree::{check_coverage_for_pages, parse_struct_tree};
 use crate::receipts::Receipt;
@@ -368,7 +368,7 @@ pub fn extract_pdf(
         .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref).map_err(|diagnostics| {
+    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource)).map_err(|diagnostics| {
         let msg = diagnostics
             .first()
             .map(|d| d.message.as_ref())
@@ -1249,7 +1249,7 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
         .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref).map_err(|diagnostics| {
+    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource)).map_err(|diagnostics| {
         let msg = diagnostics
             .first()
             .map(|d| d.message.as_ref())
@@ -1544,7 +1544,7 @@ where
         .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref).map_err(|diagnostics| {
+    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource)).map_err(|diagnostics| {
         let msg = diagnostics
             .first()
             .map(|d| d.message.as_ref())

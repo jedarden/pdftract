@@ -6,6 +6,7 @@
 
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::parser::object::{intern, ObjRef, PdfObject};
+use crate::parser::stream::PdfSource;
 use crate::parser::ocg::{parse_oc_properties, OcProperties};
 use crate::parser::xref::XrefResolver;
 
@@ -451,6 +452,7 @@ impl Default for Catalog {
 /// # Arguments
 /// * `resolver` - The xref resolver for resolving indirect references
 /// * `root_ref` - The object reference to the catalog (/Root in trailer)
+/// * `source` - Optional PDF source for reading indirect objects. If None, uses cached objects only.
 ///
 /// # Returns
 /// A `Result<Catalog>` containing the parsed catalog or a list of diagnostics.
@@ -459,12 +461,20 @@ impl Default for Catalog {
 /// - If /Pages is missing, emits STRUCT_MISSING_KEY and returns an empty catalog
 /// - All other entries are optional; missing entries are None/defaults
 /// - Never panics; all errors become diagnostics
-pub fn parse_catalog(resolver: &XrefResolver, root_ref: ObjRef) -> Result<Catalog> {
+pub fn parse_catalog(
+    resolver: &XrefResolver,
+    root_ref: ObjRef,
+    source: Option<&dyn PdfSource>,
+) -> Result<Catalog> {
     let mut catalog = Catalog::default();
     let mut diagnostics = Vec::new();
 
-    // Resolve the root object
-    let root_obj = match resolver.resolve(root_ref) {
+    // Resolve the root object using source if available, otherwise use cache-only resolve
+    let root_obj = match source {
+        Some(src) => resolver.resolve_with_source(root_ref, src),
+        None => resolver.resolve(root_ref),
+    };
+    let root_obj = match root_obj {
         Ok(obj) => obj,
         Err(e) => {
             diagnostics.push(Diagnostic::with_dynamic_no_offset(
@@ -824,7 +834,7 @@ mod tests {
         let catalog_obj = make_test_catalog_dict();
         resolver.cache_object(root_ref, catalog_obj);
 
-        let result = parse_catalog(&resolver, root_ref);
+        let result = parse_catalog(&resolver, root_ref, None);
         assert!(result.is_ok());
 
         let catalog = result.unwrap();
@@ -846,7 +856,7 @@ mod tests {
         let catalog_obj = PdfObject::Dict(Box::new(dict));
         resolver.cache_object(root_ref, catalog_obj);
 
-        let result = parse_catalog(&resolver, root_ref);
+        let result = parse_catalog(&resolver, root_ref, None);
         assert!(result.is_ok());
 
         let catalog = result.unwrap();
@@ -867,7 +877,7 @@ mod tests {
         // Cache a non-dict object
         resolver.cache_object(root_ref, PdfObject::Integer(42));
 
-        let result = parse_catalog(&resolver, root_ref);
+        let result = parse_catalog(&resolver, root_ref, None);
         assert!(result.is_err());
     }
 
@@ -877,7 +887,7 @@ mod tests {
         let root_ref = ObjRef::new(999, 0);
 
         // Don't cache anything; resolve will fail
-        let result = parse_catalog(&resolver, root_ref);
+        let result = parse_catalog(&resolver, root_ref, None);
         assert!(result.is_err());
     }
 
@@ -892,7 +902,7 @@ mod tests {
         let catalog_obj = PdfObject::Dict(Box::new(dict));
         resolver.cache_object(root_ref, catalog_obj);
 
-        let result = parse_catalog(&resolver, root_ref);
+        let result = parse_catalog(&resolver, root_ref, None);
         assert!(result.is_ok());
 
         let catalog = result.unwrap();
@@ -926,7 +936,7 @@ mod tests {
         let catalog_obj = PdfObject::Dict(Box::new(dict));
         resolver.cache_object(root_ref, catalog_obj);
 
-        let catalog = parse_catalog(&resolver, root_ref).unwrap();
+        let catalog = parse_catalog(&resolver, root_ref, None).unwrap();
         assert!(catalog.mark_info.is_tagged);
     }
 
@@ -941,7 +951,7 @@ mod tests {
         let catalog_obj = PdfObject::Dict(Box::new(dict));
         resolver.cache_object(root_ref, catalog_obj);
 
-        let catalog = parse_catalog(&resolver, root_ref).unwrap();
+        let catalog = parse_catalog(&resolver, root_ref, None).unwrap();
         assert_eq!(catalog.version, Some("2.0".to_string()));
     }
 
@@ -1178,7 +1188,7 @@ mod proptests {
             resolver.cache_object(root_ref, catalog_obj);
 
             // This should never panic - it should always return Ok or Err with diagnostics
-            let result = parse_catalog(&resolver, root_ref);
+            let result = parse_catalog(&resolver, root_ref, None);
 
             // If we get Ok, verify the catalog is structurally valid
             // If we get Err, verify diagnostics are present
