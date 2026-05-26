@@ -10,6 +10,15 @@ fn main() {
     println!("cargo:rerun-if-changed=build/predefined-cmaps/");
     println!("cargo:rerun-if-changed=build/glyph-shapes.json");
     println!("cargo:rerun-if-changed=build/wordlist-en-20k.txt");
+    println!("cargo:rerun-if-changed=build/CHECKSUMS.sha256");
+
+    // Verify build-time data file checksums (TH-06 supply-chain gate)
+    if let Err(e) = verify_checksums() {
+        eprintln!("cargo:warning=Checksum verification failed: {}", e);
+        eprintln!("cargo:warning=Build-time data files may have been tampered with or need regeneration.");
+        eprintln!("cargo:warning=To regenerate CHECKSUMS.sha256, run: cd crates/pdftract-core/build && sha256sum std14-metrics.json named-encodings.json agl.json font-fingerprints.json wordlist-en-20k.txt predefined-cmaps/*.json > CHECKSUMS.sha256 && sha256sum ../../../build/glyph-shapes.json >> CHECKSUMS.sha256");
+        panic!("Checksum verification failed - aborting build");
+    }
 
     let out_dir = env::var("OUT_DIR").unwrap();
     let out_path = Path::new(&out_dir);
@@ -877,4 +886,110 @@ pub static EN_WORDLIST_20K: phf::Set<&'static str> = {};
 
     fs::write(Path::new(out_dir).join("wordlist.rs"), rust_code)
         .expect("Failed to write wordlist.rs");
+}
+
+/// Verify SHA-256 checksums of build-time data files.
+///
+/// This is the TH-06 supply-chain gate implementation. It reads CHECKSUMS.sha256
+/// and verifies that each build-time data file matches its expected checksum.
+///
+/// # Returns
+///
+/// `Ok(())` if all checksums match, `Err(String)` with a descriptive message otherwise.
+fn verify_checksums() -> Result<(), String> {
+    use std::collections::HashMap;
+    use std::io::BufRead;
+
+    let checksums_path = Path::new("build/CHECKSUMS.sha256");
+    if !checksums_path.exists() {
+        return Err(format!("CHECKSUMS.sha256 not found at {}", checksums_path.display()));
+    }
+
+    let checksums_file = fs::File::open(checksums_path)
+        .map_err(|e| format!("Failed to open CHECKSUMS.sha256: {}", e))?;
+
+    // Parse CHECKSUMS.sha256 into a map of path -> expected checksum
+    let mut expected_checksums: HashMap<String, String> = HashMap::new();
+    let reader = std::io::BufReader::new(checksums_file);
+
+    for line in reader.lines() {
+        let line = line.map_err(|e| format!("Failed to read CHECKSUMS.sha256: {}", e))?;
+        let line = line.trim();
+
+        // Skip empty lines and comments
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        // Parse: "checksum  path"
+        let parts: Vec<&str> = line.splitn(2, "  ").collect();
+        if parts.len() != 2 {
+            return Err(format!("Invalid checksum line: {}", line));
+        }
+
+        let checksum = parts[0].to_string();
+        let path = parts[1].to_string();
+        expected_checksums.insert(path, checksum);
+    }
+
+    // Verify each file's checksum
+    let mut failures = Vec::new();
+
+    for (path, expected_checksum) in &expected_checksums {
+        let file_path = Path::new(path);
+
+        // Skip files that don't exist (they may be optional, like glyph-shapes.json)
+        if !file_path.exists() {
+            eprintln!("cargo:warning=Checksum file not found (optional): {}", path);
+            continue;
+        }
+
+        // Compute SHA-256 of the file
+        let actual_checksum = compute_sha256(file_path)
+            .map_err(|e| format!("Failed to compute checksum for {}: {}", path, e))?;
+
+        if actual_checksum != *expected_checksum {
+            failures.push(format!(
+                "{}: expected {}, got {}",
+                path, expected_checksum, actual_checksum
+            ));
+        }
+    }
+
+    if !failures.is_empty() {
+        Err(format!(
+            "Checksum verification failed for {} file(s):\n  {}",
+            failures.len(),
+            failures.join("\n  ")
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+/// Compute SHA-256 checksum of a file.
+///
+/// # Returns
+///
+/// Hex-encoded checksum string (64 hex characters).
+fn compute_sha256(path: &Path) -> Result<String, String> {
+    use std::io::Read;
+    use sha2::{Digest, Sha256};
+
+    let mut file = fs::File::open(path)
+        .map_err(|e| format!("Failed to open {}: {}", path.display(), e))?;
+
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 8192];
+
+    loop {
+        let n = file.read(&mut buffer)
+            .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buffer[..n]);
+    }
+
+    Ok(format!("{:x}", hasher.finalize()))
 }

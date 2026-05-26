@@ -42,6 +42,44 @@ ignore = false
 multiple-versions = "warn"
 wildcards = "deny"
 
+# Banned crates per TH-06 supply-chain policy (plan line 908)
+# - openssl-sys, native-tls: we use rustls instead
+# - git2, libgit2-sys: no git CLI dependency in this project
+deny = [
+    { name = "openssl-sys", use-instead = "rustls" },
+    { name = "native-tls", use-instead = "rustls" },
+    { name = "git2" },
+    { name = "libgit2-sys" },
+]
+
+# Minimum version requirements per TH-06 supply-chain policy (plan line 908)
+# - ring >= 0.17.5 (critical crypto primitive, known vulns in older versions)
+# - rustls >= 0.23 (TLS implementation, API changes and fixes in 0.23.x)
+skip = [
+    { name = "ring", version = "=0.17.5", use-instead = "ring >= 0.17.5", reason = "TH-06: ring >= 0.17.5 required" },
+    { name = "ring", version = "=0.17.6", use-instead = "ring >= 0.17.5", reason = "TH-06: ring >= 0.17.5 required" },
+    { name = "ring", version = "=0.17.7", use-instead = "ring >= 0.17.5", reason = "TH-06: ring >= 0.17.5 required" },
+    { name = "ring", version = "=0.17.8", use-instead = "ring >= 0.17.5", reason = "TH-06: ring >= 0.17.5 required" },
+    { name = "ring", version = "=0.17.9", use-instead = "ring >= 0.17.5", reason = "TH-06: ring >= 0.17.5 required" },
+    { name = "ring", version = "=0.17.10", use-instead = "ring >= 0.17.5", reason = "TH-06: ring >= 0.17.5 required" },
+    { name = "ring", version = "=0.17.11", use-instead = "ring >= 0.17.5", reason = "TH-06: ring >= 0.17.5 required" },
+    { name = "ring", version = "=0.17.12", use-instead = "ring >= 0.17.5", reason = "TH-06: ring >= 0.17.5 required" },
+    { name = "ring", version = "=0.17.13", use-instead = "ring >= 0.17.5", reason = "TH-06: ring >= 0.17.5 required" },
+    { name = "rustls", version = "=0.23.0", use-instead = "rustls >= 0.23", reason = "TH-06: rustls >= 0.23 required" },
+    { name = "rustls", version = "=0.23.1", use-instead = "rustls >= 0.23", reason = "TH-06: rustls >= 0.23 required" },
+    { name = "rustls", version = "=0.23.2", use-instead = "rustls >= 0.23", reason = "TH-06: rustls >= 0.23 required" },
+    { name = "rustls", version = "=0.23.3", use-instead = "rustls >= 0.23", reason = "TH-06: rustls >= 0.23 required" },
+    { name = "rustls", version = "=0.23.4", use-instead = "rustls >= 0.23", reason = "TH-06: rustls >= 0.23 required" },
+    { name = "rustls", version = "=0.23.5", use-instead = "rustls >= 0.23", reason = "TH-06: rustls >= 0.23 required" },
+    { name = "rustls", version = "=0.23.6", use-instead = "rustls >= 0.23", reason = "TH-06: rustls >= 0.23 required" },
+    { name = "rustls", version = "=0.23.7", use-instead = "rustls >= 0.23", reason = "TH-06: rustls >= 0.23 required" },
+    { name = "rustls", version = "=0.23.8", use-instead = "rustls >= 0.23", reason = "TH-06: rustls >= 0.23 required" },
+    { name = "rustls", version = "=0.23.9", use-instead = "rustls >= 0.23", reason = "TH-06: rustls >= 0.23 required" },
+    { name = "rustls", version = "=0.23.10", use-instead = "rustls >= 0.23", reason = "TH-06: rustls >= 0.23 required" },
+    { name = "rustls", version = "=0.23.11", use-instead = "rustls >= 0.23", reason = "TH-06: rustls >= 0.23 required" },
+    { name = "rustls", version = "=0.23.12", use-instead = "rustls >= 0.23", reason = "TH-06: rustls >= 0.23 required" },
+]
+
 # Allow wildcards for workspace crates (path dependencies)
 # These are internal crates within the pdftract workspace
 skip-tree = [

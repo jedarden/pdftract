@@ -15,8 +15,32 @@
 # "RUSTSEC-YYYY-NNNN" = "Justification for why this advisory is acceptable"
 
 [advisories]
-# Example format (uncomment to use):
-# "RUSTSEC-2020-0000" = "Affected crate is used in a non-security-critical path and we have a mitigation plan tracked in issue #XYZ"
+# Ignore pyo3 buffer overflow advisory - upgrade tracked separately
+# RUSTSEC-2025-0020: pyo3 0.20.3 has buffer overflow vulnerability
+# Upgrade to pyo3 >=0.24.1 is tracked separately (see notes/pdftract-1jlpy.md)
+ignore = [
+    "RUSTSEC-2025-0020",
+    "RUSTSEC-2021-0145",
+    "RUSTSEC-2024-0375",
+    "RUSTSEC-2020-0144",
+]
+
+# Informational exceptions for audited advisories
+# These are tracked separately and have written justifications
+exception-paths = [
+    # pyo3 0.20.3 buffer overflow - upgrade tracked in notes/pdftract-1jlpy.md
+    { id = "RUSTSEC-2025-0020", note = "Upgrade to pyo3 >=0.24.1 tracked separately, see notes/pdftract-1jlpy.md" },
+
+    # atty unsound - migration to is-terminal tracked separately
+    { id = "RUSTSEC-2021-0145", note = "Migration to is-terminal tracked separately, atty used only in non-critical path" },
+
+    # atty unmaintained - migration to is-terminal tracked separately
+    { id = "RUSTSEC-2024-0375", note = "Migration to is-terminal tracked separately, atty used only in non-critical path" },
+
+    # lzw unmaintained - no safe upgrade exists
+    # See ADR-003: https://github.com/jedarden/pdftract/blob/main/docs/adr/0003-lzw-advisory-exception.md
+    { id = "RUSTSEC-2020-0144", note = "No safe upgrade exists for PDF LZWDecode, alternatives (weezl) incompatible with PDF LZW" },
+]
 
 [output]
 # Use terse output for CI logs (full report still in artifacts)

@@ -44,9 +44,13 @@ encoding_rs = "0.8"
 quick-xml = { version = "0.36", optional = true }
 serde_yaml = { version = "0.9", optional = true }
 chrono = "0.4"
+aes = { version = "0.8", optional = true }
+rc4 = { version = "0.1", optional = true }
+cbc = { version = "0.1", optional = true, features = ["std"] }
+cipher = { version = "0.4", optional = true, features = ["block-padding"] }
 
 [features]
-default = ["serde"]
+default = ["serde", "decrypt"]
 serde = ["dep:serde", "dep:serde_json", "dep:schemars"]
 schemars = ["dep:schemars", "serde"]
 receipts = []  # Enable visual citation receipts (SVG clip generation)
@@ -54,6 +58,7 @@ ocr = ["dep:image", "dep:imageproc", "dep:leptonica-plumbing", "dep:quick-xml"] 
 full-render = ["dep:pdfium-render", "ocr"]  # Enable PDFium-based rendering (requires ocr)
 remote = ["dep:url"]  # Enable remote HTTP source (Phase 1.8)
 profiles = ["dep:serde_yaml"]  # Enable extraction profiles (Phase 7.10)
+decrypt = ["dep:aes", "dep:rc4", "dep:cbc", "dep:cipher"]  # Enable PDF decryption (RC4/AES-128/AES-256)
 proptest = []
 fuzzing = []  # Enable cfg(fuzzing) for fuzz harnesses
 shape-db = []  # Enable glyph shape database (Level 4 encoding fallback)
@@ -83,3 +88,4 @@ harness = false
 phf_codegen = "0.11"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+sha2 = "0.10"
