@@ -5,6 +5,7 @@
 //! - Code block classification (code.rs)
 //! - Column label assignment (columns.rs)
 //! - Line formation (line.rs)
+//! - Reading order determination via XY-cut (reading_order.rs)
 //! - Readability aggregation (readability.rs)
 //! - English wordlist for dict coverage scoring (wordlist.rs)
 //! - Text correction pipeline (correction.rs)
@@ -18,6 +19,7 @@ pub mod columns;
 pub mod correction;
 pub mod line;
 pub mod readability;
+pub mod reading_order;
 pub mod wordlist;
 
 pub use caption::{classify_caption, classify_page_captions, Block, PageContext};
@@ -32,4 +34,5 @@ pub use line::{
     HasBBox, HasFontSize, Line, LineDirection, LineMetadata,
 };
 pub use readability::{aggregate_page_readability, ScoredSpan};
+pub use reading_order::{xy_cut, BlockWithBBox, HasBBox as HasBBoxForOrder, XYCutResult};
 pub use wordlist::is_english_word;
