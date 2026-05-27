@@ -5,13 +5,24 @@
 //! directory. The design uses temp + rename for atomic writes and
 //! tolerates duplicated work on first-miss races, avoiding distributed
 //! locks for simplicity and predictable failure modes.
+//!
+//! # Cache entry format (with integrity)
+//!
+//! Each cache entry file stores: `[8-byte HMAC][compressed JSON]`
+//! - HMAC-SHA-256 over `fingerprint || opts_hash || compressed_blob`
+//! - Only first 8 bytes of HMAC are stored (64 bits sufficient for integrity)
+//! - Reads verify HMAC; mismatch → corrupt entry
 
 use crate::cache::compression::decode;
+use crate::cache::integrity;
 use crate::cache::layout::entry_path;
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Size of HMAC signature stored in each cache entry (8 bytes = 64 bits).
+const HMAC_SIZE: usize = 8;
 
 /// Environment variable to disable fsync before rename.
 ///
@@ -109,36 +120,48 @@ impl Writer {
         &self,
         fingerprint: &str,
         opts_hash: &str,
-        compressed_size: usize,
+        _compressed_size: usize,
         data: &[u8],
     ) -> io::Result<()> {
-        // Step 1: Compute the entry path
-        let entry = entry_path(&self.cache_dir, fingerprint, opts_hash, compressed_size);
+        // Step 1: Compute the entry path with total file size (HMAC + data)
+        let total_size = HMAC_SIZE + data.len();
+        let entry = entry_path(&self.cache_dir, fingerprint, opts_hash, total_size);
 
         // Step 2: Create parent directory (mkdir -p, idempotent)
         if let Some(parent) = entry.parent() {
             fs::create_dir_all(parent)?;
         }
 
-        // Step 3: Create temp file in the same directory (for same-filesystem rename)
+        // Step 3: Load HMAC key and compute signature
+        let key = integrity::load_cache_key(&self.cache_dir).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("Cache not initialized: {}", e),
+            )
+        })?;
+
+        let hmac = integrity::compute_hmac(&key, fingerprint, opts_hash, data);
+
+        // Step 4: Create temp file in the same directory (for same-filesystem rename)
         let temp_path = self.temp_path(&entry);
 
-        // Write data to temp file
+        // Write HMAC + data to temp file
         {
             let mut file = File::create(&temp_path)?;
+            file.write_all(&hmac)?;
             file.write_all(data)?;
 
-            // Step 4: fsync the temp file (optional, for crash safety)
+            // Step 5: fsync the temp file (optional, for crash safety)
             if !self.fsync_disabled() {
                 file.sync_all()?;
             }
         }
 
-        // Step 5: Atomic rename
+        // Step 6: Atomic rename
         match fs::rename(&temp_path, &entry) {
             Ok(()) => Ok(()),
             Err(e) => {
-                // Step 6: On rename failure, unlink temp file
+                // Step 7: On rename failure, unlink temp file
                 let _ = fs::remove_file(&temp_path);
                 Err(e)
             }
@@ -300,14 +323,51 @@ impl Reader {
     ) -> io::Result<Vec<u8>> {
         let entry = entry_path(&self.cache_dir, fingerprint, opts_hash, compressed_size);
 
-        // Step 1: Open the entry
-        let compressed_data = fs::read(&entry)?;
+        // Step 1: Read the entry (HMAC + compressed data)
+        let file_data = fs::read(&entry)?;
 
-        // Step 2: Decompress
-        match decode(&compressed_data) {
+        // Step 2: Verify HMAC signature
+        if file_data.len() < HMAC_SIZE {
+            // File too small to contain HMAC + data
+            let _ = fs::remove_file(&entry);
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "corrupt cache entry (too small, deleted)",
+            ));
+        }
+
+        let stored_hmac = &file_data[0..HMAC_SIZE];
+        let compressed_data = &file_data[HMAC_SIZE..];
+
+        // Load key and verify HMAC
+        let key = match integrity::load_cache_key(&self.cache_dir) {
+            Ok(k) => k,
+            Err(e) => {
+                // If key doesn't exist, cache is not initialized - treat as miss
+                return Err(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("Cache not initialized: {}", e),
+                ));
+            }
+        };
+
+        let mut hmac_bytes = [0u8; HMAC_SIZE];
+        hmac_bytes.copy_from_slice(stored_hmac);
+
+        if !integrity::verify_hmac(&key, fingerprint, opts_hash, compressed_data, &hmac_bytes) {
+            // HMAC mismatch - possibly poisoned cache (TH-10)
+            let _ = fs::remove_file(&entry);
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "cache integrity check failed (HMAC mismatch, entry deleted)",
+            ));
+        }
+
+        // Step 3: Decompress
+        match decode(compressed_data) {
             Ok(data) => Ok(data),
             Err(e) => {
-                // Step 3: On decompression error, delete the corrupt entry
+                // Step 4: On decompression error, delete the corrupt entry
                 let _ = fs::remove_file(&entry);
                 Err(io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -452,10 +512,25 @@ mod tests {
         crate::cache::compression::encode(data).unwrap()
     }
 
+    /// Initialize a test cache directory with an HMAC key.
+    /// This should be called at the start of any test that uses Writer or Reader.
+    fn init_test_cache(cache_dir: &Path) {
+        // Ensure the key exists: try to init it first, then verify it can be loaded
+        if integrity::init_cache_key(cache_dir).is_err() {
+            // Init failed (might be because key already exists), try to load it
+            integrity::load_cache_key(cache_dir).expect("Failed to load cache key for tests");
+        } else {
+            // Init succeeded, verify the key can be loaded
+            integrity::load_cache_key(cache_dir).expect("Failed to load newly created cache key");
+        }
+    }
+
     #[test]
     fn test_writer_basic() {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path();
+
+        init_test_cache(cache_dir);
 
         let writer = Writer::new(cache_dir);
         let compressed = compress_data(TEST_DATA);
@@ -482,6 +557,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path();
 
+        init_test_cache(cache_dir);
+
         let reader = Reader::new(cache_dir);
         let result = reader.read(TEST_FINGERPRINT, TEST_OPTS_HASH, 1234);
 
@@ -493,6 +570,8 @@ mod tests {
     fn test_reader_exists() {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path();
+
+        init_test_cache(cache_dir);
 
         let writer = Writer::new(cache_dir);
         let reader = Reader::new(cache_dir);
@@ -519,6 +598,8 @@ mod tests {
     fn test_write_creates_parent_dirs() {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path();
+
+        init_test_cache(cache_dir);
 
         let writer = Writer::new(cache_dir);
         let compressed = compress_data(TEST_DATA);
@@ -549,6 +630,8 @@ mod tests {
     fn test_concurrent_writers_same_key() {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().to_path_buf();
+
+        init_test_cache(&cache_dir);
 
         let compressed1 = compress_data(b"writer 1 data");
         let compressed2 = compress_data(b"writer 2 data");
@@ -589,7 +672,7 @@ mod tests {
 
         // The final entry should be valid (one of the two)
         let reader = Reader::new(&cache_dir);
-        let result = reader.read(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed_size);
+        let result = reader.read(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed_size + 8);
 
         assert!(result.is_ok(), "Final entry should be valid");
 
@@ -602,6 +685,8 @@ mod tests {
     fn test_concurrent_writers_different_keys() {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().to_path_buf();
+
+        init_test_cache(&cache_dir);
 
         let handles: Vec<_> = (0..8)
             .map(|i| {
@@ -645,6 +730,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path();
 
+        init_test_cache(cache_dir);
+
         let writer = Writer::new(cache_dir);
         let compressed = compress_data(TEST_DATA);
 
@@ -673,7 +760,7 @@ mod tests {
 
         // Reading should delete the corrupt entry
         let reader = Reader::new(cache_dir);
-        let result = reader.read(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len());
+        let result = reader.read(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len() + 8);
 
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().kind(), io::ErrorKind::InvalidData);
@@ -690,6 +777,8 @@ mod tests {
     fn test_temp_file_cleanup() {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path();
+
+        init_test_cache(cache_dir);
 
         let writer = Writer::new(cache_dir);
         let compressed = compress_data(TEST_DATA);
@@ -727,6 +816,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path();
 
+        init_test_cache(cache_dir);
+
         let writer = Writer::new(cache_dir);
         let compressed = compress_data(TEST_DATA);
 
@@ -761,6 +852,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path();
 
+        init_test_cache(cache_dir);
+
         // Default: fsync enabled
         let writer = Writer::new(cache_dir);
         assert!(!writer.fsync_disabled());
@@ -778,6 +871,8 @@ mod tests {
     fn test_temp_path_unique() {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path();
+
+        init_test_cache(cache_dir);
 
         let writer = Writer::new(cache_dir);
         let compressed = compress_data(TEST_DATA);
@@ -809,6 +904,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path();
 
+        init_test_cache(cache_dir);
+
         // Create a file that will fail on rename due to cross-device link
         // (simulate by using a non-existent parent)
 
@@ -827,7 +924,7 @@ mod tests {
 
         // Verify the entry exists
         let reader = Reader::new(cache_dir);
-        let result = reader.read(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len());
+        let result = reader.read(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len() + 8);
         assert!(result.is_ok());
     }
 
@@ -838,6 +935,8 @@ mod tests {
 
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().to_path_buf();
+
+        init_test_cache(&cache_dir);
 
         let compressed1 = compress_data(b"version 1");
         let compressed2 = compress_data(b"version 2");
@@ -884,6 +983,8 @@ mod tests {
     fn test_stress_concurrent_access() {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().to_path_buf();
+
+        init_test_cache(&cache_dir);
 
         const NUM_KEYS: usize = 10;
         const NUM_ITERATIONS: usize = 100;
@@ -954,6 +1055,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path();
 
+        init_test_cache(cache_dir);
+
         let writer = Writer::new(cache_dir);
         let compressed1 = compress_data(b"first version");
         let compressed2 = compress_data(b"second version");
@@ -971,7 +1074,7 @@ mod tests {
 
         // Read should return second version
         let reader = Reader::new(cache_dir);
-        let result = reader.read(TEST_FINGERPRINT, TEST_OPTS_HASH, size).unwrap();
+        let result = reader.read(TEST_FINGERPRINT, TEST_OPTS_HASH, size + 8).unwrap();
 
         assert_eq!(result, b"second version");
     }
@@ -981,6 +1084,8 @@ mod tests {
         // AC: Concurrent extractors on same fingerprint: both succeed; no deadlock
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().to_path_buf();
+
+        init_test_cache(&cache_dir);
 
         let compressed = compress_data(TEST_DATA);
         let compressed_size = compressed.len();
@@ -1019,7 +1124,7 @@ mod tests {
 
         // Final entry should be valid
         let reader = Reader::new(&cache_dir);
-        let result = reader.read(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed_size);
+        let result = reader.read(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed_size + 8);
         assert!(
             result.is_ok(),
             "Entry should be readable after concurrent writes"
@@ -1031,6 +1136,8 @@ mod tests {
         // AC: Reader sees a fully-decompressable entry always — never a torn write
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().to_path_buf();
+
+        init_test_cache(&cache_dir);
 
         let compressed = compress_data(TEST_DATA);
         let compressed_size = compressed.len();
@@ -1078,7 +1185,7 @@ mod tests {
 
         // Final entry should be valid
         let reader = Reader::new(&cache_dir);
-        let result = reader.read(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed_size);
+        let result = reader.read(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed_size + 8);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), TEST_DATA);
     }
@@ -1088,6 +1195,8 @@ mod tests {
         // AC: Corrupt entry on disk (truncated file): treated as a miss; entry deleted
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path();
+
+        init_test_cache(cache_dir);
 
         let writer = Writer::new(cache_dir);
         let compressed = compress_data(TEST_DATA);
@@ -1112,7 +1221,7 @@ mod tests {
 
         // Read should detect corruption, delete entry, and return error
         let reader = Reader::new(cache_dir);
-        let result = reader.read(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len());
+        let result = reader.read(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len() + 8);
 
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().kind(), io::ErrorKind::InvalidData);

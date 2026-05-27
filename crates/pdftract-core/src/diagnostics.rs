@@ -896,6 +896,16 @@ pub enum DiagCode {
     /// Phase origin: 6.9
     CacheEntryCorrupt,
 
+    /// Cache entry failed integrity check (HMAC mismatch)
+    ///
+    /// Emitted when a cached entry's HMAC-SHA-256 signature doesn't match
+    /// the computed signature over the entry data. This indicates cache
+    /// poisoning (TH-10) or corruption. The entry is treated as a miss and
+    /// extraction is re-run.
+    ///
+    /// Phase origin: 6.9
+    CacheIntegrityFail,
+
     /// Cache write failed
     ///
     /// Emitted when writing to the cache fails (e.g., out of disk space).
@@ -1118,7 +1128,7 @@ impl DiagCode {
             DiagCode::McpToolInvalidParams | DiagCode::McpPathTraversal => "MCP",
 
             // CACHE_*
-            DiagCode::CacheEntryCorrupt | DiagCode::CacheWriteFailed => "CACHE",
+            DiagCode::CacheEntryCorrupt | DiagCode::CacheIntegrityFail | DiagCode::CacheWriteFailed => "CACHE",
 
             // MARKED_CONTENT_*
             DiagCode::EmcWithoutBmc
@@ -1237,6 +1247,7 @@ impl DiagCode {
             DiagCode::McpToolInvalidParams => "MCP_TOOL_INVALID_PARAMS",
             DiagCode::McpPathTraversal => "MCP_PATH_TRAVERSAL",
             DiagCode::CacheEntryCorrupt => "CACHE_ENTRY_CORRUPT",
+            DiagCode::CacheIntegrityFail => "CACHE_INTEGRITY_FAIL",
             DiagCode::CacheWriteFailed => "CACHE_WRITE_FAILED",
             DiagCode::EmcWithoutBmc => "EMC_WITHOUT_BMC",
             DiagCode::MarkedContentDepthExceeded => "MARKED_CONTENT_DEPTH_EXCEEDED",
@@ -1345,6 +1356,7 @@ impl DiagCode {
             | DiagCode::LayoutReadingOrderAmbiguous
             | DiagCode::LayoutLowReadability
             | DiagCode::CacheEntryCorrupt
+            | DiagCode::CacheIntegrityFail
             | DiagCode::CacheWriteFailed => Severity::Warning,
 
             #[cfg(feature = "cjk")]
@@ -2175,6 +2187,14 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         recoverable: true,
         phase: "6.9",
         suggested_action: "None — the entry was deleted and extraction re-ran",
+    },
+    DiagInfo {
+        code: DiagCode::CacheIntegrityFail,
+        category: "CACHE",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "6.9",
+        suggested_action: "Cache entry failed HMAC verification; possibly poisoned or corrupted. Entry treated as miss and extraction re-ran.",
     },
     DiagInfo {
         code: DiagCode::CacheWriteFailed,

@@ -10,9 +10,11 @@
 //! ```text
 //! <cache_dir>/
 //!   index.json                              # cache version + metadata
+//!   key                                     # HMAC-SHA-256 key (256-bit, mode 0600)
 //!   sentinel.touched                        # O_APPEND sentinel for LRU tracking
 //!   <fp[0:2]>/<fp[2:4]>/<full_fp>/         # fingerprint-based path
-//!     <opts_hash>-<size>.json.zst          # cached extraction, zstd-compressed
+//!     <opts_hash>-<size>.json.zst           # cached extraction, zstd-compressed
+//!                                          # Format: [8-byte HMAC][compressed JSON]
 //! ```
 //!
 //! # Module Structure
@@ -20,14 +22,17 @@
 //! - [`layout`] — Path construction and directory creation
 //! - [`key`] — Cache key construction from (fingerprint, options) pairs
 //! - [`compression`] — Zstandard compression/decompression for cache entries
+//! - [`integrity`] — HMAC-SHA-256 integrity verification (TH-10 mitigation)
 //! - [`metadata`] — Cache index.json and metadata handling (TODO: 6.9.3)
 
 pub mod compression;
+pub mod integrity;
 pub mod key;
 pub mod layout;
 pub mod lru;
 pub mod multi_process;
 
+pub use integrity::{compute_hmac, init_cache_key, load_cache_key, verify_hmac};
 pub use key::CacheKey;
 pub use layout::{
     entry_path, increment_hit_counter, increment_miss_counter, CacheIndex, CURRENT_SCHEMA_VERSION,
@@ -39,7 +44,7 @@ use crate::extract::ExtractionResult;
 use crate::options::ExtractionOptions;
 use anyhow::{Context, Result};
 use serde_json;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Result of a cache lookup operation.
@@ -111,14 +116,14 @@ pub fn extract_with_cache(
 
     // First, we need the fingerprint to compute the cache key
     // We can't get this without parsing the PDF, so we parse but don't extract
-    let (fingerprint, _catalog, pages, _resolver) = crate::document::parse_pdf_file(pdf_path)
+    let (fingerprint, _catalog, _pages, _resolver) = crate::document::parse_pdf_file(pdf_path)
         .context("Failed to parse PDF file for fingerprint")?;
 
     // Compute cache key
     let key = CacheKey::new(&fingerprint, options);
 
     // Try to read from cache
-    let reader = Reader::new(cache_dir);
+    let _reader = Reader::new(cache_dir);
 
     // We need to find the actual entry file size since we don't know it ahead of time
     // Walk the fingerprint directory to find the entry with matching opts_hash
@@ -202,8 +207,6 @@ fn find_cached_entry(
     fingerprint: &str,
     opts_hash: &str,
 ) -> Result<Option<(Vec<u8>, u64)>, std::io::Error> {
-    use std::fs;
-
     let fp_dir = layout::fingerprint_dir(cache_dir, fingerprint);
 
     if !fp_dir.exists() {
