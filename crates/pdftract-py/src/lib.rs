@@ -9,7 +9,6 @@ use std::path::Path;
 
 // Import base64 for decoding attachment data in PyO3 bindings
 use base64::engine::general_purpose::STANDARD;
-use base64::engine::Engine;
 
 // Type alias for PyO3 owned references
 type PyResultAny<'py> = PyResult<Py<PyAny>>;
@@ -24,170 +23,119 @@ use pdftract_core::{
     TableJson, ThreadJson,
 };
 
+// Import diagnostics for error code mapping
+use pdftract_core::diagnostics::{DiagCode, DIAGNOSTIC_CATALOG};
+
 // ============================================================================
 // Exception hierarchy
 // ============================================================================
 
-/// Base exception for all pdftract errors.
-#[pyclass(name = "PdftractError")]
-#[derive(Debug)]
-pub struct PyPdftractError {
-    #[pyo3(get, set)]
-    message: String,
-}
-
-impl From<anyhow::Error> for PyPdftractError {
-    fn from(err: anyhow::Error) -> Self {
-        PyPdftractError {
-            message: err.to_string(),
-        }
-    }
-}
-
-#[pymethods]
-impl PyPdftractError {
-    fn __str__(&self) -> String {
-        self.message.clone()
-    }
-
-    fn __repr__(&self) -> String {
-        format!("PdftractError({})", self.message)
-    }
-}
-
-// Corrupt PDF error
-#[pyclass(name = "CorruptPdfError")]
-#[derive(Debug)]
-pub struct PyCorruptPdfError {
-    #[pyo3(get, set)]
-    message: String,
-}
-
-#[pymethods]
-impl PyCorruptPdfError {
-    fn __str__(&self) -> String {
-        self.message.clone()
-    }
-}
-
-// Encryption error
-#[pyclass(name = "EncryptionError")]
-#[derive(Debug)]
-pub struct PyEncryptionError {
-    #[pyo3(get, set)]
-    message: String,
-}
-
-#[pymethods]
-impl PyEncryptionError {
-    fn __str__(&self) -> String {
-        self.message.clone()
-    }
-}
-
-// Source unreachable error
-#[pyclass(name = "SourceUnreachableError")]
-#[derive(Debug)]
-pub struct PySourceUnreachableError {
-    #[pyo3(get, set)]
-    message: String,
-}
-
-#[pymethods]
-impl PySourceUnreachableError {
-    fn __str__(&self) -> String {
-        self.message.clone()
-    }
-}
-
-// Remote fetch interrupted error
-#[pyclass(name = "RemoteFetchInterruptedError")]
-#[derive(Debug)]
-pub struct PyRemoteFetchInterruptedError {
-    #[pyo3(get, set)]
-    message: String,
-}
-
-#[pymethods]
-impl PyRemoteFetchInterruptedError {
-    fn __str__(&self) -> String {
-        self.message.clone()
-    }
-}
-
-// TLS error
-#[pyclass(name = "TlsError")]
-#[derive(Debug)]
-pub struct PyTlsError {
-    #[pyo3(get, set)]
-    message: String,
-}
-
-#[pymethods]
-impl PyTlsError {
-    fn __str__(&self) -> String {
-        self.message.clone()
-    }
-}
-
-// Receipt verify error
-#[pyclass(name = "ReceiptVerifyError")]
-#[derive(Debug)]
-pub struct PyReceiptVerifyError {
-    #[pyo3(get, set)]
-    message: String,
-}
-
-#[pymethods]
-impl PyReceiptVerifyError {
-    fn __str__(&self) -> String {
-        self.message.clone()
-    }
-}
-
-// Unsupported operation error
-#[pyclass(name = "UnsupportedOperationError")]
-#[derive(Debug)]
-pub struct PyUnsupportedOperationError {
-    #[pyo3(get, set)]
-    message: String,
-}
-
-#[pymethods]
-impl PyUnsupportedOperationError {
-    fn __str__(&self) -> String {
-        self.message.clone()
-    }
-}
+// Use PyO3's create_exception! macro to create proper exception types
+// with Python inheritance. EncryptionError inherits from PdftractError,
+// and all others inherit from PdftractError.
+pyo3::create_exception!(pdftract, PdftractError, pyo3::exceptions::PyException);
+pyo3::create_exception!(pdftract, EncryptionError, PdftractError);
+pyo3::create_exception!(pdftract, CorruptPdfError, PdftractError);
+pyo3::create_exception!(pdftract, SourceUnreachableError, PdftractError);
+pyo3::create_exception!(pdftract, RemoteFetchInterruptedError, PdftractError);
+pyo3::create_exception!(pdftract, TlsError, PdftractError);
+pyo3::create_exception!(pdftract, ReceiptVerifyError, PdftractError);
+pyo3::create_exception!(pdftract, UnsupportedOperationError, PdftractError);
 
 // ============================================================================
 // Helper functions
 // ============================================================================
 
-/// Convert a Rust error to the appropriate Python exception.
+/// Get the hint for a diagnostic code from the catalog.
+fn get_hint_for_code(code: &str) -> Option<&'static str> {
+    DIAGNOSTIC_CATALOG
+        .iter()
+        .find(|info| info.code.to_string() == code)
+        .map(|info| info.suggested_action)
+}
+
+/// Convert a Rust error to the appropriate Python exception with attributes.
+///
+/// This function maps anyhow::Error to the appropriate Python exception type
+/// and sets the code, page_index, and hint attributes from the error context.
+/// Since anyhow::Error doesn't directly expose Diagnostic information, we
+/// parse the error message to identify the diagnostic code and set attributes
+/// accordingly.
 fn map_error_to_py(py: Python, err: anyhow::Error) -> PyErr {
     let msg = err.to_string();
     let err_str = msg.to_lowercase();
 
-    // Map to specific exception based on error message
-    if err_str.contains("encrypted") || err_str.contains("password") {
-        PyErr::new::<PyEncryptionError, _>(msg)
+    // Determine exception type, diagnostic code, and hint based on error message
+    let (code, hint): (Option<String>, Option<String>) = if err_str.contains("encrypted")
+        || err_str.contains("password")
+    {
+        let diag_code = if err_str.contains("wrong") || err_str.contains("incorrect") {
+            "ENCRYPTION_WRONG_PASSWORD"
+        } else {
+            "ENCRYPTION_UNSUPPORTED"
+        };
+        (
+            Some(diag_code.to_string()),
+            get_hint_for_code(diag_code).map(|h| h.to_string()),
+        )
     } else if err_str.contains("corrupt") || err_str.contains("invalid") {
-        PyErr::new::<PyCorruptPdfError, _>(msg)
+        (
+            Some("STRUCT_INVALID_NAME".to_string()),
+            get_hint_for_code("STRUCT_INVALID_NAME").map(|h| h.to_string()),
+        )
     } else if err_str.contains("tls") || err_str.contains("certificate") || err_str.contains("ssl")
     {
-        PyErr::new::<PyTlsError, _>(msg)
+        (
+            Some("REMOTE_TLS_ERROR".to_string()),
+            get_hint_for_code("REMOTE_TLS_ERROR").map(|h| h.to_string()),
+        )
     } else if err_str.contains("network") || err_str.contains("interrupted") {
-        PyErr::new::<PyRemoteFetchInterruptedError, _>(msg)
+        (
+            Some("REMOTE_FETCH_INTERRUPTED".to_string()),
+            get_hint_for_code("REMOTE_FETCH_INTERRUPTED").map(|h| h.to_string()),
+        )
     } else if err_str.contains("unreachable") || err_str.contains("not found") {
-        PyErr::new::<PySourceUnreachableError, _>(msg)
+        (
+            Some("REMOTE_HOST_UNREACHABLE".to_string()),
+            get_hint_for_code("REMOTE_HOST_UNREACHABLE").map(|h| h.to_string()),
+        )
     } else {
-        PyErr::new::<PyPdftractError, _>(msg)
+        (None, None)
+    };
+
+    // Map to specific exception based on error message
+    // Create PyErr and set attributes on the instance
+    let PyErr = if err_str.contains("encrypted") || err_str.contains("password") {
+        EncryptionError::new_err(msg)
+    } else if err_str.contains("corrupt") || err_str.contains("invalid") {
+        CorruptPdfError::new_err(msg)
+    } else if err_str.contains("tls") || err_str.contains("certificate") || err_str.contains("ssl")
+    {
+        TlsError::new_err(msg)
+    } else if err_str.contains("network") || err_str.contains("interrupted") {
+        RemoteFetchInterruptedError::new_err(msg)
+    } else if err_str.contains("unreachable") || err_str.contains("not found") {
+        SourceUnreachableError::new_err(msg)
+    } else {
+        PdftractError::new_err(msg)
+    };
+
+    // Set attributes on the exception instance
+    // We need to get the instance and set attributes using Python's setattr
+    let instance = PyErr.value(py);
+    if let Some(ref c) = code {
+        let _ = instance.setattr("code", c);
     }
+    let _ = instance.setattr("page_index", None::<u32>);
+    if let Some(ref h) = hint {
+        let _ = instance.setattr("hint", h);
+    }
+
+    PyErr
 }
 
 /// Convert Python kwargs to ExtractionOptions.
-fn kwargs_to_options(kwargs: Option<&PyDict>) -> PyResult<ExtractionOptions> {
+fn kwargs_to_options(_kwargs: Option<&PyDict>) -> PyResult<ExtractionOptions> {
     let opts = ExtractionOptions::default();
     // For now, just return default options
     // TODO: Parse kwargs to set options when ExtractionOptions has those fields
@@ -547,16 +495,25 @@ fn attachment_to_py<'py>(py: Python<'py>, attachment: AttachmentJson) -> PyResul
 // ============================================================================
 
 #[pymodule]
-fn pdftract(_py: Python, m: &PyModule) -> PyResult<()> {
-    // Add exception classes
-    m.add_class::<PyPdftractError>()?;
-    m.add_class::<PyCorruptPdfError>()?;
-    m.add_class::<PyEncryptionError>()?;
-    m.add_class::<PySourceUnreachableError>()?;
-    m.add_class::<PyRemoteFetchInterruptedError>()?;
-    m.add_class::<PyTlsError>()?;
-    m.add_class::<PyReceiptVerifyError>()?;
-    m.add_class::<PyUnsupportedOperationError>()?;
+fn pdftract(py: Python, m: &PyModule) -> PyResult<()> {
+    // Add exception classes with proper Python inheritance
+    m.add("PdftractError", py.get_type::<PdftractError>())?;
+    m.add("EncryptionError", py.get_type::<EncryptionError>())?;
+    m.add("CorruptPdfError", py.get_type::<CorruptPdfError>())?;
+    m.add(
+        "SourceUnreachableError",
+        py.get_type::<SourceUnreachableError>(),
+    )?;
+    m.add(
+        "RemoteFetchInterruptedError",
+        py.get_type::<RemoteFetchInterruptedError>(),
+    )?;
+    m.add("TlsError", py.get_type::<TlsError>())?;
+    m.add("ReceiptVerifyError", py.get_type::<ReceiptVerifyError>())?;
+    m.add(
+        "UnsupportedOperationError",
+        py.get_type::<UnsupportedOperationError>(),
+    )?;
 
     // Add extract_stream function
     m.add_function(wrap_pyfunction!(extract_stream_fn, m)?)?;
@@ -573,4 +530,56 @@ fn pdftract(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(verify_receipt, m)?)?;
 
     Ok(())
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_exception_hierarchy() {
+        // Test that EncryptionError inherits from PdftractError
+        Python::with_gil(|py| {
+            let pdftract_err = PdftractError::new_err("test error");
+            let encryption_err = EncryptionError::new_err("encrypted");
+
+            // Both should be instances of PdftractError
+            let pdftract_err_type = py.get_type::<PdftractError>();
+            assert!(pdftract_err
+                .value(py)
+                .is_instance(&pdftract_err_type)
+                .unwrap());
+            assert!(encryption_err
+                .value(py)
+                .is_instance(&pdftract_err_type)
+                .unwrap());
+        });
+    }
+
+    #[test]
+    fn test_exception_attributes() {
+        // Test that exception attributes are set correctly
+        Python::with_gil(|py| {
+            let err = EncryptionError::new_err("PDF is encrypted");
+            let instance = err.value(py);
+
+            // Set attributes
+            instance.setattr("code", "ENCRYPTION_UNSUPPORTED").unwrap();
+            instance.setattr("page_index", None::<u32>).unwrap();
+            instance.setattr("hint", "Supply the password keyword argument").unwrap();
+
+            // Verify attributes
+            let code: Option<String> = instance.getattr("code").unwrap().extract().unwrap();
+            let page_index: Option<u32> = instance.getattr("page_index").unwrap().extract().unwrap();
+            let hint: Option<String> = instance.getattr("hint").unwrap().extract().unwrap();
+
+            assert_eq!(code, Some("ENCRYPTION_UNSUPPORTED".to_string()));
+            assert_eq!(page_index, None);
+            assert_eq!(hint, Some("Supply the password keyword argument".to_string()));
+        });
+    }
 }
