@@ -709,7 +709,7 @@ fn process_string(
     resources: &ResourceDict,
     mode: ProcessingMode,
     glyphs: &mut Vec<Glyph>,
-    diagnostics: &mut Vec<Diagnostic>,
+    _diagnostics: &mut Vec<Diagnostic>,
     marked_content_stack: Option<&MarkedContentStack>,
 ) {
     let (x, y) = text_matrix.origin();
@@ -727,7 +727,7 @@ fn process_string(
         ProcessingMode::Normal => {
             // Try to resolve Unicode via ToUnicode
             if let Some(font_name) = &text_matrix.font_name {
-                if let Some(&font_ref) = resources.fonts.get(font_name.as_str()) {
+                if let Some(&_font_ref) = resources.fonts.get(font_name.as_str()) {
                     // For now, emit a placeholder with medium confidence
                     // A full implementation would use the font resolver
                     let text = String::from_utf8_lossy(bytes);
@@ -753,8 +753,8 @@ fn process_string(
 /// Extract numeric values from operand tokens.
 fn extract_numbers(
     operands: &[Token],
-    count: usize,
-    diagnostics: &mut Vec<Diagnostic>,
+    _count: usize,
+    _diagnostics: &mut Vec<Diagnostic>,
 ) -> Vec<f64> {
     operands
         .iter()
@@ -1400,15 +1400,13 @@ fn handle_do_operator(
     current_gstate: &crate::graphics_state::GraphicsState,
     resource_stack: &mut ResourceStack,
     exec_context: &mut ExecutionContext,
-    glyphs: &mut Vec<Glyph>,
+    _glyphs: &mut Vec<Glyph>,
     images: &mut Vec<ImageXObject>,
     diagnostics: &mut Vec<Diagnostic>,
-    mode: ProcessingMode,
-    marked_content_stack: Option<&MarkedContentStack>,
+    _mode: ProcessingMode,
+    _marked_content_stack: Option<&MarkedContentStack>,
     pdf_bytes: &[u8],
 ) {
-    use crate::graphics_state::Matrix3x3;
-
     // Resolve the XObject stream
     let xobject_obj = match resolve_xobject_stream(xobject_ref, pdf_bytes) {
         Ok(obj) => obj,
@@ -1418,7 +1416,7 @@ fn handle_do_operator(
         }
     };
 
-    let (stream_dict, subtype_opt, content_bytes) = match xobject_obj {
+    let (stream_dict, subtype_opt, _content_bytes) = match xobject_obj {
         XObjectResolveResult::Stream(dict, content) => {
             let subtype_str = dict
                 .get("/Subtype")
@@ -1464,7 +1462,7 @@ fn handle_do_operator(
 
             // Push new resource scope if form has /Resources
             let form_resources = stream_dict.get("/Resources").and_then(|obj| {
-                if let PdfObject::Dict(d) = obj {
+                if let PdfObject::Dict(_d) = obj {
                     Some(crate::parser::resources::extract_resources(obj))
                 } else {
                     None
@@ -1516,8 +1514,8 @@ enum XObjectResolveResult {
 
 /// Resolve an XObject reference to its stream dictionary and decoded content.
 fn resolve_xobject_stream(
-    xobject_ref: ObjRef,
-    pdf_bytes: &[u8],
+    _xobject_ref: ObjRef,
+    _pdf_bytes: &[u8],
 ) -> Result<XObjectResolveResult, Diagnostic> {
     // This is a simplified stub - the full implementation would:
     // 1. Parse the PDF to build an XrefResolver
@@ -1602,10 +1600,10 @@ fn compute_unit_square_bbox(ctm: &crate::graphics_state::Matrix3x3) -> [f32; 4] 
 fn process_string_with_ctm(
     bytes: &[u8],
     gstate: &crate::graphics_state::GraphicsState,
-    resources: &ResourceDict,
+    _resources: &ResourceDict,
     mode: ProcessingMode,
     glyphs: &mut Vec<Glyph>,
-    diagnostics: &mut Vec<Diagnostic>,
+    _diagnostics: &mut Vec<Diagnostic>,
     marked_content_stack: Option<&MarkedContentStack>,
 ) {
     // Get text origin from gstate.text_matrix
@@ -1659,7 +1657,7 @@ fn process_string_with_ctm(
 fn process_tj_array(
     array_elements: &[Token],
     gstate: &mut crate::graphics_state::GraphicsState,
-    resources: &ResourceDict,
+    _resources: &ResourceDict,
     mode: ProcessingMode,
     glyphs: &mut Vec<Glyph>,
     diagnostics: &mut Vec<Diagnostic>,
@@ -2403,14 +2401,16 @@ mod tests {
         ctx.enter(1);
         assert_eq!(ctx.depth(), 1);
 
-        // Second different entry should succeed
+        // Second different entry should succeed (nested)
         assert!(ctx.can_enter(2).is_ok());
         ctx.enter(2);
         assert_eq!(ctx.depth(), 2);
 
-        // Exit and re-enter should succeed
+        // Exit and enter different object should succeed
         ctx.exit();
-        assert!(ctx.can_enter(1).is_ok());
+        assert!(ctx.can_enter(3).is_ok());
+        ctx.enter(3);
+        assert_eq!(ctx.depth(), 2);
     }
 
     #[test]
@@ -2427,6 +2427,86 @@ mod tests {
         if let Err(diag) = result {
             assert_eq!(diag.code, crate::diagnostics::DiagCode::StructXobjectCycle);
         }
+    }
+
+    #[test]
+    fn test_execution_context_nested_cycle_a_b_a() {
+        // Acceptance criterion: A->B->A cycle detected at B's invocation of A
+        let mut ctx = ExecutionContext::new();
+
+        // Enter A
+        assert!(ctx.can_enter(1).is_ok());
+        ctx.enter(1);
+
+        // Enter B (nested in A)
+        assert!(ctx.can_enter(2).is_ok());
+        ctx.enter(2);
+
+        // Try to enter A again from B (cycle!)
+        let result = ctx.can_enter(1);
+        assert!(result.is_err());
+        if let Err(diag) = result {
+            assert_eq!(diag.code, crate::diagnostics::DiagCode::StructXobjectCycle);
+        }
+    }
+
+    #[test]
+    fn test_execution_context_sequential_invocation() {
+        // Acceptance criterion: Same form invoked twice sequentially (NOT nested) should succeed
+        let mut ctx = ExecutionContext::new();
+
+        // Enter A
+        assert!(ctx.can_enter(1).is_ok());
+        ctx.enter(1);
+        assert_eq!(ctx.depth(), 1);
+
+        // Exit A
+        ctx.exit();
+        assert_eq!(ctx.depth(), 0);
+
+        // Enter A again (sequential, not nested) - should succeed
+        assert!(ctx.can_enter(1).is_ok());
+        ctx.enter(1);
+        assert_eq!(ctx.depth(), 1);
+    }
+
+    #[test]
+    fn test_execution_context_diamond_pattern() {
+        // Acceptance criterion: Diamond pattern A->B and A->C->D, B and C both invoke D
+        // No cycle; D executes twice
+        let mut ctx = ExecutionContext::new();
+
+        // Enter A
+        assert!(ctx.can_enter(1).is_ok());
+        ctx.enter(1);
+
+        // Enter B from A
+        assert!(ctx.can_enter(2).is_ok());
+        ctx.enter(2);
+
+        // Exit B
+        ctx.exit();
+
+        // Enter C from A
+        assert!(ctx.can_enter(3).is_ok());
+        ctx.enter(3);
+
+        // Enter D from C
+        assert!(ctx.can_enter(4).is_ok());
+        ctx.enter(4);
+
+        // Exit D
+        ctx.exit();
+
+        // Exit C
+        ctx.exit();
+
+        // Now simulate A invoking B again, which invokes D again
+        assert!(ctx.can_enter(2).is_ok());
+        ctx.enter(2);
+
+        // D should be enterable again (no cycle - it's not in current stack)
+        assert!(ctx.can_enter(4).is_ok());
     }
 
     #[test]
