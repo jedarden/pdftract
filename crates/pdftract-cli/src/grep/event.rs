@@ -150,6 +150,33 @@ fn is_false(value: &bool) -> bool {
     !*value
 }
 
+/// Progress event for tracking grep processing.
+///
+/// These events are sent on the progress channel to update the progress bar
+/// and emit JSON progress events when --progress-json is enabled.
+#[derive(Debug, Clone)]
+pub enum ProgressEvent {
+    /// A file is starting processing.
+    FileStart { path: String, size_hint: Option<u64> },
+
+    /// Progress within a file (page-level updates).
+    FileProgress {
+        path: String,
+        pages_done: usize,
+        pages_total: usize,
+    },
+
+    /// A file completed processing.
+    FileDone {
+        path: String,
+        matches: usize,
+        duration_ms: u128,
+    },
+
+    /// A file was skipped (encrypted, non-PDF, etc.).
+    FileSkipped { path: String, reason: String },
+}
+
 /// JSON-Lines output sink for grep results.
 ///
 /// This writer handles line-buffered JSON output to stdout, ensuring

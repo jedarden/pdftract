@@ -8,11 +8,15 @@ pub use matcher::{MatchRange, Matcher};
 
 // Event and JSON output module
 mod event;
-pub use event::{CountEvent, FileOnlyEvent, JsonSink, MatchEvent};
+pub use event::{CountEvent, FileOnlyEvent, JsonSink, MatchEvent, ProgressEvent};
 
 // Path expansion module
 mod expand;
 pub use expand::{expand_paths, FileWorkItem, PathOrUrl};
+
+// Worker module
+mod worker;
+pub use worker::worker_run;
 
 /// Progress reporting mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

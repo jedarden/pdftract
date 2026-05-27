@@ -13,7 +13,17 @@
 pub mod aes_256;
 
 #[cfg(feature = "decrypt")]
-pub use aes_256::{aes_256_decrypt, Aes256Decryptor, FileKeyResult};
+pub mod rc4;
+
+#[cfg(feature = "decrypt")]
+pub use aes_256::{aes_256_decrypt, Aes256Decryptor, FileKeyResult as Aes256FileKeyResult};
+
+#[cfg(feature = "decrypt")]
+pub use rc4::{
+    decrypt_object, derive_file_key, derive_object_key, pad_password, rc4_decrypt,
+    validate_user_password, validate_user_password_r2, validate_user_password_r3,
+    FileKeyResult as Rc4FileKeyResult,
+};
 
 use crate::diagnostics::{DiagCode, Diagnostic};
 
