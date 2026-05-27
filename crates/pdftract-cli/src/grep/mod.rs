@@ -18,6 +18,16 @@ pub use expand::{expand_paths, FileWorkItem, PathOrUrl};
 mod worker;
 pub use worker::worker_run;
 
+// Progress module
+#[cfg(feature = "grep")]
+mod progress;
+#[cfg(feature = "grep")]
+pub use progress::ProgressManager;
+
+// Highlight module
+mod highlight;
+pub use highlight::{group_matches_by_file_and_page, write_highlighted_pdfs};
+
 /// Progress reporting mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProgressMode {

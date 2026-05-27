@@ -17,14 +17,17 @@
 //! it — this cuts per-file CPU by ~30-40% on typical pages.
 
 use super::event::{MatchEvent, ProgressEvent};
-use super::matcher::{MatchRange, Matcher};
 use super::expand::{FileWorkItem, PathOrUrl};
+use super::matcher::{MatchRange, Matcher};
 use super::GrepConfig;
 use anyhow::{anyhow, Context, Result};
-use pdftract_core::content_stream::{Glyph, ProcessingMode, process_with_mode};
+use pdftract_core::content_stream::{process_with_mode, Glyph, ProcessingMode};
 use pdftract_core::diagnostics::Diagnostic;
-use pdftract_core::fingerprint::{compute_fingerprint, CatalogFlags, ContentStreamData, PageFingerprintData};
+use pdftract_core::fingerprint::{
+    compute_fingerprint, CatalogFlags, ContentStreamData, PageFingerprintData,
+};
 use pdftract_core::parser::catalog::Catalog;
+use pdftract_core::parser::object::PdfObject;
 use pdftract_core::parser::pages::{flatten_page_tree, PageDict};
 use pdftract_core::parser::resources::ResourceDict;
 use pdftract_core::parser::stream::{FileSource, PdfSource};
@@ -123,7 +126,7 @@ pub fn worker_run(
 
     // Check for encryption
     if let Some(trailer) = &xref_section.trailer {
-        if let Some(_encrypt) = trailer.get(b"Encrypt") {
+        if let Some(_encrypt) = trailer.get("/Encrypt") {
             // Encrypted PDF without password support - skip with diagnostic
             eprintln!("{}: encrypted (skipped)", path.display());
             progress_sink.send(ProgressEvent::FileSkipped {
@@ -138,8 +141,12 @@ pub fn worker_run(
     let resolver = XrefResolver::from_section(xref_section.clone());
 
     // Get the root reference from trailer
-    let root_ref = match xref_section.trailer.and_then(|trailer| trailer.get(b"Root")) {
-        Some(Some(root_ref)) => root_ref,
+    let root_ref = match xref_section
+        .trailer
+        .as_ref()
+        .and_then(|trailer| trailer.get("/Root"))
+    {
+        Some(PdfObject::Ref(root_ref)) => *root_ref,
         _ => {
             progress_sink.send(ProgressEvent::FileSkipped {
                 path: path.display().to_string(),
@@ -265,9 +272,9 @@ fn compute_fingerprint_for_grep(
                 .map(|&obj_ref| ContentStreamData::Indirect(obj_ref))
                 .collect(),
             resources: None, // Skip resources for grep mode (performance)
-            media_box: page.media_box.unwrap_or([0.0, 0.0, 612.0, 792.0]),
+            media_box: page.media_box,
             crop_box: page.crop_box,
-            rotate: page.rotate.unwrap_or(0),
+            rotate: page.rotate,
         })
         .collect();
 
@@ -320,26 +327,22 @@ fn extract_spans_from_page(
     resolver: &XrefResolver,
     source: &dyn PdfSource,
 ) -> Result<Vec<Span>> {
-    // Get page resources
-    let resources = page
-        .resources
-        .as_ref()
-        .map(|r| ResourceDict::from_dict(r, resolver))
-        .transpose()?
-        .unwrap_or_else(ResourceDict::default);
+    // Get page resources (already resolved in PageDict)
+    let resources = (*page.resources).clone();
 
     // Decode and process content streams
     let decoded = decode_page_streams(page, resolver, source)?;
 
     // Process content stream to extract glyphs
-    let glyphs = process_with_mode(&decoded, &resources, ProcessingMode::Normal, None)
-        .map_err(|diagnostics| {
+    let glyphs = process_with_mode(&decoded, &resources, ProcessingMode::Normal, None).map_err(
+        |diagnostics| {
             let msg = diagnostics
                 .first()
                 .map(|d| d.message.as_ref())
                 .unwrap_or("unknown error");
             anyhow!("failed to process content stream: {}", msg)
-        })?;
+        },
+    )?;
 
     // Group glyphs into spans (consecutive glyphs with same font)
     let spans = group_glyphs_into_spans(glyphs);
@@ -381,14 +384,10 @@ fn group_glyphs_into_spans(glyphs: Vec<Glyph>) -> Vec<Span> {
             let font_changed = last_font.as_ref() != Some(&font);
 
             // Different line? (Y position differs by more than 20% of font size)
-            let line_changed = last_y.map_or(false, |ly| {
-                (ly - y).abs() > font_size * 0.2
-            });
+            let line_changed = last_y.map_or(false, |ly| (ly - y).abs() > font_size * 0.2);
 
             // Too far horizontally? (gap > 2x font size)
-            let too_far = last_x_end.map_or(false, |lx| {
-                glyph.bbox[0] - lx > font_size * 2.0
-            });
+            let too_far = last_x_end.map_or(false, |lx| glyph.bbox[0] - lx > font_size * 2.0);
 
             font_changed || line_changed || too_far
         };
@@ -449,7 +448,10 @@ fn create_span_from_glyphs(glyphs: &[Glyph]) -> Span {
     }
 
     // Get font and size from first glyph
-    let font = glyphs[0].font.clone().unwrap_or_else(|| "unknown".to_string());
+    let font = glyphs[0]
+        .font
+        .clone()
+        .unwrap_or_else(|| "unknown".to_string());
     let font_size = glyphs[0].size.unwrap_or(12.0);
 
     // Compute confidence as minimum of all glyphs
@@ -471,7 +473,9 @@ fn decode_page_streams(
     resolver: &XrefResolver,
     source: &dyn PdfSource,
 ) -> Result<Vec<u8>> {
-    use pdftract_core::parser::stream::{decode_stream, ExtractionOptions as StreamExtractionOptions};
+    use pdftract_core::parser::stream::{
+        decode_stream, ExtractionOptions as StreamExtractionOptions,
+    };
 
     let stream_opts = StreamExtractionOptions {
         max_decompress_bytes: pdftract_core::parser::stream::DEFAULT_MAX_DECOMPRESS_BYTES,
@@ -600,7 +604,7 @@ fn find_startxref(source: &dyn PdfSource) -> Result<u64> {
 /// Parse the catalog with a given resolver.
 fn parse_catalog_with_resolver(
     resolver: &XrefResolver,
-    root_ref: &pdftract_core::parser::object::ObjRef,
+    root_ref: pdftract_core::parser::object::ObjRef,
     source: &dyn PdfSource,
 ) -> Result<Catalog, Vec<Diagnostic>> {
     pdftract_core::parser::catalog::parse_catalog(resolver, root_ref, Some(source))
