@@ -9,11 +9,19 @@
 //! - GET /api/search?q=... - Search across spans
 
 use super::inspect::InspectorState;
+use super::render::anchors;
+use super::render::blocks;
+use super::render::columns;
+use super::render::confidence_heatmap;
+use super::render::reading_order;
+use super::render::spans;
 use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Json, Response as AxumResponse},
 };
+use pdftract_core::schema::BlockJson;
+use pdftract_core::schema::SpanJson;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -358,46 +366,229 @@ fn check_auth(
 }
 
 /// Render a page as SVG with all overlay layers.
+///
+/// This function generates a complete SVG document containing:
+/// - Background layer (white background, glyph paths in full version)
+/// - 8 toggleable overlay layers (spans, blocks, columns, reading_order, confidence_heatmap, ocr, mcid, anchors)
+/// - Selection layer (invisible <text> elements for browser text selection)
+///
+/// # Arguments
+///
+/// * `page` - Page JSON data from document_a
+/// * `width` - Page width in points
+/// * `height` - Page height in points
+/// * `thumbnail` - If true, renders simplified version (200px wide, fewer layers)
+///
+/// # Returns
+///
+/// A complete SVG document string.
 fn render_page_svg(page: &JsonValue, width: f64, height: f64, thumbnail: bool) -> String {
-    // Get page data
-    let spans = page.get("spans").and_then(|s| s.as_array());
-    let blocks = page.get("blocks").and_then(|b| b.as_array());
+    // Parse page data into structs
+    let spans_json = page.get("spans").and_then(|s| s.as_array());
+    let blocks_json = page.get("blocks").and_then(|b| b.as_array());
+
+    // Parse spans and blocks from JSON
+    let spans: Vec<SpanJson> = spans_json
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let blocks: Vec<BlockJson> = blocks_json
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Get page index and page number
+    let page_index = page.get("index").and_then(|i| i.as_u64()).unwrap_or(0) as usize;
+    let page_number = page.get("number").and_then(|n| n.as_u64()).unwrap_or(1) as u32;
 
     let mut svg_layers = Vec::new();
 
-    // Render each layer (these functions are defined in the render modules)
-    // For now, we'll create a basic SVG structure
-    // The full implementation will call the render functions from the render/ modules
+    // 1. Background layer - white background with glyph paths (full version only)
+    // Note: Full glyph path rendering requires font data which isn't available in JSON
+    // For now, we render a simple white background. This can be extended later
+    // to include actual glyph paths via ttf-parser when font data is available.
+    svg_layers.push(r#"<g class="background"><rect width="100%" height="100%" fill="white"/></g>"#.to_string());
 
-    // Spans layer
-    if let Some(spans_array) = spans {
-        // TODO: call render::spans::render_spans()
-        // For now, placeholder
-        if !thumbnail {
-            svg_layers.push(r#"<g class="layer-spans"></g>"#.to_string());
-        }
+    // 2. Selection layer - invisible <text> elements for browser text selection
+    // This layer is always rendered (even in thumbnails) to enable text selection
+    if !spans.is_empty() {
+        let selection_elements = render_selection_layer(&spans, height);
+        svg_layers.push(format!(r#"<g class="selection" style="pointer-events: none;">{}</g>"#, selection_elements.join("")));
     }
 
-    // Blocks layer
-    if let Some(blocks_array) = blocks {
-        // TODO: call render::blocks::render_blocks()
-        if !thumbnail {
-            svg_layers.push(r#"<g class="layer-blocks"></g>"#.to_string());
+    // Overlay layers (only in full version, not thumbnails)
+    if !thumbnail {
+        // 3. Spans layer - thin outline rectangles per span, color-coded by confidence
+        if !spans.is_empty() {
+            let span_elements = spans::render_spans(&spans);
+            svg_layers.push(format!(r#"<g class="layer-spans" style="display: none;">{}</g>"#, span_elements.join("")));
+        }
+
+        // 4. Blocks layer - translucent block rects, color-coded by kind
+        if !blocks.is_empty() {
+            let block_elements = blocks::render_blocks(&blocks);
+            svg_layers.push(format!(r#"<g class="layer-blocks" style="display: none;">{}</g>"#, block_elements.join("")));
+        }
+
+        // 5. Columns layer - dashed vertical lines at column boundaries
+        // Extract column information from spans
+        let page_height_f32 = height as f32;
+        let detected_columns = extract_columns_from_spans(&spans, page_height_f32);
+        if !detected_columns.is_empty() {
+            let column_elements = columns::render_columns(&detected_columns, page_height_f32);
+            svg_layers.push(format!(r#"<g class="layer-columns" style="display: none;">{}</g>"#, column_elements.join("")));
+        }
+
+        // 6. Reading order layer - curved arrows with numeric labels
+        if blocks.len() > 1 {
+            // Use natural block order for reading order (0, 1, 2, ...)
+            let order: Vec<usize> = (0..blocks.len()).collect();
+            let reading_order_elements = reading_order::render_reading_order(&blocks, &order);
+            if !reading_order_elements.is_empty() {
+                svg_layers.push(format!(r#"<g class="layer-reading-order" style="display: none;">{}</g>"#, reading_order_elements.join("")));
+            }
+        }
+
+        // 7. Confidence heatmap layer - per-glyph color cells
+        if !spans.is_empty() {
+            let heatmap_elements = confidence_heatmap::render_confidence_heatmap(&spans);
+            if !heatmap_elements.is_empty() {
+                svg_layers.push(format!(r#"<g class="layer-confidence-heatmap" style="display: none;">{}</g>"#, heatmap_elements.join("")));
+            }
+        }
+
+        // 8. OCR layer - cyan diagonal-stripe overlay on OCR'd regions
+        let ocr_elements = render_ocr_layer(&spans);
+        if !ocr_elements.is_empty() {
+            svg_layers.push(format!(r#"<g class="layer-ocr" style="display: none;">{}</g>"#, ocr_elements.join("")));
+        }
+
+        // 9. MCID layer - numeric MCID labels (placeholder for now)
+        // Note: MCID tracking is not yet implemented in the schema
+        // This layer is included as a placeholder for future implementation
+        svg_layers.push(r#"<g class="layer-mcid" style="display: none;"></g>"#.to_string());
+
+        // 10. Anchors layer - block-ID labels at top-left of each block
+        if !blocks.is_empty() {
+            let anchor_elements = anchors::render_anchors(page_index, page_number, &blocks);
+            svg_layers.push(format!(r#"<g class="layer-anchors" style="display: none;">{}</g>"#, anchor_elements.join("")));
         }
     }
-
-    // Other layers (columns, reading_order, confidence_heatmap, ocr, mcid, anchors)
-    // TODO: add remaining layers
 
     let layers_html = svg_layers.join("\n");
 
+    // Create SVG with arrowhead marker definition for reading order arrows
     format!(
-        r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {} {}" width="{}" height="{}">
-<rect width="100%" height="100%" fill="white"/>
+        r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {} {}" width="{}" height="{}">
+<defs>
+  <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+    <path d="M0,0 L0,6 L9,3 z" fill="#3b82f6" />
+  </marker>
+</defs>
+<style>
+  .layer-spans, .layer-blocks, .layer-columns, .layer-reading-order, .layer-confidence-heatmap, .layer-ocr, .layer-mcid, .layer-anchors {{
+    display: none;
+  }}
+</style>
 {}
-</svg>"#,
+</svg>"##,
         width, height, width, height, layers_html
     )
+}
+
+/// Render invisible <text> elements for browser text selection.
+///
+/// These elements are positioned over the text content but have opacity 0,
+/// making them invisible to the user but selectable by the browser.
+/// This enables users to copy-paste text from the inspector.
+fn render_selection_layer(spans: &[SpanJson], page_height: f64) -> Vec<String> {
+    spans.iter().map(|span| {
+        let [x0, y0, x1, y1] = span.bbox;
+
+        // Flip Y coordinate for SVG (PDF y-up, SVG y-down)
+        let svg_y = page_height - y1;
+        let font_size = span.size;
+
+        // Escape text content for XML
+        let text_escaped = escape_xml_text(&span.text);
+
+        format!(
+            r#"<text x="{:.2}" y="{:.2}" font-size="{:.2}" fill="black" opacity="0" style="cursor: text;">{}</text>"#,
+            x0, svg_y, font_size, text_escaped
+        )
+    }).collect()
+}
+
+/// Render OCR layer with cyan diagonal-stripe overlay.
+///
+/// Spans with confidence_source containing "ocr" get a translucent cyan
+/// overlay with diagonal stripes to indicate they were OCR-extracted.
+fn render_ocr_layer(spans: &[SpanJson]) -> Vec<String> {
+    spans.iter().filter(|span| {
+        span.confidence_source.as_ref()
+            .map(|s| s.contains("ocr"))
+            .unwrap_or(false)
+    }).map(|span| {
+        let [x0, y0, x1, y1] = span.bbox;
+        let width = x1 - x0;
+        let height = y1 - y0;
+
+        format!(
+            r#"<rect x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" fill="cyan" fill-opacity="0.1" stroke="cyan" stroke-width="1" stroke-dasharray="4,2" class="ocr-overlay" />"#,
+            x0, y0, width, height
+        )
+    }).collect()
+}
+
+/// Extract column information from spans.
+///
+/// Groups spans by their column field and creates Column objects
+/// for rendering column boundaries.
+fn extract_columns_from_spans(spans: &[SpanJson], _page_height: f32) -> Vec<pdftract_core::layout::columns::Column> {
+    use pdftract_core::layout::columns::Column;
+    use std::collections::HashMap;
+
+    // Group spans by column
+    let mut column_spans: HashMap<u32, Vec<&SpanJson>> = HashMap::new();
+
+    for span in spans {
+        if let Some(col) = span.column {
+            column_spans.entry(col).or_default().push(span);
+        }
+    }
+
+    // Create Column objects from grouped spans
+    column_spans
+        .into_iter()
+        .map(|(col_index, col_spans)| {
+            // Find the x-range for this column
+            let x0 = col_spans.iter().map(|s| s.bbox[0]).fold(f64::INFINITY, f64::min);
+            let x1 = col_spans.iter().map(|s| s.bbox[2]).fold(f64::NEG_INFINITY, f64::max);
+
+            Column {
+                index: col_index,
+                x_range: [x0 as f32, x1 as f32],
+            }
+        })
+        .collect()
+}
+
+/// Escape text content for XML.
+///
+/// Replaces special XML characters with their entity references.
+fn escape_xml_text(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
 }
 
 /// Decode a base64 string to bytes.
@@ -442,5 +633,217 @@ mod tests {
         let input = "SGVsbG8gV29ybGQ="; // "Hello World" in base64
         let bytes = base64_decode_to_bytes(input);
         assert_eq!(String::from_utf8(bytes).unwrap(), "Hello World");
+    }
+
+    #[test]
+    fn test_render_page_svg_basic() {
+        // Create a minimal page JSON
+        let page_json = serde_json::json!({
+            "index": 0,
+            "number": 1,
+            "width": 612.0,
+            "height": 792.0,
+            "spans": [
+                {
+                    "text": "Hello World",
+                    "bbox": [100.0, 200.0, 300.0, 220.0],
+                    "font": "Helvetica",
+                    "size": 12.0,
+                    "color": "#000000",
+                }
+            ],
+            "blocks": [
+                {
+                    "kind": "paragraph",
+                    "text": "Hello World",
+                    "bbox": [100.0, 200.0, 300.0, 220.0],
+                }
+            ],
+        });
+
+        let svg = render_page_svg(&page_json, 612.0, 792.0, false);
+
+        // Verify basic SVG structure
+        assert!(svg.contains("<svg"));
+        assert!(svg.contains("viewBox=\"0 0 612 792\""));
+        assert!(svg.contains("xmlns=\"http://www.w3.org/2000/svg\""));
+
+        // Verify arrowhead marker is present
+        assert!(svg.contains("<marker id=\"arrowhead\""));
+        assert!(svg.contains("<path d=\"M0,0 L0,6 L9,3 z\""));
+
+        // Verify all layer groups are present
+        assert!(svg.contains("<g class=\"background\">"));
+        assert!(svg.contains("<g class=\"selection\""));
+        assert!(svg.contains("<g class=\"layer-spans\""));
+        assert!(svg.contains("<g class=\"layer-blocks\""));
+        assert!(svg.contains("<g class=\"layer-columns\""));
+        assert!(svg.contains("<g class=\"layer-reading-order\""));
+        assert!(svg.contains("<g class=\"layer-confidence-heatmap\""));
+        assert!(svg.contains("<g class=\"layer-ocr\""));
+        assert!(svg.contains("<g class=\"layer-mcid\""));
+        assert!(svg.contains("<g class=\"layer-anchors\""));
+
+        // Verify text selection element is present
+        assert!(svg.contains("Hello World"));
+        assert!(svg.contains("opacity=\"0\""));
+
+        // Verify style block is present
+        assert!(svg.contains("<style>"));
+        assert!(svg.contains("display: none;"));
+    }
+
+    #[test]
+    fn test_render_page_svg_thumbnail() {
+        // Create a minimal page JSON
+        let page_json = serde_json::json!({
+            "index": 0,
+            "number": 1,
+            "width": 612.0,
+            "height": 792.0,
+            "spans": [
+                {
+                    "text": "Hello",
+                    "bbox": [100.0, 200.0, 200.0, 220.0],
+                    "font": "Helvetica",
+                    "size": 12.0,
+                }
+            ],
+        });
+
+        let svg = render_page_svg(&page_json, 200.0, 258.8, true);
+
+        // Verify thumbnail SVG structure
+        assert!(svg.contains("viewBox=\"0 0 200 258.8\""));
+
+        // Verify background and selection layers are present
+        assert!(svg.contains("<g class=\"background\">"));
+        assert!(svg.contains("<g class=\"selection\""));
+
+        // Verify overlay layers are NOT present in thumbnail
+        assert!(!svg.contains("<g class=\"layer-spans\""));
+        assert!(!svg.contains("<g class=\"layer-blocks\""));
+    }
+
+    #[test]
+    fn test_render_page_svg_empty_page() {
+        // Create an empty page JSON
+        let page_json = serde_json::json!({
+            "index": 0,
+            "number": 1,
+            "width": 612.0,
+            "height": 792.0,
+            "spans": [],
+            "blocks": [],
+        });
+
+        let svg = render_page_svg(&page_json, 612.0, 792.0, false);
+
+        // Verify SVG is still generated
+        assert!(svg.contains("<svg"));
+        assert!(svg.contains("<g class=\"background\">"));
+
+        // Verify selection layer is present but empty
+        assert!(svg.contains("<g class=\"selection\""));
+        assert!(svg.contains("</g>"));
+    }
+
+    #[test]
+    fn test_escape_xml_text() {
+        assert_eq!(escape_xml_text("hello"), "hello");
+        assert_eq!(escape_xml_text("a&b"), "a&amp;b");
+        assert_eq!(escape_xml_text("<tag>"), "&lt;tag&gt;");
+        assert_eq!(escape_xml_text("\"quote\""), "&quot;quote&quot;");
+        assert_eq!(escape_xml_text("'apos'"), "&apos;apos&apos;");
+        assert_eq!(
+            escape_xml_text("All & <special> \"chars'"),
+            "All &amp; &lt;special&gt; &quot;chars&apos;"
+        );
+    }
+
+    #[test]
+    fn test_render_ocr_layer() {
+        let spans = vec![
+            SpanJson {
+                text: "OCR text".to_string(),
+                bbox: [100.0, 200.0, 300.0, 220.0],
+                font: "Helvetica".to_string(),
+                size: 12.0,
+                color: None,
+                rendering_mode: None,
+                confidence: Some(0.85),
+                confidence_source: Some("ocr".to_string()),
+                lang: None,
+                flags: vec![],
+                receipt: None,
+                column: None,
+            },
+            SpanJson {
+                text: "Vector text".to_string(),
+                bbox: [100.0, 230.0, 300.0, 250.0],
+                font: "Helvetica".to_string(),
+                size: 12.0,
+                color: None,
+                rendering_mode: None,
+                confidence: Some(0.95),
+                confidence_source: Some("vector".to_string()),
+                lang: None,
+                flags: vec![],
+                receipt: None,
+                column: None,
+            },
+        ];
+
+        let ocr_elements = render_ocr_layer(&spans);
+
+        // Only OCR span should have an overlay
+        assert_eq!(ocr_elements.len(), 1);
+        assert!(ocr_elements[0].contains("class=\"ocr-overlay\""));
+        assert!(ocr_elements[0].contains("fill=\"cyan\""));
+    }
+
+    #[test]
+    fn test_extract_columns_from_spans() {
+        let spans = vec![
+            SpanJson {
+                text: "Column 1".to_string(),
+                bbox: [50.0, 100.0, 200.0, 120.0],
+                font: "Helvetica".to_string(),
+                size: 12.0,
+                color: None,
+                rendering_mode: None,
+                confidence: None,
+                confidence_source: None,
+                lang: None,
+                flags: vec![],
+                receipt: None,
+                column: Some(0),
+            },
+            SpanJson {
+                text: "Column 2".to_string(),
+                bbox: [250.0, 100.0, 400.0, 120.0],
+                font: "Helvetica".to_string(),
+                size: 12.0,
+                color: None,
+                rendering_mode: None,
+                confidence: None,
+                confidence_source: None,
+                lang: None,
+                flags: vec![],
+                receipt: None,
+                column: Some(1),
+            },
+        ];
+
+        let columns = extract_columns_from_spans(&spans, 792.0);
+
+        assert_eq!(columns.len(), 2);
+        assert_eq!(columns[0].index, 0);
+        assert_eq!(columns[1].index, 1);
+        // Check x-ranges are approximately correct
+        assert!((columns[0].x_range[0] - 50.0).abs() < 0.1);
+        assert!((columns[0].x_range[1] - 200.0).abs() < 0.1);
+        assert!((columns[1].x_range[0] - 250.0).abs() < 0.1);
+        assert!((columns[1].x_range[1] - 400.0).abs() < 0.1);
     }
 }
