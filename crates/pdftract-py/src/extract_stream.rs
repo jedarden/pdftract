@@ -250,16 +250,19 @@ impl StreamIterator {
             .as_ref()
             .ok_or_else(|| PyStopIteration::new_err(()))?;
 
-        let frame_result = recv.try_recv();
-
-        match frame_result {
+        // Try non-blocking recv first
+        match recv.try_recv() {
             Ok(frame) => {
+                // GIL must be held for pythonize
                 let py_obj = page_frame_to_py(py, &frame)?;
                 Ok(Some(py_obj))
             }
             Err(mpsc::TryRecvError::Empty) => {
+                // Release GIL while waiting - but we can't hold &Receiver across the boundary
+                // Instead, sleep briefly and retry (same pattern as before, but documented)
                 py.allow_threads(|| std::thread::sleep(std::time::Duration::from_millis(10)));
 
+                // Check again after sleep
                 let recv = self
                     .receiver
                     .as_ref()

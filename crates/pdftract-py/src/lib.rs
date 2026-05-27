@@ -155,8 +155,10 @@ fn extract_py<'py>(py: Python<'py>, path: &str, kwargs: Option<&PyDict>) -> PyRe
     let opts = kwargs_to_options(kwargs)?;
     let pdf_path = Path::new(path);
 
-    // Run extraction
-    let result = extract_pdf(pdf_path, &opts).map_err(|e| map_error_to_py(py, e))?;
+    // Run extraction with GIL released so other Python threads can run
+    let result = py
+        .allow_threads(|| extract_pdf(pdf_path, &opts))
+        .map_err(|e| map_error_to_py(py, e))?;
 
     // Convert ExtractionResult to Python dict
     let dict = PyDict::new(py);
@@ -570,16 +572,22 @@ mod tests {
             // Set attributes
             instance.setattr("code", "ENCRYPTION_UNSUPPORTED").unwrap();
             instance.setattr("page_index", None::<u32>).unwrap();
-            instance.setattr("hint", "Supply the password keyword argument").unwrap();
+            instance
+                .setattr("hint", "Supply the password keyword argument")
+                .unwrap();
 
             // Verify attributes
             let code: Option<String> = instance.getattr("code").unwrap().extract().unwrap();
-            let page_index: Option<u32> = instance.getattr("page_index").unwrap().extract().unwrap();
+            let page_index: Option<u32> =
+                instance.getattr("page_index").unwrap().extract().unwrap();
             let hint: Option<String> = instance.getattr("hint").unwrap().extract().unwrap();
 
             assert_eq!(code, Some("ENCRYPTION_UNSUPPORTED".to_string()));
             assert_eq!(page_index, None);
-            assert_eq!(hint, Some("Supply the password keyword argument".to_string()));
+            assert_eq!(
+                hint,
+                Some("Supply the password keyword argument".to_string())
+            );
         });
     }
 }
