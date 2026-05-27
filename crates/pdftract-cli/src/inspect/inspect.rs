@@ -5,7 +5,7 @@
 
 use super::api;
 use super::args::InspectArgs;
-use crate::middleware::{audit_middleware, AuditState};
+use crate::middleware::{audit_middleware, csp_middleware, AuditState};
 use anyhow::{Context, Result};
 use axum::{extract::State, response::Html, routing::get, Router};
 use pdftract_core::audit::AuditLogWriter;
@@ -158,6 +158,8 @@ fn create_router_with_audit(state: InspectorState) -> Router {
         .route("/api/page/:i/thumbnail", get(api::api_page_thumbnail))
         .route("/api/raster/:i.png", get(api::api_raster))
         .route("/api/search", get(api::api_search))
+        // CSP middleware (TH-09 XSS mitigation)
+        .layer(axum::middleware::from_fn(csp_middleware))
         // Audit middleware
         .layer(axum::middleware::from_fn_with_state(
             audit_state,

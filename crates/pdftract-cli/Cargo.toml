@@ -82,6 +82,7 @@ tracing = { workspace = true }
 ureq = { version = "2.9", optional = true }
 uuid = { version = "1.0", features = ["v4", "serde"] }
 walkdir = "2"
+chromiumoxide = { version = "0.6", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -110,6 +111,8 @@ cache = []
 receipts = []
 # Markdown output
 markdown = []
+# Headless browser testing for security tests (requires Chrome/Chromium)
+chrome-test = ["chromiumoxide"]
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/pdftract-v{ version }-{ target }.{ archive-format }"
@@ -127,4 +130,5 @@ reqwest = { version = "0.12", features = ["blocking", "json", "rustls-tls", "mul
 schemars = { version = "0.8", features = ["derive"] }
 image = "0.24"
 chrono = { version = "0.4", features = ["serde"] }
- criterion = "0.5"
+criterion = "0.5"
+chromiumoxide = "0.6"
