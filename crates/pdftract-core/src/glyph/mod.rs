@@ -14,7 +14,7 @@
 
 pub mod metrics;
 
-use crate::font::{classify_font, std14, type0, FontKind, UnicodeSource};
+use crate::font::{classify_font, std14, FontKind, UnicodeSource};
 use crate::graphics_state::{Color, GraphicsState};
 use crate::parser::object::types::{PdfDict, PdfObject};
 use std::sync::Arc;
@@ -22,10 +22,10 @@ use std::sync::Arc;
 /// A single glyph extracted from the content stream (Phase 3 output).
 ///
 /// This is the OUTPUT of Phase 3 and the INPUT to Phase 4.
-/// Its field set is a contract — every consumer assumes 10 fields
+/// Its field set is a contract — every consumer assumes the fields
 /// with the precise types in the plan.
 ///
-/// Per plan section Phase 3.2 (lines 1556-1569):
+/// Per plan section Phase 3.2 (lines 1556-1569) with OCG extension (bead pdftract-1q19p):
 /// ```rust
 /// struct Glyph {
 ///     codepoint: char,         // resolved Unicode or U+FFFD
@@ -38,6 +38,7 @@ use std::sync::Arc;
 ///     fill_color: Color,
 ///     is_word_boundary: bool,  // synthetic space injected before this glyph
 ///     mcid: Option<u32>,       // MCID of innermost enclosing marked-content sequence
+///     is_hidden: bool,         // OCG hidden flag (true if glyph is in a default-OFF OCG)
 /// }
 /// ```
 #[derive(Debug, Clone, PartialEq)]
@@ -64,6 +65,12 @@ pub struct Glyph {
     pub is_word_boundary: bool,
     /// Marked Content Identifier (MCID) from innermost BDC frame (None for now; filled by Phase 3.4).
     pub mcid: Option<u32>,
+    /// OCG hidden flag (true if glyph is within a default-OFF Optional Content Group).
+    ///
+    /// Per bead pdftract-1q19p: glyphs in OCG blocks that are OFF by default receive
+    /// is_hidden=true. Downstream consumers can filter these out or keep them
+    /// based on user preferences (e.g., --include-hidden-layers flag).
+    pub is_hidden: bool,
 }
 
 impl Glyph {
@@ -82,6 +89,7 @@ impl Glyph {
         fill_color: Color,
         is_word_boundary: bool,
         mcid: Option<u32>,
+        is_hidden: bool,
     ) -> Self {
         Self {
             codepoint,
@@ -94,6 +102,7 @@ impl Glyph {
             fill_color: Box::new(fill_color),
             is_word_boundary,
             mcid,
+            is_hidden,
         }
     }
 
@@ -113,6 +122,7 @@ impl Glyph {
             fill_color: Box::new(Color::DeviceGray(0.0)),
             is_word_boundary: false,
             mcid: None,
+            is_hidden: false,
         }
     }
 
@@ -131,8 +141,9 @@ impl Glyph {
 /// 1. Pulls font_name/font_size/rendering_mode/fill_color from current GraphicsState
 /// 2. Computes bbox via compute_device_bbox (uses text_matrix * CTM transformation)
 /// 3. Consults word boundary detector for is_word_boundary flag
-/// 4. Sets mcid from marked-content stack (None for now; Phase 3.4 will fill this)
-/// 5. Appends to the per-page raw_glyph_list
+/// 4. Sets mcid from marked-content stack
+/// 5. Sets is_hidden from OCG tracking (bead pdftract-1q19p)
+/// 6. Appends to the per-page raw_glyph_list
 ///
 /// # Arguments
 ///
@@ -144,7 +155,8 @@ impl Glyph {
 /// * `confidence` - Confidence score (typically from unicode_source.confidence())
 /// * `char_code` - Original character code in font's encoding
 /// * `is_word_boundary` - Word boundary flag from detector
-/// * `mcid` - Marked Content Identifier (None for now; Phase 3.4)
+/// * `mcid` - Marked Content Identifier
+/// * `is_hidden` - OCG hidden flag (true if glyph is in a default-OFF OCG)
 ///
 /// # Returns
 ///
@@ -159,6 +171,7 @@ pub fn emit_glyph(
     char_code: u32,
     is_word_boundary: bool,
     mcid: Option<u32>,
+    is_hidden: bool,
 ) -> Result<(), String> {
     // Compute bbox via the existing compute_device_bbox function
     let bbox_f64 = compute_device_bbox(state, font_dict, char_code);
@@ -205,6 +218,7 @@ pub fn emit_glyph(
         fill_color,
         is_word_boundary,
         mcid,
+        is_hidden,
     );
 
     // Append to raw_glyph_list
@@ -789,6 +803,7 @@ mod tests {
             'A' as u32,
             false,
             None,
+            false,
         );
 
         assert!(result.is_ok(), "emit_glyph should succeed");
@@ -843,6 +858,7 @@ mod tests {
                 codepoint as u32,
                 false,
                 None,
+                false,
             );
             assert!(result.is_ok());
             assert_eq!(
@@ -887,6 +903,7 @@ mod tests {
                 codepoint as u32,
                 false,
                 None,
+                false,
             );
             assert!(result.is_ok());
         }
@@ -931,6 +948,7 @@ mod tests {
             'A' as u32,
             false,
             None,
+            false,
         )
         .unwrap();
 
@@ -991,6 +1009,7 @@ mod tests {
             'A' as u32,
             true, // is_word_boundary = true
             None,
+            false,
         )
         .unwrap();
 
@@ -1026,6 +1045,7 @@ mod tests {
             'A' as u32,
             false,
             Some(42), // mcid = 42
+            false,
         )
         .unwrap();
 
@@ -1061,6 +1081,7 @@ mod tests {
             'A' as u32,
             false,
             None,
+            false,
         )
         .unwrap();
 
@@ -1097,9 +1118,153 @@ mod tests {
             'A' as u32,
             false,
             None,
+            false,
         )
         .unwrap();
 
         assert_eq!(raw_glyph_list[0].rendering_mode, 3);
+    }
+
+    #[test]
+    fn test_glyph_is_hidden_default_false() {
+        // AC: Glyph is_hidden defaults to false
+        let mut state = make_test_gstate();
+        state.set_font(
+            std::sync::Arc::new(crate::font::Font::new(
+                crate::font::FontId::from_usize(1),
+                None,
+                None,
+                None,
+                false,
+            )),
+            12.0,
+        );
+
+        let font_dict = make_std14_font_dict("Helvetica");
+        let mut raw_glyph_list = new_raw_glyph_list();
+
+        emit_glyph(
+            &mut raw_glyph_list,
+            &state,
+            &font_dict,
+            'A',
+            UnicodeSource::ToUnicode,
+            1.0,
+            'A' as u32,
+            false,
+            None,
+            false, // is_hidden = false
+        )
+        .unwrap();
+
+        assert!(!raw_glyph_list[0].is_hidden);
+    }
+
+    #[test]
+    fn test_glyph_is_hidden_true() {
+        // AC: Glyph is_hidden can be set to true
+        let mut state = make_test_gstate();
+        state.set_font(
+            std::sync::Arc::new(crate::font::Font::new(
+                crate::font::FontId::from_usize(1),
+                None,
+                None,
+                None,
+                false,
+            )),
+            12.0,
+        );
+
+        let font_dict = make_std14_font_dict("Helvetica");
+        let mut raw_glyph_list = new_raw_glyph_list();
+
+        emit_glyph(
+            &mut raw_glyph_list,
+            &state,
+            &font_dict,
+            'A',
+            UnicodeSource::ToUnicode,
+            1.0,
+            'A' as u32,
+            false,
+            None,
+            true, // is_hidden = true
+        )
+        .unwrap();
+
+        assert!(raw_glyph_list[0].is_hidden);
+    }
+
+    #[test]
+    fn test_glyph_clone_includes_is_hidden() {
+        // AC: Cloning a Glyph preserves is_hidden
+        let mut state = make_test_gstate();
+        state.set_font(
+            std::sync::Arc::new(crate::font::Font::new(
+                crate::font::FontId::from_usize(1),
+                None,
+                None,
+                None,
+                false,
+            )),
+            12.0,
+        );
+
+        let font_dict = make_std14_font_dict("Helvetica");
+        let mut raw_glyph_list = new_raw_glyph_list();
+
+        emit_glyph(
+            &mut raw_glyph_list,
+            &state,
+            &font_dict,
+            'A',
+            UnicodeSource::ToUnicode,
+            1.0,
+            'A' as u32,
+            false,
+            None,
+            true,
+        )
+        .unwrap();
+
+        let glyph = &raw_glyph_list[0];
+        let cloned = glyph.clone();
+
+        assert_eq!(glyph.is_hidden, cloned.is_hidden);
+        assert!(cloned.is_hidden);
+    }
+
+    #[test]
+    fn test_glyph_equality_includes_is_hidden() {
+        // AC: Two glyphs with different is_hidden are not equal
+        let bbox = [0.0, 0.0, 10.0, 10.0];
+        let glyph1 = Glyph::new(
+            'A',
+            UnicodeSource::ToUnicode,
+            1.0,
+            bbox,
+            Arc::from("Helvetica"),
+            12.0,
+            0,
+            Color::DeviceGray(0.0),
+            false,
+            None,
+            false, // is_hidden = false
+        );
+        let glyph2 = Glyph::new(
+            'A',
+            UnicodeSource::ToUnicode,
+            1.0,
+            bbox,
+            Arc::from("Helvetica"),
+            12.0,
+            0,
+            Color::DeviceGray(0.0),
+            false,
+            None,
+            true, // is_hidden = true
+        );
+
+        assert_ne!(glyph1, glyph2); // Different is_hidden
     }
 }

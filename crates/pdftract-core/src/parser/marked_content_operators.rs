@@ -10,9 +10,8 @@
 
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::parser::marked_content_stack::{MarkedContentFrame, MarkedContentStack};
-use crate::parser::object::{ObjRef, PdfObject};
+use crate::parser::object::PdfObject;
 use crate::parser::resources::ResourceDict;
-use indexmap::IndexMap;
 use std::sync::Arc;
 
 /// Parse BMC operator (begin marked content).
@@ -41,12 +40,17 @@ pub fn parse_bmc(stack: &mut MarkedContentStack, tag: Arc<str>) -> bool {
 /// If the second operand is a Name, it's resolved via ResourceDict::lookup_properties.
 /// If the properties dict contains /MCID, the value is extracted; otherwise mcid=None.
 ///
+/// Per bead pdftract-1q19p: If the tag is "OC" and the properties contain /OCG
+/// referencing an Optional Content Group, check if the OCG is OFF by default.
+/// If so, set is_hidden=true on the frame.
+///
 /// # Arguments
 ///
 /// * `stack` - The marked-content stack to push the frame onto
-/// * `tag` - The tag name (e.g., "Span", "P")
+/// * `tag` - The tag name (e.g., "Span", "P", "OC")
 /// * `props` - The properties object (dict or name)
 /// * `resources` - The page resource dictionary for property name resolution
+/// * `default_off_ocgs` - Optional HashSet of OCG refs that are OFF by default
 ///
 /// # Returns
 ///
@@ -56,9 +60,27 @@ pub fn parse_bdc(
     tag: Arc<str>,
     props: &PdfObject,
     resources: &ResourceDict,
+    default_off_ocgs: Option<&std::collections::HashSet<crate::parser::object::ObjRef>>,
 ) -> bool {
     let mcid = extract_mcid_from_props(props, resources);
-    stack.push_bdc(tag.to_string(), mcid)
+
+    // Check for OCG /OC tag (bead pdftract-1q19p)
+    let is_hidden = if tag.as_ref() == "OC" || tag.as_ref() == "/OC" {
+        // Check if props dict has /OCG reference
+        if let Some(ocg_ref) = extract_ocg_ref_from_props(props) {
+            // Check if this OCG is in the OFF set
+            default_off_ocgs
+                .map(|off_set| off_set.contains(&ocg_ref))
+                .unwrap_or(false)
+        } else {
+            // No /OCG property, not hidden
+            false
+        }
+    } else {
+        false
+    };
+
+    stack.push_bdc(tag.to_string(), mcid, is_hidden)
 }
 
 /// Parse EMC operator (end marked content).
@@ -155,6 +177,33 @@ fn extract_mcid_from_dict(dict: &indexmap::IndexMap<Arc<str>, PdfObject>) -> Opt
     }
 }
 
+/// Extract OCG reference from a BDC properties object.
+///
+/// Per bead pdftract-1q19p: If the properties dict contains /OCG key
+/// with an indirect reference value, return that reference.
+///
+/// # Arguments
+///
+/// * `props` - The properties object (dict or name)
+///
+/// # Returns
+///
+/// Some(ocg_ref) if /OCG is present and is an indirect reference, None otherwise.
+fn extract_ocg_ref_from_props(props: &PdfObject) -> Option<crate::parser::object::ObjRef> {
+    match props {
+        PdfObject::Dict(dict) => {
+            // Inline property dict - check for /OCG key
+            dict.get("/OCG").and_then(|obj| obj.as_ref())
+        }
+        PdfObject::Name(_name) => {
+            // Property resource name - would need to resolve via /Properties
+            // For now, return None (property name resolution for OCG deferred)
+            None
+        }
+        _ => None,
+    }
+}
+
 /// Emit a diagnostic for an invalid BDC operand.
 ///
 /// # Arguments
@@ -198,7 +247,7 @@ pub fn emit_unknown_property_name(diagnostics: &mut Vec<Diagnostic>, name: &str)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::object::intern;
+    use crate::parser::object::{intern, ObjRef};
     use indexmap::IndexMap;
 
     #[test]
@@ -220,7 +269,8 @@ mod tests {
             &mut stack,
             Arc::from("P"),
             &PdfObject::Dict(Box::new(props)),
-            &ResourceDict::new()
+            &ResourceDict::new(),
+            None
         ));
         assert_eq!(stack.depth(), 1);
         assert_eq!(stack.innermost_mcid(), Some(42));
@@ -235,7 +285,8 @@ mod tests {
             &mut stack,
             Arc::from("Artifact"),
             &PdfObject::Dict(Box::new(props)),
-            &ResourceDict::new()
+            &ResourceDict::new(),
+            None
         ));
         assert_eq!(stack.depth(), 1);
         assert_eq!(stack.innermost_mcid(), None);
@@ -254,7 +305,8 @@ mod tests {
             &mut stack,
             Arc::from("P"),
             &PdfObject::Name(Arc::from("MyProps")),
-            &resources
+            &resources,
+            None
         ));
         assert_eq!(stack.depth(), 1);
         assert_eq!(stack.innermost_mcid(), None); // Can't resolve without full resolver
@@ -370,6 +422,7 @@ mod tests {
             Arc::from("P"),
             &PdfObject::Dict(Box::new(props1)),
             &ResourceDict::new(),
+            None,
         );
 
         // Inner BMC
@@ -409,6 +462,7 @@ mod tests {
             Arc::from("/P"),
             &PdfObject::Dict(Box::new(props)),
             &ResourceDict::new(),
+            None,
         );
 
         assert_eq!(stack.depth(), 1);
@@ -440,8 +494,119 @@ mod tests {
             &mut stack,
             Arc::from("P"),
             &PdfObject::Dict(Box::new(props)),
-            &ResourceDict::new()
+            &ResourceDict::new(),
+            None
         ));
         assert_eq!(stack.innermost_mcid(), Some(10000));
+    }
+
+    #[test]
+    fn test_parse_bdc_oc_tag_not_ocg() {
+        let mut stack = MarkedContentStack::new();
+        let mut props = IndexMap::new();
+        props.insert(intern("/MCID"), PdfObject::Integer(5));
+
+        // /OC tag without /OCG property should not be hidden
+        assert!(parse_bdc(
+            &mut stack,
+            Arc::from("OC"),
+            &PdfObject::Dict(Box::new(props)),
+            &ResourceDict::new(),
+            None
+        ));
+        assert_eq!(stack.depth(), 1);
+        assert!(!stack.is_hidden()); // No /OCG, not hidden
+    }
+
+    #[test]
+    fn test_parse_bdc_oc_tag_with_ocg_not_in_off_set() {
+        let mut stack = MarkedContentStack::new();
+        let mut props = IndexMap::new();
+        let ocg_ref = ObjRef::new(10, 0);
+        props.insert(intern("/OCG"), PdfObject::Ref(ocg_ref));
+
+        // Create OFF set that doesn't include this OCG
+        let mut off_set = std::collections::HashSet::new();
+        off_set.insert(ObjRef::new(99, 0)); // Different OCG
+
+        assert!(parse_bdc(
+            &mut stack,
+            Arc::from("OC"),
+            &PdfObject::Dict(Box::new(props)),
+            &ResourceDict::new(),
+            Some(&off_set)
+        ));
+        assert_eq!(stack.depth(), 1);
+        assert!(!stack.is_hidden()); // OCG not in OFF set
+    }
+
+    #[test]
+    fn test_parse_bdc_oc_tag_with_ocg_in_off_set() {
+        let mut stack = MarkedContentStack::new();
+        let mut props = IndexMap::new();
+        let ocg_ref = ObjRef::new(10, 0);
+        props.insert(intern("/OCG"), PdfObject::Ref(ocg_ref));
+
+        // Create OFF set that includes this OCG
+        let mut off_set = std::collections::HashSet::new();
+        off_set.insert(ocg_ref);
+
+        assert!(parse_bdc(
+            &mut stack,
+            Arc::from("OC"),
+            &PdfObject::Dict(Box::new(props)),
+            &ResourceDict::new(),
+            Some(&off_set)
+        ));
+        assert_eq!(stack.depth(), 1);
+        assert!(stack.is_hidden()); // OCG in OFF set
+    }
+
+    #[test]
+    fn test_parse_bdc_slash_oc_tag() {
+        let mut stack = MarkedContentStack::new();
+        let mut props = IndexMap::new();
+        let ocg_ref = ObjRef::new(10, 0);
+        props.insert(intern("/OCG"), PdfObject::Ref(ocg_ref));
+
+        // Create OFF set that includes this OCG
+        let mut off_set = std::collections::HashSet::new();
+        off_set.insert(ocg_ref);
+
+        // Test with /OC (leading slash)
+        assert!(parse_bdc(
+            &mut stack,
+            Arc::from("/OC"),
+            &PdfObject::Dict(Box::new(props)),
+            &ResourceDict::new(),
+            Some(&off_set)
+        ));
+        assert_eq!(stack.depth(), 1);
+        assert!(stack.is_hidden()); // /OC with leading slash works
+    }
+
+    #[test]
+    fn test_parse_bdc_non_oc_tag_ignores_ocg_property() {
+        let mut stack = MarkedContentStack::new();
+        let mut props = IndexMap::new();
+        let ocg_ref = ObjRef::new(10, 0);
+        props.insert(intern("/OCG"), PdfObject::Ref(ocg_ref));
+        props.insert(intern("/MCID"), PdfObject::Integer(5));
+
+        // Create OFF set that includes this OCG
+        let mut off_set = std::collections::HashSet::new();
+        off_set.insert(ocg_ref);
+
+        // Non-OC tag should not check OCG
+        assert!(parse_bdc(
+            &mut stack,
+            Arc::from("P"), // Not "OC" or "/OC"
+            &PdfObject::Dict(Box::new(props)),
+            &ResourceDict::new(),
+            Some(&off_set)
+        ));
+        assert_eq!(stack.depth(), 1);
+        assert!(!stack.is_hidden()); // Non-OC tag ignores OCG
+        assert_eq!(stack.innermost_mcid(), Some(5)); // MCID still extracted
     }
 }

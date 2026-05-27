@@ -1181,7 +1181,7 @@ pub fn execute_with_do(
                             ));
                         }
                         gstate.next_line();
-                        operand_buffer.clear();
+                        // Note: T* does NOT clear the operand buffer - it has no operands
                     }
                     "Tf" => {
                         // Set text font: Tf font size
@@ -2231,7 +2231,7 @@ mod tests {
         let content = b"BT (Hello) Tj ET";
         let resources = ResourceDict::new();
         let mut stack = MarkedContentStack::new();
-        stack.push_bdc("Span".to_string(), Some(5));
+        stack.push_bdc("Span".to_string(), Some(5), false);
 
         let glyphs =
             process_with_mode(content, &resources, ProcessingMode::Normal, Some(&stack)).unwrap();
@@ -2245,8 +2245,8 @@ mod tests {
         let content = b"BT (Hello) Tj ET";
         let resources = ResourceDict::new();
         let mut stack = MarkedContentStack::new();
-        stack.push_bdc("Outer".to_string(), Some(1));
-        stack.push_bdc("Inner".to_string(), Some(2));
+        stack.push_bdc("Outer".to_string(), Some(1), false);
+        stack.push_bdc("Inner".to_string(), Some(2), false);
 
         let glyphs =
             process_with_mode(content, &resources, ProcessingMode::Normal, Some(&stack)).unwrap();
@@ -2260,7 +2260,7 @@ mod tests {
         let content = b"BT (Hello) Tj ET";
         let resources = ResourceDict::new();
         let mut stack = MarkedContentStack::new();
-        stack.push_bdc("Outer".to_string(), Some(1));
+        stack.push_bdc("Outer".to_string(), Some(1), false);
         stack.push_bmc("Span".to_string()); // No MCID
 
         let glyphs =
@@ -2275,9 +2275,9 @@ mod tests {
         let content = b"BT (Hello) Tj ET";
         let resources = ResourceDict::new();
         let mut stack = MarkedContentStack::new();
-        stack.push_bdc("Outer".to_string(), Some(1));
+        stack.push_bdc("Outer".to_string(), Some(1), false);
         stack.push_bmc("Middle".to_string()); // No MCID
-        stack.push_bdc("Inner".to_string(), Some(2));
+        stack.push_bdc("Inner".to_string(), Some(2), false);
 
         let glyphs =
             process_with_mode(content, &resources, ProcessingMode::Normal, Some(&stack)).unwrap();
