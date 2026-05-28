@@ -34,6 +34,7 @@ pub mod ocr;
 pub mod options;
 pub mod output;
 pub mod page_class;
+pub mod pages;
 pub mod parser;
 #[cfg(feature = "ocr")]
 pub mod preprocess;
@@ -59,7 +60,7 @@ pub mod table;
 pub mod threads;
 
 // Re-export key types for convenience
-pub use confidence::ConfidenceSource;
+pub use confidence::{map_confidence_source, ConfidenceSource};
 pub use document::{PageExtraction, PageIter, PdfExtractor};
 pub use extract::{
     extract_pdf, extract_pdf_ndjson, extract_pdf_streaming, ExtractionMetadata, ExtractionResult,
@@ -73,7 +74,7 @@ pub use markdown::{
     block_to_markdown, form_fields_to_markdown, page_to_markdown, parse_anchors, span_to_markdown,
     Anchor,
 };
-pub use options::{ExtractionOptions, ReceiptsMode};
+pub use options::{ExtractionOptions, OutputOptions, ReceiptsMode};
 pub use page_class::{page_type_string, PageClass, PageClassification};
 pub use parser::pages::{count_pages_tree, LazyPageIter, PageDict, DEFAULT_MEDIABOX};
 pub use schema::{

@@ -257,12 +257,14 @@ impl Span {
 /// | Fingerprint      | Native            |
 /// | ShapeMatch       | Heuristic         |
 /// | Unknown (U+FFFD) | Heuristic         |
+/// | Ocr              | Ocr               |
 fn map_unicode_source_to_confidence(source: UnicodeSource) -> ConfidenceSource {
     match source {
         UnicodeSource::ToUnicode | UnicodeSource::Agl | UnicodeSource::Fingerprint => {
             ConfidenceSource::Native
         }
         UnicodeSource::ShapeMatch | UnicodeSource::Unknown => ConfidenceSource::Heuristic,
+        UnicodeSource::Ocr => ConfidenceSource::Ocr,
     }
 }
 
@@ -1351,5 +1353,184 @@ mod tests {
 
         assert_eq!(spans.len(), 1);
         assert_eq!(spans[0].text, "a\u{00AD}\u{200D}\u{200C}\u{FFFD}");
+    }
+
+    // Acceptance criteria tests for pdftract-2etcd (map_confidence_source)
+
+    #[test]
+    fn test_map_confidence_source_to_unicode_without_correction() {
+        // AC: ToUnicode + corrected=false → Native
+        use crate::font::UnicodeSource;
+
+        assert_eq!(
+            map_confidence_source(UnicodeSource::ToUnicode, false),
+            ConfidenceSource::Native
+        );
+    }
+
+    #[test]
+    fn test_map_confidence_source_to_unicode_with_correction() {
+        // AC: ToUnicode + corrected=true → Heuristic (override applies)
+        use crate::font::UnicodeSource;
+
+        assert_eq!(
+            map_confidence_source(UnicodeSource::ToUnicode, true),
+            ConfidenceSource::Heuristic
+        );
+    }
+
+    #[test]
+    fn test_map_confidence_source_agl_without_correction() {
+        // AC: Agl + corrected=false → Native
+        use crate::font::UnicodeSource;
+
+        assert_eq!(
+            map_confidence_source(UnicodeSource::Agl, false),
+            ConfidenceSource::Native
+        );
+    }
+
+    #[test]
+    fn test_map_confidence_source_agl_with_correction() {
+        // AC: Agl + corrected=true → Heuristic (override applies)
+        use crate::font::UnicodeSource;
+
+        assert_eq!(
+            map_confidence_source(UnicodeSource::Agl, true),
+            ConfidenceSource::Heuristic
+        );
+    }
+
+    #[test]
+    fn test_map_confidence_source_fingerprint_without_correction() {
+        // AC: Fingerprint + corrected=false → Native
+        use crate::font::UnicodeSource;
+
+        assert_eq!(
+            map_confidence_source(UnicodeSource::Fingerprint, false),
+            ConfidenceSource::Native
+        );
+    }
+
+    #[test]
+    fn test_map_confidence_source_fingerprint_with_correction() {
+        // AC: Fingerprint + corrected=true → Heuristic (override applies)
+        use crate::font::UnicodeSource;
+
+        assert_eq!(
+            map_confidence_source(UnicodeSource::Fingerprint, true),
+            ConfidenceSource::Heuristic
+        );
+    }
+
+    #[test]
+    fn test_map_confidence_source_shape_match_any_correction() {
+        // AC: ShapeMatch + (any) → Heuristic (correction flag doesn't matter)
+        use crate::font::UnicodeSource;
+
+        assert_eq!(
+            map_confidence_source(UnicodeSource::ShapeMatch, false),
+            ConfidenceSource::Heuristic
+        );
+        assert_eq!(
+            map_confidence_source(UnicodeSource::ShapeMatch, true),
+            ConfidenceSource::Heuristic
+        );
+    }
+
+    #[test]
+    fn test_map_confidence_source_unknown_any_correction() {
+        // AC: Unknown + (any) → Heuristic (correction flag doesn't matter)
+        use crate::font::UnicodeSource;
+
+        assert_eq!(
+            map_confidence_source(UnicodeSource::Unknown, false),
+            ConfidenceSource::Heuristic
+        );
+        assert_eq!(
+            map_confidence_source(UnicodeSource::Unknown, true),
+            ConfidenceSource::Heuristic
+        );
+    }
+
+    #[test]
+    fn test_map_confidence_source_ocr_without_correction() {
+        // AC: Ocr + corrected=false → Ocr (override does NOT apply to OCR)
+        use crate::font::UnicodeSource;
+
+        assert_eq!(
+            map_confidence_source(UnicodeSource::Ocr, false),
+            ConfidenceSource::Ocr
+        );
+    }
+
+    #[test]
+    fn test_map_confidence_source_ocr_with_correction() {
+        // AC: Ocr + corrected=true → Ocr (override does NOT apply to OCR)
+        use crate::font::UnicodeSource;
+
+        assert_eq!(
+            map_confidence_source(UnicodeSource::Ocr, true),
+            ConfidenceSource::Ocr
+        );
+    }
+
+    #[test]
+    fn test_map_confidence_source_exhaustive_match() {
+        // AC: Exhaustive match: adding a hypothetical UnicodeSource::Fallback
+        // would cause a compiler error in this function until a match arm is added
+        use crate::font::UnicodeSource;
+
+        // Test all current variants
+        for (source, expected_without_correction, expected_with_correction) in &[
+            (UnicodeSource::ToUnicode, ConfidenceSource::Native, ConfidenceSource::Heuristic),
+            (UnicodeSource::Agl, ConfidenceSource::Native, ConfidenceSource::Heuristic),
+            (UnicodeSource::Fingerprint, ConfidenceSource::Native, ConfidenceSource::Heuristic),
+            (UnicodeSource::ShapeMatch, ConfidenceSource::Heuristic, ConfidenceSource::Heuristic),
+            (UnicodeSource::Unknown, ConfidenceSource::Heuristic, ConfidenceSource::Heuristic),
+            (UnicodeSource::Ocr, ConfidenceSource::Ocr, ConfidenceSource::Ocr),
+        ] {
+            assert_eq!(
+                map_confidence_source(*source, false),
+                *expected_without_correction,
+                "Without correction: {:?}",
+                source
+            );
+            assert_eq!(
+                map_confidence_source(*source, true),
+                *expected_with_correction,
+                "With correction: {:?}",
+                source
+            );
+        }
+    }
+
+    #[test]
+    fn test_map_confidence_source_correction_downgrades_native_to_heuristic() {
+        // INV: Phase 4.7 correction ALWAYS overrides upward (Native -> Heuristic)
+        // — never downward (Ocr -> Heuristic)
+        use crate::font::UnicodeSource;
+
+        // All Native sources should downgrade to Heuristic when corrected=true
+        let native_sources = [
+            UnicodeSource::ToUnicode,
+            UnicodeSource::Agl,
+            UnicodeSource::Fingerprint,
+        ];
+
+        for source in native_sources {
+            assert_eq!(
+                map_confidence_source(source, false),
+                ConfidenceSource::Native,
+                "{:?} should be Native without correction",
+                source
+            );
+            assert_eq!(
+                map_confidence_source(source, true),
+                ConfidenceSource::Heuristic,
+                "{:?} should downgrade to Heuristic with correction",
+                source
+            );
+        }
     }
 }
