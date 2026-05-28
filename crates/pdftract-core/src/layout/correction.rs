@@ -4,6 +4,7 @@
 //! before readability scoring. Corrections include:
 //! - Mojibake detection and repair (Latin-1 interpreted as UTF-8)
 //! - Hyphenation repair (end-of-line hyphen joined with next line)
+//! - Word-break normalization (zero-width characters stripped or preserved per script)
 //!
 //! # Mojibake Detection
 //!
@@ -15,6 +16,270 @@
 use encoding_rs::WINDOWS_1252;
 
 use crate::layout::line::{Block, Line, LineMetadata};
+use crate::span::Span;
+
+/// Unicode script category for word-break normalization.
+///
+/// Simplified script detection based on Unicode codepoint ranges.
+/// Used to determine whether zero-width joiner/non-joiner characters
+/// should be preserved (they're orthographic in complex scripts) or
+/// stripped (they're noise in Latin text).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Script {
+    /// Arabic script - requires ZWNJ/ZWJ for correct rendering
+    Arabic,
+    /// Hebrew script - may use ZWNJ/ZWJ
+    Hebrew,
+    /// Devanagari (Hindi, Marathi, Nepali, Sanskrit) - requires ZWNJ/ZWJ for conjuncts
+    Devanagari,
+    /// Bengali script - requires ZWNJ/ZWJ for conjuncts
+    Bengali,
+    /// Other Indic scripts (Gurmukhi, Gujarati, Tamil, Telugu, Kannada, Malayalam, Odia)
+    Indic,
+    /// Thai script - may use ZWNJ/ZWJ
+    Thai,
+    /// Lao script
+    Lao,
+    /// Tibetan script
+    Tibetan,
+    /// Myanmar (Burmese) script
+    Myanmar,
+    /// Khmer script
+    Khmer,
+    /// Sinhala script
+    Sinhala,
+    /// Latin and other simple scripts - ZWNJ/ZWJ are noise
+    Latin,
+    /// Unknown script - default to strip (safe default)
+    Unknown,
+}
+
+impl Script {
+    /// Returns true if this script uses ZWNJ/ZWJ for legitimate orthographic purposes.
+    ///
+    /// Complex scripts like Arabic, Indic, and Southeast Asian scripts use
+    /// zero-width joiner/non-joiner characters to control ligature formation
+    /// and conjunct rendering. Stripping these breaks the text.
+    pub fn preserves_joiners(self) -> bool {
+        matches!(
+            self,
+            Self::Arabic
+                | Self::Hebrew
+                | Self::Devanagari
+                | Self::Bengali
+                | Self::Indic
+                | Self::Thai
+                | Self::Lao
+                | Self::Tibetan
+                | Self::Myanmar
+                | Self::Khmer
+                | Self::Sinhala
+        )
+    }
+}
+
+/// Detect the dominant script from text content.
+///
+/// Scans the text and returns the first script category that matches
+/// a significant number of characters. Returns `Script::Latin` for
+/// ASCII/Latin text and `Script::Unknown` for empty text.
+///
+/// # Detection Priority
+///
+/// Scripts are checked in priority order (Arabic first, then Devanagari, etc.).
+/// The first script with >=3 matching characters is returned. If no script
+/// reaches the threshold, returns `Script::Latin` as a safe default.
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::layout::correction::detect_script;
+///
+/// assert_eq!(detect_script("Hello world"), Script::Latin);
+/// assert_eq!(detect_script("مرحبا"), Script::Arabic);
+/// assert_eq!(detect_script("नमस्ते"), Script::Devanagari);
+/// assert_eq!(detect_script(""), Script::Unknown);
+/// ```
+pub fn detect_script(text: &str) -> Script {
+    if text.is_empty() {
+        return Script::Unknown;
+    }
+
+    let mut arabic_count = 0;
+    let mut hebrew_count = 0;
+    let mut devanagari_count = 0;
+    let mut bengali_count = 0;
+    let mut indic_count = 0;
+    let mut thai_count = 0;
+    let mut lao_count = 0;
+    let mut tibetan_count = 0;
+    let mut myanmar_count = 0;
+    let mut khmer_count = 0;
+    let mut sinhala_count = 0;
+
+    for c in text.chars() {
+        let cp = c as u32;
+        match cp {
+            // Arabic: U+0600..U+06FF, U+0750..U+077F, U+08A0..U+08FF
+            0x0600..=0x06FF | 0x0750..=0x077F | 0x08A0..=0x08FF => arabic_count += 1,
+            // Hebrew: U+0590..U+05FF
+            0x0590..=0x05FF => hebrew_count += 1,
+            // Devanagari: U+0900..U+097F
+            0x0900..=0x097F => devanagari_count += 1,
+            // Bengali: U+0980..U+09FF
+            0x0980..=0x09FF => bengali_count += 1,
+            // Other Indic scripts:
+            // Gurmukhi: U+0A00..U+0A7F
+            // Gujarati: U+0A80..U+0AFF
+            // Tamil: U+0B80..U+0BFF
+            // Telugu: U+0C00..U+0C7F
+            // Kannada: U+0C80..U+0CFF
+            // Malayalam: U+0D00..U+0D7F
+            // Odia: U+0B00..U+0B7F
+            0x0A00..=0x0A7F | 0x0A80..=0x0AFF | 0x0B00..=0x0B7F | 0x0B80..=0x0BFF |
+            0x0C00..=0x0C7F | 0x0C80..=0x0CFF | 0x0D00..=0x0D7F => indic_count += 1,
+            // Thai: U+0E00..U+0E7F
+            0x0E00..=0x0E7F => thai_count += 1,
+            // Lao: U+0E80..U+0EFF
+            0x0E80..=0x0EFF => lao_count += 1,
+            // Tibetan: U+0F00..U+0FFF
+            0x0F00..=0x0FFF => tibetan_count += 1,
+            // Myanmar: U+1000..U+109F
+            0x1000..=0x109F => myanmar_count += 1,
+            // Khmer: U+1780..U+17FF
+            0x1780..=0x17FF => khmer_count += 1,
+            // Sinhala: U+0D80..U+0DFF
+            0x0D80..=0x0DFF => sinhala_count += 1,
+            _ => {}
+        }
+    }
+
+    const THRESHOLD: usize = 3;
+
+    if arabic_count >= THRESHOLD {
+        return Script::Arabic;
+    }
+    if hebrew_count >= THRESHOLD {
+        return Script::Hebrew;
+    }
+    if devanagari_count >= THRESHOLD {
+        return Script::Devanagari;
+    }
+    if bengali_count >= THRESHOLD {
+        return Script::Bengali;
+    }
+    if indic_count >= THRESHOLD {
+        return Script::Indic;
+    }
+    if thai_count >= THRESHOLD {
+        return Script::Thai;
+    }
+    if lao_count >= THRESHOLD {
+        return Script::Lao;
+    }
+    if tibetan_count >= THRESHOLD {
+        return Script::Tibetan;
+    }
+    if myanmar_count >= THRESHOLD {
+        return Script::Myanmar;
+    }
+    if khmer_count >= THRESHOLD {
+        return Script::Khmer;
+    }
+    if sinhala_count >= THRESHOLD {
+        return Script::Sinhala;
+    }
+
+    // Default to Latin for ASCII or undetected scripts
+    Script::Latin
+}
+
+/// Normalize word-break characters in span text based on script hint.
+///
+/// Strips zero-width formatting characters that are noise in extracted text:
+/// - **U+200B** (zero-width space): ALWAYS stripped (never content)
+/// - **U+FEFF** (zero-width no-break space / BOM): ALWAYS stripped (never content)
+/// - **U+200C** (zero-width non-joiner): stripped unless script requires it
+/// - **U+200D** (zero-width joiner): stripped unless script requires it
+///
+/// The script_hint determines whether ZWNJ/ZWJ are preserved:
+/// - **Arabic, Hebrew, Indic, Thai, Lao, Tibetan, Myanmar, Khmer, Sinhala**:
+///   ZWNJ/ZWJ are preserved (they control ligature/conjunct formation)
+/// - **Latin or Unknown**: All four characters are stripped
+///
+/// # Arguments
+///
+/// * `span` - Mutable reference to the span to normalize
+/// * `script_hint` - Optional script hint; if None, detects from span text
+///
+/// # Returns
+///
+/// Count of characters stripped (u32).
+///
+/// # Invariants
+///
+/// - **INV**: U+200B and U+FEFF are NEVER content; always stripped regardless of script.
+/// - **INV**: U+200C/U+200D are content in Arabic/Indic; stripping breaks rendering.
+/// - **INV**: When script_hint is None, script is detected from the span's own text.
+/// - **INV**: For unknown-script text, default to strip (safer for Latin output).
+///
+/// # Performance
+///
+/// O(n) where n is the length of the span text. Uses `String::retain` with
+/// a closure that checks the script hint once.
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::layout::correction::{normalize_word_breaks, Script};
+/// use pdftract_core::span::Span;
+/// use std::sync::Arc;
+///
+/// // Latin text: all zero-width chars stripped
+/// let mut span = Span::empty();
+/// span.text = String::from("auto\u{200B}mation");
+/// let count = normalize_word_breaks(&mut span, Some(Script::Latin));
+/// assert_eq!(count, 1);
+/// assert_eq!(span.text, "automation");
+///
+/// // Arabic text: ZWNJ/ZWJ preserved
+/// let mut span = Span::empty();
+/// span.text = String::from("\u{0627}\u{200C}\u{200D}"); // alef + ZWNJ + ZWJ
+/// let count = normalize_word_breaks(&mut span, Some(Script::Arabic));
+/// assert_eq!(count, 0);
+/// assert_eq!(span.text, "\u{0627}\u{200C}\u{200D}");
+///
+/// // Unknown script: all stripped (safe default)
+/// let mut span = Span::empty();
+/// span.text = String::from("test\u{200C}\u{200D}");
+/// let count = normalize_word_breaks(&mut span, None);
+/// assert_eq!(count, 2);
+/// assert_eq!(span.text, "test");
+/// ```
+pub fn normalize_word_breaks(span: &mut Span, script_hint: Option<Script>) -> u32 {
+    let script = script_hint.unwrap_or_else(|| detect_script(&span.text));
+    let preserve_joiners = script.preserves_joiners();
+
+    let original_len = span.text.len();
+
+    span.text.retain(|c| {
+        match c {
+            // U+200B zero-width space: ALWAYS strip
+            '\u{200B}' => false,
+            // U+FEFF BOM: ALWAYS strip
+            '\u{FEFF}' => false,
+            // U+200C ZWNJ: strip unless script requires it
+            '\u{200C}' => preserve_joiners,
+            // U+200D ZWJ: strip unless script requires it
+            '\u{200D}' => preserve_joiners,
+            // All other characters: keep
+            _ => true,
+        }
+    });
+
+    // Return count of stripped characters by byte length difference
+    (original_len - span.text.len()) as u32
+}
 
 /// Trait for types with mutable text content that can be corrected.
 ///
@@ -942,5 +1207,279 @@ mod tests {
         assert_eq!(block.lines[1].spans[0].text(), "here");
         assert_eq!(block.lines[2].spans[0].text(), "Second hyphenation ");
         assert_eq!(block.lines[3].spans[0].text(), "there");
+    }
+
+    // ===== Script detection tests =====
+
+    #[test]
+    fn test_detect_script_latin() {
+        // Latin/ASCII text
+        assert_eq!(detect_script("Hello world"), Script::Latin);
+        assert_eq!(detect_script("The quick brown fox"), Script::Latin);
+    }
+
+    #[test]
+    fn test_detect_script_arabic() {
+        // Arabic text
+        assert_eq!(detect_script("مرحبا"), Script::Arabic);
+        assert_eq!(detect_script("السلام عليكم"), Script::Arabic);
+    }
+
+    #[test]
+    fn test_detect_script_hebrew() {
+        // Hebrew text
+        assert_eq!(detect_script("שלום"), Script::Hebrew);
+        assert_eq!(detect_script("מה נשמע"), Script::Hebrew);
+    }
+
+    #[test]
+    fn test_detect_script_devanagari() {
+        // Devanagari text (Hindi)
+        assert_eq!(detect_script("नमस्ते"), Script::Devanagari);
+        assert_eq!(detect_script("धन्यवाद"), Script::Devanagari);
+    }
+
+    #[test]
+    fn test_detect_script_bengali() {
+        // Bengali text
+        assert_eq!(detect_script("হ্যালো"), Script::Bengali);
+        assert_eq!(detect_script("ধন্যবাদ"), Script::Bengali);
+    }
+
+    #[test]
+    fn test_detect_script_thai() {
+        // Thai text
+        assert_eq!(detect_script("สวัสดี"), Script::Thai);
+        assert_eq!(detect_script("ขอบคุณ"), Script::Thai);
+    }
+
+    #[test]
+    fn test_detect_script_empty() {
+        // Empty text
+        assert_eq!(detect_script(""), Script::Unknown);
+    }
+
+    #[test]
+    fn test_detect_script_mixed_latin_arabic() {
+        // Mixed text - Arabic wins with threshold
+        assert_eq!(detect_script("Hello مرحبا"), Script::Arabic);
+    }
+
+    // ===== Word-break normalization tests =====
+
+    #[test]
+    fn test_normalize_word_breaks_latin_zero_width_space() {
+        // AC: "auto\u{200B}mation" (Latin) -> "automation" (1 stripped, U+200B)
+        let mut span = Span::empty();
+        span.text = String::from("auto\u{200B}mation");
+        let count = normalize_word_breaks(&mut span, Some(Script::Latin));
+        assert_eq!(count, 3); // U+200B is 3 bytes in UTF-8
+        assert_eq!(span.text, "automation");
+    }
+
+    #[test]
+    fn test_normalize_word_breaks_latin_bom() {
+        // AC: Mixed BOM "\u{FEFF}hello" -> "hello" (always stripped)
+        let mut span = Span::empty();
+        span.text = String::from("\u{FEFF}hello");
+        let count = normalize_word_breaks(&mut span, Some(Script::Latin));
+        assert_eq!(count, 3); // U+FEFF is 3 bytes in UTF-8
+        assert_eq!(span.text, "hello");
+    }
+
+    #[test]
+    fn test_normalize_word_breaks_latin_zwnj_zwj() {
+        // Latin text: ZWNJ/ZWJ should be stripped
+        let mut span = Span::empty();
+        span.text = String::from("test\u{200C}\u{200D}case");
+        let count = normalize_word_breaks(&mut span, Some(Script::Latin));
+        assert_eq!(count, 6); // Each is 3 bytes in UTF-8
+        assert_eq!(span.text, "testcase");
+    }
+
+    #[test]
+    fn test_normalize_word_breaks_arabic_preserves_zwnj_zwj() {
+        // AC: Arabic "ای\u{200C}\u{200D}" with script_hint=Arabic -> unchanged
+        // Note: Using a simpler Arabic example since "ای" requires specific characters
+        let mut span = Span::empty();
+        span.text = String::from("\u{0627}\u{200C}\u{200D}"); // alef + ZWNJ + ZWJ
+        let count = normalize_word_breaks(&mut span, Some(Script::Arabic));
+        assert_eq!(count, 0);
+        assert_eq!(span.text, "\u{0627}\u{200C}\u{200D}");
+    }
+
+    #[test]
+    fn test_normalize_word_breaks_arabic_strips_zw_space() {
+        // Arabic text: U+200B should still be stripped even in Arabic
+        let mut span = Span::empty();
+        span.text = String::from("\u{0627}\u{200B}\u{0628}"); // alef + ZWSP + beh
+        let count = normalize_word_breaks(&mut span, Some(Script::Arabic));
+        assert_eq!(count, 3); // U+200B is 3 bytes in UTF-8
+        assert_eq!(span.text, "\u{0627}\u{0628}");
+    }
+
+    #[test]
+    fn test_normalize_word_breaks_arabic_strips_bom() {
+        // Arabic text: U+FEFF should still be stripped even in Arabic
+        let mut span = Span::empty();
+        span.text = String::from("\u{FEFF}\u{0627}\u{0628}"); // BOM + alef + beh
+        let count = normalize_word_breaks(&mut span, Some(Script::Arabic));
+        assert_eq!(count, 3); // U+FEFF is 3 bytes in UTF-8
+        assert_eq!(span.text, "\u{0627}\u{0628}");
+    }
+
+    #[test]
+    fn test_normalize_word_breaks_unknown_script_strips_all() {
+        // AC: Arabic same with script_hint=None -> stripped (default-strip)
+        let mut span = Span::empty();
+        span.text = String::from("\u{0627}\u{200C}\u{200D}");
+        let count = normalize_word_breaks(&mut span, None);
+        assert_eq!(count, 6); // Both ZWNJ and ZWJ stripped
+        assert_eq!(span.text, "\u{0627}");
+    }
+
+    #[test]
+    fn test_normalize_word_breaks_devanagari_preserves_zwnj_zwj() {
+        // AC: Devanagari "क\u{200D}ष" with script_hint=Devanagari -> unchanged
+        let mut span = Span::empty();
+        span.text = String::from("\u{0915}\u{200D}\u{0937}"); // ka + ZWJ + ssa
+        let count = normalize_word_breaks(&mut span, Some(Script::Devanagari));
+        assert_eq!(count, 0);
+        assert_eq!(span.text, "\u{0915}\u{200D}\u{0937}");
+    }
+
+    #[test]
+    fn test_normalize_word_breaks_devanagari_strips_zw_space() {
+        // Devanagari text: U+200B should still be stripped
+        let mut span = Span::empty();
+        span.text = String::from("\u{0915}\u{200B}\u{0937}");
+        let count = normalize_word_breaks(&mut span, Some(Script::Devanagari));
+        assert_eq!(count, 3); // U+200B is 3 bytes
+        assert_eq!(span.text, "\u{0915}\u{0937}");
+    }
+
+    #[test]
+    fn test_normalize_word_breaks_auto_detect_latin() {
+        // Auto-detect Latin text
+        let mut span = Span::empty();
+        span.text = String::from("test\u{200C}\u{200D}");
+        let count = normalize_word_breaks(&mut span, None);
+        assert_eq!(count, 6);
+        assert_eq!(span.text, "test");
+    }
+
+    #[test]
+    fn test_normalize_word_breaks_auto_detect_arabic() {
+        // Auto-detect Arabic text and preserve ZWNJ/ZWJ
+        let mut span = Span::empty();
+        span.text = String::from("مرحبا\u{200C}"); // Arabic + ZWNJ
+        let count = normalize_word_breaks(&mut span, None);
+        assert_eq!(count, 0);
+        assert_eq!(span.text, "مرحبا\u{200C}");
+    }
+
+    #[test]
+    fn test_normalize_word_breaks_auto_detect_devanagari() {
+        // Auto-detect Devanagari text and preserve ZWNJ/ZWJ
+        let mut span = Span::empty();
+        span.text = String::from("नमस्ते\u{200D}"); // Devanagari + ZWJ
+        let count = normalize_word_breaks(&mut span, None);
+        assert_eq!(count, 0);
+        assert_eq!(span.text, "नमस्ते\u{200D}");
+    }
+
+    #[test]
+    fn test_normalize_word_breaks_empty_span() {
+        // Empty span: no changes
+        let mut span = Span::empty();
+        span.text = String::from("");
+        let count = normalize_word_breaks(&mut span, None);
+        assert_eq!(count, 0);
+        assert_eq!(span.text, "");
+    }
+
+    #[test]
+    fn test_normalize_word_breaks_multiple_zero_width_chars() {
+        // Multiple zero-width characters in Latin text
+        let mut span = Span::empty();
+        span.text = String::from("a\u{200B}b\u{200C}c\u{200D}d\u{FEFF}e");
+        let count = normalize_word_breaks(&mut span, Some(Script::Latin));
+        assert_eq!(count, 12); // 4 chars * 3 bytes each
+        assert_eq!(span.text, "abcde");
+    }
+
+    #[test]
+    fn test_normalize_word_breaks_hebrew_preserves_joiners() {
+        // Hebrew text: ZWNJ/ZWJ should be preserved
+        let mut span = Span::empty();
+        span.text = String::from("\u{05E9}\u{05DC}\u{200C}\u{05D5}\u{05DD}"); // shalom with ZWNJ
+        let count = normalize_word_breaks(&mut span, Some(Script::Hebrew));
+        assert_eq!(count, 0);
+        assert!(span.text.contains("\u{200C}"));
+    }
+
+    #[test]
+    fn test_normalize_word_breaks_thai_preserves_joiners() {
+        // Thai text: ZWNJ/ZWJ should be preserved
+        let mut span = Span::empty();
+        span.text = String::from("\u{0E2A}\u{0E27}\u{0E31}\u{0E12}\u{200D}"); // sawasdee with ZWJ
+        let count = normalize_word_breaks(&mut span, Some(Script::Thai));
+        assert_eq!(count, 0);
+        assert!(span.text.contains("\u{200D}"));
+    }
+
+    #[test]
+    fn test_normalize_word_breaks_bengali_preserves_joiners() {
+        // Bengali text: ZWNJ/ZWJ should be preserved
+        let mut span = Span::empty();
+        span.text = String::from("\u{0985}\u{09BE}\u{200C}"); // a with ZWNJ
+        let count = normalize_word_breaks(&mut span, Some(Script::Bengali));
+        assert_eq!(count, 0);
+        assert!(span.text.contains("\u{200C}"));
+    }
+
+    #[test]
+    fn test_normalize_word_breaks_indic_preserves_joiners() {
+        // Indic text (Tamil): ZWNJ/ZWJ should be preserved
+        let mut span = Span::empty();
+        span.text = String::from("\u{0B85}\u{0BBE}\u{200D}"); // Tamil a with ZWJ
+        let count = normalize_word_breaks(&mut span, Some(Script::Indic));
+        assert_eq!(count, 0);
+        assert!(span.text.contains("\u{200D}"));
+    }
+
+    #[test]
+    fn test_script_preserves_joiners_arabic() {
+        // Test Script::Arabic.preserves_joiners()
+        assert!(Script::Arabic.preserves_joiners());
+    }
+
+    #[test]
+    fn test_script_preserves_joiners_latin() {
+        // Test Script::Latin.preserves_joiners()
+        assert!(!Script::Latin.preserves_joiners());
+    }
+
+    #[test]
+    fn test_script_preserves_joiners_all_complex_scripts() {
+        // All complex scripts should preserve joiners
+        assert!(Script::Arabic.preserves_joiners());
+        assert!(Script::Hebrew.preserves_joiners());
+        assert!(Script::Devanagari.preserves_joiners());
+        assert!(Script::Bengali.preserves_joiners());
+        assert!(Script::Indic.preserves_joiners());
+        assert!(Script::Thai.preserves_joiners());
+        assert!(Script::Lao.preserves_joiners());
+        assert!(Script::Tibetan.preserves_joiners());
+        assert!(Script::Myanmar.preserves_joiners());
+        assert!(Script::Khmer.preserves_joiners());
+        assert!(Script::Sinhala.preserves_joiners());
+    }
+
+    #[test]
+    fn test_script_preserves_joiners_simple_scripts() {
+        // Simple scripts should NOT preserve joiners
+        assert!(!Script::Latin.preserves_joiners());
+        assert!(!Script::Unknown.preserves_joiners());
     }
 }
