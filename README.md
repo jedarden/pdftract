@@ -1,163 +1,101 @@
 # pdftract
 
-[![MSRV](https://img.shields.io/badge/MSRV-1.78-orange)](https://github.com/rust-lang/rust/releases/tag/1.78.0)
+[![crates.io](https://img.shields.io/crates/v/pdftract)](https://crates.io/crates/pdftract)
+[![docs.rs](https://img.shields.io/docsrs/pdftract)](https://docs.rs/pdftract)
+[![CI Status](https://custom-icon-badges.demolab.com/badge/CI-Argo%20Workflows-success?logo=argocd&logoColor=white)](https://github.com/jedarden/pdftract/blob/main/.ci/argo-workflows/pdftract-ci.yaml)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](LICENSE-MIT)
 
 A PDF text extraction library that gets the hard parts right.
 
-## What it does
+## Platform Support
 
-- **Correct reading order** — layout regions are segmented and sequenced before text is emitted, handling multi-column pages, sidebars, footnotes, and mixed-layout documents without relying on PDF operator order
-- **Font encoding recovery** — when `ToUnicode` CMaps are absent, wrong, or incomplete, pdftract works through a layered recovery pipeline: glyph name lookup via the Adobe Glyph List, font fingerprinting against known metrics and embedded checksums, and glyph outline shape matching
-- **Structure tree extraction** — PDF/UA and PDF/A documents encode their logical structure (headings, paragraphs, lists, tables, reading order) in a `StructTree`; pdftract reads this directly when present, producing accurate semantic output at no extra cost
-- **Per-page hybrid routing** — each page is independently classified and routed to the appropriate pipeline: vector text extraction, full OCR, or assisted OCR where vector hints improve raster accuracy
-- **Structured output with provenance** — the primary output is JSON carrying per-span bounding boxes, font name, size, and confidence score alongside the extracted text, not a flat string dump
+| Platform | Status |
+|----------|--------|
+| Linux x86_64 | Fully CI-tested (gating CI on every PR) |
+| Linux aarch64 | Fully CI-tested |
+| macOS x86_64 | Build-tested; manually smoke-tested per release |
+| macOS aarch64 | Build-tested; manually smoke-tested per release |
+| Windows x86_64 | Build-tested; manually smoke-tested per release |
 
-## Output
-
-```json
-{
-  "pages": [
-    {
-      "page": 1,
-      "blocks": [
-        { "kind": "heading", "text": "Introduction", "bbox": [72, 680, 400, 700] },
-        { "kind": "paragraph", "text": "...", "bbox": [72, 640, 540, 670] }
-      ],
-      "spans": [
-        { "text": "Introduction", "bbox": [72, 680, 400, 700], "font": "Times-Bold", "size": 14.0, "confidence": 0.99 }
-      ]
-    }
-  ],
-  "metadata": { "title": "...", "author": "...", "page_count": 10 }
-}
-```
-
-## Usage
-
-```
-pdftract extract invoice.pdf            # structured JSON to stdout
-pdftract extract invoice.pdf --text     # plain text to stdout
-pdftract extract invoice.pdf --output out.json
-pdftract serve --port 8080              # HTTP service: POST /extract
-```
+> **Note:** Linux is fully CI-tested; macOS and Windows are build-tested and manually smoke-tested per release. See [docs/operations/manual-platform-smoke.md](docs/operations/manual-platform-smoke.md) for the per-release smoke procedure.
 
 ## Installation
 
-### cargo binstall (recommended, fastest)
-
-If you have Rust toolchain installed, the quickest way to get a prebuilt binary is via `cargo binstall`:
+### cargo
 
 ```bash
-cargo install cargo-binstall
-cargo binstall pdftract
+cargo install pdftract
 ```
 
-This downloads the appropriate binary for your platform from the GitHub Releases (2-3 seconds) instead of compiling from source.
-
-### Pre-built binaries
-
-Download directly from [GitHub Releases](https://github.com/jedarden/pdftract/releases):
-
-- Linux (x86_64): `pdftract-v*-x86_64-unknown-linux-musl.tar.gz`
-- macOS (Apple Silicon): `pdftract-v*-aarch64-apple-darwin.tar.gz`
-- macOS (Intel): `pdftract-v*-x86_64-apple-darwin.tar.gz`
-- Windows: `pdftract-v*-x86_64-pc-windows-gnu.zip`
-
-### Build from source
+### pip
 
 ```bash
-cargo install pdftract --features full-render,ocr
+pip install pdftract
 ```
 
-See `docs/notes/` for language-specific SDK installation examples (Python, Node.js, Go, Ruby, Java, Rust, Bash).
-
-## Architecture
-
-Rust core with PyO3 Python bindings and a CLI binary. The same binary runs as a command-line tool or as an HTTP microservice — the container deployment is just `pdftract serve`.
-
-See `docs/research/` for technical deep-dives into the PDF specification, font encoding, glyph Unicode recovery, and tagged PDF structure. See `docs/notes/` for SDK invocation examples in Python, Node.js, Go, Ruby, Java, Rust, and Bash.
-
-## Verifying Releases
-
-All releases are signed using [Sigstore](https://sigstore.dev/) keyless signing with OIDC from the iad-ci cluster. This provides cryptographic proof that artifacts were produced by the official CI/CD pipeline and haven't been tampered with.
-
-### Verify Binary Archives
-
-To verify downloaded binary archives:
+### Docker
 
 ```bash
-# Download release artifacts
-gh release download vX.Y.Z --dir /tmp/pdftract-release
-
-# Verify the SHA256SUMS signature
-cosign verify-blob \
-  --certificate-identity-regexp 'https://iad-ci-oidc.ardenone.com.*' \
-  --certificate-oidc-issuer 'https://iad-ci-oidc.ardenone.com' \
-  --signature SHA256SUMS.sig \
-  --certificate SHA256SUMS.pem \
-  SHA256SUMS
-
-# Verify individual artifacts against checksums
-sha256sum -c SHA256SUMS
+docker pull ronaldraygun/pdftract:latest
 ```
 
-### Verify Docker Images
-
-To verify Docker images before running them:
+### Homebrew
 
 ```bash
-# Verify the main image
-cosign verify \
-  --certificate-identity-regexp 'https://iad-ci-oidc.ardenone.com.*' \
-  --certificate-oidc-issuer 'https://iad-ci-oidc.ardenone.com' \
-  ghcr.io/jedarden/pdftract:X.Y.Z
-
-# Verify the OCR variant
-cosign verify \
-  --certificate-identity-regexp 'https://iad-ci-oidc.ardenone.com.*' \
-  --certificate-oidc-issuer 'https://iad-ci-oidc.ardenone.com' \
-  ghcr.io/jedarden/pdftract:ocr-X.Y.Z
-
-# Verify the full variant
-cosign verify \
-  --certificate-identity-regexp 'https://iad-ci-oidc.ardenone.com.*' \
-  --certificate-oidc-issuer 'https://iad-ci-oidc.ardenone.com' \
-  ghcr.io/jedarden/pdftract:full-X.Y.Z
+brew install pdftract
 ```
 
-### View SLSA Provenance
+## Quickstart
 
-Each Docker image includes SLSA provenance attestation:
+### Rust
+
+```rust
+use pdftract_core::{extract_pdf, ExtractionOptions};
+
+let opts = ExtractionOptions::default();
+let doc = extract_pdf("file.pdf", &opts)?;
+println!("Extracted {} pages", doc.metadata.page_count);
+```
+
+### Python
+
+```python
+import pdftract
+
+doc = pdftract.extract("file.pdf")
+print(f"Extracted {doc['metadata']['page_count']} pages")
+```
+
+### CLI
 
 ```bash
-cosign verify-attestation \
-  --certificate-identity-regexp 'https://iad-ci-oidc.ardenone.com.*' \
-  --certificate-oidc-issuer 'https://iad-ci-oidc.ardenone.com' \
-  --type slsaprovenance \
-  ghcr.io/jedarden/pdftract:X.Y.Z
+pdftract extract file.pdf --json result.json   # JSON output
+pdftract extract file.pdf --text -             # Plain text to stdout
+pdftract serve --port 8080                     # HTTP microservice
 ```
 
-The provenance includes the build configuration, source commit, and builder identity.
+## What it does
 
-## Security
+- **Correct reading order** — layout regions are segmented and sequenced before text is emitted, handling multi-column pages, sidebars, footnotes, and mixed-layout documents
+- **Font encoding recovery** — when `ToUnicode` CMaps are absent, wrong, or incomplete, pdftract works through a layered recovery pipeline: glyph name lookup, font fingerprinting, and glyph outline shape matching
+- **Structure tree extraction** — PDF/UA and PDF/A documents encode their logical structure; pdftract reads this directly when present
+- **Per-page hybrid routing** — each page is independently classified and routed to the appropriate pipeline: vector text extraction, full OCR, or assisted OCR
+- **Structured output with provenance** — the primary output is JSON carrying per-span bounding boxes, font name, size, and confidence score
 
-For responsible disclosure of security vulnerabilities, please email [security@jedarden.com](mailto:security@jedarden.com). See [`SECURITY.md`](SECURITY.md) for our disclosure policy, supported versions, and PGP key for encrypted reports.
+## Documentation
 
-**PGP Key:** The public key for `security@jedarden.com` is available at [`docs/security/pgp-public-key.asc`](docs/security/pgp-public-key.asc).
+- **User docs:** [docs/user-docs](docs/user-docs/) (mdBook)
+- **API reference:** [docs.rs/pdftract](https://docs.rs/pdftract)
+- **Contributing guide:** [CONTRIBUTING.md](CONTRIBUTING.md)
+- **Security policy:** [SECURITY.md](SECURITY.md)
+- **Changelog:** [CHANGELOG.md](CHANGELOG.md)
+- **License:** [LICENSE-MIT](LICENSE-MIT) or [LICENSE-APACHE](LICENSE-APACHE)
 
-> **NOTE:** The PGP key is currently a placeholder. The security contact must generate and publish a 4096-bit RSA key for `security@jedarden.com`. See `docs/security/pgp-public-key.asc` for generation instructions.
+## License
 
-## Contributing
+Licensed under either of:
 
-Contributions are welcome! Please see [`CONTRIBUTING.md`](CONTRIBUTING.md) for:
-- Development setup and build instructions
-- Local validation checklist before opening a PR
-- Commit message style (Conventional Commits)
-- CI on forks (maintainer-triggered Argo workflow)
-- DCO sign-off requirement
+- MIT License ([LICENSE-MIT](LICENSE-MIT) or https://opensource.org/licenses/MIT)
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or https://www.apache.org/licenses/LICENSE-2.0)
 
-By participating in this project, you agree to abide by our [Code of Conduct](CODE_OF_CONDUCT.md).
-
-## Status
-
-Early development. See `docs/plan/` for the implementation roadmap.
+at your option.
