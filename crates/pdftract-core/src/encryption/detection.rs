@@ -24,12 +24,18 @@ pub struct EncryptionInfo {
     pub owner_hash: Vec<u8>,
     /// User password hash (/U)
     pub user_hash: Vec<u8>,
-    /// Permissions flags (/P or /Perms)
+    /// Permissions flags (/P for V<5, /Perms for V=5)
     pub perms: u32,
     /// File ID (first 16 bytes of /ID[0] from trailer)
     pub file_id: Vec<u8>,
     /// Crypt filter dictionary for V=4 and V=5
     pub crypt_filters: Option<CryptFiltersV4>,
+    /// Encrypted user encryption key (/UE) for V=5 (AES-256)
+    pub user_key_encrypted: Option<Vec<u8>>,
+    /// Encrypted owner encryption key (/OE) for V=5 (AES-256)
+    pub owner_key_encrypted: Option<Vec<u8>>,
+    /// Encrypted permissions (/Perms) for V=5 (AES-256)
+    pub perms_encrypted: Option<Vec<u8>>,
 }
 
 /// Crypt filter metadata for V=4 and V=5 encryption.
@@ -161,11 +167,15 @@ pub fn detect_encryption(
         None
     };
 
-    // Step 8: For V=5, parse /Perms
-    let perms = if version == 5 {
-        parse_v5_perms(encrypt_dict)?
+    // Step 8: For V=5, parse /Perms, /UE, /OE
+    let (perms, user_key_encrypted, owner_key_encrypted, perms_encrypted) = if version == 5 {
+        let perms = parse_v5_perms(encrypt_dict)?;
+        let user_key_encrypted = parse_v5_key(encrypt_dict, "/UE")?;
+        let owner_key_encrypted = parse_v5_key(encrypt_dict, "/OE")?;
+        let perms_encrypted = parse_v5_perms_bytes(encrypt_dict)?;
+        (perms, Some(user_key_encrypted), Some(owner_key_encrypted), Some(perms_encrypted))
     } else {
-        perms
+        (perms, None, None, None)
     };
 
     // Step 9: Extract /ID[0] from trailer
@@ -181,10 +191,16 @@ pub fn detect_encryption(
         perms,
         file_id,
         crypt_filters,
+        user_key_encrypted,
+        owner_key_encrypted,
+        perms_encrypted,
     })
 }
 
 /// Trait for xref resolution (to avoid coupling to specific resolver type).
+///
+/// This trait is implemented by the actual XrefResolver from the xref module,
+/// and also by MockResolver for testing.
 pub trait XrefResolver {
     fn resolve(&self, obj_ref: ObjRef) -> Result<PdfObject, ResolveError>;
 }
@@ -195,6 +211,18 @@ pub enum ResolveError {
     NotFound(ObjRef),
     CircularRef(ObjRef),
     Io(String),
+}
+
+// Implement the detection module's XrefResolver trait for the actual xref::XrefResolver
+impl XrefResolver for crate::parser::xref::XrefResolver {
+    fn resolve(&self, obj_ref: ObjRef) -> Result<PdfObject, ResolveError> {
+        // Convert ResolveError from xref module to detection module's ResolveError
+        self.resolve(obj_ref).map_err(|e| match e {
+            crate::parser::xref::ResolveError::NotFound(obj_ref) => ResolveError::NotFound(obj_ref),
+            crate::parser::xref::ResolveError::CircularRef(obj_ref) => ResolveError::CircularRef(obj_ref),
+            crate::parser::xref::ResolveError::Io(msg) => ResolveError::Io(msg),
+        })
+    }
 }
 
 /// Parse /V field from encryption dictionary.
@@ -272,6 +300,24 @@ fn parse_v5_perms(dict: &PdfDict) -> Option<u32> {
     let mut bytes = [0u8; 4];
     bytes.copy_from_slice(&perms_bytes[..4]);
     Some(u32::from_le_bytes(bytes))
+}
+
+/// Parse /UE or /OE field for V=5 encryption (32-byte encrypted key).
+fn parse_v5_key(dict: &PdfDict, key: &str) -> Option<Vec<u8>> {
+    let key_bytes = dict.get(key)?.as_string()?.to_vec();
+    if key_bytes.len() != 32 {
+        return None;
+    }
+    Some(key_bytes)
+}
+
+/// Parse /Perms field as raw bytes for V=5 encryption (16-byte encrypted permissions).
+fn parse_v5_perms_bytes(dict: &PdfDict) -> Option<Vec<u8>> {
+    let perms_bytes = dict.get("/Perms")?.as_string()?.to_vec();
+    if perms_bytes.len() != 16 {
+        return None;
+    }
+    Some(perms_bytes)
 }
 
 /// Extract first 16 bytes of /ID[0] from trailer.
@@ -434,6 +480,8 @@ mod tests {
             ("/O", PdfObject::String(Box::new(vec![0u8; 48]))),
             ("/U", PdfObject::String(Box::new(vec![0u8; 48]))),
             ("/P", PdfObject::Integer(0xFFFFFFFF_i64)),
+            ("/UE", PdfObject::String(Box::new(vec![0u8; 32]))),
+            ("/OE", PdfObject::String(Box::new(vec![0u8; 32]))),
             ("/Perms", PdfObject::String(Box::new({
                 let mut perms = [0u8; 16];
                 perms[0..4].copy_from_slice(&0xFFFFFFFFu32.to_le_bytes());

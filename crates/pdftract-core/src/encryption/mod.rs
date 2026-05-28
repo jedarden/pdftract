@@ -18,6 +18,9 @@ pub mod aes_128;
 pub mod aes_256;
 
 #[cfg(feature = "decrypt")]
+pub mod decryptor;
+
+#[cfg(feature = "decrypt")]
 pub mod rc4;
 
 #[cfg(feature = "decrypt")]
@@ -25,6 +28,9 @@ pub use aes_128::{aes_128_decrypt, derive_aes_128_object_key, is_identity_filter
 
 #[cfg(feature = "decrypt")]
 pub use aes_256::{aes_256_decrypt, Aes256Decryptor, FileKeyResult as Aes256FileKeyResult};
+
+#[cfg(feature = "decrypt")]
+pub use decryptor::{decrypt_with_password, DecryptionContext, PasswordValidation};
 
 #[cfg(feature = "decrypt")]
 pub use rc4::{
@@ -39,17 +45,6 @@ pub use detection::{
 };
 
 use crate::diagnostics::{DiagCode, Diagnostic};
-
-/// Result of password validation.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PasswordValidation {
-    /// Empty password (owner password not set)
-    EmptyPassword,
-    /// User password matched
-    UserPassword,
-    /// Owner password matched
-    OwnerPassword,
-}
 
 /// Error during decryption.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ArgAction};
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -9,6 +9,7 @@ mod classify;
 mod codegen;
 mod doctor;
 mod grep;
+mod header;
 mod inspect;
 mod mcp;
 mod middleware;
@@ -89,6 +90,10 @@ enum Commands {
         /// PDF password (INSECURE: rejected unless PDFTRACT_INSECURE_CLI_PASSWORD=1)
         #[arg(long, conflicts_with = "password_stdin")]
         password: Option<String>,
+
+        /// Custom HTTP headers for remote sources (repeatable; format: HEADER:VALUE)
+        #[arg(long, value_name = "HEADER:VALUE", action = ArgAction::Append)]
+        header: Vec<String>,
 
         /// Page range to extract (1-based, comma-separated: 1-5,7,12-)
         #[arg(long, value_name = "RANGE")]
@@ -452,6 +457,7 @@ fn main() -> Result<()> {
             input,
             password_stdin,
             password,
+            header,
             pages,
             json,
             md,
@@ -478,6 +484,7 @@ fn main() -> Result<()> {
                 input,
                 password_stdin,
                 password,
+                header,
                 pages,
                 json.into_iter().collect(),
                 md.into_iter().collect(),
@@ -500,7 +507,16 @@ fn main() -> Result<()> {
                 include_hidden_layers,
                 include_watermarks,
             ) {
-                eprintln!("Error: {}", e);
+                let error_msg = e.to_string();
+                eprintln!("Error: {}", error_msg);
+
+                // Exit code 3 for encryption errors (per spec)
+                if error_msg.contains("decryption failed") ||
+                   error_msg.contains("PDF decryption failed") ||
+                   error_msg.contains("Unsupported encryption") ||
+                   error_msg.contains("Wrong password") {
+                    std::process::exit(3);
+                }
                 std::process::exit(1);
             }
         }
@@ -522,7 +538,16 @@ fn main() -> Result<()> {
                 top_k,
                 exit_on_unknown,
             ) {
-                eprintln!("Error: {}", e);
+                let error_msg = e.to_string();
+                eprintln!("Error: {}", error_msg);
+
+                // Exit code 3 for encryption errors (per spec)
+                if error_msg.contains("decryption failed") ||
+                   error_msg.contains("PDF decryption failed") ||
+                   error_msg.contains("Unsupported encryption") ||
+                   error_msg.contains("Wrong password") {
+                    std::process::exit(3);
+                }
                 std::process::exit(1);
             }
         }
@@ -661,6 +686,7 @@ fn cmd_extract(
     input: PathBuf,
     password_stdin: bool,
     password: Option<String>,
+    header: Vec<String>,
     pages: Option<String>,
     json: Vec<PathBuf>,
     md: Vec<PathBuf>,
@@ -755,6 +781,30 @@ fn cmd_extract(
     if resolved_password.is_some() {
         eprintln!("Password provided via secure channel");
     }
+
+    // Parse and validate custom HTTP headers
+    let _headers = if !header.is_empty() {
+        match header::parse_headers(&header) {
+            Ok(h) => {
+                // Check if input is a URL (https:// or http://)
+                let input_str = input.to_string_lossy();
+                if input_str.starts_with("http://") || input_str.starts_with("https://") {
+                    eprintln!("Note: Custom HTTP headers will be passed to HttpRangeSource (Phase 1.8)");
+                    eprintln!("Headers provided: {}", h.len());
+                    Some(h)
+                } else {
+                    // Local file: silently ignore headers as specified
+                    None
+                }
+            }
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                std::process::exit(2);
+            }
+        }
+    } else {
+        None
+    };
 
     // Build extraction options
     let mut options = ExtractionOptions::with_receipts(receipts_mode);
@@ -960,12 +1010,12 @@ fn write_output<W: std::io::Write>(
 
                 if include_anchors {
                     // Use markdown module with anchors
-                    let md = page_to_markdown(&page.blocks, &page.tables, page.index, true, include_break);
+                    let md = page_to_markdown(&page.blocks, &page.tables, page.index, true, include_break, &options.output);
                     write!(writer, "{}", md)?;
                 } else {
                     // Simple conversion without anchors
                     for (block_idx, block) in page.blocks.iter().enumerate() {
-                        let md = block_to_markdown(block, &page.tables, page.index, block_idx, false);
+                        let md = block_to_markdown(block, &page.tables, page.index, block_idx, false, &options.output);
                         write!(writer, "{}\n", md)?;
                     }
                     if include_break {

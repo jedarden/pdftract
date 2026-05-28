@@ -18,6 +18,7 @@ use crate::attachment::associated_files::walk_af_array;
 use crate::attachment::filespec::extract_one;
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::document::compute_fingerprint_lazy;
+use secrecy::ExposeSecret;
 use crate::forms::{
     acro_field_to_value, combine, walk_acroform_fields, AcroFormField, FormFieldValue,
 };
@@ -359,6 +360,34 @@ pub fn extract_pdf(
 
     // Create resolver from xref section
     let resolver = XrefResolver::from_section(xref_section.clone());
+
+    // Detect and handle encryption (Phase 1.4)
+    #[cfg(feature = "decrypt")]
+    let decryption_context = {
+        use crate::encryption::decrypt_with_password;
+
+        // Get the trailer for encryption detection
+        let trailer_dict = xref_section.trailer.as_ref().cloned();
+
+        let mut diagnostics = Vec::new();
+        let password = options.password.as_ref().map(|p| p.expose_secret());
+
+        if let Some(trailer) = trailer_dict {
+            match decrypt_with_password(&trailer, &resolver, password, &mut diagnostics) {
+                Ok(ctx_opt) => ctx_opt,
+                Err(e) => {
+                    // Emit diagnostic and return error
+                    let diag = e.to_diagnostic();
+                    return Err(anyhow::anyhow!("PDF decryption failed: {}", diag.message));
+                }
+            }
+        } else {
+            None
+        }
+    };
+
+    #[cfg(not(feature = "decrypt"))]
+    let decryption_context = Option::<crate::encryption::decryptor::DecryptionContext>::None;
 
     // Get the root reference from trailer
     let root_ref = xref_section
