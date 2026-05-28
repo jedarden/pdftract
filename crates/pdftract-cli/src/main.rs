@@ -17,6 +17,7 @@ mod mcp;
 mod middleware;
 mod output;
 mod pages;
+mod panic_hook;
 mod password;
 mod serve;
 mod url;
@@ -442,6 +443,10 @@ enum CacheCommands {
 }
 
 fn main() -> Result<()> {
+    // Install panic hook for SecretString redaction in backtraces
+    // This ensures credentials never leak in crash dumps
+    panic_hook::install_panic_hook();
+
     let cli = Cli::parse();
 
     match cli.command {

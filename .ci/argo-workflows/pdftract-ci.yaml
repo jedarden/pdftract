@@ -269,6 +269,7 @@ spec:
           add_step "cargo-deny" "$WORKFLOW_PHASE"
           add_step "cargo-bloat" "$WORKFLOW_PHASE"
           add_step "memory-ceiling" "$WORKFLOW_PHASE"
+          add_step "log-policy-check" "$WORKFLOW_PHASE"
           add_step "schema-gen" "$WORKFLOW_PHASE"
           add_step "wer-gate" "$WORKFLOW_PHASE"
           add_step "bench-matrix" "$WORKFLOW_PHASE"
@@ -1136,15 +1137,17 @@ spec:
     # === Quality Matrix ===
     # Run linting (clippy, fmt), security audit (cargo-audit), dependency review,
     # license/ban/advisory checks (cargo-deny), MSRV check, binary size budget,
-    # memory ceiling enforcement, and schema generation consistency.
+    # memory ceiling enforcement, schema generation consistency, and log policy enforcement.
     #
-    # Seven parallel Tier 1 quality gates — any failure blocks PR merge:
+    # Eight parallel Tier 1 quality gates — any failure blocks PR merge:
     # 1. clippy-fmt: General linting and formatting check with INV-8 unwrap/expect ban
     # 2. msrv-check: Verify no newer Rust features are used (MSRV 1.78)
     # 3. cargo-audit: Security advisory check on dependencies
     # 4. cargo-deny: License and security policy enforcement
     # 5. cargo-bloat: Binary size budget enforcement (<= 4 MB)
     # 6. memory-ceiling: Memory budget enforcement (analogous to cargo-bloat for RSS)
+    # 7. log-policy-check: NEVER-log secrets enforcement (grep-based scan)
+    # 8. schema-gen: Schema generation consistency check
     #
     # CRITICAL: All cargo commands MUST use --locked (or --locked --frozen)
     - name: quality-matrix
@@ -1163,6 +1166,8 @@ spec:
             template: cargo-bloat
           - name: memory-ceiling
             template: memory-ceiling
+          - name: log-policy-check
+            template: log-policy-check
           - name: schema-gen
             template: schema-gen
 
@@ -1937,6 +1942,89 @@ spec:
           limits:
             cpu: 2000m
             memory: 4Gi
+
+    # === Log Policy Check ===
+    # Enforces NEVER-log secrets policy across the codebase.
+    #
+    # This is a Tier 1 hard gate from Phase 6 audit logging policy. It scans
+    # the codebase for log calls that might leak credentials, auth headers, or
+    # sensitive content. Without this gate, credential leakage can silently slip
+    # past code review and appear in logs, crash dumps, and SIEM systems.
+    #
+    # Bead: pdftract-3990k
+    # Plan section: Phase 6 audit logging policy (lines 931-964)
+    #
+    # Enforcement policy:
+    # - No log calls with credential variable names (password, token, secret, api_key, etc.)
+    # - No log calls with sensitive content variables (body, content, text, data)
+    # - Authorization/Cookie/Proxy-Authorization headers must be redacted
+    # - SecretString values must always render as [REDACTED]
+    # - Script: .ci/scripts/check-log-policy.sh (grep-based scan)
+    - name: log-policy-check
+      activeDeadlineSeconds: 300
+      container:
+        image: alpine:3.19
+        command: [sh, -c]
+        args:
+          - |
+            set -eo pipefail
+
+            echo "=========================================="
+            echo "Log-Policy Enforcement Check"
+            echo "=========================================="
+
+            cd /workspace
+
+            echo "=== Running log policy scan ==="
+            echo "Scanning for forbidden patterns:"
+            echo "  - Credential variables in log calls"
+            echo "  - Sensitive content variables in log calls"
+            echo "  - Auth headers without redaction"
+            echo ""
+
+            # Install bash for the check script
+            apk add --no-cache bash
+
+            # Run the log policy check script
+            bash .ci/scripts/check-log-policy.sh || {
+              EXIT_CODE=$?
+
+              echo "=========================================="
+              echo "LOG POLICY CHECK FAILED"
+              echo "=========================================="
+              echo ""
+              echo "The log policy enforcement check detected potential violations."
+              echo "Review the output above for specific issues."
+              echo ""
+              echo "Forbidden patterns:"
+              echo "  - Log calls with credential variables (password, token, secret, api_key, etc.)"
+              echo "  - Log calls with sensitive content variables (body, content, text, data)"
+              echo "  - Auth headers without redaction (Authorization, Cookie, Proxy-Authorization)"
+              echo ""
+              echo "To fix violations:"
+              echo "  - Use SecretString for all credentials (secrecy crate)"
+              echo "  - Never log request bodies or extracted text"
+              echo "  - Use redact_headers_for_log() for HTTP logging"
+              echo ""
+              echo "Log policy enforcement is a Tier-1 quality gate per Phase 6."
+              echo "See plan.md lines 931-964 for the full policy."
+
+              exit $EXIT_CODE
+            }
+
+            echo ""
+            echo "=== Log policy check passed ==="
+            echo "No credential leaks or forbidden patterns detected"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
 
     # === WER Gate ===
     # Word Error Rate CI gate for OCR accuracy validation
