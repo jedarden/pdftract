@@ -157,9 +157,34 @@ If `bf close` fails on you, DO NOT just retry the same way. Try `bf batch --json
 - **`bf rotate --dry-run`** — preview which closed beads would be archived (30-day default age)
 - **`bead_annotations`** table — bf-only key-value metadata per bead; useful for worker breadcrumbs
 
-## CI lives elsewhere
+## CI — Argo Workflows on iad-ci only. GitHub Actions are disabled.
 
-Per parent CLAUDE.md and ADR-009 in the plan: all CI is Argo Workflows on iad-ci. Never invoke GitHub Actions, never propose them, never reintroduce them. CI YAML lives in `jedarden/declarative-config → k8s/iad-ci/argo-workflows/`. Cluster writes go through ArgoCD; never kubectl apply directly.
+**GitHub Actions are disabled across all repos in this environment. Never re-enable them, never add new workflows, never propose them.**
+
+There is a legacy workflow file at `.github/workflows/schema-gen.yml` (schema generation validation). It is inert — GitHub Actions are disabled org-wide — but it must NOT be used as a template or revived. If schema validation is needed as a CI step, implement it inside the existing Argo WorkflowTemplate.
+
+All CI runs on Argo Workflows in the `iad-ci` cluster:
+
+- **WorkflowTemplate:** `pdftract-ci` — lives in `jedarden/declarative-config → k8s/iad-ci/argo-workflows/pdftract-ci.yaml`
+- **Nightly supply-chain scan:** `pdftract-nightly-supply-chain.yaml` (same path)
+- **Nightly fuzz:** `pdftract-nightly-fuzz.yaml` (same path)
+- **In-tree Argo YAML:** `.ci/argo-workflows/` — these are the source files, synced to declarative-config
+
+ArgoCD on ardenone-manager syncs declarative-config automatically on push. Never `kubectl apply` directly against any cluster.
+
+To trigger a CI run manually:
+```bash
+kubectl --kubeconfig=/home/coding/.kube/iad-ci.kubeconfig create -f - <<EOF
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: pdftract-ci-manual-
+  namespace: argo-workflows
+spec:
+  workflowTemplateRef:
+    name: pdftract-ci
+EOF
+```
 
 ## When you finish a bead
 
