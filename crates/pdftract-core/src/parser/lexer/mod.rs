@@ -237,6 +237,14 @@ impl<'a> Lexer<'a> {
         self.pos as u64
     }
 
+    /// Push a diagnostic to the lexer's diagnostic list.
+    ///
+    /// This is used by modules that need to emit diagnostics while parsing
+    /// (e.g., inline image scanning).
+    pub fn push_diagnostic(&mut self, diag: Diag) {
+        self.diagnostics.push(diag);
+    }
+
     /// Take all accumulated diagnostics, leaving the internal buffer empty.
     ///
     /// # Example

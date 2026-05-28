@@ -1,6 +1,10 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use std::path::PathBuf;
+use std::sync::Arc;
+
+#[cfg(feature = "grep")]
+use rayon::prelude::*;
 
 // Matcher module
 mod matcher;
@@ -246,38 +250,214 @@ pub fn produce_work_items(config: &GrepConfig) -> Result<(Vec<FileWorkItem>, u64
 }
 
 /// Run the grep command
+#[cfg(feature = "grep")]
 pub fn run_grep(args: GrepArgs) -> Result<()> {
+    use std::sync::Arc;
+    use std::time::Instant;
+
     // Validate and normalize arguments
     let config = args.validate()?;
+    let config = Arc::new(config);
 
     // Expand paths into work items
     let (work_items, bytes_total) = produce_work_items(&config)?;
 
-    // For now, just print the work items
-    // TODO: Implement the actual grep logic in subsequent beads (7.8.2-7.8.10)
-    if !config.quiet {
-        eprintln!(
-            "pdftract grep: found {} PDF files ({} bytes total)",
-            work_items.len(),
-            bytes_total
-        );
-        eprintln!("Pattern: {}", config.pattern);
-        eprintln!(
-            "Match mode: {}",
-            if config.use_regex { "regex" } else { "literal" }
-        );
-
-        // Print first few files as a preview
-        for (i, item) in work_items.iter().take(5).enumerate() {
-            eprintln!("  {}. {}", i + 1, item.path.display());
+    if work_items.is_empty() {
+        if !config.quiet {
+            eprintln!("pdftract grep: no PDF files found");
         }
-        if work_items.len() > 5 {
-            eprintln!("  ... and {} more", work_items.len() - 5);
+        return Ok(());
+    }
+
+    let files_total = work_items.len() as u64;
+    let start_time = Instant::now();
+
+    // Build the matcher
+    let matcher = Arc::new(Matcher::build(
+        &config.pattern,
+        config.use_regex,
+        config.ignore_case,
+        config.word_regexp,
+    )?);
+
+    // Create channels for match events and progress events
+    let (match_tx, match_rx) = crossbeam_channel::unbounded::<MatchEvent>();
+    let (progress_tx, progress_rx) = crossbeam_channel::unbounded::<ProgressEvent>();
+
+    // Create progress manager (returns None if progress is disabled)
+    let mut progress_manager = if cfg!(feature = "grep") {
+        ProgressManager::new(files_total, bytes_total, config.progress_mode)
+    } else {
+        None
+    };
+
+    // Clone config and channels for worker threads
+    let config_clone = config.clone();
+    let matcher_clone = matcher.clone();
+    let match_tx_clone = match_tx.clone();
+    let progress_tx_clone = progress_tx.clone();
+
+    // Spawn progress JSON thread if enabled
+    let progress_json_handle = if config.progress_json {
+        let progress_rx = progress_rx.clone();
+        Some(std::thread::spawn(move || {
+            while let Ok(event) = progress_rx.recv() {
+                if let Err(e) = emit_progress_json(&event) {
+                    eprintln!("Warning: failed to emit progress JSON: {}", e);
+                }
+            }
+        }))
+    } else {
+        None
+    };
+
+    // Process files in parallel using rayon
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(config.threads)
+        .build()
+        .with_context(|| "Failed to build thread pool")?
+        .install(|| {
+            work_items.par_iter().for_each(|item| {
+                if let Err(e) = worker_run(
+                    item,
+                    &matcher_clone,
+                    &config_clone,
+                    &match_tx_clone,
+                    &progress_tx_clone,
+                ) {
+                    eprintln!("Warning: error processing {}: {}", item.path.display(), e);
+                }
+            });
+        });
+
+    // Drop senders to signal receivers that we're done
+    drop(match_tx);
+    drop(progress_tx);
+
+    // Collect all match events
+    let mut all_matches: Vec<MatchEvent> = match_rx.iter().collect();
+
+    // Join progress JSON thread if it was spawned
+    if let Some(handle) = progress_json_handle {
+        let _ = handle.join();
+    }
+
+    // Handle output based on mode
+    if config.files_with_matches {
+        // -l mode: output unique file paths only
+        let unique_files: std::collections::HashSet<_> =
+            all_matches.iter().map(|m| &m.path).collect();
+        if config.json {
+            let mut sink = JsonSink::new();
+            for path in unique_files {
+                let event = MatchEvent::file_only(path.clone());
+                let _ = sink.write_file_only(&event);
+            }
+        } else if !config.quiet {
+            for path in unique_files {
+                println!("{}", path);
+            }
+        }
+    } else if config.count {
+        // -c mode: output match counts per file
+        let mut counts: std::collections::HashMap<&String, usize> = std::collections::HashMap::new();
+        for m in &all_matches {
+            *counts.entry(&m.path).or_insert(0) += 1;
+        }
+        if config.json {
+            let mut sink = JsonSink::new();
+            for (path, count) in counts {
+                let event = MatchEvent::count_event(path.clone(), count);
+                let _ = sink.write_count(&event);
+            }
+        } else if !config.quiet {
+            for (path, count) in counts {
+                println!("{}:{}", path, count);
+            }
+        }
+    } else {
+        // Normal mode: output all matches
+        if config.json {
+            let mut sink = JsonSink::new();
+            for m in &all_matches {
+                let _ = sink.write_match(m);
+            }
+        } else if !config.quiet {
+            for m in &all_matches {
+                // Human-readable format: path:p<page>:bbox:match_text
+                let page_human = m.page_index + 1;
+                println!(
+                    "{}:p{}:[{:.1},{:.1},{:.1},{:.1}]:{}",
+                    m.path,
+                    page_human,
+                    m.bbox[0],
+                    m.bbox[1],
+                    m.bbox[2],
+                    m.bbox[3],
+                    m.match_text
+                );
+            }
         }
     }
 
-    // Exit with "not yet implemented" status
-    std::process::exit(2);
+    // Write highlighted PDFs if --highlight was specified
+    if let Some(ref highlight_dir) = config.highlight_dir {
+        if let Err(e) = write_highlighted_pdfs(&all_matches, highlight_dir) {
+            eprintln!("Warning: failed to write highlighted PDFs: {}", e);
+        }
+    }
+
+    // Finish progress manager
+    if let Some(pm) = progress_manager {
+        let duration_ms = start_time.elapsed().as_millis();
+        pm.finish(files_total, bytes_total, duration_ms);
+    }
+
+    Ok(())
+}
+
+/// Emit a progress event as JSON to stderr.
+fn emit_progress_json(event: &ProgressEvent) -> Result<()> {
+    use std::io::Write;
+
+    let json = match event {
+        ProgressEvent::FileStart { path, size_hint } => {
+            let size = size_hint.unwrap_or(0);
+            serde_json::json!({
+                "type": "file_start",
+                "path": path,
+                "size_hint": size
+            })
+        }
+        ProgressEvent::FileProgress {
+            path,
+            pages_done,
+            pages_total,
+        } => serde_json::json!({
+            "type": "file_progress",
+            "path": path,
+            "pages_done": pages_done,
+            "pages_total": pages_total
+        }),
+        ProgressEvent::FileDone {
+            path,
+            matches,
+            duration_ms,
+        } => serde_json::json!({
+            "type": "file_done",
+            "path": path,
+            "matches": matches,
+            "duration_ms": duration_ms
+        }),
+        ProgressEvent::FileSkipped { path, reason } => serde_json::json!({
+            "type": "file_skipped",
+            "path": path,
+            "reason": reason
+        }),
+    };
+
+    writeln!(std::io::stderr(), "{}", json)
+        .with_context(|| "Failed to write progress JSON to stderr")
 }
 
 #[cfg(test)]

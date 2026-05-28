@@ -169,6 +169,10 @@ fn create_router_with_audit(state: InspectorState) -> Router {
         .route("/api/page/:i/thumbnail", get(api::api_page_thumbnail))
         .route("/api/raster/:i.png", get(api::api_raster))
         .route("/api/search", get(api::api_search))
+        // Comparison mode endpoints (Phase 7.9.8)
+        .route("/api/compare/document", get(api::api_compare_document))
+        .route("/api/compare/page/:i", get(api::api_compare_page))
+        .route("/api/compare/page/:i/svg/:side", get(api::api_compare_page_svg))
         // CSP middleware (TH-09 XSS mitigation)
         .layer(axum::middleware::from_fn(csp_middleware))
         // Audit middleware
@@ -180,13 +184,13 @@ fn create_router_with_audit(state: InspectorState) -> Router {
 }
 
 /// Handler for the index page (Phase 7.9.3).
-async fn index_handler(State(_state): State<Arc<Mutex<InspectorState>>>) -> Html<&'static str> {
-    Html(include_str!("frontend/index.html"))
+async fn index_handler(State(_state): State<Arc<Mutex<InspectorState>>>) -> Html<String> {
+    Html(String::from_utf8(include_bytes!("frontend/index.html").to_vec()).unwrap())
 }
 
 /// Handler for static style.css (Phase 7.9.3).
 async fn static_style_handler() -> impl IntoResponse {
-    let css = include_str!("frontend/style.css");
+    let css = String::from_utf8(include_bytes!("frontend/style.css").to_vec()).unwrap();
     Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/css; charset=utf-8")
@@ -197,7 +201,7 @@ async fn static_style_handler() -> impl IntoResponse {
 
 /// Handler for static app.js (Phase 7.9.3).
 async fn static_app_handler() -> impl IntoResponse {
-    let js = include_str!("frontend/app.js");
+    let js = String::from_utf8(include_bytes!("frontend/app.js").to_vec()).unwrap();
     Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "application/javascript; charset=utf-8")

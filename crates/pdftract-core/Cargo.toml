@@ -23,7 +23,7 @@ lzw = { workspace = true }
 memmap2 = "0.9"
 regex = "1.10"
 secrecy = { workspace = true }
-serde = { version = "1.0", features = ["derive"], optional = true }
+serde = { version = "1.0", features = ["derive", "rc"], optional = true }
 serde_json = { version = "1.0", optional = true }
 schemars = { version = "1.2", features = ["derive"], optional = true }
 sha2 = "0.10"

@@ -158,6 +158,7 @@ enum Commands {
         exit_on_unknown: bool,
     },
     /// Search for text patterns in PDF files with bounding-box results
+    #[cfg(feature = "grep")]
     Grep(grep::GrepArgs),
     /// Inspect a PDF file in a local web browser with debugging overlays
     Inspect(inspect::InspectArgs),
@@ -457,6 +458,7 @@ fn main() -> Result<()> {
                 std::process::exit(1);
             }
         }
+        #[cfg(feature = "grep")]
         Commands::Grep(args) => {
             if let Err(e) = grep::run_grep(args) {
                 eprintln!("Error: {}", e);
@@ -815,12 +817,12 @@ fn cmd_extract(
 
                 if include_anchors {
                     // Use markdown module with anchors
-                    let md = page_to_markdown(&page.blocks, page.index, true, include_break);
+                    let md = page_to_markdown(&page.blocks, &page.tables, page.index, true, include_break);
                     write!(writer, "{}", md)?;
                 } else {
                     // Simple conversion without anchors
                     for (block_idx, block) in page.blocks.iter().enumerate() {
-                        let md = block_to_markdown(block, page.index, block_idx, false);
+                        let md = block_to_markdown(block, &page.tables, page.index, block_idx, false);
                         write!(writer, "{}\n", md)?;
                     }
                     if include_break {

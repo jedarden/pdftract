@@ -1,46 +1,68 @@
-description: Book chapter with title, chapter number, author, section headings
-priority: 32
+# Book Chapter Profile
+#
+# Book chapters, monographs, and long-form narrative documents.
+# Extracts title, chapter_number, author, sections.
+
+name: book_chapter
+description: Book chapters, monographs, long-form narrative documents
+priority: 5
+
+# Matching predicates for book chapter classification
 match:
-  any:
-    - text_patterns:
-        - "(?i)chapter\\s+[IVXLCDM0-9]+"
-        - "(?i)section\\s+[0-9]+\\.?[0-9]*"
-        - "(?i)^\\d+\\.\\s+[A-Z]"
+  all:
+    # Page count in typical chapter range (not a whole book, not a single page)
     - structural:
-        - has_running_headers: true
-        - has_chapter_headings: true
-        - page_count_gte: 5
-  page_count_hint: 5-50
-profile_fields:
+        page_count: {min: 5, max: 1000}
+    # Heading depth indicates structured content
+    - structural:
+        heading_depth: {min: 1, max: 5}
+    # AND EITHER: has chapter/section headings
+    # OR: has limited font diversity (not a dense academic paper)
+    # OR: matches chapter/section text patterns
+    - any:
+        - text_matches: '^Chapter \d+'
+        - heading_matches: '^(Chapter|Part|Section) \d+'
+        - text_matches: '^\d+\.\s+[A-Z]'
+        - structural:
+            font_diversity: {min: 1, max: 4}
+  none:
+    # Exclude more specific document types
+    - text_contains: ['Abstract', 'WHEREAS', 'Invoice', 'Account Statement', 'References']
+
+# Extraction tuning for book chapters
+extraction:
+  # Use line_dominant reading order for narrative text flow
+  reading_order: line_dominant
+  # Default table detection
+  table_detection: default
+  # Higher readability threshold for narrative text quality
+  readability_threshold: 0.6
+  # Don't include invisible text
+  include_invisible: false
+  # Exclude headers, footers, and page numbers from body content
+  include_headers_footers: false
+
+# Field extraction specifications
+fields:
   title:
     type: string
-    extraction:
-      region_hint: "first_page_top"
-      patterns:
-        - "^(.+)$"
-      fallback: null
+    region: top_third
+    pick: largest_font
+    page: first
+
   chapter_number:
     type: string
-    extraction:
-      region_hint: "first_page_top"
-      patterns:
-        - "(?i)chapter\\s+([IVXLCDM0-9]+)"
-        - "^([0-9]+)\\.\\s+[A-Z]"
-      fallback: null
+    near: ['Chapter', 'Part']
+    regex: '\d+'
+    max_distance_pt: 100
+
   author:
     type: string
-    extraction:
-      patterns:
-        - "(?i)(?:by|author)\\s*:?.*?([A-Z][a-z]+\\s+[A-Z][a-z]+)"
-        - "([A-Z][a-z]+\\s+[A-Z][a-z]+)\\s+(?:is\\s+the\\s+author)"
-      fallback: null
+    region: top_quarter
+    pick: smallest_font
+    page: first
+
   sections:
     type: array
-    extraction:
-      per_page: false
-      region_hint: "headings"
-      patterns:
-        - "^(?:[0-9]+\\.\\s*)?[A-Z][A-Za-z0-9\\s\\-:]+$"
-      fallback: []
-reading_order: line_dominant
-zone_filtering: exclude_headers_footers_page_numbers
+    pick: largest_font
+    per_page: true

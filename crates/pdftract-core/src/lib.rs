@@ -53,6 +53,7 @@ pub use render::pdfium_path::has_full_render;
 pub mod schema;
 pub mod semaphore;
 pub mod signature;
+pub mod span;
 pub mod span_flags;
 pub mod table;
 pub mod threads;
@@ -86,12 +87,15 @@ pub use word_boundary::{TextState, WordBoundaryDetector, WordBoundaryManager};
 // Re-export Phase 3 Glyph types (pdftract-4j0ub)
 pub use glyph::{emit_glyph, new_raw_glyph_list, Glyph};
 
+// Re-export Phase 4.1 Span types (pdftract-31ag5)
+pub use span::{CssHexColor, Span, merge_glyphs_to_spans};
+
 #[cfg(feature = "ocr")]
 pub use dpi::{select_dpi, FontSizeSpan, Pdf1Filter};
 #[cfg(feature = "ocr")]
 pub use hybrid::{
     compute_cell_crops, compute_iou, crop_cell_from_page, get_hybrid_cells,
-    merge_vector_and_ocr_spans, CellCrop, Span, SpanSource,
+    merge_vector_and_ocr_spans, CellCrop, HybridSpan, SpanSource,
 };
 #[cfg(feature = "ocr")]
 pub use ocr::preprocessing::{

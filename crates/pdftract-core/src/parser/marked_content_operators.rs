@@ -321,7 +321,8 @@ mod tests {
             &mut stack,
             Arc::from("P"),
             &PdfObject::Name(Arc::from("UnknownProps")),
-            &resources
+            &resources,
+            None
         ));
         assert_eq!(stack.depth(), 1);
         assert_eq!(stack.innermost_mcid(), None);

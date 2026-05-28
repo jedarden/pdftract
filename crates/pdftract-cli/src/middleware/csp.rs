@@ -40,7 +40,7 @@ pub async fn csp_middleware(req: Request, next: Next) -> Response {
 mod tests {
     use super::*;
     use axum::{routing::get, Router};
-    use http::StatusCode;
+    use axum::http::StatusCode;
     use tower::ServiceExt;
 
     #[tokio::test]
@@ -55,7 +55,7 @@ mod tests {
 
         let response = app
             .oneshot(
-                http::Request::builder()
+                axum::http::Request::builder()
                     .uri("/")
                     .body(axum::body::Body::empty())
                     .unwrap(),

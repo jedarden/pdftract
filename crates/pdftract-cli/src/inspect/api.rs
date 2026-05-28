@@ -7,6 +7,11 @@
 //! - GET /api/page/{i}/thumbnail - Thumbnail SVG for sidebar
 //! - GET /api/raster/{i}.png - Base64 PNG for scanned pages
 //! - GET /api/search?q=... - Search across spans
+//!
+//! Phase 7.9.8: Comparison mode endpoints:
+//! - GET /api/compare/document - Diff summary for both documents
+//! - GET /api/compare/page/{i} - Side-by-side page data with diff
+//! - GET /api/compare/page/{i}/svg/{side} - SVG for one side (a or b)
 
 use super::inspect::InspectorState;
 use super::render::anchors;
@@ -47,6 +52,70 @@ pub struct SearchMatch {
     pub text: String,
 }
 
+/// Diff summary for comparison mode.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiffSummary {
+    /// Number of pages added in B
+    pub pages_added: usize,
+    /// Number of pages removed from A
+    pub pages_removed: usize,
+    /// Number of blocks added in B
+    pub blocks_added: usize,
+    /// Number of blocks removed from A
+    pub blocks_removed: usize,
+    /// Number of blocks changed
+    pub blocks_changed: usize,
+    /// Number of spans added in B
+    pub spans_added: usize,
+    /// Number of spans removed from A
+    pub spans_removed: usize,
+    /// Number of spans changed
+    pub spans_changed: usize,
+    /// Whether reading order changed on any page
+    pub reading_order_changed: bool,
+}
+
+/// Comparison document metadata.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompareDocumentMeta {
+    /// Document A metadata
+    pub a: JsonValue,
+    /// Document B metadata (null if not in comparison mode)
+    pub b: Option<JsonValue>,
+    /// Diff summary (null if not in comparison mode)
+    pub diff_summary: Option<DiffSummary>,
+}
+
+/// Page diff information.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PageDiff {
+    /// Block IDs that changed (yellow)
+    pub changed_blocks: Vec<usize>,
+    /// Block IDs only in A (red)
+    pub removed_blocks: Vec<usize>,
+    /// Block IDs only in B (green)
+    pub added_blocks: Vec<usize>,
+    /// Span indices that changed
+    pub changed_spans: Vec<usize>,
+    /// Span indices only in A
+    pub removed_spans: Vec<usize>,
+    /// Span indices only in B
+    pub added_spans: Vec<usize>,
+    /// Whether reading order changed on this page
+    pub reading_order_changed: bool,
+}
+
+/// Comparison page data.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ComparePageData {
+    /// Page A data (null if page doesn't exist in A)
+    pub a: Option<JsonValue>,
+    /// Page B data (null if page doesn't exist in B)
+    pub b: Option<JsonValue>,
+    /// Diff information (null if not in comparison mode or page missing from one side)
+    pub diff: Option<PageDiff>,
+}
+
 /// API error response.
 #[derive(Debug, Serialize)]
 pub struct ApiError {
@@ -65,6 +134,351 @@ pub async fn api_document(
 
     let state_guard = state.lock().await;
     Ok(Json(state_guard.document_a.clone()))
+}
+
+/// Compute page diff between two pages.
+fn compute_page_diff(page_a: &JsonValue, page_b: &JsonValue) -> PageDiff {
+    let blocks_a = page_a.get("blocks").and_then(|b| b.as_array());
+    let blocks_b = page_b.get("blocks").and_then(|b| b.as_array());
+    let spans_a = page_a.get("spans").and_then(|s| s.as_array());
+    let spans_b = page_b.get("spans").and_then(|s| s.as_array());
+
+    let mut diff = PageDiff {
+        changed_blocks: Vec::new(),
+        removed_blocks: Vec::new(),
+        added_blocks: Vec::new(),
+        changed_spans: Vec::new(),
+        removed_spans: Vec::new(),
+        added_spans: Vec::new(),
+        reading_order_changed: false,
+    };
+
+    // Match blocks between A and B
+    let blocks_a_vec: Vec<BlockJson> = blocks_a
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let blocks_b_vec: Vec<BlockJson> = blocks_b
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut matched_a = vec![false; blocks_a_vec.len()];
+    let mut matched_b = vec![false; blocks_b_vec.len()];
+
+    // Match blocks by bbox overlap and text similarity
+    for (i, block_a) in blocks_a_vec.iter().enumerate() {
+        let mut best_match = None;
+        let mut best_score = 0.0;
+
+        for (j, block_b) in blocks_b_vec.iter().enumerate() {
+            if matched_b[j] {
+                continue;
+            }
+
+            let score = block_match_score(block_a, block_b);
+            if score > 0.5 && score > best_score {
+                best_match = Some(j);
+                best_score = score;
+            }
+        }
+
+        if let Some(j) = best_match {
+            matched_a[i] = true;
+            matched_b[j] = true;
+
+            // Check if block changed
+            if blocks_changed(block_a, &blocks_b_vec[j]) {
+                diff.changed_blocks.push(i);
+            }
+        } else {
+            diff.removed_blocks.push(i);
+        }
+    }
+
+    // Find added blocks (in B but not matched)
+    for (j, matched) in matched_b.iter().enumerate() {
+        if !*matched {
+            diff.added_blocks.push(j);
+        }
+    }
+
+    // Match spans between A and B
+    let spans_a_vec: Vec<SpanJson> = spans_a
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let spans_b_vec: Vec<SpanJson> = spans_b
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut span_matched_a = vec![false; spans_a_vec.len()];
+    let mut span_matched_b = vec![false; spans_b_vec.len()];
+
+    // Match spans by bbox overlap and text similarity
+    for (i, span_a) in spans_a_vec.iter().enumerate() {
+        let mut best_match = None;
+        let mut best_score = 0.0;
+
+        for (j, span_b) in spans_b_vec.iter().enumerate() {
+            if span_matched_b[j] {
+                continue;
+            }
+
+            let score = span_match_score(span_a, span_b);
+            if score > 0.5 && score > best_score {
+                best_match = Some(j);
+                best_score = score;
+            }
+        }
+
+        if let Some(j) = best_match {
+            span_matched_a[i] = true;
+            span_matched_b[j] = true;
+
+            // Check if span changed
+            if spans_changed(span_a, &spans_b_vec[j]) {
+                diff.changed_spans.push(i);
+            }
+        } else {
+            diff.removed_spans.push(i);
+        }
+    }
+
+    // Find added spans (in B but not matched)
+    for (j, matched) in span_matched_b.iter().enumerate() {
+        if !*matched {
+            diff.added_spans.push(j);
+        }
+    }
+
+    // Check reading order (compare block sequences)
+    if blocks_a_vec.len() != blocks_b_vec.len() {
+        diff.reading_order_changed = true;
+    }
+
+    diff
+}
+
+/// Compute diff summary for two documents.
+fn compute_diff_summary(doc_a: &JsonValue, doc_b: &JsonValue) -> DiffSummary {
+    let pages_a = doc_a.get("pages").and_then(|p| p.as_array());
+    let pages_b = doc_b.get("pages").and_then(|p| p.as_array());
+
+    let mut summary = DiffSummary {
+        pages_added: 0,
+        pages_removed: 0,
+        blocks_added: 0,
+        blocks_removed: 0,
+        blocks_changed: 0,
+        spans_added: 0,
+        spans_removed: 0,
+        spans_changed: 0,
+        reading_order_changed: false,
+    };
+
+    if let (Some(pages_a), Some(pages_b)) = (pages_a, pages_b) {
+        // Count page differences
+        summary.pages_added = pages_b.len().saturating_sub(pages_a.len());
+        summary.pages_removed = pages_a.len().saturating_sub(pages_b.len());
+
+        let max_pages = pages_a.len().max(pages_b.len());
+
+        for i in 0..max_pages {
+            let page_a = pages_a.get(i);
+            let page_b = pages_b.get(i);
+
+            if let (Some(pa), Some(pb)) = (page_a, page_b) {
+                let diff = compute_page_diff(pa, pb);
+
+                summary.blocks_added += diff.added_blocks.len();
+                summary.blocks_removed += diff.removed_blocks.len();
+                summary.blocks_changed += diff.changed_blocks.len();
+                summary.spans_added += diff.added_spans.len();
+                summary.spans_removed += diff.removed_spans.len();
+                summary.spans_changed += diff.changed_spans.len();
+
+                if diff.reading_order_changed {
+                    summary.reading_order_changed = true;
+                }
+            }
+        }
+    }
+
+    summary
+}
+
+/// Compute match score between two blocks (0.0 to 1.0).
+fn block_match_score(a: &BlockJson, b: &BlockJson) -> f64 {
+    let bbox_score = bbox_overlap_score(&a.bbox, &b.bbox);
+    let text_score = text_similarity_score(&a.text, &b.text);
+
+    // Weighted average: bbox is more important than text for blocks
+    0.7 * bbox_score + 0.3 * text_score
+}
+
+/// Compute match score between two spans (0.0 to 1.0).
+fn span_match_score(a: &SpanJson, b: &SpanJson) -> f64 {
+    let bbox_score = bbox_overlap_score(&a.bbox, &b.bbox);
+    let text_score = text_similarity_score(&a.text, &b.text);
+
+    // Equal weight for spans
+    0.5 * bbox_score + 0.5 * text_score
+}
+
+/// Compute bbox overlap score (0.0 to 1.0).
+fn bbox_overlap_score(bbox_a: &[f64; 4], bbox_b: &[f64; 4]) -> f64 {
+    let [ax0, ay0, ax1, ay1] = *bbox_a;
+    let [bx0, by0, bx1, by1] = *bbox_b;
+
+    // Compute intersection
+    let ix0 = ax0.max(bx0);
+    let iy0 = ay0.max(by0);
+    let ix1 = ax1.min(bx1);
+    let iy1 = ay1.min(by1);
+
+    // No intersection
+    if ix0 >= ix1 || iy0 >= iy1 {
+        return 0.0;
+    }
+
+    let intersection_area = (ix1 - ix0) * (iy1 - iy0);
+    let area_a = (ax1 - ax0) * (ay1 - ay0);
+    let area_b = (bx1 - bx0) * (by1 - by0);
+
+    // IoU (Intersection over Union)
+    let union_area = area_a + area_b - intersection_area;
+    if union_area > 0.0 {
+        intersection_area / union_area
+    } else {
+        0.0
+    }
+}
+
+/// Compute text similarity score using normalized Levenshtein distance (0.0 to 1.0).
+fn text_similarity_score(text_a: &str, text_b: &str) -> f64 {
+    if text_a == text_b {
+        return 1.0;
+    }
+
+    let len_a = text_a.chars().count();
+    let len_b = text_b.chars().count();
+
+    if len_a == 0 && len_b == 0 {
+        return 1.0;
+    }
+
+    if len_a == 0 || len_b == 0 {
+        return 0.0;
+    }
+
+    let distance = levenshtein_distance(text_a, text_b);
+    let max_len = len_a.max(len_b);
+
+    // Convert to similarity score (1.0 = identical, 0.0 = completely different)
+    let similarity = 1.0 - (distance as f64 / max_len as f64);
+    similarity
+}
+
+/// Compute Levenshtein distance between two strings.
+fn levenshtein_distance(a: &str, b: &str) -> usize {
+    let a_chars: Vec<char> = a.chars().collect();
+    let b_chars: Vec<char> = b.chars().collect();
+    let len_a = a_chars.len();
+    let len_b = b_chars.len();
+
+    let mut matrix = vec![vec![0; len_b + 1]; len_a + 1];
+
+    for i in 0..=len_a {
+        matrix[i][0] = i;
+    }
+
+    for j in 0..=len_b {
+        matrix[0][j] = j;
+    }
+
+    for i in 1..=len_a {
+        for j in 1..=len_b {
+            let cost = if a_chars[i - 1] == b_chars[j - 1] {
+                0
+            } else {
+                1
+            };
+
+            matrix[i][j] = [
+                matrix[i - 1][j] + 1,       // deletion
+                matrix[i][j - 1] + 1,       // insertion
+                matrix[i - 1][j - 1] + cost, // substitution
+            ]
+            .iter()
+            .min()
+            .unwrap();
+        }
+    }
+
+    matrix[len_a][len_b]
+}
+
+/// Check if two blocks are different.
+fn blocks_changed(a: &BlockJson, b: &BlockJson) -> bool {
+    // Check if text or bbox differ significantly
+    let text_sim = text_similarity_score(&a.text, &b.text);
+    let bbox_sim = bbox_overlap_score(&a.bbox, &b.bbox);
+
+    // Consider changed if either text or bbox differs significantly
+    text_sim < 0.9 || bbox_sim < 0.9
+}
+
+/// Check if two spans are different.
+fn spans_changed(a: &SpanJson, b: &SpanJson) -> bool {
+    // Check if text or bbox differ significantly
+    let text_sim = text_similarity_score(&a.text, &b.text);
+    let bbox_sim = bbox_overlap_score(&a.bbox, &b.bbox);
+
+    // Consider changed if either text or bbox differs significantly
+    text_sim < 0.9 || bbox_sim < 0.9
+}
+
+/// Handler for GET /api/compare/document - returns comparison metadata.
+pub async fn api_compare_document(
+    State(state): State<Arc<tokio::sync::Mutex<InspectorState>>>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, ApiError> {
+    check_auth(&state, &headers)?;
+
+    let state_guard = state.lock().await;
+
+    let document_a = state_guard.document_a.clone();
+    let document_b = state_guard.document_b.clone();
+
+    let diff_summary = if let Some(ref doc_b) = document_b {
+        Some(compute_diff_summary(&document_a, doc_b))
+    } else {
+        None
+    };
+
+    let meta = CompareDocumentMeta {
+        a: document_a,
+        b: document_b,
+        diff_summary,
+    };
+
+    Ok(Json(meta))
 }
 
 /// Handler for GET /api/page/{i} - returns per-page JSON.
@@ -100,6 +514,64 @@ pub async fn api_page(
     }
 
     Ok(Json(pages[page_index].clone()))
+}
+
+/// Handler for GET /api/compare/page/{i} - returns comparison page data.
+pub async fn api_compare_page(
+    State(state): State<Arc<tokio::sync::Mutex<InspectorState>>>,
+    Path(page_index): Path<usize>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, ApiError> {
+    check_auth(&state, &headers)?;
+
+    let state_guard = state.lock().await;
+
+    // Get pages from document_a
+    let pages_a = state_guard
+        .document_a
+        .get("pages")
+        .and_then(|p| p.as_array())
+        .ok_or_else(|| ApiError {
+            error: "INTERNAL_ERROR".to_string(),
+            message: "No pages in document".to_string(),
+        })?;
+
+    // Get page A (null if out of range)
+    let page_a = if page_index < pages_a.len() {
+        Some(pages_a[page_index].clone())
+    } else {
+        None
+    };
+
+    // Get page B (null if not in comparison mode or out of range)
+    let page_b = if let Some(ref doc_b) = state_guard.document_b {
+        let pages_b = doc_b.get("pages").and_then(|p| p.as_array());
+        if let Some(pages_b) = pages_b {
+            if page_index < pages_b.len() {
+                Some(pages_b[page_index].clone())
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Compute diff if both pages exist
+    let diff = match (&page_a, &page_b) {
+        (Some(a), Some(b)) => Some(compute_page_diff(a, b)),
+        _ => None,
+    };
+
+    let data = ComparePageData {
+        a: page_a,
+        b: page_b,
+        diff,
+    };
+
+    Ok(Json(data))
 }
 
 /// Handler for GET /api/page/{i}/svg - returns SVG render with overlays.
@@ -188,6 +660,66 @@ pub async fn api_page_thumbnail(
     let thumb_width = 200.0;
     let thumb_height = height * scale;
     let svg = render_page_svg(page, thumb_width, thumb_height, true);
+
+    let response = AxumResponse::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "image/svg+xml")
+        .body(axum::body::Body::from(svg))
+        .map_err(|e| ApiError {
+            error: "INTERNAL_ERROR".to_string(),
+            message: format!("Failed to build response: {}", e),
+        })?;
+
+    Ok(response)
+}
+
+/// Handler for GET /api/compare/page/{i}/svg/{side} - returns SVG for one side.
+pub async fn api_compare_page_svg(
+    State(state): State<Arc<tokio::sync::Mutex<InspectorState>>>,
+    Path((page_index, side)): Path<(usize, String)>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, ApiError> {
+    check_auth(&state, &headers)?;
+
+    let state_guard = state.lock().await;
+
+    // Validate side parameter
+    if side != "a" && side != "b" {
+        return Err(ApiError {
+            error: "BAD_REQUEST".to_string(),
+            message: "Side must be 'a' or 'b'".to_string(),
+        });
+    }
+
+    // Get pages from the appropriate document
+    let pages = if side == "a" {
+        state_guard.document_a.get("pages").and_then(|p| p.as_array())
+    } else if let Some(ref doc_b) = state_guard.document_b {
+        doc_b.get("pages").and_then(|p| p.as_array())
+    } else {
+        None
+    };
+
+    let pages = pages.ok_or_else(|| ApiError {
+        error: "INTERNAL_ERROR".to_string(),
+        message: "No pages in document".to_string(),
+    })?;
+
+    // Validate page index
+    if page_index >= pages.len() {
+        return Err(ApiError {
+            error: "NOT_FOUND".to_string(),
+            message: format!("Page {} not found", page_index),
+        });
+    }
+
+    // Get page dimensions
+    let page = &pages[page_index];
+    let width = page.get("width").and_then(|w| w.as_f64()).unwrap_or(612.0);
+    let height = page.get("height").and_then(|h| h.as_f64()).unwrap_or(792.0);
+
+    // Render SVG with all overlay layers
+    let svg = render_page_svg(page, width, height, false);
 
     let response = AxumResponse::builder()
         .status(StatusCode::OK)

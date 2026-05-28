@@ -33,3 +33,6 @@ html[data-layers~="spans"] .layer-spans,html[data-layers~="blocks"] .layer-block
 .tooltip-key{color:#8f8}
 .tooltip-value{color:#8cf}
 .tooltip-number{color:#f8c}
+.search-highlight{background:#ffeb3b;outline:2px solid #ff9800}
+.search-match-found{animation:highlight-pulse 1s ease-out}
+@keyframes highlight-pulse{0%{background:#ff9800}100%{background:#ffeb3b}}

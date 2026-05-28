@@ -17,8 +17,8 @@ const XSS_PAYLOAD: &str = "../../tests/fixtures/security/xss-payload.pdf";
 const EXPECTED_CSP: &str = "default-src 'self'; script-src 'self'";
 
 /// Helper: spawn pdftract inspect and return the URL from stderr.
-fn spawn_inspector(pdf_path: &str) -> anyhow::Result<(String, tokio::process::Child)> {
-    let mut child = tokio::process::Command::new(PDFTRACT)
+fn spawn_inspector(pdf_path: &str) -> anyhow::Result<(String, std::process::Child)> {
+    let mut child = std::process::Command::new(PDFTRACT)
         .arg("inspect")
         .arg(pdf_path)
         .arg("--no-open")
@@ -113,7 +113,7 @@ fn test_csp_header_on_index() {
     }
 
     // Clean up the child process
-    let _ = child.start_kill();
+    let _ = child.kill();
     let _ = child.wait();
 }
 
@@ -155,7 +155,7 @@ fn test_csp_header_on_api_endpoints() {
     );
 
     // Clean up the child process
-    let _ = child.start_kill();
+    let _ = child.kill();
     let _ = child.wait();
 }
 
@@ -191,7 +191,7 @@ fn test_inspector_renders_svg() {
     // Phase 7.9.3 will add the full SVG rendering verification
 
     // Clean up the child process
-    let _ = child.start_kill();
+    let _ = child.kill();
     let _ = child.wait();
 }
 
@@ -237,7 +237,7 @@ fn test_inspector_handles_normal_content() {
     );
 
     // Clean up the child process
-    let _ = child.start_kill();
+    let _ = child.kill();
     let _ = child.wait();
 }
 
@@ -324,6 +324,6 @@ fn test_headless_browser_no_script_execution() {
     assert!(result.is_ok(), "Headless browser test failed: {:?}", result);
 
     // Clean up the child process
-    let _ = child.start_kill();
+    let _ = child.kill();
     let _ = child.wait();
 }

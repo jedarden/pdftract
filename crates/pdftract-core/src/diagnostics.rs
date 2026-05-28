@@ -963,6 +963,23 @@ pub enum DiagCode {
     /// Phase origin: 5.3.2
     ImgSourceMixed,
 
+    /// ID token without trailing whitespace
+    ///
+    /// Emitted when the inline image ID keyword is not followed by exactly one
+    /// whitespace byte (LF, CR, or space) as required by PDF spec section 8.9.7.
+    /// The raw-bytes scanner starts immediately; recovery is automatic.
+    ///
+    /// Phase origin: 3.5
+    InlineImageIdWhitespaceMissing,
+
+    /// Inline image missing EI terminator
+    ///
+    /// Emitted when an inline image's data stream doesn't end with the EI
+    /// keyword. The scanner consumes all remaining bytes as image data.
+    ///
+    /// Phase origin: 3.5
+    InlineImageNoEi,
+
     // === PROFILE_* codes ===
     /// Profile YAML contains forbidden secret keys
     ///
@@ -1137,6 +1154,9 @@ impl DiagCode {
             | DiagCode::StructInvalidBdcOperand
             | DiagCode::McidRedefined => "MARKED_CONTENT",
 
+            // INLINE_IMAGE_*
+            DiagCode::InlineImageIdWhitespaceMissing | DiagCode::InlineImageNoEi => "INLINE_IMAGE",
+
             // PROFILE_*
             DiagCode::ProfileSecretsForbidden | DiagCode::ProfileInvalid => "PROFILE",
 
@@ -1254,6 +1274,8 @@ impl DiagCode {
             DiagCode::UnknownMarkedContentProps => "UNKNOWN_MARKED_CONTENT_PROPS",
             DiagCode::StructInvalidBdcOperand => "STRUCT_INVALID_BDC_OPERAND",
             DiagCode::McidRedefined => "MCID_REDEFINED",
+            DiagCode::InlineImageIdWhitespaceMissing => "INLINE_IMAGE_ID_WHITESPACE_MISSING",
+            DiagCode::InlineImageNoEi => "INLINE_IMAGE_NO_EI",
             DiagCode::ProfileSecretsForbidden => "PROFILE_SECRETS_FORBIDDEN",
             DiagCode::ProfileInvalid => "PROFILE_INVALID",
             DiagCode::RepairRescuedFromBackwardsXref => "REPAIR_RESCUED_FROM_BACKWARDS_XREF",
@@ -1355,6 +1377,8 @@ impl DiagCode {
             | DiagCode::TextShowOutsideBt
             | DiagCode::LayoutReadingOrderAmbiguous
             | DiagCode::LayoutLowReadability
+            | DiagCode::InlineImageIdWhitespaceMissing
+            | DiagCode::InlineImageNoEi
             | DiagCode::CacheEntryCorrupt
             | DiagCode::CacheIntegrityFail
             | DiagCode::CacheWriteFailed => Severity::Warning,

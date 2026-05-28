@@ -30,15 +30,15 @@ use std::collections::BTreeSet;
 /// Internal span representation for merge operations.
 ///
 /// This is a minimal span type used during the merge operation.
-/// The actual extraction pipeline uses SpanJson from the schema module.
+/// The actual extraction pipeline uses the canonical HybridSpan type from the span module.
 #[derive(Debug, Clone)]
-pub struct Span {
+pub struct HybridHybridSpan {
     /// Bounding box [x0, y0, x1, y1] in PDF user space.
     pub bbox: [f64; 4],
     /// Confidence score [0.0, 1.0].
     pub confidence: f32,
     /// Source of this span: "vector" or "ocr".
-    pub source: SpanSource,
+    pub source: HybridSpanSource,
     /// The extracted text.
     pub text: String,
     /// Column index (0-based) assigned by Phase 4.3 column detection.
@@ -50,7 +50,7 @@ pub struct Span {
 
 /// Source of a span - either vector extraction, OCR, assisted OCR, or OCR fallback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SpanSource {
+pub enum HybridSpanSource {
     /// Text extracted from content stream (Phase 3).
     Vector,
     /// Text extracted via OCR (Phase 5).
@@ -61,9 +61,9 @@ pub enum SpanSource {
     OcrFallback,
 }
 
-impl Span {
+impl HybridHybridSpan {
     /// Create a new span.
-    pub fn new(bbox: [f64; 4], confidence: f32, source: SpanSource, text: String) -> Self {
+    pub fn new(bbox: [f64; 4], confidence: f32, source: HybridSpanSource, text: String) -> Self {
         Self {
             bbox,
             confidence,
@@ -75,22 +75,22 @@ impl Span {
 
     /// Create a span with vector source.
     pub fn vector(bbox: [f64; 4], confidence: f32, text: String) -> Self {
-        Self::new(bbox, confidence, SpanSource::Vector, text)
+        Self::new(bbox, confidence, HybridSpanSource::Vector, text)
     }
 
     /// Create a span with OCR source.
     pub fn ocr(bbox: [f64; 4], confidence: f32, text: String) -> Self {
-        Self::new(bbox, confidence, SpanSource::Ocr, text)
+        Self::new(bbox, confidence, HybridSpanSource::Ocr, text)
     }
 
     /// Create a span with assisted OCR source (position-validated).
     pub fn ocr_assisted(bbox: [f64; 4], confidence: f32, text: String) -> Self {
-        Self::new(bbox, confidence, SpanSource::OcrAssisted, text)
+        Self::new(bbox, confidence, HybridSpanSource::OcrAssisted, text)
     }
 
     /// Create a span with OCR fallback source (region-level validation failed).
     pub fn ocr_fallback(bbox: [f64; 4], confidence: f32, text: String) -> Self {
-        Self::new(bbox, confidence, SpanSource::OcrFallback, text)
+        Self::new(bbox, confidence, HybridSpanSource::OcrFallback, text)
     }
 
     /// Get the width of the span's bbox.
@@ -112,7 +112,7 @@ impl Span {
     }
 }
 
-impl CorrectableText for Span {
+impl CorrectableText for HybridSpan {
     fn text_mut(&mut self) -> &mut String {
         &mut self.text
     }
@@ -172,8 +172,8 @@ pub fn compute_iou(a: [f64; 4], b: [f64; 4]) -> f64 {
 ///
 /// # Arguments
 ///
-/// * `vector_spans` - Spans from Phase 3 content stream extraction
-/// * `ocr_spans` - Spans from Phase 5 OCR
+/// * `vector_spans` - HybridSpans from Phase 3 content stream extraction
+/// * `ocr_spans` - HybridSpans from Phase 5 OCR
 ///
 /// # Returns
 ///
@@ -184,7 +184,7 @@ pub fn compute_iou(a: [f64; 4], b: [f64; 4]) -> f64 {
 /// The returned spans are sorted by top-to-bottom, left-to-right order
 /// (reading order). Note: Phase 4.5 recomputes the final reading order;
 /// this task only produces the merged list.
-pub fn merge_vector_and_ocr_spans(vector_spans: &[Span], ocr_spans: &[Span]) -> Vec<Span> {
+pub fn merge_vector_and_ocr_spans(vector_spans: &[HybridSpan], ocr_spans: &[HybridSpan]) -> Vec<HybridSpan> {
     let mut result = Vec::new();
 
     // Add all vector spans (they're always kept unless overlapping with higher-confidence OCR)
@@ -397,14 +397,14 @@ pub trait OcrCallback: Send + Sync {
         cell_image: &GrayImage,
         cell: CellIndex,
         dpi: u32,
-    ) -> Result<Vec<Span>, String>;
+    ) -> Result<Vec<HybridSpan>, String>;
 }
 
 /// Mock OCR callback for testing that tracks call counts.
 #[cfg(test)]
 struct MockOcrCallback {
     call_count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
-    output_spans: Vec<Span>,
+    output_spans: Vec<HybridSpan>,
 }
 
 #[cfg(test)]
@@ -414,7 +414,7 @@ impl OcrCallback for MockOcrCallback {
         _cell_image: &GrayImage,
         _cell: CellIndex,
         _dpi: u32,
-    ) -> Result<Vec<Span>, String> {
+    ) -> Result<Vec<HybridSpan>, String> {
         self.call_count
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok(self.output_spans.clone())
@@ -434,7 +434,7 @@ impl OcrCallback for MockOcrCallback {
 /// * `page_width_pt` - Page width in PDF points
 /// * `page_height_pt` - Page height in PDF points
 /// * `classification` - Page classification with hybrid_cells set
-/// * `vector_spans` - Spans from Phase 3 content stream extraction
+/// * `vector_spans` - HybridSpans from Phase 3 content stream extraction
 /// * `dpi` - DPI used for rendering
 /// * `ocr_callback` - Callback to run OCR on each cell image
 ///
@@ -445,7 +445,7 @@ impl OcrCallback for MockOcrCallback {
 /// # Example
 ///
 /// ```
-/// use pdftract_core::hybrid::{process_hybrid_page, Span, SpanSource};
+/// use pdftract_core::hybrid::{process_hybrid_page, HybridSpan, HybridSpanSource};
 /// use pdftract_core::classify::{PageClassification, CellIndex};
 /// use std::collections::BTreeSet;
 /// use image::GrayImage;
@@ -475,10 +475,10 @@ pub fn process_hybrid_page(
     page_width_pt: f64,
     page_height_pt: f64,
     classification: &PageClassification,
-    vector_spans: &[Span],
+    vector_spans: &[HybridSpan],
     dpi: u32,
     ocr_callback: &dyn OcrCallback,
-) -> Vec<Span> {
+) -> Vec<HybridSpan> {
     let mut all_ocr_spans = Vec::new();
 
     // Get the list of hybrid cells (scanned cells only)
@@ -550,35 +550,35 @@ mod tests {
 
     #[test]
     fn test_span_new() {
-        let span = Span::new(
+        let span = HybridSpan::new(
             [10.0, 20.0, 50.0, 40.0],
             0.9,
-            SpanSource::Vector,
+            HybridSpanSource::Vector,
             "test".to_string(),
         );
         assert_eq!(span.bbox, [10.0, 20.0, 50.0, 40.0]);
         assert_eq!(span.confidence, 0.9);
-        assert_eq!(span.source, SpanSource::Vector);
+        assert_eq!(span.source, HybridSpanSource::Vector);
         assert_eq!(span.text, "test");
     }
 
     #[test]
     fn test_span_vector() {
-        let span = Span::vector([0.0, 0.0, 100.0, 20.0], 0.95, "vector text".to_string());
-        assert_eq!(span.source, SpanSource::Vector);
+        let span = HybridSpan::vector([0.0, 0.0, 100.0, 20.0], 0.95, "vector text".to_string());
+        assert_eq!(span.source, HybridSpanSource::Vector);
         assert_eq!(span.confidence, 0.95);
     }
 
     #[test]
     fn test_span_ocr() {
-        let span = Span::ocr([0.0, 0.0, 100.0, 20.0], 0.85, "ocr text".to_string());
-        assert_eq!(span.source, SpanSource::Ocr);
+        let span = HybridSpan::ocr([0.0, 0.0, 100.0, 20.0], 0.85, "ocr text".to_string());
+        assert_eq!(span.source, HybridSpanSource::Ocr);
         assert_eq!(span.confidence, 0.85);
     }
 
     #[test]
     fn test_span_dimensions() {
-        let span = Span::vector([10.0, 20.0, 60.0, 50.0], 1.0, "test".to_string());
+        let span = HybridSpan::vector([10.0, 20.0, 60.0, 50.0], 1.0, "test".to_string());
         assert_eq!(span.width(), 50.0);
         assert_eq!(span.height(), 30.0);
         assert_eq!(span.area(), 1500.0);
@@ -586,12 +586,12 @@ mod tests {
 
     #[test]
     fn test_merge_no_overlap() {
-        let vector = vec![Span::vector(
+        let vector = vec![HybridSpan::vector(
             [0.0, 0.0, 10.0, 10.0],
             0.9,
             "vector".to_string(),
         )];
-        let ocr = vec![Span::ocr([20.0, 20.0, 30.0, 30.0], 0.8, "ocr".to_string())];
+        let ocr = vec![HybridSpan::ocr([20.0, 20.0, 30.0, 30.0], 0.8, "ocr".to_string())];
 
         let result = merge_vector_and_ocr_spans(&vector, &ocr);
         assert_eq!(result.len(), 2);
@@ -600,7 +600,7 @@ mod tests {
     #[test]
     fn test_merge_iou_06_vector_kept() {
         // IoU = 0.6 > 0.5, vector confidence >= 0.5 -> vector kept, OCR dropped
-        let vector = vec![Span::vector(
+        let vector = vec![HybridSpan::vector(
             [0.0, 0.0, 100.0, 100.0],
             0.9,
             "vector text".to_string(),
@@ -608,44 +608,44 @@ mod tests {
         let ocr = vec![
             // OCR overlaps by 60%: intersection 60x100, union (10000 + 10000 - 6000) = 14000
             // bbox [40, 0, 100, 100] overlaps [0, 0, 100, 100] by 60x100
-            Span::ocr([40.0, 0.0, 100.0, 100.0], 0.7, "ocr text".to_string()),
+            HybridSpan::ocr([40.0, 0.0, 100.0, 100.0], 0.7, "ocr text".to_string()),
         ];
 
         let result = merge_vector_and_ocr_spans(&vector, &ocr);
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].source, SpanSource::Vector);
+        assert_eq!(result[0].source, HybridSpanSource::Vector);
         assert_eq!(result[0].text, "vector text");
     }
 
     #[test]
     fn test_merge_iou_03_both_kept() {
         // IoU = 0.3 < 0.5 -> both kept
-        let vector = vec![Span::vector(
+        let vector = vec![HybridSpan::vector(
             [0.0, 0.0, 100.0, 100.0],
             0.9,
             "vector".to_string(),
         )];
         let ocr = vec![
             // OCR overlaps by 30%: [70, 0, 100, 100] overlaps [0, 0, 100, 100] by 30x100
-            Span::ocr([70.0, 0.0, 100.0, 100.0], 0.7, "ocr".to_string()),
+            HybridSpan::ocr([70.0, 0.0, 100.0, 100.0], 0.7, "ocr".to_string()),
         ];
 
         let result = merge_vector_and_ocr_spans(&vector, &ocr);
         assert_eq!(result.len(), 2);
         // Check that both spans are present
-        assert!(result.iter().any(|s| s.source == SpanSource::Vector));
-        assert!(result.iter().any(|s| s.source == SpanSource::Ocr));
+        assert!(result.iter().any(|s| s.source == HybridSpanSource::Vector));
+        assert!(result.iter().any(|s| s.source == HybridSpanSource::Ocr));
     }
 
     #[test]
     fn test_merge_iou_06_low_vector_confidence_ocr_kept() {
         // IoU = 0.6 > 0.5, but vector confidence < 0.5 -> OCR kept
-        let vector = vec![Span::vector(
+        let vector = vec![HybridSpan::vector(
             [0.0, 0.0, 100.0, 100.0],
             0.2,
             "bad vector".to_string(),
         )];
-        let ocr = vec![Span::ocr(
+        let ocr = vec![HybridSpan::ocr(
             [40.0, 0.0, 100.0, 100.0],
             0.7,
             "ocr text".to_string(),
@@ -654,15 +654,15 @@ mod tests {
         let result = merge_vector_and_ocr_spans(&vector, &ocr);
         assert_eq!(result.len(), 2); // Both kept because vector confidence is low
                                      // Verify both are present
-        assert!(result.iter().any(|s| s.source == SpanSource::Vector));
-        assert!(result.iter().any(|s| s.source == SpanSource::Ocr));
+        assert!(result.iter().any(|s| s.source == HybridSpanSource::Vector));
+        assert!(result.iter().any(|s| s.source == HybridSpanSource::Ocr));
     }
 
     #[test]
     fn test_merge_sorting() {
         let vector = vec![
-            Span::vector([0.0, 100.0, 50.0, 120.0], 0.9, "top".to_string()),
-            Span::vector([0.0, 0.0, 50.0, 20.0], 0.9, "bottom".to_string()),
+            HybridSpan::vector([0.0, 100.0, 50.0, 120.0], 0.9, "top".to_string()),
+            HybridSpan::vector([0.0, 0.0, 50.0, 20.0], 0.9, "bottom".to_string()),
         ];
         let ocr = vec![];
 
@@ -747,9 +747,9 @@ mod tests {
     #[test]
     fn test_merge_reading_order() {
         let vector = vec![
-            Span::vector([0.0, 50.0, 50.0, 70.0], 0.9, "middle".to_string()),
-            Span::vector([0.0, 100.0, 50.0, 120.0], 0.9, "top".to_string()),
-            Span::vector([0.0, 0.0, 50.0, 20.0], 0.9, "bottom".to_string()),
+            HybridSpan::vector([0.0, 50.0, 50.0, 70.0], 0.9, "middle".to_string()),
+            HybridSpan::vector([0.0, 100.0, 50.0, 120.0], 0.9, "top".to_string()),
+            HybridSpan::vector([0.0, 0.0, 50.0, 20.0], 0.9, "bottom".to_string()),
         ];
 
         let result = merge_vector_and_ocr_spans(&vector, &[]);
@@ -762,14 +762,14 @@ mod tests {
 
     #[test]
     fn test_merge_multiple_ocr_spans() {
-        let vector = vec![Span::vector(
+        let vector = vec![HybridSpan::vector(
             [0.0, 0.0, 100.0, 100.0],
             0.9,
             "vector".to_string(),
         )];
         let ocr = vec![
-            Span::ocr([200.0, 0.0, 300.0, 100.0], 0.8, "ocr1".to_string()),
-            Span::ocr([400.0, 0.0, 500.0, 100.0], 0.8, "ocr2".to_string()),
+            HybridSpan::ocr([200.0, 0.0, 300.0, 100.0], 0.8, "ocr1".to_string()),
+            HybridSpan::ocr([400.0, 0.0, 500.0, 100.0], 0.8, "ocr2".to_string()),
         ];
 
         let result = merge_vector_and_ocr_spans(&vector, &ocr);
@@ -778,9 +778,9 @@ mod tests {
 
     #[test]
     fn test_span_source_equality() {
-        assert_eq!(SpanSource::Vector, SpanSource::Vector);
-        assert_eq!(SpanSource::Ocr, SpanSource::Ocr);
-        assert_ne!(SpanSource::Vector, SpanSource::Ocr);
+        assert_eq!(HybridSpanSource::Vector, HybridSpanSource::Vector);
+        assert_eq!(HybridSpanSource::Ocr, HybridSpanSource::Ocr);
+        assert_ne!(HybridSpanSource::Vector, HybridSpanSource::Ocr);
     }
 
     // ============ Hybrid Page Processing Tests (Phase 5.2.4) ============
@@ -801,19 +801,19 @@ mod tests {
 
         // Create vector spans from the text header (top 2 rows)
         let vector_spans = vec![
-            Span::vector([50.0, 700.0, 200.0, 720.0], 0.95, "Header Text".to_string()),
-            Span::vector([50.0, 650.0, 200.0, 670.0], 0.95, "More Header".to_string()),
+            HybridSpan::vector([50.0, 700.0, 200.0, 720.0], 0.95, "Header Text".to_string()),
+            HybridSpan::vector([50.0, 650.0, 200.0, 670.0], 0.95, "More Header".to_string()),
         ];
 
         // Create mock OCR callback that tracks call count
         let call_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let mock_spans = vec![
-            Span::ocr(
+            HybridSpan::ocr(
                 [50.0, 100.0, 200.0, 120.0],
                 0.8,
                 "Scanned Text 1".to_string(),
             ),
-            Span::ocr([50.0, 50.0, 200.0, 70.0], 0.8, "Scanned Text 2".to_string()),
+            HybridSpan::ocr([50.0, 50.0, 200.0, 70.0], 0.8, "Scanned Text 2".to_string()),
         ];
         let mock_ocr = MockOcrCallback {
             call_count: call_count.clone(),
@@ -843,8 +843,8 @@ mod tests {
         );
 
         // Verify result contains both vector and OCR spans
-        assert!(result.iter().any(|s| s.source == SpanSource::Vector));
-        assert!(result.iter().any(|s| s.source == SpanSource::Ocr));
+        assert!(result.iter().any(|s| s.source == HybridSpanSource::Vector));
+        assert!(result.iter().any(|s| s.source == HybridSpanSource::Ocr));
 
         // Verify vector spans are present
         assert!(result.iter().any(|s| s.text == "Header Text"));
@@ -865,7 +865,7 @@ mod tests {
         let classification = PageClassification::hybrid(0.75, cells);
 
         // Create vector spans that overlap with OCR region
-        let vector_spans = vec![Span::vector(
+        let vector_spans = vec![HybridSpan::vector(
             [50.0, 50.0, 150.0, 70.0],
             0.9,
             "Vector Text".to_string(),
@@ -881,7 +881,7 @@ mod tests {
         // Intersection = [50, 50, 150, 70] = 100 * 20 = 2000
         // Union = (110*30) + (100*20) - 2000 = 3300 + 2000 - 2000 = 3300
         // IoU = 2000 / 3300 = 0.606 > 0.5
-        let mock_spans = vec![Span::ocr(
+        let mock_spans = vec![HybridSpan::ocr(
             [45.0, 45.0, 155.0, 75.0],
             0.7,
             "OCR Text".to_string(),
@@ -913,7 +913,7 @@ mod tests {
             1,
             "Should have only 1 span after merge (vector wins)"
         );
-        assert_eq!(result[0].source, SpanSource::Vector);
+        assert_eq!(result[0].source, HybridSpanSource::Vector);
         assert_eq!(result[0].text, "Vector Text");
     }
 
@@ -927,14 +927,14 @@ mod tests {
         let classification = PageClassification::hybrid(0.75, cells);
 
         // Vector span with low confidence
-        let vector_spans = vec![Span::vector(
+        let vector_spans = vec![HybridSpan::vector(
             [50.0, 50.0, 150.0, 70.0],
             0.2,
             "Bad Vector".to_string(),
         )];
 
         // OCR span with high confidence, overlapping vector
-        let mock_spans = vec![Span::ocr(
+        let mock_spans = vec![HybridSpan::ocr(
             [45.0, 45.0, 155.0, 75.0],
             0.7,
             "Good OCR".to_string(),
@@ -964,8 +964,8 @@ mod tests {
             2,
             "Both vector and OCR should be kept when vector confidence is low"
         );
-        assert!(result.iter().any(|s| s.source == SpanSource::Vector));
-        assert!(result.iter().any(|s| s.source == SpanSource::Ocr));
+        assert!(result.iter().any(|s| s.source == HybridSpanSource::Vector));
+        assert!(result.iter().any(|s| s.source == HybridSpanSource::Ocr));
     }
 
     #[test]
@@ -973,7 +973,7 @@ mod tests {
         // Test that non-hybrid classifications return only vector spans
 
         let classification = PageClassification::new(PageClass::Vector, 0.9);
-        let vector_spans = vec![Span::vector(
+        let vector_spans = vec![HybridSpan::vector(
             [50.0, 50.0, 150.0, 70.0],
             0.9,
             "Vector Only".to_string(),
@@ -1002,7 +1002,7 @@ mod tests {
 
         // Result should have only vector spans
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].source, SpanSource::Vector);
+        assert_eq!(result[0].source, HybridSpanSource::Vector);
         assert_eq!(result[0].text, "Vector Only");
     }
 
@@ -1011,7 +1011,7 @@ mod tests {
         // Test hybrid classification with empty hybrid_cells
 
         let classification = PageClassification::hybrid(0.75, BTreeSet::new());
-        let vector_spans = vec![Span::vector(
+        let vector_spans = vec![HybridSpan::vector(
             [50.0, 50.0, 150.0, 70.0],
             0.9,
             "Vector".to_string(),
@@ -1040,6 +1040,6 @@ mod tests {
 
         // Result should have only vector spans
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].source, SpanSource::Vector);
+        assert_eq!(result[0].source, HybridSpanSource::Vector);
     }
 }

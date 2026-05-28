@@ -23,6 +23,9 @@
 //! ```
 
 use crate::confidence::ConfidenceSource;
+use crate::font::UnicodeSource;
+use crate::glyph::Glyph;
+use crate::graphics_state::Color;
 use crate::span_flags::flags;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -244,6 +247,244 @@ impl Span {
     pub fn is_superscript(&self) -> bool {
         self.flags & span_flags::SUPERSCRIPT != 0
     }
+}
+
+/// Map UnicodeSource to ConfidenceSource per plan Phase 4.1.
+///
+/// | UnicodeSource    | ConfidenceSource |
+/// |------------------|-------------------|
+/// | ToUnicode        | Native            |
+/// | Agl              | Native            |
+/// | Fingerprint      | Native            |
+/// | ShapeMatch       | Heuristic         |
+/// | Unknown (U+FFFD) | Heuristic         |
+fn map_unicode_source_to_confidence(source: UnicodeSource) -> ConfidenceSource {
+    match source {
+        UnicodeSource::ToUnicode | UnicodeSource::Agl | UnicodeSource::Fingerprint => {
+            ConfidenceSource::Native
+        }
+        UnicodeSource::ShapeMatch | UnicodeSource::Unknown => ConfidenceSource::Heuristic,
+    }
+}
+
+/// Normalize a Color to RGB tuple for comparison.
+///
+/// Returns `Some((r, g, b))` for DeviceGray, DeviceRGB, and DeviceCMYK.
+/// Returns `None` for Spot and Other colors (compared by variant equality).
+fn normalize_color_for_comparison(color: &Color) -> Option<(u8, u8, u8)> {
+    match color {
+        Color::DeviceGray(v) => {
+            let v = (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+            Some((v, v, v))
+        }
+        Color::DeviceRGB(rgb) => {
+            let r = (rgb[0].clamp(0.0, 1.0) * 255.0).round() as u8;
+            let g = (rgb[1].clamp(0.0, 1.0) * 255.0).round() as u8;
+            let b = (rgb[2].clamp(0.0, 1.0) * 255.0).round() as u8;
+            Some((r, g, b))
+        }
+        Color::DeviceCMYK(cmyk) => {
+            // CMYK → RGB conversion: R = (1-C)*(1-K)
+            let c = cmyk[0].clamp(0.0, 1.0);
+            let m = cmyk[1].clamp(0.0, 1.0);
+            let y = cmyk[2].clamp(0.0, 1.0);
+            let k = cmyk[3].clamp(0.0, 1.0);
+            let r = ((1.0 - c) * (1.0 - k) * 255.0).round() as u8;
+            let g = ((1.0 - m) * (1.0 - k) * 255.0).round() as u8;
+            let b = ((1.0 - y) * (1.0 - k) * 255.0).round() as u8;
+            Some((r, g, b))
+        }
+        Color::Spot(_, _) | Color::Other => None,
+    }
+}
+
+/// Check if two colors are equal using RGB-normalized comparison.
+///
+/// For DeviceGray, DeviceRGB, and DeviceCMYK, compares using normalized RGB values.
+/// For Spot and Other, compares by variant equality (Spot colors compared by name AND tint exactly).
+fn colors_equal(a: &Color, b: &Color) -> bool {
+    match (normalize_color_for_comparison(a), normalize_color_for_comparison(b)) {
+        (Some(rgb_a), Some(rgb_b)) => rgb_a == rgb_b,
+        (None, None) => a == b, // Both Spot/Other: compare by variant (Spot by name+tint)
+        _ => false,             // One normalizable, one not: different
+    }
+}
+
+/// Append a glyph's codepoint to a span's text.
+///
+/// This function implements the per-glyph text assembly logic for Phase 4.1.
+/// It appends the glyph's codepoint to the span's text field.
+///
+/// Per the bead pdftract-2c5sx acceptance criteria:
+/// - Single codepoint glyphs: append the char directly
+/// - Multi-codepoint glyphs (ligatures): Phase 2 already expands these into
+///   separate Glyph structs, so per-glyph append works correctly
+/// - RTL text: preserved in visual order; bidi reordering happens in Phase 4.2
+///
+/// # Arguments
+///
+/// * `span` - Mutable reference to the span to append to
+/// * `glyph` - The glyph whose codepoint should be appended
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::span::assemble_text;
+/// use pdftract_core::span::Span;
+///
+/// let mut span = Span::empty();
+/// let glyph = Glyph::new('A', ...);
+/// assemble_text(&mut span, &glyph);
+/// assert_eq!(span.text, "A");
+/// ```
+fn assemble_text(span: &mut Span, glyph: &Glyph) {
+    span.text.push(glyph.codepoint);
+}
+
+/// Merge consecutive glyphs into spans using the 5-trigger break detector.
+///
+/// This function implements Phase 4.1 glyph-to-span merging. It walks the
+/// per-page glyph list and groups consecutive glyphs into spans. A new span
+/// begins when any of the 5 triggers fires on the current glyph:
+///
+/// 1. `font_name != prev font_name`
+/// 2. `(font_size - prev_font_size).abs() > 0.5`
+/// 3. `rendering_mode != prev rendering_mode`
+/// 4. RGB-normalized `fill_color != prev color`
+/// 5. `is_word_boundary == true`
+///
+/// # Word boundary handling
+///
+/// When triggered by `is_word_boundary == true`, we append a space to the
+/// PREVIOUS span's text (option a from the plan). This produces cleaner JSON
+/// output and easier round-trip than emitting a 1-char " " span.
+///
+/// # Arguments
+///
+/// * `glyphs` - The per-page glyph list to merge
+///
+/// # Returns
+///
+/// A vector of spans, where each span represents a maximal run of glyphs
+/// sharing the same font, size, color, and rendering mode.
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::span::merge_glyphs_to_spans;
+/// use pdftract_core::glyph::Glyph;
+/// use std::sync::Arc;
+///
+/// let glyphs = vec![
+///     // "Hello" (5 glyphs)
+///     Glyph::new('H', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
+///                Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+///     // ... more glyphs for "ello World"
+/// ];
+///
+/// let spans = merge_glyphs_to_spans(&glyphs);
+/// // spans[0].text == "Hello "
+/// // spans[1].text == "World"
+/// ```
+pub fn merge_glyphs_to_spans(glyphs: &[Glyph]) -> Vec<Span> {
+    if glyphs.is_empty() {
+        return Vec::new();
+    }
+
+    let mut result = Vec::new();
+    let mut current_span: Option<Span> = None;
+    let mut prev_fill_color: Option<&Color> = None;
+
+    for glyph in glyphs {
+        // Special case: word boundary marker - append space to current span, finalize it, and skip
+        if glyph.is_word_boundary {
+            if let Some(mut span) = current_span.take() {
+                span.text.push(' ');
+                result.push(span);
+            }
+            prev_fill_color = None; // Reset on word boundary
+            // Skip the boundary marker glyph itself (it's synthetic, not a real glyph)
+            continue;
+        }
+
+        // Check if we need to start a new span (no current span OR any trigger fires)
+        let should_start_new_span = if let Some(ref span) = current_span {
+            // Trigger 1: font_name changed
+            let font_changed = &glyph.font_name != &span.font;
+
+            // Trigger 2: font_size delta > 0.5pt
+            let size_changed = (glyph.font_size - span.size).abs() > 0.5;
+
+            // Trigger 3: rendering_mode changed
+            let mode_changed = glyph.rendering_mode != span.rendering_mode;
+
+            // Trigger 4: fill_color changed (RGB-normalized)
+            let color_changed = if let Some(prev_color) = prev_fill_color {
+                !colors_equal(&glyph.fill_color, prev_color)
+            } else {
+                false // No previous color, don't trigger
+            };
+
+            font_changed || size_changed || mode_changed || color_changed
+        } else {
+            true // No current span, must start new one
+        };
+
+        if should_start_new_span {
+            // Finalize current span (if any)
+            if let Some(span) = current_span.take() {
+                result.push(span);
+            }
+
+            // Start new span from current glyph
+            let confidence_source = map_unicode_source_to_confidence(glyph.unicode_source);
+            let color = glyph.fill_color.to_css_hex().map(|s| CssHexColor(s));
+
+            current_span = Some(Span::new(
+                glyph.codepoint.encode_utf8(&mut [0; 4]).to_string(), // Start with this glyph's char
+                glyph.bbox,
+                glyph.font_name.clone(),
+                glyph.font_size,
+                color,
+                glyph.rendering_mode,
+                glyph.confidence,
+                confidence_source,
+                None,  // lang: filled in Phase 7
+                0,     // flags: filled in Phase 4.1 flag detector
+            ));
+            prev_fill_color = Some(&glyph.fill_color);
+        } else {
+            // Append to current span
+            if let Some(ref mut span) = current_span {
+                // Append glyph codepoint to span text via assemble_text
+                assemble_text(span, glyph);
+
+                // Extend bbox to union
+                span.bbox[0] = span.bbox[0].min(glyph.bbox[0]);
+                span.bbox[1] = span.bbox[1].min(glyph.bbox[1]);
+                span.bbox[2] = span.bbox[2].max(glyph.bbox[2]);
+                span.bbox[3] = span.bbox[3].max(glyph.bbox[3]);
+
+                // Update confidence_source to worst (lowest confidence) source
+                // Must compare OLD confidence before updating span.confidence
+                let glyph_source = map_unicode_source_to_confidence(glyph.unicode_source);
+                if glyph.confidence < span.confidence {
+                    span.confidence_source = glyph_source;
+                }
+                // Update confidence to minimum
+                span.confidence = span.confidence.min(glyph.confidence);
+            }
+            // Update prev_fill_color to current glyph's color
+            prev_fill_color = Some(&glyph.fill_color);
+        }
+    }
+
+    // Push final span
+    if let Some(span) = current_span {
+        result.push(span);
+    }
+
+    result
 }
 
 #[cfg(test)]
@@ -523,5 +764,593 @@ mod tests {
             0,
         );
         assert_eq!(ocr.confidence_source, ConfidenceSource::Ocr);
+    }
+
+    // Acceptance criteria tests for pdftract-3zz9n (merge_glyphs_to_spans)
+
+    #[test]
+    fn test_merge_glyphs_to_spans_hello_world_with_word_boundary() {
+        // AC: Input "Hello World" (5 glyphs, space-boundary, 5 glyphs): output 2 spans "Hello " and "World"
+        use crate::font::UnicodeSource;
+        use crate::graphics_state::Color;
+
+        let glyphs = vec![
+            // "Hello" - 5 glyphs with same font/size/color
+            Glyph::new('H', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('e', UnicodeSource::ToUnicode, 1.0, [10.0, 10.0, 20.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [20.0, 10.0, 30.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [30.0, 10.0, 40.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('o', UnicodeSource::ToUnicode, 1.0, [40.0, 10.0, 50.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            // Word boundary marker (is_word_boundary = true)
+            Glyph::new(' ', UnicodeSource::ToUnicode, 1.0, [50.0, 10.0, 60.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), true, None, false),
+            // "World" - 5 glyphs with same font/size/color
+            Glyph::new('W', UnicodeSource::ToUnicode, 1.0, [60.0, 10.0, 70.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('o', UnicodeSource::ToUnicode, 1.0, [70.0, 10.0, 80.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('r', UnicodeSource::ToUnicode, 1.0, [80.0, 10.0, 90.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [90.0, 10.0, 100.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('d', UnicodeSource::ToUnicode, 1.0, [100.0, 10.0, 110.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+        ];
+
+        let spans = merge_glyphs_to_spans(&glyphs);
+
+        assert_eq!(spans.len(), 2, "Expected 2 spans, got {}", spans.len());
+        assert_eq!(spans[0].text, "Hello ", "First span should be 'Hello '");
+        assert_eq!(spans[1].text, "World", "Second span should be 'World'");
+    }
+
+    #[test]
+    fn test_merge_glyphs_to_spans_font_name_change_triggers_break() {
+        // AC: Input "He" (regular) + "lo" (bold) at same font/color: 2 spans, font_name changes
+        use crate::font::UnicodeSource;
+        use crate::graphics_state::Color;
+
+        let glyphs = vec![
+            // "He" - regular Helvetica
+            Glyph::new('H', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('e', UnicodeSource::ToUnicode, 1.0, [10.0, 10.0, 20.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            // "lo" - Helvetica-Bold (font name change)
+            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [20.0, 10.0, 30.0, 20.0],
+                       Arc::from("Helvetica-Bold"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('o', UnicodeSource::ToUnicode, 1.0, [30.0, 10.0, 40.0, 20.0],
+                       Arc::from("Helvetica-Bold"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+        ];
+
+        let spans = merge_glyphs_to_spans(&glyphs);
+
+        assert_eq!(spans.len(), 2, "Expected 2 spans for font change");
+        assert_eq!(spans[0].text, "He");
+        assert_eq!(spans[0].font, Arc::from("Helvetica"));
+        assert_eq!(spans[1].text, "lo");
+        assert_eq!(spans[1].font, Arc::from("Helvetica-Bold"));
+    }
+
+    #[test]
+    fn test_merge_glyphs_to_spans_font_size_within_threshold_no_break() {
+        // AC: Input with font_size 12pt vs 12.2pt: 1 span (delta < 0.5pt)
+        use crate::font::UnicodeSource;
+        use crate::graphics_state::Color;
+
+        let glyphs = vec![
+            Glyph::new('H', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('e', UnicodeSource::ToUnicode, 1.0, [10.0, 10.0, 20.0, 20.0],
+                       Arc::from("Helvetica"), 12.2, 0, Color::DeviceGray(0.0), false, None, false), // delta = 0.2pt < 0.5
+            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [20.0, 10.0, 30.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+        ];
+
+        let spans = merge_glyphs_to_spans(&glyphs);
+
+        assert_eq!(spans.len(), 1, "Expected 1 span for size delta < 0.5pt");
+        assert_eq!(spans[0].text, "Hel");
+    }
+
+    #[test]
+    fn test_merge_glyphs_to_spans_font_size_exceeds_threshold_breaks() {
+        // Verify that size delta > 0.5pt triggers a break
+        use crate::font::UnicodeSource;
+        use crate::graphics_state::Color;
+
+        let glyphs = vec![
+            Glyph::new('H', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('e', UnicodeSource::ToUnicode, 1.0, [10.0, 10.0, 20.0, 20.0],
+                       Arc::from("Helvetica"), 12.6, 0, Color::DeviceGray(0.0), false, None, false), // delta = 0.6pt > 0.5
+        ];
+
+        let spans = merge_glyphs_to_spans(&glyphs);
+
+        assert_eq!(spans.len(), 2, "Expected 2 spans for size delta > 0.5pt");
+        assert_eq!(spans[0].text, "H");
+        assert_eq!(spans[1].text, "e");
+    }
+
+    #[test]
+    fn test_merge_glyphs_to_spans_device_gray_and_rgb_normalized_same_color() {
+        // AC: Input with DeviceGray(0.5) then DeviceRGB([0.5,0.5,0.5]): 1 span (RGB-normalized same)
+        use crate::font::UnicodeSource;
+        use crate::graphics_state::Color;
+
+        let glyphs = vec![
+            Glyph::new('H', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.5), false, None, false),
+            Glyph::new('e', UnicodeSource::ToUnicode, 1.0, [10.0, 10.0, 20.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceRGB([0.5, 0.5, 0.5]), false, None, false),
+            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [20.0, 10.0, 30.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.5), false, None, false),
+        ];
+
+        let spans = merge_glyphs_to_spans(&glyphs);
+
+        assert_eq!(spans.len(), 1, "Expected 1 span for RGB-normalized same colors");
+        assert_eq!(spans[0].text, "Hel");
+        // DeviceGray(0.5) -> (0.5 * 255).round() = 128 -> #808080
+        assert_eq!(spans[0].color.as_ref().unwrap().as_str(), "#808080");
+    }
+
+    #[test]
+    fn test_merge_glyphs_to_spans_spot_vs_device_rgb_different_colors() {
+        // AC: Input with Spot("PANTONE", 1.0) vs DeviceRGB([1,0,0]) with same hex: 2 spans (Spot != Device)
+        use crate::font::UnicodeSource;
+        use crate::graphics_state::Color;
+
+        let glyphs = vec![
+            Glyph::new('H', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::Spot(Arc::from("PANTONE-123"), 1.0), false, None, false),
+            Glyph::new('e', UnicodeSource::ToUnicode, 1.0, [10.0, 10.0, 20.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceRGB([1.0, 0.0, 0.0]), false, None, false),
+        ];
+
+        let spans = merge_glyphs_to_spans(&glyphs);
+
+        assert_eq!(spans.len(), 2, "Expected 2 spans: Spot color != DeviceRGB even if visual appearance is similar");
+        assert_eq!(spans[0].text, "H");
+        assert_eq!(spans[0].color, None, "Spot color serializes as None");
+        assert_eq!(spans[1].text, "e");
+        assert_eq!(spans[1].color.as_ref().unwrap().as_str(), "#ff0000");
+    }
+
+    #[test]
+    fn test_merge_glyphs_to_spans_empty_glyph_list() {
+        // AC: Empty glyph list: returns empty Vec<Span> (no error)
+        use crate::font::UnicodeSource;
+
+        let glyphs: Vec<Glyph> = vec![];
+        let spans = merge_glyphs_to_spans(&glyphs);
+
+        assert_eq!(spans.len(), 0);
+    }
+
+    #[test]
+    fn test_merge_glyphs_to_spans_rendering_mode_change() {
+        // Verify that rendering_mode change triggers a break
+        use crate::font::UnicodeSource;
+        use crate::graphics_state::Color;
+
+        let glyphs = vec![
+            Glyph::new('H', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('e', UnicodeSource::ToUnicode, 1.0, [10.0, 10.0, 20.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 2, Color::DeviceGray(0.0), false, None, false), // mode 2
+        ];
+
+        let spans = merge_glyphs_to_spans(&glyphs);
+
+        assert_eq!(spans.len(), 2, "Expected 2 spans for rendering_mode change");
+        assert_eq!(spans[0].rendering_mode, 0);
+        assert_eq!(spans[1].rendering_mode, 2);
+    }
+
+    #[test]
+    fn test_merge_glyphs_to_spans_confidence_minimum() {
+        // INV: confidence is the MINIMUM of all member glyphs' confidence
+        use crate::font::UnicodeSource;
+        use crate::graphics_state::Color;
+
+        let glyphs = vec![
+            Glyph::new('H', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('e', UnicodeSource::ShapeMatch, 0.7, [10.0, 10.0, 20.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('l', UnicodeSource::Agl, 0.9, [20.0, 10.0, 30.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+        ];
+
+        let spans = merge_glyphs_to_spans(&glyphs);
+
+        assert_eq!(spans.len(), 1);
+        // Confidence should be minimum: min(1.0, 0.7, 0.9) = 0.7
+        assert_eq!(spans[0].confidence, 0.7);
+    }
+
+    #[test]
+    fn test_merge_glyphs_to_spans_confidence_source_worst_glyph() {
+        // INV: confidence_source is mapped from the WORST glyph (lowest confidence) source
+        use crate::font::UnicodeSource;
+        use crate::graphics_state::Color;
+
+        let glyphs = vec![
+            Glyph::new('H', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('e', UnicodeSource::ShapeMatch, 0.7, [10.0, 10.0, 20.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+        ];
+
+        let spans = merge_glyphs_to_spans(&glyphs);
+
+        assert_eq!(spans.len(), 1);
+        // ShapeMatch (0.7) is worse than ToUnicode (1.0), so confidence_source should be Heuristic
+        assert_eq!(spans[0].confidence_source, ConfidenceSource::Heuristic);
+    }
+
+    #[test]
+    fn test_merge_glyphs_to_spans_bbox_union() {
+        // Verify bbox is the union of all member glyph bboxes
+        use crate::font::UnicodeSource;
+        use crate::graphics_state::Color;
+
+        let glyphs = vec![
+            Glyph::new('H', UnicodeSource::ToUnicode, 1.0, [10.0, 20.0, 20.0, 30.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('e', UnicodeSource::ToUnicode, 1.0, [25.0, 15.0, 35.0, 25.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [40.0, 18.0, 50.0, 28.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+        ];
+
+        let spans = merge_glyphs_to_spans(&glyphs);
+
+        assert_eq!(spans.len(), 1);
+        // Bbox should be union: x0=min(10,25,40)=10, y0=min(20,15,18)=15, x1=max(20,35,50)=50, y1=max(30,25,28)=30
+        assert_eq!(spans[0].bbox, [10.0, 15.0, 50.0, 30.0]);
+    }
+
+    #[test]
+    fn test_merge_glyphs_to_spans_unicode_source_to_confidence_source_mapping() {
+        // Verify UnicodeSource → ConfidenceSource mapping per plan
+        use crate::font::UnicodeSource;
+        use crate::graphics_state::Color;
+
+        // Test ToUnicode → Native
+        let glyphs = vec![
+            Glyph::new('A', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+        ];
+        let spans = merge_glyphs_to_spans(&glyphs);
+        assert_eq!(spans[0].confidence_source, ConfidenceSource::Native);
+
+        // Test Agl → Native
+        let glyphs = vec![
+            Glyph::new('A', UnicodeSource::Agl, 0.9, [0.0, 10.0, 10.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+        ];
+        let spans = merge_glyphs_to_spans(&glyphs);
+        assert_eq!(spans[0].confidence_source, ConfidenceSource::Native);
+
+        // Test Fingerprint → Native
+        let glyphs = vec![
+            Glyph::new('A', UnicodeSource::Fingerprint, 0.85, [0.0, 10.0, 10.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+        ];
+        let spans = merge_glyphs_to_spans(&glyphs);
+        assert_eq!(spans[0].confidence_source, ConfidenceSource::Native);
+
+        // Test ShapeMatch → Heuristic
+        let glyphs = vec![
+            Glyph::new('A', UnicodeSource::ShapeMatch, 0.7, [0.0, 10.0, 10.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+        ];
+        let spans = merge_glyphs_to_spans(&glyphs);
+        assert_eq!(spans[0].confidence_source, ConfidenceSource::Heuristic);
+
+        // Test Unknown → Heuristic
+        let glyphs = vec![
+            Glyph::new('A', UnicodeSource::Unknown, 0.0, [0.0, 10.0, 10.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+        ];
+        let spans = merge_glyphs_to_spans(&glyphs);
+        assert_eq!(spans[0].confidence_source, ConfidenceSource::Heuristic);
+    }
+
+    #[test]
+    fn test_normalize_color_for_comparison_device_gray() {
+        // Test DeviceGray normalization
+        use crate::graphics_state::Color;
+
+        let color = Color::DeviceGray(0.5);
+        let normalized = normalize_color_for_comparison(&color);
+        // 0.5 * 255.0 = 127.5, rounds to 128
+        assert_eq!(normalized, Some((128, 128, 128)));
+    }
+
+    #[test]
+    fn test_normalize_color_for_comparison_device_rgb() {
+        // Test DeviceRGB normalization
+        use crate::graphics_state::Color;
+
+        let color = Color::DeviceRGB([1.0, 0.5, 0.0]);
+        let normalized = normalize_color_for_comparison(&color);
+        // 0.5 * 255.0 = 127.5, rounds to 128
+        assert_eq!(normalized, Some((255, 128, 0)));
+    }
+
+    #[test]
+    fn test_normalize_color_for_comparison_device_cmyk() {
+        // Test DeviceCMYK normalization
+        use crate::graphics_state::Color;
+
+        // Cyan (C=1, M=0, Y=0, K=0) should map to RGB (0, 255, 255)
+        let color = Color::DeviceCMYK([1.0, 0.0, 0.0, 0.0]);
+        let normalized = normalize_color_for_comparison(&color);
+        assert_eq!(normalized, Some((0, 255, 255)));
+    }
+
+    #[test]
+    fn test_normalize_color_for_comparison_spot() {
+        // Test Spot color returns None
+        use crate::graphics_state::Color;
+
+        let color = Color::Spot(Arc::from("PANTONE-123"), 1.0);
+        let normalized = normalize_color_for_comparison(&color);
+        assert_eq!(normalized, None);
+    }
+
+    #[test]
+    fn test_normalize_color_for_comparison_other() {
+        // Test Other color returns None
+        use crate::graphics_state::Color;
+
+        let color = Color::Other;
+        let normalized = normalize_color_for_comparison(&color);
+        assert_eq!(normalized, None);
+    }
+
+    #[test]
+    fn test_colors_equal_device_gray_and_rgb_same() {
+        // Test DeviceGray(0.5) equals DeviceRGB([0.5, 0.5, 0.5])
+        use crate::graphics_state::Color;
+
+        let gray = Color::DeviceGray(0.5);
+        let rgb = Color::DeviceRGB([0.5, 0.5, 0.5]);
+        assert!(colors_equal(&gray, &rgb));
+    }
+
+    #[test]
+    fn test_colors_equal_device_gray_and_rgb_different() {
+        // Test DeviceGray(0.5) does not equal DeviceRGB([1.0, 0.5, 0.5])
+        use crate::graphics_state::Color;
+
+        let gray = Color::DeviceGray(0.5);
+        let rgb = Color::DeviceRGB([1.0, 0.5, 0.5]);
+        assert!(!colors_equal(&gray, &rgb));
+    }
+
+    #[test]
+    fn test_colors_equal_spot_different_names() {
+        // Test Spot colors with different names are not equal
+        use crate::graphics_state::Color;
+
+        let spot1 = Color::Spot(Arc::from("PANTONE-123"), 1.0);
+        let spot2 = Color::Spot(Arc::from("PANTONE-456"), 1.0);
+        assert!(!colors_equal(&spot1, &spot2));
+    }
+
+    #[test]
+    fn test_colors_equal_spot_same_name_different_tint() {
+        // Test Spot colors with same name but different tint are not equal
+        use crate::graphics_state::Color;
+
+        let spot1 = Color::Spot(Arc::from("PANTONE-123"), 1.0);
+        let spot2 = Color::Spot(Arc::from("PANTONE-123"), 0.5);
+        assert!(!colors_equal(&spot1, &spot2));
+    }
+
+    #[test]
+    fn test_colors_equal_spot_same_name_same_tint() {
+        // Test Spot colors with same name and tint are equal
+        use crate::graphics_state::Color;
+
+        let spot1 = Color::Spot(Arc::from("PANTONE-123"), 1.0);
+        let spot2 = Color::Spot(Arc::from("PANTONE-123"), 1.0);
+        assert!(colors_equal(&spot1, &spot2));
+    }
+
+    #[test]
+    fn test_colors_equal_spot_vs_device_rgb() {
+        // Test Spot color is never equal to DeviceRGB (even if visual appearance is similar)
+        use crate::graphics_state::Color;
+
+        let spot = Color::Spot(Arc::from("PANTONE-RED"), 1.0);
+        let rgb = Color::DeviceRGB([1.0, 0.0, 0.0]);
+        assert!(!colors_equal(&spot, &rgb));
+    }
+
+    // Acceptance criteria tests for pdftract-2c5sx (span text assembly)
+
+    #[test]
+    fn test_assemble_text_five_glyphs_hello() {
+        // AC: 5 glyphs "Hello" -> span.text == "Hello"
+        use crate::font::UnicodeSource;
+
+        let glyphs = vec![
+            Glyph::new('H', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('e', UnicodeSource::ToUnicode, 1.0, [10.0, 10.0, 20.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [20.0, 10.0, 30.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [30.0, 10.0, 40.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('o', UnicodeSource::ToUnicode, 1.0, [40.0, 10.0, 50.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+        ];
+
+        let spans = merge_glyphs_to_spans(&glyphs);
+
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].text, "Hello");
+    }
+
+    #[test]
+    fn test_assemble_text_hello_world_with_boundary() {
+        // AC: 5 glyphs "Hello" + boundary + 5 glyphs "World" -> span1.text == "Hello ", span2.text == "World"
+        use crate::font::UnicodeSource;
+
+        let glyphs = vec![
+            Glyph::new('H', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('e', UnicodeSource::ToUnicode, 1.0, [10.0, 10.0, 20.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [20.0, 10.0, 30.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [30.0, 10.0, 40.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('o', UnicodeSource::ToUnicode, 1.0, [40.0, 10.0, 50.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            // Word boundary
+            Glyph::new(' ', UnicodeSource::ToUnicode, 1.0, [50.0, 10.0, 60.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), true, None, false),
+            Glyph::new('W', UnicodeSource::ToUnicode, 1.0, [60.0, 10.0, 70.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('o', UnicodeSource::ToUnicode, 1.0, [70.0, 10.0, 80.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('r', UnicodeSource::ToUnicode, 1.0, [80.0, 10.0, 90.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [90.0, 10.0, 100.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('d', UnicodeSource::ToUnicode, 1.0, [100.0, 10.0, 110.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+        ];
+
+        let spans = merge_glyphs_to_spans(&glyphs);
+
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[0].text, "Hello ", "First span should have trailing space");
+        assert_eq!(spans[1].text, "World", "Second span should not have leading space");
+    }
+
+    #[test]
+    fn test_assemble_text_ligature_fi_as_two_glyphs() {
+        // AC: Ligature glyph emitting (f, i) as 2 glyphs with shared bbox: span.text == "fi"
+        // Phase 2 already expands ligatures into separate glyphs, so we just verify per-glyph append works
+        use crate::font::UnicodeSource;
+
+        // Simulate a ligature that was expanded into two glyphs with shared bbox
+        let shared_bbox = [0.0, 10.0, 12.0, 20.0];
+        let glyphs = vec![
+            Glyph::new('f', UnicodeSource::ToUnicode, 1.0, shared_bbox,
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('i', UnicodeSource::ToUnicode, 1.0, shared_bbox,
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+        ];
+
+        let spans = merge_glyphs_to_spans(&glyphs);
+
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].text, "fi", "Ligature expansion should concatenate both codepoints");
+    }
+
+    #[test]
+    fn test_assemble_text_rtl_arabic_preserved_in_source_order() {
+        // AC: RTL Arabic span: text in source byte order (Phase 4.2 reorders at line level)
+        // Arabic word "kitab" (book) in visual order: k-t-a-b (but stored in logical order)
+        // For this test, we just verify that glyphs are appended in the order they appear
+        use crate::font::UnicodeSource;
+
+        // Arabic letters in their logical order (as they appear in the content stream)
+        let glyphs = vec![
+            Glyph::new('\u{0643}', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0], // keheh (k)
+                       Arc::from("Arial"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('\u{062A}', UnicodeSource::ToUnicode, 1.0, [10.0, 10.0, 20.0, 20.0], // teh (t)
+                       Arc::from("Arial"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('\u{0627}', UnicodeSource::ToUnicode, 1.0, [20.0, 10.0, 30.0, 20.0], // alef (a)
+                       Arc::from("Arial"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('\u{0628}', UnicodeSource::ToUnicode, 1.0, [30.0, 10.0, 40.0, 20.0], // beh (b)
+                       Arc::from("Arial"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+        ];
+
+        let spans = merge_glyphs_to_spans(&glyphs);
+
+        assert_eq!(spans.len(), 1);
+        // Text should be in source byte order (as glyphs appear in content stream)
+        // Phase 4.2 will handle bidi reordering at the line level
+        assert_eq!(spans[0].text, "\u{0643}\u{062A}\u{0627}\u{0628}");
+    }
+
+    #[test]
+    fn test_assemble_text_boundary_at_start_of_page_no_space_injection() {
+        // AC: Boundary at start of page: no space injection; first span starts cleanly
+        use crate::font::UnicodeSource;
+
+        // First glyph is a word boundary (odd but possible)
+        let glyphs = vec![
+            Glyph::new(' ', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), true, None, false),
+            Glyph::new('H', UnicodeSource::ToUnicode, 1.0, [10.0, 10.0, 20.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('e', UnicodeSource::ToUnicode, 1.0, [20.0, 10.0, 30.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+        ];
+
+        let spans = merge_glyphs_to_spans(&glyphs);
+
+        // Should produce one span with "He" (no leading space)
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].text, "He", "No leading space when boundary is first glyph");
+    }
+
+    #[test]
+    fn test_assemble_text_direct_call() {
+        // Direct test of the assemble_text function
+        use crate::font::UnicodeSource;
+
+        let mut span = Span::empty();
+        let glyph1 = Glyph::new('A', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
+                                 Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false);
+        let glyph2 = Glyph::new('B', UnicodeSource::ToUnicode, 1.0, [10.0, 10.0, 20.0, 20.0],
+                                 Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false);
+
+        assemble_text(&mut span, &glyph1);
+        assert_eq!(span.text, "A");
+
+        assemble_text(&mut span, &glyph2);
+        assert_eq!(span.text, "AB");
+    }
+
+    #[test]
+    fn test_assemble_text_preserves_special_unicode_chars() {
+        // Verify that soft hyphen, ZWJ, ZWNJ, and U+FFFD are preserved
+        use crate::font::UnicodeSource;
+
+        let glyphs = vec![
+            Glyph::new('a', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('\u{00AD}', UnicodeSource::ToUnicode, 1.0, [10.0, 10.0, 20.0, 20.0], // soft hyphen
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('\u{200D}', UnicodeSource::ToUnicode, 1.0, [20.0, 10.0, 30.0, 20.0], // ZWJ
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('\u{200C}', UnicodeSource::ToUnicode, 1.0, [30.0, 10.0, 40.0, 20.0], // ZWNJ
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('\u{FFFD}', UnicodeSource::Unknown, 0.0, [40.0, 10.0, 50.0, 20.0], // replacement char
+                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+        ];
+
+        let spans = merge_glyphs_to_spans(&glyphs);
+
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].text, "a\u{00AD}\u{200D}\u{200C}\u{FFFD}");
     }
 }

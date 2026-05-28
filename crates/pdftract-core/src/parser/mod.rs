@@ -4,6 +4,7 @@
 
 pub mod catalog;
 pub mod diagnostic;
+pub mod inline_image;
 pub mod lexer;
 pub mod marked_content;
 pub mod marked_content_operators;
@@ -28,6 +29,7 @@ pub use catalog::{
 pub use marked_content::{
     compute_coverage, compute_coverage_from_sets, CoverageResult, McidTracker,
 };
+pub use inline_image::{parse_inline_image_header, scan_inline_image_data, InlineImageHeader};
 pub use marked_content_operators::{parse_bdc, parse_bmc, parse_emc};
 pub use marked_content_stack::{MarkedContentFrame, MarkedContentStack};
 pub use object::PdfObject;
@@ -46,6 +48,6 @@ pub use struct_tree::{
 };
 pub use xref::{
     detect_linearization, is_hybrid_trailer, load_xref_linearized, load_xref_with_prev_chain,
-    merge_hybrid, merge_linearized_xrefs, parse_traditional_xref, parse_xref_stream,
+    merge_hybrid, parse_traditional_xref, parse_xref_stream,
     LinearizationInfo, ResolveError, ResolveResult, XrefEntry, XrefResolver, XrefSection,
 };

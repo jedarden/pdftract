@@ -1,0 +1,25 @@
+{
+  "metadata": {
+    "document_type": "book_chapter",
+    "document_type_confidence": 0.78,
+    "document_type_reasons": [
+      "page count 3 in range [5, 1000]",
+      "text matches '^Chapter \\d+' pattern",
+      "structural.heading_depth in range [1, 5]",
+      "no exclusion patterns matched"
+    ],
+    "profile_name": "book_chapter",
+    "profile_version": "1.0.0",
+    "profile_fields": {
+      "title": "Cellular Respiration",
+      "chapter_number": "7",
+      "author": "Prof. Michael Chen & Dr. Lisa Rodriguez",
+      "sections": [
+        "Glycolysis",
+        "The Krebs Cycle",
+        "Electron Transport Chain",
+        "ATP Production"
+      ]
+    }
+  }
+}
