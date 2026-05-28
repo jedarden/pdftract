@@ -1,17 +1,17 @@
 {
   "$defs": {
     "AnnotationJson": {
-      "description": "JSON representation of a PDF annotation.\n\nThis struct represents a non-link annotation from a PDF page, such as\nhighlights, text notes, stamps, free text, ink drawings, lines, polygons,\nand file attachments.\n\nPer the plan (Phase 7.6.3), annotations are extracted after links and\nform fields, with sorting for deterministic output.",
+      "description": "JSON representation of a non-link annotation.\n\nRepresents markup annotations like highlights, text notes, stamps,\nand other non-link annotations.\n\nPer the plan (Phase 7.6.4), annotations are emitted at the page level in the\n`/pages[i]/annotations` array, sorted by (rect.y0 desc, rect.x0) for deterministic output.",
       "properties": {
         "author": {
-          "description": "The annotation's author from the /T entry.\n\nNone if /T is missing or not a string.",
+          "description": "The annotation's author (from /T).\n\nNone if /T is missing or not a string.",
           "type": [
             "string",
             "null"
           ]
         },
         "color": {
-          "description": "The color array from /C as RGB/Grayscale components.\n\nNone if /C is missing. Length is 1 (grayscale), 3 (RGB), or 4 (CMYK).",
+          "description": "The color array (from /C) as RGB/Grayscale components.\n\nNone if /C is missing. Length is 1 (grayscale), 3 (RGB), or 4 (CMYK).",
           "items": {
             "format": "float",
             "type": "number"
@@ -22,28 +22,28 @@
           ]
         },
         "contents": {
-          "description": "The annotation's content text from /Contents.\n\nNone if /Contents is missing or not a string.",
+          "description": "The annotation's content text (from /Contents).\n\nNone if /Contents is missing or not a string.",
           "type": [
             "string",
             "null"
           ]
         },
         "modified": {
-          "description": "The modification date from /M as an ISO 8601 string.\n\nNone if /M is missing, malformed, or fails to parse.\nFormat: \"YYYY-MM-DDTHH:MM:SS+HH:MM\" or \"YYYY-MM-DDTHH:MM:SSZ\"",
+          "description": "The modification date (from /M) as an ISO 8601 string.\n\nNone if /M is missing, malformed, or fails to parse.",
           "type": [
             "string",
             "null"
           ]
         },
         "name_id": {
-          "description": "The name identifier from /NM.\n\nNone if /NM is missing.",
+          "description": "The name identifier (from /NM).\n\nNone if /NM is missing.",
           "type": [
             "string",
             "null"
           ]
         },
         "opacity": {
-          "description": "The opacity from /CA.\n\nNone if /CA is missing.",
+          "description": "The opacity (from /CA).\n\nNone if not specified (defaults to 1.0).",
           "format": "float",
           "type": [
             "number",
@@ -51,9 +51,9 @@
           ]
         },
         "rect": {
-          "description": "The bounding rectangle [x0, y0, x1, y1] in PDF user-space units.\n\nNone if the /Rect entry is missing or invalid.",
+          "description": "Bounding box in PDF user-space points.\n\nFormat: [x0, y0, x1, y1] where (x0, y0) is the bottom-left corner.\nNone if the /Rect entry is missing or invalid.",
           "items": {
-            "format": "double",
+            "format": "float",
             "type": "number"
           },
           "maxItems": 4,
@@ -72,17 +72,17 @@
               "type": "null"
             }
           ],
-          "description": "Subtype-specific fields.\n\nPresent only for annotation types that have additional data beyond\nthe common fields. For unsupported subtypes, this is null."
+          "description": "Subtype-specific fields.\n\nThe presence and contents of this field depend on the annotation subtype:\n- TextMarkup (Highlight, Squiggly, StrikeOut, Underline): contains \"quads\" array\n- Stamp: contains \"name\" field\n- FreeText: contains \"da\" (default appearance) field\n- Text (sticky note): contains \"open\", \"state\", \"state_model\" fields\n- Ink: contains \"strokes\" array\n- Line: contains \"endpoints\" array\n- Polygon/PolyLine: contains \"vertices\" array\n- FileAttachment: contains \"fs_ref\" field\n- Other subtypes: null or omitted"
         },
         "subject": {
-          "description": "The subject from /Subj.\n\nNone if /Subj is missing.",
+          "description": "The subject (from /Subj).\n\nNone if /Subj is missing.",
           "type": [
             "string",
             "null"
           ]
         },
         "type": {
-          "description": "The annotation subtype (e.g., \"Highlight\", \"Text\", \"Stamp\", \"FreeText\", \"Ink\", \"Line\", \"Polygon\", \"FileAttachment\").",
+          "description": "Annotation subtype (e.g., \"Text\", \"Highlight\", \"Stamp\", \"FreeText\").\n\nPer INV: stable taxonomy of annotation subtypes.",
           "type": "string"
         }
       },
@@ -92,16 +92,19 @@
       "type": "object"
     },
     "AnnotationSpecificJson": {
-      "description": "Subtype-specific annotation fields.\n\nThis enum captures the additional data present in specific annotation subtypes.",
+      "description": "JSON representation of subtype-specific annotation fields.",
       "oneOf": [
         {
-          "description": "Text markup annotations (Highlight, Underline, StrikeOut, Squiggly).\n\nContains the quadpoint arrays defining the marked regions.",
+          "description": "Text markup annotations (Highlight, Squiggly, StrikeOut, Underline).\n\nContains quad points for the highlighted regions.",
           "properties": {
+            "kind": {
+              "const": "text_markup",
+              "type": "string"
+            },
             "quads": {
-              "description": "Array of quadpoint arrays [x0, y0, x1, y1, x2, y2, x3, y3] defining the marked regions.\n\nEach quad defines a quadrilateral region in PDF user-space coordinates.",
               "items": {
                 "items": {
-                  "format": "double",
+                  "format": "float",
                   "type": "number"
                 },
                 "maxItems": 8,
@@ -112,28 +115,19 @@
             }
           },
           "required": [
+            "kind",
             "quads"
           ],
           "type": "object"
         },
         {
-          "description": "Stamp annotations.\n\nContains the stamp name from /Name.",
+          "description": "Stamp annotation with icon name.",
           "properties": {
-            "name": {
-              "description": "The stamp name (e.g., \"Approved\", \"Draft\", \"Confidential\").",
+            "kind": {
+              "const": "stamp",
               "type": "string"
-            }
-          },
-          "required": [
-            "name"
-          ],
-          "type": "object"
-        },
-        {
-          "description": "Free text annotations.\n\nContains the default appearance string from /DA.",
-          "properties": {
-            "da": {
-              "description": "The default appearance string.",
+            },
+            "name": {
               "type": [
                 "string",
                 "null"
@@ -141,91 +135,125 @@
             }
           },
           "required": [
-            "da"
+            "kind"
           ],
           "type": "object"
         },
         {
-          "description": "Text annotations (sticky notes).\n\nContains the open state and state information.",
+          "description": "FreeText annotation with default appearance string.",
           "properties": {
+            "da": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "const": "free_text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Text (sticky note) annotation.",
+          "properties": {
+            "kind": {
+              "const": "text",
+              "type": "string"
+            },
             "open": {
-              "description": "Whether the note is initially open.",
               "type": [
                 "boolean",
                 "null"
               ]
             },
             "state": {
-              "description": "The annotation state from /State (e.g., \"Reviewed\", \"Accepted\").",
               "type": [
                 "string",
                 "null"
               ]
             },
             "state_model": {
-              "description": "The state model from /StateModel (e.g., \"Marked\", \"Review\").",
               "type": [
                 "string",
                 "null"
               ]
             }
           },
+          "required": [
+            "kind"
+          ],
           "type": "object"
         },
         {
-          "description": "Ink annotations (hand-drawn sketches).\n\nContains the stroke paths.",
+          "description": "Ink annotation with stroke paths.",
           "properties": {
+            "kind": {
+              "const": "ink",
+              "type": "string"
+            },
             "strokes": {
-              "description": "Array of stroke paths, where each stroke is an array of points.\n\nEach point is [x, y] in PDF user-space coordinates.",
               "items": {
                 "items": {
-                  "format": "double",
-                  "type": "number"
+                  "items": {
+                    "format": "float",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
                 },
-                "maxItems": 2,
-                "minItems": 2,
                 "type": "array"
               },
               "type": "array"
             }
           },
           "required": [
+            "kind",
             "strokes"
           ],
           "type": "object"
         },
         {
-          "description": "Line annotations.\n\nContains the line endpoints.",
+          "description": "Line annotation with endpoints.",
           "properties": {
             "endpoints": {
-              "description": "The line endpoints as [[x0, y0], [x1, y1]].",
               "items": {
-                "items": {
-                  "format": "double",
-                  "type": "number"
-                },
-                "maxItems": 2,
-                "minItems": 2,
-                "type": "array"
+                "format": "float",
+                "type": "number"
               },
-              "maxItems": 2,
-              "minItems": 2,
-              "type": "array"
+              "maxItems": 4,
+              "minItems": 4,
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "kind": {
+              "const": "line",
+              "type": "string"
             }
           },
           "required": [
-            "endpoints"
+            "kind"
           ],
           "type": "object"
         },
         {
-          "description": "Polygon annotations.\n\nContains the polygon vertices.",
+          "description": "Polygon or PolyLine annotation with vertices.",
           "properties": {
+            "kind": {
+              "const": "polygon",
+              "type": "string"
+            },
             "vertices": {
-              "description": "Array of [x, y] vertices defining the polygon.\n\nEach vertex is in PDF user-space coordinates.",
               "items": {
                 "items": {
-                  "format": "double",
+                  "format": "float",
                   "type": "number"
                 },
                 "maxItems": 2,
@@ -236,32 +264,49 @@
             }
           },
           "required": [
+            "kind",
             "vertices"
           ],
           "type": "object"
         },
         {
-          "description": "File attachment annotations.\n\nContains the file specification reference.",
+          "description": "FileAttachment annotation.",
           "properties": {
             "fs_ref": {
-              "description": "The file specification reference number.\n\nComputed as (object_number << 16 | generation_number) as u32.",
               "format": "uint32",
               "minimum": 0,
               "type": [
                 "integer",
                 "null"
               ]
+            },
+            "kind": {
+              "const": "file_attachment",
+              "type": "string"
             }
           },
           "required": [
-            "fs_ref"
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Other annotation types with no subtype-specific fields.",
+          "properties": {
+            "kind": {
+              "const": "other",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
           ],
           "type": "object"
         }
       ]
     },
     "AttachmentJson": {
-      "description": "JSON representation of an embedded file attachment.\n\nRepresents a single embedded file extracted from the PDF's `/EmbeddedFiles`\nname tree or `/AF` (Associated Files) array.\n\nPer plan (Phase 7.5.3), attachments exceeding 50 MB are truncated\n(metadata only, data: null, truncated: true). The `data` field contains\nbase64-encoded content using RFC 4648 standard alphabet with padding\nand no line breaks. The JSON Schema declares `contentEncoding: base64`\nfor the `data` field, enabling JSON Schema validators and code generation\ntools to understand the encoding.",
+      "description": "JSON representation of an embedded file attachment.\n\nRepresents a single embedded file extracted from the PDF's\n`/EmbeddedFiles` name tree or `/AF` (Associated Files) array.\n\nPer the plan (Phase 7.5.3), attachments exceeding 50 MB are truncated\n(metadata only, `data: null`, `truncated: true`). The `data` field\ncontains base64-encoded content using RFC 4648 standard alphabet with\npadding and no line breaks.\n\nThe JSON Schema declares `contentEncoding: base64` for the `data` field,\nenabling JSON Schema validators and code generation tools to understand\nthe encoding.",
       "properties": {
         "checksum_md5": {
           "description": "MD5 checksum from /Params /CheckSum as hex string (None if absent).\n\nPer PDF spec, /CheckSum is a 16-byte binary string (MD5), hex-encoded\nas 32 lowercase hex characters.",
@@ -279,7 +324,6 @@
         },
         "data": {
           "description": "Base64-encoded attachment content (null if truncated or empty).\n\nPer JSON Schema, this field has `contentEncoding: base64`, indicating\nthe string is base64-encoded binary data. Downstream tools can use this\ninformation to automatically decode the content.\n\n- `Some(base64_string)` when content <= 50 MB\n- `None` when `truncated: true` (content too large)\n\nIn the Python API (PyO3), this field is returned as a `bytes` object\n(PyO3 automatically decodes the base64 string).",
-          "contentEncoding": "base64",
           "type": [
             "string",
             "null"
@@ -328,6 +372,32 @@
       ],
       "type": "object"
     },
+    "BeadJson": {
+      "description": "A single bead in an article thread chain.\n\nRepresents one bead's position on a page, extracted during bead chain walking.\nPer PDF 1.7 Section 12.4.3, each bead contains a reference to its page and\na bounding rectangle defining the article region on that page.\n\n# Fields\n\n* `page_index` - 0-based index of the page containing this bead\n* `rect` - Bounding rectangle of the bead region in PDF user-space coordinates [x0, y0, x1, y1]",
+      "properties": {
+        "page_index": {
+          "description": "0-based page index where this bead is located.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rect": {
+          "description": "Bounding rectangle in PDF user-space coordinates [x0, y0, x1, y1].\n\nPer PDF spec, the origin is at the bottom-left corner of the page.\nThis rect is NOT flipped to image-space coordinates.",
+          "items": {
+            "format": "float",
+            "type": "number"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "type": "array"
+        }
+      },
+      "required": [
+        "page_index",
+        "rect"
+      ],
+      "type": "object"
+    },
     "BlockJson": {
       "description": "JSON representation of a structural block.\n\nA block is a higher-level semantic unit composed of one or more\nspans. Examples include paragraphs, headings, list items, and\ntable cells.",
       "properties": {
@@ -365,6 +435,16 @@
             }
           ],
           "description": "Optional cryptographic receipt for verification.\n\nThis field is present when `--receipts=lite` or `--receipts=svg`\nis enabled. When receipts are disabled, the field is `null`."
+        },
+        "spans": {
+          "default": [],
+          "description": "References to spans in the page's `spans` array.\n\nThese indices point to the spans that make up this block's content.",
+          "items": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
         },
         "table_index": {
           "description": "Optional table index for \"table\" kind blocks.\n\nThis field is present only for table blocks and points to the\ncorresponding entry in the page's `tables` array.",
@@ -471,33 +551,16 @@
       "description": "Choice field value representation.\n\nChoice fields can have either a single selected value or multiple\nselected values (for multi-select list boxes)."
     },
     "DestArrayJson": {
-      "description": "Explicit destination array for internal links.\n\nThis struct represents an explicit destination in a PDF, which specifies\na target page and how that page should be displayed (fit type).",
-      "properties": {
-        "dest": {
-          "$ref": "#/$defs/DestTypeJson",
-          "description": "The fit type and associated coordinates for this destination."
-        },
-        "page_index": {
-          "description": "Zero-based page index for this destination.",
-          "format": "uint",
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "page_index",
-        "dest"
-      ],
-      "type": "object"
-    },
-    "DestTypeJson": {
-      "description": "Destination fit type enum.\n\nThis enum defines how a page should be displayed when navigating to\na destination. It corresponds to the PDF destination fit types.",
+      "description": "JSON representation of an explicit destination array.\n\nDescribes a specific location within a PDF page.",
       "oneOf": [
         {
-          "description": "XYZ destination with optional left, top, and zoom.\n\nDisplay the page with the coordinates (left, top) positioned at the\nupper-left corner of the window and the page contents magnified by\nthe factor zoom. A null value for any of left, top, or zoom indicates\nthat the current value of that parameter should be retained unchanged.",
+          "description": "XYZ destination with optional left, top, zoom.\n\nNull values mean \"retain current view\" for that parameter.",
           "properties": {
+            "fit": {
+              "const": "xyz",
+              "type": "string"
+            },
             "left": {
-              "description": "The left coordinate in PDF user-space units.\n\nNull indicates the current left position should be retained.",
               "format": "double",
               "type": [
                 "number",
@@ -505,7 +568,6 @@
               ]
             },
             "top": {
-              "description": "The top coordinate in PDF user-space units.\n\nNull indicates the current top position should be retained.",
               "format": "double",
               "type": [
                 "number",
@@ -513,7 +575,6 @@
               ]
             },
             "zoom": {
-              "description": "The zoom factor.\n\nNull indicates the current zoom level should be retained.",
               "format": "double",
               "type": [
                 "number",
@@ -521,19 +582,32 @@
               ]
             }
           },
-          "required": [],
+          "required": [
+            "fit"
+          ],
           "type": "object"
         },
         {
-          "const": "Fit",
-          "description": "Fit destination — display the page with its contents magnified\njust enough to fit the entire page within the window both horizontally\nand vertically.",
-          "type": "string"
+          "description": "Fit page to window.",
+          "properties": {
+            "fit": {
+              "const": "fit",
+              "type": "string"
+            }
+          },
+          "required": [
+            "fit"
+          ],
+          "type": "object"
         },
         {
-          "description": "FitH destination with optional top coordinate.\n\nDisplay the page with the top coordinate positioned at the top edge\nof the window and the contents magnified just enough to fit the entire\nwidth of the page within the window.",
+          "description": "Fit horizontally with optional top coordinate.",
           "properties": {
+            "fit": {
+              "const": "fith",
+              "type": "string"
+            },
             "top": {
-              "description": "The top coordinate in PDF user-space units.\n\nNull indicates the current top position should be retained.",
               "format": "double",
               "type": [
                 "number",
@@ -541,14 +615,19 @@
               ]
             }
           },
-          "required": [],
+          "required": [
+            "fit"
+          ],
           "type": "object"
         },
         {
-          "description": "FitV destination with optional left coordinate.\n\nDisplay the page with the left coordinate positioned at the left edge\nof the window and the contents magnified just enough to fit the entire\nheight of the page within the window.",
+          "description": "Fit vertically with optional left coordinate.",
           "properties": {
+            "fit": {
+              "const": "fitv",
+              "type": "string"
+            },
             "left": {
-              "description": "The left coordinate in PDF user-space units.\n\nNull indicates the current left position should be retained.",
               "format": "double",
               "type": [
                 "number",
@@ -556,34 +635,37 @@
               ]
             }
           },
-          "required": [],
+          "required": [
+            "fit"
+          ],
           "type": "object"
         },
         {
-          "description": "FitR destination with bounding rectangle.\n\nDisplay the page with the specified rectangle magnified just enough\nto fit the entire rectangle within the window both horizontally and\nvertically.",
+          "description": "Fit rectangle (left, bottom, right, top).",
           "properties": {
             "bottom": {
-              "description": "The bottom coordinate in PDF user-space units.",
               "format": "double",
               "type": "number"
             },
+            "fit": {
+              "const": "fitr",
+              "type": "string"
+            },
             "left": {
-              "description": "The left coordinate in PDF user-space units.",
               "format": "double",
               "type": "number"
             },
             "right": {
-              "description": "The right coordinate in PDF user-space units.",
               "format": "double",
               "type": "number"
             },
             "top": {
-              "description": "The top coordinate in PDF user-space units.",
               "format": "double",
               "type": "number"
             }
           },
           "required": [
+            "fit",
             "left",
             "bottom",
             "right",
@@ -592,30 +674,26 @@
           "type": "object"
         },
         {
-          "const": "FitB",
-          "description": "FitB destination — display the page with its contents magnified\njust enough to fit its bounding box entirely within the window both\nhorizontally and vertically.",
-          "type": "string"
-        },
-        {
-          "description": "FitBH destination with optional top coordinate.\n\nDisplay the page with the top coordinate positioned at the top edge\nof the window and the contents magnified just enough to fit the entire\nwidth of its bounding box within the window.",
+          "description": "Fit bounding box to window.",
           "properties": {
-            "top": {
-              "description": "The top coordinate in PDF user-space units.\n\nNull indicates the current top position should be retained.",
-              "format": "double",
-              "type": [
-                "number",
-                "null"
-              ]
+            "fit": {
+              "const": "fitb",
+              "type": "string"
             }
           },
-          "required": [],
+          "required": [
+            "fit"
+          ],
           "type": "object"
         },
         {
-          "description": "FitBV destination with optional left coordinate.\n\nDisplay the page with the left coordinate positioned at the left edge\nof the window and the contents magnified just enough to fit the entire\nheight of its bounding box within the window.",
+          "description": "Fit bounding box horizontally with optional top coordinate.",
           "properties": {
-            "left": {
-              "description": "The left coordinate in PDF user-space units.\n\nNull indicates the current left position should be retained.",
+            "fit": {
+              "const": "fitbh",
+              "type": "string"
+            },
+            "top": {
               "format": "double",
               "type": [
                 "number",
@@ -623,59 +701,42 @@
               ]
             }
           },
-          "required": [],
+          "required": [
+            "fit"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Fit bounding box vertically with optional left coordinate.",
+          "properties": {
+            "fit": {
+              "const": "fitbv",
+              "type": "string"
+            },
+            "left": {
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "fit"
+          ],
           "type": "object"
         }
-      ]
-    },
-    "LinkJson": {
-      "description": "JSON representation of a PDF link annotation.\n\nThis struct represents a hyperlink from a PDF page, which can point to\na URI, a named destination, or an explicit destination array.\n\nPer the plan (Phase 7.6.2), links are extracted and sorted deterministically\nfor stable output.",
+      ],
       "properties": {
-        "dest": {
-          "description": "Named destination string (e.g., \"Chapter1\").\n\nNone if the link is not a named destination link.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "dest_array": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/DestArrayJson"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Explicit destination array with page index and fit type.\n\nNone if the link is not an explicit destination link."
-        },
         "page_index": {
-          "description": "Zero-based page index containing this link.",
+          "description": "Zero-based page index within the document.",
           "format": "uint",
           "minimum": 0,
           "type": "integer"
-        },
-        "rect": {
-          "description": "The bounding rectangle [x0, y0, x1, y1] in PDF user-space units.\n\nFormat: [x0, y0, x1, y1] where (x0, y0) is the bottom-left corner and\n(x1, y1) is the top-right corner.",
-          "items": {
-            "format": "double",
-            "type": "number"
-          },
-          "maxItems": 4,
-          "minItems": 4,
-          "type": "array"
-        },
-        "uri": {
-          "description": "URI string for external links.\n\nNone if the link is not a URI link.",
-          "type": [
-            "string",
-            "null"
-          ]
         }
       },
       "required": [
-        "page_index",
-        "rect"
+        "page_index"
       ],
       "type": "object"
     },
@@ -937,11 +998,81 @@
       ],
       "description": "Form field value representation.\n\nThis enum captures the current value of a form field, with the variant\ntype matching the field_type."
     },
+    "JavascriptActionJson": {
+      "description": "JSON representation of a JavaScript action found in a PDF.\n\nRepresents a single JavaScript action discovered during extraction.\nPer TH-04, pdftract NEVER executes embedded JavaScript; this struct\nsurfaces the JS for downstream security review.",
+      "properties": {
+        "code_excerpt": {
+          "description": "Truncated excerpt of the JavaScript code (first 200 characters).\n\nThe excerpt is JSON-escaped and HTML-escaped if rendered in a web context.\nThis field contains the raw JS text for review, NOT executable code.",
+          "type": "string"
+        },
+        "location": {
+          "description": "Location of the JavaScript action in the PDF structure.\n\nExamples: \"catalog.openaction\", \"page.0.aa.O\", \"page.1.annot.0.A\".\nThe format is: <scope>.<index>.<path> where scope is \"catalog\" or \"page\",\nindex is the page number (for pages), and path is the dot-joined entry path.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "location",
+        "code_excerpt"
+      ],
+      "type": "object"
+    },
+    "LinkJson": {
+      "description": "JSON representation of a hyperlink annotation.\n\nRepresents either a URI hyperlink (external link) or an internal destination\nlink (named or explicit destination within the same document).\n\nPer the plan (Phase 7.6.4), links are emitted at the document level in the\n`/links` array, sorted by (page_index, rect.y0 desc, rect.x0) for deterministic output.",
+      "properties": {
+        "dest": {
+          "description": "The internal destination name (from /Dest as a name string).\n\nPresent for named destination links. Null for URI links or explicit destinations.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dest_array": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DestArrayJson"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Explicit destination array (from /Dest as an array or resolved name tree).\n\nPresent when the link target can be resolved to explicit coordinates.\nNull for URI links or unresolved named destinations."
+        },
+        "page_index": {
+          "description": "Zero-based page index containing this link.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rect": {
+          "description": "Bounding box in PDF user-space points.\n\nFormat: [x0, y0, x1, y1] where (x0, y0) is the bottom-left corner.",
+          "items": {
+            "format": "float",
+            "type": "number"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "type": "array"
+        },
+        "uri": {
+          "description": "The URI target for external links (from /A /S /URI /URI).\n\nPresent for URI links and JavaScript actions (prefixed with \"javascript:\").\nNull for internal destination links.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "page_index",
+        "rect"
+      ],
+      "type": "object"
+    },
     "PageResult": {
-      "description": "Result for a single page.\n\nContains page geometry, classification, and content arrays (spans, blocks, tables, annotations).",
+      "description": "Result for a single page.",
       "properties": {
         "annotations": {
-          "description": "Non-link annotations on this page (highlights, notes, stamps, etc.).\n\nThis array contains all non-link annotations extracted from the page's\n/Annots array. Annotations are sorted deterministically by position\n(y0 descending, then x0 ascending) for stable output.",
+          "default": [],
+          "description": "Page-level annotations (highlights, stamps, notes, etc.).\n\nThis array contains all non-link annotations on this page.\nAnnotations are sorted by (rect.y0 desc, rect.x0) for deterministic output.\nEmpty when the page has no annotations.",
           "items": {
             "$ref": "#/$defs/AnnotationJson"
           },
@@ -964,8 +1095,10 @@
         "height": {
           "description": "Page height in points (1/72 inch).",
           "format": "float",
-          "minimum": 0,
-          "type": "number"
+          "type": [
+            "number",
+            "null"
+          ]
         },
         "index": {
           "description": "0-based page index.",
@@ -974,22 +1107,27 @@
           "type": "integer"
         },
         "page_label": {
-          "description": "Human-readable label from PDF /PageLabels number tree (e.g., \"iv\", \"A-3\").\n\nAbsent (null) if the PDF defines no page labels.",
+          "description": "Human-readable label from PDF /PageLabels number tree.\n\nExamples: \"iv\", \"A-3\", \"1\". Null if the PDF defines no page labels.",
           "type": [
             "string",
             "null"
           ]
         },
         "page_number": {
-          "description": "One-based page number (= page_index + 1).\n\nEmitted as a convenience for human-facing display. For programmatic\naccess, use page_index instead.",
-          "format": "uint",
-          "minimum": 1,
+          "description": "1-based page number (= index + 1).\n\nEmitted as a convenience for human-facing display. For programmatic\naccess, use index instead.",
+          "format": "uint32",
+          "minimum": 0,
           "type": "integer"
         },
         "rotation": {
           "description": "Page rotation in degrees clockwise (0, 90, 180, or 270).",
-          "enum": [0, 90, 180, 270],
-          "type": "integer"
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "spans": {
           "description": "Extracted spans (text fragments with consistent styling).",
@@ -1007,34 +1145,26 @@
         },
         "type": {
           "description": "Page classification from the page classifier.\n\nOne of: \"text\", \"scanned\", \"mixed\", \"broken_vector\", \"blank\", \"figure_only\".",
-          "enum": [
-            "text",
-            "scanned",
-            "mixed",
-            "broken_vector",
-            "blank",
-            "figure_only"
-          ],
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "width": {
           "description": "Page width in points (1/72 inch).",
           "format": "float",
-          "minimum": 0,
-          "type": "number"
+          "type": [
+            "number",
+            "null"
+          ]
         }
       },
       "required": [
         "index",
         "page_number",
-        "width",
-        "height",
-        "rotation",
-        "type",
         "spans",
         "blocks",
-        "tables",
-        "annotations"
+        "tables"
       ],
       "type": "object"
     },
@@ -1210,7 +1340,7 @@
       "type": "object"
     },
     "SpanJson": {
-      "description": "JSON representation of a text span.\n\nA span is the smallest unit of extracted text, representing a\ncontiguous run of text with consistent font and styling.\n\n# TODO: Phase 6.1 - Add confidence_source field\n\nWhen the `confidence_source` field is added to the schema (per plan line 363, 1662),\nit should include \"ocr-fallback\" as a valid value for spans emitted via\nPhase 5.5.3 region-level fallback. The internal `SpanSource::OcrFallback` variant\nin `hybrid.rs` maps to this value.",
+      "description": "JSON representation of a text span.\n\nA span is the smallest unit of extracted text, representing a\ncontiguous run of text with consistent font and styling.\n\nPer INV-7 (confidence_source on every Span), all spans include\nthe confidence_source field to indicate how the text was extracted.",
       "properties": {
         "bbox": {
           "description": "Bounding box in PDF user-space points.\n\nFormat: `[x0, y0, x1, y1]` where (x0, y0) is the bottom-left\ncorner and (x1, y1) is the top-right corner.",
@@ -1221,6 +1351,13 @@
           "maxItems": 4,
           "minItems": 4,
           "type": "array"
+        },
+        "color": {
+          "description": "Fill color as CSS hex string (e.g., \"#1a1a1a\"), or null if not expressible as RGB.\n\nNull for spot colors, patterns, or complex color spaces that cannot be\naccurately represented as RGB hex.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "column": {
           "description": "Column index (0-based) assigned by Phase 4.3 column detection.\n\nThis field is `None` for spans outside any detected column\n(e.g., full-width headings, inter-column gaps).",
@@ -1239,9 +1376,31 @@
             "null"
           ]
         },
+        "confidence_source": {
+          "description": "Source of the confidence/text extraction.\n\nOne of: \"vector\" (native font decoding), \"ocr\" (pure OCR),\n\"ocr-assisted\" (OCR + vector correction), \"ocr-fallback\" (region-level fallback),\n\"repaired\" (text was repaired via heuristics).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "flags": {
+          "default": [],
+          "description": "Set of style flags applied to this span.\n\nPossible values: \"bold\", \"italic\", \"smallcaps\", \"subscript\", \"superscript\".",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "font": {
           "description": "Font name or identifier.",
           "type": "string"
+        },
+        "lang": {
+          "description": "BCP-47 language tag if detected, otherwise null.\n\nExamples: \"en\", \"en-US\", \"zh-Hans\". Null when language detection\nis not available or not applicable.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "receipt": {
           "anyOf": [
@@ -1253,6 +1412,16 @@
             }
           ],
           "description": "Optional cryptographic receipt for verification.\n\nThis field is present when `--receipts=lite` or `--receipts=svg`\nis enabled. When receipts are disabled, the field is `null`."
+        },
+        "rendering_mode": {
+          "description": "PDF Tr operator value (0-7) indicating the text rendering mode.\n\n0 = fill, 1 = stroke, 2 = fill then stroke, 3 = invisible,\n4 = fill to clip, 5 = stroke to clip, 6 = fill then stroke to clip,\n7 = clip.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "size": {
           "description": "Font size in points.",
@@ -1333,32 +1502,6 @@
       ],
       "type": "object"
     },
-    "BeadJson": {
-      "description": "A single bead in an article thread chain.\n\nRepresents one bead's position on a page, extracted during bead chain walking.\nPer PDF 1.7 Section 12.4.3, each bead contains a reference to its page and\na bounding rectangle defining the article region on that page.",
-      "properties": {
-        "page_index": {
-          "description": "0-based page index where this bead is located.",
-          "format": "uint",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "rect": {
-          "description": "Bounding rectangle in PDF user-space coordinates [x0, y0, x1, y1].\n\nPer PDF spec, the origin is at the bottom-left corner of the page.\nThis rect is NOT flipped to image-space coordinates.",
-          "items": {
-            "format": "float",
-            "type": "number"
-          },
-          "maxItems": 4,
-          "minItems": 4,
-          "type": "array"
-        }
-      },
-      "required": [
-        "page_index",
-        "rect"
-      ],
-      "type": "object"
-    },
     "ThreadJson": {
       "description": "JSON representation of an article thread.\n\nRepresents a single article thread from the PDF's /Threads array,\nincluding metadata from the thread info dict (/I) and the complete\nbead chain walked from the first bead.\n\nPer the plan (Phase 7.7), threads are extracted and emitted at the\ndocument level in the `/threads` array. The bead chain is walked by\nfollowing `/N` (next bead) links from the first bead until termination.",
       "properties": {
@@ -1370,6 +1513,7 @@
           ]
         },
         "beads": {
+          "default": [],
           "description": "Beads in this thread chain, in traversal order.\n\nEach bead represents a region on a page that is part of this article.\nThe beads are ordered by following `/N` (next bead) links from the\nfirst bead through the chain until termination.",
           "items": {
             "$ref": "#/$defs/BeadJson"
@@ -1405,6 +1549,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "description": "JSON Schema for pdftract PDF extraction output v1.0. This schema defines the structure of extraction results including pages, spans, blocks, tables, form fields, signatures, and metadata.",
   "properties": {
+    "attachments": {
+      "description": "Embedded file attachments extracted from the document.\n\nThis array contains all embedded files from the PDF's `/EmbeddedFiles`\nname tree or `/AF` (Associated Files) array. Attachments exceeding\n50 MB are truncated (metadata only, `data: null`, `truncated: true`).\nEmpty when the PDF has no embedded files.",
+      "items": {
+        "$ref": "#/$defs/AttachmentJson"
+      },
+      "type": "array"
+    },
     "fingerprint": {
       "description": "The PDF fingerprint (for receipt generation).",
       "type": "string"
@@ -1416,17 +1567,18 @@
       },
       "type": "array"
     },
-    "links": {
-      "description": "Hyperlink annotations extracted from the document.\n\nThis array contains all link annotations from all pages, sorted\ndeterministically by page_index and position for stable output.\nEmpty when the PDF has no link annotations.",
+    "javascript_actions": {
+      "default": [],
+      "description": "JavaScript actions detected in the document.\n\nPer TH-04, this array contains all discovered JavaScript actions\nwith their location and code excerpt. pdftract NEVER executes\nembedded JavaScript; this is for downstream security review.\nEmpty when no JavaScript is present.",
       "items": {
-        "$ref": "#/$defs/LinkJson"
+        "$ref": "#/$defs/JavascriptActionJson"
       },
       "type": "array"
     },
-    "attachments": {
-      "description": "Embedded file attachments extracted from the document.\n\nThis array contains all embedded files from the /EmbeddedFiles name tree\nor /AF (Associated Files) array. Attachments exceeding 50 MB are\ntruncated (metadata only, data: null, truncated: true). Empty when the\nPDF has no embedded files.",
+    "links": {
+      "description": "Document-scoped hyperlinks extracted from the document.\n\nThis array contains all link annotations (URI and internal destination links)\nextracted from all pages. Links are sorted by (page_index, rect.y0 desc, rect.x0).\nEmpty when the PDF has no link annotations.",
       "items": {
-        "$ref": "#/$defs/AttachmentJson"
+        "$ref": "#/$defs/LinkJson"
       },
       "type": "array"
     },
@@ -1447,6 +1599,13 @@
         "$ref": "#/$defs/SignatureJson"
       },
       "type": "array"
+    },
+    "threads": {
+      "description": "Article thread chains extracted from the document.\n\nThis array contains all article threads from the PDF's `/Threads` array.\nEach thread includes metadata from the thread info dict (/I) and the\ncomplete bead chain walked from the first bead. Empty when the PDF has\nno article threads.",
+      "items": {
+        "$ref": "#/$defs/ThreadJson"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -1455,7 +1614,9 @@
     "metadata",
     "signatures",
     "form_fields",
-    "links"
+    "links",
+    "attachments",
+    "threads"
   ],
   "title": "pdftract Output v1.0",
   "type": "object"
