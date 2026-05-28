@@ -1,120 +1,100 @@
-# Verification Note: pdftract-37qim
+# pdftract-37qim Verification Note
 
-## Task: CLI parsing + validation (multi-format flags, --ndjson exclusivity, stdout uniqueness)
-
-## Summary
-The CLI parsing + validation for multi-output was already implemented in `crates/pdftract-cli/src/output.rs`. This verification confirms that the implementation meets all acceptance criteria.
+## Task
+CLI parsing + validation for multi-format output flags
 
 ## Implementation Status
-The implementation was already present in the codebase. This task verified that:
-1. The `OutputConfig` struct and `build_specs()` method correctly validate output configurations
-2. All validation rules from the plan (lines 2261-2265) are enforced
-3. The CLI integration in `main.rs` uses the output configuration correctly
+**ALREADY COMPLETE** - No code changes required.
 
-## Verification Results
+## Verification Summary
 
-### Acceptance Criteria - ALL PASS
-
-1. **`--json a.json --md b.md -> 2 OutputSpecs built`** - PASS
-   ```bash
-   $ ./target/release/pdftract extract --json /tmp/a.json --md /tmp/b.md tests/fixtures/empty.pdf
-   Producing 2 outputs:
-     json -> /tmp/a.json
-     markdown -> /tmp/b.md
-   ```
-
-2. **`--json a.json --json b.json -> CLI error "duplicate format"`** - PASS
-   ```bash
-   $ ./target/release/pdftract extract --json /tmp/a.json --json /tmp/b.json tests/fixtures/empty.pdf
-   Error: duplicate format: --json and --json both specify json output
-   ```
-
-3. **`--ndjson --md b.md -> CLI error "--ndjson cannot be combined"`** - PASS (critical test line 2284)
-   ```bash
-   $ ./target/release/pdftract extract --ndjson --md /tmp/b.md tests/fixtures/empty.pdf
-   error: the argument '--ndjson' cannot be used with '--md <PATH>'
-   ```
-   Note: clap's `conflicts_with_all` catches this at parse time
-
-4. **`--md - --json out.json -> 2 specs, MD=Stdout, JSON=File`** - PASS
-   ```bash
-   $ ./target/release/pdftract extract --md - --json /tmp/out.json tests/fixtures/empty.pdf
-   Producing 2 outputs:
-     markdown -> stdout
-     json -> /tmp/out.json
-   ```
-
-5. **`--md - --json - -> CLI error "at most one stdout"`** - PASS
-   ```bash
-   $ ./target/release/pdftract extract --md - --json - tests/fixtures/empty.pdf
-   Error: at most one output may be stdout (-); multiple formats cannot all write to stdout
-   ```
-
-6. **`--format json,md -o out -> 2 specs, out.json + out.md`** - PASS
-   ```bash
-   $ ./target/release/pdftract extract --format json,md -o /tmp/out tests/fixtures/empty.pdf
-   Producing 2 outputs:
-     json -> /tmp/out.json
-     markdown -> /tmp/out.md
-   ```
-
-### Additional Verification
-
-- **Default behavior (no output flags)** - PASS
-  - Per plan lines 2242-2243: Single output to stdout (default)
-  - Test `test_output_config_default` confirms JSON to stdout when no flags specified
-
-- **`--format without -o` error** - PASS
-  ```bash
-  $ ./target/release/pdftract extract --format json tests/fixtures/empty.pdf
-  Error: --format requires -o (output base path)
-  ```
-
-- **Cross-format duplication detection** - PASS
-  - Tests: `test_duplicate_format_json_flag_and_format_list`, `test_duplicate_format_md_flag_and_format_list`, `test_duplicate_format_text_flag_and_format_list`
-  - Validates that `--json` and `--format json` cannot both specify JSON output
-
-## Implementation Details
-
-### OutputConfig Structure
-Located in `crates/pdftract-cli/src/output.rs`:
-- `OutputConfig` struct stores parsed CLI flags
-- `build_specs()` method validates and builds `Vec<OutputSpec>`
-- Validation rules:
-  1. Each format can appear at most once
-  2. At most one output can be stdout
-  3. `--ndjson` cannot be combined with other formats
-  4. `--format` requires `-o`
-
-### CLI Integration
-Located in `crates/pdftract-cli/src/main.rs`:
-- `cmd_extract()` creates `OutputConfig` from CLI args (lines 696-703)
-- Calls `build_specs()` and reports errors with `exit(2)` (lines 705-711)
-- Iterates over output specs and writes each to its destination (lines 910-924)
-- Uses `AtomicFileWriter` for file outputs (atomic writes)
-
-### Test Coverage
-All 23 tests in `output::tests` pass (verified with `cargo nextest run`):
-- Format parsing (`test_format_from_str`)
-- Extension mapping (`test_format_extension`)
-- Destination handling (`test_destination_from_path`)
-- Single format flags (`test_single_format_flag_json`, `test_single_format_flag_md`, `test_single_format_flag_text`)
-- Multiple format flags (`test_multiple_format_flags`)
-- Stdout handling (`test_stdout_with_file`, `test_multiple_stdout_rejected`)
-- NDJSON exclusivity (`test_ndjson_exclusive_with_json`, `test_ndjson_exclusive_with_md`, `test_ndjson_exclusive_with_text`)
-- Format auto-naming (`test_format_with_base`, `test_format_with_all_formats`, `test_output_spec_auto_named`)
-- Duplicate detection (`test_duplicate_format_json_flag_and_format_list`, etc.)
-
-## References
-- Plan section: Phase 6.6 CLI design + validation rules (lines 2221-2247, 2261-2303)
-- Critical test: Line 2284 - `--ndjson --md b.md` → rejected at CLI parse time
-
-## PASS/WARN/FAIL Summary
-- **PASS**: All 6 acceptance criteria
-- **WARN**: None
-- **FAIL**: None
-
-## Files Verified
-- `crates/pdftract-cli/src/output.rs` - Core validation logic (560 lines)
+The CLI parsing and validation for multi-output is fully implemented in:
+- `crates/pdftract-cli/src/output.rs` - Core validation logic
 - `crates/pdftract-cli/src/main.rs` - CLI integration
-- `crates/pdftract-cli/tests/multi_output_validation.rs` - Integration tests
+
+### Validation Rules Implemented
+
+1. **At most one stdout** (`-`): `output.rs:236-240`
+   - Tracks stdout_count across all format specifications
+   - Errors with clear message if > 1 format targets stdout
+
+2. **Duplicate format rejection**: `output.rs:147-199`
+   - Tracks each format in `format_sources` HashMap
+   - Errors on duplicate `--json`, `--md`, `--text`, or `--ndjson` flags
+   - Errors on duplicate formats in `--format` list
+   - Errors when a format appears both as flag and in `--format` list
+
+3. **NDJSON exclusivity**: Two-layer protection
+   - clap-level: `conflicts_with_all` on `--ndjson` flag (`main.rs:115`)
+   - Validation-level: Check in `build_specs()` (`output.rs:243-247`)
+
+4. **Auto-naming with `--format` + `-o`**: `output.rs:212-233`
+   - Derives filenames from base + format extension
+   - Extensions: `.json`, `.md`, `.txt`, `.ndjson`
+
+### Acceptance Criteria Verified
+
+| Test | Status | Location |
+|------|--------|----------|
+| `--json a.json --md b.md` → 2 specs | ✓ | `test_multiple_format_flags` |
+| `--json a.json --json b.json` → error | ✓ | Manual verification |
+| `--ndjson --md b.md` → error | ✓ | Manual verification |
+| `--md - --json out.json` → 2 specs | ✓ | `test_stdout_with_file` |
+| `--md - --json -` → error | ✓ | Manual verification |
+| `--format json,md -o out` → 2 specs | ✓ | `test_format_with_base` |
+
+### Test Results
+```bash
+$ cargo test -p pdftract-cli --lib output::tests
+test result: ok. 23 passed; 0 failed
+```
+
+### Manual CLI Verification
+```bash
+# Duplicate format rejection
+$ ./target/release/pdftract extract --json a.json --json b.json blank.pdf
+Error: duplicate format: --json and --json both specify json output
+Exit code: 2
+
+# NDJSON exclusivity
+$ ./target/release/pdftract extract --ndjson --md b.md blank.pdf
+error: the argument '--ndjson' cannot be used with '--md <PATH>'
+Exit code: 2
+
+# Multiple stdout rejection
+$ ./target/release/pdftract extract --md - --json - blank.pdf
+Error: at most one output may be stdout (-); multiple formats cannot all write to stdout
+Exit code: 2
+
+# Auto-naming
+$ ./target/release/pdftract extract --format json,md -o out blank.pdf
+Producing 2 outputs:
+  json -> out.json
+  markdown -> out.md
+```
+
+## Key Implementation Details
+
+### OutputSpec Structure
+```rust
+pub struct OutputSpec {
+    pub format: Format,
+    pub dest: Destination,  // File(PathBuf) | Stdout
+}
+```
+
+### Validation Flow
+1. Parse CLI flags with clap
+2. Build `OutputConfig` from parsed values
+3. Call `build_specs()` which validates and returns `Vec<OutputSpec>`
+4. Exit with code 2 on validation error
+
+### Error Messages
+All error messages are clear and point to the offending flag:
+- "duplicate format: --json and --json both specify json output"
+- "--ndjson cannot be combined with other output formats"
+- "at most one output may be stdout (-)"
+- "--format requires -o (output base path)"
+
+## Conclusion
+The implementation fully satisfies all acceptance criteria for bead pdftract-37qim. No code changes are required.
