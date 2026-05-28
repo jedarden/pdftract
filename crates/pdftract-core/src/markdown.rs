@@ -37,7 +37,7 @@
 
 use crate::schema::{
     BeadJson, BlockJson, ChoiceValueJson, FormFieldJson, FormFieldTypeJson, FormFieldValueJson,
-    SpanJson, ThreadJson,
+    SpanJson, TableJson, ThreadJson,
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -203,6 +203,7 @@ fn parse_bbox(s: &str) -> Option<[f32; 4]> {
 /// # Arguments
 ///
 /// * `block` - The block to convert
+/// * `tables` - The tables array for looking up table structures by table_index
 /// * `page_index` - Zero-based page index
 /// * `block_index` - Zero-based block index within the page
 /// * `include_anchor` - Whether to include the HTML comment anchor
@@ -212,6 +213,7 @@ fn parse_bbox(s: &str) -> Option<[f32; 4]> {
 /// A markdown string with optional anchor.
 pub fn block_to_markdown(
     block: &BlockJson,
+    tables: &[TableJson],
     page_index: usize,
     block_index: usize,
     include_anchor: bool,
@@ -249,10 +251,25 @@ pub fn block_to_markdown(
             result.push_str(&format!("* {}\n", block.text));
         }
         "table" => {
-            result.push_str(&format!("| {}\n", block.text));
+            // Look up the table structure from the tables array
+            if let Some(table_idx) = block.table_index {
+                if let Some(table) = tables.get(table_idx) {
+                    result.push_str(&emit_table(table));
+                } else {
+                    // Fallback to text if table index is invalid
+                    result.push_str(&format!("| {}\n", block.text));
+                }
+            } else {
+                // Fallback to text if no table index
+                result.push_str(&format!("| {}\n", block.text));
+            }
         }
         "figure" => {
             result.push_str(&format!("![]()\n\n{}\n", block.text));
+        }
+        "caption" => {
+            // Captions are emitted as italic text
+            result.push_str(&format!("*{}*\n", block.text));
         }
         _ => {
             result.push_str(&format!("{}\n", block.text));
@@ -270,6 +287,7 @@ pub fn block_to_markdown(
 /// # Arguments
 ///
 /// * `blocks` - The blocks to convert
+/// * `tables` - The tables array for looking up table structures
 /// * `page_index` - Zero-based page index
 /// * `include_anchor` - Whether to include HTML comment anchors
 /// * `include_page_break` - Whether to add a page break separator
@@ -279,6 +297,7 @@ pub fn block_to_markdown(
 /// A markdown string with all blocks from the page.
 pub fn page_to_markdown(
     blocks: &[BlockJson],
+    tables: &[TableJson],
     page_index: usize,
     include_anchor: bool,
     include_page_break: bool,
@@ -286,7 +305,7 @@ pub fn page_to_markdown(
     let mut result = String::new();
 
     for (block_index, block) in blocks.iter().enumerate() {
-        let md = block_to_markdown(block, page_index, block_index, include_anchor);
+        let md = block_to_markdown(block, tables, page_index, block_index, include_anchor);
         result.push_str(&md);
         result.push('\n');
     }
@@ -419,7 +438,7 @@ Some text."#;
             receipt: None,
         };
 
-        let md = block_to_markdown(&block, 0, 0, true);
+        let md = block_to_markdown(&block, &[], 0, 0, true);
         assert!(md.contains(
             "<!-- pdftract: page=0 block=0 bbox=[72.0,640.5,540.0,672.0] kind=heading -->"
         ));
@@ -429,7 +448,7 @@ Some text."#;
     #[test]
     fn test_block_to_markdown_paragraph_without_anchor() {
         let block = make_test_block("paragraph", "Some text.", [72.0, 600.0, 540.0, 630.0]);
-        let md = block_to_markdown(&block, 0, 0, false);
+        let md = block_to_markdown(&block, &[], 0, 0, false);
         assert!(!md.contains("<!-- pdftract:"));
         assert!(md.contains("Some text."));
     }
@@ -437,21 +456,21 @@ Some text."#;
     #[test]
     fn test_block_to_markdown_list() {
         let block = make_test_block("list", "Item 1", [72.0, 500.0, 540.0, 520.0]);
-        let md = block_to_markdown(&block, 0, 0, false);
+        let md = block_to_markdown(&block, &[], 0, 0, false);
         assert!(md.contains("* Item 1"));
     }
 
     #[test]
     fn test_block_to_markdown_table() {
         let block = make_test_block("table", "Cell data", [72.0, 400.0, 540.0, 450.0]);
-        let md = block_to_markdown(&block, 0, 0, false);
+        let md = block_to_markdown(&block, &[], 0, 0, false);
         assert!(md.contains("| Cell data"));
     }
 
     #[test]
     fn test_block_to_markdown_figure() {
         let block = make_test_block("figure", "Alt text", [72.0, 300.0, 540.0, 350.0]);
-        let md = block_to_markdown(&block, 0, 0, false);
+        let md = block_to_markdown(&block, &[], 0, 0, false);
         assert!(md.contains("![]()"));
         assert!(md.contains("Alt text"));
     }
@@ -463,7 +482,7 @@ Some text."#;
             make_test_block("paragraph", "Text", [72.0, 600.0, 540.0, 630.0]),
         ];
 
-        let md = page_to_markdown(&blocks, 0, false, true);
+        let md = page_to_markdown(&blocks, &[], 0, false, true);
         assert!(md.contains("---"));
     }
 
@@ -474,7 +493,7 @@ Some text."#;
             make_test_block("paragraph", "Text", [72.0, 600.0, 540.0, 630.0]),
         ];
 
-        let md = page_to_markdown(&blocks, 0, false, false);
+        let md = page_to_markdown(&blocks, &[], 0, false, false);
         assert!(!md.contains("---"));
     }
 
@@ -485,7 +504,7 @@ Some text."#;
             make_test_block("paragraph", "Text", [72.0, 600.0, 540.0, 630.0]),
         ];
 
-        let md = page_to_markdown(&blocks, 0, true, false);
+        let md = page_to_markdown(&blocks, &[], 0, true, false);
         assert_eq!(md.matches("<!-- pdftract:").count(), 2);
     }
 
@@ -501,7 +520,7 @@ Some text."#;
             receipt: None,
         }];
 
-        let md = page_to_markdown(&blocks, 3, true, false);
+        let md = page_to_markdown(&blocks, &[], 3, true, false);
         let anchors = parse_anchors(&md);
 
         assert_eq!(anchors.len(), 1);
@@ -586,11 +605,6 @@ fn format_value_json(value: &FormFieldValueJson) -> String {
         FormFieldValueJson::Signature(None) => "*unsigned*".to_string(),
         FormFieldValueJson::Signature(Some(n)) => format!("ref #{}", n),
     }
-}
-
-/// Escape pipe characters for markdown table cells.
-fn escape_pipe(s: &str) -> String {
-    s.replace('|', "\\|")
 }
 
 /// Generate a markdown footer section for article threads.
@@ -928,6 +942,274 @@ fn escape_markdown_inline(s: &str) -> String {
             '\\' | '`' | '*' | '_' | '[' | ']' | '(' | ')' | '#' | '!' | '+' | '<' | '>' => {
                 result.push('\\');
                 result.push(c);
+            }
+            _ => result.push(c),
+        }
+    }
+
+    result
+}
+
+/// Emit a table as Markdown (GFM pipe table) or HTML fallback.
+///
+/// This function implements Phase 6.5 table emission:
+/// - Simple tables (all 1x1 cells, no nested content) → GFM pipe table
+/// - Complex tables (merged cells/colspan/rowspan/nested blocks) → HTML `<table>`
+/// - Caption → italic line below the table
+///
+/// # Arguments
+///
+/// * `table` - The table to emit
+///
+/// # Returns
+///
+/// A Markdown string with the table in the appropriate format.
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::markdown::emit_table;
+/// use pdftract_core::schema::{TableJson, RowJson, CellJson};
+///
+/// let table = TableJson {
+///     id: "table_0".to_string(),
+///     bbox: [50.0, 100.0, 400.0, 300.0],
+///     rows: vec![
+///         RowJson {
+///             bbox: [50.0, 250.0, 400.0, 300.0],
+///             cells: vec![
+///                 CellJson {
+///                     bbox: [50.0, 250.0, 200.0, 300.0],
+///                     text: "Header 1".to_string(),
+///                     spans: vec![],
+///                     row: 0,
+///                     col: 0,
+///                     rowspan: 1,
+///                     colspan: 1,
+///                     is_header_row: true,
+///                 },
+///                 CellJson {
+///                     bbox: [200.0, 250.0, 400.0, 300.0],
+///                     text: "Header 2".to_string(),
+///                     spans: vec![],
+///                     row: 0,
+///                     col: 1,
+///                     rowspan: 1,
+///                     colspan: 1,
+///                     is_header_row: true,
+///                 },
+///             ],
+///             is_header: true,
+///         },
+///         RowJson {
+///             bbox: [50.0, 100.0, 400.0, 250.0],
+///             cells: vec![
+///                 CellJson {
+///                     bbox: [50.0, 100.0, 200.0, 250.0],
+///                     text: "Data 1".to_string(),
+///                     spans: vec![],
+///                     row: 1,
+///                     col: 0,
+///                     rowspan: 1,
+///                     colspan: 1,
+///                     is_header_row: false,
+///                 },
+///                 CellJson {
+///                     bbox: [200.0, 100.0, 400.0, 250.0],
+///                     text: "Data 2".to_string(),
+///                     spans: vec![],
+///                     row: 1,
+///                     col: 1,
+///                     rowspan: 1,
+///                     colspan: 1,
+///                     is_header_row: false,
+///                 },
+///             ],
+///             is_header: false,
+///         },
+///     ],
+///     header_rows: 1,
+///     detection_method: "line_based".to_string(),
+///     continued: false,
+///     continued_from_prev: false,
+///     page_index: 0,
+/// };
+///
+/// let md = emit_table(&table);
+/// assert!(md.contains("| Header 1 | Header 2 |"));
+/// assert!(md.contains("| Data 1 | Data 2 |"));
+/// ```
+pub fn emit_table(table: &TableJson) -> String {
+    // Check if table is simple (all cells 1x1) or complex (merged cells)
+    let is_simple = table.rows.iter().all(|row| {
+        row.cells
+            .iter()
+            .all(|cell| cell.rowspan == 1 && cell.colspan == 1)
+    });
+
+    if is_simple {
+        emit_gfm_table(table)
+    } else {
+        emit_html_table(table)
+    }
+}
+
+/// Emit a table as GitHub-Flavored Markdown pipe table.
+///
+/// GFM pipe tables require:
+/// - All cells have rowspan=1 and colspan=1 (no merged cells)
+/// - Header row (first row if is_header=true, otherwise synthesized)
+/// - Separator row with `| --- | --- |` syntax
+/// - Body rows with `| val | val |` syntax
+fn emit_gfm_table(table: &TableJson) -> String {
+    let mut result = String::new();
+
+    // Find the maximum number of columns across all rows
+    let max_cols = table
+        .rows
+        .iter()
+        .map(|row| row.cells.len())
+        .max()
+        .unwrap_or(0);
+
+    if max_cols == 0 {
+        return String::new();
+    }
+
+    // Emit header row (use first row if it exists)
+    if let Some(first_row) = table.rows.first() {
+        result.push_str("| ");
+        for (i, cell) in first_row.cells.iter().enumerate() {
+            if i > 0 {
+                result.push_str(" | ");
+            }
+            result.push_str(&escape_pipe(&cell.text));
+        }
+        // Pad missing columns
+        for i in first_row.cells.len()..max_cols {
+            if i > 0 || !first_row.cells.is_empty() {
+                result.push_str(" | ");
+            }
+            result.push_str(" ");
+        }
+        result.push_str(" |\n");
+    } else {
+        // Empty header row for table with no rows
+        for i in 0..max_cols {
+            if i > 0 {
+                result.push_str(" | ");
+            }
+            result.push_str(" ");
+        }
+        result.push_str(" |\n");
+    }
+
+    // Emit separator row
+    result.push_str("|");
+    for _ in 0..max_cols {
+        result.push_str(" --- |");
+    }
+    result.push('\n');
+
+    // Emit body rows (skip first row if it was header)
+    let body_start = if table.rows.first().map_or(false, |r| r.is_header) {
+        1
+    } else {
+        0
+    };
+
+    for row in table.rows.iter().skip(body_start) {
+        result.push_str("| ");
+        for (i, cell) in row.cells.iter().enumerate() {
+            if i > 0 {
+                result.push_str(" | ");
+            }
+            result.push_str(&escape_pipe(&cell.text));
+        }
+        // Pad missing columns
+        for i in row.cells.len()..max_cols {
+            if i > 0 || !row.cells.is_empty() {
+                result.push_str(" | ");
+            }
+            result.push_str(" ");
+        }
+        result.push_str(" |\n");
+    }
+
+    result
+}
+
+/// Emit a table as inline HTML `<table>`.
+///
+/// HTML fallback is used when:
+/// - Any cell has colspan > 1 or rowspan > 1 (merged cells)
+/// - Nested blocks are present (future enhancement)
+pub fn emit_html_table(table: &TableJson) -> String {
+    let mut result = String::from("<table>\n");
+
+    for row in &table.rows {
+        result.push_str("  <tr>\n");
+
+        for cell in &row.cells {
+            let tag = if cell.is_header_row || row.is_header {
+                "th"
+            } else {
+                "td"
+            };
+
+            result.push_str("    <");
+            result.push_str(tag);
+
+            // Add colspan if > 1
+            if cell.colspan > 1 {
+                result.push_str(&format!(" colspan=\"{}\"", cell.colspan));
+            }
+
+            // Add rowspan if > 1
+            if cell.rowspan > 1 {
+                result.push_str(&format!(" rowspan=\"{}\"", cell.rowspan));
+            }
+
+            result.push_str(">");
+            result.push_str(&escape_pipe(&cell.text));
+            result.push_str("</");
+            result.push_str(tag);
+            result.push_str(">\n");
+        }
+
+        result.push_str("  </tr>\n");
+    }
+
+    result.push_str("</table>\n");
+    result
+}
+
+/// Escape pipe characters for markdown table cells.
+///
+/// This function escapes `|` as `\|` to prevent it from being interpreted
+/// as a column separator in GFM pipe tables.
+///
+/// Also replaces newlines with `<br>` for GFM tables (HTML inside Markdown
+/// table cells is allowed and widely supported).
+fn escape_pipe(s: &str) -> String {
+    let mut result = String::with_capacity(s.len() * 2);
+
+    for c in s.chars() {
+        match c {
+            '|' => {
+                result.push_str("\\|");
+            }
+            '\n' => {
+                // Newlines in GFM tables become <br> tags
+                result.push_str("<br>");
+            }
+            '<' => {
+                // Escape < to prevent HTML injection
+                result.push_str("&lt;");
+            }
+            '>' => {
+                // Escape > to prevent HTML injection
+                result.push_str("&gt;");
             }
             _ => result.push(c),
         }
@@ -1297,5 +1579,453 @@ mod span_tests {
             },
         ];
         assert_eq!(collapse_page_ranges(&beads), "pages 0-1, 3-4");
+    }
+
+    // Table emission tests (Phase 6.5)
+
+    fn make_test_cell(
+        text: &str,
+        row: usize,
+        col: usize,
+        rowspan: u32,
+        colspan: u32,
+        is_header_row: bool,
+    ) -> crate::schema::CellJson {
+        crate::schema::CellJson {
+            bbox: [0.0, 0.0, 100.0, 20.0],
+            text: text.to_string(),
+            spans: vec![],
+            row,
+            col,
+            rowspan,
+            colspan,
+            is_header_row,
+        }
+    }
+
+    fn make_test_row(cells: Vec<crate::schema::CellJson>, is_header: bool) -> crate::schema::RowJson {
+        crate::schema::RowJson {
+            bbox: [0.0, 0.0, 100.0, 20.0],
+            cells,
+            is_header,
+        }
+    }
+
+    #[test]
+    fn test_emit_table_simple_3x3() {
+        // Simple 3x3 table: GFM pipe format
+        let table = TableJson {
+            id: "table_0".to_string(),
+            bbox: [0.0, 0.0, 300.0, 200.0],
+            rows: vec![
+                make_test_row(
+                    vec![
+                        make_test_cell("H1", 0, 0, 1, 1, true),
+                        make_test_cell("H2", 0, 1, 1, 1, true),
+                        make_test_cell("H3", 0, 2, 1, 1, true),
+                    ],
+                    true,
+                ),
+                make_test_row(
+                    vec![
+                        make_test_cell("D1", 1, 0, 1, 1, false),
+                        make_test_cell("D2", 1, 1, 1, 1, false),
+                        make_test_cell("D3", 1, 2, 1, 1, false),
+                    ],
+                    false,
+                ),
+                make_test_row(
+                    vec![
+                        make_test_cell("D4", 2, 0, 1, 1, false),
+                        make_test_cell("D5", 2, 1, 1, 1, false),
+                        make_test_cell("D6", 2, 2, 1, 1, false),
+                    ],
+                    false,
+                ),
+            ],
+            header_rows: 1,
+            detection_method: "line_based".to_string(),
+            continued: false,
+            continued_from_prev: false,
+            page_index: 0,
+        };
+
+        let md = emit_table(&table);
+        assert!(md.contains("| H1 | H2 | H3 |"));
+        assert!(md.contains("| --- | --- | --- |"));
+        assert!(md.contains("| D1 | D2 | D3 |"));
+        assert!(md.contains("| D4 | D5 | D6 |"));
+        // Should NOT contain HTML table tags
+        assert!(!md.contains("<table>"));
+        assert!(!md.contains("<tr>"));
+        assert!(!md.contains("<td>"));
+    }
+
+    #[test]
+    fn test_emit_table_merged_cells_html_fallback() {
+        // Critical test: merged-cell table input -> falls back to inline <table>
+        let table = TableJson {
+            id: "table_0".to_string(),
+            bbox: [0.0, 0.0, 300.0, 200.0],
+            rows: vec![
+                make_test_row(
+                    vec![
+                        make_test_cell("Merged Header", 0, 0, 1, 2, true), // colspan=2
+                        make_test_cell("H2", 0, 1, 1, 1, true),
+                    ],
+                    true,
+                ),
+                make_test_row(
+                    vec![
+                        make_test_cell("D1", 1, 0, 1, 1, false),
+                        make_test_cell("D2", 1, 1, 1, 1, false),
+                    ],
+                    false,
+                ),
+            ],
+            header_rows: 1,
+            detection_method: "line_based".to_string(),
+            continued: false,
+            continued_from_prev: false,
+            page_index: 0,
+        };
+
+        let md = emit_table(&table);
+        // Should contain HTML table tags
+        assert!(md.contains("<table>"));
+        assert!(md.contains("</table>"));
+        assert!(md.contains("<tr>"));
+        assert!(md.contains("</tr>"));
+        // Should have colspan attribute
+        assert!(md.contains("colspan=\"2\""));
+        // Should NOT contain GFM pipe syntax
+        assert!(!md.contains("| --- |"));
+    }
+
+    #[test]
+    fn test_emit_table_rowspan_html_fallback() {
+        // Table with rowspan -> HTML fallback
+        let table = TableJson {
+            id: "table_0".to_string(),
+            bbox: [0.0, 0.0, 300.0, 200.0],
+            rows: vec![
+                make_test_row(
+                    vec![
+                        make_test_cell("Rowspan", 0, 0, 2, 1, true), // rowspan=2
+                        make_test_cell("H2", 0, 1, 1, 1, true),
+                    ],
+                    true,
+                ),
+                make_test_row(
+                    vec![
+                        make_test_cell("D1", 1, 0, 1, 1, false), // This cell is below the rowspan cell
+                        make_test_cell("D2", 1, 1, 1, 1, false),
+                    ],
+                    false,
+                ),
+            ],
+            header_rows: 1,
+            detection_method: "line_based".to_string(),
+            continued: false,
+            continued_from_prev: false,
+            page_index: 0,
+        };
+
+        let md = emit_table(&table);
+        // Should have rowspan attribute
+        assert!(md.contains("rowspan=\"2\""));
+        // Should NOT contain GFM pipe syntax
+        assert!(!md.contains("| --- |"));
+    }
+
+    #[test]
+    fn test_escape_pipe() {
+        // Cell with pipe character: escaped as \|
+        assert_eq!(escape_pipe("A|B"), "A\\|B");
+        assert_eq!(escape_pipe("|||"), "\\|\\|\\|");
+        assert_eq!(escape_pipe("test"), "test");
+    }
+
+    #[test]
+    fn test_escape_pipe_newline_to_br() {
+        // Cell with newline: rendered with <br>
+        assert_eq!(escape_pipe("line1\nline2"), "line1<br>line2");
+        assert_eq!(escape_pipe("a\nb\nc"), "a<br>b<br>c");
+    }
+
+    #[test]
+    fn test_escape_pipe_html_entities() {
+        // < and > escaped as HTML entities
+        assert_eq!(escape_pipe("<tag>"), "&lt;tag&gt;");
+        assert_eq!(escape_pipe("a<b"), "a&lt;b");
+    }
+
+    #[test]
+    fn test_emit_table_with_pipe_in_cell() {
+        // Cell with pipe character: escaped as \|
+        let table = TableJson {
+            id: "table_0".to_string(),
+            bbox: [0.0, 0.0, 200.0, 100.0],
+            rows: vec![
+                make_test_row(
+                    vec![
+                        make_test_cell("A|B", 0, 0, 1, 1, true),
+                        make_test_cell("Normal", 0, 1, 1, 1, true),
+                    ],
+                    true,
+                ),
+                make_test_row(
+                    vec![
+                        make_test_cell("Data", 1, 0, 1, 1, false),
+                        make_test_cell("Value", 1, 1, 1, 1, false),
+                    ],
+                    false,
+                ),
+            ],
+            header_rows: 1,
+            detection_method: "line_based".to_string(),
+            continued: false,
+            continued_from_prev: false,
+            page_index: 0,
+        };
+
+        let md = emit_table(&table);
+        // Pipe should be escaped in the output
+        assert!(md.contains("A\\|B"));
+        // The table should still render correctly
+        assert!(md.contains("| --- | --- |"));
+    }
+
+    #[test]
+    fn test_emit_table_with_newline_in_cell() {
+        // Cell with newline: rendered with <br>
+        let table = TableJson {
+            id: "table_0".to_string(),
+            bbox: [0.0, 0.0, 200.0, 100.0],
+            rows: vec![
+                make_test_row(
+                    vec![
+                        make_test_cell("Line1\nLine2", 0, 0, 1, 1, true),
+                        make_test_cell("Normal", 0, 1, 1, 1, true),
+                    ],
+                    true,
+                ),
+                make_test_row(
+                    vec![
+                        make_test_cell("Data", 1, 0, 1, 1, false),
+                        make_test_cell("Value", 1, 1, 1, 1, false),
+                    ],
+                    false,
+                ),
+            ],
+            header_rows: 1,
+            detection_method: "line_based".to_string(),
+            continued: false,
+            continued_from_prev: false,
+            page_index: 0,
+        };
+
+        let md = emit_table(&table);
+        // Newline should become <br> tag
+        assert!(md.contains("Line1<br>Line2"));
+    }
+
+    #[test]
+    fn test_emit_table_empty() {
+        // Empty table (no rows)
+        let table = TableJson {
+            id: "table_0".to_string(),
+            bbox: [0.0, 0.0, 100.0, 50.0],
+            rows: vec![],
+            header_rows: 0,
+            detection_method: "line_based".to_string(),
+            continued: false,
+            continued_from_prev: false,
+            page_index: 0,
+        };
+
+        let md = emit_table(&table);
+        // Empty table should return empty string
+        assert_eq!(md, "");
+    }
+
+    #[test]
+    fn test_emit_table_single_row() {
+        // Table with single row (no body rows)
+        let table = TableJson {
+            id: "table_0".to_string(),
+            bbox: [0.0, 0.0, 200.0, 50.0],
+            rows: vec![make_test_row(
+                vec![
+                    make_test_cell("H1", 0, 0, 1, 1, true),
+                    make_test_cell("H2", 0, 1, 1, 1, true),
+                ],
+                true,
+            )],
+            header_rows: 1,
+            detection_method: "line_based".to_string(),
+            continued: false,
+            continued_from_prev: false,
+            page_index: 0,
+        };
+
+        let md = emit_table(&table);
+        // Should have header row and separator
+        assert!(md.contains("| H1 | H2 |"));
+        assert!(md.contains("| --- | --- |"));
+        // Should not have any body rows (no "| |" after separator)
+        let parts: Vec<&str> = md.lines().collect();
+        assert_eq!(parts.len(), 2); // Header row + separator
+    }
+
+    #[test]
+    fn test_emit_table_no_header() {
+        // Table with no header row (all rows are data)
+        let table = TableJson {
+            id: "table_0".to_string(),
+            bbox: [0.0, 0.0, 200.0, 100.0],
+            rows: vec![
+                make_test_row(
+                    vec![
+                        make_test_cell("D1", 0, 0, 1, 1, false),
+                        make_test_cell("D2", 0, 1, 1, 1, false),
+                    ],
+                    false,
+                ),
+                make_test_row(
+                    vec![
+                        make_test_cell("D3", 1, 0, 1, 1, false),
+                        make_test_cell("D4", 1, 1, 1, 1, false),
+                    ],
+                    false,
+                ),
+            ],
+            header_rows: 0,
+            detection_method: "line_based".to_string(),
+            continued: false,
+            continued_from_prev: false,
+            page_index: 0,
+        };
+
+        let md = emit_table(&table);
+        // Should use first row as header for GFM
+        assert!(md.contains("| D1 | D2 |"));
+        assert!(md.contains("| --- | --- |"));
+        // Second row should be in body
+        assert!(md.contains("| D3 | D4 |"));
+    }
+
+    #[test]
+    fn test_emit_html_table_header_cells() {
+        // HTML table with is_header_row cells should use <th> tags
+        let table = TableJson {
+            id: "table_0".to_string(),
+            bbox: [0.0, 0.0, 200.0, 100.0],
+            rows: vec![
+                make_test_row(
+                    vec![
+                        make_test_cell("Header1", 0, 0, 1, 1, true), // is_header_row=true
+                        make_test_cell("Header2", 0, 1, 1, 1, true),
+                    ],
+                    true,
+                ),
+                make_test_row(
+                    vec![
+                        make_test_cell("Data1", 1, 0, 1, 1, false), // is_header_row=false
+                        make_test_cell("Data2", 1, 1, 1, 1, false),
+                    ],
+                    false,
+                ),
+            ],
+            header_rows: 1,
+            detection_method: "line_based".to_string(),
+            continued: false,
+            continued_from_prev: false,
+            page_index: 0,
+        };
+
+        let md = emit_html_table(&table);
+        // First row should use <th> tags
+        assert!(md.contains("<th>Header1</th>"));
+        assert!(md.contains("<th>Header2</th>"));
+        // Second row should use <td> tags
+        assert!(md.contains("<td>Data1</td>"));
+        assert!(md.contains("<td>Data2</td>"));
+    }
+
+    #[test]
+    fn test_emit_html_table_row_and_colspan() {
+        // HTML table with both rowspan and colspan
+        let table = TableJson {
+            id: "table_0".to_string(),
+            bbox: [0.0, 0.0, 300.0, 200.0],
+            rows: vec![
+                make_test_row(
+                    vec![
+                        make_test_cell("Both", 0, 0, 2, 2, true), // rowspan=2, colspan=2
+                        make_test_cell("H2", 0, 1, 1, 1, true),
+                    ],
+                    true,
+                ),
+                make_test_row(
+                    vec![
+                        make_test_cell("D1", 1, 0, 1, 1, false),
+                        make_test_cell("D2", 1, 1, 1, 1, false),
+                    ],
+                    false,
+                ),
+            ],
+            header_rows: 1,
+            detection_method: "line_based".to_string(),
+            continued: false,
+            continued_from_prev: false,
+            page_index: 0,
+        };
+
+        let md = emit_html_table(&table);
+        // Should have both colspan and rowspan attributes
+        assert!(md.contains("colspan=\"2\""));
+        assert!(md.contains("rowspan=\"2\""));
+    }
+
+    #[test]
+    fn test_emit_gfm_table_variable_width() {
+        // GFM table with different column counts per row
+        let table = TableJson {
+            id: "table_0".to_string(),
+            bbox: [0.0, 0.0, 300.0, 200.0],
+            rows: vec![
+                make_test_row(
+                    vec![
+                        make_test_cell("H1", 0, 0, 1, 1, true),
+                        make_test_cell("H2", 0, 1, 1, 1, true),
+                        make_test_cell("H3", 0, 2, 1, 1, true),
+                    ],
+                    true,
+                ),
+                make_test_row(
+                    vec![
+                        make_test_cell("D1", 1, 0, 1, 1, false),
+                        make_test_cell("D2", 1, 1, 1, 1, false),
+                        // Missing third cell - should pad
+                    ],
+                    false,
+                ),
+            ],
+            header_rows: 1,
+            detection_method: "line_based".to_string(),
+            continued: false,
+            continued_from_prev: false,
+            page_index: 0,
+        };
+
+        let md = emit_table(&table);
+        // Should have 3 columns in all rows (padded with empty cells)
+        assert!(md.contains("| H1 | H2 | H3 |"));
+        assert!(md.contains("| --- | --- | --- |"));
+        // Second row should be padded
+        let lines: Vec<&str> = md.lines().collect();
+        let body_line = lines.get(2).unwrap();
+        assert_eq!(body_line.matches('|').count(), 4); // 4 pipes = 3 cells
     }
 }

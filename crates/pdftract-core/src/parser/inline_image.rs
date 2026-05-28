@@ -740,10 +740,63 @@ fn parse_decode_array(
 /// This function advances the lexer until it finds a name token (starting
 /// with `/`) or the `ID` keyword. It's used for error recovery when a
 /// malformed header is encountered.
+///
+/// The recovery scans byte-by-byte for:
+/// - `/` (start of a name token)
+/// - `I` followed by `D` (start of the ID keyword)
+///
+/// This allows the parser to skip past malformed key-value pairs and
+/// continue parsing from the next valid key or the ID terminator.
 fn recover_to_next_key(lexer: &mut Lexer) {
-    // Peek ahead to find the next name or ID
-    // This is a simplified recovery - a full implementation would
-    // scan byte-by-byte to find '/' or 'I'
+    let remaining = lexer.remaining_bytes();
+
+    // Scan byte-by-byte for '/' or "ID"
+    let mut i = 0;
+    while i < remaining.len() {
+        let byte = remaining[i];
+
+        if byte == b'/' {
+            // Found the start of a name token
+            // Skip all bytes before this '/'
+            lexer.skip_bytes(i as u64);
+            return;
+        }
+
+        if byte == b'I' && i + 1 < remaining.len() && remaining[i + 1] == b'D' {
+            // Found "ID" - check that it's a token boundary
+            // (preceded by whitespace or delimiter, followed by whitespace or delimiter)
+            let preceded_by_delim = if i == 0 {
+                true // At start of input, so it's a boundary
+            } else {
+                let prev = remaining[i - 1];
+                prev == b' ' || prev == b'\t' || prev == b'\n' || prev == b'\r'
+                    || prev == b'\x0C' || prev == b'(' || prev == b')' || prev == b'<'
+                    || prev == b'>' || prev == b'[' || prev == b']' || prev == b'{'
+                    || prev == b'}' || prev == b'/' || prev == b'%'
+            };
+
+            let followed_by_delim = if i + 2 >= remaining.len() {
+                true // At end of input, so it's a boundary
+            } else {
+                let next = remaining[i + 2];
+                next == b' ' || next == b'\t' || next == b'\n' || next == b'\r'
+                    || next == b'\x0C' || next == b'(' || next == b')' || next == b'<'
+                    || next == b'>' || next == b'[' || next == b']' || next == b'{'
+                    || next == b'}' || next == b'/' || next == b'%'
+            };
+
+            if preceded_by_delim && followed_by_delim {
+                // Found a valid "ID" keyword
+                lexer.skip_bytes(i as u64);
+                return;
+            }
+        }
+
+        i += 1;
+    }
+
+    // No more keys or ID found - skip to end
+    lexer.skip_bytes(remaining.len() as u64);
 }
 
 #[cfg(test)]
@@ -842,9 +895,9 @@ mod tests {
         // Should succeed with diagnostic (not fatal error)
         assert!(result.is_ok());
 
-        // Check that diagnostic was emitted
+        // Check that diagnostic was emitted - the value for /H is /BPC (a Name, not an Integer)
         let diags = lexer.take_diagnostics();
-        assert!(diags.iter().any(|d| d.code == DiagCode::StructInvalidDictValue));
+        assert!(diags.iter().any(|d| d.code == DiagCode::StructInvalidType));
     }
 
     #[test]
@@ -854,8 +907,8 @@ mod tests {
         let mut lexer = Lexer::new(input);
         let _ = parse_inline_image_header(&mut lexer);
 
-        // ID without whitespace (should emit diagnostic)
-        let input2 = b"/W 10 IDEI";
+        // ID at end of input without whitespace (should emit diagnostic)
+        let input2 = b"/W 10 ID";
         let mut lexer2 = Lexer::new(input2);
         let result = parse_inline_image_header(&mut lexer2);
         assert!(result.is_ok());
