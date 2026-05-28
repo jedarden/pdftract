@@ -632,6 +632,15 @@ pub enum DiagCode {
     #[cfg(feature = "cjk")]
     CjkDecodeMalformed,
 
+    /// Unrecognized byte during CJK codespace tokenization
+    ///
+    /// Emitted when a byte in a content stream doesn't match any codespace range.
+    /// U+FFFD is emitted for the unrecognized byte. This diagnostic is emitted
+    /// once per (font, byte_value) to prevent flood.
+    ///
+    /// Phase origin: 3
+    CjkTokenizeUnknownByte,
+
     // === OCR_* codes ===
     /// JBIG2 decoder not available
     ///

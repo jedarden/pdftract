@@ -4,6 +4,8 @@
 //! fetches PDF data from HTTP/HTTPS servers using Range requests. Data is cached
 //! in 64 KiB blocks with a 64-block LRU cache (4 MiB total per document).
 
+#![cfg(feature = "remote")]
+
 use crate::source::PdfSource;
 use bytes::Bytes;
 use lru::LruCache;

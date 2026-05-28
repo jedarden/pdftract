@@ -16,7 +16,8 @@ use crate::fingerprint::{
 use crate::parser::catalog::{parse_catalog, Catalog};
 use crate::parser::object::PdfDict;
 use crate::parser::pages::{flatten_page_tree, LazyPageIter, PageDict};
-use crate::parser::stream::{FileSource, PdfSource};
+use crate::parser::stream::{FileSource as ParserFileSource, PdfSource as ParserPdfSource};
+use crate::source::{FileSource, PdfSource};
 use crate::parser::xref::{load_xref_with_prev_chain, XrefResolver, XrefSection};
 use crate::receipts::verifier::SpanData;
 use anyhow::{anyhow, Context, Result};
@@ -48,7 +49,7 @@ pub fn parse_pdf_file(
     XrefResolver,
 )> {
     // Open the PDF file
-    let source = FileSource::open(pdf_path).context("Failed to open PDF file")?;
+    let source = ParserFileSource::open(pdf_path).context("Failed to open PDF file")?;
 
     // Find the startxref offset
     let startxref_offset = find_startxref(&source).context("Failed to find startxref offset")?;
@@ -68,7 +69,7 @@ pub fn parse_pdf_file(
         .ok_or_else(|| anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource)).map_err(
+    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn ParserPdfSource)).map_err(
         |diagnostics| {
             let msg = diagnostics
                 .first()

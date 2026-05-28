@@ -158,6 +158,7 @@ pub trait PdfSource: Read + Seek + Send + Sync {
 /// ];
 /// let source = open_source("https://example.com/doc.pdf", Some(headers))?;
 /// ```
+#[cfg(feature = "remote")]
 pub fn open_source(
     path_or_url: &str,
     headers: Option<Vec<(String, String)>>,
@@ -175,10 +176,46 @@ pub fn open_source(
     }
 }
 
+/// Open a PDF source from a local file path.
+///
+/// This function only supports local file paths when the remote feature is disabled.
+/// For URL support, enable the `remote` feature.
+///
+/// # Arguments
+///
+/// * `path_or_url` - Path to a local PDF file
+///
+/// # Returns
+///
+/// A `Box<dyn PdfSource>` that can be used for PDF parsing.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The path is invalid
+/// - The file cannot be opened
+#[cfg(not(feature = "remote"))]
+pub fn open_source(
+    path_or_url: &str,
+    _headers: Option<Vec<(String, String)>>,
+) -> io::Result<Box<dyn PdfSource>> {
+    if path_or_url.starts_with("http://") || path_or_url.starts_with("https://") {
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Remote sources are not supported; rebuild pdftract with --features remote",
+        ));
+    }
+    // Use FileSource for local paths
+    let source = FileSource::open(path_or_url)?;
+    Ok(Box::new(source))
+}
+
 mod file_source;
+#[cfg(feature = "remote")]
 mod http_range;
 mod mmap;
 
 pub use file_source::FileSource;
+#[cfg(feature = "remote")]
 pub use http_range::HttpRangeSource;
 pub use mmap::MmapSource;

@@ -3265,6 +3265,22 @@ pub trait PdfSource {
     }
 }
 
+/// Adapter: implement parser::stream::PdfSource for any source::PdfSource type.
+///
+/// This allows the newer source::PdfSource trait (with read_range/Read+Seek)
+/// to work with parser functions that expect parser::stream::PdfSource (with read_at).
+impl<T: crate::source::PdfSource> PdfSource for T {
+    fn read_at(&self, offset: u64, len: usize) -> std::io::Result<Vec<u8>> {
+        use bytes::Buf;
+        let data = self.read_range(offset, len)?;
+        Ok(data.to_vec())
+    }
+
+    fn len(&self) -> std::io::Result<u64> {
+        Ok(crate::source::PdfSource::len(self))
+    }
+}
+
 /// A memory-backed PDF source.
 #[derive(Debug, Clone)]
 pub struct MemorySource {
@@ -3712,6 +3728,33 @@ fn decode_stream_impl(
                 if let Some(PdfObject::Ref(globals_ref)) = dict.get("/JBIG2Globals") {
                     stream_meta.jbig2_globals_ref = Some(Jbig2GlobalsRef::new(*globals_ref));
                 }
+            }
+        }
+
+        // Check for DCTDecode and emit diagnostics for missing SOI/EOI markers
+        if normalized_name == "DCTDecode" {
+            use crate::parser::stream::DCTDecoder;
+
+            // Validate SOI marker at start
+            let has_soi = current_bytes.len() >= 2 && &current_bytes[0..2] == &DCTDecoder::JPEG_SOI;
+            if !has_soi {
+                diagnostics.push(Diagnostic::with_static_no_offset(
+                    DiagCode::StreamInvalidJpeg,
+                    "Missing SOI (Start Of Image) marker at start of JPEG data",
+                ));
+            }
+
+            // Validate EOI marker at end
+            let has_eoi = current_bytes.len() >= 2 && &current_bytes[current_bytes.len() - 2..] == &DCTDecoder::JPEG_EOI;
+            if !has_eoi {
+                diagnostics.push(Diagnostic::with_dynamic(
+                    DiagCode::StreamInvalidJpeg,
+                    current_bytes.len().saturating_sub(2) as u64,
+                    format!(
+                        "Missing EOI (End Of Image) marker at end of JPEG data (length: {})",
+                        current_bytes.len()
+                    ),
+                ));
             }
         }
 
