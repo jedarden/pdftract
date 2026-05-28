@@ -8,7 +8,7 @@ Implemented the inspector frontend as a single-page vanilla web app with the fol
 - `crates/pdftract-cli/src/inspect/frontend/style.css` (3,291 bytes raw)
 - `crates/pdftract-cli/src/inspect/frontend/app.js` (5,494 bytes raw)
 
-**Total bundle size: 10,748 bytes raw, 3,914 bytes gzipped** (well under the 80 KB limit)
+**Total bundle size: 10,748 bytes raw, 3,584 bytes gzipped** (well under the 80 KB limit)
 
 ## Features Implemented
 
@@ -82,6 +82,12 @@ Implemented the inspector frontend as a single-page vanilla web app with the fol
 - `crates/pdftract-cli/src/inspect/frontend/style.css`: New file
 - `crates/pdftract-cli/src/inspect/frontend/app.js`: New file
 
+## Updates (2026-05-27)
+
+- Fixed tooltip handler to use correct data attribute names (`data-spanIndex`, `data-blockIndex`) instead of expecting a single `data-tooltip` attribute
+- This matches the actual SVG rendering output from spans.rs and blocks.rs which provide individual data attributes
+
 ## Git Commits
 
 - `feat(pdftract-2825c): implement inspector frontend bundle with <80KB size limit`
+- `fix(pdftract-2825c): fix tooltip handler to use correct data attribute names`

@@ -1,0 +1,23 @@
+{
+  "metadata": {
+    "document_type": "legal_filing",
+    "document_type_confidence": 0.93,
+    "document_type_reasons": [
+      "text_contains matched 'UNITED STATES COURT OF APPEALS'",
+      "text_contains matched 'Case No.'",
+      "text_contains matched 'Appellant'",
+      "text_contains matched 'Appellee'",
+      "heading_matches matched 'APPELLANT\\'S OPENING BRIEF'",
+      "structural.page_count in range [1, 500]"
+    ],
+    "profile_name": "legal_filing",
+    "profile_version": "1.0.0",
+    "profile_fields": {
+      "case_number": "24-1234",
+      "court": "UNITED STATES COURT OF APPEALS FOR THE NINTH CIRCUIT",
+      "parties": ["TechCorp Inc.", "DataSystems LLC"],
+      "filing_date": "2024-03-10",
+      "docket_entries": []
+    }
+  }
+}

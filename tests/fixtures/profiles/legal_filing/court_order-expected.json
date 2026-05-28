@@ -1,0 +1,23 @@
+{
+  "metadata": {
+    "document_type": "legal_filing",
+    "document_type_confidence": 0.95,
+    "document_type_reasons": [
+      "text_contains matched 'UNITED STATES DISTRICT COURT'",
+      "text_contains matched 'Case No.'",
+      "text_contains matched 'Plaintiff'",
+      "text_contains matched 'Defendant'",
+      "heading_matches matched 'ORDER GRANTING'",
+      "structural.page_count in range [1, 500]"
+    ],
+    "profile_name": "legal_filing",
+    "profile_version": "1.0.0",
+    "profile_fields": {
+      "case_number": "1:24-cv-04567",
+      "court": "UNITED STATES DISTRICT COURT FOR THE SOUTHERN DISTRICT OF NEW YORK",
+      "parties": ["Global Trade Inc.", "Pacific Shipping Corp."],
+      "filing_date": "2024-03-20",
+      "docket_entries": []
+    }
+  }
+}
