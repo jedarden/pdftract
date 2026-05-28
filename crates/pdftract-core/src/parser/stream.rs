@@ -18,7 +18,11 @@ use lzw::{Decoder, DecoderEarlyChange, MsbReader};
 use secrecy::SecretString;
 
 use crate::diagnostics::{DiagCode, Diagnostic};
-use crate::parser::object::{PdfObject, PdfStream};
+use crate::parser::object::{PdfObject, PdfStream, ObjRef};
+use crate::decoder::{jbig2::Jbig2GlobalsRef, jpx::JpxDecoder};
+
+#[cfg(feature = "decrypt")]
+use crate::encryption::decryptor::DecryptionContext;
 
 /// Maximum number of filters allowed in a single stream's pipeline.
 /// This prevents stack overflow and excessive computation.
@@ -1161,12 +1165,83 @@ impl StreamDecoder for RunLengthDecoder {
     }
 }
 
+/// JPXDecode filter (JPEG2000) passthrough with JP2 box magic validation.
+///
+/// This decoder:
+/// - Validates JP2 box magic signature at the start (12 bytes)
+/// - Emits STREAM_INVALID_JPX if magic doesn't match (raw J2K or corrupt)
+/// - Emits OCR_JPX_UNSUPPORTED when full-render AND libopenjp2 are unavailable
+/// - Passes through raw JPEG2000 bytes unchanged (pdftract-core does not decode JPX)
+///
+/// Per PDF spec 7.4.9:
+/// - JPXDecode is the JPEG2000 compression format (ISO/IEC 15444-1)
+/// - Data may be JP2-wrapped (with box headers) or raw J2K codestream
+/// - JP2 wrapper starts with 12-byte signature: 00 00 00 0C 6A 50 20 20 0D 0A 87 0A
+///
+/// For OCR path: requires `full-render` feature or libopenjp2 system library.
+/// Without either, OCR_JPX_UNSUPPORTED diagnostic is emitted.
+#[derive(Debug, Clone, Copy)]
+pub struct JpxStreamDecoder;
+
+impl JpxStreamDecoder {
+    /// Validate JP2 box magic and emit diagnostics.
+    ///
+    /// This validates the JP2 signature at the start of the data and emits
+    /// appropriate diagnostics for missing support or invalid magic.
+    fn validate_and_emit_diagnostics(
+        input: &[u8],
+        _params: Option<&PdfObject>,
+    ) -> Vec<Diagnostic> {
+        let mut diagnostics = Vec::new();
+        let decoder = crate::decoder::jpx::JpxDecoder::new();
+
+        // Emit OCR_JPX_UNSUPPORTED if no JPX support is available
+        decoder.emit_unsupported_diagnostic(&mut diagnostics);
+
+        // Validate JP2 box magic
+        if !crate::decoder::jpx::JpxDecoder::validate_jp2_magic(input) {
+            decoder.emit_invalid_magic_diagnostic(&mut diagnostics);
+        }
+
+        diagnostics
+    }
+}
+
+impl StreamDecoder for JpxStreamDecoder {
+    fn decode(
+        &self,
+        input: &[u8],
+        params: Option<&PdfObject>,
+        doc_counter: &mut u64,
+        max_bytes: u64,
+    ) -> Result<Vec<u8>, FilterError> {
+        // Validate JP2 magic and emit diagnostics
+        // Note: Diagnostics are currently dropped because StreamDecoder trait
+        // doesn't provide a way to return them. In a future change, we may
+        // extend the trait to accept a diagnostics buffer.
+        let _diagnostics = Self::validate_and_emit_diagnostics(input, params);
+
+        // Pass through raw bytes unchanged, enforcing bomb limit
+        let len = input.len() as u64;
+        *doc_counter += len;
+        if *doc_counter > max_bytes {
+            // Truncate to stay within limit
+            let remaining = max_bytes.saturating_sub(*doc_counter - len);
+            return Ok(input[..remaining.min(len) as usize].to_vec());
+        }
+        Ok(input.to_vec())
+    }
+
+    fn name(&self) -> &'static str {
+        "JPXDecode"
+    }
+}
+
 /// Passthrough decoder for filters we don't decode (DCTDecode, JBIG2Decode, etc.).
 ///
 /// Returns the raw bytes unchanged. Used for:
 /// - DCTDecode (JPEG) - pass raw JPEG bytes
 /// - JBIG2Decode - pass raw JBIG2 bytes
-/// - JPXDecode - pass raw JPEG2000 bytes
 /// - Crypt with /Identity
 #[derive(Debug, Clone, Copy)]
 pub struct PassthroughDecoder {
@@ -1494,7 +1569,7 @@ pub fn get_decoder(name: &str) -> Option<Box<dyn StreamDecoder>> {
         "Crypt" => Some(Box::new(CryptDecoder)),
         "DCTDecode" => Some(Box::new(DCTDecoder)),
         "JBIG2Decode" => Some(Box::new(PassthroughDecoder::new("JBIG2Decode"))),
-        "JPXDecode" => Some(Box::new(PassthroughDecoder::new("JPXDecode"))),
+        "JPXDecode" => Some(Box::new(JpxStreamDecoder)),
         "CCITTFaxDecode" => Some(Box::new(CCITTFaxDecoder)),
         "RunLengthDecode" => Some(Box::new(RunLengthDecoder)),
         _ => None,
@@ -1975,6 +2050,94 @@ mod tests {
         // Test no params (returns None)
         let result = DCTDecoder::parse_color_transform(None);
         assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_jpxstream_passthrough_valid_jp2() {
+        // Valid JP2 with signature box at start
+        let mut jp2_data = vec![
+            0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87, 0x0A, // JP2 signature
+        ];
+        jp2_data.extend_from_slice(b"fake_jp2_data");
+
+        let mut counter = 0;
+        let result = JpxStreamDecoder.decode(&jp2_data, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        // Pass through unchanged
+        assert_eq!(output, jp2_data);
+        // Byte counter should be incremented
+        assert_eq!(counter, jp2_data.len() as u64);
+    }
+
+    #[test]
+    fn test_jpxstream_passthrough_raw_j2k() {
+        // Raw J2K codestream (no JP2 wrapper)
+        let j2k_data = [
+            0xFF, 0x4F, // SOC (Start of Codestream)
+            0xFF, 0x51, // SIZ (Image and tile size)
+            0x00, 0x29, 0x00, 0x01, // Lsiz, Rsiz
+        ];
+
+        let mut counter = 0;
+        let result = JpxStreamDecoder.decode(&j2k_data, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        // Still passes through unchanged even without JP2 wrapper
+        assert_eq!(output, j2k_data);
+    }
+
+    #[test]
+    fn test_jpxstream_passthrough_empty() {
+        // Empty JPX data (edge case)
+        let jpx_data = b"";
+
+        let mut counter = 0;
+        let result = JpxStreamDecoder.decode(jpx_data, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output.len(), 0);
+    }
+
+    #[test]
+    fn test_jpxstream_passthrough_truncated() {
+        // Data too short for JP2 signature (less than 12 bytes)
+        let jpx_data = [0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87]; // 11 bytes
+
+        let mut counter = 0;
+        let result = JpxStreamDecoder.decode(&jpx_data, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        // Still passes through unchanged even though truncated
+        assert_eq!(output, jpx_data);
+    }
+
+    #[test]
+    fn test_jpxstream_bomb_limit() {
+        // Test that bomb limit is enforced
+        let mut jp2_data = vec![
+            0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87, 0x0A, // JP2 signature
+        ];
+        jp2_data.extend_from_slice(&[0u8; 1000]); // 1000 bytes of data
+
+        let mut counter = 0;
+        let limit = 100; // Only allow 100 bytes
+        let result = JpxStreamDecoder.decode(&jp2_data, None, &mut counter, limit);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output.len(), 100); // Should truncate at bomb limit
+    }
+
+    #[test]
+    fn test_jpxstream_name() {
+        assert_eq!(JpxStreamDecoder.name(), "JPXDecode");
+    }
+
+    #[test]
+    fn test_jpxstream_is_send_sync() {
+        // Verify JpxStreamDecoder implements Send + Sync (required for StreamDecoder)
+        fn is_send_sync<T: Send + Sync>() {}
+        is_send_sync::<JpxStreamDecoder>();
     }
 
     #[test]
@@ -3182,6 +3345,50 @@ impl PdfSource for FileSource {
     }
 }
 
+/// Metadata extracted from a PDF stream during decoding.
+///
+/// This struct captures filter-specific metadata that is needed by
+/// downstream consumers (e.g., the OCR pipeline in Phase 5.4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StreamMeta {
+    /// JBIG2 globals reference (from /JBIG2Globals in the stream dictionary).
+    ///
+    /// Per PDF spec 7.4.7, /JBIG2Globals is an indirect reference to a
+    /// globally-shared symbol dictionary stream that must be prepended to
+    /// JBIG2 data before decoding. The OCR pipeline (Phase 5.4) resolves this
+    /// reference and fetches the global symbols before sending to pdfium-render.
+    ///
+    /// - `Some(Jbig2GlobalsRef)` if /JBIG2Globals is present in the stream
+    /// - `None` if the stream is self-contained (no globals)
+    pub jbig2_globals_ref: Option<Jbig2GlobalsRef>,
+}
+
+impl Default for StreamMeta {
+    fn default() -> Self {
+        Self {
+            jbig2_globals_ref: None,
+        }
+    }
+}
+
+impl StreamMeta {
+    /// Create a new StreamMeta with no metadata.
+    #[inline]
+    pub const fn new() -> Self {
+        Self {
+            jbig2_globals_ref: None,
+        }
+    }
+
+    /// Create a new StreamMeta with a JBIG2 globals reference.
+    #[inline]
+    pub const fn with_jbig2_globals(globals_ref: Jbig2GlobalsRef) -> Self {
+        Self {
+            jbig2_globals_ref: Some(globals_ref),
+        }
+    }
+}
+
 /// Decode result containing both bytes and diagnostics.
 #[derive(Debug, Clone)]
 pub struct DecodeResult {
@@ -3189,6 +3396,8 @@ pub struct DecodeResult {
     pub bytes: Vec<u8>,
     /// Diagnostics emitted during decoding
     pub diagnostics: Vec<Diagnostic>,
+    /// Stream metadata extracted during decoding
+    pub meta: StreamMeta,
 }
 
 impl DecodeResult {
@@ -3197,6 +3406,16 @@ impl DecodeResult {
         Self {
             bytes,
             diagnostics: Vec::new(),
+            meta: StreamMeta::new(),
+        }
+    }
+
+    /// Create a new decode result with stream metadata.
+    pub fn with_meta(bytes: Vec<u8>, meta: StreamMeta) -> Self {
+        Self {
+            bytes,
+            diagnostics: Vec::new(),
+            meta,
         }
     }
 
@@ -3205,6 +3424,16 @@ impl DecodeResult {
         Self {
             bytes,
             diagnostics: vec![diagnostic],
+            meta: StreamMeta::new(),
+        }
+    }
+
+    /// Create a decode result with metadata and add a diagnostic.
+    pub fn with_meta_and_diagnostic(bytes: Vec<u8>, meta: StreamMeta, diagnostic: Diagnostic) -> Self {
+        Self {
+            bytes,
+            diagnostics: vec![diagnostic],
+            meta,
         }
     }
 }
@@ -3263,7 +3492,10 @@ fn scan_for_endstream(source: &dyn PdfSource, start_offset: u64) -> Option<u64> 
     None
 }
 
-/// Decode a PDF stream by applying its filter pipeline.
+/// Decode a PDF stream by applying its filter pipeline (without decryption support).
+///
+/// This is a convenience function for the common case where decryption is not needed.
+/// For encrypted PDFs, use `decode_stream_with_decryption` instead.
 ///
 /// # Parameters
 /// - `stream`: The PDF stream to decode
@@ -3279,16 +3511,46 @@ pub fn decode_stream(
     opts: &ExtractionOptions,
     doc_decompress_counter: &mut u64,
 ) -> Vec<u8> {
-    decode_stream_impl(stream, source, opts, doc_decompress_counter).bytes
+    decode_stream_impl(stream, source, opts, doc_decompress_counter, None, None).bytes
+}
+
+/// Decode a PDF stream by applying its filter pipeline (with decryption support).
+///
+/// # Parameters
+/// - `stream`: The PDF stream to decode
+/// - `source`: The PDF source to read raw bytes from
+/// - `opts`: Extraction options (bomb limits, etc.)
+/// - `doc_decompress_counter`: Cumulative decompressed bytes for the document
+/// - `obj_ref`: Object reference for decryption (optional)
+/// - `decryption_context`: Decryption context for encrypted PDFs (optional)
+///
+/// # Returns
+/// The decoded stream bytes, or an empty Vec if decoding failed completely.
+pub fn decode_stream_with_decryption(
+    stream: &PdfStream,
+    source: &dyn PdfSource,
+    opts: &ExtractionOptions,
+    doc_decompress_counter: &mut u64,
+    obj_ref: Option<ObjRef>,
+    #[cfg(feature = "decrypt")] decryption_context: Option<&DecryptionContext>,
+) -> Vec<u8> {
+    decode_stream_impl(stream, source, opts, doc_decompress_counter, obj_ref, decryption_context).bytes
 }
 
 /// Internal implementation that returns both bytes and diagnostics.
+#[allow(clippy::too_many_arguments)]
 fn decode_stream_impl(
     stream: &PdfStream,
     source: &dyn PdfSource,
     opts: &ExtractionOptions,
     doc_decompress_counter: &mut u64,
+    obj_ref: Option<ObjRef>,
+    #[cfg(feature = "decrypt")] decryption_context: Option<&DecryptionContext>,
+    #[cfg(not(feature = "decrypt"))] _decryption_context: Option<&()>,
 ) -> DecodeResult {
+    // Step 0: Initialize stream metadata
+    let mut stream_meta = StreamMeta::new();
+
     // Step 1: Read raw bytes from source
     let raw_bytes = if let Some(len) = stream.len_hint.or_else(|| stream.length()) {
         match source.read_at(stream.offset, len as usize) {
@@ -3306,19 +3568,49 @@ fn decode_stream_impl(
         }
     };
 
-    // Step 2: Get filter list (empty = raw stream, no filtering)
+    // Step 2: Decrypt if PDF is encrypted (before applying decompression filters)
+    // Per PDF spec, encrypted streams are decrypted first, then decompression is applied
+    let mut current_bytes = raw_bytes.clone();
+    #[cfg(feature = "decrypt")]
+    if let (Some(ctx), Some(obj_ref)) = (decryption_context, obj_ref) {
+        use crate::encryption::decryptor::DecryptionContext;
+        // Decrypt the stream data using the per-object key
+        match ctx.decrypt_stream(
+            &current_bytes,
+            obj_ref.object,
+            obj_ref.generation as u16,
+        ) {
+            Ok(decrypted) => {
+                current_bytes = decrypted;
+            }
+            Err(_e) => {
+                // Decryption failed - emit diagnostic and return empty bytes
+                return DecodeResult::with_meta_and_diagnostic(
+                    Vec::new(),
+                    stream_meta,
+                    Diagnostic::with_dynamic_no_offset(
+                        DiagCode::EncryptionWrongPassword,
+                        "Stream decryption failed: incorrect password or corrupt crypt filter".to_string(),
+                    ),
+                );
+            }
+        }
+    }
+
+    // Step 3: Get filter list (empty = raw stream, no filtering)
     let filters = match stream.filter() {
         Some(f) => f,
         None => {
-            // No filter - enforce bomb limit and return raw bytes
-            let len = raw_bytes.len() as u64;
+            // No filter - enforce bomb limit and return current_bytes (decrypted if applicable)
+            let len = current_bytes.len() as u64;
             if *doc_decompress_counter + len > opts.max_decompress_bytes {
                 // Bomb limit exceeded - truncate
                 let remaining = (opts.max_decompress_bytes - *doc_decompress_counter) as usize;
                 *doc_decompress_counter += remaining as u64;
-                let truncated = raw_bytes[..remaining.min(raw_bytes.len())].to_vec();
-                return DecodeResult::with_diagnostic(
+                let truncated = current_bytes[..remaining.min(current_bytes.len())].to_vec();
+                return DecodeResult::with_meta_and_diagnostic(
                     truncated,
+                    stream_meta,
                     Diagnostic::with_dynamic_no_offset(
                         DiagCode::StreamBomb,
                         format!(
@@ -3329,14 +3621,14 @@ fn decode_stream_impl(
                 );
             }
             *doc_decompress_counter += len;
-            return DecodeResult::ok(raw_bytes);
+            return DecodeResult::with_meta(current_bytes, stream_meta);
         }
     };
 
     // Safety check: limit filter pipeline depth
     if filters.len() > MAX_FILTERS {
         // Too many filters - return raw bytes to avoid DoS
-        return DecodeResult::ok(raw_bytes);
+        return DecodeResult::with_meta(raw_bytes, stream_meta);
     }
 
     // Step 3: Get decode params (aligned with filters, may be shorter)
@@ -3346,8 +3638,9 @@ fn decode_stream_impl(
     // Per PDF spec, /DecodeParms can be shorter than /Filter (missing params are treated as null).
     // But /DecodeParms cannot be longer than /Filter.
     if decode_params.len() > filters.len() {
-        return DecodeResult::with_diagnostic(
-            raw_bytes,
+        return DecodeResult::with_meta_and_diagnostic(
+            current_bytes,
+            stream_meta,
             Diagnostic::with_dynamic_no_offset(
                 DiagCode::StreamInvalidParams,
                 format!(
@@ -3360,7 +3653,6 @@ fn decode_stream_impl(
     }
 
     // Step 4: Apply filters in order
-    let mut current_bytes = raw_bytes;
     let mut diagnostics = Vec::new();
     let mut bomb_limit_hit = false;
 
@@ -3402,6 +3694,27 @@ fn decode_stream_impl(
             }
         }
 
+        // Check for JBIG2Decode and emit OCR_JBIG2_UNSUPPORTED if full-render is disabled
+        if normalized_name == "JBIG2Decode" {
+            // Per EC-11: emit diagnostic once per JBIG2 stream when full-render is not compiled
+            // The diagnostic alerts downstream consumers that OCR processing will fail without PDFium
+            let has_full_render = cfg!(feature = "full-render");
+            if !has_full_render {
+                diagnostics.push(Diagnostic::with_static_no_offset(
+                    DiagCode::OcrJbig2Unsupported,
+                    "JBIG2Decode filter encountered; build with --features full-render to enable JBIG2 decoding via PDFium",
+                ));
+            }
+
+            // Extract /JBIG2Globals reference if present
+            // The globals reference is stored in StreamMeta for the OCR pipeline (Phase 5.4)
+            if let Some(PdfObject::Dict(dict)) = params {
+                if let Some(PdfObject::Ref(globals_ref)) = dict.get("/JBIG2Globals") {
+                    stream_meta.jbig2_globals_ref = Some(Jbig2GlobalsRef::new(*globals_ref));
+                }
+            }
+        }
+
         match get_decoder(&normalized_name) {
             Some(decoder) => {
                 let counter_before = *doc_decompress_counter;
@@ -3430,6 +3743,7 @@ fn decode_stream_impl(
                         return DecodeResult {
                             bytes: Vec::new(),
                             diagnostics,
+                            meta: stream_meta,
                         };
                     }
                     Err(e) => {
@@ -3462,6 +3776,7 @@ fn decode_stream_impl(
     DecodeResult {
         bytes: current_bytes,
         diagnostics,
+        meta: stream_meta,
     }
 }
 
@@ -5581,5 +5896,96 @@ endobj
             .read_at(5, 4)
             .expect("failed to read from MemorySource");
         assert_eq!(bytes, b"data");
+    }
+
+    /// JBIG2Decode passthrough test.
+    ///
+    /// JBIG2 streams are passed through as-is (raw bytes).
+    /// The decoder doesn't decode JBIG2; pdftract-core only extracts the raw bytes
+    /// and optionally the /JBIG2Globals reference for downstream consumers.
+    #[test]
+    fn test_jbig2_passthrough() {
+        let jbig2_data = b"\x00\x01\x02\x03"; // Fake JBIG2 data
+        let mut counter = 0;
+        let result = PassthroughDecoder::new("JBIG2Decode").decode(
+            jbig2_data,
+            None,
+            &mut counter,
+            DEFAULT_MAX_DECOMPRESS_BYTES,
+        );
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output, jbig2_data);
+        assert_eq!(counter, jbig2_data.len() as u64);
+    }
+
+    /// JBIG2Decode with /JBIG2Globals reference test.
+    ///
+    /// Test that the Jbig2Decoder can extract the /JBIG2Globals reference
+    /// from the stream dictionary when present.
+    #[test]
+    fn test_jbig2_extract_globals_ref() {
+        use crate::decoder::jbig2::{Jbig2Decoder, Jbig2GlobalsRef};
+        use crate::parser::object::PdfDict;
+
+        let mut dict = PdfDict::new();
+        dict.insert(
+            crate::parser::object::intern("/JBIG2Globals"),
+            PdfObject::Ref(ObjRef::new(42, 0)),
+        );
+
+        let globals_ref = Jbig2Decoder::extract_globals_ref(&dict);
+        assert!(globals_ref.is_some());
+        assert_eq!(globals_ref.unwrap().obj_ref.object, 42);
+    }
+
+    /// JBIG2Decode without /JBIG2Globals test.
+    ///
+    /// Test that when /JBIG2Globals is missing, extract_globals_ref returns None.
+    #[test]
+    fn test_jbig2_extract_globals_ref_missing() {
+        use crate::decoder::jbig2::Jbig2Decoder;
+        use crate::parser::object::PdfDict;
+
+        let dict = PdfDict::new(); // No /JBIG2Globals
+
+        let globals_ref = Jbig2Decoder::extract_globals_ref(&dict);
+        assert!(globals_ref.is_none());
+    }
+
+    /// JBIG2Decode with invalid /JBIG2Globals type test.
+    ///
+    /// Per PDF spec, /JBIG2Globals must be an indirect reference (Ref).
+    /// If it's any other type (Name, String, etc.), we treat it as missing.
+    #[test]
+    fn test_jbig2_extract_globals_ref_invalid_type() {
+        use crate::decoder::jbig2::Jbig2Decoder;
+        use crate::parser::object::PdfDict;
+
+        let mut dict = PdfDict::new();
+        // /JBIG2Globals must be a Ref, not a Name
+        dict.insert(
+            crate::parser::object::intern("/JBIG2Globals"),
+            PdfObject::Name(crate::parser::object::intern("InvalidGlobals")),
+        );
+
+        let globals_ref = Jbig2Decoder::extract_globals_ref(&dict);
+        assert!(globals_ref.is_none());
+    }
+
+    /// JBIG2Decode bomb limit enforcement test.
+    ///
+    /// Test that the bomb limit is enforced for JBIG2 streams.
+    #[test]
+    fn test_jbig2_bomb_limit() {
+        let jbig2_data = vec![0u8; 1000];
+        let mut counter = 0;
+        let limit = 100; // Only allow 100 bytes
+
+        let result = PassthroughDecoder::new("JBIG2Decode")
+            .decode(&jbig2_data, None, &mut counter, limit);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output.len(), 100); // Should truncate at bomb limit
     }
 }

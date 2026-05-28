@@ -5,5 +5,7 @@
 //! passthrough.
 
 pub mod jbig2;
+pub mod jpx;
 
 pub use jbig2::{Jbig2Decoder, Jbig2GlobalsRef};
+pub use jpx::JpxDecoder;

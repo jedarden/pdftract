@@ -497,6 +497,16 @@ pub enum DiagCode {
     /// Phase origin: 1.5
     StreamInvalidCcitt,
 
+    /// JPEG2000 (JPX) data has invalid JP2 box magic
+    ///
+    /// Emitted when JPXDecode filter data doesn't match the JP2 box magic signature
+    /// (00 00 00 0C 6A 50 20 20 0D 0A 87 0A). This indicates raw J2K codestream
+    /// (no JP2 wrapper) or corrupted data. The data is passed through anyway, but
+    /// the diagnostic alerts consumers that the JPX may be malformed.
+    ///
+    /// Phase origin: 1.5
+    StreamInvalidJpx,
+
     // === ENCRYPTION_* codes ===
     /// Unsupported encryption or no password supplied
     ///
@@ -1085,6 +1095,7 @@ impl DiagCode {
             | DiagCode::StreamInvalidParams
             | DiagCode::StreamInvalidJpeg
             | DiagCode::StreamInvalidCcitt
+            | DiagCode::StreamInvalidJpx
             | DiagCode::StreamTruncated => "STREAM",
 
             // ENCRYPTION_*
@@ -1227,6 +1238,7 @@ impl DiagCode {
             DiagCode::StreamInvalidParams => "STREAM_INVALID_PARAMS",
             DiagCode::StreamInvalidJpeg => "STREAM_INVALID_JPEG",
             DiagCode::StreamInvalidCcitt => "STREAM_INVALID_CCITT",
+            DiagCode::StreamInvalidJpx => "STREAM_INVALID_JPX",
             DiagCode::EncryptionUnsupported => "ENCRYPTION_UNSUPPORTED",
             DiagCode::EncryptionWrongPassword => "ENCRYPTION_WRONG_PASSWORD",
             DiagCode::EncryptionInvalidDict => "ENCRYPTION_INVALID_DICT",
@@ -1351,6 +1363,7 @@ impl DiagCode {
             | DiagCode::StreamInvalidParams
             | DiagCode::StreamInvalidJpeg
             | DiagCode::StreamInvalidCcitt
+            | DiagCode::StreamInvalidJpx
             | DiagCode::PageInvalidCount
             | DiagCode::PageInvalidRotate
             | DiagCode::FontGlyphUnmapped
@@ -1829,6 +1842,14 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         recoverable: true,
         phase: "1.5",
         suggested_action: "CCITT data is missing required /Columns parameter; data is passed through anyway",
+    },
+    DiagInfo {
+        code: DiagCode::StreamInvalidJpx,
+        category: "STREAM",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "1.5",
+        suggested_action: "JP2 box magic signature not found; raw J2K codestream (no JP2 wrapper) or corrupted data; data is passed through anyway",
     },
     // === ENCRYPTION_* codes ===
     DiagInfo {
