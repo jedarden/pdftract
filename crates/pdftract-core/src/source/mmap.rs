@@ -177,6 +177,7 @@ mod tests {
     use super::*;
     use std::fs;
     use std::io::Write;
+    use std::sync::Arc;
     use std::thread;
     use tempfile::NamedTempFile;
 
@@ -335,14 +336,14 @@ mod tests {
         let content = b"0123456789";
         temp_file.write_all(content).unwrap();
 
-        let source = MmapSource::open(temp_file.path()).unwrap();
+        let source = Arc::new(MmapSource::open(temp_file.path()).unwrap());
 
         // Spawn multiple threads reading concurrently
         let handles: Vec<_> = (0..4)
             .map(|i| {
-                let source_ref = &source;
+                let source_clone = Arc::clone(&source);
                 thread::spawn(move || {
-                    let bytes = source_ref.read_range(i as u64, 2).unwrap();
+                    let bytes = source_clone.read_range(i as u64, 2).unwrap();
                     bytes.to_vec()
                 })
             })
@@ -434,7 +435,7 @@ mod tests {
     #[test]
     fn test_empty_file() {
         let temp_file = NamedTempFile::new().unwrap();
-        let source = MmapSource::open(temp_file.path()).unwrap();
+        let mut source = MmapSource::open(temp_file.path()).unwrap();
         assert_eq!(source.len(), 0);
 
         let mut buf = [0u8; 10];

@@ -25,7 +25,12 @@ Implemented FileSource as a PdfSource fallback for when memory-mapping is not av
   - `test_large_file`: Handles 100KB file
   - `test_read_mixed_with_seek`: Tests mixed read/seek operations
 
-### 2. crates/pdftract-core/Cargo.toml
+### 2. crates/pdftract-core/src/source/mmap.rs (test fixes)
+- Added `std::sync::Arc` import for thread sharing
+- Fixed lifetime issue in `test_sync_multiple_threads` by using Arc instead of `&source`
+- Added `mut` to source in `test_empty_file` for Read trait compatibility
+
+### 3. crates/pdftract-core/Cargo.toml
 - Added `parking_lot = "0.12"` dependency
 
 ## Acceptance Criteria
