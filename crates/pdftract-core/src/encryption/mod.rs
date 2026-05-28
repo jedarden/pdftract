@@ -9,6 +9,8 @@
 //!
 //! The `decrypt` feature must be enabled to use this module.
 
+pub mod detection;
+
 #[cfg(feature = "decrypt")]
 pub mod aes_256;
 
@@ -25,56 +27,12 @@ pub use rc4::{
     FileKeyResult as Rc4FileKeyResult,
 };
 
+pub use detection::{
+    detect_encryption, AuthEvent, CryptFilterDef, CryptFilterMethod, CryptFiltersV4,
+    EncryptionInfo,
+};
+
 use crate::diagnostics::{DiagCode, Diagnostic};
-
-/// Encryption algorithm version.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EncryptionVersion {
-    /// V=1: RC4 40-bit
-    V1,
-    /// V=2: RC4 40-128 bit
-    V2,
-    /// V=4: RC4 or AES-128 via crypt filters
-    V4,
-    /// V=5: AES-256 (PDF 2.0)
-    V5,
-}
-
-/// Encryption algorithm revision.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EncryptionRevision {
-    /// R=2: RC4 40-bit
-    R2,
-    /// R=3: RC4 40-128 bit
-    R3,
-    /// R=4: Crypt filters
-    R4,
-    /// R=5: AES-256 (original PDF 2.0)
-    R5,
-    /// R=6: AES-256 (enhanced for Spectre mitigation)
-    R6,
-}
-
-/// Encryption metadata extracted from the PDF's /Encrypt dictionary.
-#[derive(Debug, Clone)]
-pub struct EncryptionInfo {
-    /// Algorithm version (V)
-    pub version: EncryptionVersion,
-    /// Algorithm revision (R)
-    pub revision: EncryptionRevision,
-    /// Key length in bits (40, 128, or 256)
-    pub key_length: u32,
-    /// Owner password hash (O)
-    pub owner_hash: Vec<u8>,
-    /// User password hash (U)
-    pub user_hash: Vec<u8>,
-    /// Permissions flags (P)
-    pub permissions: u32,
-    /// File encryption key (encrypted)
-    pub file_key_encrypted: Option<Vec<u8>>,
-    /// Crypt filter dictionary (CF) for V=4 and V=5
-    pub crypt_filters: Option<Vec<u8>>,
-}
 
 /// Result of password validation.
 #[derive(Debug, Clone, PartialEq, Eq)]
