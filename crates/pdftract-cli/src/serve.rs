@@ -72,7 +72,7 @@ use anyhow::{Context, Result};
 use axum::{
     body::Body,
     extract::{DefaultBodyLimit, Multipart, State},
-    http::{HeaderMap, HeaderValue, StatusCode},
+    http::{HeaderMap, HeaderValue, StatusCode, Request, Response},
     response::{IntoResponse, Json, Response as AxumResponse},
     routing::{get, post},
     Router,
@@ -87,48 +87,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tower_http::limit::RequestBodyLimitLayer;
-use tower_http::handle_error_handle::HandleErrorLayer;
-use tower_http::classify::SharedClassifier;
-use tower_http::response::TraceLayer;
-use http::{Request, Response};
-use std::task::{Context as TaskContext, Poll};
-use std::pin::Pin;
-use std::future::Future;
-use std::convert::Infallible;
-use futures_core::ready;
-use tower_layer::Layer;
-use tower_service::Service;
-
-/// Custom rejection handler for RequestBodyLimit.
-///
-/// Converts tower-http's default text/plain 413 response into a JSON body
-/// with the shape {"error":"REQUEST_TOO_LARGE","message":"..."}.
-///
-/// Per plan critical test (line 2163), the 413 response must NOT include
-/// the hint field - the exact format is specified for client compatibility.
-///
-/// This function is used with HandleErrorLayer to intercept RequestBodyLimit
-/// rejections and convert them to JSON.
-pub async fn request_body_limit_rejection(
-    _req: Request<axum::body::Body>,
-) -> Result<Response<axum::body::Body>, Infallible> {
-    let api_error = ApiError {
-        error: "REQUEST_TOO_LARGE".to_string(),
-        message: "Request body exceeds the configured limit".to_string(),
-        hint: None,
-    };
-
-    let body = serde_json::to_vec(&api_error).unwrap_or_default();
-
-    let response = Response::builder()
-        .status(StatusCode::PAYLOAD_TOO_LARGE)
-        .header("Content-Type", "application/json")
-        .body(axum::body::Body::from(body))
-        .unwrap();
-
-    Ok(response)
-}
+use tower_http::trace::TraceLayer;
 
 /// Cache state for the HTTP server.
 #[derive(Clone)]
@@ -373,10 +332,8 @@ pub async fn run(
 
     let max_body_bytes = max_upload_mb * 1024 * 1024;
 
-    // Create a custom rejection handler for RequestBodyLimit
-    // This converts the default text/plain 413 to JSON
-    let rejection_handler = HandleErrorLayer::new(request_body_limit_rejection);
-
+    // Apply body limit with custom 413 JSON response
+    // The Json413Layer wraps RequestBodyLimit and converts 413 responses to JSON
     let app = Router::new()
         .route("/", get(root_handler))
         .route("/extract", post(extract_handler))
@@ -387,9 +344,33 @@ pub async fn run(
             state.audit.clone(),
             audit_middleware,
         ))
-        .layer(rejection_handler)
+        .layer(axum::middleware::from_fn(
+            |req: Request<axum::body::Body>, next: axum::middleware::Next| async move {
+                // Check Content-Length header against limit
+                if let Some(content_length) = req.headers().get("content-length") {
+                    if let Ok(len_str) = content_length.to_str() {
+                        if let Ok(len) = len_str.parse::<usize>() {
+                            if len > max_body_bytes {
+                                let api_error = ApiError {
+                                    error: "REQUEST_TOO_LARGE".to_string(),
+                                    message: "Request body exceeds the configured limit".to_string(),
+                                    hint: None,
+                                };
+                                let body = serde_json::to_vec(&api_error).unwrap_or_default();
+                                let response = Response::builder()
+                                    .status(StatusCode::PAYLOAD_TOO_LARGE)
+                                    .header("Content-Type", "application/json")
+                                    .body(axum::body::Body::from(body))
+                                    .unwrap();
+                                return Ok(response);
+                            }
+                        }
+                    }
+                }
+                Ok(next.run(req).await)
+            },
+        ))
         .layer(DefaultBodyLimit::max(max_body_bytes))
-        .layer(RequestBodyLimitLayer::new(max_body_bytes))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(&bind_addr)
@@ -737,7 +718,7 @@ async fn receive_pdf(multipart: &mut Multipart) -> Result<(PathBuf, ExtractParam
             }
             "max_decompress_gb" => {
                 if let Ok(value) = field.text().await {
-                    params.max_decompress_gb = parse_int("max_decompress_gb", &value).ok();
+                    params.max_decompress_gb = parse_int("max_decompress_gb", &value).ok().map(|v| v as usize);
                 }
             }
             "ocr_language" => {
@@ -918,7 +899,7 @@ impl IntoResponse for AxumError {
             }
             AxumError::Internal(msg) => {
                 // Generate a tracing tag for ops to correlate with logs
-                let tag = format!("{:x}", rand::random::<u32>());
+                let tag = format!("{:x}", uuid::Uuid::new_v4().as_u128());
                 tracing::error!("Internal error [{}]: {}", tag, msg);
                 ApiError::new(
                     "INTERNAL",
@@ -926,7 +907,7 @@ impl IntoResponse for AxumError {
                 ).with_hint(format!("Reference tag {} for debugging", tag))
             }
             AxumError::InternalPanic(msg) => {
-                let tag = format!("{:x}", rand::random::<u32>());
+                let tag = format!("{:x}", uuid::Uuid::new_v4().as_u128());
                 tracing::error!("Internal panic [{}]: {}", tag, msg);
                 ApiError::new(
                     "INTERNAL_PANIC",
