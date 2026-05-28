@@ -26,10 +26,27 @@
 <button class="layer-toggle" data-layer="ocr" aria-label="Toggle OCR layer">6 OCR</button>
 <button class="layer-toggle" data-layer="mcid" aria-label="Toggle MCID layer">7 MCID</button>
 <button class="layer-toggle" data-layer="anchors" aria-label="Toggle anchors layer">8 Anchors</button>
+<button id="btn-diff" class="layer-toggle" data-layer="diff" aria-label="Toggle diff overlay" style="display:none">9 Diff</button>
+</div>
+<div class="comparison-controls" style="display:none">
+<label class="sync-toggle">
+<input type="checkbox" id="sync-scroll" checked>
+Sync scroll
+</label>
 </div>
 </div>
 <div id="canvas-container" class="canvas-container">
 <div id="loading" class="loading">Loading...</div>
+<div id="compare-container" class="compare-container" style="display:none">
+<div class="compare-side">
+<div class="compare-label">Document A</div>
+<div class="svg-wrapper" id="svg-a"></div>
+</div>
+<div class="compare-side">
+<div class="compare-label">Document B</div>
+<div class="svg-wrapper" id="svg-b"></div>
+</div>
+</div>
 </div>
 </main>
 <aside class="panel">
