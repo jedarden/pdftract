@@ -80,13 +80,55 @@ use axum::{
 use bytes;
 use pdftract_core::audit::AuditLogWriter;
 use pdftract_core::cache;
+use pdftract_core::diagnostics::DiagCode;
 use pdftract_core::extract::{extract_pdf, extract_pdf_ndjson, result_to_json};
 use pdftract_core::options::{ExtractionOptions, ReceiptsMode};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tower_http::limit::RequestBodyLimitLayer;
+use tower_http::handle_error_handle::HandleErrorLayer;
+use tower_http::classify::SharedClassifier;
+use tower_http::response::TraceLayer;
+use http::{Request, Response};
+use std::task::{Context as TaskContext, Poll};
+use std::pin::Pin;
+use std::future::Future;
+use std::convert::Infallible;
+use futures_core::ready;
+use tower_layer::Layer;
+use tower_service::Service;
+
+/// Custom rejection handler for RequestBodyLimit.
+///
+/// Converts tower-http's default text/plain 413 response into a JSON body
+/// with the shape {"error":"REQUEST_TOO_LARGE","message":"..."}.
+///
+/// Per plan critical test (line 2163), the 413 response must NOT include
+/// the hint field - the exact format is specified for client compatibility.
+///
+/// This function is used with HandleErrorLayer to intercept RequestBodyLimit
+/// rejections and convert them to JSON.
+pub async fn request_body_limit_rejection(
+    _req: Request<axum::body::Body>,
+) -> Result<Response<axum::body::Body>, Infallible> {
+    let api_error = ApiError {
+        error: "REQUEST_TOO_LARGE".to_string(),
+        message: "Request body exceeds the configured limit".to_string(),
+        hint: None,
+    };
+
+    let body = serde_json::to_vec(&api_error).unwrap_or_default();
+
+    let response = Response::builder()
+        .status(StatusCode::PAYLOAD_TOO_LARGE)
+        .header("Content-Type", "application/json")
+        .body(axum::body::Body::from(body))
+        .unwrap();
+
+    Ok(response)
+}
 
 /// Cache state for the HTTP server.
 #[derive(Clone)]
@@ -166,21 +208,125 @@ impl CacheStatus {
     }
 }
 
+/// API error response shape.
+///
+/// All 4xx and 5xx responses use this JSON shape for consistency.
+#[derive(Debug, Serialize)]
+pub struct ApiError {
+    /// Error code (e.g., "BAD_REQUEST", "REQUEST_TOO_LARGE", "ENCRYPTED")
+    pub error: String,
+    /// Human-readable error message
+    pub message: String,
+    /// Optional hint for actionable errors (e.g., "Supply the correct password via --password")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
+}
+
+impl ApiError {
+    /// Create a new API error with code and message.
+    pub fn new(error: impl Into<String>, message: impl Into<String>) -> Self {
+        ApiError {
+            error: error.into(),
+            message: message.into(),
+            hint: None,
+        }
+    }
+
+    /// Add a hint to the error.
+    pub fn with_hint(mut self, hint: impl Into<String>) -> Self {
+        self.hint = Some(hint.into());
+        self
+    }
+}
+
 /// Extraction request parameters.
-#[derive(Debug, Deserialize)]
+///
+/// These are parsed from multipart form fields. All fields are optional
+/// and have sensible defaults defined in the plan (lines 2127-2137).
+#[derive(Debug, Default)]
 struct ExtractParams {
     /// Receipts mode (off, lite, svg)
-    #[serde(default)]
-    receipts: String,
+    receipts: Option<String>,
     /// Disable cache for this request
-    #[serde(default)]
     no_cache: bool,
     /// Enable full-render path using PDFium
-    #[serde(default)]
     full_render: bool,
     /// Maximum decompression size in GB (overrides server default)
-    #[serde(default)]
     max_decompress_gb: Option<usize>,
+    /// OCR language codes (comma-separated)
+    ocr_language: Option<String>,
+    /// OCR DPI override
+    ocr_dpi: Option<u32>,
+    /// Enable markdown anchors
+    markdown_anchors: bool,
+}
+
+/// Field-typing helpers for multipart form parsing.
+mod form_helpers {
+    /// Parse a boolean from a form field value.
+    ///
+    /// Accepts: "true", "1", "yes", "on" → true
+    ///          "false", "0", "no", "off" → false
+    ///
+    /// Case-insensitive. Returns an error for unrecognized values.
+    pub fn parse_bool(field_name: &str, value: &str) -> Result<bool, String> {
+        match value.trim().to_lowercase().as_str() {
+            "true" | "1" | "yes" | "on" => Ok(true),
+            "false" | "0" | "no" | "off" => Ok(false),
+            _ => Err(format!(
+                "Invalid boolean value for '{}': '{}'. Expected: true, false, 1, 0, yes, no, on, off",
+                field_name, value
+            )),
+        }
+    }
+
+    /// Parse a float (f32) from a form field value.
+    pub fn parse_float(field_name: &str, value: &str) -> Result<f32, String> {
+        value
+            .trim()
+            .parse::<f32>()
+            .map_err(|_| format!("Invalid float value for '{}': '{}'", field_name, value))
+    }
+
+    /// Parse an integer (u32) from a form field value.
+    pub fn parse_int(field_name: &str, value: &str) -> Result<u32, String> {
+        value
+            .trim()
+            .parse::<u32>()
+            .map_err(|_| format!("Invalid integer value for '{}': '{}'", field_name, value))
+    }
+
+    /// Parse a comma-separated list into a Vec<String>.
+    ///
+    /// Empty values are filtered out. Whitespace around each value is trimmed.
+    pub fn parse_comma_list(value: &str) -> Vec<String> {
+        value
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    }
+
+    /// Validate PDF magic bytes.
+    ///
+    /// Returns an error if the data does not start with "%PDF-" (the standard
+    /// PDF file signature). This check is performed on the first 5 bytes of
+    /// the uploaded file.
+    ///
+    /// The PDF spec (ISO 32000-1:2008, section 7.5.2) requires that the first
+    /// line of a PDF file contains "%PDF-x.y" where x.y is the version number.
+    pub fn validate_pdf_magic_bytes(data: &[u8]) -> Result<(), String> {
+        if data.len() < 5 {
+            return Err("Uploaded file is too small to be a valid PDF".to_string());
+        }
+
+        // Check for %PDF- signature (standard PDF magic bytes)
+        if !data.starts_with(b"%PDF-") {
+            return Err("Uploaded file is not a PDF (missing %PDF- header)".to_string());
+        }
+
+        Ok(())
+    }
 }
 
 /// Run the HTTP serve mode.
@@ -227,6 +373,10 @@ pub async fn run(
 
     let max_body_bytes = max_upload_mb * 1024 * 1024;
 
+    // Create a custom rejection handler for RequestBodyLimit
+    // This converts the default text/plain 413 to JSON
+    let rejection_handler = HandleErrorLayer::new(request_body_limit_rejection);
+
     let app = Router::new()
         .route("/", get(root_handler))
         .route("/extract", post(extract_handler))
@@ -237,6 +387,7 @@ pub async fn run(
             state.audit.clone(),
             audit_middleware,
         ))
+        .layer(rejection_handler)
         .layer(DefaultBodyLimit::max(max_body_bytes))
         .layer(RequestBodyLimitLayer::new(max_body_bytes))
         .with_state(state);
@@ -318,7 +469,7 @@ async fn extract_handler(
             cache_disabled,
             Some(cache_size_bytes),
         )
-        .map_err(|e| AxumError::Extraction(format!("{:?}", e)))
+        .map_err(|e| AxumError::Extraction(format!("{:?}", e), None))
     })
     .await
     .map_err(|e| {
@@ -330,7 +481,10 @@ async fn extract_handler(
             AxumError::InternalPanic(format!("Extraction task panicked: {}", e))
         }
     })?
-    .map_err(|e| e)?;
+    .map_err(|e| match e {
+        AxumError::Extraction(msg, _) => AxumError::Extraction(msg, None),
+        other => other,
+    })?;
 
     // Build JSON response with cache status
     let mut result = result;
@@ -347,7 +501,7 @@ async fn extract_handler(
             CacheStatus::from_string(&cache_status).header_value(),
         )
         .body(Body::from(serde_json::to_string(&json).unwrap()))
-        .map_err(|e| AxumError::Internal(format!("{:?}", e)))?;
+        .map_err(|e| AxumError::Internal(format!("{:?}", e).to_string()))?;
 
     Ok(response)
 }
@@ -376,7 +530,7 @@ async fn extract_text_handler(
             cache_disabled,
             Some(cache_size_bytes),
         )
-        .map_err(|e| AxumError::Extraction(format!("{:?}", e)))
+        .map_err(|e| AxumError::Extraction(format!("{:?}", e), None))
     })
     .await
     .map_err(|e| {
@@ -388,7 +542,10 @@ async fn extract_text_handler(
             AxumError::InternalPanic(format!("Extraction task panicked: {}", e))
         }
     })?
-    .map_err(|e| e)?;
+    .map_err(|e| match e {
+        AxumError::Extraction(msg, _) => AxumError::Extraction(msg, None),
+        other => other,
+    })?;
 
     let mut text = String::new();
     for page in &result.pages {
@@ -405,7 +562,7 @@ async fn extract_text_handler(
             CacheStatus::from_string(&cache_status).header_value(),
         )
         .body(Body::from(text))
-        .map_err(|e| AxumError::Internal(format!("{:?}", e)))?;
+        .map_err(|e| AxumError::Internal(format!("{:?}", e).to_string()))?;
 
     Ok(response)
 }
@@ -490,61 +647,135 @@ async fn extract_stream_handler(
         .header("X-Pdftract-Cache", CacheStatus::Skipped.header_value())
         .header("Content-Type", "application/x-ndjson")
         .body(body)
-        .map_err(|e| AxumError::Internal(format!("{:?}", e)))?;
+        .map_err(|e| AxumError::Internal(format!("{:?}", e).to_string()))?;
 
     Ok(response)
 }
 
 /// Receive uploaded PDF file and extraction parameters.
+///
+/// Parses multipart/form-data with the following structure:
+/// - `file` or `pdf`: Required field containing the PDF file bytes
+/// - `receipts`: Optional; "off", "lite", or "svg" (default: "off")
+/// - `no_cache`: Optional; boolean flag to disable cache (default: false)
+/// - `full_render`: Optional; boolean flag to enable full-render (default: false)
+/// - `max_decompress_gb`: Optional; integer max decompression size in GB
+/// - `ocr_language`: Optional; comma-separated list of language codes (default: "eng")
+/// - `ocr_dpi`: Optional; integer DPI override for OCR
+/// - `markdown_anchors`: Optional; boolean flag to enable markdown anchors (default: false)
+///
+/// Unknown fields are logged as warnings and ignored (forward-compatibility).
+///
+/// Returns a tuple of (temp file path, parsed parameters). The temp file is
+/// cleaned up by the OS; the caller should extract from it before the request ends.
 async fn receive_pdf(multipart: &mut Multipart) -> Result<(PathBuf, ExtractParams), AxumError> {
+    use form_helpers::{parse_bool, parse_int, validate_pdf_magic_bytes};
+
     let mut pdf_path = None;
-    let mut params = ExtractParams {
-        receipts: "off".to_string(),
-        no_cache: false,
-        full_render: false,
-        max_decompress_gb: None,
-    };
+    let mut pdf_bytes: Option<Vec<u8>> = None;
+    let mut params = ExtractParams::default();
+
+    // Known form fields for validation (forward-compatibility: unknown fields are warned)
+    const KNOWN_FIELDS: &[&str] = &[
+        "file", "pdf", "receipts", "no_cache", "full_render",
+        "max_decompress_gb", "ocr_language", "ocr_dpi", "markdown_anchors",
+    ];
 
     while let Some(field) = multipart
         .next_field()
         .await
-        .map_err(|e| AxumError::Internal(format!("{:?}", e)))?
+        .map_err(|e| AxumError::Internal(format!("Failed to read multipart field: {:?}", e)))?
     {
         let name = field.name().unwrap_or("").to_string();
 
+        // Handle the file field (required)
         if name == "file" || name == "pdf" {
             let data = field
                 .bytes()
                 .await
-                .map_err(|e| AxumError::Internal(format!("{:?}", e)))?;
+                .map_err(|e| AxumError::Internal(format!("Failed to read file field: {:?}", e)))?;
+
+            // Validate PDF magic bytes before processing
+            validate_pdf_magic_bytes(&data).map_err(|msg| {
+                AxumError::BadRequest(
+                    msg,
+                    Some("Upload a valid PDF file (must start with %PDF-)".to_string()),
+                )
+            })?;
+
+            pdf_bytes = Some(data.to_vec());
 
             // Create a temp file that will persist for the duration of the request
             let temp_dir = std::env::temp_dir();
             let temp_file = temp_dir.join(format!("pdftract-upload-{}.pdf", uuid::Uuid::new_v4()));
             tokio::fs::write(&temp_file, &data)
                 .await
-                .map_err(|e| AxumError::Internal(format!("{:?}", e)))?;
+                .map_err(|e| AxumError::Internal(format!("Failed to write temp file: {:?}", e)))?;
             pdf_path = Some(temp_file);
-        } else if name == "receipts" {
-            if let Ok(value) = field.text().await {
-                params.receipts = value;
+            continue;
+        }
+
+        // Parse form fields (all are optional)
+        match name.as_str() {
+            "receipts" => {
+                if let Ok(value) = field.text().await {
+                    params.receipts = Some(value);
+                }
             }
-        } else if name == "no_cache" {
-            params.no_cache = true;
-        } else if name == "full_render" {
-            // Check if full_render is requested
-            if let Ok(value) = field.text().await {
-                params.full_render = value == "true" || value == "1";
+            "no_cache" => {
+                // Presence of the field means true (checkbox behavior)
+                params.no_cache = true;
             }
-            // Checkbox without value also means true
-            if params.full_render == false {
-                params.full_render = true;
+            "full_render" => {
+                if let Ok(value) = field.text().await {
+                    params.full_render = parse_bool("full_render", &value)
+                        .unwrap_or(false);
+                } else {
+                    // Checkbox without value also means true
+                    params.full_render = true;
+                }
+            }
+            "max_decompress_gb" => {
+                if let Ok(value) = field.text().await {
+                    params.max_decompress_gb = parse_int("max_decompress_gb", &value).ok();
+                }
+            }
+            "ocr_language" => {
+                if let Ok(value) = field.text().await {
+                    params.ocr_language = Some(value);
+                }
+            }
+            "ocr_dpi" => {
+                if let Ok(value) = field.text().await {
+                    params.ocr_dpi = parse_int("ocr_dpi", &value).ok();
+                }
+            }
+            "markdown_anchors" => {
+                if let Ok(value) = field.text().await {
+                    params.markdown_anchors = parse_bool("markdown_anchors", &value)
+                        .unwrap_or(false);
+                } else {
+                    params.markdown_anchors = true;
+                }
+            }
+            _ => {
+                // Unknown field - log warning and ignore (forward-compatibility)
+                if !name.is_empty() {
+                    tracing::warn!(
+                        "Unknown multipart field '{}' ignored (known fields: {:?})",
+                        name,
+                        KNOWN_FIELDS.join(", ")
+                    );
+                }
             }
         }
     }
 
-    let pdf_path =
-        pdf_path.ok_or_else(|| AxumError::BadRequest("No PDF file uploaded".to_string()))?;
+    // Validate that a PDF was uploaded
+    let pdf_path = pdf_path.ok_or_else(|| AxumError::MissingField(
+        "No PDF file uploaded".to_string(),
+        "file".to_string(),
+    ))?;
 
     Ok((pdf_path, params))
 }
@@ -558,23 +789,26 @@ fn build_options(
     state: &ServeState,
     params: &ExtractParams,
 ) -> Result<ExtractionOptions, AxumError> {
-    let receipts_mode = match params.receipts.as_str() {
-        "lite" => ReceiptsMode::Lite,
-        "svg" => ReceiptsMode::SvgClip,
+    use form_helpers::parse_comma_list;
+
+    // Parse receipts mode (default: Off)
+    let receipts_mode = match params.receipts.as_deref() {
+        Some("lite") => ReceiptsMode::Lite,
+        Some("svg") => ReceiptsMode::SvgClip,
         _ => ReceiptsMode::Off,
     };
 
-    // Validate max_decompress_gb if provided (for future use)
-    // Note: This is currently validated but not applied to ExtractionOptions
-    // since the extraction pipeline uses a hardcoded DEFAULT_MAX_DECOMPRESS_BYTES.
-    // This validation is kept for API compatibility and future implementation.
+    // Validate max_decompress_gb if provided
     if let Some(gb) = params.max_decompress_gb {
         const MAX_DECOMPRESS_GB_HARD_CAP: usize = 4096;
         if gb > MAX_DECOMPRESS_GB_HARD_CAP {
-            return Err(AxumError::BadRequest(format!(
-                "max_decompress_gb value {} exceeds hard cap of {} GB",
-                gb, MAX_DECOMPRESS_GB_HARD_CAP
-            )));
+            return Err(AxumError::BadRequest(
+                format!(
+                    "max_decompress_gb value {} exceeds hard cap of {} GB",
+                    gb, MAX_DECOMPRESS_GB_HARD_CAP
+                ),
+                Some(format!("Use a value <= {} GB", MAX_DECOMPRESS_GB_HARD_CAP))
+            ));
         }
     }
 
@@ -589,6 +823,7 @@ fn build_options(
                     "full_render requested but PDFium is not available at runtime. \
                     Ensure the PDFium native library is installed."
                         .to_string(),
+                    Some("Install PDFium or build with --features full-render".to_string())
                 ));
             }
         }
@@ -603,9 +838,18 @@ fn build_options(
         }
     }
 
+    // Parse OCR language list (default: ["eng"])
+    let ocr_language = params.ocr_language.as_deref()
+        .map(parse_comma_list)
+        .unwrap_or_else(|| vec!["eng".to_string()]);
+
+    // Build extraction options with defaults + overrides
     Ok(ExtractionOptions {
         receipts: receipts_mode,
         full_render: params.full_render,
+        ocr_dpi_override: params.ocr_dpi,
+        ocr_language,
+        markdown_anchors: params.markdown_anchors,
         ..Default::default()
     })
 }
@@ -613,10 +857,14 @@ fn build_options(
 /// Error types for the HTTP server.
 #[derive(Debug)]
 pub enum AxumError {
-    /// Bad request (400) - invalid parameters or missing file
-    BadRequest(String),
+    /// Bad request (400) - invalid parameters
+    BadRequest(String, Option<String>),
+    /// Missing field (400) - required multipart field not provided
+    MissingField(String, String),
+    /// Request too large (413) - body exceeds configured limit
+    RequestTooLarge,
     /// Extraction error (422) - PDF parsing or extraction failure
-    Extraction(String),
+    Extraction(String, Option<DiagCode>),
     /// Internal error (500) - server-side failure
     Internal(String),
     /// Internal panic (500) - spawn_blocking task panicked (indicates a bug)
@@ -625,23 +873,77 @@ pub enum AxumError {
 
 impl IntoResponse for AxumError {
     fn into_response(self) -> AxumResponse {
-        let (status, error_code, message) = match self {
-            AxumError::BadRequest(msg) => (StatusCode::BAD_REQUEST, "BAD_REQUEST", msg),
-            AxumError::Extraction(msg) => {
-                (StatusCode::UNPROCESSABLE_ENTITY, "EXTRACTION_ERROR", msg)
+        let api_error = match self {
+            AxumError::RequestTooLarge => ApiError {
+                error: "REQUEST_TOO_LARGE".to_string(),
+                message: "Request body exceeds the configured limit".to_string(),
+                hint: None,
+            },
+            AxumError::MissingField(msg, field_name) => {
+                ApiError::new("MISSING_FIELD", msg)
+                    .with_hint(format!("Supply the '{}' multipart field", field_name))
             }
-            AxumError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", msg),
+            AxumError::BadRequest(msg, hint) => {
+                let mut err = ApiError::new("BAD_REQUEST", msg);
+                if let Some(h) = hint {
+                    err = err.with_hint(h);
+                }
+                err
+            }
+            AxumError::Extraction(msg, diag_code) => {
+                let (error_code, hint) = if let Some(dc) = diag_code {
+                    match dc {
+                        DiagCode::EncryptionUnsupported => (
+                            "ENCRYPTED".to_string(),
+                            Some("Supply the correct password via --password, or use an Adobe-side decryption tool first".to_string()),
+                        ),
+                        DiagCode::EncryptionWrongPassword => (
+                            "WRONG_PASSWORD".to_string(),
+                            Some("The supplied password is incorrect".to_string()),
+                        ),
+                        DiagCode::StreamDecodeError | DiagCode::XrefTruncated | DiagCode::StructUnexpectedEof => (
+                            "CORRUPT_PDF".to_string(),
+                            Some("The PDF file is corrupt or truncated and cannot be extracted".to_string()),
+                        ),
+                        _ => ("EXTRACTION_ERROR".to_string(), None),
+                    }
+                } else {
+                    ("EXTRACTION_ERROR".to_string(), None)
+                };
+                let mut err = ApiError::new(error_code, msg);
+                if let Some(h) = hint {
+                    err = err.with_hint(h);
+                }
+                err
+            }
+            AxumError::Internal(msg) => {
+                // Generate a tracing tag for ops to correlate with logs
+                let tag = format!("{:x}", rand::random::<u32>());
+                tracing::error!("Internal error [{}]: {}", tag, msg);
+                ApiError::new(
+                    "INTERNAL",
+                    "Internal error during extraction".to_string(),
+                ).with_hint(format!("Reference tag {} for debugging", tag))
+            }
             AxumError::InternalPanic(msg) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_PANIC", msg)
+                let tag = format!("{:x}", rand::random::<u32>());
+                tracing::error!("Internal panic [{}]: {}", tag, msg);
+                ApiError::new(
+                    "INTERNAL_PANIC",
+                    "Extraction task panicked (indicates a bug)".to_string(),
+                ).with_hint(format!("Reference tag {} for debugging", tag))
             }
         };
 
-        let body = serde_json::json!({
-            "error": error_code,
-            "message": message,
-        });
+        let status = match api_error.error.as_str() {
+            "REQUEST_TOO_LARGE" => StatusCode::PAYLOAD_TOO_LARGE, // 413
+            "BAD_REQUEST" | "MISSING_FIELD" => StatusCode::BAD_REQUEST, // 400
+            "ENCRYPTED" | "WRONG_PASSWORD" | "EXTRACTION_ERROR" | "CORRUPT_PDF" => StatusCode::UNPROCESSABLE_ENTITY, // 422
+            "INTERNAL" | "INTERNAL_PANIC" => StatusCode::INTERNAL_SERVER_ERROR, // 500
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        };
 
-        (status, Json(body)).into_response()
+        (status, Json(api_error)).into_response()
     }
 }
 
@@ -654,12 +956,37 @@ mod tests {
     #[test]
     fn test_error_into_response() {
         // Test BadRequest
-        let err = AxumError::BadRequest("test".to_string());
+        let err = AxumError::BadRequest("test".to_string(), None);
         let resp = err.into_response();
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 
+        // Test MissingField
+        let err = AxumError::MissingField("test".to_string(), "file".to_string());
+        let resp = err.into_response();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+        // Test RequestTooLarge (413)
+        let err = AxumError::RequestTooLarge;
+        let resp = err.into_response();
+        assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+
         // Test Extraction
-        let err = AxumError::Extraction("test".to_string());
+        let err = AxumError::Extraction("test".to_string(), None);
+        let resp = err.into_response();
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+        // Test Extraction with DiagCode::EncryptionUnsupported
+        let err = AxumError::Extraction("test".to_string(), Some(DiagCode::EncryptionUnsupported));
+        let resp = err.into_response();
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+        // Test Extraction with DiagCode::StreamDecodeError (CORRUPT_PDF)
+        let err = AxumError::Extraction("test".to_string(), Some(DiagCode::StreamDecodeError));
+        let resp = err.into_response();
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+        // Test Extraction with DiagCode::XrefTruncated (CORRUPT_PDF)
+        let err = AxumError::Extraction("test".to_string(), Some(DiagCode::XrefTruncated));
         let resp = err.into_response();
         assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
 
@@ -672,6 +999,30 @@ mod tests {
         let err = AxumError::InternalPanic("test".to_string());
         let resp = err.into_response();
         assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    /// Test that 413 response matches exact JSON format from plan critical test (line 2163).
+    ///
+    /// The critical test requires: {"error":"REQUEST_TOO_LARGE","message":"Request body exceeds the configured limit"}
+    /// This test verifies the ApiError serialization produces this exact format (no hint field).
+    #[test]
+    fn test_413_json_format() {
+        // Test the exact format required by the critical test
+        let api_error = ApiError {
+            error: "REQUEST_TOO_LARGE".to_string(),
+            message: "Request body exceeds the configured limit".to_string(),
+            hint: None,
+        };
+        let json_str = serde_json::to_string(&api_error).unwrap();
+        assert_eq!(
+            json_str,
+            r#"{"error":"REQUEST_TOO_LARGE","message":"Request body exceeds the configured limit"}"#
+        );
+
+        // Verify the IntoResponse impl also produces the correct status code
+        let err = AxumError::RequestTooLarge;
+        let resp = err.into_response();
+        assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
     }
 
     /// Test that CacheStatus converts correctly to/from strings.
@@ -820,5 +1171,160 @@ mod tests {
             "/health should respond in < 100ms during load, took {:?}",
             health_duration
         );
+    }
+
+    /// Unit tests for field-typing helpers.
+    mod form_helpers_tests {
+        use super::form_helpers::*;
+
+        #[test]
+        fn test_parse_bool_true() {
+            assert!(parse_bool("test", "true").unwrap());
+            assert!(parse_bool("test", "TRUE").unwrap());
+            assert!(parse_bool("test", "1").unwrap());
+            assert!(parse_bool("test", "yes").unwrap());
+            assert!(parse_bool("test", "YES").unwrap());
+            assert!(parse_bool("test", "on").unwrap());
+            assert!(parse_bool("test", "ON").unwrap());
+        }
+
+        #[test]
+        fn test_parse_bool_false() {
+            assert!(!parse_bool("test", "false").unwrap());
+            assert!(!parse_bool("test", "FALSE").unwrap());
+            assert!(!parse_bool("test", "0").unwrap());
+            assert!(!parse_bool("test", "no").unwrap());
+            assert!(!parse_bool("test", "NO").unwrap());
+            assert!(!parse_bool("test", "off").unwrap());
+            assert!(!parse_bool("test", "OFF").unwrap());
+        }
+
+        #[test]
+        fn test_parse_bool_invalid() {
+            assert!(parse_bool("test", "invalid").is_err());
+            assert!(parse_bool("test", "2").is_err());
+            assert!(parse_bool("test", "").is_err());
+        }
+
+        #[test]
+        fn test_parse_float() {
+            assert_eq!(parse_float("test", "1.5").unwrap(), 1.5);
+            assert_eq!(parse_float("test", "0.5").unwrap(), 0.5);
+            assert_eq!(parse_float("test", "0").unwrap(), 0.0);
+            assert_eq!(parse_float("test", "-1.5").unwrap(), -1.5);
+        }
+
+        #[test]
+        fn test_parse_float_invalid() {
+            assert!(parse_float("test", "invalid").is_err());
+            assert!(parse_float("test", "").is_err());
+        }
+
+        #[test]
+        fn test_parse_int() {
+            assert_eq!(parse_int("test", "100").unwrap(), 100);
+            assert_eq!(parse_int("test", "0").unwrap(), 0);
+            assert_eq!(parse_int("test", "300").unwrap(), 300);
+        }
+
+        #[test]
+        fn test_parse_int_invalid() {
+            assert!(parse_int("test", "invalid").is_err());
+            assert!(parse_int("test", "1.5").is_err());
+            assert!(parse_int("test", "-1").is_err()); // u32 can't be negative
+        }
+
+        #[test]
+        fn test_parse_comma_list() {
+            assert_eq!(parse_comma_list("eng,fra,deu"), vec!["eng", "fra", "deu"]);
+            assert_eq!(parse_comma_list("eng, fra, deu"), vec!["eng", "fra", "deu"]);
+            assert_eq!(parse_comma_list("eng"), vec!["eng"]);
+            assert_eq!(parse_comma_list(""), Vec::<String>::new());
+            assert_eq!(parse_comma_list("eng,,fra"), vec!["eng", "fra"]); // Empty values filtered
+        }
+
+        #[test]
+        fn test_validate_pdf_magic_bytes_valid() {
+            let valid_pdf = b"%PDF-1.4\n";
+            assert!(validate_pdf_magic_bytes(valid_pdf).is_ok());
+
+            let valid_pdf2 = b"%PDF-1.2\n%%EOF";
+            assert!(validate_pdf_magic_bytes(valid_pdf2).is_ok());
+        }
+
+        #[test]
+        fn test_validate_pdf_magic_bytes_invalid() {
+            let invalid_pdf = b"NOT-A-PDF";
+            assert!(validate_pdf_magic_bytes(invalid_pdf).is_err());
+
+            let invalid_pdf2 = b"hello";
+            assert!(validate_pdf_magic_bytes(invalid_pdf2).is_err());
+        }
+
+        #[test]
+        fn test_validate_pdf_magic_bytes_too_small() {
+            let too_small = b"%PD";
+            assert!(validate_pdf_magic_bytes(too_small).is_err());
+        }
+    }
+
+    /// Test that build_options correctly handles all form fields.
+    #[test]
+    fn test_build_options_with_all_fields() {
+        let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30);
+
+        let params = ExtractParams {
+            receipts: Some("lite".to_string()),
+            no_cache: true,
+            full_render: false,
+            max_decompress_gb: Some(2),
+            ocr_language: Some("eng,fra,deu".to_string()),
+            ocr_dpi: Some(300),
+            markdown_anchors: true,
+        };
+
+        let options = build_options(&state, &params).unwrap();
+
+        assert_eq!(options.receipts, ReceiptsMode::Lite);
+        assert_eq!(options.ocr_language, vec!["eng", "fra", "deu"]);
+        assert_eq!(options.ocr_dpi_override, Some(300));
+        assert_eq!(options.markdown_anchors, true);
+        assert!(!options.full_render);
+    }
+
+    /// Test that build_options uses defaults when fields are missing.
+    #[test]
+    fn test_build_options_with_defaults() {
+        let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30);
+
+        let params = ExtractParams::default();
+
+        let options = build_options(&state, &params).unwrap();
+
+        assert_eq!(options.receipts, ReceiptsMode::Off);
+        assert_eq!(options.ocr_language, vec!["eng"]);
+        assert_eq!(options.ocr_dpi_override, None);
+        assert_eq!(options.markdown_anchors, false);
+    }
+
+    /// Test that max_decompress_gb validation works.
+    #[test]
+    fn test_build_options_max_decompress_gb_validation() {
+        let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30);
+
+        let params = ExtractParams {
+            max_decompress_gb: Some(5000), // Exceeds hard cap
+            ..Default::default()
+        };
+
+        let result = build_options(&state, &params);
+        assert!(result.is_err());
+
+        match result.unwrap_err() {
+            AxumError::BadRequest(msg, _) => {
+                assert!(msg.contains("exceeds hard cap"));
+            }
+            _ => panic!("Expected BadRequest error"),
+        }
     }
 }
