@@ -1,0 +1,59 @@
+{
+  "metadata": {
+    "document_type": "slide_deck",
+    "document_type_confidence": 0.92,
+    "document_type_reasons": [
+      "page count 40 in range [3, 200]",
+      "font diversity 4 in range [2, 10]",
+      "text contains 'slides' (1 hits)",
+      "text contains 'presentation' (1 hits)"
+    ],
+    "profile_name": "slide_deck",
+    "profile_version": "1.0.0",
+    "profile_fields": {
+      "title": "Introduction to Machine Learning",
+      "presenter": "Prof. Robert Chen, PhD",
+      "date": null,
+      "slide_titles": [
+        "Introduction to Machine Learning",
+        "Overview",
+        "What is a Neural Network?",
+        "Perceptrons",
+        "Multi-Layer Networks",
+        "Activation Functions",
+        "Backpropagation",
+        "Loss Functions",
+        "Optimization",
+        "Regularization",
+        "Convolutional Networks",
+        "Recurrent Networks",
+        "Transformer Architecture",
+        "Attention Mechanisms",
+        "Training Strategies",
+        "Hyperparameter Tuning",
+        "Evaluation Metrics",
+        "Case Studies",
+        "Current Research",
+        "Future Directions",
+        "Summary",
+        "References",
+        "Q1",
+        "Q2",
+        "Q3",
+        "Q4",
+        "Q5",
+        "Q6",
+        "Q7",
+        "Q8",
+        "Q9",
+        "Q10",
+        "Q11",
+        "Q12",
+        "Q13",
+        "Q14",
+        "Q15",
+        "Thank You"
+      ]
+    }
+  }
+}

@@ -1,0 +1,170 @@
+%PDF-1.4
+%PDF-Magic-Comment
+2 0 obj
+<</Type/Catalog/Pages 2 0 R>>
+endobj
+3 0 obj
+<</Type/Pages/Count 3/Kids[3 0 R 4 0 R 5 0 R]/Resources<<//Font<</F1 6 0 R>>>>/MediaBox[0 0 612 792]>>
+endobj
+4 0 obj
+<</Type/Page/Parent 2 0 R/Contents 8 0 R>>
+endobj
+5 0 obj
+<</Type/Page/Parent 2 0 R/Contents 9 0 R>>
+endobj
+6 0 obj
+<</Type/Page/Parent 2 0 R/Contents 10 0 R>>
+endobj
+7 0 obj
+<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>
+endobj
+8 0 obj
+<</Length 569>>
+stream
+BT
+50 720 Td
+24 Tf
+(Quantum Error Correction for Surface Codes) Tj
+ET
+BT
+50 680 Td
+12 Tf
+(Robert Zhang, Emily Watson) Tj
+ET
+BT
+50 660 Td
+10 Tf
+(IEEE Transactions on Quantum Engineering) Tj
+ET
+BT
+50 640 Td
+10 Tf
+(DOI: 10.1109/TQE.2023.1234567) Tj
+ET
+BT
+50 620 Td
+10 Tf
+(Published: 2023-09-01) Tj
+ET
+BT
+50 580 Td
+14 Tf
+(Abstract) Tj
+ET
+BT
+50 560 Td
+10 Tf
+(Optimized decoding algorithm for surface codes. We present a novel) Tj
+ET
+BT
+50 546 Td
+10 Tf
+(approach that reduces decoding latency while maintaining error) Tj
+ET
+BT
+50 532 Td
+10 Tf
+(correction performance.) Tj
+ET
+
+endstream
+endobj
+9 0 obj
+<</Length 429>>
+stream
+BT
+50 750 Td
+14 Tf
+(1. Introduction) Tj
+ET
+BT
+50 720 Td
+10 Tf
+(This paper presents a comprehensive study of the subject matter. We) Tj
+ET
+BT
+50 706 Td
+10 Tf
+(analyze various approaches and present novel methodologies.) Tj
+ET
+BT
+50 600 Td
+14 Tf
+(2. Methods) Tj
+ET
+BT
+50 570 Td
+10 Tf
+(Our approach combines state-of-the-art techniques with novel) Tj
+ET
+BT
+50 556 Td
+10 Tf
+(optimizations. We evaluate on standard benchmarks.) Tj
+ET
+
+endstream
+endobj
+10 0 obj
+<</Length 372>>
+stream
+BT
+50 750 Td
+14 Tf
+(References) Tj
+ET
+BT
+50 720 Td
+10 Tf
+([1]) Tj
+ET
+BT
+70 706 Td
+10 Tf
+(H. Physicist, 'Quantum Computing,' IEEE Trans. Quantum, 2022.) Tj
+ET
+BT
+50 678 Td
+10 Tf
+([2]) Tj
+ET
+BT
+70 664 Td
+10 Tf
+(I. Qubit, 'Surface Codes,' Phys. Rev. A, 2023.) Tj
+ET
+BT
+50 636 Td
+10 Tf
+([3]) Tj
+ET
+BT
+70 622 Td
+10 Tf
+(J. Error, 'Fault Tolerance,' Nature Physics, 2021.) Tj
+ET
+
+endstream
+endobj
+11 0 obj
+<</Title(Quantum Error Correction for Surface Codes)/Author(Robert Zhang, Emily Watson)/Producer(pdftract-test)>>
+endobj
+xref
+0 1
+0000000000 65535 f 
+1 10
+000000001c 00000 n 
+0000000049 00000 n 
+00000000bf 00000 n 
+00000000f9 00000 n 
+0000000133 00000 n 
+000000016e 00000 n 
+00000001ad 00000 n 
+0000000417 00000 n 
+00000005f5 00000 n 
+000000079b 00000 n 
+trailer
+<</Size 11 /Root 1 0 R /Info 10 0 R>>
+startxref
+2077
+%%EOF

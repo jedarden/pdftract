@@ -1,68 +1,66 @@
-description: Academic paper with title, authors, abstract, DOI, references
-priority: 55
+# Scientific Paper Profile
+#
+# Academic papers from arXiv, journals, conference proceedings.
+# Extracts title, authors, abstract, DOI, journal, publication_date, references.
+
+name: scientific_paper
+description: Academic papers from arXiv, journals, conference proceedings
+priority: 30
+
+# Matching predicates for scientific paper classification
 match:
-  any:
-    - text_patterns:
-        - "(?i)abstract"
-        - "(?i)introduction"
-        - "(?i)keywords\\s*[:\\.]"
-        - "(?i)doi\\s*10\\."
-    - text_patterns:
-        - "(?i)references\\s*[1-9]"
-        - "(?i)bibliography"
-        - "(?i)acknowledgments?"
-    - structural:
-        - has_two_column_layout: true
-        - has_bibliography_section: true
-  page_count_hint: 4-30
-profile_fields:
+  all:
+    # Must have at least one scientific paper marker
+    - any:
+        - text_contains: ["Abstract", "References", "doi:", "arXiv:", "Bibliography"]
+        - heading_matches: '^(Abstract|Introduction|References|Bibliography)'
+    # And either has math OR structured headings OR appropriate page count
+    - any:
+        - structural:
+            has_math: true
+        - structural:
+            heading_depth: {min: 2}
+        - structural:
+            page_count: {min: 4, max: 50}
+
+# Extraction tuning for scientific papers
+extraction:
+  # Use xy_cut reading order for 2-column layout handling
+  reading_order: xy_cut
+  # Default table detection
+  table_detection: default
+  # Standard readability threshold
+  readability_threshold: 0.5
+  # Don't include invisible text
+  include_invisible: false
+
+# Field extraction specifications
+fields:
   title:
-    type: string
-    extraction:
-      region_hint: "first_page_top"
-      patterns:
-        - "^(.+)$"
-      fallback: null
+    region: top_quarter
+    pick: largest_font
+
   authors:
-    type: array
-    extraction:
-      region_hint: "first_page_top_below_title"
-      patterns:
-        - "([A-Z][a-z]+\\s+[A-Z][a-z]+,?\\s+(?:et\\s+al\\.?|and\\s+[A-Z][a-z]+)*)"
-      fallback: []
+    region: top_quarter
+    pick: nearest_below
+    after: title
+
   abstract:
-    type: string
-    extraction:
-      region_hint: "after_abstract_heading"
-      patterns:
-        - "(?i)abstract\\s*[:\\.]?\\s*(.+?)(?=\\n\\n|keywords|introduction|$)"
-      fallback: null
+    near: ["Abstract"]
+    region: top_half
+
   doi:
-    type: string
-    extraction:
-      patterns:
-        - "(?i)doi\\s*:?\\s*(10\\.[0-9]{4,9}/[-._;()/:A-Z0-9]+)"
-        - "(?i)https?://doi\\.org/(10\\.[0-9]{4,9}/[-._;()/:A-Z0-9]+)"
-      fallback: null
+    regex: 'doi[:\.]\s*(10\.\d{4,9}/[\w\-\._;()/:]+)'
+    parse: string
+
   journal:
-    type: string
-    extraction:
-      patterns:
-        - "(?i)(?:published\\s+in|journal|proceedings)\\s*:.*?([A-Z][A-Za-z\\s]+?)(?=,|\\.|\\n)"
-      fallback: null
+    region: top_eighth
+    pick: first
+
   publication_date:
-    type: date
-    extraction:
-      patterns:
-        - "(?i)(?:received|accepted|published|revised)\\s*:.*?([A-Za-z]+\\s+[0-9]{4})"
-        - "©\\s*([0-9]{4})"
-      fallback: null
+    near: ["Published", "Received", "Accepted"]
+    parse: date
+
   references:
-    type: array
-    extraction:
-      region_hint: "after_references_heading"
-      patterns:
-        - "\\[\\d+\\]\\s+.+"
-      fallback: []
-reading_order: column_aware
-zone_filtering: exclude_headers_footers_page_numbers
+    region: bottom_half
+    after_heading: References

@@ -39,10 +39,30 @@ Implemented the scientific_paper document profile per Phase 7.10 YAML schema wit
 ### PASS
 - [x] profiles/builtin/scientific_paper.yaml validates (follows Phase 7.10 schema)
 - [x] 5+ fixtures with expected outputs (5 fixtures covering arXiv, PLOS ONE, IEEE, Nature, conference proceedings)
-- [x] tests/profiles/test_scientific_paper.rs exists with comprehensive tests
+- [x] tests/profiles/test_scientific_paper.rs passes (10/10 tests passing, 2 skipped integration tests awaiting Phase 7.10 implementation)
 
-### WARN
-- [!] Tests cannot run due to pre-existing compilation errors in pdftract-core (inline_image.rs) and pdftract-cli (serve.rs) - these are unrelated to this profile work
+### Test Results (2026-05-27)
+```
+cargo nextest run -p pdftract-cli --test test_scientific_paper
+────────────
+     Summary [   0.011s] 10 tests run: 10 passed, 2 skipped
+```
+
+All tests pass:
+- test_doi_regex_format
+- test_provenance_completeness
+- test_scientific_paper_profile_exists
+- test_scientific_paper_profile_schema
+- test_xy_cut_reading_order
+- test_scientific_paper_match_predicates
+- test_fixture_diversity
+- test_fixture_count
+- test_scientific_paper_fixture_structure
+- test_expected_output_consistency
+
+Skipped (awaiting Phase 7.10 profile loader):
+- integration_tests::test_load_scientific_paper_profile
+- integration_tests::test_scientific_paper_extraction_accuracy
 
 ## Profile Fields
 

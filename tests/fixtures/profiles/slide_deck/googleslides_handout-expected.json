@@ -1,0 +1,35 @@
+{
+  "metadata": {
+    "document_type": "slide_deck",
+    "document_type_confidence": 0.75,
+    "document_type_reasons": [
+      "page count 4 in range [3, 200]",
+      "font diversity 2 in range [2, 10]",
+      "text contains 'slides' (1 hits)"
+    ],
+    "profile_name": "slide_deck",
+    "profile_version": "1.0.0",
+    "profile_fields": {
+      "title": "Team Onboarding Guide",
+      "presenter": "HR Department",
+      "date": null,
+      "slide_titles": [
+        "Welcome!",
+        "Company Values",
+        "Our Mission",
+        "Tools & Resources",
+        "Benefits Overview",
+        "Who's Who",
+        "First Week Checklist",
+        "Questions?",
+        "Contact HR",
+        "Thank You",
+        "Insurance",
+        "401k",
+        "PTO Policy",
+        "Remote Work",
+        "Emergency Contacts"
+      ]
+    }
+  }
+}

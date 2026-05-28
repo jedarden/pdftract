@@ -1,0 +1,139 @@
+%PDF-1.4
+%PDF-Magic-Comment
+2 0 obj
+<</Type/Catalog/Pages 2 0 R>>
+endobj
+3 0 obj
+<</Type/Pages/Count 2/Kids[3 0 R 4 0 R]/Resources<<//Font<</F1 5 0 R>>>>/MediaBox[0 0 612 792]>>
+endobj
+4 0 obj
+<</Type/Page/Parent 2 0 R/Contents 7 0 R>>
+endobj
+5 0 obj
+<</Type/Page/Parent 2 0 R/Contents 8 0 R>>
+endobj
+6 0 obj
+<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>
+endobj
+7 0 obj
+<</Length 875>>
+stream
+BT
+50 720 Td
+24 Tf
+(Deep Learning for Scientific Document Understanding: A Comprehensive Survey) Tj
+ET
+BT
+50 680 Td
+12 Tf
+(Jane Smith, John Doe, Alex Johnson) Tj
+ET
+BT
+50 660 Td
+10 Tf
+(arXiv preprint) Tj
+ET
+BT
+50 640 Td
+10 Tf
+(DOI: 10.1234/arxiv.2401.12345) Tj
+ET
+BT
+50 620 Td
+10 Tf
+(Published: 2024-01-15) Tj
+ET
+BT
+50 580 Td
+14 Tf
+(Abstract) Tj
+ET
+BT
+50 560 Td
+10 Tf
+(This paper presents a comprehensive survey of deep learning approaches) Tj
+ET
+BT
+50 546 Td
+10 Tf
+(for scientific document understanding. We review recent advances in) Tj
+ET
+BT
+50 532 Td
+10 Tf
+(layout analysis, text extraction, and semantic understanding of) Tj
+ET
+BT
+50 518 Td
+10 Tf
+(academic papers. Our analysis covers transformer-based models, graph) Tj
+ET
+BT
+50 504 Td
+10 Tf
+(neural networks, and multi-modal approaches that combine vision and) Tj
+ET
+BT
+50 490 Td
+10 Tf
+(language understanding.) Tj
+ET
+
+endstream
+endobj
+8 0 obj
+<</Length 429>>
+stream
+BT
+50 750 Td
+14 Tf
+(1. Introduction) Tj
+ET
+BT
+50 720 Td
+10 Tf
+(This paper presents a comprehensive study of the subject matter. We) Tj
+ET
+BT
+50 706 Td
+10 Tf
+(analyze various approaches and present novel methodologies.) Tj
+ET
+BT
+50 600 Td
+14 Tf
+(2. Methods) Tj
+ET
+BT
+50 570 Td
+10 Tf
+(Our approach combines state-of-the-art techniques with novel) Tj
+ET
+BT
+50 556 Td
+10 Tf
+(optimizations. We evaluate on standard benchmarks.) Tj
+ET
+
+endstream
+endobj
+9 0 obj
+<</Title(Deep Learning for Scientific Document Understanding: A Comprehensive Survey)/Author(Jane Smith, John Doe, Alex Johnson)/Producer(pdftract-test)>>
+endobj
+xref
+0 1
+0000000000 65535 f 
+1 8
+000000001c 00000 n 
+0000000049 00000 n 
+00000000b9 00000 n 
+00000000f3 00000 n 
+000000012d 00000 n 
+000000016c 00000 n 
+0000000508 00000 n 
+00000006e6 00000 n 
+trailer
+<</Size 9 /Root 1 0 R /Info 8 0 R>>
+startxref
+1936
+%%EOF

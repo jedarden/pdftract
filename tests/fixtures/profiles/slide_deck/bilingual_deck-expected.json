@@ -1,0 +1,32 @@
+{
+  "metadata": {
+    "document_type": "slide_deck",
+    "document_type_confidence": 0.82,
+    "document_type_reasons": [
+      "page count 12 in range [3, 200]",
+      "font diversity 3 in range [2, 10]",
+      "text contains 'slides' (1 hits)"
+    ],
+    "profile_name": "slide_deck",
+    "profile_version": "1.0.0",
+    "profile_fields": {
+      "title": "Informe Anual 2024",
+      "presenter": "Maria Garcia / Director General",
+      "date": null,
+      "slide_titles": [
+        "Informe Anual 2024",
+        "Resumen Ejecutivo",
+        "Logros 2024",
+        "Crecimiento de Ingresos",
+        "Expansión Global",
+        "Productos Nuevos",
+        "Sostenibilidad",
+        "Compromiso Social",
+        "Perspectivas 2025",
+        "Estrategia",
+        "Próximos Pasos",
+        "Gracias"
+      ]
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "metadata": {
+    "document_type": "slide_deck",
+    "document_type_confidence": 0.85,
+    "document_type_reasons": [
+      "page count 10 in range [3, 200]",
+      "font diversity 3 in range [2, 10]",
+      "text contains 'slides' (1 hits)",
+      "text contains 'presentation' (1 hits)"
+    ],
+    "profile_name": "slide_deck",
+    "profile_version": "1.0.0",
+    "profile_fields": {
+      "title": "Q3 2024 Product Roadmap",
+      "presenter": "Jane Smith, VP Product",
+      "date": null,
+      "slide_titles": [
+        "Q3 2024 Product Roadmap",
+        "Agenda",
+        "Market Overview",
+        "Product Vision",
+        "Key Features",
+        "Technical Architecture",
+        "Go-to-Market Strategy",
+        "Pricing & Packaging",
+        "Next Steps",
+        "Q&A"
+      ]
+    }
+  }
+}

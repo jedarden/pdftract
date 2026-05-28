@@ -1,0 +1,36 @@
+{
+  "metadata": {
+    "document_type": "slide_deck",
+    "document_type_confidence": 0.88,
+    "document_type_reasons": [
+      "page count 15 in range [3, 200]",
+      "font diversity 3 in range [2, 10]",
+      "text contains 'slides' (1 hits)",
+      "text contains 'presentation' (1 hits)"
+    ],
+    "profile_name": "slide_deck",
+    "profile_version": "1.0.0",
+    "profile_fields": {
+      "title": "2025 Annual Kickoff",
+      "presenter": "Michael Johnson, CEO",
+      "date": null,
+      "slide_titles": [
+        "2025 Annual Kickoff",
+        "Welcome",
+        "2024 Recap",
+        "Financial Highlights",
+        "Customer Success Stories",
+        "Product Roadmap 2025",
+        "Market Expansion",
+        "Team Growth",
+        "Strategic Priorities",
+        "OKR Framework",
+        "Investment Areas",
+        "Culture & Values",
+        "Events Calendar",
+        "Leadership Team",
+        "Thank You"
+      ]
+    }
+  }
+}

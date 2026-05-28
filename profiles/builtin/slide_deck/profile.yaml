@@ -1,47 +1,64 @@
-description: Presentation slides with title, presenter, date, slide titles
-priority: 35
+# Slide Deck Profile
+#
+# PowerPoint / Keynote / Google Slides exports as PDF.
+# Extracts title, presenter, date, slide_titles.
+
+name: slide_deck
+description: PowerPoint / Keynote / Google Slides exports as PDF
+priority: 15
+
+# Matching predicates for slide deck classification
 match:
-  any:
+  all:
+    # Page count in typical slide deck range
     - structural:
-        - page_aspect_ratio: "landscape"
-        - page_count_gte: 3
-        - has_large_centred_text: true
-    - text_patterns:
-        - "(?i)presentation"
-        - "(?i)slide\\s+[0-9]+"
-        - "(?i)table\\s+of\\s+contents"
-  page_count_hint: 3-200
-profile_fields:
+        page_count: {min: 3, max: 200}
+    # And EITHER: has limited font diversity (not a dense academic paper)
+    # OR: contains "Slide N" patterns
+    # OR: contains slide deck keywords
+    - any:
+        - structural:
+            has_form_field: false
+            font_diversity: {min: 2, max: 10}
+        - text_matches: '^Slide \d+$'
+        - text_contains: ["slides", "presentation"]
+  none:
+    # Exclude academic papers (these have their own profile)
+    - text_contains: ["Abstract", "References", "WHEREAS", "Invoice"]
+
+# Extraction tuning for slide decks
+extraction:
+  # Use xy_cut reading order for proper layout handling
+  reading_order: xy_cut
+  # Default table detection
+  table_detection: default
+  # Lower readability threshold for slides (less text density)
+  readability_threshold: 0.6
+  # Don't include invisible text
+  include_invisible: false
+  # Minimum block characters
+  min_block_chars: 5
+
+# Field extraction specifications
+fields:
   title:
     type: string
-    extraction:
-      region_hint: "first_page_centre"
-      patterns:
-        - "^(.+)$"
-      fallback: null
+    region: middle_half
+    pick: largest_font
+    page: first
+
   presenter:
     type: string
-    extraction:
-      region_hint: "first_page_below_title"
-      patterns:
-        - "([A-Z][a-z]+\\s+[A-Z][a-z]+)"
-        - "([A-Z]\\.[A-Z]\\.[A-Za-z]+)"
-      fallback: null
+    region: bottom_half
+    pick: largest_font
+    page: first
+
   date:
     type: date
-    extraction:
-      region_hint: "first_page_bottom"
-      patterns:
-        - "([A-Za-z]+\\s+[0-9]{1,2},?\\s+[0-9]{4})"
-        - "([0-9]{1,2}[/-][0-9]{1,2}[/-][0-9]{2,4})"
-      fallback: null
+    near: ["Date"]
+    parse: date
+
   slide_titles:
     type: array
-    extraction:
-      per_page: true
-      region_hint: "top_left_or_centre"
-      patterns:
-        - "^[A-Z][A-Za-z0-9\\s\\-:]+$"
-      fallback: []
-reading_order: line_dominant
-zone_filtering: none
+    pick: largest_font
+    per_page: true
