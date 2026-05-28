@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::diagnostics::{DiagCode, Diagnostic};
+use crate::{emit, diagnostics::{Diagnostic, DiagCode}};
 use crate::parser::object::{ObjRef, PdfDict, PdfObject};
 
 /// Encryption metadata extracted from the PDF's /Encrypt dictionary.
@@ -91,6 +91,7 @@ pub enum AuthEvent {
 ///
 /// * `trailer` - The trailer dictionary from the PDF
 /// * `resolver` - The cross-reference resolver for dereferencing indirect objects
+/// * `diagnostics` - Diagnostics vector to emit errors to
 ///
 /// # Returns
 ///
@@ -105,6 +106,7 @@ pub enum AuthEvent {
 pub fn detect_encryption(
     trailer: &PdfDict,
     resolver: &impl XrefResolver,
+    diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<EncryptionInfo> {
     // Step 1: Look up /Encrypt in trailer
     let encrypt_ref = trailer.get("/Encrypt")?;
@@ -123,7 +125,14 @@ pub fn detect_encryption(
     let filter_name = filter.as_name()?;
     if filter_name != "Standard" {
         // Emit ENCRYPTION_UNSUPPORTED with the filter name
-        // For now, we can't emit diagnostics in this signature
+        emit!(
+            diagnostics,
+            EncryptionUnsupported,
+            message = format!(
+                "Unsupported encryption filter: /{}. Only /Standard is supported.",
+                filter_name
+            )
+        );
         return None;
     }
 
@@ -132,9 +141,15 @@ pub fn detect_encryption(
     let revision = parse_revision(encrypt_dict)?;
     let key_length = parse_key_length(encrypt_dict, version)?;
 
-    // Step 5: Parse /O, /U
-    let owner_hash = parse_hash(encrypt_dict, "/O", revision)?;
-    let user_hash = parse_hash(encrypt_dict, "/U", revision)?;
+    // Step 5: Parse /O, /U with length validation
+    let owner_hash = match parse_hash_with_diagnostics(encrypt_dict, "/O", revision, diagnostics) {
+        Some(hash) => hash,
+        None => return None,
+    };
+    let user_hash = match parse_hash_with_diagnostics(encrypt_dict, "/U", revision, diagnostics) {
+        Some(hash) => hash,
+        None => return None,
+    };
 
     // Step 6: Parse /P (32-bit signed int; perms bitfield)
     let perms = parse_permissions(encrypt_dict)?;
@@ -214,13 +229,28 @@ fn parse_key_length(dict: &PdfDict, version: u8) -> Option<u32> {
     }
 }
 
-/// Parse a hash field (/O or /U) with length validation.
-fn parse_hash(dict: &PdfDict, key: &str, revision: u8) -> Option<Vec<u8>> {
+/// Parse a hash field (/O or /U) with length validation and diagnostic emission.
+fn parse_hash_with_diagnostics(
+    dict: &PdfDict,
+    key: &str,
+    revision: u8,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<Vec<u8>> {
     let hash_bytes = dict.get(key)?.as_string()?.to_vec();
 
     // Validate length
     let expected_len = if revision >= 5 { 48 } else { 32 };
     if hash_bytes.len() != expected_len {
+        emit!(
+            diagnostics,
+            EncryptionInvalidDict,
+            message = format!(
+                "Invalid {} length: expected {} bytes, got {}",
+                key,
+                expected_len,
+                hash_bytes.len()
+            )
+        );
         return None;
     }
 
@@ -260,14 +290,20 @@ fn parse_crypt_filters(dict: &PdfDict) -> Option<CryptFiltersV4> {
     let stream_filter = parse_filter_name(dict.get("/StmF"))?;
     let string_filter = parse_filter_name(dict.get("/StrF"))?;
 
-    let cf_dict = dict.get("/CF")?.as_dict()?;
-    let mut filters = BTreeMap::new();
+    // /CF is optional - if not present, use empty filters map
+    let filters = if let Some(cf_obj) = dict.get("/CF") {
+        let cf_dict = cf_obj.as_dict()?;
+        let mut filters = BTreeMap::new();
 
-    for (name, filter_def) in cf_dict {
-        let name_str = name.strip_prefix('/')?;
-        let def = parse_crypt_filter_def(filter_def.as_dict()?)?;
-        filters.insert(name_str.to_string(), def);
-    }
+        for (name, filter_def) in cf_dict {
+            let name_str = name.strip_prefix('/')?;
+            let def = parse_crypt_filter_def(filter_def.as_dict()?)?;
+            filters.insert(name_str.to_string(), def);
+        }
+        filters
+    } else {
+        BTreeMap::new()
+    };
 
     Some(CryptFiltersV4 {
         stream_filter,
@@ -350,14 +386,16 @@ mod tests {
     fn test_no_encrypt_key() {
         let trailer = make_dict(vec![]);
         let resolver = MockResolver;
+        let mut diagnostics = Vec::new();
 
-        let result = detect_encryption(&trailer, &resolver);
+        let result = detect_encryption(&trailer, &resolver, &mut diagnostics);
         assert!(result.is_none());
+        assert!(diagnostics.is_empty());
     }
 
     #[test]
     fn test_v1_r2_rc4_40() {
-        let mut encrypt_dict = make_dict(vec![
+        let encrypt_dict = make_dict(vec![
             ("/Filter", PdfObject::Name("Standard".into())),
             ("/V", PdfObject::Integer(1)),
             ("/R", PdfObject::Integer(2)),
@@ -366,17 +404,17 @@ mod tests {
             ("/P", PdfObject::Integer(0xFFFFFFFF_i64)),
         ]);
 
-        let mut trailer = make_dict(vec![
+        let trailer = make_dict(vec![
             ("/Encrypt", PdfObject::Dict(Box::new(encrypt_dict))),
-            ("/ID", PdfObject::Array(Box::new(vec![PdfObject::String(Box::new(
-                vec![0u8; 16],
-            ))]))),
+            ("/ID", PdfObject::Array(Box::new(vec![PdfObject::String(Box::new(vec![0u8; 16]))]))),
         ]);
 
         let resolver = MockResolver;
-        let result = detect_encryption(&trailer, &resolver);
+        let mut diagnostics = Vec::new();
+        let result = detect_encryption(&trailer, &resolver, &mut diagnostics);
 
         assert!(result.is_some());
+        assert!(diagnostics.is_empty());
         let info = result.unwrap();
         assert_eq!(info.version, 1);
         assert_eq!(info.revision, 2);
@@ -389,7 +427,7 @@ mod tests {
 
     #[test]
     fn test_v5_r6_aes_256() {
-        let mut encrypt_dict = make_dict(vec![
+        let encrypt_dict = make_dict(vec![
             ("/Filter", PdfObject::Name("Standard".into())),
             ("/V", PdfObject::Integer(5)),
             ("/R", PdfObject::Integer(6)),
@@ -403,17 +441,17 @@ mod tests {
             }))),
         ]);
 
-        let mut trailer = make_dict(vec![
+        let trailer = make_dict(vec![
             ("/Encrypt", PdfObject::Dict(Box::new(encrypt_dict))),
-            ("/ID", PdfObject::Array(Box::new(vec![PdfObject::String(Box::new(
-                vec![0u8; 16],
-            ))]))),
+            ("/ID", PdfObject::Array(Box::new(vec![PdfObject::String(Box::new(vec![0u8; 16]))]))),
         ]);
 
         let resolver = MockResolver;
-        let result = detect_encryption(&trailer, &resolver);
+        let mut diagnostics = Vec::new();
+        let result = detect_encryption(&trailer, &resolver, &mut diagnostics);
 
         assert!(result.is_some());
+        assert!(diagnostics.is_empty());
         let info = result.unwrap();
         assert_eq!(info.version, 5);
         assert_eq!(info.revision, 6);
@@ -424,7 +462,7 @@ mod tests {
     }
 
     #[test]
-    fn test_non_standard_filter() {
+    fn test_non_standard_filter_emits_diagnostic() {
         let encrypt_dict = make_dict(vec![
             ("/Filter", PdfObject::Name("Custom".into())),
             ("/V", PdfObject::Integer(1)),
@@ -434,14 +472,19 @@ mod tests {
         let trailer = make_dict(vec![("/Encrypt", PdfObject::Dict(Box::new(encrypt_dict)))]);
 
         let resolver = MockResolver;
-        let result = detect_encryption(&trailer, &resolver);
+        let mut diagnostics = Vec::new();
+        let result = detect_encryption(&trailer, &resolver, &mut diagnostics);
 
         // Non-Standard filter returns None
         assert!(result.is_none());
+        // Should emit ENCRYPTION_UNSUPPORTED diagnostic
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].code, DiagCode::EncryptionUnsupported);
+        assert!(diagnostics[0].message.contains("Custom"));
     }
 
     #[test]
-    fn test_invalid_o_length() {
+    fn test_invalid_o_length_emits_diagnostic() {
         let encrypt_dict = make_dict(vec![
             ("/Filter", PdfObject::Name("Standard".into())),
             ("/V", PdfObject::Integer(1)),
@@ -454,10 +497,69 @@ mod tests {
         let trailer = make_dict(vec![("/Encrypt", PdfObject::Dict(Box::new(encrypt_dict)))]);
 
         let resolver = MockResolver;
-        let result = detect_encryption(&trailer, &resolver);
+        let mut diagnostics = Vec::new();
+        let result = detect_encryption(&trailer, &resolver, &mut diagnostics);
 
         // Invalid /O length returns None
         assert!(result.is_none());
+        // Should emit ENCRYPTION_INVALID_DICT diagnostic
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].code, DiagCode::EncryptionInvalidDict);
+        assert!(diagnostics[0].message.contains("/O"));
+        assert!(diagnostics[0].message.contains("expected 32"));
+    }
+
+    #[test]
+    fn test_invalid_u_length_emits_diagnostic() {
+        let encrypt_dict = make_dict(vec![
+            ("/Filter", PdfObject::Name("Standard".into())),
+            ("/V", PdfObject::Integer(1)),
+            ("/R", PdfObject::Integer(2)),
+            ("/O", PdfObject::String(Box::new(vec![0u8; 32]))),
+            ("/U", PdfObject::String(Box::new(vec![0u8; 31]))), // Wrong length
+            ("/P", PdfObject::Integer(0xFFFFFFFF_i64)),
+        ]);
+
+        let trailer = make_dict(vec![("/Encrypt", PdfObject::Dict(Box::new(encrypt_dict)))]);
+
+        let resolver = MockResolver;
+        let mut diagnostics = Vec::new();
+        let result = detect_encryption(&trailer, &resolver, &mut diagnostics);
+
+        // Invalid /U length returns None
+        assert!(result.is_none());
+        // Should emit ENCRYPTION_INVALID_DICT diagnostic
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].code, DiagCode::EncryptionInvalidDict);
+        assert!(diagnostics[0].message.contains("/U"));
+        assert!(diagnostics[0].message.contains("expected 32"));
+    }
+
+    #[test]
+    fn test_v5_invalid_hash_length_emits_diagnostic() {
+        // For R>=5, /O and /U should be 48 bytes
+        let encrypt_dict = make_dict(vec![
+            ("/Filter", PdfObject::Name("Standard".into())),
+            ("/V", PdfObject::Integer(5)),
+            ("/R", PdfObject::Integer(6)),
+            ("/O", PdfObject::String(Box::new(vec![0u8; 32]))), // Wrong length for R=6
+            ("/U", PdfObject::String(Box::new(vec![0u8; 48]))),
+            ("/P", PdfObject::Integer(0xFFFFFFFF_i64)),
+        ]);
+
+        let trailer = make_dict(vec![("/Encrypt", PdfObject::Dict(Box::new(encrypt_dict)))]);
+
+        let resolver = MockResolver;
+        let mut diagnostics = Vec::new();
+        let result = detect_encryption(&trailer, &resolver, &mut diagnostics);
+
+        // Invalid /O length returns None
+        assert!(result.is_none());
+        // Should emit ENCRYPTION_INVALID_DICT diagnostic
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].code, DiagCode::EncryptionInvalidDict);
+        assert!(diagnostics[0].message.contains("/O"));
+        assert!(diagnostics[0].message.contains("expected 48"));
     }
 
     #[test]
@@ -484,9 +586,11 @@ mod tests {
         let trailer = make_dict(vec![("/Encrypt", PdfObject::Dict(Box::new(encrypt_dict)))]);
 
         let resolver = MockResolver;
-        let result = detect_encryption(&trailer, &resolver);
+        let mut diagnostics = Vec::new();
+        let result = detect_encryption(&trailer, &resolver, &mut diagnostics);
 
         assert!(result.is_some());
+        assert!(diagnostics.is_empty());
         let info = result.unwrap();
         assert_eq!(info.version, 4);
         assert!(info.crypt_filters.is_some());
@@ -510,11 +614,70 @@ mod tests {
         let trailer = make_dict(vec![("/Encrypt", PdfObject::Dict(Box::new(encrypt_dict)))]);
 
         let resolver = MockResolver;
-        let result = detect_encryption(&trailer, &resolver);
+        let mut diagnostics = Vec::new();
+        let result = detect_encryption(&trailer, &resolver, &mut diagnostics);
 
         assert!(result.is_some());
+        assert!(diagnostics.is_empty());
         let info = result.unwrap();
         // Missing /ID should result in empty file_id
         assert!(info.file_id.is_empty());
+    }
+
+    #[test]
+    fn test_all_v_r_combinations() {
+        // Test V=1, R=2 (RC4-40)
+        let encrypt_dict = make_dict(vec![
+            ("/Filter", PdfObject::Name("Standard".into())),
+            ("/V", PdfObject::Integer(1)),
+            ("/R", PdfObject::Integer(2)),
+            ("/O", PdfObject::String(Box::new(vec![0u8; 32]))),
+            ("/U", PdfObject::String(Box::new(vec![0u8; 32]))),
+            ("/P", PdfObject::Integer(0xFFFFFFFF_i64)),
+        ]);
+        let trailer = make_dict(vec![
+            ("/Encrypt", PdfObject::Dict(Box::new(encrypt_dict))),
+            ("/ID", PdfObject::Array(Box::new(vec![PdfObject::String(Box::new(vec![0u8; 16]))]))),
+        ]);
+        let mut diagnostics = Vec::new();
+        let result = detect_encryption(&trailer, &MockResolver, &mut diagnostics);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().key_length, 40);
+
+        // Test V=2, R=3 (RC4-128)
+        let encrypt_dict = make_dict(vec![
+            ("/Filter", PdfObject::Name("Standard".into())),
+            ("/V", PdfObject::Integer(2)),
+            ("/R", PdfObject::Integer(3)),
+            ("/O", PdfObject::String(Box::new(vec![0u8; 32]))),
+            ("/U", PdfObject::String(Box::new(vec![0u8; 32]))),
+            ("/P", PdfObject::Integer(0xFFFFFFFF_i64)),
+        ]);
+        let trailer = make_dict(vec![
+            ("/Encrypt", PdfObject::Dict(Box::new(encrypt_dict))),
+            ("/ID", PdfObject::Array(Box::new(vec![PdfObject::String(Box::new(vec![0u8; 16]))]))),
+        ]);
+        let mut diagnostics = Vec::new();
+        let result = detect_encryption(&trailer, &MockResolver, &mut diagnostics);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().key_length, 40);
+
+        // Test V=4, R=4 (RC4 or AES-128)
+        let encrypt_dict = make_dict(vec![
+            ("/Filter", PdfObject::Name("Standard".into())),
+            ("/V", PdfObject::Integer(4)),
+            ("/R", PdfObject::Integer(4)),
+            ("/O", PdfObject::String(Box::new(vec![0u8; 32]))),
+            ("/U", PdfObject::String(Box::new(vec![0u8; 32]))),
+            ("/P", PdfObject::Integer(0xFFFFFFFF_i64)),
+        ]);
+        let trailer = make_dict(vec![
+            ("/Encrypt", PdfObject::Dict(Box::new(encrypt_dict))),
+            ("/ID", PdfObject::Array(Box::new(vec![PdfObject::String(Box::new(vec![0u8; 16]))]))),
+        ]);
+        let mut diagnostics = Vec::new();
+        let result = detect_encryption(&trailer, &MockResolver, &mut diagnostics);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().key_length, 128);
     }
 }

@@ -352,13 +352,14 @@ fn build_extraction_options(
         }
     };
 
-    // Note: pages and ocr options are not yet implemented in the extraction pipeline
-    // They are parsed here for future compatibility
-    if pages.is_some() {
-        // TODO: implement page range selection
+    let mut options = ExtractionOptions::with_receipts(receipts_mode);
+
+    // Set page range if provided
+    if let Some(ref range) = pages {
+        options.pages = Some(range.clone());
     }
 
-    ExtractionOptions::with_receipts(receipts_mode)
+    options
 }
 
 /// Create a stub response for tools that require Phase 6 extraction surface.

@@ -324,7 +324,7 @@ fn compute_diff_summary(doc_a: &JsonValue, doc_b: &JsonValue) -> DiffSummary {
 }
 
 /// Compute match score between two blocks (0.0 to 1.0).
-fn block_match_score(a: &BlockJson, b: &BlockJson) -> f64 {
+pub fn block_match_score(a: &BlockJson, b: &BlockJson) -> f64 {
     let bbox_score = bbox_overlap_score(&a.bbox, &b.bbox);
     let text_score = text_similarity_score(&a.text, &b.text);
 
@@ -333,7 +333,7 @@ fn block_match_score(a: &BlockJson, b: &BlockJson) -> f64 {
 }
 
 /// Compute match score between two spans (0.0 to 1.0).
-fn span_match_score(a: &SpanJson, b: &SpanJson) -> f64 {
+pub fn span_match_score(a: &SpanJson, b: &SpanJson) -> f64 {
     let bbox_score = bbox_overlap_score(&a.bbox, &b.bbox);
     let text_score = text_similarity_score(&a.text, &b.text);
 
@@ -342,7 +342,7 @@ fn span_match_score(a: &SpanJson, b: &SpanJson) -> f64 {
 }
 
 /// Compute bbox overlap score (0.0 to 1.0).
-fn bbox_overlap_score(bbox_a: &[f64; 4], bbox_b: &[f64; 4]) -> f64 {
+pub fn bbox_overlap_score(bbox_a: &[f64; 4], bbox_b: &[f64; 4]) -> f64 {
     let [ax0, ay0, ax1, ay1] = *bbox_a;
     let [bx0, by0, bx1, by1] = *bbox_b;
 
@@ -371,7 +371,7 @@ fn bbox_overlap_score(bbox_a: &[f64; 4], bbox_b: &[f64; 4]) -> f64 {
 }
 
 /// Compute text similarity score using normalized Levenshtein distance (0.0 to 1.0).
-fn text_similarity_score(text_a: &str, text_b: &str) -> f64 {
+pub fn text_similarity_score(text_a: &str, text_b: &str) -> f64 {
     if text_a == text_b {
         return 1.0;
     }
@@ -396,7 +396,7 @@ fn text_similarity_score(text_a: &str, text_b: &str) -> f64 {
 }
 
 /// Compute Levenshtein distance between two strings.
-fn levenshtein_distance(a: &str, b: &str) -> usize {
+pub fn levenshtein_distance(a: &str, b: &str) -> usize {
     let a_chars: Vec<char> = a.chars().collect();
     let b_chars: Vec<char> = b.chars().collect();
     let len_a = a_chars.len();
@@ -420,7 +420,7 @@ fn levenshtein_distance(a: &str, b: &str) -> usize {
                 1
             };
 
-            matrix[i][j] = [
+            matrix[i][j] = *[
                 matrix[i - 1][j] + 1,       // deletion
                 matrix[i][j - 1] + 1,       // insertion
                 matrix[i - 1][j - 1] + cost, // substitution

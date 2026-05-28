@@ -12,10 +12,12 @@ mod grep;
 mod inspect;
 mod mcp;
 mod middleware;
+mod output;
 mod password;
 mod serve;
 mod verify_receipt;
 use codegen::Language;
+use output::OutputConfig;
 use pdftract_core::atomic_file_writer::AtomicFileWriter;
 use pdftract_core::cache;
 use pdftract_core::extract::{extract_pdf, result_to_json};
@@ -88,13 +90,33 @@ enum Commands {
         #[arg(long, conflicts_with = "password_stdin")]
         password: Option<String>,
 
-        /// Output format (json, text, markdown)
-        #[arg(short, long, default_value = "json")]
-        format: String,
+        /// Page range to extract (1-based, comma-separated: 1-5,7,12-)
+        #[arg(long, value_name = "RANGE")]
+        pages: Option<String>,
 
-        /// Output file path (use '-' for stdout, default)
-        #[arg(short, long, default_value = "-")]
-        output: PathBuf,
+        /// Output JSON to PATH (use '-' for stdout)
+        #[arg(long, value_name = "PATH")]
+        json: Vec<PathBuf>,
+
+        /// Output Markdown to PATH (use '-' for stdout)
+        #[arg(long, value_name = "PATH")]
+        md: Vec<PathBuf>,
+
+        /// Output plain text to PATH (use '-' for stdout)
+        #[arg(long, value_name = "PATH")]
+        text: Vec<PathBuf>,
+
+        /// Output NDJSON to stdout (mutually exclusive with other formats)
+        #[arg(long, conflicts_with_all = ["json", "md", "text", "format"])]
+        ndjson: bool,
+
+        /// Output formats (comma-separated: json,markdown,text,ndjson)
+        #[arg(long, value_delimiter = ',', value_name = "FORMATS")]
+        format: Vec<String>,
+
+        /// Base path for auto-named outputs (used with --format)
+        #[arg(short, long, value_name = "BASE")]
+        output: Option<PathBuf>,
 
         /// Receipt mode: off (default), lite, or svg
         #[arg(long, value_name = "MODE", default_value = "off", value_parser = ["off", "lite", "svg"])]
@@ -127,6 +149,30 @@ enum Commands {
         /// Auto-detect document type and apply appropriate profile
         #[arg(long)]
         auto: bool,
+
+        /// Include header blocks in output
+        #[arg(long)]
+        include_headers: bool,
+
+        /// Include footer blocks in output
+        #[arg(long)]
+        include_footers: bool,
+
+        /// Include both header and footer blocks in output
+        #[arg(long)]
+        include_headers_footers: bool,
+
+        /// Include invisible text spans in output (rendering_mode == 3)
+        #[arg(long)]
+        include_invisible_text: bool,
+
+        /// Include hidden-layer text spans in output (OCG-controlled)
+        #[arg(long)]
+        include_hidden_layers: bool,
+
+        /// Include watermark blocks in output (no-op until Phase 7)
+        #[arg(long)]
+        include_watermarks: bool,
     },
     /// Classify document type (runs metadata + signal extraction, not full text extraction)
     Classify {
@@ -406,6 +452,11 @@ fn main() -> Result<()> {
             input,
             password_stdin,
             password,
+            pages,
+            json,
+            md,
+            text,
+            ndjson,
             format,
             receipts,
             ocr,
@@ -416,12 +467,23 @@ fn main() -> Result<()> {
             md_anchors,
             auto,
             output,
+            include_headers,
+            include_footers,
+            include_headers_footers,
+            include_invisible_text,
+            include_hidden_layers,
+            include_watermarks,
         } => {
             if let Err(e) = cmd_extract(
                 input,
                 password_stdin,
                 password,
-                &format,
+                pages,
+                json.into_iter().collect(),
+                md.into_iter().collect(),
+                text.into_iter().collect(),
+                ndjson,
+                format,
                 output,
                 &receipts,
                 ocr,
@@ -431,6 +493,12 @@ fn main() -> Result<()> {
                 no_cache,
                 md_anchors,
                 auto,
+                include_headers,
+                include_footers,
+                include_headers_footers,
+                include_invisible_text,
+                include_hidden_layers,
+                include_watermarks,
             ) {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
@@ -593,8 +661,13 @@ fn cmd_extract(
     input: PathBuf,
     password_stdin: bool,
     password: Option<String>,
-    format: &str,
-    output: PathBuf,
+    pages: Option<String>,
+    json: Vec<PathBuf>,
+    md: Vec<PathBuf>,
+    text: Vec<PathBuf>,
+    ndjson: bool,
+    format: Vec<String>,
+    output: Option<PathBuf>,
     receipts: &str,
     ocr: bool,
     ocr_language: Vec<String>,
@@ -603,6 +676,12 @@ fn cmd_extract(
     no_cache: bool,
     md_anchors: bool,
     auto: bool,
+    include_headers: bool,
+    include_footers: bool,
+    include_headers_footers: bool,
+    include_invisible_text: bool,
+    include_hidden_layers: bool,
+    include_watermarks: bool,
 ) -> Result<()> {
     // Validate receipts mode
     let receipts_mode = match ReceiptsMode::from_str(receipts) {
@@ -612,6 +691,36 @@ fn cmd_extract(
             std::process::exit(2);
         }
     };
+
+    // Validate output configuration
+    let output_config = OutputConfig {
+        json,
+        md,
+        text,
+        ndjson,
+        format_list: format.clone(),
+        output_base: output.clone(),
+    };
+
+    let output_specs = match output_config.build_specs() {
+        Ok(specs) => specs,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(2);
+        }
+    };
+
+    // Report what outputs will be produced
+    if output_specs.len() > 1 {
+        eprintln!("Producing {} outputs:", output_specs.len());
+        for spec in &output_specs {
+            let dest_name = match &spec.dest {
+                output::Destination::Stdout => "stdout".to_string(),
+                output::Destination::File(p) => p.display().to_string(),
+            };
+            eprintln!("  {} -> {}", spec.format.name(), dest_name);
+        }
+    }
 
     // Check if SVG mode is requested but feature is not available
     if receipts_mode == ReceiptsMode::SvgClip {
@@ -649,6 +758,16 @@ fn cmd_extract(
 
     // Build extraction options
     let mut options = ExtractionOptions::with_receipts(receipts_mode);
+
+    // Configure page range
+    options.pages = pages;
+
+    // Configure output filtering options
+    options.output.include_headers = include_headers || include_headers_footers;
+    options.output.include_footers = include_footers || include_headers_footers;
+    options.output.include_invisible = include_invisible_text;
+    options.output.include_hidden_layers = include_hidden_layers;
+    options.output.include_watermarks = include_watermarks;
 
     // Handle --auto flag: run classifier first
     #[cfg(feature = "profiles")]
@@ -787,18 +906,42 @@ fn cmd_extract(
     result.metadata.cache_status = Some(cache_status);
     result.metadata.cache_age_seconds = cache_age;
 
-    // Create atomic file writer for output
-    let mut writer =
-        AtomicFileWriter::create(&output).context("Failed to create output file writer")?;
-
-    // Output based on requested format
-    match format {
-        "json" => {
-            let json_output = result_to_json(&result);
-            let json_str = serde_json::to_string_pretty(&json_output)?;
-            write!(writer, "{}", json_str)?;
+    // Write each output to its destination
+    for spec in &output_specs {
+        match spec.dest {
+            output::Destination::Stdout => {
+                // Write to stdout
+                write_output(&result, &options, spec.format, &mut std::io::stdout())?;
+            }
+            output::Destination::File(ref path) => {
+                // Create atomic file writer for file output
+                let mut writer = AtomicFileWriter::create(path)
+                    .context(format!("Failed to create output file writer: {}", path.display()))?;
+                write_output(&result, &options, spec.format, &mut writer)?;
+                writer.commit().context(format!("Failed to commit output file: {}", path.display()))?;
+            }
         }
-        "text" => {
+    }
+
+    Ok(())
+}
+
+/// Write output in the specified format to the given writer.
+fn write_output<W: std::io::Write>(
+    result: &pdftract_core::ExtractionResult,
+    options: &ExtractionOptions,
+    format: output::Format,
+    writer: &mut W,
+) -> Result<()> {
+    use std::io::Write;
+
+    match format {
+        output::Format::Json => {
+            let json_output = result_to_json(result);
+            let json_str = serde_json::to_string_pretty(&json_output)?;
+            writeln!(writer, "{}", json_str)?;
+        }
+        output::Format::Text => {
             // Plain text output: concatenate all span texts
             for page in &result.pages {
                 for span in &page.spans {
@@ -806,7 +949,7 @@ fn cmd_extract(
                 }
             }
         }
-        "markdown" => {
+        output::Format::Markdown => {
             // Markdown output: simple conversion with optional anchors
             let include_anchors = options.markdown_anchors;
             let include_page_breaks = true; // Add --- between pages
@@ -852,17 +995,31 @@ fn cmd_extract(
                 }
             }
         }
-        _ => {
-            eprintln!(
-                "Error: Unknown format '{}', expected 'json', 'text', or 'markdown'",
-                format
-            );
-            std::process::exit(2);
+        output::Format::Ndjson => {
+            // NDJSON output: emit one line per block with spans
+            for page in &result.pages {
+                for (block_idx, block) in page.blocks.iter().enumerate() {
+                    let ndjson_record = serde_json::json!({
+                        "page": page.index,
+                        "block_index": block_idx,
+                        "kind": block.kind,
+                        "bbox": block.bbox,
+                        "spans": block.spans.iter().filter_map(|&span_idx| {
+                            page.spans.get(span_idx).map(|span| {
+                                serde_json::json!({
+                                    "text": span.text,
+                                    "font": span.font,
+                                    "size": span.size,
+                                    "bbox": span.bbox,
+                                })
+                            })
+                        }).collect::<Vec<_>>(),
+                    });
+                    writeln!(writer, "{}", ndjson_record)?;
+                }
+            }
         }
     }
-
-    // Commit the atomic write (rename temp file to target)
-    writer.commit().context("Failed to commit output file")?;
 
     Ok(())
 }
@@ -1465,6 +1622,14 @@ fn cmd_serve(
     max_decompress_gb: usize,
     audit_log: Option<PathBuf>,
 ) -> Result<()> {
+    // Warn if binding to 0.0.0.0 (no auth, exposed to all interfaces)
+    if bind.starts_with("0.0.0.0") || bind.starts_with("[::]") {
+        eprintln!("*** WARNING: Binding to {} exposes pdftract serve on ALL interfaces.", bind);
+        eprintln!("*** pdftract serve has NO BUILT-IN AUTHENTICATION.");
+        eprintln!("*** Deploy behind a reverse proxy (nginx, Traefik, Caddy) for production use.");
+        eprintln!();
+    }
+
     // Validate hard cap for max_upload_mb (4 GiB)
     const MAX_UPLOAD_MB_HARD_CAP: usize = 4096;
     if max_upload_mb > MAX_UPLOAD_MB_HARD_CAP {

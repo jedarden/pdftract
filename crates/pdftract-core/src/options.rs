@@ -66,6 +66,124 @@ impl ReceiptsMode {
     }
 }
 
+/// Output filtering options for Phase 4.6.
+///
+/// Controls which block kinds and span types are included in extraction output.
+/// Per INV-1: defaults exclude; flags ADD content. 95% of users want body text only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(default)]
+pub struct OutputOptions {
+    /// Include header blocks in output.
+    ///
+    /// Headers are detected via cross-page deduplication (Phase 4.4).
+    /// Default: false (headers excluded from output).
+    pub include_headers: bool,
+
+    /// Include footer blocks in output.
+    ///
+    /// Footers are detected via cross-page deduplication (Phase 4.4).
+    /// Default: false (footers excluded from output).
+    pub include_footers: bool,
+
+    /// Include watermark blocks in output.
+    ///
+    /// Watermarks are detected in Phase 7. Prior to Phase 7, this is a no-op
+    /// (no watermark blocks are emitted by the pipeline).
+    /// Default: false (watermarks excluded from output).
+    pub include_watermarks: bool,
+
+    /// Include invisible text spans in output.
+    ///
+    /// Invisible text has rendering_mode == 3 (invisible to rendering).
+    /// Default: false (invisible spans excluded from output).
+    pub include_invisible: bool,
+
+    /// Include hidden-layer text spans in output.
+    ///
+    /// Hidden layers are controlled by Glyph.is_hidden (Phase 3.4 OCG).
+    /// Default: false (hidden-layer spans excluded from output).
+    pub include_hidden_layers: bool,
+
+    /// Include structural metadata blocks in output.
+    ///
+    /// Structural metadata comes from tagged PDF StructTree (Phase 7.1).
+    /// Prior to Phase 7.1, this is a no-op (no struct metadata blocks emitted).
+    /// Default: false (struct metadata excluded from output).
+    pub include_struct_metadata: bool,
+}
+
+impl Default for OutputOptions {
+    fn default() -> Self {
+        Self {
+            include_headers: false,
+            include_footers: false,
+            include_watermarks: false,
+            include_invisible: false,
+            include_hidden_layers: false,
+            include_struct_metadata: false,
+        }
+    }
+}
+
+impl OutputOptions {
+    /// Check if a block kind should be included in output.
+    ///
+    /// Returns false if the block kind is filtered out by options.
+    ///
+    /// # Arguments
+    ///
+    /// * `kind` - The block kind string (e.g., "header", "footer", "watermark")
+    ///
+    /// # Returns
+    ///
+    /// true if the block should be included, false if filtered out.
+    pub fn include_block_kind(&self, kind: &str) -> bool {
+        match kind {
+            "header" => self.include_headers,
+            "footer" => self.include_footers,
+            "watermark" => self.include_watermarks,
+            _ => true, // All other block kinds are included by default
+        }
+    }
+
+    /// Check if a span should be included in output.
+    ///
+    /// Returns false if the span is filtered out by options.
+    ///
+    /// # Arguments
+    ///
+    /// * `rendering_mode` - Optional rendering mode (Some(3) for invisible text)
+    /// * `is_hidden` - Whether the span is in a hidden layer (OCG)
+    ///
+    /// # Returns
+    ///
+    /// true if the span should be included, false if filtered out.
+    pub fn include_span(&self, rendering_mode: Option<u8>, is_hidden: bool) -> bool {
+        // Filter invisible text (rendering_mode == 3)
+        if let Some(3) = rendering_mode {
+            if !self.include_invisible {
+                return false;
+            }
+        }
+
+        // Filter hidden layers
+        if is_hidden && !self.include_hidden_layers {
+            return false;
+        }
+
+        true
+    }
+
+    /// Set both include_headers and include_footers to true.
+    ///
+    /// Convenience method for --include-headers-footers CLI flag.
+    pub fn include_headers_and_footers(&mut self) {
+        self.include_headers = true;
+        self.include_footers = true;
+    }
+}
+
 /// Options that control PDF extraction behavior.
 ///
 /// This struct is passed through the extraction pipeline and controls
@@ -164,6 +282,44 @@ pub struct ExtractionOptions {
     ///
     /// Default: false (anchors disabled)
     pub markdown_anchors: bool,
+
+    /// Maximum decompressed bytes allowed per document (bomb limit).
+    ///
+    /// This limit prevents zip-bomb attacks where a small compressed PDF expands
+    /// to multi-GB of decompressed data. When the decompressed size exceeds this
+    /// limit, a STREAM_BOMB diagnostic is emitted and extraction fails.
+    ///
+    /// Default: 512 MiB (DEFAULT_MAX_DECOMPRESS_BYTES)
+    ///
+    /// # Security implications
+    ///
+    /// - This limit applies to the entire document, not per-stream
+    /// - All compressed streams (content streams, embedded files, object streams)
+    ///   contribute to this counter
+    /// - Exceeding the limit triggers a hard error (STREAM_BOMB diagnostic)
+    /// - Set to 0 to disable decompression limits (NOT RECOMMENDED for production)
+    pub max_decompress_bytes: u64,
+
+    /// Output filtering options (Phase 4.6).
+    ///
+    /// Controls which block kinds and span types are included in output.
+    pub output: OutputOptions,
+
+    /// Page range specification (1-based, comma-separated).
+    ///
+    /// When set, only the specified pages are extracted. The format accepts:
+    /// - Single pages: "1", "3", "7"
+    /// - Closed ranges: "1-5" (pages 1-5 inclusive)
+    /// - Open-start ranges: "-5" (equivalent to "1-5")
+    /// - Open-end ranges: "12-" (page 12 to end)
+    /// - Comma-separated: "1-5,7,12-15"
+    ///
+    /// Out-of-range page numbers emit PAGE_OUT_OF_RANGE diagnostics but
+    /// do not abort extraction. Pages are 1-based (user-facing) but converted
+    /// to 0-based indices internally.
+    ///
+    /// Default: None (all pages extracted)
+    pub pages: Option<String>,
 }
 
 impl Default for ExtractionOptions {
@@ -176,6 +332,9 @@ impl Default for ExtractionOptions {
             ocr_dpi_override: None,
             ocr_language: vec!["eng".to_string()],
             markdown_anchors: false,
+            max_decompress_bytes: crate::parser::stream::DEFAULT_MAX_DECOMPRESS_BYTES,
+            output: OutputOptions::default(),
+            pages: None,
         }
     }
 }
@@ -210,6 +369,8 @@ impl ExtractionOptions {
             ocr_dpi_override: None,
             ocr_language: vec!["eng".to_string()],
             markdown_anchors: false,
+            output: OutputOptions::default(),
+            pages: None,
             ..Default::default()
         }
     }
@@ -221,6 +382,8 @@ impl ExtractionOptions {
             ocr_dpi_override: None,
             ocr_language: vec!["eng".to_string()],
             markdown_anchors: false,
+            output: OutputOptions::default(),
+            pages: None,
             ..Default::default()
         })
     }
@@ -241,6 +404,8 @@ impl ExtractionOptions {
             ocr_dpi_override: None,
             ocr_language: vec!["eng".to_string()],
             markdown_anchors: false,
+            output: OutputOptions::default(),
+            pages: None,
             ..Default::default()
         }
     }
@@ -399,5 +564,121 @@ mod tests {
         let json = "{}";
         let opts: ExtractionOptions = serde_json::from_str(json).unwrap();
         assert_eq!(opts.ocr_language, vec!["eng"]);
+    }
+
+    #[test]
+    fn test_output_options_default() {
+        let opts = OutputOptions::default();
+        assert!(!opts.include_headers);
+        assert!(!opts.include_footers);
+        assert!(!opts.include_watermarks);
+        assert!(!opts.include_invisible);
+        assert!(!opts.include_hidden_layers);
+        assert!(!opts.include_struct_metadata);
+    }
+
+    #[test]
+    fn test_output_options_include_block_kind() {
+        let opts = OutputOptions::default();
+
+        // All filtered out by default
+        assert!(!opts.include_block_kind("header"));
+        assert!(!opts.include_block_kind("footer"));
+        assert!(!opts.include_block_kind("watermark"));
+
+        // Other block kinds are included by default
+        assert!(opts.include_block_kind("paragraph"));
+        assert!(opts.include_block_kind("heading"));
+        assert!(opts.include_block_kind("table"));
+        assert!(opts.include_block_kind("list"));
+    }
+
+    #[test]
+    fn test_output_options_include_block_kind_with_flags() {
+        let mut opts = OutputOptions::default();
+        opts.include_headers = true;
+        opts.include_footers = true;
+        opts.include_watermarks = true;
+
+        assert!(opts.include_block_kind("header"));
+        assert!(opts.include_block_kind("footer"));
+        assert!(opts.include_block_kind("watermark"));
+    }
+
+    #[test]
+    fn test_output_options_include_span() {
+        let opts = OutputOptions::default();
+
+        // Invisible text filtered out by default
+        assert!(!opts.include_span(Some(3), false));
+
+        // Hidden layers filtered out by default
+        assert!(!opts.include_span(Some(0), true));
+
+        // Normal spans included
+        assert!(opts.include_span(Some(0), false));
+        assert!(opts.include_span(None, false));
+    }
+
+    #[test]
+    fn test_output_options_include_span_with_flags() {
+        let mut opts = OutputOptions::default();
+        opts.include_invisible = true;
+        opts.include_hidden_layers = true;
+
+        // Now they're included
+        assert!(opts.include_span(Some(3), false));
+        assert!(opts.include_span(Some(0), true));
+    }
+
+    #[test]
+    fn test_output_options_include_headers_and_footers() {
+        let mut opts = OutputOptions::default();
+        assert!(!opts.include_headers);
+        assert!(!opts.include_footers);
+
+        opts.include_headers_and_footers();
+        assert!(opts.include_headers);
+        assert!(opts.include_footers);
+    }
+
+    #[test]
+    fn test_output_options_serialize() {
+        let opts = OutputOptions::default();
+        let json = serde_json::to_string(&opts).unwrap();
+
+        // Verify all fields are present
+        assert!(json.contains("\"include_headers\""));
+        assert!(json.contains("\"include_footers\""));
+        assert!(json.contains("\"include_watermarks\""));
+        assert!(json.contains("\"include_invisible\""));
+        assert!(json.contains("\"include_hidden_layers\""));
+        assert!(json.contains("\"include_struct_metadata\""));
+    }
+
+    #[test]
+    fn test_output_options_deserialize() {
+        let json = r#"{"include_headers":true,"include_footers":true}"#;
+        let opts: OutputOptions = serde_json::from_str(json).unwrap();
+
+        assert!(opts.include_headers);
+        assert!(opts.include_footers);
+        assert!(!opts.include_watermarks);
+    }
+
+    #[test]
+    fn test_extraction_options_with_output() {
+        let json = r#"{"output":{"include_headers":true}}"#;
+        let opts: ExtractionOptions = serde_json::from_str(json).unwrap();
+
+        assert!(opts.output.include_headers);
+        assert!(!opts.output.include_footers);
+    }
+
+    #[test]
+    fn test_extraction_options_default_output() {
+        let opts = ExtractionOptions::default();
+        assert!(!opts.output.include_headers);
+        assert!(!opts.output.include_footers);
     }
 }

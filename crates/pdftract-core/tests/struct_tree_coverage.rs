@@ -79,6 +79,9 @@ fn test_suspects_true_fallback_to_xy_cut() {
         ocr_dpi_override: None,
         ocr_language: vec!["eng".to_string()],
         markdown_anchors: false,
+        max_decompress_bytes: 512 * 1024 * 1024,
+        output: Default::default(),
+        pages: None,
     };
 
     let result = extract_pdf(&fixture_path, &options);
@@ -134,6 +137,9 @@ fn test_suspects_false_trusts_tree() {
         ocr_dpi_override: None,
         ocr_language: vec!["eng".to_string()],
         markdown_anchors: false,
+        max_decompress_bytes: 512 * 1024 * 1024,
+        output: Default::default(),
+        pages: None,
     };
 
     let result = extract_pdf(&fixture_path, &options);
@@ -187,6 +193,9 @@ fn test_suspects_true_high_coverage_no_fallback() {
         ocr_dpi_override: None,
         ocr_language: vec!["eng".to_string()],
         markdown_anchors: false,
+        max_decompress_bytes: 512 * 1024 * 1024,
+        output: Default::default(),
+        pages: None,
     };
 
     let result = extract_pdf(&fixture_path, &options);

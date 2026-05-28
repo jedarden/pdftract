@@ -135,10 +135,28 @@ fn map_error_to_py(py: Python, err: anyhow::Error) -> PyErr {
 }
 
 /// Convert Python kwargs to ExtractionOptions.
-fn kwargs_to_options(_kwargs: Option<&PyDict>) -> PyResult<ExtractionOptions> {
-    let opts = ExtractionOptions::default();
-    // For now, just return default options
-    // TODO: Parse kwargs to set options when ExtractionOptions has those fields
+fn kwargs_to_options(kwargs: Option<&PyDict>) -> PyResult<ExtractionOptions> {
+    let mut opts = ExtractionOptions::default();
+
+    if let Some(kwargs) = kwargs {
+        // Parse pages parameter
+        if let Some(pages) = kwargs.get_item("pages")? {
+            let pages_str: Option<String> = pages.extract()?;
+            if let Some(range) = pages_str {
+                opts.pages = Some(range);
+            }
+        }
+
+        // Parse receipts parameter
+        if let Some(receipts) = kwargs.get_item("receipts")? {
+            let receipts_str: Option<String> = receipts.extract()?;
+            if let Some(mode) = receipts_str {
+                opts.receipts = pdftract_core::options::ReceiptsMode::from_str(&mode)
+                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e))?;
+            }
+        }
+    }
+
     Ok(opts)
 }
 

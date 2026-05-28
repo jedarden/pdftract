@@ -433,6 +433,15 @@ pub fn extract_pdf(
         }
     }
 
+    // Parse page range if specified
+    let mut page_count = all_pages.len();
+    let mut page_range_diagnostics = Vec::new();
+    let page_filter: Option<std::collections::BTreeSet<usize>> = if let Some(ref range_str) = options.pages {
+        Some(crate::pages::parse_pages(range_str, page_count, &mut page_range_diagnostics)?)
+    } else {
+        None
+    };
+
     // Phase 7.6: Extract annotations and links from all pages
     // Walk all pages and extract annotations by subtype
     //
@@ -492,6 +501,13 @@ pub fn extract_pdf(
 
     // Process pages for content extraction
     for (page_index, page_dict) in all_pages.into_iter().enumerate() {
+        // Skip pages not in the selected range (if --pages was specified)
+        if let Some(ref filter) = page_filter {
+            if !filter.contains(&page_index) {
+                continue;
+            }
+        }
+
         // Get page height for two-page table detection
         let [_x0, _y0, _x1, y1] = page_dict.media_box;
         let page_height = (y1 - page_dict.media_box[1]).max(0.0);
@@ -504,7 +520,7 @@ pub fn extract_pdf(
                 &page_dict,
                 &resolver_arc,
                 &source,
-                DEFAULT_MAX_DECOMPRESS_BYTES,
+                options.max_decompress_bytes,
             );
 
             let mut tracker = McidTracker::new();
@@ -721,6 +737,11 @@ pub fn extract_pdf(
     // Add JavaScript detection diagnostics to the error list
     let mut all_diagnostics_with_js = all_diagnostics;
     for diag in js_diagnostics {
+        all_diagnostics_with_js.push(diag.message.as_ref().to_string());
+    }
+
+    // Add page range diagnostics (PAGE_OUT_OF_RANGE warnings)
+    for diag in page_range_diagnostics {
         all_diagnostics_with_js.push(diag.message.as_ref().to_string());
     }
 
@@ -1320,38 +1341,40 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
     // Create a semaphore to bound the number of in-flight pages
     let semaphore = Arc::new(Semaphore::new(options.max_parallel_pages));
 
-    // Process pages sequentially from the lazy iterator
-    // Each page is materialized, processed, and dropped before moving to the next
-    while let Some(page_result) = page_iter.next() {
-        let page_dict = match page_result {
-            Ok(p) => p,
-            Err(diagnostics) => {
-                // Emit diagnostics as error pages
-                let msg = diagnostics
-                    .first()
-                    .map(|d| d.message.as_ref())
-                    .unwrap_or("unknown error");
-                error_count += 1;
-                let error_json = json!({
-                    "index": page_count,
-                    "error": msg,
-                    "spans": [],
-                    "blocks": [],
-                });
-                serde_json::to_writer(&mut writer, &error_json)
-                    .context("Failed to write NDJSON")?;
-                writeln!(writer).context("Failed to write newline")?;
-                writer.flush().context("Failed to flush output")?;
-                // Still record page data for coverage check (even on error)
-                if needs_coverage_check {
-                    pages_with_mcids.push((page_count, None, std::collections::HashSet::new()));
-                }
-                page_count += 1;
+    // First, collect all pages to get the page count for range parsing
+    // This is necessary because the page range needs to know the total count
+    let mut all_pages: Vec<crate::parser::pages::PageDict> = Vec::new();
+    let mut page_diagnostics: Vec<Diagnostic> = Vec::new();
+    loop {
+        match page_iter.next() {
+            Some(Ok(page_dict)) => {
+                all_pages.push(page_dict);
+            }
+            Some(Err(diags)) => {
+                page_diagnostics.extend(diags);
+                break;
+            }
+            None => break,
+        }
+    }
+
+    // Parse page range if specified
+    let mut page_count = all_pages.len();
+    let mut page_range_diagnostics = Vec::new();
+    let page_filter: Option<std::collections::BTreeSet<usize>> = if let Some(ref range_str) = options.pages {
+        Some(crate::pages::parse_pages(range_str, page_count, &mut page_range_diagnostics)?)
+    } else {
+        None
+    };
+
+    // Process pages sequentially from the collected pages
+    for (page_index, page_dict) in all_pages.into_iter().enumerate() {
+        // Skip pages not in the selected range (if --pages was specified)
+        if let Some(ref filter) = page_filter {
+            if !filter.contains(&page_index) {
                 continue;
             }
-        };
-
-        let page_index = page_count;
+        }
 
         // Track MCIDs for this page if coverage check is needed
         if needs_coverage_check {
@@ -1360,7 +1383,7 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
                 &page_dict,
                 &resolver_arc,
                 &source,
-                DEFAULT_MAX_DECOMPRESS_BYTES,
+                options.max_decompress_bytes,
             );
 
             let mut tracker = McidTracker::new();
@@ -1371,7 +1394,7 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
 
             // Record page data for coverage check
             let mcid_set = tracker.mcid_set().clone();
-            pages_with_mcids.push((page_count, struct_parents, mcid_set));
+            pages_with_mcids.push((page_index, struct_parents, mcid_set));
 
             // Drop decoded_streams and tracker to free memory
             drop(decoded_streams);
@@ -1447,7 +1470,6 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
 
         // Drop page_dict explicitly to ensure memory is freed before next iteration
         drop(page_dict);
-        page_count += 1;
     }
 
     // Phase 7.1.4: Perform coverage check if Suspects is true

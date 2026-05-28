@@ -12,10 +12,16 @@
 pub mod detection;
 
 #[cfg(feature = "decrypt")]
+pub mod aes_128;
+
+#[cfg(feature = "decrypt")]
 pub mod aes_256;
 
 #[cfg(feature = "decrypt")]
 pub mod rc4;
+
+#[cfg(feature = "decrypt")]
+pub use aes_128::{aes_128_decrypt, derive_aes_128_object_key, is_identity_filter};
 
 #[cfg(feature = "decrypt")]
 pub use aes_256::{aes_256_decrypt, Aes256Decryptor, FileKeyResult as Aes256FileKeyResult};

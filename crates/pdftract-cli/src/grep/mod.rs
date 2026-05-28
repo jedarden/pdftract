@@ -285,7 +285,7 @@ pub fn run_grep(args: GrepArgs) -> Result<()> {
     let (progress_tx, progress_rx) = crossbeam_channel::unbounded::<ProgressEvent>();
 
     // Create progress manager (returns None if progress is disabled)
-    let mut progress_manager = if cfg!(feature = "grep") {
+    let progress_manager = if cfg!(feature = "grep") {
         ProgressManager::new(files_total, bytes_total, config.progress_mode)
     } else {
         None
@@ -297,18 +297,30 @@ pub fn run_grep(args: GrepArgs) -> Result<()> {
     let match_tx_clone = match_tx.clone();
     let progress_tx_clone = progress_tx.clone();
 
-    // Spawn progress JSON thread if enabled
-    let progress_json_handle = if config.progress_json {
+    // Spawn progress consumer thread
+    // This thread consumes progress events and updates the progress manager
+    let progress_manager_mutex = std::sync::Arc::new(std::sync::Mutex::new(progress_manager));
+    let progress_consumer_handle = {
         let progress_rx = progress_rx.clone();
+        let progress_manager_ref = progress_manager_mutex.clone();
+        let progress_json_enabled = config.progress_json;
+
         Some(std::thread::spawn(move || {
             while let Ok(event) = progress_rx.recv() {
-                if let Err(e) = emit_progress_json(&event) {
-                    eprintln!("Warning: failed to emit progress JSON: {}", e);
+                if progress_json_enabled {
+                    if let Err(e) = emit_progress_json(&event) {
+                        eprintln!("Warning: failed to emit progress JSON: {}", e);
+                    }
+                }
+
+                // Update progress manager if available
+                if let Ok(mut pm) = progress_manager_ref.try_lock() {
+                    if let Some(ref mut manager) = *pm {
+                        manager.handle_event(&event);
+                    }
                 }
             }
         }))
-    } else {
-        None
     };
 
     // Process files in parallel using rayon
@@ -337,8 +349,8 @@ pub fn run_grep(args: GrepArgs) -> Result<()> {
     // Collect all match events
     let mut all_matches: Vec<MatchEvent> = match_rx.iter().collect();
 
-    // Join progress JSON thread if it was spawned
-    if let Some(handle) = progress_json_handle {
+    // Join progress consumer thread
+    if let Some(handle) = progress_consumer_handle {
         let _ = handle.join();
     }
 
@@ -408,9 +420,11 @@ pub fn run_grep(args: GrepArgs) -> Result<()> {
     }
 
     // Finish progress manager
-    if let Some(pm) = progress_manager {
-        let duration_ms = start_time.elapsed().as_millis();
-        pm.finish(files_total, bytes_total, duration_ms);
+    if let Ok(mut pm_guard) = progress_manager_mutex.try_lock() {
+        if let Some(pm) = pm_guard.take() {
+            let duration_ms = start_time.elapsed().as_millis();
+            pm.finish(files_total, bytes_total, duration_ms);
+        }
     }
 
     Ok(())

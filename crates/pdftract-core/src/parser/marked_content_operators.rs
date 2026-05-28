@@ -51,6 +51,7 @@ pub fn parse_bmc(stack: &mut MarkedContentStack, tag: Arc<str>) -> bool {
 /// * `props` - The properties object (dict or name)
 /// * `resources` - The page resource dictionary for property name resolution
 /// * `default_off_ocgs` - Optional HashSet of OCG refs that are OFF by default
+/// * `diagnostics` - Optional diagnostics vector to append errors to
 ///
 /// # Returns
 ///
@@ -61,8 +62,9 @@ pub fn parse_bdc(
     props: &PdfObject,
     resources: &ResourceDict,
     default_off_ocgs: Option<&std::collections::HashSet<crate::parser::object::ObjRef>>,
+    diagnostics: Option<&mut Vec<Diagnostic>>,
 ) -> bool {
-    let mcid = extract_mcid_from_props(props, resources);
+    let mcid = extract_mcid_from_props(props, resources, diagnostics);
 
     // Check for OCG /OC tag (bead pdftract-1q19p)
     let is_hidden = if tag.as_ref() == "OC" || tag.as_ref() == "/OC" {
@@ -110,11 +112,16 @@ pub fn parse_emc(stack: &mut MarkedContentStack) -> Option<MarkedContentFrame> {
 ///
 /// * `props` - The properties object (dict or name)
 /// * `resources` - The page resource dictionary for property name resolution
+/// * `diagnostics` - Optional diagnostics vector to append errors to
 ///
 /// # Returns
 ///
 /// Some(mcid) if found and valid, None otherwise.
-fn extract_mcid_from_props(props: &PdfObject, resources: &ResourceDict) -> Option<u32> {
+fn extract_mcid_from_props(
+    props: &PdfObject,
+    resources: &ResourceDict,
+    diagnostics: Option<&mut Vec<Diagnostic>>,
+) -> Option<u32> {
     match props {
         PdfObject::Dict(dict) => {
             // Inline property dict - read /MCID directly
@@ -134,7 +141,9 @@ fn extract_mcid_from_props(props: &PdfObject, resources: &ResourceDict) -> Optio
                 }
                 None => {
                     // Unknown property name - emit diagnostic but continue
-                    // The caller will emit UNKNOWN_MARKED_CONTENT_PROPS diagnostic
+                    if let Some(diags) = diagnostics {
+                        emit_unknown_property_name(diags, name_str);
+                    }
                     None
                 }
             }
@@ -270,6 +279,7 @@ mod tests {
             Arc::from("P"),
             &PdfObject::Dict(Box::new(props)),
             &ResourceDict::new(),
+            None,
             None
         ));
         assert_eq!(stack.depth(), 1);
@@ -286,6 +296,7 @@ mod tests {
             Arc::from("Artifact"),
             &PdfObject::Dict(Box::new(props)),
             &ResourceDict::new(),
+            None,
             None
         ));
         assert_eq!(stack.depth(), 1);
@@ -306,6 +317,7 @@ mod tests {
             Arc::from("P"),
             &PdfObject::Name(Arc::from("MyProps")),
             &resources,
+            None,
             None
         ));
         assert_eq!(stack.depth(), 1);
@@ -316,16 +328,21 @@ mod tests {
     fn test_parse_bdc_with_property_name_not_found() {
         let mut stack = MarkedContentStack::new();
         let resources = ResourceDict::new();
+        let mut diagnostics = Vec::new();
 
         assert!(parse_bdc(
             &mut stack,
             Arc::from("P"),
             &PdfObject::Name(Arc::from("UnknownProps")),
             &resources,
-            None
+            None,
+            Some(&mut diagnostics)
         ));
         assert_eq!(stack.depth(), 1);
         assert_eq!(stack.innermost_mcid(), None);
+        // Verify that the diagnostic was emitted
+        assert!(!diagnostics.is_empty());
+        assert_eq!(diagnostics[0].code, DiagCode::UnknownMarkedContentProps);
     }
 
     #[test]
@@ -424,6 +441,7 @@ mod tests {
             &PdfObject::Dict(Box::new(props1)),
             &ResourceDict::new(),
             None,
+            None,
         );
 
         // Inner BMC
@@ -464,6 +482,7 @@ mod tests {
             &PdfObject::Dict(Box::new(props)),
             &ResourceDict::new(),
             None,
+            None,
         );
 
         assert_eq!(stack.depth(), 1);
@@ -496,6 +515,7 @@ mod tests {
             Arc::from("P"),
             &PdfObject::Dict(Box::new(props)),
             &ResourceDict::new(),
+            None,
             None
         ));
         assert_eq!(stack.innermost_mcid(), Some(10000));
@@ -513,6 +533,7 @@ mod tests {
             Arc::from("OC"),
             &PdfObject::Dict(Box::new(props)),
             &ResourceDict::new(),
+            None,
             None
         ));
         assert_eq!(stack.depth(), 1);
@@ -535,7 +556,8 @@ mod tests {
             Arc::from("OC"),
             &PdfObject::Dict(Box::new(props)),
             &ResourceDict::new(),
-            Some(&off_set)
+            Some(&off_set),
+            None
         ));
         assert_eq!(stack.depth(), 1);
         assert!(!stack.is_hidden()); // OCG not in OFF set
@@ -557,7 +579,8 @@ mod tests {
             Arc::from("OC"),
             &PdfObject::Dict(Box::new(props)),
             &ResourceDict::new(),
-            Some(&off_set)
+            Some(&off_set),
+            None
         ));
         assert_eq!(stack.depth(), 1);
         assert!(stack.is_hidden()); // OCG in OFF set
@@ -580,7 +603,8 @@ mod tests {
             Arc::from("/OC"),
             &PdfObject::Dict(Box::new(props)),
             &ResourceDict::new(),
-            Some(&off_set)
+            Some(&off_set),
+            None,
         ));
         assert_eq!(stack.depth(), 1);
         assert!(stack.is_hidden()); // /OC with leading slash works
@@ -604,7 +628,8 @@ mod tests {
             Arc::from("P"), // Not "OC" or "/OC"
             &PdfObject::Dict(Box::new(props)),
             &ResourceDict::new(),
-            Some(&off_set)
+            Some(&off_set),
+            None,
         ));
         assert_eq!(stack.depth(), 1);
         assert!(!stack.is_hidden()); // Non-OC tag ignores OCG

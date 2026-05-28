@@ -514,6 +514,14 @@ pub enum DiagCode {
     /// Phase origin: 1.4
     EncryptionWrongPassword,
 
+    /// Invalid encryption dictionary
+    ///
+    /// Emitted when the /Encrypt dictionary has invalid entries (e.g., /O or /U
+    /// with incorrect length, missing required fields, or malformed values).
+    ///
+    /// Phase origin: 1.4
+    EncryptionInvalidDict,
+
     // === PAGE_* codes ===
     /// Page number out of range
     ///
@@ -1080,7 +1088,9 @@ impl DiagCode {
             | DiagCode::StreamTruncated => "STREAM",
 
             // ENCRYPTION_*
-            DiagCode::EncryptionUnsupported | DiagCode::EncryptionWrongPassword => "ENCRYPTION",
+            DiagCode::EncryptionUnsupported
+            | DiagCode::EncryptionWrongPassword
+            | DiagCode::EncryptionInvalidDict => "ENCRYPTION",
 
             // PAGE_*
             DiagCode::PageOutOfRange | DiagCode::PageInvalidCount | DiagCode::PageInvalidRotate => {
@@ -1219,6 +1229,7 @@ impl DiagCode {
             DiagCode::StreamInvalidCcitt => "STREAM_INVALID_CCITT",
             DiagCode::EncryptionUnsupported => "ENCRYPTION_UNSUPPORTED",
             DiagCode::EncryptionWrongPassword => "ENCRYPTION_WRONG_PASSWORD",
+            DiagCode::EncryptionInvalidDict => "ENCRYPTION_INVALID_DICT",
             DiagCode::PageOutOfRange => "PAGE_OUT_OF_RANGE",
             DiagCode::PageInvalidCount => "PAGE_INVALID_COUNT",
             DiagCode::PageInvalidRotate => "PAGE_INVALID_ROTATE",
@@ -1397,6 +1408,7 @@ impl DiagCode {
 
             DiagCode::EncryptionUnsupported
             | DiagCode::EncryptionWrongPassword
+            | DiagCode::EncryptionInvalidDict
             | DiagCode::RemoteTlsFailed
             | DiagCode::RemoteDnsFailed => Severity::Fatal,
         }
@@ -1412,6 +1424,7 @@ impl DiagCode {
             self,
             DiagCode::EncryptionUnsupported
                 | DiagCode::EncryptionWrongPassword
+                | DiagCode::EncryptionInvalidDict
                 | DiagCode::RemoteTlsFailed
                 | DiagCode::RemoteDnsFailed
         )
@@ -1833,6 +1846,14 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         recoverable: false,
         phase: "1.4",
         suggested_action: "The supplied password is incorrect",
+    },
+    DiagInfo {
+        code: DiagCode::EncryptionInvalidDict,
+        category: "ENCRYPTION",
+        severity: Severity::Fatal,
+        recoverable: false,
+        phase: "1.4",
+        suggested_action: "The /Encrypt dictionary has invalid or malformed entries; the PDF may be corrupted",
     },
     // === PAGE_* codes ===
     DiagInfo {

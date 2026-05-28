@@ -219,6 +219,8 @@ struct ExtractParams {
     ocr_dpi: Option<u32>,
     /// Enable markdown anchors
     markdown_anchors: bool,
+    /// Page range (e.g., "1-5,7,12-")
+    pages: Option<String>,
 }
 
 /// Helper function to extract DiagCode from extraction error messages.
@@ -400,7 +402,7 @@ pub async fn run(
     let limit_bytes = max_body_bytes;
     let app = Router::new()
         .route("/", get(root_handler))
-        .route("/extract", post(extract_handler))
+        .route("/extract", get(extract_get_not_found_handler).post(extract_handler))
         .route("/extract/text", post(extract_text_handler))
         .route("/extract/stream", post(extract_stream_handler))
         .route("/health", get(health_handler))
@@ -502,6 +504,20 @@ async fn health_handler() -> impl IntoResponse {
         "status": "ok",
         "version": env!("CARGO_PKG_VERSION")
     }))
+}
+
+/// Extract GET handler - returns 404 for file-path parameter attempts.
+///
+/// This handler explicitly rejects GET requests to /extract (which might attempt
+/// to pass file paths via query parameters like ?path=/etc/passwd). All PDF
+/// extraction must use POST with multipart/form-data uploads.
+async fn extract_get_not_found_handler() -> impl IntoResponse {
+    let api_error = ApiError {
+        error: "NOT_FOUND".to_string(),
+        message: "POST to /extract with multipart/form-data is required; file-path parameters are not supported".to_string(),
+        hint: Some("Use POST /extract with a 'file' field containing the PDF bytes".to_string()),
+    };
+    (StatusCode::NOT_FOUND, Json(api_error))
 }
 
 /// Extract handler - returns JSON with cache status in metadata.
@@ -740,6 +756,7 @@ async fn receive_pdf(multipart: &mut Multipart) -> Result<(PathBuf, ExtractParam
     const KNOWN_FIELDS: &[&str] = &[
         "file", "pdf", "receipts", "no_cache", "full_render",
         "max_decompress_gb", "ocr_language", "ocr_dpi", "markdown_anchors",
+        "pages",
     ];
 
     while let Some(field) = multipart
@@ -817,6 +834,11 @@ async fn receive_pdf(multipart: &mut Multipart) -> Result<(PathBuf, ExtractParam
                         .unwrap_or(false);
                 } else {
                     params.markdown_anchors = true;
+                }
+            }
+            "pages" => {
+                if let Ok(value) = field.text().await {
+                    params.pages = Some(value);
                 }
             }
             _ => {
@@ -904,6 +926,13 @@ fn build_options(
         .map(parse_comma_list)
         .unwrap_or_else(|| vec!["eng".to_string()]);
 
+    // Calculate max_decompress_bytes: use form field override if provided, otherwise use server default
+    let max_decompress_bytes = if let Some(gb) = params.max_decompress_gb {
+        (gb as u64) * (1 << 30) // Convert GB to bytes
+    } else {
+        state.max_decompress_bytes
+    };
+
     // Build extraction options with defaults + overrides
     Ok(ExtractionOptions {
         receipts: receipts_mode,
@@ -911,6 +940,8 @@ fn build_options(
         ocr_dpi_override: params.ocr_dpi,
         ocr_language,
         markdown_anchors: params.markdown_anchors,
+        max_decompress_bytes,
+        pages: params.pages.clone(),
         ..Default::default()
     })
 }
@@ -962,6 +993,10 @@ impl IntoResponse for AxumError {
                             "WRONG_PASSWORD".to_string(),
                             Some("The supplied password is incorrect".to_string()),
                         ),
+                        DiagCode::StreamBomb => (
+                            "DECOMPRESSION_LIMIT".to_string(),
+                            Some("PDF decompression exceeded the configured limit. This file may be a zip-bomb or malicious PDF.".to_string()),
+                        ),
                         DiagCode::StreamDecodeError | DiagCode::XrefTruncated | DiagCode::StructUnexpectedEof => (
                             "CORRUPT_PDF".to_string(),
                             Some("The PDF file is corrupt or truncated and cannot be extracted".to_string()),
@@ -999,7 +1034,7 @@ impl IntoResponse for AxumError {
         let status = match api_error.error.as_str() {
             "REQUEST_TOO_LARGE" => StatusCode::PAYLOAD_TOO_LARGE, // 413
             "BAD_REQUEST" | "MISSING_FIELD" => StatusCode::BAD_REQUEST, // 400
-            "ENCRYPTED" | "WRONG_PASSWORD" | "EXTRACTION_ERROR" | "CORRUPT_PDF" => StatusCode::UNPROCESSABLE_ENTITY, // 422
+            "ENCRYPTED" | "WRONG_PASSWORD" | "EXTRACTION_ERROR" | "CORRUPT_PDF" | "DECOMPRESSION_LIMIT" => StatusCode::UNPROCESSABLE_ENTITY, // 422
             "INTERNAL" | "INTERNAL_PANIC" => StatusCode::INTERNAL_SERVER_ERROR, // 500
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
@@ -1011,6 +1046,7 @@ impl IntoResponse for AxumError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hyper::body::to_bytes;
     use std::time::Duration;
 
     /// Test that the AxumError enum converts to correct status codes and error codes.
@@ -1060,6 +1096,48 @@ mod tests {
         let err = AxumError::InternalPanic("test".to_string());
         let resp = err.into_response();
         assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+        // Test Extraction with DiagCode::StreamBomb (DECOMPRESSION_LIMIT)
+        let err = AxumError::Extraction("test".to_string(), Some(DiagCode::StreamBomb));
+        let resp = err.into_response();
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        // Verify the response body contains DECOMPRESSION_LIMIT error code
+        let body = hyper::body::to_bytes(resp.into_body()).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["error"], "DECOMPRESSION_LIMIT");
+        assert!(json["hint"].as_str().unwrap().contains("zip-bomb"));
+    }
+
+    /// Test that GET /extract returns 404 (security constraint: no file-path parameters).
+    #[tokio::test]
+    async fn test_extract_get_returns_404() {
+        use axum::{
+            body::Body,
+            http::{StatusCode, Request},
+        };
+
+        let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30);
+        let app = Router::new()
+            .route("/extract", get(extract_get_not_found_handler).post(extract_handler))
+            .with_state(state);
+
+        // Test GET /extract (should return 404, not 405)
+        let request = Request::builder()
+            .uri("/extract")
+            .method("GET")
+            .body(Body::empty())
+            .unwrap();
+        let response = axum::app::clone_app(&app)
+            .oneshot(request)
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        // Verify the error message is descriptive
+        let body = hyper::body::to_bytes(response.into_body()).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["error"], "NOT_FOUND");
+        assert!(json["message"].as_str().unwrap().contains("POST"));
     }
 
     /// Test that 413 response matches exact JSON format from plan critical test (line 2163).
@@ -1342,6 +1420,7 @@ mod tests {
             ocr_language: Some("eng,fra,deu".to_string()),
             ocr_dpi: Some(300),
             markdown_anchors: true,
+            pages: Some("1-5".to_string()),
         };
 
         let options = build_options(&state, &params).unwrap();
@@ -1351,6 +1430,8 @@ mod tests {
         assert_eq!(options.ocr_dpi_override, Some(300));
         assert_eq!(options.markdown_anchors, true);
         assert!(!options.full_render);
+        // max_decompress_gb=2 should be converted to 2 * 2^30 bytes
+        assert_eq!(options.max_decompress_bytes, 2 * (1u64 << 30));
     }
 
     /// Test that build_options uses defaults when fields are missing.
@@ -1366,6 +1447,8 @@ mod tests {
         assert_eq!(options.ocr_language, vec!["eng"]);
         assert_eq!(options.ocr_dpi_override, None);
         assert_eq!(options.markdown_anchors, false);
+        // When max_decompress_gb is not provided, use server default (1 << 30 = 1 GB)
+        assert_eq!(options.max_decompress_bytes, 1 << 30);
     }
 
     /// Test that max_decompress_gb validation works.

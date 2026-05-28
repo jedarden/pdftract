@@ -31,7 +31,7 @@ use crate::graphics_state::ColorSpace;
 use crate::parser::lexer::Lexer;
 use crate::parser::lexer::Token;
 use crate::parser::marked_content_stack::MarkedContentStack;
-use crate::parser::object::{ObjRef, PdfDict, PdfObject};
+use crate::parser::object::{intern, ObjRef, PdfDict, PdfObject};
 use crate::parser::resources::ResourceDict;
 use std::sync::Arc;
 
@@ -834,6 +834,10 @@ pub fn execute_with_do(
     // Execution context for cycle/depth detection
     let mut exec_context = ExecutionContext::new();
 
+    // Marked-content stack for BMC/BDC/EMC operators
+    // Per PDF spec 14.5: independent of graphics state stack
+    let mut mc_stack = MarkedContentStack::new();
+
     let mut lexer = Lexer::new(content);
 
     while let Some(token) = lexer.next_token() {
@@ -866,6 +870,97 @@ pub fn execute_with_do(
                                 "Graphics state stack underflow",
                             ));
                         }
+                        operand_buffer.clear();
+                    }
+                    "BMC" => {
+                        // Begin marked content with tag only: BMC /Tag
+                        // Consumes 1 operand: a Name (the tag)
+                        if let Some(tag_token) = operand_buffer.last() {
+                            if let Token::Name(tag_bytes) = tag_token {
+                                if let Ok(tag_str) = std::str::from_utf8(tag_bytes) {
+                                    use crate::parser::marked_content_operators::parse_bmc;
+                                    // Strip leading slash if present
+                                    let tag = tag_str.strip_prefix('/').unwrap_or(tag_str);
+                                    parse_bmc(&mut mc_stack, Arc::from(tag));
+                                }
+                            }
+                        }
+                        operand_buffer.clear();
+                    }
+                    "BDC" => {
+                        // Begin marked content with properties: BDC /Tag <<props>> or BDC /Tag /PropName
+                        // Consumes 2 operands: a Name (tag) and either a dict or Name (props)
+                        if operand_buffer.len() >= 2 {
+                            use crate::parser::marked_content_operators::parse_bdc;
+                            use crate::parser::object::PdfObject;
+
+                            let tag = match operand_buffer.get(operand_buffer.len() - 2) {
+                                Some(Token::Name(tag_bytes)) => {
+                                    if let Ok(tag_str) = std::str::from_utf8(tag_bytes) {
+                                        tag_str.strip_prefix('/').unwrap_or(tag_str)
+                                    } else {
+                                        ""
+                                    }
+                                }
+                                _ => "",
+                            };
+
+                            let props_obj = match operand_buffer.last() {
+                                Some(Token::Name(name_bytes)) => {
+                                    if let Ok(name_str) = std::str::from_utf8(name_bytes) {
+                                        PdfObject::Name(Arc::from(name_str.as_ref()))
+                                    } else {
+                                        PdfObject::Null
+                                    }
+                                }
+                                Some(Token::DictEnd) => {
+                                    // Parse inline dict from buffer
+                                    parse_inline_dict_from_buffer(&operand_buffer, &mut diagnostics)
+                                        .unwrap_or(PdfObject::Null)
+                                }
+                                Some(Token::DictStart) => {
+                                    // Malformed: DictStart without DictEnd
+                                    diagnostics.push(Diagnostic::with_static_no_offset(
+                                        DiagCode::StructInvalidDictValue,
+                                        "BDC inline dict has DictStart but no DictEnd",
+                                    ));
+                                    PdfObject::Null
+                                }
+                                Some(Token::ArrayEnd) => {
+                                    // Malformed: ArrayEnd without ArrayStart
+                                    diagnostics.push(Diagnostic::with_static_no_offset(
+                                        DiagCode::StructInvalidBdcOperand,
+                                        "BDC second operand is array end (malformed)",
+                                    ));
+                                    PdfObject::Null
+                                }
+                                Some(Token::ArrayStart) => {
+                                    // Arrays are not valid for BDC props
+                                    diagnostics.push(Diagnostic::with_static_no_offset(
+                                        DiagCode::StructInvalidBdcOperand,
+                                        "BDC second operand is array (expected dict or name)",
+                                    ));
+                                    PdfObject::Null
+                                }
+                                _ => PdfObject::Null,
+                            };
+
+                            parse_bdc(
+                                &mut mc_stack,
+                                Arc::from(tag),
+                                &props_obj,
+                                resource_stack.current(),
+                                None, // default_off_ocgs - TODO: pass from caller
+                                Some(&mut diagnostics),
+                            );
+                        }
+                        operand_buffer.clear();
+                    }
+                    "EMC" => {
+                        // End marked content: EMC
+                        // Consumes 0 operands, pops top frame from marked-content stack
+                        use crate::parser::marked_content_operators::parse_emc;
+                        parse_emc(&mut mc_stack);
                         operand_buffer.clear();
                     }
                     "cm" => {
@@ -1102,7 +1197,7 @@ pub fn execute_with_do(
                                             &mut images,
                                             &mut diagnostics,
                                             mode,
-                                            marked_content_stack,
+                                            Some(&mc_stack),
                                             pdf_bytes,
                                         );
                                     } else {
@@ -1253,7 +1348,7 @@ pub fn execute_with_do(
                                         mode,
                                         &mut glyphs,
                                         &mut diagnostics,
-                                        marked_content_stack,
+                                        Some(&mc_stack),
                                     );
                                 }
                             }
@@ -1285,7 +1380,7 @@ pub fn execute_with_do(
                                         mode,
                                         &mut glyphs,
                                         &mut diagnostics,
-                                        marked_content_stack,
+                                        Some(&mc_stack),
                                     );
                                 } else {
                                     diagnostics.push(Diagnostic::with_static_no_offset(
@@ -1321,7 +1416,7 @@ pub fn execute_with_do(
                                         mode,
                                         &mut glyphs,
                                         &mut diagnostics,
-                                        marked_content_stack,
+                                        Some(&mc_stack),
                                     );
                                 }
                             }
@@ -1381,6 +1476,9 @@ pub fn execute_with_do(
             }
         }
     }
+
+    // Collect diagnostics from marked-content stack
+    diagnostics.extend(mc_stack.take_diagnostics());
 
     ExecutionResult {
         glyphs,
@@ -1805,6 +1903,134 @@ fn apply_tj_kerning(
         *pending_word_boundary = true;
     }
     // Negative kerns never inject word boundaries.
+}
+
+/// Parse an inline dictionary from the operand buffer tokens.
+///
+/// This function extracts a dictionary from the operand buffer, starting from
+/// a DictStart token and ending at a DictEnd token. It handles the BDC operator's
+/// inline dictionary syntax: `BDC /Tag <<props>>`.
+///
+/// # Arguments
+///
+/// * `operand_buffer` - The operand buffer containing the tokens
+/// * `diagnostics` - Diagnostic list to append errors to
+///
+/// # Returns
+///
+/// Some(PdfObject::Dict) if parsing succeeds, None if it fails.
+fn parse_inline_dict_from_buffer(
+    operand_buffer: &[Token],
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<PdfObject> {
+    use crate::parser::object::{intern, PdfDict};
+    use indexmap::IndexMap;
+
+    // Find the DictStart and DictEnd positions
+    let dict_start = operand_buffer.iter().position(|t| matches!(t, Token::DictStart));
+    let dict_end = operand_buffer.iter().rposition(|t| matches!(t, Token::DictEnd));
+
+    match (dict_start, dict_end) {
+        (Some(start), Some(end)) if end > start => {
+            // Extract tokens between DictStart and DictEnd
+            let dict_tokens = &operand_buffer[start + 1..end];
+            let mut dict = IndexMap::new();
+
+            // Parse key-value pairs
+            let mut i = 0;
+            while i < dict_tokens.len() {
+                // Key must be a Name
+                let key = match dict_tokens.get(i) {
+                    Some(Token::Name(key_bytes)) => {
+                        if let Ok(key_str) = std::str::from_utf8(key_bytes) {
+                            // Strip leading slash if present
+                            intern(key_str.strip_prefix('/').unwrap_or(key_str))
+                        } else {
+                            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                                DiagCode::StructInvalidDictKey,
+                                "Dictionary key is not valid UTF-8".to_string(),
+                            ));
+                            i += 1;
+                            continue;
+                        }
+                    }
+                    Some(t) => {
+                        diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                            DiagCode::StructInvalidDictKey,
+                            format!("Dictionary key is not a name: {:?}", t),
+                        ));
+                        // Try to skip this token and continue
+                        i += 1;
+                        continue;
+                    }
+                    None => break,
+                };
+
+                // Value can be various types
+                let value = match dict_tokens.get(i + 1) {
+                    Some(Token::Integer(n)) => PdfObject::Integer(*n),
+                    Some(Token::Real(f)) => PdfObject::Real(*f),
+                    Some(Token::Bool(b)) => PdfObject::Bool(*b),
+                    Some(Token::Name(name_bytes)) => {
+                        if let Ok(name_str) = std::str::from_utf8(name_bytes) {
+                            PdfObject::Name(Arc::from(name_str.as_ref()))
+                        } else {
+                            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                                DiagCode::StructInvalidDictValue,
+                                "Name value is not valid UTF-8".to_string(),
+                            ));
+                            PdfObject::Null
+                        }
+                    }
+                    Some(Token::String(bytes)) => PdfObject::String(Box::new(bytes.clone())),
+                    Some(Token::ArrayStart) => {
+                        // Arrays in inline dicts are rare; treat as null for now
+                        diagnostics.push(Diagnostic::with_static_no_offset(
+                            DiagCode::StructInvalidDictValue,
+                            "Inline dict contains array (not yet supported)",
+                        ));
+                        PdfObject::Null
+                    }
+                    Some(Token::DictStart) => {
+                        // Nested dicts in inline dicts are rare; treat as null for now
+                        diagnostics.push(Diagnostic::with_static_no_offset(
+                            DiagCode::StructInvalidDictValue,
+                            "Inline dict contains nested dict (not yet supported)",
+                        ));
+                        PdfObject::Null
+                    }
+                    Some(Token::Null) => PdfObject::Null,
+                    None => {
+                        diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                            DiagCode::StructInvalidDictValue,
+                            format!("Dictionary key '{}' has no value", key),
+                        ));
+                        PdfObject::Null
+                    }
+                    Some(t) => {
+                        diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                            DiagCode::StructInvalidDictValue,
+                            format!("Invalid dict value type: {:?}", t),
+                        ));
+                        PdfObject::Null
+                    }
+                };
+
+                dict.insert(key, value);
+                i += 2;
+            }
+
+            Some(PdfObject::Dict(Box::new(dict)))
+        }
+        _ => {
+            // Malformed dict - no DictStart/DictEnd pair
+            diagnostics.push(Diagnostic::with_static_no_offset(
+                DiagCode::StructInvalidDictValue,
+                "BDC inline dict missing DictStart or DictEnd",
+            ));
+            None
+        }
+    }
 }
 
 /// Normalize glyph bboxes by applying the inverse rotation of the page.

@@ -51,6 +51,9 @@ cbc = { version = "0.1", optional = true, features = ["std"] }
 cipher = { version = "0.4", optional = true, features = ["block-padding"] }
 digest = { version = "0.10", optional = true }
 hmac = "0.12"
+unicode-segmentation = "1.11"
+strsim = "0.11"
+unicode-bidi = { workspace = true }
 
 [features]
 default = ["serde", "decrypt"]

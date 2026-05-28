@@ -125,7 +125,8 @@ impl FontId {
 
 /// Source of a Unicode glyph mapping.
 ///
-/// Indicates which level of the fallback chain produced this mapping.
+/// Indicates which level of the fallback chain produced this mapping,
+/// or whether the mapping came from OCR (Phase 5.4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnicodeSource {
     /// Level 1: ToUnicode CMap
@@ -138,12 +139,15 @@ pub enum UnicodeSource {
     ShapeMatch,
     /// No mapping found (U+FFFD)
     Unknown,
+    /// OCR path (Phase 5.4 HOCR)
+    Ocr,
 }
 
 impl UnicodeSource {
     /// Get the confidence score for this source.
     ///
     /// Per INV-30, confidence is always one of {1.0, 0.9, 0.85, 0.7, 0.0}.
+    /// OCR confidence is computed by Tesseract and varies (not in this set).
     pub fn confidence(self) -> f32 {
         match self {
             UnicodeSource::ToUnicode => 1.0,
@@ -151,6 +155,7 @@ impl UnicodeSource {
             UnicodeSource::Fingerprint => 0.85,
             UnicodeSource::ShapeMatch => 0.7,
             UnicodeSource::Unknown => 0.0,
+            UnicodeSource::Ocr => 0.5, // Placeholder: actual OCR confidence comes from Tesseract
         }
     }
 }
