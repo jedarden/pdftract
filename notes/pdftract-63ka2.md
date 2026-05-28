@@ -1,9 +1,9 @@
-# Verification Note: pdftract-63ka2
+# Verification Note: pdftract-63ka2 (Updated 2026-05-28)
 
 ## Bead
 Phase 4.3: Column Detection (coordinator)
 
-## Current State
+## Current Status: BLOCKER - DO NOT CLOSE
 
 ### Children Status
 All 4 children are CLOSED:
@@ -20,20 +20,20 @@ Column detection functions are fully implemented in `crates/pdftract-core/src/la
 - `assign_columns_to_spans()` - Part of the 49 tests
 - `assign_columns_to_lines()` - Part of the 49 tests
 
-### Integration Status: BLOCKER
+### Integration Status: BLOCKER (As of 2026-05-28)
 
 Column detection is NOT integrated into the main extraction pipeline:
 
-1. **Main `Span` struct missing column field**
-   - File: `crates/pdftract-core/src/span/mod.rs`
-   - The `Span` struct does NOT have a `column: Option<u32>` field
-   - Child bead `pdftract-64j83` added the column field to `HybridHybridSpan` (hybrid.rs) instead
-   - `HybridHybridSpan` is used for hybrid pages (mixed vector/scanned content), not the main pipeline
+1. **Main `Span` struct HAS column field but it's never used**
+   - File: `crates/pdftract-core/src/span/mod.rs:179`
+   - The `Span` struct DOES have `column: Option<u32>` field (updated since initial note)
+   - However, the extraction pipeline never assigns column values
 
 2. **Extraction pipeline does not call column detection**
    - File: `crates/pdftract-core/src/extract.rs`
-   - Column detection functions are never invoked
+   - Column detection functions are never invoked (grep found no matches)
    - `SpanJson::column` is hardcoded to `None` (lines 1059, 1916)
+   - The extraction pipeline doesn't use `cluster_spans_into_lines` or column detection at all
 
 3. **No end-to-end tests for column detection**
    - No fixture tests for three-column papers
@@ -49,13 +49,16 @@ Column detection is NOT integrated into the main extraction pipeline:
 
 ## Blockers
 
-1. **Add `column: Option<u32>` field to main `Span` struct**
-   - File: `crates/pdftract-core/src/span/mod.rs`
-   - Update `Span::new()` to initialize the field
+The extraction pipeline (`extract.rs`) needs to be refactored to use the Phase 4 layout pipeline:
 
-2. **Integrate column detection into extraction pipeline**
+1. **Add Phase 4 pipeline integration**
    - File: `crates/pdftract-core/src/extract.rs`
-   - After line formation (Phase 4.2), call column detection:
+   - Currently the pipeline doesn't use line formation or column detection
+   - Need to add: glyph → span → line → column detection → block formation
+   - Current pipeline goes directly from glyphs to spans to blocks without line/column phases
+
+2. **Implement column detection call chain**
+   - After line formation (Phase 4.2), call:
      - `build_x0_histogram(spans, page_width)`
      - `detect_column_gaps(&hist, page_width)`
      - `confirm_columns(&gaps, page_width, &lines)`
@@ -71,15 +74,17 @@ Column detection is NOT integrated into the main extraction pipeline:
 
 ## Recommendation
 
-DO NOT CLOSE this coordinator bead. The sub-phase implementation is incomplete because:
-1. The main `Span` struct lacks the column field
-2. The extraction pipeline does not call column detection
+**DO NOT CLOSE this coordinator bead.** The sub-phase implementation is incomplete because:
+1. The extraction pipeline doesn't use the Phase 4 layout pipeline
+2. Column detection functions are never called in production
 3. No end-to-end verification of acceptance criteria
 
-The child beads being closed only means the individual functions are implemented. The coordinator must ensure the sub-phase works end-to-end, which requires integration into the extraction pipeline.
+The child beads being closed only means the individual functions are implemented and unit-tested. The coordinator must ensure the sub-phase works end-to-end, which requires integration into the extraction pipeline.
 
-## Files Requiring Changes
+## Next Steps
 
-1. `crates/pdftract-core/src/span/mod.rs` - Add `column: Option<u32>` to `Span`
-2. `crates/pdftract-core/src/extract.rs` - Integrate column detection pipeline
-3. `crates/pdftract-core/tests/` or `crates/pdftract-cli/tests/` - Add fixture tests
+This coordinator bead requires significant extraction pipeline refactoring:
+1. Integrate Phase 4.2 line formation into extract.rs
+2. Add Phase 4.3 column detection after line formation
+3. Update SpanJson to use computed column values
+4. Add fixture tests for acceptance criteria verification
