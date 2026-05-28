@@ -7,6 +7,9 @@ license.workspace = true
 repository.workspace = true
 publish = true
 
+[build-dependencies]
+libflate = "2"
+
 [[bin]]
 name = "pdftract"
 path = "src/main.rs"
@@ -27,6 +30,10 @@ path = "../../tests/gen_lexer_golden.rs"
 [[bin]]
 name = "build-xref-fixture"
 path = "../../tools/build-xref-fixture/main.rs"
+
+[[bin]]
+name = "generate_slide_deck_fixtures"
+path = "../../tests/fixtures/generate_slide_deck_fixtures.rs"
 
 [[bench]]
 name = "grep_1000"

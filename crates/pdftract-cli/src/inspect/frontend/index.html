@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en" data-layers="">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>pdftract inspector</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="modulepreload" href="/static/app.js">
+</head>
+<body>
+<div class="app">
+<aside class="sidebar">
+<div class="sidebar-header">Pages</div>
+<div id="thumbnails" class="thumbnails"></div>
+</aside>
+<main class="main">
+<div class="toolbar">
+<button id="btn-prev" class="btn" aria-label="Previous page">← Prev</button>
+<button id="btn-next" class="btn" aria-label="Next page">Next →</button>
+<input id="search-input" type="search" placeholder="Search (press /)" aria-label="Search" class="search-input">
+<div class="toggles">
+<button class="layer-toggle" data-layer="spans" aria-label="Toggle spans layer">1 Spans</button>
+<button class="layer-toggle" data-layer="blocks" aria-label="Toggle blocks layer">2 Blocks</button>
+<button class="layer-toggle" data-layer="columns" aria-label="Toggle columns layer">3 Columns</button>
+<button class="layer-toggle" data-layer="reading-order" aria-label="Toggle reading order layer">4 Order</button>
+<button class="layer-toggle" data-layer="confidence-heatmap" aria-label="Toggle confidence heatmap layer">5 Heatmap</button>
+<button class="layer-toggle" data-layer="ocr" aria-label="Toggle OCR layer">6 OCR</button>
+<button class="layer-toggle" data-layer="mcid" aria-label="Toggle MCID layer">7 MCID</button>
+<button class="layer-toggle" data-layer="anchors" aria-label="Toggle anchors layer">8 Anchors</button>
+</div>
+</div>
+<div id="canvas-container" class="canvas-container">
+<div id="loading" class="loading">Loading...</div>
+</div>
+</main>
+<aside class="panel">
+<div class="panel-header">Page JSON</div>
+<div id="json-tree" class="json-tree"></div>
+</aside>
+</div>
+<div id="tooltip" class="tooltip" hidden></div>
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>

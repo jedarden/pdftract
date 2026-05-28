@@ -2,12 +2,20 @@
 //!
 //! Implements Phase 7.9.1: inspect subcommand with extraction pipeline,
 //! axum server, and browser launcher.
+//!
+//! Phase 7.9.3: Frontend bundle served via include_bytes!.
 
 use super::api;
 use super::args::InspectArgs;
 use crate::middleware::{audit_middleware, csp_middleware, AuditState};
 use anyhow::{Context, Result};
-use axum::{extract::State, response::Html, routing::get, Router};
+use axum::{
+    extract::State,
+    http::{header, StatusCode},
+    response::{Html, IntoResponse, Response},
+    routing::get,
+    Router,
+};
 use pdftract_core::audit::AuditLogWriter;
 use pdftract_core::extract::{extract_pdf, result_to_json};
 use pdftract_core::options::ExtractionOptions;
@@ -149,8 +157,11 @@ fn create_router_with_audit(state: InspectorState) -> Router {
     let state_arc = Arc::new(Mutex::new(state));
 
     Router::new()
-        // Index page
+        // Index page (Phase 7.9.3)
         .route("/", get(index_handler))
+        // Static assets (Phase 7.9.3)
+        .route("/static/style.css", get(static_style_handler))
+        .route("/static/app.js", get(static_app_handler))
         // API endpoints (Phase 7.9.2)
         .route("/api/document", get(api::api_document))
         .route("/api/page/:i", get(api::api_page))
@@ -168,25 +179,31 @@ fn create_router_with_audit(state: InspectorState) -> Router {
         .with_state(state_arc)
 }
 
-/// Handler for the index page.
+/// Handler for the index page (Phase 7.9.3).
 async fn index_handler(State(_state): State<Arc<Mutex<InspectorState>>>) -> Html<&'static str> {
-    // For now, return a placeholder. The full frontend will be in 7.9.3.
-    Html(
-        r#"<!DOCTYPE html>
-<html>
-<head>
-    <title>pdftract inspector</title>
-    <style>
-        body { font-family: system-ui, sans-serif; margin: 2rem; }
-        h1 { color: #333; }
-    </style>
-</head>
-<body>
-    <h1>pdftract inspector</h1>
-    <p>Inspector mode is under construction. See Phase 7.9 for the full implementation.</p>
-</body>
-</html>"#,
-    )
+    Html(include_str!("frontend/index.html"))
+}
+
+/// Handler for static style.css (Phase 7.9.3).
+async fn static_style_handler() -> impl IntoResponse {
+    let css = include_str!("frontend/style.css");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "text/css; charset=utf-8")
+        .header(header::CACHE_CONTROL, "public, max-age=3600")
+        .body(axum::body::Body::from(css))
+        .unwrap()
+}
+
+/// Handler for static app.js (Phase 7.9.3).
+async fn static_app_handler() -> impl IntoResponse {
+    let js = include_str!("frontend/app.js");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/javascript; charset=utf-8")
+        .header(header::CACHE_CONTROL, "public, max-age=3600")
+        .body(axum::body::Body::from(js))
+        .unwrap()
 }
 
 /// Launch the OS default browser to the given URL.
