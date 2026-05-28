@@ -26,7 +26,6 @@ use crate::confidence::ConfidenceSource;
 use crate::font::UnicodeSource;
 use crate::glyph::Glyph;
 use crate::graphics_state::Color;
-use crate::span_flags::flags;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
