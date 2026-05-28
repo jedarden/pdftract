@@ -43,6 +43,42 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
+/// Markdown emission options for controlling block inclusion.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MarkdownOptions {
+    /// Include header and footer blocks in output.
+    pub include_headers_footers: bool,
+    /// Include watermark blocks in output.
+    pub include_watermarks: bool,
+    /// Include page break separators between pages.
+    pub include_page_breaks: bool,
+}
+
+impl MarkdownOptions {
+    /// Create a new MarkdownOptions with default settings.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set whether to include headers and footers.
+    pub fn with_headers_footers(mut self, include: bool) -> Self {
+        self.include_headers_footers = include;
+        self
+    }
+
+    /// Set whether to include watermarks.
+    pub fn with_watermarks(mut self, include: bool) -> Self {
+        self.include_watermarks = include;
+        self
+    }
+
+    /// Set whether to include page breaks.
+    pub fn with_page_breaks(mut self, include: bool) -> Self {
+        self.include_page_breaks = include;
+        self
+    }
+}
+
 /// Regex for parsing pdftract HTML comment anchors.
 ///
 /// Format: `<!-- pdftract: page=(\d+) block=(\d+) bbox=\[([\d.,]+)\] kind=(\w+) -->`
@@ -196,6 +232,280 @@ fn parse_bbox(s: &str) -> Option<[f32; 4]> {
     Some(bbox)
 }
 
+/// Emit a block as Markdown based on its kind.
+///
+/// This function implements the Phase 6.5 block-kind dispatch table, mapping
+/// each block type to its appropriate Markdown representation.
+///
+/// # Block Kind Dispatch Table
+///
+/// | Block kind | Markdown emission |
+/// |---|---|
+/// | `heading` (level N) | `#` × N + space + text + `\n\n` |
+/// | `paragraph` | text + `\n\n`; soft line breaks as `  \n` |
+/// | `list` (bulleted) | `- item\n` per item |
+/// | `list` (numbered) | `1. item\n` (preserves source numbering) |
+/// | `code` | Fenced block with language detection |
+/// | `formula` (inline) | `$expr$` |
+/// | `formula` (display) | `$$\nexpr\n$$\n\n` |
+/// | `table` | GFM pipe table or HTML fallback |
+/// | `caption` | `*text*\n\n` |
+/// | `figure` | `![alt](#)\n\n` |
+/// | `header` / `footer` | Skipped unless `include_headers_footers` |
+/// | `watermark` | Skipped unless `include_watermarks` |
+/// | `block_quote` | `> line\n` per line |
+/// | `toc` | Emitted as plain text |
+/// | `note` / `footnote` | Emitted as inline text |
+/// | `reference` | Emitted as plain text |
+///
+/// # Arguments
+///
+/// * `block` - The block to convert
+/// * `tables` - The tables array for looking up table structures
+/// * `options` - Markdown emission options
+///
+/// # Returns
+///
+/// A markdown string representing the block.
+fn emit_block_kind(block: &BlockJson, tables: &[TableJson], options: &MarkdownOptions) -> String {
+    match block.kind.as_str() {
+        "heading" => emit_heading(block),
+
+        "paragraph" => emit_paragraph(block),
+
+        "list" | "list_item" => emit_list_item(block),
+
+        "code" => emit_code_block(block),
+
+        "formula" => emit_formula(block),
+
+        "table" => emit_table_block(block, tables),
+
+        "caption" => emit_caption(block),
+
+        "figure" => emit_figure(block),
+
+        "header" | "footer" => {
+            if options.include_headers_footers {
+                emit_header_footer(block)
+            } else {
+                String::new()
+            }
+        }
+
+        "watermark" => {
+            if options.include_watermarks {
+                emit_watermark(block)
+            } else {
+                String::new()
+            }
+        }
+
+        "block_quote" => emit_block_quote(block),
+
+        "toc" => emit_toc(block),
+
+        "note" | "footnote" => emit_note(block),
+
+        "reference" => emit_reference(block),
+
+        "list_label" | "list_body" => {
+            // These are internal structural elements, emit as plain text
+            format!("{}\n", block.text)
+        }
+
+        _ => {
+            // Unknown block kinds fall back to plain text
+            format!("{}\n", block.text)
+        }
+    }
+}
+
+/// Emit a heading block with level from block.level or default to 1.
+fn emit_heading(block: &BlockJson) -> String {
+    let level = block.level.unwrap_or(1).clamp(1, 6);
+    let prefix = "#".repeat(level as usize);
+    format!("{} {}\n\n", prefix, block.text)
+}
+
+/// Emit a paragraph block with soft line breaks preserved.
+fn emit_paragraph(block: &BlockJson) -> String {
+    // Soft line breaks within a paragraph are encoded as trailing "  \n"
+    // (CommonMark hard break syntax). Internal newlines in block.text
+    // become soft breaks, while the paragraph ends with "\n\n".
+    let text = block.text.replace('\n', "  \n");
+    format!("{}\n\n", text)
+}
+
+/// Emit a list item (bulleted or numbered).
+fn emit_list_item(block: &BlockJson) -> String {
+    // Try to detect if this is a numbered list by checking if text starts with a number
+    let is_numbered = block
+        .text
+        .chars()
+        .next()
+        .map(|c| c.is_ascii_digit())
+        .unwrap_or(false);
+
+    if is_numbered {
+        // Numbered list item - preserve source numbering
+        format!("{}\n", block.text)
+    } else {
+        // Bulleted list item
+        // Note: Nested sublist handling (2-space indent per level) requires
+        // structural information from the PDF parser. For now, emit as a flat list.
+        format!("* {}\n", block.text)
+    }
+}
+
+/// Emit a code block with language detection.
+fn emit_code_block(block: &BlockJson) -> String {
+    // Detect language from monospace font hint + optional shebang/keyword sniff
+    let lang = detect_code_language(&block.text);
+    format!("```{}\n{}\n```\n\n", lang, block.text)
+}
+
+/// Detect the programming language from code content.
+///
+/// This is a best-effort heuristic based on:
+/// - Shebang lines (e.g., `#!/usr/bin/env python`)
+/// - Common language keywords/patterns
+/// Falls back to empty string (no language specified)
+fn detect_code_language(code: &str) -> &str {
+    let first_line = code.lines().next().unwrap_or("");
+
+    // Check for shebang
+    if first_line.starts_with("#!") {
+        if first_line.contains("python") || first_line.contains("python3") {
+            return "python";
+        }
+        if first_line.contains("bash") || first_line.contains("sh") {
+            return "bash";
+        }
+        if first_line.contains("node") || first_line.contains("javascript") {
+            return "javascript";
+        }
+        if first_line.contains("perl") {
+            return "perl";
+        }
+        if first_line.contains("ruby") {
+            return "ruby";
+        }
+    }
+
+    // Check for common language patterns
+    let lower = code.to_lowercase();
+
+    // Rust patterns
+    if lower.contains("fn main()") || lower.contains("use std::") || lower.contains("let mut ") {
+        return "rust";
+    }
+
+    // Python patterns
+    if lower.contains("def ") || lower.contains("import ") || lower.contains("from ") {
+        return "python";
+    }
+
+    // JavaScript patterns
+    if lower.contains("function ") || lower.contains("const ") || lower.contains("let ") {
+        return "javascript";
+    }
+
+    // C/C++ patterns
+    if lower.contains("#include <") || lower.contains("#include \"") {
+        return "c";
+    }
+
+    // Java patterns
+    if lower.contains("public class") || lower.contains("public static void main") {
+        return "java";
+    }
+
+    // Go patterns
+    if lower.contains("func ") && lower.contains("package ") {
+        return "go";
+    }
+
+    // Default: no language specified
+    ""
+}
+
+/// Emit a formula (inline or display).
+fn emit_formula(block: &BlockJson) -> String {
+    // Distinguish inline vs display mode by checking if the formula
+    // contains newlines. Single-line formulas are inline ($...$),
+    // multi-line formulas are display ($$\n...\n$$).
+    if block.text.contains('\n') {
+        // Display mode: multi-line formula
+        format!("$$\n{}\n$$\n\n", block.text)
+    } else {
+        // Inline mode: single-line formula
+        format!("${}$", block.text)
+    }
+}
+
+/// Emit a table block with lookup from tables array.
+fn emit_table_block(block: &BlockJson, tables: &[TableJson]) -> String {
+    // Look up the table structure from the tables array
+    if let Some(table_idx) = block.table_index {
+        if let Some(table) = tables.get(table_idx) {
+            emit_table(table)
+        } else {
+            // Fallback to text if table index is invalid
+            format!("| {}\n", block.text)
+        }
+    } else {
+        // Fallback to text if no table index
+        format!("| {}\n", block.text)
+    }
+}
+
+/// Emit a caption block (italic text).
+fn emit_caption(block: &BlockJson) -> String {
+    format!("*{}*\n\n", block.text)
+}
+
+/// Emit a figure block with alt text placeholder.
+fn emit_figure(block: &BlockJson) -> String {
+    // Use block.text as alt text, with placeholder path
+    format!("![{}]()\n\n", block.text)
+}
+
+/// Emit a header or footer block.
+fn emit_header_footer(block: &BlockJson) -> String {
+    format!("{}\n", block.text)
+}
+
+/// Emit a watermark block.
+fn emit_watermark(block: &BlockJson) -> String {
+    format!("{}\n", block.text)
+}
+
+/// Emit a block quote (prefixed lines).
+fn emit_block_quote(block: &BlockJson) -> String {
+    // Prefix each line with "> "
+    block
+        .text
+        .lines()
+        .map(|line| format!("> {}\n", line))
+        .collect()
+}
+
+/// Emit a table of contents block.
+fn emit_toc(block: &BlockJson) -> String {
+    format!("{}\n", block.text)
+}
+
+/// Emit a note or footnote block.
+fn emit_note(block: &BlockJson) -> String {
+    format!("{}\n", block.text)
+}
+
+/// Emit a reference block.
+fn emit_reference(block: &BlockJson) -> String {
+    format!("{}\n", block.text)
+}
+
 /// Convert a block to markdown with optional anchor comment.
 ///
 /// If `include_anchor` is true, emits an HTML comment before the block content.
@@ -218,6 +528,38 @@ pub fn block_to_markdown(
     block_index: usize,
     include_anchor: bool,
 ) -> String {
+    block_to_markdown_with_options(
+        block,
+        tables,
+        page_index,
+        block_index,
+        include_anchor,
+        &MarkdownOptions::default(),
+    )
+}
+
+/// Convert a block to markdown with optional anchor comment and custom options.
+///
+/// # Arguments
+///
+/// * `block` - The block to convert
+/// * `tables` - The tables array for looking up table structures by table_index
+/// * `page_index` - Zero-based page index
+/// * `block_index` - Zero-based block index within the page
+/// * `include_anchor` - Whether to include the HTML comment anchor
+/// * `options` - Markdown emission options
+///
+/// # Returns
+///
+/// A markdown string with optional anchor.
+pub fn block_to_markdown_with_options(
+    block: &BlockJson,
+    tables: &[TableJson],
+    page_index: usize,
+    block_index: usize,
+    include_anchor: bool,
+    options: &MarkdownOptions,
+) -> String {
     let mut result = String::new();
 
     // Add anchor comment if requested
@@ -237,48 +579,28 @@ pub fn block_to_markdown(
         result.push('\n');
     }
 
-    // Add block content based on kind
-    match block.kind.as_str() {
-        "heading" => {
-            let level = block.level.unwrap_or(1);
-            let prefix = "#".repeat(level as usize);
-            result.push_str(&format!("{} {}\n", prefix, block.text));
-        }
-        "paragraph" => {
-            result.push_str(&format!("{}\n", block.text));
-        }
-        "list" => {
-            result.push_str(&format!("* {}\n", block.text));
-        }
-        "table" => {
-            // Look up the table structure from the tables array
-            if let Some(table_idx) = block.table_index {
-                if let Some(table) = tables.get(table_idx) {
-                    result.push_str(&emit_table(table));
-                } else {
-                    // Fallback to text if table index is invalid
-                    result.push_str(&format!("| {}\n", block.text));
-                }
-            } else {
-                // Fallback to text if no table index
-                result.push_str(&format!("| {}\n", block.text));
-            }
-        }
-        "figure" => {
-            result.push_str(&format!("![]()\n\n{}\n", block.text));
-        }
-        "caption" => {
-            // Captions are emitted as italic text
-            result.push_str(&format!("*{}*\n", block.text));
-        }
-        _ => {
-            result.push_str(&format!("{}\n", block.text));
-        }
-    }
+    // Add block content based on kind using the dispatch table
+    result.push_str(&emit_block_kind(block, tables, options));
 
     result
 }
 
+/// Convert all blocks from a page to markdown with optional anchors.
+///
+/// If `include_anchor` is true, each block is preceded by an HTML comment.
+/// If `include_page_break` is true, adds a horizontal rule between pages.
+///
+/// # Arguments
+///
+/// * `blocks` - The blocks to convert
+/// * `tables` - The tables array for looking up table structures
+/// * `page_index` - Zero-based page index
+/// * `include_anchor` - Whether to include HTML comment anchors
+/// * `include_page_break` - Whether to add a page break separator
+///
+/// # Returns
+///
+/// A markdown string with all blocks from the page.
 /// Convert all blocks from a page to markdown with optional anchors.
 ///
 /// If `include_anchor` is true, each block is preceded by an HTML comment.
@@ -302,16 +624,50 @@ pub fn page_to_markdown(
     include_anchor: bool,
     include_page_break: bool,
 ) -> String {
+    let options = MarkdownOptions {
+        include_page_breaks: include_page_break,
+        ..Default::default()
+    };
+    page_to_markdown_with_options(blocks, tables, page_index, include_anchor, &options)
+}
+
+/// Convert all blocks from a page to markdown with full options control.
+///
+/// # Arguments
+///
+/// * `blocks` - The blocks to convert
+/// * `tables` - The tables array for looking up table structures
+/// * `page_index` - Zero-based page index
+/// * `include_anchor` - Whether to include HTML comment anchors
+/// * `options` - Markdown emission options
+///
+/// # Returns
+///
+/// A markdown string with all blocks from the page.
+pub fn page_to_markdown_with_options(
+    blocks: &[BlockJson],
+    tables: &[TableJson],
+    page_index: usize,
+    include_anchor: bool,
+    options: &MarkdownOptions,
+) -> String {
     let mut result = String::new();
 
     for (block_index, block) in blocks.iter().enumerate() {
-        let md = block_to_markdown(block, tables, page_index, block_index, include_anchor);
+        let md = block_to_markdown_with_options(
+            block,
+            tables,
+            page_index,
+            block_index,
+            include_anchor,
+            options,
+        );
         result.push_str(&md);
         result.push('\n');
     }
 
     // Add page break if requested and this isn't the last page
-    if include_page_break {
+    if options.include_page_breaks {
         result.push_str("\n---\n\n");
     }
 
@@ -527,6 +883,64 @@ Some text."#;
         assert_eq!(anchors[0].page, 3);
         assert_eq!(anchors[0].block, 0);
         assert_eq!(anchors[0].kind, "heading");
+    }
+
+    #[test]
+    fn test_block_to_markdown_paragraph_soft_line_break() {
+        // Paragraph with internal newlines should emit soft breaks as "  \n"
+        let block = make_test_block("paragraph", "Line 1\nLine 2\nLine 3", [72.0, 600.0, 540.0, 630.0]);
+        let md = block_to_markdown(&block, &[], 0, 0, false);
+        // Internal newlines become "  \n" (soft breaks)
+        assert!(md.contains("Line 1  \n"));
+        assert!(md.contains("Line 2  \n"));
+        assert!(md.contains("Line 3\n\n")); // Final paragraph ends with \n\n
+    }
+
+    #[test]
+    fn test_block_to_markdown_paragraph_no_soft_break() {
+        // Paragraph without internal newlines
+        let block = make_test_block("paragraph", "Single line text", [72.0, 600.0, 540.0, 630.0]);
+        let md = block_to_markdown(&block, &[], 0, 0, false);
+        assert_eq!(md, "Single line text\n\n");
+    }
+
+    #[test]
+    fn test_block_to_markdown_formula_inline() {
+        // Single-line formula should be inline: $E=mc^2$
+        let block = make_test_block("formula", "E=mc^2", [72.0, 600.0, 540.0, 630.0]);
+        let md = block_to_markdown(&block, &[], 0, 0, false);
+        assert_eq!(md, "$E=mc^2$");
+    }
+
+    #[test]
+    fn test_block_to_markdown_formula_display() {
+        // Multi-line formula should be display: $$\n...\n$$
+        let block = make_test_block(
+            "formula",
+            "\\int_{-\\infty}^{\\infty} e^{-x^2} dx = \\sqrt{\\pi}",
+            [72.0, 600.0, 540.0, 630.0],
+        );
+        let md = block_to_markdown(&block, &[], 0, 0, false);
+        assert!(md.contains("$$\n"));
+        assert!(md.contains("\n$$\n"));
+    }
+
+    #[test]
+    fn test_block_to_markdown_list_numbered_preserves_numbering() {
+        // Numbered list should preserve source numbering
+        let block = make_test_block("list", "7. Seventh item", [72.0, 500.0, 540.0, 520.0]);
+        let md = block_to_markdown(&block, &[], 0, 0, false);
+        // Should preserve "7." numbering
+        assert!(md.contains("7. Seventh item"));
+    }
+
+    #[test]
+    fn test_block_to_markdown_list_bulleted() {
+        // Bulleted list should use "* " prefix
+        let block = make_test_block("list", "Item text", [72.0, 500.0, 540.0, 520.0]);
+        let md = block_to_markdown(&block, &[], 0, 0, false);
+        // Should add "* " prefix
+        assert!(md.contains("* Item text"));
     }
 }
 
