@@ -21,6 +21,8 @@ indexmap = "2.2"
 flate2 = { workspace = true }
 lzw = { workspace = true }
 memmap2 = "0.9"
+bytes = "1"
+parking_lot = "0.12"
 regex = "1.10"
 secrecy = { workspace = true }
 serde = { version = "1.0", features = ["derive", "rc"], optional = true }
