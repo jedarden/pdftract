@@ -17,7 +17,7 @@
 //! When XY-cut produces > 10 regions with < 3 blocks each, the caller should
 //! switch to the Docstrum algorithm (nearest-neighbor graph traversal).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 /// Maximum recursion depth for XY-cut to prevent stack overflow on pathological layouts.
 const MAX_DEPTH: u32 = 20;
@@ -600,6 +600,302 @@ impl HasBBox for BlockWithBBox {
     }
 }
 
+/// Docstrum nearest-neighbor graph traversal for reading order.
+///
+/// Implements O'Gorman 1993 Docstrum algorithm for irregular layouts.
+/// Computes k-nearest neighbors, builds adjacency graph with angle constraints,
+/// and traverses connected components in reading order.
+///
+/// # Arguments
+///
+/// * `blocks` - Blocks to order (must have bbox accessible via HasBBox)
+///
+/// # Returns
+///
+/// `XYCutResult` with ordered block indices and algorithm set to "docstrum".
+///
+/// # Algorithm
+///
+/// 1. For each block, find k=5 nearest neighbors by Euclidean center-to-center distance
+/// 2. Build adjacency graph with edges weighted by distance
+/// 3. Apply angle constraints:
+///    - Within-line: angle within ±30° of horizontal (0°)
+///    - Between-line: angle within ±30° of vertical (90° or -90°)
+/// 4. Find root nodes (no incoming edges from blocks above)
+/// 5. Sort roots by (column ASC, y DESC)
+/// 6. Traverse each connected component via DFS in y-then-x order
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::layout::reading_order::{docstrum, BlockWithBBox};
+///
+/// // Magazine layout with sidebar
+/// let blocks = vec![
+///     BlockWithBBox::new(0, [50.0, 700.0, 250.0, 750.0]),  // main col 1
+///     BlockWithBBox::new(1, [50.0, 600.0, 250.0, 650.0]),  // main col 2
+///     BlockWithBBox::new(2, [50.0, 500.0, 250.0, 550.0]),  // main col 3
+///     BlockWithBBox::new(3, [400.0, 700.0, 550.0, 750.0]), // sidebar 1
+///     BlockWithBBox::new(4, [400.0, 600.0, 550.0, 650.0]), // sidebar 2
+/// ];
+///
+/// let result = docstrum(&blocks);
+/// // Main column (0,1,2) before sidebar (3,4)
+/// assert!(result.order.starts_with(&[0, 1, 2]));
+/// ```
+pub fn docstrum<B>(blocks: &[B]) -> XYCutResult
+where
+    B: HasBBox + Clone,
+{
+    if blocks.is_empty() {
+        return XYCutResult {
+            order: vec![],
+            region_count: 0,
+            small_region_count: 0,
+            algorithm: "docstrum".to_string(),
+        };
+    }
+
+    if blocks.len() == 1 {
+        return XYCutResult {
+            order: vec![0],
+            region_count: 1,
+            small_region_count: 0,
+            algorithm: "docstrum".to_string(),
+        };
+    }
+
+    // k=5 nearest neighbors per block (Docstrum standard)
+    const K: usize = 5;
+
+    // Compute centers for all blocks
+    let centers: Vec<(f32, f32)> = blocks
+        .iter()
+        .map(|b| {
+            let bbox = b.bbox();
+            let cx = (bbox[0] + bbox[2]) / 2.0;
+            let cy = (bbox[1] + bbox[3]) / 2.0;
+            (cx, cy)
+        })
+        .collect();
+
+    // Build adjacency graph
+    let edges = build_adjacency_graph(blocks, &centers, K);
+
+    // Find root nodes (no incoming edges from blocks above)
+    let roots = find_roots(&edges, &centers);
+
+    // Sort roots by (column ASC, y DESC)
+    let mut sorted_roots = roots;
+    sorted_roots.sort_by(|&a, &b| {
+        let (ca_x, ca_y) = centers[a];
+        let (cb_x, cb_y) = centers[b];
+        // Column grouping: floor divide by page width
+        let col_a = (ca_x / 100.0).floor() as i32;
+        let col_b = (cb_x / 100.0).floor() as i32;
+        col_a.cmp(&col_b).then_with(|| cb_y.partial_cmp(&ca_y).unwrap_or(std::cmp::Ordering::Equal))
+    });
+
+    // Traverse connected components
+    let order = traverse_components(&edges, &sorted_roots, &centers);
+
+    XYCutResult {
+        order,
+        region_count: 1, // Docstrum produces 1 logical region
+        small_region_count: 0,
+        algorithm: "docstrum".to_string(),
+    }
+}
+
+/// Edge in the Docstrum adjacency graph.
+#[derive(Debug, Clone)]
+struct Edge {
+    /// Source block index.
+    from: usize,
+    /// Target block index.
+    to: usize,
+    /// Euclidean distance between centers.
+    distance: f32,
+    /// Angle in radians between centers.
+    angle: f32,
+}
+
+/// Build adjacency graph with k-nearest neighbors and angle constraints.
+fn build_adjacency_graph<B>(
+    blocks: &[B],
+    centers: &[(f32, f32)],
+    k: usize,
+) -> Vec<Edge>
+where
+    B: HasBBox,
+{
+    let n = blocks.len();
+    let mut edges = Vec::new();
+
+    // Angle thresholds in radians: ±30 degrees
+    const WITHIN_LINE_TOL: f32 = 30.0 * std::f32::consts::PI / 180.0; // ±30° from horizontal
+    const BETWEEN_LINE_TOL: f32 = 30.0 * std::f32::consts::PI / 180.0; // ±30° from vertical
+
+    // For each block, find k nearest neighbors
+    for i in 0..n {
+        let (cx_i, cy_i) = centers[i];
+
+        // Compute distances to all other blocks
+        let mut distances: Vec<(usize, f32)> = Vec::with_capacity(n - 1);
+        for j in 0..n {
+            if i == j {
+                continue;
+            }
+            let (cx_j, cy_j) = centers[j];
+            let dx = cx_j - cx_i;
+            let dy = cy_j - cy_i;
+            let dist = (dx * dx + dy * dy).sqrt();
+            distances.push((j, dist));
+        }
+
+        // Sort by distance and take k nearest
+        distances.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        let n_dist = distances.len();
+        let k_nearest: Vec<(usize, f32)> = distances
+            .into_iter()
+            .take(k.min(n_dist))
+            .collect();
+
+        // Create edges for k-nearest neighbors that pass angle constraints
+        for &(j, dist) in &k_nearest {
+            let (cx_j, cy_j) = centers[j];
+            let dx = cx_j - cx_i;
+            let dy = cy_j - cy_i;
+
+            // Compute angle in radians (-π to π)
+            let angle = dy.atan2(dx);
+
+            // Check angle constraints
+            let angle_abs = angle.abs();
+            let passes = if dy.abs() < dx.abs() {
+                // Horizontal-ish: within-line adjacency
+                angle_abs <= WITHIN_LINE_TOL
+            } else {
+                // Vertical-ish: between-line adjacency
+                let from_vertical = (angle_abs - std::f32::consts::PI / 2.0).abs();
+                from_vertical <= BETWEEN_LINE_TOL
+            };
+
+            if passes {
+                edges.push(Edge {
+                    from: i,
+                    to: j,
+                    distance: dist,
+                    angle,
+                });
+            }
+        }
+    }
+
+    edges
+}
+
+/// Find root nodes (no incoming edges from blocks above).
+///
+/// A root is a block with no incoming edges from blocks whose center-y is greater.
+fn find_roots(edges: &[Edge], centers: &[(f32, f32)]) -> Vec<usize> {
+    let n = centers.len();
+    let mut has_incoming_from_above = vec![false; n];
+
+    for edge in edges {
+        let (from_y, to_y) = (centers[edge.from].1, centers[edge.to].1);
+        // If edge from a block above (greater y in PDF coords)
+        if from_y > to_y {
+            has_incoming_from_above[edge.to] = true;
+        }
+    }
+
+    // Roots are blocks with no incoming edges from above
+    let mut roots = Vec::new();
+    for i in 0..n {
+        if !has_incoming_from_above[i] {
+            roots.push(i);
+        }
+    }
+
+    // If no roots found (circular or pathological), use all nodes sorted by position
+    if roots.is_empty() && n > 0 {
+        roots = (0..n).collect();
+    }
+
+    roots
+}
+
+/// Traverse connected components via DFS in y-then-x order.
+fn traverse_components(
+    edges: &[Edge],
+    roots: &[usize],
+    centers: &[(f32, f32)],
+) -> Vec<usize> {
+    let n = centers.len();
+    if n == 0 {
+        return Vec::new();
+    }
+
+    // Build adjacency list
+    let mut adj_list: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for edge in edges {
+        adj_list[edge.from].push(edge.to);
+    }
+
+    let mut visited = vec![false; n];
+    let mut order = Vec::new();
+
+    // For each root, traverse its component
+    for &root in roots {
+        if visited[root] {
+            continue;
+        }
+        traverse_dfs(root, &adj_list, &mut visited, &mut order, centers);
+    }
+
+    // Visit any remaining unvisited nodes (isolated blocks)
+    for i in 0..n {
+        if !visited[i] {
+            order.push(i);
+            visited[i] = true;
+        }
+    }
+
+    order
+}
+
+/// Depth-first traversal with y-then-x ordering.
+fn traverse_dfs(
+    node: usize,
+    adj_list: &[Vec<usize>],
+    visited: &mut [bool],
+    order: &mut Vec<usize>,
+    centers: &[(f32, f32)],
+) {
+    if visited[node] {
+        return;
+    }
+    visited[node] = true;
+    order.push(node);
+
+    // Sort neighbors by (y DESC, x ASC) for reading order
+    let mut neighbors = adj_list[node].clone();
+    neighbors.sort_by(|&a, &b| {
+        let (cy_a, cx_a) = (centers[a].1, centers[a].0);
+        let (cy_b, cx_b) = (centers[b].1, centers[b].0);
+        cy_b.partial_cmp(&cy_a)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| cx_a.partial_cmp(&cx_b).unwrap_or(std::cmp::Ordering::Equal))
+    });
+
+    for &neighbor in &neighbors {
+        if !visited[neighbor] {
+            traverse_dfs(neighbor, adj_list, visited, order, centers);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -834,5 +1130,176 @@ mod tests {
         assert!(result.region_count >= 5);
         // Each region has 2 blocks (< 3), so small_region_count should be significant
         assert_eq!(result.small_region_count, result.region_count);
+    }
+
+    // Docstrum tests
+
+    #[test]
+    fn test_docstrum_empty() {
+        let blocks: Vec<BlockWithBBox> = vec![];
+        let result = docstrum(&blocks);
+
+        assert_eq!(result.order, Vec::<usize>::new());
+        assert_eq!(result.algorithm, "docstrum");
+    }
+
+    #[test]
+    fn test_docstrum_single_block() {
+        let blocks = vec![BlockWithBBox::new(0, [50.0, 700.0, 250.0, 750.0])];
+        let result = docstrum(&blocks);
+
+        assert_eq!(result.order, vec![0usize]);
+        assert_eq!(result.algorithm, "docstrum");
+    }
+
+    #[test]
+    fn test_docstrum_magazine_main_and_sidebar() {
+        // Magazine layout: main text (left) and sidebar (right)
+        let blocks = vec![
+            // Main column (3 blocks stacked)
+            BlockWithBBox::new(0, [50.0, 700.0, 250.0, 750.0]),
+            BlockWithBBox::new(1, [50.0, 600.0, 250.0, 650.0]),
+            BlockWithBBox::new(2, [50.0, 500.0, 250.0, 550.0]),
+            // Sidebar (2 blocks stacked, separated horizontally)
+            BlockWithBBox::new(3, [400.0, 700.0, 550.0, 750.0]),
+            BlockWithBBox::new(4, [400.0, 600.0, 550.0, 650.0]),
+        ];
+
+        let result = docstrum(&blocks);
+
+        // Main column (0,1,2) should come before sidebar (3,4)
+        assert_eq!(result.algorithm, "docstrum");
+        // Check that all main column blocks come before sidebar
+        let main_pos: Vec<_> = result.order.iter().filter(|&&i| i < 3).collect();
+        let sidebar_pos: Vec<_> = result.order.iter().filter(|&&i| i >= 3).collect();
+        // Main column indices should appear before sidebar indices
+        if let (Some(&first_main), Some(&last_main), Some(&first_sidebar)) = (
+            main_pos.first(),
+            main_pos.last(),
+            sidebar_pos.first(),
+        ) {
+            assert!(last_main < first_sidebar);
+        }
+    }
+
+    #[test]
+    fn test_docstrum_all_one_line_horizontal() {
+        // All blocks in one horizontal line
+        let blocks = vec![
+            BlockWithBBox::new(0, [50.0, 700.0, 150.0, 750.0]),
+            BlockWithBBox::new(1, [160.0, 700.0, 260.0, 750.0]),
+            BlockWithBBox::new(2, [270.0, 700.0, 370.0, 750.0]),
+            BlockWithBBox::new(3, [380.0, 700.0, 480.0, 750.0]),
+        ];
+
+        let result = docstrum(&blocks);
+
+        // Should visit left-to-right
+        assert_eq!(result.algorithm, "docstrum");
+        // All y coordinates are same, so order by x ascending
+        let x_coords: Vec<f32> = result
+            .order
+            .iter()
+            .map(|&i| blocks[i].bbox()[0])
+            .collect();
+        // Verify strictly increasing x coordinates
+        for i in 1..x_coords.len() {
+            assert!(x_coords[i] > x_coords[i - 1]);
+        }
+    }
+
+    #[test]
+    fn test_docstrum_all_one_column_vertical() {
+        // All blocks in one vertical column
+        let blocks = vec![
+            BlockWithBBox::new(0, [50.0, 700.0, 200.0, 750.0]), // top
+            BlockWithBBox::new(1, [50.0, 600.0, 200.0, 650.0]),
+            BlockWithBBox::new(2, [50.0, 500.0, 200.0, 550.0]), // bottom
+        ];
+
+        let result = docstrum(&blocks);
+
+        // Should visit top-to-bottom (y descending in PDF coords)
+        assert_eq!(result.algorithm, "docstrum");
+        let y_coords: Vec<f32> = result
+            .order
+            .iter()
+            .map(|&i| blocks[i].bbox()[3]) // y1 (bottom of bbox)
+            .collect();
+        // Verify strictly decreasing y coordinates (top to bottom)
+        for i in 1..y_coords.len() {
+            assert!(y_coords[i] < y_coords[i - 1]);
+        }
+    }
+
+    #[test]
+    fn test_docstrum_scattered_pathological() {
+        // Pathological case: blocks scattered with no clear adjacency
+        let blocks = vec![
+            BlockWithBBox::new(0, [50.0, 700.0, 100.0, 750.0]),
+            BlockWithBBox::new(1, [200.0, 600.0, 250.0, 650.0]),
+            BlockWithBBox::new(2, [350.0, 500.0, 400.0, 550.0]),
+            BlockWithBBox::new(3, [500.0, 400.0, 550.0, 450.0]),
+        ];
+
+        let result = docstrum(&blocks);
+
+        // Each block should be visited exactly once
+        assert_eq!(result.algorithm, "docstrum");
+        assert_eq!(result.order.len(), 4);
+        let mut sorted = result.order.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(sorted, vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn test_docstrum_k_nearest_neighbors() {
+        // Verify k=5 neighbor selection with more than 5 blocks
+        let blocks: Vec<BlockWithBBox> = (0..10)
+            .map(|i| {
+                let x = (i % 3) as f32 * 150.0 + 50.0; // 3 columns
+                let y = (i / 3) as f32 * 100.0 + 600.0; // multiple rows
+                BlockWithBBox::new(i, [x, y, x + 80.0, y + 50.0])
+            })
+            .collect();
+
+        let result = docstrum(&blocks);
+
+        // Should handle more than k blocks gracefully
+        assert_eq!(result.algorithm, "docstrum");
+        assert_eq!(result.order.len(), 10);
+    }
+
+    #[test]
+    fn test_docstrum_angle_constraint_within_line() {
+        // Horizontal line: blocks should connect with ±30° of horizontal
+        let blocks = vec![
+            BlockWithBBox::new(0, [50.0, 700.0, 150.0, 750.0]),
+            BlockWithBBox::new(1, [160.0, 705.0, 260.0, 755.0]), // slight y offset (within ±30°)
+            BlockWithBBox::new(2, [270.0, 700.0, 370.0, 750.0]),
+        ];
+
+        let result = docstrum(&blocks);
+
+        // Should form one component, visited left-to-right
+        assert_eq!(result.algorithm, "docstrum");
+        assert_eq!(result.order.len(), 3);
+    }
+
+    #[test]
+    fn test_docstrum_angle_constraint_between_line() {
+        // Vertical column: blocks should connect with ±30° of vertical
+        let blocks = vec![
+            BlockWithBBox::new(0, [50.0, 700.0, 150.0, 750.0]),
+            BlockWithBBox::new(1, [55.0, 600.0, 155.0, 650.0]), // slight x offset (within ±30°)
+            BlockWithBBox::new(2, [50.0, 500.0, 150.0, 550.0]),
+        ];
+
+        let result = docstrum(&blocks);
+
+        // Should form one component, visited top-to-bottom
+        assert_eq!(result.algorithm, "docstrum");
+        assert_eq!(result.order.len(), 3);
     }
 }

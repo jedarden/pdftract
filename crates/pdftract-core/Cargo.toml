@@ -56,21 +56,25 @@ hmac = "0.12"
 unicode-segmentation = "1.11"
 strsim = "0.11"
 unicode-bidi = { workspace = true }
+lru = { version = "0.12", optional = true }
+ureq = { version = "2.10", default-features = false, features = ["tls"], optional = true }
+rustls = { version = "0.23", optional = true }
 
 [features]
-default = ["serde", "decrypt"]
+default = ["serde", "decrypt", "quick-xml"]
 serde = ["dep:serde", "dep:serde_json", "dep:schemars"]
 schemars = ["dep:schemars", "serde"]
 receipts = []  # Enable visual citation receipts (SVG clip generation)
-ocr = ["dep:image", "dep:imageproc", "dep:leptonica-plumbing", "dep:quick-xml"]  # Enable OCR path (image compositing + preprocessing + HOCR parsing)
+ocr = ["dep:image", "dep:imageproc", "dep:leptonica-plumbing"]  # Enable OCR path (image compositing + preprocessing + HOCR parsing)
 full-render = ["dep:pdfium-render", "ocr"]  # Enable PDFium-based rendering (requires ocr)
-remote = ["dep:url"]  # Enable remote HTTP source (Phase 1.8)
+remote = ["dep:url", "dep:ureq", "dep:lru"]  # Enable remote HTTP source (Phase 1.8)
 profiles = ["dep:serde_yaml"]  # Enable extraction profiles (Phase 7.10)
 decrypt = ["dep:aes", "dep:rc4", "dep:md-5", "dep:cbc", "dep:cipher", "dep:digest"]  # Enable PDF decryption (RC4/AES-128/AES-256)
 proptest = []
 fuzzing = []  # Enable cfg(fuzzing) for fuzz harnesses
 shape-db = []  # Enable glyph shape database (Level 4 encoding fallback)
 cjk = []  # Enable CJK text extraction via predefined CMap registry (~1.2 MB binary size increase)
+quick-xml = ["dep:quick-xml"]  # Enable quick-xml for conformance detection (Phase 1.4)
 
 [dev-dependencies]
 chrono = "0.4"
