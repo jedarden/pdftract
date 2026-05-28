@@ -100,34 +100,47 @@ pub fn classify_formula<S>(_block: &Block<S>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layout::line::Block;
 
-    #[test]
-    fn test_classify_watermark_always_false() {
-        // Create a dummy block for testing
-        let dummy_block = Block {
+    /// Minimal test block structure.
+    ///
+    /// The actual `Block<S>` from line.rs requires a generic parameter for the
+    /// span type. For stub testing, we only need to verify the functions exist
+    /// and return false. The generic parameter is unused (the block is ignored),
+    /// so we use `()` as a placeholder type.
+    #[derive(Debug, Clone)]
+    struct TestBlock {
+        kind: String,
+        text: String,
+        bbox: [f32; 4],
+        median_font_size: f32,
+        column: usize,
+    }
+
+    /// Convert `TestBlock` to the `Block<()> type expected by the stubs.
+    ///
+    /// The stubs ignore their input, so we only need to satisfy the type system.
+    /// The `Line<()> type requires `lines`, which we provide as an empty vec.
+    fn make_test_block() -> crate::layout::line::Block<()> {
+        crate::layout::line::Block {
             lines: vec![],
             kind: "test".to_string(),
             text: String::new(),
             bbox: [0.0, 0.0, 100.0, 20.0],
             median_font_size: 12.0,
-            metadata: None,
-        };
+            column: 0,
+        }
+    }
+
+    #[test]
+    fn test_classify_watermark_always_false() {
+        let dummy_block = make_test_block();
         // Stub should always return false
         assert_eq!(classify_watermark(&dummy_block), false);
     }
 
     #[test]
     fn test_classify_formula_always_false() {
-        // Create a dummy block for testing
-        let dummy_block = Block {
-            lines: vec![],
-            kind: "test".to_string(),
-            text: String::new(),
-            bbox: [0.0, 0.0, 100.0, 20.0],
-            median_font_size: 12.0,
-            metadata: None,
-        };
+        let dummy_block = make_test_block();
         // Stub should always return false
         assert_eq!(classify_formula(&dummy_block), false);
     }
@@ -136,14 +149,7 @@ mod tests {
     fn test_watermark_stub_documentation() {
         // Verify the stub exists and compiles
         // This test documents the Phase 4 behavior
-        let dummy_block = Block {
-            lines: vec![],
-            kind: "test".to_string(),
-            text: String::new(),
-            bbox: [0.0, 0.0, 100.0, 20.0],
-            median_font_size: 12.0,
-            metadata: None,
-        };
+        let dummy_block = make_test_block();
         assert!(!classify_watermark(&dummy_block));
     }
 
@@ -151,14 +157,7 @@ mod tests {
     fn test_formula_stub_documentation() {
         // Verify the stub exists and compiles
         // This test documents the Phase 4 behavior
-        let dummy_block = Block {
-            lines: vec![],
-            kind: "test".to_string(),
-            text: String::new(),
-            bbox: [0.0, 0.0, 100.0, 20.0],
-            median_font_size: 12.0,
-            metadata: None,
-        };
+        let dummy_block = make_test_block();
         assert!(!classify_formula(&dummy_block));
     }
 }
