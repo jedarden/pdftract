@@ -711,4 +711,68 @@ mod tests {
         assert_eq!(ranges.len(), 2);
         assert!(!diags.is_empty());
     }
+
+    #[test]
+    fn test_identity_h_roundtrip() {
+        // Acceptance criterion: Round-trip with Identity-H CMap fixture
+        // Identity-H CMap typically has a single 2-byte codespace range
+        let identity_h_cmap = b"/CIDInit /ProcSet findresource begin
+12 dict begin
+begincmap
+/CMapName /Identity-H def
+/CMapType 2 def
+1 begincodespacerange
+<0000> <FFFF>
+endcodespacerange
+1 begincidchar
+<0000> 0
+endcidchar
+endcmap
+CMapName currentdict /CMap defineresource pop
+end
+end";
+
+        let parser = CodespaceParser::new(identity_h_cmap);
+        let (ranges, diags) = parser.parse();
+
+        // Identity-H should have a single 2-byte range covering all 16-bit codes
+        assert_eq!(ranges.len(), 1);
+        assert_eq!(ranges.ranges[0].width, 2);
+        assert_eq!(ranges.ranges[0].lo_slice(), &[0x00, 0x00]);
+        assert_eq!(ranges.ranges[0].hi_slice(), &[0xFF, 0xFF]);
+        assert!(diags.is_empty());
+
+        // Verify that codes in this range are correctly identified
+        let range = ranges.find_range(&[0x00, 0x41]).unwrap();
+        assert_eq!(range.width, 2);
+        let range = ranges.find_range(&[0xFF, 0xFF]).unwrap();
+        assert_eq!(range.width, 2);
+        let range = ranges.find_range(&[0x81, 0x40]).unwrap();
+        assert_eq!(range.width, 2);
+    }
+
+    #[test]
+    fn test_identity_v_roundtrip() {
+        // Identity-V CMap similar to Identity-H but for vertical writing mode
+        let identity_v_cmap = b"/CIDInit /ProcSet findresource begin
+12 dict begin
+begincmap
+/CMapName /Identity-V def
+/CMapType 2 def
+1 begincodespacerange
+<0000> <FFFF>
+endcodespacerange
+endcmap
+CMapName currentdict /CMap defineresource pop
+end
+end";
+
+        let parser = CodespaceParser::new(identity_v_cmap);
+        let (ranges, diags) = parser.parse();
+
+        // Identity-V should have the same codespace as Identity-H
+        assert_eq!(ranges.len(), 1);
+        assert_eq!(ranges.ranges[0].width, 2);
+        assert!(diags.is_empty());
+    }
 }
