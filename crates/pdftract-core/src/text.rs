@@ -42,7 +42,71 @@
 //! assert_eq!(text, "First paragraph.\n\nSecond paragraph.");
 //! ```
 
-use crate::schema::BlockJson;
+use crate::schema::{BlockJson, SpanJson};
+
+/// Check if a span should be included based on rendering mode and include_invisible option.
+///
+/// Per PDF spec, rendering_mode values:
+/// - 0-2: visible (fill, stroke, or both)
+/// - 3: invisible (no rendering)
+/// - 4-7: invisible variants (clip modes, no visible rendering)
+///
+/// Returns false if the span should be excluded, true if it should be included.
+fn should_include_span(span: &SpanJson, include_invisible: bool) -> bool {
+    // If include_invisible is true, include all spans regardless of rendering_mode
+    if include_invisible {
+        return true;
+    }
+
+    // Filter out invisible text based on rendering_mode
+    if let Some(mode) = span.rendering_mode {
+        // Tr=3 is invisible, Tr=4-7 are invisible variants (clip modes with no visible rendering)
+        if mode >= 3 {
+            return false;
+        }
+    }
+
+    true
+}
+
+/// Compute block text from spans with invisible text filtering.
+///
+/// This function joins span texts while filtering out invisible spans
+/// based on the include_invisible option. Operates at SPAN level as required.
+///
+/// # Arguments
+///
+/// * `spans` - All spans on the page
+/// * `block_spans` - Indices of spans that belong to this block
+/// * `include_invisible` - Whether to include invisible text (Tr=3)
+///
+/// # Returns
+///
+/// The concatenated text of visible spans in the block, or empty string
+/// if all spans are filtered out.
+fn compute_block_text_from_spans(
+    spans: &[SpanJson],
+    block_spans: &[usize],
+    include_invisible: bool,
+) -> String {
+    let mut result = String::new();
+    let mut is_first = true;
+
+    for &span_idx in block_spans {
+        if let Some(span) = spans.get(span_idx) {
+            if should_include_span(span, include_invisible) {
+                if !is_first {
+                    // Add space between spans from different parts of the block
+                    result.push(' ');
+                }
+                result.push_str(&span.text);
+                is_first = false;
+            }
+        }
+    }
+
+    result
+}
 
 /// Options controlling plain text serialization behavior.
 ///
@@ -100,6 +164,7 @@ impl TextOptions {
 /// # Arguments
 ///
 /// * `blocks` - The blocks to serialize, in reading order
+/// * `spans` - All spans on the page (for span-level invisible text filtering)
 /// * `options` - Options controlling which blocks are included
 ///
 /// # Returns
@@ -109,16 +174,16 @@ impl TextOptions {
 ///
 /// # Block Text Rules
 ///
-/// - Paragraph/Heading/Caption/Quote: use pre-computed block text
-/// - List/Code: use pre-computed block text (lines already joined)
+/// - Paragraph/Heading/Caption/Quote: computed from spans with invisible filtering
+/// - List/Code: computed from spans with invisible filtering
 /// - Figure: empty string (no text content)
-/// - Table: use pre-computed block text
+/// - Table: computed from spans with invisible filtering
 ///
 /// # Filtering
 ///
 /// - Header/Footer: excluded unless `include_headers_footers` is true
 /// - Watermark: excluded unless `include_watermarks` is true
-/// - Invisible spans: excluded unless `include_invisible_text` is true
+/// - Invisible spans: excluded unless `include_invisible_text` is true (SPAN-level filter)
 ///
 /// # Examples
 ///
@@ -142,10 +207,10 @@ impl TextOptions {
 /// ];
 ///
 /// let options = TextOptions::default();
-/// let text = serialize_page_text(&blocks, &options);
+/// let text = serialize_page_text(&blocks, &[], &options);
 /// assert_eq!(text, "First paragraph.\n\nSecond paragraph.");
 /// ```
-pub fn serialize_page_text(blocks: &[BlockJson], options: &TextOptions) -> String {
+pub fn serialize_page_text(blocks: &[BlockJson], spans: &[SpanJson], options: &TextOptions) -> String {
     let mut result_parts = Vec::new();
 
     for block in blocks {
@@ -157,10 +222,24 @@ pub fn serialize_page_text(blocks: &[BlockJson], options: &TextOptions) -> Strin
             continue;
         }
 
-        // Get block text based on kind
-        let block_text = get_block_text(block);
+        // Get block text by filtering spans at SPAN level (not block level)
+        // This recomputes block.text from its constituent spans with invisible filtering.
+        // If span data is not available (empty block.spans), fall back to pre-computed text.
+        // Figures always emit empty text (no readable text content).
+        let block_text = if block.kind == "figure" {
+            String::new() // Figures have no readable text content
+        } else if block.spans.is_empty() {
+            // No span data available - use pre-computed text (backward compatibility)
+            block.text.clone()
+        } else {
+            compute_block_text_from_spans(
+                spans,
+                &block.spans,
+                options.include_invisible_text,
+            )
+        };
 
-        // Skip empty blocks (no spurious newlines)
+        // Skip empty blocks (no spurious newlines) - includes all-invisible blocks
         if block_text.trim().is_empty() {
             continue;
         }
@@ -221,7 +300,7 @@ mod tests {
         ];
 
         let options = TextOptions::default();
-        let text = serialize_page_text(&blocks, &options);
+        let text = serialize_page_text(&blocks, &[], &options);
         assert_eq!(text, "Foo\n\nBar\n\nBaz");
     }
 
@@ -238,7 +317,7 @@ mod tests {
         ];
 
         let options = TextOptions::default();
-        let text = serialize_page_text(&blocks, &options);
+        let text = serialize_page_text(&blocks, &[], &options);
         assert_eq!(text, "Title\n\nP1\n\nP2");
     }
 
@@ -251,7 +330,7 @@ mod tests {
         ];
 
         let options = TextOptions::default();
-        let text = serialize_page_text(&blocks, &options);
+        let text = serialize_page_text(&blocks, &[], &options);
         assert_eq!(text, "Content");
         assert!(!text.contains("Page 1"));
     }
@@ -264,7 +343,7 @@ mod tests {
         ];
 
         let options = TextOptions::new().with_headers_footers();
-        let text = serialize_page_text(&blocks, &options);
+        let text = serialize_page_text(&blocks, &[], &options);
         assert_eq!(text, "Page 1\n\nContent");
     }
 
@@ -276,7 +355,7 @@ mod tests {
         ];
 
         let options = TextOptions::default();
-        let text = serialize_page_text(&blocks, &options);
+        let text = serialize_page_text(&blocks, &[], &options);
         assert_eq!(text, "Content");
         assert!(!text.contains("Page 1 of 10"));
     }
@@ -291,7 +370,7 @@ mod tests {
         )];
 
         let options = TextOptions::default();
-        let text = serialize_page_text(&blocks, &options);
+        let text = serialize_page_text(&blocks, &[], &options);
         assert_eq!(text, "Item 1\nItem 2\nItem 3");
     }
 
@@ -305,7 +384,7 @@ mod tests {
         )];
 
         let options = TextOptions::default();
-        let text = serialize_page_text(&blocks, &options);
+        let text = serialize_page_text(&blocks, &[], &options);
         assert_eq!(text, "fn main() {\n    println!(\"Hello\");\n}");
     }
 
@@ -319,7 +398,7 @@ mod tests {
         )];
 
         let options = TextOptions::default();
-        let text = serialize_page_text(&blocks, &options);
+        let text = serialize_page_text(&blocks, &[], &options);
         assert_eq!(text, "");
     }
 
@@ -333,7 +412,7 @@ mod tests {
         ];
 
         let options = TextOptions::default();
-        let text = serialize_page_text(&blocks, &options);
+        let text = serialize_page_text(&blocks, &[], &options);
         assert_eq!(text, "First\n\nSecond");
     }
 
@@ -345,7 +424,7 @@ mod tests {
         ];
 
         let options = TextOptions::default();
-        let text = serialize_page_text(&blocks, &options);
+        let text = serialize_page_text(&blocks, &[], &options);
         assert_eq!(text, "Content");
         assert!(!text.contains("DRAFT"));
     }
@@ -358,7 +437,7 @@ mod tests {
         ];
 
         let options = TextOptions::new().with_watermarks();
-        let text = serialize_page_text(&blocks, &options);
+        let text = serialize_page_text(&blocks, &[], &options);
         assert_eq!(text, "Content\n\nDRAFT");
     }
 
@@ -372,7 +451,7 @@ mod tests {
         )];
 
         let options = TextOptions::default();
-        let text = serialize_page_text(&blocks, &options);
+        let text = serialize_page_text(&blocks, &[], &options);
         assert_eq!(text, "Figure 1: The results show");
     }
 
@@ -386,7 +465,7 @@ mod tests {
         )];
 
         let options = TextOptions::default();
-        let text = serialize_page_text(&blocks, &options);
+        let text = serialize_page_text(&blocks, &[], &options);
         assert_eq!(text, "This is a quote");
     }
 
@@ -400,7 +479,7 @@ mod tests {
         )];
 
         let options = TextOptions::default();
-        let text = serialize_page_text(&blocks, &options);
+        let text = serialize_page_text(&blocks, &[], &options);
         assert_eq!(text, "Cell1 Cell2");
     }
 
@@ -409,7 +488,7 @@ mod tests {
         // INV: Empty block list produces empty string
         let blocks: Vec<BlockJson> = vec![];
         let options = TextOptions::default();
-        let text = serialize_page_text(&blocks, &options);
+        let text = serialize_page_text(&blocks, &[], &options);
         assert_eq!(text, "");
     }
 
@@ -464,5 +543,261 @@ mod tests {
         let mut block = make_test_block("heading", "Title", [0.0, 0.0, 100.0, 20.0]);
         block.level = Some(2);
         assert_eq!(get_block_text(&block), "Title");
+    }
+
+    // Invisible text filtering tests (pdftract-38p8h)
+
+    fn make_test_span(text: &str, bbox: [f64; 4], rendering_mode: Option<u8>) -> SpanJson {
+        SpanJson {
+            text: text.to_string(),
+            bbox,
+            font: "Helvetica".to_string(),
+            size: 12.0,
+            color: None,
+            rendering_mode,
+            confidence: None,
+            confidence_source: None,
+            lang: None,
+            flags: vec![],
+            receipt: None,
+            column: None,
+        }
+    }
+
+    #[test]
+    fn test_should_include_span_visible_mode_0() {
+        // AC: rendering_mode 0 (fill) is always included
+        let span = make_test_span("visible", [0.0, 0.0, 100.0, 20.0], Some(0));
+        assert!(should_include_span(&span, false));
+        assert!(should_include_span(&span, true));
+    }
+
+    #[test]
+    fn test_should_include_span_visible_mode_1() {
+        // AC: rendering_mode 1 (stroke) is always included
+        let span = make_test_span("visible", [0.0, 0.0, 100.0, 20.0], Some(1));
+        assert!(should_include_span(&span, false));
+        assert!(should_include_span(&span, true));
+    }
+
+    #[test]
+    fn test_should_include_span_visible_mode_2() {
+        // AC: rendering_mode 2 (fill then stroke) is always included
+        let span = make_test_span("visible", [0.0, 0.0, 100.0, 20.0], Some(2));
+        assert!(should_include_span(&span, false));
+        assert!(should_include_span(&span, true));
+    }
+
+    #[test]
+    fn test_should_include_span_invisible_mode_3_excluded_by_default() {
+        // AC: rendering_mode 3 (invisible) excluded when include_invisible=false
+        let span = make_test_span("invisible", [0.0, 0.0, 100.0, 20.0], Some(3));
+        assert!(!should_include_span(&span, false));
+    }
+
+    #[test]
+    fn test_should_include_span_invisible_mode_3_included_when_flagged() {
+        // AC: rendering_mode 3 (invisible) included when include_invisible=true
+        let span = make_test_span("invisible", [0.0, 0.0, 100.0, 20.0], Some(3));
+        assert!(should_include_span(&span, true));
+    }
+
+    #[test]
+    fn test_should_include_span_invisible_mode_4_excluded_by_default() {
+        // AC: rendering_mode 4 (fill to clip) treated same as mode 3
+        let span = make_test_span("clip", [0.0, 0.0, 100.0, 20.0], Some(4));
+        assert!(!should_include_span(&span, false));
+        assert!(should_include_span(&span, true));
+    }
+
+    #[test]
+    fn test_should_include_span_invisible_mode_5_excluded_by_default() {
+        // AC: rendering_mode 5 (stroke to clip) treated same as mode 3
+        let span = make_test_span("clip", [0.0, 0.0, 100.0, 20.0], Some(5));
+        assert!(!should_include_span(&span, false));
+        assert!(should_include_span(&span, true));
+    }
+
+    #[test]
+    fn test_should_include_span_invisible_mode_6_excluded_by_default() {
+        // AC: rendering_mode 6 (fill then stroke to clip) treated same as mode 3
+        let span = make_test_span("clip", [0.0, 0.0, 100.0, 20.0], Some(6));
+        assert!(!should_include_span(&span, false));
+        assert!(should_include_span(&span, true));
+    }
+
+    #[test]
+    fn test_should_include_span_invisible_mode_7_excluded_by_default() {
+        // AC: rendering_mode 7 (clip) treated same as mode 3
+        let span = make_test_span("clip", [0.0, 0.0, 100.0, 20.0], Some(7));
+        assert!(!should_include_span(&span, false));
+        assert!(should_include_span(&span, true));
+    }
+
+    #[test]
+    fn test_should_include_span_no_rendering_mode() {
+        // AC: spans without rendering_mode are included (default visible)
+        let span = make_test_span("default", [0.0, 0.0, 100.0, 20.0], None);
+        assert!(should_include_span(&span, false));
+        assert!(should_include_span(&span, true));
+    }
+
+    #[test]
+    fn test_compute_block_text_from_spans_mixed_visibility() {
+        // AC: Mixed block with visible and invisible spans - only visible emitted
+        let spans = vec![
+            make_test_span("visible", [0.0, 0.0, 50.0, 20.0], Some(0)),
+            make_test_span("invisible", [50.0, 0.0, 100.0, 20.0], Some(3)),
+            make_test_span("visible2", [100.0, 0.0, 150.0, 20.0], Some(0)),
+        ];
+
+        let block_spans = vec![0, 1, 2];
+        let text = compute_block_text_from_spans(&spans, &block_spans, false);
+        assert_eq!(text, "visible visible2");
+    }
+
+    #[test]
+    fn test_compute_block_text_from_spans_all_invisible_excluded() {
+        // AC: All-invisible block produces empty text (no spurious \n\n)
+        let spans = vec![
+            make_test_span("hidden1", [0.0, 0.0, 50.0, 20.0], Some(3)),
+            make_test_span("hidden2", [50.0, 0.0, 100.0, 20.0], Some(4)),
+        ];
+
+        let block_spans = vec![0, 1];
+        let text = compute_block_text_from_spans(&spans, &block_spans, false);
+        assert_eq!(text, "");
+    }
+
+    #[test]
+    fn test_compute_block_text_from_spans_include_invisible_true() {
+        // AC: With include_invisible=true, invisible spans are included
+        let spans = vec![
+            make_test_span("visible", [0.0, 0.0, 50.0, 20.0], Some(0)),
+            make_test_span("invisible", [50.0, 0.0, 100.0, 20.0], Some(3)),
+        ];
+
+        let block_spans = vec![0, 1];
+        let text = compute_block_text_from_spans(&spans, &block_spans, true);
+        assert_eq!(text, "visible invisible");
+    }
+
+    #[test]
+    fn test_serialize_page_text_invisible_span_filtered() {
+        // AC: Invisible text span excluded from --text output by default
+        let spans = vec![
+            make_test_span("visible", [0.0, 0.0, 50.0, 20.0], Some(0)),
+            make_test_span("invisible", [50.0, 0.0, 100.0, 20.0], Some(3)),
+        ];
+
+        let blocks = vec![BlockJson {
+            kind: "paragraph".to_string(),
+            text: "visible invisible".to_string(),
+            bbox: [0.0, 0.0, 100.0, 20.0],
+            level: None,
+            table_index: None,
+            spans: vec![0, 1],
+            receipt: None,
+        }];
+
+        let options = TextOptions::default();
+        let text = serialize_page_text(&blocks, &spans, &options);
+        assert_eq!(text, "visible");
+        assert!(!text.contains("invisible"));
+    }
+
+    #[test]
+    fn test_serialize_page_text_invisible_span_included_when_flagged() {
+        // AC: Invisible text span included when include_invisible_text=true
+        let spans = vec![
+            make_test_span("visible", [0.0, 0.0, 50.0, 20.0], Some(0)),
+            make_test_span("invisible", [50.0, 0.0, 100.0, 20.0], Some(3)),
+        ];
+
+        let blocks = vec![BlockJson {
+            kind: "paragraph".to_string(),
+            text: "visible invisible".to_string(),
+            bbox: [0.0, 0.0, 100.0, 20.0],
+            level: None,
+            table_index: None,
+            spans: vec![0, 1],
+            receipt: None,
+        }];
+
+        let options = TextOptions::new().with_invisible_text();
+        let text = serialize_page_text(&blocks, &spans, &options);
+        assert_eq!(text, "visible invisible");
+    }
+
+    #[test]
+    fn test_serialize_page_text_all_invisible_block_omitted() {
+        // AC: All-invisible block omitted from output (no spurious \n\n)
+        let spans = vec![
+            make_test_span("hidden", [0.0, 0.0, 100.0, 20.0], Some(3)),
+        ];
+
+        let blocks = vec![
+            BlockJson {
+                kind: "paragraph".to_string(),
+                text: "visible".to_string(),
+                bbox: [0.0, 0.0, 100.0, 20.0],
+                level: None,
+                table_index: None,
+                spans: vec![],
+                receipt: None,
+            },
+            BlockJson {
+                kind: "paragraph".to_string(),
+                text: "hidden".to_string(),
+                bbox: [0.0, 20.0, 100.0, 40.0],
+                level: None,
+                table_index: None,
+                spans: vec![0],
+                receipt: None,
+            },
+            BlockJson {
+                kind: "paragraph".to_string(),
+                text: "visible2".to_string(),
+                bbox: [0.0, 40.0, 100.0, 60.0],
+                level: None,
+                table_index: None,
+                spans: vec![],
+                receipt: None,
+            },
+        ];
+
+        let options = TextOptions::default();
+        let text = serialize_page_text(&blocks, &spans, &options);
+        // Empty block should be skipped, resulting in no double newline between visible blocks
+        assert!(text.contains("visible"));
+        assert!(!text.contains("hidden"));
+        // Count the number of double newlines - should be exactly 1 (between the two visible blocks)
+        let double_newline_count = text.matches("\n\n").count();
+        assert_eq!(double_newline_count, 1);
+    }
+
+    #[test]
+    fn test_serialize_page_text_mixed_blocks_with_invisible() {
+        // AC: Mixed visibility blocks - visible emitted, invisible filtered
+        let spans = vec![
+            make_test_span("visible1", [0.0, 0.0, 50.0, 20.0], Some(0)),
+            make_test_span("invisible", [50.0, 0.0, 100.0, 20.0], Some(3)),
+            make_test_span("visible2", [100.0, 0.0, 150.0, 20.0], Some(0)),
+        ];
+
+        let blocks = vec![BlockJson {
+            kind: "paragraph".to_string(),
+            text: "visible1 invisible visible2".to_string(),
+            bbox: [0.0, 0.0, 150.0, 20.0],
+            level: None,
+            table_index: None,
+            spans: vec![0, 1, 2],
+            receipt: None,
+        }];
+
+        let options = TextOptions::default();
+        let text = serialize_page_text(&blocks, &spans, &options);
+        assert_eq!(text, "visible1 visible2");
+        assert!(!text.contains("invisible"));
     }
 }
