@@ -4,7 +4,7 @@
 //! across all possible inputs, following INV-8 (no panic at public boundary).
 
 use pdftract_core::parser::stream::{
-    FlateDecoder, ASCII85Decoder, ASCIIHexDecoder, LZWDecoder,
+    FlateDecoder, ASCII85Decoder, ASCIIHexDecoder, LZWDecoder, RunLengthDecoder,
     DEFAULT_MAX_DECOMPRESS_BYTES,
 };
 use indexmap::IndexMap;
