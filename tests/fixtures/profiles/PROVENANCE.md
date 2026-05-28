@@ -26,6 +26,10 @@ bash scripts/check-provenance.sh
 
 | Path | Source URL | License | Downloaded Date | SHA256 | Notes |
 |------|------------|---------|-----------------|-------|-------|
+| EC-04-rc4-encrypted.pdf | tests/fixtures/generate_encrypted_fixtures.py | MIT-0 | 2026-05-27 | 83826e9f7e21a809d2ac5e54e9faf0b6d3bb901bc04e5b566c4dfc013bd2c997 | RC4-40 encrypted PDF (V=1, R=2), password "test" |
+| EC-05-aes128-encrypted.pdf | tests/fixtures/generate_encrypted_fixtures.py | MIT-0 | 2026-05-27 | ad83d1e4857cdf3f90cdabf8f69047aa7117636acebc5c5cecafe84e54ec2544 | AES-128 encrypted PDF (V=4, R=4), password "test" |
+| EC-06-aes256-encrypted.pdf | tests/fixtures/generate_encrypted_fixtures.py | MIT-0 | 2026-05-27 | 427a11b325f14700e3eed1763938b679fbd49cfe3d9de976b3ca25fe9fc4ef16 | AES-256 encrypted PDF (V=5, R=6), password "test" |
+| EC-empty-password.pdf | tests/fixtures/generate_encrypted_fixtures.py | MIT-0 | 2026-05-27 | 0f24efd0d94708c1ccbc33474f3d4fd9b88f6bb876598037ef63f4eba5bb8c74 | Encrypted PDF with empty password (decrypts without --password) |
 | classifier/contract/01.pdf | scripts/generate_test_corpus.py | MIT-0 | 2026-05-17 | 077ee8401299b78d123f75afdd0fa4f3425def24a55942e11d6eb2aa324d7c17 | Synthetic contract test data |
 | classifier/contract/02.pdf | scripts/generate_test_corpus.py | MIT-0 | 2026-05-17 | 01d472892d545f13ad3a1731ab7f0ce2d8a1b4b51831001a2ce01f803485411e | Synthetic contract test data |
 | classifier/contract/03.pdf | scripts/generate_test_corpus.py | MIT-0 | 2026-05-17 | 0d9fc1e44d68df8f13c733d914ae49b753705bd8654e29dae20075c5d21076e8 | Synthetic contract test data |
