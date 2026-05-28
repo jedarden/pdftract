@@ -6,6 +6,8 @@ This bead implements consistent error JSON response shape for all 4xx and 5xx re
 
 ## Implementation Status
 
+**VERIFICATION**: The error handling implementation was already complete in `crates/pdftract-cli/src/serve.rs`. This task involved verification and fixing a test fixture compilation bug.
+
 All acceptance criteria are met:
 
 ### 1. ApiError struct definition
@@ -58,16 +60,45 @@ Existing tests verify:
 
 ## Changes Made
 
-### Fixed compilation error
-- Fixed middleware return type by adding `Ok()` wrappers:
-  - `return Ok(response)` for early return (line 365)
-  - `Ok(next.run(req).await)` for normal flow (line 370)
+### Fixed test fixture compilation bug
+- File: `tests/fixtures/generate_book_chapter_fixtures.rs`
+- Issue: `chapter_number()` method returns `()` but code tried to assign result back to `builder`
+- Fixed lines 410 and 468:
+  - Changed `builder = builder.chapter_number("4");` to `builder.chapter_number("4");`
+  - Changed `builder = builder.chapter_number("3");` to `builder.chapter_number("3");`
+- This bug was blocking test compilation
 
-### Removed unused code
-- Removed unused imports and the standalone `request_body_limit_rejection` function
-- The rejection logic is now inline in the middleware for better clarity
+### Verified existing implementation
+- Confirmed ApiError struct is correctly defined (lines 171-200)
+- Confirmed AxumError enum with IntoResponse impl (lines 918-1009)
+- Confirmed custom 413 middleware (lines 411-452)
+- Confirmed status code mapping (lines 999-1005)
+- All 18 serve module tests pass
 
 ## Verification
+
+Ran all 18 serve module tests - all passed:
+
+```
+PASS [   0.007s] ( 1/18) pdftract-cli::bin/pdftract serve::tests::form_helpers_tests::test_validate_pdf_magic_bytes_invalid
+PASS [   0.007s] ( 2/18) pdftract-cli::bin/pdftract serve::tests::form_helpers_tests::test_parse_bool_invalid
+PASS [   0.007s] ( 3/18) pdftract-cli::bin/pdftract serve::tests::form_helpers_tests::test_validate_pdf_magic_bytes_too_small
+PASS [   0.008s] ( 4/18) pdftract-cli::bin/pdftract serve::tests::form_helpers_tests::test_parse_bool_true
+PASS [   0.008s] ( 5/18) pdftract-cli::bin/pdftract serve::tests::form_helpers_tests::test_parse_int
+PASS [   0.008s] ( 6/18) pdftract-cli::bin/pdftract serve::tests::form_helpers_tests::test_parse_int_invalid
+PASS [   0.008s] ( 7/18) pdftract-cli::bin/pdftract serve::tests::form_helpers_tests::test_parse_comma_list
+PASS [   0.008s] ( 8/18) pdftract-cli::bin/pdftract serve::tests::form_helpers_tests::test_validate_pdf_magic_bytes_valid
+PASS [   0.008s] ( 9/18) pdftract-cli::bin/pdftract serve::tests::form_helpers_tests::test_parse_float_invalid
+PASS [   0.009s] (10/18) pdftract-cli::bin/pdftract serve::tests::form_helpers_tests::test_parse_bool_false
+PASS [   0.009s] (11/18) pdftract-cli::bin/pdftract serve::tests::form_helpers_tests::test_parse_float
+PASS [   0.009s] (12/18) pdftract-cli::bin/pdftract serve::tests::test_413_json_format
+PASS [   0.004s] (13/18) pdftract-cli::bin/pdftract serve::tests::test_build_options_with_all_fields
+PASS [   0.006s] (14/18) pdftract-cli::bin/pdftract serve::tests::test_build_options_max_decompress_gb_validation
+PASS [   0.005s] (15/18) pdftract-cli::bin/pdftract serve::tests::test_error_into_response
+PASS [   0.006s] (16/18) pdftract-cli::bin/pdftract serve::tests::test_build_options_with_defaults
+PASS [   0.005s] (17/18) pdftract-cli::bin/pdftract serve::tests::test_cache_status_conversions
+PASS [   0.115s] (18/18) pdftract-cli::bin/pdftract serve::tests::test_concurrent_requests_parallel
+```
 
 All acceptance criteria PASS:
 - ✅ File over size limit -> 413 with custom JSON body
