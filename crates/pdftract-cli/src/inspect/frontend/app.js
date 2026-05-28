@@ -1,60 +1,212 @@
 // pdftract inspector - Phase 7.9.3 frontend bundle
-// Single-page vanilla web app, <80KB gzipped, no framework, no CDN
+// Phase 7.9.8: Comparison mode support
 
 const STORAGE_PREFIX='pdftract-inspector-';
-const LAYERS=['spans','blocks','columns','reading-order','confidence-heatmap','ocr','mcid','anchors'];
-const LAYER_KEYS=['spans','blocks','columns','reading_order','confidence_heatmap','ocr','mcid','anchors'];
+const LAYERS=['spans','blocks','columns','reading-order','confidence-heatmap','ocr','mcid','anchors','diff'];
+const LAYER_KEYS=['spans','blocks','columns','reading_order','confidence_heatmap','ocr','mcid','anchors','diff'];
 
 let currentPage=0;
 let totalPages=0;
+let totalPagesA=0;
+let totalPagesB=0;
 let pageData=null;
+let isComparisonMode=false;
+let pageDiff=null;
+let scrollSync=true;
 
-function init(){loadLayerState();setupKeyboard();setupToggles();setupSearch();setupNav();loadFragment()}
+function init(){loadLayerState();setupKeyboard();setupToggles();setupSearch();setupNav();setupComparisonMode();loadFragment()}
 
 async function loadDocument(){
   const res=await fetch('/api/document');
   if(!res.ok)throw new Error('Failed to load document');
   const data=await res.json();
-  totalPages=data.pages?.length||0;
+  totalPagesA=data.pages?.length||0;
+
+  // Check if comparison mode is active
+  const compareRes=await fetch('/api/compare/document');
+  if(compareRes.ok){
+    const compareData=await compareRes.json();
+    if(compareData.b){
+      isComparisonMode=true;
+      totalPagesB=compareData.b.pages?.length||0;
+      totalPages=Math.max(totalPagesA,totalPagesB);
+      showComparisonMode(true);
+    }else{
+      isComparisonMode=false;
+      totalPages=totalPagesA;
+      showComparisonMode(false);
+    }
+  }else{
+    isComparisonMode=false;
+    totalPages=totalPagesA;
+    showComparisonMode(false);
+  }
+
   renderThumbnails();
   loadFragment()
 }
 
 async function loadPage(index){
-  const res=await fetch(`/api/page/${index}`);
-  if(!res.ok)throw new Error('Failed to load page');
-  pageData=await res.json();
   currentPage=index;
-  renderPage();
-  renderJson();
+
+  if(isComparisonMode){
+    await loadComparisonPage(index);
+  }else{
+    await loadSinglePage(index);
+  }
+
   updateActiveThumbnail();
   updateFragment();
   updateNavState()
 }
 
-async function loadThumbnails(){
-  const container=document.getElementById('thumbnails');
-  container.innerHTML='';
-  for(let i=0;i<totalPages;i++){
-    const thumb=document.createElement('div');
-    thumb.className='thumbnail';
-    thumb.dataset.index=i;
-    const img=document.createElement('img');
-    img.className='thumbnail-img';
-    img.src=`/api/page/${i}/thumbnail`;
-    img.alt=`Page ${i+1}`;
-    img.loading='lazy';
-    const num=document.createElement('div');
-    num.className='thumbnail-number';
-    num.textContent=`${i+1}`;
-    thumb.appendChild(img);
-    thumb.appendChild(num);
-    thumb.addEventListener('click',()=>loadPage(i));
-    container.appendChild(thumb)
-  }
+async function loadSinglePage(index){
+  const res=await fetch(`/api/page/${index}`);
+  if(!res.ok)throw new Error('Failed to load page');
+  pageData=await res.json();
+  await renderPageSingle();
+  renderJson();
 }
 
-function renderThumbnails(){loadThumbnails()}
+async function loadComparisonPage(index){
+  const res=await fetch(`/api/compare/page/${index}`);
+  if(!res.ok)throw new Error('Failed to load comparison page');
+  const data=await res.json();
+
+  pageData=data;
+  pageDiff=data.diff;
+
+  // Load SVGs for both sides
+  const [sideARes,sideBRes]=await Promise.all([
+    fetch(`/api/compare/page/${index}/svg/a`),
+    fetch(`/api/compare/page/${index}/svg/b`)
+  ]);
+
+  const svgA=sideARes.ok?await sideARes.text():null;
+  const svgB=sideBRes.ok?await sideBRes.text():null;
+
+  renderPageComparison(svgA,svgB);
+  renderJson();
+}
+
+async function renderPageSingle(){
+  const container=document.getElementById('canvas-container');
+  container.innerHTML='';
+  const res=await fetch(`/api/page/${currentPage}/svg`);
+  if(!res.ok)throw new Error('Failed to load SVG');
+  const svg=await res.text();
+  const wrapper=document.createElement('div');
+  wrapper.id='page-svg';
+  wrapper.innerHTML=svg;
+
+  // Add diff overlay if present
+  if(pageDiff){
+    const diffOverlay=renderDiffOverlay(pageDiff);
+    wrapper.querySelector('svg').innerHTML+=diffOverlay;
+  }
+
+  setupTooltips(wrapper);
+  container.appendChild(wrapper)
+}
+
+function renderPageComparison(svgA,svgB){
+  const container=document.getElementById('canvas-container');
+  const compareContainer=document.getElementById('compare-container');
+
+  container.innerHTML='';
+  container.appendChild(compareContainer);
+  compareContainer.style.display='flex';
+
+  // Render side A
+  const wrapperA=document.getElementById('svg-a');
+  wrapperA.innerHTML=svgA||'<div class="loading">Page not available</div>';
+  if(svgA){
+    const svg=wrapperA.querySelector('svg');
+    if(svg&&pageDiff){
+      const diffOverlay=renderDiffOverlay(pageDiff,'a');
+      svg.innerHTML+=diffOverlay;
+    }
+    setupTooltips(wrapperA);
+  }
+
+  // Render side B
+  const wrapperB=document.getElementById('svg-b');
+  wrapperB.innerHTML=svgB||'<div class="loading">Page not available</div>';
+  if(svgB){
+    const svg=wrapperB.querySelector('svg');
+    if(svg&&pageDiff){
+      const diffOverlay=renderDiffOverlay(pageDiff,'b');
+      svg.innerHTML+=diffOverlay;
+    }
+    setupTooltips(wrapperB);
+  }
+
+  // Setup scroll sync
+  setupScrollSync(wrapperA,wrapperB)
+}
+
+function renderDiffOverlay(diff,side='both'){
+  let overlay='';
+
+  // Get page dimensions from current page data
+  const width=pageData.a?.width||pageData.b?.width||612;
+  const height=pageData.a?.height||pageData.b?.height||792;
+
+  // Render removed blocks (red) - only on side A
+  if(side==='a'||side==='both'){
+    for(const idx of diff.removed_blocks||[]){
+      const block=(pageData.a?.blocks||[])[idx];
+      if(block){
+        const [x0,y0,x1,y1]=block.bbox;
+        overlay+=`<rect class="diff-removed layer-diff" x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" rx="2"/>`;
+      }
+    }
+  }
+
+  // Render added blocks (green) - only on side B
+  if(side==='b'||side==='both'){
+    for(const idx of diff.added_blocks||[]){
+      const block=(pageData.b?.blocks||[])[idx];
+      if(block){
+        const [x0,y0,x1,y1]=block.bbox;
+        overlay+=`<rect class="diff-added layer-diff" x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" rx="2"/>`;
+      }
+    }
+  }
+
+  // Render changed blocks (yellow) - both sides
+  if(side==='a'||side==='both'){
+    for(const idx of diff.changed_blocks||[]){
+      const block=(pageData.a?.blocks||[])[idx];
+      if(block){
+        const [x0,y0,x1,y1]=block.bbox;
+        overlay+=`<rect class="diff-changed layer-diff" x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" rx="2"/>`;
+      }
+    }
+  }
+  if(side==='b'){
+    for(const idx of diff.changed_blocks||[]){
+      const block=(pageData.b?.blocks||[])[idx];
+      if(block){
+        const [x0,y0,x1,y1]=block.bbox;
+        overlay+=`<rect class="diff-changed layer-diff" x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" rx="2"/>`;
+      }
+    }
+  }
+
+  return overlay
+}
+
+function setupScrollSync(wrapperA,wrapperB){
+  const syncScroll=(source,target)=>{
+    if(!scrollSync)return;
+    const scrollRatio=source.scrollTop/(source.scrollHeight-source.clientHeight);
+    target.scrollTop=scrollRatio*(target.scrollHeight-target.clientHeight)
+  };
+
+  wrapperA.addEventListener('scroll',()=>syncScroll(wrapperA,wrapperB));
+  wrapperB.addEventListener('scroll',()=>syncScroll(wrapperB,wrapperA))
+}
 
 async function renderPage(){
   const container=document.getElementById('canvas-container');
@@ -106,6 +258,28 @@ function setupToggles(){
   })
 }
 
+function setupComparisonMode(){
+  const syncCheckbox=document.getElementById('sync-scroll');
+  if(syncCheckbox){
+    syncCheckbox.addEventListener('change',e=>{
+      scrollSync=e.target.checked
+    })
+  }
+}
+
+function showComparisonMode(show){
+  const diffBtn=document.getElementById('btn-diff');
+  const compareControls=document.querySelector('.comparison-controls');
+
+  if(show){
+    if(diffBtn)diffBtn.style.display='';
+    if(compareControls)compareControls.style.display='flex';
+  }else{
+    if(diffBtn)diffBtn.style.display='none';
+    if(compareControls)compareControls.style.display='none';
+  }
+}
+
 function setupKeyboard(){
   document.addEventListener('keydown',e=>{
     if(e.target.tagName==='INPUT')return;
@@ -118,7 +292,7 @@ function setupKeyboard(){
     }else if(e.key==='/'){
       e.preventDefault();
       document.getElementById('search-input').focus()
-    }else if(e.key>='1'&&e.key<='8'){
+    }else if(e.key>='1'&&e.key<='9'){
       const idx=parseInt(e.key)-1;
       const layer=LAYERS[idx];
       if(layer)toggleLayer(layer)

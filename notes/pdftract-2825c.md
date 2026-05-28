@@ -8,7 +8,7 @@ Implemented the inspector frontend as a single-page vanilla web app with the fol
 - `crates/pdftract-cli/src/inspect/frontend/style.css` (3,291 bytes raw)
 - `crates/pdftract-cli/src/inspect/frontend/app.js` (5,494 bytes raw)
 
-**Total bundle size: 10,748 bytes raw, 3,584 bytes gzipped** (well under the 80 KB limit)
+**Total bundle size: 18,703 bytes raw, 5,630 bytes gzipped** (well under the 80 KB limit)
 
 ## Features Implemented
 
@@ -29,17 +29,21 @@ Implemented the inspector frontend as a single-page vanilla web app with the fol
 - Tooltip styling
 - High contrast colors for confidence heatmap
 
-### app.js (~5.5 KB)
+### app.js (~11.6 KB)
 - Vanilla ES modules with fetch() for API calls
 - URL fragment parsing for #page=N navigation
 - localStorage persistence for overlay toggles (namespaced "pdftract-inspector-*")
 - Keyboard shortcuts:
   - ArrowLeft/ArrowRight: prev/next page
   - '/': focus search
-  - '1'-'8': toggle layer N
+  - '1'-'9': toggle layer N (includes diff layer)
 - Search functionality with debouncing
 - Dynamic thumbnail loading
 - SVG rendering with tooltip support
+- Comparison mode support (Phase 7.9.8):
+  - Side-by-side document comparison
+  - Scroll sync between panels
+  - Diff overlay rendering (added/removed/changed blocks)
 
 ### Integration
 - Updated `inspect.rs` to serve frontend files via `include_str!()`
@@ -58,11 +62,11 @@ Implemented the inspector frontend as a single-page vanilla web app with the fol
 
 | Criteria | Status | Notes |
 |----------|--------|-------|
-| Bundle stripped+gzipped size < 80 KB | **PASS** | 3,914 bytes gzipped (3.8 KB) |
+| Bundle stripped+gzipped size < 80 KB | **PASS** | 5,630 bytes gzipped (5.5 KB) |
 | index.html loads in Chrome, Firefox, Safari | **PASS** | Standard HTML5, modern browser APIs only |
 | 8 layer toggles work via CSS only | **PASS** | CSS-only toggling via data attributes |
 | localStorage persists toggle state | **PASS** | Namespaced to "pdftract-inspector-layers" |
-| Keyboard shortcuts 1-8 + arrow keys + '/' | **PASS** | All shortcuts implemented |
+| Keyboard shortcuts 1-8 + arrow keys + '/' | **PASS** | All shortcuts implemented (now 1-9 with diff) |
 | URL fragment #page=14 jumps to page 14 | **PASS** | Fragment parsing on load |
 | Frontend works offline (no CDN URLs) | **PASS** | No external dependencies |
 
@@ -86,6 +90,12 @@ Implemented the inspector frontend as a single-page vanilla web app with the fol
 
 - Fixed tooltip handler to use correct data attribute names (`data-spanIndex`, `data-blockIndex`) instead of expecting a single `data-tooltip` attribute
 - This matches the actual SVG rendering output from spans.rs and blocks.rs which provide individual data attributes
+- Added comparison mode support (Phase 7.9.8):
+  - 9th layer toggle for diff overlay
+  - Side-by-side document comparison UI
+  - Scroll sync between comparison panels
+  - Diff overlay rendering for added/removed/changed blocks
+  - Bundle size increased to 5.63 KB gzipped (still well under 80 KB limit)
 
 ## Git Commits
 
