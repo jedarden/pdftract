@@ -408,8 +408,13 @@ pub fn extract_pdf(
         },
     )?;
 
+    // Resolve AcroForm if present for fingerprint computation
+    let acroform = catalog.acroform_ref.and_then(|ref_| {
+        resolver.resolve(ref_).ok().and_then(|obj| obj.as_dict().cloned())
+    });
+
     // Build fingerprint input (without full page tree for lazy extraction)
-    let fingerprint = compute_fingerprint_lazy(&catalog, &xref_section, &catalog.acroform);
+    let fingerprint = compute_fingerprint_lazy(&catalog, &resolver, &acroform);
 
     // Wrap resolver in Arc for sharing across threads
     let resolver_arc = Arc::new(resolver);
@@ -1611,6 +1616,11 @@ where
         },
     )?;
 
+    // Resolve AcroForm if present for fingerprint computation
+    let acroform = catalog.acroform_ref.and_then(|ref_| {
+        resolver.resolve(ref_).ok().and_then(|obj| obj.as_dict().cloned())
+    });
+
     // Wrap resolver in Arc for sharing across threads
     let resolver_arc = Arc::new(resolver);
 
@@ -1631,7 +1641,7 @@ where
     };
 
     // Build fingerprint
-    let fingerprint = compute_fingerprint_lazy(&catalog, &xref_section, &catalog.acroform);
+    let fingerprint = compute_fingerprint_lazy(&catalog, &resolver_arc, &acroform);
 
     // Wrap options in Arc for sharing across threads
     let fingerprint_arc = Arc::new(fingerprint.clone());

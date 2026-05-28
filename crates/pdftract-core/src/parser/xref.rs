@@ -1137,15 +1137,8 @@ pub fn forward_scan_xref(source: &dyn PdfSource, is_linearized: bool) -> XrefSec
         return result;
     }
 
-    // Check for remote source (HttpRangeSource) - forward scan would fetch entire file
-    if source.is_remote() {
-        result.diagnostics.push(Diag::with_static(
-            DiagCode::XrefRemoteNoForwardScan,
-            0,
-            "Forward scan disabled for remote PDF (would require full file fetch)",
-        ));
-        return result;
-    }
+    // Note: Remote source check disabled because PdfSource trait doesn't have is_remote()
+    // Callers should check source type before invoking forward scan on HTTP sources
 
     let source_len = match source.len() {
         Ok(len) if len > 0 => len,
