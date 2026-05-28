@@ -446,6 +446,15 @@ pub enum DiagCode {
     /// Phase origin: 1.3
     StructInvalidPrevOffset,
 
+    /// Invalid linearized hint stream
+    ///
+    /// Emitted when a linearized PDF's hint stream (/H entry) is malformed or
+    /// cannot be parsed. Prefetch optimization is disabled for this document,
+    /// but extraction still works correctly (slower, without prefetch).
+    ///
+    /// Phase origin: 1.8
+    StructInvalidHintStream,
+
     // === STREAM_* codes ===
     /// Stream decompression failed (corrupt data)
     ///
@@ -639,7 +648,17 @@ pub enum DiagCode {
     /// once per (font, byte_value) to prevent flood.
     ///
     /// Phase origin: 3
+    #[cfg(feature = "cjk")]
     CjkTokenizeUnknownByte,
+
+    /// Invalid codespace range in CMap
+    ///
+    /// Emitted when a codespace range has malformed lo/hi bounds (e.g., width
+    /// mismatch, invalid hex string, or width outside 1-4 bytes). The malformed
+    /// range is skipped and parsing continues.
+    ///
+    /// Phase origin: 3
+    CmapInvalidCodespace,
 
     // === OCR_* codes ===
     /// JBIG2 decoder not available
@@ -1079,7 +1098,8 @@ impl DiagCode {
             | DiagCode::StructNonGotoOutline
             | DiagCode::StructInvalidPdfDocEncoding
             | DiagCode::StructHybridConflict
-            | DiagCode::StructIncompleteCoverage => "STRUCT",
+            | DiagCode::StructIncompleteCoverage
+            | DiagCode::StructInvalidHintStream => "STRUCT",
 
             // XREF_*
             DiagCode::XrefInvalidHeader
@@ -1125,10 +1145,11 @@ impl DiagCode {
             | DiagCode::FontUnsupported
             | DiagCode::FontType3WidthsLengthMismatch
             | DiagCode::FontCidtogidmapTruncated
-            | DiagCode::FontEncodingDifferenceOutOfRange => "FONT",
+            | DiagCode::FontEncodingDifferenceOutOfRange
+            | DiagCode::CmapInvalidCodespace => "FONT",
 
             #[cfg(feature = "cjk")]
-            DiagCode::CjkDecodeMalformed => "CJK",
+            DiagCode::CjkDecodeMalformed | DiagCode::CjkTokenizeUnknownByte => "CJK",
 
             // OCR_*
             DiagCode::OcrJbig2Unsupported
@@ -1241,6 +1262,7 @@ impl DiagCode {
             DiagCode::XrefInvalidStreamFormat => "XREF_INVALID_STREAM_FORMAT",
             DiagCode::XrefInvalidStreamEntry => "XREF_INVALID_STREAM_ENTRY",
             DiagCode::StructInvalidPrevOffset => "STRUCT_INVALID_PREV_OFFSET",
+            DiagCode::StructInvalidHintStream => "STRUCT_INVALID_HINT_STREAM",
             DiagCode::StreamDecodeError => "STREAM_DECODE_ERROR",
             DiagCode::StreamBomb => "STREAM_BOMB",
             DiagCode::StreamUnknownFilter => "STREAM_UNKNOWN_FILTER",
@@ -1261,9 +1283,12 @@ impl DiagCode {
             DiagCode::FontUnsupported => "FONT_UNSUPPORTED",
             DiagCode::FontCidtogidmapTruncated => "FONT_CIDTOGIDMAP_TRUNCATED",
             DiagCode::FontEncodingDifferenceOutOfRange => "ENCODING_DIFFERENCE_OUT_OF_RANGE",
+            DiagCode::CmapInvalidCodespace => "CMAP_INVALID_CODESPACE",
             DiagCode::FontType3WidthsLengthMismatch => "FONT_TYPE3_WIDTHS_LENGTH_MISMATCH",
             #[cfg(feature = "cjk")]
             DiagCode::CjkDecodeMalformed => "CJK_DECODE_MALFORMED",
+            #[cfg(feature = "cjk")]
+            DiagCode::CjkTokenizeUnknownByte => "CJK_TOKENIZE_UNKNOWN_BYTE",
             DiagCode::OcrJbig2Unsupported => "OCR_JBIG2_UNSUPPORTED",
             DiagCode::OcrJpxUnsupported => "OCR_JPX_UNSUPPORTED",
             DiagCode::OcrCcittUnsupported => "OCR_CCITT_UNSUPPORTED",
@@ -1357,6 +1382,7 @@ impl DiagCode {
             | DiagCode::StructInvalidPdfDocEncoding
             | DiagCode::StructHybridConflict
             | DiagCode::StructInvalidPrevOffset
+            | DiagCode::StructInvalidHintStream
             | DiagCode::XrefInvalidHeader
             | DiagCode::XrefInvalidEntry
             | DiagCode::XrefInvalidSubsectionHeader
@@ -1383,6 +1409,7 @@ impl DiagCode {
             | DiagCode::FontType3WidthsLengthMismatch
             | DiagCode::FontCidtogidmapTruncated
             | DiagCode::FontEncodingDifferenceOutOfRange
+            | DiagCode::CmapInvalidCodespace
             | DiagCode::OcrJbig2Unsupported
             | DiagCode::OcrJpxUnsupported
             | DiagCode::OcrCcittUnsupported
@@ -1417,7 +1444,7 @@ impl DiagCode {
             | DiagCode::CacheWriteFailed => Severity::Warning,
 
             #[cfg(feature = "cjk")]
-            DiagCode::CjkDecodeMalformed => Severity::Warning,
+            DiagCode::CjkDecodeMalformed | DiagCode::CjkTokenizeUnknownByte => Severity::Warning,
 
             DiagCode::StreamBomb
             | DiagCode::PageOutOfRange
