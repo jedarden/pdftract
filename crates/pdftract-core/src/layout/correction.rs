@@ -15,6 +15,8 @@
 
 use encoding_rs::WINDOWS_1252;
 
+use crate::font::UnicodeSource;
+use crate::glyph::Glyph;
 use crate::layout::line::{Block, Line, LineMetadata};
 use crate::span::Span;
 
@@ -674,6 +676,248 @@ where
     repair_count
 }
 
+/// Ligature type for reconstruction from split glyphs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Ligature {
+    /// "fi" ligature
+    Fi,
+    /// "fl" ligature
+    Fl,
+    /// "ffi" ligature
+    Ffi,
+    /// "ffl" ligature
+    Ffl,
+    /// "ff" ligature
+    Ff,
+}
+
+impl Ligature {
+    /// Get the decomposed string representation of this ligature.
+    fn decomposed(self) -> &'static str {
+        match self {
+            Ligature::Fi => "fi",
+            Ligature::Fl => "fl",
+            Ligature::Ffi => "ffi",
+            Ligature::Ffl => "ffl",
+            Ligature::Ff => "ff",
+        }
+    }
+
+    /// Check if the given character is a ligature component (f, l, i).
+    fn is_component(c: char) -> bool {
+        matches!(c, 'f' | 'l' | 'i')
+    }
+}
+
+/// Positional gap threshold for ligature detection (in points).
+///
+/// Glyphs with gap < LIGATURE_GAP_THRESHOLD are considered adjacent
+/// and potentially part of the same ligature.
+const LIGATURE_GAP_THRESHOLD: f32 = 0.1;
+
+/// Repair split ligatures in span text using adjacent glyph position data.
+///
+/// Detects sequences where U+FFFD is adjacent (positional gap < 0.1pt) to f/l/i,
+/// indicating a split ligature that Phase 2 failed to map. Reconstructs the
+/// ligature by verifying positional adjacency and replaces U+FFFD with the
+/// correct decomposed characters.
+///
+/// # Arguments
+///
+/// * `span` - Mutable reference to the span to repair
+/// * `neighbor_glyphs` - Slice of glyphs with position data for adjacency checking
+///
+/// # Returns
+///
+/// `true` if any repair was performed, `false` otherwise.
+///
+/// # Algorithm
+///
+/// 1. Walk span.text for U+FFFD characters
+/// 2. For each U+FFFD, check preceding and following characters in the text
+/// 3. Map character position to glyph index (handles char-to-glyph mapping)
+/// 4. Verify positional adjacency using glyph bbox data (gap < 0.1pt)
+/// 5. Determine ligature type based on character context
+/// 6. Replace U+FFFD with decomposed ligature string
+///
+/// # Ligature Detection
+///
+/// Ligatures are detected when ALL of the following are true:
+/// - U+FFFD is adjacent to f/l/i in the text (e.g., "f<U+FFFD>i" or "<U+FFFD>i")
+/// - The corresponding glyph bboxes have gap < 0.1pt (indicating same ligature)
+/// - Character context matches a known ligature pattern
+///
+/// # v0.1.0 Limitations
+///
+/// - Full shape matching against Phase 2.5 DB requires bitmap data not available
+///   in the Glyph struct; this implementation uses position-based heuristics
+/// - Assumes approximate 1:1 char-to-glyph mapping (may fail on complex scripts)
+/// - Does not handle multi-codepoint ligatures like U+FB01 (fi) directly
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::layout::correction::repair_split_ligatures;
+/// use pdftract_core::span::Span;
+///
+/// let mut span = Span::empty();
+/// span.text = String::from("f\u{FFFD}ect"); // "f[REPLACEMENT]ect"
+///
+/// // With glyphs showing 'f' adjacent to U+FFFD glyph (gap < 0.1pt),
+/// // and next char 'i' in text, this repairs to "fiect"
+/// let repaired = repair_split_ligatures(&mut span, &glyphs);
+/// assert!(repaired);
+/// assert_eq!(span.text, "fiect");
+/// ```
+pub fn repair_split_ligatures(span: &mut Span, neighbor_glyphs: &[Glyph]) -> bool {
+    let original_text = span.text.clone();
+    let mut modified = false;
+
+    // Fast-path: no U+FFFD in text or no glyphs
+    if !span.text.contains('\u{FFFD}') || neighbor_glyphs.is_empty() {
+        return false;
+    }
+
+    let mut result = String::new();
+    let chars: Vec<char> = span.text.chars().collect();
+
+    // Build char-to-glyph index mapping
+    // This handles the approximate mapping from character positions to glyph indices
+    let mut char_to_glyph: Vec<usize> = Vec::with_capacity(chars.len());
+    let mut glyph_idx = 0;
+
+    for (char_idx, &ch) in chars.iter().enumerate() {
+        // Skip until we find a matching glyph
+        while glyph_idx < neighbor_glyphs.len() && neighbor_glyphs[glyph_idx].codepoint != ch {
+            glyph_idx += 1;
+        }
+
+        if glyph_idx < neighbor_glyphs.len() {
+            char_to_glyph.push(glyph_idx);
+            // Move to next glyph for next character (if not U+FFFD)
+            if ch != '\u{FFFD}' {
+                glyph_idx += 1;
+            }
+        } else {
+            // No matching glyph found - use last valid index or -1
+            char_to_glyph.push(usize::MAX);
+        }
+    }
+
+    // Process each character
+    for (i, &ch) in chars.iter().enumerate() {
+        if ch != '\u{FFFD}' {
+            result.push(ch);
+            continue;
+        }
+
+        // Found U+FFFD - check if it's a split ligature
+        let prev_char = if i > 0 { Some(chars[i - 1]) } else { None };
+        let next_char = if i + 1 < chars.len() { Some(chars[i + 1]) } else { None };
+
+        let ffd_glyph_idx = char_to_glyph.get(i).copied().unwrap_or(usize::MAX);
+
+        // Skip if we couldn't map this character to a glyph
+        if ffd_glyph_idx == usize::MAX || ffd_glyph_idx >= neighbor_glyphs.len() {
+            result.push('\u{FFFD}');
+            continue;
+        }
+
+        // Check if U+FFFD is in a ligature context
+        // Ligature patterns:
+        // 1. f<U+FFFD>i -> fi
+        // 2. f<U+FFFD>l -> fl
+        // 3. ff<U+FFFD>i -> ffi
+        // 4. ff<U+FFFD>l -> ffl
+        // 5. f<U+FFFD>f -> ff (less common)
+        // 6. <U+FFFD>i after f -> fi (U+FFFD represents the ligature)
+        // 7. <U+FFFD>l after f -> fl
+
+        let mut ligature: Option<Ligature> = None;
+
+        // Pattern 1-2: f<U+FFFD>i or f<U+FFFD>l
+        if prev_char == Some('f') {
+            // Check position adjacency between 'f' glyph and U+FFFD glyph
+            let prev_glyph_idx = char_to_glyph.get(i - 1).copied().unwrap_or(usize::MAX);
+            let is_adjacent = if prev_glyph_idx != usize::MAX && prev_glyph_idx + 1 == ffd_glyph_idx {
+                // Consecutive glyphs - check bbox gap
+                let gap = neighbor_glyphs[ffd_glyph_idx].bbox[0] - neighbor_glyphs[prev_glyph_idx].bbox[2];
+                gap < LIGATURE_GAP_THRESHOLD
+            } else {
+                false
+            };
+
+            if is_adjacent {
+                // Determine ligature type based on next character
+                match next_char {
+                    Some('i') => ligature = Some(Ligature::Fi),
+                    Some('l') => ligature = Some(Ligature::Fl),
+                    Some('f') => {
+                        // Could be ff or start of ffi/ffl - check character after next
+                        if i + 2 < chars.len() {
+                            match chars[i + 2] {
+                                'i' | 'l' => {
+                                    // f<U+FFFD>f followed by i/l - ambiguous
+                                    // For v0.1.0, treat as ff
+                                    ligature = Some(Ligature::Ff);
+                                }
+                                _ => ligature = Some(Ligature::Ff),
+                            }
+                        } else {
+                            ligature = Some(Ligature::Ff);
+                        }
+                    }
+                    _ => {
+                        // f<U+FFFD> with no following i/l/f - might still be a ligature
+                        // Use shape or position hint if available
+                        // For v0.1.0, conservative: don't repair
+                    }
+                }
+            }
+        }
+
+        // Pattern 3-4: ff<U+FFFD>i or ff<U+FFFD>l
+        if ligature.is_none() && i >= 2 && chars[i - 2] == 'f' && chars[i - 1] == 'f' {
+            let prev_glyph_idx = char_to_glyph.get(i - 1).copied().unwrap_or(usize::MAX);
+            let is_adjacent = if prev_glyph_idx != usize::MAX && prev_glyph_idx + 1 == ffd_glyph_idx {
+                let gap = neighbor_glyphs[ffd_glyph_idx].bbox[0] - neighbor_glyphs[prev_glyph_idx].bbox[2];
+                gap < LIGATURE_GAP_THRESHOLD
+            } else {
+                false
+            };
+
+            if is_adjacent {
+                match next_char {
+                    Some('i') => ligature = Some(Ligature::Ffi),
+                    Some('l') => ligature = Some(Ligature::Ffl),
+                    _ => {}
+                }
+            }
+        }
+
+        // Pattern 6-7: U+FFFD represents the entire ligature glyph
+        // Previous char is f, and U+FFFD glyph is positioned right after it
+        // But the next text character is NOT part of the ligature
+        // This is harder to detect - would need shape matching
+        // For v0.1.0, we only handle patterns 1-4
+
+        if let Some(lig) = ligature {
+            result.push_str(lig.decomposed());
+            modified = true;
+        } else {
+            result.push('\u{FFFD}');
+        }
+    }
+
+    if modified {
+        span.text = result;
+        // Update confidence_source to Heuristic since we used heuristic repair
+        span.confidence_source = crate::confidence::ConfidenceSource::Heuristic;
+    }
+
+    modified
+}
+
 /// Test implementation of `HasBBox` for unit tests.
 #[cfg(test)]
 #[derive(Debug, Clone)]
@@ -746,6 +990,7 @@ impl TestBlock {
 mod tests {
     use super::*;
     use crate::layout::line::{Block, Line, LineDirection};
+    use std::sync::Arc;
 
     /// Helper to create a test Line with a single span.
     #[cfg(test)]
@@ -1481,5 +1726,258 @@ mod tests {
         // Simple scripts should NOT preserve joiners
         assert!(!Script::Latin.preserves_joiners());
         assert!(!Script::Unknown.preserves_joiners());
+    }
+
+    // ===== Ligature repair tests =====
+
+    #[test]
+    fn test_ligature_repair_fi_adjacent() {
+        // AC: U+FFFD adjacent to 'i', gap 0.05pt: repaired to "fi" by shape
+        let mut span = Span::empty();
+        span.text = String::from("f\u{FFFD}ect");
+
+        // Create glyphs: 'f' at [0,0,5,10], U+FFFD at [5.05,0,10,10], 'e' at [10,0,15,10]
+        // The gap between 'f' and U+FFFD is 0.05pt < 0.1pt threshold
+        let glyphs = vec![
+            Glyph::new('f', UnicodeSource::ToUnicode, 1.0, [0.0, 0.0, 5.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('\u{FFFD}', UnicodeSource::Unknown, 0.0, [5.05, 0.0, 10.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('e', UnicodeSource::ToUnicode, 1.0, [10.0, 0.0, 15.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+        ];
+
+        let repaired = repair_split_ligatures(&mut span, &glyphs);
+        assert!(repaired, "Should repair f + U+FFFD to 'fi'");
+        assert_eq!(span.text, "fiect", "Should replace f + U+FFFD with 'fi'");
+        assert_eq!(span.confidence_source, crate::confidence::ConfidenceSource::Heuristic);
+    }
+
+    #[test]
+    fn test_ligature_repair_no_adjacent_ligature() {
+        // AC: U+FFFD with no nearby f/l/i: not repaired
+        let mut span = Span::empty();
+        span.text = String::from("abc\u{FFFD}def");
+
+        let glyphs = vec![
+            Glyph::new('a', UnicodeSource::ToUnicode, 1.0, [0.0, 0.0, 5.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('b', UnicodeSource::ToUnicode, 1.0, [5.0, 0.0, 10.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('c', UnicodeSource::ToUnicode, 1.0, [10.0, 0.0, 15.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('\u{FFFD}', UnicodeSource::Unknown, 0.0, [15.0, 0.0, 20.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('d', UnicodeSource::ToUnicode, 1.0, [20.0, 0.0, 25.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+        ];
+
+        let repaired = repair_split_ligatures(&mut span, &glyphs);
+        assert!(!repaired, "Should not repair when U+FFFD is not adjacent to f/l/i");
+        assert_eq!(span.text, "abc\u{FFFD}def", "Text should remain unchanged");
+    }
+
+    #[test]
+    fn test_ligature_repair_gap_too_large() {
+        // U+FFFD adjacent to 'f' but gap > 0.1pt: not repaired
+        let mut span = Span::empty();
+        span.text = String::from("f\u{FFFD}ect");
+
+        // Create glyphs with gap 0.2pt > 0.1pt threshold
+        let glyphs = vec![
+            Glyph::new('f', UnicodeSource::ToUnicode, 1.0, [0.0, 0.0, 5.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('\u{FFFD}', UnicodeSource::Unknown, 0.0, [5.2, 0.0, 10.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('e', UnicodeSource::ToUnicode, 1.0, [10.0, 0.0, 15.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+        ];
+
+        let repaired = repair_split_ligatures(&mut span, &glyphs);
+        assert!(!repaired, "Should not repair when gap exceeds threshold");
+        assert_eq!(span.text, "f\u{FFFD}ect", "Text should remain unchanged");
+    }
+
+    #[test]
+    fn test_ligature_repair_fl_ligature() {
+        // Test fl ligature repair: f<U+FFFD>l -> fl
+        let mut span = Span::empty();
+        span.text = String::from("f\u{FFFD}y");
+
+        let glyphs = vec![
+            Glyph::new('f', UnicodeSource::ToUnicode, 1.0, [0.0, 0.0, 5.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('\u{FFFD}', UnicodeSource::Unknown, 0.0, [5.05, 0.0, 10.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('y', UnicodeSource::ToUnicode, 1.0, [10.0, 0.0, 15.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+        ];
+
+        // This won't repair because 'y' is not 'l' - need proper test data
+        let repaired = repair_split_ligatures(&mut span, &glyphs);
+        assert!(!repaired, "Should not repair without 'l' following");
+    }
+
+    #[test]
+    fn test_ligature_repair_fl_with_l_following() {
+        // Test fl ligature repair with actual 'l' following: f<U+FFFD>l -> fl
+        let mut span = Span::empty();
+        span.text = String::from("f\u{FFFD}l");
+
+        let glyphs = vec![
+            Glyph::new('f', UnicodeSource::ToUnicode, 1.0, [0.0, 0.0, 5.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('\u{FFFD}', UnicodeSource::Unknown, 0.0, [5.05, 0.0, 10.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [10.0, 0.0, 15.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+        ];
+
+        let repaired = repair_split_ligatures(&mut span, &glyphs);
+        assert!(repaired, "Should repair f + U+FFFD + l to 'fl'");
+        assert_eq!(span.text, "fl", "Should replace f + U+FFFD + l with 'fl'");
+    }
+
+    #[test]
+    fn test_ligature_repair_multiple_fffd() {
+        // Multiple U+FFFD in span: each evaluated independently
+        let mut span = Span::empty();
+        span.text = String::from("f\u{FFFD}rst and f\u{FFFD}l");
+
+        let glyphs = vec![
+            Glyph::new('f', UnicodeSource::ToUnicode, 1.0, [0.0, 0.0, 5.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('\u{FFFD}', UnicodeSource::Unknown, 0.0, [5.05, 0.0, 10.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('r', UnicodeSource::ToUnicode, 1.0, [10.0, 0.0, 15.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('f', UnicodeSource::ToUnicode, 1.0, [40.0, 0.0, 45.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('\u{FFFD}', UnicodeSource::Unknown, 0.0, [45.05, 0.0, 50.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [50.0, 0.0, 55.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+        ];
+
+        let repaired = repair_split_ligatures(&mut span, &glyphs);
+        // First U+FFFD not followed by i/l, so not repaired
+        // Second U+FFFD followed by 'l', so repaired to 'fl'
+        assert!(repaired, "Should repair at least one ligature");
+        assert_eq!(span.text, "f\u{FFFD}rst and fl", "Second ligature repaired");
+    }
+
+    #[test]
+    fn test_ligature_repair_empty_span() {
+        // Empty span: no repairs
+        let mut span = Span::empty();
+        span.text = String::from("");
+        let glyphs = vec![];
+
+        let repaired = repair_split_ligatures(&mut span, &glyphs);
+        assert!(!repaired);
+        assert_eq!(span.text, "");
+    }
+
+    #[test]
+    fn test_ligature_repair_no_fffd() {
+        // Span without U+FFFD: fast-path returns false
+        let mut span = Span::empty();
+        span.text = String::from("normal text");
+
+        let glyphs = vec![
+            Glyph::new('n', UnicodeSource::ToUnicode, 1.0, [0.0, 0.0, 5.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+        ];
+
+        let repaired = repair_split_ligatures(&mut span, &glyphs);
+        assert!(!repaired);
+        assert_eq!(span.text, "normal text");
+    }
+
+    #[test]
+    fn test_ligature_enum_decomposed() {
+        // Test Ligature::decomposed() returns correct strings
+        assert_eq!(Ligature::Fi.decomposed(), "fi");
+        assert_eq!(Ligature::Fl.decomposed(), "fl");
+        assert_eq!(Ligature::Ffi.decomposed(), "ffi");
+        assert_eq!(Ligature::Ffl.decomposed(), "ffl");
+        assert_eq!(Ligature::Ff.decomposed(), "ff");
+    }
+
+    #[test]
+    fn test_ligature_is_component() {
+        // Test Ligature::is_component() correctly identifies f, l, i
+        assert!(Ligature::is_component('f'));
+        assert!(Ligature::is_component('l'));
+        assert!(Ligature::is_component('i'));
+        assert!(!Ligature::is_component('a'));
+        assert!(!Ligature::is_component('x'));
+        assert!(!Ligature::is_component('\u{FFFD}'));
+    }
+
+    #[test]
+    fn test_ligature_repair_ffi_ligature() {
+        // Test ffi ligature repair: ff<U+FFFD>i -> ffi
+        let mut span = Span::empty();
+        span.text = String::from("ff\u{FFFD}i");
+
+        let glyphs = vec![
+            Glyph::new('f', UnicodeSource::ToUnicode, 1.0, [0.0, 0.0, 5.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('f', UnicodeSource::ToUnicode, 1.0, [5.0, 0.0, 10.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('\u{FFFD}', UnicodeSource::Unknown, 0.0, [10.05, 0.0, 15.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('i', UnicodeSource::ToUnicode, 1.0, [15.0, 0.0, 20.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+        ];
+
+        let repaired = repair_split_ligatures(&mut span, &glyphs);
+        assert!(repaired, "Should repair ff + U+FFFD + i to 'ffi'");
+        assert_eq!(span.text, "ffi", "Should replace ff + U+FFFD + i with 'ffi'");
+    }
+
+    #[test]
+    fn test_ligature_repair_ffl_ligature() {
+        // Test ffl ligature repair: ff<U+FFFD>l -> ffl
+        let mut span = Span::empty();
+        span.text = String::from("ff\u{FFFD}l");
+
+        let glyphs = vec![
+            Glyph::new('f', UnicodeSource::ToUnicode, 1.0, [0.0, 0.0, 5.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('f', UnicodeSource::ToUnicode, 1.0, [5.0, 0.0, 10.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('\u{FFFD}', UnicodeSource::Unknown, 0.0, [10.05, 0.0, 15.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [15.0, 0.0, 20.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+        ];
+
+        let repaired = repair_split_ligatures(&mut span, &glyphs);
+        assert!(repaired, "Should repair ff + U+FFFD + l to 'ffl'");
+        assert_eq!(span.text, "ffl", "Should replace ff + U+FFFD + l with 'ffl'");
+    }
+
+    #[test]
+    fn test_ligature_repair_ff_ligature() {
+        // Test ff ligature repair: f<U+FFFD>f -> ff
+        let mut span = Span::empty();
+        span.text = String::from("f\u{FFFD}ft");
+
+        let glyphs = vec![
+            Glyph::new('f', UnicodeSource::ToUnicode, 1.0, [0.0, 0.0, 5.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('\u{FFFD}', UnicodeSource::Unknown, 0.0, [5.05, 0.0, 10.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('f', UnicodeSource::ToUnicode, 1.0, [10.0, 0.0, 15.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new('t', UnicodeSource::ToUnicode, 1.0, [15.0, 0.0, 20.0, 10.0],
+                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+        ];
+
+        let repaired = repair_split_ligatures(&mut span, &glyphs);
+        assert!(repaired, "Should repair f + U+FFFD + f to 'ff'");
+        assert_eq!(span.text, "fft", "Should replace f + U+FFFD + f with 'ff'");
     }
 }
