@@ -1,8 +1,154 @@
+// #![deny(missing_docs)]
+
 //! pdftract-core — Core PDF parsing and text extraction primitives.
 //!
 //! This crate provides the foundational data structures and parsers for
-//! processing PDF documents, including the lexer, object parser, and
-//! text extraction engines.
+//! processing PDF documents, including the PDF lexer, object model parser,
+//! content stream interpreter, and text extraction engines.
+//!
+//! # Overview
+//!
+//! pdftract-core is a pure-Rust PDF processing library that extracts structured
+//! text, tables, and metadata from PDF documents. It handles the full PDF specification
+//! including encrypted documents, embedded fonts, and complex page layouts.
+//!
+//! The crate is organized into several layers:
+//! - **Parser layer** (`parser`) — Lexes and parses PDF binary format into object model
+//! - **Content stream layer** (`content_stream`, `graphics_state`) — Interprets drawing operations
+//! - **Text extraction layer** (`extract`, `glyph`, `span`) — Reconstructs text from drawing commands
+//! - **Analysis layer** (`layout`, `table`, `classify`) — Detects structure (tables, blocks, page type)
+//! - **Output layer** (`schema`, `markdown`, `text`) — Serializes to JSON/Markdown/text
+//!
+//! # Quick Start
+//!
+//! ## Basic Text Extraction
+//!
+//! ```rust,no_run
+//! use pdftract_core::{extract_pdf, ExtractionOptions, OutputOptions};
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Extract text from a PDF file
+//! let result = extract_pdf(
+//!     "document.pdf",
+//!     &ExtractionOptions::default(),
+//!     &OutputOptions::default()
+//! )?;
+//!
+//! // Access extracted text per page
+//! for (page_num, page_result) in result.pages.iter().enumerate() {
+//!     println!("Page {}: {} chars extracted", page_num + 1, page_result.text.len());
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## JSON Output with Schema
+//!
+//! ```rust,no_run
+//! use pdftract_core::{extract_pdf_ndjson, ExtractionOptions, OutputOptions};
+//! use std::fs::File;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Extract to NDJSON (one JSON object per page)
+//! let output = File::create("output.ndjson")?;
+//! extract_pdf_ndjson(
+//!     "document.pdf",
+//!     &ExtractionOptions::default(),
+//!     &OutputOptions::default(),
+//!     output
+//! )?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Streaming Extraction for Large Files
+//!
+//! ```rust,no_run
+//! use pdftract_core::{extract_pdf_streaming, ExtractionOptions, OutputOptions};
+//! use std::fs::File;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Stream pages one at a time (memory-efficient for large PDFs)
+//! let mut output = File::create("output.ndjson")?;
+//! extract_pdf_streaming(
+//!     "large_document.pdf",
+//!     &ExtractionOptions::default(),
+//!     &OutputOptions::default(),
+//!     &mut output
+//! )?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## With OCR for Scanned PDFs
+//!
+//! ```rust,no_run
+//! use pdftract_core::{extract_pdf, ExtractionOptions, OutputOptions};
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Enable OCR via "ocr" feature
+//! let result = extract_pdf(
+//!     "scanned.pdf",
+//!     &ExtractionOptions {
+//!         ocr_languages: vec!["eng".to_string()],
+//!         ..Default::default()
+//!     },
+//!     &OutputOptions::default()
+//! )?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Feature Flags
+//!
+//! | Feature | Description | Default |
+//! |---------|-------------|---------|
+//! | `default` | Core extraction without OCR/encryption | ✓ |
+//! | `ocr` | Tesseract OCR for scanned documents | - |
+//! | `full-render` | PDFium-based rendering (requires external library) | - |
+//! | `decrypt` | Decryption of encrypted PDFs | - |
+//! | `remote` | HTTP range fetching for remote PDFs | - |
+//! | `profiles` | Profiling/timing instrumentation | - |
+//! | `receipts` | Cryptographic receipt generation | - |
+//! | `cache` | On-disk caching for expensive operations | - |
+//!
+//! # JSON Schema
+//!
+//! The output JSON schema is documented at:
+//! <https://github.com/jedarden/pdftract/blob/main/crates/pdftract-core/SCHEMA.md>
+//!
+//! # Architecture
+//!
+//! ## Extraction Pipeline
+//!
+//! 1. **Source Loading** — [`PdfSource`] trait handles file/memory/HTTP inputs
+//! 2. **Parser** — [`parser`] module lexes PDF binary format into object model
+//! 3. **Xref Resolution** — Cross-reference table resolves object offsets
+//! 4. **Catalog/Page Tree** — Document structure traversal
+//! 5. **Content Stream Parsing** — Drawing operations interpreted
+//! 6. **Glyph Reconstruction** — Text extracted from drawing commands
+//! 7. **Span Merging** — Glyphs merged into logical text spans
+//! 8. **Layout Analysis** — Blocks, tables, reading order detected
+//! 9. **Serialization** — JSON/Markdown/text output
+//!
+//! ## Memory Behavior
+//!
+//! The crate uses lazy loading and streaming to minimize memory:
+//! - [`PageIter`] loads pages on-demand, not all at once
+//! - [`extract_pdf_streaming`] writes output incrementally
+//! - [`MmapSource`] memory-maps files for zero-copy access
+//!
+//! # Error Handling
+//!
+//! Most functions return `Result<T, E>` where `E` is typically:
+//! - [`PdfError`] — General parsing/processing errors
+//! - [`std::io::Error`] — File I/O errors
+//! - [`serde_json::Error`] — JSON serialization errors (when applicable)
+//!
+//! # Thread Safety
+//!
+//! The extraction pipeline is designed for single-threaded use, but you can
+//! process multiple independent PDFs in parallel using rayon or similar.
 
 pub mod annotation;
 pub mod atomic_file_writer;
@@ -47,6 +193,8 @@ pub mod profiles;
 pub mod receipts;
 #[cfg(feature = "ocr")]
 pub mod render;
+#[cfg(feature = "remote")]
+pub mod remote;
 pub mod source;
 pub mod text;
 #[cfg(feature = "remote")]
@@ -66,7 +214,7 @@ pub mod threads;
 
 // Re-export key types for convenience
 pub use confidence::{map_confidence_source, ConfidenceSource};
-pub use document::{PageExtraction, PageIter, PdfExtractor};
+pub use document::{Document, PageExtraction, PageIter, PdfExtractor};
 pub use extract::{
     extract_pdf, extract_pdf_ndjson, extract_pdf_streaming, ExtractionMetadata, ExtractionResult,
     PageResult,
@@ -94,7 +242,7 @@ pub use word_boundary::{TextState, WordBoundaryDetector, WordBoundaryManager};
 pub use source::{FileSource, MmapSource, PdfSource};
 
 #[cfg(feature = "remote")]
-pub use source::HttpRangeSource;
+pub use source::{HttpRangeSource, RemoteOpts};
 
 // Re-export Phase 3 Glyph types (pdftract-4j0ub)
 pub use glyph::{emit_glyph, new_raw_glyph_list, Glyph};

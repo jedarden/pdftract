@@ -594,20 +594,50 @@ fn payload_too_large_response(max_bytes: usize) -> AxumResponse {
     (StatusCode::PAYLOAD_TOO_LARGE, Json(error_json)).into_response()
 }
 
+/// Redact sensitive headers from a HeaderMap for logging.
+///
+/// Returns a comma-separated string of header names with "[REDACTED]" placeholders
+/// for sensitive headers (Authorization, Cookie, Proxy-Authorization).
+fn redact_headers_for_log(headers: &HeaderMap) -> String {
+    let mut redacted = Vec::new();
+
+    for (name, _) in headers.iter() {
+        let name_str = name.as_str();
+        match name_str {
+            "authorization" | "cookie" | "proxy-authorization" => {
+                redacted.push(format!("{}=[REDACTED]", name_str));
+            }
+            _ => {
+                redacted.push(format!("{}=[...]", name_str));
+            }
+        }
+    }
+
+    redacted.join(", ")
+}
+
 /// Logging middleware for all HTTP requests.
 ///
-/// Logs the method, path, and response status for each request.
+/// Logs the method, path, response status, and headers (with sensitive values redacted).
 async fn logging_middleware(
     req: AxumRequest,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
     let method = req.method().clone();
     let uri = req.uri().clone();
+    let headers = req.headers().clone();
+    let redacted_headers = redact_headers_for_log(&headers);
 
     let response = next.run(req).await;
 
     let status = response.status();
-    tracing::info!("{} {} -> {}", method, uri, status);
+    tracing::info!(
+        "{} {} -> {} | Headers: {}",
+        method,
+        uri,
+        status,
+        redacted_headers
+    );
 
     response
 }

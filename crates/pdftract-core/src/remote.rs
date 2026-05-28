@@ -11,26 +11,19 @@
 //!
 //! ```ignore
 //! use pdftract_core::remote::{open_remote, RemoteOpts};
-//! use pdftract_core::options::ExtractionOptions;
 //!
 //! let opts = RemoteOpts::new()
 //!     .with_header("Authorization", "Bearer token");
 //!
-//! // Just open the remote PDF (for custom processing)
+//! // Open the remote PDF (for custom processing)
 //! let (catalog, resolver, source, fingerprint) = open_remote("https://example.com/doc.pdf", &opts)?;
-//!
-//! // Or extract directly
-//! let result = extract_remote("https://example.com/doc.pdf", &opts, &ExtractionOptions::default())?;
 //! ```
 
 use crate::document::compute_fingerprint_lazy;
-use crate::extract::{extract_pdf_from_source, ExtractionSource};
-use crate::options::ExtractionOptions;
 use crate::parser::catalog::{parse_catalog, Catalog};
-use crate::parser::hint_stream;
-use crate::parser::xref::{detect_linearization, load_xref_with_prev_chain, XrefResolver};
+use crate::parser::xref::{load_xref_with_prev_chain, XrefResolver};
 use crate::source::{open_remote as open_remote_source, RemoteOpts};
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 
 /// Open a PDF from a remote HTTP/HTTPS URL.
 ///
@@ -79,11 +72,17 @@ pub fn open_remote(
     // Open the remote PDF source
     let source = open_remote_source(url, opts).context("Failed to open remote PDF source")?;
 
-    // Find the startxref offset (reads last 1 KB of the file)
-    let startxref_offset = find_startxref(&*source).context("Failed to find startxref offset")?;
+    // Convert source to parser PdfSource
+    // The blanket impl in parser/stream.rs converts any source::PdfSource to parser::stream::PdfSource
+    let parser_source: Box<dyn ParserPdfSource> = source;
+
+    // Find the startxref offset using progressive tail fetch for remote sources
+    // This starts with 16 KB and progressively fetches larger tails if needed
+    let startxref_offset = find_startxref_progressive(&*parser_source)
+        .context("Failed to find startxref offset")?;
 
     // Load the xref table (forward-scan is disabled for remote sources)
-    let xref_section = load_xref_with_prev_chain(&*source, startxref_offset);
+    let xref_section = load_xref_with_prev_chain(&*parser_source, startxref_offset);
 
     // Create resolver from xref section
     let resolver = XrefResolver::from_section(xref_section.clone());
@@ -97,15 +96,14 @@ pub fn open_remote(
         .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref, Some(&*source as &dyn ParserPdfSource)).map_err(
-        |diagnostics| {
+    let catalog = parse_catalog(&resolver, root_ref, Some(&*parser_source as &dyn ParserPdfSource))
+        .map_err(|diagnostics| {
             let msg = diagnostics
                 .first()
                 .map(|d| d.message.as_ref())
                 .unwrap_or("unknown error");
             anyhow::anyhow!("Failed to parse catalog: {}", msg)
-        },
-    )?;
+        })?;
 
     // Resolve AcroForm dictionary if present (for XFA detection and fingerprint)
     let acroform = catalog
@@ -117,125 +115,7 @@ pub fn open_remote(
     // Build fingerprint input (without full page tree for lazy extraction)
     let fingerprint = compute_fingerprint_lazy(&catalog, &resolver, &acroform);
 
-    Ok((catalog, resolver, source, fingerprint))
-}
-
-/// Extract pages from a remote PDF using the extraction options.
-///
-/// This is a convenience function that combines `open_remote` with extraction.
-/// It performs the HTTP fetch sequence and then extracts the specified pages.
-///
-/// # Arguments
-///
-/// * `url` - HTTP/HTTPS URL to the PDF file
-/// * `opts` - Remote options (headers, credentials, etc.)
-/// * `extraction_opts` - Extraction options (page range, receipts, etc.)
-///
-/// # Returns
-///
-/// An `ExtractionResult` containing the extracted pages and metadata.
-///
-/// # Example
-///
-/// ```ignore
-/// use pdftract_core::remote::{extract_remote, RemoteOpts};
-/// use pdftract_core::options::ExtractionOptions;
-///
-/// let remote_opts = RemoteOpts::new()
-///     .with_header("Authorization", "Bearer token");
-///
-/// let extraction_opts = ExtractionOptions::default();
-///
-/// let result = extract_remote("https://example.com/doc.pdf", &remote_opts, &extraction_opts)?;
-/// ```
-pub fn extract_remote(
-    url: &str,
-    opts: &RemoteOpts,
-    extraction_opts: &ExtractionOptions,
-) -> Result<crate::extract::ExtractionResult> {
-    // Open the remote PDF source
-    let source = open_remote_source(url, opts).context("Failed to open remote PDF source")?;
-
-    // Prefetch pages using hint stream if available (optimization for linearized PDFs)
-    prefetch_hint_stream(&*source, extraction_opts);
-
-    // Use the extraction pipeline with the remote source
-    let extraction_source = ExtractionSource::Remote(source);
-
-    extract_pdf_from_source(extraction_source, extraction_opts)
-}
-
-/// Prefetch pages using the hint stream from a linearized PDF.
-///
-/// This function:
-/// 1. Detects if the PDF is linearized
-/// 2. Parses the hint stream if present
-/// 3. Prefetches the requested page ranges using the hint table predictions
-///
-/// # Parameters
-/// - `source`: The PDF source to read from
-/// - `extraction_opts`: Extraction options containing page ranges
-///
-/// # Returns
-/// Nothing; prefetch is a performance optimization that doesn't affect correctness.
-pub fn prefetch_hint_stream(
-    source: &dyn crate::parser::stream::PdfSource,
-    extraction_opts: &ExtractionOptions,
-) {
-    // Detect linearization
-    let lin_info = match detect_linearization(source) {
-        Some(info) => info,
-        None => return, // Not linearized, no hint stream
-    };
-
-    // Check if hint stream info is available
-    let (hint_offset, hint_length) = match (lin_info.hint_stream_offset, lin_info.hint_stream_length) {
-        (Some(offset), Some(length)) => (offset, length),
-        _ => return, // No hint stream, nothing to prefetch
-    };
-
-    // Parse the hint stream
-    let mut diagnostics = Vec::new();
-    let hint_table = match hint_stream::parse_hint_stream_from_linearized(
-        source,
-        hint_offset,
-        hint_length,
-        &mut diagnostics,
-    ) {
-        Some(table) => table,
-        None => return, // Failed to parse hint stream, continue without prefetch
-    };
-
-    // Get the requested page range (if any)
-    let page_ranges = extraction_opts.pages.as_ref();
-    let page_indices: Vec<u32> = match page_ranges {
-        Some(ranges) => {
-            // Convert page ranges to 0-based indices
-            ranges
-                .iter()
-                .flat_map(|r| {
-                    let start = r.start.saturating_sub(1) as u32; // Convert to 0-based
-                    let end = r.end.saturating_sub(1) as u32;
-                    start..=end
-                })
-                .collect()
-        }
-        None => {
-            // No page range specified, prefetch all pages (up to a limit)
-            (0..hint_table.page_count().min(100)).collect()
-        }
-    };
-
-    // Prefetch each requested page
-    for page_idx in page_indices {
-        if let Some(range) = hint_table.predict_page_range(page_idx) {
-            let length = range.end.saturating_sub(range.start) as usize;
-            source.prefetch(range.start, length);
-        }
-    }
-
-    // Note: Shared object hints are not yet implemented (Phase 2)
-    let _shared_ranges = hint_table.predict_shared_objects();
+    Ok((catalog, resolver, parser_source, fingerprint))
 }
 
 /// Find the startxref offset in a PDF file.
@@ -283,6 +163,81 @@ fn find_startxref(source: &dyn crate::parser::stream::PdfSource) -> Result<u64> 
         .context("startxref offset is not a valid number")?;
 
     Ok(offset)
+}
+
+/// Find the startxref offset with progressive tail fetching for remote PDFs.
+///
+/// For remote sources, we start with a 16 KB tail fetch. If the startxref offset
+/// points before the tail, we progressively fetch larger tails (32, 64, ..., 1024 KB)
+/// until we capture the startxref.
+///
+/// # Parameters
+/// - `source`: The PDF source to read from
+///
+/// # Returns
+/// The startxref offset, or an error if not found after progressive fetching
+fn find_startxref_progressive(source: &dyn crate::parser::stream::PdfSource) -> Result<u64> {
+    const INITIAL_TAIL: u64 = 16 * 1024; // 16 KB
+    const MAX_TAIL: u64 = 1024 * 1024;  // 1 MB maximum
+
+    let file_len = source.len()?;
+
+    // Try with progressively larger tails
+    let mut tail_size = INITIAL_TAIL;
+    while tail_size <= MAX_TAIL {
+        let scan_start = file_len.saturating_sub(tail_size) as usize;
+        let scan_end = file_len as usize;
+
+        let tail_data = source
+            .read_at(scan_start as u64, scan_end - scan_start)
+            .context("Failed to read PDF tail")?;
+
+        // Find "startxref" in the tail data
+        if let Some(startxref_pos) = tail_data.windows(9).rposition(|w| w == b"startxref") {
+            // Parse the offset after "startxref"
+            let offset_data = &tail_data[startxref_pos + 9..];
+
+            // Skip leading whitespace
+            let offset_start = offset_data
+                .iter()
+                .position(|&b| !matches!(b, b' ' | b'\r' | b'\n' | b'\t'))
+                .unwrap_or(offset_data.len());
+
+            let offset_data_trimmed = &offset_data[offset_start..];
+
+            // Find the newline after the offset
+            let newline_pos = offset_data_trimmed
+                .iter()
+                .position(|&b| b == b'\n' || b == b'\r')
+                .unwrap_or(offset_data_trimmed.len());
+
+            let offset_str = std::str::from_utf8(&offset_data_trimmed[..newline_pos])
+                .context("startxref offset is not valid UTF-8")?;
+
+            let offset: u64 = offset_str
+                .trim()
+                .parse()
+                .context("startxref offset is not a valid number")?;
+
+            // Check if startxref points before the tail (meaning the xref is not in this tail)
+            let startxref_absolute = scan_start as u64 + startxref_pos as u64;
+            if offset >= startxref_absolute as u64 {
+                // The xref is within the tail we just read
+                return Ok(offset);
+            }
+
+            // startxref points before our tail - need larger tail
+            tail_size *= 2;
+        } else {
+            // No startxref found - try larger tail
+            tail_size *= 2;
+        }
+    }
+
+    Err(anyhow!(
+        "startxref not found after progressive tail fetch up to {} KB",
+        MAX_TAIL / 1024
+    ))
 }
 
 #[cfg(test)]

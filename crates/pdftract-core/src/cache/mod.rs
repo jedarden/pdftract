@@ -52,7 +52,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub enum CacheLookupResult {
     /// Cache hit: entry found and deserialized successfully
     Hit {
+        /// The cached extraction result
         result: ExtractionResult,
+        /// Age of the cache entry in seconds (time since creation)
         age_seconds: u64,
     },
     /// Cache miss: entry not found or corrupt (will be overwritten)

@@ -14,25 +14,48 @@ use crate::parser::xref::XrefResolver;
 #[derive(Debug, Clone)]
 pub enum AnnotationSpecific {
     /// Highlight, Squiggly, StrikeOut, Underline: quad points for the highlighted regions.
-    TextMarkup { quads: Vec<[f32; 8]> },
+    TextMarkup {
+        /// Array of 8-float quads representing the highlighted regions
+        /// (each quad is x1,y1,x2,y2,x3,y3,x4,y4 in reading order)
+        quads: Vec<[f32; 8]>,
+    },
     /// Stamp annotation: icon name.
-    Stamp { name: Option<String> },
+    Stamp {
+        /// Icon name for the stamp (e.g., "Approved", "Draft", "Confidential")
+        name: Option<String>,
+    },
     /// FreeText annotation: default appearance string.
-    FreeText { da: Option<String> },
+    FreeText {
+        /// Default appearance string for the text (e.g., "1 Tf 0 g")
+        da: Option<String>,
+    },
     /// Text (sticky note) annotation: open state and model.
     Text {
+        /// Whether the note is initially open when the page is viewed
         open: Option<bool>,
+        /// State string for the note (e.g., "Reviewed", "Accepted")
         state: Option<String>,
+        /// State model (e.g., "Marked", "Review")
         state_model: Option<String>,
     },
     /// Ink annotation: stroke paths.
-    Ink { strokes: Vec<Vec<[f32; 2]>> },
+    Ink {
+        /// Array of stroke paths, where each path is a series of (x, y) points
+        strokes: Vec<Vec<[f32; 2]>>,
+    },
     /// Line annotation: endpoints.
-    Line { endpoints: Option<[f32; 4]> },
+    Line {
+        /// Line endpoints as [x1, y1, x2, y2]
+        endpoints: Option<[f32; 4]>,
+    },
     /// Polygon or PolyLine annotation: vertices.
-    Polygon { vertices: Vec<[f32; 2]> },
+    Polygon {
+        /// Array of (x, y) coordinate pairs for the polygon/polyline vertices
+        vertices: Vec<[f32; 2]>,
+    },
     /// FileAttachment annotation: filespec reference.
     FileAttachment {
+        /// Reference to the file specification dictionary for the attached file
         fs_ref: Option<crate::parser::object::ObjRef>,
     },
     /// Circle, Square, Caret, Redact, Sound, Movie, Screen, PrinterMark, TrapNet, Watermark, 3D:

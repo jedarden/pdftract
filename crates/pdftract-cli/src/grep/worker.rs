@@ -172,7 +172,7 @@ pub fn worker_run(
         Some(PdfObject::Ref(root_ref)) => *root_ref,
         _ => {
             progress_sink.send(ProgressEvent::FileSkipped {
-                path: path.display().to_string(),
+                path: path_str.clone(),
                 reason: "no /Root in trailer".to_string(),
             })?;
             return Ok(());
@@ -188,7 +188,7 @@ pub fn worker_run(
                 .map(|d| d.message.as_ref())
                 .unwrap_or("unknown error");
             progress_sink.send(ProgressEvent::FileSkipped {
-                path: path.display().to_string(),
+                path: path_str.clone(),
                 reason: format!("failed to parse catalog: {}", msg),
             })?;
             return Ok(());
@@ -204,7 +204,7 @@ pub fn worker_run(
                 .map(|d| d.message.as_ref())
                 .unwrap_or("unknown error");
             progress_sink.send(ProgressEvent::FileSkipped {
-                path: path.display().to_string(),
+                path: path_str.clone(),
                 reason: format!("failed to parse page tree: {}", msg),
             })?;
             return Ok(());
@@ -249,7 +249,7 @@ pub fn worker_run(
         }
         // Emit page progress
         progress_sink.send(ProgressEvent::FileProgress {
-            path: path.display().to_string(),
+            path: path_str.clone(),
             pages_done: page_index,
             pages_total,
         })?;
@@ -271,7 +271,7 @@ pub fn worker_run(
         for span in spans {
             let matches_in_span = process_span(
                 &span,
-                &path,
+                &path_str,
                 page_index as u32,
                 &fingerprint,
                 matcher,
@@ -290,7 +290,7 @@ pub fn worker_run(
     // Emit file done event
     let duration_ms = start_time.elapsed().as_millis();
     progress_sink.send(ProgressEvent::FileDone {
-        path: path.display().to_string(),
+        path: path_str.clone(),
         matches: total_match_count,
         duration_ms,
     })?;

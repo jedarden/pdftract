@@ -202,14 +202,27 @@ pub fn detect_encryption(
 /// This trait is implemented by the actual XrefResolver from the xref module,
 /// and also by MockResolver for testing.
 pub trait XrefResolver {
+    /// Resolve an object reference to its underlying PDF object.
+    ///
+    /// # Arguments
+    ///
+    /// * `obj_ref` - The object reference to resolve
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(PdfObject)` - The resolved object
+    /// * `Err(ResolveError)` - If the object cannot be resolved
     fn resolve(&self, obj_ref: ObjRef) -> Result<PdfObject, ResolveError>;
 }
 
 /// Resolution error type.
 #[derive(Debug, Clone)]
 pub enum ResolveError {
+    /// Object reference not found in the xref table
     NotFound(ObjRef),
+    /// Circular reference detected during resolution
     CircularRef(ObjRef),
+    /// I/O error during resolution (with error message)
     Io(String),
 }
 

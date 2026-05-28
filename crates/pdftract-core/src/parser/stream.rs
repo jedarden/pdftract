@@ -3263,6 +3263,14 @@ pub trait PdfSource {
     fn is_empty(&self) -> std::io::Result<bool> {
         Ok(self.len()? == 0)
     }
+
+    /// Check if this is a remote source (HTTP/HTTPS).
+    ///
+    /// Returns true for remote sources, false for local sources.
+    /// This is used to disable forward-scan xref recovery for remote sources.
+    fn is_remote(&self) -> bool {
+        false
+    }
 }
 
 /// Adapter: implement parser::stream::PdfSource for any source::PdfSource type.
@@ -3278,6 +3286,10 @@ impl<T: crate::source::PdfSource> PdfSource for T {
 
     fn len(&self) -> std::io::Result<u64> {
         Ok(crate::source::PdfSource::len(self))
+    }
+
+    fn is_remote(&self) -> bool {
+        crate::source::PdfSource::is_remote(self)
     }
 }
 

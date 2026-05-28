@@ -24,6 +24,9 @@ use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+#[cfg(feature = "remote")]
+use crate::source::RemoteOpts;
+
 /// Parse a PDF file and return the document components needed for verification.
 ///
 /// This is a high-level function that:
@@ -96,8 +99,8 @@ pub fn parse_pdf_file(
     // Build fingerprint input
     let fingerprint_input = build_fingerprint_input(&catalog, &pages, &resolver, &acroform);
 
-    // Compute fingerprint
-    let fingerprint = compute_fingerprint(&fingerprint_input, &resolver);
+    // Compute fingerprint with source available for content stream decoding
+    let fingerprint = compute_fingerprint(&fingerprint_input, &resolver, Some(&source as &dyn ParserPdfSource));
 
     Ok((fingerprint, catalog, pages, resolver))
 }
@@ -167,8 +170,8 @@ pub fn parse_pdf_source(
     // Build fingerprint input
     let fingerprint_input = build_fingerprint_input(&catalog, &pages, &resolver, &acroform);
 
-    // Compute fingerprint
-    let fingerprint = compute_fingerprint(&fingerprint_input, &resolver);
+    // Compute fingerprint with source available
+    let fingerprint = compute_fingerprint(&fingerprint_input, &resolver, Some(&*source as &dyn ParserPdfSource));
 
     Ok((fingerprint, catalog, pages, resolver))
 }
@@ -513,7 +516,9 @@ impl PdfExtractor {
     pub fn pages(&self) -> PageIter<'_> {
         PageIter {
             lazy_iter: None,
-            extractor: self,
+            catalog: &self.catalog,
+            resolver: &self.resolver,
+            source: Some(&self.source as &dyn ParserPdfSource),
             index: 0,
         }
     }
@@ -584,6 +589,261 @@ pub struct BlockData {
 
 /// Lazy iterator over PDF pages.
 ///
+/// Compute fingerprint without full page materialization.
+///
+/// This is a simplified version that uses only catalog-level data.
+/// The full fingerprint computation requires page content streams.
+pub(crate) fn compute_fingerprint_lazy(
+    catalog: &Catalog,
+    resolver: &XrefResolver,
+    acroform: &Option<PdfDict>,
+) -> String {
+    // For lazy extraction, use a simpler fingerprint based on catalog data
+    // The full implementation would incrementally hash pages as they're extracted
+    use crate::fingerprint::FingerprintInput;
+
+    // Detect JavaScript and XFA presence (no pages available in lazy mode)
+    let contains_javascript = if catalog.open_action.is_some() || catalog.aa.is_some() {
+        true
+    } else {
+        // For catalog-level checks, use simple detection
+        // Full page/annotation walk requires materialized pages
+        false
+    };
+    let contains_xfa = detect_xfa(acroform);
+
+    let fingerprint_input = FingerprintInput {
+        page_count: 0, // Will be updated when pages are extracted
+        pages: vec![],
+        struct_tree_root_ref: catalog.struct_tree_root_ref,
+        is_tagged: catalog.mark_info.is_tagged,
+        catalog_flags: CatalogFlags {
+            is_encrypted: false,
+            contains_javascript,
+            contains_xfa,
+            ocg_present: catalog
+                .oc_properties
+                .as_ref()
+                .map(|props| props.present)
+                .unwrap_or(false),
+        },
+    };
+
+    compute_fingerprint(&fingerprint_input, resolver, None)
+}
+
+/// A parsed PDF document that can be from either local or remote sources.
+///
+/// This type provides a unified interface for working with PDFs regardless
+/// of their source (local file, HTTP/HTTPS URL, memory buffer). It holds
+/// the parsed catalog, xref resolver, and lazy page iterator.
+///
+/// # Example
+///
+/// ```ignore
+/// use pdftract_core::document::Document;
+///
+/// // Open from local file
+/// let doc = Document::open("document.pdf")?;
+///
+/// // Open from remote URL
+/// let doc = Document::open_remote("https://example.com/doc.pdf", &RemoteOpts::new())?;
+///
+/// // Get page count
+/// let count = doc.page_count()?;
+///
+/// // Iterate pages lazily
+/// for page_result in doc.pages() {
+///     let page = page_result?;
+///     println!("Page {}: {}x{}", page.index, page.width, page.height);
+/// }
+/// ```
+pub struct Document {
+    /// The parsed catalog
+    catalog: Catalog,
+    /// The xref resolver for object resolution
+    resolver: XrefResolver,
+    /// The PDF source (file, HTTP, memory)
+    source: Option<Box<dyn ParserPdfSource>>,
+    /// The document fingerprint
+    fingerprint: String,
+    /// Whether this is a remote document
+    is_remote: bool,
+}
+
+impl Document {
+    /// Open a PDF from a local file path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to the PDF file
+    ///
+    /// # Returns
+    ///
+    /// A parsed Document ready for extraction.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The file cannot be opened
+    /// - The PDF is malformed
+    /// - The xref table cannot be parsed
+    pub fn open<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
+        let path = path.as_ref();
+        let parser_source = ParserFileSource::open(path).context("Failed to open PDF file")?;
+        Self::from_source(Box::new(parser_source), false)
+    }
+
+    /// Open a PDF from a remote HTTP/HTTPS URL.
+    ///
+    /// This performs the HTTP fetch sequence:
+    /// 1. HEAD request to verify Range support and get Content-Length
+    /// 2. Tail Range fetch (last 16 KB, progressive up to 1 MB) for startxref
+    /// 3. Xref parsing with forward-scan disabled (no full file fetch)
+    /// 4. Returns a parsed Document
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - HTTP/HTTPS URL to the PDF file
+    /// * `opts` - Remote options (headers, credentials, etc.)
+    ///
+    /// # Returns
+    ///
+    /// A parsed Document ready for extraction.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - URL is invalid or DNS fails
+    /// - TLS handshake fails
+    /// - Server returns 401/403
+    /// - Server doesn't support Range requests
+    /// - No Content-Length header
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use pdftract_core::{Document, source::RemoteOpts};
+    ///
+    /// let opts = RemoteOpts::new()
+    ///     .with_header("Authorization", "Bearer token");
+    ///
+    /// let doc = Document::open_remote("https://example.com/doc.pdf", &opts)?;
+    /// ```
+    #[cfg(feature = "remote")]
+    pub fn open_remote(url: &str, opts: &RemoteOpts) -> Result<Self> {
+        use crate::source::open_remote as open_remote_source;
+        let source = open_remote_source(url, opts).context("Failed to open remote PDF source")?;
+        Self::from_source(source, true)
+    }
+
+    /// Create a Document from a generic PdfSource.
+    ///
+    /// This is used internally by both `open` and `open_remote`.
+    fn from_source(source: Box<dyn ParserPdfSource>, is_remote: bool) -> Result<Self> {
+        // Find the startxref offset
+        let startxref_offset = find_startxref(&*source).context("Failed to find startxref offset")?;
+
+        // Load the xref table (forward-scan is disabled for remote sources automatically)
+        let xref_section = load_xref_with_prev_chain(&*source, startxref_offset);
+
+        // Create resolver from xref section
+        let resolver = XrefResolver::from_section(xref_section.clone());
+
+        // Get the root reference from trailer
+        let root_ref = xref_section
+            .trailer
+            .as_ref()
+            .and_then(|trailer| trailer.get("Root"))
+            .and_then(|obj| obj.as_ref())
+            .ok_or_else(|| anyhow!("No /Root reference in trailer"))?;
+
+        // Parse the catalog
+        let catalog = parse_catalog(&resolver, root_ref, Some(&*source)).map_err(|diagnostics| {
+            let msg = diagnostics
+                .first()
+                .map(|d| d.message.as_ref())
+                .unwrap_or("unknown error");
+            anyhow!("Failed to parse catalog: {}", msg)
+        })?;
+
+        // Resolve AcroForm dictionary if present (for XFA detection)
+        let acroform = catalog
+            .acroform_ref
+            .and_then(|r| resolver.resolve(r).ok())
+            .and_then(|o| o.as_dict().map(|d| d.clone()));
+
+        // Build fingerprint (lazy version without full page tree)
+        let fingerprint = compute_fingerprint_lazy(&catalog, &resolver, &acroform);
+
+        Ok(Self {
+            catalog,
+            resolver,
+            source: Some(source),
+            fingerprint,
+            is_remote,
+        })
+    }
+
+    /// Get the document fingerprint.
+    pub fn fingerprint(&self) -> &str {
+        &self.fingerprint
+    }
+
+    /// Get the catalog.
+    pub fn catalog(&self) -> &Catalog {
+        &self.catalog
+    }
+
+    /// Check if this is a remote document.
+    pub fn is_remote(&self) -> bool {
+        self.is_remote
+    }
+
+    /// Get the total page count.
+    ///
+    /// This walks the page tree to count pages without materializing PageDict objects.
+    /// Uses O(depth) memory, making it safe for large documents.
+    pub fn page_count(&self) -> Result<usize> {
+        use crate::parser::pages::count_pages_tree;
+        count_pages_tree(&self.resolver, self.catalog.pages_ref)
+            .map_err(|e| anyhow!("Failed to count pages: {:?}", e))
+    }
+
+    /// Get a lazy iterator over pages.
+    ///
+    /// The iterator yields pages one at a time, decoding each page's
+    /// content streams on-demand and dropping them after use.
+    ///
+    /// # Memory Behavior
+    ///
+    /// This uses LazyPageIter which walks the page tree depth-first,
+    /// materializing only the current path from root to leaf (max ~16 nodes).
+    /// Each yielded PageExtraction contains the extracted data for one page,
+    /// and all intermediate data is dropped before yielding the next page.
+    pub fn pages(&self) -> PageIter<'_> {
+        PageIter {
+            lazy_iter: None,
+            catalog: &self.catalog,
+            resolver: &self.resolver,
+            source: self.source.as_ref().map(|s| s.as_ref()),
+            index: 0,
+        }
+    }
+
+    /// Get the xref resolver.
+    pub fn resolver(&self) -> &XrefResolver {
+        &self.resolver
+    }
+
+    /// Get the underlying source if available.
+    pub fn source(&self) -> Option<&dyn ParserPdfSource> {
+        self.source.as_ref().map(|s| s.as_ref())
+    }
+}
+
+/// Lazy iterator over PDF pages.
+///
 /// This iterator yields pages one at a time without materializing
 /// the entire document model in memory.
 ///
@@ -596,8 +856,12 @@ pub struct BlockData {
 pub struct PageIter<'a> {
     /// Lazy page iterator from the parser
     lazy_iter: Option<LazyPageIter<'a>>,
-    /// Reference to the extractor for accessing source/resolver
-    extractor: &'a PdfExtractor,
+    /// Reference to the catalog for page tree root
+    catalog: &'a Catalog,
+    /// Reference to the resolver for object resolution
+    resolver: &'a XrefResolver,
+    /// Reference to the source for stream reading
+    source: Option<&'a dyn ParserPdfSource>,
     /// Current page index
     index: usize,
 }
@@ -608,7 +872,7 @@ impl<'a> Iterator for PageIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         // Initialize lazy iterator on first use
         if self.lazy_iter.is_none() {
-            match LazyPageIter::new(&self.extractor.resolver, self.extractor.catalog.pages_ref) {
+            match LazyPageIter::new(self.resolver, self.catalog.pages_ref) {
                 Ok(iter) => self.lazy_iter = Some(iter),
                 Err(diagnostics) => {
                     let msg = diagnostics
@@ -657,47 +921,85 @@ impl<'a> Iterator for PageIter<'a> {
     }
 }
 
-/// Compute fingerprint without full page materialization.
+/// Open a PDF from a remote HTTP/HTTPS URL.
 ///
-/// This is a simplified version that uses only catalog-level data.
-/// The full fingerprint computation requires page content streams.
-pub(crate) fn compute_fingerprint_lazy(
-    catalog: &Catalog,
-    resolver: &XrefResolver,
-    acroform: &Option<PdfDict>,
-) -> String {
-    // For lazy extraction, use a simpler fingerprint based on catalog data
-    // The full implementation would incrementally hash pages as they're extracted
-    use crate::fingerprint::FingerprintInput;
+/// This is a convenience function that performs the HTTP fetch sequence:
+/// 1. HEAD request to verify Range support and get Content-Length
+/// 2. Tail Range fetch (last 16 KB) to parse startxref and trailer
+/// 3. Xref parsing with forward-scan disabled for remote sources
+/// 4. Returns the parsed catalog, resolver, source, and fingerprint
+///
+/// # Arguments
+///
+/// * `url` - HTTP/HTTPS URL to the PDF file
+///
+/// # Returns
+///
+/// A tuple of (catalog, resolver, source, fingerprint) for further processing.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - URL is invalid or DNS fails
+/// - TLS handshake fails
+/// - Server returns 401/403
+/// - Server doesn't support Range
+/// - HEAD fails with 405 → Falls back to GET with Range: bytes=0-0
+/// - No Content-Length → Returns error
+///
+/// # Example
+///
+/// ```ignore
+/// use pdftract_core::document::open_remote_url;
+///
+/// let (catalog, resolver, source, fingerprint) = open_remote_url("https://example.com/doc.pdf")?;
+/// // Use catalog, resolver, source for custom processing
+/// ```
+#[cfg(feature = "remote")]
+pub fn open_remote_url(url: &str) -> std::io::Result<Box<dyn PdfSource>> {
+    use crate::source::open_remote as open_remote_source;
+    open_remote_source(url, &RemoteOpts::new())
+}
 
-    // Detect JavaScript and XFA presence (no pages available in lazy mode)
-    let contains_javascript = if catalog.open_action.is_some() || catalog.aa.is_some() {
-        true
-    } else {
-        // For catalog-level checks, use simple detection
-        // Full page/annotation walk requires materialized pages
-        false
-    };
-    let contains_xfa = detect_xfa(acroform);
-
-    let fingerprint_input = FingerprintInput {
-        page_count: 0, // Will be updated when pages are extracted
-        pages: vec![],
-        struct_tree_root_ref: catalog.struct_tree_root_ref,
-        is_tagged: catalog.mark_info.is_tagged,
-        catalog_flags: CatalogFlags {
-            is_encrypted: false,
-            contains_javascript,
-            contains_xfa,
-            ocg_present: catalog
-                .oc_properties
-                .as_ref()
-                .map(|props| props.present)
-                .unwrap_or(false),
-        },
-    };
-
-    compute_fingerprint(&fingerprint_input, resolver)
+/// Open a PDF from a remote HTTP/HTTPS URL with options.
+///
+/// This is a convenience function that performs the HTTP fetch sequence
+/// with custom options (headers, credentials).
+///
+/// # Arguments
+///
+/// * `url` - HTTP/HTTPS URL to the PDF file
+/// * `opts` - Remote options (headers, credentials, etc.)
+///
+/// # Returns
+///
+/// A Box<dyn PdfSource> that can be used for PDF parsing.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - URL is invalid or DNS fails → std::io::Error with kind `NotFound`
+/// - TLS handshake fails → std::io::Error with kind `PermissionDenied`
+/// - Server returns 401/403 → std::io::Error with kind `PermissionDenied`
+/// - Server doesn't support Range → std::io::Error with kind `Unsupported`
+/// - HEAD fails with 405 → Falls back to GET with Range: bytes=0-0
+/// - No Content-Length → Returns error with kind `Other`
+///
+/// # Example
+///
+/// ```ignore
+/// use pdftract_core::document::open_remote_url_with_opts;
+/// use pdftract_core::source::RemoteOpts;
+///
+/// let opts = RemoteOpts::new()
+///     .with_header("Authorization", "Bearer token");
+///
+/// let source = open_remote_url_with_opts("https://example.com/doc.pdf", &opts)?;
+/// ```
+#[cfg(feature = "remote")]
+pub fn open_remote_url_with_opts(url: &str, opts: &RemoteOpts) -> std::io::Result<Box<dyn PdfSource>> {
+    use crate::source::open_remote as open_remote_source;
+    open_remote_source(url, opts)
 }
 
 #[cfg(test)]

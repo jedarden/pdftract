@@ -340,6 +340,36 @@ pub struct ExtractionMetadata {
 /// For large documents (1000+ pages), this can consume significant memory.
 /// Use `extract_pdf_ndjson` for true streaming extraction that never accumulates
 /// all pages in memory.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use pdftract_core::{extract_pdf, ExtractionOptions, OutputOptions};
+/// use std::path::Path;
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// // Extract text from a PDF file with default options
+/// let result = extract_pdf(
+///     Path::new("document.pdf"),
+///     &ExtractionOptions::default()
+/// )?;
+///
+/// // Access extracted text per page
+/// for (page_num, page_result) in result.pages.iter().enumerate() {
+///     println!("Page {}: {} chars extracted", page_num + 1, page_result.text.len());
+///     println!("Text: {}", &page_result.text[..page_result.text.len().min(100)]);
+/// }
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The PDF file cannot be opened or read
+/// - The PDF structure is invalid or corrupted
+/// - Decryption fails (for encrypted PDFs)
+/// - Content stream decoding exceeds bomb limits
 pub fn extract_pdf(
     pdf_path: &std::path::Path,
     options: &ExtractionOptions,
@@ -1276,6 +1306,35 @@ pub fn result_to_json(result: &ExtractionResult) -> serde_json::Value {
 /// {"index": 0, "spans": [...], "blocks": [...]}
 /// {"index": 1, "spans": [...], "blocks": [...]}
 /// ```
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use pdftract_core::{extract_pdf_ndjson, ExtractionOptions};
+/// use std::fs::File;
+/// use std::path::Path;
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// // Stream extraction to NDJSON file (memory-efficient for large PDFs)
+/// let output = File::create("output.ndjson")?;
+/// let metadata = extract_pdf_ndjson(
+///     Path::new("large_document.pdf"),
+///     &ExtractionOptions::default(),
+///     output
+/// )?;
+///
+/// println!("Extracted {} pages", metadata.total_pages);
+/// println!("Total spans: {}", metadata.total_spans);
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The PDF file cannot be opened or read
+/// - The PDF structure is invalid or corrupted
+/// - Writing to the output fails
 pub fn extract_pdf_ndjson<W: std::io::Write>(
     pdf_path: &std::path::Path,
     options: &ExtractionOptions,

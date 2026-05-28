@@ -29,7 +29,9 @@ use sha2::{Digest, Sha256};
 use crate::diagnostics::Diagnostic;
 use crate::parser::lexer::Lexer;
 use crate::parser::object::{ObjRef, PdfDict, PdfObject};
+use crate::parser::stream::{ExtractionOptions, decode_stream};
 use crate::parser::xref::XrefResolver;
+use crate::parser::stream::PdfSource as ParserPdfSource;
 
 /// Version prefix for fingerprint output.
 pub const FINGERPRINT_VERSION: &str = "pdftract-v1";
@@ -124,17 +126,22 @@ impl CatalogFlags {
 /// # Arguments
 /// * `input` - The fingerprint input data
 /// * `resolver` - The xref resolver for resolving indirect references
+/// * `source` - Optional PDF source for decoding content streams (None for lazy mode)
 ///
 /// # Returns
 /// A string in the format `"pdftract-v1:" + hex(SHA-256)`.
 ///
 /// # Example
 /// ```ignore
-/// let fingerprint = compute_fingerprint(&fingerprint_input, &resolver);
+/// let fingerprint = compute_fingerprint(&fingerprint_input, &resolver, Some(&source));
 /// assert!(fingerprint.starts_with("pdftract-v1:"));
 /// assert_eq!(fingerprint.len(), "pdftract-v1:".len() + 64);
 /// ```
-pub fn compute_fingerprint(input: &FingerprintInput, resolver: &XrefResolver) -> String {
+pub fn compute_fingerprint(
+    input: &FingerprintInput,
+    resolver: &XrefResolver,
+    source: Option<&dyn ParserPdfSource>,
+) -> String {
     let mut hasher = Sha256::new();
 
     // 1. Page count (u32 big-endian)
@@ -142,7 +149,7 @@ pub fn compute_fingerprint(input: &FingerprintInput, resolver: &XrefResolver) ->
 
     // 2. Per-page contributions
     for page in &input.pages {
-        hash_page(page, &mut hasher, resolver);
+        hash_page(page, &mut hasher, resolver, source);
     }
 
     // 3. Structure tree hash (or zeros)
@@ -165,9 +172,14 @@ pub fn compute_fingerprint(input: &FingerprintInput, resolver: &XrefResolver) ->
 }
 
 /// Hash a single page's contribution to the fingerprint.
-fn hash_page(page: &PageFingerprintData, hasher: &mut Sha256, resolver: &XrefResolver) {
+fn hash_page(
+    page: &PageFingerprintData,
+    hasher: &mut Sha256,
+    resolver: &XrefResolver,
+    source: Option<&dyn ParserPdfSource>,
+) {
     // a. SHA-256 of concatenated decoded content streams
-    let content_hash = hash_content_streams(&page.content_streams, resolver);
+    let content_hash = hash_content_streams(&page.content_streams, resolver, source);
     hasher.update(content_hash);
 
     // b. SHA-256 of resolved resource dict
@@ -183,7 +195,11 @@ fn hash_page(page: &PageFingerprintData, hasher: &mut Sha256, resolver: &XrefRes
 ///
 /// Returns SHA-256 of the concatenated, decoded content streams
 /// with whitespace normalized to single 0x20 between tokens.
-fn hash_content_streams(streams: &[ContentStreamData], resolver: &XrefResolver) -> [u8; 32] {
+fn hash_content_streams(
+    streams: &[ContentStreamData],
+    resolver: &XrefResolver,
+    source: Option<&dyn ParserPdfSource>,
+) -> [u8; 32] {
     let mut hasher = Sha256::new();
 
     for stream_data in streams {
@@ -192,11 +208,16 @@ fn hash_content_streams(streams: &[ContentStreamData], resolver: &XrefResolver) 
                 // Resolve the stream object and decode it
                 match resolver.resolve(*ref_) {
                     Ok(PdfObject::Stream(stream)) => {
-                        // For Phase 1, we use the stream dictionary as a stub
-                        // In a full implementation, we would decode via Phase 1.5
-                        // and normalize whitespace via the lexer
-                        let _ = stream; // Suppress unused warning until Phase 1.5
-                        normalize_content_bytes(&[])
+                        // Try to decode the stream if source is available
+                        if let Some(src) = source {
+                            let opts = ExtractionOptions::default();
+                            let mut decompress_counter = 0u64;
+                            let decoded = decode_stream(&*stream, src, &opts, &mut decompress_counter);
+                            normalize_content_bytes(&decoded)
+                        } else {
+                            // Lazy mode: no source available, use empty bytes
+                            normalize_content_bytes(&[])
+                        }
                     }
                     _ => Vec::new(),
                 }
@@ -771,7 +792,7 @@ mod tests {
             catalog_flags: CatalogFlags::default(),
         };
 
-        let fingerprint = compute_fingerprint(&input, &resolver);
+        let fingerprint = compute_fingerprint(&input, &resolver, None);
 
         assert!(fingerprint.starts_with("pdftract-v1:"));
         assert_eq!(fingerprint.len(), "pdftract-v1:".len() + 64);
@@ -800,10 +821,10 @@ mod tests {
             catalog_flags: CatalogFlags::default(),
         };
 
-        let first = compute_fingerprint(&input, &resolver);
+        let first = compute_fingerprint(&input, &resolver, None);
 
         for _ in 0..99 {
-            let next = compute_fingerprint(&input, &resolver);
+            let next = compute_fingerprint(&input, &resolver, None);
             assert_eq!(next, first, "Fingerprint must be reproducible");
         }
     }
@@ -849,8 +870,8 @@ mod tests {
             catalog_flags: CatalogFlags::default(),
         };
 
-        let fp1 = compute_fingerprint(&input1, &resolver);
-        let fp2 = compute_fingerprint(&input2, &resolver);
+        let fp1 = compute_fingerprint(&input1, &resolver, None);
+        let fp2 = compute_fingerprint(&input2, &resolver, None);
 
         assert_ne!(
             fp1, fp2,
@@ -890,8 +911,8 @@ mod tests {
             catalog_flags: CatalogFlags::default(),
         };
 
-        let fp1 = compute_fingerprint(&input1, &resolver);
-        let fp2 = compute_fingerprint(&input2, &resolver);
+        let fp1 = compute_fingerprint(&input1, &resolver, None);
+        let fp2 = compute_fingerprint(&input2, &resolver, None);
 
         assert_ne!(
             fp1, fp2,
@@ -934,8 +955,8 @@ mod tests {
             },
         };
 
-        let fp1 = compute_fingerprint(&input1, &resolver);
-        let fp2 = compute_fingerprint(&input2, &resolver);
+        let fp1 = compute_fingerprint(&input1, &resolver, None);
+        let fp2 = compute_fingerprint(&input2, &resolver, None);
 
         assert_ne!(
             fp1, fp2,
@@ -969,7 +990,7 @@ mod tests {
             catalog_flags: CatalogFlags::default(),
         };
 
-        let fingerprint = compute_fingerprint(&input, &resolver);
+        let fingerprint = compute_fingerprint(&input, &resolver, None);
 
         let regex = Regex::new(r"^pdftract-v1:[0-9a-f]{64}$").unwrap();
         assert!(
@@ -1004,7 +1025,7 @@ mod tests {
                 catalog_flags: CatalogFlags::default(),
             };
 
-            let fingerprint = compute_fingerprint(&input, &resolver);
+            let fingerprint = compute_fingerprint(&input, &resolver, None);
             assert!(
                 regex.is_match(&fingerprint),
                 "Fingerprint '{}' must match INV-13 format",
@@ -1088,7 +1109,7 @@ mod tests {
         };
 
         let start = Instant::now();
-        let _fingerprint = compute_fingerprint(&input, &resolver);
+        let _fingerprint = compute_fingerprint(&input, &resolver, None);
         let duration = start.elapsed();
 
         // Performance requirement: < 100 ms for 100-page PDF

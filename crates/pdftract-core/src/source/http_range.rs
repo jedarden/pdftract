@@ -120,11 +120,27 @@ impl HttpRangeSource {
         let head_req = agent.head(&url);
         let head_req = apply_headers(head_req, &headers);
 
-        let response = head_req.call().map_err(|e| {
-            classify_http_error(&e, "HEAD request failed")
-        })?;
+        let response = match head_req.call() {
+            Ok(r) => r,
+            Err(e) => {
+                let err = classify_http_error(&e, "HEAD request failed");
+                // Check if this is a 405 Method Not Allowed error
+                if let Some(ureq::Error::Status(code, _)) = Some(&e) {
+                    if *code == 405 {
+                        // Fall back to GET with Range: bytes=0-0 to probe server
+                        return Self::open_with_get_probe(&agent, &url, &headers);
+                    }
+                }
+                return Err(err);
+            }
+        };
 
         if response.status() < 200 || response.status() >= 300 {
+            // Check for 405 Method Not Allowed
+            if response.status() == 405 {
+                // Fall back to GET with Range: bytes=0-0 to probe server
+                return Self::open_with_get_probe(&agent, &url, &headers);
+            }
             return Err(io::Error::new(
                 io::ErrorKind::Other,
                 format!("HEAD request failed with status {}", response.status()),
@@ -148,6 +164,67 @@ impl HttpRangeSource {
             agent: Arc::new(agent),
             url,
             headers,
+            content_length,
+            supports_range,
+            cache: Mutex::new(cache),
+            cursor: Cell::new(0),
+        })
+    }
+
+    /// Open using GET with Range: bytes=0-0 to probe server capabilities.
+    ///
+    /// This is a fallback for servers that don't support HEAD requests (return 405).
+    /// We use a minimal Range request to check for Range support and get Content-Length.
+    fn open_with_get_probe(agent: &ureq::Agent, url: &str, headers: &[(String, String)]) -> io::Result<Self> {
+        // Try GET with Range: bytes=0-0 to probe server
+        let get_req = agent.get(url);
+        let get_req = apply_headers(get_req, headers);
+        let get_req = get_req.set("Range", "bytes=0-0");
+
+        let response = get_req.call().map_err(|e| {
+            classify_http_error(&e, "GET probe request failed")
+        })?;
+
+        // Check status
+        let status = response.status();
+
+        // 206 Partial Content → server supports Range
+        // 200 OK → server ignored Range header (no Range support)
+        // 416 Range Not Satisfiable → server supports Range but range is invalid (zero-length file?)
+
+        let supports_range = status == 206 || status == 416;
+
+        // Get Content-Length from Content-Range header or Content-Length header
+        let content_length = if status == 206 {
+            // Try Content-Range header: "bytes 0-0/TOTAL"
+            response
+                .header("content-range")
+                .and_then(|v| {
+                    v.rsplit('/').next().and_then(|s| s.parse().ok())
+                })
+        } else if status == 416 {
+            // Range Not Satisfiable - check Content-Range for *
+            // Or use Content-Length
+            response
+                .header("content-range")
+                .and_then(|v| {
+                    v.rsplit('/').next().and_then(|s| s.parse().ok())
+                })
+                .or_else(|| {
+                    response.header("content-length").and_then(|v| v.parse().ok())
+                })
+        } else {
+            // 200 OK or other - use Content-Length
+            response.header("content-length").and_then(|v| v.parse().ok())
+        }.unwrap_or(0);
+
+        // Initialize LRU cache
+        let cache = LruCache::new(NonZeroUsize::new(CACHE_CAPACITY).unwrap());
+
+        Ok(Self {
+            agent: Arc::new(agent.clone()),
+            url: url.to_string(),
+            headers: headers.to_vec(),
             content_length,
             supports_range,
             cache: Mutex::new(cache),

@@ -44,6 +44,14 @@ path = "../../tests/fixtures/generate_scientific_paper_fixtures.rs"
 name = "generate_book_chapter_fixtures"
 path = "../../tests/fixtures/generate_book_chapter_fixtures.rs"
 
+[[bin]]
+name = "generate_fixtures"
+path = "../../tests/document_model/fixtures/generate_fixtures.rs"
+
+[[bin]]
+name = "generate_expected_json"
+path = "../../tests/document_model/generate_expected_json.rs"
+
 [[bench]]
 name = "grep_1000"
 harness = false
@@ -147,3 +155,4 @@ image = "0.24"
 chrono = { version = "0.4", features = ["serde"] }
 criterion = "0.5"
 chromiumoxide = "0.6"
+lopdf = "0.34"

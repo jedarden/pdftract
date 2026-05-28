@@ -23,8 +23,11 @@ pub enum FitType {
     /// XYZ destination (left, top, zoom)
     /// Any null value means "retain current view"
     Xyz {
+        /// Left coordinate of the viewport (null = retain current left position)
         left: Option<f32>,
+        /// Top coordinate of the viewport (null = retain current top position)
         top: Option<f32>,
+        /// Zoom factor (null = retain current zoom)
         zoom: Option<f32>,
     },
     /// Fit page to window

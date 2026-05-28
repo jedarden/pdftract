@@ -175,6 +175,26 @@ impl RemoteOpts {
         self
     }
 
+    /// Add Basic Authentication credentials.
+    ///
+    /// This adds an `Authorization` header with Basic authentication
+    /// (base64-encoded username:password).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use pdftract_core::source::RemoteOpts;
+    ///
+    /// let opts = RemoteOpts::new()
+    ///     .with_credentials("user", "pass");
+    /// ```
+    pub fn with_credentials(self, username: &str, password: &str) -> Self {
+        use base64::prelude::*;
+        let creds = format!("{}:{}", username, password);
+        let encoded = BASE64_STANDARD.encode(creds);
+        self.with_header("Authorization", &format!("Basic {}", encoded))
+    }
+
     /// Get the headers as a vector.
     pub fn headers(&self) -> &[(String, String)] {
         &self.headers

@@ -365,12 +365,12 @@ pub fn parse_hint_stream(data: &[u8], diagnostics: &mut Vec<crate::diagnostics::
 /// - `Some(HintTable)`: Successfully parsed hint stream
 /// - `None`: Failed to fetch or parse hint stream (emits STRUCT_INVALID_HINT_STREAM)
 pub fn parse_hint_stream_from_linearized(
-    source: &dyn crate::parser::stream::PdfSource,
+    source: &dyn crate::source::PdfSource,
     hint_stream_offset: u64,
     hint_stream_length: u64,
     diagnostics: &mut Vec<crate::diagnostics::Diagnostic>,
 ) -> Option<HintTable> {
-    use crate::parser::stream::get_decoder;
+    use crate::parser::stream::{get_decoder, FlateDecoder, DEFAULT_MAX_DECOMPRESS_BYTES};
 
     // Fetch the hint stream data
     let hint_stream_data = source
@@ -379,9 +379,17 @@ pub fn parse_hint_stream_from_linearized(
         .filter(|data| !data.is_empty())?;
 
     // The hint stream is flate-encoded (per PDF spec Annex F.1)
-    let decoded = match get_decoder(b"FlateDecode") {
-        Some(crate::parser::stream::StreamDecoder::Flate(decoder)) => {
-            decoder.decode(&hint_stream_data, usize::MAX, diagnostics).ok()?
+    let mut counter = 0u64;
+    let decoded = match get_decoder("FlateDecode") {
+        Some(decoder) => {
+            // Check if it's a FlateDecoder and decode
+            if decoder.name() == "FlateDecode" {
+                decoder.decode(&hint_stream_data, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES).ok()?
+            } else {
+                emit!(diagnostics, StructInvalidHintStream,
+                      message = "hint stream is not FlateDecode".to_string());
+                return None;
+            }
         }
         _ => {
             emit!(diagnostics, StructInvalidHintStream,

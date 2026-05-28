@@ -922,12 +922,15 @@ pub fn repair_split_ligatures(span: &mut Span, neighbor_glyphs: &[Glyph]) -> boo
 #[cfg(test)]
 #[derive(Debug, Clone)]
 pub struct TestSpan {
+    /// Text content of the span.
     pub text: String,
+    /// Bounding box of the span [x0, y0, x1, y1].
     pub bbox: [f64; 4],
 }
 
 #[cfg(test)]
 impl TestSpan {
+    /// Create a new test span with text and bounding box.
     pub fn new(text: impl Into<String>, bbox: [f64; 4]) -> Self {
         Self {
             text: text.into(),
@@ -958,7 +961,9 @@ impl CorrectableText for TestSpan {
 #[cfg(test)]
 #[derive(Debug, Clone)]
 pub struct TestLine {
+    /// Spans in this line.
     pub spans: Vec<TestSpan>,
+    /// Column index for this line (if multi-column).
     pub column: Option<usize>,
 }
 
@@ -975,12 +980,15 @@ impl Default for TestLine {
 /// Test implementation of `Block` for unit tests.
 #[cfg(test)]
 pub struct TestBlock {
+    /// Lines in this block.
     pub lines: Vec<TestLine>,
+    /// Column index for this block.
     pub column: usize,
 }
 
 #[cfg(test)]
 impl TestBlock {
+    /// Create a new test block with lines and column index.
     pub fn new(lines: Vec<TestLine>, column: usize) -> Self {
         Self { lines, column }
     }

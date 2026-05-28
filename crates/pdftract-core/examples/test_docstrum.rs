@@ -16,7 +16,8 @@ fn main() {
         BlockWithBBox::new(4, [350.0, 620.0, 450.0, 660.0]), // sidebar, mid
     ];
 
-    let order = docstrum(&blocks);
+    let result = docstrum(&blocks);
+    let order = &result.order;
     println!("  Order: {:?}", order);
 
     // Find where sidebar blocks appear
@@ -36,7 +37,8 @@ fn main() {
         BlockWithBBox::new(3, [350.0, 400.0, 400.0, 450.0]),
     ];
 
-    let order = docstrum(&blocks);
+    let result = docstrum(&blocks);
+    let order = &result.order;
     println!("  Order: {:?}", order);
 
     assert_eq!(order.len(), 4, "all 4 blocks should be in the order");
@@ -56,11 +58,12 @@ fn main() {
         BlockWithBBox::new(2, [190.0, 700.0, 240.0, 750.0]),
     ];
 
-    let order = docstrum(&blocks);
+    let result = docstrum(&blocks);
+    let order = &result.order;
     println!("  Order: {:?}", order);
 
     assert_eq!(order.len(), 3, "all blocks should be in one component");
-    assert_eq!(order, vec![0, 1, 2], "order should be left-to-right (0, 1, 2)");
+    assert_eq!(*order, vec![0, 1, 2], "order should be left-to-right (0, 1, 2)");
     println!("  PASS: Single component, left-to-right order\n");
 
     // Test 4: All one column vertical
@@ -71,11 +74,12 @@ fn main() {
         BlockWithBBox::new(2, [50.0, 500.0, 100.0, 550.0]), // bottom
     ];
 
-    let order = docstrum(&blocks);
+    let result = docstrum(&blocks);
+    let order = &result.order;
     println!("  Order: {:?}", order);
 
     assert_eq!(order.len(), 3, "all blocks should be in one component");
-    assert_eq!(order, vec![0, 1, 2], "order should be top-to-bottom (0, 1, 2)");
+    assert_eq!(*order, vec![0, 1, 2], "order should be top-to-bottom (0, 1, 2)");
     println!("  PASS: Single component, top-to-bottom order\n");
 
     println!("All Docstrum acceptance criteria tests PASSED!");

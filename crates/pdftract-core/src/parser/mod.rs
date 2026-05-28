@@ -4,6 +4,7 @@
 
 pub mod catalog;
 pub mod diagnostic;
+pub mod hint_stream;
 pub mod inline_image;
 pub mod lexer;
 pub mod marked_content;
@@ -46,6 +47,7 @@ pub use struct_tree::{
     structure_type_to_block_kind, BlockKind, CoverageCheckResult, Kid, MappingResult,
     ParentTreeEntry, ParentTreeResolver, RoleMap, StructElemNode, StructTreeRoot, StructureType,
 };
+pub use hint_stream::{parse_hint_stream, parse_hint_stream_from_linearized, HintTable};
 pub use xref::{
     detect_linearization, is_hybrid_trailer, load_xref_linearized, load_xref_with_prev_chain,
     merge_hybrid, parse_traditional_xref, parse_xref_stream,

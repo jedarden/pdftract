@@ -98,11 +98,19 @@ impl Default for Bitmap32x32 {
 /// 2D point for path construction.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Point {
+    /// X coordinate
     pub x: f64,
+    /// Y coordinate
     pub y: f64,
 }
 
 impl Point {
+    /// Create a new Point with the given coordinates.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - X coordinate
+    /// * `y` - Y coordinate
     pub fn new(x: f64, y: f64) -> Self {
         Self { x, y }
     }
