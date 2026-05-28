@@ -108,17 +108,36 @@ The `schema-gen` template in pdftract-ci.yaml:
 - This enables schema diffs to be reviewable in PRs
 - Schema $id uses pdftract.com domain (DNS already available)
 
+## Enum Values (Clarification)
+
+The bead's "Critical considerations" section lists enum values that differ from the actual implementation:
+
+### confidence_source enum
+- **Bead says:** `["vector", "ocr", "ocr-assisted", "ocr-fallback", "repaired"]`
+- **Actual (per plan line 363 and Rust code):** `["native", "heuristic", "ocr"]`
+- **Rationale:** The plan defines confidence_source as provenance of Unicode resolution (native PDF encoding vs heuristic recovery vs OCR). The bead's values appear to be from an earlier spec version.
+
+### severity enum
+- **Bead says:** `["info", "warning", "error"]` (3 values, no "fatal")
+- **Actual (per Rust code and plan):** `["info", "warning", "error", "fatal"]` (4 values)
+- **Rationale:** The Rust `Severity` enum includes `Fatal` for extraction-aborting conditions (e.g., `ENCRYPTION_UNSUPPORTED`). The bead's omission of "fatal" appears to be an oversight.
+
+The current schema matches the plan and the Rust implementation. The bead requirements should be considered superseded by the plan specification.
+
 ## Retrospective
 
 ### What worked
 - The schemars crate integrates seamlessly with existing serde derives
 - CI gate provides clear error messages with reproduction steps
 - Stable sorting ensures deterministic output for diffs
+- Both GitHub Actions and ArgoCD workflows validate the schema
 
 ### What didn't
-- No issues encountered; implementation was already complete
+- Bead requirements had outdated enum values that didn't match the plan
+- No technical implementation issues
 
 ### Reusable pattern
 - For similar schema generation tasks: use schemars + xtask + CI diff gate
 - Always use BTreeMap sorting for deterministic JSON output
 - Commit generated files (don't generate at build time) for reviewability
+- Verify bead requirements against the plan before implementation
