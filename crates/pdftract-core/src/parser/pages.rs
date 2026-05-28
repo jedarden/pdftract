@@ -66,6 +66,27 @@ pub struct PageDict {
     pub struct_parents: Option<i32>,
 }
 
+impl Default for PageDict {
+    fn default() -> Self {
+        Self {
+            obj_ref: ObjRef::new(0, 0),
+            media_box: DEFAULT_MEDIABOX,
+            crop_box: None,
+            bleed_box: None,
+            trim_box: None,
+            art_box: None,
+            rotate: 0,
+            resources: Arc::new(ResourceDict::new()),
+            contents: Vec::new(),
+            annots: Vec::new(),
+            actual_text: None,
+            lang: None,
+            aa: None,
+            struct_parents: None,
+        }
+    }
+}
+
 impl PageDict {
     /// Get the /StructParents value for this page.
     ///
