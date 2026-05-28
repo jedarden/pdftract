@@ -140,6 +140,9 @@ pub mod span_flags {
 ///
 /// - **flags**: SpanFlags bitmask (bold, italic, smallcaps, subscript, superscript).
 ///
+/// - **column**: Column index (0-based) assigned by Phase 4.3 column detection.
+///   None for spans outside any detected column (e.g., full-width headings).
+///
 /// # Invariants
 ///
 /// - INV: text is VALID UTF-8 (Rust String); no U+FFFD unless the underlying
@@ -172,6 +175,8 @@ pub struct Span {
     pub lang: Option<Arc<str>>,
     /// SpanFlags bitmask (bold, italic, smallcaps, subscript, superscript).
     pub flags: u8,
+    /// Column index (0-based) assigned by Phase 4.3 column detection.
+    pub column: Option<u32>,
 }
 
 impl Span {
@@ -201,6 +206,7 @@ impl Span {
             confidence_source,
             lang,
             flags,
+            column: None,
         }
     }
 
@@ -219,6 +225,7 @@ impl Span {
             confidence_source: ConfidenceSource::Native,
             lang: None,
             flags: 0,
+            column: None,
         }
     }
 
@@ -491,6 +498,7 @@ pub fn merge_glyphs_to_spans(glyphs: &[Glyph]) -> Vec<Span> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::confidence::map_confidence_source;
 
     // CssHexColor tests
 
