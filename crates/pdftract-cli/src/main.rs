@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ArgAction};
+use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -15,8 +16,10 @@ mod inspect;
 mod mcp;
 mod middleware;
 mod output;
+mod pages;
 mod password;
 mod serve;
+mod url;
 mod verify_receipt;
 use codegen::Language;
 use output::OutputConfig;
@@ -835,19 +838,20 @@ fn cmd_extract(
         eprintln!("Password provided via secure channel");
     }
 
+    // Check if input is a URL
+    let input_str = input.to_string_lossy().to_string();
+    let is_url = input_str.starts_with("http://") || input_str.starts_with("https://");
+
     // Parse and validate custom HTTP headers
-    let _headers = if !header.is_empty() {
+    let custom_headers = if !header.is_empty() {
         match header::parse_headers(&header) {
             Ok(h) => {
-                // Check if input is a URL (https:// or http://)
-                let input_str = input.to_string_lossy();
-                if input_str.starts_with("http://") || input_str.starts_with("https://") {
-                    eprintln!("Note: Custom HTTP headers will be passed to HttpRangeSource (Phase 1.8)");
-                    eprintln!("Headers provided: {}", h.len());
-                    Some(h)
+                if is_url {
+                    eprintln!("Custom HTTP headers: {}", h.len());
+                    h
                 } else {
-                    // Local file: silently ignore headers as specified
-                    None
+                    // Local file: headers don't apply, but we don't error
+                    std::collections::HashMap::new()
                 }
             }
             Err(e) => {
@@ -856,7 +860,26 @@ fn cmd_extract(
             }
         }
     } else {
-        None
+        std::collections::HashMap::new()
+    };
+
+    // Parse URL credentials if present
+    let (url_for_source, parsed_url) = if is_url {
+        match url::parse_url(&input_str) {
+            Ok(parsed) => {
+                if parsed.has_credentials {
+                    eprintln!("Warning: URL contains credentials that are visible in shell history.");
+                    eprintln!("Consider using --header 'Authorization: Bearer TOKEN' instead.");
+                }
+                (parsed.url.clone(), Some(parsed))
+            }
+            Err(e) => {
+                eprintln!("Error parsing URL: {}", e);
+                std::process::exit(2);
+            }
+        }
+    } else {
+        (input_str.clone(), None)
     };
 
     // Build extraction options
@@ -1003,10 +1026,54 @@ fn cmd_extract(
         None
     };
 
-    // Perform extraction with cache integration
-    let (mut result, cache_status, cache_age) =
+    // Perform extraction (with different paths for URLs vs local files)
+    let (mut result, cache_status, cache_age) = if is_url {
+        // Remote extraction path
+        #[cfg(not(feature = "remote"))]
+        {
+            eprintln!("Error: Remote sources require the 'remote' feature to be enabled");
+            eprintln!("Build pdftract with: --features remote");
+            std::process::exit(2);
+        }
+
+        #[cfg(feature = "remote")]
+        {
+            use pdftract_core::source::{HttpRangeSource, open_source};
+
+            // Combine custom headers with URL credentials
+            let mut headers_vec: Vec<(String, String)> = custom_headers
+                .into_iter()
+                .map(|(k, v)| (k, v))
+                .collect();
+
+            // If URL has credentials, ureq will automatically add Authorization header
+            // We just pass the URL with credentials to HttpRangeSource
+            let extraction_url = if let Some(ref parsed) = parsed_url {
+                // If credentials were present, use the original URL (with credentials stripped)
+                // ureq will handle the basic auth from the URL
+                parsed.url.clone()
+            } else {
+                url_for_source.clone()
+            };
+
+            // Add custom headers to the URL
+            // Note: ureq automatically handles basic auth when credentials are in the URL
+            let source = HttpRangeSource::with_headers(&extraction_url, headers_vec)
+                .context("Failed to open remote PDF source")?;
+
+            use pdftract_core::extract::{ExtractionSource, extract_pdf_from_source};
+            let extraction_source = ExtractionSource::Remote(Box::new(source));
+
+            let result = extract_pdf_from_source(extraction_source, &options)
+                .context("Failed to extract PDF from remote source")?;
+
+            (result, "skipped".to_string(), None) // Cache not applicable for remote
+        }
+    } else {
+        // Local file extraction path (with cache)
         cache::extract_with_cache(&input, &options, cache_dir_ref, no_cache, cache_size_bytes)
-            .context("Failed to extract PDF")?;
+            .context("Failed to extract PDF")?
+    };
 
     // Set cache status metadata
     result.metadata.cache_status = Some(cache_status);

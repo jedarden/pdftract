@@ -10,6 +10,7 @@ pub mod attachment;
 pub mod audit;
 pub mod cache;
 pub mod classify;
+pub mod cmap;
 pub mod confidence;
 pub mod conformance;
 pub mod content_stream;

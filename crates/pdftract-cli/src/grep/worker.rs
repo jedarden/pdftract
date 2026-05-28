@@ -35,6 +35,9 @@ use pdftract_core::parser::xref::{load_xref_with_prev_chain, XrefResolver, XrefS
 use std::sync::Arc;
 use std::time::Instant;
 
+#[cfg(feature = "remote")]
+use pdftract_core::source::http_range::HttpRangeSource;
+
 /// Result of processing a single PDF file.
 ///
 /// Contains the matches found and the total match count.
@@ -78,43 +81,63 @@ pub fn worker_run(
 ) -> Result<()> {
     let start_time = Instant::now();
 
-    // Get the path string
-    let path = match &item.path {
-        PathOrUrl::Local(p) => p.clone(),
-        PathOrUrl::Remote(_) => {
-            // Remote URLs are not yet supported in worker mode
-            progress_sink.send(ProgressEvent::FileSkipped {
-                path: item.path.display(),
-                reason: "remote URLs not yet supported".to_string(),
-            })?;
-            return Ok(());
-        }
+    // Get the path string and whether it's a URL
+    let (path_str, is_remote) = match &item.path {
+        PathOrUrl::Local(p) => (p.clone(), false),
+        PathOrUrl::Remote(url) => (url.clone(), true),
     };
 
     // Emit file start event
     progress_sink.send(ProgressEvent::FileStart {
-        path: path.display().to_string(),
+        path: item.path.display(),
         size_hint: item.size_hint,
     })?;
 
-    // Open the PDF file
-    let source = match FileSource::open(&path) {
-        Ok(s) => s,
-        Err(e) => {
+    // Open the PDF source (local or remote)
+    let source: Box<dyn PdfSource> = if is_remote {
+        #[cfg(feature = "remote")]
+        {
+            // Convert headers HashMap to Vec<(String, String)>
+            let headers_vec: Vec<(String, String)> = config.headers.clone().into_iter().collect();
+
+            match HttpRangeSource::with_headers(&path_str, headers_vec) {
+                Ok(s) => Box::new(s),
+                Err(e) => {
+                    progress_sink.send(ProgressEvent::FileSkipped {
+                        path: item.path.display(),
+                        reason: format!("failed to open remote PDF: {}", e),
+                    })?;
+                    return Ok(());
+                }
+            }
+        }
+        #[cfg(not(feature = "remote"))]
+        {
             progress_sink.send(ProgressEvent::FileSkipped {
-                path: path.display().to_string(),
-                reason: format!("failed to open: {}", e),
+                path: item.path.display(),
+                reason: "remote URL support not compiled in".to_string(),
             })?;
             return Ok(());
+        }
+    } else {
+        match FileSource::open(&path_str) {
+            Ok(s) => Box::new(s),
+            Err(e) => {
+                progress_sink.send(ProgressEvent::FileSkipped {
+                    path: item.path.display(),
+                    reason: format!("failed to open: {}", e),
+                })?;
+                return Ok(());
+            }
         }
     };
 
     // Find the startxref offset
-    let startxref_offset = match find_startxref(&source) {
+    let startxref_offset = match find_startxref(source.as_ref()) {
         Ok(offset) => offset,
         Err(e) => {
             progress_sink.send(ProgressEvent::FileSkipped {
-                path: path.display().to_string(),
+                path: item.path.display(),
                 reason: format!("invalid PDF: {}", e),
             })?;
             return Ok(());
@@ -128,9 +151,9 @@ pub fn worker_run(
     if let Some(trailer) = &xref_section.trailer {
         if let Some(_encrypt) = trailer.get("/Encrypt") {
             // Encrypted PDF without password support - skip with diagnostic
-            eprintln!("{}: encrypted (skipped)", path.display());
+            eprintln!("{}: encrypted (skipped)", item.path.display());
             progress_sink.send(ProgressEvent::FileSkipped {
-                path: path.display().to_string(),
+                path: item.path.display(),
                 reason: "encrypted (no password provided)".to_string(),
             })?;
             return Ok(());
@@ -190,6 +213,27 @@ pub fn worker_run(
 
     let pages_total = pages.len();
 
+    // Parse page range if specified
+    let page_filter: Option<std::collections::BTreeSet<usize>> = if let Some(ref range_str) = config.pages {
+        let mut page_range_diagnostics = Vec::new();
+        match pdftract_core::pages::parse_pages(range_str, pages_total, &mut page_range_diagnostics) {
+            Ok(filter) => {
+                // Emit diagnostics for out-of-range pages
+                for diag in page_range_diagnostics {
+                    eprintln!("Warning: {}", diag.message);
+                }
+                Some(filter)
+            }
+            Err(e) => {
+                // Invalid page range syntax - emit error and skip all pages
+                eprintln!("Error: {}", e);
+                return Ok(());
+            }
+        }
+    } else {
+        None
+    };
+
     // Compute fingerprint once per file
     let fingerprint = compute_fingerprint_for_grep(&catalog, &pages, &xref_section, &resolver);
 
@@ -197,6 +241,12 @@ pub fn worker_run(
 
     // Process each page
     for (page_index, page) in pages.iter().enumerate() {
+        // Skip if page filter is set and this page is not in the filter
+        if let Some(ref filter) = page_filter {
+            if !filter.contains(&page_index) {
+                continue;
+            }
+        }
         // Emit page progress
         progress_sink.send(ProgressEvent::FileProgress {
             path: path.display().to_string(),

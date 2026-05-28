@@ -91,8 +91,7 @@ pub fn parse_pdf_file(
     // Resolve AcroForm dictionary if present
     let acroform = catalog.acroform_ref
         .and_then(|r| resolver.resolve(r).ok())
-        .and_then(|o| o.as_dict())
-        .cloned();
+        .and_then(|o| o.as_dict().map(|d| d.clone()));
 
     // Build fingerprint input
     let fingerprint_input = build_fingerprint_input(&catalog, &pages, &resolver, &acroform);
@@ -116,7 +115,7 @@ pub fn parse_pdf_file(
 ///
 /// A tuple of (fingerprint, catalog, pages, resolver)
 pub fn parse_pdf_source(
-    source: Box<dyn PdfSource>,
+    source: Box<dyn ParserPdfSource>,
 ) -> Result<(
     String,
     Catalog,
@@ -141,7 +140,7 @@ pub fn parse_pdf_source(
         .ok_or_else(|| anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref, Some(&*source as &dyn PdfSource)).map_err(
+    let catalog = parse_catalog(&resolver, root_ref, Some(&*source as &dyn ParserPdfSource)).map_err(
         |diagnostics| {
             let msg = diagnostics
                 .first()
@@ -163,8 +162,7 @@ pub fn parse_pdf_source(
     // Resolve AcroForm dictionary if present
     let acroform = catalog.acroform_ref
         .and_then(|r| resolver.resolve(r).ok())
-        .and_then(|o| o.as_dict())
-        .cloned();
+        .and_then(|o| o.as_dict().map(|d| d.clone()));
 
     // Build fingerprint input
     let fingerprint_input = build_fingerprint_input(&catalog, &pages, &resolver, &acroform);
@@ -178,7 +176,7 @@ pub fn parse_pdf_source(
 /// Find the startxref offset in a PDF file.
 ///
 /// Scans the last 1024 bytes of the file for "startxref" keyword.
-fn find_startxref(source: &dyn PdfSource) -> Result<u64> {
+fn find_startxref(source: &dyn ParserPdfSource) -> Result<u64> {
     let len = source.len()? as usize;
     let scan_start = len.saturating_sub(1024);
     let scan_end = len;
@@ -393,7 +391,7 @@ impl PdfExtractor {
             .ok_or_else(|| anyhow!("No /Root reference in trailer"))?;
 
         // Parse the catalog
-        let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource)).map_err(
+        let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn ParserPdfSource)).map_err(
             |diagnostics| {
                 let msg = diagnostics
                     .first()
@@ -406,8 +404,7 @@ impl PdfExtractor {
         // Resolve AcroForm dictionary if present (for XFA detection)
         let acroform = catalog.acroform_ref
             .and_then(|r| resolver.resolve(r).ok())
-            .and_then(|o| o.as_dict())
-            .cloned();
+            .and_then(|o| o.as_dict().map(|d| d.clone()));
 
         // Build fingerprint input (without full page tree for lazy extraction)
         let fingerprint = compute_fingerprint_lazy(&catalog, &resolver, &acroform);

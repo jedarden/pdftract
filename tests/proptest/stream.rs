@@ -362,3 +362,226 @@ proptest::proptest! {
         prop_assert_eq!(stream.length(), Some(100));
     }
 }
+
+/// Property: FlateDecode roundtrip - encode then decode produces original.
+#[cfg(feature = "proptest")]
+proptest::proptest! {
+    #[test]
+    fn prop_flate_roundtrip(
+        data in proptest::collection::vec(proptest::num::u8::ANY, 0..50_000)
+    ) {
+        use flate2::write::{ZlibEncoder, ZlibDecoder};
+        use flate2::Compression;
+        use std::io::Write;
+
+        // Encode with flate2 (zlib format)
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(&data).unwrap();
+        let encoded = encoder.finish().unwrap();
+
+        // Decode with our FlateDecoder (handles zlib format)
+        let mut counter = 0;
+        let result = FlateDecoder.decode(&encoded, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+
+        prop_assert!(result.is_ok());
+        let decoded = result.unwrap();
+
+        // Should round-trip perfectly
+        prop_assert_eq!(decoded, data);
+    }
+}
+
+/// Property: ASCII85 roundtrip - encode then decode produces original.
+#[cfg(feature = "proptest")]
+proptest::proptest! {
+    #[test]
+    fn prop_ascii85_roundtrip(
+        data in proptest::collection::vec(proptest::num::u8::ANY, 0..10_000)
+    ) {
+        let encoded = ascii85_encode(&data);
+
+        // Decode with our ASCII85Decoder
+        let mut counter = 0;
+        let result = ASCII85Decoder.decode(&encoded, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+
+        prop_assert!(result.is_ok());
+        let decoded = result.unwrap();
+
+        // Should round-trip perfectly
+        prop_assert_eq!(decoded, data);
+    }
+}
+
+/// Property: RunLengthDecode roundtrip - encode then decode produces original.
+#[cfg(feature = "proptest")]
+proptest::proptest! {
+    #[test]
+    fn prop_runlength_roundtrip(
+        data in proptest::collection::vec(proptest::num::u8::ANY, 0..10_000)
+    ) {
+        let encoded = runlength_encode(&data);
+
+        // Decode with our RunLengthDecoder
+        let mut counter = 0;
+        let result = RunLengthDecoder.decode(&encoded, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+
+        prop_assert!(result.is_ok());
+        let decoded = result.unwrap();
+
+        // Should round-trip perfectly
+        prop_assert_eq!(decoded, data);
+    }
+}
+
+/// Property: Bomb limit enforced for varying decompression ratios.
+#[cfg(feature = "proptest")]
+proptest::proptest! {
+    #[test]
+    fn prop_bomb_limit_enforced(
+        // Seed for deterministic test
+        seed in 0u64..1000u64,
+        // Decompression ratio to test (1 = 1:1, 100 = 100:1)
+        ratio in 10u32..1000u32,
+        // Bomb limit in bytes
+        bomb_limit in 100u64..100_000u64,
+    ) {
+        use flate2::write::ZlibEncoder;
+        use flate2::Compression;
+        use std::io::Write;
+
+        // Create a pattern that compresses well
+        // Repeated pattern "AB" compresses at high ratio
+        let repeat_count = ((ratio as usize) * 100).min(50_000);
+        let mut pattern = Vec::with_capacity(repeat_count * 2);
+        for _ in 0..repeat_count {
+            pattern.push(b'A');
+            pattern.push(b'B');
+        }
+
+        // Encode with flate2
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+        encoder.write_all(&pattern).unwrap();
+        let encoded = encoder.finish().unwrap();
+
+        // Decode with bomb limit
+        let mut counter = 0;
+        let result = FlateDecoder.decode(&encoded, None, &mut counter, bomb_limit);
+
+        prop_assert!(result.is_ok());
+        let decoded = result.unwrap();
+
+        // Output should not exceed bomb limit significantly
+        // (allowing small margin for chunk processing)
+        prop_assert!(
+            decoded.len() as u64 <= bomb_limit + 10_000,
+            "Decoded {} bytes exceeds bomb limit {} by more than 10KB",
+            decoded.len(),
+            bomb_limit
+        );
+
+        // Counter should also be bounded
+        prop_assert!(
+            counter <= bomb_limit + 10_000,
+            "Counter {} exceeds bomb limit {} by more than 10KB",
+            counter,
+            bomb_limit
+        );
+    }
+}
+
+/// Helper: Encode bytes in ASCII85 format (Base85).
+fn ascii85_encode(data: &[u8]) -> Vec<u8> {
+    let mut result = Vec::with_capacity(data.len() / 4 * 5 + 10);
+    result.push(b'<');
+    result.push(b'~');
+
+    let mut chunk = [0u8; 4];
+    for (i, &byte) in data.iter().enumerate() {
+        chunk[i % 4] = byte;
+
+        if i % 4 == 3 || i == data.len() - 1 {
+            // Process this chunk
+            let chunk_len = if i == data.len() - 1 { (i % 4) + 1 } else { 4 };
+
+            // Check for all zeros (use 'z' shortcut)
+            if chunk_len == 4 && chunk.iter().all(|&b| b == 0) {
+                result.push(b'z');
+                chunk = [0; 4];
+                continue;
+            }
+
+            // Convert to 32-bit number
+            let value = u32::from_be_bytes(chunk);
+
+            // Encode in base85
+            for j in (0..5).rev() {
+                let divisor = 85u32.pow(j as u32);
+                let encoded_char = (value / divisor) % 85;
+                result.push(encoded_char as u8 + 33);
+            }
+            chunk = [0; 4];
+        }
+    }
+
+    result.push(b'~');
+    result.push(b'>');
+    result
+}
+
+/// Helper: Encode bytes using RunLength encoding (PDF spec).
+fn runlength_encode(data: &[u8]) -> Vec<u8> {
+    let mut result = Vec::new();
+    let mut i = 0;
+
+    while i < data.len() {
+        // Look ahead for repeated bytes
+        let current_byte = data[i];
+        let mut repeat_count = 1;
+
+        while i + repeat_count < data.len() && data[i + repeat_count] == current_byte && repeat_count < 127 {
+            repeat_count += 1;
+        }
+
+        if repeat_count >= 3 {
+            // Use run-length encoding for 3+ repeats
+            // 257 - repeat_count = length byte
+            let len_byte = (257 - repeat_count) as u8;
+            result.push(len_byte);
+            result.push(current_byte);
+            i += repeat_count;
+        } else {
+            // Look ahead for non-repeating bytes
+            let literal_start = i;
+            let mut literal_len = 0;
+
+            while i + literal_len < data.len() && literal_len < 127 {
+                // Check if next byte would repeat (start of a run)
+                if i + literal_len + 2 < data.len()
+                    && data[i + literal_len] == data[i + literal_len + 1]
+                    && data[i + literal_len] == data[i + literal_len + 2]
+                {
+                    break;
+                }
+                literal_len += 1;
+            }
+
+            // Encode as literal copy
+            if literal_len > 0 {
+                let len_byte = (literal_len - 1) as u8; // len+1 bytes -> len is len-1
+                result.push(len_byte);
+                result.extend_from_slice(&data[literal_start..literal_start + literal_len]);
+                i += literal_len;
+            } else {
+                // Single byte as literal
+                result.push(0); // len=0 means copy 1 byte
+                result.push(current_byte);
+                i += 1;
+            }
+        }
+    }
+
+    // End of data marker
+    result.push(128);
+
+    result
+}

@@ -108,6 +108,17 @@ pub trait PdfSource: Read + Seek + Send + Sync {
     /// The default implementation is a no-op.
     fn prefetch(&self, _offset: u64, _length: usize) {}
 
+    /// Check if this is a remote source (HTTP/HTTPS).
+    ///
+    /// Returns true for HttpRangeSource, false for local sources (MmapSource, FileSource).
+    /// This is used to disable forward-scan xref recovery for remote sources, which would
+    /// require fetching the entire file.
+    ///
+    /// The default implementation returns false (local source).
+    fn is_remote(&self) -> bool {
+        false
+    }
+
     /// Get the underlying source as a `dyn PdfSource` trait object.
     ///
     /// This is used when you need to erase the concrete type and work with
@@ -117,6 +128,56 @@ pub trait PdfSource: Read + Seek + Send + Sync {
         Self: Sized,
     {
         self
+    }
+}
+
+/// Options for opening a remote PDF source.
+///
+/// # Example
+///
+/// ```ignore
+/// use pdftract_core::source::RemoteOpts;
+///
+/// let opts = RemoteOpts::new()
+///     .with_header("Authorization", "Bearer token")
+///     .with_header("X-API-Key", "key123");
+/// ```
+#[cfg(feature = "remote")]
+#[derive(Debug, Clone, Default)]
+pub struct RemoteOpts {
+    /// Custom HTTP headers to include on every request.
+    headers: Vec<(String, String)>,
+}
+
+#[cfg(feature = "remote")]
+impl RemoteOpts {
+    /// Create a new RemoteOpts with default settings (no custom headers).
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add a custom header to the request.
+    ///
+    /// Headers are included on every HEAD and Range request.
+    /// Useful for authentication (Bearer tokens, API keys).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use pdftract_core::source::RemoteOpts;
+    ///
+    /// let opts = RemoteOpts::new()
+    ///     .with_header("Authorization", "Bearer token123")
+    ///     .with_header("X-Custom", "value");
+    /// ```
+    pub fn with_header(mut self, key: &str, value: &str) -> Self {
+        self.headers.push((key.to_string(), value.to_string()));
+        self
+    }
+
+    /// Get the headers as a vector.
+    pub fn headers(&self) -> &[(String, String)] {
+        &self.headers
     }
 }
 
@@ -174,6 +235,46 @@ pub fn open_source(
         let source = FileSource::open(path_or_url)?;
         Ok(Box::new(source))
     }
+}
+
+/// Open a PDF source from a remote HTTP/HTTPS URL.
+///
+/// This function performs a HEAD request to verify Range support and get Content-Length,
+/// then returns an HttpRangeSource for fetching PDF data.
+///
+/// # Arguments
+///
+/// * `url` - HTTP/HTTPS URL to the PDF file
+/// * `opts` - Remote options (headers, credentials, etc.)
+///
+/// # Returns
+///
+/// A `Box<dyn PdfSource>` that can be used for PDF parsing.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The URL is invalid or DNS fails → io::Error with kind `NotFound`
+/// - TLS handshake fails → io::Error with kind `PermissionDenied`
+/// - Server returns 401/403 → io::Error with kind `PermissionDenied`
+/// - Server doesn't support Range → io::Error with kind `Unsupported`
+/// - HEAD fails with 405 → Falls back to GET with Range: bytes=0-0
+/// - No Content-Length → Returns error with kind `Other`
+///
+/// # Example
+///
+/// ```ignore
+/// use pdftract_core::source::{open_remote, RemoteOpts};
+///
+/// let opts = RemoteOpts::new()
+///     .with_header("Authorization", "Bearer token");
+///
+/// let source = open_remote("https://example.com/doc.pdf", &opts)?;
+/// ```
+#[cfg(feature = "remote")]
+pub fn open_remote(url: &str, opts: &RemoteOpts) -> io::Result<Box<dyn PdfSource>> {
+    let source = HttpRangeSource::with_headers(url, opts.headers().to_vec())?;
+    Ok(Box::new(source))
 }
 
 /// Open a PDF source from a local file path.

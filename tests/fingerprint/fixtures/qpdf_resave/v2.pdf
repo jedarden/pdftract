@@ -1,0 +1,85 @@
+%PDF-1.3
+%¿÷¢þ
+1 0 obj
+<< /Metadata 3 0 R /Pages 4 0 R /Type /Catalog >>
+endobj
+2 0 obj
+<< /Author (pdftract test suite) /Producer (pikepdf 9.2.1) /Title (Fingerprint Test Source) >>
+endobj
+3 0 obj
+<< /Subtype /XML /Type /Metadata /Length 748 >>
+stream
+<?xpacket begin="ï»¿" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="pikepdf">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+ <rdf:Description rdf:about=""><dc:title xmlns:dc="http://purl.org/dc/elements/1.1/"><rdf:Alt><rdf:li xml:lang="x-default">Fingerprint Test Source</rdf:li></rdf:Alt></dc:title></rdf:Description><rdf:Description xmlns:dc="http://purl.org/dc/elements/1.1/" rdf:about="" dc:creator="pdftract test suite"/><rdf:Description xmlns:pdf="http://ns.adobe.com/pdf/1.3/" rdf:about="" pdf:Producer="pikepdf 9.2.1"/><rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/" rdf:about="" xmp:MetadataDate="2026-05-28T10:44:48.139665+00:00"/></rdf:RDF>
+</x:xmpmeta>
+
+<?xpacket end="w"?>
+endstream
+endobj
+4 0 obj
+<< /Count 3 /Kids [ 5 0 R 6 0 R 7 0 R ] /Type /Pages >>
+endobj
+5 0 obj
+<< /Contents 8 0 R /MediaBox [ 0 0 612 792 ] /Parent 4 0 R /Resources << /Font << /F1 << /BaseFont (/Helvetica) /Subtype (/Type1) /Type (/Font) >> >> >> /Type /Page >>
+endobj
+6 0 obj
+<< /Contents 9 0 R /MediaBox [ 0 0 612 792 ] /Parent 4 0 R /Resources << /Font << /F1 << /BaseFont (/Helvetica) /Subtype (/Type1) /Type (/Font) >> >> >> /Type /Page >>
+endobj
+7 0 obj
+<< /Contents 10 0 R /MediaBox [ 0 0 612 792 ] /Parent 4 0 R /Resources << /Font << /F1 << /BaseFont (/Helvetica) /Subtype (/Type1) /Type (/Font) >> >> >> /Type /Page >>
+endobj
+8 0 obj
+<< /Length 283 >>
+stream
+
+        BT
+        /F1 12 Tf
+        50 700 Td
+        (Page 1: Lorem ipsum dolor sit amet, consectetur adipiscing elit.\n    Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.\n    Ut enim ad minim veniam, quis nostrud exercitation ullamco.)
+ Tj
+        ET
+        endstream
+endobj
+9 0 obj
+<< /Length 283 >>
+stream
+
+        BT
+        /F1 12 Tf
+        50 690 Td
+        (Page 2: Lorem ipsum dolor sit amet, consectetur adipiscing elit.\n    Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.\n    Ut enim ad minim veniam, quis nostrud exercitation ullamco.)
+ Tj
+        ET
+        endstream
+endobj
+10 0 obj
+<< /Length 283 >>
+stream
+
+        BT
+        /F1 12 Tf
+        50 680 Td
+        (Page 3: Lorem ipsum dolor sit amet, consectetur adipiscing elit.\n    Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.\n    Ut enim ad minim veniam, quis nostrud exercitation ullamco.)
+ Tj
+        ET
+        endstream
+endobj
+xref
+0 11
+0000000000 65535 f 
+0000000015 00000 n 
+0000000080 00000 n 
+0000000190 00000 n 
+0000001018 00000 n 
+0000001089 00000 n 
+0000001272 00000 n 
+0000001455 00000 n 
+0000001639 00000 n 
+0000001972 00000 n 
+0000002305 00000 n 
+trailer << /Info 2 0 R /Root 1 0 R /Size 11 /ID [<04fd46456b646e87b6f278795faf265c><b36e913dc0b735084c8c4237f43a6e8e>] >>
+startxref
+2639
+%%EOF

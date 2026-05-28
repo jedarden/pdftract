@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
-use clap::Parser;
+use clap::{ArgAction, Parser};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -121,6 +122,14 @@ pub struct GrepArgs {
     /// Suppress all output except exit code
     #[arg(long)]
     pub quiet: bool,
+
+    /// Custom HTTP headers for remote sources (repeatable; format: HEADER:VALUE)
+    #[arg(long, value_name = "HEADER:VALUE", action = ArgAction::Append)]
+    pub header: Vec<String>,
+
+    /// Page range to extract (1-based, comma-separated: 1-5,7,12-)
+    #[arg(long, value_name = "RANGE")]
+    pub pages: Option<String>,
 }
 
 impl GrepArgs {
@@ -185,6 +194,13 @@ impl GrepArgs {
         // Determine thread count
         let threads = self.threads.unwrap_or_else(num_cpus::get);
 
+        // Parse and validate custom HTTP headers
+        let headers = if !self.header.is_empty() {
+            crate::header::parse_headers(&self.header)?
+        } else {
+            HashMap::new()
+        };
+
         Ok(GrepConfig {
             pattern: self.pattern.clone(),
             paths: self.paths.clone(),
@@ -203,6 +219,8 @@ impl GrepArgs {
             progress_mode: self.progress_mode(),
             progress_json: self.progress_json,
             quiet: self.quiet,
+            headers,
+            pages: self.pages.clone(),
         })
     }
 }
@@ -227,6 +245,10 @@ pub struct GrepConfig {
     pub progress_mode: ProgressMode,
     pub progress_json: bool,
     pub quiet: bool,
+    /// Custom HTTP headers for remote sources (lowercase names)
+    pub headers: HashMap<String, String>,
+    /// Page range to extract (1-based, comma-separated)
+    pub pages: Option<String>,
 }
 
 /// Check if the remote feature is enabled at compile time.

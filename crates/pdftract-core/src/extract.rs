@@ -409,7 +409,7 @@ pub fn extract_pdf(
     )?;
 
     // Build fingerprint input (without full page tree for lazy extraction)
-    let fingerprint = compute_fingerprint_lazy(&catalog, &xref_section);
+    let fingerprint = compute_fingerprint_lazy(&catalog, &xref_section, &catalog.acroform);
 
     // Wrap resolver in Arc for sharing across threads
     let resolver_arc = Arc::new(resolver);
@@ -1631,7 +1631,7 @@ where
     };
 
     // Build fingerprint
-    let fingerprint = compute_fingerprint_lazy(&catalog, &xref_section);
+    let fingerprint = compute_fingerprint_lazy(&catalog, &xref_section, &catalog.acroform);
 
     // Wrap options in Arc for sharing across threads
     let fingerprint_arc = Arc::new(fingerprint.clone());

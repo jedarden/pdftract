@@ -133,7 +133,7 @@ fn detect_conformance_impl(
             Err(_) => {
                 // Malformed XML - emit diagnostic and return None
                 diagnostics.push(Diagnostic::with_static_no_offset(
-                    DiagCode::StructInvalidXmp,
+                    DiagCode::StructUnexpectedByte,
                     "Malformed XMP metadata in /Metadata stream; unable to parse PDF/A conformance",
                 ));
                 return (None, true);

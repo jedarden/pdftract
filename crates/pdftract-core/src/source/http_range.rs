@@ -210,6 +210,10 @@ impl PdfSource for HttpRangeSource {
         self.content_length
     }
 
+    fn is_remote(&self) -> bool {
+        true
+    }
+
     fn read_range(&self, offset: u64, length: usize) -> io::Result<Bytes> {
         // Bounds check
         if offset > self.content_length {
