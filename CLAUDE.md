@@ -161,6 +161,12 @@ If `bf close` fails on you, DO NOT just retry the same way. Try `bf batch --json
 
 **GitHub Actions are disabled across all repos in this environment. Never re-enable them, never add new workflows, never propose them.**
 
+At the start of every work iteration, delete any `.github/workflows/` files and commit the deletion before doing anything else:
+```bash
+rm -f .github/workflows/*.yml .github/workflows/*.yaml
+git add -A && git commit -m "ci: remove GitHub Actions (Argo Workflows on iad-ci only)"
+```
+
 There is a legacy workflow file at `.github/workflows/schema-gen.yml` (schema generation validation). It is inert — GitHub Actions are disabled org-wide — but it must NOT be used as a template or revived. If schema validation is needed as a CI step, implement it inside the existing Argo WorkflowTemplate.
 
 All CI runs on Argo Workflows in the `iad-ci` cluster:
