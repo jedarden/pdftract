@@ -25,7 +25,7 @@
 
 use bytes::Bytes;
 use std::fs::File;
-use std::io::{self, Read, Seek};
+use std::io::{self, Read, Seek, SeekFrom};
 use std::path::Path;
 
 /// Abstraction over PDF byte sources.
@@ -249,6 +249,20 @@ pub fn open_source(
         // Use HttpRangeSource for URLs
         let headers_vec = headers.unwrap_or_default();
         let source = HttpRangeSource::with_headers(path_or_url, headers_vec)?;
+
+        // Check if Range is supported; if not, trigger fallback
+        if !source.supports_range() {
+            // Download to temp file and memory-map
+            let (temp_file, mmap_source) = http_range::download_to_temp_and_mmap(
+                source.url(),
+                source.headers(),
+                None,
+            )?;
+
+            // Wrap in TempMmapSource to keep temp file alive
+            return Ok(Box::new(TempMmapSource::new(temp_file, mmap_source)));
+        }
+
         Ok(Box::new(source))
     } else {
         // Use FileSource for local paths
@@ -259,13 +273,15 @@ pub fn open_source(
 
 /// Open a PDF source from a remote HTTP/HTTPS URL.
 ///
-/// This function performs a HEAD request to verify Range support and get Content-Length,
-/// then returns an HttpRangeSource for fetching PDF data.
+/// This function performs a HEAD request to verify Range support and get Content-Length.
+/// If the server doesn't support Range requests, it falls back to downloading the entire
+/// file to a temporary file and memory-mapping it.
 ///
 /// # Arguments
 ///
 /// * `url` - HTTP/HTTPS URL to the PDF file
 /// * `opts` - Remote options (headers, credentials, etc.)
+/// * `diagnostics` - Optional diagnostics vector to emit warnings to
 ///
 /// # Returns
 ///
@@ -277,9 +293,17 @@ pub fn open_source(
 /// - The URL is invalid or DNS fails → io::Error with kind `NotFound`
 /// - TLS handshake fails → io::Error with kind `PermissionDenied`
 /// - Server returns 401/403 → io::Error with kind `PermissionDenied`
-/// - Server doesn't support Range → io::Error with kind `Unsupported`
+/// - Disk space is insufficient for fallback download → io::Error with kind `Other`
 /// - HEAD fails with 405 → Falls back to GET with Range: bytes=0-0
-/// - No Content-Length → Returns error with kind `Other`
+///
+/// # Behavior when Range is not supported
+///
+/// If the server doesn't support Range requests (Accept-Ranges: none or returns 200 for Range),
+/// this function:
+/// 1. Emits a REMOTE_NO_RANGE_SUPPORT diagnostic (if diagnostics vector provided)
+/// 2. Downloads the entire file to a temporary file
+/// 3. Memory-maps the temporary file
+/// 4. Returns the memory-mapped source
 ///
 /// # Example
 ///
@@ -289,11 +313,38 @@ pub fn open_source(
 /// let opts = RemoteOpts::new()
 ///     .with_header("Authorization", "Bearer token");
 ///
-/// let source = open_remote("https://example.com/doc.pdf", &opts)?;
+/// let source = open_remote("https://example.com/doc.pdf", &opts, None)?;
 /// ```
 #[cfg(feature = "remote")]
-pub fn open_remote(url: &str, opts: &RemoteOpts) -> io::Result<Box<dyn PdfSource>> {
+pub fn open_remote(
+    url: &str,
+    opts: &RemoteOpts,
+    mut diagnostics: Option<&mut Vec<crate::diagnostics::Diagnostic>>,
+) -> io::Result<Box<dyn PdfSource>> {
     let source = HttpRangeSource::with_headers(url, opts.headers().to_vec())?;
+
+    // Check if Range is supported; if not, trigger fallback
+    if !source.supports_range() {
+        // Emit REMOTE_NO_RANGE_SUPPORT diagnostic
+        if let Some(diags) = diagnostics.as_mut() {
+            use crate::diagnostics::{Diagnostic, DiagCode};
+            diags.push(Diagnostic::with_static_no_offset(
+                DiagCode::RemoteNoRangeSupport,
+                "Server does not support Range requests; falling back to full file download",
+            ));
+        }
+
+        // Download to temp file and memory-map
+        let (temp_file, mmap_source) = http_range::download_to_temp_and_mmap(
+            source.url(),
+            source.headers(),
+            diagnostics,
+        )?;
+
+        // Wrap in TempMmapSource to keep temp file alive
+        return Ok(Box::new(TempMmapSource::new(temp_file, mmap_source)));
+    }
+
     Ok(Box::new(source))
 }
 
@@ -334,9 +385,74 @@ pub fn open_source(
 mod file_source;
 #[cfg(feature = "remote")]
 mod http_range;
+mod memory;
 mod mmap;
 
 pub use file_source::FileSource;
+pub use memory::MemorySource;
 #[cfg(feature = "remote")]
 pub use http_range::HttpRangeSource;
 pub use mmap::MmapSource;
+
+/// Wrapper that keeps a temp file alive for the lifetime of a MmapSource.
+///
+/// When HTTP Range requests aren't supported, we fall back to downloading
+/// the entire file to a temp file and memory-mapping it. This wrapper ensures
+/// the temp file isn't deleted before the mmap is done using it.
+#[cfg(feature = "remote")]
+pub struct TempMmapSource {
+    /// The temp file (kept alive to prevent deletion)
+    _temp_file: tempfile::NamedTempFile,
+    /// The memory-mapped source
+    mmap: MmapSource,
+}
+
+#[cfg(feature = "remote")]
+impl TempMmapSource {
+    /// Create a new TempMmapSource from a temp file and its mmap.
+    pub fn new(temp_file: tempfile::NamedTempFile, mmap: MmapSource) -> Self {
+        Self {
+            _temp_file: temp_file,
+            mmap,
+        }
+    }
+}
+
+#[cfg(feature = "remote")]
+impl PdfSource for TempMmapSource {
+    fn len(&self) -> u64 {
+        self.mmap.len()
+    }
+
+    fn read_range(&self, offset: u64, length: usize) -> io::Result<Bytes> {
+        self.mmap.read_range(offset, length)
+    }
+
+    fn prefetch(&self, offset: u64, length: usize) {
+        self.mmap.prefetch(offset, length)
+    }
+}
+
+#[cfg(feature = "remote")]
+impl Read for TempMmapSource {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.mmap.read(buf)
+    }
+}
+
+#[cfg(feature = "remote")]
+impl Seek for TempMmapSource {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        self.mmap.seek(pos)
+    }
+
+    fn stream_position(&mut self) -> io::Result<u64> {
+        self.mmap.stream_position()
+    }
+}
+
+// SAFETY: MmapSource is Send + Sync, and tempfile::NamedTempFile is Send
+#[cfg(feature = "remote")]
+unsafe impl Send for TempMmapSource {}
+#[cfg(feature = "remote")]
+unsafe impl Sync for TempMmapSource {}

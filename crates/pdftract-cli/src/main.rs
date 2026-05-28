@@ -304,6 +304,10 @@ enum Commands {
         /// Write per-request audit log to FILE (NDJSON; use "-" for stdout)
         #[arg(long, value_name = "FILE")]
         audit_log: Option<PathBuf>,
+
+        /// Trust X-Forwarded-For header for client IP detection (DANGER: enables IP spoofing if not behind a trusted proxy)
+        #[arg(long)]
+        trust_forwarded_for: bool,
     },
     /// Start the MCP (Model Context Protocol) server
     ///
@@ -600,6 +604,7 @@ fn main() -> Result<()> {
             max_upload_mb,
             max_decompress_gb,
             audit_log,
+            trust_forwarded_for,
         } => {
             if let Err(e) = cmd_serve(
                 bind,
@@ -609,6 +614,7 @@ fn main() -> Result<()> {
                 max_upload_mb,
                 max_decompress_gb,
                 audit_log,
+                trust_forwarded_for,
             ) {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
@@ -1799,6 +1805,7 @@ fn cmd_serve(
     max_upload_mb: usize,
     max_decompress_gb: usize,
     audit_log: Option<PathBuf>,
+    trust_forwarded_for: bool,
 ) -> Result<()> {
     // Warn if binding to 0.0.0.0 (no auth, exposed to all interfaces)
     if bind.starts_with("0.0.0.0") || bind.starts_with("[::]") {
@@ -1843,6 +1850,7 @@ fn cmd_serve(
             max_upload_mb,
             max_decompress_gb,
             audit_log,
+            trust_forwarded_for,
         ))
 }
 

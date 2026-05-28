@@ -13,9 +13,11 @@ use serde::{Deserialize, Serialize};
 pub struct Segment {
     /// Start point (x0, y0).
     pub x0: f32,
+    /// Start point (x0, y0).
     pub y0: f32,
     /// End point (x1, y1).
     pub x1: f32,
+    /// End point (x1, y1).
     pub y1: f32,
     /// Orientation of the segment.
     pub orientation: SegmentOrientation,
@@ -173,7 +175,9 @@ impl Segment {
 /// Orientation of a path segment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SegmentOrientation {
+    /// Horizontal orientation.
     Horizontal,
+    /// Vertical orientation.
     Vertical,
 }
 

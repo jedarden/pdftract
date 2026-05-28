@@ -43,12 +43,27 @@ pub type ResolveResult<T> = Result<T, ResolveError>;
 /// Cross-reference table entry.
 #[derive(Debug, Clone, PartialEq)]
 pub enum XrefEntry {
-    /// Free entry (available for reuse)
-    Free { next_free: u32, gen_nr: u16 },
-    /// In-use entry at a specific byte offset
-    InUse { offset: u64, gen_nr: u16 },
-    /// Compressed object in an object stream
-    Compressed { obj_stm_nr: u32, index: u32 },
+    /// Free entry (available for reuse).
+    Free {
+        /// Object number of the next free entry in the free list.
+        next_free: u32,
+        /// Generation number when this object was freed.
+        gen_nr: u16,
+    },
+    /// In-use entry at a specific byte offset.
+    InUse {
+        /// Byte offset of the indirect object in the PDF file.
+        offset: u64,
+        /// Generation number of this object.
+        gen_nr: u16,
+    },
+    /// Compressed object in an object stream (PDF 1.5+).
+    Compressed {
+        /// Object number of the containing object stream.
+        obj_stm_nr: u32,
+        /// Index of this object within the object stream.
+        index: u32,
+    },
 }
 
 /// Result of parsing a traditional xref table.
@@ -1461,7 +1476,7 @@ fn parse_obj_header_at_memory(data: &[u8], obj_offset: u64) -> Option<(u32, u16)
 ///
 /// Returns Some(PdfDict) if found, None otherwise.
 fn forward_scan_trailer(source: &dyn PdfSource) -> Option<PdfDict> {
-    let source_len = source.len().ok()?;
+    let source_len = source.len();
     const TRAILER_KEYWORD: &[u8] = b"trailer";
 
     // Read from the end of the file backwards (trailer is usually near the end)
@@ -2056,7 +2071,7 @@ pub fn detect_linearization(source: &dyn PdfSource) -> Option<LinearizationInfo>
     };
 
     // Validate that /L matches the actual file size
-    let actual_file_length = source.len().ok()?;
+    let actual_file_length = source.len();
     if file_length != actual_file_length {
         // File was modified after linearization (incremental update)
         // Linearization is invalid, fall through to non-linearized path

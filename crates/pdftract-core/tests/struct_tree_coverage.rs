@@ -82,6 +82,8 @@ fn test_suspects_true_fallback_to_xy_cut() {
         max_decompress_bytes: 512 * 1024 * 1024,
         output: Default::default(),
         pages: None,
+        password: None,
+        http_headers: None,
     };
 
     let result = extract_pdf(&fixture_path, &options);
@@ -140,6 +142,8 @@ fn test_suspects_false_trusts_tree() {
         max_decompress_bytes: 512 * 1024 * 1024,
         output: Default::default(),
         pages: None,
+        password: None,
+        http_headers: None,
     };
 
     let result = extract_pdf(&fixture_path, &options);
@@ -196,6 +200,8 @@ fn test_suspects_true_high_coverage_no_fallback() {
         max_decompress_bytes: 512 * 1024 * 1024,
         output: Default::default(),
         pages: None,
+        password: None,
+        http_headers: None,
     };
 
     let result = extract_pdf(&fixture_path, &options);

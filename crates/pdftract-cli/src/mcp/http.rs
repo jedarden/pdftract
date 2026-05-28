@@ -23,11 +23,11 @@
 
 use crate::mcp::framing::{BatchMessage, ErrorObject, Id, Notification, Request, Response};
 use crate::mcp::tools;
-use crate::middleware::{audit_middleware, AuditState};
+use crate::middleware::{audit_middleware, AuditState, RequestMetadata};
 use anyhow::{anyhow, Context, Result};
 use axum::{
     body::Body,
-    extract::{DefaultBodyLimit, Request as AxumRequest, State},
+    extract::{DefaultBodyLimit, Extension, Request as AxumRequest, State},
     http::{HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Json, Response as AxumResponse, Sse},
     routing::{get, post},
@@ -206,6 +206,7 @@ pub async fn run_server(
 /// Returns a single response or batch response array.
 async fn handle_post_request(
     State(state): State<McpServerState>,
+    Extension(metadata): Extension<RequestMetadata>,
     headers: HeaderMap,
     body: String,
 ) -> AxumResponse {
@@ -248,6 +249,45 @@ async fn handle_post_request(
     for request in requests {
         let response = handle_request(request, registry, root);
         responses.push(response);
+    }
+
+    // Write audit log if configured
+    if let Some(ref writer) = state.audit.writer {
+        let duration_ms = metadata.start_time.elapsed().as_millis() as u64;
+
+        // For batch requests, we log the batch as a single entry
+        // For single requests, we log one entry
+        // The tool name is the first request's method (or "mcp.batch" for batches)
+        let tool_name = if responses.len() == 1 {
+            // For single request, get the method from the response if it's a tools/call
+            // Otherwise use the metadata tool from the URL path
+            metadata.tool.clone()
+        } else {
+            "mcp.batch".to_string()
+        };
+
+        // Determine status: 200 if all responses are success, 500 if any error
+        let status = if responses.iter().all(|r| r.is_success()) {
+            200
+        } else {
+            500
+        };
+
+        // Collect diagnostics from all error responses
+        let diagnostics: Vec<String> = responses
+            .iter()
+            .filter_map(|r| r.get_error())
+            .map(|e| e.code.to_string())
+            .collect();
+
+        let _ = writer.log(
+            &tool_name,
+            metadata.client_ip.as_deref(),
+            None, // No fingerprint available at MCP layer (PDF bytes not directly exposed)
+            duration_ms,
+            status,
+            &diagnostics,
+        );
     }
 
     // Return the response(s)

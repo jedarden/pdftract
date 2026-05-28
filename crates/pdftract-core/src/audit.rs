@@ -16,7 +16,7 @@
 //!
 //! # Thread safety
 //!
-//! The writer uses a Mutex<BufWriter> for concurrent access.
+//! The writer uses a `Mutex\<BufWriter\>` for concurrent access.
 //! Each write is flushed immediately for crash safety.
 
 use anyhow::{Context, Result};
@@ -45,8 +45,8 @@ pub struct AuditRecord {
     pub fingerprint: Option<String>,
     /// Request duration in milliseconds
     pub duration_ms: u64,
-    /// Status ("ok" or "error")
-    pub status: String,
+    /// HTTP-style status code (200 ok, 4xx client error, 5xx server error)
+    pub status: u16,
     /// Diagnostic codes only (no messages)
     pub diagnostics: Vec<String>,
 }
@@ -57,7 +57,7 @@ impl AuditRecord {
         tool: impl Into<String>,
         fingerprint: Option<String>,
         duration_ms: u64,
-        status: impl Into<String>,
+        status: u16,
     ) -> Self {
         let ts = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
         Self {
@@ -66,7 +66,7 @@ impl AuditRecord {
             tool: tool.into(),
             fingerprint,
             duration_ms,
-            status: status.into(),
+            status,
             diagnostics: Vec::new(),
         }
     }
@@ -150,7 +150,7 @@ impl AuditLogWriter {
         client_ip: Option<&str>,
         fingerprint: Option<&str>,
         duration_ms: u64,
-        status: &str,
+        status: u16,
         diagnostics: &[String],
     ) -> Result<()> {
         let ts = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
@@ -160,7 +160,7 @@ impl AuditLogWriter {
             tool: tool.to_string(),
             fingerprint: fingerprint.map(|s| s.to_string()),
             duration_ms,
-            status: status.to_string(),
+            status,
             diagnostics: diagnostics.to_vec(),
         };
         self.write_record(&record)
@@ -174,11 +174,11 @@ mod tests {
 
     #[test]
     fn test_audit_record_new() {
-        let record = AuditRecord::new("extract", Some("pdftract-v1:abcd".to_string()), 1234, "ok");
+        let record = AuditRecord::new("extract", Some("pdftract-v1:abcd".to_string()), 1234, 200);
         assert_eq!(record.tool, "extract");
         assert_eq!(record.fingerprint, Some("pdftract-v1:abcd".to_string()));
         assert_eq!(record.duration_ms, 1234);
-        assert_eq!(record.status, "ok");
+        assert_eq!(record.status, 200);
         assert!(record.ts.len() > 0);
         assert!(record.client_ip.is_none());
         assert!(record.diagnostics.is_empty());
@@ -186,13 +186,13 @@ mod tests {
 
     #[test]
     fn test_audit_record_with_client_ip() {
-        let record = AuditRecord::new("extract", None, 100, "ok").with_client_ip("10.0.0.1");
+        let record = AuditRecord::new("extract", None, 100, 200).with_client_ip("10.0.0.1");
         assert_eq!(record.client_ip, Some("10.0.0.1".to_string()));
     }
 
     #[test]
     fn test_audit_record_with_diagnostics() {
-        let record = AuditRecord::new("extract", None, 100, "error")
+        let record = AuditRecord::new("extract", None, 100, 500)
             .with_diagnostics(vec!["XREF_REPAIRED".to_string(), "STREAM_BOMB".to_string()]);
         assert_eq!(record.diagnostics.len(), 2);
         assert_eq!(record.diagnostics[0], "XREF_REPAIRED");
@@ -201,7 +201,7 @@ mod tests {
 
     #[test]
     fn test_audit_record_add_diagnostic() {
-        let mut record = AuditRecord::new("extract", None, 100, "ok");
+        let mut record = AuditRecord::new("extract", None, 100, 200);
         record.add_diagnostic("XREF_REPAIRED");
         assert_eq!(record.diagnostics.len(), 1);
         assert_eq!(record.diagnostics[0], "XREF_REPAIRED");
@@ -209,14 +209,14 @@ mod tests {
 
     #[test]
     fn test_audit_record_serialize() {
-        let record = AuditRecord::new("extract", Some("pdftract-v1:abcd".to_string()), 1234, "ok")
+        let record = AuditRecord::new("extract", Some("pdftract-v1:abcd".to_string()), 1234, 200)
             .with_client_ip("10.0.0.1")
             .with_diagnostics(vec!["XREF_REPAIRED".to_string()]);
         let json = serde_json::to_string(&record).unwrap();
         assert!(json.contains("\"tool\":\"extract\""));
         assert!(json.contains("\"fingerprint\":\"pdftract-v1:abcd\""));
         assert!(json.contains("\"duration_ms\":1234"));
-        assert!(json.contains("\"status\":\"ok\""));
+        assert!(json.contains("\"status\":200"));
         assert!(json.contains("\"client_ip\":\"10.0.0.1\""));
         assert!(json.contains("\"diagnostics\":[\"XREF_REPAIRED\"]"));
         // Verify it's a single line
@@ -234,7 +234,7 @@ mod tests {
 
         let writer = AuditLogWriter::open(&temp_file).unwrap();
 
-        let record = AuditRecord::new("extract", Some("pdftract-v1:abcd".to_string()), 1234, "ok");
+        let record = AuditRecord::new("extract", Some("pdftract-v1:abcd".to_string()), 1234, 200);
         writer.write_record(&record).unwrap();
 
         // Read back the file

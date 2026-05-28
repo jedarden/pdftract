@@ -36,8 +36,11 @@ pub enum DestAnchor {
     /// XYZ destination (left, top, zoom)
     /// Any null value means "retain current view"
     Xyz {
+        /// Left coordinate (null = retain current)
         left: Option<f64>,
+        /// Top coordinate (null = retain current)
         top: Option<f64>,
+        /// Zoom factor (null = retain current)
         zoom: Option<f64>,
     },
     /// Fit page to window

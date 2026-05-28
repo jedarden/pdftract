@@ -348,7 +348,7 @@ fn compute_fingerprint_for_grep(
         catalog_flags,
     };
 
-    compute_fingerprint(&fingerprint_input, resolver)
+    compute_fingerprint(&fingerprint_input, resolver, None)
 }
 
 /// A span of text extracted from a PDF.

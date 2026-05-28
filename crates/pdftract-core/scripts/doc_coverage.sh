@@ -1,53 +1,53 @@
 #!/bin/bash
+# Analyze pdftract-core public API documentation coverage.
 
-CRATE_ROOT="crates/pdftract-core/src"
-OUTPUT_FILE="target/doc_coverage_report.txt"
+set -e
 
-{
-    echo "Calculating rustdoc coverage for pdftract-core..."
-    echo "Generated: $(date)"
-    echo ""
-    echo "=== Public Item Counts ==="
+cd "$(dirname "$0")/.."
 
-    pub_fn_count=$(rg "^pub fn " "$CRATE_ROOT" --no-heading | wc -l | tr -d ' ')
-    pub_struct_count=$(rg "^pub struct " "$CRATE_ROOT" --no-heading | wc -l | tr -d ' ')
-    pub_enum_count=$(rg "^pub enum " "$CRATE_ROOT" --no-heading | wc -l | tr -d ' ')
-    pub_trait_count=$(rg "^pub trait " "$CRATE_ROOT" --no-heading | wc -l | tr -d ' ')
-    pub_type_count=$(rg "^pub type " "$CRATE_ROOT" --no-heading | wc -l | tr -d ' ')
-    pub_const_count=$(rg "^pub const " "$CRATE_ROOT" --no-heading | wc -l | tr -d ' ')
-    pub_static_count=$(rg "^pub static " "$CRATE_ROOT" --no-heading | wc -l | tr -d ' ')
-
-    total_items=$((pub_fn_count + pub_struct_count + pub_enum_count + pub_trait_count + pub_type_count + pub_const_count + pub_static_count))
-
-    echo "Functions: $pub_fn_count"
-    echo "Structs: $pub_struct_count"
-    echo "Enums: $pub_enum_count"
-    echo "Traits: $pub_trait_count"
-    echo "Types: $pub_type_count"
-    echo "Constants: $pub_const_count"
-    echo "Statics: $pub_static_count"
-    echo "Total: $total_items"
-    echo ""
-
-    echo "=== Key Public API Files (doc comment count) ==="
-
-    for entry in "lib.rs:lib.rs" "extract.rs:extract.rs" "document.rs:document.rs" "options.rs:options.rs" "schema/mod.rs:schema/mod.rs" "source/mod.rs:source/mod.rs" "font/mod.rs:font/mod.rs" "table/mod.rs:table/mod.rs" "layout/mod.rs:layout/mod.rs" "forms/mod.rs:forms/mod.rs"; do
-        file="${CRATE_ROOT}/${entry%:*}"
-        name="${entry#*:}"
-        
-        if [ -f "$file" ]; then
-            pub_items=$(rg "^pub (fn|struct|enum|trait|type)" "$file" --no-heading | wc -l | tr -d ' ')
-            doc_lines=$(rg "^///" "$file" --count-matches | tr -d ' ' || echo 0)
-            echo "  $name: $doc_lines doc comments, $pub_items public items"
-        fi
-    done
-
-    echo ""
-    echo "=== Coverage Note ==="
-    echo "This is a rough estimate. The 80% target requires worked examples, not just doc comments."
-
-} > "$OUTPUT_FILE"
-
-cat "$OUTPUT_FILE"
+echo "=== pdftract-core Public API Documentation Coverage ==="
 echo ""
-echo "Coverage report written to $OUTPUT_FILE"
+
+# Run cargo doc with missing_docs enabled
+echo "Running cargo doc to check for missing_docs warnings..."
+
+# First, check if missing_docs is already enabled
+if grep -q "#!\[deny(missing_docs)\]" src/lib.rs; then
+    echo "missing_docs already enabled"
+else
+    echo "Enabling missing_docs lint temporarily..."
+    cp src/lib.rs src/lib.rs.bak
+    sed -i '1i #![deny(missing_docs)]' src/lib.rs
+    trap "mv src/lib.rs.bak src/lib.rs" EXIT
+fi
+
+# Run cargo doc and capture warnings
+OUTPUT=$(cargo doc --no-deps 2>&1 || true)
+
+# Count missing_docs warnings
+MISSING=$(echo "$OUTPUT" | grep -c "missing_docs" || echo 0)
+echo "Public items missing documentation: $MISSING"
+
+# Get documented count from cargo doc output
+DOCUMENTED=$(echo "$OUTPUT" | grep -oP "documented \K[0-9]+" || echo 0)
+echo "Total public items documented: $DOCUMENTED"
+
+# Calculate total items
+TOTAL=$((DOCUMENTED + MISSING))
+COVERAGE=0
+if [ "$TOTAL" -gt 0 ]; then
+    COVERAGE=$((DOCUMENTED * 100 / TOTAL))
+fi
+
+echo ""
+echo "=== Coverage Status ==="
+echo "Total public items: $TOTAL"
+echo "Coverage: ${COVERAGE}%"
+
+if [ "$COVERAGE" -ge 80 ]; then
+    echo "✓ PASS: ${COVERAGE}% coverage meets 80% threshold"
+    exit 0
+else
+    echo "✗ FAIL: ${COVERAGE}% coverage below 80% threshold"
+    exit 1
+fi

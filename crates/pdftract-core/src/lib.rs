@@ -1,4 +1,4 @@
-// #![deny(missing_docs)]
+#![deny(missing_docs)]
 
 //! pdftract-core — Core PDF parsing and text extraction primitives.
 //!
@@ -140,10 +140,11 @@
 //!
 //! # Error Handling
 //!
-//! Most functions return `Result<T, E>` where `E` is typically:
-//! - [`PdfError`] — General parsing/processing errors
-//! - [`std::io::Error`] — File I/O errors
-//! - [`serde_json::Error`] — JSON serialization errors (when applicable)
+//! Most functions return `anyhow::Result<T>` which wraps various error types:
+//! - File I/O errors from opening/reading PDFs
+//! - Parsing errors from malformed PDF structures
+//! - Decryption errors for encrypted PDFs (when `decrypt` feature is enabled)
+//! - JSON serialization errors when emitting structured output
 //!
 //! # Thread Safety
 //!
@@ -238,8 +239,9 @@ pub use table::{GridCandidate, PageContext as TablePageContext, TableDetector};
 pub use text::{serialize_page_text, TextOptions};
 pub use word_boundary::{TextState, WordBoundaryDetector, WordBoundaryManager};
 
-// Re-export PdfSource trait (pdftract-1mmq9)
-pub use source::{FileSource, MmapSource, PdfSource};
+// Re-export PdfSource types (pdftract-1mmq9)
+// Note: PdfSource trait is available via pdftract_core::source::PdfSource to avoid conflict with parser::stream::PdfSource
+pub use source::{FileSource, MmapSource};
 
 #[cfg(feature = "remote")]
 pub use source::{HttpRangeSource, RemoteOpts};

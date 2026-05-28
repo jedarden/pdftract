@@ -261,6 +261,7 @@ fn handle_request(
     request: Request,
     registry: &tools::ToolRegistry,
     root: Option<&Path>,
+    audit_writer: Option<&pdftract_core::audit::AuditLogWriter>,
 ) -> Response {
     let id = request.request_id();
 

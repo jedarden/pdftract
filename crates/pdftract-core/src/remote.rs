@@ -70,11 +70,10 @@ pub fn open_remote(
     use crate::parser::stream::PdfSource as ParserPdfSource;
 
     // Open the remote PDF source
-    let source = open_remote_source(url, opts).context("Failed to open remote PDF source")?;
+    let source = open_remote_source(url, opts, None).context("Failed to open remote PDF source")?;
 
-    // Convert source to parser PdfSource
-    // The blanket impl in parser/stream.rs converts any source::PdfSource to parser::stream::PdfSource
-    let parser_source: Box<dyn ParserPdfSource> = source;
+    // Convert source to parser PdfSource using SourceAdapter
+    let parser_source: Box<dyn ParserPdfSource> = Box::new(crate::parser::stream::SourceAdapter::new(source));
 
     // Find the startxref offset using progressive tail fetch for remote sources
     // This starts with 16 KB and progressively fetches larger tails if needed
@@ -109,8 +108,7 @@ pub fn open_remote(
     let acroform = catalog
         .acroform_ref
         .and_then(|r| resolver.resolve(r).ok())
-        .and_then(|o| o.as_dict())
-        .cloned();
+        .and_then(|o| o.as_dict().cloned());
 
     // Build fingerprint input (without full page tree for lazy extraction)
     let fingerprint = compute_fingerprint_lazy(&catalog, &resolver, &acroform);

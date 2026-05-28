@@ -139,6 +139,23 @@ static {}_METRICS: Std14Metrics = Std14Metrics {{
         );
     }
 
+    let doc_comment = r#"/// Look up Standard 14 font metrics by font name.
+///
+/// Returns `Some(&'static Std14Metrics)` if the font name is one of the
+/// Standard 14 fonts (e.g., "Times-Roman", "Helvetica", "Courier"), otherwise
+/// returns `None`.
+///
+/// # Example
+///
+/// ```rust
+/// use pdftract_core::get_std14_metrics;
+///
+/// if let Some(metrics) = get_std14_metrics("Helvetica") {
+///     println!("Helvetica ascent: {}", metrics.ascent);
+/// }
+/// ```
+"#;
+
     let rust_code = format!(
         r#"
 // Auto-generated Standard 14 font metrics.
@@ -146,12 +163,14 @@ static {}_METRICS: Std14Metrics = Std14Metrics {{
 
 {}
 
+{}
 pub fn get_std14_metrics(name: &str) -> Option<&'static Std14Metrics> {{
     static METRICS: phf::Map<&'static str, &'static Std14Metrics> = {};
     METRICS.get(name).copied()
 }}
 "#,
         metrics_structs,
+        doc_comment,
         map_builder.build()
     );
 
@@ -198,9 +217,15 @@ fn generate_named_encodings(out_dir: &Path, encodings_path: &Path) {
 
         encoding_arrays.push_str(&format!(
             r#"
+/// Named encoding table for {}.
+///
+/// Maps byte values (0-255) to glyph names according to the PDF specification's
+/// predefined encodings. Each entry is `Some(glyph_name)` if the byte maps to
+/// a named glyph, or `None` if it's unmapped.
 pub static {}: [Option<&'static str>; 256] = [
 {}];
 "#,
+            encoding_name,
             ident,
             array_values.join(", ")
         ));
@@ -214,6 +239,21 @@ pub static {}: [Option<&'static str>; 256] = [
 
 {}
 
+/// Look up a named encoding table by [`NamedEncoding`] enum.
+///
+/// Returns a reference to a 256-element array mapping byte values to glyph names
+/// for the specified encoding. This is used by the font resolver to decode
+/// text encoded with predefined PDF encodings.
+///
+/// # Example
+///
+/// ```rust
+/// use pdftract_core::font::NamedEncoding;
+/// use pdftract_core::get_named_encoding_table;
+///
+/// let win_ansi = get_named_encoding_table(NamedEncoding::WinAnsi);
+/// assert_eq!(win_ansi[0x41], Some("A")); // 0x41 = 'A' in WinAnsiEncoding
+/// ```
 pub fn get_named_encoding_table(encoding: NamedEncoding) -> &'static [Option<&'static str>; 256] {{
     match encoding {{
         NamedEncoding::WinAnsi => &WIN_ANSI,

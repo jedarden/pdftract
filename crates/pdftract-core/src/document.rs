@@ -329,7 +329,7 @@ pub fn extract_spans_from_page(
 ///
 /// # Returns
 ///
-/// The fingerprint string in the format "pdftract-v1:<hex>"
+/// The fingerprint string in the format "pdftract-v1:\<hex\>"
 pub fn compute_pdf_fingerprint(pdf_path: &std::path::Path) -> Result<String> {
     let (fingerprint, _catalog, _pages, _resolver) = parse_pdf_file(pdf_path)?;
     Ok(fingerprint)
@@ -732,9 +732,11 @@ impl Document {
     /// ```
     #[cfg(feature = "remote")]
     pub fn open_remote(url: &str, opts: &RemoteOpts) -> Result<Self> {
+        use crate::parser::stream::SourceAdapter;
         use crate::source::open_remote as open_remote_source;
-        let source = open_remote_source(url, opts).context("Failed to open remote PDF source")?;
-        Self::from_source(source, true)
+        let source = open_remote_source(url, opts, None).context("Failed to open remote PDF source")?;
+        let adapted = Box::new(SourceAdapter::new(source)) as Box<dyn ParserPdfSource>;
+        Self::from_source(adapted, true)
     }
 
     /// Create a Document from a generic PdfSource.
@@ -958,7 +960,7 @@ impl<'a> Iterator for PageIter<'a> {
 #[cfg(feature = "remote")]
 pub fn open_remote_url(url: &str) -> std::io::Result<Box<dyn PdfSource>> {
     use crate::source::open_remote as open_remote_source;
-    open_remote_source(url, &RemoteOpts::new())
+    open_remote_source(url, &RemoteOpts::new(), None)
 }
 
 /// Open a PDF from a remote HTTP/HTTPS URL with options.
@@ -999,7 +1001,7 @@ pub fn open_remote_url(url: &str) -> std::io::Result<Box<dyn PdfSource>> {
 #[cfg(feature = "remote")]
 pub fn open_remote_url_with_opts(url: &str, opts: &RemoteOpts) -> std::io::Result<Box<dyn PdfSource>> {
     use crate::source::open_remote as open_remote_source;
-    open_remote_source(url, opts)
+    open_remote_source(url, opts, None)
 }
 
 #[cfg(test)]

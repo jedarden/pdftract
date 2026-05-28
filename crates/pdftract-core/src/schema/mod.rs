@@ -1036,10 +1036,13 @@ pub enum DestTypeJson {
     ///
     /// Null values mean "retain current view" for that parameter.
     Xyz {
+        /// Left coordinate (null = retain current left).
         #[serde(skip_serializing_if = "Option::is_none")]
         left: Option<f64>,
+        /// Top coordinate (null = retain current top).
         #[serde(skip_serializing_if = "Option::is_none")]
         top: Option<f64>,
+        /// Zoom factor (null = retain current zoom).
         #[serde(skip_serializing_if = "Option::is_none")]
         zoom: Option<f64>,
     },
@@ -1047,30 +1050,38 @@ pub enum DestTypeJson {
     Fit,
     /// Fit horizontally with optional top coordinate.
     FitH {
+        /// Top coordinate to position at top of window (null = retain current).
         #[serde(skip_serializing_if = "Option::is_none")]
         top: Option<f64>,
     },
     /// Fit vertically with optional left coordinate.
     FitV {
+        /// Left coordinate to position at left of window (null = retain current).
         #[serde(skip_serializing_if = "Option::is_none")]
         left: Option<f64>,
     },
     /// Fit rectangle (left, bottom, right, top).
     FitR {
+        /// Left edge of rectangle.
         left: f64,
+        /// Bottom edge of rectangle.
         bottom: f64,
+        /// Right edge of rectangle.
         right: f64,
+        /// Top edge of rectangle.
         top: f64,
     },
     /// Fit bounding box to window.
     FitB,
     /// Fit bounding box horizontally with optional top coordinate.
     FitBH {
+        /// Top edge of window in PDF user space units.
         #[serde(skip_serializing_if = "Option::is_none")]
         top: Option<f64>,
     },
     /// Fit bounding box vertically with optional left coordinate.
     FitBV {
+        /// Left edge of window in PDF user space units.
         #[serde(skip_serializing_if = "Option::is_none")]
         left: Option<f64>,
     },
@@ -1223,38 +1234,60 @@ pub enum AnnotationSpecificJson {
     /// Text markup annotations (Highlight, Squiggly, StrikeOut, Underline).
     ///
     /// Contains quad points for the highlighted regions.
-    TextMarkup { quads: Vec<[f32; 8]> },
+    TextMarkup {
+        /// Array of 8-element quadpoint arrays [x0, y0, x1, y1, x2, y2, x3, y3].
+        quads: Vec<[f32; 8]>
+    },
 
     /// Stamp annotation with icon name.
-    Stamp { name: Option<String> },
+    Stamp {
+        /// Stamp icon name (e.g., "Approved", "Draft", "Confidential").
+        name: Option<String>
+    },
 
     /// FreeText annotation with default appearance string.
-    FreeText { da: Option<String> },
+    FreeText {
+        /// Default appearance string for text rendering.
+        da: Option<String>
+    },
 
     /// Text (sticky note) annotation.
     Text {
+        /// Whether the note is initially open in the viewer.
         #[serde(skip_serializing_if = "Option::is_none")]
         open: Option<bool>,
+        /// Note state model (e.g., "Marked" for review states).
         #[serde(skip_serializing_if = "Option::is_none")]
         state: Option<String>,
+        /// State model name (e.g., "Review").
         #[serde(skip_serializing_if = "Option::is_none")]
         state_model: Option<String>,
     },
 
     /// Ink annotation with stroke paths.
-    Ink { strokes: Vec<Vec<[f32; 2]>> },
+    Ink {
+        /// Stroke paths as sequences of (x, y) coordinates.
+        strokes: Vec<Vec<[f32; 2]>>,
+    },
 
     /// Line annotation with endpoints.
     Line {
+        /// Line endpoints as [x0, y0, x1, y1].
         #[serde(skip_serializing_if = "Option::is_none")]
         endpoints: Option<[f32; 4]>,
     },
 
     /// Polygon or PolyLine annotation with vertices.
-    Polygon { vertices: Vec<[f32; 2]> },
+    Polygon {
+        /// Polygon vertices as sequences of (x, y) coordinates.
+        vertices: Vec<[f32; 2]>,
+    },
 
     /// FileAttachment annotation.
-    FileAttachment { fs_ref: Option<u32> },
+    FileAttachment {
+        /// File specification reference.
+        fs_ref: Option<u32>,
+    },
 
     /// Other annotation types with no subtype-specific fields.
     #[serde(other)]

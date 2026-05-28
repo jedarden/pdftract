@@ -171,6 +171,25 @@ impl HttpRangeSource {
         })
     }
 
+    /// Check if the server supports Range requests.
+    ///
+    /// Returns false if the server doesn't support Range (Accept-Ranges: none
+    /// or returned 200 for a Range request). In this case, use the fallback
+    /// `download_to_temp_and_mmap` function to download the entire file.
+    pub fn supports_range(&self) -> bool {
+        self.supports_range
+    }
+
+    /// Get the URL for this source.
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    /// Get the headers used for this source.
+    pub fn headers(&self) -> &[(String, String)] {
+        &self.headers
+    }
+
     /// Open using GET with Range: bytes=0-0 to probe server capabilities.
     ///
     /// This is a fallback for servers that don't support HEAD requests (return 405).
@@ -560,6 +579,143 @@ fn classify_http_error(err: &ureq::Error, context: &str) -> io::Error {
                 format!("{}: {}", context, transport_err),
             )
         }
+    }
+}
+
+/// Fallback: download entire file to temp and memory-map it.
+///
+/// Used when the server doesn't support Range requests. Downloads the entire
+/// file to a temporary file and memory-maps it for efficient access.
+///
+/// # Arguments
+///
+/// * `url` - HTTP/HTTPS URL to download from
+/// * `headers` - Custom headers to include in the request
+/// * `diagnostics` - Optional diagnostics vector to emit errors to
+///
+/// # Returns
+///
+/// A tuple of (temp file, mmap source). The temp file must be kept alive
+/// for the lifetime of the mmap source.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Disk space is insufficient (emits REMOTE_INSUFFICIENT_DISK diagnostic)
+/// - Download fails (REMOTE_FETCH_INTERRUPTED)
+/// - File cannot be memory-mapped
+pub fn download_to_temp_and_mmap(
+    url: &str,
+    headers: &[(String, String)],
+    diagnostics: Option<&mut Vec<crate::diagnostics::Diagnostic>>,
+) -> io::Result<(tempfile::NamedTempFile, super::MmapSource)> {
+    #[cfg(feature = "remote")]
+    {
+        use std::io::Write;
+        use crate::diagnostics::{Diagnostic, DiagCode};
+
+        // Build agent and request
+        let agent = ureq::AgentBuilder::new()
+            .timeout(std::time::Duration::from_secs(READ_TIMEOUT_SECS))
+            .build();
+
+        let req = agent.get(url);
+        let req = apply_headers(req, headers);
+
+        // Get response to check Content-Length first
+        let response = req.call().map_err(|e| {
+            classify_http_error(&e, "Fallback download request failed")
+        })?;
+
+        if response.status() < 200 || response.status() >= 300 {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("Fallback download failed with status {}", response.status()),
+            ));
+        }
+
+        // Get Content-Length for disk space check
+        let content_length = response
+            .header("content-length")
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(0);
+
+        // Check disk space
+        #[cfg(feature = "nix")]
+        {
+            use nix::sys::statvfs;
+            use std::path::Path;
+
+            // Get temp directory path
+            let temp_dir = tempfile::Builder::new().prefix("pdftract").tempdir()?;
+            let temp_path = temp_dir.path();
+
+            // Get statvfs info
+            let stat = statvfs::statvfs(temp_path)?;
+
+            // Calculate available space (f_bavail * f_frsize)
+            let available_bytes = stat.statvfs.f_bavail as u64 * stat.statvfs.f_frsize as u64;
+
+            // Add 10% buffer for filesystem overhead and temp file metadata
+            let required_bytes = content_length.saturating_mul(11) / 10;
+
+            if content_length > 0 && available_bytes < required_bytes {
+                // Emit REMOTE_INSUFFICIENT_DISK diagnostic
+                if let Some(diags) = diagnostics {
+                    diags.push(Diagnostic::with_dynamic_no_offset(
+                        DiagCode::RemoteInsufficientDisk,
+                        format!(
+                            "Insufficient disk space for fallback download: need {} bytes, have {} bytes available. Set TMPDIR to a different path if needed.",
+                            required_bytes, available_bytes
+                        ),
+                    ));
+                }
+
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!(
+                        "Insufficient disk space: need {} bytes, have {} bytes available",
+                        required_bytes, available_bytes
+                    ),
+                ));
+            }
+
+            // Explicitly drop the tempdir so we can create our NamedTempFile
+            drop(temp_dir);
+        }
+
+        // Create temp file
+        let mut temp_file = tempfile::NamedTempFile::new()?;
+
+        // Download and write to temp file
+        let mut reader = response.into_reader();
+        let mut writer = temp_file.as_file_mut();
+
+        io::copy(&mut reader, &mut writer).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::Interrupted,
+                format!("Failed to download file: {}", e),
+            )
+        })?;
+
+        // Sync to disk
+        writer.flush()?;
+        writer.sync_all()?;
+
+        // Reopen as MmapSource
+        let mmap_source = super::MmapSource::open(temp_file.path())?;
+
+        Ok((temp_file, mmap_source))
+    }
+
+    #[cfg(not(feature = "remote"))]
+    {
+        let _ = (url, headers);
+        let _ = diagnostics;
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Remote sources are not supported; rebuild pdftract with --features remote",
+        ))
     }
 }
 

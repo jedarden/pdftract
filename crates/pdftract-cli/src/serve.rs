@@ -67,11 +67,11 @@
 //! - `EXTRACTION_ERROR`: PDF parsing or extraction failure
 //! - `INTERNAL_PANIC`: spawn_blocking task panicked (indicates a bug)
 
-use crate::middleware::{audit_middleware, AuditState};
+use crate::middleware::{audit_middleware, AuditState, RequestMetadata};
 use anyhow::{Context, Result};
 use axum::{
     body::Body,
-    extract::{DefaultBodyLimit, Multipart, State},
+    extract::{DefaultBodyLimit, Extension, Multipart, State},
     http::{HeaderMap, HeaderValue, StatusCode, Request, Response},
     response::{IntoResponse, Json, Response as AxumResponse},
     routing::{get, post},
@@ -120,15 +120,21 @@ impl ServeState {
         cache_disabled: bool,
         audit_writer: Option<AuditLogWriter>,
         max_decompress_bytes: u64,
+        trust_forwarded_for: bool,
     ) -> Self {
         let cache = CacheState {
             cache_dir,
             cache_size_bytes,
             cache_disabled,
         };
+        let audit = if trust_forwarded_for {
+            AuditState::with_trusted_forwarded_for(audit_writer)
+        } else {
+            AuditState::new(audit_writer)
+        };
         Self {
             cache: Arc::new(Mutex::new(cache)),
-            audit: AuditState::new(audit_writer),
+            audit,
             max_decompress_bytes,
         }
     }
@@ -362,7 +368,9 @@ mod form_helpers {
 /// * `cache_size_bytes` — Cache size limit in bytes
 /// * `cache_disabled` — Whether cache is globally disabled
 /// * `max_upload_mb` — Maximum request body size in MB
+/// * `max_decompress_gb` — Maximum decompression size in GB
 /// * `audit_log` — Optional audit log file path
+/// * `trust_forwarded_for` — Whether to trust X-Forwarded-For for client IP
 pub async fn run(
     bind_addr: String,
     cache_dir: Option<PathBuf>,
@@ -371,6 +379,7 @@ pub async fn run(
     max_upload_mb: usize,
     max_decompress_gb: usize,
     audit_log: Option<PathBuf>,
+    trust_forwarded_for: bool,
 ) -> Result<()> {
     let cache_dir_for_logging = cache_dir.as_deref();
 
@@ -523,6 +532,7 @@ async fn extract_get_not_found_handler() -> impl IntoResponse {
 /// Extract handler - returns JSON with cache status in metadata.
 async fn extract_handler(
     State(state): State<ServeState>,
+    Extension(metadata): Extension<RequestMetadata>,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, AxumError> {
     let (pdf_file, params) = receive_pdf(&mut multipart).await?;
@@ -568,6 +578,10 @@ async fn extract_handler(
     result.metadata.cache_status = Some(cache_status.clone());
     result.metadata.cache_age_seconds = cache_age;
 
+    // Extract fingerprint and diagnostics for audit log
+    let fingerprint = result.fingerprint.clone();
+    let diagnostics: Vec<String> = result.metadata.diagnostics.iter().map(|d| d.code.to_string()).collect();
+
     let json = result_to_json(&result);
 
     let response = AxumResponse::builder()
@@ -580,12 +594,26 @@ async fn extract_handler(
         .body(Body::from(serde_json::to_string(&json).unwrap()))
         .map_err(|e| AxumError::Internal(format!("{:?}", e).to_string()))?;
 
+    // Write audit log if configured
+    if let Some(ref writer) = state.audit.writer {
+        let duration_ms = metadata.start_time.elapsed().as_millis() as u64;
+        let _ = writer.log(
+            &metadata.tool,
+            metadata.client_ip.as_deref(),
+            Some(&fingerprint),
+            duration_ms,
+            200,
+            &diagnostics,
+        );
+    }
+
     Ok(response)
 }
 
 /// Extract text handler - returns plain text with X-Pdftract-Cache header.
 async fn extract_text_handler(
     State(state): State<ServeState>,
+    Extension(metadata): Extension<RequestMetadata>,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, AxumError> {
     let (pdf_file, params) = receive_pdf(&mut multipart).await?;
@@ -624,6 +652,10 @@ async fn extract_text_handler(
         }
     })??;
 
+    // Extract fingerprint and diagnostics for audit log
+    let fingerprint = result.fingerprint.clone();
+    let diagnostics: Vec<String> = result.metadata.diagnostics.iter().map(|d| d.code.to_string()).collect();
+
     let mut text = String::new();
     for page in &result.pages {
         for span in &page.spans {
@@ -640,6 +672,19 @@ async fn extract_text_handler(
         )
         .body(Body::from(text))
         .map_err(|e| AxumError::Internal(format!("{:?}", e).to_string()))?;
+
+    // Write audit log if configured
+    if let Some(ref writer) = state.audit.writer {
+        let duration_ms = metadata.start_time.elapsed().as_millis() as u64;
+        let _ = writer.log(
+            &metadata.tool,
+            metadata.client_ip.as_deref(),
+            Some(&fingerprint),
+            duration_ms,
+            200,
+            &diagnostics,
+        );
+    }
 
     Ok(response)
 }

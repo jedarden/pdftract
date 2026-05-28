@@ -13,7 +13,7 @@
 use crate::grep::event::MatchEvent;
 use anyhow::{anyhow, Context, Result};
 use pdftract_core::parser::object::{ObjRef, PdfDict, PdfObject};
-use pdftract_core::parser::stream::{FileSource, PdfSource};
+use pdftract_core::parser::stream::FileSource;
 use pdftract_core::parser::xref::{load_xref_with_prev_chain, XrefEntry, XrefSection};
 use std::collections::HashMap;
 

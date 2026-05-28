@@ -47,7 +47,7 @@ pub use struct_tree::{
     structure_type_to_block_kind, BlockKind, CoverageCheckResult, Kid, MappingResult,
     ParentTreeEntry, ParentTreeResolver, RoleMap, StructElemNode, StructTreeRoot, StructureType,
 };
-pub use hint_stream::{parse_hint_stream, parse_hint_stream_from_linearized, HintTable};
+pub use hint_stream::{parse_hint_stream, parse_hint_stream_from_linearized, prefetch_from_hint_stream, HintTable};
 pub use xref::{
     detect_linearization, is_hybrid_trailer, load_xref_linearized, load_xref_with_prev_chain,
     merge_hybrid, parse_traditional_xref, parse_xref_stream,

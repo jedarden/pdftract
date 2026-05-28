@@ -43,13 +43,25 @@ pub type ObjStmResult<T> = Result<T, ObjStmError>;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ObjStmError {
     /// Required key missing from stream dictionary
-    MissingKey { key: String },
+    MissingKey {
+        /// The missing key name.
+        key: String,
+    },
     /// Invalid object stream format
-    InvalidFormat { msg: String },
+    InvalidFormat {
+        /// Error message describing the format issue.
+        msg: String,
+    },
     /// Circular reference in /Extends chain
-    CircularRef { obj_ref: ObjRef },
+    CircularRef {
+        /// The object reference that created a cycle.
+        obj_ref: ObjRef,
+    },
     /// Extends chain depth exceeded
-    DepthExceeded { max: u8 },
+    DepthExceeded {
+        /// Maximum depth allowed.
+        max: u8,
+    },
     /// Stream decompression failed
     DecompressionFailed,
 }

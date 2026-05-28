@@ -26,7 +26,10 @@ use crate::options::{ExtractionOptions, ReceiptsMode};
 use crate::parser::catalog::ReadingOrderAlgorithm;
 use crate::parser::marked_content::{track_mcids_from_content_stream, McidTracker};
 use crate::parser::stream::DEFAULT_MAX_DECOMPRESS_BYTES;
-use crate::parser::stream::{FileSource, PdfSource};
+use crate::source::FileSource;
+// Import both PdfSource traits with aliases to avoid ambiguity
+use crate::source::PdfSource as SourcePdfSource;
+use crate::parser::stream::PdfSource as ParserPdfSource;
 use crate::parser::struct_tree::{check_coverage_for_pages, parse_struct_tree};
 use crate::receipts::Receipt;
 use crate::schema::{
@@ -376,7 +379,6 @@ pub fn extract_pdf(
 ) -> Result<ExtractionResult> {
     use crate::parser::catalog::parse_catalog;
     use crate::parser::pages::LazyPageIter;
-    use crate::parser::stream::FileSource;
     use crate::parser::xref::{load_xref_with_prev_chain, XrefResolver};
 
     // Open the PDF file
@@ -428,7 +430,7 @@ pub fn extract_pdf(
         .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource)).map_err(
+    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn ParserPdfSource)).map_err(
         |diagnostics| {
             let msg = diagnostics
                 .first()
@@ -505,6 +507,29 @@ pub fn extract_pdf(
     } else {
         None
     };
+
+    // Phase 1.8: Hint stream prefetch for linearized PDFs
+    // If the PDF is linearized and has a hint stream, prefetch the pages
+    // that will be extracted. This reduces latency by pipelining HTTP requests.
+    if let Some(ref page_filter) = page_filter {
+        use crate::parser::xref::detect_linearization;
+        use crate::parser::hint_stream::prefetch_from_hint_stream;
+
+        let mut prefetch_diagnostics = Vec::new();
+        if let Some(lin_info) = detect_linearization(&source) {
+            if let (Some(hint_offset), Some(hint_length)) = (lin_info.hint_stream_offset, lin_info.hint_stream_length) {
+                // Prefetch the pages that will be extracted
+                // page_filter contains 0-based page indices
+                prefetch_from_hint_stream(
+                    &source,
+                    hint_offset,
+                    hint_length,
+                    page_filter.iter().copied(),
+                    &mut prefetch_diagnostics,
+                );
+            }
+        }
+    }
 
     // Phase 7.6: Extract annotations and links from all pages
     // Walk all pages and extract annotations by subtype
@@ -693,15 +718,14 @@ pub fn extract_pdf(
     // Phase 7.3: Extract digital signature metadata
     // Discover signature fields and extract metadata from them
     let sig_fields = discover(&resolver_arc, &catalog);
-    use crate::parser::stream::PdfSource;
-    let file_size = source.len().ok();
+    let file_size = Some(SourcePdfSource::len(&source));
     let signatures_core = extract_signatures(&sig_fields, &resolver_arc, file_size);
     let signatures: Vec<SignatureJson> = signatures_core.into_iter().map(|s| s.into()).collect();
 
     // Phase 7.5: Extract embedded file attachments from /EmbeddedFiles and /AF
     let attachments = match resolver_arc.resolve(root_ref) {
         Ok(catalog_obj) => match catalog_obj.as_dict() {
-            Some(catalog_dict) => extract_attachments(&resolver_arc, catalog_dict, Some(&source)),
+            Some(catalog_dict) => extract_attachments(&resolver_arc, catalog_dict, Some(&source as &dyn ParserPdfSource)),
             None => Vec::new(),
         },
         Err(_) => Vec::new(),
@@ -1342,7 +1366,6 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
 ) -> Result<ExtractionMetadata> {
     use crate::parser::catalog::parse_catalog;
     use crate::parser::pages::LazyPageIter;
-    use crate::parser::stream::FileSource;
     use crate::parser::xref::{load_xref_with_prev_chain, XrefResolver};
     use std::io::Write;
 
@@ -1367,7 +1390,7 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
         .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource)).map_err(
+    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn ParserPdfSource)).map_err(
         |diagnostics| {
             let msg = diagnostics
                 .first()
@@ -1459,6 +1482,29 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
     } else {
         None
     };
+
+    // Phase 1.8: Hint stream prefetch for linearized PDFs
+    // If the PDF is linearized and has a hint stream, prefetch the pages
+    // that will be extracted. This reduces latency by pipelining HTTP requests.
+    if let Some(ref page_filter) = page_filter {
+        use crate::parser::xref::detect_linearization;
+        use crate::parser::hint_stream::prefetch_from_hint_stream;
+
+        let mut prefetch_diagnostics = Vec::new();
+        if let Some(lin_info) = detect_linearization(&source) {
+            if let (Some(hint_offset), Some(hint_length)) = (lin_info.hint_stream_offset, lin_info.hint_stream_length) {
+                // Prefetch the pages that will be extracted
+                // page_filter contains 0-based page indices
+                prefetch_from_hint_stream(
+                    &source,
+                    hint_offset,
+                    hint_length,
+                    page_filter.iter().copied(),
+                    &mut prefetch_diagnostics,
+                );
+            }
+        }
+    }
 
     // Process pages sequentially from the collected pages
     for (page_index, page_dict) in all_pages.into_iter().enumerate() {
@@ -1641,7 +1687,6 @@ where
 {
     use crate::parser::catalog::parse_catalog;
     use crate::parser::pages::LazyPageIter;
-    use crate::parser::stream::FileSource;
     use crate::parser::xref::{load_xref_with_prev_chain, XrefResolver};
 
     // Open the PDF file
@@ -1665,7 +1710,7 @@ where
         .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource)).map_err(
+    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn ParserPdfSource)).map_err(
         |diagnostics| {
             let msg = diagnostics
                 .first()
@@ -1889,9 +1934,7 @@ where
 ///
 /// Scans the last 1024 bytes of the file for "startxref" keyword.
 fn find_startxref(source: &FileSource) -> anyhow::Result<u64> {
-    use crate::parser::stream::PdfSource;
-
-    let len = source.len()? as usize;
+    let len = SourcePdfSource::len(source) as usize;
     let scan_start = len.saturating_sub(1024);
     let scan_end = len;
 

@@ -66,7 +66,7 @@ impl std::error::Error for CMapError {}
 #[derive(Debug, Clone)]
 pub struct ToUnicodeMap {
     /// Mapping from source byte sequence to destination Unicode codepoints.
-    /// Uses Vec<u8> as key (source bytes) and Vec<char> as value (destination chars).
+    /// Uses `Vec\<u8\>` as key (source bytes) and `Vec\<char\>` as value (destination chars).
     mappings: HashMap<Vec<u8>, Vec<char>>,
 }
 

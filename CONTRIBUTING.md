@@ -282,6 +282,68 @@ We use issue templates to ensure all necessary information is provided upfront. 
 
 See [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/) for the full list.
 
+## Security Policy: NEVER-Log Secrets
+
+**Critical:** pdftract enforces a strict **NEVER-log secrets** policy to prevent credential leakage in logs, crash dumps, and SIEM systems.
+
+### Forbidden Patterns
+
+The following content MUST NEVER appear in logs at any level (trace, debug, info, warn, error):
+
+1. **Credential values:**
+   - Passwords, API keys, bearer tokens, session IDs
+   - `SecretString` inner values (use `secrecy::SecretString` for all credentials)
+   - Auth tokens for MCP, HTTP sources, or any external service
+
+2. **PDF bytes and extracted text:**
+   - Raw PDF stream data (compressed or uncompressed)
+   - Extracted text content (may contain sensitive documents)
+   - Image data (embedded images may contain sensitive information)
+
+3. **HTTP headers:**
+   - `Authorization`, `Cookie`, `Proxy-Authorization` header values
+   - Use `redact_headers_for_log()` for any request logging
+
+### Safe Patterns
+
+These are acceptable to log:
+
+- **Metadata only:** File paths, URLs without query params, content hashes
+- **Diagnostic codes:** `TH-03`, `STRUCT_MISSING_KEY` (not the full message text)
+- **Metrics:** Request duration, byte counts, error codes
+- **Sanitized data:** Strings with known sensitive patterns removed (document the sanitization)
+
+### Implementation Requirements
+
+1. **Use `secrecy::SecretString`** for all credential values:
+   ```rust
+   use secrecy::SecretString;
+   let password = SecretString::new("value".into());
+   // Debug/Display impls print "[REDACTED]"
+   ```
+
+2. **Never log request bodies** that might contain user data. Log only:
+   - Request method and path
+   - Response status
+   - Header names with redacted values
+
+3. **CI gate enforcement:** A grep-based script scans every PR for forbidden patterns and fails on:
+   - `log::info!` / `tracing::info!` / `println!` / `eprintln!` with variables named:
+     - `password`, `token`, `credential`, `secret`, `api_key`, `auth_header`
+   - Any log of `body`, `content`, `text`, `data` variables (requires reviewer judgment)
+
+### Verification
+
+A fuzz test (`tests/log_secret_fuzz.rs`) runs with 10,000 random inputs and verifies that:
+- No credential value appears in any captured log output
+- SecretString values always render as `[REDACTED]`
+- Authorization headers are redacted in request logs
+
+### See Also
+
+- [SECURITY.md](SECURITY.md) — Vulnerability reporting policy
+- [Phase 6 audit logging policy](docs/plan/plan.md) — Full audit log design
+
 ## Getting Help
 
 - **Documentation:** Check [`docs/`](docs/) for design docs and ADRs

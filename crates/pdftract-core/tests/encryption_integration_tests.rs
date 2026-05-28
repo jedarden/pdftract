@@ -396,39 +396,7 @@ fn test_non_encrypted_pdf() {
 #[test]
 #[cfg(feature = "decrypt")]
 fn test_proptest_random_encrypt_dict() {
-    // Proptest-style test: random byte sequences as /Encrypt dict never panic
-    use proptest::prelude::*;
-
-    let _ = proptest::prop_oneof![
-        0 => {
-            // Valid V=1, R=2 dict
-            let mut o = vec![0u8; 32];
-            o[0] = 0x28; // Start with valid padding byte
-            let mut u = vec![0u8; 32];
-            u[0] = 0x28;
-            make_dict(vec![
-                ("/Filter", PdfObject::Name("Standard".into())),
-                ("/V", PdfObject::Integer(1)),
-                ("/R", PdfObject::Integer(2)),
-                ("/O", PdfObject::String(Box::new(o))),
-                ("/U", PdfObject::String(Box::new(u))),
-                ("/P", PdfObject::Integer(0xFFFFFFFF_i64)),
-            ])
-        }
-    ].boxed().map(|dict| {
-        let resolver = MockResolver::new();
-        let mut diagnostics = Vec::new();
-        let trailer = make_trailer(dict, Some(vec![1u8; 16]));
-
-        // Should never panic, only return errors
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            detect_encryption(&trailer, &resolver, &mut diagnostics)
-        }));
-
-        assert!(result.is_ok(), "Should never panic");
-    });
-
-    // Run a few manual cases
+    // Test: random byte sequences as /Encrypt dict never panic
     for _ in 0..10 {
         let resolver = MockResolver::new();
         let mut diagnostics = Vec::new();

@@ -1249,6 +1249,7 @@ pub struct PassthroughDecoder {
 }
 
 impl PassthroughDecoder {
+    /// Creates a new passthrough decoder with the given name.
     pub fn new(name: &'static str) -> Self {
         Self { name }
     }
@@ -3293,6 +3294,38 @@ impl<T: crate::source::PdfSource> PdfSource for T {
     }
 }
 
+/// Wrapper for trait object conversion from source::PdfSource to parser::stream::PdfSource.
+///
+/// This allows `Box<dyn source::PdfSource>` to be used where `Box<dyn parser::stream::PdfSource>`
+/// is expected, which the blanket impl above doesn't cover (trait objects don't work with
+/// blanket impls for generic types).
+pub struct SourceAdapter {
+    inner: Box<dyn crate::source::PdfSource>,
+}
+
+impl SourceAdapter {
+    /// Create a new adapter from a source::PdfSource trait object.
+    pub fn new(inner: Box<dyn crate::source::PdfSource>) -> Self {
+        Self { inner }
+    }
+}
+
+impl PdfSource for SourceAdapter {
+    fn read_at(&self, offset: u64, len: usize) -> std::io::Result<Vec<u8>> {
+        use bytes::Buf;
+        let data = self.inner.read_range(offset, len)?;
+        Ok(data.to_vec())
+    }
+
+    fn len(&self) -> std::io::Result<u64> {
+        Ok(self.inner.len())
+    }
+
+    fn is_remote(&self) -> bool {
+        self.inner.is_remote()
+    }
+}
+
 /// A memory-backed PDF source.
 #[derive(Debug, Clone)]
 pub struct MemorySource {
@@ -3300,10 +3333,12 @@ pub struct MemorySource {
 }
 
 impl MemorySource {
+    /// Creates a new memory-backed PDF source from owned data.
     pub fn new(data: Vec<u8>) -> Self {
         Self { data }
     }
 
+    /// Creates a new memory-backed PDF source from a slice.
     pub fn from_slice(data: &[u8]) -> Self {
         Self {
             data: data.to_vec(),
@@ -3354,24 +3389,64 @@ impl FileSource {
     }
 }
 
-impl PdfSource for FileSource {
-    fn read_at(&self, offset: u64, len: usize) -> std::io::Result<Vec<u8>> {
+// parser::stream::PdfSource is implemented via the blanket impl:
+// impl<T: crate::source::PdfSource> PdfSource for T
+// FileSource implements crate::source::PdfSource below, so it gets
+// parser::stream::PdfSource automatically.
+
+// Implement the higher-level source::PdfSource trait for compatibility
+// with hint stream prefetch and other remote-source operations
+impl crate::source::PdfSource for FileSource {
+    fn len(&self) -> u64 {
+        self.mmap.len() as u64
+    }
+
+    fn read_range(&self, offset: u64, length: usize) -> std::io::Result<bytes::Bytes> {
         let start = offset as usize;
-        let end = (start + len).min(self.mmap.len());
+        let end = (start + length).min(self.mmap.len());
 
         if start >= self.mmap.len() {
-            return Ok(Vec::new());
+            return Ok(bytes::Bytes::new());
         }
 
-        // Slice the mmap region - this is a zero-copy operation
-        // that returns bytes directly from the memory-mapped region.
-        Ok(self.mmap[start..end].to_vec())
-    }
-
-    fn len(&self) -> std::io::Result<u64> {
-        Ok(self.mmap.len() as u64)
+        // Zero-copy slice from the mmap region
+        Ok(bytes::Bytes::copy_from_slice(&self.mmap[start..end]))
     }
 }
+
+// Implement Read + Seek for source::PdfSource compatibility
+impl std::io::Read for FileSource {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        // For a memory-mapped source, we can't really "read" progressively
+        // since we have the entire file in memory. This implementation
+        // is provided for trait compatibility but shouldn't be used
+        // in practice (use read_at or read_range instead).
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Read not supported on mmap FileSource; use read_range instead",
+        ))
+    }
+}
+
+impl std::io::Seek for FileSource {
+    fn seek(&mut self, _pos: std::io::SeekFrom) -> std::io::Result<u64> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Seek not supported on mmap FileSource; use read_range instead",
+        ))
+    }
+
+    fn stream_position(&mut self) -> std::io::Result<u64> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "stream_position not supported on mmap FileSource",
+        ))
+    }
+}
+
+// SAFETY: memmap2::Mmap is Send + Sync
+unsafe impl Send for FileSource {}
+unsafe impl Sync for FileSource {}
 
 /// Metadata extracted from a PDF stream during decoding.
 ///

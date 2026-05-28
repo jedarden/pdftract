@@ -27,32 +27,54 @@ use unicode_normalization::UnicodeNormalization;
 pub const IOU_VERIFICATION_THRESHOLD: f64 = 0.9;
 
 /// Verification exit codes.
+///
+/// These codes are returned by the verifier CLI to indicate the
+/// specific failure mode. Use `VerificationResult::exit_code()`
+/// to get the code for a result.
 pub mod exit_code {
+    /// Receipt verified successfully.
     pub const SUCCESS: i32 = 0;
+    /// PDF fingerprint mismatch.
     pub const FINGERPRINT_MISMATCH: i32 = 10;
+    /// Bounding box mismatch (no span meets 90% IoU threshold).
     pub const BBOX_MISMATCH: i32 = 11;
+    /// Content hash mismatch (best-IoU span's text differs).
     pub const CONTENT_MISMATCH: i32 = 12;
+    /// Extraction failed (PDF unreadable, encrypted without password, etc.).
     pub const EXTRACTION_FAILED: i32 = 1;
 }
 
 /// Verification result.
 #[derive(Debug, Clone, PartialEq)]
 pub enum VerificationResult {
+    /// Receipt verified successfully.
     Ok {
+        /// IoU of the best-matching span.
         best_iou: f64,
+        /// Computed content hash of the best-matching span.
         actual_content_hash: String,
     },
+    /// PDF fingerprint mismatch.
     FingerprintMismatch {
+        /// Expected fingerprint from the receipt.
         expected: String,
+        /// Actual computed fingerprint of the PDF.
         actual: String,
     },
+    /// Bounding box mismatch (no span meets 90% IoU threshold).
     BboxMismatch {
+        /// IoU of the best-matching span.
         best_iou: f64,
+        /// Required IoU threshold (0.9).
         threshold: f64,
     },
+    /// Content hash mismatch (best-IoU span's text differs).
     ContentMismatch {
+        /// IoU of the best-matching span.
         best_iou: f64,
+        /// Expected content hash from the receipt.
         expected_hash: String,
+        /// Actual computed content hash of the best-matching span.
         actual_hash: String,
     },
 }

@@ -46,60 +46,109 @@ pub type Result<T> = std::result::Result<T, Vec<Diagnostic>>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StructureType {
     // Grouping elements
+    /// Document - root of the structure hierarchy
     Document,
+    /// Part - major division of a document
     Part,
+    /// Art - self-contained region of content
     Art,
+    /// Sect - section of a document
     Sect,
+    /// Div - generic grouping element
     Div,
+    /// BlockQuote - block quotation
     BlockQuote,
+    /// Caption - caption for table or figure
     Caption,
+    /// Toc - table of contents
     Toc,
+    /// Toci - table of contents item
     Toci,
+    /// Index - index section
     Index,
+    /// NonStruct - non-structural element
     NonStruct,
+    /// Private - private use
     Private,
 
     // Block-level elements
+    /// P - paragraph
     P,
+    /// H - heading (level unspecified)
     H,
+    /// H1 - level 1 heading
     H1,
+    /// H2 - level 2 heading
     H2,
+    /// H3 - level 3 heading
     H3,
+    /// H4 - level 4 heading
     H4,
+    /// H5 - level 5 heading
     H5,
+    /// H6 - level 6 heading
     H6,
+    /// L - list
     L,
+    /// LI - list item
     LI,
+    /// Lbl - label for list item
     Lbl,
+    /// LBody - list item body
     LBody,
+    /// Table - table
     Table,
+    /// TR - table row
     TR,
+    /// TH - table header cell
     TH,
+    /// TD - table data cell
     TD,
+    /// THead - table header section
     THead,
+    /// TBody - table body section
     TBody,
+    /// TFoot - table footer section
     TFoot,
 
     // Inline elements
+    /// Span - inline span
     Span,
+    /// Quote - inline quotation
     Quote,
+    /// Note - footnote or endnote
     Note,
+    /// Reference - bibliographic reference
     Reference,
+    /// BibEntry - bibliography entry
     BibEntry,
+    /// Code - code fragment
     Code,
+    /// Link - hyperlink
     Link,
+    /// Annot - annotation
     Annot,
+    /// Ruby - ruby annotation container
     Ruby,
+    /// RB - ruby base text
     RB,
+    /// RT - ruby text
     RT,
+    /// RP - ruby parenthesis
     RP,
+    /// Warichu - warichu annotation container
     Warichu,
+    /// WT - warichu text
     WT,
+    /// WP - warichu parenthesis
     WP,
 
     // Illustration/media
+    /// Figure - figure/illustration
     Figure,
+    /// Formula - mathematical formula
     Formula,
+    /// Form - interactive form
     Form,
 
     /// Unknown/non-standard type (not mapped by RoleMap)
@@ -272,8 +321,13 @@ pub enum Kid {
     Element(Box<StructElemNode>),
     /// A direct MCID integer (marked content identifier on the same page)
     Mcid(u32),
-    /// A marked content reference (MCID on a specific page)
-    Mcr { page: ObjRef, mcid: u32 },
+    /// A marked content reference (MCID on a specific page).
+    Mcr {
+        /// Page object reference containing the marked content.
+        page: ObjRef,
+        /// Marked content identifier on that page.
+        mcid: u32,
+    },
     /// An object reference (annotation or XObject)
     ObjRef(ObjRef),
 }
@@ -1398,7 +1452,10 @@ pub enum BlockKind {
     /// Paragraph text
     Paragraph,
     /// Heading with level 1-6
-    Heading { level: u8 },
+    Heading {
+        /// Heading level (1 = highest, 6 = lowest)
+        level: u8
+    },
     /// Table structure
     Table,
     /// List container

@@ -787,6 +787,15 @@ pub enum DiagCode {
     /// Phase origin: 1.8
     RemoteUrlPrivateNetwork,
 
+    /// Insufficient disk space for fallback download
+    ///
+    /// Emitted when the server doesn't support Range requests and the available
+    /// disk space is insufficient to download the entire file. The extraction is
+    /// aborted with exit code 5.
+    ///
+    /// Phase origin: 1.8
+    RemoteInsufficientDisk,
+
     // === GSTATE_* codes ===
     /// Graphics state stack overflow
     ///
@@ -1170,7 +1179,8 @@ impl DiagCode {
             | DiagCode::RemoteNoRangeSupport
             | DiagCode::RemoteTlsFailed
             | DiagCode::RemoteDnsFailed
-            | DiagCode::RemoteUrlPrivateNetwork => "REMOTE",
+            | DiagCode::RemoteUrlPrivateNetwork
+            | DiagCode::RemoteInsufficientDisk => "REMOTE",
 
             // GSTATE_*
             DiagCode::GstateStackOverflow
@@ -1305,6 +1315,7 @@ impl DiagCode {
             DiagCode::RemoteTlsFailed => "REMOTE_TLS_FAILED",
             DiagCode::RemoteDnsFailed => "REMOTE_DNS_FAILED",
             DiagCode::RemoteUrlPrivateNetwork => "REMOTE_URL_PRIVATE_NETWORK",
+            DiagCode::RemoteInsufficientDisk => "REMOTE_INSUFFICIENT_DISK",
             DiagCode::GstateStackOverflow => "GSTATE_STACK_OVERFLOW",
             DiagCode::GstateStackUnderflow => "GSTATE_STACK_UNDERFLOW",
             DiagCode::GstateBtEtMismatch => "GSTATE_BT_ET_MISMATCH",
@@ -1450,6 +1461,7 @@ impl DiagCode {
             | DiagCode::PageOutOfRange
             | DiagCode::RemoteFetchInterrupted
             | DiagCode::RemoteUrlPrivateNetwork
+            | DiagCode::RemoteInsufficientDisk
             | DiagCode::McpToolInvalidParams
             | DiagCode::McpPathTraversal
             | DiagCode::ProfileSecretsForbidden
@@ -2133,6 +2145,14 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         recoverable: true,
         phase: "1.8",
         suggested_action: "URL targets a private network address. Use --allow-private-networks to enable (WARNING: security risk in multi-tenant deployments)",
+    },
+    DiagInfo {
+        code: DiagCode::RemoteInsufficientDisk,
+        category: "REMOTE",
+        severity: Severity::Error,
+        recoverable: true,
+        phase: "1.8",
+        suggested_action: "Free disk space on the temp file system (set TMPDIR to a different path if needed), or retry when more space is available",
     },
     // === GSTATE_* codes ===
     DiagInfo {

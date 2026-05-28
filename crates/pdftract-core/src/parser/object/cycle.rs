@@ -37,6 +37,10 @@ use super::ObjRef;
 ///
 /// Capacity of 64 is conservative: typical PDF resolution depth is < 10.
 thread_local! {
+    /// Per-thread set of object references currently being resolved.
+    ///
+    /// Tracks which object references are on the current thread's resolution
+    /// stack to detect cycles. Use [`ResolutionGuard`] for automatic cleanup.
     pub static RESOLVING: RefCell<HashSet<ObjRef>> = RefCell::new(HashSet::with_capacity(64));
 }
 
