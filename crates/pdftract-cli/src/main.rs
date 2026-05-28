@@ -9,6 +9,7 @@ mod classify;
 mod codegen;
 mod doctor;
 mod grep;
+mod hash;
 mod header;
 mod inspect;
 mod mcp;
@@ -215,6 +216,19 @@ enum Commands {
     Inspect(inspect::InspectArgs),
     /// Verify a receipt against a PDF file
     VerifyReceipt(verify_receipt::VerifyReceiptCommand),
+    /// Compute the PDF structural fingerprint (hash)
+    Hash {
+        /// Path to the PDF file or URL
+        input: String,
+
+        /// PDF password (INSECURE: rejected unless PDFTRACT_INSECURE_CLI_PASSWORD=1)
+        #[arg(long)]
+        password: Option<String>,
+
+        /// Custom HTTP headers for remote sources (repeatable; format: HEADER:VALUE)
+        #[arg(long, value_name = "HEADER:VALUE", action = ArgAction::Append)]
+        header: Vec<String>,
+    },
     /// Manage the extraction cache
     Cache {
         #[command(subcommand)]
@@ -598,6 +612,45 @@ fn main() -> Result<()> {
                 std::process::exit(1);
             }
         }
+        Commands::Hash {
+            input,
+            password,
+            header,
+        } => {
+            // Parse and validate custom HTTP headers
+            let headers = if !header.is_empty() {
+                match header::parse_headers(&header) {
+                    Ok(h) => {
+                        // Check if input is a URL (https:// or http://)
+                        if input.starts_with("http://") || input.starts_with("https://") {
+                            // Convert HashMap to Vec for HashArgs
+                            h.into_iter().collect()
+                        } else {
+                            // Local file: headers don't apply
+                            Vec::new()
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Error: {}", e);
+                        std::process::exit(2);
+                    }
+                }
+            } else {
+                Vec::new()
+            };
+
+            let args = hash::HashArgs {
+                input,
+                password,
+                headers,
+            };
+
+            if let Err(e) = hash::run_hash(args) {
+                let exit_code = hash::map_error_to_exit_code(&e);
+                eprintln!("Error: {}", e);
+                std::process::exit(exit_code);
+            }
+        }
         Commands::Mcp {
             stdio,
             bind,
@@ -808,6 +861,9 @@ fn cmd_extract(
 
     // Build extraction options
     let mut options = ExtractionOptions::with_receipts(receipts_mode);
+
+    // Configure password
+    options.password = resolved_password;
 
     // Configure page range
     options.pages = pages;

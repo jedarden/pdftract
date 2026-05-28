@@ -19,7 +19,7 @@ use secrecy::SecretString;
 
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::parser::object::{PdfObject, PdfStream, ObjRef};
-use crate::decoder::{jbig2::Jbig2GlobalsRef, jpx::JpxDecoder};
+use crate::decoder::jbig2::Jbig2GlobalsRef;
 
 #[cfg(feature = "decrypt")]
 use crate::encryption::decryptor::DecryptionContext;
@@ -3712,6 +3712,20 @@ fn decode_stream_impl(
                 if let Some(PdfObject::Ref(globals_ref)) = dict.get("/JBIG2Globals") {
                     stream_meta.jbig2_globals_ref = Some(Jbig2GlobalsRef::new(*globals_ref));
                 }
+            }
+        }
+
+        // Check for JPXDecode and emit diagnostics per EC-12
+        if normalized_name == "JPXDecode" {
+            use crate::decoder::jpx::JpxDecoder;
+
+            // Emit OCR_JPX_UNSUPPORTED if full-render AND libopenjp2 are unavailable
+            let decoder = JpxDecoder::new();
+            decoder.emit_unsupported_diagnostic(&mut diagnostics);
+
+            // Validate JP2 box magic and emit STREAM_INVALID_JPX if it doesn't match
+            if !JpxDecoder::validate_jp2_magic(&current_bytes) {
+                decoder.emit_invalid_magic_diagnostic(&mut diagnostics);
             }
         }
 

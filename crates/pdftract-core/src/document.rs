@@ -9,10 +9,12 @@
 //! `PageIter` which yields pages lazily without materializing the entire page tree.
 //! Use `PdfExtractor::pages()` to get an iterator that extracts each page on-demand.
 
+use crate::detection::{detect_javascript, detect_xfa};
 use crate::fingerprint::{
     compute_fingerprint, CatalogFlags, ContentStreamData, FingerprintInput, PageFingerprintData,
 };
 use crate::parser::catalog::{parse_catalog, Catalog};
+use crate::parser::object::PdfDict;
 use crate::parser::pages::{flatten_page_tree, LazyPageIter, PageDict};
 use crate::parser::stream::{FileSource, PdfSource};
 use crate::parser::xref::{load_xref_with_prev_chain, XrefResolver, XrefSection};
@@ -85,8 +87,86 @@ pub fn parse_pdf_file(
         anyhow!("Failed to flatten page tree: {}", msg)
     })?;
 
+    // Resolve AcroForm dictionary if present
+    let acroform = catalog.acroform_ref
+        .and_then(|r| resolver.resolve(r).ok())
+        .and_then(|o| o.as_dict())
+        .cloned();
+
     // Build fingerprint input
-    let fingerprint_input = build_fingerprint_input(&catalog, &pages, &xref_section);
+    let fingerprint_input = build_fingerprint_input(&catalog, &pages, &resolver, &acroform);
+
+    // Compute fingerprint
+    let fingerprint = compute_fingerprint(&fingerprint_input, &resolver);
+
+    Ok((fingerprint, catalog, pages, resolver))
+}
+
+/// Parse a PDF from a generic source and return document components.
+///
+/// This is a variant of `parse_pdf_file` that works with any `PdfSource`
+/// implementation (local files, HTTP sources, memory buffers, etc.).
+///
+/// # Arguments
+///
+/// * `source` - A PDF source (FileSource, HttpRangeSource, etc.)
+///
+/// # Returns
+///
+/// A tuple of (fingerprint, catalog, pages, resolver)
+pub fn parse_pdf_source(
+    source: Box<dyn PdfSource>,
+) -> Result<(
+    String,
+    Catalog,
+    Vec<crate::parser::pages::PageDict>,
+    XrefResolver,
+)> {
+    // Find the startxref offset
+    let startxref_offset = find_startxref(&*source).context("Failed to find startxref offset")?;
+
+    // Load the xref table
+    let xref_section = load_xref_with_prev_chain(&*source, startxref_offset);
+
+    // Create resolver from xref section
+    let resolver = XrefResolver::from_section(xref_section.clone());
+
+    // Get the root reference from trailer
+    let root_ref = xref_section
+        .trailer
+        .as_ref()
+        .and_then(|trailer| trailer.get("Root"))
+        .and_then(|obj| obj.as_ref())
+        .ok_or_else(|| anyhow!("No /Root reference in trailer"))?;
+
+    // Parse the catalog
+    let catalog = parse_catalog(&resolver, root_ref, Some(&*source as &dyn PdfSource)).map_err(
+        |diagnostics| {
+            let msg = diagnostics
+                .first()
+                .map(|d| d.message.as_ref())
+                .unwrap_or("unknown error");
+            anyhow!("Failed to parse catalog: {}", msg)
+        },
+    )?;
+
+    // Flatten the page tree
+    let pages = flatten_page_tree(&resolver, catalog.pages_ref).map_err(|diagnostics| {
+        let msg = diagnostics
+            .first()
+            .map(|d| d.message.as_ref())
+            .unwrap_or("unknown error");
+        anyhow!("Failed to flatten page tree: {}", msg)
+    })?;
+
+    // Resolve AcroForm dictionary if present
+    let acroform = catalog.acroform_ref
+        .and_then(|r| resolver.resolve(r).ok())
+        .and_then(|o| o.as_dict())
+        .cloned();
+
+    // Build fingerprint input
+    let fingerprint_input = build_fingerprint_input(&catalog, &pages, &resolver, &acroform);
 
     // Compute fingerprint
     let fingerprint = compute_fingerprint(&fingerprint_input, &resolver);
@@ -145,7 +225,8 @@ fn find_startxref(source: &dyn PdfSource) -> Result<u64> {
 fn build_fingerprint_input(
     catalog: &Catalog,
     pages: &[crate::parser::pages::PageDict],
-    _xref_section: &XrefSection,
+    resolver: &XrefResolver,
+    acroform: &Option<PdfDict>,
 ) -> FingerprintInput {
     let page_count = pages.len() as u32;
 
@@ -166,11 +247,15 @@ fn build_fingerprint_input(
         })
         .collect();
 
+    // Detect JavaScript and XFA presence
+    let contains_javascript = detect_javascript(catalog, pages, acroform, resolver);
+    let contains_xfa = detect_xfa(acroform);
+
     // Build catalog flags
     let catalog_flags = CatalogFlags {
         is_encrypted: false, // TODO: detect encryption
-        contains_javascript: catalog.open_action.is_some() || catalog.aa.is_some(),
-        contains_xfa: false, // TODO: detect XFA
+        contains_javascript,
+        contains_xfa,
         ocg_present: catalog
             .oc_properties
             .as_ref()
@@ -317,8 +402,14 @@ impl PdfExtractor {
             },
         )?;
 
+        // Resolve AcroForm dictionary if present (for XFA detection)
+        let acroform = catalog.acroform_ref
+            .and_then(|r| resolver.resolve(r).ok())
+            .and_then(|o| o.as_dict())
+            .cloned();
+
         // Build fingerprint input (without full page tree for lazy extraction)
-        let fingerprint = compute_fingerprint_lazy(&catalog, &xref_section);
+        let fingerprint = compute_fingerprint_lazy(&catalog, &resolver, &acroform);
 
         Ok(Self {
             source,
@@ -572,10 +663,24 @@ impl<'a> Iterator for PageIter<'a> {
 ///
 /// This is a simplified version that uses only catalog-level data.
 /// The full fingerprint computation requires page content streams.
-pub(crate) fn compute_fingerprint_lazy(catalog: &Catalog, _xref_section: &XrefSection) -> String {
+pub(crate) fn compute_fingerprint_lazy(
+    catalog: &Catalog,
+    resolver: &XrefResolver,
+    acroform: &Option<PdfDict>,
+) -> String {
     // For lazy extraction, use a simpler fingerprint based on catalog data
     // The full implementation would incrementally hash pages as they're extracted
     use crate::fingerprint::FingerprintInput;
+
+    // Detect JavaScript and XFA presence (no pages available in lazy mode)
+    let contains_javascript = if catalog.open_action.is_some() || catalog.aa.is_some() {
+        true
+    } else {
+        // For catalog-level checks, use simple detection
+        // Full page/annotation walk requires materialized pages
+        false
+    };
+    let contains_xfa = detect_xfa(acroform);
 
     let fingerprint_input = FingerprintInput {
         page_count: 0, // Will be updated when pages are extracted
@@ -584,8 +689,8 @@ pub(crate) fn compute_fingerprint_lazy(catalog: &Catalog, _xref_section: &XrefSe
         is_tagged: catalog.mark_info.is_tagged,
         catalog_flags: CatalogFlags {
             is_encrypted: false,
-            contains_javascript: catalog.open_action.is_some() || catalog.aa.is_some(),
-            contains_xfa: false,
+            contains_javascript,
+            contains_xfa,
             ocg_present: catalog
                 .oc_properties
                 .as_ref()
@@ -594,7 +699,7 @@ pub(crate) fn compute_fingerprint_lazy(catalog: &Catalog, _xref_section: &XrefSe
         },
     };
 
-    compute_fingerprint(&fingerprint_input, &XrefResolver::new())
+    compute_fingerprint(&fingerprint_input, resolver)
 }
 
 #[cfg(test)]

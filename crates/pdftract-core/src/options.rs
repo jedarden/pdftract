@@ -5,6 +5,7 @@
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 
 /// Receipt generation mode.
@@ -320,6 +321,54 @@ pub struct ExtractionOptions {
     ///
     /// Default: None (all pages extracted)
     pub pages: Option<String>,
+
+    /// PDF password for encrypted documents.
+    ///
+    /// When set, this password is used to decrypt the PDF before extraction.
+    /// The password is kept in a SecretString to prevent accidental exposure
+    /// in logs or error messages.
+    ///
+    /// Default: None (no password; tries empty password first per PDF spec)
+    ///
+    /// # Password priority
+    ///
+    /// The extraction flow attempts passwords in this order:
+    /// 1. Empty string (for documents with empty owner password)
+    /// 2. The password from this field, if set
+    ///
+    /// If both attempts fail, an ENCRYPTION_UNSUPPORTED diagnostic is emitted
+    /// and extraction fails with exit code 3.
+    #[serde(skip)]
+    pub password: Option<SecretString>,
+
+    /// Custom HTTP headers for remote PDF sources.
+    ///
+    /// When the input is an HTTP/HTTPS URL, these headers are included in all
+    /// HTTP requests (HEAD and Range). This is useful for API keys, authentication
+    /// tokens, and other custom headers required by remote PDF hosts.
+    ///
+    /// Headers are silently ignored for local file extraction.
+    ///
+    /// Default: None (no custom headers)
+    ///
+    /// # Header format
+    ///
+    /// Each header is a tuple of (name, value). Headers are validated before use:
+    /// - Name must match [A-Za-z0-9_-]+ (HTTP token format)
+    /// - No CRLF characters in name or value (HTTP injection protection)
+    /// - Managed headers (Host, Content-Length, etc.) are rejected
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let headers = vec![
+    ///     ("Authorization".to_string(), "Bearer token123".to_string()),
+    ///     ("X-API-Key".to_string(), "secret-key".to_string()),
+    /// ];
+    /// options.http_headers = Some(headers);
+    /// ```
+    #[serde(skip)]
+    pub http_headers: Option<Vec<(String, String)>>,
 }
 
 impl Default for ExtractionOptions {
@@ -335,6 +384,8 @@ impl Default for ExtractionOptions {
             max_decompress_bytes: crate::parser::stream::DEFAULT_MAX_DECOMPRESS_BYTES,
             output: OutputOptions::default(),
             pages: None,
+            password: None,
+            http_headers: None,
         }
     }
 }
@@ -371,6 +422,8 @@ impl ExtractionOptions {
             markdown_anchors: false,
             output: OutputOptions::default(),
             pages: None,
+            password: None,
+            http_headers: None,
             ..Default::default()
         }
     }
@@ -384,6 +437,8 @@ impl ExtractionOptions {
             markdown_anchors: false,
             output: OutputOptions::default(),
             pages: None,
+            password: None,
+            http_headers: None,
             ..Default::default()
         })
     }
@@ -406,6 +461,8 @@ impl ExtractionOptions {
             markdown_anchors: false,
             output: OutputOptions::default(),
             pages: None,
+            password: None,
+            http_headers: None,
             ..Default::default()
         }
     }

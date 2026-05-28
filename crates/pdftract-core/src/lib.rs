@@ -11,7 +11,10 @@ pub mod audit;
 pub mod cache;
 pub mod classify;
 pub mod confidence;
+pub mod conformance;
 pub mod content_stream;
+pub mod decoder;
+pub mod detection;
 pub mod diagnostics;
 pub mod document;
 #[cfg(feature = "ocr")]
@@ -88,6 +91,9 @@ pub use word_boundary::{TextState, WordBoundaryDetector, WordBoundaryManager};
 
 // Re-export PdfSource trait (pdftract-1mmq9)
 pub use source::{FileSource, MmapSource, PdfSource};
+
+#[cfg(feature = "remote")]
+pub use source::HttpRangeSource;
 
 // Re-export Phase 3 Glyph types (pdftract-4j0ub)
 pub use glyph::{emit_glyph, new_raw_glyph_list, Glyph};

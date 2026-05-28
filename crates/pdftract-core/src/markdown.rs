@@ -338,6 +338,7 @@ fn emit_paragraph(block: &BlockJson) -> String {
 }
 
 /// Emit a list item (bulleted or numbered).
+/// This is used for isolated list items without nesting context.
 fn emit_list_item(block: &BlockJson) -> String {
     // Try to detect if this is a numbered list by checking if text starts with a number
     let is_numbered = block
@@ -352,10 +353,82 @@ fn emit_list_item(block: &BlockJson) -> String {
         format!("{}\n", block.text)
     } else {
         // Bulleted list item
-        // Note: Nested sublist handling (2-space indent per level) requires
-        // structural information from the PDF parser. For now, emit as a flat list.
         format!("* {}\n", block.text)
     }
+}
+
+/// Emit a sequence of list blocks with proper nesting support.
+///
+/// This function groups consecutive list items and emits them with proper
+/// indentation based on their bbox x0 (left margin) values. Nested sublists
+/// are indented by 2 spaces per level per CommonMark convention.
+///
+/// # Arguments
+///
+/// * `list_blocks` - A slice of consecutive list blocks
+///
+/// # Returns
+///
+/// A markdown string with properly indented list items.
+///
+/// # Nesting Detection
+///
+/// Nesting level is inferred from the bbox x0 (left margin) value:
+/// - All items at the same x0 are at the same nesting level
+/// - Items with greater x0 are nested under the previous item
+/// - Each nesting level adds 2 spaces of indentation
+fn emit_list_blocks(list_blocks: &[BlockJson]) -> String {
+    if list_blocks.is_empty() {
+        return String::new();
+    }
+
+    // Group by x0 value to detect nesting levels
+    let mut result = String::new();
+    let mut indent_levels: Vec<f64> = Vec::new(); // Track x0 values for each nesting level
+
+    for block in list_blocks {
+        let x0 = block.bbox[0];
+
+        // Determine nesting level by comparing x0 to known levels
+        let mut level = 0;
+        for (i, &indent) in indent_levels.iter().enumerate() {
+            if (x0 - indent).abs() < 5.0 {
+                // x0 matches this level (within 5 point tolerance)
+                level = i;
+                break;
+            }
+        }
+
+        // If x0 doesn't match any known level, it's a new level
+        if level == 0 && indent_levels.iter().all(|&v| (x0 - v).abs() >= 5.0) {
+            level = indent_levels.len();
+            indent_levels.push(x0);
+        } else if level < indent_levels.len() && indent_levels.iter().enumerate().all(|(i, &v)| i != level || (x0 - v).abs() >= 5.0) {
+            // x0 is a new level beyond current ones
+            level = indent_levels.len();
+            indent_levels.push(x0);
+        }
+
+        // Detect if this is a numbered list item
+        let is_numbered = block
+            .text
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_digit())
+            .unwrap_or(false);
+
+        // Emit with proper indentation
+        let indent = "  ".repeat(level);
+        if is_numbered {
+            // Numbered list item - preserve source numbering
+            result.push_str(&format!("{}{}\n", indent, block.text));
+        } else {
+            // Bulleted list item
+            result.push_str(&format!("{}* {}\n", indent, block.text));
+        }
+    }
+
+    result
 }
 
 /// Emit a code block with language detection.
@@ -652,18 +725,42 @@ pub fn page_to_markdown_with_options(
     options: &MarkdownOptions,
 ) -> String {
     let mut result = String::new();
+    let mut i = 0;
 
-    for (block_index, block) in blocks.iter().enumerate() {
-        let md = block_to_markdown_with_options(
-            block,
-            tables,
-            page_index,
-            block_index,
-            include_anchor,
-            options,
-        );
-        result.push_str(&md);
-        result.push('\n');
+    while i < blocks.len() {
+        let block = &blocks[i];
+
+        // Check if this is a list item and if there are consecutive list items
+        if block.kind == "list" || block.kind == "list_item" {
+            // Find the end of the consecutive list sequence
+            let mut list_end = i + 1;
+            while list_end < blocks.len()
+                && (blocks[list_end].kind == "list" || blocks[list_end].kind == "list_item")
+            {
+                list_end += 1;
+            }
+
+            // Emit the entire list sequence as a group
+            let list_blocks = &blocks[i..list_end];
+            let list_md = emit_list_blocks(list_blocks);
+            result.push_str(&list_md);
+            result.push('\n');
+
+            i = list_end;
+        } else {
+            // Non-list block - emit individually
+            let md = block_to_markdown_with_options(
+                block,
+                tables,
+                page_index,
+                i,
+                include_anchor,
+                options,
+            );
+            result.push_str(&md);
+            result.push('\n');
+            i += 1;
+        }
     }
 
     // Add page break if requested and this isn't the last page
@@ -941,6 +1038,77 @@ Some text."#;
         let md = block_to_markdown(&block, &[], 0, 0, false);
         // Should add "* " prefix
         assert!(md.contains("* Item text"));
+    }
+
+    #[test]
+    fn test_emit_list_blocks_nested_sublist() {
+        // Critical test: nested sublist with proper indentation
+        // Level 0: x0 = 72.0
+        // Level 1: x0 = 90.0 (indented by 18 points)
+        // Level 2: x0 = 108.0 (indented by 36 points)
+        let list_blocks = vec![
+            make_test_block("list", "Item 1", [72.0, 500.0, 540.0, 520.0]),
+            make_test_block("list", "Item 2", [72.0, 480.0, 540.0, 500.0]),
+            make_test_block("list", "Nested 1", [90.0, 460.0, 540.0, 480.0]),
+            make_test_block("list", "Nested 2", [90.0, 440.0, 540.0, 460.0]),
+            make_test_block("list", "Deep nested", [108.0, 420.0, 540.0, 440.0]),
+            make_test_block("list", "Item 3", [72.0, 400.0, 540.0, 420.0]),
+        ];
+
+        let md = emit_list_blocks(&list_blocks);
+
+        // Check that level 0 items have no indentation
+        assert!(md.contains("* Item 1"));
+        assert!(md.contains("* Item 2"));
+        assert!(md.contains("* Item 3"));
+
+        // Check that level 1 items are indented by 2 spaces
+        assert!(md.contains("  * Nested 1"));
+        assert!(md.contains("  * Nested 2"));
+
+        // Check that level 2 items are indented by 4 spaces
+        assert!(md.contains("    * Deep nested"));
+    }
+
+    #[test]
+    fn test_emit_list_blocks_single_item() {
+        // Single list item should still work
+        let list_blocks = vec![make_test_block("list", "Single item", [72.0, 500.0, 540.0, 520.0])];
+        let md = emit_list_blocks(&list_blocks);
+        assert!(md.contains("* Single item"));
+    }
+
+    #[test]
+    fn test_emit_list_blocks_empty() {
+        // Empty list should return empty string
+        let list_blocks: Vec<BlockJson> = vec![];
+        let md = emit_list_blocks(&list_blocks);
+        assert_eq!(md, "");
+    }
+
+    #[test]
+    fn test_page_to_markdown_with_nested_list() {
+        // Critical test: page with nested list in context
+        let blocks = vec![
+            make_test_block("heading", "Title", [72.0, 700.0, 540.0, 720.0]),
+            make_test_block("list", "Item 1", [72.0, 650.0, 540.0, 670.0]),
+            make_test_block("list", "Nested 1", [90.0, 630.0, 540.0, 650.0]),
+            make_test_block("list", "Item 2", [72.0, 610.0, 540.0, 630.0]),
+            make_test_block("paragraph", "Text after", [72.0, 580.0, 540.0, 600.0]),
+        ];
+
+        let md = page_to_markdown(&blocks, &[], 0, false, false);
+
+        // Verify heading
+        assert!(md.contains("# Title"));
+
+        // Verify nested list structure
+        assert!(md.contains("* Item 1"));
+        assert!(md.contains("  * Nested 1"));
+        assert!(md.contains("* Item 2"));
+
+        // Verify paragraph after list
+        assert!(md.contains("Text after"));
     }
 }
 

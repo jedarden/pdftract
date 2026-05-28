@@ -107,10 +107,78 @@ pub trait PdfSource: Read + Seek + Send + Sync {
     ///
     /// The default implementation is a no-op.
     fn prefetch(&self, _offset: u64, _length: usize) {}
+
+    /// Get the underlying source as a `dyn PdfSource` trait object.
+    ///
+    /// This is used when you need to erase the concrete type and work with
+    /// the trait object (e.g., when passing to functions that accept `&dyn PdfSource`).
+    fn as_source(&self) -> &dyn PdfSource
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
+
+/// Open a PDF source from a path or URL string.
+///
+/// This function detects whether the input is:
+/// - An HTTP/HTTPS URL → creates HttpRangeSource with optional headers
+/// - A local file path → creates FileSource
+///
+/// # Arguments
+///
+/// * `path_or_url` - Path to a local PDF file or HTTP/HTTPS URL
+/// * `headers` - Optional custom HTTP headers (only used for HTTP/HTTPS URLs)
+///
+/// # Returns
+///
+/// A `Box<dyn PdfSource>` that can be used for PDF parsing.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The path/URL is invalid
+/// - The file cannot be opened
+/// - The HTTP HEAD request fails (for URLs)
+/// - TLS handshake fails
+///
+/// # Example
+///
+/// ```ignore
+/// use pdftract_core::source::open_source;
+///
+/// // Local file
+/// let source = open_source("document.pdf", None)?;
+///
+/// // HTTP URL with headers
+/// let headers = vec![
+///     ("Authorization".to_string(), "Bearer token".to_string()),
+///     ("X-API-Key".to_string(), "key123".to_string()),
+/// ];
+/// let source = open_source("https://example.com/doc.pdf", Some(headers))?;
+/// ```
+pub fn open_source(
+    path_or_url: &str,
+    headers: Option<Vec<(String, String)>>,
+) -> io::Result<Box<dyn PdfSource>> {
+    // Check if this is an HTTP/HTTPS URL
+    if path_or_url.starts_with("http://") || path_or_url.starts_with("https://") {
+        // Use HttpRangeSource for URLs
+        let headers_vec = headers.unwrap_or_default();
+        let source = HttpRangeSource::with_headers(path_or_url, headers_vec)?;
+        Ok(Box::new(source))
+    } else {
+        // Use FileSource for local paths
+        let source = FileSource::open(path_or_url)?;
+        Ok(Box::new(source))
+    }
 }
 
 mod file_source;
+mod http_range;
 mod mmap;
 
 pub use file_source::FileSource;
+pub use http_range::HttpRangeSource;
 pub use mmap::MmapSource;
