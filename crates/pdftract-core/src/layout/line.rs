@@ -8,6 +8,7 @@
 //! to group lines into semantic blocks.
 
 use serde::{Deserialize, Serialize};
+use unicode_bidi::{BidiClass, bidi_class};
 
 /// Text direction for a line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -413,6 +414,78 @@ where
     }
 }
 
+/// Detect the text direction for a line of text.
+///
+/// This function implements Phase 4.2 RTL detection by counting Unicode
+/// bidi classes in the text and returning the dominant direction.
+///
+/// # Algorithm
+///
+/// Walk each character in the text and count bidi classes:
+/// - **L (Left-to-Right):** LTR characters (Latin, Cyrillic, etc.)
+/// - **R (Right-to-Left):** RTL characters (Arabic, Hebrew)
+/// - **AL (Arabic Letter):** RTL characters (Arabic)
+/// - All other classes (EN, ES, ET, AN, CS, NSM, BN, B, S, WS, ON, LRE, LRO, RLE, RLO, PDF, LRI, RLI, FSI, PDI) are ignored
+///
+/// # Returns
+///
+/// - `LineDirection::Ltr` if LTR count > RTL count OR both counts are zero (empty/neutral-only)
+/// - `LineDirection::Rtl` if RTL count > LTR count
+/// - `LineDirection::Mixed` if counts are equal (and both > 0)
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::layout::line::{detect_line_direction, LineDirection};
+///
+/// // Latin text -> Ltr
+/// assert_eq!(detect_line_direction("Hello, World!"), LineDirection::Ltr);
+///
+/// // Arabic text -> Rtl
+/// assert_eq!(detect_line_direction("مرحبا بالعالم"), LineDirection::Rtl);
+///
+/// // Empty string -> Ltr (default)
+/// assert_eq!(detect_line_direction(""), LineDirection::Ltr);
+///
+/// // Digits only -> Ltr (default, numerals are bidi-neutral)
+/// assert_eq!(detect_line_direction("123 456"), LineDirection::Ltr);
+/// ```
+///
+/// # INV
+///
+/// Numerals are bidi-neutral and do not drive direction. Punctuation is also neutral.
+/// Empty lines default to Ltr.
+pub fn detect_line_direction(line_text: &str) -> LineDirection {
+    let mut ltr_count = 0u32;
+    let mut rtl_count = 0u32;
+
+    for ch in line_text.chars() {
+        match bidi_class(ch) {
+            BidiClass::L => ltr_count += 1,
+            BidiClass::R | BidiClass::AL => rtl_count += 1,
+            _ => {
+                // All other bidi classes (EN, ES, ET, AN, CS, NSM, BN, B, S, WS, ON,
+                // LRE, LRO, RLE, RLO, PDF, LRI, RLI, FSI, PDI) are ignored per INV:
+                // numerals are bidi-neutral; punctuation is neutral
+            }
+        }
+    }
+
+    // Default to Ltr when both counts are zero (empty line or neutral-only text like digits)
+    if ltr_count == 0 && rtl_count == 0 {
+        return LineDirection::Ltr;
+    }
+
+    if rtl_count > ltr_count {
+        LineDirection::Rtl
+    } else if ltr_count > rtl_count {
+        LineDirection::Ltr
+    } else {
+        // Mixed when counts are tied (and both > 0)
+        LineDirection::Mixed
+    }
+}
+
 /// Compute the baseline y-coordinate for a span.
 ///
 /// The baseline is approximated as `y0 + (bbox_height * 0.2)`, where the
@@ -462,6 +535,15 @@ pub trait HasBBox {
 pub trait HasFontSize {
     /// Get the font size in points.
     fn font_size(&self) -> f32;
+}
+
+/// Trait for types that have text content.
+///
+/// This trait allows direction detection to work with different
+/// span representations.
+pub trait HasText {
+    /// Get the text content.
+    fn text(&self) -> &str;
 }
 
 /// Cluster spans into lines by baseline proximity.
@@ -519,7 +601,7 @@ pub trait HasFontSize {
 /// on the same line as the base text.
 pub fn cluster_spans_into_lines<S>(spans: Vec<S>, median_font_size: f32) -> Vec<Line<S>>
 where
-    S: HasBBox + HasFontSize + Clone,
+    S: HasBBox + HasFontSize + HasText + Clone,
 {
     if spans.is_empty() {
         return Vec::new();
@@ -598,7 +680,7 @@ where
 /// Finalize a line cluster by sorting spans by x0 and computing metadata.
 fn finalize_line_cluster<S>(mut spans: Vec<S>, union_bbox: [f32; 4]) -> Line<S>
 where
-    S: HasBBox + HasFontSize,
+    S: HasBBox + HasFontSize + HasText,
 {
     // Sort spans by x0 (left-to-right for LTR scripts)
     spans.sort_by(|a, b| {
@@ -621,11 +703,15 @@ where
     font_sizes.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let median_font_size = font_sizes[font_sizes.len() / 2];
 
+    // Detect text direction by concatenating span text
+    let line_text: String = spans.iter().map(|s| s.text()).collect();
+    let direction = detect_line_direction(&line_text);
+
     Line {
         spans,
         bbox: union_bbox,
         baseline,
-        direction: LineDirection::Ltr, // TODO: RTL detection in future
+        direction,
         page_relative_y: 0.0,          // TODO: Compute from page_height
         median_font_size,
         rendering_mode: None, // TODO: Extract from span metadata
@@ -695,12 +781,18 @@ mod tests {
     struct TestSpan {
         bbox: [f32; 4],
         font_size: f32,
+        text: String,
     }
 
     impl TestSpan {
         /// Create a new test span.
         fn new(bbox: [f32; 4], font_size: f32) -> Self {
-            Self { bbox, font_size }
+            Self { bbox, font_size, text: String::new() }
+        }
+
+        /// Create a new test span with text.
+        fn with_text(bbox: [f32; 4], font_size: f32, text: &str) -> Self {
+            Self { bbox, font_size, text: text.to_string() }
         }
     }
 
@@ -713,6 +805,12 @@ mod tests {
     impl HasFontSize for TestSpan {
         fn font_size(&self) -> f32 {
             self.font_size
+        }
+    }
+
+    impl HasText for TestSpan {
+        fn text(&self) -> &str {
+            &self.text
         }
     }
 
@@ -756,6 +854,83 @@ mod tests {
         // baseline = 0 + 50 * 0.2 = 10
         let bbox = [0.0, 0.0, 100.0, 50.0];
         assert_eq!(compute_baseline(&bbox), 10.0);
+    }
+
+    // Phase 4.2 RTL Direction Detection Tests
+
+    #[test]
+    fn test_detect_line_direction_latin_text() {
+        // "Hello, World!" -> Ltr
+        assert_eq!(detect_line_direction("Hello, World!"), LineDirection::Ltr);
+    }
+
+    #[test]
+    fn test_detect_line_direction_arabic_text() {
+        // "مرحبا بالعالم" -> Rtl (Arabic greeting "Hello world")
+        assert_eq!(detect_line_direction("مرحبا بالعالم"), LineDirection::Rtl);
+    }
+
+    #[test]
+    fn test_detect_line_direction_empty_string() {
+        // "" -> Ltr (default per bead acceptance criteria)
+        assert_eq!(detect_line_direction(""), LineDirection::Ltr);
+    }
+
+    #[test]
+    fn test_detect_line_direction_digits_only() {
+        // "123 456" -> Ltr (default per bead acceptance criteria)
+        assert_eq!(detect_line_direction("123 456"), LineDirection::Ltr);
+    }
+
+    #[test]
+    fn test_detect_line_direction_punctuation_only() {
+        // "!?,." -> Ltr (default per bead acceptance criteria)
+        assert_eq!(detect_line_direction("!?,."), LineDirection::Ltr);
+    }
+
+    #[test]
+    fn test_detect_line_direction_latin_dominant() {
+        // Latin text with some punctuation -> Ltr
+        assert_eq!(detect_line_direction("Hello, World! 123"), LineDirection::Ltr);
+    }
+
+    #[test]
+    fn test_detect_line_direction_arabic_dominant() {
+        // Arabic text with digits -> Rtl (Arabic characters dominate)
+        assert_eq!(detect_line_direction("مرحبا 123"), LineDirection::Rtl);
+    }
+
+    #[test]
+    fn test_detect_line_direction_mixed_latin_arabic() {
+        // Equal Latin and Arabic characters -> Mixed
+        let text = "Hello مرحبا"; // 5 Latin + 1 space + 5 Arabic
+        assert_eq!(detect_line_direction(text), LineDirection::Mixed);
+    }
+
+    #[test]
+    fn test_detect_line_direction_latin_more_than_arabic() {
+        // More Latin than Arabic -> Ltr
+        let text = "Hello world مرحبا"; // 10 Latin + 1 space + 5 Arabic
+        assert_eq!(detect_line_direction(text), LineDirection::Ltr);
+    }
+
+    #[test]
+    fn test_detect_line_direction_arabic_more_than_latin() {
+        // More Arabic than Latin -> Rtl
+        let text = "مرحبا بالعالم Hi"; // 10 Arabic + 1 space + 2 Latin
+        assert_eq!(detect_line_direction(text), LineDirection::Rtl);
+    }
+
+    #[test]
+    fn test_detect_line_direction_hebrew_text() {
+        // Hebrew text -> Rtl
+        assert_eq!(detect_line_direction("שלום עולם"), LineDirection::Rtl);
+    }
+
+    #[test]
+    fn test_detect_line_direction_cyrillic_text() {
+        // Cyrillic text -> Ltr
+        assert_eq!(detect_line_direction("Привет мир"), LineDirection::Ltr);
     }
 
     #[test]

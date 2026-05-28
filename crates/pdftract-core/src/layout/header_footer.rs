@@ -337,7 +337,6 @@ mod tests {
             level: None,
             table_index: None,
             spans: vec![],
-            reading_order_rank: 0,
             receipt: None,
         }
     }
