@@ -1,0 +1,56 @@
+# pdftract Traefik dynamic configuration example
+#
+# DEPLOYMENT MODEL:
+# This config assumes pdftract serve is bound to 127.0.0.1:8080 with NO AUTHENTICATION.
+# Traefik provides TLS termination (via Let's Encrypt), HTTP Basic Authentication,
+# and acts as the security boundary. The pdftract server itself should never be
+# exposed directly to the internet.
+#
+# USAGE:
+# 1. Replace pdftract.example.com with your actual hostname
+# 2. Generate htpasswd file: htpasswd -c /etc/traefik/htpasswd-pdftract yourusername
+# 3. Place this file in Traefik's dynamic configuration directory (e.g., /etc/traefik/dynamic/)
+# 4. Ensure Traefik has a certResolver named "letsencrypt" configured
+# 5. Traefik will hot-reload this configuration
+#
+# SECURITY NOTES:
+# - /health endpoint is exempt from auth (allows monitoring scrapes)
+# - pdftract serve MUST bind to 127.0.0.1, not 0.0.0.0
+# - Request body limited to 256MB to match pdftract's PDF upload size
+
+http:
+  routers:
+    # Main router for /extract endpoint
+    pdftract:
+      rule: "Host(`pdftract.example.com`) && Path(`/extract`)"
+      service: pdftract-backend
+      middlewares:
+        - pdftract-auth
+        - pdftract-limit
+      tls:
+        certResolver: letsencrypt
+
+    # Health check router (no auth)
+    pdftract-health:
+      rule: "Host(`pdftract.example.com`) && Path(`/health`)"
+      service: pdftract-backend
+      tls:
+        certResolver: letsencrypt
+
+  services:
+    pdftract-backend:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:8080"
+        passHostHeader: true
+
+  middlewares:
+    pdftract-auth:
+      basicAuth:
+        usersFile: "/etc/traefik/htpasswd-pdftract"
+        removeHeader: true  # Don't leak Authorization header to backend
+
+    pdftract-limit:
+      buffering:
+        maxRequestBodyBytes: 268435456  # 256 MB
+        memRequestBodyBytes: 16777216   # 16 MB in-memory buffer
