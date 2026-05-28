@@ -1,0 +1,25 @@
+{
+  "metadata": {
+    "document_type": "scientific_paper",
+    "document_type_confidence": 0.92,
+    "document_type_reasons": [
+      "text_contains matched 'Abstract'",
+      "text_contains matched 'References'",
+      "text_contains matched 'arXiv:'",
+      "structural.has_math = true",
+      "structural.heading_depth >= 2",
+      "structural.page_count in range [4, 50]"
+    ],
+    "profile_name": "scientific_paper",
+    "profile_version": "1.0.0",
+    "profile_fields": {
+      "title": "Deep Learning for Scientific Document Understanding: A Comprehensive Survey",
+      "authors": ["Jane Smith", "John Doe", "Alex Johnson"],
+      "abstract": "This paper presents a comprehensive survey of deep learning approaches for scientific document understanding. We review recent advances in layout analysis, text extraction, and semantic understanding of academic papers. Our analysis covers transformer-based models, graph neural networks, and multi-modal approaches that combine vision and language understanding.",
+      "doi": "10.1234/arxiv.2401.12345",
+      "journal": "arXiv preprint",
+      "publication_date": "2024-01-15",
+      "references": "[1] A. Author et al., 'Foundations of Machine Learning,' JMLR, 2023.\n[2] B. Researcher, 'Attention is All You Need,' NeurIPS, 2017.\n[3] C. Scientist et al., 'BERT: Pre-training of Deep Bidirectional Transformers,' ACL, 2019."
+    }
+  }
+}

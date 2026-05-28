@@ -1,0 +1,25 @@
+{
+  "metadata": {
+    "document_type": "scientific_paper",
+    "document_type_confidence": 0.87,
+    "document_type_reasons": [
+      "text_contains matched 'Abstract'",
+      "text_contains matched 'References'",
+      "text_contains matched 'doi:'",
+      "structural.has_math = true",
+      "structural.heading_depth >= 2",
+      "structural.page_count in range [4, 50]"
+    ],
+    "profile_name": "scientific_paper",
+    "profile_version": "1.0.0",
+    "profile_fields": {
+      "title": "Scalable Federated Learning with Privacy-Preserving Aggregation",
+      "authors": ["Chen Liu", "Michael Brown"],
+      "abstract": "Federated learning enables collaborative model training without sharing raw user data, but existing aggregation protocols leak information through gradient updates. We propose a novel privacy-preserving aggregation scheme based on secure multi-party computation that provides differential privacy guarantees while reducing communication overhead by 60%. Our system scales to 10,000 clients with sub-minute convergence times.",
+      "doi": "10.1145/3544548.3586123",
+      "journal": "Proceedings of the 2023 ACM SIGKDD Conference on Knowledge Discovery and Data Mining",
+      "publication_date": "2023-08-06",
+      "references": "[1] McMahan B, et al. Communication-Efficient Learning of Deep Networks from Decentralized Data. AISTATS 2017.\n[2] Bonawitz K, et al. Practical Secure Aggregation for Privacy-Preserving Machine Learning. CCS 2017.\n[3] Yang K, et al. Federated Machine Learning: Concept and Applications. TIIS 2019."
+    }
+  }
+}

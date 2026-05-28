@@ -1,0 +1,25 @@
+{
+  "metadata": {
+    "document_type": "scientific_paper",
+    "document_type_confidence": 0.90,
+    "document_type_reasons": [
+      "text_contains matched 'Abstract'",
+      "text_contains matched 'Received'",
+      "text_contains matched 'doi:'",
+      "structural.has_math = true",
+      "structural.heading_depth >= 2",
+      "structural.page_count in range [4, 50]"
+    ],
+    "profile_name": "scientific_paper",
+    "profile_version": "1.0.0",
+    "profile_fields": {
+      "title": "Single-Cell Transcriptomics Reveals Novel Biomarkers for Early Cancer Detection",
+      "authors": ["Sarah Miller", "James Wilson", "Anna Kim"],
+      "abstract": "Early detection of cancer significantly improves patient outcomes, yet current screening methods lack sensitivity for early-stage disease. Using single-cell RNA sequencing on 5,000 tumor samples across 12 cancer types, we identified a panel of 15 biomarkers that detect stage I tumors with 94% sensitivity. Validation in an independent cohort confirmed robust performance across diverse populations.",
+      "doi": "10.1038/s41586-023-06789-x",
+      "journal": "Nature",
+      "publication_date": "2023-11-08",
+      "references": "[1] Tirosh I, et al. Dissecting the multicellular ecosystem of metastatic melanoma by single-cell RNA-seq. Science. 2016;352(6282):189-196.\n[2] Patel AP, et al. Single-cell RNA-seq highlights intratumoral heterogeneity in primary glioblastoma. Science. 2014;344(6181):1396-1401.\n[3] MacParland SA, et al. Single cell RNA sequencing of human liver reveals a distinct population of Kupffer cells. Nat Commun. 2018;9(1):4383."
+    }
+  }
+}

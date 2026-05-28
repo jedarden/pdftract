@@ -1,0 +1,25 @@
+{
+  "metadata": {
+    "document_type": "scientific_paper",
+    "document_type_confidence": 0.95,
+    "document_type_reasons": [
+      "text_contains matched 'Abstract'",
+      "text_contains matched 'References'",
+      "text_contains matched 'doi:'",
+      "structural.has_math = true",
+      "structural.heading_depth >= 2",
+      "structural.page_count in range [4, 50]"
+    ],
+    "profile_name": "scientific_paper",
+    "profile_version": "1.0.0",
+    "profile_fields": {
+      "title": "Quantum Error Correction for Surface Codes: An Optimized Decoding Algorithm",
+      "authors": ["Robert Zhang", "Emily Watson"],
+      "abstract": "We present an optimized decoding algorithm for surface code quantum error correction that reduces the decoding latency by 40% compared to state-of-the-art methods. Our approach leverages parallel neural network inference and efficient syndrome graph processing. Experimental results on distance-15 surface codes demonstrate threshold improvements of 2.3%.",
+      "doi": "10.1109/TQE.2023.1234567",
+      "journal": "IEEE Transactions on Quantum Engineering",
+      "publication_date": "2023-09-01",
+      "references": "[1] Fowler A G, et al., 'Surface codes: Towards practical large-scale quantum computation,' Phys. Rev. A, vol. 86, no. 3, p. 032324, 2012.\n[2] Fowler A G, et al., 'Minimum weight perfect matching for fault-tolerant quantum computation,' IEEE Trans. Comput., vol. 99, no. 1, pp. 1-12, 2019.\n[3] Dennis E, et al., 'Topological quantum memory,' Phys. Rev. A, vol. 65, no. 4, p. 042310, 2002."
+    }
+  }
+}

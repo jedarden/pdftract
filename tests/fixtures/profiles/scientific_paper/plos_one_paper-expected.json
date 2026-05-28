@@ -1,0 +1,24 @@
+{
+  "metadata": {
+    "document_type": "scientific_paper",
+    "document_type_confidence": 0.88,
+    "document_type_reasons": [
+      "text_contains matched 'Abstract'",
+      "text_contains matched 'doi:'",
+      "structural.has_math = true",
+      "structural.heading_depth >= 2",
+      "structural.page_count in range [4, 50]"
+    ],
+    "profile_name": "scientific_paper",
+    "profile_version": "1.0.0",
+    "profile_fields": {
+      "title": "Climate Change Impacts on Biodiversity in Tropical Ecosystems",
+      "authors": ["Maria Garcia", "David Lee", "Sophie Chen"],
+      "abstract": "Tropical ecosystems are among the most biodiverse regions on Earth, yet they face unprecedented threats from climate change. This study examines the impact of rising temperatures and changing precipitation patterns on species richness and ecosystem functioning across three tropical forest sites. Our findings indicate significant shifts in species composition and ecosystem services.",
+      "doi": "10.1371/journal.pone.0281234",
+      "journal": "PLOS ONE",
+      "publication_date": "2023-06-12",
+      "references": "[1] Smith J, et al. (2022) Biodiversity loss in tropical regions. Nature Climate Change 12(3): 234-245.\n[2] Johnson M, et al. (2021) Ecosystem resilience under climate stress. Science 371(6525): 123-130.\n[3] Williams R, et al. (2020) Tropical forest responses to drought. Ecological Applications 30(8): e02123."
+    }
+  }
+}
