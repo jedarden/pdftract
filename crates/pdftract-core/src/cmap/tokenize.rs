@@ -154,9 +154,12 @@ pub fn tokenize_cjk_bytes(
             } else {
                 // Emit U+FFFD and diagnostic once per unique byte value
                 codes.push(0xFFFD);
+                #[cfg(feature = "cjk")]
                 if emitted_unknown.insert(b) {
                     emit!(diagnostics, CjkTokenizeUnknownByte, offset = cursor as u64);
                 }
+                #[cfg(not(feature = "cjk"))]
+                let _ = emitted_unknown.insert(b);
             }
 
             cursor += 1;
@@ -214,6 +217,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "cjk")]
     fn test_unrecognized_byte_emits_replacement_and_diagnostic() {
         // Acceptance criterion: Unrecognized byte (no matching range): emit U+FFFD code + CJK_TOKENIZE_UNKNOWN_BYTE diagnostic once
         let mut codespace = CodespaceRanges::new();
@@ -230,6 +234,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "cjk")]
     fn test_unrecognized_byte_diagnostic_emitted_once_per_unique_byte() {
         // Multiple occurrences of the same unrecognized byte should emit only one diagnostic
         let mut codespace = CodespaceRanges::new();
@@ -324,6 +329,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "cjk")]
     fn test_partial_match_at_end_of_input() {
         // If we're at the end of input and don't have enough bytes for a multi-byte sequence,
         // we should fall through to unrecognized byte handling

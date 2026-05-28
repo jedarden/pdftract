@@ -5,4 +5,10 @@
 
 pub mod codespace;
 
+#[cfg(feature = "cjk")]
+pub mod tokenize;
+
 pub use codespace::{CodespaceRange, CodespaceRanges, parse_codespace_ranges, parse_codespace_ranges_with_diags};
+
+#[cfg(feature = "cjk")]
+pub use tokenize::tokenize_cjk_bytes;

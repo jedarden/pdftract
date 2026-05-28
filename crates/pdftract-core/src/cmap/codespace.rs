@@ -108,8 +108,8 @@ impl fmt::Display for CodespaceRange {
 /// Collection of codespace ranges from a CMap.
 ///
 /// Most CMaps define 1-8 ranges. Predefined CMaps typically define:
-/// - 1-byte ASCII range: <00> <7F>
-/// - 2-byte CJK range: <8000> <FFFF> (or similar)
+/// - 1-byte ASCII range: \`<00> <7F>\`
+/// - 2-byte CJK range: \`<8000> <FFFF\>\` (or similar)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodespaceRanges {
     /// The ranges in this CMap.
@@ -180,7 +180,12 @@ pub enum CodespaceError {
     /// Invalid hex string format.
     InvalidHexString(String),
     /// Width mismatch between lo and hi bounds.
-    WidthMismatch { lo_width: usize, hi_width: usize },
+    WidthMismatch {
+        /// Width of the lo bound.
+        lo_width: usize,
+        /// Width of the hi bound.
+        hi_width: usize,
+    },
     /// Invalid width (not 1, 2, 3, or 4).
     InvalidWidth(usize),
     /// Unexpected token in codespace block.
@@ -209,6 +214,7 @@ impl std::error::Error for CodespaceError {}
 pub struct CodespaceParser<'a> {
     input: &'a [u8],
     position: usize,
+    pending_count: Option<i64>,
     diagnostics: Vec<crate::diagnostics::Diagnostic>,
 }
 
@@ -218,6 +224,7 @@ impl<'a> CodespaceParser<'a> {
         Self {
             input,
             position: 0,
+            pending_count: None,
             diagnostics: Vec::new(),
         }
     }
@@ -231,6 +238,10 @@ impl<'a> CodespaceParser<'a> {
         while let Some(token) = self.next_token() {
             match token {
                 Token::Eof => break,
+                Token::Integer(n) => {
+                    // Store integer - may be a count before begincodespacerange
+                    self.pending_count = Some(n);
+                }
                 Token::Keyword(ref kw) => {
                     match kw.as_slice() {
                         b"begincodespacerange" => {
@@ -239,6 +250,8 @@ impl<'a> CodespaceParser<'a> {
                                 // Recovery: skip to endcodespacerange
                                 self.skip_to_keyword(b"endcodespacerange");
                             }
+                            // Clear pending count in case it wasn't used
+                            self.pending_count = None;
                         }
                         b"endcodespacerange" => {
                             // Unexpected - should have been consumed by parse_codespace_block
@@ -247,14 +260,17 @@ impl<'a> CodespaceParser<'a> {
                                 self.position as u64,
                                 "Unbalanced codespace block: endcodespacerange without begincodespacerange".to_string(),
                             ));
+                            self.pending_count = None;
                         }
                         _ => {
-                            // Unknown keyword - skip (may be other CMap blocks)
+                            // Unknown keyword - clear pending count (not for us)
+                            self.pending_count = None;
                         }
                     }
                 }
                 _ => {
-                    // Unexpected token - skip
+                    // Unexpected token - clear pending count
+                    self.pending_count = None;
                 }
             }
         }
@@ -264,33 +280,61 @@ impl<'a> CodespaceParser<'a> {
 
     /// Parse a begincodespacerange...endcodespacerange block.
     fn parse_codespace_block(&mut self, ranges: &mut CodespaceRanges) -> Result<(), CodespaceError> {
-        // Read count
-        let count = self.expect_integer()?;
-        if count < 0 {
-            return Err(CodespaceError::UnexpectedToken(
-                "negative codespace range count".to_string(),
-            ));
-        }
-        let count = count as usize;
+        // Read count - may be pending (from before keyword) or after keyword
+        let count = match self.pending_count.take() {
+            Some(n) => {
+                if n < 0 {
+                    return Err(CodespaceError::UnexpectedToken(
+                        "negative codespace range count".to_string(),
+                    ));
+                }
+                n as usize
+            }
+            None => {
+                let n = self.expect_integer()?;
+                if n < 0 {
+                    return Err(CodespaceError::UnexpectedToken(
+                        "negative codespace range count".to_string(),
+                    ));
+                }
+                n as usize
+            }
+        };
 
         // Read count pairs of <lo> <hi>
         for _ in 0..count {
-            let lo = self.expect_hex_string()?;
-            let hi = self.expect_hex_string()?;
+            let lo = match self.expect_hex_string() {
+                Ok(s) => s,
+                Err(_) => {
+                    // Failed to read lo - skip to endcodespacerange
+                    emit!(self.diagnostics, CmapInvalidCodespace);
+                    self.skip_to_keyword(b"endcodespacerange");
+                    break;
+                }
+            };
+
+            let hi = match self.expect_hex_string() {
+                Ok(s) => s,
+                Err(_) => {
+                    // Failed to read hi - skip to endcodespacerange
+                    emit!(self.diagnostics, CmapInvalidCodespace);
+                    self.skip_to_keyword(b"endcodespacerange");
+                    break;
+                }
+            };
 
             // Validate width
             if lo.len() != hi.len() {
                 emit!(self.diagnostics, CmapInvalidCodespace);
-                return Err(CodespaceError::WidthMismatch {
-                    lo_width: lo.len(),
-                    hi_width: hi.len(),
-                });
+                // Skip this invalid range and continue to the next
+                continue;
             }
 
             let width = lo.len();
             if width < 1 || width > 4 {
                 emit!(self.diagnostics, CmapInvalidCodespace);
-                return Err(CodespaceError::InvalidWidth(width));
+                // Skip this invalid range and continue to the next
+                continue;
             }
 
             // Create range with 4-byte arrays
