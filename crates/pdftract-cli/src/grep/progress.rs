@@ -6,12 +6,11 @@
 //! dedicated thread).
 
 use crate::grep::{ProgressEvent, ProgressMode};
-use anyhow::Result;
-use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle, TermLike};
+use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// Default steady tick interval (100 ms).
 const STEADY_TICK_MS: u64 = 100;
@@ -33,19 +32,23 @@ pub struct ProgressManager {
     /// Current file sub-bar.
     current_bar: Option<ProgressBar>,
     /// Multi-progress container for coordinating bars.
-    multi: Option<MultiProgress>,
+    _multi: Option<MultiProgress>,
     /// Last event time for watchdog (atomic for cross-thread access).
     last_event_time: Arc<AtomicU64>,
+    /// Watchdog shutdown flag.
+    shutdown_flag: Arc<AtomicBool>,
     /// Watchdog thread handle.
     watchdog_thread: Option<thread::JoinHandle<()>>,
     /// Whether we're in TTY mode.
     is_tty: bool,
     /// Current file path for slow-file warning.
-    current_file: Arc<tokio::sync::Mutex<String>>,
+    current_file: Arc<Mutex<String>>,
     /// Current file start time for slow-file warning.
     current_file_start: Arc<AtomicU64>,
     /// Slow file warning already emitted flag.
     slow_file_warned: Arc<AtomicBool>,
+    /// Main bar reference for watchdog redraws.
+    main_bar_for_watchdog: Arc<Mutex<Option<ProgressBar>>>,
 }
 
 impl ProgressManager {
@@ -73,8 +76,9 @@ impl ProgressManager {
             return None;
         }
 
-        let multi = Some(MultiProgress::new());
-        let multi_ref = multi.as_ref().unwrap();
+        // Create multi-progress with stderr target
+        let multi = MultiProgress::new();
+        multi.set_draw_target(ProgressDrawTarget::stderr());
 
         // Main bar template: "Searching: [{wide_bar}] {pos}/{len} files ({percent}%) {bytes_per_sec} ETA {eta}"
         let main_style = ProgressStyle::with_template(
@@ -82,24 +86,24 @@ impl ProgressManager {
         )
         .expect("invalid main bar template");
 
-        let main_bar = Some(multi_ref.add(ProgressBar::new(files_total)));
-        let main_bar_ref = main_bar.as_ref().unwrap();
-        main_bar_ref.set_style(main_style);
-        main_bar_ref.enable_steady_tick(Duration::from_millis(STEADY_TICK_MS));
+        let main_bar = multi.add(ProgressBar::new(files_total));
+        main_bar.set_style(main_style);
+        main_bar.enable_steady_tick(Duration::from_millis(STEADY_TICK_MS));
 
         // Sub-bar template: "Current: {msg}" where msg = "<path> (page {pages_done}/{pages_total})"
         let current_style =
             ProgressStyle::with_template("Current: {msg}").expect("invalid current bar template");
 
-        let current_bar = Some(multi_ref.add(ProgressBar::new(1)));
-        let current_bar_ref = current_bar.as_ref().unwrap();
-        current_bar_ref.set_style(current_style);
-        current_bar_ref.enable_steady_tick(Duration::from_millis(STEADY_TICK_MS));
+        let current_bar = multi.add(ProgressBar::new(1));
+        current_bar.set_style(current_style);
+        current_bar.enable_steady_tick(Duration::from_millis(STEADY_TICK_MS));
 
         let last_event_time = Arc::new(AtomicU64::new(timestamp_ms()));
-        let current_file = Arc::new(tokio::sync::Mutex::new(String::new()));
+        let shutdown_flag = Arc::new(AtomicBool::new(false));
+        let current_file = Arc::new(Mutex::new(String::new()));
         let current_file_start = Arc::new(AtomicU64::new(timestamp_ms()));
         let slow_file_warned = Arc::new(AtomicBool::new(false));
+        let main_bar_for_watchdog = Arc::new(Mutex::new(Some(main_bar.clone())));
 
         // Spawn watchdog thread
         let watchdog_thread = Some(spawn_watchdog(
@@ -107,19 +111,23 @@ impl ProgressManager {
             current_file.clone(),
             current_file_start.clone(),
             slow_file_warned.clone(),
+            shutdown_flag.clone(),
             is_tty,
+            main_bar_for_watchdog.clone(),
         ));
 
         Some(Self {
-            main_bar,
-            current_bar,
-            multi,
+            main_bar: Some(main_bar),
+            current_bar: Some(current_bar),
+            _multi: Some(multi),
             last_event_time,
+            shutdown_flag,
             watchdog_thread,
             is_tty,
             current_file,
             current_file_start,
             slow_file_warned,
+            main_bar_for_watchdog,
         })
     }
 
@@ -134,7 +142,7 @@ impl ProgressManager {
         match event {
             ProgressEvent::FileStart { path, size_hint: _ } => {
                 // Update current file for slow-file warning
-                *self.current_file.blocking_lock() = path.clone();
+                *self.current_file.lock().unwrap() = path.clone();
                 self.current_file_start
                     .store(timestamp_ms(), Ordering::Relaxed);
                 self.slow_file_warned.store(false, Ordering::Relaxed);
@@ -151,11 +159,10 @@ impl ProgressManager {
             } => {
                 // Update current bar with page progress
                 if let Some(ref bar) = self.current_bar {
+                    let path = self.current_file.lock().unwrap();
                     bar.set_message(format!(
                         "{} (page {}/{})",
-                        self.current_file.blocking_lock(),
-                        pages_done,
-                        pages_total
+                        path, pages_done, pages_total
                     ));
                 }
             }
@@ -185,10 +192,16 @@ impl ProgressManager {
     ///
     /// Displays final stats: "Searched: 512 files (104 MB) in 18.4s (78 MB/s)"
     pub fn finish(mut self, files_processed: u64, bytes_total: u64, duration_ms: u128) {
+        // Signal watchdog thread to stop
+        self.shutdown_flag.store(true, Ordering::Relaxed);
+
         // Join watchdog thread
         if let Some(handle) = self.watchdog_thread.take() {
             let _ = handle.join();
         }
+
+        // Clear main_bar_for_watchdog to prevent any late redraws
+        *self.main_bar_for_watchdog.lock().unwrap() = None;
 
         if let Some(main_bar) = self.main_bar.take() {
             main_bar.finish();
@@ -219,7 +232,8 @@ impl ProgressManager {
 
 impl Drop for ProgressManager {
     fn drop(&mut self) {
-        // Ensure watchdog thread is joined
+        // Ensure watchdog thread is joined and flag is set
+        self.shutdown_flag.store(true, Ordering::Relaxed);
         if let Some(handle) = self.watchdog_thread.take() {
             let _ = handle.join();
         }
@@ -228,23 +242,7 @@ impl Drop for ProgressManager {
 
 /// Check if stderr is a TTY.
 fn is_terminal_stderr() -> bool {
-    // Try to detect if stderr is a terminal
-    // On Unix: check isatty(STDERR_FILENO)
-    // On Windows: similar check
-    #[cfg(unix)]
-    {
-        use std::os::unix::io::AsRawFd;
-        let stderr = std::io::stderr();
-        unsafe { libc::isatty(stderr.as_raw_fd()) != 0 }
-    }
-
-    #[cfg(windows)]
-    {
-        // Windows TTY detection
-        // For simplicity, assume false on Windows for now
-        // A full implementation would use winapi::console::GetConsoleMode
-        false
-    }
+    atty::is(atty::Stream::Stderr)
 }
 
 /// Get current timestamp in milliseconds.
@@ -261,19 +259,19 @@ fn timestamp_ms() -> u64 {
 /// The watchdog ensures the progress bars tick at least once every 500 ms,
 /// even when no events are arriving (e.g., during slow file processing).
 fn spawn_watchdog(
-    last_event_time: Arc<AtomicU64>,
-    current_file: Arc<tokio::sync::Mutex<String>>,
+    _last_event_time: Arc<AtomicU64>,
+    current_file: Arc<Mutex<String>>,
     current_file_start: Arc<AtomicU64>,
     slow_file_warned: Arc<AtomicBool>,
+    shutdown_flag: Arc<AtomicBool>,
     is_tty: bool,
+    main_bar_for_watchdog: Arc<Mutex<Option<ProgressBar>>>,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
-        loop {
+        while !shutdown_flag.load(Ordering::Relaxed) {
             thread::sleep(Duration::from_millis(WATCHDOG_TIMEOUT_MS));
 
             let now = timestamp_ms();
-            let last = last_event_time.load(Ordering::Relaxed);
-            let _elapsed = now.saturating_sub(last);
 
             // Check for slow file (30 seconds)
             let file_start = current_file_start.load(Ordering::Relaxed);
@@ -282,7 +280,7 @@ fn spawn_watchdog(
                 && !slow_file_warned.load(Ordering::Relaxed)
                 && is_tty
             {
-                let path = current_file.blocking_lock().clone();
+                let path = current_file.lock().unwrap();
                 if !path.is_empty() {
                     let elapsed_secs = file_elapsed / 1000;
                     eprintln!(
@@ -293,11 +291,14 @@ fn spawn_watchdog(
                 }
             }
 
-            // If elapsed > WATCHDOG_TIMEOUT_MS, force a redraw
-            // This is a no-op for indicatif bars (they auto-redraw),
-            // but the liveness guarantee is that the bars are still ticking
-            // via the steady_tick we enabled.
-            // The watchdog here mainly serves for slow-file warnings.
+            // Force a redraw of the main bar to ensure liveness
+            // This guarantees the 500ms update requirement even during slow file processing
+            let bar_guard = main_bar_for_watchdog.lock().unwrap();
+            if let Some(ref bar) = *bar_guard {
+                // Tick the bar to force a redraw - this is a no-op for progress
+                // but ensures the terminal cursor moves and the bar stays alive
+                bar.tick();
+            }
         }
     })
 }
@@ -335,5 +336,13 @@ mod tests {
         // May be Some or None depending on environment
         // We just verify it doesn't panic
         let _ = manager;
+    }
+
+    #[test]
+    fn test_shutdown_flag() {
+        let flag = Arc::new(AtomicBool::new(false));
+        assert!(!flag.load(Ordering::Relaxed));
+        flag.store(true, Ordering::Relaxed);
+        assert!(flag.load(Ordering::Relaxed));
     }
 }

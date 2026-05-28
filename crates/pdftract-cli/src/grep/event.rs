@@ -157,7 +157,10 @@ fn is_false(value: &bool) -> bool {
 #[derive(Debug, Clone)]
 pub enum ProgressEvent {
     /// A file is starting processing.
-    FileStart { path: String, size_hint: Option<u64> },
+    FileStart {
+        path: String,
+        size_hint: Option<u64>,
+    },
 
     /// Progress within a file (page-level updates).
     FileProgress {
