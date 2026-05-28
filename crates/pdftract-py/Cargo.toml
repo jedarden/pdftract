@@ -14,7 +14,7 @@ crate-type = ["cdylib", "rlib"]
 anyhow = "1"
 base64 = "0.22"
 pdftract-core = { path = "../pdftract-core" }
-pyo3 = { version = "0.20", features = ["extension-module"] }
+pyo3 = { version = "0.20", features = ["extension-module", "abi3-py310"] }
 
 [features]
 default = ["pyo3/extension-module"]

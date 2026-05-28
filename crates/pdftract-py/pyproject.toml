@@ -7,7 +7,7 @@ name = "pdftract"
 dynamic = ["version"]
 description = "PDF text extraction library with robust encoding detection"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = {text = "MIT OR Apache-2.0"}
 keywords = ["pdf", "text-extraction", "encoding-detection"]
 classifiers = [
@@ -16,6 +16,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -34,7 +35,7 @@ Issues = "https://github.com/jedarden/pdftract/issues"
 features = ["pyo3/extension-module"]
 # Strip symbols from the final wheel for smaller size
 strip = true
-# Use abi3 for forward compatibility across Python 3.11+
+# Use abi3 for forward compatibility across Python 3.10+
 python-source = "python"
 # Include license files in the wheel
 license-files = ["../../LICENSE-MIT", "../../LICENSE-APACHE"]
