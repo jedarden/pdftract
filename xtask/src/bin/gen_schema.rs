@@ -62,12 +62,66 @@ fn find_workspace_root() -> PathBuf {
     std::env::current_dir().unwrap()
 }
 
+/// Add explicit enum constraints to schema fields.
+///
+/// This function post-processes the generated JSON schema to add explicit
+/// enum constraints to fields that should have restricted value sets.
+fn add_enum_constraints(value: &mut Value) {
+    if let Some(obj) = value.as_object_mut() {
+        // Add enum constraints to $defs for specific fields
+        if let Some(defs) = obj.get_mut("$defs").and_then(|v| v.as_object_mut()) {
+            // Add enum to DiagnosticJson.severity
+            if let Some(diag) = defs.get_mut("DiagnosticJson").and_then(|v| v.as_object_mut()) {
+                if let Some(props) = diag.get_mut("properties").and_then(|v| v.as_object_mut()) {
+                    if let Some(severity) = props.get_mut("severity").and_then(|v| v.as_object_mut()) {
+                        severity.insert("enum".to_string(), Value::Array(vec![
+                            Value::String("info".to_string()),
+                            Value::String("warning".to_string()),
+                            Value::String("error".to_string()),
+                            Value::String("fatal".to_string()),
+                        ]));
+                    }
+                }
+            }
+
+            // Add enum to PageJson.page_type (type field)
+            if let Some(page) = defs.get_mut("PageJson").and_then(|v| v.as_object_mut()) {
+                if let Some(props) = page.get_mut("properties").and_then(|v| v.as_object_mut()) {
+                    if let Some(page_type) = props.get_mut("type").and_then(|v| v.as_object_mut()) {
+                        page_type.insert("enum".to_string(), Value::Array(vec![
+                            Value::String("text".to_string()),
+                            Value::String("scanned".to_string()),
+                            Value::String("mixed".to_string()),
+                            Value::String("broken_vector".to_string()),
+                            Value::String("blank".to_string()),
+                            Value::String("figure_only".to_string()),
+                        ]));
+                    }
+                }
+            }
+
+            // Add enum to SpanJson.confidence_source
+            if let Some(span) = defs.get_mut("SpanJson").and_then(|v| v.as_object_mut()) {
+                if let Some(props) = span.get_mut("properties").and_then(|v| v.as_object_mut()) {
+                    if let Some(conf_src) = props.get_mut("confidence_source").and_then(|v| v.as_object_mut()) {
+                        conf_src.insert("enum".to_string(), Value::Array(vec![
+                            Value::String("native".to_string()),
+                            Value::String("heuristic".to_string()),
+                            Value::String("ocr".to_string()),
+                        ]));
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Generate the JSON Schema for pdftract extraction output.
 fn generate_schema() -> String {
-    use pdftract_core::extract::ExtractionResult;
+    use pdftract_core::schema::Output;
     use schemars::schema_for;
 
-    let schema = schema_for!(ExtractionResult);
+    let schema = schema_for!(Output);
 
     // Convert to JSON value
     let mut value = serde_json::to_value(&schema).expect("Failed to serialize schema");
@@ -92,6 +146,9 @@ fn generate_schema() -> String {
             .to_string()
         ));
     }
+
+    // Add explicit enum constraints
+    add_enum_constraints(&mut value);
 
     // Sort keys recursively for stable ordering
     let sorted = sort_keys_recursive(value);
