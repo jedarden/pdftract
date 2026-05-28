@@ -1,0 +1,736 @@
+# pdftract-py-ci WorkflowTemplate
+#
+# This template orchestrates the Python wheel build and publish pipeline for pdftract,
+# a Rust PDF text extraction library with PyO3 Python bindings. The pipeline builds
+# wheels for multiple target triples using maturin and publishes them to PyPI.
+#
+# === Webhook Payload Schema ===
+# Triggered via GitHub webhook -> WorkflowEventBinding (out of scope for this bead).
+# Expected webhook payload schema:
+#
+#   {
+#     "ref": "refs/tags/v0.1.0",
+#     "repository": {
+#       "full_name": "jedarden/pdftract",
+#       "html_url": "https://github.com/jedarden/pdftract"
+#     },
+#     "head_commit": {
+#       "id": "abc123...",
+#       "message": "Release v0.1.0"
+#     },
+#     "sender": {
+#       "login": "username"
+#     }
+#   }
+#
+# === Parameter Reference ===
+# - commit-sha: Full Git commit SHA (40 hex chars)
+# - ref: Git tag (must match "v*.*.*" pattern)
+# - repo-url: GitHub repository URL
+# - version: SemVer version string (extracted from tag)
+#
+# === DAG Structure ===
+# setup -> [parallel: wheel-linux-x86-64, wheel-linux-aarch64, wheel-darwin-x86-64,
+#            wheel-darwin-aarch64, wheel-windows-x86-64, sdist] ->
+# [parallel: publish-pypi-sdist, publish-pypi-wheels (TAG-GATED)]
+#
+# - setup: Clone repo, install maturin, warm cargo cache
+# - wheel-linux-x86-64: Build manylinux_2_28_x86_64 wheel using quay.io/pypa/manylinux_2_28_x86_64
+# - wheel-linux-aarch64: Build manylinux_2_28_aarch64 wheel using messense/manylinux_2_28-cross:aarch64
+# - wheel-darwin-x86-64: Build macosx_11_0_x86_64 wheel using osxcross
+# - wheel-darwin-aarch64: Build macosx_11_0_arm64 wheel using osxcross
+# - wheel-windows-x86-64: Build win_amd64 wheel using cross-rs
+# - sdist: Build source distribution using maturin sdist
+# - publish-pypi-sdist: Upload sdist to PyPI via twine (runs immediately after sdist, TAG-GATED)
+# - publish-pypi-wheels: Upload all wheels to PyPI via twine (runs after all wheels, TAG-GATED)
+#
+# TAG-GATED: Publish steps only execute when workflow.parameters.ref matches regex
+# ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ (e.g., v1.0.0, v2.3.4-rc.1)
+#
+# === Trigger ===
+# Only fires on milestone tags matching "v*.*.*" (e.g., v0.1.0, v1.2.3).
+# Does NOT fire on PRs or branch pushes — wheel builds are expensive.
+#
+# === Parallelism ===
+# All wheel builds run in parallel. Failure of one platform does NOT block others.
+# Publish steps run in parallel: sdist publishes immediately, wheels publish after all builds.
+#
+# === PyPI Token ===
+# Uses PyPI API token from ExternalSecret `pypi-token-pdftract` (synced from OpenBao).
+# Per ADR-009: NO OIDC trusted-publisher (GitHub Actions exclusive feature).
+#
+# === Wheel Naming ===
+# Wheels are abi3-tagged: pdftract-X.Y.Z-cp311-abi3-<platform_tag>.whl
+# - cp311-abi3 means compatible with Python 3.11+
+# - One wheel per platform serves all Python 3.11+ minor versions
+#
+# === Re-runnability ===
+# twine upload --skip-existing returns 0 for already-uploaded files.
+# Re-running the same tag is idempotent: only missing artifacts are uploaded.
+#
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: pdftract-py-ci
+  namespace: argo-workflows
+  labels:
+    app.kubernetes.io/name: pdftract-py-ci
+    app.kubernetes.io/component: ci
+    app.kubernetes.io/part-of: pdftract
+spec:
+  entrypoint: pipeline
+  serviceAccountName: argo-workflow
+
+  podGC:
+    strategy: OnPodCompletion
+
+  ttlStrategy:
+    secondsAfterSuccess: 1800
+    secondsAfterFailure: 7200
+
+  onExit: on-exit
+
+  arguments:
+    parameters:
+      - name: commit-sha
+        value: ""
+        description: "Full Git commit SHA (40 hex chars)"
+      - name: ref
+        value: "refs/tags/v0.0.0"
+        description: "Git tag (must match 'v*.*.*' pattern)"
+      - name: repo-url
+        value: "https://github.com/jedarden/pdftract.git"
+        description: "GitHub repository URL"
+      - name: version
+        value: "0.0.0"
+        description: "SemVer version string (extracted from tag)"
+
+  volumeClaimTemplates:
+    - metadata:
+        name: cargo-cache
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: sata-large
+        resources:
+          requests:
+            storage: 50Gi
+    - metadata:
+        name: workspace
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: sata-large
+        resources:
+          requests:
+            storage: 10Gi
+    - metadata:
+        name: wheel-artifacts
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: sata-large
+        resources:
+          requests:
+            storage: 5Gi
+
+  volumes:
+    - name: docker-config
+      secret:
+        secretName: docker-hub-registry
+        items:
+          - key: .dockerconfigjson
+            path: config.json
+    - name: pypi-token
+      secret:
+        secretName: pypi-token-pdftract
+        items:
+          - key: token
+            path: token
+
+  podMetadata:
+    labels:
+      app.kubernetes.io/name: pdftract-py-ci
+      commit-sha: "{{workflow.parameters.commit-sha}}"
+
+  podSpecPatch: |
+    imagePullSecrets:
+      - name: docker-hub-registry
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      fsGroup: 1000
+
+  templates:
+    # === Top-level DAG ===
+    # Setup runs first, then all wheel builds + sdist run in parallel,
+    # then publish to PyPI (sdist immediately, wheels after all builds).
+    - name: pipeline
+      dag:
+        tasks:
+          - name: setup
+            template: setup
+
+          - name: wheel-linux-x86-64
+            template: wheel-linux-x86-64
+            dependencies: [setup]
+            continueOn:
+              failed: true
+
+          - name: wheel-linux-aarch64
+            template: wheel-linux-aarch64
+            dependencies: [setup]
+            continueOn:
+              failed: true
+
+          - name: wheel-darwin-x86-64
+            template: wheel-darwin-x86-64
+            dependencies: [setup]
+            continueOn:
+              failed: true
+
+          - name: wheel-darwin-aarch64
+            template: wheel-darwin-aarch64
+            dependencies: [setup]
+            continueOn:
+              failed: true
+
+          - name: wheel-windows-x86-64
+            template: wheel-windows-x86-64
+            dependencies: [setup]
+            continueOn:
+              failed: true
+
+          - name: sdist
+            template: sdist
+            dependencies: [setup]
+
+          # Publish sdist immediately after it's built
+          - name: publish-pypi-sdist
+            template: publish-pypi
+            dependencies: [sdist]
+            when: "{{workflow.parameters.ref}} =~ ^refs/tags/v[0-9]+\\.[0-9]+\\.[0-9]+(-rc\\.[0-9]+)?$"
+            arguments:
+              parameters:
+                - name: glob
+                  value: "*.tar.gz"
+
+          # Publish wheels after all wheel builds complete (or fail)
+          - name: publish-pypi-wheels
+            template: publish-pypi
+            dependencies: [wheel-linux-x86-64, wheel-linux-aarch64, wheel-darwin-x86-64, wheel-darwin-aarch64, wheel-windows-x86-64]
+            when: "{{workflow.parameters.ref}} =~ ^refs/tags/v[0-9]+\\.[0-9]+\\.[0-9]+(-rc\\.[0-9]+)?$"
+            arguments:
+              parameters:
+                - name: glob
+                  value: "*.whl"
+
+    # === Exit Handler ===
+    # Reports workflow status (success/failure) with details
+    - name: on-exit
+      script:
+        image: alpine:3.19
+        command: [sh]
+        source: |
+          #!/bin/sh
+          set -e
+          echo "=== Workflow Exit Report ==="
+          echo "Workflow: {{workflow.name}}"
+          echo "Commit: {{workflow.parameters.commit-sha}}"
+          echo "Tag: {{workflow.parameters.ref}}"
+          echo "Version: {{workflow.parameters.version}}"
+          echo "Status: {{workflow.status}}"
+          echo "Artifacts available in /wheels volume"
+      activeDeadlineSeconds: 60
+
+    # === Setup Step ===
+    # Clones repo, installs maturin, warms cargo cache
+    - name: setup
+      activeDeadlineSeconds: 600
+      container:
+        image: rust:1.78-slim
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+
+            echo "=== Setup: Cloning repo ==="
+            git clone --depth 1 "{{workflow.parameters.repo-url}}" /workspace
+            cd /workspace
+            git checkout "{{workflow.parameters.commit-sha}}"
+
+            echo "=== Setup: Installing maturin ==="
+            export CARGO_HOME="/cache/cargo/registry"
+            cargo install --locked maturin
+
+            echo "=== Setup: Verifying maturin installation ==="
+            maturin --version
+
+            echo "=== Setup: Complete ==="
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+
+    # === Wheel Linux x86_64 ===
+    # Build manylinux_2_28_x86_64 wheel using quay.io/pypa/manylinux_2_28_x86_64
+    - name: wheel-linux-x86-64
+      activeDeadlineSeconds: 3600
+      container:
+        image: quay.io/pypa/manylinux_2_28_x86_64
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+
+            TARGET="x86_64-unknown-linux-gnu"
+            WHEEL_NAME="pdftract-{{workflow.parameters.version}}-cp311-abi3-manylinux_2_28_x86_64.whl"
+
+            echo "=========================================="
+            echo "Building wheel for: $TARGET"
+            echo "Wheel name: $WHEEL_NAME"
+            echo "=========================================="
+
+            cd /workspace
+
+            # Set reproducible build timestamp
+            export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct 2>/dev/null || echo 0)
+            export CARGO_HOME="/cache/cargo/registry"
+            export CARGO_TARGET_DIR="/cache/cargo/target-$TARGET"
+            export PATH="/opt/python/cp311-cp311/bin:$PATH"
+
+            echo "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH"
+            echo "Python: $(python3.11 --version)"
+
+            # Install maturin in the manylinux environment
+            pip3.11 install --no-cache-dir maturin[zig]
+
+            echo "=== Building wheel with maturin ==="
+            cd crates/pdftract-py
+            maturin build --release \
+              --target "$TARGET" \
+              --strip \
+              --interpreter python3.11 \
+              --abi3 \
+              --out /wheels
+
+            echo "=== Verifying wheel output ==="
+            ls -lh /wheels/
+
+            # Verify wheel was built
+            if [ ! -f "/wheels/$WHEEL_NAME" ]; then
+              echo "ERROR: Expected wheel not found: /wheels/$WHEEL_NAME" >&2
+              echo "Contents of /wheels:"
+              ls -la /wheels/
+              exit 1
+            fi
+
+            echo "=== Wheel build complete ==="
+            echo "Built: $WHEEL_NAME"
+
+            # Verify wheel integrity
+            python3.11 -m zipfile -l "/wheels/$WHEEL_NAME" | head -20
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+          - name: wheel-artifacts
+            mountPath: /wheels
+        resources:
+          requests:
+            cpu: 2000m
+            memory: 4Gi
+          limits:
+            cpu: 4000m
+            memory: 8Gi
+
+    # === Wheel Linux aarch64 ===
+    # Build manylinux_2_28_aarch64 wheel using messense/manylinux_2_28-cross:aarch64
+    - name: wheel-linux-aarch64
+      activeDeadlineSeconds: 3600
+      container:
+        image: messense/manylinux_2_28-cross:aarch64
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+
+            TARGET="aarch64-unknown-linux-gnu"
+            WHEEL_NAME="pdftract-{{workflow.parameters.version}}-cp311-abi3-manylinux_2_28_aarch64.whl"
+
+            echo "=========================================="
+            echo "Building wheel for: $TARGET (cross-compile)"
+            echo "Wheel name: $WHEEL_NAME"
+            echo "=========================================="
+
+            cd /workspace
+
+            # Set reproducible build timestamp
+            export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct 2>/dev/null || echo 0)
+            export CARGO_HOME="/cache/cargo/registry"
+            export CARGO_TARGET_DIR="/cache/cargo/target-$TARGET"
+            export PATH="/opt/python/cp311-cp311/bin:$PATH"
+
+            echo "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH"
+            echo "Python: $(python3.11 --version)"
+
+            # Install maturin in the manylinux cross environment
+            pip3.11 install --no-cache-dir maturin[zig]
+
+            echo "=== Building wheel with maturin (cross-compile) ==="
+            cd crates/pdftract-py
+            maturin build --release \
+              --target "$TARGET" \
+              --strip \
+              --interpreter python3.11 \
+              --abi3 \
+              --out /wheels
+
+            echo "=== Verifying wheel output ==="
+            ls -lh /wheels/
+
+            # Verify wheel was built
+            if [ ! -f "/wheels/$WHEEL_NAME" ]; then
+              echo "ERROR: Expected wheel not found: /wheels/$WHEEL_NAME" >&2
+              echo "Contents of /wheels:"
+              ls -la /wheels/
+              exit 1
+            fi
+
+            echo "=== Wheel build complete ==="
+            echo "Built: $WHEEL_NAME"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+          - name: wheel-artifacts
+            mountPath: /wheels
+        resources:
+          requests:
+            cpu: 2000m
+            memory: 4Gi
+          limits:
+            cpu: 4000m
+            memory: 8Gi
+
+    # === Wheel Darwin x86_64 ===
+    # Build macosx_11_0_x86_64 wheel using osxcross
+    - name: wheel-darwin-x86-64
+      activeDeadlineSeconds: 3600
+      container:
+        image: messense/maturin:main-darwin-x86_64
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+
+            TARGET="x86_64-apple-darwin"
+            WHEEL_NAME="pdftract-{{workflow.parameters.version}}-cp311-abi3-macosx_11_0_x86_64.whl"
+
+            echo "=========================================="
+            echo "Building wheel for: $TARGET (osxcross)"
+            echo "Wheel name: $WHEEL_NAME"
+            echo "=========================================="
+
+            cd /workspace
+
+            # Set reproducible build timestamp
+            export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct 2>/dev/null || echo 0)
+            export CARGO_HOME="/cache/cargo/registry"
+            export CARGO_TARGET_DIR="/cache/cargo/target-$TARGET"
+
+            echo "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH"
+
+            echo "=== Building wheel with maturin (osxcross) ==="
+            cd crates/pdftract-py
+            maturin build --release \
+              --target "$TARGET" \
+              --strip \
+              --interpreter python3.11 \
+              --abi3 \
+              --out /wheels
+
+            echo "=== Verifying wheel output ==="
+            ls -lh /wheels/
+
+            # Verify wheel was built
+            if [ ! -f "/wheels/$WHEEL_NAME" ]; then
+              echo "ERROR: Expected wheel not found: /wheels/$WHEEL_NAME" >&2
+              echo "Contents of /wheels:"
+              ls -la /wheels/
+              exit 1
+            fi
+
+            echo "=== Wheel build complete ==="
+            echo "Built: $WHEEL_NAME"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+          - name: wheel-artifacts
+            mountPath: /wheels
+        resources:
+          requests:
+            cpu: 2000m
+            memory: 4Gi
+          limits:
+            cpu: 4000m
+            memory: 8Gi
+
+    # === Wheel Darwin aarch64 ===
+    # Build macosx_11_0_arm64 wheel using osxcross
+    - name: wheel-darwin-aarch64
+      activeDeadlineSeconds: 3600
+      container:
+        image: messense/maturin:main-darwin-aarch64
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+
+            TARGET="aarch64-apple-darwin"
+            WHEEL_NAME="pdftract-{{workflow.parameters.version}}-cp311-abi3-macosx_11_0_arm64.whl"
+
+            echo "=========================================="
+            echo "Building wheel for: $TARGET (osxcross)"
+            echo "Wheel name: $WHEEL_NAME"
+            echo "=========================================="
+
+            cd /workspace
+
+            # Set reproducible build timestamp
+            export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct 2>/dev/null || echo 0)
+            export CARGO_HOME="/cache/cargo/registry"
+            export CARGO_TARGET_DIR="/cache/cargo/target-$TARGET"
+
+            echo "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH"
+
+            echo "=== Building wheel with maturin (osxcross) ==="
+            cd crates/pdftract-py
+            maturin build --release \
+              --target "$TARGET" \
+              --strip \
+              --interpreter python3.11 \
+              --abi3 \
+              --out /wheels
+
+            echo "=== Verifying wheel output ==="
+            ls -lh /wheels/
+
+            # Verify wheel was built
+            if [ ! -f "/wheels/$WHEEL_NAME" ]; then
+              echo "ERROR: Expected wheel not found: /wheels/$WHEEL_NAME" >&2
+              echo "Contents of /wheels:"
+              ls -la /wheels/
+              exit 1
+            fi
+
+            echo "=== Wheel build complete ==="
+            echo "Built: $WHEEL_NAME"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+          - name: wheel-artifacts
+            mountPath: /wheels
+        resources:
+          requests:
+            cpu: 2000m
+            memory: 4Gi
+          limits:
+            cpu: 4000m
+            memory: 8Gi
+
+    # === Wheel Windows x86_64 ===
+    # Build win_amd64 wheel using cross-rs
+    - name: wheel-windows-x86-64
+      activeDeadlineSeconds: 3600
+      container:
+        image: messense/maturin:main-windows-x86_64
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+
+            TARGET="x86_64-pc-windows-msvc"
+            WHEEL_NAME="pdftract-{{workflow.parameters.version}}-cp311-abi3-win_amd64.whl"
+
+            echo "=========================================="
+            echo "Building wheel for: $TARGET (cross-compile)"
+            echo "Wheel name: $WHEEL_NAME"
+            echo "=========================================="
+
+            cd /workspace
+
+            # Set reproducible build timestamp
+            export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct 2>/dev/null || echo 0)
+            export CARGO_HOME="/cache/cargo/registry"
+            export CARGO_TARGET_DIR="/cache/cargo/target-$TARGET"
+
+            echo "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH"
+
+            echo "=== Building wheel with maturin (cross-rs) ==="
+            cd crates/pdftract-py
+            maturin build --release \
+              --target "$TARGET" \
+              --strip \
+              --interpreter python3.11 \
+              --abi3 \
+              --out /wheels
+
+            echo "=== Verifying wheel output ==="
+            ls -lh /wheels/
+
+            # Verify wheel was built
+            if [ ! -f "/wheels/$WHEEL_NAME" ]; then
+              echo "ERROR: Expected wheel not found: /wheels/$WHEEL_NAME" >&2
+              echo "Contents of /wheels:"
+              ls -la /wheels/
+              exit 1
+            fi
+
+            echo "=== Wheel build complete ==="
+            echo "Built: $WHEEL_NAME"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+          - name: wheel-artifacts
+            mountPath: /wheels
+        resources:
+          requests:
+            cpu: 2000m
+            memory: 4Gi
+          limits:
+            cpu: 4000m
+            memory: 8Gi
+
+    # === Source Distribution ===
+    # Build sdist using maturin sdist
+    - name: sdist
+      activeDeadlineSeconds: 1800
+      container:
+        image: rust:1.78-slim
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+
+            SDIST_NAME="pdftract-{{workflow.parameters.version}}.tar.gz"
+
+            echo "=========================================="
+            echo "Building source distribution"
+            echo "Sdist name: $SDIST_NAME"
+            echo "=========================================="
+
+            cd /workspace
+
+            export CARGO_HOME="/cache/cargo/registry"
+
+            # Install maturin
+            cargo install --locked maturin
+
+            echo "=== Building sdist with maturin ==="
+            cd crates/pdftract-py
+            maturin build --release \
+              --sdist \
+              --out /wheels
+
+            echo "=== Verifying sdist output ==="
+            ls -lh /wheels/
+
+            # Verify sdist was built
+            if [ ! -f "/wheels/$SDIST_NAME" ]; then
+              echo "ERROR: Expected sdist not found: /wheels/$SDIST_NAME" >&2
+              echo "Contents of /wheels:"
+              ls -la /wheels/
+              exit 1
+            fi
+
+            echo "=== Sdist build complete ==="
+            echo "Built: $SDIST_NAME"
+
+            # Verify sdist contents
+            tar -tzf "/wheels/$SDIST_NAME" | head -20
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+          - name: wheel-artifacts
+            mountPath: /wheels
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+
+    # === Publish PyPI ===
+    # Upload wheels/sdist to PyPI via twine
+    # Uses --skip-existing for idempotent re-runs
+    # ONLY runs on tag pushes matching ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$
+    - name: publish-pypi
+      inputs:
+        parameters:
+          - name: glob
+            value: "*.whl"
+      activeDeadlineSeconds: 600
+      container:
+        image: python:3.11-slim
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+
+            GLOB="{{inputs.parameters.glob}}"
+
+            echo "=========================================="
+            echo "Publishing to PyPI"
+            echo "Pattern: $GLOB"
+            echo "Version: {{workflow.parameters.version}}"
+            echo "=========================================="
+
+            cd /wheels
+
+            # Install twine
+            pip install --no-cache-dir twine
+
+            # List files to be uploaded
+            echo "=== Files to upload ==="
+            ls -lh $GLOB || echo "No files matching pattern: $GLOB"
+
+            # Upload to PyPI
+            # Use --password $(cat /path) to avoid token in env vars (leakable via ps aux)
+            echo "=== Uploading to PyPI ==="
+            twine upload --skip-existing \
+              --repository pypi \
+              --username __token__ \
+              --password "$(cat /etc/pypi-token/token)" \
+              $GLOB
+
+            echo "=== PyPI upload complete ==="
+        volumeMounts:
+          - name: wheel-artifacts
+            mountPath: /wheels
+          - name: pypi-token
+            mountPath: /etc/pypi-token
+            readOnly: true
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
