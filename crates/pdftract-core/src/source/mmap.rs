@@ -187,7 +187,7 @@ mod tests {
         temp_file.write_all(b"%PDF-1.4\ntest content\n").unwrap();
 
         let source = MmapSource::open(temp_file.path()).unwrap();
-        assert_eq!(source.len(), 20);
+        assert_eq!(source.len(), 22);
     }
 
     #[test]
@@ -291,7 +291,7 @@ mod tests {
         source.seek(SeekFrom::End(-2)).unwrap();
         let mut buf = [0u8; 2];
         source.read_exact(&mut buf).unwrap();
-        assert_eq!(&buf, b"el");
+        assert_eq!(&buf, b"lo");
     }
 
     #[test]
