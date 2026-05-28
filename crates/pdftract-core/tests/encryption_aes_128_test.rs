@@ -140,14 +140,14 @@ mod tests {
         let mut data_copy = vec![0u8; plaintext.len() + 16];
         data_copy[..plaintext.len()].copy_from_slice(plaintext);
         let encryptor = Aes128CbcEnc::new(&key.into(), &iv.into());
-        encryptor
+        let ct = encryptor
             .encrypt_padded_mut::<Pkcs7>(&mut data_copy, plaintext.len())
             .unwrap();
 
-        // Prepare data: IV + ciphertext (entire buffer after encrypt_padded_mut)
-        let mut encrypted_data = Vec::with_capacity(16 + data_copy.len());
+        // Prepare data: IV + ciphertext (use the returned slice which has correct length)
+        let mut encrypted_data = Vec::with_capacity(16 + ct.len());
         encrypted_data.extend_from_slice(&iv);
-        encrypted_data.extend_from_slice(&data_copy);
+        encrypted_data.extend_from_slice(ct);
 
         // Decrypt
         let result = aes_128_decrypt(&file_key, object_number, generation, &encrypted_data);
@@ -310,14 +310,14 @@ mod tests {
         let mut data_copy = vec![0u8; plaintext.len() + 16];
         data_copy[..plaintext.len()].copy_from_slice(plaintext);
         let encryptor = Aes128CbcEnc::new(&key.into(), &iv.into());
-        encryptor
+        let ct = encryptor
             .encrypt_padded_mut::<Pkcs7>(&mut data_copy, plaintext.len())
             .unwrap();
 
         // Prepare data: IV + ciphertext
-        let mut encrypted_data = Vec::with_capacity(16 + data_copy.len());
+        let mut encrypted_data = Vec::with_capacity(16 + ct.len());
         encrypted_data.extend_from_slice(&iv);
-        encrypted_data.extend_from_slice(&data_copy);
+        encrypted_data.extend_from_slice(ct);
 
         // Decrypt
         let result = aes_128_decrypt(&file_key, object_number, generation, &encrypted_data);
@@ -352,14 +352,14 @@ mod tests {
         let mut data_copy = vec![0u8; plaintext.len() + 16];
         data_copy[..plaintext.len()].copy_from_slice(plaintext);
         let encryptor = Aes128CbcEnc::new(&key.into(), &iv.into());
-        encryptor
+        let ct = encryptor
             .encrypt_padded_mut::<Pkcs7>(&mut data_copy, plaintext.len())
             .unwrap();
 
         // Prepare data: IV + ciphertext
-        let mut encrypted_data = Vec::with_capacity(16 + data_copy.len());
+        let mut encrypted_data = Vec::with_capacity(16 + ct.len());
         encrypted_data.extend_from_slice(&iv);
-        encrypted_data.extend_from_slice(&data_copy);
+        encrypted_data.extend_from_slice(ct);
 
         // Decrypt
         let result = aes_128_decrypt(&file_key, object_number, generation, &encrypted_data);
