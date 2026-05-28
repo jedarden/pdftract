@@ -403,6 +403,78 @@ mod tests {
     }
 
     #[test]
+    fn test_detect_javascript_with_annotation_js() {
+        let resolver = XrefResolver::new();
+        let catalog = Catalog::new(ObjRef::new(1, 0));
+
+        // Create a page with an annotation that has JavaScript in /A
+        let mut page = PageDict::default();
+        page.obj_ref = ObjRef::new(2, 0);
+
+        // Create an annotation with JavaScript action
+        let annot_ref = ObjRef::new(10, 0);
+        let mut annot_dict = PdfDict::new();
+        let mut js_dict = PdfDict::new();
+        js_dict.insert(Arc::from("S"), PdfObject::Name(Arc::from("JavaScript")));
+        js_dict.insert(Arc::from("JS"), PdfObject::String(Box::new(b"app.alert('annot')".to_vec())));
+        annot_dict.insert(Arc::from("A"), PdfObject::Dict(Box::new(js_dict)));
+        resolver.cache_object(annot_ref, PdfObject::Dict(Box::new(annot_dict)));
+
+        page.annots.push(annot_ref);
+        let pages = vec![page];
+
+        let acroform = None;
+
+        assert!(detect_javascript(&catalog, &pages, &acroform, &resolver));
+    }
+
+    #[test]
+    fn test_detect_javascript_with_page_aa_js() {
+        let resolver = XrefResolver::new();
+        let catalog = Catalog::new(ObjRef::new(1, 0));
+
+        // Create a page with /AA containing JavaScript
+        let mut page = PageDict::default();
+        page.obj_ref = ObjRef::new(2, 0);
+
+        let mut aa_dict = PdfDict::new();
+        let mut js_dict = PdfDict::new();
+        js_dict.insert(Arc::from("S"), PdfObject::Name(Arc::from("JavaScript")));
+        js_dict.insert(Arc::from("JS"), PdfObject::String(Box::new(b"app.alert('page')".to_vec())));
+        aa_dict.insert(Arc::from("O"), PdfObject::Dict(Box::new(js_dict)));
+        page.aa = Some(PdfObject::Dict(Box::new(aa_dict)));
+
+        let pages = vec![page];
+        let acroform = None;
+
+        assert!(detect_javascript(&catalog, &pages, &acroform, &resolver));
+    }
+
+    #[test]
+    fn test_detect_javascript_with_acroform_field_js() {
+        let resolver = XrefResolver::new();
+        let catalog = Catalog::new(ObjRef::new(1, 0));
+
+        let page = PageDict::default();
+        let pages = vec![page];
+
+        // Create AcroForm with a field that has JavaScript in /AA
+        let mut acroform = PdfDict::new();
+        let mut field_dict = PdfDict::new();
+        let mut aa_dict = PdfDict::new();
+        let mut js_dict = PdfDict::new();
+        js_dict.insert(Arc::from("S"), PdfObject::Name(Arc::from("JavaScript")));
+        js_dict.insert(Arc::from("JS"), PdfObject::String(Box::new(b"app.alert('field')".to_vec())));
+        aa_dict.insert(Arc::from("C"), PdfObject::Dict(Box::new(js_dict)));
+        field_dict.insert(Arc::from("AA"), PdfObject::Dict(Box::new(aa_dict)));
+
+        let fields = vec![PdfObject::Dict(Box::new(field_dict))];
+        acroform.insert(Arc::from("Fields"), PdfObject::Array(Box::new(fields)));
+
+        assert!(detect_javascript(&catalog, &pages, &Some(acroform), &resolver));
+    }
+
+    #[test]
     fn test_has_js_action_with_s_javascript() {
         let resolver = XrefResolver::new();
 

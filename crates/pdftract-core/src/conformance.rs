@@ -13,6 +13,7 @@
 //! The conformance information is stored in the document's /Metadata
 //! stream as XMP XML with the pdfaid namespace.
 
+use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::parser::stream::PdfSource;
 use crate::parser::xref::XrefResolver;
 use crate::parser::object::PdfObject;
@@ -62,10 +63,42 @@ use anyhow::Result;
 /// assert_eq!(result, Some("PDF/A-1b".to_string()));
 /// ```
 pub fn detect_conformance(metadata_stream: Option<&[u8]>) -> Option<String> {
+    detect_conformance_impl(metadata_stream, &mut Vec::new()).0
+}
+
+/// Detect PDF/A conformance from an XMP metadata stream with diagnostics.
+///
+/// Same as `detect_conformance` but emits diagnostics when XMP parsing fails.
+///
+/// # Arguments
+///
+/// * `metadata_stream` - Optional byte slice containing the XMP metadata stream
+/// * `diagnostics` - Optional diagnostics vector to emit errors into
+///
+/// # Returns
+///
+/// * `Some(String)` - PDF/A conformance string if detected (e.g., "PDF/A-1b")
+/// * `None` - No PDF/A conformance detected or malformed XML
+pub fn detect_conformance_with_diagnostics(
+    metadata_stream: Option<&[u8]>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<String> {
+    detect_conformance_impl(metadata_stream, diagnostics).0
+}
+
+/// Internal implementation of conformance detection.
+fn detect_conformance_impl(
+    metadata_stream: Option<&[u8]>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> (Option<String>, bool) {
     use quick_xml::events::Event;
     use quick_xml::reader::Reader;
 
-    let xml = metadata_stream?;
+    let xml = match metadata_stream {
+        Some(x) => x,
+        None => return (None, false),
+    };
+
     let mut reader = Reader::from_reader(xml);
     let mut part: Option<String> = None;
     let mut conf: Option<String> = None;
@@ -97,17 +130,26 @@ pub fn detect_conformance(metadata_stream: Option<&[u8]>) -> Option<String> {
                 current_tag = None;
             }
             Ok(Event::Eof) => break,
-            Err(_) => return None, // Malformed XML - graceful failure
+            Err(_) => {
+                // Malformed XML - emit diagnostic and return None
+                diagnostics.push(Diagnostic::with_static_no_offset(
+                    DiagCode::StructInvalidXmp,
+                    "Malformed XMP metadata in /Metadata stream; unable to parse PDF/A conformance",
+                ));
+                return (None, true);
+            }
             _ => {}
         }
         buf.clear();
     }
 
-    match (part, conf) {
+    let result = match (part, conf) {
         (Some(p), Some(c)) => Some(format!("PDF/A-{}{}", p, c)),
         (Some(p), None) => Some(format!("PDF/A-{}", p)),
         _ => None,
-    }
+    };
+
+    (result, false)
 }
 
 /// Detect PDF/A conformance from a catalog's metadata reference.
