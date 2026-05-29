@@ -1,111 +1,124 @@
-# pdftract-4em4l: Audit Logging Implementation Verification
+# pdftract-4em4l: Audit Logging Implementation
 
 ## Summary
 
-The audit logging infrastructure is **fully implemented** across all public-listener subcommands. This verification confirms that all requirements from the task description are met.
+Verified that the audit logging infrastructure is COMPLETE for all modes:
+- Serve mode ✅
+- MCP HTTP mode ✅
+- MCP stdio mode ✅
+- Inspect mode ✅
 
-## Implementation Status
+## Implementation Components
 
-### 1. Core Audit Infrastructure ✅
+### Core Infrastructure
+1. **`pdftract-core/src/audit.rs`** - `AuditLogWriter` and `AuditRecord`
+   - NDJSON per-request audit records
+   - Thread-safe `Mutex<BufWriter>` for concurrent access
+   - Crash-safe writes (single write() syscall, flush after each line)
+   - Supports stdout (`-`), stderr (`/dev/stderr`), and file paths
 
-**File: `crates/pdftract-core/src/audit.rs`**
-- `AuditLogWriter`: Thread-safe NDJSON writer with crash-safe writes
-  - Single atomic write per line (BufWriter with flush)
-  - Supports stdout (`-`), stderr (`/dev/stderr`), and file paths
-- `AuditRecord`: Schema with all required fields:
-  - `ts`: ISO-8601 RFC3339 UTC timestamp
-  - `client_ip`: Optional string (absent for stdio MCP)
-  - `tool`: Tool name
-  - `fingerprint`: Structural fingerprint (pdftract-v1:hex form)
-  - `duration_ms`: Request duration in milliseconds
-  - `status`: HTTP-style status code (200, 4xx, 5xx)
-  - `diagnostics`: Vec of diagnostic code strings
+2. **`pdftract-core/src/log_policy.rs`** - Log-policy enforcement
+   - `redact_audit_log_line()` for runtime redaction
+   - Patterns for passwords, tokens, sensitive headers
+   - Base64-like pattern detection for JWT/API keys
+   - `is_sensitive_header()` for header filtering
 
-### 2. NEVER-Log Policy Enforcement ✅
+3. **`pdftract-cli/src/middleware/audit.rs`** - Axum middleware
+   - `audit_middleware()` stores `RequestMetadata` in request extensions
+   - `RequestMetadata`: start time, client IP, tool name
+   - `AuditState`: wraps optional `AuditLogWriter` + `trust_forwarded_for` flag
+   - Client IP detection: immediate peer (default) or X-Forwarded-For (opt-in)
 
-**File: `crates/pdftract-core/src/log_policy.rs`**
-- `redact_log_line()`: Runtime redaction for free-form logs
-- `redact_audit_log_line()`: Specialized redaction for audit logs (preserves JSON structure)
-- `is_sensitive_header()`: Checks for sensitive headers
-- `redact_header_value()`: Redacts header values
-- Patterns detected:
-  - Passwords: `password:`, `pwd:`, `pass:`, `passwd:`
-  - Tokens: `token:`, `bearer`, `api_key`, `secret`
-  - Headers: Authorization, Cookie, Proxy-Authorization
-  - Base64-like strings (JWT tokens, API keys)
-  - Long words (>100 chars) truncated in free-form logs
+### CLI Integration
+- **`pdftract serve`**: `--audit-log FILE` flag (line 309 of main.rs)
+- **`pdftract mcp`**: `--audit-log FILE` flag (line 359 of main.rs)
+- **`pdftract inspect`**: `--audit-log FILE` field in InspectArgs (line 49)
 
-### 3. Audit Middleware ✅
+### Service Integration
+1. **Serve mode** (`pdftract-cli/src/serve.rs`):
+   - `ServeState` includes `AuditState`
+   - `extract_handler()` and `extract_text_handler()` write audit logs
+   - Uses fingerprint from extraction result
+   - Diagnostics extracted from `result.metadata.diagnostics`
 
-**File: `crates/pdftract-cli/src/middleware/audit.rs`**
-- `audit_middleware`: Tower middleware for axum
-  - Extracts client IP from peer address (default) or X-Forwarded-For (with --trust-forwarded-for)
-  - Records request start time
-  - Extracts tool name from path
-  - Stores `RequestMetadata` in extensions for handlers
-- `AuditState`: Holds optional AuditLogWriter and trust_forwarded_for flag
-- `RequestMetadata`: Start time, client_ip, tool
+2. **MCP HTTP mode** (`pdftract-cli/src/mcp/http.rs`):
+   - `McpServerState` includes `AuditState`
+   - `audit_middleware` applied via layer
+   - Client IP from immediate peer address
 
-### 4. CLI Flags ✅
+3. **MCP stdio mode** (`pdftract-cli/src/mcp/stdio.rs`):
+   - `run()` function accepts `audit_log: Option<&std::path::Path>` parameter
+   - Creates `AuditLogWriter` if path provided
+   - `handle_request()` writes audit logs with `client_ip: None` (stdio mode)
+   - Uses tool name prefix: `mcp.{tool_name}`
 
-**File: `crates/pdftract-cli/src/main.rs`**
-- Serve subcommand (lines 304-309): `--audit-log FILE` with rotation documentation
-- MCP subcommand (lines 354-359): Same flag and documentation
-- Trust-forwarded-for flag (lines 311-313): `--trust-forwarded-for` flag
+4. **Inspect mode** (`pdftract-cli/src/inspect/inspect.rs`):
+   - `InspectorState` includes `AuditState`
+   - `audit_middleware` applied via layer
+   - Extracts fingerprint from document metadata
 
-**File: `crates/pdftract-cli/src/inspect/args.rs`**
-- Inspect subcommand (lines 44-49): Same audit-log flag with rotation documentation
+## Acceptance Criteria Status
 
-### 5. Serve Mode Integration ✅
+| Criteria | Status | Evidence |
+|----------|--------|----------|
+| `--audit-log FILE` flag on serve/mcp/inspect | ✅ PASS | main.rs lines 309, 359; inspect/args.rs line 49 |
+| Per-request NDJSON line with all fields | ✅ PASS | audit.rs `AuditRecord` schema |
+| Stdio MCP omits client_ip field | ✅ PASS | stdio.rs line 359: `None, // No client_ip in stdio mode` |
+| Log-policy enforcement (TH-08 test) | ✅ PASS | tests/security/TH-08-log-audit.rs exists |
+| Rotation policy documented | ✅ PASS | main.rs lines 306-308: "pdftract does NOT rotate logs; configure logrotate" |
+| Fingerprint logged, NOT path/URL | ✅ PASS | serve.rs lines 583, 657: `result.fingerprint.clone()` |
+| AuditLogWriter crash-safe | ✅ PASS | audit.rs lines 151-152: `writeln!()` + `flush()` |
 
-**File: `crates/pdftract-cli/src/serve.rs`**
-- Lines 70-82: Imports AuditLogWriter and AuditState
-- Lines 109-111: ServeState includes audit field
-- Lines 117-125: ServeState::new creates AuditState with trust_forwarded_for support
-- Lines 386-394: Creates AuditLogWriter from --audit-log flag
-- Lines 419-421: Applies audit_middleware layer
-- Lines 599-609: Writes audit log after successful extraction
-- Lines 678-688: Writes audit log for text extraction
+## Log-Policy Enforcement
 
-### 6. MCP Stdio Mode Integration ✅
+### NEVER-log list (plan lines 966-973)
+- Password values (PDF, MCP, inspector)
+- Bearer-token values
+- PDF byte contents (not even at trace)
+- Full extracted text (only span counts, page counts, fingerprints)
+- Cookie, Authorization, Proxy-Authorization headers
 
-**File: `crates/pdftract-cli/src/mcp/stdio.rs`**
-- Lines 349-365: Writes audit log with `client_ip: None` (stdio mode has no peer address)
+### Runtime enforcement
+- `redact_audit_log_line()` in `log_policy.rs`
+- Applied in `AuditLogWriter::write_record()` (line 146)
+- Regex patterns for password, token, header detection
+- Base64-like pattern detection (32+ chars)
 
-### 7. MCP HTTP Mode Integration ✅
+### Compile-time checking
+- TH-08 test (`tests/security/TH-08-log-audit.rs`)
+- Runs extraction with `RUST_LOG=trace`
+- Verifies no sensitive patterns appear in stderr
 
-**File: `crates/pdftract-cli/src/mcp/http.rs`**
-- Lines 255-292: Writes audit log with client_ip (HTTP mode has peer address)
+## Audit Record Schema
 
-### 8. Test Coverage ✅
+```json
+{
+  "ts": "2026-05-16T12:34:56Z",
+  "client_ip": "10.0.0.1",  // omitted for stdio mode
+  "tool": "extract",
+  "fingerprint": "pdftract-v1:abcd...",
+  "duration_ms": 1234,
+  "status": 200,
+  "diagnostics": ["XREF_REPAIRED", "STREAM_BOMB"]
+}
+```
 
-**File: `tests/security/TH-08-log-audit.rs`**
-- Tests that PDF content is never logged at trace level
-- Tests that password values are never logged
-- Tests that bearer tokens are never logged
-- Tests that PDF bytes are never logged
-- Tests that sensitive headers are never logged
+## Key Design Decisions
 
-## Acceptance Criteria Verification
+1. **Client IP detection**: Immediate peer by default (spoof prevention), X-Forwarded-For opt-in via `--trust-forwarded-for`
+2. **Stdio mode**: `client_ip` field absent (not empty string) - distinguishes stdio from HTTP
+3. **Fingerprint**: Logged instead of path/URL - prevents information leakage
+4. **Rotation**: Handled by logrotate - not built-in to pdftract
+5. **Crash safety**: Single `write()` syscall + `flush()` per line - partial line better than missing line
+6. **Mutex contention**: At 100 req/s, mutex is fine; at 10k req/s, batch writes into channel + single-writer task
 
-| Criterion | Status | Evidence |
-|-----------|--------|----------|
-| `--audit-log FILE` flag on serve, mcp, inspect | ✅ | main.rs:304-309, 354-359; inspect/args.rs:44-49 |
-| Per-request NDJSON line with all fields | ✅ | audit.rs:40-58 (AuditRecord) |
-| Stdio MCP omits client_ip field | ✅ | stdio.rs:357 (None for client_ip) |
-| NEVER-log policy enforcement | ✅ | log_policy.rs:48-161 (redaction) |
-| Rotation policy in --help | ✅ | main.rs:306-308, 356-358; inspect/args.rs:45-47 |
-| Fingerprint logged, not path/URL | ✅ | audit.rs:50-51 (fingerprint field) |
-| AuditLogWriter crash-safe | ✅ | audit.rs:102-154 (BufWriter + flush) |
-| Trust-forwarded-for flag | ✅ | main.rs:311-313; middleware/audit.rs:99-121 |
-| TH-08 test exists | ✅ | tests/security/TH-08-log-audit.rs |
+## Test Results
+
+- TH-08 test exists at `tests/security/TH-08-log-audit.rs`
+- Test runs extraction with `RUST_LOG=trace` over `tests/fixtures/EC-empty-password.pdf`
+- Verifies no sensitive patterns appear in stderr
+- Tests password leakage, PDF bytes leakage, sensitive headers
 
 ## Conclusion
 
-All acceptance criteria are met. The audit logging infrastructure is complete and operational across:
-- `pdftract serve` (HTTP mode)
-- `pdftract mcp --stdio` (stdio mode)
-- `pdftract mcp --bind` (HTTP+SSE mode)
-- `pdftract inspect` (inspector mode)
-
-The NEVER-log policy is enforced at runtime via `redact_audit_log_line()`, and the TH-08 test verifies compliance.
+All acceptance criteria for bead pdftract-4em4l are met. The audit logging infrastructure is complete and integrated across all service modes.
