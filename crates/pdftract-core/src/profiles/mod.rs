@@ -8,14 +8,15 @@
 //!
 //! Profile files are checked for forbidden secret keys (password, token, secret,
 //! api_key, etc.) to prevent accidental publication of credentials in profiles
-//! that are checked into source control. See [`ProfileSecretsForbidden`] for details.
+//! that are checked into source control. See [`check_forbidden_keys`] and
+//! [`ForbiddenKeyError`] for details.
 //!
 //! # Document Type Profiles
 //!
-//! The [`types`] module defines the core types for document type classification
-//! (Phase 5.6): [`ProfileType`], [`Profile`], and [`MatchPredicate`]. These
-//! are the shared vocabulary between the rule engine, built-in profile definitions,
-//! and user-authored YAML profiles.
+//! The core types for document type classification (Phase 5.6) are
+//! [`ProfileType`], [`Profile`], and [`MatchPredicate`]. These are the shared
+//! vocabulary between the rule engine, built-in profile definitions, and
+//! user-authored YAML profiles.
 
 mod engine;
 mod loader;

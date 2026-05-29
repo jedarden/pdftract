@@ -492,19 +492,19 @@ impl<T> HyphenableSpan for T where T: CorrectableText + HasBBox {}
 /// # Detection Criteria
 ///
 /// A hyphenation repair is performed when ALL of the following are true:
-/// 1. line[n].last_span.text ends with `-`, `‐` (U+2010), or `‑` (U+2011)
-/// 2. line[n].last_span.bbox[2] >= column_right - 0.05 * column_width (hyphen at right edge)
-/// 3. line[n+1].first_span.text starts with a LOWERCASE letter (continuation)
-/// 4. line[n].last_span and line[n+1].first_span are in the same column
+/// 1. line\[n\].last_span.text ends with `-`, `‐` (U+2010), or `‑` (U+2011)
+/// 2. line\[n\].last_span.bbox[2] >= column_right - 0.05 * column_width (hyphen at right edge)
+/// 3. line\[n+1\].first_span.text starts with a LOWERCASE letter (continuation)
+/// 4. line\[n\].last_span and line\[n+1\].first_span are in the same column
 ///
 /// # Repair Process
 ///
-/// 1. Find the last word in line[n].last_span.text; strip the trailing hyphen
-/// 2. Find the first word in line[n+1].first_span.text
+/// 1. Find the last word in line\[n\].last_span.text; strip the trailing hyphen
+/// 2. Find the first word in line\[n+1\].first_span.text
 /// 3. Join: `joined_word = stripped_last + first`
-/// 4. Modify line[n].last_span.text: replace hyphenated word with `joined_word + " "`
-/// 5. Modify line[n+1].first_span.text: remove the first word
-/// 6. If line[n+1].first_span becomes empty, remove it; if line becomes empty, remove it
+/// 4. Modify line\[n\].last_span.text: replace hyphenated word with `joined_word + " "`
+/// 5. Modify line\[n+1\].first_span.text: remove the first word
+/// 6. If line\[n+1\].first_span becomes empty, remove it; if line becomes empty, remove it
 ///
 /// # Invariants
 ///

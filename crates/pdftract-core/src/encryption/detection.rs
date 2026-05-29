@@ -26,7 +26,7 @@ pub struct EncryptionInfo {
     pub user_hash: Vec<u8>,
     /// Permissions flags (/P for V<5, /Perms for V=5)
     pub perms: u32,
-    /// File ID (first 16 bytes of /ID[0] from trailer)
+    /// File ID (first 16 bytes of /ID\[0\] from trailer)
     pub file_id: Vec<u8>,
     /// Crypt filter dictionary for V=4 and V=5
     pub crypt_filters: Option<CryptFiltersV4>,

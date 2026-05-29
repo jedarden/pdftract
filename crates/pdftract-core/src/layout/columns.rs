@@ -22,8 +22,8 @@ use tracing::warn;
 ///
 /// # Behavior
 ///
-/// - For each span: `idx = span.bbox[0].round() as usize`
-/// - Clamp idx to `[0, hist.len() - 1]`
+/// - For each span: `idx = span.bbox\[0\].round() as usize`
+/// - Clamp idx to `\[0, hist.len() - 1\]`
 /// - x0 < 0: clamped to 0, diagnostic logged
 /// - x0 > page_width: clamped to last bucket, diagnostic logged
 /// - Empty spans: returns Vec of zeros
@@ -371,8 +371,8 @@ impl HasBBox for [f64; 4] {
 
 /// A confirmed column with its x_range and index.
 ///
-/// The x_range is [x0, x1] in PDF user space coordinates.
-/// Spans whose bbox[0] falls within this range are assigned to this column.
+/// The x_range is \[x0, x1\] in PDF user space coordinates.
+/// Spans whose bbox\[0\] falls within this range are assigned to this column.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Column {
     /// Column index (0-based, monotonic left-to-right).

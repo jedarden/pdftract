@@ -27,7 +27,7 @@ xref
 0000000302 00000 n
 0000000377 00000 n
 trailer<</Size 6/Root 1 0 R>>
-startxref 445
+startxref 360
 %%EOF
 EOF
     echo "Created base PDF: $BASE_PDF"

@@ -9,15 +9,23 @@ use pyo3::types::PyDict;
 use std::path::Path;
 
 use pdftract_core::{extract_text, ExtractionOptions};
+use pdftract_core::options::ReceiptsMode;
 
 /// Allowed kwarg names for strict validation.
 const ALLOWED_KWARGS: &[&str] = &[
     "ocr",
     "ocr_language",
     "include_invisible",
+    "extract_forms",
+    "extract_attachments",
+    "readability_threshold",
     "password",
     "max_decompress_gb",
+    "full_render",
+    "receipts",
+    "cache_dir",
     "pages",
+    "formats",
 ];
 
 /// Parse Python kwargs into ExtractionOptions.
@@ -85,6 +93,48 @@ fn parse_kwargs(kwargs: Option<&PyDict>) -> PyResult<ExtractionOptions> {
         // Parse pages (str) → pages: Option<String>
         if let Some(pages) = kwargs.get_item("pages")? {
             opts.pages = Some(pages.extract()?);
+        }
+
+        // Parse extract_forms (bool) - No-op, forms are always extracted
+        if let Some(extract_forms) = kwargs.get_item("extract_forms")? {
+            let _extract_forms: bool = extract_forms.extract()?;
+            // Forms are always extracted; this kwarg is accepted for API compatibility
+        }
+
+        // Parse extract_attachments (bool) - No-op, attachments are always extracted
+        if let Some(extract_attachments) = kwargs.get_item("extract_attachments")? {
+            let _extract_attachments: bool = extract_attachments.extract()?;
+            // Attachments are always extracted; this kwarg is accepted for API compatibility
+        }
+
+        // Parse readability_threshold (float) - Not implemented yet
+        if let Some(readability_threshold) = kwargs.get_item("readability_threshold")? {
+            let _readability_threshold: f64 = readability_threshold.extract()?;
+            // Readability threshold is not yet implemented in pdftract-core
+        }
+
+        // Parse full_render (bool) → full_render: bool
+        if let Some(full_render) = kwargs.get_item("full_render")? {
+            opts.full_render = full_render.extract()?;
+        }
+
+        // Parse receipts (str) → receipts: ReceiptsMode
+        if let Some(receipts) = kwargs.get_item("receipts")? {
+            let receipts_str: String = receipts.extract()?;
+            opts.receipts = ReceiptsMode::from_str(&receipts_str)
+                .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e))?;
+        }
+
+        // Parse cache_dir (str) - Not implemented yet
+        if let Some(cache_dir) = kwargs.get_item("cache_dir")? {
+            let _cache_dir: String = cache_dir.extract()?;
+            // Cache dir is not yet implemented in pdftract-core
+        }
+
+        // Parse formats (list[str]) - Not implemented yet
+        if let Some(formats) = kwargs.get_item("formats")? {
+            let _formats: Vec<String> = formats.extract()?;
+            // Output format selection is not yet implemented
         }
     }
 
@@ -235,6 +285,26 @@ mod tests {
             kwargs.set_item("pages", "1-5,7,12-15").unwrap();
             let opts = parse_kwargs(Some(kwargs)).unwrap();
             assert_eq!(opts.pages, Some("1-5,7,12-15".to_string()));
+        });
+    }
+
+    #[test]
+    fn test_parse_kwargs_receipts() {
+        Python::with_gil(|py| {
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("receipts", "lite").unwrap();
+            let opts = parse_kwargs(Some(kwargs)).unwrap();
+            assert_eq!(opts.receipts, ReceiptsMode::Lite);
+        });
+    }
+
+    #[test]
+    fn test_parse_kwargs_full_render() {
+        Python::with_gil(|py| {
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("full_render", true).unwrap();
+            let opts = parse_kwargs(Some(kwargs)).unwrap();
+            assert_eq!(opts.full_render, true);
         });
     }
 }

@@ -15,8 +15,8 @@
 //!
 //! # Mapping (INV-9)
 //!
-//! The mapping from internal [`UnicodeSource`](crate::font::UnicodeSource)
-//! (6 variants) to [`ConfidenceSource`] (3 variants) is:
+//! The mapping from internal [`UnicodeSource`] (6 variants) to [`ConfidenceSource`]
+//! (3 variants) is:
 //!
 //! | `UnicodeSource` | `corrected_in_4_7` | `ConfidenceSource` |
 //! |-----------------|-------------------|-------------------|

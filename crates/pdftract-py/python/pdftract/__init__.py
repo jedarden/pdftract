@@ -151,7 +151,11 @@ def extract(source, **options):
         PdftractError: Other extraction errors
     """
     extractor = _get_extractor()
-    return extractor.extract(source, **options)
+    result = extractor.extract(source, **options)
+    # Wrap raw dict from native module in typed Document
+    if isinstance(result, dict):
+        return Document.from_dict(result)
+    return result
 
 
 def extract_text(source, **options):
@@ -207,7 +211,12 @@ def extract_stream(source, **options):
         Only one page is resident in memory at a time.
     """
     extractor = _get_extractor()
-    return extractor.extract_stream(source, **options)
+    # Wrap raw dict iterator from native module to yield typed Page objects
+    for page in extractor.extract_stream(source, **options):
+        if isinstance(page, dict):
+            yield Page.from_dict(page)
+        else:
+            yield page
 
 
 def search(source, pattern, **options):
@@ -225,7 +234,19 @@ def search(source, pattern, **options):
         PdftractError: Extraction errors
     """
     extractor = _get_extractor()
-    return extractor.search(source, pattern, **options)
+    # Wrap raw dict iterator from native module to yield typed Match objects
+    for match in extractor.search(source, pattern, **options):
+        if isinstance(match, dict):
+            yield Match(
+                text=match.get("text", ""),
+                page_index=match.get("page_index", 0),
+                span_index=match.get("span_index", 0),
+                bbox=match.get("bbox", []),
+                match_start=match.get("match_start", 0),
+                match_end=match.get("match_end", 0),
+            )
+        else:
+            yield match
 
 
 def get_metadata(source, **options):
@@ -243,7 +264,23 @@ def get_metadata(source, **options):
         PdftractError: Extraction errors
     """
     extractor = _get_extractor()
-    return extractor.get_metadata(source, **options)
+    result = extractor.get_metadata(source, **options)
+    # Wrap raw dict from native module in typed Metadata
+    if isinstance(result, dict):
+        return Metadata(
+            page_count=result.get("page_count", 0),
+            title=result.get("title"),
+            author=result.get("author"),
+            subject=result.get("subject"),
+            keywords=result.get("keywords"),
+            creator=result.get("creator"),
+            producer=result.get("producer"),
+            creation_date=result.get("creation_date"),
+            mod_date=result.get("mod_date"),
+            fingerprint=result.get("fingerprint"),
+            outline=result.get("outline"),
+        )
+    return result
 
 
 def hash(source, **options):
@@ -261,7 +298,11 @@ def hash(source, **options):
         PdftractError: Extraction errors
     """
     extractor = _get_extractor()
-    return extractor.hash(source, **options)
+    result = extractor.hash(source, **options)
+    # Wrap raw string from native module in typed Fingerprint
+    if isinstance(result, str):
+        return Fingerprint.from_string(result)
+    return result
 
 
 def classify(source):
@@ -277,7 +318,15 @@ def classify(source):
         PdftractError: Extraction errors
     """
     extractor = _get_extractor()
-    return extractor.classify(source)
+    result = extractor.classify(source)
+    # Wrap raw dict from native module in typed Classification
+    if isinstance(result, dict):
+        return Classification(
+            class_name=result.get("class_name", "Unknown"),
+            confidence=result.get("confidence", 0.0),
+            hybrid_cells=result.get("hybrid_cells"),
+        )
+    return result
 
 
 def verify_receipt(path, receipt):

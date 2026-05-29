@@ -9,7 +9,7 @@
 //!
 //! The file encryption key is derived from:
 //! 1. Pad password to 32 bytes via the standard padding string
-//! 2. MD5 hash: pad || /O || /P (4 bytes LE) || first16(/ID[0])
+//! 2. MD5 hash: pad || /O || /P (4 bytes LE) || first16(/ID\[0\])
 //! 3. If R>=3: iterate MD5 50 times on the first n bytes (n = key_length/8)
 //! 4. The first n bytes of the MD5 output is the encryption key
 //!
@@ -24,7 +24,7 @@
 //!
 //! - R=2: pad password; RC4-encrypt the 32-byte padding string with the file key;
 //!   compare with /U
-//! - R=3: pad password; MD5(pad || first16(/ID[0])); RC4 19 times with i^step key;
+//! - R=3: pad password; MD5(pad || first16(/ID\[0\])); RC4 19 times with i^step key;
 //!   compare first 16 bytes with first 16 of /U
 
 #[cfg(feature = "decrypt")]

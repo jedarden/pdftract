@@ -7,7 +7,7 @@
 //!
 //! 1. Convert 32×32 grayscale bitmap to float32 values
 //! 2. Apply 32×32 2D DCT-II (Discrete Cosine Transform)
-//! 3. Extract top-left 8×8 AC coefficients (skipping DC at [0,0])
+//! 3. Extract top-left 8×8 AC coefficients (skipping DC at \[0,0\])
 //! 4. Compute median of those 64 values
 //! 5. Produce 64-bit hash: bit i is set if coefficient i > median
 //!

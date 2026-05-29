@@ -351,6 +351,43 @@ pub fn compute_pdf_fingerprint(pdf_path: &std::path::Path) -> Result<String> {
 ///     // Process page without holding all pages in memory
 /// }
 /// ```
+/// PDF document extractor with lazy page iteration.
+///
+/// This struct provides on-demand access to PDF pages without materializing
+/// the entire page tree in memory. Use it for memory-efficient extraction
+/// from large documents or when you need random access to specific pages.
+///
+/// # Examples
+///
+/// Open a PDF and iterate over pages lazily:
+///
+/// ```rust,no_run
+/// use pdftract_core::document::PdfExtractor;
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let extractor = PdfExtractor::open("document.pdf")?;
+/// println!("Fingerprint: {}", extractor.fingerprint());
+/// println!("Total pages: {}", extractor.catalog().page_count.unwrap_or(0));
+/// # Ok(())
+/// # }
+/// ```
+///
+/// Memory-bounded extraction of specific pages:
+///
+/// ```rust,no_run
+/// use pdftract_core::document::PdfExtractor;
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let extractor = PdfExtractor::open("large.pdf")?;
+///
+/// // Only pages 5-10 are materialized, not the entire document
+/// for page_result in extractor.pages()?.take(10) {
+///     let page = page_result?;
+///     println!("Page {} has {} spans", page.index, page.spans.len());
+/// }
+/// # Ok(())
+/// # }
+/// ```
 pub struct PdfExtractor {
     /// The PDF file source
     source: FileSource,
@@ -855,6 +892,26 @@ impl Document {
 /// and materializes only the current path from root to leaf (max ~16 nodes).
 /// Each yielded PageExtraction contains the extracted data for one page,
 /// and all intermediate data is dropped before yielding the next page.
+///
+/// # Examples
+///
+/// Iterate over pages with bounded memory:
+///
+/// ```rust,no_run
+/// use pdftract_core::document::Document;
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let doc = Document::open("large_document.pdf")?;
+///
+/// // Memory stays O(depth × per-page), not O(pages × per-page)
+/// for page_result in doc.pages() {
+///     let page = page_result?;
+///     println!("Page {}: {}x{}", page.index, page.width, page.height);
+///     // PageExtraction is dropped after each iteration
+/// }
+/// # Ok(())
+/// # }
+/// ```
 pub struct PageIter<'a> {
     /// Lazy page iterator from the parser
     lazy_iter: Option<LazyPageIter<'a>>,
@@ -975,7 +1032,7 @@ pub fn open_remote_url(url: &str) -> std::io::Result<Box<dyn PdfSource>> {
 ///
 /// # Returns
 ///
-/// A Box<dyn PdfSource> that can be used for PDF parsing.
+/// A `Box<dyn PdfSource>` that can be used for PDF parsing.
 ///
 /// # Errors
 ///

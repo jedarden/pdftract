@@ -23,7 +23,7 @@
 //! - [`key`] — Cache key construction from (fingerprint, options) pairs
 //! - [`compression`] — Zstandard compression/decompression for cache entries
 //! - [`integrity`] — HMAC-SHA-256 integrity verification (TH-10 mitigation)
-//! - [`metadata`] — Cache index.json and metadata handling (TODO: 6.9.3)
+//! - `metadata` — Cache index.json and metadata handling (TODO: 6.9.3)
 
 pub mod compression;
 pub mod integrity;

@@ -5,7 +5,7 @@
 //!
 //! # References
 //!
-//! - Adobe Glyph List Specification: https://github.com/adobe-type-tools/agl-aglfn
+//! - Adobe Glyph List Specification: <https://github.com/adobe-type-tools/agl-aglfn>
 //! - AGL 1.4 (glyphlist.txt): ~4,400 entries
 //! - AGLFN 1.7 (aglfn.txt): ~770 entries for new fonts
 

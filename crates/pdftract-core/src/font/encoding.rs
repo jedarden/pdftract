@@ -156,7 +156,7 @@ impl DifferencesOverlay {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```text
     /// // [ 39 /quotesingle 96 /grave ]
     /// // → entries: [(39, "quotesingle"), (96, "grave")]
     /// ```

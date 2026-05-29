@@ -596,9 +596,9 @@ impl GraphicsState {
     /// Set fill color in current color space (sc operator).
     ///
     /// The numeric components are interpreted based on the current fill_color_space.
-    /// For DeviceGray: [gray]
-    /// For DeviceRGB: [r, g, b]
-    /// For DeviceCMYK: [c, m, y, k]
+    /// For DeviceGray: \[gray\]
+    /// For DeviceRGB: \[r, g, b\]
+    /// For DeviceCMYK: \[c, m, y, k\]
     /// For other spaces: sets Color::Other
     #[inline]
     pub fn set_fill_color(&mut self, components: &[f32]) {

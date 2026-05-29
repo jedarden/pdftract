@@ -5,16 +5,149 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use std::sync::mpsc;
 use std::thread;
+use std::sync::Arc;
+use std::sync::Mutex;
 
-use pdftract_core::ExtractionOptions;
+use pdftract_core::{ExtractionOptions, extract_pdf_streaming, ReceiptsMode};
+use secrecy::SecretString;
 
 // Type alias for PyO3 owned references
 type PyResultAny<'py> = PyResult<Py<PyAny>>;
 
+/// Allowed kwarg names for strict validation.
+const ALLOWED_KWARGS: &[&str] = &[
+    "ocr",
+    "ocr_language",
+    "include_invisible",
+    "extract_forms",
+    "extract_attachments",
+    "readability_threshold",
+    "password",
+    "max_decompress_gb",
+    "full_render",
+    "receipts",
+    "cache_dir",
+    "pages",
+    "formats",
+];
+
+/// Parse Python kwargs into ExtractionOptions.
+///
+/// This function performs strict validation: unknown kwargs raise PdftractError
+/// to catch typos early rather than silently ignoring them.
+fn parse_kwargs(kwargs: Option<&PyDict>) -> PyResult<ExtractionOptions> {
+    let mut opts = ExtractionOptions::default();
+
+    if let Some(kwargs) = kwargs {
+        // Validate that all kwargs are in the allowlist
+        for key in kwargs.keys() {
+            let key_str: String = key.extract()?;
+            if !ALLOWED_KWARGS.contains(&key_str.as_str()) {
+                return Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(format!(
+                    "Unknown keyword argument '{}'. Allowed: {}",
+                    key_str,
+                    ALLOWED_KWARGS.join(", ")
+                )));
+            }
+        }
+
+        // Parse ocr (bool) - No-op for now, OCR is controlled by feature flag
+        if let Some(ocr) = kwargs.get_item("ocr")? {
+            let _ocr: bool = ocr.extract()?;
+            // OCR is controlled by the 'ocr' feature flag in pdftract-core
+            // This kwarg is accepted for API compatibility but has no effect
+        }
+
+        // Parse ocr_language (list[str] or comma-string)
+        if let Some(lang) = kwargs.get_item("ocr_language")? {
+            if let Ok(lang_list) = lang.extract::<Vec<String>>() {
+                opts.ocr_language = lang_list;
+            } else if let Ok(lang_str) = lang.extract::<String>() {
+                // Split on comma if provided as string
+                opts.ocr_language = lang_str
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+            } else {
+                return Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+                    "ocr_language must be a list of strings or a comma-separated string",
+                ));
+            }
+        }
+
+        // Parse include_invisible (bool) → output.include_invisible
+        if let Some(include_invisible) = kwargs.get_item("include_invisible")? {
+            opts.output.include_invisible = include_invisible.extract()?;
+        }
+
+        // Parse extract_forms (bool) - No-op, forms are always extracted
+        if let Some(extract_forms) = kwargs.get_item("extract_forms")? {
+            let _extract_forms: bool = extract_forms.extract()?;
+            // Forms are always extracted; this kwarg is accepted for API compatibility
+        }
+
+        // Parse extract_attachments (bool) - No-op, attachments are always extracted
+        if let Some(extract_attachments) = kwargs.get_item("extract_attachments")? {
+            let _extract_attachments: bool = extract_attachments.extract()?;
+            // Attachments are always extracted; this kwarg is accepted for API compatibility
+        }
+
+        // Parse readability_threshold (float) - Not implemented yet
+        if let Some(readability_threshold) = kwargs.get_item("readability_threshold")? {
+            let _readability_threshold: f64 = readability_threshold.extract()?;
+            // Readability threshold is not yet implemented in pdftract-core
+        }
+
+        // Parse password (str) → password: Option<SecretString>
+        if let Some(password) = kwargs.get_item("password")? {
+            let pwd: String = password.extract()?;
+            opts.password = Some(SecretString::new(pwd.into()));
+        }
+
+        // Parse max_decompress_gb (int) → max_decompress_bytes: u64
+        if let Some(max_gb) = kwargs.get_item("max_decompress_gb")? {
+            let gb: u64 = max_gb.extract()?;
+            opts.max_decompress_bytes = gb.saturating_mul(1024 * 1024 * 1024);
+        }
+
+        // Parse full_render (bool) → full_render: bool
+        if let Some(full_render) = kwargs.get_item("full_render")? {
+            opts.full_render = full_render.extract()?;
+        }
+
+        // Parse receipts (str) → receipts: ReceiptsMode
+        if let Some(receipts) = kwargs.get_item("receipts")? {
+            let receipts_str: String = receipts.extract()?;
+            opts.receipts = ReceiptsMode::from_str(&receipts_str)
+                .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e))?;
+        }
+
+        // Parse cache_dir (str) - Not implemented yet
+        if let Some(cache_dir) = kwargs.get_item("cache_dir")? {
+            let _cache_dir: String = cache_dir.extract()?;
+            // Cache dir is not yet implemented in pdftract-core
+        }
+
+        // Parse pages (str) → pages: Option<String>
+        if let Some(pages) = kwargs.get_item("pages")? {
+            opts.pages = Some(pages.extract()?);
+        }
+
+        // Parse formats (list[str]) - Not implemented yet
+        if let Some(formats) = kwargs.get_item("formats")? {
+            let _formats: Vec<String> = formats.extract()?;
+            // Output format selection is not yet implemented
+        }
+    }
+
+    Ok(opts)
+}
+
 /// StreamIterator for Python's iterator protocol.
 #[pyclass]
 pub struct StreamIterator {
-    receiver: Option<mpsc::Receiver<PageFrame>>,
+    receiver: Option<Arc<Mutex<mpsc::Receiver<PageFrame>>>>,
     handle: Option<thread::JoinHandle<Result<(), String>>>,
 }
 
@@ -245,39 +378,52 @@ impl StreamIterator {
     }
 
     fn __next__(&mut self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
-        let recv = self
-            .receiver
-            .as_ref()
-            .ok_or_else(|| PyStopIteration::new_err(()))?;
+        // Check if receiver is still available
+        let recv_opt = self.receiver.take();
+        if recv_opt.is_none() {
+            return Err(PyStopIteration::new_err(()));
+        }
+        let recv = recv_opt.unwrap();
 
-        // Try non-blocking recv first
-        match recv.try_recv() {
+        // Try non-blocking recv first - if data is available, return immediately
+        {
+            let recv_guard = recv.lock().unwrap();
+            match recv_guard.try_recv() {
+                Ok(frame) => {
+                    // Drop guard before moving recv
+                    drop(recv_guard);
+                    // Restore receiver for next iteration
+                    self.receiver = Some(recv);
+                    // GIL must be held for pythonize
+                    let py_obj = page_frame_to_py(py, &frame)?;
+                    return Ok(Some(py_obj));
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    // Sender is done - check thread result
+                    return self.check_thread_complete();
+                }
+                Err(mpsc::TryRecvError::Empty) => {
+                    // Fall through to blocking recv below
+                }
+            }
+        }
+
+        // Channel is empty - do blocking recv with GIL released
+        let recv_clone = Arc::clone(&recv);
+        let frame = py.allow_threads(move || {
+            let recv_guard = recv_clone.lock().unwrap();
+            recv_guard.recv()
+        });
+
+        // Restore receiver for next iteration (unless this is the end)
+        self.receiver = Some(recv);
+
+        match frame {
             Ok(frame) => {
-                // GIL must be held for pythonize
                 let py_obj = page_frame_to_py(py, &frame)?;
                 Ok(Some(py_obj))
             }
-            Err(mpsc::TryRecvError::Empty) => {
-                // Release GIL while waiting - but we can't hold &Receiver across the boundary
-                // Instead, sleep briefly and retry (same pattern as before, but documented)
-                py.allow_threads(|| std::thread::sleep(std::time::Duration::from_millis(10)));
-
-                // Check again after sleep
-                let recv = self
-                    .receiver
-                    .as_ref()
-                    .ok_or_else(|| PyStopIteration::new_err(()))?;
-
-                match recv.try_recv() {
-                    Ok(frame) => {
-                        let py_obj = page_frame_to_py(py, &frame)?;
-                        Ok(Some(py_obj))
-                    }
-                    Err(mpsc::TryRecvError::Empty) => Ok(None),
-                    Err(mpsc::TryRecvError::Disconnected) => self.check_thread_complete(),
-                }
-            }
-            Err(mpsc::TryRecvError::Disconnected) => self.check_thread_complete(),
+            Err(mpsc::RecvError) => self.check_thread_complete(),
         }
     }
 }
@@ -285,7 +431,7 @@ impl StreamIterator {
 impl StreamIterator {
     fn check_thread_complete(&mut self) -> PyResult<Option<Py<PyAny>>> {
         if let Some(handle) = self.handle.take() {
-            drop(self.receiver.take());
+            self.receiver.take();
 
             match handle.join() {
                 Ok(Ok(())) => Err(PyStopIteration::new_err(())),
@@ -301,19 +447,43 @@ impl StreamIterator {
 }
 
 /// Extract pages from a PDF as a streaming iterator.
+///
+/// This function returns a Python iterator that yields one page dict per page.
+/// Each dict contains the page's spans, blocks, and tables.
+///
+/// # Arguments
+///
+/// * `path` - Path to the PDF file (local file or HTTPS URL)
+/// * `**kwargs` - Optional extraction options (see ALLOWED_KWARGS)
+///
+/// # Returns
+///
+/// A StreamIterator that yields page dicts.
+///
+/// # Examples
+///
+/// ```python
+/// import pdftract
+///
+/// # Stream extraction
+/// for page in pdftract.extract_stream("document.pdf"):
+///     print(f"Page {page['page_index']}: {len(page['spans'])} spans")
+/// ```
 #[pyfunction]
 pub fn extract_stream_fn(
     py: Python<'_>,
     path: &str,
-    _kwargs: Option<&PyDict>,
+    kwargs: Option<&PyDict>,
 ) -> PyResult<Py<StreamIterator>> {
-    let opts = ExtractionOptions::default();
+    // Parse kwargs into ExtractionOptions with strict validation
+    let opts = parse_kwargs(kwargs)?;
 
     let (tx, rx) = mpsc::channel();
-    let path_owned = path.to_string();
+    let pdf_path = std::path::PathBuf::from(path);
+    let opts_owned = opts.clone();
 
     let handle = thread::spawn(move || {
-        pdftract_core::extract_pdf_streaming(std::path::Path::new(&path_owned), &opts, |page| {
+        extract_pdf_streaming(&pdf_path, &opts_owned, |page| {
             tx.send(PageFrame::from(page.clone())).is_ok()
         })
         .map(|_| ())
@@ -323,7 +493,7 @@ pub fn extract_stream_fn(
     Ok(Py::new(
         py,
         StreamIterator {
-            receiver: Some(rx),
+            receiver: Some(Arc::new(Mutex::new(rx))),
             handle: Some(handle),
         },
     )?)

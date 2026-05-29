@@ -63,7 +63,7 @@ pub struct XYCutResult {
 ///
 /// # Behavior
 ///
-/// - Single block / empty: returns as-is with order = [0] or []
+/// - Single block / empty: returns as-is with order = \[0\] or []
 /// - Prefers vertical split first (columns dominate)
 /// - > 10 regions with < 3 blocks: signals Docstrum trigger (caller switches)
 /// - Leaf nodes (single column): sorted by y descending (top-to-bottom reading)

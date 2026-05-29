@@ -373,6 +373,91 @@ pub struct ExtractionMetadata {
 /// - The PDF structure is invalid or corrupted
 /// - Decryption fails (for encrypted PDFs)
 /// - Content stream decoding exceeds bomb limits
+/// Extract text, tables, and metadata from a PDF file.
+///
+/// This is the main entry point for PDF extraction. It processes the entire
+/// document and returns structured data including text spans, blocks, tables,
+/// form fields, links, and more.
+///
+/// # Arguments
+///
+/// * `pdf_path` - Path to the PDF file to extract from
+/// * `options` - Extraction options controlling OCR, DPI, page limits, etc.
+///
+/// # Returns
+///
+/// A [`ExtractionResult`] containing:
+/// - `fingerprint` - Cryptographic hash of the PDF for receipt verification
+/// - `pages` - Array of extracted pages with spans, blocks, and tables
+/// - `signatures` - Digital signature information
+/// - `form_fields` - Interactive form field values
+/// - `links` - Hyperlinks and internal destinations
+/// - `attachments` - Embedded file attachments
+/// - `threads` - Article thread chains
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The PDF file cannot be opened or read
+/// - The PDF is malformed or corrupted
+/// - The PDF is encrypted and no password is provided
+/// - Decompression bomb limits are exceeded
+///
+/// # Examples
+///
+/// Basic extraction with default options:
+///
+/// ```rust,no_run
+/// use pdftract_core::{extract_pdf, ExtractionOptions};
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let result = extract_pdf(
+///     "document.pdf",
+///     &ExtractionOptions::default()
+/// )?;
+///
+/// println!("Extracted {} pages", result.pages.len());
+/// println!("Fingerprint: {}", result.fingerprint);
+/// # Ok(())
+/// # }
+/// ```
+///
+/// Extraction with OCR for scanned documents:
+///
+/// ```rust,no_run
+/// use pdftract_core::{extract_pdf, ExtractionOptions};
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # #[cfg(feature = "ocr")]
+/// let result = extract_pdf(
+///     "scanned.pdf",
+///     &ExtractionOptions {
+///         ocr_languages: vec!["eng".to_string()],
+///         ..Default::default()
+///     }
+/// )?;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// Extraction with page limit for large files:
+///
+/// ```rust,no_run
+/// use pdftract_core::{extract_pdf, ExtractionOptions};
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let result = extract_pdf(
+///     "large_document.pdf",
+///     &ExtractionOptions {
+///         max_pages: Some(10),
+///         ..Default::default()
+///     }
+/// )?;
+///
+/// println!("First 10 pages extracted");
+/// # Ok(())
+/// # }
+/// ```
 pub fn extract_pdf(
     pdf_path: &std::path::Path,
     options: &ExtractionOptions,

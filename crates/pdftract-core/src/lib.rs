@@ -123,7 +123,7 @@
 //!
 //! ## Extraction Pipeline
 //!
-//! 1. **Source Loading** — [`PdfSource`] trait handles file/memory/HTTP inputs
+//! 1. **Source Loading** — [`source::PdfSource`] trait handles file/memory/HTTP inputs
 //! 2. **Parser** — [`parser`] module lexes PDF binary format into object model
 //! 3. **Xref Resolution** — Cross-reference table resolves object offsets
 //! 4. **Catalog/Page Tree** — Document structure traversal

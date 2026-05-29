@@ -404,7 +404,7 @@ fn attachment_to_py<'py>(py: Python<'py>, attachment: AttachmentJson) -> PyResul
 // ============================================================================
 
 #[pymodule]
-fn pdftract(py: Python, m: &PyModule) -> PyResult<()> {
+fn _native(py: Python, m: &PyModule) -> PyResult<()> {
     // Add exception classes with proper Python inheritance
     m.add("PdftractError", py.get_type::<PdftractError>())?;
     m.add("EncryptionError", py.get_type::<EncryptionError>())?;

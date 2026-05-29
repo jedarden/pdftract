@@ -11,7 +11,6 @@
 use anyhow::Result;
 use pdftract_core::{extract_pdf_ndjson, ExtractionOptions};
 use std::env;
-use std::fs::File;
 use std::io::{self, BufWriter};
 use std::path::Path;
 
