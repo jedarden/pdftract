@@ -44,13 +44,7 @@ path = "../../tests/fixtures/generate_scientific_paper_fixtures.rs"
 name = "generate_book_chapter_fixtures"
 path = "../../tests/fixtures/generate_book_chapter_fixtures.rs"
 
-[[bin]]
-name = "generate_fixtures"
-path = "../../tests/document_model/fixtures/generate_fixtures.rs"
-
-[[bin]]
-name = "generate_expected_json"
-path = "../../tests/document_model/generate_expected_json.rs"
+# Removed: generate_fixtures, generate_expected_json (files do not exist)
 
 [[bench]]
 name = "grep_1000"
