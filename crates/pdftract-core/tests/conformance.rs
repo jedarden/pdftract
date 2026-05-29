@@ -142,12 +142,38 @@ fn options_from_value(opts: &Value) -> ExtractionOptions {
     options
 }
 
+/// Resolve a dotted path in a JSON value (e.g., "metadata.page_count" -> nested lookup).
+fn resolve_path(value: &Value, path: &str) -> Option<&Value> {
+    let parts: Vec<&str> = path.split('.').collect();
+    let mut current = value;
+
+    for part in parts {
+        match current {
+            Value::Object(map) => {
+                current = map.get(part)?;
+            }
+            Value::Array(arr) => {
+                // Handle array indexing like [0]
+                if part.starts_with('[') && part.ends_with(']') {
+                    let index: usize = part[1..part.len()-1].parse().ok()?;
+                    current = arr.get(index)?;
+                } else {
+                    return None;
+                }
+            }
+            _ => return None,
+        }
+    }
+
+    Some(current)
+}
+
 /// Compare a value against expected with tolerances.
 fn compare_with_tolerances(actual: &Value, expected: &Value, tolerances: &Value, path: &str) -> Vec<String> {
     let mut errors = Vec::new();
 
     match (expected, actual) {
-        (Value::Object(exp_map), Value::Object(act_map)) => {
+        (Value::Object(exp_map), _) => {
             for (key, exp_value) in exp_map {
                 let field_path = if path.is_empty() {
                     key.clone()
@@ -155,12 +181,17 @@ fn compare_with_tolerances(actual: &Value, expected: &Value, tolerances: &Value,
                     format!("{}.{}", path, key)
                 };
 
-                if !act_map.contains_key(key) {
-                    errors.push(format!("Missing field: {}", field_path));
-                    continue;
-                }
+                // Try to resolve dotted paths in actual
+                let act_value = resolve_path(actual, &field_path);
 
-                let act_value = &act_map[key];
+                let act_value = match act_value {
+                    Some(v) => v,
+                    None => {
+                        errors.push(format!("Missing field: {}", field_path));
+                        continue;
+                    }
+                };
+
                 let field_errors = compare_with_tolerances(act_value, exp_value, tolerances, &field_path);
                 errors.extend(field_errors);
             }
