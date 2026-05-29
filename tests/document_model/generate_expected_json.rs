@@ -81,11 +81,11 @@ fn generate_expected_json(pdf_path: &Path, name: &str, _password: Option<&str>) 
 
     // Check for encryption
     let is_encrypted = catalog.diagnostics.iter()
-        .any(|d| d.code.contains("ENCRYPTION"));
+        .any(|d| d.code.category() == "ENCRYPTION");
 
     // Get encryption status from diagnostics
     let encryption_status = catalog.diagnostics.iter()
-        .find(|d| d.code.contains("ENCRYPTION"))
+        .find(|d| d.code.category() == "ENCRYPTION")
         .map(|d| d.message.clone());
 
     // Resolve AcroForm if present

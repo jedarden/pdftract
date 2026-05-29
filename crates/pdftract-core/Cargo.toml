@@ -98,8 +98,13 @@ name = "wordlist"
 harness = false
 
 [package.metadata.docs.rs]
-all-features = true
+# Document all public API features except those requiring system libraries.
+# The "ocr" and "full-render" features require leptonica-sys which needs
+# pkg-config and system libraries that may not be available in the docs.rs
+# build environment. These features are excluded from documentation builds.
+features = ["serde", "schemars", "receipts", "remote", "profiles", "decrypt", "cjk", "quick-xml"]
 rustdoc-args = ["--cfg", "docsrs"]
+targets = ["x86_64-unknown-linux-gnu"]
 
 [build-dependencies]
 phf_codegen = "0.11"

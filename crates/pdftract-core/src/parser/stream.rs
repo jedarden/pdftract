@@ -3308,6 +3308,14 @@ impl SourceAdapter {
     pub fn new(inner: Box<dyn crate::source::PdfSource>) -> Self {
         Self { inner }
     }
+
+    /// Get a reference to the inner source::PdfSource.
+    ///
+    /// This allows accessing the modern PdfSource trait methods (like `read_range`, `prefetch`)
+    /// that aren't available on the legacy parser::stream::PdfSource trait.
+    pub fn inner(&self) -> &dyn crate::source::PdfSource {
+        self.inner.as_ref()
+    }
 }
 
 impl PdfSource for SourceAdapter {

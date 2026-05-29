@@ -7,6 +7,48 @@
 //! 4. Verifying encryption status, OCG visibility map, outline tree, JS/XFA/conformance flags
 
 use std::collections::HashMap;
+
+#[test]
+#[ignore = "Diagnostic test - run with cargo test -- --ignored"]
+fn debug_ocg_default_off() {
+    use pdftract_core::parser::stream::{FileSource, PdfSource};
+    use pdftract_core::parser::xref::load_xref_with_prev_chain;
+
+    let pdf_path = PathBuf::from("tests/document_model/fixtures/ocg_default_off.pdf");
+    let source = FileSource::open(&pdf_path).expect("Failed to open PDF file");
+
+    // Find startxref manually
+    let file_size = source.len().expect("Failed to get file size");
+    let read_size = 1024.min(file_size);
+    let read_offset = file_size - read_size;
+
+    let tail = source.read_at(read_offset, read_size as usize).expect("Failed to read tail");
+    let tail_str = std::str::from_utf8(&tail).expect("Invalid UTF-8 in tail");
+
+    println!("Tail (last 1KB): {}", tail_str);
+
+    if let Some(pos) = tail_str.find("startxref") {
+        let offset_start = pos + "startxref".len();
+        let offset_str = &tail_str[offset_start..].trim();
+
+        if let Ok(startxref_offset) = offset_str.parse::<u64>() {
+            println!("Found startxref offset: {}", startxref_offset);
+
+            // Load xref
+            let xref = load_xref_with_prev_chain(&source, startxref_offset);
+
+            println!("Xref has trailer: {}", xref.trailer.is_some());
+            if let Some(trailer) = &xref.trailer {
+                println!("Trailer keys: {:?}", trailer.keys().collect::<Vec<_>>());
+                if let Some(root) = trailer.get("Root") {
+                    println!("Root entry: {:?}", root);
+                } else {
+                    println!("No Root key!");
+                }
+            }
+        }
+    }
+}
 use std::fs;
 use std::path::PathBuf;
 use pdftract_core::detection;

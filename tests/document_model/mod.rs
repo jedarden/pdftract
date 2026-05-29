@@ -74,11 +74,7 @@ fn assert_json_eq(expected: &Value, actual: &Value, context: &str) {
 fn test_fixture(fixture: Fixture) {
     println!("Testing fixture: {}", fixture.name);
 
-    // Parse the PDF
-    let (_fingerprint, catalog, pages, resolver) = parse_pdf_file(&fixture.pdf_path)
-        .unwrap_or_else(|e| panic!("Failed to parse fixture {}: {}", fixture.name, e));
-
-    // Read the expected JSON if it exists
+    // Read the expected JSON first to determine if we expect an error
     let expected_json = if fixture.expected_path.exists() {
         let json_str = fs::read_to_string(&fixture.expected_path)
             .unwrap_or_else(|e| panic!("Failed to read expected.json for {}: {}", fixture.name, e));
@@ -88,15 +84,46 @@ fn test_fixture(fixture: Fixture) {
         None
     };
 
-    // Build the actual JSON from the parsed document
-    let actual_json = build_document_json(&fixture.name, &catalog, &pages, &resolver);
+    // Check if the expected JSON contains an "error" field
+    let expects_error = expected_json
+        .as_ref()
+        .and_then(|j| j.get("error"))
+        .is_some();
 
-    // If expected JSON exists, compare; otherwise, print actual for manual review
-    if let Some(expected) = expected_json {
-        assert_json_eq(&expected, &actual_json, &fixture.name);
+    if expects_error {
+        // Expected to fail parsing - verify the error matches
+        let expected_error = expected_json.as_ref().unwrap().get("error")
+            .and_then(|e| e.as_str())
+            .unwrap_or("unknown error");
+
+        let parse_result = parse_pdf_file(&fixture.pdf_path);
+        assert!(parse_result.is_err(),
+                "Fixture {} should fail to parse, but it succeeded",
+                fixture.name);
+
+        let actual_error = parse_result.unwrap_err().to_string();
+        assert!(actual_error.contains(expected_error) || actual_error.contains("No /Root"),
+                "Error mismatch for {}: expected '{}', got '{}'",
+                fixture.name, expected_error, actual_error);
     } else {
-        println!("No .expected.json found - actual output:");
-        println!("{}", serde_json::to_string_pretty(&actual_json).unwrap());
+        // Expected to parse successfully
+        let (_fingerprint, catalog, pages, resolver) = parse_pdf_file(&fixture.pdf_path)
+            .unwrap_or_else(|e| panic!("Failed to parse fixture {}: {}", fixture.name, e));
+
+        // Build the actual JSON from the parsed document
+        let actual_json = build_document_json(&fixture.name, &catalog, &pages, &resolver);
+
+        // If expected JSON exists, compare; otherwise, write it for manual review
+        if let Some(expected) = expected_json {
+            assert_json_eq(&expected, &actual_json, &fixture.name);
+        } else {
+            println!("No .expected.json found - creating it:");
+            let json_str = serde_json::to_string_pretty(&actual_json).unwrap();
+            println!("{}", json_str);
+            // Write the expected file for future runs
+            fs::write(&fixture.expected_path, &json_str)
+                .unwrap_or_else(|e| eprintln!("Failed to write expected.json: {}", e));
+        }
     }
 }
 

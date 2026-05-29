@@ -1,1 +1,1 @@
-Filter array: ASCII85 then Flate, order matters
+Filter array: input is ASCII85-encoded; after a85 decode, bytes are deflate-compressed

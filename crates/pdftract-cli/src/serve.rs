@@ -402,6 +402,7 @@ pub async fn run(
         cache_disabled,
         audit_writer,
         max_decompress_bytes,
+        trust_forwarded_for,
     );
 
     let max_body_bytes = max_upload_mb * 1024 * 1024;

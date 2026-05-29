@@ -1,1 +1,1 @@
-FlateDecode: truncated stream, expects partial output
+FlateDecode: mid-stream EOF; expects partial bytes + STREAM_DECODE_ERROR

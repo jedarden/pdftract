@@ -1,0 +1,11 @@
+{
+  "contains_javascript": false,
+  "contains_xfa": false,
+  "fixture": "encrypted_aes128_test",
+  "is_encrypted": false,
+  "is_tagged": false,
+  "ocg_base_state": "On",
+  "ocg_present": false,
+  "page_count": 0,
+  "pages": []
+}

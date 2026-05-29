@@ -18,6 +18,12 @@
 //!
 //! The writer uses a `Mutex\<BufWriter\>` for concurrent access.
 //! Each write is flushed immediately for crash safety.
+//!
+//! # Log-policy enforcement
+//!
+//! The audit log writer applies log-policy enforcement to ensure that
+//! sensitive content (passwords, tokens, etc.) is never written to the
+//! audit log. See the `log_policy` module for details.
 
 use anyhow::{Context, Result};
 use chrono::{SecondsFormat, Utc};
@@ -132,13 +138,17 @@ impl AuditLogWriter {
     ///
     /// The record is serialized as a single-line JSON object.
     /// The write is flushed immediately for crash safety.
+    /// Log-policy enforcement is applied to prevent sensitive content leakage.
     pub fn write_record(&self, record: &AuditRecord) -> Result<()> {
         let json = serde_json::to_string(record).context("Failed to serialize audit record")?;
+        // Apply log-policy enforcement to prevent sensitive content leakage
+        // Use redact_audit_log_line instead of redact_log_line to avoid truncating JSON
+        let redacted = crate::log_policy::redact_audit_log_line(&json);
         let mut writer = self
             .writer
             .lock()
             .map_err(|e| anyhow::anyhow!("Audit log writer lock poisoned: {}", e))?;
-        writeln!(writer, "{}", json).context("Failed to write audit record")?;
+        writeln!(writer, "{}", redacted).context("Failed to write audit record")?;
         writer.flush().context("Failed to flush audit record")?;
         Ok(())
     }
@@ -225,9 +235,6 @@ mod tests {
 
     #[test]
     fn test_audit_log_writer_memory() {
-        // Write to an in-memory buffer
-        use std::io::Cursor;
-
         // Create a temporary file for testing
         let temp_dir = tempfile::tempdir().unwrap();
         let temp_file = temp_dir.path().join("audit.ndjson");

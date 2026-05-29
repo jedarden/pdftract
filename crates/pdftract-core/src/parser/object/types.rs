@@ -22,7 +22,7 @@ thread_local! {
     static INTERNER: RefCell<HashSet<Arc<str>>> = RefCell::new(HashSet::new());
 }
 
-/// Intern a string slice as an Arc<str>, returning a shared instance if already interned.
+/// Intern a string slice as an `Arc<str>`, returning a shared instance if already interned.
 pub fn intern(s: &str) -> Arc<str> {
     INTERNER.with_borrow_mut(|interner| {
         // Fast path: check if already exists
@@ -232,7 +232,7 @@ pub enum PdfObject {
     String(Box<Vec<u8>>),
 
     /// Name object (PDF 1.7, Section 7.3.5)
-    /// Uses interned Arc<str> for cheap cloning and deduplication.
+    /// Uses interned `Arc<str>` for cheap cloning and deduplication.
     Name(Arc<str>),
 
     /// Array object (PDF 1.7, Section 7.3.6)

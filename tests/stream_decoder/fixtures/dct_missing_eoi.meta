@@ -1,1 +1,1 @@
-DCTDecode: JPEG missing EOI, passes through + STREAM_INVALID_JPEG warning
+DCTDecode: JPEG without EOI; expects passthrough + STREAM_INVALID_JPEG warning

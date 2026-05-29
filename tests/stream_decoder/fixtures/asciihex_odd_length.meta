@@ -1,1 +1,1 @@
-ASCIIHexDecode: odd length, final nibble padded to 0
+ASCIIHexDecode: <48656C6C6> -> b'Hello' with last nibble padded

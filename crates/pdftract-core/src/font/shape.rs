@@ -299,7 +299,7 @@ pub fn hamming_distance(a: u64, b: u64) -> u32 {
 ///
 /// # Invariants
 ///
-/// - Given the same SHAPE_TABLE and FREQ_TABLE, returns the same Option<char>
+/// - Given the same SHAPE_TABLE and FREQ_TABLE, returns the same `Option<char>`
 ///   across runs (deterministic).
 /// - Empty SHAPE_TABLE always returns None (no panic).
 ///

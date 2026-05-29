@@ -1,5 +1,4 @@
 #![deny(missing_docs)]
-
 //! pdftract-core — Core PDF parsing and text extraction primitives.
 //!
 //! This crate provides the foundational data structures and parsers for
@@ -87,6 +86,7 @@
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! // Enable OCR via "ocr" feature
+//! # #[cfg(feature = "ocr")]
 //! let result = extract_pdf(
 //!     "scanned.pdf",
 //!     &ExtractionOptions {
@@ -103,14 +103,16 @@
 //!
 //! | Feature | Description | Default |
 //! |---------|-------------|---------|
-//! | `default` | Core extraction without OCR/encryption | ✓ |
+//! | `serde` | JSON serialization support | ✓ |
+//! | `decrypt` | Decryption of encrypted PDFs | ✓ |
+//! | `quick-xml` | Conformance detection via XML metadata | ✓ |
 //! | `ocr` | Tesseract OCR for scanned documents | - |
 //! | `full-render` | PDFium-based rendering (requires external library) | - |
-//! | `decrypt` | Decryption of encrypted PDFs | - |
 //! | `remote` | HTTP range fetching for remote PDFs | - |
 //! | `profiles` | Profiling/timing instrumentation | - |
 //! | `receipts` | Cryptographic receipt generation | - |
-//! | `cache` | On-disk caching for expensive operations | - |
+//! | `cjk` | CJK text extraction via predefined CMap registry | - |
+//! | `schemars` | JSON Schema generation | - |
 //!
 //! # JSON Schema
 //!
@@ -151,6 +153,7 @@
 //! The extraction pipeline is designed for single-threaded use, but you can
 //! process multiple independent PDFs in parallel using rayon or similar.
 
+
 pub mod annotation;
 pub mod atomic_file_writer;
 pub mod attachment;
@@ -179,6 +182,7 @@ pub mod graphics_state;
 pub mod hybrid;
 pub mod javascript;
 pub mod layout;
+pub mod log_policy;
 pub mod markdown;
 #[cfg(feature = "ocr")]
 pub mod ocr;
@@ -217,8 +221,8 @@ pub mod threads;
 pub use confidence::{map_confidence_source, ConfidenceSource};
 pub use document::{Document, PageExtraction, PageIter, PdfExtractor};
 pub use extract::{
-    extract_pdf, extract_pdf_ndjson, extract_pdf_streaming, ExtractionMetadata, ExtractionResult,
-    PageResult,
+    extract_pdf, extract_pdf_ndjson, extract_pdf_streaming, extract_text, ExtractionMetadata,
+    ExtractionResult, PageResult,
 };
 pub use font::std14::{get_std14_metrics, NamedEncoding, Std14Metrics};
 pub use forms::{

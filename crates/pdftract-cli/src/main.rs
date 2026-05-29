@@ -301,7 +301,10 @@ enum Commands {
         #[arg(long, value_name = "GB", default_value = "1")]
         max_decompress_gb: usize,
 
-        /// Write per-request audit log to FILE (NDJSON; use "-" for stdout)
+        /// Write per-request audit log to FILE (NDJSON; use "-" for stdout, "/dev/stderr" for stderr)
+        ///
+        /// Rotation: pdftract does NOT rotate logs; configure logrotate on the audit-log file.
+        /// When FILE is "-", rotation is the responsibility of the supervisor (e.g., journald).
         #[arg(long, value_name = "FILE")]
         audit_log: Option<PathBuf>,
 
@@ -349,6 +352,9 @@ enum Commands {
         root: Option<PathBuf>,
 
         /// Write per-request audit log to FILE (NDJSON; use "-" for stdout, "/dev/stderr" for stderr)
+        ///
+        /// Rotation: pdftract does NOT rotate logs; configure logrotate on the audit-log file.
+        /// When FILE is "-", rotation is the responsibility of the supervisor (e.g., journald).
         #[arg(long, value_name = "FILE")]
         audit_log: Option<PathBuf>,
     },

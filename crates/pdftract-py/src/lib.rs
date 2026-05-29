@@ -5,26 +5,23 @@
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
-use std::path::Path;
-
-// Import base64 for decoding attachment data in PyO3 bindings
-use base64::engine::general_purpose::STANDARD;
 
 // Type alias for PyO3 owned references
 type PyResultAny<'py> = PyResult<Py<PyAny>>;
 
+mod extract;
 mod extract_stream;
+mod extract_text;
 
+use extract::extract as extract_fn;
 use extract_stream::{extract_stream_fn, StreamIterator};
+use extract_text::extract_text_fn;
 
-// Re-export core types and functions
-use pdftract_core::{
-    extract_pdf, extract_pdf_streaming, AttachmentJson, BeadJson, ExtractionOptions, PageResult,
-    TableJson, ThreadJson,
-};
+// Re-export core types
+use pdftract_core::{AttachmentJson, ExtractionOptions, PageResult, TableJson};
 
 // Import diagnostics for error code mapping
-use pdftract_core::diagnostics::{DiagCode, DIAGNOSTIC_CATALOG};
+use pdftract_core::diagnostics::DIAGNOSTIC_CATALOG;
 
 // ============================================================================
 // Exception hierarchy
@@ -161,128 +158,20 @@ fn kwargs_to_options(kwargs: Option<&PyDict>) -> PyResult<ExtractionOptions> {
 }
 
 // ============================================================================
-// Contract method: extract
-// ============================================================================
-
-/// Extract text and structure from a PDF.
-///
-/// Returns a Document object containing pages with spans, blocks, and tables.
-#[pyfunction]
-#[pyo3(name = "extract")]
-fn extract_py<'py>(py: Python<'py>, path: &str, kwargs: Option<&PyDict>) -> PyResultAny<'py> {
-    let opts = kwargs_to_options(kwargs)?;
-    let pdf_path = Path::new(path);
-
-    // Run extraction with GIL released so other Python threads can run
-    let result = py
-        .allow_threads(|| extract_pdf(pdf_path, &opts))
-        .map_err(|e| map_error_to_py(py, e))?;
-
-    // Convert ExtractionResult to Python dict
-    let dict = PyDict::new(py);
-
-    // Add metadata
-    let metadata = PyDict::new(py);
-    metadata.set_item("page_count", result.metadata.page_count)?;
-    metadata.set_item("span_count", result.metadata.span_count)?;
-    metadata.set_item("block_count", result.metadata.block_count)?;
-    if let Some(cache_status) = result.metadata.cache_status {
-        metadata.set_item("cache_status", cache_status)?;
-    }
-    dict.set_item("metadata", metadata)?;
-
-    // Add pages
-    let pages: PyResult<Vec<Py<PyAny>>> = result
-        .pages
-        .into_iter()
-        .map(|page| page_to_py(py, page))
-        .collect();
-    dict.set_item("pages", pages?)?;
-
-    // Add attachments (with base64 data decoded to bytes)
-    let attachments: PyResult<Vec<Py<PyAny>>> = result
-        .attachments
-        .into_iter()
-        .map(|attachment| attachment_to_py(py, attachment))
-        .collect();
-    dict.set_item("attachments", attachments?)?;
-
-    // Add threads (as Python list of dicts)
-    let threads: PyResult<Vec<Py<PyAny>>> = result
-        .threads
-        .into_iter()
-        .map(|thread| thread_to_py(py, thread))
-        .collect();
-    dict.set_item("threads", threads?)?;
-
-    Ok(dict.clone().into())
-}
-
-/// Convert a Bead to a Python dict with two keys (page_index, rect).
-///
-/// Per the bead spec, beads are simple 2-key dicts for compactness.
-fn bead_to_py<'py>(py: Python<'py>, bead: BeadJson) -> PyResultAny<'py> {
-    let dict = PyDict::new(py);
-    dict.set_item("page_index", bead.page_index)?;
-    dict.set_item("rect", bead.rect)?;
-    Ok(dict.clone().into())
-}
-
-/// Convert a Thread to a Python dict with title, author, subject, keywords, and beads.
-///
-/// This converts the full ThreadJson structure to a Python dict, including
-/// the list of beads (each bead is a 2-key dict via bead_to_py).
-fn thread_to_py<'py>(py: Python<'py>, thread: ThreadJson) -> PyResultAny<'py> {
-    let dict = PyDict::new(py);
-
-    dict.set_item("title", thread.title)?;
-    dict.set_item("author", thread.author)?;
-    dict.set_item("subject", thread.subject)?;
-    dict.set_item("keywords", thread.keywords)?;
-
-    // Convert beads to Python list of 2-key dicts
-    let beads: PyResult<Vec<Py<PyAny>>> = thread
-        .beads
-        .into_iter()
-        .map(|bead| bead_to_py(py, bead))
-        .collect();
-    dict.set_item("beads", beads?)?;
-
-    Ok(dict.clone().into())
-}
-
-// ============================================================================
 // Contract method: extract_text
 // ============================================================================
 
-#[pyfunction]
-fn extract_text(py: Python, path: &str, kwargs: Option<&PyDict>) -> PyResult<String> {
-    let result = extract_py(py, path, kwargs)?;
-    let dict = result.downcast::<PyDict>(py)?;
-    let pages = dict
-        .get_item("pages")?
-        .unwrap()
-        .downcast::<pyo3::types::PyList>()?;
-
-    let mut text = String::new();
-    for page in pages.iter() {
-        let page_dict = page.downcast::<PyDict>()?;
-        let spans = page_dict
-            .get_item("spans")?
-            .unwrap()
-            .downcast::<pyo3::types::PyList>()?;
-
-        for span in spans.iter() {
-            let span_dict = span.downcast::<PyDict>()?;
-            if let Some(text_obj) = span_dict.get_item("text")? {
-                let span_text: String = text_obj.extract()?;
-                text.push_str(&span_text);
-                text.push(' ');
-            }
-        }
-    }
-
-    Ok(text)
+/// Extract plain text from a PDF, returning a String.
+///
+/// This is the fast path for RAG ingest pipelines that just want the text body.
+/// It returns a bare String, avoiding the cost of serializing the full Document
+/// to JSON and re-parsing in Python.
+///
+/// See the extract_text module for full documentation.
+#[pyfunction(name = "extract_text")]
+#[pyo3(signature = (path, **kwargs))]
+fn py_extract_text(py: Python, path: &str, kwargs: Option<&PyDict>) -> PyResult<String> {
+    extract_text_fn(py, path, kwargs)
 }
 
 // ============================================================================
@@ -293,7 +182,7 @@ fn extract_text(py: Python, path: &str, kwargs: Option<&PyDict>) -> PyResult<Str
 fn extract_markdown(py: Python, path: &str, kwargs: Option<&PyDict>) -> PyResult<String> {
     // For now, just return extract_text output
     // TODO: Implement proper markdown conversion
-    extract_text(py, path, kwargs)
+    extract_text_fn(py, path, kwargs)
 }
 
 // ============================================================================
@@ -325,7 +214,7 @@ fn search<'py>(
 
 #[pyfunction]
 fn get_metadata<'py>(py: Python<'py>, path: &str, kwargs: Option<&PyDict>) -> PyResultAny<'py> {
-    let result = extract_py(py, path, kwargs)?;
+    let result = extract_fn(py, path, kwargs)?;
     let dict = result.downcast::<PyDict>(py)?;
     let metadata = dict.get_item("metadata")?.unwrap();
     Ok(metadata.clone().into())
@@ -539,9 +428,9 @@ fn pdftract(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(extract_stream_fn, m)?)?;
     m.add_class::<StreamIterator>()?;
 
-    // Add main extraction function
-    m.add_function(wrap_pyfunction!(extract_py, m)?)?;
-    m.add_function(wrap_pyfunction!(extract_text, m)?)?;
+    // Add main extraction functions
+    m.add_function(wrap_pyfunction!(extract::extract, m)?)?;
+    m.add_function(wrap_pyfunction!(py_extract_text, m)?)?;
     m.add_function(wrap_pyfunction!(extract_markdown, m)?)?;
     m.add_function(wrap_pyfunction!(search, m)?)?;
     m.add_function(wrap_pyfunction!(get_metadata, m)?)?;

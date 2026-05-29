@@ -116,8 +116,8 @@ enum Source {
 ///
 /// # Returns
 ///
-/// A Vec<(String, FormFieldValue)> sorted alphabetically by field name,
-/// plus a Vec<Diagnostic> containing any collision diagnostics.
+/// A `Vec<(String, FormFieldValue)>` sorted alphabetically by field name,
+/// plus a `Vec<Diagnostic>` containing any collision diagnostics.
 ///
 /// # Behavior
 ///

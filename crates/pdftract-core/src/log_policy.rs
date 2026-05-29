@@ -126,6 +126,40 @@ pub fn redact_header_value(header_name: &str, header_value: &str) -> String {
     }
 }
 
+/// Redact an audit log JSON line by replacing known-secret patterns with `[REDACTED]`.
+///
+/// This is a specialized version of `redact_log_line` for audit logs that skips
+/// the long-word truncation heuristic. Audit logs emit valid NDJSON (single-line
+/// JSON objects), which can easily exceed 100 characters as a single "word" when
+/// minified. We want to preserve the full JSON structure while only redacting
+/// actual secret values.
+///
+/// # Arguments
+///
+/// * `line` - The audit log JSON line to redact
+///
+/// # Returns
+///
+/// The redacted audit log JSON line with secrets replaced by `[REDACTED]`
+pub fn redact_audit_log_line(line: &str) -> String {
+    let mut redacted = line.to_string();
+
+    // Apply each secret pattern (same as redact_log_line)
+    for pattern in get_secret_patterns().iter() {
+        redacted = pattern
+            .replace_all(&redacted, "[REDACTED]")
+            .to_string();
+    }
+
+    // Note: We do NOT apply the long-word truncation here because audit logs
+    // are structured JSON that can legitimately be long. The truncation heuristic
+    // in redact_log_line is for free-form log messages where a very long "word"
+    // might be a leaked secret, but in audit logs we have structured data that
+    // should be preserved in full.
+
+    redacted
+}
+
 /// LogPolicyFilter provides runtime filtering for log output.
 ///
 /// This filter can be used with any logger implementation to enforce

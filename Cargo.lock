@@ -3299,6 +3299,8 @@ dependencies = [
  "base64",
  "pdftract-core",
  "pyo3",
+ "pythonize",
+ "secrecy",
 ]
 
 [[package]]
@@ -3660,6 +3662,16 @@ dependencies = [
  "pyo3-build-config",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "pythonize"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ffd1c3ef39c725d63db5f9bc455461bafd80540cb7824c61afb823501921a850"
+dependencies = [
+ "pyo3",
+ "serde",
 ]
 
 [[package]]

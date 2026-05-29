@@ -42,6 +42,9 @@ pub struct InspectArgs {
     pub compare: Option<PathBuf>,
 
     /// Write per-request audit log to FILE (NDJSON; use "-" for stdout, "/dev/stderr" for stderr)
+    ///
+    /// Rotation: pdftract does NOT rotate logs; configure logrotate on the audit-log file.
+    /// When FILE is "-", rotation is the responsibility of the supervisor (e.g., journald).
     #[arg(long, value_name = "FILE")]
     pub audit_log: Option<PathBuf>,
 }

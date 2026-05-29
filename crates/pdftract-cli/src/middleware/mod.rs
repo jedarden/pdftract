@@ -3,5 +3,5 @@
 pub mod audit;
 pub mod csp;
 
-pub use audit::{audit_middleware, AuditState};
+pub use audit::{audit_middleware, AuditState, RequestMetadata};
 pub use csp::csp_middleware;

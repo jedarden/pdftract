@@ -140,7 +140,7 @@ impl Default for XrefSection {
 /// - Traditional InUse + Stream Free → InUse (CONFLICT, traditional wins)
 /// - Traditional InUse + Stream InUse → InUse (no conflict, both agree)
 /// - Traditional InUse + Stream Compressed → InUse (traditional wins)
-/// - Traditional <absent> + Stream Compressed → Compressed (gap fill)
+/// - Traditional `<absent>` + Stream Compressed → Compressed (gap fill)
 ///
 /// # Example
 /// ```rust
@@ -1476,7 +1476,7 @@ fn parse_obj_header_at_memory(data: &[u8], obj_offset: u64) -> Option<(u32, u16)
 ///
 /// Returns Some(PdfDict) if found, None otherwise.
 fn forward_scan_trailer(source: &dyn PdfSource) -> Option<PdfDict> {
-    let source_len = source.len();
+    let source_len = source.len().ok()?;
     const TRAILER_KEYWORD: &[u8] = b"trailer";
 
     // Read from the end of the file backwards (trailer is usually near the end)
@@ -2071,7 +2071,10 @@ pub fn detect_linearization(source: &dyn PdfSource) -> Option<LinearizationInfo>
     };
 
     // Validate that /L matches the actual file size
-    let actual_file_length = source.len();
+    let actual_file_length = match source.len() {
+        Ok(len) => len,
+        Err(_) => return None,
+    };
     if file_length != actual_file_length {
         // File was modified after linearization (incremental update)
         // Linearization is invalid, fall through to non-linearized path
@@ -2115,7 +2118,7 @@ pub fn detect_linearization(source: &dyn PdfSource) -> Option<LinearizationInfo>
 /// - First-page InUse + Full InUse → Full wins (same offset expected)
 /// - First-page InUse + Full Free → Full wins (object was deleted)
 /// - First-page Free + Full InUse → Full wins (object was added)
-/// - First-page <absent> + Full InUse → Full wins (gap filled)
+/// - First-page `<absent>` + Full InUse → Full wins (gap filled)
 ///
 /// # References
 /// - Plan section: Phase 1.3 line 1113

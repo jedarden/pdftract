@@ -1,0 +1,11 @@
+{
+  "contains_javascript": false,
+  "contains_xfa": false,
+  "error": "Failed to parse PDF: No /Root reference in trailer",
+  "fixture": "tagged_3_level_outline",
+  "is_encrypted": false,
+  "is_tagged": false,
+  "ocg_present": false,
+  "page_count": 0,
+  "pages": []
+}

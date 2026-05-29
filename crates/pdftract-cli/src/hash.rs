@@ -131,7 +131,7 @@ fn compute_fingerprint_from_url(
     url: &str,
     headers: &[(String, String)],
 ) -> Result<String> {
-    use pdftract_core::source::http_range::HttpRangeSource;
+    use pdftract_core::source::HttpRangeSource;
 
     // Open the remote PDF
     let source = HttpRangeSource::with_headers(url, headers.to_vec())

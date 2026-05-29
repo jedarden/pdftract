@@ -231,7 +231,7 @@ pub fn count_header_rows(cells: &[Cell], row_count: usize) -> u32 {
 /// 3. Missing right edge between cells (i, j) and (i+1, j) -> colspan extension.
 /// 4. Missing bottom edge between cells (i, j) and (i, j+1) -> rowspan extension.
 /// 5. Iterate until no more merges can be applied (transitive merges).
-/// 6. Absorbed cells are excluded from the final Vec<Cell>.
+/// 6. Absorbed cells are excluded from the final `Vec<Cell>`.
 ///
 /// # Arguments
 ///

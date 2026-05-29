@@ -534,53 +534,143 @@ mod tests {
 
     #[test]
     fn test_parse_hint_header_minimal() {
-        // Manually construct a minimal valid hint header:
-        // - Version: 1 (0x00000001)
-        // - Bit widths: object_number=8, page_offset=16, page_length=16,
-        //               shared_object=8, shared_length=8
-        //   Packed as: 0x81818181 (but we only use 20 bits)
-        // - Page count: 1 (using 8 bits)
-        // - Shared group count: 0 (using 8 bits)
-
-        // Let's construct this more carefully:
-        // Byte 0-3: version = 1 (big-endian)
-        // Byte 4-7: bit widths packed in 20 bits
-        //   Actually, the spec says these are 4-bit values read as bits,
-        //   not as bytes. Let me re-read the spec...
-
-        // Re-reading PDF spec Annex F.2:
-        // The bit widths are stored as a 32-bit integer where:
-        // - Bits 16-19: object number width
-        // - Bits 12-15: page offset width
-        // - Bits 8-11: page length width
-        // - Bits 4-7: shared object number width
-        // - Bits 0-3: shared group length width
-
-        // For minimal widths: all 1s (so we need at least 1 bit each)
-        // Let's use: object=4, page_offset=8, page_length=8, shared_obj=4, shared_len=4
-        // Packed: (4 << 16) | (8 << 12) | (8 << 8) | (4 << 4) | 4
-        //       = 0x04884 (but we need 32-bit alignment)
-
-        // Actually, let me look at the spec more carefully.
-        // The widths are stored as 4-bit values, but they're read bit-by-bit.
-
-        // Let me use a simpler approach: construct a valid hint header
-        // where all widths are 8 bits (for simplicity):
-
-        // Byte 0-3: 0x00000001 (version)
-        // Byte 4-7: 0x08080808 (all widths = 8 bits)
-        // Byte 8-11: page count = 1
-        // Byte 12-15: shared groups = 0
+        // Construct a valid hint header with proper bit-level packing.
+        // The hint stream uses bit-packed fields that can span byte boundaries.
+        //
+        // Format (PDF spec Annex F.2):
+        // - 32-bit: version (must be 1)
+        // - 20 bits: bit widths (five 4-bit fields)
+        //   [object_number_bits (4) | page_offset_bits (4) | page_length_bits (4) |
+        //    shared_object_number_bits (4) | shared_group_length_bits (4)]
+        // - variable bits: page count (width = object_number_bits)
+        // - variable bits: shared group count (width = object_number_bits)
+        //
+        // For this test, we use:
+        // - All widths = 8 bits (binary: 1000, so each 4-bit field is 0b1000 = 8)
+        // - Page count = 1
+        // - Shared group count = 0
+        //
+        // The 20-bit bit_widths value is:
+        //   (8 << 16) | (8 << 12) | (8 << 8) | (8 << 4) | 8 = 0x88888
+        //
+        // This is packed MSB-first across 3 bytes (20 bits need 3 bytes):
+        //   Byte 0: bits 19-12 = 0x88
+        //   Byte 1: bits 11-4  = 0x88
+        //   Byte 2: bits 3-0   = 0x8 (with 4 zero padding bits = 0x80)
+        //
+        // After the version (4 bytes), the bit_widths field starts at bit 32.
+        // Reading bits 32-51 gives us 0x88888.
 
         let mut data = Vec::new();
-        // Version: 1
+        // Version: 1 (bytes 0-3)
         data.extend_from_slice(&1u32.to_be_bytes());
-        // Bit widths: all 8 bits
-        data.extend_from_slice(&0x08080808u32.to_be_bytes());
-        // Page count: 1
-        data.extend_from_slice(&1u32.to_be_bytes());
-        // Shared groups: 0
-        data.extend_from_slice(&0u32.to_be_bytes());
+        // Bit widths: 20-bit value 0x88888 packed MSB-first (bits 32-51)
+        // This spans bytes 4-6 with bit alignment
+        data.extend_from_slice(&[0x88, 0x88, 0x80]); // 20 bits: 0x88888
+        // Page count: 1 (8 bits, starting at bit 52)
+        // This starts in byte 6 (after the 20-bit bit_widths field)
+        data.push(0x01); // byte 6: lower 4 bits are padding, upper 4 bits start page count
+        // Actually, we need to track bit position more carefully.
+        // After 52 bits (version + bit_widths), we're at bit 52, which is:
+        // - byte 6, bit 4 (0-indexed within byte)
+        // So page count (8 bits) spans bytes 6-7
+
+        // Let me recalculate with exact bit positions:
+        // - Version: bits 0-31 (bytes 0-3)
+        // - Bit widths: bits 32-51 (bytes 4-6, partial)
+        // - Page count (8 bits): bits 52-59
+        //   - Bit 52 is byte 6, bit 4 (since bit 48 starts byte 6)
+        //   - So we need bits 4-11 of byte 6, and bit 0-3 of byte 7
+        // - Shared groups (8 bits): bits 60-67
+
+        // Let's rebuild with proper bit alignment:
+        data.clear();
+        data.extend_from_slice(&1u32.to_be_bytes()); // bytes 0-3: version
+
+        // bytes 4-6: bit widths (20 bits = 0x88888)
+        // Byte 4: bits 32-39 = 10001000 = 0x88
+        // Byte 5: bits 40-47 = 10001000 = 0x88
+        // Byte 6: bits 48-51 = 1000 (in upper 4 bits), padding 0000 (lower 4 bits) = 0x80
+        data.extend_from_slice(&[0x88, 0x88, 0x80]);
+
+        // Page count (8 bits, value 1 = 0b00000001): bits 52-59
+        // Bit 52 starts at byte 6, bit 4
+        // Byte 6: [XXXX XXXX] where X are bits 48-55
+        //        bits 48-51 were padding (0000), bits 52-55 start page count (0000) of 0b00000001
+        // Byte 7: [XXXX XXXX] where X are bits 56-63
+        //        bits 56-59 are the rest of page count (0001), bits 60-63 start shared groups
+        // Actually, let me just use bit_write_u8 helper...
+
+        // Simplifying: construct the remaining bytes manually
+        // Byte 6: bits 48-55. Upper 4 bits (48-51) were padding (0000).
+        //         Lower 4 bits (52-55) start page count. Page count = 1 = 0b00000001.
+        //         So bits 52-55 are 0000.
+        //         Byte 6 = 0b00000000 (but upper bits were already set to 0x80)
+        // Wait, byte 6 already has bits 48-51 = 0b1000 from bit_widths.
+        // Let me redo this more carefully...
+
+        // Final approach: construct bytes 6-7 together
+        // Byte 6: bits 48-55
+        //   - Bits 48-51: padding from bit_widths field = 0000
+        //   - Bits 52-55: upper 4 bits of page count (0b0000)
+        // Byte 7: bits 56-63
+        //   - Bits 56-59: lower 4 bits of page count (0b0001)
+        //   - Bits 60-63: upper 4 bits of shared group count (0b0000)
+        // Byte 8: bits 64-71
+        //   - Bits 64-67: lower 4 bits of shared group count (0b0000)
+        //   - Remaining bits: unused
+
+        // Byte 6 = 0b00000000 = 0x00 (but we already set the upper 4 bits in bit_widths!)
+        // This is getting confusing. Let me use a different approach.
+
+        data.clear();
+        data.extend_from_slice(&1u32.to_be_bytes()); // bytes 0-3
+
+        // Bit widths (20 bits): 0x88888 = 0b10001000100010001000
+        // Packed MSB-first starting at bit 32 (byte 4, bit 0):
+        // Byte 4: bits 0-7  = 10001000 = 0x88
+        // Byte 5: bits 8-15 = 10001000 = 0x88
+        // Byte 6: bits 16-19 (of this field) = 1000, bits 20-23 (padding) = 0000
+        //        = 0b10000000 = 0x80
+        data.extend_from_slice(&[0x88, 0x88, 0x80]);
+
+        // Page count (8 bits, value 1): starts at bit 52 (byte 6, bit 4)
+        // Byte 6, bits 4-7: upper 4 bits of page count = 0000
+        // Byte 7, bits 0-3: lower 4 bits of page count = 0001
+        // So we need to update byte 6's lower 4 bits and set byte 7's upper 4 bits
+        // Byte 6 = 0b1000_0000 -> we need lower 4 bits = 0000, so unchanged
+        // Byte 7: upper 4 bits = 0000 (from page count), lower 4 bits = 0000 (start of shared groups)
+        data.extend_from_slice(&[0x00, 0x00]); // bytes 7-8: page count (1) + shared groups (0)
+
+        // Wait, this still doesn't work. Let me trace through BitReader more carefully.
+
+        // After read_u32() at bit_pos=0, bit_pos=32 (byte boundary)
+        // read_bits(20) reads bits 32-51:
+        // - bit_pos=32, read bit 32 (byte 4, bit 0)
+        // - ... up to bit 51 (byte 6, bit 3)
+        // After this, bit_pos=52
+
+        // read_bits(8) for page_count reads bits 52-59:
+        // - bit 52 is byte 6, bit 4 (since bit 48 starts byte 6)
+        // - bit 59 is byte 7, bit 3
+
+        // So for page_count=1 (0b00000001):
+        // - Bits 52-55 (byte 6, bits 4-7): 0000
+        // - Bits 56-59 (byte 7, bits 0-3): 0001
+
+        // Byte 6 currently has bits 48-51 = 1000 (from bit_widths padding), bits 52-55 = 0000
+        // So byte 6 = 0b1000_0000 = 0x80 (correct as is)
+
+        // Byte 7 needs bits 56-59 = 0001, and bits 60-63 start shared groups
+        // shared_groups = 0, so bits 60-63 = 0000
+        // Byte 7 = 0b00010000 = 0x10
+
+        // Byte 8 needs bits 64-67 = lower 4 bits of shared_groups = 0000
+        // Byte 8 = 0x00
+
+        data.truncate(7); // Keep bytes 0-6
+        data.push(0x10); // byte 7: page count (1) + shared groups start
+        data.push(0x00); // byte 8: shared groups (0)
 
         let mut reader = BitReader::new(data);
         let header = parse_hint_header(&mut reader);
@@ -675,21 +765,37 @@ mod tests {
     fn test_parse_hint_stream_full_minimal() {
         // Construct a minimal valid hint stream:
         // Header with 1 page, then 1 page hint record
+        //
+        // To simplify bit alignment, we use 4-bit widths (so page_count and
+        // shared_group_count fit in 4 bits each, totaling 8 bits = 1 byte).
+        // This ensures the hint records start at a byte boundary.
         let mut data = Vec::new();
 
         // Header
-        data.extend_from_slice(&1u32.to_be_bytes()); // version
-        data.extend_from_slice(&0x08080808u32.to_be_bytes()); // all widths = 8 bits
-        data.extend_from_slice(&1u32.to_be_bytes()); // page count = 1
-        data.extend_from_slice(&0u32.to_be_bytes()); // shared groups = 0
+        data.extend_from_slice(&1u32.to_be_bytes()); // bytes 0-3: version
 
-        // Page hint record (for 1 page)
-        // - Object number: 10
-        // - Offset: 500
-        // - Length: 200
-        data.extend_from_slice(&10u32.to_be_bytes());
-        data.extend_from_slice(&500u32.to_be_bytes());
-        data.extend_from_slice(&200u32.to_be_bytes());
+        // Bit widths (20 bits): use 4-bit fields for simplicity
+        // object_number_bits: 4 bits (0x4)
+        // page_offset_bits: 4 bits (0x4)
+        // page_length_bits: 4 bits (0x4)
+        // shared_object_number_bits: 4 bits (0x4)
+        // shared_group_length_bits: 4 bits (0x4)
+        // Packed: 0x44444 = 0b0100_0100_0100_0100_0100 (20 bits)
+        data.extend_from_slice(&[0x44, 0x44, 0x40]); // bytes 4-6: 0x44444 packed
+
+        // Page count (4 bits, value 1) + shared groups (4 bits, value 0)
+        // Page count starts at bit 52, shared groups at bit 56
+        // Together they form byte 7: 0b00010000 = 0x10
+        data.push(0x10); // byte 7: page_count=1 (upper 4 bits), shared_groups=0 (lower 4 bits)
+
+        // After header, we're at bit 60 = byte 8, bit 0 (byte-aligned!)
+        // Page hint records start at byte 8
+        // Each record: object_number (4 bits) + offset (4 bits) + length (4 bits)
+        // For 1 record with values: object_number=0, offset=15, length=15
+        // Packed in 12 bits (1.5 bytes): 0b0000_1111_1111 = 0x0FF0 (12 bits)
+        // Byte 8: 0b00001111 = 0x0F
+        // Byte 9: 0b11110000 = 0xF0
+        data.extend_from_slice(&[0x0F, 0xF0]); // bytes 8-9: 1 hint record
 
         let mut diagnostics = vec![];
         let result = parse_hint_stream(&data, &mut diagnostics);
@@ -697,7 +803,8 @@ mod tests {
         assert!(result.is_some());
         let table = result.unwrap();
         assert_eq!(table.page_count(), 1);
-        assert_eq!(table.predict_page_range(0), Some(500..700));
+        // Page range: offset 15, length 15 → [15, 30)
+        assert_eq!(table.predict_page_range(0), Some(15..30));
     }
 
     // proptest: random byte sequences never panic

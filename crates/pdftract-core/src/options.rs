@@ -58,6 +58,16 @@ impl ReceiptsMode {
     }
 
     /// Convert to a lowercase string representation.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pdftract_core::options::ReceiptsMode;
+    ///
+    /// assert_eq!(ReceiptsMode::Off.as_str(), "off");
+    /// assert_eq!(ReceiptsMode::Lite.as_str(), "lite");
+    /// assert_eq!(ReceiptsMode::SvgClip.as_str(), "svg");
+    /// ```
     pub fn as_str(&self) -> &'static str {
         match self {
             ReceiptsMode::Off => "off",
@@ -71,6 +81,23 @@ impl ReceiptsMode {
 ///
 /// Controls which block kinds and span types are included in extraction output.
 /// Per INV-1: defaults exclude; flags ADD content. 95% of users want body text only.
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::options::OutputOptions;
+///
+/// // Default options exclude headers, footers, watermarks
+/// let opts = OutputOptions::default();
+/// assert!(!opts.include_headers);
+/// assert!(!opts.include_footers);
+///
+/// // Include headers and footers
+/// let mut opts = OutputOptions::default();
+/// opts.include_headers_and_footers();
+/// assert!(opts.include_headers);
+/// assert!(opts.include_footers);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
@@ -189,6 +216,25 @@ impl OutputOptions {
 ///
 /// This struct is passed through the extraction pipeline and controls
 /// optional features like receipt generation and parallelism limits.
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::options::ExtractionOptions;
+///
+/// // Default options
+/// let opts = ExtractionOptions::default();
+///
+/// // Enable lite receipts
+/// let opts = ExtractionOptions::with_receipts(
+///     pdftract_core::options::ReceiptsMode::Lite
+/// );
+///
+/// // Custom parallelism settings
+/// let opts = ExtractionOptions::with_parallelism(8, 1024);
+/// assert_eq!(opts.max_parallel_pages, 8);
+/// assert_eq!(opts.memory_budget_mb, 1024);
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ExtractionOptions {

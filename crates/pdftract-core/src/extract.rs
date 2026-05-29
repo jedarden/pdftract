@@ -1299,6 +1299,68 @@ pub fn result_to_json(result: &ExtractionResult) -> serde_json::Value {
     })
 }
 
+/// Extract plain text from a PDF file.
+///
+/// This is a convenience function that extracts text from a PDF and returns
+/// it as a single string, with span texts concatenated in reading order.
+/// Each span's text is followed by a newline, matching the CLI `--text` format.
+///
+/// # Arguments
+///
+/// * `pdf_path` - Path to the PDF file
+/// * `options` - Extraction options controlling page range, password, etc.
+///
+/// # Returns
+///
+/// A `String` containing all extracted text from the PDF.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use pdftract_core::{extract_text, ExtractionOptions};
+/// use std::path::Path;
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let text = extract_text(
+///     Path::new("document.pdf"),
+///     &ExtractionOptions::default()
+/// )?;
+/// println!("Extracted {} characters", text.len());
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Text Format
+///
+/// - Spans are emitted in reading order (as ordered in the spans array)
+/// - Each span's text is followed by a newline
+/// - Pages are concatenated without separator
+/// - Invisible text (rendering_mode=3) is excluded unless `include_invisible` is set
+pub fn extract_text(
+    pdf_path: &std::path::Path,
+    options: &ExtractionOptions,
+) -> Result<String> {
+    let result = extract_pdf(pdf_path, options)?;
+
+    let mut text = String::new();
+    for page in &result.pages {
+        for span in &page.spans {
+            // Filter invisible text based on include_invisible option
+            if !options.output.include_invisible {
+                if let Some(mode) = span.rendering_mode {
+                    if mode >= 3 {
+                        continue;
+                    }
+                }
+            }
+            text.push_str(&span.text);
+            text.push('\n');
+        }
+    }
+
+    Ok(text)
+}
+
 /// Extract text and structure from a PDF file, writing NDJSON output.
 ///
 /// This is the streaming variant of `extract_pdf` that writes each page
@@ -1677,6 +1739,31 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
 ///
 /// The callback is invoked from the extraction thread with a reference to each
 /// PageResult. If the callback returns `false`, extraction stops early.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use pdftract_core::{extract_pdf_streaming, ExtractionOptions};
+/// use std::path::Path;
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// // Process a large PDF one page at a time with bounded memory
+/// let mut page_count = 0;
+/// let metadata = extract_pdf_streaming(
+///     Path::new("large_document.pdf"),
+///     &ExtractionOptions::default(),
+///     |page_result| {
+///         page_count += 1;
+///         println!("Page {}: {} spans", page_count, page_result.spans.len());
+///         // Return true to continue, false to stop early
+///         page_count < 10 // Only process first 10 pages
+///     }
+/// )?;
+///
+/// println!("Processed {} pages", metadata.total_pages);
+/// # Ok(())
+/// # }
+/// ```
 pub fn extract_pdf_streaming<F>(
     pdf_path: &std::path::Path,
     options: &ExtractionOptions,

@@ -240,8 +240,8 @@ pub fn compute_coverage_from_sets(
 /// # MCID Extraction
 ///
 /// MCIDs are extracted from BDC property dictionaries:
-/// - BDC <tag> <properties> EMC
-/// - If <properties> contains /MCID N, the MCID N is recorded
+/// - BDC `<tag>` `<properties>` EMC
+/// - If `<properties>` contains /MCID N, the MCID N is recorded
 /// - Artifact marked content (/Artifact) is tracked separately
 pub fn track_mcids_from_content_stream(content_bytes: &[u8], tracker: &mut McidTracker) {
     use std::collections::HashSet;

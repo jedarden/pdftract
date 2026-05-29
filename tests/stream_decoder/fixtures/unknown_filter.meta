@@ -1,1 +1,1 @@
-Unknown filter: SomeFakeFilter, passthrough + STRUCT_UNKNOWN_FILTER
+Filter: /SomeFakeFilter; expects STRUCT_UNKNOWN_FILTER + passthrough

@@ -5,7 +5,7 @@
 //!
 //! Per PDF spec section 14.5:
 //! - BMC /Tag: begin marked content with tag only
-//! - BDC /Tag <<props>> or BDC /Tag /PropName: begin marked content with properties
+//! - BDC /Tag `<<props>>` or BDC /Tag /PropName: begin marked content with properties
 //! - EMC: end marked content (pop top frame)
 
 use crate::diagnostics::{DiagCode, Diagnostic};

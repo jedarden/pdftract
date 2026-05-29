@@ -147,7 +147,7 @@ impl Glyph {
 ///
 /// # Arguments
 ///
-/// * `raw_glyph_list` - Per-page Vec<Glyph> to append to (pre-reserved to 4096)
+/// * `raw_glyph_list` - Per-page `Vec<Glyph>` to append to (pre-reserved to 4096)
 /// * `state` - Current graphics state (font, color, CTM, text_matrix)
 /// * `font_dict` - Font dictionary from resource dict (for metrics)
 /// * `codepoint` - Resolved Unicode codepoint (or U+FFFD on failure)

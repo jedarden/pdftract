@@ -32,6 +32,32 @@ use crate::signature::Signature;
 ///
 /// Per INV-7 (confidence_source on every Span), all spans include
 /// the confidence_source field to indicate how the text was extracted.
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::schema::SpanJson;
+/// use serde_json;
+///
+/// let span = SpanJson {
+///     text: "Hello, world!".to_string(),
+///     bbox: [72.0, 720.0, 200.0, 730.0],
+///     font: "Helvetica".to_string(),
+///     size: 12.0,
+///     color: Some("#000000".to_string()),
+///     rendering_mode: Some(0),
+///     confidence: None,
+///     confidence_source: Some("vector".to_string()),
+///     lang: Some("en".to_string()),
+///     flags: vec![],
+///     receipt: None,
+///     column: Some(0),
+/// };
+///
+/// // Serialize to JSON
+/// let json = serde_json::to_string(&span).unwrap();
+/// assert!(json.contains("Hello, world!"));
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct SpanJson {
@@ -124,6 +150,25 @@ impl CorrectableText for SpanJson {
 /// A block is a higher-level semantic unit composed of one or more
 /// spans. Examples include paragraphs, headings, list items, and
 /// table cells.
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::schema::BlockJson;
+///
+/// let paragraph = BlockJson {
+///     kind: "paragraph".to_string(),
+///     text: "This is a paragraph.".to_string(),
+///     bbox: [72.0, 600.0, 540.0, 580.0],
+///     level: None,
+///     table_index: None,
+///     spans: vec![0, 1, 2],
+///     receipt: None,
+/// };
+///
+/// assert_eq!(paragraph.kind, "paragraph");
+/// assert_eq!(paragraph.spans.len(), 3);
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BlockJson {
@@ -179,6 +224,27 @@ pub type SpanRef = usize;
 ///
 /// A cell represents a single unit within a table row, containing
 /// its text content, bounding box, and position information.
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::schema::CellJson;
+///
+/// let cell = CellJson {
+///     bbox: [100.0, 400.0, 200.0, 380.0],
+///     text: "Cell content".to_string(),
+///     spans: vec![0],
+///     row: 0,
+///     col: 0,
+///     rowspan: 1,
+///     colspan: 1,
+///     is_header_row: true,
+/// };
+///
+/// assert_eq!(cell.row, 0);
+/// assert_eq!(cell.col, 0);
+/// assert!(cell.is_header_row);
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct CellJson {
@@ -254,6 +320,43 @@ pub struct RowJson {
 /// Tables are emitted in parallel with table blocks - the block
 /// provides the concatenated text and position, while the TableJson
 /// provides full cell-level structure.
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::schema::{TableJson, RowJson, CellJson};
+///
+/// let table = TableJson {
+///     id: "table_0".to_string(),
+///     bbox: [72.0, 500.0, 540.0, 300.0],
+///     rows: vec![
+///         RowJson {
+///             bbox: [72.0, 500.0, 540.0, 480.0],
+///             cells: vec![
+///                 CellJson {
+///                     bbox: [72.0, 500.0, 200.0, 480.0],
+///                     text: "Header".to_string(),
+///                     spans: vec![],
+///                     row: 0,
+///                     col: 0,
+///                     rowspan: 1,
+///                     colspan: 1,
+///                     is_header_row: true,
+///                 }
+///             ],
+///             is_header: true,
+///         }
+///     ],
+///     header_rows: 1,
+///     detection_method: "line_based".to_string(),
+///     continued: false,
+///     continued_from_prev: false,
+///     page_index: 0,
+/// };
+///
+/// assert_eq!(table.rows.len(), 1);
+/// assert_eq!(table.header_rows, 1);
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct TableJson {
@@ -361,18 +464,48 @@ impl ExtractionQuality {
     }
 
     /// Set the overall quality level.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdftract_core::schema::ExtractionQuality;
+    ///
+    /// let quality = ExtractionQuality::new()
+    ///     .with_quality("high");
+    /// assert_eq!(quality.overall_quality, "high");
+    /// ```
     pub fn with_quality(mut self, quality: &str) -> Self {
         self.overall_quality = quality.to_string();
         self
     }
 
     /// Set the DPI used for OCR rendering.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdftract_core::schema::ExtractionQuality;
+    ///
+    /// let quality = ExtractionQuality::new()
+    ///     .with_dpi(300);
+    /// assert_eq!(quality.dpi_used, Some(300));
+    /// ```
     pub fn with_dpi(mut self, dpi: u32) -> Self {
         self.dpi_used = Some(dpi);
         self
     }
 
     /// Set the OCR fraction.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdftract_core::schema::ExtractionQuality;
+    ///
+    /// let quality = ExtractionQuality::new()
+    ///     .with_ocr_fraction(0.5);
+    /// assert_eq!(quality.ocr_fraction, Some(0.5));
+    /// ```
     pub fn with_ocr_fraction(mut self, fraction: f32) -> Self {
         self.ocr_fraction = Some(fraction);
         self
@@ -392,6 +525,35 @@ impl Default for ExtractionQuality {
 ///
 /// Per the plan (Phase 7.4), form fields are extracted from both AcroForm
 /// and XFA sources, with XFA values taking precedence on collision.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use pdftract_core::schema::{FormFieldJson, FormFieldTypeJson, FormFieldValueJson};
+///
+/// // Create a text field
+/// let text_field = FormFieldJson {
+///     name: "employee_name".to_string(),
+///     field_type: FormFieldTypeJson::Text,
+///     value: FormFieldValueJson::Text(Some("John Doe".to_string())),
+///     default: None,
+///     page_index: Some(0),
+///     rect: Some([100.0, 700.0, 300.0, 720.0]),
+///     required: true,
+///     read_only: false,
+///     multiline: Some(false),
+///     max_length: Some(50),
+///     options: None,
+///     multi_select: None,
+///     selected: None,
+///     state_name: None,
+///     pushbutton: None,
+///     radio: None,
+/// };
+///
+/// assert_eq!(text_field.name, "employee_name");
+/// assert_eq!(text_field.required, true);
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct FormFieldJson {
@@ -541,6 +703,28 @@ pub enum ChoiceValueJson {
 /// in v1. The `validation_status` field is always "not_checked" — future versions
 /// may add "valid", "invalid", or "indeterminate" as cryptographic validation
 /// is implemented.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use pdftract_core::schema::SignatureJson;
+///
+/// // Create a signature JSON
+/// let sig = SignatureJson {
+///     field_name: "employer_signature".to_string(),
+///     signer_name: "John Doe".to_string(),
+///     signing_date: Some("2023-01-15T14:30:45Z".to_string()),
+///     reason: Some("Contract approval".to_string()),
+///     location: Some("New York, NY".to_string()),
+///     sub_filter: Some("adbe.pkcs7.detached".to_string()),
+///     byte_range: Some(vec![0, 1000, 2000, 500]),
+///     coverage_fraction: Some(0.5),
+///     validation_status: "not_checked".to_string(),
+/// };
+///
+/// assert_eq!(sig.signer_name, "John Doe");
+/// assert_eq!(sig.validation_status, "not_checked");
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct SignatureJson {
@@ -730,7 +914,7 @@ pub struct JavascriptActionJson {
     /// Location of the JavaScript action in the PDF structure.
     ///
     /// Examples: "catalog.openaction", "page.0.aa.O", "page.1.annot.0.A".
-    /// The format is: <scope>.<index>.<path> where scope is "catalog" or "page",
+    /// The format is: `<scope>`.`<index>`.`<path>` where scope is "catalog" or "page",
     /// index is the page number (for pages), and path is the dot-joined entry path.
     pub location: String,
 
@@ -1357,6 +1541,17 @@ pub struct Output {
 
 impl Output {
     /// Create a new empty Output structure.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdftract_core::schema::Output;
+    ///
+    /// let output = Output::new();
+    /// assert_eq!(output.schema_version, "1.0");
+    /// assert_eq!(output.metadata.page_count, 0);
+    /// assert!(output.pages.is_empty());
+    /// ```
     pub fn new() -> Self {
         Output {
             schema_version: "1.0",

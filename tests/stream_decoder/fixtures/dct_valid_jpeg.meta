@@ -1,1 +1,1 @@
-DCTDecode: valid JPEG with SOI/EOI markers, byte-perfect passthrough
+DCTDecode: known JPEG file; expects byte-perfect passthrough + SOI marker check

@@ -302,7 +302,7 @@ impl Default for Matrix3x3 {
 /// Graphics state as defined in PDF spec section 8.4.
 ///
 /// This contains all 13 graphics state parameters needed for content stream processing.
-/// Per INV-30, GraphicsState is Clone (cheap thanks to Arc<Font>) so q/Q can snapshot it.
+/// Per INV-30, GraphicsState is Clone (cheap thanks to `Arc<Font>`) so q/Q can snapshot it.
 #[derive(Clone)]
 pub struct GraphicsState {
     /// Current Transformation Matrix (ctm)

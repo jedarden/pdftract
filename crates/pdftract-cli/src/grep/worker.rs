@@ -30,13 +30,14 @@ use pdftract_core::parser::catalog::Catalog;
 use pdftract_core::parser::object::PdfObject;
 use pdftract_core::parser::pages::{flatten_page_tree, PageDict};
 use pdftract_core::parser::resources::ResourceDict;
-use pdftract_core::parser::stream::{FileSource, PdfSource};
+use pdftract_core::parser::stream::{FileSource, SourceAdapter};
+use pdftract_core::source::PdfSource as SourcePdfSource;
 use pdftract_core::parser::xref::{load_xref_with_prev_chain, XrefResolver, XrefSection};
 use std::sync::Arc;
 use std::time::Instant;
 
 #[cfg(feature = "remote")]
-use pdftract_core::source::http_range::HttpRangeSource;
+use pdftract_core::source::HttpRangeSource;
 
 /// Result of processing a single PDF file.
 ///
@@ -83,7 +84,7 @@ pub fn worker_run(
 
     // Get the path string and whether it's a URL
     let (path_str, is_remote) = match &item.path {
-        PathOrUrl::Local(p) => (p.clone(), false),
+        PathOrUrl::Local(p) => (p.to_string_lossy().to_string(), false),
         PathOrUrl::Remote(url) => (url.clone(), true),
     };
 
@@ -94,7 +95,7 @@ pub fn worker_run(
     })?;
 
     // Open the PDF source (local or remote)
-    let source: Box<dyn PdfSource> = if is_remote {
+    let source: Box<dyn SourcePdfSource> = if is_remote {
         #[cfg(feature = "remote")]
         {
             // Convert headers HashMap to Vec<(String, String)>
@@ -132,8 +133,11 @@ pub fn worker_run(
         }
     };
 
+    // Adapt source for parser functions
+    let adapted_source = SourceAdapter::new(source);
+
     // Find the startxref offset
-    let startxref_offset = match find_startxref(source.as_ref()) {
+    let startxref_offset = match find_startxref(adapted_source.inner()) {
         Ok(offset) => offset,
         Err(e) => {
             progress_sink.send(ProgressEvent::FileSkipped {
@@ -145,7 +149,7 @@ pub fn worker_run(
     };
 
     // Load the xref table
-    let xref_section = load_xref_with_prev_chain(&source, startxref_offset);
+    let xref_section = load_xref_with_prev_chain(&adapted_source, startxref_offset);
 
     // Check for encryption
     if let Some(trailer) = &xref_section.trailer {
@@ -180,7 +184,7 @@ pub fn worker_run(
     };
 
     // Parse the catalog
-    let catalog = match parse_catalog_with_resolver(&resolver, root_ref, &source) {
+    let catalog = match parse_catalog_with_resolver(&resolver, root_ref, &adapted_source) {
         Ok(c) => c,
         Err(diagnostics) => {
             let msg = diagnostics
@@ -255,7 +259,7 @@ pub fn worker_run(
         })?;
 
         // Extract spans from this page
-        let spans = match extract_spans_from_page(page, &resolver, &source) {
+        let spans = match extract_spans_from_page(page, &resolver, &adapted_source) {
             Ok(s) => s,
             Err(e) => {
                 // Log error but continue with next page
@@ -271,7 +275,7 @@ pub fn worker_run(
         for span in spans {
             let matches_in_span = process_span(
                 &span,
-                &path_str,
+                std::path::Path::new(&path_str),
                 page_index as u32,
                 &fingerprint,
                 matcher,
@@ -375,7 +379,7 @@ struct Span {
 fn extract_spans_from_page(
     page: &PageDict,
     resolver: &XrefResolver,
-    source: &dyn PdfSource,
+    source: &SourceAdapter,
 ) -> Result<Vec<Span>> {
     // Get page resources (already resolved in PageDict)
     let resources = (*page.resources).clone();
@@ -521,7 +525,7 @@ fn create_span_from_glyphs(glyphs: &[Glyph]) -> Span {
 fn decode_page_streams(
     page: &PageDict,
     resolver: &XrefResolver,
-    source: &dyn PdfSource,
+    source: &SourceAdapter,
 ) -> Result<Vec<u8>> {
     use pdftract_core::parser::stream::{
         decode_stream, ExtractionOptions as StreamExtractionOptions,
@@ -608,13 +612,13 @@ fn process_span(
 }
 
 /// Find the startxref offset in a PDF file.
-fn find_startxref(source: &dyn PdfSource) -> Result<u64> {
-    let len = source.len()? as usize;
+fn find_startxref(source: &dyn SourcePdfSource) -> Result<u64> {
+    let len = source.len() as usize;
     let scan_start = len.saturating_sub(1024);
     let scan_end = len;
 
     let tail_data = source
-        .read_at(scan_start as u64, scan_end - scan_start)
+        .read_range(scan_start as u64, scan_end - scan_start)
         .context("Failed to read PDF tail")?;
 
     // Find "startxref" in the tail data
@@ -655,7 +659,7 @@ fn find_startxref(source: &dyn PdfSource) -> Result<u64> {
 fn parse_catalog_with_resolver(
     resolver: &XrefResolver,
     root_ref: pdftract_core::parser::object::ObjRef,
-    source: &dyn PdfSource,
+    source: &SourceAdapter,
 ) -> Result<Catalog, Vec<Diagnostic>> {
     pdftract_core::parser::catalog::parse_catalog(resolver, root_ref, Some(source))
 }

@@ -6,7 +6,8 @@
 //! - Performance benefits of hint-based prefetch
 
 use pdftract_core::parser::hint_stream::parse_hint_stream;
-use pdftract_core::source::MemorySource;
+use pdftract_core::source::{MemorySource, PdfSource};
+use std::io::{Read, Seek, SeekFrom};
 
 /// Create a minimal valid hint stream for testing.
 ///
@@ -19,35 +20,36 @@ fn create_test_hint_stream(num_pages: u32) -> (Vec<u8>, Vec<(u64, u64)>) {
     // Version: 1 (32-bit big-endian)
     data.extend_from_slice(&1u32.to_be_bytes());
 
-    // Bit widths: all 16 bits (allows testing with larger offsets)
+    // Bit widths: Use 8 bits for all fields for simplicity
     // Format: [object_number (4) | page_offset (4) | page_length (4) |
     //          shared_object (4) | shared_length (4)]
-    // 16 bits = 0x1, so packed as 0x11111 = 0b0001_0001_0001_0001_0001 (20 bits)
-    let bit_widths = 0x11111u32;
+    // 8 bits = 0x8, so packed as 0x88888 = 0b1000_1000_1000_1000_1000 (20 bits)
+    let bit_widths = 0x88888u32;
     data.extend_from_slice(&bit_widths.to_be_bytes()[..3]); // First 3 bytes contain 20 bits
 
-    // Page count: num_pages (16 bits)
-    data.extend_from_slice(&(num_pages as u16).to_be_bytes());
+    // Page count: num_pages (8 bits) - object_number_bits width
+    data.extend_from_slice(&(num_pages as u8).to_be_bytes());
 
-    // Shared groups: 0 (16 bits)
-    data.extend_from_slice(&0u16.to_be_bytes());
+    // Shared groups: 0 (8 bits) - object_number_bits width
+    data.push(0);
 
     // Page hint records
     // For simplicity, we create pages at offsets 1000, 2000, 3000, ...
-    // each with length 500
+    // each with length 500 (capped at u8 max for 8-bit width testing)
     let mut expected_ranges = Vec::new();
     for i in 0..num_pages {
-        let offset = 1000 + (i as u64) * 1000;
-        let length = 500u64;
+        // Use smaller values to fit in 8-bit fields for testing
+        let offset = 100u64 + (i as u64) * 50u64;
+        let length = 50u64;
 
         // Object number: skip (write 0)
-        data.extend_from_slice(&(0u16).to_be_bytes());
+        data.push(0);
 
-        // Offset
-        data.extend_from_slice(&(offset as u16).to_be_bytes());
+        // Offset (8 bits)
+        data.push(offset as u8);
 
-        // Length
-        data.extend_from_slice(&(length as u16).to_be_bytes());
+        // Length (8 bits)
+        data.push(length as u8);
 
         expected_ranges.push((offset, offset + length));
     }
@@ -369,9 +371,21 @@ impl MockPrefetchSource {
     }
 }
 
+impl Read for MockPrefetchSource {
+    fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+        Ok(0)
+    }
+}
+
+impl Seek for MockPrefetchSource {
+    fn seek(&mut self, _pos: SeekFrom) -> std::io::Result<u64> {
+        Ok(0)
+    }
+}
+
 impl pdftract_core::source::PdfSource for MockPrefetchSource {
-    fn len(&self) -> std::io::Result<u64> {
-        Ok(10000)
+    fn len(&self) -> u64 {
+        10000
     }
 
     fn read_range(&self, offset: u64, length: usize) -> std::io::Result<bytes::Bytes> {
@@ -399,7 +413,7 @@ fn test_prefetch_from_hint_stream_basic() {
     // Get the hint stream offset and length (simulate linearized PDF)
     // For this test, we'll use the raw hint data directly
     let hint_stream_offset = 0;
-    let hint_stream_length = source.len().unwrap() as u64;
+    let hint_stream_length = source.len();
 
     // Prefetch pages 1-3 (0-based: 0, 1, 2)
     let page_indices: Vec<usize> = vec![0, 1, 2];
@@ -426,7 +440,7 @@ fn test_prefetch_from_hint_stream_out_of_bounds() {
 
     let source = MemorySource::new(hint_data);
     let hint_stream_offset = 0;
-    let hint_stream_length = source.len().unwrap() as u64;
+    let hint_stream_length = source.len();
 
     // Prefetch pages including out-of-bounds page 10
     let page_indices: Vec<usize> = vec![0, 10];
@@ -452,7 +466,7 @@ fn test_prefetch_from_hint_stream_empty_page_list() {
 
     let source = MemorySource::new(hint_data);
     let hint_stream_offset = 0;
-    let hint_stream_length = source.len().unwrap() as u64;
+    let hint_stream_length = source.len();
 
     // Prefetch no pages (empty iterator)
     let page_indices: Vec<usize> = vec![];
@@ -477,7 +491,7 @@ fn test_prefetch_from_hint_stream_malformed_hint_stream() {
 
     let source = MemorySource::new(malformed_data);
     let hint_stream_offset = 0;
-    let hint_stream_length = source.len().unwrap() as u64;
+    let hint_stream_length = source.len();
 
     let page_indices: Vec<usize> = vec![0, 1, 2];
     let mut diagnostics = vec![];

@@ -1,1 +1,1 @@
-RunLengthDecode: literal, repeat, EOD
+RunLengthDecode: all three byte-value ranges (literal copy, repeat, EOD)

@@ -345,6 +345,25 @@ fn handle_request(
                 timestamp, tool_name, path_or_hash, duration_ms, response_size, error_code,
             );
 
+            // Write audit log if configured (stdio mode: client_ip is absent)
+            if let Some(writer) = audit_writer {
+                let status = if result.is_ok() { 200 } else { 500 };
+                let diagnostics = if let Err(ref e) = result {
+                    vec![e.code.to_string()]
+                } else {
+                    Vec::new()
+                };
+                // For stdio mode, client_ip is None (no HTTP peer)
+                let _ = writer.log(
+                    &format!("mcp.{}", tool_name),
+                    None, // No client_ip in stdio mode
+                    None, // No fingerprint at MCP layer
+                    duration_ms as u64,
+                    status,
+                    &diagnostics,
+                );
+            }
+
             match result {
                 Ok(value) => Response::success(id, value),
                 Err(error) => Response::error(id, error),
@@ -439,7 +458,7 @@ pub fn run(root: Option<&Path>, audit_log: Option<&std::path::Path>) -> Result<(
         match read_message(&mut stdin) {
             Ok(Some(request)) => {
                 // Handle the request
-                let response = handle_request(request, &registry, root);
+                let response = handle_request(request, &registry, root, _audit_writer.as_ref());
 
                 // Write the response
                 if let Err(e) = write_response(&response) {

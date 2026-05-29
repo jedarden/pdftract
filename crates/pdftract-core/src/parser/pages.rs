@@ -2,7 +2,7 @@
 //!
 //! This module implements the page tree walker that resolves inherited attributes
 //! (MediaBox, CropBox, Resources, Rotate) across the /Pages subtree and produces
-//! a flat Vec<PageDict> suitable for downstream extraction phases.
+//! a flat `Vec<PageDict>` suitable for downstream extraction phases.
 //!
 //! Per PDF 1.7 spec section 7.7.3.4 "Page Tree":
 //! - /MediaBox, /CropBox, /Resources, /Rotate are inheritable from ancestor /Pages nodes
