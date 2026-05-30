@@ -210,6 +210,7 @@ pub mod word_boundary;
 #[cfg(all(feature = "ocr", feature = "full-render"))]
 pub use render::pdfium_path::has_full_render;
 pub mod schema;
+pub mod sdk;
 pub mod semaphore;
 pub mod signature;
 pub mod span;

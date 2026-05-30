@@ -1150,12 +1150,12 @@ fn write_output<W: std::io::Write>(
 
                 if include_anchors {
                     // Use markdown module with anchors
-                    let md = page_to_markdown(&page.blocks, &page.tables, page.index, true, include_break, &options.output);
+                    let md = page_to_markdown(&page.blocks, &page.tables, page.index, true, include_break);
                     write!(writer, "{}", md)?;
                 } else {
                     // Simple conversion without anchors
                     for (block_idx, block) in page.blocks.iter().enumerate() {
-                        let md = block_to_markdown(block, &page.tables, page.index, block_idx, false, &options.output);
+                        let md = block_to_markdown(block, &page.tables, page.index, block_idx, false);
                         write!(writer, "{}\n", md)?;
                     }
                     if include_break {

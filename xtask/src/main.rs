@@ -105,6 +105,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("  generate-stress-pdfs            Generate stress-test PDFs for memory ceiling testing");
         eprintln!("  generate-page-class-fixtures    Generate page classification test fixtures");
         eprintln!("  generate-brokenvector-fixtures  Generate BrokenVector OCR test fixtures");
+        eprintln!("  generate-sensitive-fixture      Generate password-protected PDF for TH-08 log audit test");
         eprintln!("  gen-schema                      Generate JSON Schema from Rust output types");
         eprintln!(
             "  gen-shape-db                    Generate glyph shape database from font files"
@@ -145,6 +146,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         "generate-brokenvector-fixtures" => {
             generate_brokenvector_fixtures()?;
+            Ok(())
+        }
+        "generate-sensitive-fixture" => {
+            generate_sensitive_fixture()?;
             Ok(())
         }
         "gen-schema" => {
@@ -2151,6 +2156,154 @@ fn find_font_files(dir: &Path) -> Result<Vec<PathBuf>, Box<dyn std::error::Error
 
     font_files.sort();
     Ok(font_files)
+}
+
+/// Generate password-protected PDF for TH-08 log audit testing.
+///
+/// Creates a PDF with unique, distinctive markers that should never appear
+/// in log output:
+/// - Body text: "UNIQUE-MARKER-IN-BODY-TEXT-7f9a"
+/// - Password: "UNIQUE-PASSWORD-FOR-TH08-7f9a"
+///
+/// These markers are specifically designed to be unlikely to appear in
+/// normal log output, making substring-based leak detection reliable.
+fn generate_sensitive_fixture() -> Result<(), Box<dyn std::error::Error>> {
+    use lopdf::{Dictionary, Document, Object, Stream};
+
+    println!("==========================================");
+    println!("Generating TH-08 Sensitive Fixture");
+    println!("==========================================");
+
+    const BODY_TEXT: &str = "UNIQUE-MARKER-IN-BODY-TEXT-7f9a";
+    const PASSWORD: &str = "UNIQUE-PASSWORD-FOR-TH08-7f9a";
+
+    let workspace_root = find_workspace_root();
+    let fixtures_dir = workspace_root.join("tests/fixtures/security");
+    fs::create_dir_all(&fixtures_dir)?;
+
+    let output_path = fixtures_dir.join("sensitive.pdf");
+
+    println!("\nCreating password-protected PDF:");
+    println!("  Body text marker: {}", BODY_TEXT);
+    println!("  Password: {}", PASSWORD);
+
+    // Create minimal PDF with the unique marker
+    let mut doc = Document::with_version("1.4");
+
+    // Create font
+    let mut font_dict = Dictionary::new();
+    font_dict.set("Type", "Font");
+    font_dict.set("Subtype", "Type1");
+    font_dict.set("BaseFont", "Helvetica");
+    let font_id = doc.add_object(font_dict);
+
+    // Resources
+    let mut resources = Dictionary::new();
+    let mut font_resources = Dictionary::new();
+    font_resources.set("F1", font_id);
+    resources.set("Font", font_resources);
+
+    // Content stream with the unique marker text
+    let content = format!(
+        "BT\n/F1 12 Tf\n100 700 Td\n({}) Tj\nET\n",
+        BODY_TEXT
+    );
+    let content_bytes = content.as_bytes();
+
+    let mut content_dict = Dictionary::new();
+    content_dict.set("Length", content_bytes.len() as i32);
+    let content_stream = Stream::new(content_dict, content_bytes.to_vec());
+    let content_id = doc.add_object(content_stream);
+
+    // Page dictionary
+    let page_dict = dictionary! {
+        "Type" => "Page",
+        "MediaBox" => vec![0.0.into(), 0.0.into(), 612.0.into(), 792.0.into()],
+        "Resources" => resources,
+        "Contents" => content_id,
+    };
+    let page_id = doc.add_object(page_dict);
+
+    // Pages tree
+    let pages_id = doc.add_object(dictionary! {
+        "Type" => "Pages",
+        "Count" => 1,
+        "Kids" => vec![page_id.into()],
+    });
+
+    // Update page with parent reference
+    let mut page_obj = doc.get_object(page_id)?.as_dict().cloned()?;
+    page_obj.set("Parent", pages_id);
+    doc.objects.insert(page_id, Object::Dictionary(page_obj));
+
+    // Catalog
+    let catalog_id = doc.add_object(dictionary! {
+        "Type" => "Catalog",
+        "Pages" => pages_id,
+    });
+    doc.trailer.set("Root", catalog_id);
+
+    // Set document ID (required for encryption)
+    let id = b"th08-sensitive-pdf-7f9a\0\0\0\0\0\0\0\0\0\0\0\0";
+    doc.trailer.set("ID", Object::Array(vec![
+        Object::String(id.to_vec()),
+        Object::String(id.to_vec()),
+    ]));
+
+    // Encrypt with the unique password
+    let user_password = PASSWORD.as_bytes();
+    let owner_password = b"";
+
+    doc.encrypt(user_password, owner_password)?;
+
+    // Save the document
+    doc.save(&output_path)?;
+
+    // Create provenance file
+    let provenance_path = fixtures_dir.join("sensitive.pdf.provenance.md");
+    let provenance_content = format!(
+        r#"# Sensitive fixture for TH-08 log audit testing
+#
+# PROVENANCE: synthetic, public-domain
+#
+# This PDF is password-protected with unique, distinctive markers designed
+# to be unlikely to appear in normal log output. The test runs pdftract
+# with RUST_LOG=trace and verifies that no sensitive content leaks into logs.
+#
+# PDF Contents:
+# - Page 1 contains text: "{}"
+# - Password: "{}"
+# - Encryption: RC4-40 (V=1, R=2) for wide compatibility
+#
+# Test Verification:
+# - Run pdftract extract with RUST_LOG=pdftract=trace
+# - Capture stdout + stderr
+# - Verify password value "{}" does NOT appear in logs
+# - Verify body text "{}" does NOT appear in logs
+# - Verify trace logging IS active (check for expected log patterns)
+#
+# The fixture is safe to use in test environments because:
+# - The markers are synthetic and not real credentials
+# - The password is only used for testing log leakage
+# - The content is designed for substring-based leak detection
+"#,
+        BODY_TEXT, PASSWORD, PASSWORD, BODY_TEXT
+    );
+    fs::write(&provenance_path, provenance_content)?;
+
+    let metadata = fs::metadata(&output_path)?;
+    let size_kb = metadata.len() as f64 / 1024.0;
+
+    println!("\n==========================================");
+    println!("TH-08 Sensitive Fixture Generated");
+    println!("==========================================");
+    println!("\nGenerated files:");
+    println!("  - sensitive.pdf ({:.2} KB)", size_kb);
+    println!("  - sensitive.pdf.provenance.md");
+    println!("\nTest command:");
+    println!("  cargo nextest run th-08");
+
+    Ok(())
 }
 
 /// Expected page classification for a fixture

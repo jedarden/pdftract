@@ -3791,16 +3791,14 @@ fn decode_stream_impl(
                 ));
             }
 
-            // Emit OCR_CCITT_UNSUPPORTED if full-render and libtiff are both unavailable
+            // Emit OCR_CCITT_UNSUPPORTED if full-render is not available
             // cfg!(feature = "full-render") checks if pdfium-render is available
-            // We check if we have libtiff support by seeing if the image crate is available
             let has_full_render = cfg!(feature = "full-render");
-            let has_libtiff = cfg!(feature = "image"); // image crate with tiff feature
 
-            if !has_full_render && !has_libtiff {
+            if !has_full_render {
                 diagnostics.push(Diagnostic::with_static_no_offset(
                     DiagCode::OcrCcittUnsupported,
-                    "CCITT fax compression detected but neither full-render nor libtiff is available; OCR will skip CCITT images",
+                    "CCITT fax compression detected; build with --features full-render to enable CCITT decoding via PDFium",
                 ));
             }
         }

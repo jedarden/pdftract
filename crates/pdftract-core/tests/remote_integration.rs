@@ -102,14 +102,14 @@ impl wiremock::Respond for ByteCountingResponder {
         }
 
         // Handle Range requests
-        let range_header = request.headers.get("range").and_then(|v| v.first());
+        let range_header = request.headers.get("range").and_then(|v| v.to_str().ok());
 
-        if let Some(range_value) = range_header {
+        if let Some(range_str) = range_header {
             if !self.supports_range {
                 // Server doesn't support Range - return full content with 200
                 self.counter.fetch_add(self.data.len() as u64, Ordering::SeqCst);
                 return response
-                    .body(self.data.clone())
+                    .set_body_bytes(self.data.clone())
                     .set_status(200);
             }
 
@@ -122,7 +122,6 @@ impl wiremock::Respond for ByteCountingResponder {
             }
 
             // Parse Range header: "bytes=START-END"
-            let range_str = range_value.to_str().unwrap_or("");
             if let Some(range_part) = range_str.strip_prefix("bytes=") {
                 let parts: Vec<&str> = range_part.split('-').collect();
                 if parts.len() == 2 {
@@ -145,7 +144,7 @@ impl wiremock::Respond for ByteCountingResponder {
                             response = response
                                 .append_header("Content-Range", format!("bytes {}-{}/{}", start, end, data_len))
                                 .append_header("Content-Length", slice_data.len().to_string())
-                                .body(slice_data)
+                                .set_body_bytes(slice_data)
                                 .set_status(206);
                         }
 
@@ -157,7 +156,7 @@ impl wiremock::Respond for ByteCountingResponder {
 
         // No Range header or parsing failed - return full content
         self.counter.fetch_add(self.data.len() as u64, Ordering::SeqCst);
-        response.body(self.data.clone()).into()
+        response.set_body_bytes(self.data.clone()).into()
     }
 }
 
@@ -381,7 +380,7 @@ async fn test_connection_drop_after_trailer() {
             .append_header("Accept-Ranges", "bytes")
             .append_header("Content-Range", format!("bytes 0-{}/{}", partial_len - 1, pdf_data.len()))
             .append_header("Content-Length", partial_len.to_string())
-            .body(partial_data.to_vec())
+            .set_body_bytes(partial_data.to_vec())
     });
 
     Mock::given(matchers::method("GET"))
@@ -413,17 +412,19 @@ async fn test_connection_drop_after_trailer() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "Manual test - requires real TLS server with bad cert"]
 async fn test_tls_handshake_failure_self_signed() {
-    use rcgen::{Certificate, DistinguishedName, SanTypes};
+    use rcgen::{CertificateParams, DistinguishedName, SanType};
 
-    // Generate self-signed certificate
-    let mut params = rcgen::CertificateParams::default();
+    // Generate self-signed certificate using rcgen 0.13 API
+    let mut params = CertificateParams::default();
     params.distinguished_name = DistinguishedName::new();
     params.distinguished_name.push(rcgen::DnType::CommonName, "localhost");
-    params.subject_alt_names = vec![SanTypes::DnsName("localhost".to_string())];
+    params.subject_alt_names = vec![SanType::DnsName("localhost".to_string())];
 
-    let cert = Certificate::from_params(params).expect("Failed to generate certificate");
-    let cert_pem = cert.serialize_pem().expect("Failed to serialize cert");
-    let key_pem = cert.serialize_private_key_pem();
+    // Generate key pair and self-signed certificate
+    let key_pair = params.key_pair.clone().unwrap_or_else(|| rcgen::KeyPair::generate().unwrap());
+    let cert = params.self_signed(&key_pair).expect("Failed to generate certificate");
+    let cert_pem = cert.pem().expect("Failed to serialize cert");
+    let key_pem = key_pair.serialize_pem();
 
     // Manual verification steps (documented here):
     // 1. Serve a PDF over HTTPS with self-signed cert
@@ -460,9 +461,8 @@ async fn test_linearized_hint_stream_prefetch() {
         let mut times = request_times_clone.lock().unwrap();
         times.push(std::time::Instant::now());
 
-        let range_header = request.headers.get("range").and_then(|v| v.first());
-        if let Some(range_value) = range_header {
-            let range_str = range_value.to_str().unwrap_or("");
+        let range_header = request.headers.get("range").and_then(|v| v.to_str().ok());
+        if let Some(range_str) = range_header {
             println!("Range request at {:?}", std::time::Instant::now());
             println!("Range header: {}", range_str);
 

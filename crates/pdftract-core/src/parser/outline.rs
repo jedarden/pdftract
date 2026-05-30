@@ -500,7 +500,7 @@ fn decode_pdfdocencoding(bytes: &[u8]) -> Result<String> {
         .map(|&byte| {
             pdfdoc_override(byte).unwrap_or_else(|| {
                 // Default: Latin-1 (ISO-8859-1) interpretation
-                (byte as char)
+                byte as char
             })
         })
         .collect();

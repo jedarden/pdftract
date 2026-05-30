@@ -1,51 +1,36 @@
 %PDF-1.4
+
+0 0 obj
+<</Type/Pages/Count 1/Kids[1 0 R]/Resources<</Font<</F1<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>>>/ProcSet[/PDF]>>>
+endobj
+
 1 0 obj
-<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>
+<</Type/Page/MediaBox[0 0 612 792]/Parent 0 0 R/Contents 2 0 R/Resources<</Font<</F2<</Type/Font/Subtype/Type1/BaseFont/Times-Roman>>>>>>>
 endobj
+
 2 0 obj
-<</Type/Font/Subtype/Type1/BaseFont/Times-Roman>>
-endobj
-3 0 obj
-<</Type/Font/Subtype/Type1/BaseFont/Courier>>
-endobj
-4 0 obj
-<</Type/XObject/Subtype/Image/Width 100/Height 100>>
-endobj
-5 0 obj
-<</Length 49>>stream
-BT /F1 12 Tf 100 700 Td (Test Override) Tj ET
+<</Length 44>>
+stream
+BT
+/F1 12 Tf
+100 700 Td
+(Page 1) Tj
+ET
 endstream
 endobj
-6 0 obj
-<</Font<</F1 1 0 R/F2 2 0 R>>/XObject<</Im1 4 0 R>>>>
+
+3 0 obj
+<</Type/Catalog/Pages 0 0 R>>
 endobj
-7 0 obj
-<</Font<</F1 3 0 R/F3 1 0 R>>>>
-endobj
-8 0 obj
-<</Type/Page/Parent 9 0 R/Contents 5 0 R/Resources 7 0 R/MediaBox[0 0 612 792]>>
-endobj
-9 0 obj
-<</Type/Pages/Count 1/Kids[8 0 R]/Resources 6 0 R>>
-endobj
-10 0 obj
-<</Type/Catalog/Pages 9 0 R>>
-endobj
+
 xref
-0 11
-0000000000 65535 f
-0000000009 00000 n
-0000000074 00000 n
-0000000157 00000 n
-0000000240 00000 n
-0000000331 00000 n
-0000000412 00000 n
-0000000513 00000 n
-0000000586 00000 n
-0000000729 00000 n
-0000000802 00000 n
+0 4
+0000000000 65535 f 
+0000000148 00000 n 
+0000000303 00000 n 
+0000000390 00000 n 
 trailer
-<</Size 11/Root 10 0 R>>
+<</Size 4/Root 3 0 R>>
 startxref
-899
+436
 %%EOF

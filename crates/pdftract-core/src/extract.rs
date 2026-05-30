@@ -1338,6 +1338,24 @@ fn generate_receipt(
 /// Convert an ExtractionResult to JSON format.
 ///
 /// This produces the JSON output format expected by the CLI and API.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use pdftract_core::{extract_pdf, ExtractionOptions, result_to_json};
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let result = extract_pdf(
+///     "document.pdf",
+///     &ExtractionOptions::default()
+/// )?;
+///
+/// // Convert to JSON for API output
+/// let json_value = result_to_json(&result);
+/// println!("{}", json_value.to_string());
+/// # Ok(())
+/// # }
+/// ```
 pub fn result_to_json(result: &ExtractionResult) -> serde_json::Value {
     let pages: Vec<serde_json::Value> = result
         .pages

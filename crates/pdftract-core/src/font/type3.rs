@@ -220,7 +220,7 @@ impl Type3Font {
         let expected_len = if last_char >= first_char {
             // Cast to usize before arithmetic to avoid overflow
             // when last_char = 255 and first_char = 0
-            (last_char as usize - first_char as usize + 1)
+            last_char as usize - first_char as usize + 1
         } else {
             0
         };

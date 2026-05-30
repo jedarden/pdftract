@@ -33,6 +33,10 @@ name = "build-xref-fixture"
 path = "../../tools/build-xref-fixture/main.rs"
 
 [[bin]]
+name = "debug-fingerprint"
+path = "../../tools/debug-fingerprint/main.rs"
+
+[[bin]]
 name = "generate_slide_deck_fixtures"
 path = "../../tests/fixtures/generate_slide_deck_fixtures.rs"
 

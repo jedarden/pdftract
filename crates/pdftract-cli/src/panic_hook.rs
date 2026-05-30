@@ -66,7 +66,7 @@ fn redact_backtrace(backtrace: &str) -> String {
 
 	// Also redact any base64 strings longer than 20 characters (potential token leaks)
 	// This is heuristic but catches common auth token encoding patterns.
-	let lines: Vec<&str> = redacted.lines().map(|line| {
+	let lines: Vec<String> = redacted.lines().map(|line| {
 		if line.len() > 200 {
 			// Truncate very long lines that might contain serialized secrets
 			format!("{}... [TRUNCATED: line too long]", &line[..200])

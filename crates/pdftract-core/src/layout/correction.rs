@@ -493,7 +493,7 @@ impl<T> HyphenableSpan for T where T: CorrectableText + HasBBox {}
 ///
 /// A hyphenation repair is performed when ALL of the following are true:
 /// 1. line\[n\].last_span.text ends with `-`, `‐` (U+2010), or `‑` (U+2011)
-/// 2. line\[n\].last_span.bbox[2] >= column_right - 0.05 * column_width (hyphen at right edge)
+/// 2. line\[n\].last_span.bbox\[2\] >= column_right - 0.05 * column_width (hyphen at right edge)
 /// 3. line\[n+1\].first_span.text starts with a LOWERCASE letter (continuation)
 /// 4. line\[n\].last_span and line\[n+1\].first_span are in the same column
 ///

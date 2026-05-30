@@ -1162,7 +1162,7 @@ mod tests {
             http::{StatusCode, Request},
         };
 
-        let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30);
+        let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30, false);
         let app = Router::new()
             .route("/extract", get(extract_get_not_found_handler).post(extract_handler))
             .with_state(state);
@@ -1249,7 +1249,7 @@ mod tests {
         use tokio::time::Instant;
 
         // Start the server in the background
-        let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30); // No cache, 1 GB decompress limit
+        let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30, false); // No cache, 1 GB decompress limit
         let app = Router::new()
             .route("/extract", post(extract_handler))
             .route("/health", get(health_handler))
@@ -1456,7 +1456,7 @@ mod tests {
     /// Test that build_options correctly handles all form fields.
     #[test]
     fn test_build_options_with_all_fields() {
-        let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30);
+        let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30, false);
 
         let params = ExtractParams {
             receipts: Some("lite".to_string()),
@@ -1483,7 +1483,7 @@ mod tests {
     /// Test that build_options uses defaults when fields are missing.
     #[test]
     fn test_build_options_with_defaults() {
-        let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30);
+        let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30, false);
 
         let params = ExtractParams::default();
 
@@ -1500,7 +1500,7 @@ mod tests {
     /// Test that max_decompress_gb validation works.
     #[test]
     fn test_build_options_max_decompress_gb_validation() {
-        let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30);
+        let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30, false);
 
         let params = ExtractParams {
             max_decompress_gb: Some(5000), // Exceeds hard cap

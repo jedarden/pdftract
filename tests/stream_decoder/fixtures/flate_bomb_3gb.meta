@@ -1,1 +1,2 @@
-FlateDecode: 10KB input -> ~3GB output, tests bomb limit
+FlateDecode: 3126128 bytes input -> 3221225472 bytes output
+Tests bomb limit of 2GB (should truncate)

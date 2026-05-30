@@ -56,8 +56,9 @@ fn test_forward_scan_disabled_for_remote() {
     }
 
     // For local FileSource:
+    use pdftract_core::source::PdfSource;
     let file_source = pdftract_core::source::FileSource::open("/dev/null").unwrap();
-    assert!(!file_source.is_remote());
+    assert!(!PdfSource::is_remote(&file_source));
 }
 
 /// Test page-by-page on-demand fetch behavior.

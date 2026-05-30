@@ -398,7 +398,7 @@ impl Column {
 /// Assign column indices to spans based on confirmed columns.
 ///
 /// For each span, finds the confirmed column whose x_range contains
-/// span.bbox[0]. Spans outside any column get column = None.
+/// `span.bbox\[0\]`. Spans outside any column get column = None.
 ///
 /// # Arguments
 ///
@@ -407,7 +407,7 @@ impl Column {
 ///
 /// # Behavior
 ///
-/// - Spans are assigned by their x0 coordinate (bbox[0])
+/// - Spans are assigned by their x0 coordinate (`bbox\[0\]`)
 /// - Spans outside all columns get `column = None`
 /// - Column indices are monotonic left-to-right (INV)
 ///

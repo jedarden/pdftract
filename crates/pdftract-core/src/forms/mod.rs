@@ -19,12 +19,16 @@
 
 pub mod combiner;
 pub mod value_button;
+pub mod value_choice;
+pub mod value_text;
 pub mod xfa;
 
 pub use xfa::{extract_xfa_fields, XfaField};
 
 pub use combiner::{combine, ChoiceValue, FormFieldValue};
 pub use value_button::{extract_button_value, ButtonKind, ButtonValue};
+pub use value_choice::{extract_choice_value, ChoiceKind, ChoiceValue as ChoiceValueData};
+pub use value_text::{extract_text_value, decode_pdf_string, TextValue};
 
 /// Convert an AcroFormField to FormFieldValue.
 ///
@@ -43,27 +47,19 @@ pub use value_button::{extract_button_value, ButtonKind, ButtonValue};
 pub fn acro_field_to_value(field: &AcroFormField) -> FormFieldValue {
     match field.field_type {
         AcroFieldType::Tx => {
-            // Text field: extract string value from /V
-            let value = field
-                .value
-                .as_ref()
-                .and_then(|v| v.as_string())
-                .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok());
-            let default = field
-                .default
-                .as_ref()
-                .and_then(|v| v.as_string())
-                .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok());
-            let multiline = field.is_multi_line();
-
-            // Extract /MaxLen if present (would need to be added to AcroFormField)
-            let max_length = None; // TODO: extract from field dict if needed
+            // Text field: use extract_text_value with proper PDFDocEncoding/UTF-16BE decoding
+            let text_value = extract_text_value(
+                field.value.as_ref(),
+                field.default.as_ref(),
+                field.flags,
+                field.max_length.map(|v| v as i32),
+            );
 
             FormFieldValue::Text {
-                value,
-                default,
-                multiline,
-                max_length,
+                value: text_value.value,
+                default: text_value.default,
+                multiline: text_value.multiline,
+                max_length: text_value.max_length,
             }
         }
 
@@ -146,6 +142,48 @@ pub fn acro_field_to_value(field: &AcroFormField) -> FormFieldValue {
     }
 }
 
+/// Extract form field values from AcroForm fields.
+///
+/// This is the main entry point for Phase 7.4.2: it converts a slice of
+/// AcroFormField (from Phase 7.4.1) into a Vec of (field_name, FormFieldValue)
+/// pairs suitable for JSON serialization and downstream consumption.
+///
+/// # Arguments
+///
+/// * `fields` - Slice of AcroFormField from walk_acroform_fields()
+///
+/// # Returns
+///
+/// A `Vec<(String, FormFieldValue)>` where each tuple contains:
+/// - The absolute (dot-joined) field name
+/// - The extracted FormFieldValue with proper type-specific values
+///
+/// # Behavior
+///
+/// - Skips Sig fields (signature fields are handled by Phase 7.3)
+/// - Converts each field to FormFieldValue via acro_field_to_value()
+/// - Preserves all /Ff flag bits for downstream inspection
+/// - Returns fields in the order they were discovered (not sorted)
+///
+/// # Example
+///
+/// ```ignore
+/// use pdftract_core::forms::{walk_acroform_fields, extract_values};
+///
+/// let fields = walk_acroform_fields(&resolver, &catalog, Some(&pages));
+/// let extracted = extract_values(&fields);
+/// for (name, value) in extracted {
+///     println!("Field: {} = {:?}", name, value);
+/// }
+/// ```
+pub fn extract_values(fields: &[AcroFormField]) -> Vec<(String, FormFieldValue)> {
+    fields
+        .iter()
+        .filter(|field| field.field_type != AcroFieldType::Sig)
+        .map(|field| (field.full_name.clone(), acro_field_to_value(field)))
+        .collect()
+}
+
 /// Extract choice field values from /V and /DV entries.
 ///
 /// Choice fields can have either a single selected value or multiple
@@ -154,17 +192,22 @@ fn extract_choice_values(
     value: &Option<PdfObject>,
     default: &Option<PdfObject>,
 ) -> (ChoiceValue, Option<ChoiceValue>) {
+    // Helper to decode a PDF string to UTF-8
+    let decode_string = |bytes: &[u8]| -> String {
+        decode_pdf_string(bytes).unwrap_or_else(|_| String::from_utf8_lossy(bytes).to_string())
+    };
+
     // Extract current value
     let current = match value {
-        Some(PdfObject::String(s)) => String::from_utf8(s.to_vec())
-            .ok()
-            .map(|v| ChoiceValue::Single(v))
-            .unwrap_or_else(|| ChoiceValue::Single(String::new())),
+        Some(PdfObject::String(s)) => {
+            let decoded = decode_string(s);
+            ChoiceValue::Single(decoded)
+        }
         Some(PdfObject::Array(arr)) => {
             let values: Vec<String> = arr
                 .iter()
                 .filter_map(|v| v.as_string())
-                .filter_map(|bytes| String::from_utf8(bytes.to_vec()).ok())
+                .map(|bytes| decode_string(bytes))
                 .collect();
             if values.is_empty() {
                 ChoiceValue::Single(String::new())
@@ -179,14 +222,15 @@ fn extract_choice_values(
 
     // Extract default value
     let default_val = match default {
-        Some(PdfObject::String(s)) => String::from_utf8(s.to_vec())
-            .ok()
-            .map(|v| ChoiceValue::Single(v)),
+        Some(PdfObject::String(s)) => {
+            let decoded = decode_string(s);
+            Some(ChoiceValue::Single(decoded))
+        }
         Some(PdfObject::Array(arr)) => {
             let values: Vec<String> = arr
                 .iter()
                 .filter_map(|v| v.as_string())
-                .filter_map(|bytes| String::from_utf8(bytes.to_vec()).ok())
+                .map(|bytes| decode_string(bytes))
                 .collect();
             if values.is_empty() {
                 None
@@ -312,6 +356,11 @@ pub struct AcroFormField {
     /// Each element is a (export_value, display_name) pair. For simple choice
     /// fields without explicit export values, both entries are the same string.
     pub opt: Option<Vec<(String, String)>>,
+
+    /// Max length (/MaxLen entry) - present only for Tx fields
+    ///
+    /// Maximum number of characters allowed in a text field. None if no limit.
+    pub max_length: Option<u32>,
 }
 
 impl AcroFormField {
@@ -670,6 +719,12 @@ fn walk_field_recursive(
             }
         });
 
+    // Extract /MaxLen (max length) for Tx fields - ignore negative values
+    let max_length = field_dict
+        .get("MaxLen")
+        .and_then(|o| o.as_int())
+        .and_then(|v| if v > 0 { Some(v as u32) } else { None });
+
     // Resolve page_index from the widget map
     let page_index = page_map.get(&field_ref).copied();
 
@@ -728,6 +783,7 @@ fn walk_field_recursive(
             rect,
             page_index,
             opt,
+            max_length,
         });
     }
 
@@ -808,6 +864,7 @@ mod tests {
         rect: Option<[f32; 4]>,
         kids: Option<Vec<ObjRef>>,
         opt: Option<Vec<PdfObject>>,
+        max_len: Option<i32>,
     ) -> (ObjRef, PdfObject) {
         let mut dict = indexmap::IndexMap::new();
 
@@ -849,6 +906,10 @@ mod tests {
 
         if let Some(opt_array) = opt {
             dict.insert(intern("Opt"), PdfObject::Array(Box::new(opt_array)));
+        }
+
+        if let Some(max_len_val) = max_len {
+            dict.insert(intern("MaxLen"), PdfObject::Integer(max_len_val as i64));
         }
 
         let field_ref = ObjRef::new(100 + id, 0);
@@ -893,6 +954,7 @@ mod tests {
             None,
             None,
             None,
+            None, // max_len
         );
 
         let (field2_ref, field2) = make_field_dict_with_id(
@@ -905,6 +967,7 @@ mod tests {
             None,
             None,
             None,
+            None, // max_len
         );
 
         let (field3_ref, field3) = make_field_dict_with_id(
@@ -917,6 +980,7 @@ mod tests {
             None,
             None,
             None,
+            None, // max_len
         );
 
         let fields = vec![
@@ -967,6 +1031,7 @@ mod tests {
             None,
             None,
             None,
+            None, // max_len
         );
 
         let (child_ref, child) = make_field_dict_with_id(
@@ -979,6 +1044,7 @@ mod tests {
             None,
             Some(vec![grandchild_ref]),
             None,
+            None, // max_len
         );
 
         let (parent_ref, parent) = make_field_dict_with_id(
@@ -991,6 +1057,7 @@ mod tests {
             None,
             Some(vec![child_ref]),
             None,
+            None, // max_len
         );
 
         let fields = vec![PdfObject::Ref(parent_ref)];
@@ -1024,6 +1091,7 @@ mod tests {
             None,
             None,
             None,
+            None, // max_len
         );
 
         let (parent_ref, parent) = make_field_dict_with_id(
@@ -1036,6 +1104,7 @@ mod tests {
             None,
             Some(vec![child_ref]),
             None,
+            None, // max_len
         );
 
         let fields = vec![PdfObject::Ref(parent_ref)];
@@ -1064,6 +1133,7 @@ mod tests {
             None,
             None,
             None,
+            None, // max_len
         );
 
         let (parent_ref, parent) = make_field_dict_with_id(
@@ -1076,6 +1146,7 @@ mod tests {
             None,
             Some(vec![child_ref]),
             None,
+            None, // max_len
         );
 
         let fields = vec![PdfObject::Ref(parent_ref)];
@@ -1104,6 +1175,7 @@ mod tests {
             None,
             None,
             None,
+            None, // max_len
         );
 
         let (parent_ref, parent) = make_field_dict_with_id(
@@ -1116,6 +1188,7 @@ mod tests {
             None,
             Some(vec![child_ref]),
             None,
+            None, // max_len
         );
 
         let fields = vec![PdfObject::Ref(parent_ref)];
@@ -1144,6 +1217,7 @@ mod tests {
             None,
             None,
             None,
+            None, // max_len
         );
 
         let (parent_ref, parent) = make_field_dict_with_id(
@@ -1156,6 +1230,7 @@ mod tests {
             None,
             Some(vec![child_ref]),
             None,
+            None, // max_len
         );
 
         let fields = vec![PdfObject::Ref(parent_ref)];
@@ -1193,6 +1268,7 @@ mod tests {
             None,
             None,
             Some(opt_array),
+            None, // max_len
         );
 
         let fields = vec![PdfObject::Ref(field_ref)];
@@ -1223,7 +1299,8 @@ mod tests {
             None,
             None,
             None,
-            None,
+            None,  // opt
+            None,  // max_len
         );
 
         let (btn_ref, btn) = make_field_dict_with_id(
@@ -1235,7 +1312,8 @@ mod tests {
             None,
             None,
             None,
-            None,
+            None,  // opt
+            None,  // max_len
         );
 
         let (ch_ref, ch) = make_field_dict_with_id(
@@ -1247,7 +1325,8 @@ mod tests {
             None,
             None,
             None,
-            None,
+            None,  // opt
+            None,  // max_len
         );
 
         let (sig_ref, sig) = make_field_dict_with_id(
@@ -1259,7 +1338,8 @@ mod tests {
             None,
             None,
             None,
-            None,
+            None,  // opt
+            None,  // max_len
         );
 
         let fields = vec![
@@ -1315,6 +1395,7 @@ mod tests {
             rect: None,
             page_index: None,
             opt: None,
+            max_length: None,
         };
 
         assert_eq!(field.is_checked(), Some(true));
@@ -1338,6 +1419,7 @@ mod tests {
             rect: None,
             page_index: None,
             opt: None,
+            max_length: None,
         };
 
         assert!(!field.is_read_only());
@@ -1373,6 +1455,7 @@ mod tests {
             rect: None,
             page_index: None,
             opt: None,
+            max_length: None,
         };
 
         assert!(!field.is_radio());
@@ -1385,5 +1468,390 @@ mod tests {
         // Set Pushbutton (bit 26)
         field.flags |= 1 << 25;
         assert!(field.is_pushbutton());
+    }
+
+    /// Integration test for Phase 7.4.2: extract_values() with Tx, Btn, Ch fields.
+    ///
+    /// This is the critical test from the plan: text field, checkbox, and dropdown
+    /// - all three types extracted with correct values.
+    #[test]
+    fn test_extract_values_tx_btn_ch_critical() {
+        let mut fields = Vec::new();
+
+        // Tx field: multiline text with max_length
+        let tx_field = AcroFormField {
+            full_name: "employee_name".to_string(),
+            field_type: AcroFieldType::Tx,
+            value: Some(PdfObject::String(Box::new(b"John Doe".to_vec()))),
+            default: Some(PdfObject::String(Box::new(b"Jane Doe".to_vec()))),
+            flags: 0x1000, // Bit 12: multiline
+            rect: None,
+            page_index: Some(0),
+            opt: None,
+            max_length: Some(50),
+        };
+        fields.push(tx_field);
+
+        // Btn field: checkbox (selected)
+        let btn_field = AcroFormField {
+            full_name: "is_manager".to_string(),
+            field_type: AcroFieldType::Btn,
+            value: Some(PdfObject::Name(intern("Yes"))),
+            default: Some(PdfObject::Name(intern("Off"))),
+            flags: 0, // No special flags → checkbox
+            rect: None,
+            page_index: Some(0),
+            opt: None,
+            max_length: None,
+        };
+        fields.push(btn_field);
+
+        // Ch field: dropdown (combo) with options
+        let mut ch_options = Vec::new();
+        ch_options.push(("opt1".to_string(), "Option 1".to_string()));
+        ch_options.push(("opt2".to_string(), "Option 2".to_string()));
+        ch_options.push(("opt3".to_string(), "Option 3".to_string()));
+
+        let ch_field = AcroFormField {
+            full_name: "department".to_string(),
+            field_type: AcroFieldType::Ch,
+            value: Some(PdfObject::String(Box::new(b"opt2".to_vec()))),
+            default: Some(PdfObject::String(Box::new(b"opt1".to_vec()))),
+            flags: 0x20000, // Bit 17: combo
+            rect: None,
+            page_index: Some(0),
+            opt: Some(ch_options),
+            max_length: None,
+        };
+        fields.push(ch_field);
+
+        // Extract values
+        let extracted = extract_values(&fields);
+
+        // Should have 3 fields (Sig fields would be skipped, but none here)
+        assert_eq!(extracted.len(), 3);
+
+        // Check Tx field
+        let tx_extracted = extracted
+            .iter()
+            .find(|(name, _)| name == "employee_name")
+            .unwrap();
+        match &tx_extracted.1 {
+            FormFieldValue::Text {
+                value,
+                default,
+                multiline,
+                max_length,
+            } => {
+                assert_eq!(value.as_ref().unwrap(), "John Doe");
+                assert_eq!(default.as_ref().unwrap(), "Jane Doe");
+                assert!(*multiline); // Should be multiline
+                assert_eq!(max_length, &Some(50));
+            }
+            _ => panic!("Expected Text field variant"),
+        }
+
+        // Check Btn field
+        let btn_extracted = extracted
+            .iter()
+            .find(|(name, _)| name == "is_manager")
+            .unwrap();
+        match &btn_extracted.1 {
+            FormFieldValue::Button {
+                kind,
+                selected,
+                state_name,
+                default_selected,
+                pushbutton,
+                radio,
+            } => {
+                assert_eq!(*kind, ButtonKind::Checkbox);
+                assert!(*selected); // Should be checked
+                assert_eq!(state_name.as_ref().unwrap(), "Yes");
+                assert_eq!(default_selected.as_ref().unwrap(), &false);
+                assert!(!*pushbutton);
+                assert!(!*radio);
+            }
+            _ => panic!("Expected Button field variant"),
+        }
+
+        // Check Ch field
+        let ch_extracted = extracted
+            .iter()
+            .find(|(name, _)| name == "department")
+            .unwrap();
+        match &ch_extracted.1 {
+            FormFieldValue::Choice {
+                value,
+                default,
+                options,
+                is_combo,
+                is_multi_select,
+            } => {
+                assert_eq!(value, &ChoiceValue::Single("opt2".to_string()));
+                assert_eq!(default.as_ref().unwrap(), &ChoiceValue::Single("opt1".to_string()));
+                assert_eq!(options.len(), 3);
+                assert_eq!(options[0], ("opt1".to_string(), "Option 1".to_string()));
+                assert_eq!(options[1], ("opt2".to_string(), "Option 2".to_string()));
+                assert_eq!(options[2], ("opt3".to_string(), "Option 3".to_string()));
+                assert!(*is_combo); // Should be combo
+                assert!(!*is_multi_select);
+            }
+            _ => panic!("Expected Choice field variant"),
+        }
+    }
+
+    /// Test that Sig fields are skipped by extract_values().
+    ///
+    /// Per the implementation guidance, Sig fields should be skipped since
+    /// they are handled by Phase 7.3.
+    #[test]
+    fn test_extract_values_skips_sig_fields() {
+        let mut fields = Vec::new();
+
+        // Tx field (should be included)
+        let tx_field = AcroFormField {
+            full_name: "name".to_string(),
+            field_type: AcroFieldType::Tx,
+            value: Some(PdfObject::String(Box::new(b"John".to_vec()))),
+            default: None,
+            flags: 0,
+            rect: None,
+            page_index: None,
+            opt: None,
+            max_length: None,
+        };
+        fields.push(tx_field);
+
+        // Sig field (should be skipped)
+        let sig_field = AcroFormField {
+            full_name: "signature".to_string(),
+            field_type: AcroFieldType::Sig,
+            value: Some(PdfObject::Ref(ObjRef::new(100, 0))),
+            default: None,
+            flags: 0,
+            rect: None,
+            page_index: None,
+            opt: None,
+            max_length: None,
+        };
+        fields.push(sig_field);
+
+        // Btn field (should be included)
+        let btn_field = AcroFormField {
+            full_name: "checkbox".to_string(),
+            field_type: AcroFieldType::Btn,
+            value: Some(PdfObject::Name(intern("Yes"))),
+            default: None,
+            flags: 0,
+            rect: None,
+            page_index: None,
+            opt: None,
+            max_length: None,
+        };
+        fields.push(btn_field);
+
+        // Extract values
+        let extracted = extract_values(&fields);
+
+        // Should have 2 fields (Tx and Btn, Sig skipped)
+        assert_eq!(extracted.len(), 2);
+
+        // Verify only Tx and Btn are present
+        let field_names: Vec<_> = extracted.iter().map(|(name, _)| name.as_str()).collect();
+        assert!(field_names.contains(&"name"));
+        assert!(field_names.contains(&"checkbox"));
+        assert!(!field_names.contains(&"signature"));
+    }
+
+    /// Test unselected checkbox (/V absent or /Off).
+    #[test]
+    fn test_extract_values_unselected_checkbox() {
+        let fields = vec![AcroFormField {
+            full_name: "unchecked".to_string(),
+            field_type: AcroFieldType::Btn,
+            value: Some(PdfObject::Name(intern("Off"))),
+            default: None,
+            flags: 0, // No flags → checkbox
+            rect: None,
+            page_index: None,
+            opt: None,
+            max_length: None,
+        }];
+
+        let extracted = extract_values(&fields);
+        assert_eq!(extracted.len(), 1);
+
+        match &extracted[0].1 {
+            FormFieldValue::Button {
+                kind,
+                selected,
+                state_name,
+                ..
+            } => {
+                assert_eq!(*kind, ButtonKind::Checkbox);
+                assert!(!*selected); // Should be unchecked
+                assert_eq!(state_name.as_ref().unwrap(), "Off");
+            }
+            _ => panic!("Expected Button field"),
+        }
+    }
+
+    /// Test selected radio button.
+    #[test]
+    fn test_extract_values_selected_radio() {
+        let fields = vec![AcroFormField {
+            full_name: "radio_option".to_string(),
+            field_type: AcroFieldType::Btn,
+            value: Some(PdfObject::Name(intern("OptionA"))),
+            default: None,
+            flags: 1 << 24, // Bit 25: radio
+            rect: None,
+            page_index: None,
+            opt: None,
+            max_length: None,
+        }];
+
+        let extracted = extract_values(&fields);
+        assert_eq!(extracted.len(), 1);
+
+        match &extracted[0].1 {
+            FormFieldValue::Button {
+                kind,
+                selected,
+                state_name,
+                radio,
+                ..
+            } => {
+                assert_eq!(*kind, ButtonKind::Radio);
+                assert!(*selected); // Should be checked
+                assert_eq!(state_name.as_ref().unwrap(), "OptionA");
+                assert!(*radio);
+            }
+            _ => panic!("Expected Button field"),
+        }
+    }
+
+    /// Test multi-select list box.
+    #[test]
+    fn test_extract_values_multi_select_list() {
+        let mut options = Vec::new();
+        options.push(("item1".to_string(), "Item 1".to_string()));
+        options.push(("item2".to_string(), "Item 2".to_string()));
+        options.push(("item3".to_string(), "Item 3".to_string()));
+
+        let fields = vec![AcroFormField {
+            full_name: "multi_select_list".to_string(),
+            field_type: AcroFieldType::Ch,
+            value: Some(PdfObject::Array(Box::new(vec![
+                PdfObject::String(Box::new(b"item1".to_vec())),
+                PdfObject::String(Box::new(b"item3".to_vec())),
+            ]))),
+            default: None,
+            flags: 1 << 20, // Bit 21: multi-select
+            rect: None,
+            page_index: None,
+            opt: Some(options),
+            max_length: None,
+        }];
+
+        let extracted = extract_values(&fields);
+        assert_eq!(extracted.len(), 1);
+
+        match &extracted[0].1 {
+            FormFieldValue::Choice {
+                value,
+                is_multi_select,
+                ..
+            } => {
+                assert!(*is_multi_select);
+                match value {
+                    ChoiceValue::Multiple(items) => {
+                        assert_eq!(items.len(), 2);
+                        assert!(items.contains(&"item1".to_string()));
+                        assert!(items.contains(&"item3".to_string()));
+                    }
+                    _ => panic!("Expected Multiple selection"),
+                }
+            }
+            _ => panic!("Expected Choice field"),
+        }
+    }
+
+    /// Test combo box with /Opt 2-tuple entries.
+    #[test]
+    fn test_extract_values_combo_with_opt_tuples() {
+        let mut options = Vec::new();
+        // Use 2-tuple entries: (export_value, display_text)
+        options.push(("val1".to_string(), "First Option".to_string()));
+        options.push(("val2".to_string(), "Second Option".to_string()));
+        options.push(("val3".to_string(), "Third Option".to_string()));
+
+        let fields = vec![AcroFormField {
+            full_name: "combo_with_tuples".to_string(),
+            field_type: AcroFieldType::Ch,
+            value: Some(PdfObject::String(Box::new(b"val2".to_vec()))),
+            default: None,
+            flags: 1 << 17, // Bit 18: combo
+            rect: None,
+            page_index: None,
+            opt: Some(options),
+            max_length: None,
+        }];
+
+        let extracted = extract_values(&fields);
+        assert_eq!(extracted.len(), 1);
+
+        match &extracted[0].1 {
+            FormFieldValue::Choice {
+                value,
+                options,
+                is_combo,
+                ..
+            } => {
+                assert!(*is_combo);
+                assert_eq!(value, &ChoiceValue::Single("val2".to_string()));
+                // Verify options are 2-tuples with different export and display values
+                assert_eq!(options.len(), 3);
+                assert_eq!(options[0], ("val1".to_string(), "First Option".to_string()));
+                assert_eq!(options[1], ("val2".to_string(), "Second Option".to_string()));
+                assert_eq!(options[2], ("val3".to_string(), "Third Option".to_string()));
+            }
+            _ => panic!("Expected Choice field"),
+        }
+    }
+
+    /// Test multi-line text field.
+    #[test]
+    fn test_extract_values_multiline_text() {
+        let multi_line_value = b"Line 1\nLine 2\r\nLine 3".to_vec();
+
+        let fields = vec![AcroFormField {
+            full_name: "multiline_field".to_string(),
+            field_type: AcroFieldType::Tx,
+            value: Some(PdfObject::String(Box::new(multi_line_value))),
+            default: None,
+            flags: 0x1000, // Bit 12: multiline
+            rect: None,
+            page_index: None,
+            opt: None,
+            max_length: None,
+        }];
+
+        let extracted = extract_values(&fields);
+        assert_eq!(extracted.len(), 1);
+
+        match &extracted[0].1 {
+            FormFieldValue::Text {
+                value,
+                multiline,
+                ..
+            } => {
+                assert!(value.as_ref().unwrap().contains('\n'));
+                assert!(value.as_ref().unwrap().contains('\r'));
+                assert!(*multiline); // Should be multiline
+            }
+            _ => panic!("Expected Text field"),
+        }
     }
 }

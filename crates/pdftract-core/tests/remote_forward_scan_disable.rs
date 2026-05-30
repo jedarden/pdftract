@@ -18,8 +18,8 @@ impl PdfSource for MockRemoteSource {
         Ok(self.data.len() as u64)
     }
 
-    fn read_at(&self, _offset: u64, _length: usize) -> std::io::Result<bytes::Bytes> {
-        Ok(bytes::Bytes::new())
+    fn read_at(&self, _offset: u64, _length: usize) -> std::io::Result<Vec<u8>> {
+        Ok(Vec::new())
     }
 
     fn is_remote(&self) -> bool {
@@ -37,9 +37,9 @@ impl PdfSource for MockLocalSource {
         Ok(self.data.len() as u64)
     }
 
-    fn read_at(&self, offset: u64, length: usize) -> std::io::Result<bytes::Bytes> {
+    fn read_at(&self, offset: u64, length: usize) -> std::io::Result<Vec<u8>> {
         let end = (offset as usize + length).min(self.data.len());
-        Ok(bytes::Bytes::copy_from_slice(&self.data[offset as usize..end]))
+        Ok(self.data[offset as usize..end].to_vec())
     }
 
     fn is_remote(&self) -> bool {
