@@ -180,7 +180,7 @@ spec:
 
           - name: bench-matrix
             template: bench-matrix
-            dependencies: [setup]
+            dependencies: [setup, build-matrix]
             arguments:
               artifacts:
                 - name: pdftract-binary
@@ -389,7 +389,7 @@ spec:
               "build:x86_64-pc-windows-gnu": "ghcr.io/cross-rs/x86_64-pc-windows-gnu:main",
               "test:glibc": "rust:1.83-bookworm",
               "test:musl": "ghcr.io/cross-rs/x86_64-unknown-linux-musl:main",
-              "quality": "pdftract-test-glibc:1.78",
+              "quality": "ronaldraygun/pdftract-test-glibc:1.78",
               "msrv": "rust:1.78-slim",
               "bench": "python:3.11-slim-bookworm"
             }'
@@ -1186,7 +1186,7 @@ spec:
     - name: clippy-fmt
       activeDeadlineSeconds: 900
       container:
-        image: pdftract-test-glibc:1.78
+        image: ronaldraygun/pdftract-test-glibc:1.78
         command: [bash, -c]
         args:
           - |
@@ -1289,7 +1289,7 @@ spec:
     - name: cargo-audit
       activeDeadlineSeconds: 300
       container:
-        image: pdftract-test-glibc:1.78
+        image: ronaldraygun/pdftract-test-glibc:1.78
         command: [bash, -c]
         args:
           - |
@@ -1404,7 +1404,7 @@ spec:
     - name: cargo-deny
       activeDeadlineSeconds: 300
       container:
-        image: pdftract-test-glibc:1.78
+        image: ronaldraygun/pdftract-test-glibc:1.78
         command: [bash, -c]
         args:
           - |
@@ -1521,7 +1521,7 @@ spec:
     - name: cargo-bloat
       activeDeadlineSeconds: 600
       container:
-        image: pdftract-test-glibc:1.78
+        image: ronaldraygun/pdftract-test-glibc:1.78
         command: [bash, -c]
         args:
           - |
@@ -1660,7 +1660,7 @@ spec:
     - name: memory-ceiling
       activeDeadlineSeconds: 600
       container:
-        image: pdftract-test-glibc:1.78
+        image: ronaldraygun/pdftract-test-glibc:1.78
         command: [bash, -c]
         args:
           - |
@@ -1873,7 +1873,7 @@ spec:
     - name: schema-gen
       activeDeadlineSeconds: 300
       container:
-        image: pdftract-test-glibc:1.78
+        image: ronaldraygun/pdftract-test-glibc:1.78
         command: [bash, -c]
         args:
           - |
@@ -2054,7 +2054,7 @@ spec:
             path: /tmp/pdftract-binary
       activeDeadlineSeconds: 600
       container:
-        image: pdftract-test-glibc:1.78
+        image: ronaldraygun/pdftract-test-glibc:1.78
         command: [bash, -c]
         args:
           - |
@@ -2348,7 +2348,7 @@ spec:
             path: /tmp/pdftract-binary
       activeDeadlineSeconds: 360
       container:
-        image: pdftract-test-glibc:1.78
+        image: ronaldraygun/pdftract-test-glibc:1.78
         command: [bash, -c]
         args:
           - |
