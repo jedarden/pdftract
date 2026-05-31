@@ -1,81 +1,104 @@
+# Invoice extraction profile
+# Matches commercial invoices with line items, vendor/customer, and totals
+name: invoice
 description: Commercial invoice with line items, vendor/customer, and totals
 priority: 50
+
 match:
-  any:
-    - text_patterns:
-        - "(?i)invoice"
-        - "(?i)bill to"
-        - "(?i)invoice #"
-        - "(?i)invoice number"
-        - "(?i)tax invoice"
-    - text_patterns:
-        - "(?i)due date"
-        - "(?i)payment terms"
-        - "(?i)purchase order"
-        - "(?i)po #"
-    - structural:
-        - has_line_item_table: true
-  page_count_hint: 1-5
-profile_fields:
+  all:
+    - any:
+        - text_contains:
+            patterns: ["invoice", "bill to", "invoice #", "invoice number", "tax invoice"]
+        - heading_matches:
+            pattern: "^Invoice\\b"
+    - any:
+        - has_currency_pattern:
+            has_currency_pattern: true
+        - structural:
+            has_table: true
+            has_form_field: false
+            has_math: false
+            page_count:
+              min: 1
+              max: 5
+  none:
+    - text_contains:
+        patterns: ["abstract", "bibliography", "scientific paper"]
+
+extraction:
+  reading_order: line_dominant
+  table_detection: strict_borders
+  readability_threshold: 0.4
+  include_invisible: false
+  include_headers_footers: false
+  force_ocr: false
+  min_block_chars: 0
+
+fields:
   invoice_number:
     type: string
     extraction:
-      patterns:
-        - "(?i)invoice\\s*[#:]?\\s*([A-Z0-9-]+)"
-        - "(?i)bill\\s*invoice\\s*[#:]?\\s*([A-Z0-9-]+)"
-      fallback: null
+      regex: "Invoice\\s*#\\s*([\\w-]+)"
+      near: ["Invoice", "Invoice Number", "Invoice #"]
+      max_distance_pt: 200
+      parse: string
+
   vendor:
     type: string
     extraction:
-      patterns:
-        - "(?i)(?:from|vendor|supplier|company)\\s*:?\\s*([A-Z][A-Za-z0-9\\s&]+?)(?=\\n|\\r|$)"
-        - "(?i)^([A-Z][A-Za-z0-9\\s&]+)\\s+(?:Inc|LLC|Ltd|Corp|GmbH)"
-      fallback: null
+      region: top_quarter
+      pick: largest_font
+
   customer:
     type: string
     extraction:
-      patterns:
-        - "(?i)(?:bill\\s*to|customer|client)\\s*:?\\s*([A-Z][A-Za-z0-9\\s&]+?)(?=\\n|\\r|$)"
-      fallback: null
+      near: ["Bill To", "Customer", "Sold To"]
+      max_distance_pt: 150
+      pick: nearest_below
+      parse: string
+
   invoice_date:
     type: date
     extraction:
-      patterns:
-        - "(?i)invoice\\s*date\\s*:?\\s*([0-9]{1,2}[/-][0-9]{1,2}[/-][0-9]{2,4})"
-        - "(?i)date\\s*:?\\s*([0-9]{1,2}[/-][0-9]{1,2}[/-][0-9]{2,4})"
-      fallback: null
+      near: ["Date", "Invoice Date"]
+      max_distance_pt: 100
+      parse: date
+
   due_date:
     type: date
     extraction:
-      patterns:
-        - "(?i)due\\s*date\\s*:?\\s*([0-9]{1,2}[/-][0-9]{1,2}[/-][0-9]{2,4})"
-        - "(?i)payment\\s*due\\s*:?\\s*([0-9]{1,2}[/-][0-9]{1,2}[/-][0-9]{2,4})"
-      fallback: null
+      near: ["Due Date", "Payment Due", "Due"]
+      max_distance_pt: 100
+      parse: date
+
   total:
     type: decimal
     extraction:
-      patterns:
-        - "(?i)total\\s*[:=]?\\s*[\\$€£¥]?\\s*([0-9,]+\\.?[0-9]*)"
-        - "(?i)amount\\s*due\\s*[:=]?\\s*[\\$€£¥]?\\s*([0-9,]+\\.?[0-9]*)"
-      fallback: null
+      regex: "([\\d,]+\\.\\d{2})"
+      near: ["Total", "Amount Due", "Balance Due", "Grand Total"]
+      max_distance_pt: 80
+      parse: decimal
+
   subtotal:
     type: decimal
     extraction:
-      patterns:
-        - "(?i)sub\\s*total\\s*[:=]?\\s*[\\$€£¥]?\\s*([0-9,]+\\.?[0-9]*)"
-      fallback: null
+      regex: "([\\d,]+\\.\\d{2})"
+      near: ["Subtotal", "Sub-Total"]
+      max_distance_pt: 80
+      parse: decimal
+
   tax:
     type: decimal
     extraction:
-      patterns:
-        - "(?i)tax\\s*[:=]?\\s*[\\$€£¥]?\\s*([0-9,]+\\.?[0-9]*)"
-        - "(?i)vat\\s*[:=]?\\s*[\\$€£¥]?\\s*([0-9,]+\\.?[0-9]*)"
-        - "(?i)gst\\s*[:=]?\\s*[\\$€£¥]?\\s*([0-9,]+\\.?[0-9]*)"
-      fallback: null
+      regex: "([\\d,]+\\.\\d{2})"
+      near: ["Tax", "VAT", "GST", "Sales Tax"]
+      max_distance_pt: 80
+      parse: decimal
+
   line_items:
     type: array
     extraction:
-      table_region: "largest_table_or_bottom_half"
+      table_region: largest_table
       schema:
         - name: description
           type: string
@@ -90,5 +113,3 @@ profile_fields:
           type: decimal
           required: false
       fallback: []
-reading_order: line_dominant
-zone_filtering: exclude_headers_footers

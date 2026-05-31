@@ -1,38 +1,66 @@
-# Contract profile for legal agreements
-# Extracts parties, effective date, term, governing law, and signatures from contracts
+# Contract extraction profile
+# Matches legal contracts and agreements with parties, effective date, term, governing law, and signatures
 name: contract
 description: Legal contracts and agreements with parties, effective date, term, governing law, and signatures
 priority: 20
 
-# Matching predicates: identify documents as contracts
 match:
   all:
     - any:
-        - text_contains: ["AGREEMENT", "CONTRACT", "WHEREAS", "NOW THEREFORE", "In witness whereof"]
-        - heading_matches: '^(Agreement|Contract|Memorandum of Understanding)'
-    - structural: {page_count: {min: 2, max: 200}}
+        - text_contains:
+            patterns: ["AGREEMENT", "CONTRACT", "WHEREAS", "NOW THEREFORE", "In witness whereof"]
+        - heading_matches:
+            pattern: "^(Agreement|Contract|Memorandum of Understanding)"
+    - structural:
+        has_table: false
+        has_form_field: false
+        has_math: false
+        page_count:
+          min: 2
+          max: 200
   none:
-    - text_contains: ["Invoice #", "Receipt"]
+    - text_contains:
+        patterns: ["Invoice #", "Receipt"]
 
-# Extraction tuning for contracts
 extraction:
   reading_order: xy_cut
+  table_detection: off
   readability_threshold: 0.5
+  include_invisible: false
   include_headers_footers: false
+  force_ocr: false
+  min_block_chars: 0
 
-# Field extractors for contract-specific metadata
 fields:
   parties:
-    near: ["between", "party of the first part", "BY AND BETWEEN"]
-    pick: nearest_below
+    type: string
+    extraction:
+      near: ["between", "party of the first part", "BY AND BETWEEN"]
+      pick: nearest_below
+      parse: string
+
   effective_date:
-    near: ["Effective Date", "Date of Agreement", "as of"]
-    parse: date
+    type: date
+    extraction:
+      near: ["Effective Date", "Date of Agreement", "as of"]
+      parse: date
+
   term:
-    near: ["Term", "Initial Term", "expires on", "shall remain in effect"]
-    regex: '\d+\s+(years?|months?)|expires?\s+\d{4}'
+    type: string
+    extraction:
+      near: ["Term", "Initial Term", "expires on", "shall remain in effect"]
+      regex: "\\d+\\s+(years?|months?)|expires?\\s+\\d{4}"
+      parse: string
+
   governing_law:
-    near: ["Governing Law", "governed by the laws of"]
-    pick: nearest_right
+    type: string
+    extraction:
+      near: ["Governing Law", "governed by the laws of"]
+      pick: nearest_right
+      parse: string
+
   signatures:
-    region: bottom_quarter
+    type: array
+    extraction:
+      region: bottom_quarter
+      fallback: []

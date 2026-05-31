@@ -304,6 +304,15 @@ pub struct ExtractionMetadata {
     /// Diagnostics emitted during extraction (coverage warnings, etc.)
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub diagnostics: Vec<String>,
+    /// Profile name if a profile was applied (Phase 7.10)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_name: Option<String>,
+    /// Profile version if a profile was applied (Phase 7.10)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_version: Option<String>,
+    /// Extracted fields from profile if a profile was applied (Phase 7.10)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_fields: Option<serde_json::Value>,
 }
 
 /// Extract text and structure from a PDF file.
@@ -931,6 +940,9 @@ pub fn extract_pdf(
             error_count,
             reading_order_algorithm: Some(final_reading_order_algorithm.as_str().to_string()),
             diagnostics: all_diagnostics_with_js,
+            profile_name: None,
+            profile_version: None,
+            profile_fields: None,
         },
         signatures,
         form_fields,
@@ -1812,6 +1824,9 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
         error_count: error_count as usize,
         reading_order_algorithm: Some(final_reading_order_algorithm.as_str().to_string()),
         diagnostics: all_diagnostics,
+        profile_name: None,
+        profile_version: None,
+        profile_fields: None,
     })
 }
 
@@ -2117,6 +2132,9 @@ where
         error_count,
         reading_order_algorithm: Some(final_reading_order_algorithm.as_str().to_string()),
         diagnostics: all_diagnostics,
+        profile_name: None,
+        profile_version: None,
+        profile_fields: None,
     })
 }
 

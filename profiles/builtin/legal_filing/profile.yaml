@@ -1,55 +1,62 @@
-# Legal Filing Profile
-#
-# Court filings: motions, briefs, orders, docket entries.
-# Extracts case_number, court, parties, filing_date, docket_entries.
-
+# Legal Filing extraction profile
+# Matches court filings: motions, briefs, orders, docket entries
 name: legal_filing
-description: "Court filings: motions, briefs, orders, docket entries"
+description: Court filings: motions, briefs, orders, docket entries
 priority: 40
 
-# Matching predicates for legal filing classification
 match:
   all:
-    # Must have at least one legal filing marker
     - any:
         - text_contains:
-            ["UNITED STATES DISTRICT COURT", "IN THE COURT OF", "IN THE MATTER OF",
-             "Case No.", "Civil Action No.", "Plaintiff", "Defendant", "Petitioner",
-             "Respondent", "COMPLAINT", "MOTION TO", "ORDER GRANTING", "OPINION"]
-        - heading_matches: '^(COMPLAINT|MOTION|ORDER|OPINION|BRIEF)'
-    # And appropriate page count
-    - structural: {page_count: {min: 1, max: 500}}
+            patterns: ["UNITED STATES DISTRICT COURT", "IN THE COURT OF", "IN THE MATTER OF", "Case No.", "Civil Action No.", "Plaintiff", "Defendant", "Petitioner", "Respondent", "COMPLAINT", "MOTION TO", "ORDER GRANTING", "OPINION"]
+        - heading_matches:
+            pattern: "^(COMPLAINT|MOTION|ORDER|OPINION|BRIEF)"
+    - structural:
+        has_table: false
+        has_form_field: false
+        has_math: false
+        page_count:
+          min: 1
+          max: 500
 
-# Extraction tuning for legal filings
 extraction:
-  # Use xy_cut reading order for complex layouts
   reading_order: xy_cut
-  # Default table detection
   table_detection: default
-  # Standard readability threshold
   readability_threshold: 0.5
-  # Include headers and footers (page numbers and citations are load-bearing in legal docs)
-  include_headers_footers: true
-  # Don't include invisible text
   include_invisible: false
+  include_headers_footers: true
+  force_ocr: false
+  min_block_chars: 0
 
-# Field extraction specifications
 fields:
   case_number:
-    near: ["Case No.", "Civil Action No.", "Docket No.", "Cause No."]
-    regex: '[\w-]+:?\s*\d+[\w-]*'
-    parse: string
+    type: string
+    extraction:
+      near: ["Case No.", "Civil Action No.", "Docket No.", "Cause No."]
+      regex: "[\\w-]+:?\\s*\\d+[\\w-]*"
+      parse: string
 
   court:
-    region: top_quarter
-    pick: largest_font
+    type: string
+    extraction:
+      region: top_quarter
+      pick: largest_font
+      parse: string
 
   parties:
-    near: ["Plaintiff", "Defendant", "Petitioner", "Respondent", "v."]
+    type: array
+    extraction:
+      near: ["Plaintiff", "Defendant", "Petitioner", "Respondent", "v."]
+      fallback: []
 
   filing_date:
-    near: ["Filed", "Date Filed", "Dated"]
-    parse: date
+    type: date
+    extraction:
+      near: ["Filed", "Date Filed", "Dated"]
+      parse: date
 
   docket_entries:
-    region: full
+    type: array
+    extraction:
+      region: bottom_half
+      fallback: []

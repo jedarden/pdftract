@@ -1,66 +1,87 @@
-# Scientific Paper Profile
-#
-# Academic papers from arXiv, journals, conference proceedings.
-# Extracts title, authors, abstract, DOI, journal, publication_date, references.
-
+# Scientific Paper extraction profile
+# Matches academic papers from arXiv, journals, conference proceedings
 name: scientific_paper
 description: Academic papers from arXiv, journals, conference proceedings
 priority: 30
 
-# Matching predicates for scientific paper classification
 match:
   all:
-    # Must have at least one scientific paper marker
     - any:
-        - text_contains: ["Abstract", "References", "doi:", "arXiv:", "Bibliography"]
-        - heading_matches: '^(Abstract|Introduction|References|Bibliography)'
-    # And either has math OR structured headings OR appropriate page count
+        - text_contains:
+            patterns: ["Abstract", "References", "doi:", "arXiv:", "Bibliography"]
+        - heading_matches:
+            pattern: "^(Abstract|Introduction|References|Bibliography)"
     - any:
         - structural:
+            has_table: false
+            has_form_field: false
             has_math: true
+            page_count: null
         - structural:
-            heading_depth: {min: 2}
-        - structural:
-            page_count: {min: 4, max: 50}
+            has_table: false
+            has_form_field: false
+            has_math: false
+            page_count:
+              min: 4
+              max: 50
+  none:
+    - text_contains:
+        patterns: ["Invoice", "Receipt", "WHEREAS", "NOW THEREFORE"]
 
-# Extraction tuning for scientific papers
 extraction:
-  # Use xy_cut reading order for 2-column layout handling
   reading_order: xy_cut
-  # Default table detection
   table_detection: default
-  # Standard readability threshold
   readability_threshold: 0.5
-  # Don't include invisible text
   include_invisible: false
+  include_headers_footers: false
+  force_ocr: false
+  min_block_chars: 0
 
-# Field extraction specifications
 fields:
   title:
-    region: top_quarter
-    pick: largest_font
+    type: string
+    extraction:
+      region: top_quarter
+      pick: largest_font
+      parse: string
 
   authors:
-    region: top_quarter
-    pick: nearest_below
-    after: title
+    type: array
+    extraction:
+      region: top_quarter
+      pick: nearest_below
+      after_heading: title
+      fallback: []
 
   abstract:
-    near: ["Abstract"]
-    region: top_half
+    type: string
+    extraction:
+      near: ["Abstract"]
+      region: top_half
+      parse: string
 
   doi:
-    regex: 'doi[:\.]\s*(10\.\d{4,9}/[\w\-\._;()/:]+)'
-    parse: string
+    type: string
+    extraction:
+      regex: "doi[:\\.]\\s*(10\\.\\d{4,9}/[\\w\\-\\._;()/:]+)"
+      parse: string
 
   journal:
-    region: top_eighth
-    pick: first
+    type: string
+    extraction:
+      region: top_eighth
+      pick: first
+      parse: string
 
   publication_date:
-    near: ["Published", "Received", "Accepted"]
-    parse: date
+    type: date
+    extraction:
+      near: ["Published", "Received", "Accepted"]
+      parse: date
 
   references:
-    region: bottom_half
-    after_heading: References
+    type: array
+    extraction:
+      region: bottom_half
+      after_heading: References
+      fallback: []

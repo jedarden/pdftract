@@ -1,18 +1,34 @@
+# Form extraction profile
+# Matches fillable forms with fields; uses line_dominant reading order
+name: form
 description: Fillable form with fields; uses line_dominant reading order and form_fields from Phase 7.4
 priority: 30
+
 match:
-  any:
-    - text_patterns:
-        - "(?i)form\\s*[0-9A-Z-]+"
-        - "(?i)application\\s+form"
-        - "(?i)questionnaire"
-        - "(?i)please\\s+fill\\s+out"
-        - "(?i)required\\s+fields?"
+  all:
+    - any:
+        - text_contains:
+            patterns: ["form", "application form", "questionnaire", "please fill out", "required fields"]
+        - structural:
+            has_table: false
+            has_form_field: true
+            has_math: false
+            page_count: null
     - structural:
-        - has_form_field_layout: true
-        - has_blank_lines_with_colons: true
-  page_count_hint: 1-10
-profile_fields: {}
-reading_order: line_dominant
-zone_filtering: none
-form_fields_integration: true
+        has_table: false
+        has_form_field: false
+        has_math: false
+        page_count:
+          min: 1
+          max: 10
+
+extraction:
+  reading_order: line_dominant
+  table_detection: off
+  readability_threshold: 0.5
+  include_invisible: false
+  include_headers_footers: true
+  force_ocr: false
+  min_block_chars: 0
+
+fields: {}

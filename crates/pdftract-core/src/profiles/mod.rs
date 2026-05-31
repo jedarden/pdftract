@@ -18,19 +18,35 @@
 //! vocabulary between the rule engine, built-in profile definitions, and
 //! user-authored YAML profiles.
 
+mod apply_profile;
 mod engine;
+mod extraction;
+mod extraction_loader;
+mod field_extractor;
 mod loader;
+mod match_eval;
 mod signals;
 mod types;
 
+pub use apply_profile::{apply_extraction_tuning, apply_profile_to_metadata, classify_and_select_profile};
 pub use engine::{
     classify, has_currency_pattern, ClassificationResult, ClassifierEngine, FeatureSignals,
 };
+pub use extraction::{
+    ExtractionProfile, ExtractionTuning, FieldExtraction, FieldSchema, FieldSpec, MatchExpr,
+    ExtractionMatchPredicate,
+};
+pub use extraction_loader::{
+    find_profile, get_xdg_profile_dir, load_extraction_profiles, load_profile_file, ProfileOrigin,
+    ProfileSource, validate_profile_file,
+};
+pub use field_extractor::{extract_profile_fields, FieldExtractionResult};
 pub use loader::{
     check_forbidden_keys, load_profiles_from_dir, ForbiddenKeyError, ProfileLoadError,
 };
+pub use match_eval::{evaluate_match, MatchResult};
 pub use signals::{extract_feature_signals, extract_signals_from_results, PageSignalAccumulator};
-pub use types::{MatchPredicate, Profile, ProfileType};
+pub use types::{MatchPredicate as ClassificationMatchPredicate, Profile, ProfileType};
 
 use crate::diagnostics::DiagCode;
 

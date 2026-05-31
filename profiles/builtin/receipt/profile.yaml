@@ -1,52 +1,67 @@
+# Receipt extraction profile
+# Matches point-of-sale or purchase receipts with items and payment method
+name: receipt
 description: Point-of-sale or purchase receipt with items, payment method
 priority: 45
+
 match:
-  any:
-    - text_patterns:
-        - "(?i)receipt"
-        - "(?i)store receipt"
-        - "(?i)register receipt"
-        - "(?i)transaction receipt"
-    - text_patterns:
-        - "(?i)total.*sold"
-        - "(?i)change.*due"
-        - "(?i)cash.*credit"
-        - "(?i)card.*payment"
+  all:
+    - any:
+        - text_contains:
+            patterns: ["receipt", "store receipt", "register receipt", "transaction receipt"]
+        - text_contains:
+            patterns: ["total sold", "change due", "cash credit", "card payment"]
     - structural:
-        - has_monetary_columnar_layout: true
-        - page_aspect_ratio: "narrow_or_square"
-  page_count_hint: 1
-profile_fields:
+        has_table: true
+        has_form_field: false
+        has_math: false
+        page_count:
+          min: 1
+          max: 2
+
+extraction:
+  reading_order: line_dominant
+  table_detection: default
+  readability_threshold: 0.5
+  include_invisible: false
+  include_headers_footers: false
+  force_ocr: false
+  min_block_chars: 0
+
+fields:
   merchant:
     type: string
     extraction:
-      patterns:
-        - "(?i)^([A-Z][A-Za-z0-9\\s&']+)$"
-        - "(?i)(?:store|merchant|retailer)\\s*:?\\s*([A-Z][A-Za-z0-9\\s&']+)"
-      fallback: null
+      region: top_quarter
+      pick: largest_font
+      parse: string
+
   date:
     type: date
     extraction:
-      patterns:
-        - "(?i)date\\s*:?\\s*([0-9]{1,2}[/-][0-9]{1,2}[/-][0-9]{2,4})"
-        - "([0-9]{1,2}[/-][0-9]{1,2}[/-][0-9]{2,4})\\s+([0-9]{1,2}:[0-9]{2})"
-      fallback: null
+      regex: "\\d{1,2}[/-]\\d{1,2}[/-]\\d{2,4}"
+      parse: date
+
   total:
     type: decimal
     extraction:
-      patterns:
-        - "(?i)total\\s*[:=]?\\s*[\\$€£¥]?\\s*([0-9,]+\\.?[0-9]*)"
-      fallback: null
+      regex: "([\\d,]+\\.\\d{2})"
+      near: ["Total", "Amount Due", "Balance"]
+      max_distance_pt: 80
+      parse: decimal
+
   tax:
     type: decimal
     extraction:
-      patterns:
-        - "(?i)tax\\s*[:=]?\\s*[\\$€£¥]?\\s*([0-9,]+\\.?[0-9]*)"
-      fallback: null
+      regex: "([\\d,]+\\.\\d{2})"
+      near: ["Tax", "VAT"]
+      max_distance_pt: 80
+      parse: decimal
+
   items:
     type: array
     extraction:
-      columnar_regions: "monetary_columns"
+      table_region: largest_table
       schema:
         - name: name
           type: string
@@ -58,11 +73,9 @@ profile_fields:
           type: decimal
           required: false
       fallback: []
+
   payment_method:
     type: string
     extraction:
-      patterns:
-        - "(?i)(cash|credit|debit|visa|mastercard|amex|discover|check|cheque)"
-      fallback: null
-reading_order: line_dominant
-zone_filtering: exclude_headers_footers
+      regex: "(cash|credit|debit|visa|mastercard|amex|discover|check|cheque)"
+      parse: string

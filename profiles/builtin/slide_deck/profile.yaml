@@ -1,64 +1,59 @@
-# Slide Deck Profile
-#
-# PowerPoint / Keynote / Google Slides exports as PDF.
-# Extracts title, presenter, date, slide_titles.
-
+# Slide Deck extraction profile
+# Matches PowerPoint / Keynote / Google Slides exports as PDF
 name: slide_deck
 description: PowerPoint / Keynote / Google Slides exports as PDF
 priority: 15
 
-# Matching predicates for slide deck classification
 match:
   all:
-    # Page count in typical slide deck range
     - structural:
-        page_count: {min: 3, max: 200}
-    # And EITHER: has limited font diversity (not a dense academic paper)
-    # OR: contains "Slide N" patterns
-    # OR: contains slide deck keywords
+        has_table: false
+        has_form_field: false
+        has_math: false
+        page_count:
+          min: 3
+          max: 200
     - any:
-        - structural:
-            has_form_field: false
-            font_diversity: {min: 2, max: 10}
-        - text_matches: '^Slide \d+$'
-        - text_contains: ["slides", "presentation"]
+        - text_matches:
+            pattern: "^Slide \\d+$"
+        - text_contains:
+            patterns: ["slides", "presentation"]
   none:
-    # Exclude academic papers (these have their own profile)
-    - text_contains: ["Abstract", "References", "WHEREAS", "Invoice"]
+    - text_contains:
+        patterns: ["Abstract", "References", "WHEREAS", "Invoice"]
 
-# Extraction tuning for slide decks
 extraction:
-  # Use xy_cut reading order for proper layout handling
   reading_order: xy_cut
-  # Default table detection
   table_detection: default
-  # Lower readability threshold for slides (less text density)
   readability_threshold: 0.6
-  # Don't include invisible text
   include_invisible: false
-  # Minimum block characters
+  include_headers_footers: false
+  force_ocr: false
   min_block_chars: 5
 
-# Field extraction specifications
 fields:
   title:
     type: string
-    region: middle_half
-    pick: largest_font
-    page: first
+    extraction:
+      region: top_half
+      pick: largest_font
+      parse: string
 
   presenter:
     type: string
-    region: bottom_half
-    pick: largest_font
-    page: first
+    extraction:
+      region: top_half
+      pick: largest_font
+      parse: string
 
   date:
     type: date
-    near: ["Date"]
-    parse: date
+    extraction:
+      near: ["Date"]
+      parse: date
 
   slide_titles:
     type: array
-    pick: largest_font
-    per_page: true
+    extraction:
+      pick: largest_font
+      fallback: []

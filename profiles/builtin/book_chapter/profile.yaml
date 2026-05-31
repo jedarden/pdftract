@@ -1,68 +1,63 @@
-# Book Chapter Profile
-#
-# Book chapters, monographs, and long-form narrative documents.
-# Extracts title, chapter_number, author, sections.
-
+# Book Chapter extraction profile
+# Matches book chapters, monographs, and long-form narrative documents
 name: book_chapter
 description: Book chapters, monographs, long-form narrative documents
 priority: 5
 
-# Matching predicates for book chapter classification
 match:
   all:
-    # Page count in typical chapter range (not a whole book, not a single page)
     - structural:
-        page_count: {min: 5, max: 1000}
-    # Heading depth indicates structured content
-    - structural:
-        heading_depth: {min: 1, max: 5}
-    # AND EITHER: has chapter/section headings
-    # OR: has limited font diversity (not a dense academic paper)
-    # OR: matches chapter/section text patterns
+        has_table: false
+        has_form_field: false
+        has_math: false
+        page_count:
+          min: 5
+          max: 1000
     - any:
-        - text_matches: '^Chapter \d+'
-        - heading_matches: '^(Chapter|Part|Section) \d+'
-        - text_matches: '^\d+\.\s+[A-Z]'
-        - structural:
-            font_diversity: {min: 1, max: 4}
+        - text_matches:
+            pattern: "^Chapter \\d+"
+        - heading_matches:
+            pattern: "^(Chapter|Part|Section) \\d+"
+        - text_matches:
+            pattern: "^\\d+\\.\\s+[A-Z]"
   none:
-    # Exclude more specific document types
-    - text_contains: ['Abstract', 'WHEREAS', 'Invoice', 'Account Statement', 'References']
+    - text_contains:
+        patterns: ["Abstract", "WHEREAS", "Invoice", "Account Statement", "References"]
 
-# Extraction tuning for book chapters
 extraction:
-  # Use line_dominant reading order for narrative text flow
   reading_order: line_dominant
-  # Default table detection
   table_detection: default
-  # Higher readability threshold for narrative text quality
   readability_threshold: 0.6
-  # Don't include invisible text
   include_invisible: false
-  # Exclude headers, footers, and page numbers from body content
   include_headers_footers: false
+  force_ocr: false
+  min_block_chars: 0
 
-# Field extraction specifications
 fields:
   title:
     type: string
-    region: top_third
-    pick: largest_font
-    page: first
+    extraction:
+      region: top_third
+      pick: largest_font
+      parse: string
 
   chapter_number:
     type: string
-    near: ['Chapter', 'Part']
-    regex: '\d+'
-    max_distance_pt: 100
+    extraction:
+      near: ["Chapter", "Part"]
+      regex: "\\d+"
+      max_distance_pt: 100
+      parse: string
 
   author:
     type: string
-    region: top_quarter
-    pick: smallest_font
-    page: first
+    extraction:
+      region: top_quarter
+      pick: smallest_font
+      parse: string
 
   sections:
     type: array
-    pick: largest_font
-    per_page: true
+    extraction:
+      pick: largest_font
+      fallback: []

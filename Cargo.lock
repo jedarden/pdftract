@@ -3267,6 +3267,7 @@ dependencies = [
  "criterion",
  "dashmap",
  "digest",
+ "dirs",
  "encoding_rs",
  "filetime",
  "flate2",

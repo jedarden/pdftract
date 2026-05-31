@@ -19,6 +19,7 @@ mod output;
 mod pages;
 mod panic_hook;
 mod password;
+mod profiles_cmd;
 mod serve;
 mod url;
 mod verify_receipt;
@@ -160,6 +161,10 @@ enum Commands {
         #[arg(long)]
         auto: bool,
 
+        /// Force-apply a specific profile (by name or YAML file path)
+        #[arg(long, value_name = "NAME|PATH")]
+        profile: Option<String>,
+
         /// Include header blocks in output
         #[arg(long)]
         include_headers: bool,
@@ -238,6 +243,11 @@ enum Commands {
         #[command(subcommand)]
         cache_command: CacheCommands,
     },
+    /// Manage document type profiles
+    Profiles {
+        #[command(subcommand)]
+        profiles_command: ProfilesCommands,
+    },
     /// Start the HTTP server for extraction
     ///
     /// ## Security Model
@@ -311,6 +321,14 @@ enum Commands {
         /// Trust X-Forwarded-For header for client IP detection (DANGER: enables IP spoofing if not behind a trusted proxy)
         #[arg(long)]
         trust_forwarded_for: bool,
+
+        /// Directory containing custom profile YAML files (repeatable)
+        #[arg(long, value_name = "DIR")]
+        profile_dir: Option<PathBuf>,
+
+        /// Enable hot-reload for profiles (re-read directory on every request)
+        #[arg(long)]
+        profile_hot_reload: bool,
     },
     /// Start the MCP (Model Context Protocol) server
     ///
@@ -452,6 +470,32 @@ enum CacheCommands {
     },
 }
 
+#[derive(Subcommand)]
+enum ProfilesCommands {
+    /// List all available profiles
+    List,
+    /// Show a profile's YAML content
+    Show {
+        /// Profile name or path to YAML file
+        name_or_path: String,
+    },
+    /// Export a built-in profile to stdout
+    Export {
+        /// Name of the built-in profile to export
+        name: String,
+    },
+    /// Install a profile to the user config directory
+    Install {
+        /// Path to the profile YAML file to install
+        path: PathBuf,
+    },
+    /// Validate a profile file
+    Validate {
+        /// Path to the profile YAML file to validate
+        path: PathBuf,
+    },
+}
+
 fn main() -> Result<()> {
     // Install panic hook for SecretString redaction in backtraces
     // This ensures credentials never leak in crash dumps
@@ -504,6 +548,7 @@ fn main() -> Result<()> {
             no_cache,
             md_anchors,
             auto,
+            profile,
             output,
             include_headers,
             include_footers,
@@ -532,6 +577,7 @@ fn main() -> Result<()> {
                 no_cache,
                 md_anchors,
                 auto,
+                profile,
                 include_headers,
                 include_footers,
                 include_headers_footers,
@@ -602,6 +648,12 @@ fn main() -> Result<()> {
                 std::process::exit(1);
             }
         }
+        Commands::Profiles { profiles_command } => {
+            if let Err(e) = cmd_profiles(profiles_command) {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
         Commands::Serve {
             bind,
             cache_dir,
@@ -611,6 +663,8 @@ fn main() -> Result<()> {
             max_decompress_gb,
             audit_log,
             trust_forwarded_for,
+            profile_dir,
+            profile_hot_reload,
         } => {
             if let Err(e) = cmd_serve(
                 bind,
@@ -621,6 +675,8 @@ fn main() -> Result<()> {
                 max_decompress_gb,
                 audit_log,
                 trust_forwarded_for,
+                profile_dir,
+                profile_hot_reload,
             ) {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
@@ -775,6 +831,7 @@ fn cmd_extract(
     no_cache: bool,
     md_anchors: bool,
     auto: bool,
+    profile: Option<String>,
     include_headers: bool,
     include_footers: bool,
     include_headers_footers: bool,
@@ -921,11 +978,12 @@ fn cmd_extract(
         eprintln!("Auto-detecting document type...");
 
         use pdftract_core::profiles::{
-            classify, extract_signals_from_results, load_builtins, ProfileType,
+            classify_and_select_profile, extract_signals_from_results, load_extraction_profiles,
+            apply_extraction_tuning, apply_profile_to_metadata,
         };
 
-        // Load built-in profiles
-        let profiles = load_builtins();
+        // Load all extraction profiles
+        let profiles = load_extraction_profiles(&[]).unwrap_or_default();
 
         if !profiles.is_empty() {
             // Perform a lightweight extraction for classification
@@ -940,43 +998,33 @@ fn cmd_extract(
                     .map(|p| (p.blocks.clone(), p.spans.clone()))
                     .collect();
 
-                let signals =
-                    extract_signals_from_results(&page_data, has_signature_field, has_form_field);
-                let classification = classify(&signals, &profiles);
+                let selected_profile = classify_and_select_profile(
+                    &profiles.iter().map(|p| p.profile.clone()).collect::<Vec<_>>(),
+                    &page_data,
+                    has_signature_field,
+                    has_form_field,
+                );
 
-                match classification.document_type {
-                    ProfileType::Unknown => {
-                        eprintln!(
-                            "Document type: unknown (confidence: {:.2})",
-                            classification.confidence
-                        );
-                        eprintln!("Proceeding with default extraction options.");
-                    }
-                    detected_type => {
-                        let type_name = match detected_type {
-                            ProfileType::Invoice => "invoice",
-                            ProfileType::Receipt => "receipt",
-                            ProfileType::Contract => "contract",
-                            ProfileType::ScientificPaper => "scientific_paper",
-                            ProfileType::SlideDeck => "slide_deck",
-                            ProfileType::Form => "form",
-                            ProfileType::BankStatement => "bank_statement",
-                            ProfileType::LegalFiling => "legal_filing",
-                            ProfileType::BookChapter => "book_chapter",
-                            ProfileType::Unknown => "unknown",
-                        };
-                        eprintln!(
-                            "Document type: {} (confidence: {:.2})",
-                            type_name, classification.confidence
-                        );
+                if let Some((profile, match_result)) = selected_profile {
+                    eprintln!(
+                        "Document type: {} (confidence: {:.2})",
+                        profile.name, match_result.confidence
+                    );
 
-                        // Apply profile-specific extraction options
-                        // For now, just log the detection - profile option overrides
-                        // will be implemented in Phase 7.10
-                        for reason in classification.reasons.iter().take(5) {
-                            eprintln!("  - {}", reason);
-                        }
+                    // Apply profile extraction tuning
+                    if let Some(ref tuning) = profile.extraction {
+                        apply_extraction_tuning(tuning, &mut options);
                     }
+
+                    // Store the selected profile for later field extraction
+                    // We'll extract fields after the main extraction
+                    // For now, just log the match reasons
+                    for reason in match_result.reasons.iter().take(5) {
+                        eprintln!("  - {}", reason);
+                    }
+                } else {
+                    eprintln!("Document type: unknown (confidence: below threshold)");
+                    eprintln!("Proceeding with default extraction options.");
                 }
             } else {
                 eprintln!(
@@ -990,9 +1038,56 @@ fn cmd_extract(
         }
     }
 
+    // Handle --profile flag: load and apply specific profile
+    #[cfg(feature = "profiles")]
+    if let Some(ref profile_name_or_path) = profile {
+        use pdftract_core::profiles::{
+            load_extraction_profiles, apply_extraction_tuning,
+        };
+
+        eprintln!("Applying profile: {}", profile_name_or_path);
+
+        let profiles = load_extraction_profiles(&[]).unwrap_or_default();
+
+        // Find the profile by name or load from path
+        let profile = if std::path::PathBuf::from(profile_name_or_path).exists() {
+            // Load from file path
+            use pdftract_core::profiles::load_profile_file;
+            match load_profile_file(&std::path::PathBuf::from(profile_name_or_path)) {
+                Ok(p) => Some(p),
+                Err(e) => {
+                    eprintln!("Error loading profile: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        } else {
+            // Find by name
+            profiles.iter()
+                .find(|p| p.profile.name == *profile_name_or_path)
+                .map(|p| p.profile.clone())
+        };
+
+        if let Some(p) = profile {
+            eprintln!("Loaded profile: {}", p.name);
+            if let Some(ref tuning) = p.extraction {
+                apply_extraction_tuning(tuning, &mut options);
+            }
+        } else {
+            eprintln!("Error: Profile '{}' not found", profile_name_or_path);
+            std::process::exit(1);
+        }
+    }
+
     #[cfg(not(feature = "profiles"))]
     if auto {
         eprintln!("Warning: --auto flag requires the 'profiles' feature to be enabled.");
+        eprintln!("Build pdftract with: --features profiles");
+        eprintln!("Proceeding with default extraction options.");
+    }
+
+    #[cfg(not(feature = "profiles"))]
+    if profile.is_some() {
+        eprintln!("Warning: --profile flag requires the 'profiles' feature to be enabled.");
         eprintln!("Build pdftract with: --features profiles");
         eprintln!("Proceeding with default extraction options.");
     }
@@ -1095,6 +1190,58 @@ fn cmd_extract(
     // Set cache status metadata
     result.metadata.cache_status = Some(cache_status);
     result.metadata.cache_age_seconds = cache_age;
+
+    // Extract profile fields if --auto or --profile was used
+    #[cfg(feature = "profiles")]
+    {
+        use pdftract_core::profiles::{
+            load_extraction_profiles, apply_profile_to_metadata,
+        };
+
+        let profile_to_apply = if auto {
+            // Re-run classification to get the selected profile
+            let profiles = load_extraction_profiles(&[]).unwrap_or_default();
+            let page_data: Vec<(Vec<_>, Vec<_>)> = result
+                .pages
+                .iter()
+                .map(|p| (p.blocks.clone(), p.spans.clone()))
+                .collect();
+            let has_signature_field = !result.signatures.is_empty();
+            let has_form_field = !result.form_fields.is_empty();
+
+            use pdftract_core::profiles::classify_and_select_profile;
+            classify_and_select_profile(
+                &profiles.iter().map(|p| p.profile.clone()).collect::<Vec<_>>(),
+                &page_data,
+                has_signature_field,
+                has_form_field,
+            ).map(|(p, _)| p)
+        } else if profile.is_some() {
+            // Load the specified profile
+            let profile_name_or_path = profile.as_ref().unwrap();
+            let profiles = load_extraction_profiles(&[]).unwrap_or_default();
+
+            if std::path::PathBuf::from(profile_name_or_path).exists() {
+                use pdftract_core::profiles::load_profile_file;
+                load_profile_file(&std::path::PathBuf::from(profile_name_or_path)).ok()
+            } else {
+                profiles.iter()
+                    .find(|p| p.profile.name == *profile_name_or_path)
+                    .map(|p| p.profile.clone())
+            }
+        } else {
+            None
+        };
+
+        // Apply profile to metadata
+        if let Some(p) = profile_to_apply {
+            let (name, version, fields) = apply_profile_to_metadata(&p, &result.pages);
+            // Update the result's metadata with profile information
+            result.metadata.profile_name = Some(name);
+            result.metadata.profile_version = Some(version);
+            result.metadata.profile_fields = fields;
+        }
+    }
 
     // Write each output to its destination
     for spec in &output_specs {
@@ -1801,6 +1948,25 @@ fn cmd_cache(command: CacheCommands) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn cmd_profiles(command: ProfilesCommands) -> Result<()> {
+    use profiles_cmd::{ProfilesArgs, ProfilesCommand};
+
+    // Convert ProfilesCommands to profiles_cmd::ProfilesCommand
+    let profiles_command = match command {
+        ProfilesCommands::List => ProfilesCommand::List,
+        ProfilesCommands::Show { name_or_path } => ProfilesCommand::Show { name_or_path },
+        ProfilesCommands::Export { name } => ProfilesCommand::Export { name },
+        ProfilesCommands::Install { path } => ProfilesCommand::Install { path },
+        ProfilesCommands::Validate { path } => ProfilesCommand::Validate { path },
+    };
+
+    let args = ProfilesArgs {
+        command: profiles_command,
+    };
+
+    profiles_cmd::run_profiles(args)
 }
 
 fn cmd_serve(
