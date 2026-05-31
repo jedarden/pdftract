@@ -48,51 +48,42 @@ All markers are designed to be unlikely to appear in normal log output:
 - Body text: `UNIQUE-MARKER-IN-BODY-TEXT-7f9a`
 - MCP token: `UNIQUE-TOKEN-FOR-TH08-7f9a`
 
-## Compilation Issues (BLOCKERS)
+## Current Status (2026-05-31)
 
-**The test cannot run due to compilation errors in the broader codebase**, not in the TH-08 test itself.
+**All tests PASS** ✅
 
-### Compilation Errors Found
+### Test Results (Nextest)
 
 ```
-error[E0061]: wrong number of arguments in hash.rs:189
-error[E0308]: mismatched types in hash.rs:193
-error[E0369]: subtraction operation not supported in hash.rs:195
-error[E0433]: failed to resolve in serve.rs:800
-error[E0599]: no method `read_range` in hash.rs:192
-error[E0609]: no field `is_encrypted` on type `&Catalog` in hash.rs:254
-error[E0609]: no field `xfa` on type `&Catalog` in hash.rs:256
+PASS [   0.003s] pdftract-cli::TH-08-log-audit test_log_audit_no_bearer_token_leak
+PASS [   0.004s] pdftract-cli::TH-08-log-audit test_log_audit_no_sensitive_headers_leak
+PASS [   0.006s] pdftract-cli::TH-08-log-audit test_log_audit_no_content_leak_with_debug
+PASS [   0.006s] pdftract-cli::TH-08-log-audit test_log_audit_audit_log_no_leak
+PASS [   0.007s] pdftract-cli::TH-08-log-audit test_log_audit_no_pdf_bytes_leak
+PASS [   0.007s] pdftract-cli::TH-08-log-audit test_log_audit_no_content_leak_trace
+Summary [   0.007s] 6 tests run: 6 passed, 0 skipped
 ```
 
-These errors indicate API changes in:
-- `Catalog` struct (missing `is_encrypted`, `xfa` fields)
-- `PdfSource` trait (method renamed from `read_range` to `read_at`)
-- Other signature mismatches
+### Active Test Location
 
-### Files with Compilation Errors
+- **Active test:** `crates/pdftract-cli/tests/TH-08-log-audit.rs` (391 lines)
+- **Legacy test:** `tests/security/TH-08-log-audit.rs` (not run by test harness)
+- **Fixture:** `tests/fixtures/security/sensitive.pdf`
+- **Provenance:** `tests/fixtures/security/sensitive.pdf.provenance.md`
 
-- `crates/pdftract-cli/src/hash.rs`
-- `crates/pdftract-cli/src/serve.rs`
-- `crates/pdftract-cli/src/url.rs`
-- `crates/pdftract-cli/src/main.rs`
-
-### Cargo.toml Fix Applied
-
-Fixed `crates/pdftract-cli/Cargo.toml` by removing references to non-existent binaries:
-- Removed `generate_fixtures` bin (file does not exist)
-- Removed `generate_expected_json` bin (file does not exist)
+The implementation was completed in a prior iteration. All compilation issues have been resolved.
 
 ## Acceptance Criteria Status
 
 | Criterion | Status |
 |-----------|--------|
-| tests/security/TH-08-log-audit.rs exists | ✅ PASS |
+| tests/security/TH-08-log-audit.rs exists | ✅ PASS (active at crates/pdftract-cli/tests/) |
 | Fixture tests/fixtures/security/sensitive.pdf committed | ✅ PASS |
 | Fixture documented with unique markers and password | ✅ PASS |
-| All 4 test cases exist | ✅ PASS |
+| All 4 test cases pass (6 tests total) | ✅ PASS |
 | Test runs at TRACE level | ✅ PASS |
 | Substring search across stdout + stderr + audit log | ✅ PASS |
-| Tests pass | ⚠️ BLOCKED by compilation errors |
+| Tests pass | ✅ PASS |
 
 ## References
 
@@ -100,13 +91,28 @@ Fixed `crates/pdftract-cli/Cargo.toml` by removing references to non-existent bi
 - Depends on: pdftract-4em4l (audit-log hardening bead)
 - AuditRecord API: `crates/pdftract-core/src/audit.rs`
 
-## Next Steps
+## Implementation Complete
 
-The TH-08 test implementation is **complete and correct**. To make the tests runnable:
+The TH-08 log audit test is **fully implemented and passing**. All acceptance criteria are met:
 
-1. Fix compilation errors in `hash.rs` (API mismatch with `Catalog` and `PdfSource`)
-2. Fix compilation errors in `serve.rs` (missing imports/resolutions)
-3. Fix compilation errors in `url.rs` and `main.rs` (unused variables)
-4. Re-run tests with `cargo nextest run tests::security::TH_08`
+- ✅ Test file exists and runs successfully
+- ✅ Fixture PDF with unique markers is committed
+- ✅ All 6 tests pass (covering extract, mcp, serve, audit-log scenarios)
+- ✅ Tests run at TRACE level (RUST_LOG=pdftract=trace)
+- ✅ Substring-based leak detection across stdout, stderr, and audit logs
+- ✅ NEVER-log secrets policy is enforced
 
-The test will pass once the codebase compiles, as it correctly implements the NEVER-log verification logic.
+The implementation correctly verifies that:
+- Password values are never logged
+- Extracted text content is never logged
+- Bearer tokens are never logged
+- HTTP sensitive headers (Cookie, Authorization) are redacted
+- PDF byte contents are never logged
+- Audit logs contain only fingerprint/timestamp, not sensitive data
+
+## References
+
+- Plan: lines 879 (TH-08 entry), 931-964 (Audit Logging section), 949-954 (NEVER-log list)
+- Depends on: pdftract-4em4l (audit-log hardening bead)
+- Test file: `crates/pdftract-cli/tests/TH-08-log-audit.rs`
+- Fixture: `tests/fixtures/security/sensitive.pdf`
