@@ -55,6 +55,18 @@ impl ChoiceValue {
         }
     }
 
+    /// Check if this choice value is truly empty (no value at all, not even empty string).
+    ///
+    /// This is different from `is_empty()` in that `Single(Some(""))` is NOT truly empty
+    /// - an explicit empty string is a valid value (e.g., for /DV defaults).
+    pub fn is_truly_empty(&self) -> bool {
+        match self {
+            ChoiceValue::Single(None) => true,
+            ChoiceValue::Single(Some(_)) => false, // Even empty string is a value
+            ChoiceValue::Multiple(v) => v.is_empty(),
+        }
+    }
+
     /// Get the first selected value as a string (for multi-select, returns comma-joined).
     pub fn as_display_string(&self) -> String {
         match self {
@@ -196,10 +208,12 @@ pub fn extract_choice_value(
     };
 
     // Extract current value from /V
-    let selected = extract_selected_value(value, is_multi_select);
+    // Combo boxes are always single-select (multi-select flag is ignored for combo)
+    let selected = extract_selected_value(value, is_multi_select && !is_combo);
 
     // Extract default value from /DV
-    let default_val = default.map(|dv| extract_selected_value(Some(dv), is_multi_select));
+    // Combo boxes are always single-select (multi-select flag is ignored for combo)
+    let default_val = default.map(|dv| extract_selected_value(Some(dv), is_multi_select && !is_combo));
 
     // Extract options from /Opt
     let options = extract_options(options);
@@ -207,7 +221,7 @@ pub fn extract_choice_value(
     ChoiceValueData {
         kind,
         selected,
-        default: default_val.filter(|v| !v.is_empty()),
+        default: default_val.filter(|v| !v.is_truly_empty()),
         options,
         multi_select: is_multi_select,
     }
