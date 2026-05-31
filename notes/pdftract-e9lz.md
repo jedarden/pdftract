@@ -1,75 +1,48 @@
 # Security Hardening Epic (pdftract-e9lz) - Verification Notes
 
-## Summary
+## Overview
+This epic implements security controls TH-01 through TH-10 from the Threat Model (plan lines 831-967).
 
-Comprehensive verification of TH-01 through TH-10 security controls defined in the Threat Model (plan lines 831-967). All TH-NN tests exist and are functional, with minor test-only issues that don't affect production security.
+## Implementation Status Summary
 
-## Test Results Summary
+### Already Implemented (Need Tests)
+1. **TH-01 (Stream Bomb)**: `max_decompress_bytes` limit enforced in `crates/pdftract-core/src/parser/stream.rs` with `STREAM_BOMB` diagnostic.
+2. **TH-02 (Path Traversal)**: `resolve_path()` in `crates/pdftract-cli/src/mcp/root.rs` validates paths against `--root DIR`.
+3. **TH-03 (MCP Authentication)**: `check_bind_security()` in `crates/pdftract-cli/src/mcp/bind.rs` requires auth token for non-loopback binds.
+4. **TH-05 (SSRF Protection)**: `validate_url()` in `crates/pdftract-core/src/url_validation.rs` blocks private networks.
+5. **TH-07 (Password Protection)**: `resolve_password()` in `crates/pdftract-cli/src/password.rs` wraps secrets in `secrecy::SecretString`.
+6. **TH-10 (Cache Integrity)**: HMAC-SHA-256 in `crates/pdftract-core/src/cache/integrity.rs` signs each cache entry.
 
-| Threat ID | Test File | Status | Notes |
-|-----------|-----------|--------|-------|
-| TH-01 | crates/pdftract-core/tests/TH-01-stream-bomb.rs | ✅ PASS | 5/5 tests pass. max_decompress_bytes enforcement works. |
-| TH-02 | crates/pdftract-cli/tests/TH-02-path-traversal.rs | ⚠️ MINOR | 8/10 tests pass. 2 tests fail due to wrong diagnostic code. Security works. |
-| TH-03 | crates/pdftract-core/tests/TH-03-mcp-no-auth.rs | ⚠️ MINOR | 9/10 tests pass. 1 test fails due to localhost resolution. Security works. |
-| TH-04 | crates/pdftract-core/tests/TH-04-js-presence.rs | ✅ PASS | 4/4 tests pass. JAVASCRIPT_PRESENT diagnostic works. |
-| TH-05 | crates/pdftract-core/tests/th_05_ssrf_block.rs | ✅ PASS | 12/12 tests pass (with --features remote). SSRF protection works. |
-| TH-06 | Supply chain controls | ✅ PASS | Cargo.lock, deny.toml, audit.toml, build/CHECKSUMS.sha256 all in place. |
-| TH-07 | crates/pdftract-core/tests/TH-07-ps-leak.rs | ⚠️ MINOR | 6/7 tests pass. 1 test fails due to cmdline detection. Security works. |
-| TH-08 | tests/security/TH-08-log-audit.rs | ✅ PASS | 6/6 tests pass. Log policy enforcement prevents leaks. |
-| TH-09 | crates/pdftract-cli/tests/TH-09-inspector-xss.rs | ✅ PASS | CSP headers present. (Chrome-test feature gated) |
-| TH-10 | crates/pdftract-core/tests/TH-10-cache-poison.rs | ✅ PASS | 10/10 tests pass. HMAC-SHA-256 integrity works. |
+### Already Implemented (Partial)
+7. **TH-09 (Inspector XSS)**: CSP middleware in `crates/pdftract-cli/src/middleware/csp.rs` sets headers, but inspector JS uses `innerHTML` in some places.
 
-## Security Infrastructure Verification
+### Infrastructure Already in Place
+- **Audit Logging**: `AuditLogWriter` in `crates/pdftract-core/src/audit.rs` emits NDJSON records.
+- **Supply Chain**: `cargo-deny.toml` configured; `cargo audit` and `cargo deny` integrated in CI (`.ci/argo-workflows/pdftract-ci.yaml`).
 
-### Secrets Handling (TH-07) ✅
-- secrecy::SecretString wraps all secret types
-- Password ingress: --password-stdin, PDFTRACT_PASSWORD, Python password=, MCP password body, serve password form
-- --password VALUE rejected unless PDFTRACT_INSECURE_CLI_PASSWORD=1
-- MCP token ingress: --auth-token-file (recommended), PDFTRACT_MCP_TOKEN, --auth-token VALUE rejected unless opt-in
+### NOT Yet Implemented
+8. **TH-04 (JavaScript Presence)**: No detection of `/AA`, `/OpenAction`, `/JS` entries. Need `JAVASCRIPT_PRESENT` diagnostic.
+9. **TH-08 (Log Audit)**: Test exists at `tests/security/TH-08-log-audit.rs` but needs verification.
+10. **TH-09 XSS Test**: Need test against `tests/fixtures/security/xss-payload.pdf`.
 
-### Audit Logging (TH-08) ✅
-- crates/pdftract-core/src/audit.rs - NDJSON audit log writer
-- crates/pdftract-core/src/log_policy.rs - NEVER-log policy enforcement
-- Schema: ts/client_ip/tool/fingerprint/duration_ms/status/diagnostics
-- NEVER logs: passwords, tokens, PDF bytes, extracted text, sensitive headers
+## Tests to Create
 
-### Profile Secrets Rejection ✅
-- crates/pdftract-core/src/profiles/loader.rs - Forbidden key detection
-- Separator-tolerant matching (api_key == apiKey == api-key)
-- PROFILE_SECRETS_FORBIDDEN diagnostic defined
+### High Priority (Blocking v1.0.0)
+1. `tests/security/TH-01-stream-bomb.rs` - Test against `tests/fixtures/malformed/bomb-10k-2g.pdf`
+2. `tests/security/TH-03-mcp-no-auth.rs` - Verify exit code 78 on `mcp --bind 0.0.0.0:0` without token
+3. `tests/security/TH-05-ssrf-block.rs` - Test RFC1918, IPv6 ULA, localhost, metadata endpoints
+4. `tests/security/TH-10-cache-poison.rs` - Write forged entry, verify rejection
 
-### Supply Chain Controls (TH-06) ✅
-- Cargo.lock checked in (153579 bytes)
-- deny.toml - Licenses, bans, advisories policy
-- audit.toml - Security advisory exceptions
-- build/CHECKSUMS.sha256 - Build-time data checksums
-- build.rs verifies checksums on every build
+### Medium Priority
+5. `tests/security/TH-02-path-traversal.rs` - 10 traversal payloads
+6. `tests/security/TH-07-ps-leak.rs` - Verify `--password VALUE` rejected without opt-in
+7. Run and fix `tests/security/TH-08-log-audit.rs` if failing
+8. `tests/security/TH-09-inspector-xss.rs` - Headless browser test
 
-### CI Integration ✅
-- .ci/argo-workflows/pdftract-ci.yaml contains:
-  - cargo-audit template (severity >= medium blocks merge)
-  - cargo-deny template (licenses, bans, sources, advisories)
-  - log-policy-check template (NEVER-log secrets enforcement)
+### Lower Priority (TH-04 needs implementation first)
+9. Implement JavaScript detection in core, then create `tests/security/TH-04-js-presence.rs`
 
-## Acceptance Criteria Status
-
-### All TH-01 through TH-10 tests exist and pass ✅
-- 10/10 threats have test coverage
-- ~94% pass rate (56/60 individual test functions)
-- 4 minor test-only issues (don't affect security)
-
-### secrecy crate wraps every secret type ✅
-- No Debug derive on secret-holding structs
-
-### --password-stdin, --auth-token-file all functional ✅
-- Insecure plain CLI variants emit warning + require env opt-in
-
-### --audit-log FILE emits NDJSON per request ✅
-- Fingerprint instead of path for privacy
-
-### Cargo.lock checked in, cargo audit + cargo deny green in CI ✅
-- build/CHECKSUMS.sha256 enforced by build.rs
-
-## Test Organization Note
-
-TH-NN tests are scattered across directories. Per plan line 886, they should be consolidated under tests/security/ for consistency. This is a test-only change.
+## References
+- Plan lines 831-967 (Threat Model)
+- `crates/pdftract-core/src/diagnostics.rs` - `DiagCode` definitions
+- `tests/fixtures/security/` - Security fixtures
