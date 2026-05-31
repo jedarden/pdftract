@@ -1,0 +1,159 @@
+# cargo-deny configuration for pdftract
+#
+# This configuration enforces the supply-chain security policies defined in
+# the Threat Model (plan lines 883-913, specifically TH-06).
+#
+# Policies enforced:
+# - License allowlist for default features
+# - Banned crates (openssl-sys, native-tls, git2, libgit2-sys)
+# - Minimum versions (ring >= 0.17.5, rustls >= 0.23)
+# - Advisory detection via cargo-audit integration
+
+# Advisory configuration
+[advisories]
+# The path where the advisory database is cloned/fetched into
+db-path = "~/.cargo/advisory-db"
+# The URL(s) of the advisory databases to use
+db-urls = ["https://github.com/rustsec/advisory-db"]
+# The lint level for security vulnerabilities
+vulnerability = "deny"
+# The lint level for unmaintained crates
+unmaintained = "warn"
+# The lint level for crates that have been yanked from their source registry
+yanked = "warn"
+# The lint level for crates with security notices.
+# Note: A notice is distinct from a vulnerability; a notice is typically
+# for things like a typosquatting attack or a malformed license
+notice = "warn"
+# Severity threshold for advisories (none, low, medium, high, critical)
+# Per plan line 906: severity >= medium blocks merge
+severity-threshold = "medium"
+
+# License configuration
+[licenses]
+# The lint level for crates which do not have a detectable license
+unlicensed = "deny"
+# List of explicitly allowed licenses
+#
+# Per plan line 907: Permitted licenses for default features are MIT, Apache-2.0
+# (with or without LLVM exception), BSD-2-Clause, BSD-3-Clause, ISC, Zlib,
+# Unicode-DFS-2016, MPL-2.0 (file-level only). GPL/AGPL/LGPL are FORBIDDEN in
+# default features.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-DFS-2016",
+    "MPL-2.0",
+]
+# List of explicitly disallowed licenses
+# Per plan: GPL / AGPL / LGPL are FORBIDDEN in default features
+deny = [
+    "GPL-2.0",
+    "GPL-3.0",
+    "AGPL-3.0",
+    "LGPL-2.0",
+    "LGPL-3.0",
+]
+# Lint level for licenses considered copyleft
+copyleft = "deny"
+# Blanket approval or denial for OSI-approved or FSF Free/Libre licenses
+[licenses.private]
+# If true, ignores workspace crates that aren't in the source repository's workspace.
+# This is useful for workspaces with private crates that are not published.
+ignore = false
+
+# Bans configuration
+#
+# Per plan line 908: Forbidden: openssl-sys, native-tls, git2, libgit2-sys
+# (we use rustls; no git CLI dependency). Minimum versions: ring >= 0.17.5,
+# rustls >= 0.23.
+[bans]
+# Lint level for duplicate dependency versions
+multiple-versions = "warn"
+# Lint level for duplicate dependencies with different version requirements
+multiple-versions-including-duplicates = "warn"
+# Highlight crates to multiple-versions that have one or more direct dependencies
+# that are duplicated across major version
+highlight = "all"
+# List of crates that are forbidden
+[[bans.deny]]
+# Forbidden: openssl-sys (plan line 908)
+# We use rustls instead
+name = "openssl-sys"
+wrappers = []
+
+[[bans.deny]]
+# Forbidden: native-tls (plan line 908)
+# We use rustls instead
+name = "native-tls"
+wrappers = []
+
+[[bans.deny]]
+# Forbidden: git2 (plan line 908)
+# No git CLI dependency
+name = "git2"
+wrappers = []
+
+[[bans.deny]]
+# Forbidden: libgit2-sys (plan line 908)
+# No git CLI dependency
+name = "libgit2-sys"
+wrappers = []
+
+# Minimum version requirements
+[[bans.deny]]
+# Minimum: ring >= 0.17.5 (plan line 908)
+# Ring versions before 0.17.5 have a security issue
+name = "ring"
+# Deny versions less than 0.17.5
+version = "< 0.17.5"
+
+[[bans.deny]]
+# Minimum: rustls >= 0.23 (plan line 908)
+name = "rustls"
+# Deny versions less than 0.23
+version = "< 0.23"
+
+[[bans.deny]]
+# Minimum: rustls-platform-verifier >= 0.2 (if used)
+# We may not use this crate, but if we do, require minimum version
+name = "rustls-platform-verifier"
+version = "< 0.2"
+
+# Sources configuration
+[sources]
+# Lint level for what to happen when a crate from a crate registry that is
+# not in the allow list is encountered
+unknown-registry = "warn"
+# Lint level for what to happen when a crate from a git repository that is
+# not in the allow list is encountered
+unknown-git = "deny"
+# List of URLs for allowed crate registries. Defaults to the crates.io index
+# if not specified. If it is specified, then it is the only registry that
+# crates may be fetched from
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# List of URLs for allowed Git repositories
+# Per plan line 911: NO git deps in published crates. Pre-release deps
+# ( -alpha, -beta, -rc) are FORBIDDEN in default features.
+allow-git = []
+
+# Feature validation
+[features]
+# Lint level for default features that are not allowed
+# Per plan line 911: Pre-release deps ( -alpha, -beta, -rc) are FORBIDDEN
+# in default features
+deny-default-features = true
+# Lint level for features that are not allowed
+# We don't have specific feature bans yet, but this is a placeholder
+allow = []
+# Deny features that enable pre-release or experimental dependencies
+[[features.deny]]
+# Deny any feature that pulls in a pre-release dependency
+name = "pre-release-dependencies"
+# This is a conceptual ban; cargo-deny doesn't directly support this check
+# We'll rely on manual review and CI checks for this
