@@ -408,7 +408,8 @@ fn run_extract_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
 
 /// Run the "extract_text" method test case.
 fn run_extract_text_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
-    let fixture_path = resolve_fixture_path(&case.fixture);
+    let fixture_path = resolve_fixture_path(&case.fixture)
+        .ok_or_else(|| anyhow!("Fixture path not found: {}", case.fixture))?;
     let options = options_from_value(&case.options);
 
     let text = extract_text(&fixture_path, &options)
@@ -444,7 +445,8 @@ fn run_extract_text_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
 
 /// Run the "extract_markdown" method test case.
 fn run_extract_markdown_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
-    let fixture_path = resolve_fixture_path(&case.fixture);
+    let fixture_path = resolve_fixture_path(&case.fixture)
+        .ok_or_else(|| anyhow!("Fixture path not found: {}", case.fixture))?;
     let options = options_from_value(&case.options);
 
     let extract_result = extract_pdf(&fixture_path, &options)
@@ -493,7 +495,8 @@ fn run_extract_markdown_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
 
 /// Run the "extract_stream" method test case.
 fn run_extract_stream_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
-    let fixture_path = resolve_fixture_path(&case.fixture);
+    let fixture_path = resolve_fixture_path(&case.fixture)
+        .ok_or_else(|| anyhow!("Fixture path not found: {}", case.fixture))?;
     let options = options_from_value(&case.options);
 
     let mut buffer = Vec::new();
@@ -539,7 +542,8 @@ fn run_extract_stream_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
 
 /// Run the "search" method test case.
 fn run_search_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
-    let fixture_path = resolve_fixture_path(&case.fixture);
+    let fixture_path = resolve_fixture_path(&case.fixture)
+        .ok_or_else(|| anyhow!("Fixture path not found: {}", case.fixture))?;
     let options = options_from_value(&case.options);
 
     // Extract text first, then search
@@ -629,7 +633,8 @@ fn run_search_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
 
 /// Run the "get_metadata" method test case.
 fn run_get_metadata_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
-    let fixture_path = resolve_fixture_path(&case.fixture);
+    let fixture_path = resolve_fixture_path(&case.fixture)
+        .ok_or_else(|| anyhow!("Fixture path not found: {}", case.fixture))?;
 
     // Use the SDK's get_metadata function for accurate metadata
     match pdftract_core::sdk::get_metadata(&fixture_path) {
@@ -656,7 +661,8 @@ fn run_get_metadata_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
 
 /// Run the "hash" method test case.
 fn run_hash_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
-    let fixture_path = resolve_fixture_path(&case.fixture);
+    let fixture_path = resolve_fixture_path(&case.fixture)
+        .ok_or_else(|| anyhow!("Fixture path not found: {}", case.fixture))?;
 
     // Extract to get the fingerprint
     let options = options_from_value(&case.options);
@@ -685,7 +691,8 @@ fn run_hash_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
 
 /// Run the "classify" method test case.
 fn run_classify_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
-    let fixture_path = resolve_fixture_path(&case.fixture);
+    let fixture_path = resolve_fixture_path(&case.fixture)
+        .ok_or_else(|| anyhow!("Fixture path not found: {}", case.fixture))?;
     let options = options_from_value(&case.options);
 
     let result = extract_pdf(&fixture_path, &options)
