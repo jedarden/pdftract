@@ -109,7 +109,7 @@ public struct Pdftract {
     ///   - options: Extraction options.
     /// - Returns: An `AsyncThrowingStream` that yields `Page` values.
     /// - Throws: `PdftractError` if extraction fails.
-    public func {{ method.camel_name }}(
+    public func {{ method.camel_name | lc_first }}(
         _ source: Source,
         options: ExtractOptions = ExtractOptions()
     ) -> AsyncThrowingStream<Page, Error> {
@@ -209,7 +209,7 @@ public struct Pdftract {
     ///   - options: Search options.
     /// - Returns: An `AsyncThrowingStream` that yields `Match` values.
     /// - Throws: `PdftractError` if search fails.
-    public func {{ method.camel_name }}(
+    public func {{ method.camel_name | lc_first }}(
         _ source: Source,
         _ pattern: String,
         options: SearchOptions = SearchOptions()
@@ -309,7 +309,7 @@ public struct Pdftract {
     ///   - receipt: The receipt data to verify.
     /// - Returns: `true` if the receipt is valid, `false` otherwise.
     /// - Throws: `PdftractError` if verification fails (not receipt validation failure).
-    public func {{ method.camel_name }}(_ path: String, receipt: Receipt) async throws -> Bool {
+    public func {{ method.camel_name | lc_first }}(_ path: String, receipt: Receipt) async throws -> Bool {
         let output = try await exec(["verify-receipt", path, receipt.data])
         return output.trimmingCharacters(in: .whitespacesAndNewlines) == "true"
     }
@@ -325,7 +325,7 @@ public struct Pdftract {
     ///   - options: Extraction options.
     /// - Returns: The extracted text.
     /// - Throws: `PdftractError` if extraction fails.
-    public func {{ method.camel_name }}(
+    public func {{ method.camel_name | lc_first }}(
         _ source: Source,
         options: ExtractOptions = ExtractOptions()
     ) async throws -> String {
@@ -375,7 +375,7 @@ public struct Pdftract {
     /// - Returns: The classification result.
     {% endif %}
     /// - Throws: `PdftractError` if operation fails.
-    public func {{ method.camel_name }}(
+    public func {{ method.camel_name | lc_first }}(
         _ source: Source
         {% if method.name == 'get_metadata' %}
         , options: BaseOptions = BaseOptions()
@@ -415,7 +415,7 @@ public struct Pdftract {
     ///   - options: Extraction options.
     /// - Returns: The complete document structure.
     /// - Throws: `PdftractError` if extraction fails.
-    public func {{ method.camel_name }}(
+    public func {{ method.camel_name | lc_first }}(
         _ source: Source,
         options: ExtractOptions = ExtractOptions()
     ) async throws -> Document {
