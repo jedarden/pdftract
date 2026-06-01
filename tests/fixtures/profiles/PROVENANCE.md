@@ -281,3 +281,4 @@ bash scripts/check-provenance.sh
 | remote_100page.pdf | tests/fixtures/generate_large_remote_fixture.rs | MIT-0 | 2026-05-29 | 16bcbee828006e51a125e7fe8e53be11ccd504b6b7e572f8ab26ee2c5c0b36e7 | Synthetic 100-page PDF for remote source range-request testing |
 | sample.pdf | tests/fixtures/valid-minimal.pdf (copied) | MIT-0 | 2026-05-31 | 34dabcd045665fff5dc2b2e2930905c23226704b4bc318f0ec08344be889e447 | Minimal valid PDF v1.4 fixture for SDK example default path |
 | security/sensitive.pdf | tests/fixtures/security/generate_sensitive_fixture.py | MIT-0 | 2026-05-29 | ba3ca8228cf835a6bc334acd8e084b32489af1a300d38b461f9db2382cbd48c6 | Synthetic password-protected PDF with unique markers for TH-08 log audit testing |
+| json_schema/simple_invoice.pdf | Synthetic invoice for JSON schema validation tests | MIT-0 | 2026-06-01 | f4d642e5e31d78486a06067d18b67947f5ffd0d1ea83dcf27902b872e7a7741a | Simple invoice PDF for JSON schema validation tests |

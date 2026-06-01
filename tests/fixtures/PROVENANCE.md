@@ -43,3 +43,7 @@ Generated: 2026-05-28
 Copied from valid-minimal.pdf for SDK examples default path
 Minimal valid PDF v1.4 fixture for contract method examples
 Generated: 2026-05-31
+
+# json_schema/simple_invoice.pdf
+Simple invoice PDF for JSON schema validation tests
+Generated: 2026-06-01
