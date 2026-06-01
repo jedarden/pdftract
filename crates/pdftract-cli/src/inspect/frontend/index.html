@@ -18,6 +18,7 @@
 <button id="btn-next" class="btn" aria-label="Next page">Next →</button>
 <input id="search-input" type="search" placeholder="Search spans... (press /)" aria-label="Search spans" class="search-input">
 <span id="match-count" class="match-count"></span>
+<button id="btn-help" class="btn btn-help" aria-label="Show keyboard shortcuts" title="Keyboard shortcuts (?)">?</button>
 <div class="toggles">
 <button class="layer-toggle" data-layer="spans" aria-label="Toggle spans layer">1 Spans</button>
 <button class="layer-toggle" data-layer="blocks" aria-label="Toggle blocks layer">2 Blocks</button>
@@ -56,6 +57,71 @@ Sync scroll
 </aside>
 </div>
 <div id="tooltip" class="tooltip" hidden></div>
+<div id="help-overlay" class="help-overlay" hidden>
+<div class="help-content">
+<button class="help-close" aria-label="Close help">×</button>
+<h2>Keyboard Shortcuts</h2>
+<div class="help-shortcuts">
+<div class="help-shortcut">
+<span class="help-key">←</span><span class="help-key">→</span>
+<span class="help-desc">Previous / Next page</span>
+</div>
+<div class="help-shortcut">
+<span class="help-key">↑</span><span class="help-key">↓</span>
+<span class="help-desc">Scroll within page</span>
+</div>
+<div class="help-shortcut">
+<span class="help-key">/</span>
+<span class="help-desc">Focus search input</span>
+</div>
+<div class="help-shortcut">
+<span class="help-key">Esc</span>
+<span class="help-desc">Blur input / Close help</span>
+</div>
+<div class="help-shortcut">
+<span class="help-key">?</span>
+<span class="help-desc">Show / Hide this help</span>
+</div>
+<div class="help-divider"></div>
+<div class="help-shortcut">
+<span class="help-key">1</span>
+<span class="help-desc">Toggle Spans layer</span>
+</div>
+<div class="help-shortcut">
+<span class="help-key">2</span>
+<span class="help-desc">Toggle Blocks layer</span>
+</div>
+<div class="help-shortcut">
+<span class="help-key">3</span>
+<span class="help-desc">Toggle Columns layer</span>
+</div>
+<div class="help-shortcut">
+<span class="help-key">4</span>
+<span class="help-desc">Toggle Reading Order layer</span>
+</div>
+<div class="help-shortcut">
+<span class="help-key">5</span>
+<span class="help-desc">Toggle Confidence Heatmap layer</span>
+</div>
+<div class="help-shortcut">
+<span class="help-key">6</span>
+<span class="help-desc">Toggle OCR layer</span>
+</div>
+<div class="help-shortcut">
+<span class="help-key">7</span>
+<span class="help-desc">Toggle MCID layer</span>
+</div>
+<div class="help-shortcut">
+<span class="help-key">8</span>
+<span class="help-desc">Toggle Anchors layer</span>
+</div>
+<div class="help-shortcut">
+<span class="help-key">9</span>
+<span class="help-desc">Toggle Diff overlay (comparison mode)</span>
+</div>
+</div>
+</div>
+</div>
 <script type="module" src="/static/app.js"></script>
 </body>
 </html>

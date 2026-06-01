@@ -16,7 +16,7 @@ let scrollSync=true;
 let matchedSpans=[];
 let currentMatchIndex=-1;
 
-function init(){loadLayerState();setupKeyboard();setupToggles();setupSearch();setupNav();setupComparisonMode();loadFragment()}
+function init(){loadLayerState();setupKeyboard();setupToggles();setupSearch();setupNav();setupComparisonMode();setupHelp();loadFragment()}
 
 async function loadDocument(){
   const res=await fetch('/api/document');
@@ -427,6 +427,33 @@ function setupComparisonMode(){
   }
 }
 
+function setupHelp(){
+  const helpBtn=document.getElementById('btn-help');
+  const helpOverlay=document.getElementById('help-overlay');
+  const closeBtn=document.querySelector('.help-close');
+
+  if(helpBtn){
+    helpBtn.addEventListener('click',()=>{
+      toggleHelp(true);
+    });
+  }
+
+  if(closeBtn){
+    closeBtn.addEventListener('click',()=>{
+      toggleHelp(false);
+    });
+  }
+
+  // Close on overlay click (outside content)
+  if(helpOverlay){
+    helpOverlay.addEventListener('click',e=>{
+      if(e.target===helpOverlay){
+        toggleHelp(false);
+      }
+    });
+  }
+}
+
 function showComparisonMode(show){
   const diffBtn=document.getElementById('btn-diff');
   const compareControls=document.querySelector('.comparison-controls');
@@ -443,25 +470,53 @@ function showComparisonMode(show){
 function setupKeyboard(){
   document.addEventListener('keydown',e=>{
     const searchInput=document.getElementById('search-input');
-    if(e.target.tagName==='INPUT'&&e.target!==searchInput)return;
+    const helpOverlay=document.getElementById('help-overlay');
+
+    // Close help overlay on Escape
+    if(e.key==='Escape'&&helpOverlay&&!helpOverlay.hidden){
+      e.preventDefault();
+      toggleHelp(false);
+      return;
+    }
+
+    // Skip keyboard shortcuts when typing in inputs (except search)
+    if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'){
+      // Allow Escape to blur input
+      if(e.key==='Escape'){
+        e.preventDefault();
+        e.target.blur();
+        if(e.target===searchInput)clearSearch();
+      }
+      return;
+    }
+
     if(e.key==='ArrowLeft'){
       e.preventDefault();
       navigatePage(-1)
     }else if(e.key==='ArrowRight'){
       e.preventDefault();
       navigatePage(1)
+    }else if(e.key==='ArrowUp'){
+      // Scroll up within page
+      e.preventDefault();
+      scrollPage(-1)
+    }else if(e.key==='ArrowDown'){
+      // Scroll down within page
+      e.preventDefault();
+      scrollPage(1)
     }else if(e.key==='/'){
-      if(e.target!==searchInput){
-        e.preventDefault();
-        searchInput.focus()
-      }
+      e.preventDefault();
+      searchInput.focus()
+    }else if(e.key==='?'){
+      e.preventDefault();
+      toggleHelp()
     }else if(e.key>='1'&&e.key<='9'){
       const idx=parseInt(e.key)-1;
       const layer=LAYERS[idx];
       if(layer)toggleLayer(layer)
-    }else if(e.key==='Escape'&&e.target===searchInput){
+    }else if(e.key==='Escape'){
       e.preventDefault();
-      clearSearch()
+      document.activeElement.blur()
     }
   })
 }
@@ -570,6 +625,14 @@ function navigatePage(delta){
   if(newPage>=0&&newPage<totalPages)loadPage(newPage)
 }
 
+function prevPage(){
+  navigatePage(-1)
+}
+
+function nextPage(){
+  navigatePage(1)
+}
+
 function updateNavState(){
   document.getElementById('btn-prev').disabled=currentPage<=0;
   document.getElementById('btn-next').disabled=currentPage>=totalPages-1
@@ -631,6 +694,25 @@ function updateActiveThumbnail(){
     t.classList.toggle('active',parseInt(t.dataset.index)===currentPage);
     t.disabled=false;
   });
+}
+
+function scrollPage(delta){
+  const container=document.getElementById('canvas-container');
+  if(container){
+    const scrollAmount=100;
+    container.scrollTop+=delta*scrollAmount
+  }
+}
+
+function toggleHelp(show){
+  const overlay=document.getElementById('help-overlay');
+  if(!overlay)return;
+  overlay.hidden=show===undefined?!overlay.hidden:!show;
+  if(!overlay.hidden){
+    // Focus on close button for accessibility
+    const closeBtn=overlay.querySelector('.help-close');
+    if(closeBtn)closeBtn.focus();
+  }
 }
 
 function updateFragment(){

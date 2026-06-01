@@ -63,3 +63,14 @@ html[data-layers~="spans"] .layer-spans,html[data-layers~="blocks"] .layer-block
 .diff-removed{fill:none;stroke:#dc3545;stroke-width:2;stroke-dasharray:4,2;opacity:.7}
 .diff-added{fill:none;stroke:#28a745;stroke-width:2;stroke-dasharray:4,2;opacity:.7}
 .diff-changed{fill:none;stroke:#ffc107;stroke-width:2;stroke-dasharray:4,2;opacity:.7}
+.btn-help{width:32px;height:32px;padding:0;font-size:16px;font-weight:600;border-radius:50%}
+.help-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:2000;display:flex;align-items:center;justify-content:center}
+.help-content{background:#fff;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.2);max-width:500px;width:90%;max-height:80vh;overflow:auto;padding:0;position:relative}
+.help-close{position:absolute;top:12px;right:12px;width:32px;height:32px;border:none;background:transparent;font-size:24px;cursor:pointer;color:#666;border-radius:4px;display:flex;align-items:center;justify-content:center}
+.help-close:hover{background:#f0f0f0;color:#333}
+.help-content h2{margin:0;padding:20px 20px 10px;border-bottom:1px solid #ddd;font-size:18px}
+.help-shortcuts{padding:20px;display:flex;flex-direction:column;gap:8px}
+.help-shortcut{display:flex;align-items:center;gap:12px;padding:4px 0}
+.help-key{min-width:32px;padding:4px 8px;background:#f5f5f5;border:1px solid #ddd;border-radius:4px;font-family:ui-monospace,monospace;font-size:13px;text-align:center;display:inline-block}
+.help-desc{font-size:14px;color:#333}
+.help-divider{border-top:1px solid #eee;margin:8px 0}
