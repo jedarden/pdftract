@@ -31,7 +31,12 @@ The `jsonschema = "0.26"` crate is already in dev-dependencies (line 84).
 ### 3. Fixtures
 **Directory:** `tests/fixtures/json_schema/`
 
-Currently contains one fixture: `simple_invoice.pdf`
+Currently contains 5 fixtures covering diverse PDF types:
+- `EC-04-rc4-encrypted.pdf` - RC4 encrypted PDF
+- `EC-05-aes128-encrypted.pdf` - AES-128 encrypted PDF
+- `sample.pdf` - Sample document
+- `simple_invoice.pdf` - Simple invoice
+- `valid-minimal.pdf` - Minimal valid PDF
 
 The test auto-discovers all `*.pdf` files in this directory and validates their extraction output against the schema. Adding new fixtures automatically includes them in the next test run.
 
@@ -65,12 +70,12 @@ test test_schema_span_json_structure ... ok
 test test_synthetic_output_validates ... ok
 test test_schema_itself_is_valid ... ok
 
-test result: ok. 6 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.15s
+test result: ok. 6 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.16s
 ```
 
 ## Performance
 
-Schema validation is fast: 6 tests completed in 0.15 seconds. The jsonschema crate is efficient and meets the <100ms per validation target.
+Schema validation is fast: 6 tests completed in 0.16 seconds. The jsonschema crate is efficient and meets the <100ms per validation target.
 
 ## References
 - Plan section: Phase 6.1.4

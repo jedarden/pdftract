@@ -47,3 +47,22 @@ Generated: 2026-05-31
 # json_schema/simple_invoice.pdf
 Simple invoice PDF for JSON schema validation tests
 Generated: 2026-06-01
+
+# json_schema/EC-04-rc4-encrypted.pdf
+Copied from fixtures/EC-04-rc4-encrypted.pdf for JSON schema validation
+PDF 1.7, RC4 encryption (V=1, R=2), 40-bit key, user password: "user40"
+Generated: 2026-06-01
+
+# json_schema/EC-05-aes128-encrypted.pdf
+Copied from fixtures/EC-05-aes128-encrypted.pdf for JSON schema validation
+PDF 1.7, AES-128 encryption (V=2, R=3), 128-bit key, user password: "user128"
+Generated: 2026-06-01
+
+# json_schema/valid-minimal.pdf
+Minimal valid PDF v1.4 fixture for JSON schema validation tests
+Generated: 2026-05-28
+
+# json_schema/sample.pdf
+Copied from valid-minimal.pdf for SDK examples default path
+Minimal valid PDF v1.4 fixture for contract method examples
+Generated: 2026-05-31
