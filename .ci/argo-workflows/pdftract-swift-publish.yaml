@@ -1,0 +1,327 @@
+# pdftract-swift-publish WorkflowTemplate
+#
+# Publishes the Swift SDK to github.com/jedarden/pdftract-swift by creating a git tag.
+# Triggered by the pdftract-release-cascade after pdftract-build-binaries completes.
+# The workflow clones the Swift SDK repo, syncs the version, runs conformance
+# tests, creates a git tag matching the binary version, and pushes it.
+# Swift Package Manager is git-tag-based, so the tag IS the version.
+#
+# === Parameter Reference ===
+# - tag: Git tag from the main repo (e.g., v1.0.0)
+# - version: SemVer version string (e.g., 1.0.0)
+#
+# === Steps ===
+# 1. clone-sdk-repo: Clone github.com/jedarden/pdftract-swift
+# 2. sync-version: Update Package.swift (SPM doesn't require explicit version)
+# 3. conformance: Run swift test --filter ConformanceTests (must pass to publish)
+# 4. tag-and-push: Create and push git tag VERSION (numeric, no v prefix)
+# 5. warm-spi: Post the tag to Swift Package Index to trigger indexing
+#
+# === Re-runnability ===
+# A re-run after a partial failure will detect the existing tag and skip the push
+# step (idempotent). The workflow is safe to re-run.
+#
+# === SPM Tag Format ===
+# SPM tags use NUMERIC format only: 1.0.0, not v1.0.0
+# The workflow strips the 'v' prefix from the binary tag when creating the SPM tag.
+#
+# Bead: pdftract-5lvpu
+# Plan section: SDK Architecture / Per-SDK Release Channels, line 3599 (Swift v1.1+)
+# ADR-009: Argo Workflows on iad-ci only
+#
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: pdftract-swift-publish
+  namespace: argo-workflows
+  labels:
+    app.kubernetes.io/name: pdftract-swift-publish
+    app.kubernetes.io/component: ci
+    app.kubernetes.io/part-of: pdftract
+spec:
+  entrypoint: publish-swift-sdk
+  serviceAccountName: argo-workflow
+
+  podGC:
+    strategy: OnPodCompletion
+
+  ttlStrategy:
+    secondsAfterSuccess: 1800
+    secondsAfterFailure: 7200
+
+  arguments:
+    parameters:
+      - name: tag
+        value: ""
+        description: "Git tag from main repo (e.g., v1.0.0)"
+      - name: version
+        value: ""
+        description: "Version extracted from tag (e.g., 1.0.0)"
+
+  volumeClaimTemplates:
+    - metadata:
+        name: workspace
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: sata-large
+        resources:
+          requests:
+            storage: 5Gi
+
+  podMetadata:
+    labels:
+      app.kubernetes.io/name: pdftract-swift-publish
+      tag: "{{workflow.parameters.tag}}"
+
+  templates:
+    # === Main DAG ===
+    # Orchestrates the Swift SDK publish steps
+    - name: publish-swift-sdk
+      dag:
+        tasks:
+          - name: clone-sdk-repo
+            template: clone-sdk-repo
+
+          - name: sync-version
+            template: sync-version
+            dependencies: [clone-sdk-repo]
+
+          - name: conformance
+            template: conformance
+            dependencies: [sync-version]
+
+          - name: tag-and-push
+            template: tag-and-push
+            dependencies: [conformance]
+
+          - name: warm-spi
+            template: warm-spi
+            dependencies: [tag-and-push]
+            continueOn:
+              failed: true  # Warm-up is optional; publish succeeds even if it fails
+
+    # === Clone SDK Repo ===
+    # Clones the pdftract-swift repository from GitHub
+    - name: clone-sdk-repo
+      activeDeadlineSeconds: 300
+      container:
+        image: alpine:3.19
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            apk add --no-cache git
+
+            echo "Cloning pdftract-swift repository..."
+            git clone --branch main \
+              "https://x-access-token:${GH_TOKEN}@github.com/jedarden/pdftract-swift.git" \
+              /workspace/sdk-swift
+
+            cd /workspace/sdk-swift
+            echo "Cloned commit: $(git rev-parse HEAD)"
+            echo "Branch: $(git branch --show-current)"
+        env:
+          - name: GH_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: github-pat-pdftract
+                key: token
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+
+    # === Sync Version ===
+    # For SPM, the version is implicit in the git tag, but we verify Package.swift
+    # - name: sync-version
+      activeDeadlineSeconds: 120
+      container:
+        image: swift:5.10-jammy
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            VERSION="{{workflow.parameters.version}}"
+            TAG="{{workflow.parameters.tag}}"
+
+            cd /workspace/sdk-swift
+
+            echo "Verifying Package.swift for version ${VERSION} (tag: ${TAG})"
+
+            # Verify Package.swift exists
+            if [ ! -f Package.swift ]; then
+              echo "ERROR: Package.swift not found in pdftract-swift repo"
+              exit 1
+            fi
+
+            # For SPM, the version is in the git tag, not in Package.swift
+            # But we verify the package name is correct
+            if ! grep -q "name: \"pdftract-swift\"" Package.swift; then
+              echo "WARNING: Package name doesn't match expected 'pdftract-swift'"
+            fi
+
+            echo "Version sync complete (SPM version is implicit in git tag)"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+
+    # === Conformance Tests ===
+    # Runs the Swift SDK conformance test suite against the bundled binary.
+    # This step MUST pass for the publish to proceed.
+    - name: conformance
+      activeDeadlineSeconds: 1200
+      container:
+        image: swift:5.10-jammy
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            VERSION="{{workflow.parameters.version}}"
+
+            echo "=========================================="
+            echo "Running Swift SDK Conformance Tests"
+            echo "=========================================="
+
+            cd /workspace/sdk-swift
+
+            # Build the package first
+            echo "Building package..."
+            swift build
+
+            # Run the conformance test suite
+            echo "Running: swift test --filter ConformanceTests"
+            swift test --filter ConformanceTests
+
+            echo "=========================================="
+            echo "Conformance tests PASSED"
+            echo "=========================================="
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+
+    # === Tag and Push ===
+    # Creates a git tag VERSION (numeric, no v prefix) and pushes it to GitHub.
+    # This is the actual publish step for Swift Package Manager.
+    - name: tag-and-push
+      activeDeadlineSeconds: 300
+      container:
+        image: alpine:3.19
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            VERSION="{{workflow.parameters.version}}"
+            TAG="{{workflow.parameters.tag}}"
+
+            echo "=========================================="
+            echo "Creating and pushing git tag ${VERSION}"
+            echo "=========================================="
+
+            cd /workspace/sdk-swift
+
+            # Check if tag already exists (re-run scenario)
+            if git rev-parse "${VERSION}" >/dev/null 2>&1; then
+              echo "Tag ${VERSION} already exists, skipping push"
+              echo "Existing tag: $(git rev-parse ${VERSION})"
+              exit 0
+            fi
+
+            # Create the tag (numeric format, no 'v' prefix for SPM)
+            echo "Creating tag ${VERSION}..."
+            git tag -a "${VERSION}" -m "Release ${VERSION} (matches pdftract ${TAG})"
+
+            # Push the tag
+            echo "Pushing tag to origin..."
+            git push origin "${VERSION}"
+
+            echo "=========================================="
+            echo "Tag ${VERSION} pushed successfully"
+            echo "=========================================="
+            echo ""
+            echo "Swift package will be available at:"
+            echo "  https://github.com/jedarden/pdftract-swift"
+            echo ""
+            echo "Installation in Package.swift:"
+            echo "  .package(url: \"https://github.com/jedarden/pdftract-swift.git\", from: \"${VERSION}\")"
+        env:
+          - name: GH_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: github-pat-pdftract
+                key: token
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+
+    # === Warm Swift Package Index ===
+    # Posts the tag to Swift Package Index to trigger indexing.
+    # This is optional but speeds up availability.
+    - name: warm-spi
+      activeDeadlineSeconds: 60
+      container:
+        image: alpine:3.19
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            VERSION="{{workflow.parameters.version}}"
+            TAG="{{workflow.parameters.tag}}"
+
+            echo "Warming Swift Package Index for ${VERSION}..."
+
+            # Post to Swift Package Index API to trigger indexing
+            # The SPI API accepts git repository URLs
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              -X POST \
+              -H "Accept: application/json" \
+              "https://swiftpackageindex.com/api/packages/scan" \
+              --data-binary "{\"repositoryURL\":\"https://github.com/jedarden/pdftract-swift\",\"version\":\"${VERSION}\"}")
+
+            if [ "${STATUS}" = "200" ] || [ "${STATUS}" = "202" ] || [ "${STATUS}" = "409" ]; then
+              echo "Swift Package Index ping successful (status: ${STATUS})"
+              echo "Indexing should complete within a few minutes"
+            else
+              echo "Swift Package Index returned status ${STATUS}"
+              echo "The package may still be indexing; check https://swiftpackageindex.com later"
+            fi
+
+            echo ""
+            echo "Swift package will be available at:"
+            echo "  https://swiftpackageindex.com/jedarden/pdftract-swift"
+            echo ""
+            echo "Installation in Package.swift:"
+            echo "  .package(url: \"https://github.com/jedarden/pdftract-swift.git\", from: \"${VERSION}\")"
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
