@@ -79,6 +79,24 @@ One unrelated test fails: `test_block_to_markdown_formula_display`
 - This is a bug in the test, not in the formula emission logic
 - Formula emission is not part of this bead's scope
 
+## Latest Test Results (2026-06-01)
+
+```
+cargo nextest run --package pdftract-core --lib markdown::tests
+Summary: 118 tests run: 117 passed, 1 failed, 2739 skipped
+```
+
+All critical tests for this bead passed:
+- ✅ `test_page_to_markdown_with_links_and_footnotes_emits_footnote_ref_and_def`
+- ✅ `test_page_to_markdown_with_links_and_footnotes_no_footnotes_emits_no_markers`
+- ✅ `test_page_to_markdown_with_links_and_footnotes_emits_inline_link`
+- ✅ `test_markdown_no_page_breaks_omits_horizontal_rule`
+- ✅ `test_markdown_with_page_breaks_emits_horizontal_rule`
+- ✅ `test_page_to_markdown_with_links_emits_internal_page_link`
+- ✅ `test_spans_to_markdown_with_links_and_footnotes_footnote_takes_precedence`
+
+The single failed test (`test_block_to_markdown_formula_display`) is unrelated to this bead.
+
 ## Conclusion
 
 This bead's functionality (footnotes, inline links, page breaks) is fully implemented and all relevant tests pass. The code is ready for Phase 7 integration (footnote detection) when that phase is implemented.
