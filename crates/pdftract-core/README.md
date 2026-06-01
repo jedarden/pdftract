@@ -26,6 +26,35 @@ The tradeoff—occasional merge conflicts when PRs update overlapping dependenci
 - `extract`: Text extraction with provenance (bounding boxes, confidence scores)
 - `ocr`: Tesseract integration for raster pages
 
+## Testing
+
+### SDK Conformance Tests
+
+The `conformance` integration test validates that `pdftract-core`'s public API satisfies the SDK contract shared across all language implementations. The test rig runs shared conformance cases from `tests/sdk-conformance/cases.json` and verifies correct behavior for all 9 SDK contract methods.
+
+```bash
+# Run the conformance suite
+cargo test --test conformance
+
+# Run with specific features
+cargo test --test conformance --features ocr,profiles,remote,receipts
+```
+
+The conformance suite covers:
+- `extract` — Full extraction with structured Document output
+- `extract_text` — Plain text extraction
+- `extract_markdown` — Markdown-formatted extraction with tables and headings
+- `extract_stream` — Streaming NDJSON extraction for large documents
+- `search` — Pattern search with regex and case-insensitive options
+- `get_metadata` — PDF metadata (page count, title, author, creator)
+- `hash` — Content fingerprinting (SHA256) with fast hash variant
+- `classify` — Document classification with category and confidence
+- `verify_receipt` — Receipt verification against signed metadata
+
+Each test case validates expected results with numeric tolerances for bounding boxes and confidence scores. Feature-gated tests (OCR, decryption, classification, receipts, remote) skip automatically when the corresponding feature is not compiled.
+
+See `CONTRIBUTING.md` for more details on the conformance suite and adding new test cases.
+
 ## Usage
 
 ```rust

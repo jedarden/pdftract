@@ -102,6 +102,44 @@ cargo test --workspace --features default -- --nocapture
 cargo test --workspace --features default test_name
 ```
 
+### SDK Conformance Tests
+
+pdftract includes a shared SDK conformance suite that validates the public API contract across all SDK implementations (Python, Node, Go, Java, .NET, and Rust). The Rust SDK conformance tests run directly against `pdftract-core` to ensure the library's public API satisfies the documented SDK contract.
+
+```bash
+# Run the conformance suite
+cargo test -p pdftract-core --test conformance
+
+# Run with specific features
+cargo test -p pdftract-core --test conformance --features ocr,profiles,remote,receipts
+```
+
+The conformance suite is defined in `tests/sdk-conformance/cases.json` and covers all 9 SDK contract methods:
+- `extract` — Full extraction with structured output
+- `extract_text` — Plain text extraction
+- `extract_markdown` — Markdown-formatted extraction
+- `extract_stream` — Streaming NDJSON extraction
+- `search` — Pattern search (literal and regex)
+- `get_metadata` — PDF metadata extraction
+- `hash` — Content fingerprinting (SHA256)
+- `classify` — Document classification
+- `verify_receipt` — Receipt verification
+
+Each test case includes:
+- **fixture** — Input PDF path or URL
+- **method** — Which SDK method to invoke
+- **options** — Method-specific options (OCR, password, etc.)
+- **expected** — Expected results with numeric tolerances
+- **tolerances** — Per-field numeric comparison tolerances
+- **feature** — Required feature flag (for conditional compilation)
+
+Feature-gated tests skip automatically when the corresponding feature is not compiled:
+- `ocr` — OCR-based extraction
+- `decrypt` — Password-protected PDFs
+- `profiles` — Document classification
+- `receipts` — Receipt verification
+- `remote` — URL-based remote fetch
+
 ## Minimum Supported Rust Version (MSRV)
 
 The **Minimum Supported Rust Version (MSRV)** for pdftract is **1.78**. This is the oldest Rust version that can successfully build the project. The MSRV is declared in `Cargo.toml` via the `rust-version` field and enforced in CI.
