@@ -7,9 +7,10 @@
 
 use crate::diagnostics::{DiagCode, Diagnostic as Diag};
 use crate::parser::object::{ObjRef, ObjectParser, PdfDict, PdfObject, PdfStream};
+use crate::parser::object::cache::ObjectCache;
 use crate::parser::stream::{MemorySource, PdfSource};
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 // Use memchr for SIMD-accelerated byte searching in forward_scan_xref
 use memchr::{memchr, memchr_iter};
@@ -223,15 +224,13 @@ pub fn is_hybrid_trailer(trailer: Option<&PdfDict>) -> bool {
 /// Cross-reference resolver.
 ///
 /// This resolver tracks the mapping from object numbers to their file locations
-/// and handles resolution through object streams. It also detects circular
-/// references to prevent infinite loops.
+/// and handles resolution through object streams. It uses ObjectCache for LRU caching
+/// and thread-local cycle detection to prevent infinite loops.
 pub struct XrefResolver {
     /// Map from object number to xref entry
     entries: HashMap<u32, XrefEntry>,
-    /// Cache of resolved objects (for object streams)
-    cache: Arc<RwLock<HashMap<ObjRef, PdfObject>>>,
-    /// Per-thread resolution stack for circular reference detection
-    resolving: Arc<RwLock<HashSet<ObjRef>>>,
+    /// LRU cache of resolved objects with cycle detection and depth limiting
+    cache: Arc<ObjectCache>,
 }
 
 impl XrefResolver {
@@ -239,8 +238,7 @@ impl XrefResolver {
     pub fn new() -> Self {
         XrefResolver {
             entries: HashMap::new(),
-            cache: Arc::new(RwLock::new(HashMap::new())),
-            resolving: Arc::new(RwLock::new(HashSet::new())),
+            cache: Arc::new(ObjectCache::new()),
         }
     }
 
@@ -248,8 +246,7 @@ impl XrefResolver {
     pub fn from_section(section: XrefSection) -> Self {
         XrefResolver {
             entries: section.entries,
-            cache: Arc::new(RwLock::new(HashMap::new())),
-            resolving: Arc::new(RwLock::new(HashSet::new())),
+            cache: Arc::new(ObjectCache::new()),
         }
     }
 
@@ -263,65 +260,21 @@ impl XrefResolver {
         self.entries.get(&obj_nr)
     }
 
-    /// Check if a resolution is in progress (for circular reference detection).
-    pub fn is_resolving(&self, obj_ref: ObjRef) -> bool {
-        self.resolving
-            .read()
-            .map(|guard| guard.contains(&obj_ref))
-            .unwrap_or(false)
-    }
-
-    /// Mark an object as being resolved.
-    pub fn start_resolving(&self, obj_ref: ObjRef) -> bool {
-        match self.resolving.write() {
-            Ok(mut resolving) => {
-                if resolving.contains(&obj_ref) {
-                    return false;
-                }
-                resolving.insert(obj_ref);
-                true
-            }
-            Err(_) => false, // Lock poisoned - treat as failed to start
-        }
-    }
-
-    /// Mark an object as finished resolving.
-    pub fn finish_resolving(&self, obj_ref: ObjRef) {
-        if let Ok(mut resolving) = self.resolving.write() {
-            resolving.remove(&obj_ref);
-        }
-        // If lock is poisoned, ignore - cleanup is optional
-    }
-
     /// Resolve an object reference to its value.
     ///
     /// This is a stub implementation that returns Null. The full implementation
     /// (Phase 1.3) will:
-    /// - Check for circular references
+    /// - Check for circular references (via ObjectCache)
     /// - Look up the xref entry
     /// - Read and parse the object from its offset
     /// - Handle object streams
-    /// - Cache resolved objects
+    /// - Cache resolved objects (via ObjectCache LRU)
     pub fn resolve(&self, obj_ref: ObjRef) -> ResolveResult<PdfObject> {
-        // Check for circular reference
-        if !self.start_resolving(obj_ref) {
-            return Err(ResolveError::CircularRef(obj_ref));
-        }
+        use std::sync::Arc;
 
-        // Check cache first
-        {
-            match self.cache.read() {
-                Ok(cache) => {
-                    if let Some(obj) = cache.get(&obj_ref) {
-                        self.finish_resolving(obj_ref);
-                        return Ok(obj.clone());
-                    }
-                }
-                Err(_) => {
-                    // Lock poisoned - clear the poisoned state and continue
-                    // The cache is optional, so we can proceed without it
-                }
-            }
+        // Check cache first (includes cycle detection via begin_resolution)
+        if let Some(obj) = self.cache.get(obj_ref) {
+            return Ok(obj.as_ref().clone());
         }
 
         // Look up the xref entry
@@ -333,7 +286,6 @@ impl XrefResolver {
         // Stub: return Null for now
         // Full implementation will read from file offset and parse
         // Use resolve_with_source instead
-        self.finish_resolving(obj_ref);
         Ok(PdfObject::Null)
     }
 
@@ -341,11 +293,11 @@ impl XrefResolver {
     ///
     /// This method implements full object resolution by reading from the file source.
     /// It:
-    /// - Checks for circular references
-    /// - Checks the cache first
+    /// - Checks for circular references and depth limits (via ObjectCache)
+    /// - Checks the LRU cache first
     /// - Looks up the xref entry
     /// - Reads and parses the object from its file offset
-    /// - Caches the result for future lookups
+    /// - Caches the result for future lookups (LRU eviction at 4096 entries)
     ///
     /// # Parameters
     /// - `obj_ref`: The object reference to resolve
@@ -359,26 +311,22 @@ impl XrefResolver {
         source: &dyn PdfSource,
     ) -> ResolveResult<PdfObject> {
         use crate::parser::object::ObjectParser;
+        use std::sync::Arc;
 
-        // Check for circular reference
-        if !self.start_resolving(obj_ref) {
-            return Err(ResolveError::CircularRef(obj_ref));
-        }
+        // Check for circular reference and depth limit via ObjectCache
+        // The ResolutionGuard automatically cleans up on drop (thread-local cycle detection)
+        let _guard = self.cache.begin_resolution(obj_ref).map_err(|diag| {
+            // Convert Diagnostic to ResolveError
+            match diag.code {
+                DiagCode::StructCircularRef => ResolveError::CircularRef(obj_ref),
+                DiagCode::StructDepthExceeded => ResolveError::CircularRef(obj_ref),
+                _ => ResolveError::Io(diag.message.to_string()),
+            }
+        })?;
 
         // Check cache first
-        {
-            match self.cache.read() {
-                Ok(cache) => {
-                    if let Some(obj) = cache.get(&obj_ref) {
-                        self.finish_resolving(obj_ref);
-                        return Ok(obj.clone());
-                    }
-                }
-                Err(_) => {
-                    // Lock poisoned - clear the poisoned state and continue
-                    // The cache is optional, so we can proceed without it
-                }
-            }
+        if let Some(obj) = self.cache.get(obj_ref) {
+            return Ok(obj.as_ref().clone());
         }
 
         // Look up the xref entry
@@ -392,7 +340,6 @@ impl XrefResolver {
                 // Check generation number
                 if *gen_nr != obj_ref.generation {
                     // Generation mismatch - treat as not found
-                    self.finish_resolving(obj_ref);
                     return Err(ResolveError::NotFound(obj_ref));
                 }
 
@@ -412,46 +359,40 @@ impl XrefResolver {
                     if indirect.id.object != obj_ref.object
                         || indirect.id.generation != obj_ref.generation
                     {
-                        self.finish_resolving(obj_ref);
                         return Err(ResolveError::NotFound(obj_ref));
                     }
 
                     // Get the parsed object (the actual value)
                     let obj = indirect.obj;
 
-                    // Cache the result
-                    if let Ok(mut cache) = self.cache.write() {
-                        cache.insert(obj_ref, obj.clone());
-                    }
+                    // Cache the result (ObjectCache handles LRU eviction and excludes PdfNull from cycles)
+                    self.cache.insert(obj_ref, Arc::new(obj.clone()));
 
-                    self.finish_resolving(obj_ref);
                     Ok(obj)
                 } else {
                     // Failed to parse indirect object
-                    self.finish_resolving(obj_ref);
                     Err(ResolveError::NotFound(obj_ref))
                 }
             }
             XrefEntry::Free { .. } => {
                 // Free entry - object doesn't exist
-                self.finish_resolving(obj_ref);
                 Err(ResolveError::NotFound(obj_ref))
             }
             XrefEntry::Compressed { .. } => {
                 // Object stream - not yet implemented
                 // For now, return not found
-                self.finish_resolving(obj_ref);
                 Err(ResolveError::NotFound(obj_ref))
             }
         }
     }
 
     /// Cache a resolved object.
+    ///
+    /// Uses the LRU cache which automatically evicts at 4096 entries.
+    /// PdfNull from cycle detection is NOT cached (see ObjectCache::insert).
     pub fn cache_object(&self, obj_ref: ObjRef, obj: PdfObject) {
-        if let Ok(mut cache) = self.cache.write() {
-            cache.insert(obj_ref, obj);
-        }
-        // If lock is poisoned, ignore - caching is optional
+        use std::sync::Arc;
+        self.cache.insert(obj_ref, Arc::new(obj));
     }
 
     /// Get the number of entries in the xref table.
@@ -2393,6 +2334,7 @@ pub fn load_xref_with_prev_chain(source: &dyn PdfSource, start_offset: u64) -> X
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parser::object::cycle;
 
     #[test]
     fn test_obj_ref() {
@@ -2437,13 +2379,21 @@ mod tests {
         let resolver = XrefResolver::new();
         let obj_ref = ObjRef::new(1, 0);
 
-        assert!(resolver.start_resolving(obj_ref));
-        assert!(resolver.is_resolving(obj_ref));
-        assert!(!resolver.start_resolving(obj_ref)); // Second call fails
+        // First resolution succeeds
+        let guard1 = resolver.cache.begin_resolution(obj_ref).unwrap();
+        assert!(cycle::is_resolving(obj_ref));
 
-        resolver.finish_resolving(obj_ref);
-        assert!(!resolver.is_resolving(obj_ref));
-        assert!(resolver.start_resolving(obj_ref)); // Can start again
+        // Second resolution while first is active should fail (cycle)
+        let result = resolver.cache.begin_resolution(obj_ref);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, DiagCode::StructCircularRef);
+
+        // Drop guard1 to clean up
+        drop(guard1);
+        assert!(!cycle::is_resolving(obj_ref));
+
+        // Can start again after cleanup
+        let _guard2 = resolver.cache.begin_resolution(obj_ref).unwrap();
     }
 
     #[test]

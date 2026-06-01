@@ -176,6 +176,7 @@ fn create_page_context_for_fixture(fixture: &Fixture) -> pdftract_core::classify
             ctx.raw_char_count = 1000;
             ctx.valid_char_count = 1000;
             ctx.invisible_text_count = 100; // All text is Tr=3
+            ctx.tr3_op_count = 100; // Keep in sync with invisible_text_count for all_tr3 check
             ctx.replacement_char_count = 0;
             ctx.image_coverage = 0.95;
             ctx.has_full_page_image = true;
@@ -185,6 +186,10 @@ fn create_page_context_for_fixture(fixture: &Fixture) -> pdftract_core::classify
             ctx.height = 792.0;
             ctx.rotation = 0;
             ctx.grid_cells = None;
+            // Set image_xobject_areas for full-page image detection
+            // Page area: 612 * 792 = 484,704 pt²
+            // Need >= 95% coverage: >= 460,468.8 pt²
+            ctx.image_xobject_areas = vec![470_000.0]; // ~97% of page (clearly above 95% threshold)
             ctx
         }
         "Hybrid" => {

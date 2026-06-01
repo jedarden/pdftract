@@ -25,6 +25,31 @@ use std::sync::Arc;
 /// Its field set is a contract — every consumer assumes the fields
 /// with the precise types in the plan.
 ///
+/// # Example
+///
+/// ```rust,no_run
+/// use pdftract_core::glyph::{Glyph, UnicodeSource};
+/// use pdftract_core::graphics_state::Color;
+/// use std::sync::Arc;
+///
+/// let glyph = Glyph::new(
+///     'A',                           // Unicode codepoint
+///     UnicodeSource::ToUnicode,     // Source of Unicode mapping
+///     1.0,                            // Confidence score [0.0, 1.0]
+///     [10.0, 12.0, 50.0, 22.0],    // Bounding box [x0, y0, x1, y1]
+///     Arc::from("Helvetica"),       // Font name (shared)
+///     12.0,                          // Font size in points
+///     0,                             // Text rendering mode
+///     Color::DeviceGray(0.0),       // Fill color
+///     false,                         // Word boundary flag
+///     None,                          // MCID (marked content ID)
+///     false,                         // OCG hidden flag
+/// );
+///
+/// assert_eq!(glyph.codepoint, 'A');
+/// assert_eq!(glyph.confidence, 1.0);
+/// ```
+///
 /// Per plan section Phase 3.2 (lines 1556-1569) with OCG extension (bead pdftract-1q19p):
 /// ```rust
 /// struct Glyph {

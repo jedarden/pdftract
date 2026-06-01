@@ -225,7 +225,165 @@ async function renderPage(){
 
 function renderJson(){
   const tree=document.getElementById('json-tree');
-  tree.textContent=JSON.stringify(pageData,null,2)
+  tree.innerHTML='';
+  const root=buildJsonTree(pageData);
+  tree.appendChild(root);
+  setupJsonNavigation();
+}
+
+function buildJsonTree(data){
+  const root=document.createElement('div');
+
+  // Page metadata
+  const pageDetails=document.createElement('details');
+  pageDetails.open=true;
+  pageDetails.innerHTML=`<summary>page</summary>`;
+  root.appendChild(pageDetails);
+
+  const pageContent=document.createElement('div');
+  pageDetails.appendChild(pageContent);
+
+  // Basic page properties
+  if(data.width!==undefined){
+    pageContent.appendChild(createLeaf('width',data.width));
+  }
+  if(data.height!==undefined){
+    pageContent.appendChild(createLeaf('height',data.height));
+  }
+  if(data.rotation!==undefined){
+    pageContent.appendChild(createLeaf('rotation',data.rotation));
+  }
+
+  // Spans array
+  if(data.spans&&Array.isArray(data.spans)){
+    const spansDetails=document.createElement('details');
+    spansDetails.open=true;
+    spansDetails.innerHTML=`<summary>spans (${data.spans.length} items)</summary>`;
+    pageContent.appendChild(spansDetails);
+
+    const spansContent=document.createElement('div');
+    spansDetails.appendChild(spansContent);
+
+    data.spans.forEach((span,index)=>{
+      const spanEntry=document.createElement('div');
+      spanEntry.className='span-entry';
+      spanEntry.id=`span-${index}`;
+      spanEntry.setAttribute('data-span-index',index);
+
+      const confDisplay=span.confidence!==null&&span.confidence!==undefined
+        ?`confidence: ${span.confidence.toFixed(2)}`
+        :'confidence: null';
+
+      spanEntry.innerHTML=`
+        <span class="span-index">[${index}]</span>
+        <span class="span-text">"${escapeHtml(span.text)}"</span>
+        <span class="span-meta">${confDisplay}</span>
+      `;
+
+      // Make JSON entry clickable (reverse navigation)
+      spanEntry.addEventListener('click',()=>jumpToSpan(index));
+
+      spansContent.appendChild(spanEntry);
+    });
+  }
+
+  // Blocks array
+  if(data.blocks&&Array.isArray(data.blocks)){
+    const blocksDetails=document.createElement('details');
+    blocksDetails.open=false;
+    blocksDetails.innerHTML=`<summary>blocks (${data.blocks.length} items)</summary>`;
+    pageContent.appendChild(blocksDetails);
+
+    const blocksContent=document.createElement('div');
+    blocksDetails.appendChild(blocksContent);
+
+    data.blocks.forEach((block,index)=>{
+      const blockEntry=document.createElement('div');
+      blockEntry.className='block-entry';
+
+      const bbox=Array.isArray(block.bbox)?`[${block.bbox.map(v=>v.toFixed(1)).join(', ')}]`:'[]';
+      blockEntry.innerHTML=`
+        <summary>[${index}] ${block.type||'unknown'} bbox: ${bbox}</summary>
+      `;
+
+      blocksContent.appendChild(blockEntry);
+    });
+  }
+
+  return root;
+}
+
+function createLeaf(key,value){
+  const div=document.createElement('div');
+  div.className='json-leaf';
+  div.innerHTML=`<span class="json-key">${key}:</span> <span class="json-value">${formatValue(value)}</span>`;
+  return div;
+}
+
+function formatValue(value){
+  if(typeof value==='string')return`"${value}"`;
+  if(value===null)return'null';
+  return String(value);
+}
+
+function escapeHtml(text){
+  const div=document.createElement('div');
+  div.textContent=text;
+  return div.innerHTML;
+}
+
+function setupJsonNavigation(){
+  const wrappers=document.querySelectorAll('#page-svg svg, .svg-wrapper svg');
+  wrappers.forEach(svg=>{
+    svg.querySelectorAll('[data-span-index]').forEach(rect=>{
+      rect.addEventListener('click',handleSpanClick);
+    });
+  });
+}
+
+function handleSpanClick(e){
+  const rect=e.target;
+  const spanIndex=rect.getAttribute('data-span-index');
+  if(spanIndex===null)return;
+
+  const treeEntry=document.getElementById(`span-${spanIndex}`);
+  if(!treeEntry)return;
+
+  // Open all ancestor <details> elements
+  let parent=treeEntry.parentElement;
+  while(parent){
+    if(parent.tagName==='DETAILS'){
+      parent.open=true;
+    }
+    parent=parent.parentElement;
+  }
+
+  // Scroll to the element
+  treeEntry.scrollIntoView({behavior:'smooth',block:'center'});
+
+  // Add highlighted class
+  treeEntry.classList.add('highlighted');
+
+  // Remove after 2 seconds
+  setTimeout(()=>{
+    treeEntry.classList.remove('highlighted');
+  },2000);
+}
+
+function jumpToSpan(index){
+  const wrappers=document.querySelectorAll('#page-svg svg, .svg-wrapper svg');
+  wrappers.forEach(svg=>{
+    const rect=svg.querySelector(`[data-span-index="${index}"]`);
+    if(rect){
+      rect.scrollIntoView({behavior:'smooth',block:'center',inline:'center'});
+      // Visual feedback
+      const originalStroke=rect.getAttribute('stroke-width')||'1';
+      rect.setAttribute('stroke-width','3');
+      setTimeout(()=>{
+        rect.setAttribute('stroke-width',originalStroke);
+      },1000);
+    }
+  });
 }
 
 function loadLayerState(){
@@ -476,6 +634,12 @@ function setupTooltips(svg){
   svg.addEventListener('mouseleave',e=>{
     const target=e.target.closest('.layer-spans rect, .layer-confidence-heatmap rect');
     if(target)tooltip.hidden=true;
+  },true);
+
+  // Add click handler for JSON tree navigation
+  svg.addEventListener('click',e=>{
+    const target=e.target.closest('.layer-spans rect[data-span-index]');
+    if(target)handleSpanClick(e);
   },true);
 
   svg.addEventListener('mousemove',e=>{

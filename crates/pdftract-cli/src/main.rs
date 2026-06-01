@@ -22,6 +22,7 @@ mod password;
 mod profiles_cmd;
 mod serve;
 mod url;
+mod validate;
 mod verify_receipt;
 use codegen::Language;
 use output::OutputConfig;
@@ -375,6 +376,19 @@ enum Commands {
         /// When FILE is "-", rotation is the responsibility of the supervisor (e.g., journald).
         #[arg(long, value_name = "FILE")]
         audit_log: Option<PathBuf>,
+    },
+    /// Validate a JSON file against the pdftract schema
+    Validate {
+        /// Path to the JSON file to validate (use '-' for stdin)
+        file: String,
+
+        /// Path to a custom schema file (default: bundled v1.0 schema)
+        #[arg(short, long, value_name = "PATH")]
+        schema: Option<String>,
+
+        /// Quiet mode - suppress error output (only exit code matters)
+        #[arg(short, long)]
+        quiet: bool,
     },
     /// Check environment health and dependencies
     ///
@@ -782,6 +796,23 @@ fn main() -> Result<()> {
                     eprintln!("Error: {}", e);
                     std::process::exit(1);
                 }
+            }
+        }
+        Commands::Validate {
+            file,
+            schema,
+            quiet,
+        } => {
+            if let Err(e) = validate::run_validate(validate::ValidateArgs {
+                file,
+                schema_path: schema,
+                quiet,
+            }) {
+                // Validation failed - exit 1 (error already printed by run_validate unless quiet)
+                if !quiet {
+                    eprintln!("Error: {}", e);
+                }
+                std::process::exit(1);
             }
         }
         Commands::Doctor {

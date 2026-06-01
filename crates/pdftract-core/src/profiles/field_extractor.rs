@@ -245,6 +245,8 @@ fn parse_value(raw: &str, parse_type: Option<&str>) -> Value {
         }
         Some("int") => raw
             .parse::<i64>()
+            .ok()
+            .and_then(|v| serde_json::Number::from_f64(v as f64))
             .map(Value::Number)
             .unwrap_or(Value::Null),
         Some("bool") => {

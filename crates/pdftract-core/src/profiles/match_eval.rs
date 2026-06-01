@@ -264,7 +264,7 @@ fn evaluate_predicate(pred: &ExtractionMatchPredicate, signals: &FeatureSignals)
             let mut reasons = Vec::new();
             let mut min_confidence = 1.0;
 
-            if matches!(has_table, Some(true)) {
+            if *has_table {
                 if signals.table_block_count > 0 {
                     reasons.push(format!("structural.has_table: {} tables found", signals.table_block_count));
                 } else {
@@ -273,7 +273,7 @@ fn evaluate_predicate(pred: &ExtractionMatchPredicate, signals: &FeatureSignals)
                 }
             }
 
-            if matches!(has_form_field, Some(true)) {
+            if *has_form_field {
                 if signals.has_form_field {
                     reasons.push("structural.has_form_field: form fields found".to_string());
                 } else {
@@ -282,7 +282,7 @@ fn evaluate_predicate(pred: &ExtractionMatchPredicate, signals: &FeatureSignals)
                 }
             }
 
-            if matches!(has_math, Some(true)) {
+            if *has_math {
                 if signals.has_math_operators {
                     reasons.push("structural.has_math: math operators found".to_string());
                 } else {

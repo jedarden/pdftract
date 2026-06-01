@@ -114,6 +114,31 @@ pub mod span_flags {
 /// Phase 4 glyph-to-span merging and is used throughout Phase 5 (layout)
 /// and Phase 6 (output).
 ///
+/// # Example
+///
+/// ```rust,no_run
+/// use pdftract_core::span::{Span, CssHexColor};
+/// use pdftract_core::confidence::ConfidenceSource;
+/// use std::sync::Arc;
+///
+/// let span = Span::new(
+///     "Hello, world!".to_string(),     // Text content
+///     [72.0, 720.0, 200.0, 732.0],   // Bounding box [x0, y0, x1, y1]
+///     Arc::from("Helvetica"),        // Font name (shared)
+///     12.0,                          // Font size in points
+///     Some(CssHexColor::new("#000000").unwrap()), // Fill color
+///     0,                             // Text rendering mode
+///     1.0,                           // Confidence score
+///     ConfidenceSource::Native,      // Confidence source
+///     Some(Arc::from("en")),         // Language tag
+///     0,                             // Span flags
+/// );
+///
+/// assert_eq!(span.text, "Hello, world!");
+/// assert_eq!(span.size, 12.0);
+/// assert!(span.is_bold()); // If flag bit 0 is set
+/// ```
+///
 /// # Field Descriptions
 ///
 /// - **text**: The concatenated text content of all glyphs in the span.

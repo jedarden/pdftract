@@ -959,7 +959,7 @@ fn render_page_svg(page: &JsonValue, width: f64, height: f64, thumbnail: bool) -
     if !thumbnail {
         // 3. Spans layer - thin outline rectangles per span, color-coded by confidence
         if !spans.is_empty() {
-            let span_elements = spans::render_spans(&spans);
+            let span_elements = spans::render_spans(&spans, &blocks);
             svg_layers.push(format!(r#"<g class="layer-spans" style="display: none;">{}</g>"#, span_elements.join("")));
         }
 

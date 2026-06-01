@@ -14,7 +14,7 @@
 //! # Document Type Profiles
 //!
 //! The core types for document type classification (Phase 5.6) are
-//! [`ProfileType`], [`Profile`], and [`MatchPredicate`]. These are the shared
+//! [`ProfileType`], [`Profile`], and [`ClassificationMatchPredicate`]. These are the shared
 //! vocabulary between the rule engine, built-in profile definitions, and
 //! user-authored YAML profiles.
 

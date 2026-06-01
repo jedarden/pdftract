@@ -334,7 +334,7 @@ fn test_head_probe_captures_metadata() {
     thread::sleep(Duration::from_millis(100));
 
     let opts = RemoteOpts::new();
-    let result = open_remote(&url, &opts);
+    let result = open_remote(&url, &opts, None);
 
     // The source should be created successfully
     // (In real test, we'd verify Content-Length and Accept-Ranges were captured)
@@ -359,7 +359,7 @@ fn test_405_fallback_to_get_probe() {
     thread::sleep(Duration::from_millis(100));
 
     let opts = RemoteOpts::new();
-    let result = open_remote(&url, &opts);
+    let result = open_remote(&url, &opts, None);
 
     // Should succeed using GET fallback
     assert!(result.is_ok());
@@ -380,7 +380,7 @@ fn test_unauthorized_returns_error() {
     thread::sleep(Duration::from_millis(100));
 
     let opts = RemoteOpts::new();
-    let result = open_remote(&url, &opts);
+    let result = open_remote(&url, &opts, None);
 
     // Should fail with permission error
     assert!(result.is_err());
@@ -404,7 +404,7 @@ fn test_no_content_length_handled() {
     thread::sleep(Duration::from_millis(100));
 
     let opts = RemoteOpts::new();
-    let result = open_remote(&url, &opts);
+    let result = open_remote(&url, &opts, None);
 
     // Should succeed (Content-Length is optional)
     assert!(result.is_ok());
@@ -425,7 +425,7 @@ fn test_no_range_support_detected() {
     thread::sleep(Duration::from_millis(100));
 
     let opts = RemoteOpts::new();
-    let result = open_remote(&url, &opts);
+    let result = open_remote(&url, &opts, None);
 
     // Should succeed but reads will fail
     assert!(result.is_ok());
@@ -457,7 +457,7 @@ fn test_bandwidth_partial_extraction() {
     thread::sleep(Duration::from_millis(100));
 
     let opts = RemoteOpts::new();
-    let result = open_remote(&url, &opts);
+    let result = open_remote(&url, &opts, None);
 
     assert!(result.is_ok());
 
@@ -495,7 +495,7 @@ fn test_page_by_page_on_demand_fetch() {
     thread::sleep(Duration::from_millis(100));
 
     let opts = RemoteOpts::new();
-    let result = open_remote(&url, &opts);
+    let result = open_remote(&url, &opts, None);
 
     assert!(result.is_ok());
 
@@ -527,7 +527,7 @@ fn test_progressive_tail_fetch() {
     thread::sleep(Duration::from_millis(100));
 
     let opts = RemoteOpts::new();
-    let result = open_remote(&url, &opts);
+    let result = open_remote(&url, &opts, None);
 
     assert!(result.is_ok());
 
@@ -639,7 +639,7 @@ fn test_connection_reuse() {
     thread::sleep(Duration::from_millis(100));
 
     let opts = RemoteOpts::new();
-    let result = open_remote(&url, &opts);
+    let result = open_remote(&url, &opts, None);
 
     assert!(result.is_ok());
 
@@ -666,7 +666,7 @@ fn test_prefetch_hint() {
     thread::sleep(Duration::from_millis(100));
 
     let opts = RemoteOpts::new();
-    let result = open_remote(&url, &opts);
+    let result = open_remote(&url, &opts, None);
 
     assert!(result.is_ok());
 
@@ -693,7 +693,7 @@ fn test_cache_hit_on_repeated_read() {
     thread::sleep(Duration::from_millis(100));
 
     let opts = RemoteOpts::new();
-    let result = open_remote(&url, &opts);
+    let result = open_remote(&url, &opts, None);
 
     assert!(result.is_ok());
 
@@ -722,7 +722,7 @@ fn test_block_boundary_handling() {
     thread::sleep(Duration::from_millis(100));
 
     let opts = RemoteOpts::new();
-    let result = open_remote(&url, &opts);
+    let result = open_remote(&url, &opts, None);
 
     assert!(result.is_ok());
 
@@ -743,7 +743,7 @@ fn test_block_boundary_handling() {
 #[test]
 fn test_inv8_no_panic_on_errors() {
     let result = std::panic::catch_unwind(|| {
-        let _ = pdftract_core::source::HttpRangeSource::open("http://localhost:9999/test.pdf");
+        pdftract_core::source::HttpRangeSource::open("http://localhost:9999/test.pdf")
     });
 
     assert!(result.is_ok()); // Should not panic

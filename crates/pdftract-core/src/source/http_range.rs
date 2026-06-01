@@ -641,7 +641,7 @@ pub fn download_to_temp_and_mmap(
             .unwrap_or(0);
 
         // Check disk space
-        #[cfg(feature = "nix")]
+        #[cfg(feature = "remote")]
         {
             use nix::sys::statvfs;
             use std::path::Path;
@@ -654,7 +654,7 @@ pub fn download_to_temp_and_mmap(
             let stat = statvfs::statvfs(temp_path)?;
 
             // Calculate available space (f_bavail * f_frsize)
-            let available_bytes = stat.statvfs.f_bavail as u64 * stat.statvfs.f_frsize as u64;
+            let available_bytes = stat.f_bavail as u64 * stat.f_frsize as u64;
 
             // Add 10% buffer for filesystem overhead and temp file metadata
             let required_bytes = content_length.saturating_mul(11) / 10;

@@ -67,6 +67,14 @@ pub struct ResolutionGuard {
     obj_ref: ObjRef,
 }
 
+impl std::fmt::Debug for ResolutionGuard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ResolutionGuard")
+            .field("obj_ref", &self.obj_ref)
+            .finish()
+    }
+}
+
 impl ResolutionGuard {
     /// Create a new resolution guard and insert the object reference into the tracking set.
     ///

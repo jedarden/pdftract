@@ -52,13 +52,22 @@ pub enum MatchExpr {
     Predicate(ExtractionMatchPredicate),
 
     /// All of these must match
-    All { all: Vec<MatchExpr> },
+    All {
+        /// All match expressions must evaluate to true
+        all: Vec<MatchExpr>
+    },
 
     /// Any of these can match
-    Any { any: Vec<MatchExpr> },
+    Any {
+        /// At least one match expression must evaluate to true
+        any: Vec<MatchExpr>
+    },
 
     /// None of these must match
-    None { none: Vec<MatchExpr> },
+    None {
+        /// All match expressions must evaluate to false
+        none: Vec<MatchExpr>
+    },
 }
 
 impl Default for MatchExpr {
@@ -74,43 +83,52 @@ impl Default for MatchExpr {
 pub enum ExtractionMatchPredicate {
     /// Text contains any of the given strings
     TextContains {
+        /// Substring patterns to search for in document text
         #[serde(default)]
         patterns: Vec<String>,
     },
 
     /// Text matches the given regex
     TextMatches {
+        /// Regular expression pattern to match against document text
         pattern: String,
     },
 
     /// Heading text matches the given regex
     HeadingMatches {
+        /// Regular expression pattern to match against heading text
         pattern: String,
     },
 
     /// Document has currency pattern ($\d, €\d, etc.)
     HasCurrencyPattern {
+        /// Must have currency pattern if true
         #[serde(default)]
         has_currency_pattern: bool,
     },
 
     /// Document has signature fields (AcroForm)
     HasSignatureField {
+        /// Must have signature field if true
         #[serde(default)]
         has_signature_field: bool,
     },
 
     /// Structural predicates (has_table, page_count, etc.)
     Structural {
+        /// Document contains a table if true
         #[serde(default)]
         has_table: bool,
 
+        /// Document contains a form field if true
         #[serde(default)]
         has_form_field: bool,
 
+        /// Document contains math notation if true
         #[serde(default)]
         has_math: bool,
 
+        /// Page count range constraint
         #[serde(flatten)]
         page_count: Option<PageCountRange>,
     },
@@ -118,6 +136,7 @@ pub enum ExtractionMatchPredicate {
     /// Text patterns alias for TextContains
     #[serde(rename = "text_patterns")]
     TextContainsAlias {
+        /// Substring patterns to search for in document text
         #[serde(default)]
         patterns: Vec<String>,
     },
@@ -126,12 +145,15 @@ pub enum ExtractionMatchPredicate {
 /// Page count range predicate.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PageCountRange {
+    /// Minimum page count (inclusive)
     #[serde(default)]
     pub min: Option<u32>,
 
+    /// Maximum page count (inclusive)
     #[serde(default)]
     pub max: Option<u32>,
 
+    /// Human-readable hint for debugging
     #[serde(default)]
     pub hint: Option<String>,
 }
@@ -183,7 +205,9 @@ pub struct FieldSpec {
 pub enum FieldExtraction {
     /// Simple pattern-based extraction
     Patterns {
+        /// List of regex patterns to extract field value
         patterns: Vec<String>,
+        /// Fallback value if no pattern matches
         #[serde(default)]
         fallback: Option<serde_yaml::Value>,
     },
@@ -243,9 +267,12 @@ pub enum FieldExtraction {
 /// Schema field for array extraction.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FieldSchema {
+    /// Field name in the output schema
     pub name: String,
+    /// Field type (string, decimal, date, int, bool, array)
     #[serde(rename = "type")]
     pub field_type: String,
+    /// Whether this field is required in the output
     #[serde(default)]
     pub required: bool,
 }

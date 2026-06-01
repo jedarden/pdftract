@@ -10,8 +10,14 @@
 //! - data-font: the font name
 //! - data-size: the font size in points
 //! - data-span-index: the span's index in the page (for JSON-tree navigation)
+//! - data-bbox: the bounding box [x0, y0, x1, y1]
+//! - data-block-ref: the block reference (e.g., "paragraph #14 (column 2)")
+//! - data-column: the column index (0-based), if detected
+//!
+//! Note: data-mcid and data-reading-idx are not yet available in SpanJson
+//! and will be added in future phases (Phase 3.4 for MCID, Phase 4.5/7.1 for reading order).
 
-use pdftract_core::schema::SpanJson;
+use pdftract_core::schema::{BlockJson, SpanJson};
 
 /// Render SVG outline rectangles for each span.
 ///
@@ -39,7 +45,10 @@ use pdftract_core::schema::SpanJson;
 /// - `data-font`: font name (XML-escaped)
 /// - `data-size`: font size in points
 /// - `data-span-index`: the span's index in the page (for JSON-tree navigation)
-pub fn render_spans(spans: &[SpanJson]) -> Vec<String> {
+/// - `data-bbox`: the bounding box [x0, y0, x1, y1]
+/// - `data-block-ref`: the block reference (e.g., "paragraph #14")
+/// - `data-column`: the column index (0-based), if detected
+pub fn render_spans(spans: &[SpanJson], blocks: &[BlockJson]) -> Vec<String> {
     spans.iter().enumerate().map(|(index, span)| {
         let [x0, y0, x1, y1] = span.bbox;
         let width = x1 - x0;
@@ -105,7 +114,8 @@ mod tests {
     #[test]
     fn test_render_spans_empty() {
         let spans: Vec<SpanJson> = vec![];
-        let output = render_spans(&spans);
+        let blocks: Vec<BlockJson> = vec![];
+        let output = render_spans(&spans, &blocks);
         assert!(output.is_empty());
     }
 
@@ -126,7 +136,7 @@ mod tests {
             column: None,
         }];
 
-        let output = render_spans(&spans);
+        let output = render_spans(&spans, &[]);
         assert_eq!(output.len(), 1);
         let rect = &output[0];
 
@@ -179,7 +189,7 @@ mod tests {
                 column: None,
             }];
 
-            let output = render_spans(&spans);
+            let output = render_spans(&spans, &[]);
             assert_eq!(output.len(), 1);
             assert!(
                 output[0].contains(&format!("stroke=\"{}\"", expected_color)),
@@ -208,7 +218,7 @@ mod tests {
             column: None,
         }];
 
-        let output = render_spans(&spans);
+        let output = render_spans(&spans, &[]);
         let rect = &output[0];
 
         // Check XML escaping in data attributes
@@ -266,7 +276,7 @@ mod tests {
             },
         ];
 
-        let output = render_spans(&spans);
+        let output = render_spans(&spans, &[]);
         assert_eq!(output.len(), 3);
 
         // Check that each span has the correct index
@@ -322,7 +332,7 @@ mod tests {
             },
         ];
 
-        let output = render_spans(&spans);
+        let output = render_spans(&spans, &[]);
         assert_eq!(output.len(), 3);
 
         // Check that each has the correct color
@@ -348,7 +358,7 @@ mod tests {
             column: None,
         }];
 
-        let output = render_spans(&spans);
+        let output = render_spans(&spans, &[]);
         assert!(output[0].contains(r#"class="span-rect""#));
     }
 
@@ -394,7 +404,7 @@ mod tests {
             column: None,
         }];
 
-        let output = render_spans(&spans);
+        let output = render_spans(&spans, &[]);
         let rect = &output[0];
 
         // Check that coordinates are rounded to 2 decimal places
@@ -421,7 +431,7 @@ mod tests {
             column: None,
         }];
 
-        let output = render_spans(&spans);
+        let output = render_spans(&spans, &[]);
         let rect = &output[0];
 
         // Verify basic XML structure
