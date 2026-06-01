@@ -1,109 +1,60 @@
-# pdftract-3mdb7: Hover Tooltips Implementation
+# Verification Note: pdftract-3mdb7 - Inspector Hover Tooltips
 
-## Verification Summary
+## Status: PASS (Implementation already complete)
 
-The hover tooltip functionality is **already fully implemented** in the inspector frontend. No changes were required.
+## Summary
+The hover tooltip functionality specified in this bead is already fully implemented in the existing codebase. No code changes were required.
 
-## Implementation Location
+## Files Verified
 
-- **HTML**: `crates/pdftract-cli/src/inspect/frontend/index.html:57`
-  - Single tooltip div: `<div id="tooltip" class="tooltip" hidden></div>`
+### 1. `crates/pdftract-cli/src/inspect/frontend/index.html` (line 57)
+- Contains `<div id="tooltip" class="tooltip" hidden></div>`
+- Single shared tooltip div, initially hidden ✓
 
-- **CSS**: `crates/pdftract-cli/src/inspect/frontend/style.css:30`
-  - Position: absolute
-  - Background: rgba(255,255,255,0.95)
-  - Border: 1px solid #ccc
-  - Padding: 6px 10px
-  - Font-family: monospace (ui-monospace, SF Mono, Menlo, Consolas)
-  - Font-size: 12px
-  - No CSS transitions (immediate appearance)
+### 2. `crates/pdftract-cli/src/inspect/frontend/style.css` (line 30)
+```css
+.tooltip{position:absolute;background:rgba(255,255,255,.95);border:1px solid #ccc;padding:6px 10px;font-family:ui-monospace,SFMono-Regular,SF Mono,Menlo,Consolas,monospace;font-size:12px;pointer-events:none;z-index:1000;max-width:400px;white-space:pre;line-height:1.4}
+```
+- position: absolute ✓
+- background: rgba(255,255,255,0.95) ✓
+- border: 1px solid #ccc ✓
+- padding: 6px 10px ✓
+- font-family: monospace ✓
+- font-size: 12px ✓
 
-- **JavaScript**: `crates/pdftract-cli/src/inspect/frontend/app.js:355-418`
-  - `setupTooltips(svg)` function
-  - Event delegation on SVG container
-  - Reads data-* attributes from target elements
-  - Positions tooltip relative to cursor with edge detection
-  - Uses `textContent` for XSS prevention
+### 3. `crates/pdftract-cli/src/inspect/frontend/app.js` (lines 355-418)
+The `setupTooltips()` function implements all required functionality:
+- Event delegation via `svg.addEventListener('mouseover', ...)` ✓
+- Reads data-* attrs (data-text, data-font, data-confidence, data-bbox, data-blockRef, data-mcid, data-readingIdx) ✓
+- Populates tooltip with formatted rows using `textContent` (XSS prevention) ✓
+- Positions at cursor + OFFSET (8px) ✓
+- Auto-repositions near viewport edges ✓
+- Hides on mouseleave ✓
+- No CSS transitions (immediate display for <50ms appearance) ✓
 
-## Acceptance Criteria Verification
+## Acceptance Criteria Status
 
-### PASS Criteria
+| Criterion | Status | Notes |
+|-----------|--------|-------|
+| Hover → tooltip visible within 50ms | PASS | No transitions, immediate display |
+| Tooltip shows formatted data-* attrs | PASS | Lines 363-380 build formatted content |
+| mouseleave hides tooltip | PASS | Line 389 handles mouseout |
+| Cursor near edge → auto-reposition | PASS | Lines 404-413 handle viewport boundaries |
+| No XSS via data-text | PASS | Uses textContent, not innerHTML |
 
-1. **Hovering a span → tooltip visible within 50 ms**
-   - ✅ Uses `tooltip.hidden = false` immediately on mouseover (line 383)
-   - ✅ No CSS transition-duration (immediate appearance)
-   - ✅ Uses `display` property via `hidden` attribute (no transition)
+## Data Attributes Note
 
-2. **Tooltip shows the data-* attrs as formatted rows**
-   - ✅ Lines 365-377: Reads and formats data attributes:
-     - `data-text` → "Text: {value}"
-     - `data-font` + `data-size` → "Font: {name} {size}pt"
-     - `data-confidence` → "Confidence: {value}"
-     - `data-bbox` → "Bbox: {value}"
-     - `data-blockRef` → "Block: {value}"
-     - `data-mcid` → "MCID: {value}"
-     - `data-readingIdx` → "Reading idx: {value}"
+The tooltip reads from these data-* attributes:
+- `data-text` ✓ (emitted by spans.rs)
+- `data-font` ✓ (emitted by spans.rs)
+- `data-confidence` ✓ (emitted by spans.rs)
+- `data-bbox` - NOT YET EMITTED (waiting for Phase 7.9.5)
+- `data-block-ref` - NOT YET EMITTED (waiting for Phase 7.9.5)
+- `data-mcid` - NOT YET EMITTED (waiting for Phase 7.9.5)
+- `data-reading-idx` - NOT YET EMITTED (waiting for Phase 7.9.5)
 
-3. **mouseleave hides the tooltip**
-   - ✅ Lines 388-390: `mouseout` event sets `tooltip.hidden = true`
+The frontend code gracefully handles missing attributes by only showing them if they exist. Once Phase 7.9.5 (pdftract-liq5f) is implemented and adds these attributes to the SVG span elements, the tooltip will automatically display them without any frontend changes needed.
 
-4. **Cursor near right edge: tooltip auto-repositions**
-   - ✅ Lines 396-417: `positionTooltip(x, y)` function:
-     - Checks if tooltip would exceed viewport width
-     - Repositions to cursor-left when needed
-     - Also handles bottom edge
+## Conclusion
 
-5. **No XSS via data-text content**
-   - ✅ Line 382: Uses `tooltip.textContent = content` (not innerHTML)
-   - ✅ Content is treated as plain text, not HTML
-
-### WARN Criteria
-
-None. Build infrastructure (cc linker permission) is out of scope for this UI feature.
-
-### FAIL Criteria
-
-None.
-
-## Technical Details
-
-### Event Handling Strategy
-- **Event delegation**: Single event listener on SVG container (line 359)
-- Uses `mouseover`/`mouseout`/`mousemove` events
-- Target detection via `e.target.closest('[data-text], [data-kind]')`
-- Avoids per-span listener registration (better performance)
-
-### Positioning Algorithm
-1. Default position: cursor + (8, 8) offset
-2. Right edge detection: if `left + tooltipWidth > viewportWidth`, reposition to cursor-left
-3. Bottom edge detection: if `top + tooltipHeight > viewportHeight`, reposition above
-4. Boundary clamping: keeps tooltip within viewport with minimum offset
-
-### Data Attributes Expected
-The tooltip reads these attributes from span elements (set server-side during SVG generation):
-- `data-text` - Span text content
-- `data-font` - Font name
-- `data-size` - Font size in points
-- `data-confidence` - OCR confidence score
-- `data-bbox` - Bounding box coordinates
-- `data-blockRef` - Block index reference
-- `data-mcid` - MCID value
-- `data-readingIdx` - Reading order index
-
-## Integration Points
-
-- **Server-side SVG generation**: Sets data-* attributes on span elements (Phase 7.9.4 sibling)
-- **setupTooltips() call**: Invoked from `renderPageSingle()` (line 108) and `renderPageComparison()` (lines 129, 141)
-- **Comparison mode**: Tooltips work on both side A and side B SVGs
-
-## Code Review Summary
-
-The implementation was found to be complete and correct:
-- Single shared tooltip div (cheaper than per-span)
-- XSS-safe text content rendering
-- Immediate appearance (no debouncing, no CSS transitions)
-- Edge-aware positioning
-- Event delegation for performance
-- Works in both single-view and comparison modes
-
-No code changes were required.
+The tooltip implementation is complete and meets all acceptance criteria specified in this bead. The dependency on Phase 7.9.5 for additional data attributes is already properly handled by the existing frontend code.
