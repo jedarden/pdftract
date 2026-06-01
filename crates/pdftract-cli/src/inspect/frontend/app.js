@@ -354,29 +354,67 @@ function loadFragment(){
 
 function setupTooltips(svg){
   const tooltip=document.getElementById('tooltip');
+  const OFFSET=8;
+
   svg.addEventListener('mouseover',e=>{
     const target=e.target.closest('[data-text], [data-kind]');
     if(!target)return;
     let content='';
     if(target.dataset.spanIndex!==undefined){
-      content=`Text: ${target.dataset.text}\nFont: ${target.dataset.font}\nSize: ${target.dataset.size}pt\nConfidence: ${target.dataset.confidence||'N/A'}\nSpan index: ${target.dataset.spanIndex}`
+      const lines=[];
+      if(target.dataset.text)lines.push(`Text: ${target.dataset.text}`);
+      if(target.dataset.font){
+        const size=target.dataset.size?` ${target.dataset.size}pt`:'';
+        lines.push(`Font: ${target.dataset.font}${size}`);
+      }
+      if(target.dataset.confidence&&target.dataset.confidence!==''){
+        lines.push(`Confidence: ${target.dataset.confidence}`);
+      }
+      if(target.dataset.bbox)lines.push(`Bbox: ${target.dataset.bbox}`);
+      if(target.dataset.blockRef)lines.push(`Block: ${target.dataset.blockRef}`);
+      if(target.dataset.mcid)lines.push(`MCID: ${target.dataset.mcid}`);
+      if(target.dataset.readingIdx)lines.push(`Reading idx: ${target.dataset.readingIdx}`);
+      content=lines.join('\n');
     }else if(target.dataset.blockIndex!==undefined){
       content=`Block index: ${target.dataset.blockIndex}\nKind: ${target.dataset.kind}\nText: ${target.dataset.text}\nLevel: ${target.dataset.level||'N/A'}\nTable index: ${target.dataset.tableIndex||'N/A'}`
     }
-    tooltip.hidden=false;
-    tooltip.textContent=content;
-    tooltip.style.left=e.pageX+10+'px';
-    tooltip.style.top=e.pageY+10+'px'
+    if(content){
+      tooltip.textContent=content;
+      tooltip.hidden=false;
+      positionTooltip(e.pageX,e.pageY);
+    }
   });
+
   svg.addEventListener('mouseout',e=>{
     if(e.target.closest('[data-text], [data-kind]'))tooltip.hidden=true
   });
+
   svg.addEventListener('mousemove',e=>{
-    if(!tooltip.hidden){
-      tooltip.style.left=e.pageX+10+'px';
-      tooltip.style.top=e.pageY+10+'px'
+    if(!tooltip.hidden)positionTooltip(e.pageX,e.pageY)
+  });
+
+  function positionTooltip(x,y){
+    const tooltipRect=tooltip.getBoundingClientRect();
+    const viewportWidth=window.innerWidth;
+    const viewportHeight=window.innerHeight;
+
+    let left=x+OFFSET;
+    let top=y+OFFSET;
+
+    if(left+tooltipRect.width>viewportWidth){
+      left=x-tooltipRect.width-OFFSET;
     }
-  })
+
+    if(top+tooltipRect.height>viewportHeight){
+      top=y-tooltipRect.height-OFFSET;
+    }
+
+    left=Math.max(OFFSET,Math.min(left,viewportWidth-tooltipRect.width-OFFSET));
+    top=Math.max(OFFSET,Math.min(top,viewportHeight-tooltipRect.height-OFFSET));
+
+    tooltip.style.left=left+'px';
+    tooltip.style.top=top+'px'
+  }
 }
 
 document.addEventListener('DOMContentLoaded',init);

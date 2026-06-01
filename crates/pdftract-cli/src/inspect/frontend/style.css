@@ -27,7 +27,7 @@ body{font-family:system-ui,-apple-system,sans-serif;font-size:14px;line-height:1
 .panel-header{padding:12px;border-bottom:1px solid #ddd;font-weight:600;background:#f9f9f9}
 .json-tree{flex:1;overflow:auto;padding:12px;font-size:12px;font-family:ui-monospace,monospace;white-space:pre-wrap;word-break:break-all}
 .loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:16px;color:#666}
-.tooltip{position:absolute;background:#333;color:#fff;padding:6px 10px;border-radius:4px;font-size:12px;pointer-events:none;z-index:1000;max-width:300px;white-space:pre-wrap;word-break:break-word}
+.tooltip{position:absolute;background:rgba(255,255,255,.95);border:1px solid #ccc;padding:6px 10px;font-family:ui-monospace,SFMono-Regular,SF Mono,Menlo,Consolas,monospace;font-size:12px;pointer-events:none;z-index:1000;max-width:400px;white-space:pre;line-height:1.4}
 .layer-spans,.layer-blocks,.layer-columns,.layer-reading-order,.layer-confidence-heatmap,.layer-ocr,.layer-mcid,.layer-anchors,.layer-diff{display:none}
 html[data-layers~="spans"] .layer-spans,html[data-layers~="blocks"] .layer-blocks,html[data-layers~="columns"] .layer-columns,html[data-layers~="reading-order"] .layer-reading-order,html[data-layers~="confidence-heatmap"] .layer-confidence-heatmap,html[data-layers~="ocr"] .layer-ocr,html[data-layers~="mcid"] .layer-mcid,html[data-layers~="anchors"] .layer-anchors,html[data-layers~="diff"] .layer-diff{display:block}
 .tooltip-key{color:#8f8}
