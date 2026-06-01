@@ -50,6 +50,8 @@
   - [Hybrid Routing](./advanced/hybrid-routing.md)
   - [Provenance and Confidence](./advanced/provenance.md)
 
+- [Troubleshooting Guide](./troubleshooting.md)
+
 - [Troubleshooting](./troubleshooting/README.md)
   - [Common Issues](./troubleshooting/common-issues.md)
   - [Diagnostics](./troubleshooting/diagnostics.md)
