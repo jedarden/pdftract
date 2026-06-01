@@ -15,6 +15,7 @@ body{font-family:system-ui,-apple-system,sans-serif;font-size:14px;line-height:1
 .btn:hover{background:#f0f0f0}
 .btn:active{background:#e0e0e0}
 .btn:disabled{opacity:.5;cursor:not-allowed}
+.page-indicator{font-size:13px;font-weight:500;color:#666;white-space:nowrap;padding:0 8px;min-width:100px;text-align:center}
 .search-input{flex:1;max-width:300px;padding:6px 10px;border:1px solid #ddd;border-radius:4px;font-size:13px;font-family:inherit}
 .search-input:focus{outline:none;border-color:#0078d4;box-shadow:0 0 0 2px rgba(0,120,212,.2)}
 .match-count{font-size:12px;color:#666;white-space:nowrap;padding:0 8px}

@@ -641,7 +641,15 @@ function nextPage(){
 
 function updateNavState(){
   document.getElementById('btn-prev').disabled=currentPage<=0;
-  document.getElementById('btn-next').disabled=currentPage>=totalPages-1
+  document.getElementById('btn-next').disabled=currentPage>=totalPages-1;
+  updatePageIndicator()
+}
+
+function updatePageIndicator(){
+  const indicator=document.getElementById('page-indicator');
+  if(indicator){
+    indicator.textContent=`Page ${currentPage+1} of ${totalPages}`;
+  }
 }
 
 function renderThumbnails(){
@@ -699,6 +707,25 @@ function updateActiveThumbnail(){
     t.classList.toggle('active',parseInt(t.dataset.index)===currentPage);
     t.disabled=false;
   });
+  prefetchAdjacentPages()
+}
+
+function prefetchAdjacentPages(){
+  // Prefetch previous page
+  if(currentPage>0){
+    prefetchPage(currentPage-1);
+  }
+  // Prefetch next page
+  if(currentPage<totalPages-1){
+    prefetchPage(currentPage+1);
+  }
+}
+
+function prefetchPage(index){
+  // Prefetch the page JSON
+  fetch(`/api/page/${index}`).catch(()=>{});
+  // Prefetch the SVG
+  fetch(`/api/page/${index}/svg`).catch(()=>{});
 }
 
 function scrollPage(delta){
