@@ -875,6 +875,101 @@ pub fn spans_to_markdown_with_links(spans: &[SpanJson], page_links: &[crate::sch
     result
 }
 
+/// Emit spans with inline link and footnote support.
+///
+/// This function processes spans and emits them as markdown, with spans that
+/// are part of link annotations emitted as inline links `[anchor text](URL)`
+/// and spans that are footnote references emitted as `[^N]`.
+///
+/// This implements Phase 6.5.5: footnote and inline-link emission from Phase 7.
+///
+/// # Arguments
+///
+/// * `spans` - The spans to emit
+/// * `page_links` - Link annotations for this page (from Phase 7.6)
+/// * `footnotes` - Optional footnotes data mapping span indices to footnote IDs
+///
+/// # Returns
+///
+/// A markdown string with spans emitted, including inline links and footnote refs.
+///
+/// # Example
+///
+/// ```
+/// use pdftract_core::markdown::spans_to_markdown_with_links_and_footnotes;
+/// use pdftract_core::schema::SpanJson;
+/// use pdftract_core::output::markdown::footnotes::PageFootnotes;
+///
+/// let spans = vec![
+///     SpanJson { text: "See ".to_string(), ..Default::default() },
+///     SpanJson { text: "our site".to_string(), ..Default::default() },
+///     SpanJson { text: " for details".to_string(), ..Default::default() },
+///     SpanJson { text: "1".to_string(), ..Default::default() }, // footnote ref
+/// ];
+///
+/// let mut footnotes = PageFootnotes::new();
+/// footnotes.add_ref(3, 1);
+/// footnotes.add_definition(1, "First footnote".to_string());
+///
+/// // Emits spans with links and footnote refs
+/// let md = spans_to_markdown_with_links_and_footnotes(&spans, &[], Some(&footnotes));
+/// ```
+pub fn spans_to_markdown_with_links_and_footnotes(
+    spans: &[SpanJson],
+    page_links: &[crate::schema::LinkJson],
+    footnotes: Option<&crate::output::markdown::footnotes::PageFootnotes>,
+) -> String {
+    use crate::output::markdown::links;
+
+    // Early exit if no links and no footnotes - emit spans normally
+    let has_links = !page_links.is_empty();
+    let has_footnotes = footnotes.as_ref().map_or(false, |f| !f.is_empty());
+
+    if !has_links && !has_footnotes {
+        return spans.iter().map(|s| span_to_markdown_with_optional_footnote(s, None)).collect::<String>();
+    }
+
+    // Build link data if we have links
+    let link_data = if has_links {
+        links::emit_page_links_from_json(spans, page_links)
+    } else {
+        Vec::new()
+    };
+
+    // Build link span tracking
+    let mut span_to_link: std::collections::HashMap<usize, String> = std::collections::HashMap::new();
+    let mut span_is_in_link: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    for (span_indices, link_markdown) in &link_data {
+        if let Some(&first_idx) = span_indices.first() {
+            span_to_link.insert(first_idx, link_markdown.clone());
+        }
+        for &idx in span_indices {
+            span_is_in_link.insert(idx);
+        }
+    }
+
+    // Emit spans with link and footnote handling
+    let mut result = String::new();
+    for (idx, span) in spans.iter().enumerate() {
+        // Check if this span is the first span of a link
+        if let Some(link_md) = span_to_link.get(&idx) {
+            // This span is the FIRST span in a link - emit the link markdown
+            // Note: links take precedence over footnotes for the anchor text
+            result.push_str(link_md);
+        } else if span_is_in_link.contains(&idx) {
+            // This span is part of a link but not the first - skip it
+            // (its text is already included in the anchor text from the first span)
+        } else {
+            // Check if this span has a footnote reference
+            let footnote_id = footnotes.and_then(|f| f.get_footnote_id(idx));
+            // Emit span with optional footnote ref
+            result.push_str(&span_to_markdown_with_optional_footnote(span, footnote_id));
+        }
+    }
+
+    result
+}
+
 /// Emit a block's text with inline link support.
 ///
 /// This function emits a block's text content, replacing portions that correspond
@@ -911,8 +1006,32 @@ pub fn block_to_markdown_with_links(
     spans: &[SpanJson],
     page_links: &[crate::schema::LinkJson],
 ) -> String {
-    if page_links.is_empty() {
-        // No links - return the block text as-is (paragraph emission will wrap it)
+    block_to_markdown_with_links_and_footnotes(block, spans, page_links, None)
+}
+
+/// Emit a block's text with inline link and footnote support.
+///
+/// This function emits a block's text content, replacing portions that correspond
+/// to link annotations with inline markdown links and footnote references with `[^N]`.
+///
+/// # Arguments
+///
+/// * `block` - The block to emit
+/// * `spans` - All spans on the page (for link and footnote detection)
+/// * `page_links` - Link annotations for this page (from Phase 7.6)
+/// * `footnotes` - Optional footnotes data (from Phase 7 footnote detection)
+///
+/// # Returns
+///
+/// A markdown string with the block's text, including inline links and footnotes.
+pub fn block_to_markdown_with_links_and_footnotes(
+    block: &BlockJson,
+    spans: &[SpanJson],
+    page_links: &[crate::schema::LinkJson],
+    footnotes: Option<&crate::output::markdown::footnotes::PageFootnotes>,
+) -> String {
+    // If no links and no footnotes, return the block text as-is
+    if page_links.is_empty() && footnotes.map_or(true, |f| f.is_empty()) {
         return block.text.clone();
     }
 
@@ -938,12 +1057,31 @@ pub fn block_to_markdown_with_links(
         })
         .collect();
 
-    if block_links.is_empty() {
-        // No links for this block - return text as-is
+    // Filter footnotes to only those that are in this block's spans
+    let block_footnotes = if let Some(footnotes_data) = footnotes {
+        // Create a filtered PageFootnotes for this block only
+        let mut filtered = crate::output::markdown::footnotes::PageFootnotes::new();
+        for &idx in &block_span_indices {
+            if let Some(footnote_id) = footnotes_data.get_footnote_id(idx) {
+                // Add the footnote ref for this block-local span
+                filtered.add_ref(idx, footnote_id);
+                // Copy the definition if it exists
+                if let Some(text) = footnotes_data.get_definition(footnote_id) {
+                    filtered.add_definition(footnote_id, text.to_string());
+                }
+            }
+        }
+        if filtered.is_empty() { None } else { Some(filtered) }
+    } else {
+        None
+    };
+
+    if block_links.is_empty() && block_footnotes.is_none() {
+        // No links or footnotes for this block - return text as-is
         return block.text.clone();
     }
 
-    // Emit the spans for this block with link support
+    // Emit the spans for this block with link and footnote support
     let block_spans: Vec<SpanJson> = block_span_indices
         .iter()
         .filter_map(|&idx| spans.get(idx).cloned())
@@ -954,7 +1092,7 @@ pub fn block_to_markdown_with_links(
         .map(|&link| link.clone())
         .collect();
 
-    spans_to_markdown_with_links(&block_spans, &block_links_refs)
+    spans_to_markdown_with_links_and_footnotes(&block_spans, &block_links_refs, block_footnotes.as_ref())
 }
 
 /// Emit all blocks from a page with inline link support.
@@ -1000,6 +1138,49 @@ pub fn page_to_markdown_with_links(
     include_anchor: bool,
     options: &MarkdownOptions,
 ) -> String {
+    page_to_markdown_with_links_and_footnotes(
+        blocks,
+        spans,
+        tables,
+        page_links,
+        page_index,
+        include_anchor,
+        options,
+        None, // No footnotes by default (Phase 7 not implemented)
+    )
+}
+
+/// Emit all blocks from a page with inline link and footnote support.
+///
+/// This is a variant of `page_to_markdown_with_options` that also processes
+/// link annotations and footnotes, emitting inline markdown links and
+/// footnote references where applicable.
+///
+/// # Arguments
+///
+/// * `blocks` - The blocks to convert
+/// * `spans` - All spans on the page (for link detection)
+/// * `tables` - The tables array for looking up table structures
+/// * `page_links` - Link annotations for this page (from Phase 7.6)
+/// * `page_index` - Zero-based page index
+/// * `include_anchor` - Whether to include HTML comment anchors
+/// * `options` - Markdown emission options
+/// * `footnotes` - Optional footnotes data (from Phase 7 footnote detection)
+///
+/// # Returns
+///
+/// A markdown string with all blocks from the page, including inline links
+/// and footnotes.
+pub fn page_to_markdown_with_links_and_footnotes(
+    blocks: &[BlockJson],
+    spans: &[SpanJson],
+    tables: &[TableJson],
+    page_links: &[crate::schema::LinkJson],
+    page_index: usize,
+    include_anchor: bool,
+    options: &MarkdownOptions,
+    footnotes: Option<&crate::output::markdown::footnotes::PageFootnotes>,
+) -> String {
     let mut result = String::new();
 
     // Emit page anchor for internal link targets
@@ -1042,23 +1223,23 @@ pub fn page_to_markdown_with_links(
             // Emit the entire list sequence as a group
             let list_blocks = &blocks[i..list_end];
 
-            // For list items with links, emit each item with link support
+            // For list items with links and footnotes, emit each item with combined support
             for list_block in list_blocks {
-                let block_with_links = block_to_markdown_with_links(list_block, spans, page_links);
-                if !block_with_links.is_empty() {
+                let block_with_content = block_to_markdown_with_links_and_footnotes(list_block, spans, page_links, footnotes);
+                if !block_with_content.is_empty() {
                     // Detect if numbered or bulleted
-                    let is_numbered = block_with_links
+                    let is_numbered = block_with_content
                         .chars()
                         .next()
                         .map(|c| c.is_ascii_digit())
                         .unwrap_or(false);
 
                     if is_numbered {
-                        result.push_str(&block_with_links);
+                        result.push_str(&block_with_content);
                         result.push('\n');
                     } else {
                         result.push_str("* ");
-                        result.push_str(&block_with_links);
+                        result.push_str(&block_with_content);
                         result.push('\n');
                     }
                 }
@@ -1068,15 +1249,15 @@ pub fn page_to_markdown_with_links(
             i = list_end;
         } else {
             // Non-list block - emit individually
-            let block_with_links = block_to_markdown_with_links(block, spans, page_links);
+            let block_with_content = block_to_markdown_with_links_and_footnotes(block, spans, page_links, footnotes);
 
             // For non-list blocks, use the existing block emission logic
             // but replace the text content with link-aware content
-            let kind_result = if block_with_links != block.text {
-                // Links were detected - emit the link-aware version
-                emit_block_kind_with_text(block, tables, options, &block_with_links)
+            let kind_result = if block_with_content != block.text {
+                // Links or footnotes were detected - emit the combined version
+                emit_block_kind_with_text(block, tables, options, &block_with_content)
             } else {
-                // No links - use standard emission
+                // No links or footnotes - use standard emission
                 emit_block_kind(block, tables, options)
             };
 
@@ -1085,9 +1266,27 @@ pub fn page_to_markdown_with_links(
         }
     }
 
-    // Add page break if requested and this isn't the last page
+    // Emit footnote definitions if footnotes are provided (Phase 7 integration)
+    // Footnote definitions are emitted at the end of page content, before page breaks
+    if let Some(footnotes_data) = footnotes {
+        if !footnotes_data.is_empty() {
+            result.push_str(&crate::output::markdown::footnotes::emit_footnote_defs(footnotes_data));
+        }
+    }
+
+    // Add page separator
+    // - When include_page_breaks is true: "\n---\n\n" (horizontal rule)
+    // - When include_page_breaks is false: "\n\n" (plain separation for LLM ingestion)
     if options.include_page_breaks {
         result.push_str("\n---\n\n");
+    } else {
+        // Ensure separation even without page breaks
+        // Note: result may already end with \n from block emission,
+        // so we add a single \n to ensure at least \n\n between pages
+        if !result.ends_with('\n') {
+            result.push('\n');
+        }
+        result.push('\n');
     }
 
     result
@@ -1768,6 +1967,30 @@ fn collapse_page_ranges(beads: &[BeadJson]) -> String {
 /// assert_eq!(md, "1\\*2");
 /// ```
 pub fn span_to_markdown(span: &SpanJson) -> String {
+    span_to_markdown_with_optional_footnote(span, None)
+}
+
+/// Convert a span to markdown with inline styling and optional footnote reference.
+///
+/// This is a variant of `span_to_markdown` that accepts an optional footnote ID.
+/// When a footnote ID is provided, the span text is emitted as a footnote reference
+/// `[^N]` instead of styled text.
+///
+/// # Arguments
+///
+/// * `span` - The span to convert
+/// * `footnote_id` - Optional footnote ID (when Some, emits as `[^N]`)
+///
+/// # Returns
+///
+/// A markdown string with appropriate inline styling applied, or a footnote reference.
+fn span_to_markdown_with_optional_footnote(span: &SpanJson, footnote_id: Option<u32>) -> String {
+    // If this span has a footnote reference, emit it as [^N]
+    if let Some(id) = footnote_id {
+        use crate::output::markdown::footnotes;
+        return footnotes::emit_footnote_ref(id);
+    }
+
     // Get the text content
     let text = &span.text;
 
@@ -2979,5 +3202,475 @@ mod span_tests {
         let lines: Vec<&str> = md.lines().collect();
         let body_line = lines.get(2).unwrap();
         assert_eq!(body_line.matches('|').count(), 4); // 4 pipes = 3 cells
+    }
+
+    // Integration tests for Phase 6.5.5: footnotes + inline links + per-page breaks
+
+    #[test]
+    fn test_page_to_markdown_with_links_and_footnotes_emits_footnote_ref_and_def() {
+        // Critical test: footnote ref [^N] in body and definition [^N]: text at page end
+        use crate::output::markdown::footnotes::PageFootnotes;
+        use crate::schema::LinkJson;
+
+        let spans = vec![
+            SpanJson {
+                text: "See ".to_string(),
+                bbox: [100.0, 700.0, 130.0, 720.0],
+                font: "Helvetica".to_string(),
+                size: 12.0,
+                color: Some("#000000".to_string()),
+                rendering_mode: Some(0),
+                confidence: Some(1.0),
+                confidence_source: Some("vector".to_string()),
+                lang: Some("en".to_string()),
+                flags: vec![],
+                receipt: None,
+                column: Some(0),
+            },
+            SpanJson {
+                text: "Chapter 1".to_string(),
+                bbox: [130.0, 700.0, 200.0, 720.0],
+                font: "Helvetica".to_string(),
+                size: 12.0,
+                color: Some("#000000".to_string()),
+                rendering_mode: Some(0),
+                confidence: Some(1.0),
+                confidence_source: Some("vector".to_string()),
+                lang: Some("en".to_string()),
+                flags: vec![],
+                receipt: None,
+                column: Some(0),
+            },
+        ];
+
+        let blocks = vec![
+            BlockJson {
+                kind: "paragraph".to_string(),
+                text: "See Chapter 1".to_string(),
+                bbox: [100.0, 700.0, 200.0, 720.0],
+                level: None,
+                table_index: None,
+                spans: vec![0, 1],
+                receipt: None,
+            },
+        ];
+
+        let mut footnotes = PageFootnotes::new();
+        footnotes.add_ref(1, 1); // Span index 1 is footnote ref 1
+        footnotes.add_definition(1, "First chapter introduces the topic".to_string());
+
+        let links: Vec<LinkJson> = vec![];
+        let tables: Vec<TableJson> = vec![];
+
+        let options = MarkdownOptions {
+            include_headers_footers: false,
+            include_watermarks: false,
+            include_page_breaks: false,
+        };
+
+        let md = page_to_markdown_with_links_and_footnotes(
+            &blocks,
+            &spans,
+            &tables,
+            &links,
+            0,
+            false,
+            &options,
+            Some(&footnotes),
+        );
+
+        // Should contain footnote ref in body
+        assert!(md.contains("[^1]"), "Footnote ref [^1] should be in body");
+
+        // Should contain footnote definition at end
+        assert!(md.contains("[^1]: First chapter introduces the topic"), "Footnote definition should be at page end");
+    }
+
+    #[test]
+    fn test_page_to_markdown_with_links_and_footnotes_no_footnotes_emits_no_markers() {
+        // Document with no footnotes: no [^N] markers, no definitions section
+        use crate::output::markdown::footnotes::PageFootnotes;
+        use crate::schema::LinkJson;
+
+        let spans = vec![
+            SpanJson {
+                text: "Regular text".to_string(),
+                bbox: [100.0, 700.0, 200.0, 720.0],
+                font: "Helvetica".to_string(),
+                size: 12.0,
+                color: Some("#000000".to_string()),
+                rendering_mode: Some(0),
+                confidence: Some(1.0),
+                confidence_source: Some("vector".to_string()),
+                lang: Some("en".to_string()),
+                flags: vec![],
+                receipt: None,
+                column: Some(0),
+            },
+        ];
+
+        let blocks = vec![
+            BlockJson {
+                kind: "paragraph".to_string(),
+                text: "Regular text".to_string(),
+                bbox: [100.0, 700.0, 200.0, 720.0],
+                level: None,
+                table_index: None,
+                spans: vec![0],
+                receipt: None,
+            },
+        ];
+
+        let footnotes = PageFootnotes::new(); // Empty footnotes
+        let links: Vec<LinkJson> = vec![];
+        let tables: Vec<TableJson> = vec![];
+
+        let options = MarkdownOptions {
+            include_headers_footers: false,
+            include_watermarks: false,
+            include_page_breaks: false,
+        };
+
+        let md = page_to_markdown_with_links_and_footnotes(
+            &blocks,
+            &spans,
+            &tables,
+            &links,
+            0,
+            false,
+            &options,
+            Some(&footnotes),
+        );
+
+        // Should NOT contain any footnote markers
+        assert!(!md.contains("[^"), "No footnote markers should be present");
+        assert!(!md.contains("]:"), "No footnote definitions should be present");
+    }
+
+    #[test]
+    fn test_page_to_markdown_with_links_and_footnotes_emits_inline_link() {
+        // Inline link fixture: [anchor](URL) emitted correctly
+        use crate::schema::LinkJson;
+
+        let spans = vec![
+            SpanJson {
+                text: "Visit our ".to_string(),
+                bbox: [100.0, 700.0, 170.0, 720.0],
+                font: "Helvetica".to_string(),
+                size: 12.0,
+                color: Some("#000000".to_string()),
+                rendering_mode: Some(0),
+                confidence: Some(1.0),
+                confidence_source: Some("vector".to_string()),
+                lang: Some("en".to_string()),
+                flags: vec![],
+                receipt: None,
+                column: Some(0),
+            },
+            SpanJson {
+                text: "website".to_string(),
+                bbox: [170.0, 700.0, 220.0, 720.0],
+                font: "Helvetica".to_string(),
+                size: 12.0,
+                color: Some("#0000FF".to_string()), // Blue indicates link
+                rendering_mode: Some(0),
+                confidence: Some(1.0),
+                confidence_source: Some("vector".to_string()),
+                lang: Some("en".to_string()),
+                flags: vec!["underline".to_string()],
+                receipt: None,
+                column: Some(0),
+            },
+        ];
+
+        let blocks = vec![
+            BlockJson {
+                kind: "paragraph".to_string(),
+                text: "Visit our website".to_string(),
+                bbox: [100.0, 700.0, 220.0, 720.0],
+                level: None,
+                table_index: None,
+                spans: vec![0, 1],
+                receipt: None,
+            },
+        ];
+
+        // Link annotation covering the "website" span
+        let links = vec![
+            LinkJson {
+                page_index: 0,
+                rect: [165.0, 695.0, 225.0, 725.0], // Covers "website" span
+                uri: Some("https://example.com".to_string()),
+                dest: None,
+                dest_array: None,
+            },
+        ];
+
+        let tables: Vec<TableJson> = vec![];
+
+        let options = MarkdownOptions {
+            include_headers_footers: false,
+            include_watermarks: false,
+            include_page_breaks: false,
+        };
+
+        let md = page_to_markdown_with_links_and_footnotes(
+            &blocks,
+            &spans,
+            &tables,
+            &links,
+            0,
+            false,
+            &options,
+            None,
+        );
+
+        // Should contain inline markdown link
+        assert!(md.contains("[website](https://example.com)"), "Inline link should be emitted");
+    }
+
+    #[test]
+    fn test_page_to_markdown_with_links_emits_internal_page_link() {
+        // Internal destination link: [text](#page-N)
+        use crate::schema::{LinkJson, DestArrayJson, DestTypeJson};
+
+        let spans = vec![
+            SpanJson {
+                text: "See next page".to_string(),
+                bbox: [100.0, 700.0, 200.0, 720.0],
+                font: "Helvetica".to_string(),
+                size: 12.0,
+                color: Some("#0000FF".to_string()),
+                rendering_mode: Some(0),
+                confidence: Some(1.0),
+                confidence_source: Some("vector".to_string()),
+                lang: Some("en".to_string()),
+                flags: vec!["underline".to_string()],
+                receipt: None,
+                column: Some(0),
+            },
+        ];
+
+        let blocks = vec![
+            BlockJson {
+                kind: "paragraph".to_string(),
+                text: "See next page".to_string(),
+                bbox: [100.0, 700.0, 200.0, 720.0],
+                level: None,
+                table_index: None,
+                spans: vec![0],
+                receipt: None,
+            },
+        ];
+
+        // Internal destination link to page 5
+        let links = vec![
+            LinkJson {
+                page_index: 0,
+                rect: [95.0, 695.0, 205.0, 725.0],
+                uri: None,
+                dest: None,
+                dest_array: Some(DestArrayJson {
+                    page_index: 5,
+                    dest: DestTypeJson::Fit,
+                }),
+            },
+        ];
+
+        let tables: Vec<TableJson> = vec![];
+
+        let options = MarkdownOptions {
+            include_headers_footers: false,
+            include_watermarks: false,
+            include_page_breaks: false,
+        };
+
+        let md = page_to_markdown_with_links(
+            &blocks,
+            &spans,
+            &tables,
+            &links,
+            0,
+            false,
+            &options,
+        );
+
+        // Should contain internal page link (page_index 5 -> page-6 in markdown)
+        assert!(md.contains("[See next page](#page-6)"), "Internal page link should be emitted");
+    }
+
+    #[test]
+    fn test_markdown_no_page_breaks_omits_horizontal_rule() {
+        // --md-no-page-breaks: no "---" between pages; "\n\n" separation only
+        let blocks1 = vec![
+            BlockJson {
+                kind: "heading".to_string(),
+                text: "Page 1".to_string(),
+                bbox: [100.0, 700.0, 200.0, 720.0],
+                level: Some(1),
+                table_index: None,
+                spans: vec![],
+                receipt: None,
+            },
+        ];
+
+        let blocks2 = vec![
+            BlockJson {
+                kind: "heading".to_string(),
+                text: "Page 2".to_string(),
+                bbox: [100.0, 700.0, 200.0, 720.0],
+                level: Some(1),
+                table_index: None,
+                spans: vec![],
+                receipt: None,
+            },
+        ];
+
+        let options_no_breaks = MarkdownOptions {
+            include_headers_footers: false,
+            include_watermarks: false,
+            include_page_breaks: false, // --md-no-page-breaks flag
+        };
+
+        let md1 = page_to_markdown_with_options(&blocks1, &[], 0, false, &options_no_breaks);
+        let md2 = page_to_markdown_with_options(&blocks2, &[], 1, false, &options_no_breaks);
+
+        // Combined output should NOT contain "---" between pages
+        let combined = format!("{}{}", md1, md2);
+        assert!(!combined.contains("---\n\n"), "Should NOT contain horizontal rule between pages");
+        // Should have blank line separation
+        assert!(combined.contains("\n\n"), "Should have blank line separation");
+    }
+
+    #[test]
+    fn test_markdown_with_page_breaks_emits_horizontal_rule() {
+        // Default behavior: "---" between pages
+        let blocks1 = vec![
+            BlockJson {
+                kind: "heading".to_string(),
+                text: "Page 1".to_string(),
+                bbox: [100.0, 700.0, 200.0, 720.0],
+                level: Some(1),
+                table_index: None,
+                spans: vec![],
+                receipt: None,
+            },
+        ];
+
+        let blocks2 = vec![
+            BlockJson {
+                kind: "heading".to_string(),
+                text: "Page 2".to_string(),
+                bbox: [100.0, 700.0, 200.0, 720.0],
+                level: Some(1),
+                table_index: None,
+                spans: vec![],
+                receipt: None,
+            },
+        ];
+
+        let options_with_breaks = MarkdownOptions {
+            include_headers_footers: false,
+            include_watermarks: false,
+            include_page_breaks: true, // Default behavior
+        };
+
+        let md1 = page_to_markdown_with_options(&blocks1, &[], 0, false, &options_with_breaks);
+        let md2 = page_to_markdown_with_options(&blocks2, &[], 1, false, &options_with_breaks);
+
+        // First page should end with "---\n\n"
+        assert!(md1.contains("---\n\n"), "Page 1 should end with horizontal rule");
+        // Combined output should contain "---"
+        let combined = format!("{}{}", md1, md2);
+        assert!(combined.contains("---"), "Should contain horizontal rule between pages");
+    }
+
+    #[test]
+    fn test_spans_to_markdown_with_links_and_footnotes_footnote_takes_precedence() {
+        // When a span is both a footnote and part of a link, footnote ref takes precedence
+        use crate::output::markdown::footnotes::PageFootnotes;
+        use crate::schema::LinkJson;
+
+        let spans = vec![
+            SpanJson {
+                text: "1".to_string(), // This is both a footnote ref and part of a link
+                bbox: [100.0, 700.0, 110.0, 720.0],
+                font: "Helvetica".to_string(),
+                size: 12.0,
+                color: Some("#000000".to_string()),
+                rendering_mode: Some(0),
+                confidence: Some(1.0),
+                confidence_source: Some("vector".to_string()),
+                lang: Some("en".to_string()),
+                flags: vec!["superscript".to_string()],
+                receipt: None,
+                column: Some(0),
+            },
+        ];
+
+        let mut footnotes = PageFootnotes::new();
+        footnotes.add_ref(0, 1); // Span 0 is footnote ref 1
+        footnotes.add_definition(1, "First footnote".to_string());
+
+        // Link annotation also covering the same span (first link wins)
+        let links = vec![
+            LinkJson {
+                page_index: 0,
+                rect: [95.0, 695.0, 115.0, 725.0],
+                uri: Some("https://example.com".to_string()),
+                dest: None,
+                dest_array: None,
+            },
+        ];
+
+        let md = spans_to_markdown_with_links_and_footnotes(&spans, &links, Some(&footnotes));
+
+        // Footnote ref should be emitted (takes precedence)
+        assert!(md.contains("[^1]"), "Footnote ref should be emitted");
+        // Link should NOT be emitted (footnote takes precedence)
+        assert!(!md.contains("[1](https://example.com)"), "Link should not be emitted for footnote span");
+    }
+
+    #[test]
+    fn test_block_to_markdown_with_links_and_footnotes_empty_footnotes() {
+        // Block with no footnotes should not emit footnote markers
+        use crate::output::markdown::footnotes::PageFootnotes;
+        use crate::schema::LinkJson;
+
+        let spans = vec![
+            SpanJson {
+                text: "Regular text".to_string(),
+                bbox: [100.0, 700.0, 200.0, 720.0],
+                font: "Helvetica".to_string(),
+                size: 12.0,
+                color: Some("#000000".to_string()),
+                rendering_mode: Some(0),
+                confidence: Some(1.0),
+                confidence_source: Some("vector".to_string()),
+                lang: Some("en".to_string()),
+                flags: vec![],
+                receipt: None,
+                column: Some(0),
+            },
+        ];
+
+        let block = BlockJson {
+            kind: "paragraph".to_string(),
+            text: "Regular text".to_string(),
+            bbox: [100.0, 700.0, 200.0, 720.0],
+            level: None,
+            table_index: None,
+            spans: vec![0],
+            receipt: None,
+        };
+
+        let footnotes = PageFootnotes::new(); // Empty
+        let links: Vec<LinkJson> = vec![];
+
+        let md = block_to_markdown_with_links_and_footnotes(&block, &spans, &links, Some(&footnotes));
+
+        // Should return original text (no links or footnotes)
+        assert_eq!(md, "Regular text");
+        assert!(!md.contains("[^"), "No footnote markers");
     }
 }

@@ -1,10 +1,14 @@
 use fontdue::Font;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
+
+// Import for Context trait used in validate_schema
+use anyhow::Context as AnyhowContext;
 
 /// Helper macro for creating dictionaries
 macro_rules! dictionary {
@@ -107,6 +111,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("  generate-brokenvector-fixtures  Generate BrokenVector OCR test fixtures");
         eprintln!("  generate-sensitive-fixture      Generate password-protected PDF for TH-08 log audit test");
         eprintln!("  gen-schema                      Generate JSON Schema from Rust output types");
+        eprintln!("  validate-schema                 Validate checked-in schema matches generated");
         eprintln!(
             "  gen-shape-db                    Generate glyph shape database from font files"
         );
@@ -156,6 +161,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             gen_schema()?;
             Ok(())
         }
+        "validate-schema" => {
+            validate_schema()?;
+            Ok(())
+        }
         "memory-ceiling" => {
             run_memory_ceiling_tests()?;
             Ok(())
@@ -199,6 +208,171 @@ fn gen_schema() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+/// Validate that the checked-in schema matches the generated schema.
+///
+/// Regenerates the schema and diffs against the checked-in version.
+/// Fails if there's any difference, indicating the schema needs to be regenerated.
+fn validate_schema() -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::Write;
+
+    let workspace_root = find_workspace_root();
+    let schema_path = workspace_root.join("docs/schema/v1.0/pdftract.schema.json");
+
+    // Read the checked-in schema
+    let checked_in = fs::read_to_string(&schema_path)
+        .with_context(|| format!("Failed to read checked-in schema from {}", schema_path.display()))?;
+
+    // Generate the schema in memory
+    let generated = generate_schema()?;
+
+    // Compare
+    if checked_in == generated {
+        println!("✓ Schema is up-to-date: {}", schema_path.display());
+        Ok(())
+    } else {
+        eprintln!("✗ Schema drift detected: {}", schema_path.display());
+        eprintln!("");
+        eprintln!("The checked-in schema does not match the generated schema.");
+        eprintln!("Run 'cargo run --manifest-path=xtask/Cargo.toml --bin gen_schema'");
+        eprintln!("to regenerate the schema and commit the changes.");
+        eprintln!("");
+
+        // Show a diff-like preview
+        let checked_in_lines: Vec<&str> = checked_in.lines().collect();
+        let generated_lines: Vec<&str> = generated.lines().collect();
+
+        let diff = diff_lines(&checked_in_lines, &generated_lines);
+        if !diff.is_empty() {
+            eprintln!("Differences (first 50 lines):");
+            eprintln!("{}", diff.lines().take(50).collect::<Vec<_>>().join("\n"));
+        }
+
+        Err("Schema drift detected".into())
+    }
+}
+
+/// Generate schema in memory (shared with gen_schema binary).
+fn generate_schema() -> Result<String, Box<dyn std::error::Error>> {
+    use pdftract_core::schema::Output;
+    use schemars::schema_for;
+    use serde_json::Value;
+
+    let schema = schema_for!(Output);
+    let mut value = serde_json::to_value(&schema)?;
+
+    // Set $id, title, and description
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert("$id".to_string(), Value::String(
+            "https://pdftract.com/schema/v1.0/pdftract.schema.json".to_string()
+        ));
+        obj.insert("title".to_string(), Value::String(
+            "pdftract Output v1.0".to_string()
+        ));
+        obj.insert("description".to_string(), Value::String(
+            "JSON Schema for pdftract PDF extraction output v1.0. \
+            This schema defines the structure of extraction results including pages, \
+            spans, blocks, tables, form fields, signatures, and metadata."
+            .to_string()
+        ));
+    }
+
+    // Add enum constraints (copied from gen_schema.rs)
+    add_enum_constraints(&mut value);
+
+    // Sort for stable output
+    let sorted = sort_keys_recursive(value);
+    Ok(serde_json::to_string_pretty(&sorted)?)
+}
+
+/// Add enum constraints to schema (copied from gen_schema.rs).
+fn add_enum_constraints(value: &mut Value) {
+    if let Some(obj) = value.as_object_mut() {
+        if let Some(defs) = obj.get_mut("$defs").and_then(|v| v.as_object_mut()) {
+            // DiagnosticJson.severity
+            if let Some(diag) = defs.get_mut("DiagnosticJson").and_then(|v| v.as_object_mut()) {
+                if let Some(props) = diag.get_mut("properties").and_then(|v| v.as_object_mut()) {
+                    if let Some(severity) = props.get_mut("severity").and_then(|v| v.as_object_mut()) {
+                        severity.insert("enum".to_string(), Value::Array(vec![
+                            Value::String("info".to_string()),
+                            Value::String("warning".to_string()),
+                            Value::String("error".to_string()),
+                            Value::String("fatal".to_string()),
+                        ]));
+                    }
+                }
+            }
+
+            // PageJson.page_type
+            if let Some(page) = defs.get_mut("PageJson").and_then(|v| v.as_object_mut()) {
+                if let Some(props) = page.get_mut("properties").and_then(|v| v.as_object_mut()) {
+                    if let Some(page_type) = props.get_mut("type").and_then(|v| v.as_object_mut()) {
+                        page_type.insert("enum".to_string(), Value::Array(vec![
+                            Value::String("text".to_string()),
+                            Value::String("scanned".to_string()),
+                            Value::String("mixed".to_string()),
+                            Value::String("broken_vector".to_string()),
+                            Value::String("blank".to_string()),
+                            Value::String("figure_only".to_string()),
+                        ]));
+                    }
+                }
+            }
+
+            // AttachmentJson.data contentEncoding
+            if let Some(attachment) = defs.get_mut("AttachmentJson").and_then(|v| v.as_object_mut()) {
+                if let Some(props) = attachment.get_mut("properties").and_then(|v| v.as_object_mut()) {
+                    if let Some(data) = props.get_mut("data").and_then(|v| v.as_object_mut()) {
+                        data.insert("contentEncoding".to_string(), Value::String("base64".to_string()));
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Sort keys recursively (copied from gen_schema.rs).
+fn sort_keys_recursive(value: Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut sorted = std::collections::BTreeMap::new();
+            for (k, v) in map {
+                sorted.insert(k, sort_keys_recursive(v));
+            }
+            Value::Object(sorted.into_iter().collect())
+        }
+        Value::Array(arr) => {
+            Value::Array(arr.into_iter().map(sort_keys_recursive).collect())
+        }
+        _ => value,
+    }
+}
+
+/// Generate a simple diff between two line sequences.
+fn diff_lines(old: &[&str], new: &[&str]) -> String {
+    let mut output = String::new();
+
+    let max_lines = old.len().max(new.len());
+    for i in 0..max_lines {
+        let old_line = old.get(i);
+        let new_line = new.get(i);
+
+        match (old_line, new_line) {
+            (Some(o), Some(n)) if o != n => {
+                output.push_str(&format!("Line {}: '{} '{}' '{}' '{}'\n", i + 1, "-", o, "+", n));
+            }
+            (Some(o), None) => {
+                output.push_str(&format!("Line {}: '{} '{}'\n", i + 1, "-", o));
+            }
+            (None, Some(n)) => {
+                output.push_str(&format!("Line {}: '{} '{}'\n", i + 1, "+", n));
+            }
+            _ => {}
+        }
+    }
+
+    output
 }
 
 fn generate_profile_readme(profile_name: &str) -> Result<(), Box<dyn std::error::Error>> {

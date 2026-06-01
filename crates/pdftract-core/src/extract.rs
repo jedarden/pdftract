@@ -316,83 +316,30 @@ pub struct ExtractionMetadata {
     pub profile_fields: Option<serde_json::Value>,
 }
 
-/// Extract text and structure from a PDF file.
-///
-/// This is the main entry point for PDF extraction. It:
-/// 1. Parses the PDF and computes its fingerprint
-/// 2. Extracts spans and blocks from each page in parallel (bounded by semaphore)
-/// 3. Generates receipts if requested
-///
-/// # Arguments
-///
-/// * `pdf_path` - Path to the PDF file
-/// * `options` - Extraction options controlling receipt generation and parallelism
-///
-/// # Returns
-///
-/// An `ExtractionResult` containing pages with spans and blocks.
-///
-/// # Memory Bounding
-///
-/// The number of simultaneously-resident pages is capped by `max_parallel_pages`
-/// in the options. This ensures document-wide peak RSS stays under the memory
-/// ceiling regardless of core count. Each page extraction acquires a semaphore
-/// permit before allocating its working buffers and releases it when done.
-///
-/// # Streaming/Lazy Decode
-///
-/// This function uses lazy page iteration via LazyPageIter, which walks the page
-/// tree depth-first and materializes only the current path from root to leaf
-/// (max ~16 nodes). Pages are processed sequentially but extracted in parallel
-/// with semaphore bounding. Decoded content streams are dropped immediately after
-/// each page is processed, ensuring peak RSS stays O(depth × per-page) not O(pages × per-page).
-///
-/// # WARNING: Accumulates All Results
-///
-/// This function accumulates all extracted pages in memory before returning.
-/// For large documents (1000+ pages), this can consume significant memory.
-/// Use `extract_pdf_ndjson` for true streaming extraction that never accumulates
-/// all pages in memory.
-///
-/// # Examples
-///
-/// ```rust,no_run
-/// use pdftract_core::{extract_pdf, ExtractionOptions, OutputOptions};
-/// use std::path::Path;
-///
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// // Extract text from a PDF file with default options
-/// let result = extract_pdf(
-///     Path::new("document.pdf"),
-///     &ExtractionOptions::default()
-/// )?;
-///
-/// // Access extracted text per page
-/// for (page_num, page_result) in result.pages.iter().enumerate() {
-///     println!("Page {}: {} chars extracted", page_num + 1, page_result.text.len());
-///     println!("Text: {}", &page_result.text[..page_result.text.len().min(100)]);
-/// }
-/// # Ok(())
-/// # }
-/// ```
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - The PDF file cannot be opened or read
-/// - The PDF structure is invalid or corrupted
-/// - Decryption fails (for encrypted PDFs)
-/// - Content stream decoding exceeds bomb limits
 /// Extract text, tables, and metadata from a PDF file.
 ///
 /// This is the main entry point for PDF extraction. It processes the entire
 /// document and returns structured data including text spans, blocks, tables,
 /// form fields, links, and more.
 ///
+/// # Memory Bounding
+///
+/// The number of simultaneously-resident pages is capped by [`ExtractionOptions::max_parallel_pages`].
+/// This ensures document-wide peak RSS stays under the memory ceiling regardless of core count.
+/// Each page extraction acquires a semaphore permit before allocating its working buffers
+/// and releases it when done.
+///
+/// # WARNING: Accumulates All Results
+///
+/// This function accumulates all extracted pages in memory before returning.
+/// For large documents (1000+ pages), this can consume significant memory.
+/// Use [`extract_pdf_ndjson`] or [`extract_pdf_streaming`] for true streaming extraction
+/// that never accumulates all pages in memory.
+///
 /// # Arguments
 ///
 /// * `pdf_path` - Path to the PDF file to extract from
-/// * `options` - Extraction options controlling OCR, DPI, page limits, etc.
+/// * `options` - Extraction options controlling OCR, DPI, page limits, parallelism, etc.
 ///
 /// # Returns
 ///
@@ -404,6 +351,7 @@ pub struct ExtractionMetadata {
 /// - `links` - Hyperlinks and internal destinations
 /// - `attachments` - Embedded file attachments
 /// - `threads` - Article thread chains
+/// - `metadata` - Extraction metadata (page count, diagnostics, etc.)
 ///
 /// # Errors
 ///
@@ -432,7 +380,7 @@ pub struct ExtractionMetadata {
 /// # }
 /// ```
 ///
-/// Extraction with OCR for scanned documents:
+/// Extraction with OCR for scanned documents (requires `ocr` feature):
 ///
 /// ```rust,no_run
 /// use pdftract_core::{extract_pdf, ExtractionOptions};
@@ -465,6 +413,25 @@ pub struct ExtractionMetadata {
 /// )?;
 ///
 /// println!("First 10 pages extracted");
+/// # Ok(())
+/// # }
+/// ```
+///
+/// Processing the extracted spans:
+///
+/// ```rust,no_run
+/// use pdftract_core::{extract_pdf, ExtractionOptions};
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let result = extract_pdf("document.pdf", &ExtractionOptions::default())?;
+///
+/// for page in &result.pages {
+///     for span in &page.spans {
+///         println!("Text: {}", span.text);
+///         println!("  Font: {}", span.font);
+///         println!("  Size: {}", span.font_size);
+///     }
+/// }
 /// # Ok(())
 /// # }
 /// ```

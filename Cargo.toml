@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/pdftract-core", "crates/pdftract-cli", "crates/pdftract-py", "crates/pdftract-libpdftract", "crates/pdftract-cer-diff", "crates/pdftract-inspector-ui"]
+members = ["crates/pdftract-core", "crates/pdftract-cli", "crates/pdftract-py", "crates/pdftract-libpdftract", "crates/pdftract-cer-diff", "crates/pdftract-inspector-ui", "crates/pdftract-schema-migrate"]
 exclude = ["tests/fixtures/generate_lzw_fixtures.rs"]
 
 [workspace.package]

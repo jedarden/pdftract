@@ -154,17 +154,16 @@ fn create_multi_page_pdf(path: &Path, num_pages: usize, title: &str) -> std::io:
     offset += pdf.len() - objects.last().unwrap().1;
     objects.push((font_obj, offset));
 
-    let xref_offset = offset;
+    let _xref_offset = offset;
 
     // Build xref table with actual offsets
     pdf.push_str("xref\n0 1\n0000000000 65535 f \n");
 
     // Calculate xref properly: we need to track where each object starts
-    let mut pdf_bytes = pdf.as_bytes().to_vec();
-    let mut xref_entries = Vec::new();
+    let _pdf_bytes = pdf.as_bytes().to_vec();
 
     // Rebuild PDF with accurate offsets
-    let sections = vec![
+    let mut sections = vec![
         // Catalog
         (1, format!(
             "1 0 obj\n<<\n/Type /Catalog\n/Pages 2 0 R\n/Title ({})\n>>\nendobj\n",
@@ -217,8 +216,8 @@ fn create_multi_page_pdf(path: &Path, num_pages: usize, title: &str) -> std::io:
     body.push_str("0000000000 65535 f \n");
 
     for obj_num in 1..=sections.len() {
-        let offset = offsets.get(&(obj_num as i32)).unwrap();
-        body.push_str(&format!("{:010d} 00000 n \n", offset));
+        let offset = offsets.get(&obj_num).unwrap();
+        body.push_str(&format!("{:010} 00000 n \n", offset));
     }
 
     body.push_str(&format!(

@@ -3563,6 +3563,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "pdftract-schema-migrate"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "peeking_take_while"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

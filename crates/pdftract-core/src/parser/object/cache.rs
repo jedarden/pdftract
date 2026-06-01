@@ -92,12 +92,13 @@ impl CacheResolutionGuard {
 
 impl Drop for CacheResolutionGuard {
     fn drop(&mut self) {
-        // Decrement the depth counter
-        if let Ok(mut depth) = self.depth.lock() {
-            if *depth > 0 {
-                *depth -= 1;
+        // Decrement the thread-local depth counter
+        RESOLUTION_DEPTH.with(|depth| {
+            let current = depth.get();
+            if current > 0 {
+                depth.set(current - 1);
             }
-        }
+        });
         // The ResolutionGuard drop will handle removing from thread-local set
     }
 }
@@ -351,16 +352,10 @@ impl ObjectCache {
             ));
         }
 
-        // Check depth limit
-        {
-            let mut depth = self.depth.lock().map_err(|_| {
-                Diag::with_dynamic_no_offset(
-                    DiagCode::StructDepthExceeded,
-                    "Lock poisoned - depth tracking unavailable".to_string(),
-                )
-            })?;
-
-            if *depth >= MAX_RESOLUTION_DEPTH {
+        // Check depth limit using thread-local depth counter
+        RESOLUTION_DEPTH.with(|depth| {
+            let current = depth.get();
+            if current >= MAX_RESOLUTION_DEPTH {
                 return Err(Diag::with_dynamic_no_offset(
                     DiagCode::StructDepthExceeded,
                     format!(
@@ -369,18 +364,16 @@ impl ObjectCache {
                     ),
                 ));
             }
-
-            *depth += 1;
-        }
+            depth.set(current + 1);
+            Ok(())
+        })?;
 
         // Create the resolution guard (inserts into thread-local RESOLVING set)
         let _guard = ResolutionGuard::new(obj_ref);
 
         // Wrap in CacheResolutionGuard for depth cleanup
-        Ok(CacheResolutionGuard {
-            _guard,
-            depth: Arc::clone(&self.depth),
-        })
+        // Note: depth is thread-local via RESOLUTION_DEPTH, not stored in the guard
+        Ok(CacheResolutionGuard { _guard })
     }
 
     /// End resolution and decrement depth counter.
@@ -389,11 +382,13 @@ impl ObjectCache {
     /// but can be called manually if needed.
     #[inline]
     pub fn end_resolution(&self) {
-        if let Ok(mut depth) = self.depth.lock() {
-            if *depth > 0 {
-                *depth -= 1;
+        // Decrement the thread-local depth counter
+        RESOLUTION_DEPTH.with(|depth| {
+            let current = depth.get();
+            if current > 0 {
+                depth.set(current - 1);
             }
-        }
+        });
     }
 
     /// Get the least-recently-used entry for testing.

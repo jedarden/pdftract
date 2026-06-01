@@ -30,7 +30,7 @@ use output::OutputConfig;
 use pdftract_core::atomic_file_writer::AtomicFileWriter;
 use pdftract_core::cache;
 use pdftract_core::extract::{extract_pdf, result_to_json};
-use pdftract_core::markdown::{block_to_markdown, page_to_markdown, page_to_markdown_with_links, MarkdownOptions};
+use pdftract_core::markdown::{block_to_markdown, page_to_markdown, page_to_markdown_with_links, page_to_markdown_with_links_and_footnotes, MarkdownOptions};
 use pdftract_core::options::{ExtractionOptions, ReceiptsMode};
 
 // Re-export diagnostics for the --list-diagnostics and --explain-diagnostic commands
@@ -158,6 +158,10 @@ enum Commands {
         /// Emit HTML comment anchors before each block in Markdown output
         #[arg(long)]
         md_anchors: bool,
+
+        /// Suppress page-break horizontal rules between pages
+        #[arg(long)]
+        md_no_page_breaks: bool,
 
         /// Auto-detect document type and apply appropriate profile
         #[arg(long)]
@@ -1362,7 +1366,8 @@ fn write_output<W: std::io::Write>(
         output::Format::Markdown => {
             // Markdown output: simple conversion with optional anchors
             let include_anchors = options.markdown_anchors;
-            let include_page_breaks = true; // Add --- between pages
+            // Use the --md-no-page-breaks flag to control page break emission
+            let include_page_breaks = !options.markdown_no_page_breaks; // Add --- between pages
 
             for (page_idx, page) in result.pages.iter().enumerate() {
                 let is_last_page = page_idx == result.pages.len() - 1;
@@ -1380,7 +1385,9 @@ fn write_output<W: std::io::Write>(
                     include_watermarks: options.output.include_watermarks,
                     include_page_breaks: include_break,
                 };
-                let md = page_to_markdown_with_links(
+                // Use page_to_markdown_with_links_and_footnotes for footnote support
+                // (Phase 7 footnote detection not yet implemented, so pass None for footnotes)
+                let md = page_to_markdown_with_links_and_footnotes(
                     &page.blocks,
                     &page.spans,
                     &page.tables,
@@ -1388,6 +1395,7 @@ fn write_output<W: std::io::Write>(
                     page.index,
                     include_anchors,
                     &md_options,
+                    None, // No footnotes data until Phase 7 is implemented
                 );
                 write!(writer, "{}", md)?;
             }

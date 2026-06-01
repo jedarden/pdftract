@@ -24,6 +24,11 @@ use wiremock::{
 use pdftract_core::source::{open_remote, RemoteOpts};
 use pdftract_core::diagnostics::DiagCode;
 
+/// Test fixture PDFs - use actual valid PDF files for reliable testing.
+const TEST_FIXTURE_100P: &[u8] = include_bytes!("fixtures/multipage-100.pdf");
+const TEST_FIXTURE_SMALL: &[u8] = include_bytes!("fixtures/test-minimal.pdf");
+const TEST_FIXTURE_LINEARIZED: &[u8] = include_bytes!("fixtures/linearized-10.pdf");
+
 /// Request tracking for bandwidth verification.
 #[derive(Debug, Clone, Default)]
 struct RequestMetrics {

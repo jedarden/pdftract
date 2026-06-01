@@ -225,12 +225,16 @@ fn test_thread_local_cycle_detection() {
         let result = cache_clone.begin_resolution(ref_a);
         assert!(result.is_ok(), "Should succeed - different thread-local RESOLVING set");
 
-        // But this thread CAN create its own cycle
-        let inner_guard = cache_clone.begin_resolution(ref_a).unwrap();
+        // Keep the guard active to show this thread is now resolving A
+        let thread_guard = result.unwrap();
+
+        // Now this thread CANNOT begin resolving A again (cycle within this thread)
         let cycle_result = cache_clone.begin_resolution(ref_a);
         assert!(cycle_result.is_err(), "Should detect cycle within this thread");
+        let diag = cycle_result.unwrap_err();
+        assert_eq!(diag.code, DiagCode::StructCircularRef);
 
-        drop(inner_guard);
+        drop(thread_guard);
     });
 
     handle.join().unwrap();
@@ -281,8 +285,10 @@ fn test_random_resolution_sequences_terminate() {
 
         match result {
             Ok(guard) => {
-                // Successfully entered resolution
-                // Insert a non-null object
+                // Check cache first (generates stats)
+                cache.get(obj_ref);
+
+                // Insert a non-null object if not already cached
                 if !seen_refs.contains(&obj_ref) {
                     let obj = Arc::new(PdfObject::Integer(i as i64));
                     cache.insert(obj_ref, obj);
@@ -313,13 +319,13 @@ fn test_random_resolution_sequences_terminate() {
         if i % 100 == 0 {
             let len = cache.len();
             let stats = cache.stats();
-            let total = stats.hits + stats.misses;
+            let _total = stats.hits + stats.misses;
             // len should be <= total accesses (but not strictly equal due to nulls not being cached)
             assert!(len <= (seen_refs.len() as usize), "Cache length should not exceed unique inserts");
         }
     }
 
-    // Final sanity check
+    // Final sanity check - we should have cache activity from all the get() calls
     let stats = cache.stats();
-    assert!(stats.hits + stats.misses > 0, "Should have some cache activity");
+    assert!(stats.hits + stats.misses > 0, "Should have some cache activity from get() calls");
 }

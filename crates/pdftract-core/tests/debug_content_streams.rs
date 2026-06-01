@@ -45,3 +45,8 @@ fn main() {
         print_normalized_content(Path::new(fixture));
     }
 }
+
+#[test]
+fn test_debug_content_streams() {
+    main();
+}

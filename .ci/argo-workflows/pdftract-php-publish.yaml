@@ -1,0 +1,362 @@
+# pdftract-php-publish WorkflowTemplate
+#
+# Publishes the PHP SDK to Packagist (package: jedarden/pdftract).
+# Triggered by the pdftract-release-cascade after pdftract-build-binaries completes.
+# The workflow clones the PHP SDK repo, syncs the version, runs conformance
+# tests with PHPUnit, and pushes a git tag (Packagist auto-discovers from tags).
+#
+# === Parameter Reference ===
+# - tag: Git tag from the main repo (e.g., v1.0.0)
+# - version: SemVer version string (e.g., 1.0.0)
+#
+# === Steps ===
+# 1. clone-sdk-repo: Clone github.com/jedarden/pdftract-php
+# 2. sync-version: Update composer.json version to match the tag
+# 3. composer-install: Install PHP dependencies with Composer
+# 4. conformance: Run vendor/bin/phpunit (must pass to publish)
+# 5. tag-and-push: Create git tag vX.Y.Z and push (Packagist webhook auto-discovers)
+# 6. warm-packagist: Optional POST to Packagist API to expedite indexing
+#
+# === Re-runnability ===
+# A re-run after a partial failure will detect if the tag already exists
+# on GitHub and skip the push (idempotent). The workflow is safe to re-run.
+#
+# Bead: pdftract-2m3gl
+# Plan section: SDK Architecture / Per-SDK Release Channels, line 3576 (Packagist auto-discovers)
+# ADR-009: Argo Workflows on iad-ci only
+#
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: pdftract-php-publish
+  namespace: argo-workflows
+  labels:
+    app.kubernetes.io/name: pdftract-php-publish
+    app.kubernetes.io/component: ci
+    app.kubernetes.io/part-of: pdftract
+spec:
+  entrypoint: publish-php-sdk
+  serviceAccountName: argo-workflow
+
+  podGC:
+    strategy: OnPodCompletion
+
+  ttlStrategy:
+    secondsAfterSuccess: 1800
+    secondsAfterFailure: 7200
+
+  arguments:
+    parameters:
+      - name: tag
+        value: ""
+        description: "Git tag from main repo (e.g., v1.0.0)"
+      - name: version
+        value: ""
+        description: "Version extracted from tag (e.g., 1.0.0)"
+
+  volumeClaimTemplates:
+    - metadata:
+        name: workspace
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: sata-large
+        resources:
+          requests:
+            storage: 5Gi
+
+  podMetadata:
+    labels:
+      app.kubernetes.io/name: pdftract-php-publish
+      tag: "{{workflow.parameters.tag}}"
+
+  templates:
+    # === Main DAG ===
+    # Orchestrates the PHP SDK publish steps
+    - name: publish-php-sdk
+      dag:
+        tasks:
+          - name: clone-sdk-repo
+            template: clone-sdk-repo
+
+          - name: sync-version
+            template: sync-version
+            dependencies: [clone-sdk-repo]
+
+          - name: composer-install
+            template: composer-install
+            dependencies: [sync-version]
+
+          - name: conformance
+            template: conformance
+            dependencies: [composer-install]
+
+          - name: tag-and-push
+            template: tag-and-push
+            dependencies: [conformance]
+
+          - name: warm-packagist
+            template: warm-packagist
+            dependencies: [tag-and-push]
+
+    # === Clone SDK Repo ===
+    # Clones the pdftract-php repository from GitHub
+    - name: clone-sdk-repo
+      activeDeadlineSeconds: 300
+      container:
+        image: alpine:3.19
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            apk add --no-cache git
+
+            echo "Cloning pdftract-php repository..."
+            git clone --branch main \
+              "https://x-access-token:${GH_TOKEN}@github.com/jedarden/pdftract-php.git" \
+              /workspace/sdk-php
+
+            cd /workspace/sdk-php
+            echo "Cloned commit: $(git rev-parse HEAD)"
+            echo "Branch: $(git branch --show-current)"
+        env:
+          - name: GH_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: github-pat-pdftract
+                key: token
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+
+    # === Sync Version ===
+    # Updates composer.json to match the binary tag version.
+    - name: sync-version
+      activeDeadlineSeconds: 120
+      container:
+        image: composer:2.6
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            VERSION="{{workflow.parameters.version}}"
+
+            cd /workspace/sdk-php
+
+            echo "Syncing composer.json version to ${VERSION}"
+
+            # Update the version in composer.json
+            # composer.json doesn't have a version field by default, but we can add one
+            if grep -q '"version"' composer.json; then
+              sed -i "s/\"version\": \".*\"/\"version\": \"${VERSION}\"/" composer.json
+            else
+              # Add version after the name field
+              sed -i "/\"name\":/a\\    \"version\": \"${VERSION}\"," composer.json
+            fi
+
+            echo "Version updated in composer.json"
+            grep -A1 '"name"' composer.json
+
+            # Show the diff
+            git diff
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+
+    # === Composer Install ===
+    # Installs PHP dependencies using Composer.
+    - name: composer-install
+      activeDeadlineSeconds: 600
+      container:
+        image: composer:2.6
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+
+            cd /workspace/sdk-php
+
+            echo "Installing PHP dependencies..."
+            composer install --no-interaction --prefer-dist --optimize-autoloader
+
+            echo "Composer install complete"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+
+    # === Conformance Tests ===
+    # Runs the PHP SDK conformance test suite with PHPUnit.
+    # This step MUST pass for the publish to proceed.
+    - name: conformance
+      activeDeadlineSeconds: 1200
+      container:
+        image: php:8.2-cli
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            VERSION="{{workflow.parameters.version}}"
+
+            echo "=========================================="
+            echo "Running PHP SDK Conformance Tests"
+            echo "=========================================="
+
+            cd /workspace/sdk-php
+
+            # Install Composer
+            curl -sS https://getcomposer.org/installer | php
+            php composer.phar install --no-interaction --prefer-dist
+
+            # Install pdftract binary
+            echo "Installing pdftract binary..."
+            curl -sSL "https://github.com/jedarden/pdftract/releases/download/{{workflow.parameters.tag}}/pdftract-{{workflow.parameters.tag}}-x86_64-unknown-linux-gnu.tar.gz" | tar xz
+            chmod +x pdftract
+            export PATH="/workspace/sdk-php:$PATH"
+
+            # Run the conformance test suite
+            echo "Running: vendor/bin/phpunit"
+            php vendor/bin/phpunit --testdox --colors=always
+
+            echo "=========================================="
+            echo "Conformance tests PASSED"
+            echo "=========================================="
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+
+    # === Tag and Push ===
+    # Creates a git tag and pushes it to GitHub.
+    # Packagist webhook auto-discovers tags within ~60 seconds.
+    - name: tag-and-push
+      activeDeadlineSeconds: 600
+      container:
+        image: alpine:3.19
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            VERSION="{{workflow.parameters.version}}"
+            TAG="v${VERSION}"
+
+            echo "=========================================="
+            echo "Tagging and pushing pdftract-php ${TAG}"
+            echo "=========================================="
+
+            cd /workspace/sdk-php
+
+            # Check if tag already exists (re-run scenario)
+            echo "Checking if tag ${TAG} already exists..."
+            if git rev-parse "${TAG}" >/dev/null 2>&1; then
+              echo "Tag ${TAG} already exists, skipping push"
+              exit 0
+            fi
+
+            # Configure git
+            git config user.name "pdftract-release-bot"
+            git config user.email "dev@jedarden.com"
+
+            # Commit the version change if any
+            if git diff --quiet; then
+              echo "No changes to commit"
+            else
+              git add composer.json
+              git commit -m "chore(release): bump version to ${VERSION}"
+            fi
+
+            # Create and push the tag
+            git tag -a "${TAG}" -m "Release ${TAG}"
+            git push origin main
+            git push origin "${TAG}"
+
+            echo "=========================================="
+            echo "Tag ${TAG} pushed successfully"
+            echo "Packagist will auto-discover within 60 seconds"
+            echo "=========================================="
+            echo "Install with: composer require jedarden/pdftract:${VERSION}"
+        env:
+          - name: GH_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: github-pat-pdftract
+                key: token
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+
+    # === Warm Packagist ===
+    # Optional POST to Packagist API to expedite indexing.
+    # This step is allowed to fail (continue-on-error).
+    - name: warm-packagist
+      activeDeadlineSeconds: 120
+      container:
+        image: curlimages/curl:8.5.0
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            VERSION="{{workflow.parameters.version}}"
+
+            echo "Warming Packagist index for jedarden/pdftract..."
+
+            # POST to Packagist update API (optional, speeds up indexing)
+            response=$(curl -s -X POST \
+              -H "Content-Type: application/json" \
+              "https://packagist.org/api/update-package?username=jedarden&apiToken=${PACKAGIST_TOKEN}" \
+              -d '{"package": "jedarden/pdftract"}' || true)
+
+            echo "Packagist response: ${response}"
+
+            echo "=========================================="
+            echo "Packagist warming complete"
+            echo "=========================================="
+        env:
+          - name: PACKAGIST_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: packagist-api-token-pdftract
+                key: token
+                optional: true
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
