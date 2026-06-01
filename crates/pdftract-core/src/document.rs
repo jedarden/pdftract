@@ -18,7 +18,10 @@ use crate::parser::object::PdfDict;
 use crate::parser::pages::{flatten_page_tree, LazyPageIter, PageDict};
 use crate::parser::stream::{FileSource as ParserFileSource, PdfSource as ParserPdfSource};
 use crate::source::{FileSource, PdfSource};
-use crate::parser::xref::{load_xref_with_prev_chain, XrefResolver, XrefSection};
+use crate::parser::xref::{
+    detect_linearization, load_xref_linearized, load_xref_with_prev_chain, LinearizationInfo,
+    XrefResolver, XrefSection,
+};
 use crate::receipts::verifier::SpanData;
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -57,8 +60,14 @@ pub fn parse_pdf_file(
     // Find the startxref offset
     let startxref_offset = find_startxref(&source).context("Failed to find startxref offset")?;
 
-    // Load the xref table
-    let xref_section = load_xref_with_prev_chain(&source, startxref_offset);
+    // Check if this is a linearized PDF
+    let xref_section = if let Some(lin_info) = detect_linearization(&source) {
+        // Linearized PDF: use special xref loading that merges first-page and full xref
+        load_xref_linearized(&source, &lin_info, startxref_offset)
+    } else {
+        // Normal PDF: load xref with /Prev chain support
+        load_xref_with_prev_chain(&source, startxref_offset)
+    };
 
     // Create resolver from xref section
     let resolver = XrefResolver::from_section(xref_section.clone());
@@ -128,8 +137,14 @@ pub fn parse_pdf_source(
     // Find the startxref offset
     let startxref_offset = find_startxref(&*source).context("Failed to find startxref offset")?;
 
-    // Load the xref table
-    let xref_section = load_xref_with_prev_chain(&*source, startxref_offset);
+    // Check if this is a linearized PDF
+    let xref_section = if let Some(lin_info) = detect_linearization(&*source) {
+        // Linearized PDF: use special xref loading that merges first-page and full xref
+        load_xref_linearized(&*source, &lin_info, startxref_offset)
+    } else {
+        // Normal PDF: load xref with /Prev chain support
+        load_xref_with_prev_chain(&*source, startxref_offset)
+    };
 
     // Create resolver from xref section
     let resolver = XrefResolver::from_section(xref_section.clone());

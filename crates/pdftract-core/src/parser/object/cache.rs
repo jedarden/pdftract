@@ -319,7 +319,7 @@ impl ObjectCache {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use pdftract_core::parser::object::{ObjRef, cache::ObjectCache};
+    /// use pdftract_core::parser::object::{ObjRef, cache::{ObjectCache, CacheResolutionGuard}};
     ///
     /// let cache = ObjectCache::new();
     /// let obj_ref = ObjRef::new(42, 0);
@@ -334,7 +334,7 @@ impl ObjectCache {
     ///     }
     /// }
     /// ```
-    pub fn begin_resolution(&self, obj_ref: ObjRef) -> Result<ResolutionGuard, Diag> {
+    pub fn begin_resolution(&self, obj_ref: ObjRef) -> Result<CacheResolutionGuard, Diag> {
         // Check per-thread cycle detection first
         if is_resolving(obj_ref) {
             return Err(Diag::with_dynamic_no_offset(
@@ -366,9 +366,13 @@ impl ObjectCache {
         }
 
         // Create the resolution guard (inserts into thread-local RESOLVING set)
-        let guard = ResolutionGuard::new(obj_ref);
+        let _guard = ResolutionGuard::new(obj_ref);
 
-        Ok(guard)
+        // Wrap in CacheResolutionGuard for depth cleanup
+        Ok(CacheResolutionGuard {
+            _guard,
+            depth: Arc::clone(&self.depth),
+        })
     }
 
     /// End resolution and decrement depth counter.
@@ -644,21 +648,21 @@ mod tests {
             cache.insert(refs[i], Arc::new(PdfObject::Integer(i as i64)));
         }
 
-        // LRU should be obj 1 (least recently used)
+        // After inserting 1, 2, 3, the LRU is 1 (first inserted, never accessed)
         let lru = cache.peek_lru();
         assert!(lru.is_some());
         let (k, _) = lru.unwrap();
         assert_eq!(k, refs[0]);
 
-        // Access obj 2 - LRU should still be obj 1
+        // Access obj 2 - LRU should still be obj 1, MRU is 2
         cache.get(refs[1]);
         let lru = cache.peek_lru();
         assert_eq!(lru.unwrap().0, refs[0]);
 
-        // Access obj 1 - LRU should become obj 2
+        // Access obj 1 - now the order is: LRU=3, MRU=1 (2 was recent but 1 is now most recent)
         cache.get(refs[0]);
         let lru = cache.peek_lru();
-        assert_eq!(lru.unwrap().0, refs[1]);
+        assert_eq!(lru.unwrap().0, refs[2]);
     }
 
     #[test]
@@ -675,12 +679,12 @@ mod tests {
             cache.insert(refs[i], Arc::new(PdfObject::Integer(i as i64)));
         }
 
-        // Obj 1 should be LRU
+        // Obj 1 should be LRU (first inserted, never accessed)
         assert!(cache.is_lru(refs[0]));
         assert!(!cache.is_lru(refs[1]));
         assert!(!cache.is_lru(refs[2]));
 
-        // Access obj 1 - obj 2 becomes LRU
+        // Access obj 1 - obj 2 becomes LRU (order: 2 least, 3 middle, 1 most)
         cache.get(refs[0]);
         assert!(!cache.is_lru(refs[0]));
         assert!(cache.is_lru(refs[1]));

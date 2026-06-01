@@ -117,7 +117,7 @@ pub struct SpanJson {
     /// Set of style flags applied to this span.
     ///
     /// Possible values: "bold", "italic", "smallcaps", "subscript", "superscript".
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub flags: Vec<String>,
 
     /// Optional cryptographic receipt for verification.

@@ -112,6 +112,15 @@ fn add_enum_constraints(value: &mut Value) {
                     }
                 }
             }
+
+            // Add contentEncoding: base64 to AttachmentJson.data field
+            if let Some(attachment) = defs.get_mut("AttachmentJson").and_then(|v| v.as_object_mut()) {
+                if let Some(props) = attachment.get_mut("properties").and_then(|v| v.as_object_mut()) {
+                    if let Some(data) = props.get_mut("data").and_then(|v| v.as_object_mut()) {
+                        data.insert("contentEncoding".to_string(), Value::String("base64".to_string()));
+                    }
+                }
+            }
         }
     }
 }

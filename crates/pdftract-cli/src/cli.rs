@@ -9,6 +9,10 @@ use std::path::PathBuf;
 // Language type is re-exported from codegen module (declared in main.rs/lib.rs)
 pub use crate::codegen::Language;
 
+// Import inspect and verify_receipt modules for use in Commands enum
+pub use crate::inspect::InspectArgs;
+pub use crate::verify_receipt::VerifyReceiptCommand;
+
 #[derive(Parser)]
 #[command(name = "pdftract")]
 #[command(about = "pdftract CLI - PDF extraction and conformance testing", long_about = None)]
@@ -201,9 +205,9 @@ pub enum Commands {
     #[cfg(feature = "grep")]
     Grep(grep::GrepArgs),
     /// Inspect a PDF file in a local web browser with debugging overlays
-    Inspect(inspect::InspectArgs),
+    Inspect(InspectArgs),
     /// Verify a receipt against a PDF file
-    VerifyReceipt(verify_receipt::VerifyReceiptCommand),
+    VerifyReceipt(VerifyReceiptCommand),
     /// Compute the PDF structural fingerprint (hash)
     Hash {
         /// Path to the PDF file or URL

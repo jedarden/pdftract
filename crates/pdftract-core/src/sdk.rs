@@ -76,12 +76,21 @@ pub fn extract_markdown(pdf_path: &Path, options: &ExtractionOptions) -> Result<
         if i > 0 {
             markdown.push_str("\n\n");
         }
-        markdown.push_str(&page_to_markdown(
+
+        // Filter links to only those that belong to this page
+        let page_links: Vec<_> = result.links.iter()
+            .filter(|link| link.page_index == i)
+            .cloned()
+            .collect();
+
+        markdown.push_str(&crate::markdown::page_to_markdown_with_links(
             &page.blocks,
+            &page.spans,
             &[], // No separate tables storage - tables are in blocks
+            page_links.as_slice(),
             i,
             false,  // include_anchor
-            false,  // include_page_break
+            &crate::markdown::MarkdownOptions::default(),
         ));
     }
 

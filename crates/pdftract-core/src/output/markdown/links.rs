@@ -87,12 +87,32 @@ fn resolve_page_from_dest(dest: &DestArray) -> Option<usize> {
 /// Escape special characters in Markdown link text.
 ///
 /// Per CommonMark spec, square brackets and backslashes must be escaped in link text.
-/// We escape backslashes first, then brackets, to avoid double-escaping the backslashes
-/// we introduce when escaping brackets.
+/// We process in a single pass to avoid double-escaping already-escaped sequences like `\[`.
 fn escape_link_text(text: &str) -> String {
-    text.replace('\\', "\\\\")
-        .replace('[', "\\[")
-        .replace(']', "\\]")
+    let mut result = String::with_capacity(text.len() * 2);
+    let mut chars = text.chars().peekable();
+    let mut backslash_count = 0;
+
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            backslash_count += 1;
+            // Always escape backslashes in link text
+            result.push_str("\\\\");
+        } else if c == '[' || c == ']' {
+            // Only escape brackets if NOT preceded by odd number of backslashes
+            // (odd number means the bracket is already escaped like `\[`)
+            if backslash_count % 2 == 0 {
+                result.push('\\');
+            }
+            backslash_count = 0;
+            result.push(c);
+        } else {
+            backslash_count = 0;
+            result.push(c);
+        }
+    }
+
+    result
 }
 
 /// Percent-encode a URL for Markdown link destination.

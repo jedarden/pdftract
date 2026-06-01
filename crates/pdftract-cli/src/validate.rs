@@ -39,8 +39,11 @@ fn load_schema(schema_path: Option<&str>) -> Result<jsonschema::JSONSchema> {
     let schema: Value = serde_json::from_str(&schema_json)
         .context("Schema is not valid JSON")?;
 
-    jsonschema::JSONSchema::compile(&schema)
-        .context("Schema is not valid JSON Schema Draft 2020-12")
+    // Compile the schema - this takes ownership and returns a valid JSONSchema
+    let compiled = jsonschema::JSONSchema::compile(&schema)
+        .map_err(|e| anyhow::anyhow!("Schema is not valid JSON Schema Draft 2020-12: {}", e))?;
+
+    Ok(compiled)
 }
 
 /// Read JSON from a file path or stdin.

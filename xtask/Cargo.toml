@@ -23,6 +23,10 @@ path = "src/bin/gen_cli_reference.rs"
 name = "migrate_schema"
 path = "src/bin/migrate_schema.rs"
 
+[[bin]]
+name = "gen_scanned_fixtures"
+path = "src/bin/gen_scanned_fixtures.rs"
+
 [lib]
 name = "pdftract_schema_migrate"
 path = "src/lib.rs"
@@ -40,3 +44,5 @@ fontdue = "0.9"
 clap = { version = "4.5", features = ["derive"] }
 clap-markdown = "0.1"
 anyhow = "1.0"
+printpdf = "0.9"
+encoding_rs = "0.8"

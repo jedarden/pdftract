@@ -116,7 +116,7 @@ pub fn classify_figure(ctx: &FigurePageContext) -> Vec<Block> {
 
     for image in &ctx.images {
         let image_bbox = image.bbox;
-        let image_area = bbox_area(&image_bbox);
+        let image_area = bbox_area(image_bbox);
 
         // Skip zero-area images (degenerate CTM)
         if image_area <= 0.0 {
@@ -145,7 +145,7 @@ pub fn classify_figure(ctx: &FigurePageContext) -> Vec<Block> {
 }
 
 /// Compute the area of a bounding box.
-fn bbox_area(bbox: &[f32; 4]) -> f32 {
+fn bbox_area(bbox: [f32; 4]) -> f32 {
     let width = bbox[2] - bbox[0];
     let height = bbox[3] - bbox[1];
     width * height
@@ -158,6 +158,9 @@ fn bbox_area(bbox: &[f32; 4]) -> f32 {
 /// 2. Computes the union of all intersecting glyph bboxes
 /// 3. Returns the area of the union (clipped to the image bbox)
 ///
+/// Uses a sweep line algorithm: for each vertical strip between unique x coordinates,
+/// compute the total y coverage and sum (strip_width * y_coverage).
+///
 /// # Arguments
 ///
 /// * `image_bbox` - The image's bounding box [x0, y0, x1, y1]
@@ -167,12 +170,11 @@ fn bbox_area(bbox: &[f32; 4]) -> f32 {
 ///
 /// The area of the union of all intersecting glyph bboxes, clipped to the image bbox.
 fn compute_text_overlap_area(image_bbox: &[f32; 4], glyph_bboxes: &[[f32; 4]]) -> f32 {
-    let mut union: Option<[f32; 4]> = None;
+    // Collect all intersecting rectangles (clipped to image bbox)
+    let mut rects: Vec<[f32; 4]> = Vec::new();
 
     for glyph_bbox in glyph_bboxes {
-        // Check if this glyph intersects the image bbox
         if bboxes_intersect(image_bbox, glyph_bbox) {
-            // Compute intersection (clip glyph to image bbox)
             let intersection = [
                 image_bbox[0].max(glyph_bbox[0]),
                 image_bbox[1].max(glyph_bbox[1]),
@@ -180,24 +182,72 @@ fn compute_text_overlap_area(image_bbox: &[f32; 4], glyph_bboxes: &[[f32; 4]]) -
                 image_bbox[3].min(glyph_bbox[3]),
             ];
 
-            // Skip if intersection is empty (no actual overlap)
-            if intersection[0] >= intersection[2] || intersection[1] >= intersection[3] {
-                continue;
-            }
-
-            // Expand union to include this intersection
-            if let Some(ref mut u) = union {
-                u[0] = u[0].min(intersection[0]);
-                u[1] = u[1].min(intersection[1]);
-                u[2] = u[2].max(intersection[2]);
-                u[3] = u[3].max(intersection[3]);
-            } else {
-                union = Some(intersection);
+            // Skip empty intersections
+            if intersection[0] < intersection[2] && intersection[1] < intersection[3] {
+                rects.push(intersection);
             }
         }
     }
 
-    union.map(bbox_area).unwrap_or(0.0)
+    if rects.is_empty() {
+        return 0.0;
+    }
+
+    // Sweep line algorithm: compute union area
+    // 1. Collect all unique x coordinates
+    let mut xs: Vec<f32> = rects.iter().flat_map(|r| [r[0], r[2]]).collect();
+    xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    xs.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
+
+    let mut total_area = 0.0;
+
+    // 2. For each vertical strip between consecutive x coordinates
+    for i in 0..xs.len() - 1 {
+        let x_left = xs[i];
+        let x_right = xs[i + 1];
+
+        // Skip zero-width strips
+        if x_right <= x_left {
+            continue;
+        }
+
+        // 3. Collect all y-intervals that cover this x-strip
+        let mut intervals: Vec<[f32; 2]> = Vec::new();
+        for rect in &rects {
+            // Check if rectangle overlaps this x-strip (not fully contained)
+            if rect[2] > x_left && rect[0] < x_right {
+                intervals.push([rect[1], rect[3]]);
+            }
+        }
+
+        if intervals.is_empty() {
+            continue;
+        }
+
+        // 4. Merge overlapping y-intervals
+        intervals.sort_by(|a, b| a[0].partial_cmp(&b[0]).unwrap());
+        let mut merged: Vec<[f32; 2]> = Vec::new();
+
+        for interval in intervals {
+            if let Some(last) = merged.last_mut() {
+                if interval[0] <= last[1] {
+                    // Overlapping or adjacent - merge
+                    last[1] = last[1].max(interval[1]);
+                } else {
+                    merged.push(interval);
+                }
+            } else {
+                merged.push(interval);
+            }
+        }
+
+        // 5. Sum up y coverage for this strip
+        let y_coverage: f32 = merged.iter().map(|i| i[1] - i[0]).sum();
+        let strip_width = x_right - x_left;
+        total_area += strip_width * y_coverage;
+    }
+
+    total_area
 }
 
 /// Check if two bounding boxes intersect.
@@ -214,15 +264,15 @@ mod tests {
     fn make_image(x0: f32, y0: f32, x1: f32, y1: f32) -> ImageXObject {
         ImageXObject {
             bbox: [x0, y0, x1, y1],
-            xobject_ref: ObjRef { object_number: 1, generation_number: 0 },
+            xobject_ref: ObjRef { object: 1, generation: 0 },
             name: Arc::from("test"),
         }
     }
 
     #[test]
     fn test_bbox_area() {
-        assert_eq!(bbox_area(&[0.0, 0.0, 100.0, 50.0]), 5000.0);
-        assert_eq!(bbox_area(&[10.0, 20.0, 30.0, 40.0]), 400.0);
+        assert_eq!(bbox_area([0.0, 0.0, 100.0, 50.0]), 5000.0);
+        assert_eq!(bbox_area([10.0, 20.0, 30.0, 40.0]), 400.0);
     }
 
     #[test]
@@ -405,9 +455,10 @@ mod tests {
         ];
 
         let overlap = compute_text_overlap_area(&image_bbox, &glyph_bboxes);
-        // Union should cover almost entire image: [0,0] to [100,100] = 10000
-        // Except the small gap at [60,60]
-        assert!(overlap > 9000.0, "Union area should cover most of the image");
+        // Union of [0,0,60,60] and [40,40,100,100] = 6800 (not 7200 sum due to overlap)
+        // The overlapping region [40,40,60,60] is counted only once
+        let expected = 6800.0;
+        assert!((overlap - expected).abs() < 1.0, "Union area should be {}, got {}", expected, overlap);
         assert!(overlap < 10000.0, "Union should not exceed image bounds");
     }
 

@@ -1670,7 +1670,6 @@
           ]
         },
         "flags": {
-          "default": [],
           "description": "Set of style flags applied to this span.\n\nPossible values: \"bold\", \"italic\", \"smallcaps\", \"subscript\", \"superscript\".",
           "items": {
             "type": "string"

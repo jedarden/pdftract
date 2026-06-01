@@ -49,6 +49,16 @@ impl WordBoundaryDetector {
     /// Create a new detector for the given font.
     ///
     /// Starts with bootstrap threshold = 0.25 × font_size.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pdftract_core::word_boundary::WordBoundaryDetector;
+    /// use pdftract_core::font::FontId;
+    ///
+    /// let detector = WordBoundaryDetector::new(FontId::new(0), 12.0);
+    /// assert_eq!(detector.threshold(), 3.0); // 0.25 × 12.0
+    /// ```
     pub fn new(font_id: FontId, font_size: f32) -> Self {
         Self {
             font_id,

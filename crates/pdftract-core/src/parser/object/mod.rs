@@ -7,7 +7,7 @@ pub mod cycle;
 pub mod parser;
 pub mod types;
 
-pub use cache::ObjectCache;
+pub use cache::{CacheResolutionGuard, ObjectCache};
 pub use cycle::{is_resolving, ResolutionGuard, RESOLVING};
 pub use parser::ObjectParser;
 pub use types::{intern, ObjRef, PdfDict, PdfIndirect, PdfObject, PdfStream};

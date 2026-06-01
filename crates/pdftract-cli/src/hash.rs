@@ -9,8 +9,6 @@ use pdftract_core::parser::catalog::parse_catalog;
 use pdftract_core::parser::pages::{flatten_page_tree, PageDict};
 use pdftract_core::parser::stream::{FileSource, PdfSource};
 use pdftract_core::parser::xref::{load_xref_with_prev_chain, XrefResolver};
-use std::fs::File;
-use std::io::{self, Read};
 use std::path::Path;
 
 /// Exit codes for the hash subcommand.
@@ -120,7 +118,7 @@ fn compute_fingerprint_from_file(
     let fingerprint_input = build_fingerprint_input(&catalog, &pages, &xref_section);
 
     // Compute fingerprint
-    let fingerprint = compute_fingerprint(&fingerprint_input, &resolver);
+    let fingerprint = compute_fingerprint(&fingerprint_input, &resolver, Some(&source as &dyn PdfSource));
 
     Ok(fingerprint)
 }
@@ -177,19 +175,19 @@ fn compute_fingerprint_from_url(
     let fingerprint_input = build_fingerprint_input(&catalog, &pages, &xref_section);
 
     // Compute fingerprint
-    let fingerprint = compute_fingerprint(&fingerprint_input, &resolver);
+    let fingerprint = compute_fingerprint(&fingerprint_input, &resolver, Some(&source as &dyn PdfSource));
 
     Ok(fingerprint)
 }
 
 /// Find the startxref offset in a PDF source.
 fn find_startxref(source: &dyn PdfSource) -> Result<u64> {
-    let len = source.len();
+    let len = source.len()?;
     let scan_size = 1024.min(len) as usize;
     let scan_start = (len - scan_size as u64) as u64;
 
     let tail_data = source
-        .read_range(scan_start, scan_size)
+        .read_at(scan_start, scan_size)
         .context("Failed to read PDF tail")?;
 
     // Find "startxref" in the tail data
@@ -230,9 +228,25 @@ fn find_startxref(source: &dyn PdfSource) -> Result<u64> {
 fn build_fingerprint_input(
     catalog: &pdftract_core::parser::catalog::Catalog,
     pages: &[PageDict],
-    _xref_section: &pdftract_core::parser::xref::XrefSection,
+    xref_section: &pdftract_core::parser::xref::XrefSection,
 ) -> FingerprintInput {
     let page_count = pages.len() as u32;
+
+    // Check encryption status from trailer (/Encrypt key)
+    let is_encrypted = xref_section
+        .trailer
+        .as_ref()
+        .and_then(|trailer| trailer.get("Encrypt"))
+        .map_or(false, |obj| !matches!(obj, pdftract_core::parser::object::PdfObject::Null));
+
+    // Check for XFA forms via /AcroForm in trailer
+    let contains_xfa = xref_section
+        .trailer
+        .as_ref()
+        .and_then(|trailer| trailer.get("AcroForm"))
+        .and_then(|acroform_obj| acroform_obj.as_dict())
+        .and_then(|acroform_dict| acroform_dict.get("XFA"))
+        .map_or(false, |obj| !matches!(obj, pdftract_core::parser::object::PdfObject::Null));
 
     let fingerprint_pages = pages
         .iter()
@@ -251,9 +265,9 @@ fn build_fingerprint_input(
 
     // Build catalog flags
     let catalog_flags = CatalogFlags {
-        is_encrypted: catalog.is_encrypted,
+        is_encrypted,
         contains_javascript: catalog.open_action.is_some() || catalog.aa.is_some(),
-        contains_xfa: catalog.xfa.is_some(),
+        contains_xfa,
         ocg_present: catalog
             .oc_properties
             .as_ref()

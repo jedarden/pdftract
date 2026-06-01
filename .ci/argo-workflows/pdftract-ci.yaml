@@ -272,6 +272,7 @@ spec:
           add_step "log-policy-check" "$WORKFLOW_PHASE"
           add_step "schema-gen" "$WORKFLOW_PHASE"
           add_step "cli-ref-gen" "$WORKFLOW_PHASE"
+          add_step "schema-validation" "$WORKFLOW_PHASE"
           add_step "wer-gate" "$WORKFLOW_PHASE"
           add_step "bench-matrix" "$WORKFLOW_PHASE"
           add_step "regression-corpus" "$WORKFLOW_PHASE"
@@ -1173,6 +1174,8 @@ spec:
             template: schema-gen
           - name: cli-ref-gen
             template: cli-ref-gen
+          - name: schema-validation
+            template: schema-validation
 
     # === Clippy and Fmt Check ===
     # Runs clippy with warnings denied and INV-8 unwrap/expect enforcement.
@@ -2025,6 +2028,88 @@ spec:
             echo ""
             echo "=== CLI reference generation check passed ==="
             echo "CLI reference is up to date: $CLI_REF_FILE"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+
+    # === Schema Validation Check ===
+    # Validates PDF extraction outputs against the published JSON Schema.
+    #
+    # This is a Tier 1 hard gate from Phase 6.1.4. It ensures that all extraction
+    # outputs conform to the published JSON Schema at docs/schema/v1.0/pdftract.schema.json.
+    # Without this gate, schema violations silently slip past code review and break
+    # downstream clients that rely on schema compatibility.
+    #
+    # Bead: pdftract-3jm4n
+    # Plan section: Phase 6.1.4 (lines 2029-2032)
+    #
+    # Enforcement policy:
+    # - Runs json_schema test suite via cargo test
+    # - Validates each fixture PDF extraction against the schema
+    # - Any validation error fails the gate
+    # - Schema must be regenerated (cargo xtask gen-schema) if types change
+    # - Script: ci/schema-gate.sh (calls cargo test --test json_schema)
+    - name: schema-validation
+      activeDeadlineSeconds: 300
+      container:
+        image: ronaldraygun/pdftract-test-glibc:1.78
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+
+            echo "=========================================="
+            echo "JSON Schema Validation Check"
+            echo "=========================================="
+
+            cd /workspace
+            export CARGO_HOME="/cache/cargo/registry"
+            export CARGO_TARGET_DIR="/cache/cargo/target-schema-validation"
+
+            echo "=== Running JSON schema validation tests ==="
+            echo "Validating extraction outputs against published schema"
+            echo "Schema: docs/schema/v1.0/pdftract.schema.json"
+            echo ""
+
+            # Run the schema validation gate script
+            bash ci/schema-gate.sh || {
+              EXIT_CODE=$?
+
+              echo "=========================================="
+              echo "SCHEMA VALIDATION FAILED"
+              echo "=========================================="
+              echo ""
+              echo "JSON schema validation tests failed with exit code $EXIT_CODE."
+              echo "This means extraction outputs do not conform to the published schema."
+              echo ""
+              echo "Common causes:"
+              echo "  1. A field was added/removed without updating the schema"
+              echo "  2. The schema itself needs to be regenerated (cargo xtask gen-schema)"
+              echo "  3. A genuine schema compliance bug in the extraction code"
+              echo ""
+              echo "To fix:"
+              echo "  1. Run 'cargo xtask gen-schema' to regenerate the schema"
+              echo "  2. Commit the updated schema file"
+              echo "  3. Push the commit"
+              echo ""
+              echo "Schema validation is a Tier-1 gate per Phase 6.1.4."
+              echo "See plan.md lines 2029-2032 for details."
+
+              exit $EXIT_CODE
+            }
+
+            echo ""
+            echo "=== Schema validation check passed ==="
+            echo "All extraction outputs conform to the JSON schema"
         volumeMounts:
           - name: workspace
             mountPath: /workspace

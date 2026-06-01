@@ -1596,7 +1596,8 @@ mod tests {
         ctx.width = 612.0; // US Letter
         ctx.height = 792.0;
         // Add a full-page image (>= 95% of 484,704 pt²)
-        ctx.image_xobject_areas.push(460_000.0); // ~95% coverage
+        // 0.95 * 484,704 = 460,468.8, so use 460,500 to be safely above threshold
+        ctx.image_xobject_areas.push(460_500.0); // >= 95% coverage
 
         let result = classify_page(&ctx);
 
@@ -1708,7 +1709,8 @@ mod tests {
         ctx.width = 612.0; // US Letter
         ctx.height = 792.0;
         // Add a full-page image (>= 95% of 484,704 pt²)
-        ctx.image_xobject_areas.push(460_000.0); // ~95% coverage
+        // 0.95 * 484,704 = 460,468.8, so use 460,500 to be safely above threshold
+        ctx.image_xobject_areas.push(460_500.0); // >= 95% coverage
 
         let result = classify_page(&ctx);
 

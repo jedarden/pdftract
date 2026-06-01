@@ -30,7 +30,7 @@ use output::OutputConfig;
 use pdftract_core::atomic_file_writer::AtomicFileWriter;
 use pdftract_core::cache;
 use pdftract_core::extract::{extract_pdf, result_to_json};
-use pdftract_core::markdown::{block_to_markdown, page_to_markdown};
+use pdftract_core::markdown::{block_to_markdown, page_to_markdown, page_to_markdown_with_links, MarkdownOptions};
 use pdftract_core::options::{ExtractionOptions, ReceiptsMode};
 
 // Re-export diagnostics for the --list-diagnostics and --explain-diagnostic commands
@@ -712,8 +712,6 @@ fn main() -> Result<()> {
                 max_decompress_gb,
                 audit_log,
                 trust_forwarded_for,
-                profile_dir,
-                profile_hot_reload,
             ) {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
@@ -1361,20 +1359,28 @@ fn write_output<W: std::io::Write>(
                 let is_last_page = page_idx == result.pages.len() - 1;
                 let include_break = include_page_breaks && !is_last_page;
 
-                if include_anchors {
-                    // Use markdown module with anchors
-                    let md = page_to_markdown(&page.blocks, &page.tables, page.index, true, include_break);
-                    write!(writer, "{}", md)?;
-                } else {
-                    // Simple conversion without anchors
-                    for (block_idx, block) in page.blocks.iter().enumerate() {
-                        let md = block_to_markdown(block, &page.tables, page.index, block_idx, false);
-                        write!(writer, "{}\n", md)?;
-                    }
-                    if include_break {
-                        writeln!(writer, "\n---\n")?;
-                    }
-                }
+                // Filter links to only those belonging to this page
+                let page_links: Vec<_> = result.links.iter()
+                    .filter(|link| link.page_index == page_idx)
+                    .cloned()
+                    .collect();
+
+                // Use markdown module with inline link support (Phase 6.5.5b)
+                let md_options = MarkdownOptions {
+                    include_headers_footers: options.output.include_headers || options.output.include_footers,
+                    include_watermarks: options.output.include_watermarks,
+                    include_page_breaks: include_break,
+                };
+                let md = page_to_markdown_with_links(
+                    &page.blocks,
+                    &page.spans,
+                    &page.tables,
+                    &page_links,
+                    page.index,
+                    include_anchors,
+                    &md_options,
+                );
+                write!(writer, "{}", md)?;
             }
 
             // Emit signatures footer if any signatures exist

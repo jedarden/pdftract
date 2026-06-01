@@ -19,7 +19,6 @@ pub mod caption;
 pub mod code;
 pub mod columns;
 pub mod correction;
-#[cfg(feature = "ocr")]
 pub mod figure;
 pub mod header_footer;
 pub mod line;
@@ -35,7 +34,6 @@ pub use code::{
 };
 pub use columns::{assign_columns_to_lines, assign_columns_to_spans, build_x0_histogram, Column, ColumnGap};
 pub use correction::{detect_and_repair_mojibake, repair_hyphenation, HyphenableSpan};
-#[cfg(feature = "ocr")]
 pub use figure::{classify_figure, FigurePageContext};
 pub use header_footer::detect_headers_and_footers;
 pub use line::{

@@ -230,8 +230,8 @@ pub use forms::{
     combine, walk_acroform_fields, AcroFieldType, AcroFormField, ChoiceValue, FormFieldValue,
 };
 pub use markdown::{
-    block_to_markdown, form_fields_to_markdown, page_to_markdown, parse_anchors, span_to_markdown,
-    Anchor,
+    block_to_markdown, form_fields_to_markdown, MarkdownOptions, page_to_markdown,
+    page_to_markdown_with_links, parse_anchors, span_to_markdown, Anchor,
 };
 pub use options::{ExtractionOptions, OutputOptions, ReceiptsMode};
 pub use page_class::{page_type_string, PageClass, PageClassification};

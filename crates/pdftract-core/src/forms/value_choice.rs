@@ -47,6 +47,17 @@ pub enum ChoiceValue {
 
 impl ChoiceValue {
     /// Check if this choice value is empty (no selection).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pdftract_core::forms::value_choice::ChoiceValue;
+    ///
+    /// assert!(ChoiceValue::Single(None).is_empty());
+    /// assert!(ChoiceValue::Single(Some("".to_string())).is_empty());
+    /// assert!(!ChoiceValue::Single(Some("text".to_string())).is_empty());
+    /// assert!(ChoiceValue::Multiple(vec![]).is_empty());
+    /// ```
     pub fn is_empty(&self) -> bool {
         match self {
             ChoiceValue::Single(None) => true,

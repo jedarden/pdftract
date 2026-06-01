@@ -17,7 +17,6 @@ use std::thread;
 use std::time::Duration;
 
 use pdftract_core::source::{open_remote, RemoteOpts};
-use pdftract_core::extract::extract_pdf_from_source;
 
 /// Bandwidth tracking HTTP server for testing.
 struct BandwidthTrackingServer {
@@ -586,7 +585,7 @@ fn test_basic_authentication() {
 /// Test 11: Verify forward-scan is disabled for remote sources.
 #[test]
 fn test_forward_scan_disabled_remote() {
-    use pdftract_core::parser::xref::{forward_scan_xref, XrefSection};
+    use pdftract_core::parser::xref::forward_scan_xref;
     use pdftract_core::parser::stream::PdfSource;
 
     // Mock remote source

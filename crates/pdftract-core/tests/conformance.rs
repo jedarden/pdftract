@@ -22,10 +22,11 @@ use anyhow::{anyhow, Result};
 use regex::Regex;
 use secrecy::SecretString;
 use serde::Deserialize;
-use serde_json::{Map, Value};
+use serde_json::{json, Map, Value};
 
-use pdftract_core::extract::{extract_pdf, extract_pdf_ndjson, extract_text, ExtractionResult};
+use pdftract_core::extract::ExtractionResult;
 use pdftract_core::options::ExtractionOptions;
+use pdftract_core::sdk;
 
 /// Test case loaded from cases.json.
 #[derive(Debug, Clone, Deserialize)]
@@ -116,7 +117,7 @@ fn is_feature_enabled(feature: &str) -> bool {
         "metadata" => true,
         "xmp" => cfg!(feature = "quick-xml"),
         "hash" => true,
-        "classify" => cfg!(feature = "profiles"),
+        "classify" => true, // classify is always available in SDK
         "receipt" => cfg!(feature = "receipts"),
         "error-handling" => true,
         "remote" => cfg!(feature = "remote"),
@@ -393,7 +394,7 @@ fn run_extract_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
 
     let options = options_from_value(&case.options);
 
-    let result = extract_pdf(&fixture_path, &options)
+    let result = sdk::extract(&fixture_path, &options)
         .map_err(|e| anyhow!("Extract failed: {}", e))?;
 
     let json_value = result_to_json_value(&result);
@@ -412,7 +413,7 @@ fn run_extract_text_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
         .ok_or_else(|| anyhow!("Fixture path not found: {}", case.fixture))?;
     let options = options_from_value(&case.options);
 
-    let text = extract_text(&fixture_path, &options)
+    let text = sdk::extract_text(&fixture_path, &options)
         .map_err(|e| anyhow!("Extract text failed: {}", e))?;
 
     let mut result = serde_json::json!({
@@ -449,21 +450,8 @@ fn run_extract_markdown_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
         .ok_or_else(|| anyhow!("Fixture path not found: {}", case.fixture))?;
     let options = options_from_value(&case.options);
 
-    let extract_result = extract_pdf(&fixture_path, &options)
-        .map_err(|e| anyhow!("Extract failed: {}", e))?;
-
-    let mut markdown = String::new();
-    for page in &extract_result.pages {
-        let page_md = pdftract_core::markdown::page_to_markdown(
-            &page.blocks,
-            &page.tables,
-            page.index,
-            true,  // include_anchor
-            false, // include_page_break
-        );
-        markdown.push_str(&page_md);
-        markdown.push_str("\n\n");
-    }
+    let markdown = sdk::extract_markdown(&fixture_path, &options)
+        .map_err(|e| anyhow!("Extract markdown failed: {}", e))?;
 
     let mut result = serde_json::json!({
         "output_type": "string",
@@ -499,42 +487,28 @@ fn run_extract_stream_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
         .ok_or_else(|| anyhow!("Fixture path not found: {}", case.fixture))?;
     let options = options_from_value(&case.options);
 
-    let mut buffer = Vec::new();
-    extract_pdf_ndjson(&fixture_path, &options, &mut buffer)
+    let iter = sdk::extract_stream(&fixture_path, &options)
         .map_err(|e| anyhow!("Extract stream failed: {}", e))?;
 
-    let output = String::from_utf8(buffer)
-        .map_err(|e| anyhow!("Output not valid UTF-8: {}", e))?;
+    // Collect all pages from the iterator
+    let pages: Result<Vec<_>, _> = iter.collect();
+    let pages = pages.map_err(|e| anyhow!("Stream iteration failed: {}", e))?;
 
-    // Parse NDJSON lines
-    let lines: Vec<&str> = output.lines().collect();
     let mut result = serde_json::json!({
         "output_type": "iterator",
-        "frame_count": lines.len(),
+        "frame_count": pages.len(),
     });
 
     // Check expectations
     if let Some(min) = case.expected.get("frame_count").and_then(|v| v.get("min")).and_then(|v| v.as_u64()) {
-        if lines.len() < min as usize {
+        if pages.len() < min as usize {
             return Ok((result, vec![
-                format!("Expected at least {} frames, got {}", min, lines.len())
+                format!("Expected at least {} frames, got {}", min, pages.len())
             ]));
         }
     }
 
-    // Analyze frames - each line is a page JSON object
-    let mut page_count = 0;
-
-    for line in &lines {
-        if let Ok(frame) = serde_json::from_str::<Value>(line) {
-            // Check if this is a page frame (has index field)
-            if frame.get("index").is_some() {
-                page_count += 1;
-            }
-        }
-    }
-
-    result["page_frames"] = serde_json::json!(page_count);
+    result["page_frames"] = serde_json::json!(pages.len());
 
     let errors = compare_with_tolerances(&result, &case.expected, &Value::Object(Map::new()), "");
     Ok((result, errors))
@@ -544,11 +518,6 @@ fn run_extract_stream_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
 fn run_search_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
     let fixture_path = resolve_fixture_path(&case.fixture)
         .ok_or_else(|| anyhow!("Fixture path not found: {}", case.fixture))?;
-    let options = options_from_value(&case.options);
-
-    // Extract text first, then search
-    let text = extract_text(&fixture_path, &options)
-        .map_err(|e| anyhow!("Extract text failed for search: {}", e))?;
 
     // Get search parameters from options
     let pattern = case.options.get("pattern")
@@ -563,50 +532,12 @@ fn run_search_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let max_results = case.options.get("max_results")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as usize);
+    let whole_word = case.options.get("whole_word")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
-    let mut matches = Vec::new();
-
-    if use_regex {
-        let re = Regex::new(pattern)
-            .map_err(|e| anyhow!("Invalid regex '{}': {}", pattern, e))?;
-
-        for mat in re.find_iter(&text) {
-            if let Some(max) = max_results {
-                if matches.len() >= max {
-                    break;
-                }
-            }
-            matches.push(mat.as_str().to_string());
-        }
-    } else {
-        let search_text = if case_insensitive {
-            text.to_lowercase()
-        } else {
-            text.clone()
-        };
-
-        let search_pattern = if case_insensitive {
-            pattern.to_lowercase()
-        } else {
-            pattern.to_string()
-        };
-
-        let mut start = 0;
-        while let Some(idx) = search_text[start..].find(&search_pattern) {
-            if let Some(max) = max_results {
-                if matches.len() >= max {
-                    break;
-                }
-            }
-
-            let global_idx = start + idx;
-            matches.push(text[global_idx..global_idx + pattern.len()].to_string());
-            start = global_idx + pattern.len();
-        }
-    }
+    let matches = sdk::search(&fixture_path, pattern, case_insensitive, use_regex, whole_word)
+        .map_err(|e| anyhow!("Search failed: {}", e))?;
 
     let result = serde_json::json!({
         "output_type": "iterator",
@@ -617,11 +548,11 @@ fn run_search_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
     // Check first match details if expected
     if let Some(expected_first) = case.expected.get("first_match_text") {
         if let Some(first_match) = matches.first() {
-            if first_match != expected_first.as_str().unwrap_or("") {
+            if first_match.text != expected_first.as_str().unwrap_or("") {
                 return Ok((result, vec![
                     format!("First match text mismatch: expected '{}', got '{}'",
                         expected_first.as_str().unwrap_or(""),
-                        first_match)
+                        first_match.text)
                 ]));
             }
         }
@@ -664,23 +595,26 @@ fn run_hash_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
     let fixture_path = resolve_fixture_path(&case.fixture)
         .ok_or_else(|| anyhow!("Fixture path not found: {}", case.fixture))?;
 
-    // Extract to get the fingerprint
-    let options = options_from_value(&case.options);
-    let result = extract_pdf(&fixture_path, &options)
-        .map_err(|e| anyhow!("Extract failed: {}", e))?;
+    let hash = sdk::hash(&fixture_path)
+        .map_err(|e| anyhow!("Hash failed: {}", e))?;
 
-    let fingerprint = result.fingerprint.clone();
+    // Parse the hash to get hex part (format: "pdftract-v1:<hex>")
+    let hash_prefix = "pdftract-v1:";
+    let hex_hash = if hash.starts_with(hash_prefix) {
+        hash[hash_prefix.len()..].to_string()
+    } else {
+        hash.clone()
+    };
 
     // For content stability, we'd need to extract twice - skip for now
     let content_hash_stable = true;
 
     let actual_result = serde_json::json!({
         "hash_type": "sha256",
-        "hash": fingerprint,
-        "page_count": result.pages.len(),
-        "hash.length": fingerprint.len(),
-        "fast_hash": fingerprint, // Same as hash for now
-        "fast_hash.length": fingerprint.len(),
+        "hash": hex_hash,
+        "hash.length": hex_hash.len(),
+        "fast_hash": hex_hash, // Same as hash for now
+        "fast_hash.length": hex_hash.len(),
         "fast_hash_different_from_hash": false,
         "content_hash_stable": content_hash_stable,
     });
@@ -693,76 +627,44 @@ fn run_hash_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
 fn run_classify_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
     let fixture_path = resolve_fixture_path(&case.fixture)
         .ok_or_else(|| anyhow!("Fixture path not found: {}", case.fixture))?;
+
+    // classify() requires a page_index - use 0 (first page)
+    let classification = sdk::classify(&fixture_path, 0)
+        .map_err(|e| anyhow!("Classify failed: {}", e))?;
+
+    // Map PageClass to category string using the as_type_str() method
+    let category = classification.class.as_type_str();
+
+    // Create tags based on classification
+    let mut tags = vec![category.to_string()];
+    if matches!(classification.class, pdftract_core::classify::PageClass::Scanned) {
+        tags.push("ocr".to_string());
+    }
+
+    // Build heuristics based on classification
+    let mut heuristics = serde_json::Map::new();
+    heuristics.insert("confidence_source".to_string(), json!("page_classifier"));
+
+    // For document type classification, we need to check the content
+    // Extract a small sample to detect document patterns
     let options = options_from_value(&case.options);
+    if let Ok(result) = sdk::extract(&fixture_path, &options) {
+        if let Some(first_page) = result.pages.first() {
+            let text: String = first_page.spans.iter().map(|s| s.text.clone()).collect();
 
-    let result = extract_pdf(&fixture_path, &options)
-        .map_err(|e| anyhow!("Extract failed for classification: {}", e))?;
-
-    // Basic document classification logic
-    let mut category = "document".to_string();
-    let mut confidence = 0.5;
-    let mut tags = vec!["document".to_string()];
-
-    // Check for academic paper patterns
-    let has_abstract = result.pages.iter().any(|p| {
-        p.spans.iter().any(|s| {
-            s.text.to_lowercase().contains("abstract")
-        })
-    });
-
-    let has_references = result.pages.iter().any(|p| {
-        p.spans.iter().any(|s| {
-            s.text.to_lowercase().contains("references")
-        })
-    });
-
-    let has_methods = result.pages.iter().any(|p| {
-        p.spans.iter().any(|s| {
-            s.text.to_lowercase().contains("methods")
-        })
-    });
-
-    let has_results = result.pages.iter().any(|p| {
-        p.spans.iter().any(|s| {
-            s.text.to_lowercase().contains("results")
-        })
-    });
-
-    // Check for form fields
-    let has_form_fields = !result.form_fields.is_empty();
-
-    // Check for scanned content
-    let is_scanned = result.pages.iter().any(|p| {
-        p.spans.iter().any(|s| s.confidence_source.as_deref() == Some("ocr"))
-    });
-
-    // Determine category based on heuristics
-    if has_abstract && has_references {
-        category = "scientific_paper".to_string();
-        confidence = 0.8;
-        tags = vec!["academic".to_string(), "paper".to_string()];
-    } else if has_form_fields {
-        category = "form".to_string();
-        confidence = 0.9;
-        tags = vec!["form".to_string()];
-    } else if is_scanned {
-        category = "receipt".to_string();
-        confidence = 0.6;
-        tags = vec!["scanned".to_string()];
+            heuristics.insert("has_abstract".to_string(), json!(text.to_lowercase().contains("abstract")));
+            heuristics.insert("has_references".to_string(), json!(text.to_lowercase().contains("references")));
+            heuristics.insert("has_methods".to_string(), json!(text.to_lowercase().contains("methods")));
+            heuristics.insert("has_results".to_string(), json!(text.to_lowercase().contains("results")));
+            heuristics.insert("has_form_fields".to_string(), json!(!result.form_fields.is_empty()));
+        }
     }
 
     let actual_result = serde_json::json!({
         "category": category,
-        "confidence": confidence,
+        "confidence": classification.confidence,
         "tags": tags,
-        "heuristics": {
-            "has_abstract": has_abstract,
-            "has_references": has_references,
-            "has_methods": has_methods,
-            "has_results": has_results,
-            "has_form_fields": has_form_fields,
-            "is_scanned": is_scanned,
-        }
+        "heuristics": heuristics,
     });
 
     let errors = compare_with_tolerances(&actual_result, &case.expected, &Value::Object(Map::new()), "");

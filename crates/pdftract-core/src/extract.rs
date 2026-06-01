@@ -16,6 +16,7 @@
 use crate::annotation::{dispatch_annotations, json as annotation_json};
 use crate::attachment::associated_files::walk_af_array;
 use crate::attachment::filespec::extract_one;
+use crate::attachment::name_tree::walk_embedded_files;
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::document::compute_fingerprint_lazy;
 use secrecy::ExposeSecret;
@@ -1160,10 +1161,10 @@ fn extract_attachments(
     let mut attachments = Vec::new();
     let mut seen_refs: HashSet<ObjRef> = HashSet::new();
 
-    // Walk /AF array from the catalog
+    // Walk /AF array from the catalog (PDF 2.0)
     let af_entries = match walk_af_array(resolver, catalog_dict) {
         Ok(entries) => entries,
-        Err(_) => return Vec::new(), // Return empty if /AF walk fails
+        Err(_) => Vec::new(), // Continue with /EmbeddedFiles if /AF fails
     };
     for entry in af_entries {
         if seen_refs.contains(&entry.filespec_ref) {
@@ -1183,8 +1184,30 @@ fn extract_attachments(
         }
     }
 
-    // TODO: Also walk /EmbeddedFiles name tree for PDF 1.7 compatibility
-    // This requires implementing a name tree walker for /EmbeddedFiles
+    // Walk /EmbeddedFiles name tree (PDF 1.7)
+    if let Some(names_obj) = catalog_dict.get("/Names") {
+        if let Some(names_ref) = names_obj.as_ref() {
+            if let Ok(embedded_entries) = walk_embedded_files(resolver, names_ref) {
+                for entry in embedded_entries {
+                    if seen_refs.contains(&entry.filespec_ref) {
+                        continue; // Skip duplicates (prefer /AF metadata)
+                    }
+                    seen_refs.insert(entry.filespec_ref);
+
+                    // Extract the attachment
+                    match extract_one(resolver, entry.filespec_ref, source) {
+                        Ok(attachment) => {
+                            attachments.push(attachment.into_json());
+                        }
+                        Err(_) => {
+                            // Skip failed attachments but continue with others
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // Sort by name for deterministic output
     attachments.sort_by(|a, b| a.name.cmp(&b.name));

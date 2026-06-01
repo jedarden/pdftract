@@ -47,6 +47,17 @@ pub struct PageContext<'a> {
 
 impl<'a> PageContext<'a> {
     /// Create a new page context from a page dict and content bytes.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// use pdftract_core::table::PageContext;
+    /// use pdftract_core::parser::pages::PageDict;
+    ///
+    /// let ctx = PageContext::new(&page_dict, &content_bytes);
+    /// let detector = pdftract_core::table::TableDetector::new();
+    /// let tables = detector.detect(&ctx);
+    /// ```
     pub fn new(page: &'a PageDict, content_bytes: &'a [u8]) -> Self {
         Self {
             page,

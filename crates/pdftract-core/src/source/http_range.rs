@@ -293,6 +293,14 @@ impl HttpRangeSource {
             ));
         }
 
+        // 502/503/504 → server errors, treat as connection interrupted
+        if status == 502 || status == 503 || status == 504 {
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                format!("Server error: HTTP {}", status),
+            ));
+        }
+
         // Other status codes
         Err(io::Error::new(
             io::ErrorKind::Other,
@@ -523,6 +531,17 @@ impl Seek for HttpRangeSource {
 unsafe impl Send for HttpRangeSource {}
 unsafe impl Sync for HttpRangeSource {}
 
+impl std::fmt::Debug for HttpRangeSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HttpRangeSource")
+            .field("url", &self.url)
+            .field("content_length", &self.content_length)
+            .field("supports_range", &self.supports_range)
+            .field("cache_size", &self.cache.lock().len())
+            .finish_non_exhaustive()
+    }
+}
+
 /// Apply custom headers to a ureq request.
 fn apply_headers(mut req: ureq::Request, headers: &[(String, String)]) -> ureq::Request {
     for (key, value) in headers {
@@ -537,12 +556,31 @@ fn apply_headers(mut req: ureq::Request, headers: &[(String, String)]) -> ureq::
 /// - Connection/timeout → Interrupted (trigger REMOTE_FETCH_INTERRUPTED)
 /// - TLS → PermissionDenied (trigger REMOTE_TLS_FAILED)
 /// - DNS → NotFound (trigger REMOTE_DNS_FAILED)
+/// - 401/403 → PermissionDenied (trigger REMOTE_AUTH_FAILED)
+/// - 502/503/504 → Interrupted (server errors, treat as fetch interrupted)
 fn classify_http_error(err: &ureq::Error, context: &str) -> io::Error {
     match err {
-        ureq::Error::Status(code, _) => io::Error::new(
-            io::ErrorKind::Other,
-            format!("{}: HTTP {}", context, code),
-        ),
+        ureq::Error::Status(code, _) => {
+            // 401 Unauthorized and 403 Forbidden are permission errors
+            if *code == 401 || *code == 403 {
+                return io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    format!("{}: HTTP {} (authentication required)", context, code),
+                );
+            }
+            // 502 Bad Gateway, 503 Service Unavailable, 504 Gateway Timeout
+            // are treated as connection interruptions
+            if *code == 502 || *code == 503 || *code == 504 {
+                return io::Error::new(
+                    io::ErrorKind::Interrupted,
+                    format!("{}: HTTP {} (service unavailable)", context, code),
+                );
+            }
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!("{}: HTTP {}", context, code),
+            )
+        }
         ureq::Error::Transport(transport_err) => {
             let msg = transport_err.to_string().to_lowercase();
 

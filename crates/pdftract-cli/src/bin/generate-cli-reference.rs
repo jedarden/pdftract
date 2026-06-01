@@ -33,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     std::process::exit(1);
                 }
             }
-            arg if arg.starts_with('--') => {
+            arg if arg.starts_with("--") => {
                 eprintln!("Error: Unknown argument {}", arg);
                 std::process::exit(1);
             }

@@ -232,6 +232,35 @@ fn parse_bbox(s: &str) -> Option<[f32; 4]> {
     Some(bbox)
 }
 
+/// Emit a page anchor for internal link targets.
+///
+/// This function emits an HTML anchor tag that can be referenced by internal
+/// links of the form `[text](#page-N)`. The anchor is formatted as a markdown
+/// HTML reference: `<a name="page-N"></a>` where N is the 1-based page number.
+///
+/// # Arguments
+///
+/// * `page_index` - Zero-based page index
+///
+/// # Returns
+///
+/// A markdown string containing the HTML anchor tag.
+///
+/// # Example
+///
+/// ```
+/// use pdftract_core::markdown::emit_page_anchor;
+///
+/// let anchor = emit_page_anchor(0);
+/// assert_eq!(anchor, r#"<a name="page-1"></a>"#);
+///
+/// let anchor = emit_page_anchor(4);
+/// assert_eq!(anchor, r#"<a name="page-5"></a>"#);
+/// ```
+pub fn emit_page_anchor(page_index: usize) -> String {
+    format!(r#"<a name="page-{}"></a>"#, page_index + 1)
+}
+
 /// Emit a block as Markdown based on its kind.
 ///
 /// This function implements the Phase 6.5 block-kind dispatch table, mapping
@@ -814,11 +843,17 @@ pub fn spans_to_markdown_with_links(spans: &[SpanJson], page_links: &[crate::sch
     // Process links to find which spans are covered
     let link_data = links::emit_page_links_from_json(spans, page_links);
 
-    // Build a map of span index -> link markdown (if part of a link)
+    // Build a map of span index -> link markdown, but only for the FIRST span in each link
+    // Other spans in the link are skipped because their text is already included in the anchor text
     let mut span_to_link: std::collections::HashMap<usize, String> = std::collections::HashMap::new();
+    let mut span_is_in_link: std::collections::HashSet<usize> = std::collections::HashSet::new();
     for (span_indices, link_markdown) in &link_data {
+        if let Some(&first_idx) = span_indices.first() {
+            span_to_link.insert(first_idx, link_markdown.clone());
+        }
+        // Mark all spans in this link as "used" so we skip them
         for &idx in span_indices {
-            span_to_link.insert(idx, link_markdown.clone());
+            span_is_in_link.insert(idx);
         }
     }
 
@@ -826,10 +861,11 @@ pub fn spans_to_markdown_with_links(spans: &[SpanJson], page_links: &[crate::sch
     let mut result = String::new();
     for (idx, span) in spans.iter().enumerate() {
         if let Some(link_md) = span_to_link.get(&idx) {
-            // This span is part of a link - emit the link markdown
-            // The link markdown from emit_page_links_from_json already includes the anchor text
-            // and URL, but we need to preserve any inline styling that might be on the spans
+            // This span is the FIRST span in a link - emit the link markdown
             result.push_str(link_md);
+        } else if span_is_in_link.contains(&idx) {
+            // This span is part of a link but not the first - skip it
+            // (its text is already included in the anchor text from the first span)
         } else {
             // Not part of a link - emit normal styled span
             result.push_str(&span_to_markdown(span));
@@ -965,6 +1001,12 @@ pub fn page_to_markdown_with_links(
     options: &MarkdownOptions,
 ) -> String {
     let mut result = String::new();
+
+    // Emit page anchor for internal link targets
+    // This allows links like [text](#page-N) to jump to this page
+    result.push_str(&emit_page_anchor(page_index));
+    result.push('\n');
+
     let mut i = 0;
 
     while i < blocks.len() {
@@ -1251,7 +1293,8 @@ Some text."#;
     fn test_block_to_markdown_figure() {
         let block = make_test_block("figure", "Alt text", [72.0, 300.0, 540.0, 350.0]);
         let md = block_to_markdown(&block, &[], 0, 0, false);
-        assert!(md.contains("![]()"));
+        assert!(md.contains("!["));  // Markdown image syntax start
+        assert!(md.contains("]()"));  // Markdown image syntax end
         assert!(md.contains("Alt text"));
     }
 

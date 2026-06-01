@@ -3533,6 +3533,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "pdftract-inspector-ui"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+]
+
+[[package]]
 name = "pdftract-libpdftract"
 version = "0.1.0"
 dependencies = [

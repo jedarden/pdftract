@@ -24,6 +24,21 @@ pub struct TextValue {
 
 impl TextValue {
     /// Create a new TextValue.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pdftract_core::forms::value_text::TextValue;
+    ///
+    /// let text = TextValue::new(
+    ///     Some("Hello".to_string()),
+    ///     Some("Default".to_string()),
+    ///     true,  // multiline
+    ///     Some(100)  // max_length
+    /// );
+    /// assert_eq!(text.value, Some("Hello".to_string()));
+    /// assert!(text.multiline);
+    /// ```
     pub fn new(
         value: Option<String>,
         default: Option<String>,
