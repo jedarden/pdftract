@@ -13,6 +13,8 @@ let pageData=null;
 let isComparisonMode=false;
 let pageDiff=null;
 let scrollSync=true;
+let matchedSpans=[];
+let currentMatchIndex=-1;
 
 function init(){loadLayerState();setupKeyboard();setupToggles();setupSearch();setupNav();setupComparisonMode();loadFragment()}
 
@@ -282,7 +284,8 @@ function showComparisonMode(show){
 
 function setupKeyboard(){
   document.addEventListener('keydown',e=>{
-    if(e.target.tagName==='INPUT')return;
+    const searchInput=document.getElementById('search-input');
+    if(e.target.tagName==='INPUT'&&e.target!==searchInput)return;
     if(e.key==='ArrowLeft'){
       e.preventDefault();
       navigatePage(-1)
@@ -290,35 +293,113 @@ function setupKeyboard(){
       e.preventDefault();
       navigatePage(1)
     }else if(e.key==='/'){
-      e.preventDefault();
-      document.getElementById('search-input').focus()
+      if(e.target!==searchInput){
+        e.preventDefault();
+        searchInput.focus()
+      }
     }else if(e.key>='1'&&e.key<='9'){
       const idx=parseInt(e.key)-1;
       const layer=LAYERS[idx];
       if(layer)toggleLayer(layer)
+    }else if(e.key==='Escape'&&e.target===searchInput){
+      e.preventDefault();
+      clearSearch()
     }
   })
 }
 
 function setupSearch(){
   const input=document.getElementById('search-input');
-  let timeout;
-  input.addEventListener('input',()=>{
-    clearTimeout(timeout);
-    timeout=setTimeout(performSearch,300)
+  input.addEventListener('input',performSearch);
+  input.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){
+      e.preventDefault();
+      if(e.shiftKey){
+        cycleMatch(-1)
+      }else{
+        cycleMatch(1)
+      }
+    }
   })
 }
 
-async function performSearch(){
-  const query=document.getElementById('search-input').value.trim();
-  if(!query)return;
-  const res=await fetch(`/api/search?q=${encodeURIComponent(query)}`);
-  if(!res.ok)return;
-  const matches=await res.json();
-  if(matches.length>0){
-    const match=matches[0];
-    if(match.page_index!==currentPage)loadPage(match.page_index)
+function performSearch(){
+  const query=document.getElementById('search-input').value.trim().toLowerCase();
+  const matchCount=document.getElementById('match-count');
+
+  // Clear previous matches
+  matchedSpans.forEach(span=>span.classList.remove('search-match','active'));
+  matchedSpans=[];
+  currentMatchIndex=-1;
+
+  if(!query){
+    matchCount.textContent='';
+    return
   }
+
+  // Find all spans with matching text on current page
+  const wrappers=document.querySelectorAll('#page-svg svg, .svg-wrapper svg');
+  wrappers.forEach(svg=>{
+    svg.querySelectorAll('[data-text]').forEach(span=>{
+      const text=(span.dataset.text||'').toLowerCase();
+      if(text.includes(query)){
+        span.classList.add('search-match');
+        matchedSpans.push(span)
+      }
+    })
+  });
+
+  // Update match count
+  if(matchedSpans.length>0){
+    matchCount.textContent=`1 of ${matchedSpans.length} matches`;
+    currentMatchIndex=0;
+    highlightCurrentMatch()
+  }else{
+    matchCount.textContent='No matches'
+  }
+}
+
+function cycleMatch(direction){
+  if(matchedSpans.length===0)return;
+
+  // Remove active class from current match
+  if(currentMatchIndex>=0&&currentMatchIndex<matchedSpans.length){
+    matchedSpans[currentMatchIndex].classList.remove('active')
+  }
+
+  // Calculate new index
+  if(direction>0){
+    currentMatchIndex=(currentMatchIndex+1)%matchedSpans.length
+  }else{
+    currentMatchIndex=(currentMatchIndex-1+matchedSpans.length)%matchedSpans.length
+  }
+
+  highlightCurrentMatch();
+  updateMatchCount()
+}
+
+function highlightCurrentMatch(){
+  if(currentMatchIndex>=0&&currentMatchIndex<matchedSpans.length){
+    const span=matchedSpans[currentMatchIndex];
+    span.classList.add('active');
+    span.scrollIntoView({behavior:'smooth',block:'center',inline:'center'})
+  }
+}
+
+function updateMatchCount(){
+  const matchCount=document.getElementById('match-count');
+  if(matchedSpans.length>0){
+    matchCount.textContent=`${currentMatchIndex+1} of ${matchedSpans.length} matches`
+  }else{
+    matchCount.textContent=''
+  }
+}
+
+function clearSearch(){
+  const input=document.getElementById('search-input');
+  input.value='';
+  input.blur();
+  performSearch()
 }
 
 function setupNav(){
