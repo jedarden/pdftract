@@ -330,6 +330,15 @@ pub struct ExtractionOptions {
     /// Default: false (anchors disabled)
     pub markdown_anchors: bool,
 
+    /// Suppress page-break horizontal rules between consecutive pages in Markdown output (Phase 6.5.5).
+    ///
+    /// When enabled, the horizontal rule separator (`\n\n---\n\n`) between pages is omitted,
+    /// and pages are separated by double newlines only. This is useful for LLM ingestion
+    /// where page breaks add noise and chunking systems prefer continuous text.
+    ///
+    /// Default: false (page breaks enabled with `---` separator)
+    pub markdown_no_page_breaks: bool,
+
     /// Maximum decompressed bytes allowed per document (bomb limit).
     ///
     /// This limit prevents zip-bomb attacks where a small compressed PDF expands
@@ -427,6 +436,7 @@ impl Default for ExtractionOptions {
             ocr_dpi_override: None,
             ocr_language: vec!["eng".to_string()],
             markdown_anchors: false,
+            markdown_no_page_breaks: false,
             max_decompress_bytes: crate::parser::stream::DEFAULT_MAX_DECOMPRESS_BYTES,
             output: OutputOptions::default(),
             pages: None,
@@ -466,6 +476,7 @@ impl ExtractionOptions {
             ocr_dpi_override: None,
             ocr_language: vec!["eng".to_string()],
             markdown_anchors: false,
+            markdown_no_page_breaks: false,
             output: OutputOptions::default(),
             pages: None,
             password: None,

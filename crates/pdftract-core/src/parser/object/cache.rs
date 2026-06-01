@@ -35,6 +35,7 @@
 use super::cycle::{is_resolving, ResolutionGuard, RESOLVING};
 use super::{ObjRef, PdfObject};
 use crate::diagnostics::{DiagCode, Diagnostic as Diag};
+use std::cell::Cell;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::num::NonZeroUsize;
@@ -46,15 +47,24 @@ use lru::LruCache;
 /// adversarial input that could cause stack overflow through deep chains.
 const MAX_RESOLUTION_DEPTH: u16 = 256;
 
+/// Per-thread resolution depth counter.
+///
+/// Each thread gets its own independent depth counter, allowing concurrent
+/// page processing in rayon without lock contention.
+thread_local! {
+    /// Per-thread resolution depth counter for object reference chains.
+    static RESOLUTION_DEPTH: Cell<u16> = Cell::new(0);
+}
+
 /// RAII guard that manages both thread-local cycle detection and depth tracking.
 ///
 /// This guard:
 /// - Holds the cycle detection guard (manages thread-local set)
-/// - Holds a reference to the depth counter for cleanup on drop
+/// - Increments depth on creation, decrements on drop
 ///
 /// When dropped, the guard:
 /// - Removes the object reference from the thread-local cycle detection set
-/// - Decrements the depth counter
+/// - Decrements the thread-local depth counter
 ///
 /// This ensures proper cleanup even if:
 /// - The resolution function returns early
@@ -62,8 +72,6 @@ const MAX_RESOLUTION_DEPTH: u16 = 256;
 pub struct CacheResolutionGuard {
     /// The underlying cycle detection guard (manages thread-local set)
     _guard: ResolutionGuard,
-    /// Shared depth counter for cleanup on drop
-    depth: Arc<Mutex<u16>>,
 }
 
 impl std::fmt::Debug for CacheResolutionGuard {

@@ -584,6 +584,7 @@ fn main() -> Result<()> {
             cache_size,
             no_cache,
             md_anchors,
+            md_no_page_breaks,
             auto,
             profile,
             output,
@@ -613,6 +614,7 @@ fn main() -> Result<()> {
                 &cache_size,
                 no_cache,
                 md_anchors,
+                md_no_page_breaks,
                 auto,
                 profile,
                 include_headers,
@@ -894,6 +896,7 @@ fn cmd_extract(
     cache_size: &str,
     no_cache: bool,
     md_anchors: bool,
+    md_no_page_breaks: bool,
     auto: bool,
     profile: Option<String>,
     include_headers: bool,
@@ -1160,6 +1163,12 @@ fn cmd_extract(
     options.markdown_anchors = md_anchors;
     if md_anchors {
         eprintln!("Markdown anchors enabled");
+    }
+
+    // Set markdown page breaks option
+    options.markdown_no_page_breaks = md_no_page_breaks;
+    if md_no_page_breaks {
+        eprintln!("Markdown page breaks disabled (--md-no-page-breaks)");
     }
 
     // Set OCR language if specified
