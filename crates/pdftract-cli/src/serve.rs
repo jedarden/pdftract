@@ -581,7 +581,7 @@ async fn extract_handler(
 
     // Extract fingerprint and diagnostics for audit log
     let fingerprint = result.fingerprint.clone();
-    let diagnostics: Vec<String> = result.metadata.diagnostics.iter().map(|d| d.code.to_string()).collect();
+    let diagnostics: Vec<String> = result.metadata.diagnostics.clone();
 
     let json = result_to_json(&result);
 
@@ -655,7 +655,7 @@ async fn extract_text_handler(
 
     // Extract fingerprint and diagnostics for audit log
     let fingerprint = result.fingerprint.clone();
-    let diagnostics: Vec<String> = result.metadata.diagnostics.iter().map(|d| d.code.to_string()).collect();
+    let diagnostics: Vec<String> = result.metadata.diagnostics.clone();
 
     let mut text = String::new();
     for page in &result.pages {

@@ -189,31 +189,31 @@ impl PageContext {
 /// Each signal evaluator returns a vote for a PageClass with an associated
 /// strength [0.0, 1.0] indicating confidence in that vote.
 #[derive(Debug, Clone, Copy)]
-struct Vote {
+pub struct Vote {
     /// The class being voted for.
-    class: PageClass,
+    pub class: PageClass,
     /// Confidence strength [0.0, 1.0].
-    strength: f32,
+    pub strength: f32,
 }
 
 impl Vote {
     /// Create a new vote.
-    fn new(class: PageClass, strength: f32) -> Self {
+    pub fn new(class: PageClass, strength: f32) -> Self {
         Self { class, strength }
     }
 
     /// Create a vote for Vector class.
-    fn vector(strength: f32) -> Self {
+    pub fn vector(strength: f32) -> Self {
         Self::new(PageClass::Vector, strength)
     }
 
     /// Create a vote for Scanned class.
-    fn scanned(strength: f32) -> Self {
+    pub fn scanned(strength: f32) -> Self {
         Self::new(PageClass::Scanned, strength)
     }
 
     /// Create a vote for BrokenVector class.
-    fn broken_vector(strength: f32) -> Self {
+    pub fn broken_vector(strength: f32) -> Self {
         Self::new(PageClass::BrokenVector, strength)
     }
 }
@@ -352,6 +352,12 @@ struct CharDensityRatioSignal;
 
 impl SignalEvaluator for CharDensityRatioSignal {
     fn evaluate(&self, ctx: &PageContext) -> Option<Vote> {
+        // Skip if high character validity is present (mutually exclusive with HighCharValiditySignal)
+        // If text decodes well, density doesn't matter - it's good vector text
+        if ctx.has_text() && ctx.char_validity_rate() > SignalsConfig::CHAR_VALIDITY_HIGH_THRESHOLD {
+            return None;
+        }
+
         // Calculate character density: chars per square point
         let page_area_pt2 = ctx.width * ctx.height;
         if page_area_pt2 > 0.0 {
@@ -1696,8 +1702,13 @@ mod tests {
         let mut ctx = PageContext::new();
         ctx.text_op_count = 50;
         ctx.invisible_text_count = 50;
+        ctx.tr3_op_count = 50; // Must match invisible_text_count for BrokenVector detection
         ctx.has_full_page_image = true;
         ctx.image_coverage = 0.90;
+        ctx.width = 612.0; // US Letter
+        ctx.height = 792.0;
+        // Add a full-page image (>= 95% of 484,704 pt²)
+        ctx.image_xobject_areas.push(460_000.0); // ~95% coverage
 
         let result = classify_page(&ctx);
 
@@ -1882,11 +1893,12 @@ mod tests {
     #[test]
     fn test_char_density_ratio_signal_sparse_cover_page() {
         // AC: char_count=10, page_area_pt2=1000 → density=0.01 → Scanned with strength 0.65
+        // Note: valid_char_count must be < 0.85 threshold to avoid early return
         let classifier = PageClassifier::default();
         let mut ctx = PageContext::new();
         ctx.text_op_count = 5; // Some text operators but very sparse
         ctx.raw_char_count = 10;
-        ctx.valid_char_count = 10; // Exactly 10 characters
+        ctx.valid_char_count = 8; // 80% validity (below 0.85 threshold)
         ctx.width = 25.0; // 25 * 40 = 1000 pt²
         ctx.height = 40.0;
         ctx.density_ratio = 0.5; // Normal density_ratio (not used by this signal)
@@ -1969,10 +1981,11 @@ mod tests {
     #[test]
     fn test_char_density_ratio_signal_just_below_threshold() {
         // Edge case: density = 0.0299 → should fire
+        // Note: valid_char_count must be < 0.85 threshold to avoid early return
         let mut ctx = PageContext::new();
         ctx.text_op_count = 50;
         ctx.raw_char_count = 29;
-        ctx.valid_char_count = 29;
+        ctx.valid_char_count = 24; // ~83% validity (below 0.85 threshold)
         ctx.width = 10.0; // 10 * 100 = 1000 pt²
         ctx.height = 100.0; // 29 / 1000 = 0.029 (< 0.03)
         ctx.has_visible_text = true;
@@ -2008,10 +2021,11 @@ mod tests {
     #[test]
     fn test_char_density_ratio_signal_standard_letter_page() {
         // Realistic case: US Letter page (612×792 pt) with minimal text
+        // Note: valid_char_count must be < 0.85 threshold to avoid early return
         let mut ctx = PageContext::new();
         ctx.text_op_count = 10;
         ctx.raw_char_count = 50;
-        ctx.valid_char_count = 50;
+        ctx.valid_char_count = 40; // 80% validity (below 0.85 threshold)
         ctx.width = 612.0; // US Letter width
         ctx.height = 792.0; // US Letter height
         // density = 50 / (612 * 792) = 50 / 484,704 ≈ 0.0001 (well below 0.03)
@@ -2030,10 +2044,11 @@ mod tests {
     #[test]
     fn test_char_density_ratio_signal_standard_page_with_text() {
         // Realistic case: US Letter page with normal text content
+        // Note: valid_char_count must be < 0.85 threshold to avoid early return
         let mut ctx = PageContext::new();
         ctx.text_op_count = 500;
         ctx.raw_char_count = 3000;
-        ctx.valid_char_count = 2900;
+        ctx.valid_char_count = 2400; // 80% validity (below 0.85 threshold)
         ctx.width = 612.0;
         ctx.height = 792.0;
         // density = 2900 / 484,704 ≈ 0.006 (still below 0.03)
@@ -2043,9 +2058,7 @@ mod tests {
         let signal = CharDensityRatioSignal;
         let result = signal.evaluate(&ctx);
 
-        // Should NOT fire (wait, 0.006 is below 0.03... so it SHOULD fire)
-        // But this is a normal text page with 2900 chars - let me recalculate
-        // Actually, this shows that even normal pages can have low chars/pt²
+        // This shows that even normal pages can have low chars/pt²
         // The signal is designed to be a weak fallback (0.65 strength) for very sparse pages
         assert!(result.is_some()); // Fires but with weak strength
         let vote = result.unwrap();
@@ -2063,10 +2076,11 @@ mod tests {
     #[test]
     fn test_char_density_ratio_signal_in_full_classifier() {
         // Integration test: verify CharDensityRatioSignal is wired into PageClassifier
+        // Note: valid_char_count must be < 0.85 threshold to avoid early return
         let mut ctx = PageContext::new();
         ctx.text_op_count = 10;
         ctx.raw_char_count = 20;
-        ctx.valid_char_count = 20;
+        ctx.valid_char_count = 16; // 80% validity (below 0.85 threshold)
         ctx.width = 612.0;
         ctx.height = 792.0;
         ctx.density_ratio = 0.6; // Normal density_ratio

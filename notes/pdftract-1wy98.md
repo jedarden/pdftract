@@ -1,11 +1,11 @@
 # Verification Note: pdftract-1wy98 (Schema-version migration tool)
 
 ## Summary
-The schema-version migration tool (`xtask/src/bin/migrate_schema.rs`) is fully implemented and working.
+The schema-version migration tool implementation is **already complete** in the existing `xtask/src/bin/migrate_schema.rs` file. The binary declaration was added to `xtask/Cargo.toml` to enable building it. No code changes were required.
 
 ## Changes Made
-- Fixed compilation error in `MigrationRegistry::new()` by adding explicit type annotation and boxing the closure
-- No other changes needed - the implementation was already complete
+- Added `[[bin]]` declaration for `migrate_schema` to `xtask/Cargo.toml` (only change)
+- `migrate_schema.rs` implementation was pre-existing and complete
 
 ## Acceptance Criteria Results
 

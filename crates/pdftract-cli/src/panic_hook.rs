@@ -7,6 +7,9 @@
 use std::panic::{self, PanicInfo};
 use std::thread;
 
+#[cfg(feature = "backtrace")]
+use backtrace;
+
 /// Redaction marker for SecretString values in backtraces.
 const SECRET_REDACTION: &str = "[REDACTED:SecretString]";
 

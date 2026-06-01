@@ -3,7 +3,7 @@
 //! Implements the `pdftract hash` command that computes the PDF fingerprint
 //! and outputs it to stdout with appropriate exit codes.
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use pdftract_core::fingerprint::{compute_fingerprint, CatalogFlags, ContentStreamData, FingerprintInput, PageFingerprintData};
 use pdftract_core::parser::catalog::parse_catalog;
 use pdftract_core::parser::pages::{flatten_page_tree, PageDict};

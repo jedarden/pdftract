@@ -1,3 +1,6 @@
+> This page is auto-generated from the clap command tree.
+> Run `cargo run --manifest-path=xtask/Cargo.toml --bin gen_cli_reference` to regenerate.
+
 # CLI Reference
 
 This page provides comprehensive documentation for all pdftract CLI commands and flags.
@@ -552,3 +555,37 @@ pdftract explain-diagnostic
 
 - `<code>` - Diagnostic code to explain (e.g., STRUCT_MISSING_KEY, STREAM_BOMB) (required)
 
+<!-- AUTOGEN END -->
+
+## Hand-Curated Content
+
+> **Note:** Any content added after this marker will be preserved
+> when the CLI reference is regenerated. This section is for
+> additional context that doesn't fit in the auto-generated sections.
+
+### Common Patterns
+
+#### Basic Extraction
+
+```bash
+pdftract extract document.pdf
+```
+
+#### JSON Output
+
+```bash
+pdftract extract --json output.json document.pdf
+```
+
+#### Markdown with Anchors
+
+```bash
+pdftract extract --md-anchors --md output.md document.pdf
+```
+
+### Exit Codes
+
+- `0`: Success
+- `1`: General error (extraction failed, file not found, etc.)
+- `2`: Usage error (invalid arguments, conflicting flags)
+- `3`: Decryption error (wrong or missing password)

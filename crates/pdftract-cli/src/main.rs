@@ -14,6 +14,7 @@ mod hash;
 mod header;
 mod inspect;
 mod mcp;
+mod migrate;
 mod middleware;
 mod output;
 mod pages;
@@ -389,6 +390,28 @@ enum Commands {
         /// Quiet mode - suppress error output (only exit code matters)
         #[arg(short, long)]
         quiet: bool,
+    },
+    /// Migrate JSON output between schema versions
+    MigrateSchema {
+        /// Source schema version (e.g., "1.0", "1.1")
+        #[arg(long)]
+        from: String,
+
+        /// Target schema version (e.g., "1.0", "1.1")
+        #[arg(long)]
+        to: String,
+
+        /// Input JSON file (use '-' for stdin)
+        #[arg(default_value = "-")]
+        input: String,
+
+        /// Output JSON file (use '-' for stdout)
+        #[arg(short, long, default_value = "-")]
+        output: String,
+
+        /// Pretty-print output JSON
+        #[arg(short, long)]
+        pretty: bool,
     },
     /// Check environment health and dependencies
     ///
@@ -812,6 +835,18 @@ fn main() -> Result<()> {
                 if !quiet {
                     eprintln!("Error: {}", e);
                 }
+                std::process::exit(1);
+            }
+        }
+        Commands::MigrateSchema {
+            from,
+            to,
+            input,
+            output,
+            pretty,
+        } => {
+            if let Err(e) = migrate::run_migration(&from, &to, &input, &output, pretty) {
+                eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
         }

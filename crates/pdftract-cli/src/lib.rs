@@ -2,19 +2,21 @@
 //!
 //! This library exports the CLI's internal modules for integration testing.
 
+pub mod cli;
 pub mod grep;
 pub mod header;
 pub mod inspect;
 pub mod mcp;
 pub mod middleware;
+pub mod migrate;
 pub mod output;
+pub mod verify_receipt;
 
 // Re-export diagnostics for testing
 pub use pdftract_core::diagnostics::{DiagCode, DiagInfo, DIAGNOSTIC_CATALOG};
 
 // Export CLI types for documentation generation
-#[cfg(doc)]
-pub use crate::main::{Cli, Commands};
+pub use crate::cli::{Cli, Commands};
 
 /// Generate CLI reference markdown from the clap command tree.
 ///
@@ -24,5 +26,5 @@ pub use crate::main::{Cli, Commands};
 /// and help text.
 pub fn generate_cli_markdown() -> String {
     // clap-markdown 0.1 returns a String directly
-    clap_markdown::to_markdown::<crate::main::Cli>()
+    clap_markdown::to_markdown::<Cli>()
 }

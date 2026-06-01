@@ -643,45 +643,51 @@ pub fn download_to_temp_and_mmap(
         // Check disk space
         #[cfg(feature = "remote")]
         {
-            use nix::sys::statvfs;
             use std::path::Path;
 
-            // Get temp directory path
-            let temp_dir = tempfile::Builder::new().prefix("pdftract").tempdir()?;
-            let temp_path = temp_dir.path();
+            // Get temp directory path - use std::env::temp_dir() to avoid extra allocation
+            let temp_path = std::env::temp_dir();
 
-            // Get statvfs info
-            let stat = statvfs::statvfs(temp_path)?;
+            // Use nix for safer statvfs wrapper
+            #[cfg(unix)]
+            {
+                use nix::sys::statvfs::statvfs;
+                use nix::sys::statvfs::Statvfs;
 
-            // Calculate available space (f_bavail * f_frsize)
-            let available_bytes = stat.f_bavail as u64 * stat.f_frsize as u64;
+                let stat = statvfs(&temp_path).map_err(|e| {
+                    io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("Failed to get filesystem stats: {}", e),
+                    )
+                })?;
 
-            // Add 10% buffer for filesystem overhead and temp file metadata
-            let required_bytes = content_length.saturating_mul(11) / 10;
+                // Calculate available space (blocks_available * fragment_size)
+                let available_bytes = stat.blocks_available() as u64 * stat.fragment_size() as u64;
 
-            if content_length > 0 && available_bytes < required_bytes {
-                // Emit REMOTE_INSUFFICIENT_DISK diagnostic
-                if let Some(diags) = diagnostics {
-                    diags.push(Diagnostic::with_dynamic_no_offset(
-                        DiagCode::RemoteInsufficientDisk,
+                // Add 10% buffer for filesystem overhead and temp file metadata
+                let required_bytes = content_length.saturating_mul(11) / 10;
+
+                if content_length > 0 && available_bytes < required_bytes {
+                    // Emit REMOTE_INSUFFICIENT_DISK diagnostic
+                    if let Some(diags) = diagnostics {
+                        diags.push(Diagnostic::with_dynamic_no_offset(
+                            DiagCode::RemoteInsufficientDisk,
+                            format!(
+                                "Insufficient disk space for fallback download: need {} bytes, have {} bytes available. Set TMPDIR to a different path if needed.",
+                                required_bytes, available_bytes
+                            ),
+                        ));
+                    }
+
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
                         format!(
-                            "Insufficient disk space for fallback download: need {} bytes, have {} bytes available. Set TMPDIR to a different path if needed.",
+                            "Insufficient disk space: need {} bytes, have {} bytes available",
                             required_bytes, available_bytes
                         ),
                     ));
                 }
-
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    format!(
-                        "Insufficient disk space: need {} bytes, have {} bytes available",
-                        required_bytes, available_bytes
-                    ),
-                ));
             }
-
-            // Explicitly drop the tempdir so we can create our NamedTempFile
-            drop(temp_dir);
         }
 
         // Create temp file

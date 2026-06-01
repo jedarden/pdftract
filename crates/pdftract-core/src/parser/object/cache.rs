@@ -46,6 +46,54 @@ use lru::LruCache;
 /// adversarial input that could cause stack overflow through deep chains.
 const MAX_RESOLUTION_DEPTH: u16 = 256;
 
+/// RAII guard that manages both thread-local cycle detection and depth tracking.
+///
+/// This guard:
+/// - Holds the cycle detection guard (manages thread-local set)
+/// - Holds a reference to the depth counter for cleanup on drop
+///
+/// When dropped, the guard:
+/// - Removes the object reference from the thread-local cycle detection set
+/// - Decrements the depth counter
+///
+/// This ensures proper cleanup even if:
+/// - The resolution function returns early
+/// - A panic occurs during resolution
+pub struct CacheResolutionGuard {
+    /// The underlying cycle detection guard (manages thread-local set)
+    _guard: ResolutionGuard,
+    /// Shared depth counter for cleanup on drop
+    depth: Arc<Mutex<u16>>,
+}
+
+impl std::fmt::Debug for CacheResolutionGuard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CacheResolutionGuard")
+            .field("obj_ref", &self._guard.obj_ref())
+            .finish()
+    }
+}
+
+impl CacheResolutionGuard {
+    /// Get the object reference being tracked by this guard.
+    #[inline]
+    pub fn obj_ref(&self) -> ObjRef {
+        self._guard.obj_ref()
+    }
+}
+
+impl Drop for CacheResolutionGuard {
+    fn drop(&mut self) {
+        // Decrement the depth counter
+        if let Ok(mut depth) = self.depth.lock() {
+            if *depth > 0 {
+                *depth -= 1;
+            }
+        }
+        // The ResolutionGuard drop will handle removing from thread-local set
+    }
+}
+
 /// Cache statistics.
 ///
 /// Tracks hit rates for diagnostic and performance monitoring.
@@ -91,8 +139,8 @@ pub struct ObjectCache {
     cache: Mutex<LruCache<ObjRef, Arc<PdfObject>>>,
     /// Cache statistics
     stats: Mutex<CacheStats>,
-    /// Per-thread resolution depth counter
-    depth: Mutex<u16>,
+    /// Shared depth counter (Arc allows guards to decrement on drop)
+    depth: Arc<Mutex<u16>>,
 }
 
 impl ObjectCache {
@@ -102,7 +150,7 @@ impl ObjectCache {
         ObjectCache {
             cache: Mutex::new(LruCache::new(NonZeroUsize::new(4096).unwrap())),
             stats: Mutex::new(CacheStats::default()),
-            depth: Mutex::new(0),
+            depth: Arc::new(Mutex::new(0)),
         }
     }
 
@@ -113,7 +161,7 @@ impl ObjectCache {
         ObjectCache {
             cache: Mutex::new(LruCache::new(capacity)),
             stats: Mutex::new(CacheStats::default()),
-            depth: Mutex::new(0),
+            depth: Arc::new(Mutex::new(0)),
         }
     }
 
@@ -340,7 +388,6 @@ impl ObjectCache {
     ///
     /// This is a diagnostic method that peeks at the LRU entry without
     /// modifying its position. Used primarily for testing cache eviction.
-    #[cfg(test)]
     pub fn peek_lru(&self) -> Option<(ObjRef, Arc<PdfObject>)> {
         self.cache
             .lock()
@@ -352,7 +399,6 @@ impl ObjectCache {
     /// Check if an object reference is in the LRU position.
     ///
     /// Used for testing cache eviction behavior.
-    #[cfg(test)]
     pub fn is_lru(&self, obj_ref: ObjRef) -> bool {
         self.peek_lru()
             .map(|(k, _)| k == obj_ref)
@@ -362,7 +408,6 @@ impl ObjectCache {
     /// Get the current resolution depth for testing.
     ///
     /// Used for testing depth tracking behavior.
-    #[cfg(test)]
     pub fn depth(&self) -> u16 {
         self.depth
             .lock()

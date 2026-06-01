@@ -19,6 +19,14 @@ path = "src/bin/gen_schema.rs"
 name = "gen_cli_reference"
 path = "src/bin/gen_cli_reference.rs"
 
+[[bin]]
+name = "migrate_schema"
+path = "src/bin/migrate_schema.rs"
+
+[lib]
+name = "pdftract_schema_migrate"
+path = "src/lib.rs"
+
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

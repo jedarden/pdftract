@@ -510,7 +510,8 @@ fn test_page_by_page_on_demand_fetch() {
     // 1. HEAD (already done)
     // 2. Tail fetch
     // 3. Page 5 content stream
-    let bytes_before = server.get_bytes_sent(); // Note: server is moved into thread
+    // TODO: Track bandwidth properly via Arc clone or channel
+    // let _bytes_before = server.get_bytes_sent(); // Note: server is moved into thread
     // In a real test, we'd track bandwidth through the source
 }
 
@@ -555,7 +556,7 @@ fn test_custom_headers() {
         .with_header("Authorization", "Bearer test-token")
         .with_header("X-API-Key", "test-key");
 
-    let result = open_remote(&url, &opts);
+    let result = open_remote(&url, &opts, None);
 
     // Should succeed with custom headers
     assert!(result.is_ok());
@@ -576,7 +577,7 @@ fn test_basic_authentication() {
     let opts = RemoteOpts::new()
         .with_credentials("testuser", "testpass");
 
-    let result = open_remote(&url, &opts);
+    let result = open_remote(&url, &opts, None);
 
     // Should succeed with credentials
     assert!(result.is_ok());
@@ -598,8 +599,8 @@ fn test_forward_scan_disabled_remote() {
             Ok(self.data.len() as u64)
         }
 
-        fn read_at(&self, _offset: u64, _length: usize) -> io::Result<bytes::Bytes> {
-            Ok(bytes::Bytes::new())
+        fn read_at(&self, _offset: u64, _length: usize) -> io::Result<Vec<u8>> {
+            Ok(Vec::new())
         }
 
         fn is_remote(&self) -> bool {

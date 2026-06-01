@@ -80,7 +80,7 @@ pub fn render_ocr_regions(spans: &[SpanJson]) -> Vec<String> {
         let data_text = escape_xml_attr(&tooltip_text);
 
         result.push(format!(
-            r#"<rect x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" fill="url(#ocr-diagonal-stripes)" fill-opacity="0.15" stroke="#00d9ff" stroke-width="1" stroke-opacity="0.5" class="ocr-region-rect" data-ocr-source="{}" data-confidence="{}" data-text="{}" data-span-index="{}" />"#,
+            r##"<rect x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" fill="url(#ocr-diagonal-stripes)" fill-opacity="0.15" stroke="#00d9ff" stroke-width="1" stroke-opacity="0.5" class="ocr-region-rect" data-ocr-source="{}" data-confidence="{}" data-text="{}" data-span-index="{}" />"##,
             x0, y0, width, height, data_source, data_confidence, data_text, index
         ));
     }
@@ -102,12 +102,12 @@ fn is_ocr_span(span: &SpanJson) -> bool {
 /// SVG pattern definition for cyan diagonal stripes.
 ///
 /// 45° diagonal stripes, 4px wide, 8px spacing, cyan (#00d9ff).
-const PATTERN_DEF: &str = r#"<defs>
+const PATTERN_DEF: &str = r##"<defs>
   <pattern id="ocr-diagonal-stripes" patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)">
     <rect width="8" height="8" fill="#00d9ff" fill-opacity="0" />
     <line x1="0" y1="0" x2="0" y2="8" stroke="#00d9ff" stroke-width="4" stroke-opacity="0.3" />
   </pattern>
-</defs>"#;
+</defs>"##;
 
 /// Escape a string for use in an XML attribute value.
 ///

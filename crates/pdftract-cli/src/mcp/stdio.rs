@@ -531,7 +531,7 @@ mod tests {
         let registry = tools::all_tools();
         let request = Request::new("unknown/method", None, Some(Id::Number(1)));
 
-        let response = handle_request(request, &registry, None);
+        let response = handle_request(request, &registry, None, None);
 
         assert!(response.is_error());
         assert_eq!(response.get_error().unwrap().code, -32601);
@@ -543,7 +543,7 @@ mod tests {
         let registry = tools::all_tools();
         let request = Request::new("tools/list", None, Some(Id::Number(1)));
 
-        let response = handle_request(request, &registry, None);
+        let response = handle_request(request, &registry, None, None);
 
         assert!(response.is_success());
         assert!(response.get_result().is_some());
@@ -610,7 +610,7 @@ mod tests {
 
         // Handle it
         let registry = tools::all_tools();
-        let response = handle_request(request, &registry, None);
+        let response = handle_request(request, &registry, None, None);
 
         // Verify it's a success response
         assert!(response.is_success());

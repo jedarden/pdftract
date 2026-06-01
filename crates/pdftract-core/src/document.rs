@@ -1125,7 +1125,7 @@ trailer
 /Root 1 0 R
 >>
 startxref
-403
+376
 %%EOF
 "#;
 
@@ -1142,7 +1142,7 @@ startxref
 
         let source = FileSource::open(&pdf_path).unwrap();
         let offset = find_startxref(&source).unwrap();
-        assert_eq!(offset, 403);
+        assert_eq!(offset, 376);
     }
 
     #[test]

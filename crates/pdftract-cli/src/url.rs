@@ -25,6 +25,7 @@
 //! ureq automatically sets `Authorization: Basic <base64>` from URL credentials.
 
 use std::collections::HashMap;
+use url::Url;
 
 /// Error type for URL parsing failures.
 #[derive(Debug, Clone, PartialEq)]

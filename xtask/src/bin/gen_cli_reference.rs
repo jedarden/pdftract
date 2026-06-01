@@ -8,12 +8,14 @@
 use std::fs;
 use std::path::PathBuf;
 
+const AUTOGEN_END_MARKER: &str = "<!-- AUTOGEN END -->";
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Find the workspace root
     let workspace_root = find_workspace_root();
 
     // Generate the CLI reference markdown
-    let cli_reference_md = generate_cli_reference();
+    let generated_markdown = generate_cli_reference();
 
     // Write to docs/user-docs/src/cli-reference.md
     let cli_ref_path = workspace_root.join("docs/user-docs/src/cli-reference.md");
@@ -23,7 +25,54 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         fs::create_dir_all(parent)?;
     }
 
-    fs::write(&cli_ref_path, cli_reference_md)?;
+    // Read existing file to preserve hand-curated content
+    let hand_curated_content = if cli_ref_path.exists() {
+        let existing = fs::read_to_string(&cli_ref_path)?;
+        if let Some(idx) = existing.find(AUTOGEN_END_MARKER) {
+            Some(existing[idx + AUTOGEN_END_MARKER.len()..].to_string())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Build the final output
+    let mut final_output = String::new();
+
+    // Add autogen notice at the top
+    final_output.push_str("> This page is auto-generated from the clap command tree.\n");
+    final_output.push_str("> Run `cargo run --manifest-path=xtask/Cargo.toml --bin gen_cli_reference` to regenerate.\n\n");
+    final_output.push_str(generated_markdown.trim_end());
+    final_output.push_str("\n\n");
+    final_output.push_str(AUTOGEN_END_MARKER);
+    final_output.push_str("\n\n");
+
+    // Add hand-curated content if it exists
+    if let Some(curated) = hand_curated_content {
+        final_output.push_str(curated.trim_start());
+        println!("Preserved hand-curated content after AUTOGEN END marker.");
+    } else {
+        // Add a default hand-curated section header
+        final_output.push_str("## Hand-Curated Content\n\n");
+        final_output.push_str("> **Note:** Any content added after this marker will be preserved\n");
+        final_output.push_str("> when the CLI reference is regenerated. This section is for\n");
+        final_output.push_str("> additional context that doesn't fit in the auto-generated sections.\n\n");
+        final_output.push_str("### Common Patterns\n\n");
+        final_output.push_str("#### Basic Extraction\n\n");
+        final_output.push_str("```bash\npdftract extract document.pdf\n```\n\n");
+        final_output.push_str("#### JSON Output\n\n");
+        final_output.push_str("```bash\npdftract extract --json output.json document.pdf\n```\n\n");
+        final_output.push_str("#### Markdown with Anchors\n\n");
+        final_output.push_str("```bash\npdftract extract --md-anchors --md output.md document.pdf\n```\n\n");
+        final_output.push_str("### Exit Codes\n\n");
+        final_output.push_str("- `0`: Success\n");
+        final_output.push_str("- `1`: General error (extraction failed, file not found, etc.)\n");
+        final_output.push_str("- `2`: Usage error (invalid arguments, conflicting flags)\n");
+        final_output.push_str("- `3`: Decryption error (wrong or missing password)\n");
+    }
+
+    fs::write(&cli_ref_path, final_output)?;
 
     println!("Generated CLI reference at: {}", cli_ref_path.display());
 

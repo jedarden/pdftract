@@ -771,6 +771,333 @@ pub fn page_to_markdown_with_options(
     result
 }
 
+/// Emit spans with inline link support.
+///
+/// This function processes spans and emits them as markdown, with spans that
+/// are part of link annotations emitted as inline links `[anchor text](URL)`
+/// instead of plain styled text.
+///
+/// This implements Phase 6.5.5b: inline-link emission from Phase 7.6 link annotations.
+///
+/// # Arguments
+///
+/// * `spans` - The spans to emit
+/// * `page_links` - Link annotations for this page (from Phase 7.6)
+///
+/// # Returns
+///
+/// A markdown string with spans emitted, including inline links where applicable.
+///
+/// # Example
+///
+/// ```
+/// use pdftract_core::markdown::spans_to_markdown_with_links;
+/// use pdftract_core::schema::SpanJson;
+///
+/// let spans = vec![
+///     SpanJson { text: "Click ".to_string(), ..Default::default() },
+///     SpanJson { text: "here".to_string(), ..Default::default() },
+///     SpanJson { text: " for more".to_string(), ..Default::default() },
+/// ];
+///
+/// // If "here" is part of a link, it will be emitted as [here](https://example.com)
+/// let md = spans_to_markdown_with_links(&spans, &[]);
+/// ```
+pub fn spans_to_markdown_with_links(spans: &[SpanJson], page_links: &[crate::schema::LinkJson]) -> String {
+    use crate::output::markdown::links;
+
+    if page_links.is_empty() {
+        // No links - emit spans normally with inline styling
+        return spans.iter().map(span_to_markdown).collect::<String>();
+    }
+
+    // Process links to find which spans are covered
+    let link_data = links::emit_page_links_from_json(spans, page_links);
+
+    // Build a map of span index -> link markdown (if part of a link)
+    let mut span_to_link: std::collections::HashMap<usize, String> = std::collections::HashMap::new();
+    for (span_indices, link_markdown) in &link_data {
+        for &idx in span_indices {
+            span_to_link.insert(idx, link_markdown.clone());
+        }
+    }
+
+    // Emit spans: if a span is part of a link, use the link markdown; otherwise use normal styling
+    let mut result = String::new();
+    for (idx, span) in spans.iter().enumerate() {
+        if let Some(link_md) = span_to_link.get(&idx) {
+            // This span is part of a link - emit the link markdown
+            // The link markdown from emit_page_links_from_json already includes the anchor text
+            // and URL, but we need to preserve any inline styling that might be on the spans
+            result.push_str(link_md);
+        } else {
+            // Not part of a link - emit normal styled span
+            result.push_str(&span_to_markdown(span));
+        }
+    }
+
+    result
+}
+
+/// Emit a block's text with inline link support.
+///
+/// This function emits a block's text content, replacing portions that correspond
+/// to link annotations with inline markdown links. This is useful for paragraphs
+/// and other text blocks that may contain hyperlinks.
+///
+/// # Arguments
+///
+/// * `block` - The block to emit
+/// * `spans` - All spans on the page (for link detection)
+/// * `page_links` - Link annotations for this page (from Phase 7.6)
+///
+/// # Returns
+///
+/// A markdown string with the block's text, including inline links where applicable.
+///
+/// # Example
+///
+/// ```
+/// use pdftract_core::markdown::block_to_markdown_with_links;
+/// use pdftract_core::schema::{BlockJson, SpanJson};
+///
+/// let block = BlockJson {
+///     kind: "paragraph".to_string(),
+///     text: "See our website for details.".to_string(),
+///     // ... other fields
+/// };
+///
+/// let md = block_to_markdown_with_links(&block, &spans, &links);
+/// // Result might be: "See our [website](https://example.com) for details."
+/// ```
+pub fn block_to_markdown_with_links(
+    block: &BlockJson,
+    spans: &[SpanJson],
+    page_links: &[crate::schema::LinkJson],
+) -> String {
+    if page_links.is_empty() {
+        // No links - return the block text as-is (paragraph emission will wrap it)
+        return block.text.clone();
+    }
+
+    use crate::output::markdown::links;
+
+    // Find which spans belong to this block
+    let block_span_indices: Vec<usize> = block.spans.iter().filter_map(|&idx| {
+        if idx < spans.len() { Some(idx) } else { None }
+    }).collect();
+
+    if block_span_indices.is_empty() {
+        // No spans for this block - return text as-is
+        return block.text.clone();
+    }
+
+    // Filter links to only those that intersect this block's spans
+    let block_links: Vec<&crate::schema::LinkJson> = page_links
+        .iter()
+        .filter(|link| {
+            // Check if any of this link's spans are in this block
+            let matched_spans = links::find_spans_in_link_json(spans, link);
+            matched_spans.iter().any(|idx| block.spans.contains(idx))
+        })
+        .collect();
+
+    if block_links.is_empty() {
+        // No links for this block - return text as-is
+        return block.text.clone();
+    }
+
+    // Emit the spans for this block with link support
+    let block_spans: Vec<SpanJson> = block_span_indices
+        .iter()
+        .filter_map(|&idx| spans.get(idx).cloned())
+        .collect();
+
+    let block_links_refs: Vec<crate::schema::LinkJson> = block_links
+        .iter()
+        .map(|&link| link.clone())
+        .collect();
+
+    spans_to_markdown_with_links(&block_spans, &block_links_refs)
+}
+
+/// Emit all blocks from a page with inline link support.
+///
+/// This is a variant of `page_to_markdown_with_options` that also processes
+/// link annotations and emits inline markdown links where applicable.
+///
+/// # Arguments
+///
+/// * `blocks` - The blocks to convert
+/// * `spans` - All spans on the page (for link detection)
+/// * `tables` - The tables array for looking up table structures
+/// * `page_links` - Link annotations for this page (from Phase 7.6)
+/// * `page_index` - Zero-based page index
+/// * `include_anchor` - Whether to include HTML comment anchors
+/// * `options` - Markdown emission options
+///
+/// # Returns
+///
+/// A markdown string with all blocks from the page, including inline links.
+///
+/// # Example
+///
+/// ```
+/// use pdftract_core::markdown::page_to_markdown_with_links;
+///
+/// let md = page_to_markdown_with_links(
+///     &blocks,
+///     &spans,
+///     &tables,
+///     &links,
+///     0,
+///     true,
+///     &MarkdownOptions::default(),
+/// );
+/// ```
+pub fn page_to_markdown_with_links(
+    blocks: &[BlockJson],
+    spans: &[SpanJson],
+    tables: &[TableJson],
+    page_links: &[crate::schema::LinkJson],
+    page_index: usize,
+    include_anchor: bool,
+    options: &MarkdownOptions,
+) -> String {
+    let mut result = String::new();
+    let mut i = 0;
+
+    while i < blocks.len() {
+        let block = &blocks[i];
+
+        // Add anchor comment if requested
+        if include_anchor {
+            let anchor = Anchor::new(
+                page_index,
+                i,
+                [
+                    block.bbox[0] as f32,
+                    block.bbox[1] as f32,
+                    block.bbox[2] as f32,
+                    block.bbox[3] as f32,
+                ],
+                block.kind.clone(),
+            );
+            result.push_str(&anchor.to_comment());
+            result.push('\n');
+        }
+
+        // Check if this is a list item and if there are consecutive list items
+        if block.kind == "list" || block.kind == "list_item" {
+            // Find the end of the consecutive list sequence
+            let mut list_end = i + 1;
+            while list_end < blocks.len()
+                && (blocks[list_end].kind == "list" || blocks[list_end].kind == "list_item")
+            {
+                list_end += 1;
+            }
+
+            // Emit the entire list sequence as a group
+            let list_blocks = &blocks[i..list_end];
+
+            // For list items with links, emit each item with link support
+            for list_block in list_blocks {
+                let block_with_links = block_to_markdown_with_links(list_block, spans, page_links);
+                if !block_with_links.is_empty() {
+                    // Detect if numbered or bulleted
+                    let is_numbered = block_with_links
+                        .chars()
+                        .next()
+                        .map(|c| c.is_ascii_digit())
+                        .unwrap_or(false);
+
+                    if is_numbered {
+                        result.push_str(&block_with_links);
+                        result.push('\n');
+                    } else {
+                        result.push_str("* ");
+                        result.push_str(&block_with_links);
+                        result.push('\n');
+                    }
+                }
+            }
+
+            result.push('\n');
+            i = list_end;
+        } else {
+            // Non-list block - emit individually
+            let block_with_links = block_to_markdown_with_links(block, spans, page_links);
+
+            // For non-list blocks, use the existing block emission logic
+            // but replace the text content with link-aware content
+            let kind_result = if block_with_links != block.text {
+                // Links were detected - emit the link-aware version
+                emit_block_kind_with_text(block, tables, options, &block_with_links)
+            } else {
+                // No links - use standard emission
+                emit_block_kind(block, tables, options)
+            };
+
+            result.push_str(&kind_result);
+            i += 1;
+        }
+    }
+
+    // Add page break if requested and this isn't the last page
+    if options.include_page_breaks {
+        result.push_str("\n---\n\n");
+    }
+
+    result
+}
+
+/// Emit a block kind with custom text content.
+///
+/// This is a helper for `page_to_markdown_with_links` that allows overriding
+/// the block's text with link-aware content while preserving the block's
+/// formatting and structure.
+fn emit_block_kind_with_text(
+    block: &BlockJson,
+    tables: &[TableJson],
+    options: &MarkdownOptions,
+    custom_text: &str,
+) -> String {
+    match block.kind.as_str() {
+        "heading" => {
+            let level = block.level.unwrap_or(1).clamp(1, 6);
+            let prefix = "#".repeat(level as usize);
+            format!("{} {}\n\n", prefix, custom_text)
+        }
+
+        "paragraph" => {
+            let text = custom_text.replace('\n', "  \n");
+            format!("{}\n\n", text)
+        }
+
+        "list" | "list_item" => {
+            // Try to detect if this is a numbered list
+            let is_numbered = custom_text
+                .chars()
+                .next()
+                .map(|c| c.is_ascii_digit())
+                .unwrap_or(false);
+
+            if is_numbered {
+                format!("{}\n", custom_text)
+            } else {
+                format!("* {}\n", custom_text)
+            }
+        }
+
+        "caption" => format!("*{}\n\n", custom_text),
+
+        _ => {
+            // For other block kinds, fall back to standard emission
+            emit_block_kind(block, tables, options)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

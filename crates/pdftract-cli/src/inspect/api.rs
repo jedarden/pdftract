@@ -18,6 +18,8 @@ use super::render::anchors;
 use super::render::blocks;
 use super::render::columns;
 use super::render::confidence_heatmap;
+use super::render::mcid;
+use super::render::ocr_regions;
 use super::render::reading_order;
 use super::render::spans;
 use axum::{
@@ -997,14 +999,14 @@ fn render_page_svg(page: &JsonValue, width: f64, height: f64, thumbnail: bool) -
         }
 
         // 8. OCR layer - cyan diagonal-stripe overlay on OCR'd regions
-        let ocr_elements = render_ocr_layer(&spans);
+        let ocr_elements = ocr_regions::render_ocr_regions(&spans);
         if !ocr_elements.is_empty() {
             svg_layers.push(format!(r#"<g class="layer-ocr" style="display: none;">{}</g>"#, ocr_elements.join("")));
         }
 
-        // 9. MCID layer - numeric MCID labels (placeholder for now)
-        // Note: MCID tracking is not yet implemented in the schema
-        // This layer is included as a placeholder for future implementation
+        // 9. MCID layer - numeric MCID labels for marked-content blocks
+        // Note: MCID tracking requires page metadata (mcid_map) which may not be present
+        // in all JSON documents. This is a placeholder for future Phase 3.4 integration.
         svg_layers.push(r#"<g class="layer-mcid" style="display: none;"></g>"#.to_string());
 
         // 10. Anchors layer - block-ID labels at top-left of each block
