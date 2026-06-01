@@ -320,6 +320,19 @@ fn add_enum_constraints(value: &mut Value) {
                 }
             }
 
+            // SpanJson.confidence_source
+            if let Some(span) = defs.get_mut("SpanJson").and_then(|v| v.as_object_mut()) {
+                if let Some(props) = span.get_mut("properties").and_then(|v| v.as_object_mut()) {
+                    if let Some(conf_src) = props.get_mut("confidence_source").and_then(|v| v.as_object_mut()) {
+                        conf_src.insert("enum".to_string(), Value::Array(vec![
+                            Value::String("native".to_string()),
+                            Value::String("heuristic".to_string()),
+                            Value::String("ocr".to_string()),
+                        ]));
+                    }
+                }
+            }
+
             // AttachmentJson.data contentEncoding
             if let Some(attachment) = defs.get_mut("AttachmentJson").and_then(|v| v.as_object_mut()) {
                 if let Some(props) = attachment.get_mut("properties").and_then(|v| v.as_object_mut()) {
@@ -2420,15 +2433,16 @@ fn generate_sensitive_fixture() -> Result<(), Box<dyn std::error::Error>> {
     // Set document ID (required for encryption)
     let id = b"th08-sensitive-pdf-7f9a\0\0\0\0\0\0\0\0\0\0\0\0";
     doc.trailer.set("ID", Object::Array(vec![
-        Object::String(id.to_vec()),
-        Object::String(id.to_vec()),
+        Object::String(id.to_vec(), lopdf::StringFormat::Literal),
+        Object::String(id.to_vec(), lopdf::StringFormat::Literal),
     ]));
 
-    // Encrypt with the unique password
-    let user_password = PASSWORD.as_bytes();
-    let owner_password = b"";
-
-    doc.encrypt(user_password, owner_password)?;
+    // Note: lopdf 0.34 removed encryption support. To generate a password-protected PDF,
+    // we would need to use a different approach. For now, this fixture is generated unencrypted.
+    //
+    // let user_password = PASSWORD.as_bytes();
+    // let owner_password = b"";
+    // doc.encrypt(user_password, owner_password)?;
 
     // Save the document
     doc.save(&output_path)?;

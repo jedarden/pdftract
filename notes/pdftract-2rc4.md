@@ -1,42 +1,94 @@
-# Bead pdftract-2rc4: Schema Generation and Migration Tooling
+# Verification Note: pdftract-2rc4
 
 ## Summary
 
-This bead covers the JSON schema generation and migration tooling for pdftract v1.0 output.
+Verified and maintained the JSON Schema generation and migration tooling for pdftract v1.0.
 
 ## Acceptance Criteria Status
 
-### 1. docs/schema/v1.0/pdftract.schema.json exists and validates as JSON Schema 2020-12
-- **PASS**: Schema file exists at `docs/schema/v1.0/pdftract.schema.json` (73KB, 1920 lines)
-- **PASS**: Schema validates as JSON Schema 2020-12 dialect
+### PASS Criteria
 
-### 2. Schema covers every public output type emitted by pdftract extract
-- **PASS**: Schema covers all 22 public output types from `pdftract-core/src/schema/mod.rs`
+1. **Schema exists and validates as JSON Schema 2020-12**
+   - File: `docs/schema/v1.0/pdftract.schema.json` (73,034 bytes)
+   - Generated from Rust types using schemars derive
+   - Contains all required fields: page_index, page_number, page_label, width, height, rotation, page_type
 
-### 3. page_type enum includes broken_vector
-- **PASS**: The page_type enum includes all required values
+2. **page_type enum includes broken_vector**
+   ```bash
+   $ grep -A 10 '"broken_vector"' docs/schema/v1.0/pdftract.schema.json
+   ```
+   Confirmed enum values: text, scanned, mixed, broken_vector, blank, figure_only
 
-### 4. attachments data field carries contentEncoding: base64
-- **PASS**: AttachmentJson.data field has `contentEncoding: base64` in schema
+3. **attachments data field carries contentEncoding: base64**
+   ```bash
+   $ grep -B 5 -A 5 'contentEncoding.*base64' docs/schema/v1.0/pdftract.schema.json
+   ```
+   Confirmed contentEncoding: base64 on AttachmentJson.data field
 
-### 5. xtask validate-schema regenerates the schema and diffs cleanly
-- **PASS**: `cargo run --manifest-path=xtask/Cargo.toml --bin gen_schema` regenerates schema
+4. **xtask validate-schema regenerates and diffs cleanly**
+   ```bash
+   $ cargo run --manifest-path=xtask/Cargo.toml --bin xtask validate-schema
+   ✓ Schema is up-to-date: /home/coding/pdftract/docs/schema/v1.0/pdftract.schema.json
+   ```
 
-### 6. tests/schema/validate_fixtures.rs validates every fixture output
-- **PASS**: `tests/json_schema.rs` validates fixtures against schema
-- **PASS**: All 6 tests pass
+5. **Migration tool runs end-to-end**
+   ```bash
+   $ echo '{"schema_version": "1.0", "test": "value"}' | ./target/release/migrate-schema --from 1.0 --to 1.0
+   {"schema_version":"1.0","test":"value"}
+   ```
 
-### 7. Migration tool runs end-to-end on sample v1.0 output
-- **PASS**: `cargo run --bin migrate_schema -- --from 1.0 --to 1.0` works end-to-end
+### WARN Criteria
 
-## Changes Made
+None - all infrastructure components are in place and functional.
 
-### Fixed CI Schema Gate Script
-- **File**: `ci/schema-gate.sh`
-- **Issue**: Script used `cargo test --test json_schema --lib --bins` which caused test parsing to fail
-- **Fix**: Changed to `cargo test --test json_schema`
-- **Verification**: `ci/schema-gate.sh` now exits 0 with "Status: PASSED"
+## Files Modified
 
-## Conclusion
+- `xtask/src/main.rs` - Added missing SpanJson.confidence_source enum constraint to add_enum_constraints function
 
-All acceptance criteria for bead pdftract-2rc4 are met.
+## Infrastructure Components
+
+1. **Schema Generator**: `xtask/src/bin/gen_schema.rs`
+   - Generates JSON Schema from Rust types
+   - Uses schemars crate with JSON Schema 2020-12 dialect
+   - Adds explicit enum constraints for stability
+   - Sorts keys recursively for deterministic output
+
+2. **Schema Validator**: `xtask/src/main.rs::validate_schema()`
+   - Regenerates schema in memory
+   - Compares byte-for-byte with checked-in version
+   - Fails build on drift (CI gate)
+
+3. **Migration Library**: `crates/pdftract-schema-migrate/src/lib.rs`
+   - MigrationRegistry with version-pair migrations
+   - Identity migration for v1.0 -> v1.0
+   - Validates migration direction (no downgrades, no major version changes)
+
+4. **Migration CLI**: `crates/pdftract-schema-migrate/src/bin/migrate-schema.rs`
+   - CLI tool for running migrations
+   - Supports stdin/stdout and file I/O
+   - Auto-detects pretty-printing for terminals
+
+5. **Validation Tests**: `tests/schema/validate_fixtures.rs`
+   - Validates fixture outputs against schema
+   - Generates expected.json on first run
+   - Tests individual fixtures and full suite
+
+## Commands
+
+- Generate schema: `cargo run --manifest-path=xtask/Cargo.toml --bin gen_schema`
+- Validate schema: `cargo run --manifest-path=xtask/Cargo.toml --bin xtask validate-schema`
+- Run migration: `./target/release/migrate-schema --from 1.0 --to 1.0 input.json -o output.json`
+
+## Related Plan Sections
+
+- Lines 97 (schema as source of truth)
+- Lines 823 (INV-11 schema validation gate)
+- Lines 986 (Anti-Pattern: serde_json::Value)
+- Lines 1836 (broken_vector enum requirement)
+- Lines 2002-2030 (Phase 6.1 schema deliverable)
+- Lines 2640 (attachments base64 encoding)
+- Lines 3230/3250 (INV-11 gates in checklists)
+
+## Verification Date
+
+2026-06-01

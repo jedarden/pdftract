@@ -21,10 +21,10 @@ final class ConformanceTests: XCTestCase {
         }
     }
 
-    func testBinaryAvailable() throws {
+    func testBinaryAvailable() async throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["pdftract", "--version"]
+        process.arguments = ["sh", "-c", "pdftract --version"]
 
         try process.run()
         process.waitUntilExit()
@@ -32,7 +32,7 @@ final class ConformanceTests: XCTestCase {
         XCTAssertEqual(process.terminationStatus, 0, "pdftract binary not found on PATH")
     }
 
-    func testConformance() throws {
+    func testConformance() async throws {
         guard let suite = suite,
               let cases = suite["cases"] as? [[String: Any]] else {
             throw XCTSkip("No conformance suite loaded")
@@ -42,37 +42,41 @@ final class ConformanceTests: XCTestCase {
             let id = testCase["id"] as? String ?? "unknown"
             let method = testCase["method"] as? String ?? "unknown"
 
-            try runTestCase(testCase, fixturePath: "fixtures/\(testCase["fixture"] as? String ?? "")")
+            try await runTestCase(testCase, fixturePath: "fixtures/\(testCase["fixture"] as? String ?? "")")
         }
     }
 
-    private func runTestCase(_ testCase: [String: Any], fixturePath: String) throws {
+    private func runTestCase(_ testCase: [String: Any], fixturePath: String) async throws {
         guard let method = testCase["method"] as? String else {
             throw XCTSkip("No method specified")
         }
 
         switch method {
         case "extract":
-            try testExtract(fixturePath, assertions: testCase["assertions"] as? [String: Any])
+            try await testExtract(fixturePath, assertions: testCase["assertions"] as? [String: Any])
         case "extract_text":
-            try testExtractText(fixturePath, assertions: testCase["assertions"] as? [String: Any])
+            try await testExtractText(fixturePath, assertions: testCase["assertions"] as? [String: Any])
         case "extract_markdown":
-            try testExtractMarkdown(fixturePath, assertions: testCase["assertions"] as? [String: Any])
+            try await testExtractMarkdown(fixturePath, assertions: testCase["assertions"] as? [String: Any])
         case "get_metadata":
-            try testGetMetadata(fixturePath, assertions: testCase["assertions"] as? [String: Any])
+            try await testGetMetadata(fixturePath, assertions: testCase["assertions"] as? [String: Any])
         case "hash":
-            try testHash(fixturePath, assertions: testCase["assertions"] as? [String: Any])
+            try await testHash(fixturePath, assertions: testCase["assertions"] as? [String: Any])
         case "classify":
-            try testClassify(fixturePath, assertions: testCase["assertions"] as? [String: Any])
+            try await testClassify(fixturePath, assertions: testCase["assertions"] as? [String: Any])
         case "verify_receipt":
-            try testVerifyReceipt(fixturePath, assertions: testCase["assertions"] as? [String: Any])
+            try await testVerifyReceipt(fixturePath, assertions: testCase["assertions"] as? [String: Any])
+        case "search":
+            try await testSearch(fixturePath, assertions: testCase["assertions"] as? [String: Any])
+        case "extract_stream":
+            try await testExtractStream(fixturePath, assertions: testCase["assertions"] as? [String: Any])
         default:
             throw XCTSkip("Method not yet implemented: \(method)")
         }
     }
 
-    private func testExtract(_ fixturePath: String, assertions: [String: Any]?) throws {
-        let doc = try client.extract(PathSource(fixturePath))
+    private func testExtract(_ fixturePath: String, assertions: [String: Any]?) async throws {
+        let doc = try await client.extract(.path(fixturePath))
 
         if let pageCount = assertions?["page_count"] as? Int {
             XCTAssertEqual(doc.pages.count, pageCount)
@@ -83,8 +87,8 @@ final class ConformanceTests: XCTestCase {
         }
     }
 
-    private func testExtractText(_ fixturePath: String, assertions: [String: Any]?) throws {
-        let text = try client.extractText(PathSource(fixturePath))
+    private func testExtractText(_ fixturePath: String, assertions: [String: Any]?) async throws {
+        let text = try await client.extractText(.path(fixturePath))
 
         if let minLen = assertions?["min_length"] as? Int {
             XCTAssertGreaterThanOrEqual(text.count, minLen)
@@ -97,24 +101,24 @@ final class ConformanceTests: XCTestCase {
         }
     }
 
-    private func testExtractMarkdown(_ fixturePath: String, assertions: [String: Any]?) throws {
-        let md = try client.extractMarkdown(PathSource(fixturePath))
+    private func testExtractMarkdown(_ fixturePath: String, assertions: [String: Any]?) async throws {
+        let md = try await client.extractMarkdown(.path(fixturePath))
 
         if let minLen = assertions?["min_length"] as? Int {
             XCTAssertGreaterThanOrEqual(md.count, minLen)
         }
     }
 
-    private func testGetMetadata(_ fixturePath: String, assertions: [String: Any]?) throws {
-        let metadata = try client.getMetadata(PathSource(fixturePath))
+    private func testGetMetadata(_ fixturePath: String, assertions: [String: Any]?) async throws {
+        let metadata = try await client.getMetadata(.path(fixturePath))
 
         if let pageCount = assertions?["page_count"] as? Int {
             XCTAssertEqual(metadata.pageCount, pageCount)
         }
     }
 
-    private func testHash(_ fixturePath: String, assertions: [String: Any]?) throws {
-        let fingerprint = try client.hash(PathSource(fixturePath))
+    private func testHash(_ fixturePath: String, assertions: [String: Any]?) async throws {
+        let fingerprint = try await client.hash(.path(fixturePath))
 
         XCTAssertEqual(fingerprint.hash.count, 64)
         XCTAssertEqual(fingerprint.fastHash.count, 64)
@@ -124,22 +128,52 @@ final class ConformanceTests: XCTestCase {
         }
     }
 
-    private func testClassify(_ fixturePath: String, assertions: [String: Any]?) throws {
-        let classification = try client.classify(PathSource(fixturePath))
+    private func testClassify(_ fixturePath: String, assertions: [String: Any]?) async throws {
+        let classification = try await client.classify(.path(fixturePath))
 
         XCTAssertFalse(classification.category.isEmpty)
         XCTAssertTrue(classification.confidence >= 0 && classification.confidence <= 1)
     }
 
-    private func testVerifyReceipt(_ fixturePath: String, assertions: [String: Any]?) throws {
+    private func testVerifyReceipt(_ fixturePath: String, assertions: [String: Any]?) async throws {
         guard let receipt = assertions?["receipt"] as? String else {
             throw XCTSkip("Receipt not provided in assertions")
         }
 
-        let valid = try client.verifyReceipt(fixturePath, receipt)
+        let receiptStruct = Receipt(data: receipt)
+        let valid = try await client.verifyReceipt(fixturePath, receipt: receiptStruct)
 
         if let expectedValid = assertions?["valid"] as? Bool {
             XCTAssertEqual(valid, expectedValid)
+        }
+    }
+
+    private func testSearch(_ fixturePath: String, assertions: [String: Any]?) async throws {
+        guard let pattern = assertions?["pattern"] as? String else {
+            throw XCTSkip("Pattern not provided in assertions")
+        }
+
+        var matchCount = 0
+        for await _ in client.search(.path(fixturePath), pattern) {
+            matchCount += 1
+            if let maxResults = assertions?["max_results"] as? Int, matchCount >= maxResults {
+                break
+            }
+        }
+
+        if let minMatches = assertions?["min_matches"] as? Int {
+            XCTAssertGreaterThanOrEqual(matchCount, minMatches)
+        }
+    }
+
+    private func testExtractStream(_ fixturePath: String, assertions: [String: Any]?) async throws {
+        var pageCount = 0
+        for await _ in client.extractStream(.path(fixturePath)) {
+            pageCount += 1
+        }
+
+        if let expectedPages = assertions?["page_count"] as? Int {
+            XCTAssertEqual(pageCount, expectedPages)
         }
     }
 }

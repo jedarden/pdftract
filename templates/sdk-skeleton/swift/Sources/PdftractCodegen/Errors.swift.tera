@@ -8,13 +8,18 @@ import Foundation
 import Foundation
 #endif
 
-public class PdftractError: Error {
+/// Base error type for all Pdftract errors.
+public struct PdftractError: Error, LocalizedError {
     public let message: String
     public let exitCode: Int
 
     public init(_ message: String, _ exitCode: Int) {
         self.message = message
         self.exitCode = exitCode
+    }
+
+    public var errorDescription: String? {
+        return message
     }
 
     public var localizedDescription: String {
@@ -25,21 +30,46 @@ public class PdftractError: Error {
 {% for error in errors %}
 {% if error.exit_code != 0 and error.exit_code != 10 %}
 /// {{ error.description }}
-public class {{ error.exception_name }}: PdftractError {
+public struct {{ error.exception_name }}: Error, LocalizedError {
+    public let message: String
+    public let exitCode: Int
+
     public init(_ message: String, _ exitCode: Int) {
-        super.init(message, exitCode)
+        self.message = message
+        self.exitCode = exitCode
+    }
+
+    public var errorDescription: String? {
+        return message
+    }
+
+    public var localizedDescription: String {
+        return message
     }
 }
+
 {% endif %}
 {% endfor %}
-
 {% for error in errors %}
 {% if error.exit_code == 10 %}
 /// {{ error.description }}
-public class {{ error.exception_name }}: PdftractError {
+public struct {{ error.exception_name }}: Error, LocalizedError {
+    public let message: String
+    public let exitCode: Int
+
     public init(_ message: String, _ exitCode: Int) {
-        super.init(message, exitCode)
+        self.message = message
+        self.exitCode = exitCode
+    }
+
+    public var errorDescription: String? {
+        return message
+    }
+
+    public var localizedDescription: String {
+        return message
     }
 }
+
 {% endif %}
 {% endfor %}
