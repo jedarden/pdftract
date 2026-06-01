@@ -19,12 +19,10 @@ bf claim <bead-id> --model claude-code-glm-4.7 --harness needle --harness-versio
 
 ## CRITICAL: how to close a bead
 
-**`bf close <id> --reason "..."` is BROKEN** in the current `bf` binary — it returns `Error: Query returned no rows` for every bead, including freshly-created ones. This is a bf bug, not a workspace problem.
+Close beads with `bf close <id> --reason "..."`:
 
-**Use `bf batch` instead:**
 ```bash
-bf batch --json '[{"op":"close","id":"pdftract-XXX","reason":"<one-line summary referencing commits/notes/test results>"}]'
-# Expected output: [op 0] ok
+bf close pdftract-XXX --reason "Implemented feature X. Closes pdftract-XXX. Verification: notes/pdftract-XXX.md, commit abc123. Tests: PASS (criteria A, B), WARN (infra issue C)."
 ```
 
 The `--reason` should be substantive: cite the git commits you made, the path to the verification note you wrote, the test fixtures you exercised, and any WARN/PASS items in the acceptance criteria. The reason is the only durable record of *why* you closed; treat it as the close commit message.
@@ -92,7 +90,7 @@ For each bead:
 4. **Write a verification note** at `notes/<bead-id>.md` summarizing what was done, which acceptance criteria PASS/WARN/FAIL, with file paths, commit hashes, command outputs
 5. **Commit** with a Conventional Commits message: `<type>(<bead-id-tag>): <summary>` — body cites the bead, lists the artifacts produced
 5a. **Push** via `git push forgejo main` — push immediately after committing so Forgejo reflects the work
-6. **Close the bead** via `bf batch --json '[{"op":"close","id":"pdftract-XXX","reason":"<cite note + commits + PASS/WARN/FAIL summary>"}]'`
+6. **Close the bead** via `bf close pdftract-XXX --reason "<cite note + commits + PASS/WARN/FAIL summary>"`
 7. **Flush** via `bf sync --flush-only`
 
 If acceptance criteria contain WARN items due to environmental issues (missing CLI tools, transient infra, etc.), document them clearly in the close reason and the verification note. The bead may still close if the WARNs are infra-related and out of scope. PASS the substantive criteria; WARN the infra ones; FAIL only true blockers.
@@ -141,13 +139,6 @@ never advanced to the next bead. The worker made it worse by spawning four overl
 4. **Leave no orphans when the iteration ends.** Before closing the bead and exiting,
    confirm nothing you spawned is still alive — `pgrep -af 'pdftract mcp|TH_0|TH-0'` must be
    empty.
-
-## What NOT to do (anti-loops)
-
-The worker that ran before YOU did this loop and wasted hours:
-- Claimed `pdftract-1wqec` → did real verification work → tried `bf close --reason` (FAILED with Query returned no rows) → bead reverted to open via mend strand → re-claimed → repeat × 20
-
-If `bf close` fails on you, DO NOT just retry the same way. Try `bf batch --json` instead. If that ALSO fails, surface the failure and stop — don't burn cycles in a futile loop.
 
 ## bf-specific features now available
 
