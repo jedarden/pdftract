@@ -271,6 +271,7 @@ spec:
           add_step "memory-ceiling" "$WORKFLOW_PHASE"
           add_step "log-policy-check" "$WORKFLOW_PHASE"
           add_step "schema-gen" "$WORKFLOW_PHASE"
+          add_step "cli-ref-gen" "$WORKFLOW_PHASE"
           add_step "wer-gate" "$WORKFLOW_PHASE"
           add_step "bench-matrix" "$WORKFLOW_PHASE"
           add_step "regression-corpus" "$WORKFLOW_PHASE"
@@ -1170,6 +1171,8 @@ spec:
             template: log-policy-check
           - name: schema-gen
             template: schema-gen
+          - name: cli-ref-gen
+            template: cli-ref-gen
 
     # === Clippy and Fmt Check ===
     # Runs clippy with warnings denied and INV-8 unwrap/expect enforcement.
@@ -1930,6 +1933,98 @@ spec:
             echo ""
             echo "=== Schema generation check passed ==="
             echo "Schema is up to date: $SCHEMA_FILE"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+
+    # === CLI Reference Generation Check ===
+    # Regenerates CLI reference documentation from clap definitions and verifies it matches the committed file.
+    #
+    # This is a Tier 1 hard gate from the DOC epic. It ensures the auto-generated CLI reference
+    # stays in sync with the clap derive annotations. Without this gate, CLI changes silently
+    # slip past code review and the published documentation becomes incorrect.
+    #
+    # Bead: pdftract-1j0f8
+    # Plan section: DOC epic
+    #
+    # Enforcement policy:
+    # - CLI reference is regenerated via cargo run --bin gen-cli-reference
+    # - Regenerated output is compared to committed docs/user-docs/src/cli-reference.md
+    # - Any diff (including whitespace, formatting) fails the build
+    # - Error message includes exact reproduction command
+    # - Hand-curated content after <!-- AUTOGEN END --> marker is preserved across regenerations
+    - name: cli-ref-gen
+      activeDeadlineSeconds: 300
+      container:
+        image: ronaldraygun/pdftract-test-glibc:1.78
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+
+            echo "=========================================="
+            echo "CLI Reference Generation Check"
+            echo "=========================================="
+
+            cd /workspace
+            export CARGO_HOME="/cache/cargo/registry"
+            export CARGO_TARGET_DIR="/cache/cargo/target-cli-ref-gen"
+
+            echo "=== Regenerating CLI reference ==="
+            echo "Command: cargo run --bin gen-cli-reference"
+            cargo run --bin gen-cli-reference -- --output docs/user-docs/src/cli-reference.md || {
+              EXIT_CODE=$?
+
+              echo "=========================================="
+              echo "CLI REFERENCE GENERATION FAILED"
+              echo "=========================================="
+              echo ""
+              echo "The CLI reference generation command crashed with exit code $EXIT_CODE."
+              echo "This is likely a bug in the generator, not a documentation mismatch."
+              echo ""
+              echo "Check the output above for specific errors."
+
+              exit $EXIT_CODE
+            }
+
+            echo ""
+            echo "=== Comparing to committed CLI reference ==="
+            CLI_REF_FILE="docs/user-docs/src/cli-reference.md"
+
+            if ! git diff --exit-code "$CLI_REF_FILE"; then
+              echo "=========================================="
+              echo "CLI REFERENCE MISMATCH DETECTED"
+              echo "=========================================="
+              echo ""
+              echo "The regenerated CLI reference differs from the committed file:"
+              echo "  File: $CLI_REF_FILE"
+              echo ""
+              echo "To fix this issue:"
+              echo "  1. Run locally: cargo run --bin gen-cli-reference"
+              echo "  2. Commit the regenerated CLI reference file"
+              echo "  3. Push the commit"
+              echo ""
+              echo "Note: Hand-curated content after <!-- AUTOGEN END --> is preserved."
+              echo "Only add such content after running the generator."
+              echo ""
+              echo "Diff:"
+              git diff "$CLI_REF_FILE"
+
+              exit 1
+            fi
+
+            echo ""
+            echo "=== CLI reference generation check passed ==="
+            echo "CLI reference is up to date: $CLI_REF_FILE"
         volumeMounts:
           - name: workspace
             mountPath: /workspace

@@ -8,7 +8,7 @@
 
 ---
 
-- [CLI Reference](./cli/README.md)
+- [CLI Reference](./cli-reference.md)
   - [Global Options](./cli/global-options.md)
   - [extract](./cli/extract.md)
   - [serve](./cli/serve.md)
