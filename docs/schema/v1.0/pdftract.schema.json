@@ -762,92 +762,289 @@
       ],
       "type": "object"
     },
-    "ExtractionMetadata": {
-      "description": "Metadata about the extraction process.",
+    "DestinationJson": {
+      "description": "JSON representation of a destination anchor.\n\nDescribes a specific location within a PDF page.",
       "properties": {
-        "block_count": {
-          "description": "Number of blocks extracted.",
-          "format": "uint",
-          "minimum": 0,
-          "type": "integer"
+        "bottom": {
+          "description": "Bottom coordinate (user-space points), present only for \"fitr\".",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
         },
-        "cache_age_seconds": {
-          "description": "Cache entry age in seconds (only present when cache_status == \"hit\")",
-          "format": "uint64",
+        "left": {
+          "description": "Left coordinate (user-space points), present for \"xyz\", \"fitv\", \"fitr\", \"fitbv\".",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "right": {
+          "description": "Right coordinate (user-space points), present only for \"fitr\".",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "top": {
+          "description": "Top coordinate (user-space points), present for \"xyz\", \"fith\", \"fitr\", \"fitbh\".",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "type": {
+          "description": "Destination type: \"xyz\", \"fit\", \"fith\", \"fitv\", \"fitr\", \"fitb\", \"fitbh\", \"fitbv\".",
+          "type": "string"
+        },
+        "zoom": {
+          "description": "Zoom factor, present only for \"xyz\".",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "DiagnosticJson": {
+      "description": "JSON representation of a diagnostic error.\n\nThis struct wraps the internal Diagnostic type for JSON serialization,\nproviding stable error codes and human-readable messages for consumers.",
+      "properties": {
+        "code": {
+          "description": "Stable string identifier for this diagnostic (e.g., \"FONT_GLYPH_UNMAPPED\").",
+          "type": "string"
+        },
+        "hint": {
+          "description": "Optional hint for resolving the diagnostic (e.g., \"Install Tesseract for OCR recovery\").",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "location": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ObjectLocationJson"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "PDF object reference where the issue originated, if applicable."
+        },
+        "message": {
+          "description": "Human-readable description of the diagnostic.",
+          "type": "string"
+        },
+        "page_index": {
+          "description": "Page index where this diagnostic occurred, or `null` for document-level events.",
+          "format": "uint",
           "minimum": 0,
           "type": [
             "integer",
             "null"
           ]
         },
-        "cache_status": {
-          "description": "Cache status: \"hit\", \"miss\", or \"skipped\"",
+        "severity": {
+          "description": "Severity level: \"info\", \"warning\", \"error\", or \"fatal\".",
+          "enum": [
+            "info",
+            "warning",
+            "error",
+            "fatal"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "severity"
+      ],
+      "type": "object"
+    },
+    "DocumentMetadata": {
+      "description": "JSON representation of document metadata.\n\nContains all standard PDF document information dictionary fields along\nwith derived signals from the document catalog.",
+      "properties": {
+        "author": {
+          "description": "PDF /Author - name of the person who created the document.",
           "type": [
             "string",
             "null"
           ]
         },
-        "diagnostics": {
-          "description": "Diagnostics emitted during extraction (coverage warnings, etc.)",
+        "conformance": {
+          "default": "none",
+          "description": "PDF/A or PDF/UA conformance level.\n\nOne of: \"none\", \"PDF-A-1a\", \"PDF-A-1b\", \"PDF-A-2a\", \"PDF-A-2b\", \"PDF-A-2u\",\n\"PDF-A-3a\", \"PDF-A-3b\", \"PDF-A-3u\", \"PDF-UA-1\", \"PDF-UA-2\", \"PDF-X-1a\".",
+          "type": "string"
+        },
+        "contains_javascript": {
+          "description": "True if JavaScript actions are present in the document.",
+          "type": "boolean"
+        },
+        "contains_xfa": {
+          "description": "True if XFA forms are present.",
+          "type": "boolean"
+        },
+        "creation_date": {
+          "description": "PDF /CreationDate - ISO-8601 string from /CreationDate.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "creator": {
+          "description": "PDF /Creator - the authoring application (e.g., \"Microsoft Word 2019\").",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "generator": {
+          "description": "Heuristic string identifying the producing application.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "is_encrypted": {
+          "description": "True if document is encrypted.",
+          "type": "boolean"
+        },
+        "is_tagged": {
+          "description": "True if /MarkInfo /Marked: true is present.",
+          "type": "boolean"
+        },
+        "javascript_actions": {
+          "default": [],
+          "description": "JavaScript actions found in the document.\n\nPer TH-04, this array contains all discovered JavaScript actions\nwith their location and code excerpt. Empty when no JS is present.",
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/JavascriptActionJson"
           },
           "type": "array"
         },
-        "error_count": {
-          "description": "Number of pages that failed to extract.",
-          "format": "uint",
-          "minimum": 0,
-          "type": "integer"
+        "keywords": {
+          "description": "PDF /Keywords - space- or comma-delimited keyword list.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "modification_date": {
+          "description": "PDF /ModDate - ISO-8601 string from /ModDate.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ocg_present": {
+          "description": "True if optional content groups (layers) are present.",
+          "type": "boolean"
         },
         "page_count": {
           "description": "Total number of pages in the document.",
-          "format": "uint",
+          "format": "uint32",
           "minimum": 0,
           "type": "integer"
         },
-        "profile_fields": {
-          "description": "Extracted fields from profile if a profile was applied (Phase 7.10)"
-        },
-        "profile_name": {
-          "description": "Profile name if a profile was applied (Phase 7.10)",
+        "pdf_version": {
+          "description": "PDF version (e.g., \"1.7\", \"2.0\").",
           "type": [
             "string",
             "null"
           ]
         },
-        "profile_version": {
-          "description": "Profile version if a profile was applied (Phase 7.10)",
+        "producer": {
+          "description": "PDF /Producer - the PDF-writing library (e.g., \"Acrobat Distiller 23.0\").",
           "type": [
             "string",
             "null"
           ]
         },
-        "reading_order_algorithm": {
-          "description": "Reading order algorithm used for this extraction.",
+        "subject": {
+          "description": "PDF /Subject - subject matter summary.",
           "type": [
             "string",
             "null"
           ]
         },
-        "receipts_mode": {
-          "$ref": "#/$defs/ReceiptsMode",
-          "description": "Receipts mode used for this extraction."
-        },
-        "span_count": {
-          "description": "Number of spans extracted.",
-          "format": "uint",
-          "minimum": 0,
-          "type": "integer"
+        "title": {
+          "description": "PDF /Title - document title.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
         "page_count",
-        "receipts_mode",
-        "span_count",
-        "block_count",
-        "error_count",
-        "diagnostics"
+        "is_tagged",
+        "is_encrypted",
+        "contains_javascript",
+        "contains_xfa",
+        "ocg_present"
+      ],
+      "type": "object"
+    },
+    "ExtractionQuality": {
+      "description": "Extraction quality metrics for the document.\n\nThis structure appears in the document footer (NDJSON mode) or\nin the root metadata (full JSON mode). It provides aggregate\nquality signals across all pages.",
+      "properties": {
+        "avg_confidence": {
+          "description": "Average confidence score across all spans [0.0, 1.0].",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "dpi_used": {
+          "description": "DPI used for OCR rendering (Phase 5.2).\n\nThis field records the DPI selected by the automatic DPI selection\nalgorithm (or the user-specified override). It is present when OCR\nwas performed on any page.\n\nValues: 200 (JBIG2), 300 (standard), 400 (fine print), or custom",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "min_confidence": {
+          "description": "Minimum confidence score across all spans [0.0, 1.0].\n\nThis represents the weakest link in the extraction chain.",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "ocr_fraction": {
+          "description": "Fraction of pages that required OCR fallback [0.0, 1.0].\n\nThis is the count of pages classified as \"scanned\" or \"mixed\"\ndivided by the total page count.",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "overall_quality": {
+          "description": "Overall quality assessment: \"high\", \"medium\", \"low\", or \"none\".\n\n- \"high\": All pages extracted successfully with high confidence\n- \"medium\": Most pages extracted, some with lower confidence\n- \"low\": Significant extraction issues (many low-confidence pages)\n- \"none\": No extractable content found (all blank pages)",
+          "type": "string"
+        },
+        "readability": {
+          "description": "Per-page readability score (char-weighted median of span scores) [0.0, 1.0].\n\nThis is the median of per-span readability scores, weighted by character count.\nA score below 0.5 may indicate mojibake, encoding issues, or broken text layers.",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "overall_quality"
       ],
       "type": "object"
     },
@@ -1106,41 +1303,104 @@
       ],
       "type": "object"
     },
-    "PageResult": {
-      "description": "Result for a single page.",
+    "ObjectLocationJson": {
+      "description": "JSON representation of a PDF object reference.\n\nIdentifies a specific PDF indirect object by its object and generation numbers.",
+      "properties": {
+        "generation_number": {
+          "description": "Generation number (incremented on each save).",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "object_number": {
+          "description": "Object number (zero-based index in the xref table).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "object_number",
+        "generation_number"
+      ],
+      "type": "object"
+    },
+    "OutlineNode": {
+      "description": "JSON representation of an outline node (bookmark).\n\nRepresents a single node in the document's outline hierarchy, with support\nfor nested children via the `children` field.",
+      "properties": {
+        "children": {
+          "default": [],
+          "description": "Nested child outlines (empty array for leaf nodes).",
+          "items": {
+            "$ref": "#/$defs/OutlineNode"
+          },
+          "type": "array"
+        },
+        "destination": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DestinationJson"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Destination type and coordinates within the page."
+        },
+        "level": {
+          "description": "Hierarchical level in the outline tree (0-based, root is 0).",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "page_index": {
+          "description": "Zero-based page index this outline points to, if resolved.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "title": {
+          "description": "The outline title text (decoded to UTF-8).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "level"
+      ],
+      "type": "object"
+    },
+    "PageJson": {
+      "description": "JSON representation of a single page.\n\nContains all page-level fields including geometry, classification,\nand content arrays (spans, blocks, tables, annotations).",
       "properties": {
         "annotations": {
           "default": [],
-          "description": "Page-level annotations (highlights, stamps, notes, etc.).\n\nThis array contains all non-link annotations on this page.\nAnnotations are sorted by (rect.y0 desc, rect.x0) for deterministic output.\nEmpty when the page has no annotations.",
+          "description": "Page-level annotations (highlights, stamps, notes, links).\n\nEmpty until Phase 7.2; always present as an array.",
           "items": {
             "$ref": "#/$defs/AnnotationJson"
           },
           "type": "array"
         },
         "blocks": {
-          "description": "Extracted blocks (semantic units like paragraphs, headings).",
+          "default": [],
+          "description": "Semantic blocks (paragraphs, headings, lists, tables, etc.).",
           "items": {
             "$ref": "#/$defs/BlockJson"
           },
           "type": "array"
         },
-        "error": {
-          "description": "Error message if extraction failed for this page.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
         "height": {
           "description": "Page height in points (1/72 inch).",
           "format": "float",
-          "type": [
-            "number",
-            "null"
-          ]
+          "type": "number"
         },
-        "index": {
-          "description": "0-based page index.",
+        "page_index": {
+          "description": "Zero-based page index, canonical for programmatic use.\n\nThis is the stable identifier used in all internal references.",
           "format": "uint",
           "minimum": 0,
           "type": "integer"
@@ -1153,7 +1413,7 @@
           ]
         },
         "page_number": {
-          "description": "1-based page number (= index + 1).\n\nEmitted as a convenience for human-facing display. For programmatic\naccess, use index instead.",
+          "description": "One-based page number (= page_index + 1).\n\nEmitted as a convenience for human-facing display. For programmatic\naccess, use page_index instead.",
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
@@ -1163,20 +1423,19 @@
           "format": "uint16",
           "maximum": 65535,
           "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
+          "type": "integer"
         },
         "spans": {
-          "description": "Extracted spans (text fragments with consistent styling).",
+          "default": [],
+          "description": "Text spans (atomic units with consistent font and styling).",
           "items": {
             "$ref": "#/$defs/SpanJson"
           },
           "type": "array"
         },
         "tables": {
-          "description": "Extracted tables (cell-level structure).\n\nThis array provides detailed table structure with rows and cells.\nTable blocks in the `blocks` array reference entries here via `table_index`.",
+          "default": [],
+          "description": "Parallel table structure objects.",
           "items": {
             "$ref": "#/$defs/TableJson"
           },
@@ -1192,26 +1451,21 @@
             "blank",
             "figure_only"
           ],
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": "string"
         },
         "width": {
           "description": "Page width in points (1/72 inch).",
           "format": "float",
-          "type": [
-            "number",
-            "null"
-          ]
+          "type": "number"
         }
       },
       "required": [
-        "index",
+        "page_index",
         "page_number",
-        "spans",
-        "blocks",
-        "tables"
+        "width",
+        "height",
+        "rotation",
+        "type"
       ],
       "type": "object"
     },
@@ -1262,26 +1516,6 @@
         "extraction_version"
       ],
       "type": "object"
-    },
-    "ReceiptsMode": {
-      "description": "Receipt generation mode.\n\nControls whether visual citation receipts are generated during extraction.",
-      "oneOf": [
-        {
-          "const": "off",
-          "description": "No receipts generated (default).",
-          "type": "string"
-        },
-        {
-          "const": "lite",
-          "description": "Lite mode: minimal receipts (~120 bytes each) with fingerprint, page index, bbox, and content hash.",
-          "type": "string"
-        },
-        {
-          "const": "svg",
-          "description": "SVG mode: extended receipts that include an SVG clip rendering the glyphs.",
-          "type": "string"
-        }
-      ]
     },
     "RowJson": {
       "description": "JSON representation of a table row.\n\nA row contains a sequence of cells that form a horizontal strip\nin the table.",
@@ -1426,11 +1660,9 @@
         "confidence_source": {
           "description": "Source of the confidence/text extraction.\n\nOne of: \"vector\" (native font decoding), \"ocr\" (pure OCR),\n\"ocr-assisted\" (OCR + vector correction), \"ocr-fallback\" (region-level fallback),\n\"repaired\" (text was repaired via heuristics).",
           "enum": [
-            "vector",
-            "ocr",
-            "ocr-assisted",
-            "ocr-fallback",
-            "repaired"
+            "native",
+            "heuristic",
+            "ocr"
           ],
           "type": [
             "string",
@@ -1603,58 +1835,75 @@
   "description": "JSON Schema for pdftract PDF extraction output v1.0. This schema defines the structure of extraction results including pages, spans, blocks, tables, form fields, signatures, and metadata.",
   "properties": {
     "attachments": {
-      "description": "Embedded file attachments extracted from the document.\n\nThis array contains all embedded files from the PDF's `/EmbeddedFiles`\nname tree or `/AF` (Associated Files) array. Attachments exceeding\n50 MB are truncated (metadata only, `data: null`, `truncated: true`).\nEmpty when the PDF has no embedded files.",
+      "default": [],
+      "description": "Embedded file attachments.\n\nEmpty until Phase 7.5; always present as an array.",
       "items": {
         "$ref": "#/$defs/AttachmentJson"
       },
       "type": "array"
     },
-    "fingerprint": {
-      "description": "The PDF fingerprint (for receipt generation).",
-      "type": "string"
+    "errors": {
+      "default": [],
+      "description": "All diagnostics emitted during extraction.",
+      "items": {
+        "$ref": "#/$defs/DiagnosticJson"
+      },
+      "type": "array"
+    },
+    "extraction_quality": {
+      "$ref": "#/$defs/ExtractionQuality",
+      "description": "Aggregate extraction quality metrics."
     },
     "form_fields": {
-      "description": "Interactive form fields extracted from the document.\n\nThis array contains all form fields from the AcroForm and/or XFA data.\nFields are sorted alphabetically by name. When both AcroForm and XFA\nare present, XFA values take precedence on collision.\nEmpty when the PDF has no form fields.",
+      "default": [],
+      "description": "AcroForm/XFA form fields.\n\nEmpty until Phase 7.4; always present as an array.",
       "items": {
         "$ref": "#/$defs/FormFieldJson"
       },
       "type": "array"
     },
-    "javascript_actions": {
-      "default": [],
-      "description": "JavaScript actions detected in the document.\n\nPer TH-04, this array contains all discovered JavaScript actions\nwith their location and code excerpt. pdftract NEVER executes\nembedded JavaScript; this is for downstream security review.\nEmpty when no JavaScript is present.",
-      "items": {
-        "$ref": "#/$defs/JavascriptActionJson"
-      },
-      "type": "array"
-    },
     "links": {
-      "description": "Document-scoped hyperlinks extracted from the document.\n\nThis array contains all link annotations (URI and internal destination links)\nextracted from all pages. Links are sorted by (page_index, rect.y0 desc, rect.x0).\nEmpty when the PDF has no link annotations.",
+      "default": [],
+      "description": "Document-scoped hyperlinks.\n\nEmpty until Phase 7.6; always present as an array.",
       "items": {
         "$ref": "#/$defs/LinkJson"
       },
       "type": "array"
     },
     "metadata": {
-      "$ref": "#/$defs/ExtractionMetadata",
-      "description": "Metadata about the extraction."
+      "$ref": "#/$defs/DocumentMetadata",
+      "description": "Document-level metadata."
     },
-    "pages": {
-      "description": "Extracted pages, each containing spans and blocks.",
+    "outline": {
+      "default": [],
+      "description": "Document outline (bookmark tree).\n\nEmpty array if no bookmarks are present.",
       "items": {
-        "$ref": "#/$defs/PageResult"
+        "$ref": "#/$defs/OutlineNode"
       },
       "type": "array"
     },
+    "pages": {
+      "description": "Page objects array.",
+      "items": {
+        "$ref": "#/$defs/PageJson"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "description": "Schema version identifier (e.g., \"1.0\").",
+      "type": "string"
+    },
     "signatures": {
-      "description": "Digital signatures extracted from the document.\n\nThis array contains all signature fields discovered in the AcroForm,\nincluding both signed and unsigned (blank) signature fields.\nEmpty when the PDF has no signature fields.",
+      "default": [],
+      "description": "Digital signature metadata.\n\nEmpty until Phase 7.3; always present as an array.",
       "items": {
         "$ref": "#/$defs/SignatureJson"
       },
       "type": "array"
     },
     "threads": {
-      "description": "Article thread chains extracted from the document.\n\nThis array contains all article threads from the PDF's `/Threads` array.\nEach thread includes metadata from the thread info dict (/I) and the\ncomplete bead chain walked from the first bead. Empty when the PDF has\nno article threads.",
+      "default": [],
+      "description": "Article thread chains.\n\nEmpty until Phase 7.1; always present as an array.",
       "items": {
         "$ref": "#/$defs/ThreadJson"
       },
@@ -1662,14 +1911,10 @@
     }
   },
   "required": [
-    "fingerprint",
-    "pages",
+    "schema_version",
     "metadata",
-    "signatures",
-    "form_fields",
-    "links",
-    "attachments",
-    "threads"
+    "pages",
+    "extraction_quality"
   ],
   "title": "pdftract Output v1.0",
   "type": "object"
