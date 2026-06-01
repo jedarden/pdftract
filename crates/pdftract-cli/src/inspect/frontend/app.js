@@ -450,7 +450,7 @@ function setupTooltips(svg){
         lines.push(`Confidence: ${target.dataset.confidence}`);
       }
     }
-    // Handle span rects (data-text, data-font, data-size, data-confidence)
+    // Handle span rects (data-text, data-font, data-size, data-confidence, data-bbox, data-block-ref, data-mcid, data-reading-idx)
     else if(target.dataset.text!==undefined){
       if(target.dataset.text)lines.push(`Text: ${target.dataset.text}`);
       if(target.dataset.font){
@@ -460,6 +460,10 @@ function setupTooltips(svg){
       if(target.dataset.confidence&&target.dataset.confidence!==''){
         lines.push(`Confidence: ${target.dataset.confidence}`);
       }
+      if(target.dataset.bbox)lines.push(`BBox: ${target.dataset.bbox}`);
+      if(target.dataset.blockRef!==undefined)lines.push(`Block: ${target.dataset.blockRef}`);
+      if(target.dataset.mcid!==undefined)lines.push(`MCID: ${target.dataset.mcid}`);
+      if(target.dataset.readingIdx!==undefined)lines.push(`Reading Order: ${target.dataset.readingIdx}`);
     }
 
     if(lines.length){
