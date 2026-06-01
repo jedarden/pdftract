@@ -1,0 +1,15 @@
+Clinical Trial: Drug Efficacy Study
+Background
+This double-blind study evaluated the efficacy of Drug X for treating hypertension.
+Methodology
+500 patients were randomized into treatment and placebo groups.
+The study duration was 24 weeks with regular monitoring.
+Results
+The treatment group showed a 25% greater reduction in systolic blood pressure.
+Side effects were mild and reported in less than 5% of patients.
+Discussion
+Drug X demonstrates significant efficacy compared to placebo.
+The safety profile is favorable with minimal adverse reactions.
+Conclusion
+Drug X is recommended for treatment of hypertension in adult patients.
+Further studies should explore long-term effects and optimal dosing.

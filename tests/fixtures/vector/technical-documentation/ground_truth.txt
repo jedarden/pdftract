@@ -1,0 +1,15 @@
+Getting Started
+To use the API, first obtain an authentication token from the dashboard.
+Include this token in the Authorization header of all requests.
+Authentication
+All API requests require authentication using a Bearer token.
+Tokens expire after 24 hours and must be refreshed.
+Endpoints
+GET /api/users - Retrieve a list of users
+POST /api/users - Create a new user
+GET /api/users/:id - Retrieve a specific user
+PUT /api/users/:id - Update a user
+DELETE /api/users/:id - Delete a user
+Rate Limits
+The API has a rate limit of 1000 requests per hour per user.
+Exceeding this limit will result in a 429 Too Many Requests response.

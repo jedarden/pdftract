@@ -1,0 +1,23 @@
+libpdf - PDF Processing Library
+Installation
+pip install libpdf
+Quick Example
+from libpdf import Document
+doc = Document('example.pdf')
+text = doc.extract_text()
+API Reference
+Document.open(path)
+Opens a PDF file for reading.
+Document.extract_text()
+Extracts all text content from the document.
+Document.get_page_count()
+Returns the number of pages in the document.
+Supported Formats
+PDF 1.0 through PDF 2.0
+Encrypted PDFs (with password)
+Forms and annotations
+Limitations
+OCR requires additional dependencies.
+Very large files may require streaming mode.
+License
+MIT License - see LICENSE file for details.

@@ -1,5 +1,6 @@
 // pdftract inspector - Phase 7.9.3 frontend bundle
 // Phase 7.9.8: Comparison mode support
+// Phase 7.9.7: URL fragment routing for shareable links and browser back/forward
 
 const STORAGE_PREFIX='pdftract-inspector-';
 const LAYERS=['spans','blocks','columns','reading-order','confidence-heatmap','ocr','mcid','anchors','diff'];
@@ -15,8 +16,9 @@ let pageDiff=null;
 let scrollSync=true;
 let matchedSpans=[];
 let currentMatchIndex=-1;
+let isUpdatingFragment=false; // Flag to prevent double-render on hashchange
 
-function init(){loadLayerState();setupKeyboard();setupToggles();setupSearch();setupNav();setupComparisonMode();setupHelp();loadFragment()}
+function init(){loadLayerState();setupKeyboard();setupToggles();setupSearch();setupNav();setupComparisonMode();setupHelp();setupHashChange();loadFragment()}
 
 async function loadDocument(){
   const res=await fetch('/api/document');
@@ -45,7 +47,6 @@ async function loadDocument(){
   }
 
   renderThumbnails();
-  loadFragment()
 }
 
 async function loadPage(index){
@@ -392,7 +393,12 @@ function loadLayerState(){
 }
 
 function saveLayerState(active){
-  localStorage.setItem(STORAGE_PREFIX+'layers',active.join(','))
+  try{
+    localStorage.setItem(STORAGE_PREFIX+'layers',active.join(','))
+  }catch(e){
+    // localStorage might be disabled (e.g., privacy mode)
+    console.warn('Failed to save layer state to localStorage:',e)
+  }
 }
 
 function applyLayers(active){
@@ -663,10 +669,9 @@ function renderThumbnails(){
     container.appendChild(btn);
 
     btn.addEventListener('click',()=>{
-      if(parseInt(btn.dataset.index)===currentPage)return;
-      loadPage(parseInt(btn.dataset.index));
-      history.pushState(null,'',`#page=${btn.dataset.index}`);
-      window.dispatchEvent(new HashChangeEvent('hashchange'));
+      const targetPage=parseInt(btn.dataset.index);
+      if(targetPage===currentPage)return;
+      loadPage(targetPage);
     });
   }
 
@@ -715,16 +720,92 @@ function toggleHelp(show){
   }
 }
 
+// URL fragment routing functions
+function setupHashChange(){
+  window.addEventListener('hashchange',onHashChange);
+}
+
+function onHashChange(){
+  // Skip if we're the ones updating the fragment
+  if(isUpdatingFragment)return;
+
+  const page=parsePageFromHash();
+  if(page===null)return; // Invalid hash, ignore
+
+  // If document not loaded yet, load it first
+  if(totalPages===0){
+    loadDocument().then(()=>{
+      handleHashPage(page);
+    });
+    return;
+  }
+
+  handleHashPage(page);
+}
+
+function handleHashPage(page){
+  // Clamp to valid range
+  if(page<0){
+    console.warn(`Page ${page} is out of range, defaulting to 0`);
+    page=0;
+  }else if(page>=totalPages){
+    console.warn(`Page ${page} is out of range (total pages: ${totalPages}), clamping to ${totalPages-1}`);
+    page=totalPages-1;
+  }
+
+  // Only load if different from current page
+  if(page!==currentPage){
+    loadPage(page);
+  }
+}
+
+function parsePageFromHash(){
+  const match=/#page=(\d+)/.exec(location.hash);
+  if(!match)return null; // No page in hash
+
+  const page=parseInt(match[1],10);
+  if(isNaN(page)){
+    console.warn(`Invalid page number in hash: ${match[1]}`);
+    return 0; // Default to page 0 for invalid numbers
+  }
+  if(page<0){
+    console.warn(`Negative page number in hash: ${page}`);
+    return 0;
+  }
+  return page;
+}
+
 function updateFragment(){
-  history.replaceState(null,'',`#page=${currentPage}`)
+  // Set flag to prevent hashchange from triggering a page load
+  isUpdatingFragment=true;
+  history.replaceState(null,'',`#page=${currentPage}`);
+  // Use setTimeout to reset the flag after the event loop
+  setTimeout(()=>{
+    isUpdatingFragment=false;
+  },0);
 }
 
 function loadFragment(){
-  const match=/#page=(\d+)/.exec(location.hash);
-  if(match){
-    const page=parseInt(match[1]);
-    if(page>=0)page<totalPages?loadPage(page):loadDocument().then(()=>page<totalPages&&loadPage(page))
-  }else loadDocument()
+  // If document metadata is already loaded, handle fragment immediately
+  if(totalPages>0){
+    const page=parsePageFromHash();
+    if(page!==null){
+      handleHashPage(page);
+    }else{
+      // No valid hash, load page 0
+      loadPage(0);
+    }
+  }else{
+    // Document not loaded yet, load it then handle fragment
+    loadDocument().then(()=>{
+      const page=parsePageFromHash();
+      if(page!==null){
+        handleHashPage(page);
+      }else{
+        loadPage(0);
+      }
+    });
+  }
 }
 
 function setupTooltips(svg){
