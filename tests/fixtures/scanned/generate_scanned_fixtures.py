@@ -80,9 +80,9 @@ def create_pdf_from_text(source_text_path, output_pdf_path, config):
     with open(source_text_path, 'r', encoding='utf-8') as f:
         text = f.read()
 
-    # Create PDF canvas
+    # Create PDF canvas (convert Path to string for reportlab)
     page_width, page_height = config["page_size"]
-    c = canvas.Canvas(output_pdf_path, pagesize=config["page_size"])
+    c = canvas.Canvas(str(output_pdf_path), pagesize=config["page_size"])
 
     # Set font
     c.setFont(config["font"], config["font_size"])
@@ -152,7 +152,7 @@ def rasterize_pdf_to_scanned(pdf_path, scanned_pdf_path, dpi=300):
         with tempfile.TemporaryDirectory() as tmpdir:
             # Convert PDF to PPM images
             result = subprocess.run(
-                ["pdftoppm", "-r", str(dpi), pdf_path, os.path.join(tmpdir, "page")],
+                ["pdftoppm", "-r", str(dpi), str(pdf_path), os.path.join(tmpdir, "page")],
                 capture_output=True,
                 text=True
             )
@@ -160,7 +160,7 @@ def rasterize_pdf_to_scanned(pdf_path, scanned_pdf_path, dpi=300):
             if result.returncode != 0:
                 print(f"  Warning: pdftoppm failed, copying original PDF")
                 import shutil
-                shutil.copy(pdf_path, scanned_pdf_path)
+                shutil.copy(str(pdf_path), str(scanned_pdf_path))
                 return
 
             # Convert images back to PDF
@@ -169,13 +169,13 @@ def rasterize_pdf_to_scanned(pdf_path, scanned_pdf_path, dpi=300):
             if not images:
                 print(f"  Warning: No images generated, copying original PDF")
                 import shutil
-                shutil.copy(pdf_path, scanned_pdf_path)
+                shutil.copy(str(pdf_path), str(scanned_pdf_path))
                 return
 
             # Convert images to PDF using img2pdf or PIL
             try:
                 import img2pdf
-                with open(scanned_pdf_path, "wb") as f:
+                with open(str(scanned_pdf_path), "wb") as f:
                     f.write(img2pdf.convert([str(img) for img in images]))
                 print(f"  Created scanned: {scanned_pdf_path}")
             except ImportError:
@@ -187,7 +187,7 @@ def rasterize_pdf_to_scanned(pdf_path, scanned_pdf_path, dpi=300):
 
                 if pdf_images:
                     pdf_images[0].save(
-                        scanned_pdf_path,
+                        str(scanned_pdf_path),
                         save_all=True,
                         append_images=pdf_images[1:],
                         resolution=dpi
@@ -197,7 +197,7 @@ def rasterize_pdf_to_scanned(pdf_path, scanned_pdf_path, dpi=300):
     except Exception as e:
         print(f"  Warning: Rasterization failed ({e}), using original PDF")
         import shutil
-        shutil.copy(pdf_path, scanned_pdf_path)
+        shutil.copy(str(pdf_path), str(scanned_pdf_path))
 
 
 def generate_all_fixtures():
