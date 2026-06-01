@@ -21,16 +21,14 @@ pdftract-core = { version = "1.0", features = ["ocr"] }
 ## Basic Extraction
 
 ```rust
-use pdftract_core::{extract_pdf, ExtractionOptions, OutputOptions};
+use pdftract_core::{extract, ExtractionOptions};
 
 fn main() -> anyhow::Result<()> {
     let opts = ExtractionOptions::default();
-    let output = OutputOptions::default();
-
-    let result = extract_pdf("document.pdf", &opts, &output)?;
+    let result = extract("document.pdf", &opts)?;
 
     for (i, page) in result.pages.iter().enumerate() {
-        println!("Page {}: {} chars", i + 1, page.text.len());
+        println!("Page {}: {} spans", i + 1, page.spans.len());
         for span in &page.spans {
             println!("  {}", span.text);
         }
@@ -44,17 +42,17 @@ fn main() -> anyhow::Result<()> {
 For large PDFs, stream pages one at a time to keep memory usage bounded:
 
 ```rust
-use pdftract_core::{extract_pdf_streaming, ExtractionOptions, OutputOptions};
-use std::fs::File;
+use pdftract_core::{extract_stream, ExtractionOptions};
+use std::path::Path;
 
 fn main() -> anyhow::Result<()> {
-    let mut output = File::create("output.ndjson")?;
-    extract_pdf_streaming(
-        "large_document.pdf",
-        &ExtractionOptions::default(),
-        &OutputOptions::default(),
-        &mut output,
-    )?;
+    let opts = ExtractionOptions::default();
+    let pages = extract_stream(Path::new("large_document.pdf"), &opts)?;
+
+    for page_result in pages {
+        let page = page_result?;
+        println!("Page {}: {} spans", page.index, page.spans.len());
+    }
     Ok(())
 }
 ```
@@ -90,7 +88,7 @@ fn main() -> anyhow::Result<()> {
 Generate cryptographic receipts for verification:
 
 ```rust
-use pdftract_core::{extract_pdf, ExtractionOptions, OutputOptions};
+use pdftract_core::{extract, ExtractionOptions};
 use pdftract_core::options::ReceiptsMode;
 
 fn main() -> anyhow::Result<()> {
@@ -98,8 +96,7 @@ fn main() -> anyhow::Result<()> {
         receipts: ReceiptsMode::Lite,
         ..Default::default()
     };
-    let output = OutputOptions::default();
-    let result = extract_pdf("document.pdf", &opts, &output)?;
+    let result = extract("document.pdf", &opts)?;
 
     // Receipts are embedded in page metadata
     if let Some(receipt) = &result.pages[0].receipt {
@@ -114,12 +111,12 @@ fn main() -> anyhow::Result<()> {
 With the `remote` feature, fetch PDFs via HTTP:
 
 ```rust
-use pdftract_core::{extract_pdf, ExtractionOptions, OutputOptions};
+use pdftract_core::{extract, ExtractionOptions};
+use std::path::Path;
 
 fn main() -> anyhow::Result<()> {
     let opts = ExtractionOptions::default();
-    let output = OutputOptions::default();
-    let result = extract_pdf("https://example.com/document.pdf", &opts, &output)?;
+    let result = extract(Path::new("https://example.com/document.pdf"), &opts)?;
     Ok(())
 }
 ```
@@ -129,13 +126,13 @@ fn main() -> anyhow::Result<()> {
 Most functions return `anyhow::Result<T>` which wraps various error types:
 
 ```rust
-use pdftract_core::{extract_pdf, ExtractionOptions, OutputOptions};
+use pdftract_core::{extract, ExtractionOptions};
+use std::path::Path;
 
 fn main() {
     let opts = ExtractionOptions::default();
-    let output = OutputOptions::default();
 
-    match extract_pdf("document.pdf", &opts, &output) {
+    match extract(Path::new("document.pdf"), &opts) {
         Ok(result) => {
             println!("Extracted {} pages", result.pages.len());
         }

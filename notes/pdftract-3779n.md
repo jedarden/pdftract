@@ -96,6 +96,10 @@ The task specification suggested `all-features = true`, but the current implemen
 | docs.rs sidebar shows examples | PASS | Automatic when examples compile |
 | All examples have top-line comments | PASS | Each has descriptive doc comment |
 
+## Recent Update (2026-05-31)
+
+Added `tests/fixtures/sample.pdf` (copied from `valid-minimal.pdf`) so examples can run with their default path without requiring command-line arguments.
+
 ## Conclusion
 
-No changes needed. All acceptance criteria are met by the existing workspace state.
+All acceptance criteria are met by the existing workspace state. The only modification was adding `sample.pdf` fixture for convenience.
