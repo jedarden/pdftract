@@ -1,0 +1,13 @@
+{
+  "id": "1 0 R",
+  "object": {
+    "type": "dictionary",
+    "value": {
+      "Target": {
+        "type": "reference",
+        "value": "2 0 R"
+      }
+    }
+  },
+  "type": "indirect"
+}

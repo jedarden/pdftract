@@ -1,0 +1,3 @@
+{
+  "note": "300-level nested structure - parser must hit STRUCT_DEPTH_EXCEEDED at level 256 and recover without panic. The full JSON exceeds serde_json recursion limit, so we only verify the fixture exists and parsing returns a result (possibly partial)."
+}

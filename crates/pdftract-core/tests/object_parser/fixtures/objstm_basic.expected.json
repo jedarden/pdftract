@@ -1,0 +1,5 @@
+{
+  "type": "objstm",
+  "note": "Basic Object Stream with N=5 embedded objects",
+  "expected": "Parse correctly extracts all 5 objects with their indices"
+}

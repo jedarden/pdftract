@@ -1,0 +1,17 @@
+{
+  "id": "1 0 R",
+  "object": {
+    "dict": {
+      "type": "dictionary",
+      "value": {
+        "Length": {
+          "type": "integer",
+          "value": 5
+        }
+      }
+    },
+    "offset": 31,
+    "type": "stream"
+  },
+  "type": "indirect"
+}

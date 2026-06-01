@@ -1,0 +1,19 @@
+{
+  "type": "dictionary",
+  "value": {
+    "A": {
+      "type": "dictionary",
+      "value": {
+        "B": {
+          "type": "dictionary",
+          "value": {
+            "C": {
+              "type": "integer",
+              "value": 1
+            }
+          }
+        }
+      }
+    }
+  }
+}

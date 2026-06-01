@@ -1,0 +1,32 @@
+{
+  "type": "array",
+  "value": [
+    {
+      "type": "integer",
+      "value": 1
+    },
+    {
+      "type": "boolean",
+      "value": true
+    },
+    {
+      "type": "string",
+      "value": "str"
+    },
+    {
+      "type": "name",
+      "value": "Name"
+    },
+    {
+      "type": "null"
+    },
+    {
+      "type": "real",
+      "value": 3.14
+    },
+    {
+      "type": "reference",
+      "value": "5 0 R"
+    }
+  ]
+}

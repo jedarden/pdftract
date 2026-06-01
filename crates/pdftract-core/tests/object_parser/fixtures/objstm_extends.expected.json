@@ -1,0 +1,5 @@
+{
+  "type": "objstm_extends",
+  "note": "ObjStm A with /Extends to ObjStm B; A holds 3 objs, B holds 2",
+  "expected": "Parser handles /Extends correctly and resolves all 5 objects"
+}
