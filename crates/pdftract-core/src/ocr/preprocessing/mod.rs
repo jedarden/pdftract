@@ -8,8 +8,10 @@ pub mod contrast;
 pub mod denoise;
 pub mod dispatch;
 pub mod otsu;
+pub mod sauvola;
 
 pub use contrast::{histogram_stretch, histogram_stretch_if_needed, PreprocError};
 pub use denoise::median_denoise;
 pub use dispatch::{image_source_from_filters, select_binarizer, BinarizerKind, ImageSource};
 pub use otsu::otsu_binarize;
+pub use sauvola::{sauvola_binarize, sauvola_binarize_default};

@@ -182,7 +182,10 @@ pub fn deskew(image: &GrayImage) -> Result<(GrayImage, f64, Vec<Diagnostic>)> {
 /// Convert a GrayImage to a leptonica Pix.
 ///
 /// Creates an 8-bit grayscale Pix from the image data.
-fn grayimage_to_pix(image: &GrayImage) -> Result<*mut Pix> {
+///
+/// This is a public helper function for other preprocessing modules
+/// that need to interface with leptonica FFI functions.
+pub fn grayimage_to_pix(image: &GrayImage) -> Result<*mut Pix> {
     use leptonica_plumbing::leptonica_sys::{pixCreate, pixDestroy, pixGetData, Pix};
     use std::ptr;
 
@@ -230,7 +233,10 @@ fn grayimage_to_pix(image: &GrayImage) -> Result<*mut Pix> {
 /// Convert a leptonica Pix to a GrayImage.
 ///
 /// Expects an 8-bit grayscale Pix.
-fn pix_to_grayimage(pix: *mut Pix) -> Result<GrayImage> {
+///
+/// This is a public helper function for other preprocessing modules
+/// that need to interface with leptonica FFI functions.
+pub fn pix_to_grayimage(pix: *mut Pix) -> Result<GrayImage> {
     use leptonica_plumbing::leptonica_sys::{
         pixGetData, pixGetDepth, pixGetHeight, pixGetWidth, Pix,
     };
