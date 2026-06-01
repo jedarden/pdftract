@@ -132,6 +132,12 @@ None - all acceptance criteria met or have documented workarounds.
 ### Created
 - `/home/coding/pdftract/swift-sdk/Tests/PdftractTests/ConformanceTests.swift` (700+ lines)
 
+### Modified (2025-06-01)
+- `/home/coding/pdftract/swift-sdk/Sources/Pdftract/Models/Options.swift`
+  - **Action:** Removed duplicate option structs (`ExtractOptions`, `SearchOptions`, `HashOptions`, `ClassificationOptions`)
+  - **Reason:** These were duplicates of options defined in their respective model files (Source.swift, Match.swift, Fingerprint.swift, Classification.swift)
+  - **Result:** Single source of truth; file now only contains import and compatibility comment
+
 ### Verified Existing
 - `/home/coding/pdftract/swift-sdk/Package.swift` - SPM manifest
 - `/home/coding/pdftract/swift-sdk/README.md` - Documentation with iOS unsupported note
