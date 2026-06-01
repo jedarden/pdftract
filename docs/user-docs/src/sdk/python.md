@@ -207,13 +207,13 @@ doc = pdftract.extract("https://example.com/document.pdf")
 
 ## MCP Integration
 
-For AI-assisted PDF extraction, pdftract provides an [MCP (Model Context Protocol) server](../integrations/mcp-clients.md). The Python SDK can be used alongside MCP clients like Claude Desktop:
+For AI-assisted PDF extraction, pdftract provides an [MCP (Model Context Protocol) server](../cli/mcp.md). The Python SDK can be used alongside MCP clients like Claude Desktop:
 
 ```bash
 pdftract mcp --stdio
 ```
 
-See [MCP Client Configuration Guide](../integrations/mcp-clients.md) for setup instructions.
+See [MCP Server Documentation](../cli/mcp.md) for setup instructions.
 
 ## Types
 
@@ -244,7 +244,7 @@ async def extract_async():
 
 ## See Also
 
-- [MCP Client Configuration Guide](../integrations/mcp-clients.md)
+- [MCP Server Documentation](../cli/mcp.md)
 - [JSON Schema Reference](../json-schema-reference.md)
 - [CLI Reference](../cli/README.md)
 - [Advanced: OCR Configuration](../advanced/ocr.md)
