@@ -102,6 +102,7 @@
               "type": "string"
             },
             "quads": {
+              "description": "Array of 8-element quadpoint arrays [x0, y0, x1, y1, x2, y2, x3, y3].",
               "items": {
                 "items": {
                   "format": "float",
@@ -128,6 +129,7 @@
               "type": "string"
             },
             "name": {
+              "description": "Stamp icon name (e.g., \"Approved\", \"Draft\", \"Confidential\").",
               "type": [
                 "string",
                 "null"
@@ -143,6 +145,7 @@
           "description": "FreeText annotation with default appearance string.",
           "properties": {
             "da": {
+              "description": "Default appearance string for text rendering.",
               "type": [
                 "string",
                 "null"
@@ -166,18 +169,21 @@
               "type": "string"
             },
             "open": {
+              "description": "Whether the note is initially open in the viewer.",
               "type": [
                 "boolean",
                 "null"
               ]
             },
             "state": {
+              "description": "Note state model (e.g., \"Marked\" for review states).",
               "type": [
                 "string",
                 "null"
               ]
             },
             "state_model": {
+              "description": "State model name (e.g., \"Review\").",
               "type": [
                 "string",
                 "null"
@@ -197,6 +203,7 @@
               "type": "string"
             },
             "strokes": {
+              "description": "Stroke paths as sequences of (x, y) coordinates.",
               "items": {
                 "items": {
                   "items": {
@@ -222,6 +229,7 @@
           "description": "Line annotation with endpoints.",
           "properties": {
             "endpoints": {
+              "description": "Line endpoints as [x0, y0, x1, y1].",
               "items": {
                 "format": "float",
                 "type": "number"
@@ -251,6 +259,7 @@
               "type": "string"
             },
             "vertices": {
+              "description": "Polygon vertices as sequences of (x, y) coordinates.",
               "items": {
                 "items": {
                   "format": "float",
@@ -273,6 +282,7 @@
           "description": "FileAttachment annotation.",
           "properties": {
             "fs_ref": {
+              "description": "File specification reference.",
               "format": "uint32",
               "minimum": 0,
               "type": [
@@ -323,6 +333,7 @@
           ]
         },
         "data": {
+          "contentEncoding": "base64",
           "description": "Base64-encoded attachment content (null if truncated or empty).\n\nPer JSON Schema, this field has `contentEncoding: base64`, indicating\nthe string is base64-encoded binary data. Downstream tools can use this\ninformation to automatically decode the content.\n\n- `Some(base64_string)` when content <= 50 MB\n- `None` when `truncated: true` (content too large)\n\nIn the Python API (PyO3), this field is returned as a `bytes` object\n(PyO3 automatically decodes the base64 string).",
           "type": [
             "string",
@@ -399,7 +410,7 @@
       "type": "object"
     },
     "BlockJson": {
-      "description": "JSON representation of a structural block.\n\nA block is a higher-level semantic unit composed of one or more\nspans. Examples include paragraphs, headings, list items, and\ntable cells.",
+      "description": "JSON representation of a structural block.\n\nA block is a higher-level semantic unit composed of one or more\nspans. Examples include paragraphs, headings, list items, and\ntable cells.\n\n# Examples\n\n```\nuse pdftract_core::schema::BlockJson;\n\nlet paragraph = BlockJson {\n    kind: \"paragraph\".to_string(),\n    text: \"This is a paragraph.\".to_string(),\n    bbox: [72.0, 600.0, 540.0, 580.0],\n    level: None,\n    table_index: None,\n    spans: vec![0, 1, 2],\n    receipt: None,\n};\n\nassert_eq!(paragraph.kind, \"paragraph\");\nassert_eq!(paragraph.spans.len(), 3);\n```",
       "properties": {
         "bbox": {
           "description": "Bounding box in PDF user-space points.\n\nFormat: `[x0, y0, x1, y1]` where (x0, y0) is the bottom-left\ncorner and (x1, y1) is the top-right corner.",
@@ -468,7 +479,7 @@
       "type": "object"
     },
     "CellJson": {
-      "description": "JSON representation of a table cell.\n\nA cell represents a single unit within a table row, containing\nits text content, bounding box, and position information.",
+      "description": "JSON representation of a table cell.\n\nA cell represents a single unit within a table row, containing\nits text content, bounding box, and position information.\n\n# Examples\n\n```\nuse pdftract_core::schema::CellJson;\n\nlet cell = CellJson {\n    bbox: [100.0, 400.0, 200.0, 380.0],\n    text: \"Cell content\".to_string(),\n    spans: vec![0],\n    row: 0,\n    col: 0,\n    rowspan: 1,\n    colspan: 1,\n    is_header_row: true,\n};\n\nassert_eq!(cell.row, 0);\nassert_eq!(cell.col, 0);\nassert!(cell.is_header_row);\n```",
       "properties": {
         "bbox": {
           "description": "Bounding box in PDF user-space points.\n\nFormat: `[x0, y0, x1, y1]` where (x0, y0) is the bottom-left\ncorner and (x1, y1) is the top-right corner.",
@@ -561,6 +572,7 @@
               "type": "string"
             },
             "left": {
+              "description": "Left coordinate (null = retain current left).",
               "format": "double",
               "type": [
                 "number",
@@ -568,6 +580,7 @@
               ]
             },
             "top": {
+              "description": "Top coordinate (null = retain current top).",
               "format": "double",
               "type": [
                 "number",
@@ -575,6 +588,7 @@
               ]
             },
             "zoom": {
+              "description": "Zoom factor (null = retain current zoom).",
               "format": "double",
               "type": [
                 "number",
@@ -608,6 +622,7 @@
               "type": "string"
             },
             "top": {
+              "description": "Top coordinate to position at top of window (null = retain current).",
               "format": "double",
               "type": [
                 "number",
@@ -628,6 +643,7 @@
               "type": "string"
             },
             "left": {
+              "description": "Left coordinate to position at left of window (null = retain current).",
               "format": "double",
               "type": [
                 "number",
@@ -644,6 +660,7 @@
           "description": "Fit rectangle (left, bottom, right, top).",
           "properties": {
             "bottom": {
+              "description": "Bottom edge of rectangle.",
               "format": "double",
               "type": "number"
             },
@@ -652,14 +669,17 @@
               "type": "string"
             },
             "left": {
+              "description": "Left edge of rectangle.",
               "format": "double",
               "type": "number"
             },
             "right": {
+              "description": "Right edge of rectangle.",
               "format": "double",
               "type": "number"
             },
             "top": {
+              "description": "Top edge of rectangle.",
               "format": "double",
               "type": "number"
             }
@@ -694,6 +714,7 @@
               "type": "string"
             },
             "top": {
+              "description": "Top edge of window in PDF user space units.",
               "format": "double",
               "type": [
                 "number",
@@ -714,6 +735,7 @@
               "type": "string"
             },
             "left": {
+              "description": "Left edge of window in PDF user space units.",
               "format": "double",
               "type": [
                 "number",
@@ -1027,7 +1049,7 @@
       "type": "object"
     },
     "FormFieldJson": {
-      "description": "JSON representation of a form field.\n\nThis struct represents a single interactive form field from the PDF's\nAcroForm or XFA data, including its type, value, and metadata.\n\nPer the plan (Phase 7.4), form fields are extracted from both AcroForm\nand XFA sources, with XFA values taking precedence on collision.",
+      "description": "JSON representation of a form field.\n\nThis struct represents a single interactive form field from the PDF's\nAcroForm or XFA data, including its type, value, and metadata.\n\nPer the plan (Phase 7.4), form fields are extracted from both AcroForm\nand XFA sources, with XFA values taking precedence on collision.\n\n# Example\n\n```rust,no_run\nuse pdftract_core::schema::{FormFieldJson, FormFieldTypeJson, FormFieldValueJson};\n\n// Create a text field\nlet text_field = FormFieldJson {\n    name: \"employee_name\".to_string(),\n    field_type: FormFieldTypeJson::Text,\n    value: FormFieldValueJson::Text(Some(\"John Doe\".to_string())),\n    default: None,\n    page_index: Some(0),\n    rect: Some([100.0, 700.0, 300.0, 720.0]),\n    required: true,\n    read_only: false,\n    multiline: Some(false),\n    max_length: Some(50),\n    options: None,\n    multi_select: None,\n    selected: None,\n    state_name: None,\n    pushbutton: None,\n    radio: None,\n};\n\nassert_eq!(text_field.name, \"employee_name\");\nassert_eq!(text_field.required, true);\n```",
       "properties": {
         "default": {
           "anyOf": [
@@ -1220,7 +1242,7 @@
           "type": "string"
         },
         "location": {
-          "description": "Location of the JavaScript action in the PDF structure.\n\nExamples: \"catalog.openaction\", \"page.0.aa.O\", \"page.1.annot.0.A\".\nThe format is: <scope>.<index>.<path> where scope is \"catalog\" or \"page\",\nindex is the page number (for pages), and path is the dot-joined entry path.",
+          "description": "Location of the JavaScript action in the PDF structure.\n\nExamples: \"catalog.openaction\", \"page.0.aa.O\", \"page.1.annot.0.A\".\nThe format is: `<scope>`.`<index>`.`<path>` where scope is \"catalog\" or \"page\",\nindex is the page number (for pages), and path is the dot-joined entry path.",
           "type": "string"
         }
       },
@@ -1528,7 +1550,7 @@
       "type": "object"
     },
     "SignatureJson": {
-      "description": "JSON representation of a digital signature.\n\nThis struct represents a signature extracted from a PDF signature field,\nincluding signer identity, timestamp, and coverage information.\n\nPer the plan (Phase 7.3), pdftract does NOT perform cryptographic validation\nin v1. The `validation_status` field is always \"not_checked\" — future versions\nmay add \"valid\", \"invalid\", or \"indeterminate\" as cryptographic validation\nis implemented.",
+      "description": "JSON representation of a digital signature.\n\nThis struct represents a signature extracted from a PDF signature field,\nincluding signer identity, timestamp, and coverage information.\n\nPer the plan (Phase 7.3), pdftract does NOT perform cryptographic validation\nin v1. The `validation_status` field is always \"not_checked\" — future versions\nmay add \"valid\", \"invalid\", or \"indeterminate\" as cryptographic validation\nis implemented.\n\n# Example\n\n```rust,no_run\nuse pdftract_core::schema::SignatureJson;\n\n// Create a signature JSON\nlet sig = SignatureJson {\n    field_name: \"employer_signature\".to_string(),\n    signer_name: \"John Doe\".to_string(),\n    signing_date: Some(\"2023-01-15T14:30:45Z\".to_string()),\n    reason: Some(\"Contract approval\".to_string()),\n    location: Some(\"New York, NY\".to_string()),\n    sub_filter: Some(\"adbe.pkcs7.detached\".to_string()),\n    byte_range: Some(vec![0, 1000, 2000, 500]),\n    coverage_fraction: Some(0.5),\n    validation_status: \"not_checked\".to_string(),\n};\n\nassert_eq!(sig.signer_name, \"John Doe\");\nassert_eq!(sig.validation_status, \"not_checked\");\n```",
       "properties": {
         "byte_range": {
           "description": "The /ByteRange array defining which bytes of the file are signed.\n\nFormat: array of 4 integers [offset, length, offset, length] defining two byte ranges.\nNone if /ByteRange is missing or malformed.",
@@ -1599,7 +1621,7 @@
       "type": "object"
     },
     "SpanJson": {
-      "description": "JSON representation of a text span.\n\nA span is the smallest unit of extracted text, representing a\ncontiguous run of text with consistent font and styling.\n\nPer INV-7 (confidence_source on every Span), all spans include\nthe confidence_source field to indicate how the text was extracted.",
+      "description": "JSON representation of a text span.\n\nA span is the smallest unit of extracted text, representing a\ncontiguous run of text with consistent font and styling.\n\nPer INV-7 (confidence_source on every Span), all spans include\nthe confidence_source field to indicate how the text was extracted.\n\n# Examples\n\n```\nuse pdftract_core::schema::SpanJson;\nuse serde_json;\n\nlet span = SpanJson {\n    text: \"Hello, world!\".to_string(),\n    bbox: [72.0, 720.0, 200.0, 730.0],\n    font: \"Helvetica\".to_string(),\n    size: 12.0,\n    color: Some(\"#000000\".to_string()),\n    rendering_mode: Some(0),\n    confidence: None,\n    confidence_source: Some(\"vector\".to_string()),\n    lang: Some(\"en\".to_string()),\n    flags: vec![],\n    receipt: None,\n    column: Some(0),\n};\n\n// Serialize to JSON\nlet json = serde_json::to_string(&span).unwrap();\nassert!(json.contains(\"Hello, world!\"));\n```",
       "properties": {
         "bbox": {
           "description": "Bounding box in PDF user-space points.\n\nFormat: `[x0, y0, x1, y1]` where (x0, y0) is the bottom-left\ncorner and (x1, y1) is the top-right corner.",
@@ -1706,7 +1728,7 @@
       "type": "object"
     },
     "TableJson": {
-      "description": "JSON representation of a table.\n\nTables are emitted in parallel with table blocks - the block\nprovides the concatenated text and position, while the TableJson\nprovides full cell-level structure.",
+      "description": "JSON representation of a table.\n\nTables are emitted in parallel with table blocks - the block\nprovides the concatenated text and position, while the TableJson\nprovides full cell-level structure.\n\n# Examples\n\n```\nuse pdftract_core::schema::{TableJson, RowJson, CellJson};\n\nlet table = TableJson {\n    id: \"table_0\".to_string(),\n    bbox: [72.0, 500.0, 540.0, 300.0],\n    rows: vec![\n        RowJson {\n            bbox: [72.0, 500.0, 540.0, 480.0],\n            cells: vec![\n                CellJson {\n                    bbox: [72.0, 500.0, 200.0, 480.0],\n                    text: \"Header\".to_string(),\n                    spans: vec![],\n                    row: 0,\n                    col: 0,\n                    rowspan: 1,\n                    colspan: 1,\n                    is_header_row: true,\n                }\n            ],\n            is_header: true,\n        }\n    ],\n    header_rows: 1,\n    detection_method: \"line_based\".to_string(),\n    continued: false,\n    continued_from_prev: false,\n    page_index: 0,\n};\n\nassert_eq!(table.rows.len(), 1);\nassert_eq!(table.header_rows, 1);\n```",
       "properties": {
         "bbox": {
           "description": "Bounding box in PDF user-space points.\n\nFormat: `[x0, y0, x1, y1]` where (x0, y0) is the bottom-left\ncorner and (x1, y1) is the top-right corner.",
