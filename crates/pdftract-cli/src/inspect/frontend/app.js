@@ -437,12 +437,21 @@ function setupTooltips(svg){
   const tooltip=document.getElementById('tooltip');
   const OFFSET=8;
 
-  svg.addEventListener('mouseover',e=>{
-    const target=e.target.closest('[data-text], [data-kind]');
+  svg.addEventListener('mouseenter',e=>{
+    const target=e.target.closest('.layer-spans rect, .layer-confidence-heatmap rect');
     if(!target)return;
-    let content='';
-    if(target.dataset.spanIndex!==undefined){
-      const lines=[];
+
+    const lines=[];
+
+    // Handle heatmap cells (data-char, data-confidence)
+    if(target.dataset.char!==undefined){
+      if(target.dataset.char)lines.push(`Char: ${target.dataset.char}`);
+      if(target.dataset.confidence&&target.dataset.confidence!==''){
+        lines.push(`Confidence: ${target.dataset.confidence}`);
+      }
+    }
+    // Handle span rects (data-text, data-font, data-size, data-confidence)
+    else if(target.dataset.text!==undefined){
       if(target.dataset.text)lines.push(`Text: ${target.dataset.text}`);
       if(target.dataset.font){
         const size=target.dataset.size?` ${target.dataset.size}pt`:'';
@@ -451,24 +460,19 @@ function setupTooltips(svg){
       if(target.dataset.confidence&&target.dataset.confidence!==''){
         lines.push(`Confidence: ${target.dataset.confidence}`);
       }
-      if(target.dataset.bbox)lines.push(`Bbox: ${target.dataset.bbox}`);
-      if(target.dataset.blockRef)lines.push(`Block: ${target.dataset.blockRef}`);
-      if(target.dataset.mcid)lines.push(`MCID: ${target.dataset.mcid}`);
-      if(target.dataset.readingIdx)lines.push(`Reading idx: ${target.dataset.readingIdx}`);
-      content=lines.join('\n');
-    }else if(target.dataset.blockIndex!==undefined){
-      content=`Block index: ${target.dataset.blockIndex}\nKind: ${target.dataset.kind}\nText: ${target.dataset.text}\nLevel: ${target.dataset.level||'N/A'}\nTable index: ${target.dataset.tableIndex||'N/A'}`
     }
-    if(content){
-      tooltip.textContent=content;
+
+    if(lines.length){
+      tooltip.textContent=lines.join('\n');
       tooltip.hidden=false;
       positionTooltip(e.pageX,e.pageY);
     }
-  });
+  },true);
 
-  svg.addEventListener('mouseout',e=>{
-    if(e.target.closest('[data-text], [data-kind]'))tooltip.hidden=true
-  });
+  svg.addEventListener('mouseleave',e=>{
+    const target=e.target.closest('.layer-spans rect, .layer-confidence-heatmap rect');
+    if(target)tooltip.hidden=true;
+  },true);
 
   svg.addEventListener('mousemove',e=>{
     if(!tooltip.hidden)positionTooltip(e.pageX,e.pageY)
