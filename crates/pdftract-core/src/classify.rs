@@ -28,6 +28,65 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
+/// Signal evaluator configuration constants.
+///
+/// Centralizes all threshold constants used by signal evaluators.
+/// Per EC-12, these thresholds must be kept in sync with fixture expectations.
+/// Changes to these values require updating fixture expectations and running
+/// the full test suite to verify correctness.
+#[derive(Debug, Clone, Copy)]
+pub struct SignalsConfig;
+
+impl SignalsConfig {
+    // Evaluator 1: text_operator_presence
+    /// Strength for Scanned vote when no text operators present and images exist.
+    pub const NO_TEXT_OPS_STRENGTH: f32 = 0.95;
+
+    // Evaluator 2: all_tr3_with_full_page_image
+    /// Minimum fraction of page area a single image must cover to be "full page".
+    pub const FULL_PAGE_IMAGE_THRESHOLD: f64 = 0.95;
+    /// Strength for BrokenVector vote when all text is Tr=3 AND full-page image present.
+    pub const ALL_TR3_WITH_IMAGE_STRENGTH: f32 = 0.99;
+
+    // Evaluator 3: image_coverage_fraction
+    /// Minimum image coverage fraction to trigger Scanned vote.
+    pub const IMAGE_COVERAGE_THRESHOLD: f32 = 0.85;
+    /// Strength for Scanned vote when image coverage exceeds threshold.
+    pub const IMAGE_COVERAGE_STRENGTH: f32 = 0.85;
+
+    // Evaluator 4: char_validity_rate (low)
+    /// Maximum character validity rate to trigger BrokenVector vote.
+    pub const CHAR_VALIDITY_LOW_THRESHOLD: f32 = 0.4;
+    /// Strength for BrokenVector vote when character validity is below threshold.
+    pub const CHAR_VALIDITY_LOW_STRENGTH: f32 = 0.80;
+
+    // Evaluator 5: char_validity_rate (high)
+    /// Minimum character validity rate to trigger Vector vote.
+    pub const CHAR_VALIDITY_HIGH_THRESHOLD: f32 = 0.85;
+    /// Strength for Vector vote when character validity exceeds threshold.
+    pub const CHAR_VALIDITY_HIGH_STRENGTH: f32 = 0.90;
+
+    // Evaluator 6: char_density_ratio
+    /// Maximum character density (chars per pt²) to trigger Scanned vote.
+    pub const CHAR_DENSITY_RATIO_THRESHOLD: f32 = 0.03;
+    /// Strength for Scanned vote when character density is below threshold.
+    pub const CHAR_DENSITY_RATIO_STRENGTH: f32 = 0.65;
+
+    // Short-circuit threshold
+    /// Minimum signal strength to trigger immediate short-circuit classification.
+    pub const SHORT_CIRCUIT_STRENGTH: f32 = 0.95;
+
+    // Hybrid detection thresholds
+    /// Minimum number of vector cells required for Hybrid classification.
+    pub const HYBRID_VECTOR_CELL_MIN: u32 = 10;
+    /// Minimum number of scanned cells required for Hybrid classification.
+    pub const HYBRID_SCANNED_CELL_MIN: u32 = 10;
+    /// Character validity threshold for vector cell classification.
+    pub const VECTOR_CELL_VALIDITY_THRESHOLD: f32 = 0.6;
+    /// Image coverage threshold for scanned cell classification.
+    pub const SCANNED_CELL_IMAGE_THRESHOLD: f32 = 0.80;
+}
+
 /// Page context containing all metrics needed for classification.
 ///
 /// This struct is populated by content stream analysis and contains
@@ -181,7 +240,7 @@ impl SignalEvaluator for NoTextOperatorsSignal {
             // Strong signal for Scanned if images present
             // If no images either, this is a blank page (handled elsewhere)
             if ctx.has_images() {
-                return Some(Vote::scanned(0.95));
+                return Some(Vote::scanned(SignalsConfig::NO_TEXT_OPS_STRENGTH));
             }
         }
         None
@@ -211,9 +270,9 @@ struct HighImageCoverageSignal;
 
 impl SignalEvaluator for HighImageCoverageSignal {
     fn evaluate(&self, ctx: &PageContext) -> Option<Vote> {
-        if ctx.image_coverage > 0.85 {
+        if ctx.image_coverage > SignalsConfig::IMAGE_COVERAGE_THRESHOLD {
             // Strong signal for Scanned
-            return Some(Vote::scanned(0.90));
+            return Some(Vote::scanned(SignalsConfig::IMAGE_COVERAGE_STRENGTH));
         }
         None
     }
@@ -230,9 +289,9 @@ impl SignalEvaluator for LowCharValiditySignal {
     fn evaluate(&self, ctx: &PageContext) -> Option<Vote> {
         if ctx.has_text() {
             let validity = ctx.char_validity_rate();
-            if validity < 0.4 {
+            if validity < SignalsConfig::CHAR_VALIDITY_LOW_THRESHOLD {
                 // Very low validity = broken encoding
-                return Some(Vote::broken_vector(0.80));
+                return Some(Vote::broken_vector(SignalsConfig::CHAR_VALIDITY_LOW_STRENGTH));
             }
         }
         None
@@ -250,9 +309,9 @@ impl SignalEvaluator for HighCharValiditySignal {
     fn evaluate(&self, ctx: &PageContext) -> Option<Vote> {
         if ctx.has_text() {
             let validity = ctx.char_validity_rate();
-            if validity > 0.85 {
+            if validity > SignalsConfig::CHAR_VALIDITY_HIGH_THRESHOLD {
                 // High validity = good vector text
-                return Some(Vote::vector(0.90));
+                return Some(Vote::vector(SignalsConfig::CHAR_VALIDITY_HIGH_STRENGTH));
             }
         }
         None
