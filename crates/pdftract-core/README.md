@@ -1,5 +1,7 @@
 # pdftract-core
 
+[![docs.rs](https://docs.rs/pdftract-core/badge.svg)](https://docs.rs/pdftract-core)
+
 The core Rust library for PDF text extraction. This crate provides the parsing, layout analysis, font encoding recovery, and text extraction primitives used by the CLI (`pdftract-cli`) and Python bindings (`pdftract-py`).
 
 ## Cargo.lock Policy
