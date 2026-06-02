@@ -1,18 +1,18 @@
 %PDF-1.3
 %¿÷¢þ
 1 0 obj
-<< /CreationDate (D:20240102120000Z) /Metadata 3 0 R /Pages 4 0 R /Type /Catalog >>
+<< /Metadata 3 0 R /Pages 4 0 R /Type /Catalog >>
 endobj
 2 0 obj
-<< /Author (pdftract test suite) /Producer (pikepdf 9.2.1) /Title (Fingerprint Test Source) >>
+<< /Author (pdftract test suite) /CreationDate (D:20240102120000+00'00') /Producer (pikepdf) /Title (Fingerprint Test Source) >>
 endobj
 3 0 obj
-<< /Subtype /XML /Type /Metadata /Length 748 >>
+<< /Subtype /XML /Type /Metadata /Length 792 >>
 stream
 <?xpacket begin="ï»¿" id="W5M0MpCehiHzreSzNTczkc9d"?>
 <x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="pikepdf">
  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
- <rdf:Description rdf:about=""><dc:title xmlns:dc="http://purl.org/dc/elements/1.1/"><rdf:Alt><rdf:li xml:lang="x-default">Fingerprint Test Source</rdf:li></rdf:Alt></dc:title></rdf:Description><rdf:Description xmlns:dc="http://purl.org/dc/elements/1.1/" rdf:about="" dc:creator="pdftract test suite"/><rdf:Description xmlns:pdf="http://ns.adobe.com/pdf/1.3/" rdf:about="" pdf:Producer="pikepdf 9.2.1"/><rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/" rdf:about="" xmp:MetadataDate="2026-06-01T14:17:14.713440+00:00"/></rdf:RDF>
+ <rdf:Description rdf:about=""><dc:title xmlns:dc="http://purl.org/dc/elements/1.1/"><rdf:Alt><rdf:li xml:lang="x-default">Fingerprint Test Source</rdf:li></rdf:Alt></dc:title></rdf:Description><rdf:Description rdf:about=""><dc:creator xmlns:dc="http://purl.org/dc/elements/1.1/"><rdf:Seq><rdf:li>pdftract test suite</rdf:li></rdf:Seq></dc:creator></rdf:Description><rdf:Description xmlns:pdf="http://ns.adobe.com/pdf/1.3/" rdf:about="" pdf:Producer="pikepdf"/><rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/" rdf:about="" xmp:CreateDate="2024-01-02T12:00:00Z"/></rdf:RDF>
 </x:xmpmeta>
 
 <?xpacket end="w"?>
@@ -54,16 +54,16 @@ xref
 0 11
 0000000000 65535 f 
 0000000015 00000 n 
-0000000114 00000 n 
+0000000080 00000 n 
 0000000224 00000 n 
-0000001053 00000 n 
-0000001124 00000 n 
-0000001307 00000 n 
-0000001490 00000 n 
-0000001674 00000 n 
-0000001939 00000 n 
-0000002205 00000 n 
-trailer << /Info 2 0 R /Root 1 0 R /Size 11 /ID [<4728c2d286d751eaac4d4141c32d7d44><4728c2d286d751eaac4d4141c32d7d44>] >>
+0000001097 00000 n 
+0000001168 00000 n 
+0000001351 00000 n 
+0000001534 00000 n 
+0000001718 00000 n 
+0000001983 00000 n 
+0000002249 00000 n 
+trailer << /Info 2 0 R /Root 1 0 R /Size 11 /ID [<a74df507622ef16f6ad7fcffc1737a0c><61744d1afcdf0d5d5ed2c295b07f29b4>] >>
 startxref
-2472
+2516
 %%EOF

@@ -4,18 +4,19 @@
 << /Metadata 3 0 R /Pages 4 0 R /Type /Catalog >>
 endobj
 2 0 obj
-<< /Author (pdftract test suite) /Producer (pikepdf 9.2.1) /Title (Fingerprint Test Source) >>
+<< /Author (pdftract test suite) /Producer (pikepdf) /Title (Fingerprint Test Source) >>
 endobj
 3 0 obj
-<< /Subtype /XML /Type /Metadata /Length 748 >>
+<< /Subtype /XML /Type /Metadata /Length 682 >>
 stream
 <?xpacket begin="ï»¿" id="W5M0MpCehiHzreSzNTczkc9d"?>
 <x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="pikepdf">
  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
- <rdf:Description rdf:about=""><dc:title xmlns:dc="http://purl.org/dc/elements/1.1/"><rdf:Alt><rdf:li xml:lang="x-default">Fingerprint Test Source</rdf:li></rdf:Alt></dc:title></rdf:Description><rdf:Description xmlns:dc="http://purl.org/dc/elements/1.1/" rdf:about="" dc:creator="pdftract test suite"/><rdf:Description xmlns:pdf="http://ns.adobe.com/pdf/1.3/" rdf:about="" pdf:Producer="pikepdf 9.2.1"/><rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/" rdf:about="" xmp:MetadataDate="2026-06-01T14:17:14.713440+00:00"/></rdf:RDF>
+ <rdf:Description rdf:about=""><dc:title xmlns:dc="http://purl.org/dc/elements/1.1/"><rdf:Alt><rdf:li xml:lang="x-default">Fingerprint Test Source</rdf:li></rdf:Alt></dc:title></rdf:Description><rdf:Description rdf:about=""><dc:creator xmlns:dc="http://purl.org/dc/elements/1.1/"><rdf:Seq><rdf:li>pdftract test suite</rdf:li></rdf:Seq></dc:creator></rdf:Description><rdf:Description xmlns:pdf="http://ns.adobe.com/pdf/1.3/" rdf:about="" pdf:Producer="pikepdf"/></rdf:RDF>
 </x:xmpmeta>
 
 <?xpacket end="w"?>
+
 endstream
 endobj
 4 0 obj
@@ -31,55 +32,38 @@ endobj
 << /Contents 10 0 R /MediaBox [ 0 0 612 792 ] /Parent 4 0 R /Resources << /Font << /F1 << /BaseFont (/Helvetica) /Subtype (/Type1) /Type (/Font) >> >> >> /Type /Page >>
 endobj
 8 0 obj
-<< /Length 283 >>
+<< /Length 193 /Filter /FlateDecode >>
 stream
-
-        BT
-        /F1 12 Tf
-        50 700 Td
-        (Page 1: Lorem ipsum dolor sit amet, consectetur adipiscing elit.\n    Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.\n    Ut enim ad minim veniam, quis nostrud exercitation ullamco.)
- Tj
-        ET
-        endstream
+xœEAKA…ïıï¨PênA‚=y\@:—Èdf;“ˆ?ßi«kN/ò=^6ø§ió'ï#Æ=¦Õ¹ğ0˜âêÜ¼ÒÌñR*+di®ˆ%•Š&R¶-BÉƒ±yEY¤É38‰í.¤7ı,Ş´DëÒ’ƒD‰nHtì`»âJs&P’“Óónà,Ú3 r_}%İâäÒK³êüÍ5ˆ‘IÉğ”HCÙİbú\K=ÿÿà¾S
+endstream
 endobj
 9 0 obj
-<< /Length 283 >>
+<< /Length 194 /Filter /FlateDecode >>
 stream
-
-        BT
-        /F1 12 Tf
-        50 690 Td
-        (Page 2: Lorem ipsum dolor sit amet, consectetur adipiscing elit.\n    Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.\n    Ut enim ad minim veniam, quis nostrud exercitation ullamco.)
- Tj
-        ET
-        endstream
+xœEAKCA„ïıs´Pj[PĞ£Ğz(øüén|D6»¯»‰øó]­}æ4È7Lø›—aq“÷‡-¶;ï³ó°ÁãÓCœ»Œİ3¥²B¦æŠXR©hb e[!”Ü8›WP”IZ<‚“Øú—ôÊ±Å›–c:@r(Ñ³Á‰Î=lW<CiÌJrqºbŞœE{T~Äg_IW¸¸4äÒ¬zqbdR2<%ÒPÖKs©ıÿ¾ÆÖS
+endstream
 endobj
 10 0 obj
-<< /Length 283 >>
+<< /Length 194 /Filter /FlateDecode >>
 stream
-
-        BT
-        /F1 12 Tf
-        50 680 Td
-        (Page 3: Lorem ipsum dolor sit amet, consectetur adipiscing elit.\n    Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.\n    Ut enim ad minim veniam, quis nostrud exercitation ullamco.)
- Tj
-        ET
-        endstream
+xœEÁN1DïıŠ9R©*mqD‚‡J,`³r'ÛÄFıü¦ŸÆ#ùÆüÎó°ø“·¯[lw¾fç~ƒ‡Ç†8;7{wOx+•25WÄ’JE)Û
+¡äÆÁØ¼‚¢LÒ‚äœÄÖ?¤wı,Ş´DëÔ’ƒD‰nHôÙ#ÀvÅ3”ÆL $G§+æÃÀY´g@å"¾ûJºÂÑ¥!—fÕ#øÄ5ˆ‘IÉğ”HCY/1æR/ÿ?8ÆÂS
+endstream
 endobj
 xref
 0 11
 0000000000 65535 f 
 0000000015 00000 n 
 0000000080 00000 n 
-0000000190 00000 n 
+0000000184 00000 n 
+0000000947 00000 n 
 0000001018 00000 n 
-0000001089 00000 n 
-0000001272 00000 n 
-0000001455 00000 n 
-0000001639 00000 n 
-0000001972 00000 n 
-0000002305 00000 n 
-trailer << /Info 2 0 R /Root 1 0 R /Size 11 /ID [<4728c2d286d751eaac4d4141c32d7d44><c9fcdef9cf416cd46b7ce7031081cdaa>] >>
+0000001201 00000 n 
+0000001384 00000 n 
+0000001568 00000 n 
+0000001833 00000 n 
+0000002099 00000 n 
+trailer << /Info 2 0 R /Root 1 0 R /Size 11 /ID [<a74df507622ef16f6ad7fcffc1737a0c><a74df507622ef16f6ad7fcffc1737a0c>] >>
 startxref
-2639
+2366
 %%EOF
