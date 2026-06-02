@@ -91,6 +91,34 @@ impl SignalsConfig {
 ///
 /// This struct is populated by content stream analysis and contains
 /// the raw data that signal evaluators use to make classification decisions.
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::classify::PageContext;
+///
+/// let ctx = PageContext {
+///     text_op_count: 150,
+///     invisible_text_count: 0,
+///     tr3_op_count: 0,
+///     image_xobject_areas: vec![50000.0],
+///     raw_char_count: 2500,
+///     valid_char_count: 2450,
+///     replacement_char_count: 50,
+///     image_coverage: 0.15,
+///     has_full_page_image: false,
+///     has_visible_text: true,
+///     density_ratio: 0.92,
+///     width: 612.0,
+///     height: 792.0,
+///     rotation: 0,
+///     grid_cells: None,
+/// };
+///
+/// assert_eq!(ctx.char_validity_rate(), 0.98);
+/// assert!(ctx.has_text());
+/// assert!(ctx.has_images());
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct PageContext {
     /// Number of text operators in the content stream.
@@ -188,6 +216,22 @@ impl PageContext {
 ///
 /// Each signal evaluator returns a vote for a PageClass with an associated
 /// strength [0.0, 1.0] indicating confidence in that vote.
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::classify::{Vote, PageClass};
+///
+/// // Create a vote with explicit class and strength
+/// let vote = Vote::new(PageClass::Vector, 0.9);
+/// assert_eq!(vote.class, PageClass::Vector);
+/// assert_eq!(vote.strength, 0.9);
+///
+/// // Create votes using helper methods
+/// let vector_vote = Vote::vector(0.85);
+/// let scanned_vote = Vote::scanned(0.95);
+/// let broken_vote = Vote::broken_vector(0.75);
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct Vote {
     /// The class being voted for.
@@ -477,6 +521,51 @@ pub fn image_coverage_fraction(ctx: &PageContext) -> Option<Vote> {
     }
 }
 
+/// Classify a page using the full signal evaluator pipeline.
+///
+/// This is the main entry point for page classification. It creates a PageClassifier
+/// and runs classification on the given page context.
+///
+/// # Arguments
+///
+/// * `ctx` - The page context containing all metrics needed for classification
+///
+/// # Returns
+///
+/// A `PageClassification` containing the class, confidence, and
+/// optionally the set of hybrid cell indexes for Hybrid pages.
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::classify::{classify_page, PageContext};
+///
+/// let ctx = PageContext {
+///     text_op_count: 150,
+///     invisible_text_count: 0,
+///     tr3_op_count: 0,
+///     image_xobject_areas: vec![],
+///     raw_char_count: 2500,
+///     valid_char_count: 2450,
+///     replacement_char_count: 50,
+///     image_coverage: 0.0,
+///     has_full_page_image: false,
+///     has_visible_text: true,
+///     density_ratio: 0.92,
+///     width: 612.0,
+///     height: 792.0,
+///     rotation: 0,
+///     grid_cells: None,
+/// };
+///
+/// let classification = classify_page(&ctx);
+/// assert_eq!(classification.class, pdftract_core::classify::PageClass::Vector);
+/// ```
+pub fn classify_page(ctx: &PageContext) -> PageClassification {
+    let classifier = PageClassifier::new();
+    classifier.classify(ctx)
+}
+
 /// Page classifier that runs all signal evaluators and produces a decision.
 ///
 /// The classifier implements the following pipeline:
@@ -639,27 +728,24 @@ impl Default for PageClassifier {
     }
 }
 
-/// Classify a single page using the default classifier.
-///
-/// This is the primary entry point for page classification used by
-/// the extraction pipeline.
-///
-/// # Arguments
-///
-/// * `ctx` - The page context containing all classification metrics
-///
-/// # Returns
-///
-/// A `PageClassification` containing the class, confidence, and
-/// optionally the set of hybrid cell indexes for Hybrid pages.
-pub fn classify_page(ctx: &PageContext) -> PageClassification {
-    let classifier = PageClassifier::new();
-    classifier.classify(ctx)
-}
-
 /// Page classification result.
 ///
 /// Represents the extraction path that should be used for this page.
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::classify::PageClass;
+///
+/// let class = PageClass::Vector;
+/// assert_eq!(class.as_type_str(), "text");
+///
+/// assert!(class.can_escalate_to_broken_vector());
+///
+/// let scanned = PageClass::Scanned;
+/// assert_eq!(scanned.as_type_str(), "scanned");
+/// assert!(!scanned.can_escalate_to_broken_vector());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PageClass {
     /// Vector (text-based) page - use Phase 3 content stream extraction.
@@ -796,6 +882,32 @@ pub fn page_type_string(
 /// - With `ocr` feature: routes to Phase 5.5 assisted OCR for re-extraction
 /// - Without `ocr` feature: emits `BROKENVECTOR_OCR_UNAVAILABLE` diagnostic
 ///   and sets page_type = "broken_vector" in output (no re-extraction)
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::classify::{apply_broken_vector_escalation, PageClass};
+///
+/// // Vector page with low readability escalates to BrokenVector
+/// let result = apply_broken_vector_escalation(PageClass::Vector, 0.3, 0);
+/// assert_eq!(result, PageClass::BrokenVector);
+///
+/// // Vector page with good readability stays Vector
+/// let result = apply_broken_vector_escalation(PageClass::Vector, 0.8, 1);
+/// assert_eq!(result, PageClass::Vector);
+///
+/// // Scanned pages never escalate (not eligible)
+/// let result = apply_broken_vector_escalation(PageClass::Scanned, 0.2, 2);
+/// assert_eq!(result, PageClass::Scanned);
+///
+/// // Hybrid pages never escalate (not eligible)
+/// let result = apply_broken_vector_escalation(PageClass::Hybrid, 0.1, 3);
+/// assert_eq!(result, PageClass::Hybrid);
+///
+/// // BrokenVector pages stay BrokenVector regardless of readability
+/// let result = apply_broken_vector_escalation(PageClass::BrokenVector, 0.9, 4);
+/// assert_eq!(result, PageClass::BrokenVector);
+/// ```
 pub fn apply_broken_vector_escalation(
     current_class: PageClass,
     readability_score: f32,
@@ -841,6 +953,28 @@ pub fn apply_broken_vector_escalation(
 ///
 /// Contains the classification decision, confidence score, and optionally
 /// the set of hybrid cell indexes for OCR routing.
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::classify::{PageClassification, PageClass};
+/// use std::collections::BTreeSet;
+///
+/// // Create a simple classification
+/// let classification = PageClassification::new(PageClass::Vector, 0.9);
+/// assert_eq!(classification.class, PageClass::Vector);
+/// assert_eq!(classification.confidence, 0.9);
+/// assert!(classification.hybrid_cells.is_none());
+///
+/// // Create a hybrid classification with cell indexes
+/// let mut cells = BTreeSet::new();
+/// cells.insert(10);
+/// cells.insert(18);
+/// cells.insert(27);
+/// let hybrid = PageClassification::hybrid(0.85, cells);
+/// assert_eq!(hybrid.class, PageClass::Hybrid);
+/// assert!(hybrid.hybrid_cells.is_some());
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PageClassification {
     /// The classification decision.
@@ -879,6 +1013,25 @@ impl PageClassification {
 /// - col: 0..8 (0 = left of page)
 ///
 /// The flat index is `row * 8 + col`, ranging from 0..63.
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::classify::CellIndex;
+///
+/// // Create a cell index
+/// let cell = CellIndex::new(3, 5);
+/// assert_eq!(cell.row, 3);
+/// assert_eq!(cell.col, 5);
+/// assert_eq!(cell.flat(), 3 * 8 + 5); // = 29
+///
+/// // Convert to and from flat index
+/// let flat = 42;
+/// let cell2 = CellIndex::from_flat(flat);
+/// assert_eq!(cell2.row, 5); // 42 / 8 = 5
+/// assert_eq!(cell2.col, 2);  // 42 % 8 = 2
+/// assert_eq!(cell2.flat(), 42);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CellIndex {
     /// Row index (0 = top, 7 = bottom).
@@ -920,6 +1073,21 @@ impl CellIndex {
 }
 
 /// Cell classification for a single grid cell.
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::classify::CellClass;
+///
+/// let vector = CellClass::Vector;
+/// let scanned = CellClass::Scanned;
+/// let mixed = CellClass::Mixed;
+///
+/// // CellClass determines the extraction path for that cell
+/// // Vector → content stream extraction
+/// // Scanned → OCR
+/// // Mixed → fallback to image analysis
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CellClass {
     /// Vector cell: has text operators with high character validity.
@@ -933,6 +1101,33 @@ pub enum CellClass {
 /// Per-cell analysis data.
 ///
 /// Contains the metrics computed for each grid cell during classification.
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::classify::{CellData, CellClass};
+///
+/// // Create empty cell data
+/// let empty = CellData::empty();
+/// assert_eq!(empty.text_op_count, 0);
+/// assert_eq!(empty.classify(), CellClass::Mixed);
+///
+/// // Create cell data for a vector cell
+/// let vector_cell = CellData {
+///     text_op_count: 50,
+///     image_coverage: 0.1,
+///     char_validity: 0.95,
+/// };
+/// assert_eq!(vector_cell.classify(), CellClass::Vector);
+///
+/// // Create cell data for a scanned cell
+/// let scanned_cell = CellData {
+///     text_op_count: 0,
+///     image_coverage: 0.9,
+///     char_validity: 0.0,
+/// };
+/// assert_eq!(scanned_cell.classify(), CellClass::Scanned);
+/// ```
 #[derive(Debug, Clone)]
 pub struct CellData {
     /// Number of text operators in this cell.
@@ -971,6 +1166,30 @@ impl CellData {
 /// Grid-based page classifier.
 ///
 /// Implements the 8×8 grid decomposition for hybrid detection.
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::classify::{GridClassifier, CellIndex, CellData};
+///
+/// // Create a grid classifier for a US Letter page (612 x 792 pt)
+/// let mut grid = GridClassifier::new(612.0, 792.0, 0);
+///
+/// // Access specific cells
+/// let cell_idx = CellIndex::new(3, 4);
+/// let cell_data = grid.cell(cell_idx);
+/// assert_eq!(cell_data.text_op_count, 0);
+///
+/// // Modify a cell
+/// let mut cell = grid.cell_mut(cell_idx);
+/// cell.text_op_count = 25;
+/// cell.image_coverage = 0.15;
+/// cell.char_validity = 0.92;
+///
+/// // Classify a point to find which cell it belongs to
+/// let cell_for_point = grid.point_to_cell(300.0, 400.0);
+/// assert!(cell_for_point.row < 8 && cell_for_point.col < 8);
+/// ```
 pub struct GridClassifier {
     /// Page width in PDF user space units.
     width: f64,
