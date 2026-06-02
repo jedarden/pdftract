@@ -1,0 +1,6 @@
+{
+  "type": "dictionary",
+  "value": {
+    "note": "First indirect object of circular chain A->B->C->A. See circular_three.pdf.in for full chain."
+  }
+}

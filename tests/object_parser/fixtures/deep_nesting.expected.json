@@ -1,0 +1,4 @@
+{
+  "type": "dictionary",
+  "note": "Deep nesting fixture (300 levels) - hits STRUCT_DEPTH_EXCEEDED at level 256. Actual JSON serialization is too large for serde_json. Test verifies parser terminates with depth limit diagnostic."
+}

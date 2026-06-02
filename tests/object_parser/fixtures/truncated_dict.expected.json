@@ -1,0 +1,9 @@
+{
+  "type": "dictionary",
+  "value": {
+    "A": {
+      "type": "null",
+      "note": "Missing value, parser inserts PdfNull with STRUCT_INVALID_DICT_VALUE diagnostic"
+    }
+  }
+}
