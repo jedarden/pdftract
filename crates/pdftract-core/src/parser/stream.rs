@@ -13,7 +13,7 @@ use std::io::Read;
 use std::io::Seek;
 use std::path::Path;
 
-use flate2::read::ZlibDecoder;
+use flate2::read::{ZlibDecoder, DeflateDecoder};
 use lzw::{Decoder, DecoderEarlyChange, MsbReader};
 use secrecy::SecretString;
 
@@ -475,42 +475,10 @@ impl FlateDecoder {
         // Parse predictor parameters
         let pred_params = PredictorParams::from_pdf_object(params).unwrap_or_default();
 
-        let mut decoder = ZlibDecoder::new(input);
-        let mut output = Vec::new();
-        let mut chunk = vec![0u8; BOMB_CHECK_CHUNK];
-        // Track flate output separately - we'll count the final predictor output against doc_counter
-        let mut flate_bytes = 0u64;
-
-        loop {
-            match decoder.read(&mut chunk) {
-                Ok(0) => break,
-                Ok(n) => {
-                    // Check bomb limit BEFORE adding bytes to output
-                    if *doc_counter + flate_bytes + n as u64 > max_bytes {
-                        // Bomb limit exceeded - return partial bytes
-                        let remaining = (max_bytes - *doc_counter - flate_bytes) as usize;
-                        let to_add = remaining.min(n);
-                        output.extend_from_slice(&chunk[..to_add]);
-                        // Pass remaining budget to predictor
-                        let predictor_budget = max_bytes.saturating_sub(*doc_counter);
-                        let predicted = apply_predictor(&output, &pred_params, predictor_budget);
-                        // Update doc_counter with actual predictor output size
-                        *doc_counter += predicted.len() as u64;
-                        return Ok(predicted);
-                    }
-                    flate_bytes += n as u64;
-                    output.extend_from_slice(&chunk[..n]);
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-                    // Truncated stream - return partial bytes (INV-8)
-                    break;
-                }
-                Err(_) => {
-                    // Other zlib errors - return partial bytes decoded so far
-                    break;
-                }
-            }
-        }
+        // Try ZlibDecoder first (zlib-wrapped data, RFC 1950)
+        // If that fails, try DeflateDecoder (raw deflate, RFC 1951)
+        // Many PDFs use raw deflate without the zlib wrapper
+        let output = Self::decode_with_fallback(input, doc_counter, max_bytes);
 
         // Pass remaining budget to predictor
         let predictor_budget = max_bytes.saturating_sub(*doc_counter);
@@ -518,6 +486,75 @@ impl FlateDecoder {
         // Update doc_counter with actual predictor output size
         *doc_counter += predicted.len() as u64;
         Ok(predicted)
+    }
+
+    /// Decode with fallback to raw deflate format.
+    ///
+    /// Per PDF spec, FlateDecode should use zlib compression (RFC 1950),
+    /// but many PDFs in the wild use raw deflate (RFC 1951) without the
+    /// zlib wrapper. This function tries zlib first, then falls back to
+    /// raw deflate if zlib fails with a data error.
+    fn decode_with_fallback(
+        input: &[u8],
+        doc_counter: &mut u64,
+        max_bytes: u64,
+    ) -> Vec<u8> {
+        // Try ZlibDecoder first
+        let output = Self::decode_impl(ZlibDecoder::new(input), doc_counter, max_bytes);
+
+        // If we got no output and the input looks like raw deflate,
+        // try again with DeflateDecoder
+        if output.is_empty() && !input.is_empty() {
+            // Raw deflate data doesn't start with the zlib header (0x78)
+            // Zlib header is 0x78 followed by a compression method byte
+            // If the first byte is NOT 0x78, it's likely raw deflate
+            let looks_like_raw_deflate = input[0] != 0x78;
+
+            if looks_like_raw_deflate {
+                return Self::decode_impl(DeflateDecoder::new(input), doc_counter, max_bytes);
+            }
+        }
+
+        output
+    }
+
+    /// Internal decode implementation for any reader type.
+    ///
+    /// This takes a reader that has already been constructed with the input data.
+    fn decode_impl<R: std::io::Read>(
+        mut decoder: R,
+        doc_counter: &mut u64,
+        max_bytes: u64,
+    ) -> Vec<u8> {
+        let mut output = Vec::new();
+        let mut chunk = vec![0u8; BOMB_CHECK_CHUNK];
+
+        loop {
+            match decoder.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(n) => {
+                    // Check bomb limit BEFORE adding bytes to output
+                    if *doc_counter + output.len() as u64 + n as u64 > max_bytes {
+                        // Bomb limit exceeded - return partial bytes
+                        let remaining = (max_bytes - *doc_counter - output.len() as u64) as usize;
+                        let to_add = remaining.min(n);
+                        output.extend_from_slice(&chunk[..to_add]);
+                        return output;
+                    }
+                    output.extend_from_slice(&chunk[..n]);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                    // Truncated stream - return partial bytes (INV-8)
+                    break;
+                }
+                Err(_) => {
+                    // Other decoder errors - return partial bytes decoded so far
+                    break;
+                }
+            }
+        }
+
+        output
     }
 }
 
@@ -1097,13 +1134,17 @@ impl RunLengthDecoder {
                     }
 
                     // Copy bytes
+                    let mut actually_copied = 0;
                     for _ in 0..copy_count {
                         match iter.next() {
-                            Some(byte) => output.push(byte),
+                            Some(byte) => {
+                                output.push(byte);
+                                actually_copied += 1;
+                            }
                             None => break, // Truncated input - stop here
                         }
                     }
-                    *doc_counter += copy_count as u64;
+                    *doc_counter += actually_copied as u64;
                 }
                 128 => {
                     // End of data marker
@@ -3075,7 +3116,7 @@ mod tests {
 
     #[test]
     fn test_ccitt_decode_with_invalid_columns() {
-        // /Columns = 0 should return InvalidParams error
+        // /Columns = 0 should use DEFAULT_COLUMNS per INV-8 error recovery
         let mut dict = indexmap::IndexMap::new();
         dict.insert("/Columns".into(), PdfObject::Integer(0));
         let params = Some(PdfObject::Dict(Box::new(dict)));
@@ -3087,7 +3128,15 @@ mod tests {
             &mut counter,
             DEFAULT_MAX_DECOMPRESS_BYTES,
         );
-        assert!(result.is_err());
+        // Per INV-8: error recovery returns default behavior, not an error
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        // Passthrough: input unchanged
+        assert_eq!(output, b"test");
+        // Verify the default columns value would be used (parse_params test covers this)
+        let parsed = CCITTFaxDecoder::parse_params(params.as_ref());
+        assert!(parsed.is_some());
+        assert_eq!(parsed.unwrap().columns, CCITTFaxDecoder::DEFAULT_COLUMNS);
     }
 
     #[test]
@@ -5059,7 +5108,8 @@ mod predictor_tests {
         use serde_json;
 
         // Test deserialization with password
-        let json = r#"{"max_decompress_bytes": 536870912, "password": "test123"}"#;
+        // Note: The custom deserializer expects PascalCase field names
+        let json = r#"{"MaxDecompressBytes": 536870912, "Password": "test123"}"#;
         let opts: ExtractionOptions = serde_json::from_str(json).unwrap();
 
         assert_eq!(opts.max_decompress_bytes, 536870912);
@@ -5071,14 +5121,14 @@ mod predictor_tests {
         );
 
         // Test deserialization without password
-        let json_no_pwd = r#"{"max_decompress_bytes": 1073741824}"#;
+        let json_no_pwd = r#"{"MaxDecompressBytes": 1073741824}"#;
         let opts_no_pwd: ExtractionOptions = serde_json::from_str(json_no_pwd).unwrap();
 
         assert_eq!(opts_no_pwd.max_decompress_bytes, 1073741824);
         assert!(opts_no_pwd.password.is_none());
 
         // Test deserialization with null password
-        let json_null_pwd = r#"{"max_decompress_bytes": 536870912, "password": null}"#;
+        let json_null_pwd = r#"{"MaxDecompressBytes": 536870912, "Password": null}"#;
         let opts_null_pwd: ExtractionOptions = serde_json::from_str(json_null_pwd).unwrap();
 
         assert_eq!(opts_null_pwd.max_decompress_bytes, 536870912);
