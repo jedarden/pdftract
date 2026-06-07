@@ -270,6 +270,12 @@ fn generate_cli_reference() -> String {
                     .help("Emit HTML comment anchors before each block in Markdown output")
             )
             .arg(
+                Arg::new("md_no_page_breaks")
+                    .long("md-no-page-breaks")
+                    .action(ArgAction::SetTrue)
+                    .help("Suppress page-break horizontal rules between pages")
+            )
+            .arg(
                 Arg::new("auto")
                     .long("auto")
                     .action(ArgAction::SetTrue)
@@ -427,36 +433,53 @@ fn generate_cli_reference() -> String {
                  Requires the 'inspect' feature flag."
             )
             .arg(
-                Arg::new("input")
-                    .help("Path to the PDF file")
+                Arg::new("file")
+                    .value_name("FILE")
                     .value_hint(ValueHint::FilePath)
                     .required(true)
+                    .help("Path to the PDF file to inspect")
+            )
+            .arg(
+                Arg::new("port")
+                    .short('p')
+                    .long("port")
+                    .value_name("PORT")
+                    .default_value("7676")
+                    .help("Port to bind the inspector server (default: 7676)")
             )
             .arg(
                 Arg::new("bind")
                     .short('b')
                     .long("bind")
                     .value_name("ADDR")
-                    .default_value("127.0.0.1:0")
-                    .help("Bind address for the inspector server (use 0.0.0.0:0 for accessibility from other devices)")
+                    .default_value("127.0.0.1")
+                    .help("Bind address for the inspector server (default: 127.0.0.1)")
             )
             .arg(
-                Arg::new("password")
-                    .long("password")
-                    .value_name("PASSWORD")
-                    .help("PDF password (INSECURE: rejected unless PDFTRACT_INSECURE_CLI_PASSWORD=1)")
+                Arg::new("auth_token")
+                    .long("auth-token")
+                    .value_name("TOKEN")
+                    .help("Authentication token for non-loopback binds")
             )
             .arg(
-                Arg::new("ocr")
-                    .long("ocr")
+                Arg::new("no_open")
+                    .long("no-open")
                     .action(ArgAction::SetTrue)
-                    .help("Enable OCR for scanned pages (requires 'ocr' feature)")
+                    .help("Suppress automatic browser launch")
             )
             .arg(
-                Arg::new("no_browser")
-                    .long("no-browser")
-                    .action(ArgAction::SetTrue)
-                    .help("Don't automatically open browser")
+                Arg::new("compare")
+                    .long("compare")
+                    .value_name("FILE")
+                    .value_hint(ValueHint::FilePath)
+                    .help("Optional second PDF file for comparative debugging")
+            )
+            .arg(
+                Arg::new("audit_log")
+                    .long("audit-log")
+                    .value_name("FILE")
+                    .value_hint(ValueHint::FilePath)
+                    .help("Write per-request audit log to FILE (NDJSON; use \"-\" for stdout)")
             )
     );
 
@@ -838,36 +861,63 @@ fn generate_cli_reference() -> String {
             .about("Verify a receipt against a PDF file")
             .long_about(
                 "Verify a visual citation receipt against the original PDF.\n\
-                 Checks that quoted text appears at the expected locations.\n\
+                 Checks fingerprint, bbox IoU, and content hash.\n\
                  Requires the 'receipts' feature flag."
             )
             .arg(
-                Arg::new("receipt")
-                    .value_name("PATH")
+                Arg::new("pdf_path")
+                    .value_name("FILE.pdf")
                     .value_hint(ValueHint::FilePath)
                     .required(true)
-                    .help("Path to the receipt JSON file")
+                    .help("Path to the PDF file to verify against")
             )
             .arg(
-                Arg::new("pdf")
-                    .long("pdf")
-                    .value_name("PATH")
+                Arg::new("receipt_path")
+                    .value_name("RECEIPT.json")
                     .value_hint(ValueHint::FilePath)
                     .required(true)
-                    .help("Path to the original PDF file")
+                    .help("Path to the receipt JSON file, or \"-\" for stdin")
             )
             .arg(
-                Arg::new("tolerance")
-                    .long("tolerance")
-                    .value_name("PIXELS")
-                    .default_value("10")
-                    .help("Tolerance for bounding box matching in pixels")
+                Arg::new("stdin")
+                    .long("stdin")
+                    .action(ArgAction::SetTrue)
+                    .help("Read receipt from stdin (alternative to \"-\")")
+                    .conflicts_with("receipt_path")
+            )
+            .arg(
+                Arg::new("inline")
+                    .long("inline")
+                    .value_name("JSON")
+                    .help("Receipt JSON as inline string (alternative to file path)")
+                    .conflicts_with("receipt_path")
+                    .conflicts_with("stdin")
             )
             .arg(
                 Arg::new("json")
                     .long("json")
                     .action(ArgAction::SetTrue)
-                    .help("Output results as JSON")
+                    .help("Output machine-readable JSON result")
+            )
+            .arg(
+                Arg::new("quiet")
+                    .long("quiet")
+                    .action(ArgAction::SetTrue)
+                    .help("Suppress human-readable output (exit code only)")
+                    .conflicts_with("json")
+            )
+            .arg(
+                Arg::new("password")
+                    .long("password")
+                    .value_name("PASSWORD")
+                    .help("PDF password (INSECURE: rejected unless PDFTRACT_INSECURE_CLI_PASSWORD=1)")
+            )
+            .arg(
+                Arg::new("password_stdin")
+                    .long("password-stdin")
+                    .action(ArgAction::SetTrue)
+                    .help("Read password from stdin (one line, terminated by newline)")
+                    .conflicts_with("password")
             )
     );
 
@@ -1008,6 +1058,51 @@ fn generate_cli_reference() -> String {
     );
 
     cmd = cmd.subcommand(sdk_cmd);
+
+    // migrate-schema subcommand
+    cmd = cmd.subcommand(
+        Command::new("migrate-schema")
+            .about("Migrate JSON output between schema versions")
+            .long_about(
+                "Migrate JSON output between schema versions.\n\
+                 Converts JSON from one schema version to another."
+            )
+            .arg(
+                Arg::new("from")
+                    .long("from")
+                    .value_name("VERSION")
+                    .required(true)
+                    .help("Source schema version (e.g., \"1.0\", \"1.1\")")
+            )
+            .arg(
+                Arg::new("to")
+                    .long("to")
+                    .value_name("VERSION")
+                    .required(true)
+                    .help("Target schema version (e.g., \"1.0\", \"1.1\")")
+            )
+            .arg(
+                Arg::new("input")
+                    .value_name("FILE")
+                    .default_value("-")
+                    .help("Input JSON file (use '-' for stdin)")
+            )
+            .arg(
+                Arg::new("output")
+                    .short('o')
+                    .long("output")
+                    .value_name("FILE")
+                    .default_value("-")
+                    .help("Output JSON file (use '-' for stdout)")
+            )
+            .arg(
+                Arg::new("pretty")
+                    .short('p')
+                    .long("pretty")
+                    .action(ArgAction::SetTrue)
+                    .help("Pretty-print output JSON")
+            )
+    );
 
     // list-diagnostics subcommand
     cmd = cmd.subcommand(

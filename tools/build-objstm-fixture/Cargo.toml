@@ -1,0 +1,11 @@
+[package]
+name = "build-objstm-fixture"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+# This tool is built independently
+
+[dependencies]
+flate2 = "1.0"

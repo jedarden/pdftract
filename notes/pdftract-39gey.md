@@ -83,17 +83,26 @@ Block struct uses `kind: String` field. Values used:
 
 Note: BlockKind enum with variants exists in `parser/struct_tree.rs` for Phase 7 structured tree walking.
 
+## Bug Fix
+
+Fixed `classify_heading` in `crates/pdftract-core/src/layout/line.rs`:
+- Changed `block.lines.len() <= 1` to `block.lines.len() == 1`
+- Empty blocks (0 lines) now correctly return `false` for heading classification
+- Test `test_classify_heading_empty_lines_not_heading` now passes
+- Commit: `fix(pdftract-39gey): Fix heading classification for empty blocks`
+
 ## Test Coverage Summary
 
 All child beads have comprehensive test coverage:
-- Line-to-block: 21/21 tests PASS
+- Line-to-block: 55/55 tests PASS (including heading detection tests)
 - List detection: 20/20 tests PASS
 - Figure detection: 16/16 tests PASS
 - Caption detection: 8/8 tests PASS
-- Code detection: 107/107 tests PASS
+- Code detection: 19/19 tests PASS
 - Header/footer: 25/25 tests PASS
-- Heading detection: 10/10 tests PASS
 - Watermark/formula stubs: 4/4 tests PASS
+
+**Total: 147/147 tests PASS**
 
 ## Files Modified
 

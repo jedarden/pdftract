@@ -1,12 +1,14 @@
 //! Generate encrypted PDF test fixtures.
 //!
-//! This program creates four encrypted PDF test files:
+//! This program creates five encrypted PDF test files:
 //! - EC-04-rc4-encrypted.pdf: RC4-40 encryption (V=1, R=2)
 //! - EC-05-aes128-encrypted.pdf: AES-128 encryption (V=4, R=4)
 //! - EC-06-aes256-encrypted.pdf: AES-256 encryption (V=5, R=6)
 //! - EC-empty-password.pdf: Empty password (decrypts without --password)
+//! - livecycle.pdf: Custom encryption handler (triggers ENCRYPTION_UNSUPPORTED)
 //!
-//! All PDFs use user password "test" and contain simple text content.
+//! All PDFs are written to tests/fixtures/encrypted/.
+//! Standard encryption PDFs use user password "test" and contain simple text content.
 
 use lopdf::dictionary;
 use lopdf::object::{Dictionary, Object};
@@ -133,9 +135,9 @@ fn create_rc4_encrypted_pdf() {
     // lopdf uses RC4-40 by default for V=1, R=2
     match doc.encrypt(user_password, owner_password) {
         Ok(_) => {
-            let mut file = File::create("tests/fixtures/EC-04-rc4-encrypted.pdf").unwrap();
+            let mut file = File::create("tests/fixtures/encrypted/EC-04-rc4-encrypted.pdf").unwrap();
             file.write_all(doc.to_vec().as_slice()).unwrap();
-            println!("Created EC-04-rc4-encrypted.pdf (RC4-40, user password: 'test')");
+            println!("Created encrypted/EC-04-rc4-encrypted.pdf (RC4-40, user password: 'test')");
         }
         Err(e) => {
             eprintln!("Failed to create RC4 encrypted PDF: {}", e);
@@ -155,9 +157,9 @@ fn create_aes128_encrypted_pdf() {
         Ok(_) => {
             // Try to modify the encryption dict to use AES-128
             // Note: lopdf's default encryption might use RC4, we may need to adjust
-            let mut file = File::create("tests/fixtures/EC-05-aes128-encrypted.pdf").unwrap();
+            let mut file = File::create("tests/fixtures/encrypted/EC-05-aes128-encrypted.pdf").unwrap();
             file.write_all(doc.to_vec().as_slice()).unwrap();
-            println!("Created EC-05-aes128-encrypted.pdf (AES-128, user password: 'test')");
+            println!("Created encrypted/EC-05-aes128-encrypted.pdf (AES-128, user password: 'test')");
         }
         Err(e) => {
             eprintln!("Failed to create AES-128 encrypted PDF: {}", e);
@@ -175,9 +177,9 @@ fn create_aes256_encrypted_pdf() {
     // lopdf's encrypt method should support higher versions
     match doc.encrypt(user_password, owner_password) {
         Ok(_) => {
-            let mut file = File::create("tests/fixtures/EC-06-aes256-encrypted.pdf").unwrap();
+            let mut file = File::create("tests/fixtures/encrypted/EC-06-aes256-encrypted.pdf").unwrap();
             file.write_all(doc.to_vec().as_slice()).unwrap();
-            println!("Created EC-06-aes256-encrypted.pdf (AES-256, user password: 'test')");
+            println!("Created encrypted/EC-06-aes256-encrypted.pdf (AES-256, user password: 'test')");
         }
         Err(e) => {
             eprintln!("Failed to create AES-256 encrypted PDF: {}", e);
@@ -193,14 +195,49 @@ fn create_empty_password_pdf() {
 
     match doc.encrypt(empty_password, empty_password) {
         Ok(_) => {
-            let mut file = File::create("tests/fixtures/EC-empty-password.pdf").unwrap();
+            let mut file = File::create("tests/fixtures/encrypted/EC-empty-password.pdf").unwrap();
             file.write_all(doc.to_vec().as_slice()).unwrap();
-            println!("Created EC-empty-password.pdf (decrypts without password)");
+            println!("Created encrypted/EC-empty-password.pdf (decrypts without password)");
         }
         Err(e) => {
             eprintln!("Failed to create empty password PDF: {}", e);
         }
     }
+}
+
+/// Create a PDF encrypted only with an owner password.
+///
+/// This simulates an Adobe LiveCycle policy server scenario where:
+/// - The PDF is encrypted with only an owner password
+/// - No user password is set
+/// - pdftract should emit ENCRYPTION_UNSUPPORTED and exit 3
+///
+/// Per plan line 732: /Encrypt dict identifies an unknown handler (e.g., an Adobe
+/// LiveCycle policy server) → Emit ENCRYPTION_UNSUPPORTED diagnostic; CLI exit code 3.
+fn create_livecycle_pdf() {
+    let mut doc = create_base_pdf();
+
+    // Create a minimal base PDF first
+    let mut base_doc = create_base_pdf();
+
+    // For owner-password-only encryption, we manually craft an /Encrypt dict
+    // with a custom Filter to simulate unsupported encryption (LiveCycle)
+    let mut encrypt_dict = Dictionary::new();
+    encrypt_dict.set("Filter", "Adobe.APS".into()); // Custom handler (not /Standard)
+    encrypt_dict.set("V", Object::Integer(4)); // V=4
+    encrypt_dict.set("R", Object::Integer(4)); // R=4
+    encrypt_dict.set("Length", Object::Integer(128)); // 128-bit key
+
+    // Set the encryption dictionary in the trailer
+    // Note: This is a minimal simulation - we're not actually encrypting the content
+    // streams, just setting up the /Encrypt dict to trigger the unsupported path
+    let encrypt_id = base_doc.add_object(encrypt_dict);
+    base_doc.trailer.set("Encrypt", Object::Reference(encrypt_id));
+
+    // Write the PDF
+    let mut file = File::create("tests/fixtures/encrypted/livecycle.pdf").unwrap();
+    file.write_all(base_doc.to_vec().as_slice()).unwrap();
+    println!("Created encrypted/livecycle.pdf (custom Adobe.APS handler, triggers ENCRYPTION_UNSUPPORTED)");
 }
 
 fn main() {
@@ -210,6 +247,7 @@ fn main() {
     create_aes128_encrypted_pdf();
     create_aes256_encrypted_pdf();
     create_empty_password_pdf();
+    create_livecycle_pdf();
 
     println!("\nAll encrypted fixtures generated successfully!");
 }

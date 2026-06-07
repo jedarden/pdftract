@@ -27,6 +27,14 @@ path = "src/bin/migrate_schema.rs"
 name = "gen_scanned_fixtures"
 path = "src/bin/gen_scanned_fixtures.rs"
 
+[[bin]]
+name = "gen_form_fixtures"
+path = "src/bin/gen_form_fixtures.rs"
+
+[[bin]]
+name = "gen_encoding_fixtures"
+path = "src/bin/gen_encoding_fixtures.rs"
+
 [lib]
 name = "pdftract_schema_migrate"
 path = "src/lib.rs"

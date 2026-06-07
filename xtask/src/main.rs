@@ -115,6 +115,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!(
             "  gen-shape-db                    Generate glyph shape database from font files"
         );
+        eprintln!("  generate-tagged-fixtures        Generate tagged PDF fixtures for Phase 7.1 StructTree");
         eprintln!("  memory-ceiling                  Run memory ceiling tests against perf/malformed corpora");
         std::process::exit(1);
     }
@@ -182,6 +183,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "build/glyph-shapes.json".to_string()
             };
             gen_shape_db(&fonts_dir, &output_path)?;
+            Ok(())
+        }
+        "generate-tagged-fixtures" => {
+            generate_tagged_fixtures()?;
             Ok(())
         }
         _ => {
@@ -2490,6 +2495,62 @@ fn generate_sensitive_fixture() -> Result<(), Box<dyn std::error::Error>> {
     println!("  - sensitive.pdf.provenance.md");
     println!("\nTest command:");
     println!("  cargo nextest run th-08");
+
+    Ok(())
+}
+
+/// Generate tagged PDF fixtures for Phase 7.1 StructTree integration tests.
+///
+/// Creates 4 tagged PDF test files:
+/// - `tagged-ua-simple.pdf` — minimal PDF/UA-1 with heading + paragraph elements
+/// - `tagged-ua-table.pdf` — PDF/UA with a tagged table (TR/TD structure)
+/// - `tagged-a-2a.pdf` — PDF/A-2a document with StructTree
+/// - `tagged-mcid-ordering.pdf` — document testing MCID-to-structure-element mapping
+///
+/// All PDFs are written to tests/fixtures/tagged/.
+fn generate_tagged_fixtures() -> Result<(), Box<dyn std::error::Error>> {
+    println!("==========================================");
+    println!("Generating Tagged PDF Fixtures");
+    println!("==========================================");
+
+    let workspace_root = find_workspace_root();
+    let fixtures_dir = workspace_root.join("tests/fixtures/tagged");
+    fs::create_dir_all(&fixtures_dir)?;
+
+    // Each fixture is in a separate module in generate_tagged_fixtures.rs
+    // We need to compile and run that as a separate binary or integrate directly
+    // For now, let's build it as a binary and run it
+
+    println!("\nBuilding and running generate_tagged_fixtures...");
+
+    let status = Command::new("cargo")
+        .args(["run", "--bin", "generate_tagged_fixtures"])
+        .current_dir(workspace_root.join("xtask"))
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()?;
+
+    if !status.success() {
+        return Err("generate_tagged_fixtures failed".into());
+    }
+
+    println!("\n==========================================");
+    println!("Tagged PDF Fixtures Generated");
+    println!("==========================================");
+
+    // Print sizes
+    for fixture_name in &[
+        "tagged-ua-simple.pdf",
+        "tagged-ua-table.pdf",
+        "tagged-a-2a.pdf",
+        "tagged-mcid-ordering.pdf",
+    ] {
+        let pdf_path = fixtures_dir.join(fixture_name);
+        if let Ok(metadata) = fs::metadata(&pdf_path) {
+            let size_kb = metadata.len() as f64 / 1024.0;
+            println!("  - {}: {:.2} KB", fixture_name, size_kb);
+        }
+    }
 
     Ok(())
 }

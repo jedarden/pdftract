@@ -18,8 +18,9 @@
 //! manual review on first run.
 
 use std::fs;
-use std::path::{Path, PathBuf};
-use pdftract_core::extract::{extract_pdf, ExtractionOptions};
+use std::path::{PathBuf};
+use pdftract_core::extract::extract_pdf;
+use pdftract_core::options::ExtractionOptions;
 
 /// Fixture directory for JSON schema validation tests
 const FIXTURES_DIR: &str = "tests/fixtures/json_schema";
@@ -70,23 +71,25 @@ impl Fixture {
 }
 
 /// Load the bundled JSON Schema for validation.
-fn load_schema() -> jsonschema::JSONSchema {
-    let schema_json = include_str!("../../docs/schema/v1.0/pdftract.schema.json");
+fn load_schema() -> jsonschema::Validator {
+    let schema_json = include_str!("../../../docs/schema/v1.0/pdftract.schema.json");
     let schema: serde_json::Value = serde_json::from_str(schema_json)
         .expect("Bundled schema is not valid JSON");
-    jsonschema::JSONSchema::compile(&schema)
+    jsonschema::validator_for(&schema)
         .expect("Bundled schema is not valid JSON Schema")
 }
 
 /// Validate a JSON value against the schema.
 ///
 /// Returns Ok(()) if validation passes, Err with error details otherwise.
-fn validate_json(schema: &jsonschema::JSONSchema, value: &serde_json::Value) -> Result<(), Vec<String>> {
+fn validate_json(schema: &jsonschema::Validator, value: &serde_json::Value) -> Result<(), Vec<String>> {
     let result = schema.validate(value);
     match result {
         Ok(_) => Ok(()),
-        Err(errors) => {
-            let error_details: Vec<String> = errors
+        Err(error) => {
+            // If there's at least one error, collect all errors using iter_errors
+            let error_details: Vec<String> = schema
+                .iter_errors(value)
                 .map(|e| {
                     let path = e.instance_path.to_string();
                     format!("{} {}", path, e)

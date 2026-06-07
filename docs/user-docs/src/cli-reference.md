@@ -75,6 +75,7 @@ pdftract extract
 - `--cache-size` <SIZE> - Set cache size limit (default 1 GiB; accepts KiB, MiB, GiB suffixes) (default: `1 GiB`)
 - `--no-cache` - Disable cache for this extraction (even if --cache-dir is set)
 - `--md-anchors` - Emit HTML comment anchors before each block in Markdown output
+- `--md-no-page-breaks` - Suppress page-break horizontal rules between pages
 - `--auto` - Auto-detect document type and apply appropriate profile
 - `--profile` <NAME|PATH> - Force-apply a specific profile (by name or YAML file path)
 - `--include-headers` - Include header blocks in output
@@ -150,14 +151,16 @@ pdftract inspect
 
 **Arguments:**
 
-- `<input>` - Path to the PDF file (required)
+- `<file>` - Path to the PDF file to inspect (required)
 
 **Options:**
 
-- `-b, --bind` <ADDR> - Bind address for the inspector server (use 0.0.0.0:0 for accessibility from other devices) (default: `127.0.0.1:0`)
-- `--password` <PASSWORD> - PDF password (INSECURE: rejected unless PDFTRACT_INSECURE_CLI_PASSWORD=1)
-- `--ocr` - Enable OCR for scanned pages (requires 'ocr' feature)
-- `--no-browser` - Don't automatically open browser
+- `-p, --port` <PORT> - Port to bind the inspector server (default: 7676) (default: `7676`)
+- `-b, --bind` <ADDR> - Bind address for the inspector server (default: 127.0.0.1) (default: `127.0.0.1`)
+- `--auth-token` <TOKEN> - Authentication token for non-loopback binds
+- `--no-open` - Suppress automatic browser launch
+- `--compare` <FILE> - Optional second PDF file for comparative debugging
+- `--audit-log` <FILE> - Write per-request audit log to FILE (NDJSON; use "-" for stdout)
 
   #### `serve`
 
@@ -427,7 +430,7 @@ pdftract hash
 Verify a receipt against a PDF file
 
 Verify a visual citation receipt against the original PDF.
-Checks that quoted text appears at the expected locations.
+Checks fingerprint, bbox IoU, and content hash.
 Requires the 'receipts' feature flag.
 
 **Usage:**
@@ -438,13 +441,17 @@ pdftract verify-receipt
 
 **Arguments:**
 
-- `<receipt>` - Path to the receipt JSON file (required)
+- `<pdf_path>` - Path to the PDF file to verify against (required)
+- `<receipt_path>` - Path to the receipt JSON file, or "-" for stdin (required)
 
 **Options:**
 
-- `--pdf` <PATH> - Path to the original PDF file
-- `--tolerance` <PIXELS> - Tolerance for bounding box matching in pixels (default: `10`)
-- `--json` - Output results as JSON
+- `--stdin` - Read receipt from stdin (alternative to "-")
+- `--inline` <JSON> - Receipt JSON as inline string (alternative to file path)
+- `--json` - Output machine-readable JSON result
+- `--quiet` - Suppress human-readable output (exit code only)
+- `--password` <PASSWORD> - PDF password (INSECURE: rejected unless PDFTRACT_INSECURE_CLI_PASSWORD=1)
+- `--password-stdin` - Read password from stdin (one line, terminated by newline)
 
   #### `conformance`
 
@@ -526,6 +533,30 @@ pdftract validate
 
 - `-l, --lang` <LANG> - Target language
 - `-d, --sdk-dir` <DIR> - Path to existing SDK directory
+
+  #### `migrate-schema`
+
+Migrate JSON output between schema versions
+
+Migrate JSON output between schema versions.
+Converts JSON from one schema version to another.
+
+**Usage:**
+
+```bash
+pdftract migrate-schema
+```
+
+**Arguments:**
+
+- `<input>` - Input JSON file (use '-' for stdin)
+
+**Options:**
+
+- `--from` <VERSION> - Source schema version (e.g., "1.0", "1.1")
+- `--to` <VERSION> - Target schema version (e.g., "1.0", "1.1")
+- `-o, --output` <FILE> - Output JSON file (use '-' for stdout) (default: `-`)
+- `-p, --pretty` - Pretty-print output JSON
 
   #### `list-diagnostics`
 

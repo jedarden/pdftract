@@ -1,0 +1,19 @@
+{
+  "attachments": [],
+  "fingerprint": "pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8",
+  "form_fields": [],
+  "javascript_actions": [],
+  "links": [],
+  "metadata": {
+    "block_count": 0,
+    "cache_age_seconds": null,
+    "cache_status": "skipped",
+    "page_count": 0,
+    "reading_order_algorithm": "xy_cut",
+    "span_count": 0
+  },
+  "pages": [],
+  "schema_version": "1.0",
+  "signatures": [],
+  "threads": []
+}

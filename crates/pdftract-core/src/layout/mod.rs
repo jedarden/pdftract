@@ -22,6 +22,7 @@ pub mod correction;
 pub mod figure;
 pub mod header_footer;
 pub mod line;
+pub mod list;
 pub mod readability;
 pub mod reading_order;
 pub mod watermark_formula;
@@ -40,6 +41,7 @@ pub use line::{
     cluster_spans_into_lines, compute_baseline, group_lines_into_blocks, union_bboxes, BlockInput,
     HasBBox, HasFontSize, Line, LineDirection, LineMetadata,
 };
+pub use list::{classify_list, starts_with_bullet, starts_with_number, BULLET_RE, NUMBER_RE, LineText};
 pub use readability::{aggregate_page_readability, ScoredSpan};
 pub use reading_order::{xy_cut, BlockWithBBox, HasBBox as HasBBoxForOrder, XYCutResult};
 pub use watermark_formula::{classify_formula, classify_watermark};

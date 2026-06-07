@@ -1096,8 +1096,8 @@ mod tests {
     use std::time::Duration;
 
     /// Test that the AxumError enum converts to correct status codes and error codes.
-    #[test]
-    fn test_error_into_response() {
+    #[tokio::test]
+    async fn test_error_into_response() {
         // Test BadRequest
         let err = AxumError::BadRequest("test".to_string(), None);
         let resp = err.into_response();

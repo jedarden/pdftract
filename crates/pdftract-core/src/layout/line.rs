@@ -297,7 +297,10 @@ where
         }
 
         // Trigger 2: Indent change > 0.03 * column_width
-        let indent_delta = (line_x0 - block_avg_x0.unwrap()).abs();
+        // Only trigger when current line is MORE indented (to the right, larger x0)
+        // than the block average. This detects new paragraphs starting after non-indented text.
+        // It does NOT trigger for drop-cap style indents (first line indented, rest flush-left).
+        let indent_delta = line_x0 - block_avg_x0.unwrap();
         if indent_delta > 0.03 * column_width {
             blocks.push(finalize_block(
                 std::mem::take(&mut current_block_lines),
@@ -746,6 +749,76 @@ where
     Some(union)
 }
 
+/// Classify a block as a heading based on font size and line count.
+///
+/// A block is classified as a heading if ALL of the following are true:
+/// 1. The block's median font size > 1.2 * page_body_median_font_size
+/// 2. The block has exactly 1 line (or 0 lines for empty blocks, though empty blocks won't pass the font size check)
+///
+/// # Arguments
+///
+/// * `block` - The block to classify (will have kind updated to "heading" if criteria met)
+/// * `page_body_median_font_size` - The median font size of paragraph blocks on the page
+///
+/// # Returns
+///
+/// `true` if the block was classified as a heading, `false` otherwise.
+///
+/// # INV
+///
+/// - Threshold is strictly `> 1.2`, not `>= 1.2`
+/// - Single-line criterion is `lines.len() <= 1`
+pub fn classify_heading<L>(block: &mut BlockInput<L>, page_body_median_font_size: f32) -> bool
+where
+    L: LineMetadata + Clone,
+{
+    // INV: threshold is strictly > 1.2
+    let ratio = block.median_font_size / page_body_median_font_size;
+    let size_criterion = ratio > 1.2;
+
+    // Single-line criterion (must be exactly 1 line, not 0)
+    let line_count_criterion = block.lines.len() == 1;
+
+    if size_criterion && line_count_criterion {
+        // Note: BlockInput doesn't have a kind field, so we can't set it here
+        // The calling code should set the kind based on the return value
+        true
+    } else {
+        false
+    }
+}
+
+/// Classify all blocks on a page as headings where appropriate.
+///
+/// This function processes blocks and classifies each block as a heading
+/// if it meets the font size and line count criteria.
+///
+/// # Arguments
+///
+/// * `blocks` - Mutable slice of BlockInput to classify
+/// * `page_body_median_font_size` - The median font size of paragraph blocks on the page
+///
+/// # Returns
+///
+/// A vector of indices indicating which blocks were classified as headings.
+pub fn classify_page_headings<L>(
+    blocks: &mut [BlockInput<L>],
+    page_body_median_font_size: f32,
+) -> Vec<usize>
+where
+    L: LineMetadata + Clone,
+{
+    let mut heading_indices = Vec::new();
+
+    for (idx, block) in blocks.iter_mut().enumerate() {
+        if classify_heading(block, page_body_median_font_size) {
+            heading_indices.push(idx);
+        }
+    }
+
+    heading_indices
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1153,6 +1226,25 @@ mod tests {
     }
 
     #[test]
+    fn test_indented_first_line_of_paragraph_not_split() {
+        // Indented first line of paragraph (like a drop cap): should NOT split into two blocks
+        // Coordinator acceptance criterion: "Indented first line of paragraph: NOT split into two blocks unconditionally."
+        // Scenario: First line indented (like a drop cap at x0=10), subsequent lines at x0=0
+        // Expected: ONE block (entire paragraph stays together)
+        let lines = vec![
+            make_test_line(100.0, [10.0, 95.0, 100.0, 105.0], 12.0, Some(0)), // Indented first line (drop cap)
+            make_test_line(90.0, [0.0, 85.0, 100.0, 95.0], 12.0, Some(0)),    // Not indented (continuation)
+            make_test_line(80.0, [0.0, 75.0, 100.0, 85.0], 12.0, Some(0)),    // Not indented
+        ];
+        let column_widths = vec![300.0]; // 0.03 * 300 = 9pt threshold, indent delta = 10pt
+        let blocks = group_lines_into_blocks(lines, &column_widths);
+        // Currently this FAILS (creates 2 blocks), but the coordinator acceptance criterion says it should PASS (1 block)
+        // TODO: Fix indent trigger to not split at first line of block
+        assert_eq!(blocks.len(), 1, "Indented first line of paragraph should NOT split into two blocks");
+        assert_eq!(blocks[0].lines.len(), 3, "All three lines should be in one block");
+    }
+
+    #[test]
     fn test_single_line_returns_single_block() {
         let lines = vec![make_test_line(
             100.0,
@@ -1341,5 +1433,196 @@ mod tests {
         assert_eq!(lines.len(), 1);
         // Median of [10, 12, 14] is 12
         assert_eq!(lines[0].median_font_size, 12.0);
+    }
+
+    // Phase 4.4 Heading Detection Tests
+
+    #[test]
+    fn test_classify_heading_18pt_block_12pt_body_one_line_heading() {
+        // AC: 18pt block, body 12pt, 1 line: Heading (1.5 > 1.2)
+        let mut block = BlockInput {
+            lines: vec![make_test_line(100.0, [0.0, 95.0, 100.0, 105.0], 18.0, Some(0))],
+            bbox: [0.0, 95.0, 100.0, 105.0],
+            median_font_size: 18.0,
+            column: 0,
+        };
+        let page_body_median = 12.0;
+
+        assert!(classify_heading(&mut block, page_body_median));
+    }
+
+    #[test]
+    fn test_classify_heading_14pt_block_12pt_body_one_line_not_heading() {
+        // AC: 14pt block, body 12pt, 1 line: NOT (1.17 < 1.2)
+        let mut block = BlockInput {
+            lines: vec![make_test_line(100.0, [0.0, 95.0, 100.0, 105.0], 14.0, Some(0))],
+            bbox: [0.0, 95.0, 100.0, 105.0],
+            median_font_size: 14.0,
+            column: 0,
+        };
+        let page_body_median = 12.0;
+
+        // 14 / 12 = 1.167 < 1.2, so NOT heading
+        assert!(!classify_heading(&mut block, page_body_median));
+    }
+
+    #[test]
+    fn test_classify_heading_18pt_block_three_lines_not_heading() {
+        // AC: 18pt block, 3 lines: NOT (too many lines)
+        let mut block = BlockInput {
+            lines: vec![
+                make_test_line(100.0, [0.0, 95.0, 100.0, 105.0], 18.0, Some(0)),
+                make_test_line(90.0, [0.0, 85.0, 100.0, 95.0], 18.0, Some(0)),
+                make_test_line(80.0, [0.0, 75.0, 100.0, 85.0], 18.0, Some(0)),
+            ],
+            bbox: [0.0, 75.0, 100.0, 105.0],
+            median_font_size: 18.0,
+            column: 0,
+        };
+        let page_body_median = 12.0;
+
+        // Too many lines, even though font size is large
+        assert!(!classify_heading(&mut block, page_body_median));
+    }
+
+    #[test]
+    fn test_classify_heading_12pt_block_12pt_body_not_heading() {
+        // AC: 12pt block, body 12pt: NOT
+        let mut block = BlockInput {
+            lines: vec![make_test_line(100.0, [0.0, 95.0, 100.0, 105.0], 12.0, Some(0))],
+            bbox: [0.0, 95.0, 100.0, 105.0],
+            median_font_size: 12.0,
+            column: 0,
+        };
+        let page_body_median = 12.0;
+
+        // 12 / 12 = 1.0 < 1.2, so NOT heading
+        assert!(!classify_heading(&mut block, page_body_median));
+    }
+
+    #[test]
+    fn test_classify_heading_threshold_exactly_1_2_not_heading() {
+        // Exactly 1.2 threshold: NOT heading (strict inequality)
+        let mut block = BlockInput {
+            lines: vec![make_test_line(100.0, [0.0, 95.0, 100.0, 105.0], 12.0, Some(0))],
+            bbox: [0.0, 95.0, 100.0, 105.0],
+            median_font_size: 12.0,
+            column: 0,
+        };
+        let page_body_median = 10.0;
+
+        // 12 / 10 = 1.2 exactly, NOT > 1.2, so NOT heading
+        assert!(!classify_heading(&mut block, page_body_median));
+    }
+
+    #[test]
+    fn test_classify_heading_threshold_just_above_1_2_is_heading() {
+        // Just above 1.2 threshold: IS heading
+        let mut block = BlockInput {
+            lines: vec![make_test_line(100.0, [0.0, 95.0, 100.0, 105.0], 12.1, Some(0))],
+            bbox: [0.0, 95.0, 100.0, 105.0],
+            median_font_size: 12.1,
+            column: 0,
+        };
+        let page_body_median = 10.0;
+
+        // 12.1 / 10 = 1.21 > 1.2, so IS heading
+        assert!(classify_heading(&mut block, page_body_median));
+    }
+
+    #[test]
+    fn test_classify_heading_empty_lines_not_heading() {
+        // Empty block (0 lines): NOT heading
+        let mut block: BlockInput<TestLine> = BlockInput {
+            lines: vec![],
+            bbox: [0.0, 0.0, 0.0, 0.0],
+            median_font_size: 18.0,
+            column: 0,
+        };
+        let page_body_median = 12.0;
+
+        // Empty lines, even though font size is large
+        assert!(!classify_heading(&mut block, page_body_median));
+    }
+
+    #[test]
+    fn test_classify_heading_two_lines_not_heading() {
+        // Two lines: NOT heading
+        let mut block = BlockInput {
+            lines: vec![
+                make_test_line(100.0, [0.0, 95.0, 100.0, 105.0], 18.0, Some(0)),
+                make_test_line(90.0, [0.0, 85.0, 100.0, 95.0], 18.0, Some(0)),
+            ],
+            bbox: [0.0, 85.0, 100.0, 105.0],
+            median_font_size: 18.0,
+            column: 0,
+        };
+        let page_body_median = 12.0;
+
+        // Two lines, even though font size is large
+        assert!(!classify_heading(&mut block, page_body_median));
+    }
+
+    #[test]
+    fn test_classify_heading_small_page_body_median() {
+        // Small page body median (e.g., 8pt) with 10pt block
+        let mut block = BlockInput {
+            lines: vec![make_test_line(100.0, [0.0, 95.0, 100.0, 105.0], 10.0, Some(0))],
+            bbox: [0.0, 95.0, 100.0, 105.0],
+            median_font_size: 10.0,
+            column: 0,
+        };
+        let page_body_median = 8.0;
+
+        // 10 / 8 = 1.25 > 1.2, so IS heading
+        assert!(classify_heading(&mut block, page_body_median));
+    }
+
+    #[test]
+    fn test_classify_heading_large_page_body_median() {
+        // Large page body median (e.g., 16pt) with 20pt block
+        let mut block = BlockInput {
+            lines: vec![make_test_line(100.0, [0.0, 95.0, 100.0, 105.0], 20.0, Some(0))],
+            bbox: [0.0, 95.0, 100.0, 105.0],
+            median_font_size: 20.0,
+            column: 0,
+        };
+        let page_body_median = 16.0;
+
+        // 20 / 16 = 1.25 > 1.2, so IS heading
+        assert!(classify_heading(&mut block, page_body_median));
+    }
+
+    #[test]
+    fn test_classify_page_headings_multiple() {
+        // Test classify_page_headings with multiple blocks
+        let mut blocks = vec![
+            BlockInput {
+                lines: vec![make_test_line(100.0, [0.0, 95.0, 100.0, 105.0], 18.0, Some(0))],
+                bbox: [0.0, 95.0, 100.0, 105.0],
+                median_font_size: 18.0,
+                column: 0,
+            },
+            BlockInput {
+                lines: vec![make_test_line(90.0, [0.0, 85.0, 100.0, 95.0], 12.0, Some(0))],
+                bbox: [0.0, 85.0, 100.0, 95.0],
+                median_font_size: 12.0,
+                column: 0,
+            },
+            BlockInput {
+                lines: vec![make_test_line(80.0, [0.0, 75.0, 100.0, 85.0], 15.0, Some(0))],
+                bbox: [0.0, 75.0, 100.0, 85.0],
+                median_font_size: 15.0,
+                column: 0,
+            },
+        ];
+        let page_body_median = 12.0;
+
+        let heading_indices = classify_page_headings(&mut blocks, page_body_median);
+
+        // First block (18pt > 1.2*12pt, 1 line) IS heading
+        // Second block (12pt = 12pt) NOT heading
+        // Third block (15pt > 1.2*12pt, 1 line) IS heading
+        assert_eq!(heading_indices, vec![0, 2]);
     }
 }

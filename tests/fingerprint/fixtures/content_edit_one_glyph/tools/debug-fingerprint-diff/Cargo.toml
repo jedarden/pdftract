@@ -1,0 +1,13 @@
+[package]
+name = "debug-fingerprint-diff"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "debug-fingerprint-diff"
+path = "main.rs"
+
+[dependencies]
+anyhow = "1.0"
+pdftract-core = { path = "../../crates/pdftract-core" }
