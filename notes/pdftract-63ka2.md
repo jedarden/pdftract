@@ -1,4 +1,4 @@
-# Verification Note: pdftract-63ka2 (Updated 2026-05-28)
+# Verification Note: pdftract-63ka2 (Updated 2026-06-06)
 
 ## Bead
 Phase 4.3: Column Detection (coordinator)
@@ -88,3 +88,26 @@ This coordinator bead requires significant extraction pipeline refactoring:
 2. Add Phase 4.3 column detection after line formation
 3. Update SpanJson to use computed column values
 4. Add fixture tests for acceptance criteria verification
+
+---
+
+## 2026-06-06 Verification
+
+Re-verified status on 2026-06-06. All findings from 2026-05-28 remain accurate:
+
+### Unit Tests Status
+- All 49 column detection unit tests PASS
+- Verified with: `cargo test -p pdftract-core --lib 'layout::columns::tests' --no-fail-fast`
+
+### Integration Status
+- Column detection functions still NOT called in extract.rs
+- Verified with: `grep -rn "cluster_spans_into_lines\|build_x0_histogram" crates/pdftract-core/src/extract.rs` returned no matches
+- SpanJson column field still hardcoded to None
+
+### Recommendation: DO NOT CLOSE
+The coordinator bead must remain open because:
+1. The implementation exists but is not integrated into the production pipeline
+2. End-to-end acceptance criteria cannot be verified without integration
+3. The child beads being closed only confirms unit-level correctness, not system-level correctness
+
+The coordinator's responsibility is to ensure the sub-phase works end-to-end in the actual extraction pipeline, not just that individual functions are implemented.
