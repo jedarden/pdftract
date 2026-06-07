@@ -193,9 +193,9 @@ mod tests {
         assert!(rect.contains(r#"fill="url(#ocr-diagonal-stripes)""#));
 
         // Check stroke
-        assert!(rect.contains(r#"stroke="#00d9ff""#));
-        assert!(rect.contains(r#"stroke-width="1""#));
-        assert!(rect.contains(r#"stroke-opacity="0.5""#));
+        assert!(rect.contains(r##"stroke="#00d9ff""##));
+        assert!(rect.contains(r##"stroke-width="1""##));
+        assert!(rect.contains(r##"stroke-opacity="0.5""##));
 
         // Check data attributes
         assert!(rect.contains(r#"data-ocr-source="ocr""#));

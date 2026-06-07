@@ -1092,7 +1092,7 @@ impl IntoResponse for AxumError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hyper::body::to_bytes;
+    use http_body_util::BodyExt;
     use std::time::Duration;
 
     /// Test that the AxumError enum converts to correct status codes and error codes.
@@ -1148,7 +1148,7 @@ mod tests {
         let resp = err.into_response();
         assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
         // Verify the response body contains DECOMPRESSION_LIMIT error code
-        let body = hyper::body::to_bytes(resp.into_body()).await.unwrap();
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["error"], "DECOMPRESSION_LIMIT");
         assert!(json["hint"].as_str().unwrap().contains("zip-bomb"));
@@ -1161,6 +1161,7 @@ mod tests {
             body::Body,
             http::{StatusCode, Request},
         };
+        use tower::ServiceExt;
 
         let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30, false);
         let app = Router::new()
@@ -1173,14 +1174,14 @@ mod tests {
             .method("GET")
             .body(Body::empty())
             .unwrap();
-        let response = axum::app::clone_app(&app)
+        let response = app
             .oneshot(request)
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
 
         // Verify the error message is descriptive
-        let body = hyper::body::to_bytes(response.into_body()).await.unwrap();
+        let body = response.into_body().collect().await.unwrap().to_bytes();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["error"], "NOT_FOUND");
         assert!(json["message"].as_str().unwrap().contains("POST"));

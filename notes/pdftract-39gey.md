@@ -27,8 +27,9 @@ Coordinator for Phase 4.4 Block Formation. All 8 child beads completed and verif
 
 2. **Indented first line of paragraph: NOT split unconditionally** ✅
    - Verified in pdftract-fy89c acceptance criteria
-   - Test `test_indented_first_line_new_block`: indent > 0.03 * column_width creates new block
-   - This is correct behavior per plan (line 1696)
+   - Test `test_indented_first_line_of_paragraph_not_split`: drop-cap style (first line indented, rest flush) stays together
+   - Commit `d0f52751`: fix indent trigger to not split drop-cap paragraphs
+   - Indent trigger only fires when current line x0 > block avg x0 (not on first line)
 
 3. **Header text on pages 1-10 with identical text: classified Header, deduplicated** ✅
    - Verified in pdftract-2j4zl acceptance criteria

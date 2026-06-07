@@ -296,7 +296,7 @@ mod tests {
 
         let result = render_mcid_labels(&Some(mcid_map), &blocks);
         // Check for the amber/orange color (#f59e0b)
-        assert!(result[0].contains(r#"fill="#f59e0b""#));
+        assert!(result[0].contains(r##"fill="#f59e0b""##));
     }
 
     #[test]
