@@ -369,6 +369,13 @@ impl HasBBox for [f64; 4] {
     }
 }
 
+// Implement HasBBox for Line<S> to support column detection
+impl<S> HasBBox for crate::layout::line::Line<S> {
+    fn bbox(&self) -> [f32; 4] {
+        self.bbox
+    }
+}
+
 /// A confirmed column with its x_range and index.
 ///
 /// The x_range is \[x0, x1\] in PDF user space coordinates.

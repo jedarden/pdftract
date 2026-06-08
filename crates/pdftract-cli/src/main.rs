@@ -32,6 +32,7 @@ use pdftract_core::cache;
 use pdftract_core::extract::{extract_pdf, result_to_json};
 use pdftract_core::markdown::{block_to_markdown, page_to_markdown, page_to_markdown_with_links, page_to_markdown_with_links_and_footnotes, MarkdownOptions};
 use pdftract_core::options::{ExtractionOptions, ReceiptsMode};
+use pdftract_core::text::{serialize_document_text, TextOptions};
 
 // Re-export diagnostics for the --list-diagnostics and --explain-diagnostic commands
 pub use pdftract_core::diagnostics::{DiagCode, DiagInfo, DIAGNOSTIC_CATALOG};
@@ -1356,12 +1357,22 @@ fn write_output<W: std::io::Write>(
             writeln!(writer, "{}", json_str)?;
         }
         output::Format::Text => {
-            // Plain text output: concatenate all span texts
-            for page in &result.pages {
-                for span in &page.spans {
-                    writeln!(writer, "{}", span.text)?;
-                }
-            }
+            // Plain text output: block-level serialization with form feeds between pages
+            // Phase 4.6: serialize blocks in reading order, join with \n\n, pages with \f
+            let text_options = TextOptions {
+                include_headers_footers: options.output.include_headers || options.output.include_footers,
+                include_invisible_text: options.output.include_invisible,
+                include_watermarks: options.output.include_watermarks,
+            };
+
+            // Build pages array for document-level serialization
+            let pages: Vec<(&[pdftract_core::schema::BlockJson], &[pdftract_core::schema::SpanJson])> = result.pages
+                .iter()
+                .map(|p| (&p.blocks[..], &p.spans[..]))
+                .collect();
+
+            let text = serialize_document_text(&pages, &text_options);
+            write!(writer, "{}", text)?;
         }
         output::Format::Markdown => {
             // Markdown output: simple conversion with optional anchors

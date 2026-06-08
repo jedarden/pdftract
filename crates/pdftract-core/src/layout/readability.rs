@@ -558,11 +558,12 @@ mod tests {
     #[test]
     fn test_all_replacement_chars() {
         // AC2: All-U+FFFD: significantly reduced (printable_fraction=0, whitespace_score=0)
-        // Score = 0.35*0 + 0.30*1 + 0.15*0 + 0.10*1 + 0.10*1 = 0.5
+        // Score = 0.35*0 + 0.30*0 + 0.15*0 + 0.10*1 + 0.10*1 = 0.2
+        // (dict_coverage=0 because U+FFFD sequences are not English words)
         let text = "\u{FFFD}\u{FFFD}\u{FFFD}\u{FFFD}\u{FFFD}";
         let score = score_span_readability(text, 1.0, Some("en"));
         assert!(score < 0.7, "Expected reduced score for all U+FFFD, got {}", score);
-        assert!(score > 0.3, "Score should still be >0 due to dict/lig/conf signals");
+        assert!(score > 0.1, "Score should still be >0 due to lig/conf signals");
     }
 
     #[test]
@@ -667,17 +668,22 @@ mod tests {
     #[test]
     fn test_non_english_enables_dict_only_for_en() {
         // Verify dict coverage is enabled ONLY for "en" prefix
-        let text = "clean text";
+        // Use text with non-dictionary words to show the difference
+        let text = "xyzzy plugh";  // Non-words not in the 20k wordlist
         let score_en = score_span_readability(text, 1.0, Some("en"));
         let score_en_us = score_span_readability(text, 1.0, Some("en-US"));
         let score_zh = score_span_readability(text, 1.0, Some("zh"));
         let score_none = score_span_readability(text, 1.0, None);
 
-        // English variants should have same score
+        // English variants should have same score (dict enabled, both words fail -> lower score)
         assert_eq!(score_en, score_en_us, "en and en-US should have same score");
-        // Non-English and None should have same score (dict disabled)
+        // Non-English and None should have same score (dict disabled -> higher score)
         assert_eq!(score_zh, score_none, "Non-English and None should have same score");
-        // English should be different from non-English (dict enabled)
+        // English should be DIFFERENT from non-English (dict enabled for en, disabled for zh)
+        // For "xyzzy plugh", dict_coverage=0 for en (words not in dict), but 1.0 for zh (disabled)
+        // Dict weight is 0.30, so max difference is 0.30
         assert_ne!(score_en, score_zh, "English and non-English should differ due to dict");
+        // Verify non-English score is higher (dict disabled gives 1.0 vs 0.0 for en)
+        assert!(score_zh > score_en, "Non-English should have higher score when words not in dict");
     }
 }

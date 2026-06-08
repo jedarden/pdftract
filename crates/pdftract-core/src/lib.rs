@@ -241,7 +241,7 @@ pub use schema::{
     TableJson, ThreadJson,
 };
 pub use table::{GridCandidate, PageContext as TablePageContext, TableDetector};
-pub use text::{serialize_page_text, TextOptions};
+pub use text::{serialize_document_text, serialize_page_text, TextOptions};
 pub use word_boundary::{TextState, WordBoundaryDetector, WordBoundaryManager};
 
 // Re-export PdfSource types (pdftract-1mmq9)

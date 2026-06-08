@@ -251,6 +251,66 @@ pub fn serialize_page_text(blocks: &[BlockJson], spans: &[SpanJson], options: &T
     result_parts.join("\n\n")
 }
 
+/// Serialize document text from multiple pages.
+///
+/// This function implements the document-level text serialization for Phase 4.6.
+/// It calls `serialize_page_text` for each page and joins the results with form
+/// feed characters (`\f`, U+000C, 0x0C) BETWEEN pages, with NO trailing form feed.
+///
+/// # Arguments
+///
+/// * `pages` - Slice of tuples containing (blocks, spans) for each page
+/// * `options` - Options controlling which blocks are included
+///
+/// # Returns
+///
+/// A plain text string with pages separated by `\f`. Empty pages contribute empty
+/// strings but still receive form feeds between them (except after the last page).
+///
+/// # Form Feed Invariant
+///
+/// - N pages → N-1 form feeds (e.g., 10 pages = 9 form feeds)
+/// - No leading form feed
+/// - No trailing form feed
+/// - Empty page in middle: form feed before AND after
+///
+/// # Examples
+///
+/// ```
+/// use pdftract_core::schema::BlockJson;
+/// use pdftract_core::text::{serialize_document_text, TextOptions};
+///
+/// let pages = vec![
+///     // Page 0: one paragraph
+///     (vec![block("P1")], vec![]),
+///     // Page 1: one paragraph
+///     (vec![block("P2")], vec![]),
+/// ];
+///
+/// let options = TextOptions::default();
+/// let text = serialize_document_text(&pages, &options);
+/// assert_eq!(text, "P1\fP2");  // One form feed between two pages
+/// ```
+pub fn serialize_document_text<'a>(
+    pages: &[(&'a [BlockJson], &'a [SpanJson])],
+    options: &TextOptions,
+) -> String {
+    if pages.is_empty() {
+        return String::new();
+    }
+
+    let mut result_parts = Vec::with_capacity(pages.len());
+
+    for (blocks, spans) in pages {
+        let page_text = serialize_page_text(blocks, spans, options);
+        result_parts.push(page_text);
+    }
+
+    // Join pages with form feed (U+000C, 0x0C)
+    // This produces exactly N-1 form feeds for N pages
+    result_parts.join("\u{000C}")
+}
+
 /// Check if a block kind is a header or footer.
 fn is_header_or_footer(kind: &str) -> bool {
     matches!(kind, "header" | "footer")
@@ -799,5 +859,126 @@ mod tests {
         let text = serialize_page_text(&blocks, &spans, &options);
         assert_eq!(text, "visible1 visible2");
         assert!(!text.contains("invisible"));
+    }
+
+    // Document-level serializer tests (pdftract-3bgxq)
+
+    #[test]
+    fn test_serialize_document_text_one_page() {
+        // AC: 1 page: 0 form feeds
+        let blocks = vec![make_test_block("paragraph", "P1", [0.0, 0.0, 100.0, 20.0])];
+        let spans: Vec<SpanJson> = vec![];
+        let pages = vec![(&blocks[..], &spans[..])];
+
+        let options = TextOptions::default();
+        let text = serialize_document_text(&pages, &options);
+
+        assert_eq!(text, "P1");
+        assert_eq!(text.matches('\x0c').count(), 0, "1 page should have 0 form feeds");
+    }
+
+    #[test]
+    fn test_serialize_document_text_two_pages() {
+        // AC: 2 pages: 1 form feed
+        let blocks1 = vec![make_test_block("paragraph", "P1", [0.0, 0.0, 100.0, 20.0])];
+        let blocks2 = vec![make_test_block("paragraph", "P2", [0.0, 0.0, 100.0, 20.0])];
+        let spans: Vec<SpanJson> = vec![];
+        let pages = vec![(&blocks1[..], &spans[..]), (&blocks2[..], &spans[..])];
+
+        let options = TextOptions::default();
+        let text = serialize_document_text(&pages, &options);
+
+        assert_eq!(text, "P1\x0cP2");
+        assert_eq!(text.matches('\x0c').count(), 1, "2 pages should have 1 form feed");
+    }
+
+    #[test]
+    fn test_serialize_document_text_ten_pages() {
+        // AC: 10 pages: 9 form feeds (critical test from plan)
+        // Store all blocks to keep them alive for the duration of the test
+        let blocks_vec: Vec<Vec<BlockJson>> = (1..=10)
+            .map(|i| vec![make_test_block("paragraph", &format!("P{}", i), [0.0, 0.0, 100.0, 20.0])])
+            .collect();
+        let spans: Vec<SpanJson> = vec![];
+
+        let pages: Vec<(&[BlockJson], &[SpanJson])> = blocks_vec
+            .iter()
+            .map(|blocks| (blocks.as_slice(), spans.as_slice()))
+            .collect();
+
+        let options = TextOptions::default();
+        let text = serialize_document_text(&pages, &options);
+
+        assert_eq!(text.matches('\x0c').count(), 9, "10 pages should have exactly 9 form feeds");
+        // Verify no leading form feed
+        assert!(!text.starts_with('\x0c'), "Should not have leading form feed");
+        // Verify no trailing form feed
+        assert!(!text.ends_with('\x0c'), "Should not have trailing form feed");
+    }
+
+    #[test]
+    fn test_serialize_document_text_empty_page_in_middle() {
+        // AC: Empty page in middle: form feed before AND after
+        let blocks1 = vec![make_test_block("paragraph", "P1", [0.0, 0.0, 100.0, 20.0])];
+        let blocks2: Vec<BlockJson> = vec![]; // Empty page
+        let blocks3 = vec![make_test_block("paragraph", "P3", [0.0, 0.0, 100.0, 20.0])];
+        let spans: Vec<SpanJson> = vec![];
+        let pages = vec![(&blocks1[..], &spans[..]), (&blocks2[..], &spans[..]), (&blocks3[..], &spans[..])];
+
+        let options = TextOptions::default();
+        let text = serialize_document_text(&pages, &options);
+
+        // Should be: "P1\x0c\x0cP3" (two form feeds for the empty page)
+        assert_eq!(text.matches('\x0c').count(), 2, "3 pages with empty middle should have 2 form feeds");
+        assert!(text.contains("P1\x0c\x0cP3"));
+    }
+
+    #[test]
+    fn test_serialize_document_text_empty_document() {
+        // AC: Empty document: empty string
+        let pages: Vec<(&[BlockJson], &[SpanJson])> = vec![];
+        let options = TextOptions::default();
+        let text = serialize_document_text(&pages, &options);
+
+        assert_eq!(text, "", "Empty document should produce empty string");
+    }
+
+    #[test]
+    fn test_serialize_document_text_filters_headers() {
+        // AC: Header excluded by default across all pages
+        let blocks1 = vec![
+            make_test_block("header", "Header", [0.0, 0.0, 100.0, 20.0]),
+            make_test_block("paragraph", "P1", [0.0, 20.0, 100.0, 40.0]),
+        ];
+        let blocks2 = vec![
+            make_test_block("header", "Header", [0.0, 0.0, 100.0, 20.0]),
+            make_test_block("paragraph", "P2", [0.0, 20.0, 100.0, 40.0]),
+        ];
+        let spans: Vec<SpanJson> = vec![];
+        let pages = vec![(&blocks1[..], &spans[..]), (&blocks2[..], &spans[..])];
+
+        let options = TextOptions::default();
+        let text = serialize_document_text(&pages, &options);
+
+        assert!(!text.contains("Header"), "Headers should be excluded by default");
+        assert!(text.contains("P1"));
+        assert!(text.contains("P2"));
+    }
+
+    #[test]
+    fn test_serialize_document_text_includes_headers_when_flagged() {
+        // AC: Header included when flag is set
+        let blocks1 = vec![
+            make_test_block("header", "Header1", [0.0, 0.0, 100.0, 20.0]),
+            make_test_block("paragraph", "P1", [0.0, 20.0, 100.0, 40.0]),
+        ];
+        let spans: Vec<SpanJson> = vec![];
+        let pages = vec![(&blocks1[..], &spans[..])];
+
+        let options = TextOptions::new().with_headers_footers();
+        let text = serialize_document_text(&pages, &options);
+
+        assert!(text.contains("Header1"), "Headers should be included when flag is set");
+        assert!(text.contains("P1"));
     }
 }

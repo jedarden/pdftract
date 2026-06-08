@@ -280,6 +280,36 @@ impl Span {
     }
 }
 
+// Implement traits for line clustering and column detection
+impl crate::layout::line::HasBBox for Span {
+    fn bbox(&self) -> [f32; 4] {
+        self.bbox
+    }
+}
+
+impl crate::layout::line::HasFontSize for Span {
+    fn font_size(&self) -> f32 {
+        self.size
+    }
+}
+
+impl crate::layout::line::HasText for Span {
+    fn text(&self) -> &str {
+        &self.text
+    }
+}
+
+// Implement CorrectableText for mojibake repair
+impl crate::layout::correction::CorrectableText for Span {
+    fn text_mut(&mut self) -> &mut String {
+        &mut self.text
+    }
+
+    fn text(&self) -> &str {
+        &self.text
+    }
+}
+
 /// Map UnicodeSource to ConfidenceSource per plan Phase 4.1.
 ///
 /// | UnicodeSource    | ConfidenceSource |
