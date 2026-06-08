@@ -49,7 +49,7 @@ pub enum Commands {
         #[arg(short, long, default_value = "tests/sdk-conformance/cases.json")]
         suite: PathBuf,
         /// SDK name
-        #[arg(short, long, default_value = "pdftract")]
+        #[arg(short = 'k', long, default_value = "pdftract")]
         sdk: String,
         /// SDK version
         #[arg(short, long, default_value = "0.1.0")]
