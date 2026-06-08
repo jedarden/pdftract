@@ -1,5 +1,7 @@
+# CLI Reference
+
 > This page is auto-generated from the clap command tree.
-> Run `cargo run --manifest-path=xtask/Cargo.toml --bin gen_cli_reference` to regenerate.
+> Run `cargo run --bin gen-cli-reference` to regenerate.
 
 # Command-Line Help for `pdftract`
 
