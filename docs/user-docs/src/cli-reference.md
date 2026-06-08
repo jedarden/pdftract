@@ -612,8 +612,6 @@ Exit code policy: exits 0 if no checks FAIL (WARN does not affect exit code); ex
 
 <!-- AUTOGEN END -->
 
-
-
 ## Hand-Curated Content
 
 > **Note:** Any content added after this marker will be preserved

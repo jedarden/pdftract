@@ -54,7 +54,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let hand_curated_content = if output_path.exists() {
         let existing = fs::read_to_string(&output_path)?;
         if let Some(idx) = existing.find(AUTOGEN_END_MARKER) {
-            Some(existing[idx + AUTOGEN_END_MARKER.len()..].to_string())
+            // Trim leading whitespace from curated content to prevent newline accumulation
+            Some(existing[idx + AUTOGEN_END_MARKER.len()..].trim_start().to_string())
         } else {
             None
         }
