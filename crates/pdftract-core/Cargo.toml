@@ -104,6 +104,10 @@ harness = false
 name = "wordlist"
 harness = false
 
+[[bench]]
+name = "cmap_tokenize"
+harness = false
+
 [package.metadata.docs.rs]
 # Document all public API features except those requiring system libraries.
 # The "ocr" and "full-render" features require leptonica-sys which needs
