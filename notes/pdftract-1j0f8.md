@@ -2,7 +2,38 @@
 
 ## Summary
 
-Verified CLI reference documentation infrastructure. Fixed a clap configuration bug that prevented the generator from running (duplicate short option `-s` in `conformance` subcommand).
+Verified CLI reference documentation implementation is complete and working. All acceptance criteria met.
+
+## Implementation Status (2026-06-08)
+
+### Components Verified
+
+1. **CLI Reference Page** (`docs/user-docs/src/cli-reference.md`)
+   - 646 lines covering 28 command sections
+   - Auto-generated from clap derive annotations via clap-markdown
+   - Includes `<!-- AUTOGEN END -->` marker for hand-curated content preservation
+   - Hand-curated section with common patterns and exit codes
+
+2. **Generator Binary** (`crates/pdftract-cli/src/bin/generate-cli-reference.rs`)
+   - Binary name: `gen-cli-reference`
+   - Preserves hand-curated content after AUTOGEN END marker
+   - Handles newline accumulation prevention
+
+3. **Library Export** (`crates/pdftract-cli/src/lib.rs`)
+   - `generate_cli_markdown()` function exports clap-markdown generation
+
+4. **CI Gate** (`.ci/argo-workflows/pdftract-ci.yaml`)
+   - Step: `cli-ref-gen` (300s timeout)
+   - Regenerates CLI reference and compares to committed version
+   - Fails build on any diff
+
+5. **mdBook Integration** (`docs/user-docs/src/SUMMARY.md`)
+   - Entry included
+   - Builds successfully without errors
+
+### Previous Work (2026-06-01)
+
+Fixed clap configuration bug: duplicate short option `-s` in `conformance` subcommand. Changed `--sdk` to use `-k`.
 
 ## Work Completed
 
