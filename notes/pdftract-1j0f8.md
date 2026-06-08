@@ -37,7 +37,7 @@ Fixed clap configuration bug: duplicate short option `-s` in `conformance` subco
 
 ## Work Completed
 
-### 1. Bug Fix: Clap Short Flag Conflict
+### 1. Bug Fix: Clap Short Flag Conflict (2026-06-01)
 **File:** `crates/pdftract-cli/src/cli.rs`
 
 **Problem:** The `conformance` subcommand had duplicate short options:
@@ -58,7 +58,25 @@ sdk: String,
 sdk: String,
 ```
 
-### 2. Verification Tests
+### 2. CLI Reference Update (2026-06-08)
+**File:** `docs/user-docs/src/cli-reference.md`
+
+**Change:** Updated autogen comment to use correct xtask manifest path and removed duplicate header.
+
+**Diff:**
+```diff
+-# CLI Reference
+-
+> This page is auto-generated from the clap command tree.
+-> Run `cargo run --bin gen-cli-reference` to regenerate.
++> Run `cargo run --manifest-path=xtask/Cargo.toml --bin gen_cli_reference` to regenerate.
+```
+
+**Reason:** The clap-markdown generator already adds the "# CLI Reference" header, so the manual header was redundant. Updated the command reference to match the actual invocation path.
+
+**Commit:** `657cdab5` - `docs(pdftract-1j0f8): update CLI reference generation command reference`
+
+### 3. Verification Tests
 
 1. **CLI Reference Generation:**
    ```bash
