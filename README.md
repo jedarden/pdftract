@@ -21,6 +21,8 @@ A PDF text extraction library that gets the hard parts right.
 
 ## Installation
 
+**Minimum Supported Rust Version (MSRV):** 1.78
+
 ### cargo
 
 ```bash
@@ -84,8 +86,13 @@ pdftract serve --port 8080                     # HTTP microservice
 
 ## Documentation
 
-- **User docs:** [docs/user-docs](docs/user-docs/) (mdBook)
-- **API reference:** [docs.rs/pdftract](https://docs.rs/pdftract)
+- **User docs:** [docs/user-docs](docs/user-docs/) (mdBook) — Comprehensive user guide at [pdftract.com](https://pdftract.com)
+- **API reference:** [docs.rs/pdftract](https://docs.rs/pdftract) — Rust API documentation
+- **Extraction output schema:** [docs/research/extraction-output-schema.md](docs/research/extraction-output-schema.md)
+- **SDK architecture:** [docs/notes/sdk-architecture.md](docs/notes/sdk-architecture.md)
+- **Platform smoke procedure:** [docs/operations/manual-platform-smoke.md](docs/operations/manual-platform-smoke.md)
+- **Releases:** [GitHub Releases](https://github.com/jedarden/pdftract/releases)
+- **crates.io:** [pdftract](https://crates.io/crates/pdftract)
 - **Contributing guide:** [CONTRIBUTING.md](CONTRIBUTING.md)
 - **Security policy:** [SECURITY.md](SECURITY.md)
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
