@@ -18,24 +18,48 @@ endobj
 /Parent 2 0 R
 /MediaBox [0 0 612 792]
 /Resources <<
-/Font <<
-/F1 4 0 R
+  /Font <<
+    /F1 4 0 R
+  >>
 >>
->>
-/Contents 5 0 R
+/Contents 7 0 R
 >>
 endobj
 4 0 obj
 <<
 /Type /Font
 /Subtype /Type1
-/BaseFont /TestFingerprintFont
-/FontDescriptor 6 0 R
+/BaseFont /TestFont
+/FontDescriptor 5 0 R
 >>
 endobj
 5 0 obj
 <<
-/Length 47
+/Type /FontDescriptor
+/FontName /TestFont
+/Flags 4
+/FontBBox [0 0 1000 1000]
+/ItalicAngle 0
+/Ascent 800
+/Descent -200
+/CapHeight 700
+/StemV 80
+/FontFile3 6 0 R
+>>
+endobj
+6 0 obj
+<<
+/Filter /FlateDecode
+/Length 30
+>>
+stream
+%!FontType1-1.0: TestFont 1.0
+
+endstream
+endobj
+7 0 obj
+<<
+/Length 37
 >>
 stream
 BT
@@ -43,34 +67,7 @@ BT
 100 700 Td
 (Test) Tj
 ET
-endstream
-endobj
-6 0 obj
-<<
-/Type /FontDescriptor
-/FontName /TestFingerprintFont
-/Flags 4
-/FontBBox [0 0 100 100]
-/ItalicAngle 0
-/Ascent 100
-/Descent 0
-/CapHeight 100
-/StemV 80
-/FontFile3 7 0 R
->>
-endobj
-7 0 obj
-<<
-/Length1 52
-/Length2 28
-/Length3 0
-/Subtype /Type1C
-/Length 80
->>
-stream
-%!PS-AdobeFont-1.0: TestFingerprintFont
-%%CreationDate: Mon Jun 6 00:00:00 2026
-% Minimal font program for fingerprint testing
+
 endstream
 endobj
 xref
@@ -79,15 +76,16 @@ xref
 0000000009 00000 n
 0000000058 00000 n
 0000000115 00000 n
-0000000329 00000 n
-0000000438 00000 n
-0000000497 00000 n
-0000000625 00000 n
+0000000249 00000 n
+0000000340 00000 n
+0000000521 00000 n
+0000000622 00000 n
+
 trailer
 <<
 /Size 8
 /Root 1 0 R
 >>
 startxref
-765
+709
 %%EOF
