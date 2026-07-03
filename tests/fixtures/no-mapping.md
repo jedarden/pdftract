@@ -131,6 +131,43 @@ endobj
 endobj
 ```
 
+## PDF Structure
+
+Based on analysis from bead bf-4ozvw, the fixture has the following structural characteristics:
+
+### File Characteristics
+
+- **Size:** Extremely small (660 bytes) — minimal fixture
+- **Pages:** Single page document  
+- **Format:** PDF 1.4 (standard version)
+- **Page Size:** US Letter (612 x 792 pts)
+- **Complexity:** No JavaScript, forms, or metadata streams
+- **Optimization:** Not optimized
+- **User Properties:** None
+- **Tagged PDF:** No
+- **Metadata Stream:** No
+
+### Font Analysis
+
+- **Font Name:** `CustomNoMap` — descriptive name indicating purpose
+- **Font Type:** Type 1 (PostScript font)
+- **Encoding:** Custom — this is the key characteristic
+- **Embedding:** Not embedded (`emb: no`)
+- **Subsetting:** Not subset (`sub: no`)
+- **Unicode:** No Unicode mapping (`uni: no`)
+- **Object ID:** 5 0 R
+
+### Technical Significance
+
+This fixture is particularly valuable for testing:
+
+1. **Font encoding edge cases** — Custom encodings that don't map to standard character sets
+2. **Glyph recognition without standard mappings** — Glyphs with no direct Unicode equivalent
+3. **Error handling in the text extraction pipeline** — Fallback strategies when encoding mappings are unavailable
+4. **No Font Embedding scenario** — PDF readers must rely on encoding information provided
+
+The fixture name "no-mapping" combined with the custom encoding indicates this is intentionally testing the case where pdftract must handle glyphs that have no direct mapping to readable text — a critical edge case for robust PDF text extraction.
+
 ## Expected Extraction Behavior
 
 ### Ground Truth
