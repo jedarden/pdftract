@@ -72,8 +72,10 @@ def create_unmapped_glyph_pdf(output_path, glyphs, font_title="UnmappedTestFont"
     sorted_codes = sorted(glyphs.keys(), key=int)
 
     # Build the Differences array
-    differences = " ".join([f"{code} {glyphs[code]}" for code in sorted_codes])
+    # Format: [starting_code glyph1 glyph2 glyph3 ...]
+    # The starting code establishes the base, then each glyph name maps to sequential codes
     first_code = sorted_codes[0]
+    differences = " ".join([glyphs[code] for code in sorted_codes])
 
     # Object 1: Catalog
     obj1 = "1 0 obj\n<<\n/Type /Catalog\n/Pages 2 0 R\n>>\nendobj\n"
