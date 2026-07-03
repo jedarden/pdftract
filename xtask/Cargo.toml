@@ -35,6 +35,14 @@ path = "src/bin/gen_form_fixtures.rs"
 name = "gen_encoding_fixtures"
 path = "src/bin/gen_encoding_fixtures.rs"
 
+[[bin]]
+name = "gen_unmapped_fixtures"
+path = "src/bin/gen_unmapped_fixtures.rs"
+
+[[bin]]
+name = "debug_pdf"
+path = "src/bin/debug_pdf.rs"
+
 [lib]
 name = "pdftract_schema_migrate"
 path = "src/lib.rs"
@@ -48,6 +56,7 @@ humantime = "2.1"
 lopdf = "0.34"
 schemars = "1.2"
 pdftract-core = { path = "../crates/pdftract-core", features = ["schemars"] }
+pdftract-cli = { path = "../crates/pdftract-cli", default-features = false, features = ["grep"] }
 fontdue = "0.9"
 clap = { version = "4.5", features = ["derive"] }
 clap-markdown = "0.1"
