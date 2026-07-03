@@ -48,15 +48,14 @@ AB       (Line 3: "AB " from mapped glyphs)
 
 ## Implementation Decision
 
-**Approach:** Use existing generator implementation
+**Approach:** Dedicated generator implementation
 
 **Status:** ✅ **ALREADY COMPLETE**
 
 The fixture generator is already fully implemented and operational:
-- **Generator file:** `/home/coding/pdftract/gen_unmapped_comprehensive.rs`
-- **Binary config:** `/home/coding/pdftract/gen_unmapped_bin/Cargo.toml`
-- **Build command:** `cd gen_unmapped_bin && cargo build --release`
-- **Run command:** `./target/release/gen_unmapped_comprehensive`
+- **Generator file:** `xtask/src/bin/gen_unmapped_fixtures.rs`
+- **Build command:** `cargo run --bin gen_unmapped_fixtures`
+- **Integration:** xtask pattern for reproducible fixture generation
 
 ### Implementation Details
 
@@ -66,6 +65,8 @@ The fixture generator is already fully implemented and operational:
 - Generates 3-line content stream with proper hex encoding
 - Produces valid xref table and trailer
 - Creates both PDF and ground truth `.txt` file
+- Uses `create_simple_page_with_font()` helper for consistency
+- Error handling via `anyhow` crate with context
 
 **Generated fixture location:**
 ```
@@ -74,11 +75,18 @@ tests/fixtures/encoding/unmapped-comprehensive.txt
 ```
 
 **Generator verification:**
-- ✅ Builds successfully
+- ✅ Builds successfully with `cargo build --bin gen_unmapped_fixtures`
 - ✅ Runs without errors
 - ✅ Produces valid PDF (756 bytes)
 - ✅ Produces correct ground truth (27 bytes)
 - ✅ Ground truth verified: 7 × U+FFFD + "AB " + newlines
+- ✅ Follows design specification exactly
+
+**Rationale for dedicated generator:**
+- Clear separation of concerns - specific purpose fixture
+- Easier to maintain and understand
+- Can run independently without affecting other fixtures
+- Matches pattern established by other specialized generators (gen_encoding_fixtures.rs)
 
 ## Summary
 
