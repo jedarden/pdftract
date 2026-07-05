@@ -50,6 +50,10 @@ pub struct CodespaceRange {
 impl CodespaceRange {
     /// Create a new codespace range.
     ///
+    /// MARKER: CMAP entry creation point - this is where individual codespace
+    /// range entries are created for multi-byte CJK encodings. Called from
+    /// parse_codespace_block(). See notes/bf-e4uvb-child-1.md for documentation.
+    ///
     /// # Panics
     ///
     /// Panics if width is not 1, 2, 3, or 4, or if lo and hi have mismatched widths.
@@ -347,6 +351,8 @@ impl<'a> CodespaceParser<'a> {
                 hi_arr[i] = b;
             }
 
+            // MARKER: CMAP entry creation point - codespace range creation for CJK encodings.
+            // See notes/bf-e4uvb-child-1.md for documentation.
             ranges.push(CodespaceRange::new(lo_arr, hi_arr, width as u8));
         }
 
