@@ -63,6 +63,11 @@ impl FontFingerprint {
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.hash
     }
+
+    /// Convert the hash to a hex string for database lookup.
+    fn as_hex_string(&self) -> String {
+        self.hash.iter().map(|b| format!("{:02x}", b)).collect()
+    }
 }
 
 /// Look up a Unicode codepoint for a glyph ID in a fingerprinted font.
@@ -92,8 +97,9 @@ pub fn lookup_font_fingerprint(font_program_bytes: &[u8], gid: u16) -> Option<ch
     // Compute the fingerprint
     let fingerprint = FontFingerprint::compute(font_program_bytes);
 
-    // Look up the hash in the database
-    let entries = FONT_FINGERPRINTS.get(fingerprint.as_bytes())?;
+    // Look up the hash in the database (using hex string key)
+    let hex_string = fingerprint.as_hex_string();
+    let entries = FONT_FINGERPRINTS.get(hex_string.as_str())?;
 
     // Find the glyph ID in the entries
     let codepoint = entries
@@ -124,7 +130,8 @@ impl CachedFingerprint {
     /// This computes the hash once and checks if it exists in the database.
     pub fn from_font_program(font_program_bytes: &[u8]) -> Self {
         let fingerprint = FontFingerprint::compute(font_program_bytes);
-        let is_known = FONT_FINGERPRINTS.get(fingerprint.as_bytes()).is_some();
+        let hex_string = fingerprint.as_hex_string();
+        let is_known = FONT_FINGERPRINTS.get(hex_string.as_str()).is_some();
 
         Self {
             fingerprint,
@@ -141,7 +148,8 @@ impl CachedFingerprint {
             return None;
         }
 
-        let entries = FONT_FINGERPRINTS.get(self.fingerprint.as_bytes())?;
+        let hex_string = self.fingerprint.as_hex_string();
+        let entries = FONT_FINGERPRINTS.get(hex_string.as_str())?;
         let codepoint = entries
             .iter()
             .find(|(entry_gid, _)| *entry_gid == gid)

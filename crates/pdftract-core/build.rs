@@ -450,17 +450,15 @@ static {}: &[(u16, u32)] = &[{}];
             entry_values.join(", ")
         ));
 
-        // Build the phf map key as a byte array literal
-        let key_bytes: Vec<String> = hash_bytes.iter().map(|b| format!("0x{:02x}", b)).collect();
-
-        let key = format!("[{}]", key_bytes.join(", "));
+        // Use the hex string directly as the key
+        let key = sha256_hex.to_string();
         let value = format!("&{}", ident);
 
         keys.push(key);
         values.push(value);
     }
 
-    // Add entries to the map builder
+    // Add entries to the map builder using hex string keys
     for (key, value) in keys.iter().zip(values.iter()) {
         map_builder.entry(key.as_str(), value.as_str());
     }
@@ -484,7 +482,17 @@ static {}: &[(u16, u32)] = &[{}];
 ///
 /// The hash is computed over the DECODED font program bytes (post stream
 /// decoding, pre-interpretation).
-pub static FONT_FINGERPRINTS: phf::Map<[u8; 32], &'static [(u16, u32)]> = {};
+///
+/// # Lookup
+///
+/// To look up a fingerprint, convert your `[u8; 32]` hash to a hex string:
+/// ```rust
+/// let hex = format!("{{:02x}}", hash_bytes.concat());
+/// if let Some(entries) = FONT_FINGERPRINTS.get(hex.as_str()) {{
+///     // use entries
+/// }}
+/// ```
+pub static FONT_FINGERPRINTS: phf::Map<&'static str, &'static [(u16, u32)]> = {};
 "#,
         entries_arrays,
         map_builder.build()

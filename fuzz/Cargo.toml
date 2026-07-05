@@ -35,3 +35,7 @@ path = "fuzz_targets/stream_decoder.rs"
 [[bin]]
 name = "cmap_parser"
 path = "fuzz_targets/cmap_parser.rs"
+
+[[bin]]
+name = "content"
+path = "fuzz_targets/content.rs"
