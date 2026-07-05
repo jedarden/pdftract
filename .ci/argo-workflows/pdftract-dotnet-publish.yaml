@@ -1,0 +1,441 @@
+# pdftract-dotnet-publish WorkflowTemplate
+#
+# Publishes the Pdftract NuGet package to nuget.org by building the .NET SDK,
+# running conformance tests, and publishing. Triggered by the pdftract-release-cascade
+# after pdftract-build-binaries completes.
+#
+# === Parameter Reference ===
+# - tag: Git tag from the main repo (e.g., v0.1.0)
+# - version: SemVer version string (e.g., 0.1.0)
+#
+# === Steps ===
+# 1. clone-sdk-repo: Clone github.com/jedarden/pdftract-dotnet
+# 2. sync-version: Update Pdftract.csproj <Version> to match the binary tag
+# 3. restore: dotnet restore (uses package lock for reproducibility)
+# 4. build: dotnet build --configuration Release --no-restore
+# 5. conformance: dotnet test --no-build --filter FullyQualifiedName~ConformanceTests
+# 6. pack: dotnet pack --configuration Release --no-build --output ./packages
+# 7. publish: dotnet nuget push ./packages/*.nupkg --api-key $NUGET_API_KEY --source https://api.nuget.org/v3/index.json --skip-duplicate
+#
+# === Re-runnability ===
+# --skip-duplicate makes the publish idempotent. NuGet.org is immutable;
+# a bad publish requires a new patch release. Pre-release tags use NuGet
+# pre-release version syntax (e.g., 0.1.0-rc.1).
+#
+# Bead: pdftract-5bjwj
+# Plan section: SDK Architecture / Per-SDK Release Channels, line 3573
+# ADR-009: Argo Workflows on iad-ci only
+#
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: pdftract-dotnet-publish
+  namespace: argo-workflows
+  labels:
+    app.kubernetes.io/name: pdftract-dotnet-publish
+    app.kubernetes.io/component: ci
+    app.kubernetes.io/part-of: pdftract
+spec:
+  entrypoint: publish-dotnet-sdk
+  serviceAccountName: argo-workflow
+
+  podGC:
+    strategy: OnPodCompletion
+
+  ttlStrategy:
+    secondsAfterSuccess: 1800
+    secondsAfterFailure: 7200
+
+  arguments:
+    parameters:
+      - name: tag
+        value: ""
+        description: "Git tag from main repo (e.g., v0.1.0)"
+      - name: version
+        value: ""
+        description: "Version extracted from tag (e.g., 0.1.0)"
+
+  volumeClaimTemplates:
+    - metadata:
+        name: workspace
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: sata-large
+        resources:
+          requests:
+            storage: 5Gi
+
+  podMetadata:
+    labels:
+      app.kubernetes.io/name: pdftract-dotnet-publish
+      tag: "{{workflow.parameters.tag}}"
+
+  templates:
+    # === Main DAG ===
+    # Orchestrates the .NET SDK publish steps
+    - name: publish-dotnet-sdk
+      dag:
+        tasks:
+          - name: clone-sdk-repo
+            template: clone-sdk-repo
+
+          - name: sync-version
+            template: sync-version
+            dependencies: [clone-sdk-repo]
+
+          - name: restore
+            template: restore
+            dependencies: [sync-version]
+
+          - name: build
+            template: build
+            dependencies: [restore]
+
+          - name: conformance
+            template: conformance
+            dependencies: [build]
+
+          - name: pack
+            template: pack
+            dependencies: [conformance]
+
+          - name: publish
+            template: publish
+            dependencies: [pack]
+
+    # === Clone SDK Repo ===
+    # Clones the pdftract-dotnet repository from GitHub
+    - name: clone-sdk-repo
+      activeDeadlineSeconds: 300
+      container:
+        image: alpine:3.19
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            apk add --no-cache git
+
+            echo "Cloning pdftract-dotnet repository..."
+            git clone --branch main \
+              "https://x-access-token:${GH_TOKEN}@github.com/jedarden/pdftract-dotnet.git" \
+              /workspace/sdk-dotnet
+
+            cd /workspace/sdk-dotnet
+            echo "Cloned commit: $(git rev-parse HEAD)"
+            echo "Branch: $(git branch --show-current)"
+      env:
+        - name: GH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: github-pat-pdftract
+              key: token
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      resources:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+        limits:
+          cpu: 500m
+          memory: 1Gi
+
+    # === Sync Version ===
+    # Updates Pdftract.csproj <Version> element to match the binary tag
+    - name: sync-version
+      activeDeadlineSeconds: 300
+      container:
+        image: mcr.microsoft.com/dotnet/sdk:8.0
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            VERSION="{{workflow.parameters.version}}"
+            TAG="{{workflow.parameters.tag}}"
+
+            cd /workspace/sdk-dotnet
+
+            echo "Syncing version to ${VERSION} (tag: ${TAG})"
+
+            # Find the .csproj file
+            CSPROJ_FILE=$(find . -name "*.csproj" -type f | head -1)
+            if [ -z "${CSPROJ_FILE}" ]; then
+              echo "ERROR: No .csproj file found in pdftract-dotnet repo"
+              exit 1
+            fi
+
+            echo "Found project file: ${CSPROJ_FILE}"
+
+            # Handle pre-release versions
+            # Convert "0.1.0-rc.1" to "0.1.0-rc.1" (NuGet uses same syntax)
+            NUGET_VERSION="${VERSION}"
+
+            # Update the Version element in the .csproj file
+            # Uses xmlstarlet for XML manipulation
+            apk add --no-cache xmlstarlet
+
+            if xmlstarlet ed -L -u "/Project/PropertyGroup/Version" -v "${NUGET_VERSION}" "${CSPROJ_FILE}" 2>/dev/null; then
+              echo "Updated existing <Version> element to ${NUGET_VERSION}"
+            else
+              # Version element doesn't exist, need to add it to the first PropertyGroup
+              xmlstarlet ed -L -s "/Project/PropertyGroup[1]" -t elem -n "Version" -v "${NUGET_VERSION}" "${CSPROJ_FILE}"
+              echo "Added <Version>${NUGET_VERSION}</Version> to PropertyGroup"
+            fi
+
+            # Verify the update
+            UPDATED_VERSION=$(xmlstarlet sel -t -v "/Project/PropertyGroup/Version" "${CSPROJ_FILE}")
+            echo "Version in ${CSPROJ_FILE} is now: ${UPDATED_VERSION}"
+
+            if [ "${UPDATED_VERSION}" != "${NUGET_VERSION}" ]; then
+              echo "ERROR: Version update failed"
+              exit 1
+            fi
+
+            # Commit the version bump
+            git config user.name "pdftract-ci"
+            git config user.email "ci@pdftract.com"
+            git add "${CSPROJ_FILE}"
+            git commit -m "chore: bump version to ${VERSION} (matches pdftract ${TAG})"
+            git push origin main
+
+            echo "Version sync complete: ${CSPROJ_FILE} now at ${NUGET_VERSION}"
+      env:
+        - name: GH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: github-pat-pdftract
+              key: token
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      resources:
+        requests:
+          cpu: 500m
+          memory: 1Gi
+        limits:
+          cpu: 1000m
+          memory: 2Gi
+
+    # === Restore Dependencies ===
+    # Restores NuGet packages using dotnet restore for reproducibility
+    - name: restore
+      activeDeadlineSeconds: 600
+      container:
+        image: mcr.microsoft.com/dotnet/sdk:8.0
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+
+            cd /workspace/sdk-dotnet
+
+            echo "Restoring NuGet packages..."
+
+            # Use dotnet restore for reproducible builds
+            dotnet restore --verbosity minimal
+
+            echo "Dependencies restored successfully"
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      resources:
+        requests:
+          cpu: 500m
+          memory: 1Gi
+        limits:
+          cpu: 1000m
+          memory: 2Gi
+
+    # === Build ===
+    # Builds the SDK in Release configuration
+    - name: build
+      activeDeadlineSeconds: 900
+      container:
+        image: mcr.microsoft.com/dotnet/sdk:8.0
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+
+            echo "=========================================="
+            echo "Building Pdftract NuGet package"
+            echo "=========================================="
+
+            cd /workspace/sdk-dotnet
+
+            # Build in Release configuration
+            dotnet build --configuration Release --no-restore --verbosity minimal
+
+            # Verify build outputs
+            if ! find . -name "*.dll" -path "*/Release/*" | grep -q .; then
+              echo "ERROR: No DLL files found in Release output"
+              exit 1
+            fi
+
+            echo "=========================================="
+            echo "Build complete"
+            echo "=========================================="
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      resources:
+        requests:
+          cpu: 1000m
+          memory: 2Gi
+        limits:
+          cpu: 2000m
+          memory: 4Gi
+
+    # === Conformance Tests ===
+    # Runs the SDK conformance test suite against the bundled binary
+    # This step MUST pass for the publish to proceed
+    - name: conformance
+      activeDeadlineSeconds: 1200
+      container:
+        image: mcr.microsoft.com/dotnet/sdk:8.0
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+
+            echo "=========================================="
+            echo "Running .NET SDK Conformance Tests"
+            echo "=========================================="
+
+            cd /workspace/sdk-dotnet
+
+            # Run the conformance test suite
+            # The test should be named ConformanceTests or similar
+            echo "Running: dotnet test --no-build --configuration Release --filter FullyQualifiedName~ConformanceTests"
+            dotnet test --no-build --configuration Release \
+              --filter "FullyQualifiedName~ConformanceTests" \
+              --verbosity normal
+
+            echo "=========================================="
+            echo "Conformance tests PASSED"
+            echo "=========================================="
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      resources:
+        requests:
+          cpu: 1000m
+          memory: 2Gi
+        limits:
+          cpu: 2000m
+          memory: 4Gi
+
+    # === Pack ===
+    # Creates the NuGet package (.nupkg)
+    - name: pack
+      activeDeadlineSeconds: 300
+      container:
+        image: mcr.microsoft.com/dotnet/sdk:8.0
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+
+            echo "=========================================="
+            echo "Creating NuGet package"
+            echo "=========================================="
+
+            cd /workspace/sdk-dotnet
+
+            # Create packages directory
+            mkdir -p ./packages
+
+            # Pack the NuGet package
+            dotnet pack --configuration Release --no-build --output ./packages --verbosity minimal
+
+            # Verify package was created
+            NUPKG_FILE=$(find ./packages -name "*.nupkg" | head -1)
+            if [ -z "${NUPKG_FILE}" ]; then
+              echo "ERROR: No .nupkg file found in ./packages"
+              exit 1
+            fi
+
+            echo "Created package: ${NUPKG_FILE}"
+
+            # Check for symbol package (.snupkg)
+            if find ./packages -name "*.snupkg" | grep -q .; then
+              echo "Symbol package also created"
+            fi
+
+            echo "=========================================="
+            echo "Pack complete"
+            echo "=========================================="
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      resources:
+        requests:
+          cpu: 500m
+          memory: 1Gi
+        limits:
+          cpu: 1000m
+          memory: 2Gi
+
+    # === Publish ===
+    # Publishes the package to NuGet.org
+    # Pre-release versions are handled automatically by NuGet's version parsing
+    - name: publish
+      activeDeadlineSeconds: 600
+      container:
+        image: mcr.microsoft.com/dotnet/sdk:8.0
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            VERSION="{{workflow.parameters.version}}"
+
+            echo "=========================================="
+            echo "Publishing Pdftract@${VERSION}"
+            echo "=========================================="
+
+            cd /workspace/sdk-dotnet
+
+            # Publish to NuGet.org
+            # --skip-duplicate makes this idempotent (returns 0 if package already exists)
+            echo "Publishing to nuget.org..."
+            dotnet nuget push ./packages/*.nupkg \
+              --api-key "${NUGET_API_KEY}" \
+              --source https://api.nuget.org/v3/index.json \
+              --skip-duplicate
+
+            # Push symbol packages if they exist
+            if find ./packages -name "*.snupkg" | grep -q .; then
+              echo "Publishing symbol package..."
+              dotnet nuget push ./packages/*.snupkg \
+                --api-key "${NUGET_API_KEY}" \
+                --source https://api.nuget.org/v3/index.json \
+                --skip-duplicate
+            fi
+
+            echo "=========================================="
+            echo "Published successfully to NuGet.org"
+            echo "=========================================="
+            echo ""
+            echo "Installation command:"
+            echo "  dotnet add package Pdftract --version ${VERSION}"
+            echo ""
+            echo "Package will be available at:"
+            echo "  https://www.nuget.org/packages/Pdftract/${VERSION}"
+            echo ""
+            echo "Note: NuGet.org indexing is asynchronous (~5 min delay)"
+      env:
+        - name: NUGET_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: nuget-api-key-pdftract
+              key: token
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      resources:
+        requests:
+          cpu: 500m
+          memory: 1Gi
+        limits:
+          cpu: 1000m
+          memory: 2Gi

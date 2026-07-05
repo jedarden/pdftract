@@ -1,0 +1,742 @@
+# pdftract-libpdftract-build WorkflowTemplate
+#
+# Builds the C-FFI library (libpdftract) for all 5 target triples, packages
+# each as a tar.gz archive, uploads to GitHub Release, opens a Homebrew formula
+# PR, and emits a vcpkg port draft. Triggered by milestone tag after
+# pdftract-build-binaries completes.
+#
+# Target triples:
+#   - x86_64-unknown-linux-musl
+#   - aarch64-unknown-linux-musl
+#   - x86_64-apple-darwin
+#   - aarch64-apple-darwin
+#   - x86_64-pc-windows-gnu
+#
+# === Steps ===
+# 1. clone-repo: Clone github.com/jedarden/pdftract at the tag
+# 2. generate-header: Run cbindgen to produce include/pdftract.h
+# 3. build-matrix: Parallel cross-compile for all 5 target triples
+# 4. package-per-triple: Package each triple as libpdftract-vX.Y.Z-<triple>.tar.gz
+# 5. upload-to-github-release: Attach all archives to the existing GitHub Release
+# 6. update-homebrew-tap: Clone jedarden/homebrew-tap, update formula, open PR
+# 7. emit-vcpkg-port: Generate vcpkg portfile and vcpkg.json as Argo artifacts
+#
+# === Re-runnability ===
+# GitHub asset upload uses --clobber (overwrites existing assets).
+# Homebrew formula PR is idempotent (checks for existing open PR before creating).
+#
+# Bead: pdftract-4rme7
+# Plan section: SDK Architecture / Per-SDK Release Channels, line 3574
+# ADR-009: Argo Workflows on iad-ci only
+#
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: pdftract-libpdftract-build
+  namespace: argo-workflows
+  labels:
+    app.kubernetes.io/name: pdftract-libpdftract-build
+    app.kubernetes.io/component: ci
+    app.kubernetes.io/part-of: pdftract
+spec:
+  entrypoint: libpdftract-build-pipeline
+  serviceAccountName: argo-workflow
+
+  podGC:
+    strategy: OnPodCompletion
+
+  ttlStrategy:
+    secondsAfterSuccess: 1800
+    secondsAfterFailure: 7200
+
+  arguments:
+    parameters:
+      - name: repo
+        value: jedarden/pdftract
+      - name: branch
+        value: main
+      - name: tag
+        value: ""
+        description: "Git tag (e.g., v0.1.0)"
+      - name: version
+        value: ""
+        description: "Version extracted from tag (e.g., 0.1.0)"
+      - name: commit-sha
+        value: ""
+        description: "Full commit SHA of the tag"
+
+  volumeClaimTemplates:
+    - metadata:
+        name: workspace
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: sata-large
+        resources:
+          requests:
+            storage: 10Gi
+    - metadata:
+        name: cargo-cache
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: sata-large
+        resources:
+          requests:
+            storage: 50Gi
+    - metadata:
+        name: build-artifacts
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: sata-large
+        resources:
+          requests:
+            storage: 5Gi
+
+  volumes:
+    - name: docker-config
+      secret:
+        secretName: docker-hub-registry
+        items:
+          - key: .dockerconfigjson
+            path: config.json
+    - name: osxcross-sdk
+      secret:
+        secretName: osxcross-sdk
+        optional: true
+
+  podMetadata:
+    labels:
+      app.kubernetes.io/name: pdftract-libpdftract-build
+      tag: "{{workflow.parameters.tag}}"
+
+  podSpecPatch: |
+    imagePullSecrets:
+      - name: docker-hub-registry
+
+  templates:
+    # === Main DAG ===
+    - name: libpdftract-build-pipeline
+      dag:
+        tasks:
+          - name: clone-repo
+            template: clone-repo
+
+          - name: generate-header
+            template: generate-header
+            dependencies: [clone-repo]
+
+          - name: build-triple
+            template: build-triple
+            dependencies: [generate-header]
+            arguments:
+              parameters:
+                - name: triple
+                  value: "{{item.triple}}"
+                - name: cross-image
+                  value: "{{item.cross_image}}"
+            withItems:
+              - triple: x86_64-unknown-linux-musl
+                cross_image: ghcr.io/cross-rs/x86_64-unknown-linux-musl:main
+              - triple: aarch64-unknown-linux-musl
+                cross_image: ghcr.io/cross-rs/aarch64-unknown-linux-musl:main
+              - triple: x86_64-apple-darwin
+                cross_image: ghcr.io/cross-rs/x86_64-apple-darwin:main
+              - triple: aarch64-apple-darwin
+                cross_image: ghcr.io/cross-rs/aarch64-apple-darwin:main
+              - triple: x86_64-pc-windows-gnu
+                cross_image: ghcr.io/cross-rs/x86_64-pc-windows-gnu:main
+
+          - name: package-triple
+            template: package-triple
+            dependencies: [build-triple]
+            arguments:
+              parameters:
+                - name: triple
+                  value: "{{item.triple}}"
+                - name: platform-name
+                  value: "{{item.platform_name}}"
+            withItems:
+              - triple: x86_64-unknown-linux-musl
+                platform_name: linux-amd64
+              - triple: aarch64-unknown-linux-musl
+                platform_name: linux-arm64
+              - triple: x86_64-apple-darwin
+                platform_name: macos-amd64
+              - triple: aarch64-apple-darwin
+                platform_name: macos-arm64
+              - triple: x86_64-pc-windows-gnu
+                platform_name: windows-amd64
+
+          - name: upload-to-github-release
+            template: upload-to-github-release
+            dependencies: [package-triple]
+
+          - name: update-homebrew-tap
+            template: update-homebrew-tap
+            dependencies: [upload-to-github-release]
+
+          - name: emit-vcpkg-port
+            template: emit-vcpkg-port
+            dependencies: [upload-to-github-release]
+
+    # === Clone Repo ===
+    - name: clone-repo
+      activeDeadlineSeconds: 300
+      container:
+        image: alpine/git:latest
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            VERSION="{{workflow.parameters.version}}"
+            TAG="{{workflow.parameters.tag}}"
+
+            echo "Cloning pdftract repository at tag ${TAG}..."
+            git clone --depth 1 --branch "${TAG}" \
+              "https://github.com/{{workflow.parameters.repo}}.git" \
+              /workspace/repo
+
+            cd /workspace/repo
+            echo "Cloned commit: $(git rev-parse HEAD)"
+            echo "Tag: ${TAG}"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+
+    # === Generate Header with cbindgen ===
+    - name: generate-header
+      activeDeadlineSeconds: 600
+      container:
+        image: rust:1.83-slim
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            VERSION="{{workflow.parameters.version}}"
+
+            echo "=========================================="
+            echo "Generating C header with cbindgen"
+            echo "=========================================="
+
+            cd /workspace/repo
+
+            # Install cbindgen
+            cargo install cbindgen --version 0.27
+
+            # Generate header
+            cd crates/pdftract-libpdftract
+            cbindgen --config cbindgen.toml --output include/pdftract.h
+
+            # Verify header was generated
+            if [ ! -f include/pdftract.h ]; then
+              echo "ERROR: cbindgen failed to generate include/pdftract.h"
+              exit 1
+            fi
+
+            echo "Header generated successfully at include/pdftract.h"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /usr/local/cargo/registry
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+
+    # === Build Triple (cross-compile) ===
+    - name: build-triple
+      inputs:
+        parameters:
+          - name: triple
+          - name: cross-image
+      activeDeadlineSeconds: 3600
+      retryStrategy:
+        limit: "2"
+        retryPolicy: OnError
+        backoff:
+          duration: 30s
+          factor: "2"
+      container:
+        image: "{{inputs.parameters.cross-image}}"
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            TRIPLE="{{inputs.parameters.triple}}"
+            VERSION="{{workflow.parameters.version}}"
+
+            echo "=========================================="
+            echo "Building libpdftract for ${TRIPLE}"
+            echo "=========================================="
+
+            cd /workspace/repo
+
+            # Build libpdftract with cross
+            # CARGO_HOME is set to a persistent cache directory
+            export CARGO_HOME=/cargo-cache
+            export CROSS_REMOTE_INVOKE_ON_VALIDATION=1
+
+            cross build --release -p pdftract-libpdftract \
+              --target "${TRIPLE}" \
+              --locked \
+              --frozen
+
+            # Verify output exists
+            if [ "${TRIPLE}" = "x86_64-pc-windows-gnu" ]; then
+              OUTPUT="target/${TRIPLE}/release/pdftract.dll"
+            else
+              OUTPUT="target/${TRIPLE}/release/libpdftract.so"
+              # Also check for .dylib on macOS targets
+              if echo "${TRIPLE}" | grep -q "apple-darwin"; then
+                OUTPUT="target/${TRIPLE}/release/libpdftract.dylib"
+              fi
+            fi
+
+            if [ ! -f "${OUTPUT}" ]; then
+              echo "ERROR: Expected output not found: ${OUTPUT}"
+              ls -la "target/${TRIPLE}/release/" || true
+              exit 1
+            fi
+
+            echo "Build complete: ${OUTPUT}"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cargo-cache
+          - name: osxcross-sdk
+            mountPath: /osxcross-sdk
+            readOnly: true
+        resources:
+          requests:
+            cpu: 2000m
+            memory: 4Gi
+          limits:
+            cpu: 4000m
+            memory: 8Gi
+
+    # === Package Triple ===
+    - name: package-triple
+      inputs:
+        parameters:
+          - name: triple
+          - name: platform-name
+      activeDeadlineSeconds: 600
+      container:
+        image: alpine:latest
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            TRIPLE="{{inputs.parameters.triple}}"
+            PLATFORM="{{inputs.parameters.platform-name}}"
+            VERSION="{{workflow.parameters.version}}"
+            TAG="{{workflow.parameters.tag}}"
+
+            echo "=========================================="
+            echo "Packaging libpdftract for ${PLATFORM}"
+            echo "=========================================="
+
+            cd /workspace/repo
+
+            # Create package directory structure
+            PKG_DIR="/build-artifacts/libpdftract-${VERSION}-${PLATFORM}"
+            mkdir -p "${PKG_DIR}/lib"
+            mkdir -p "${PKG_DIR}/lib/pkgconfig"
+            mkdir -p "${PKG_DIR}/include"
+
+            # Copy library
+            if [ "${TRIPLE}" = "x86_64-pc-windows-gnu" ]; then
+              cp "target/${TRIPLE}/release/pdftract.dll" "${PKG_DIR}/lib/"
+              cp "target/${TRIPLE}/release/pdftract.dll.a" "${PKG_DIR}/lib/" || true
+            else
+              cp "target/${TRIPLE}/release/libpdftract.so" "${PKG_DIR}/lib/" || true
+              cp "target/${TRIPLE}/release/libpdftract.dylib" "${PKG_DIR}/lib/" || true
+              cp "target/${TRIPLE}/release/libpdftract.a" "${PKG_DIR}/lib/" || true
+            fi
+
+            # Copy header
+            cp crates/pdftract-libpdftract/include/pdftract.h "${PKG_DIR}/include/"
+
+            # Generate and copy pkg-config file
+            sed -e "s|@PREFIX@|/usr/local|" \
+                -e "s|@VERSION@|${VERSION}|" \
+                crates/pdftract-libpdftract/pdftract.pc.in > "${PKG_DIR}/lib/pkgconfig/pdftract.pc"
+
+            # Copy licenses
+            cp LICENSE-MIT "${PKG_DIR}/LICENSE-MIT"
+            cp LICENSE-APACHE "${PKG_DIR}/LICENSE-APACHE"
+
+            # Create archive
+            cd /build-artifacts
+            if [ "${TRIPLE}" = "x86_64-pc-windows-gnu" ]; then
+              ARCHIVE="libpdftract-${VERSION}-${PLATFORM}.zip"
+              zip -r "${ARCHIVE}" "libpdftract-${VERSION}-${PLATFORM}"
+            else
+              ARCHIVE="libpdftract-${VERSION}-${PLATFORM}.tar.gz"
+              tar czf "${ARCHIVE}" "libpdftract-${VERSION}-${PLATFORM}"
+            fi
+
+            # Compute SHA256
+            if command -v sha256sum >/dev/null 2>&1; then
+              SHA256=$(sha256sum "${ARCHIVE}" | cut -d' ' -f1)
+            else
+              SHA256=$(shasum -a 256 "${ARCHIVE}" | cut -d' ' -f1)
+            fi
+
+            echo "${SHA256}" > "${ARCHIVE}.sha256"
+            echo "SHA256: ${SHA256}"
+
+            # Store SHA256 for Homebrew formula (use platform name as key)
+            mkdir -p /workspace/sha256s
+            echo "${SHA256}" > "/workspace/sha256s/${PLATFORM}"
+
+            echo "Package created: ${ARCHIVE}"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: build-artifacts
+            mountPath: /build-artifacts
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+
+    # === Upload to GitHub Release ===
+    - name: upload-to-github-release
+      activeDeadlineSeconds: 600
+      container:
+        image: ghcr.io/taichi/ghcli:latest
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            VERSION="{{workflow.parameters.version}}"
+            TAG="{{workflow.parameters.tag}}"
+
+            echo "=========================================="
+            echo "Uploading libpdftract archives to GitHub Release"
+            echo "=========================================="
+
+            # Verify the release exists (created by pdftract-github-release)
+            if ! gh release view "${TAG}" --repo "{{workflow.parameters.repo}}"; then
+              echo "ERROR: GitHub Release ${TAG} does not exist yet"
+              echo "This workflow must run AFTER pdftract-github-release"
+              exit 1
+            fi
+
+            cd /build-artifacts
+
+            # Upload all archives
+            for archive in libpdftract-*.tar.gz libpdftract-*.zip; do
+              if [ -f "${archive}" ]; then
+                echo "Uploading ${archive}..."
+                gh release upload "${TAG}" "${archive}" --repo "{{workflow.parameters.repo}}" --clobber
+                gh release upload "${TAG}" "${archive}.sha256" --repo "{{workflow.parameters.repo}}" --clobber
+              fi
+            done
+
+            echo "=========================================="
+            echo "All archives uploaded to GitHub Release ${TAG}"
+            echo "=========================================="
+        env:
+          - name: GH_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: github-pat-pdftract
+                key: token
+        volumeMounts:
+          - name: build-artifacts
+            mountPath: /build-artifacts
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+
+    # === Update Homebrew Tap ===
+    - name: update-homebrew-tap
+      activeDeadlineSeconds: 600
+      container:
+        image: alpine/git:latest
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            VERSION="{{workflow.parameters.version}}"
+            TAG="{{workflow.parameters.tag}}"
+
+            echo "=========================================="
+            echo "Updating Homebrew tap formula"
+            echo "=========================================="
+
+            # Clone the tap repository
+            git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/jedarden/homebrew-tap.git" /tmp/tap
+            cd /tmp/tap
+
+            # Check if formula already exists for this version
+            if git rev-parse "origin/pdftract-${VERSION}" 2>/dev/null; then
+              echo "Formula branch already exists for version ${VERSION}, skipping PR creation"
+              exit 0
+            fi
+
+            # Read SHA256s
+            SHA256_LINUX_AMD64=$(cat /workspace/sha256s/linux-amd64)
+            SHA256_LINUX_ARM64=$(cat /workspace/sha256s/linux-arm64)
+            SHA256_MACOS_AMD64=$(cat /workspace/sha256s/macos-amd64)
+            SHA256_MACOS_ARM64=$(cat /workspace/sha256s/macos-arm64)
+
+            # Download archives to compute Bottle SHA256s (Bottles are single-platform binaries)
+            BASE_URL="https://github.com/{{workflow.parameters.repo}}/releases/download/${TAG}"
+
+            # Create formula with Bottle blocks
+            cat > "Formula/pdftract.rb" <<FORMULA_EOF
+            # Formula generated by pdftract-libpdftract-build workflow
+            class Pdftract < Formula
+              desc "PDF text extraction library with C FFI"
+              homepage "https://github.com/jedarden/pdftract"
+              url "${BASE_URL}/libpdftract-${VERSION}-linux-amd64.tar.gz"
+              sha256 "${SHA256_LINUX_AMD64}"
+              license any_of: ["MIT", "Apache-2.0"]
+
+              depends_on "pkg-config"
+
+              bottle do
+                root_url "${BASE_URL}"
+                sha256 cellar: :any_skip_relocation, "#{Platform.os}-#{Platform.arch}" => "${SHA256_MACOS_AMD64}" if OS.mac? && Hardware::CPU.intel?
+                sha256 cellar: :any_skip_relocation, "#{Platform.os}-#{Platform.arch}" => "${SHA256_MACOS_ARM64}" if OS.mac? && Hardware::CPU.arm?
+                sha256 cellar: :any_skip_relocation, "#{Platform.os}-#{Platform.arch}" => "${SHA256_LINUX_AMD64}" if OS.linux? && Hardware::CPU.intel?
+                sha256 cellar: :any_skip_relocation, "#{Platform.os}-#{Platform.arch}" => "${SHA256_LINUX_ARM64}" if OS.linux? && Hardware::CPU.arm?
+              end
+
+              def install
+                # Install the library
+                lib.install "lib/libpdftract.so" if OS.linux?
+                lib.install "lib/libpdftract.dylib" if OS.mac?
+                lib.install "lib/libpdftract.a" if File.exist?("lib/libpdftract.a")
+
+                # Install the header
+                include.install "include/pdftract.h"
+
+                # Install pkg-config file
+                (lib/"pkgconfig").install "lib/pkgconfig/pdftract.pc"
+              end
+
+              test do
+                # Test that the library can be linked against
+                (testpath/"test.c").write <<~EOS
+                  #include <stdio.h>
+                  #include <pdftract.h>
+
+                  int main() {
+                    const char *version = pdftract_version();
+                    printf("Version: %s\\n", version);
+                    return 0;
+                  }
+                EOS
+                system ENV.cc, "test.c", "-I#{include}", "-L#{lib}", "-lpdftract", "-o", "test"
+                system "./test"
+              end
+            end
+            FORMULA_EOF
+
+            # Create a branch for the version
+            git checkout -b "pdftract-${VERSION}"
+
+            # Commit and push
+            git config user.name "pdftract-ci"
+            git config user.email "ci@pdftract.com"
+            git add "Formula/pdftract.rb"
+            git commit -m "pdftract: update to version ${VERSION}"
+
+            git push origin "pdftract-${VERSION}"
+
+            # Create PR (or find existing)
+            if gh pr view --repo jedarden/homebrew-tap --json title,number 2>/dev/null | grep -q "${VERSION}"; then
+              echo "PR already exists for version ${VERSION}"
+            else
+              gh pr create \
+                --repo jedarden/homebrew-tap \
+                --title "pdftract ${VERSION}" \
+                --body "Automated formula update for pdftract ${VERSION}
+
+            **Changes:**
+            - Version: ${VERSION}
+            - Release tag: ${TAG}
+            - Bottle SHA256s updated for all platforms
+
+            **Generated by:** pdftract-libpdftract-build workflow" \
+                --base main \
+                --head "pdftract-${VERSION}"
+            fi
+
+            echo "=========================================="
+            echo "Homebrew formula PR created"
+            echo "=========================================="
+        env:
+          - name: GH_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: github-pat-pdftract
+                key: token
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+
+    # === Emit vcpkg Port Draft ===
+    - name: emit-vcpkg-port
+      activeDeadlineSeconds: 300
+      container:
+        image: alpine:latest
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            VERSION="{{workflow.parameters.version}}"
+            TAG="{{workflow.parameters.tag}}"
+
+            echo "=========================================="
+            echo "Generating vcpkg port draft"
+            echo "=========================================="
+
+            # Compute SHA512 for vcpkg (required)
+            cd /build-artifacts
+            if command -v sha512sum >/dev/null 2>&1; then
+              SHA512=$(sha512sum libpdftract-*.tar.gz libpdftract-*.zip 2>/dev/null | head -1 | cut -d' ' -f1)
+            else
+              SHA512=$(shasum -a 512 libpdftract-*.tar.gz libpdftract-*.zip 2>/dev/null | head -1 | cut -d' ' -f1)
+            fi
+
+            # Create vcpkg port directory structure
+            mkdir -p /workspace/vcpkg-port/pdftract
+
+            # Create vcpkg.json
+            cat > /workspace/vcpkg-port/pdftract/vcpkg.json <<VCPKG_JSON_EOF
+            {
+              "name": "pdftract",
+              "version-string": "${VERSION}",
+              "description": "PDF text extraction library with C FFI",
+              "homepage": "https://github.com/jedarden/pdftract",
+              "license": "MIT OR Apache-2.0",
+              "supports": "!(windows & static)",
+              "dependencies": [
+                {
+                  "name": "vcpkg-cmake",
+                  "host": true
+                },
+                {
+                  "name": "vcpkg-cmake-config",
+                  "host": true
+                }
+              ]
+            }
+            VCPKG_JSON_EOF
+
+            # Create portfile.cmake
+            cat > /workspace/vcpkg-port/pdftract/portfile.cmake <<PORTFILE_EOF
+            vcpkg_from_github(
+                OUT_SOURCE_PATH SOURCE_PATH
+                REPO jedarden/pdftract
+                REF "${TAG}"
+                SHA512 ${SHA512}
+                HEAD_REF main
+            )
+
+            set(PDFTRACT_RELEASE_DIR "${SOURCE_PATH}/target/release")
+
+            # Install library (platform-specific)
+            if(EXISTS "${PDFTRACT_RELEASE_DIR}/libpdftract.so")
+                file(INSTALL "${PDFTRACT_RELEASE_DIR}/libpdftract.so" DESTINATION "\${CURRENT_PACKAGES_DIR}/lib")
+            endif()
+            if(EXISTS "${PDFTRACT_RELEASE_DIR}/libpdftract.dylib")
+                file(INSTALL "${PDFTRACT_RELEASE_DIR}/libpdftract.dylib" DESTINATION "\${CURRENT_PACKAGES_DIR}/lib")
+            endif()
+            if(EXISTS "${PDFTRACT_RELEASE_DIR}/pdftract.dll")
+                file(INSTALL "${PDFTRACT_RELEASE_DIR}/pdftract.dll" DESTINATION "\${CURRENT_PACKAGES_DIR}/bin")
+                file(INSTALL "${PDFTRACT_RELEASE_DIR}/pdftract.dll.a" DESTINATION "\${CURRENT_PACKAGES_DIR}/lib")
+            endif()
+            if(EXISTS "${PDFTRACT_RELEASE_DIR}/libpdftract.a")
+                file(INSTALL "${PDFTRACT_RELEASE_DIR}/libpdftract.a" DESTINATION "\${CURRENT_PACKAGES_DIR}/lib")
+            endif()
+
+            # Install header
+            file(INSTALL "${SOURCE_PATH}/crates/pdftract-libpdftract/include/pdftract.h" DESTINATION "\${CURRENT_PACKAGES_DIR}/include")
+
+            # Install pkg-config file
+            file(INSTALL "${SOURCE_PATH}/crates/pdftract-libpdftract/pdftract.pc" DESTINATION "\${CURRENT_PACKAGES_DIR}/lib/pkgconfig")
+
+            # Install licenses
+            vcpkg_install_copyright(FILE_LIST
+                "${SOURCE_PATH}/LICENSE-MIT"
+                "${SOURCE_PATH}/LICENSE-APACHE"
+            )
+
+            vcpkg_fixup_pkgconfig()
+            PORTFILE_EOF
+
+            # Create README with submission instructions
+            cat > /workspace/vcpkg-port/SUBMISSION.md <<SUBMISSION_EOF
+            # vcpkg Port Submission for pdftract ${VERSION}
+
+            ## Files
+            - \`ports/pdftract/vcpkg.json\` - Port metadata
+            - \`ports/pdftract/portfile.cmake\` - Build and install instructions
+            - This README
+
+            ## Submission Steps
+            1. Fork https://github.com/microsoft/vcpkg
+            2. Create directory: \`ports/pdftract/\`
+            3. Copy the files above to that directory
+            4. Ensure SHA512 checksum matches the release tarball
+            5. Submit PR with title \`[pdftract] Add new port\`
+            6. Link to the GitHub release: https://github.com/jedarden/pdftract/releases/tag/${TAG}
+
+            ## Notes
+            - This is a header-only library distribution
+            - Pre-built binaries are downloaded from GitHub Releases
+            - CI on Windows/Linux/macOS is handled by vcpkg's own CI
+            - No GPL dependencies (MIT/Apache-2.0 only)
+
+            ## Generated by
+            pdftract-libpdftract-build workflow
+            Bead: pdftract-4rme7
+            SUBMISSION_EOF
+
+            echo "vcpkg port draft generated at /workspace/vcpkg-port/"
+            echo "Contents:"
+            ls -la /workspace/vcpkg-port/pdftract/
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: build-artifacts
+            mountPath: /build-artifacts
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+
