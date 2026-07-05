@@ -79,6 +79,10 @@ impl ToUnicodeMap {
     }
 
     /// Add a single mapping from source bytes to destination chars.
+    ///
+    /// MARKER: CMAP entry creation point - this is where individual ToUnicode
+    /// mappings are stored. Called by parse_beginbfchar() and parse_beginbfrange().
+    /// See notes/bf-e4uvb-child-1.md for documentation.
     pub fn add_mapping(&mut self, src: Vec<u8>, dst: Vec<char>) {
         self.mappings.insert(src, dst);
     }

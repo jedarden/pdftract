@@ -252,6 +252,8 @@ impl<'a> CodespaceParser<'a> {
             let hi = self.expect_hex_string()?;
 
             // Create range
+            // MARKER: CMAP entry creation point - codespace range definitions.
+            // See notes/bf-e4uvb-child-1.md for documentation.
             if let Some(range) = CodespaceRange::new(lo, hi) {
                 ranges.add(range);
                 parsed += 1;

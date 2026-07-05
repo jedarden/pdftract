@@ -191,6 +191,8 @@ impl DifferencesOverlay {
                 }
                 PdfObject::Name(name) => {
                     // Assign this name to the current cursor position
+                    // MARKER: CMAP entry creation point - Type1 font encoding differences.
+                    // See notes/bf-e4uvb-child-1.md for documentation.
                     if cursor <= 255 {
                         overlay.entries.push((cursor as u8, Arc::clone(name)));
                     }
