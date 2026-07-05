@@ -11,7 +11,7 @@ use crate::parser::catalog::Catalog;
 use crate::parser::object::{ObjRef, PdfDict, PdfObject};
 use crate::parser::pages::PageDict;
 use crate::parser::xref::XrefResolver;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 /// Detect JavaScript presence in a PDF document.
 ///
@@ -48,12 +48,14 @@ pub fn detect_javascript(
     // Check catalog /OpenAction
     if has_js_action(&catalog.open_action, resolver) {
         info!("JavaScript actions detected: catalog /OpenAction");
+        warn!("JavaScript execution attempted but not supported - detection only (per TH-04 threat model)");
         return true;
     }
 
     // Check catalog /AA
     if has_js_in_aa(&catalog.aa, resolver) {
         info!("JavaScript actions detected: catalog /AA (Additional Actions)");
+        warn!("JavaScript execution attempted but not supported - detection only (per TH-04 threat model)");
         return true;
     }
 
@@ -62,6 +64,7 @@ pub fn detect_javascript(
         // Check page /AA
         if has_js_in_aa(&page.aa, resolver) {
             info!("JavaScript actions detected: page {} /AA (Additional Actions)", page_idx);
+            warn!("JavaScript execution attempted but not supported - detection only (per TH-04 threat model)");
             return true;
         }
 
@@ -73,6 +76,7 @@ pub fn detect_javascript(
                     if let Some(action) = annot_dict.get("A") {
                         if has_js_action(&Some(action.clone()), resolver) {
                             info!("JavaScript actions detected: page {} annotation /A (primary action)", page_idx);
+                            warn!("JavaScript execution attempted but not supported - detection only (per TH-04 threat model)");
                             return true;
                         }
                     }
@@ -80,6 +84,7 @@ pub fn detect_javascript(
                     if let Some(aa) = annot_dict.get("AA") {
                         if has_js_in_aa(&Some(aa.clone()), resolver) {
                             info!("JavaScript actions detected: page {} annotation /AA (additional actions)", page_idx);
+                            warn!("JavaScript execution attempted but not supported - detection only (per TH-04 threat model)");
                             return true;
                         }
                     }
@@ -92,6 +97,7 @@ pub fn detect_javascript(
     if let Some(form_dict) = acroform {
         if has_js_in_acroform(form_dict, resolver) {
             info!("JavaScript actions detected: AcroForm fields /AA (Additional Actions)");
+            warn!("JavaScript execution attempted but not supported - detection only (per TH-04 threat model)");
             return true;
         }
     }
