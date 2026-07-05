@@ -10,3 +10,27 @@ memory-report.json
 
 # Proptest regressions are committed (minimal counterexamples)
 # but the .gitkeep keeps the directory in git
+
+# Compiled binaries in repo root
+debug_*
+test_*
+gen_fixtures
+gen_ocr_fixtures
+
+# Compiled libraries
+*.rlib
+
+# Scratch output files
+0
+--1.ppm
+mod
+out.pdf
+
+# Backup files
+*.bak
+
+# Compiled binaries in tests/fixtures/
+tests/fixtures/gen_fixtures
+tests/fixtures/gen_ocr_fixtures
+tests/fixtures/gen_suspects*
+tests/fixtures/gen_unmapped*
