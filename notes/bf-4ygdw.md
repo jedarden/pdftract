@@ -44,7 +44,8 @@ Added two Argo WorkflowTemplates for Go and Java SDK publishing to match existin
 - ✅ Workflows follow existing PHP/Ruby publish patterns
 - ✅ Java workflow follows Maven Central GPG signing requirements
 - ✅ Both workflows reference plan sections and ADR-009
-- ✅ ArgoCD will sync templates to declarative-config (existing sync infrastructure)
+- ✅ ArgoCD sync verified - templates exist in declarative-config (july 2025)
+- ✅ Changes committed and pushed to Forgejo (commit cb7b4f28)
 
 ## References
 - Plan lines 3400–3413 (Release Engineering)
