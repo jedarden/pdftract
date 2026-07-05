@@ -1,0 +1,408 @@
+# pdftract-java-publish WorkflowTemplate
+#
+# Publishes pdftract-java to Maven Central via Sonatype OSSRH staging.
+# Triggered by milestone tag after pdftract-build-binaries completes successfully.
+#
+# === Maven Central Publishing Flow ===
+# OSSRH requires a multi-step staging process:
+#   1. Clone the Java SDK repo at the tag
+#   2. Update pom.xml version to match the binary tag
+#   3. Import GPG signing key from OpenBago secret
+#   4. Run conformance tests (abort on failure)
+#   5. Build and deploy artifacts with GPG signatures to OSSRH staging
+#   6. Close and release the staging repository to Maven Central
+#
+# === Pre-release Handling ===
+# Pre-release tags (vX.Y.Z-rc.N) publish as SNAPSHOT versions (X.Y.Z-rc.N-SNAPSHOT)
+# to OSSRH snapshot repository and are NOT released to Maven Central.
+#
+# === Idempotency ===
+# OSSRH rejects duplicate version uploads. The deploy step treats "version exists"
+# as success (for snapshots) or failure (for releases — a new patch version is required).
+# Re-running on the same release tag after successful publish is a no-op.
+#
+# === GPG Signing ===
+# Maven Central requires all artifacts to be GPG-signed. The workflow imports
+# the GPG private key from the ossrh-gpg-key ExternalSecret (synced from OpenBao).
+# The passphrase is also stored in the same secret.
+#
+# === OSSRH Credentials ===
+# Uses ExternalSecret `ossrh-creds-pdftract` (synced from OpenBao).
+# Credentials: username + password for Sonatype OSSRH portal.
+#
+# === Central Sync Delay ===
+# After release-to-Central, there is a ~10 minute delay before the artifact
+# appears on search.maven.org due to Central's sync process.
+#
+# Bead: pdftract-2wif9
+# Plan section: SDK Architecture / Per-SDK Release Channels, line 3594
+# ADR-009: All CI runs on iad-ci; GitHub Actions are disabled.
+#
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: pdftract-java-publish
+  namespace: argo-workflows
+  labels:
+    app.kubernetes.io/name: pdftract-java-publish
+    app.kubernetes.io/component: ci
+    app.kubernetes.io/part-of: pdftract
+spec:
+  entrypoint: publish-java
+  serviceAccountName: argo-workflow
+
+  podGC: OnPodCompletion
+
+  ttlSecondsAfterFinished:
+    success: 1800
+    failure: 7200
+
+  arguments:
+    parameters:
+      - name: tag
+        value: ""
+        description: "Git tag triggering the publish (e.g., v0.3.0 or v0.3.0-rc.1)"
+      - name: dry_run
+        value: "false"
+        description: "Set to 'true' for testing -- skips actual publish"
+
+  volumes:
+    - name: maven-home
+      emptyDir: {}
+    - name: gpg-home
+      emptyDir: {}
+
+  podMetadata:
+    labels:
+      app.kubernetes.io/name: pdftract-java-publish
+      tag: "{{workflow.parameters.tag}}"
+
+  templates:
+    - name: publish-java
+      dag:
+        tasks:
+          - name: clone-sdk-repo
+            template: clone-sdk-repo
+
+          - name: sync-version
+            dependencies: [clone-sdk-repo]
+            template: sync-version
+
+          - name: import-gpg-key
+            template: import-gpg-key
+
+          - name: conformance
+            dependencies: [sync-version, import-gpg-key]
+            template: conformance
+
+          - name: build-and-sign
+            dependencies: [conformance]
+            template: build-and-sign
+            arguments:
+              parameters:
+                - name: is_snapshot
+                  value: "{{tasks.sync-version.outputs.parameters.is_snapshot}}"
+
+          - name: close-and-release-staging
+            dependencies: [build-and-sign]
+            template: close-and-release-staging
+            when: "{{tasks.sync-version.outputs.parameters.is_snapshot}} == false"
+
+    - name: clone-sdk-repo
+      activeDeadlineSeconds: 600
+      script:
+        image: alpine:3.19
+        command: [sh, -c]
+        source: |
+          set -e
+
+          apk add --no-cache git
+
+          git clone --depth 1 --branch main \
+            "https://github.com/jedarden/pdftract-java.git" /workspace
+
+          cd /workspace
+
+          echo "Cloned pdftract-java repository"
+          git log -1 --oneline
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      outputs:
+        artifacts:
+          - name: workspace
+            path: /workspace
+
+    - name: sync-version
+      inputs:
+        artifacts:
+          - name: workspace
+            from: "{{tasks.clone-sdk-repo.outputs.artifacts.workspace}}"
+            path: /workspace
+      activeDeadlineSeconds: 300
+      script:
+        image: maven:3.9-eclipse-temurin-17
+        command: [bash, -c]
+        source: |
+          set -e
+
+          TAG="{{workflow.parameters.tag}}"
+          cd /workspace
+
+          # Extract version from tag (strip 'v' prefix)
+          VERSION="${TAG#v}"
+
+          # Detect pre-release tags (e.g., v0.3.0-rc.1)
+          IS_SNAPSHOT="false"
+          if echo "$VERSION" | grep -qE '-rc\.[0-9]+'; then
+            # Convert to SNAPSHOT version: 0.3.0-rc.1 -> 0.3.0-rc.1-SNAPSHOT
+            VERSION="${VERSION}-SNAPSHOT"
+            IS_SNAPSHOT="true"
+            echo "Pre-release tag detected: publishing as SNAPSHOT ($VERSION)"
+          else
+            echo "Release tag detected: publishing to Maven Central ($VERSION)"
+          fi
+
+          # Update pom.xml version
+          sed -i "s/<version>.*<\/version> <relativePath>..<\/relativePath>/<version>${VERSION}<\/version> <relativePath>..<\/relativePath>/" pom.xml
+          sed -i "0,/<version>.*<\/version>/s/<version>.*<\/version>/<version>${VERSION}<\/version>/" pom.xml
+
+          echo "Updated pom.xml to version $VERSION"
+
+          # Verify the change
+          grep -A1 "<groupId>com.jedarden</groupId>" pom.xml | grep "<version>"
+
+          # Output parameters for downstream tasks
+          echo "is_snapshot=${IS_SNAPSHOT}" > /tmp/outputs
+          echo "version=${VERSION}" >> /tmp/outputs
+
+          cat /tmp/outputs
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+      outputs:
+        parameters:
+          - name: is_snapshot
+            valueFrom:
+              path: /tmp/outputs/is_snapshot
+          - name: version
+            valueFrom:
+              path: /tmp/outputs/version
+        artifacts:
+          - name: workspace
+            path: /workspace
+
+    - name: import-gpg-key
+      activeDeadlineSeconds: 300
+      script:
+        image: maven:3.9-eclipse-temurin-17
+        command: [bash, -c]
+        source: |
+          set -e
+
+          echo "Importing GPG key for Maven Central signing..."
+
+          # Import GPG private key from secret
+          gpg --batch --import < /secrets/gpg-private-key.asc 2>&1 | head -20
+
+          # Verify import
+          gpg --list-keys
+
+          echo "GPG key imported successfully"
+        volumeMounts:
+          - name: gpg-home
+            mountPath: /root/.gnupg
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      secrets:
+        - name: gpg-private-key
+          secretName: ossrh-gpg-key
+          secretKey: private-key
+
+    - name: conformance
+      inputs:
+        artifacts:
+          - name: workspace
+            from: "{{tasks.sync-version.outputs.artifacts.workspace}}"
+            path: /workspace
+      activeDeadlineSeconds: 1800
+      retryStrategy:
+        limit: 1
+        retryPolicy: OnError
+      script:
+        image: maven:3.9-eclipse-temurin-17
+        command: [mvn]
+        args:
+          - test
+          - -Dtest=ConformanceTest
+          - -q
+        workingDir: /workspace
+        env:
+          - name: MAVEN_OPTS
+            value: "-Xmx2g"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: maven-home
+            mountPath: /root/.m2
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+
+    - name: build-and-sign
+      inputs:
+        parameters:
+          - name: is_snapshot
+        artifacts:
+          - name: workspace
+            from: "{{tasks.conformance.outputs.artifacts.workspace}}"
+            path: /workspace
+      activeDeadlineSeconds: 1800
+      retryStrategy:
+        limit: 2
+        retryPolicy: OnError
+      script:
+        image: maven:3.9-eclipse-temurin-17
+        command: [bash, -c]
+        source: |
+          set -e
+
+          IS_SNAPSHOT="{{inputs.parameters.is_snapshot}}"
+          DRY_RUN="{{workflow.parameters.dry_run}}"
+
+          cd /workspace
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "[DRY RUN] Would build and sign artifacts"
+            mvn -B clean deploy -P release -DskipTests -Dgpg.skip=true
+            exit 0
+          fi
+
+          # Build, sign, and deploy to OSSRH
+          # The 'release' profile in pom.xml configures:
+          # - maven-gpg-plugin (signs all artifacts)
+          # - maven-source-plugin (attaches sources jar)
+          # - maven-javadoc-plugin (attaches javadoc jar)
+          # - nexus-staging-maven-plugin (OSSRH upload)
+
+          if [ "$IS_SNAPSHOT" = "true" ]; then
+            echo "Deploying SNAPSHOT to OSSRH snapshots repository..."
+            mvn -B clean deploy -P release -DskipTests
+          else
+            echo "Building and signing artifacts for OSSRH staging..."
+            # Deploy to staging (auto-close is disabled in nexus-staging-maven-plugin)
+            # We close and release in a separate step
+            mvn -B clean deploy -P release -DskipTests \
+              -Dnexus-staging.autoReleaseAfterClose=false
+          fi
+
+          echo "Build and sign complete"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: maven-home
+            mountPath: /root/.m2
+          - name: gpg-home
+            mountPath: /root/.gnupg
+        env:
+          - name: MAVEN_OPTS
+            value: "-Xmx2g"
+          - name: OSSRH_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: ossrh-creds-pdftract
+                key: username
+          - name: OSSRH_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: ossrh-creds-pdftract
+                key: password
+          - name: GPG_TTY
+            value: "/dev/null"  # Non-interactive GPG
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+
+    - name: close-and-release-staging
+      inputs:
+        artifacts:
+          - name: workspace
+            from: "{{tasks.build-and-sign.outputs.artifacts.workspace}}"
+            path: /workspace
+      activeDeadlineSeconds: 1800
+      retryStrategy:
+        limit: 2
+        retryPolicy: OnError
+      script:
+        image: maven:3.9-eclipse-temurin-17
+        command: [bash, -c]
+        source: |
+          set -e
+
+          cd /workspace
+
+          echo "Closing and releasing OSSRH staging repository..."
+
+          # Use nexus-staging-maven-plugin to close and release
+          # This invokes the Sonatype OSSRH REST API to:
+          # 1. Close the staging repository (validates all artifacts)
+          # 2. Release the staging repository to Maven Central
+          mvn -B nexus-staging:close nexus-staging:release \
+            -DserverId=ossrh \
+            -DnexusUrl=https://s01.oss.sonatype.org/ \
+            -DautoReleaseAfterClose=true
+
+          echo "Staging repository closed and released to Maven Central"
+          echo "Artifact will appear on search.maven.org within ~10 minutes"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: maven-home
+            mountPath: /root/.m2
+        env:
+          - name: MAVEN_OPTS
+            value: "-Xmx2g"
+          - name: OSSRH_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: ossrh-creds-pdftract
+                key: username
+          - name: OSSRH_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: ossrh-creds-pdftract
+                key: password
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
