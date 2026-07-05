@@ -9,6 +9,7 @@ use crate::parser::catalog::Catalog;
 use crate::parser::object::{ObjRef, PdfObject};
 use crate::parser::xref::XrefResolver;
 use std::sync::Arc;
+use tracing::warn;
 
 /// A detected JavaScript action.
 #[derive(Debug, Clone)]
@@ -43,6 +44,7 @@ pub fn detect_javascript(
     pages: &[crate::parser::pages::PageDict],
     resolver: &Arc<XrefResolver>,
 ) -> (Vec<JavascriptAction>, Vec<Diagnostic>) {
+    warn!("JavaScript detection initiated - execution is NOT supported (per TH-04 threat model)");
     let mut actions = Vec::new();
     let mut diagnostics = Vec::new();
 
