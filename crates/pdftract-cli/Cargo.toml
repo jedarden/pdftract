@@ -16,13 +16,6 @@ name = "pdftract"
 path = "src/main.rs"
 test = true
 
-[[bin]]
-name = "generate_lzw_fixtures"
-path = "../../tests/fixtures/generate_lzw_fixtures_main.rs"
-
-[[bin]]
-name = "generate_preprocess_fixtures"
-path = "../../tests/fixtures/preprocess/generate_fixtures_main.rs"
 
 [[bin]]
 name = "gen_lexer_golden"
@@ -36,17 +29,6 @@ path = "../../tools/build-xref-fixture/main.rs"
 name = "debug-fingerprint"
 path = "../../tools/debug-fingerprint/main.rs"
 
-[[bin]]
-name = "generate_slide_deck_fixtures"
-path = "../../tests/fixtures/generate_slide_deck_fixtures.rs"
-
-[[bin]]
-name = "generate_scientific_paper_fixtures"
-path = "../../tests/fixtures/generate_scientific_paper_fixtures.rs"
-
-[[bin]]
-name = "generate_book_chapter_fixtures"
-path = "../../tests/fixtures/generate_book_chapter_fixtures.rs"
 
 [[bin]]
 name = "gen-cli-reference"

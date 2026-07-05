@@ -23,6 +23,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+// CLI module imports for encryption testing
+use pdftract_cli::password;
+use pdftract_core::diagnostics::{DiagCode, DiagInfo, Severity, DIAGNOSTIC_CATALOG};
+
 /// Get the workspace root directory
 fn workspace_root() -> PathBuf {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();

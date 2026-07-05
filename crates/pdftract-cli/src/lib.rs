@@ -23,7 +23,7 @@ pub mod validate;
 pub mod verify_receipt;
 
 // Re-export diagnostics for testing
-pub use pdftract_core::diagnostics::{DiagCode, DiagInfo, DIAGNOSTIC_CATALOG};
+pub use pdftract_core::diagnostics::{DiagCode, DiagInfo, Severity, DIAGNOSTIC_CATALOG};
 
 // Export CLI types for documentation generation
 pub use crate::cli::{Cli, Commands};
