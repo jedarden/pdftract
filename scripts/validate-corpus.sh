@@ -82,14 +82,14 @@ while IFS=',' read -r filename source_url page_count file_size checksum license;
     continue
   fi
 
-  ((total_files++))
+  total_files=$((total_files + 1))
 
   file_path="${CORPUS_SUBDIR}/${filename}"
 
   # Check 1: File existence
   if [[ ! -f "$file_path" ]]; then
     log_error "MISSING: $filename"
-    ((missing_files++))
+    missing_files=$((missing_files + 1))
     continue
   fi
 
@@ -101,7 +101,7 @@ while IFS=',' read -r filename source_url page_count file_size checksum license;
   if [[ "$actual_size" != "$file_size" ]]; then
     log_warn "SIZE MISMATCH: $filename"
     echo "  Expected: $file_size bytes, Got: $actual_size bytes"
-    ((size_mismatches++))
+    size_mismatches=$((size_mismatches + 1))
     continue
   fi
 
@@ -110,26 +110,27 @@ while IFS=',' read -r filename source_url page_count file_size checksum license;
     log_warn "CHECKSUM MISMATCH: $filename"
     echo "  Expected: $checksum"
     echo "  Got:      $actual_checksum"
-    ((checksum_mismatches++))
+    checksum_mismatches=$((checksum_mismatches + 1))
     continue
   fi
 
   # Check 4: License information
   if [[ -z "$license" || "$license" == "null" || "$license" == "unknown" ]]; then
     log_warn "MISSING LICENSE: $filename"
-    ((missing_licenses++))
+    missing_licenses=$((missing_licenses + 1))
     continue
   fi
 
   # All checks passed
-  ((valid_files++))
+  valid_files=$((valid_files + 1))
 
   # Accumulate totals
-  ((total_pages += page_count))
-  ((total_size += file_size))
+  total_pages=$((total_pages + page_count))
+  total_size=$((total_size + file_size))
 
   # Progress indicator
-  if [[ $((valid_files % 200)) -eq 0 && $valid_files -gt 0 ]]; then
+  remainder=$((valid_files % 200))
+  if [[ $valid_files -gt 0 ]] && [[ $remainder -eq 0 ]]; then
     log_info "Validated $valid_files files..."
   fi
 

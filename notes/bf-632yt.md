@@ -47,7 +47,26 @@ Default corpus directory: `tests/fixtures/grep-corpus`
 - ✅ Returns 0 on success, non-zero on validation failure
 - ✅ Outputs summary: total files, total pages, total size, validation status
 
-## Commit
+## Bug Fix (2026-07-05)
 
-- Commit: `c189bfd2`
-- Files changed: `scripts/validate-corpus.sh` (1 file, 114 insertions, 147 deletions)
+Fixed critical issue where script exited prematurely under `set -euo pipefail` due to arithmetic operations returning non-zero exit codes when evaluating to 0.
+
+### Changes made:
+- Replaced all `((var++))` with `var=$((var + 1))`
+- Replaced all `((var += value))` with `var=$((var + value))`
+- Restructured progress indicator to avoid modulo 0 result
+
+### Root cause:
+The `set -e` flag causes scripts to exit when any command returns non-zero. Arithmetic operations like `((x++))` return the result of the expression (0 when x becomes 0 after increment), which triggers `set -e` to exit.
+
+### Verification:
+After fix, script successfully validates all 1,260 files:
+- Total files: 1,260
+- Valid files: 603 (with complete license info)
+- Missing licenses: 657 (expected - PDFium test files)
+- Exit code: 1 (correctly fails when validation errors found)
+
+## Commits
+
+- Initial: `c189bfd2` - Created validation script
+- Fix: `<pending>` - Fixed arithmetic operation exits under set -e
