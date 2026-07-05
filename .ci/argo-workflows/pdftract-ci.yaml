@@ -195,6 +195,15 @@ spec:
                 - name: benchmark-comment
                   from: "{{tasks.bench-matrix.outputs.artifacts.benchmark-comment}}"
 
+          - name: tier4-competitor-runner
+            template: tier4-competitor-runner
+            dependencies: [bench-matrix]
+            when: "{{workflow.parameters.ref}} == \"refs/heads/main\""
+            arguments:
+              artifacts:
+                - name: pdftract-binary
+                  from: "{{tasks.build-matrix.tasks.build-linux-x86_64-musl.outputs.artifacts.pdftract-binary}}"
+
           - name: regression-corpus
             template: regression-corpus
             dependencies: [build-matrix]
@@ -2456,6 +2465,129 @@ spec:
           limits:
             cpu: 500m
             memory: 512Mi
+
+    # === Tier 4 Competitor Runner ===
+    # Runs competitor benchmarks and emits per-commit JSON results
+    # Only runs on main branch to track performance over time
+    # Bead: bf-2f5ew
+    # Plan section: Tier 4 benchmark runner (lines 3128-3131)
+    #
+    # This step:
+    # - Runs Python script benches/competitors/run_all.py
+    # - Benchmarks pdftract, pdfminer.six, pypdf, pdfplumber on same corpus
+    # - Emits benches/results/<commit-sha>.json with throughput metrics
+    # - Tracks pdftract/pdfminer and pdftract/pypdf ratios over time
+    - name: tier4-competitor-runner
+      inputs:
+        artifacts:
+          - name: pdftract-binary
+            path: /tmp/pdftract-binary
+      activeDeadlineSeconds: 3600
+      container:
+        image: python:3.11-slim-bookworm
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+
+            echo "=========================================="
+            echo "Tier 4 Competitor Benchmark Runner"
+            echo "=========================================="
+            echo "Tracking competitive performance over time (main branch only)"
+
+            cd /workspace
+
+            # Install competitor tools from requirements.txt
+            echo "=== Installing competitor tools ==="
+            pip install --no-cache-dir -r benches/competitors/requirements.txt
+
+            # Install pdftract binary from build artifact
+            echo "=== Installing pdftract binary ==="
+            PDFTRACT_ARTIFACT="/tmp/pdftract-binary"
+            if [ -f "$PDFTRACT_ARTIFACT" ]; then
+              cp "$PDFTRACT_ARTIFACT" /usr/local/bin/pdftract
+              chmod +x /usr/local/bin/pdftract
+              echo "pdftract binary installed from artifact"
+            else
+              echo "WARNING: pdftract binary not found in artifacts"
+            fi
+
+            # Verify pdftract is available
+            if ! command -v pdftract &> /dev/null; then
+              echo "ERROR: pdftract not found in PATH"
+              exit 1
+            fi
+
+            pdftract --version || echo "WARNING: pdftract --version failed"
+
+            # Run Tier 4 competitor benchmark
+            echo "=== Running Tier 4 competitor benchmarks ==="
+            python3 benches/competitors/run_all.py || {
+              EXIT_CODE=$?
+
+              echo "=========================================="
+              echo "TIER 4 BENCHMARKS FAILED"
+              echo "=========================================="
+              echo ""
+              echo "Acceptance criteria:"
+              echo "  - ratio_pdfminer ≥ 10.0 (pdftract ≥ 10× faster than pdfminer.six)"
+              echo "  - ratio_pypdf ≥ 5.0 (pdftract ≥ 5× faster than pypdf)"
+              echo ""
+              echo "Check the output above for specific failures."
+
+              exit $EXIT_CODE
+            }
+
+            # Get commit SHA for artifact naming
+            COMMIT_SHA="{{workflow.parameters.commit-sha}}"
+            RESULTS_FILE="benches/results/${COMMIT_SHA}.json"
+
+            if [ -f "$RESULTS_FILE" ]; then
+              echo ""
+              echo "✓ Results written to $RESULTS_FILE"
+
+              # Display summary
+              echo ""
+              echo "=== Tier 4 Benchmark Results ==="
+              cat "$RESULTS_FILE" | jq -r '
+                "Commit: \(.commit)",
+                "Date: \(.date)",
+                "",
+                "Median Throughput:",
+                "  pdftract:    \(pdftract_mbs) MB/s",
+                "  pdfminer.six: \(pdfminer_mbs) MB/s",
+                "  pypdf:        \(pypdf_mbs) MB/s",
+                "  pdfplumber:  \(pdfplumber_mbs) MB/s",
+                "",
+                "Speed Ratios:",
+                "  vs pdfminer.six: \(ratio_pdfminer)x",
+                "  vs pypdf:        \(ratio_pypdf)x",
+                "",
+                "Acceptance Criteria:",
+                "  pdfminer.six: \(if .ratio_pdfminer >= 10.0 then "✓ PASS" else "✗ FAIL" end) (target: ≥ 10x)",
+                "  pypdf:         \(if .ratio_pypdf >= 5.0 then "✓ PASS" else "✗ FAIL" end) (target: ≥ 5x)"
+              '
+            else
+              echo "ERROR: Results file not generated: $RESULTS_FILE"
+              exit 1
+            fi
+
+            echo ""
+            echo "=== Tier 4 benchmarks complete ==="
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 2000m
+            memory: 4Gi
+          limits:
+            cpu: 4000m
+            memory: 8Gi
+        outputs:
+          artifacts:
+            - name: tier4-results
+            path: /workspace/benches/results
 
     # === Regression Corpus ===
     # Run pdftract binary against 500-PDF private regression corpus via ARMOR proxy
