@@ -1,14 +1,11 @@
 #!/usr/bin/env bash
-# Measure Word Error Rate (WER) for OCR testing
-# Usage: ./scripts/measure-wer.sh <fixture-pdf-path>
+# Measure Word Error Rate (WER) between OCR output and ground truth
+# Usage: ./scripts/measure-wer.sh <ocr_output_file> <ground_truth_file>
 #
-# This script:
-# 1. Extracts text from the PDF using pdftract OCR
-# 2. Compares against ground truth using the WER calculation script
-# 3. Returns exit code 0 if WER ≤ 3%, 1 otherwise
+# Computes WER = (substitutions + insertions + deletions) / total_words
+# Exit code 0 if WER ≤ 3%, otherwise exit code 1
 #
 # Environment variables:
-# - PDFTRACT_PATH: Path to pdftract binary (default: cargo build output)
 # - VERBOSE: Set to 1 for verbose output
 
 set -euo pipefail
@@ -16,97 +13,73 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Default pdftract path - try to find it in common locations
-find_pdftract() {
-    # Try cargo build output first
-    if [[ -f "$PROJECT_ROOT/target/debug/pdftract" ]]; then
-        echo "$PROJECT_ROOT/target/debug/pdftract"
-        return 0
-    fi
+# Show usage
+show_usage() {
+    cat <<EOF
+Usage: $0 <ocr_output_file> <ground_truth_file>
 
-    # Try release build
-    if [[ -f "$PROJECT_ROOT/target/release/pdftract" ]]; then
-        echo "$PROJECT_ROOT/target/release/pdftract"
-        return 0
-    fi
+Measure Word Error Rate (WER) between OCR output and ground truth text.
 
-    # Try CLI crate specifically
-    if [[ -f "$PROJECT_ROOT/target/debug/pdftract-cli" ]]; then
-        echo "$PROJECT_ROOT/target/debug/pdftract-cli"
-        return 0
-    fi
+Arguments:
+  ocr_output_file    Path to file containing OCR output text
+  ground_truth_file  Path to file containing ground truth text
 
-    if [[ -f "$PROJECT_ROOT/target/release/pdftract-cli" ]]; then
-        echo "$PROJECT_ROOT/target/release/pdftract-cli"
-        return 0
-    fi
+Exit codes:
+  0  WER ≤ 3% (passes quality gate)
+  1  WER > 3% (fails quality gate)
+  2  Error (missing files, etc.)
 
-    # Fallback to just 'pdftract' and hope it's in PATH
-    echo "pdftract"
+Example:
+  $0 output.txt ground-truth.txt
+
+Environment:
+  VERBOSE=1  Enable verbose output
+EOF
 }
 
-PDFTRACT="${PDFTRACT_PATH:-$(find_pdftract)}"
-FIXTURE_PDF="$1"
-
-if [[ ! -f "$FIXTURE_PDF" ]]; then
-    echo "Error: Fixture PDF not found: $FIXTURE_PDF" >&2
-    exit 1
+# Parse arguments
+if [[ "${1:-}" == "--help" ]] || [[ "${1:-}" == "-h" ]]; then
+    show_usage
+    exit 0
 fi
 
-# Determine ground truth path
-FIXTURE_DIR="$(dirname "$FIXTURE_PDF")"
-FIXTURE_NAME="$(basename "$FIXTURE_PDF" .pdf)"
-GROUND_TRUTH="$FIXTURE_DIR/$FIXTURE_NAME.txt"
+if [[ $# -ne 2 ]]; then
+    echo "Error: Invalid arguments" >&2
+    echo "" >&2
+    show_usage >&2
+    exit 2
+fi
+
+OCR_OUTPUT="$1"
+GROUND_TRUTH="$2"
+
+# Validate input files
+if [[ ! -f "$OCR_OUTPUT" ]]; then
+    echo "Error: OCR output file not found: $OCR_OUTPUT" >&2
+    exit 2
+fi
 
 if [[ ! -f "$GROUND_TRUTH" ]]; then
     echo "Error: Ground truth file not found: $GROUND_TRUTH" >&2
-    exit 1
+    exit 2
 fi
 
-# Create temp directory for OCR output
-TEMP_DIR="$(mktemp -d)"
-trap "rm -rf '$TEMP_DIR'" EXIT
-
-OCR_OUTPUT="$TEMP_DIR/ocr_output.txt"
-
-echo "Measuring WER for: $FIXTURE_PDF"
-echo "Ground truth: $GROUND_TRUTH"
-echo ""
-
-# Extract text using pdftract with OCR
-if [[ "${VERBOSE:-0}" == "1" ]]; then
-    echo "Running: $PDFTRACT extract '$FIXTURE_PDF' --ocr --text - > '$OCR_OUTPUT'"
-fi
-
-if ! "$PDFTRACT" extract "$FIXTURE_PDF" --ocr --text - > "$OCR_OUTPUT" 2>&1; then
-    echo "Error: pdftract extract failed" >&2
-    cat "$OCR_OUTPUT" >&2
-    exit 1
-fi
-
-# Calculate WER
+# Find WER calculation script
 WER_SCRIPT="$PROJECT_ROOT/tests/fixtures/scanned/calculate_wer.py"
 
 if [[ ! -f "$WER_SCRIPT" ]]; then
     echo "Error: WER calculation script not found: $WER_SCRIPT" >&2
-    exit 1
+    exit 2
 fi
 
+# Calculate WER
 if [[ "${VERBOSE:-0}" == "1" ]]; then
-    echo "Running WER calculation..."
-    python3 "$WER_SCRIPT" "$GROUND_TRUTH" "$OCR_OUTPUT" --verbose --cer
+    python3 "$WER_SCRIPT" "$GROUND_TRUTH" "$OCR_OUTPUT" --verbose
 else
     python3 "$WER_SCRIPT" "$GROUND_TRUTH" "$OCR_OUTPUT"
 fi
 
 WER_EXIT_CODE=$?
 
-if [[ $WER_EXIT_CODE -eq 0 ]]; then
-    echo ""
-    echo "✓ WER ≤ 3% - PASSED"
-else
-    echo ""
-    echo "✗ WER > 3% - FAILED"
-fi
-
+# Exit with the WER script's exit code (0 for WER ≤ 3%, 1 for WER > 3%)
 exit $WER_EXIT_CODE
