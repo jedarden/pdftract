@@ -107,6 +107,7 @@ harness = false
 [[bench]]
 name = "cmap_tokenize"
 harness = false
+required-features = ["cjk"]
 
 [package.metadata.docs.rs]
 # Document all public API features except those requiring system libraries.
