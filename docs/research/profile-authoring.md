@@ -359,9 +359,25 @@ Error: Invalid combinator structure:
 Profiles are resolved from multiple sources in order of priority (later sources override earlier ones on name collision):
 
 1. **Built-in profiles** (compiled into binary at `profiles/builtin/`)
-2. **System-wide profiles** (`/etc/pdftract/profiles/*.yaml`)
-3. **User profiles** (`$XDG_CONFIG_HOME/pdftract/profiles/*.yaml`, defaults to `~/.config/pdftract/profiles/`)
-4. **Runtime directories** (`--profile-dir DIR` CLI flag, repeatable)
+2. **Community profiles** (`profiles/community/*.yaml` or `profiles/community/*/profile.yaml`)
+3. **System-wide profiles** (`/etc/pdftract/profiles/*.yaml`)
+4. **User profiles** (`$XDG_CONFIG_HOME/pdftract/profiles/*.yaml`, defaults to `~/.config/pdftract/profiles/`)
+5. **Runtime directories** (`--profile-dir DIR` CLI flag, repeatable)
+
+### 5.1 Community Profiles
+
+The `profiles/community/` directory contains user-contributed profiles for specialized document types. These are included in the repository and can be used directly:
+
+```bash
+# Use a community profile
+pdftract extract --profile profiles/community/my-profile/profile.yaml document.pdf
+
+# Or copy it to your user config directory
+pdftract profiles install profiles/community/my-profile/profile.yaml
+pdftract extract --profile my-profile document.pdf
+```
+
+See [Community Contribution Guide](../../profiles/community/CONTRIBUTING.md) for guidelines on submitting community profiles.
 
 ### 5.1 Shadowing Behavior
 

@@ -61,12 +61,14 @@ fn run_list() -> Result<()> {
 
         // Group by origin
         let mut builtin = Vec::new();
+        let mut community = Vec::new();
         let mut user = Vec::new();
         let mut custom = Vec::new();
 
         for source in &profiles {
             match source.source {
                 extraction_loader::ProfileOrigin::BuiltIn => builtin.push(source),
+                extraction_loader::ProfileOrigin::Community => community.push(source),
                 extraction_loader::ProfileOrigin::User => user.push(source),
                 extraction_loader::ProfileOrigin::Custom(_) => custom.push(source),
                 extraction_loader::ProfileOrigin::System => {
@@ -80,6 +82,26 @@ fn run_list() -> Result<()> {
         if !builtin.is_empty() {
             println!("Built-in profiles:");
             for source in builtin {
+                let profile = &source.profile;
+                println!(
+                    "  {} - Priority: {}{}",
+                    profile.name,
+                    profile.priority,
+                    if source.overrides_builtin {
+                        " (overrides built-in)"
+                    } else {
+                        ""
+                    }
+                );
+                println!("    {}", profile.description);
+            }
+            println!();
+        }
+
+        // Print community profiles
+        if !community.is_empty() {
+            println!("Community profiles:");
+            for source in community {
                 let profile = &source.profile;
                 println!(
                     "  {} - Priority: {}{}",

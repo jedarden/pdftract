@@ -20,6 +20,9 @@ pub struct ProfileSource {
 
     /// Whether this overrides a built-in profile
     pub overrides_builtin: bool,
+
+    /// Whether this overrides a community profile
+    pub overrides_community: bool,
 }
 
 /// Origin of a profile.
@@ -27,6 +30,9 @@ pub struct ProfileSource {
 pub enum ProfileOrigin {
     /// Built-in profile (compiled into binary)
     BuiltIn,
+
+    /// Community profile (profiles/community/)
+    Community,
 
     /// System-wide profile (/etc/pdftract/profiles/)
     System,
@@ -42,9 +48,10 @@ pub enum ProfileOrigin {
 ///
 /// Search order (lowest to highest priority):
 /// 1. Built-in profiles (compiled in)
-/// 2. System directory (/etc/pdftract/profiles/)
-/// 3. User directory (XDG config: ~/.config/pdftract/profiles/)
-/// 4. Custom directories (--profile-dir, repeatable)
+/// 2. Community profiles (profiles/community/)
+/// 3. System directory (/etc/pdftract/profiles/)
+/// 4. User directory (XDG config: ~/.config/pdftract/profiles/)
+/// 5. Custom directories (--profile-dir, repeatable)
 ///
 /// Later sources override earlier ones on name collision.
 pub fn load_extraction_profiles(
@@ -55,20 +62,26 @@ pub fn load_extraction_profiles(
     // 1. Load built-in profiles
     load_builtin_profiles(&mut profiles_by_name)?;
 
-    // 2. Load system profiles
+    // 2. Load community profiles
+    let community_dir = PathBuf::from("profiles/community");
+    if community_dir.exists() {
+        load_profiles_from_dir(&community_dir, ProfileOrigin::Community, &mut profiles_by_name)?;
+    }
+
+    // 3. Load system profiles
     let system_dir = PathBuf::from("/etc/pdftract/profiles");
     if system_dir.exists() {
         load_profiles_from_dir(&system_dir, ProfileOrigin::System, &mut profiles_by_name)?;
     }
 
-    // 3. Load user profiles (XDG config)
+    // 4. Load user profiles (XDG config)
     if let Some(user_dir) = get_xdg_profile_dir() {
         if user_dir.exists() {
             load_profiles_from_dir(&user_dir, ProfileOrigin::User, &mut profiles_by_name)?;
         }
     }
 
-    // 4. Load custom profiles (--profile-dir)
+    // 5. Load custom profiles (--profile-dir)
     for custom_dir in custom_dirs {
         if custom_dir.exists() {
             let origin = ProfileOrigin::Custom(custom_dir.clone());
@@ -152,6 +165,7 @@ fn load_builtin_profiles(
                             profile,
                             source: ProfileOrigin::BuiltIn,
                             overrides_builtin: false,
+                            overrides_community: false,
                         },
                     );
                 }
@@ -204,9 +218,15 @@ fn load_profiles_from_dir(
             let profile_yaml = path.join("profile.yaml");
             if profile_yaml.exists() {
                 if let Ok(profile) = load_profile_file(&profile_yaml) {
-                    let overrides_builtin = profiles
-                        .contains_key(&profile.name)
-                        && matches!(origin, ProfileOrigin::User | ProfileOrigin::Custom(_));
+                    let (overrides_builtin, overrides_community) = if let Some(existing) = profiles.get(&profile.name) {
+                        match &existing.source {
+                            ProfileOrigin::BuiltIn => (true, false),
+                            ProfileOrigin::Community => (false, true),
+                            _ => (false, false),
+                        }
+                    } else {
+                        (false, false)
+                    };
 
                     profiles.insert(
                         profile.name.clone(),
@@ -214,6 +234,7 @@ fn load_profiles_from_dir(
                             profile,
                             source: origin.clone(),
                             overrides_builtin,
+                            overrides_community,
                         },
                     );
                 }
@@ -227,9 +248,15 @@ fn load_profiles_from_dir(
         }
 
         if let Ok(profile) = load_profile_file(&path) {
-            let overrides_builtin = profiles
-                .contains_key(&profile.name)
-                && matches!(origin, ProfileOrigin::User | ProfileOrigin::Custom(_));
+            let (overrides_builtin, overrides_community) = if let Some(existing) = profiles.get(&profile.name) {
+                match &existing.source {
+                    ProfileOrigin::BuiltIn => (true, false),
+                    ProfileOrigin::Community => (false, true),
+                    _ => (false, false),
+                }
+            } else {
+                (false, false)
+            };
 
             profiles.insert(
                 profile.name.clone(),
@@ -237,6 +264,7 @@ fn load_profiles_from_dir(
                     profile,
                     source: origin.clone(),
                     overrides_builtin,
+                    overrides_community,
                 },
             );
         }

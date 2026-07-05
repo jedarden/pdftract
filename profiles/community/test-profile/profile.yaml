@@ -1,0 +1,18 @@
+name: test-profile
+description: Test community profile for verification
+priority: 50
+
+match:
+  all:
+    - text_contains:
+        patterns: ["test"]
+
+extraction:
+  reading_order: line_dominant
+  table_detection: strict_borders
+
+fields:
+  test_field:
+    type: string
+    extraction:
+      regex: "test.*"
