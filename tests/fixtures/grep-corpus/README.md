@@ -26,9 +26,45 @@ cargo bench --bench grep_1000
 
 ### Regenerating the corpus
 
+The corpus can be regenerated using the Makefile targets:
+
 ```bash
-cd tests/fixtures/grep-corpus
-./regenerate.sh
+# Generate/regenerate the corpus (default: 1000 PDFs)
+make download-grep-corpus
+
+# Generate a specific count
+make download-grep-corpus COUNT=500
+
+# Validate corpus integrity
+make validate-corpus
+```
+
+The `download-grep-corpus` target generates synthetic PDFs using ReportLab, which ensures:
+- **Determinism**: Same script produces identical corpus
+- **Known license**: All synthetic PDFs are public domain
+- **Controlled variety**: Mix of page counts (1-20 pages per PDF)
+- **Fast regeneration**: No network dependencies after initial setup
+
+The `validate-corpus` target verifies corpus integrity by checking:
+- All files listed in manifest.csv exist
+- File sizes match the manifest
+- SHA256 checksums are correct
+- License information is present
+- Total counts (files, pages, size) are accurate
+
+### Manual regeneration (advanced)
+
+For advanced usage, you can also run the scripts directly:
+
+```bash
+# Generate corpus
+bash scripts/download-grep-corpus.sh 1000
+
+# Regenerate manifest from existing corpus
+bash scripts/grep-corpus-generate-manifest.sh
+
+# Validate corpus
+bash scripts/validate-corpus.sh tests/fixtures/grep-corpus
 ```
 
 ## Corpus Requirements
