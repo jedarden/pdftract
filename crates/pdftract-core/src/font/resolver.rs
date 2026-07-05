@@ -395,6 +395,9 @@ fn resolve_level1(char_code: &[u8], to_unicode: Option<&ToUnicodeMap>) -> Resolv
     }
 
     // Multi-codepoint result from ligature expansion
+    // MARKER: ToUnicode entry creation point - Level 1 CMap lookup success.
+    // Creates ResolvedGlyph with UnicodeSource::ToUnicode (confidence 1.0).
+    // See notes/bf-2nob5-child-1.md for documentation.
     ResolvedGlyph::new(SmallVec::from_slice(chars), UnicodeSource::ToUnicode)
 }
 

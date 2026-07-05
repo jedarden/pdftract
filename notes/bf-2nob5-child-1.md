@@ -20,7 +20,7 @@ This documentation serves as a reference for:
 
 The following inline code comments have been added to the codebase to mark CMAP and ToUnicode entry creation points:
 
-### 1. ToUnicode Entry Creation
+### 1. ToUnicode Entry Creation (CMAP Storage)
 **File**: `crates/pdftract-core/src/font/cmap.rs`
 **Function**: `ToUnicodeMap::add_mapping()`
 **Lines**: 86-88
@@ -29,6 +29,18 @@ The following inline code comments have been added to the codebase to mark CMAP 
 /// MARKER: CMAP entry creation point - this is where individual ToUnicode
 /// mappings are stored. Called by parse_beginbfchar() and parse_beginbfrange().
 /// See notes/bf-e4uvb-child-1.md for documentation.
+```
+
+### 2. ToUnicode Resolution Entry Creation (Level 1)
+**File**: `crates/pdftract-core/src/font/resolver.rs`
+**Function**: `resolve_level1()`
+**Lines**: 398-402
+**Comment**:
+```rust
+// MARKER: ToUnicode entry creation point - Level 1 CMap lookup success.
+// Creates ResolvedGlyph with UnicodeSource::ToUnicode (confidence 1.0).
+// See notes/bf-2nob5-child-1.md for documentation.
+ResolvedGlyph::new(SmallVec::from_slice(chars), UnicodeSource::ToUnicode)
 ```
 
 ### 2. Codespace Range Entry Creation - Constructor
@@ -507,10 +519,11 @@ To add skip logic for unmapped glyphs:
 ## Verification Notes
 
 ### Inline Comments Added
-✅ Added docstring MARKER at `ToUnicodeMap::add_mapping()` (cmap.rs:86-88) - Already present
-✅ Added docstring MARKER at `CodespaceRange::new()` (codespace.rs:56-60) - Added
-✅ Added inline comment MARKER at codespace range creation (codespace.rs:354) - Added
-✅ Added inline comment MARKER at Type1 encoding differences creation (encoding.rs:196-199) - Already present
+✅ Added docstring MARKER at `ToUnicodeMap::add_mapping()` (cmap.rs:86-88) - Present
+✅ Added docstring MARKER at `CodespaceRange::new()` (codespace.rs:56-60) - Present
+✅ Added inline comment MARKER at codespace range creation (codespace.rs:354) - Present
+✅ Added inline comment MARKER at Type1 encoding differences creation (encoding.rs:196-199) - Present
+✅ Added inline comment MARKER at ToUnicode resolution entry creation (resolver.rs:398-402) - Added
 
 ### Files Verified
 ✅ `crates/pdftract-core/src/font/cmap.rs` - ToUnicode entry creation
@@ -520,9 +533,10 @@ To add skip logic for unmapped glyphs:
 ✅ `crates/pdftract-core/src/content_stream.rs` - Text extraction (usage, not creation)
 
 ### Commit Information
-- Inline comments added to codespace.rs (2 locations)
-- Existing inline comments verified in cmap.rs and encoding.rs
-- All comments reference `notes/bf-e4uvb-child-1.md` for detailed documentation
+- Inline comments added to resolver.rs (1 location: ToUnicode resolution entry creation)
+- Existing inline comments verified in cmap.rs, codespace.rs, and encoding.rs
+- All comments reference `notes/bf-2nob5-child-1.md` for detailed documentation
+- Notes file updated to reflect all marker locations
 
 ---
 
