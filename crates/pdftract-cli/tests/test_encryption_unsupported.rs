@@ -4,11 +4,15 @@
 //! and exits with code 3 when run on an owner-password-only encrypted PDF
 //! (or a PDF with an unsupported encryption handler like Adobe LiveCycle).
 
+use std::error::Error;
+use std::io;
 use std::process::Command;
 
 // CLI module imports for encryption testing
 use pdftract_cli::password;
-use pdftract_core::diagnostics::{DiagCode, DiagInfo, Severity, DIAGNOSTIC_CATALOG};
+use pdftract_core::diagnostics::{
+    DiagCode, DiagInfo, Diagnostic, DiagnosticsCollector, ObjRef, Severity, DIAGNOSTIC_CATALOG,
+};
 
 #[test]
 fn test_livecycle_pdf_emits_encryption_unsupported() {

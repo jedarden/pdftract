@@ -19,13 +19,17 @@
 //! - Plan line 1132: RC4 and AES-128/256 decryption implementation
 //! - Plan line 1149: Encrypted file with unknown handler error handling
 
+use std::error::Error;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 // CLI module imports for encryption testing
 use pdftract_cli::password;
-use pdftract_core::diagnostics::{DiagCode, DiagInfo, Severity, DIAGNOSTIC_CATALOG};
+use pdftract_core::diagnostics::{
+    DiagCode, DiagInfo, Diagnostic, DiagnosticsCollector, ObjRef, Severity, DIAGNOSTIC_CATALOG,
+};
 
 /// Get the workspace root directory
 fn workspace_root() -> PathBuf {
