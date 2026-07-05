@@ -11,26 +11,68 @@ memory-report.json
 # Proptest regressions are committed (minimal counterexamples)
 # but the .gitkeep keeps the directory in git
 
+# ============================================================================
+# Compiled binaries and build artifacts
+# ============================================================================
+
+# Compiled libraries
+*.rlib
+
 # Compiled binaries in repo root
 debug_*
 test_*
 gen_fixtures
 gen_ocr_fixtures
 
-# Compiled libraries
-*.rlib
-
-# Scratch output files
-0
---1.ppm
-mod
-out.pdf
-
-# Backup files
-*.bak
-
 # Compiled binaries in tests/fixtures/
 tests/fixtures/gen_fixtures
 tests/fixtures/gen_ocr_fixtures
 tests/fixtures/gen_suspects*
 tests/fixtures/gen_unmapped*
+
+# Temporary fixture generators in test directories
+tests/*/gen_*.py
+tests/*/gen_*.rs
+tests/*/*/gen_*.py
+tests/*/*/gen_*.rs
+
+# ============================================================================
+# Scratch and temporary output files
+# ============================================================================
+
+# Scratch output files in repo root
+0
+--1.ppm
+mod
+out.pdf
+
+# Common scratch output patterns
+*.ppm
+scratch/*.txt
+scratch/*.pdf
+scratch/*.bin
+
+# ============================================================================
+# Backup and editor temporary files
+# ============================================================================
+
+# Backup files (any extension)
+*.bak
+*.bak*
+*.bak.*
+*~
+
+# Editor temp files
+.*.swp
+*.swp
+*.swo
+*.tmp
+.*.tmp*
+
+# ============================================================================
+# Generated source files (temporary generators)
+# ============================================================================
+
+# Generated fixture source files (keep generators, ignore generated sources)
+gen_*.rs
+!xtask/src/bin/gen_*.rs  # Keep xtask generators
