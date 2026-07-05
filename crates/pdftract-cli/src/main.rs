@@ -70,10 +70,10 @@ enum Commands {
     /// Run SDK conformance test suite
     Conformance {
         /// Path to the conformance suite JSON
-        #[arg(short, long, default_value = "tests/sdk-conformance/cases.json")]
+        #[arg(short = 'u', long, default_value = "tests/sdk-conformance/cases.json")]
         suite: PathBuf,
         /// SDK name
-        #[arg(short, long, default_value = "pdftract")]
+        #[arg(short = 'k', long, default_value = "pdftract")]
         sdk: String,
         /// SDK version
         #[arg(short, long, default_value = "0.1.0")]
