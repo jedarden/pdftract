@@ -11,6 +11,7 @@ use crate::parser::catalog::Catalog;
 use crate::parser::object::{ObjRef, PdfDict, PdfObject};
 use crate::parser::pages::PageDict;
 use crate::parser::xref::XrefResolver;
+use tracing::{debug, info};
 
 /// Detect JavaScript presence in a PDF document.
 ///
@@ -46,18 +47,21 @@ pub fn detect_javascript(
 ) -> bool {
     // Check catalog /OpenAction
     if has_js_action(&catalog.open_action, resolver) {
+        info!("JavaScript actions detected: catalog /OpenAction");
         return true;
     }
 
     // Check catalog /AA
     if has_js_in_aa(&catalog.aa, resolver) {
+        info!("JavaScript actions detected: catalog /AA (Additional Actions)");
         return true;
     }
 
     // Check each page for /AA and annotations
-    for page in pages {
+    for (page_idx, page) in pages.iter().enumerate() {
         // Check page /AA
         if has_js_in_aa(&page.aa, resolver) {
+            info!("JavaScript actions detected: page {} /AA (Additional Actions)", page_idx);
             return true;
         }
 
@@ -68,12 +72,14 @@ pub fn detect_javascript(
                     // Check /A (primary action)
                     if let Some(action) = annot_dict.get("A") {
                         if has_js_action(&Some(action.clone()), resolver) {
+                            info!("JavaScript actions detected: page {} annotation /A (primary action)", page_idx);
                             return true;
                         }
                     }
                     // Check /AA (additional actions)
                     if let Some(aa) = annot_dict.get("AA") {
                         if has_js_in_aa(&Some(aa.clone()), resolver) {
+                            info!("JavaScript actions detected: page {} annotation /AA (additional actions)", page_idx);
                             return true;
                         }
                     }
@@ -85,6 +91,7 @@ pub fn detect_javascript(
     // Check AcroForm fields for /AA
     if let Some(form_dict) = acroform {
         if has_js_in_acroform(form_dict, resolver) {
+            info!("JavaScript actions detected: AcroForm fields /AA (Additional Actions)");
             return true;
         }
     }
@@ -116,12 +123,14 @@ fn has_js_action(obj: &Option<PdfObject>, resolver: &XrefResolver) -> bool {
         if let Some(s_obj) = dict.get("S") {
             if let Some(s_name) = s_obj.as_name() {
                 if s_name == "JavaScript" || s_name == "JS" {
+                    debug!("JavaScript action detected with /S == {}", s_name);
                     return true;
                 }
             }
         }
         // Check for /JS entry (JavaScript code)
         if dict.get("JS").is_some() {
+            debug!("JavaScript action detected with /JS entry");
             return true;
         }
     }
@@ -156,6 +165,7 @@ fn has_js_in_aa(aa: &Option<PdfObject>, resolver: &XrefResolver) -> bool {
         for key in &action_keys {
             if let Some(action_obj) = dict.get(*key) {
                 if has_js_action(&Some(action_obj.clone()), resolver) {
+                    debug!("JavaScript detected in /AA dictionary with action key: /{}", key);
                     return true;
                 }
             }
