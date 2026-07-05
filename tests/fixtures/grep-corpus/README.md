@@ -62,8 +62,22 @@ Potential corpus sources:
 ## Manifest Format
 
 ```csv
-filename,size_bytes,expected_matches_for_pattern_the
-doc001.pdf,102400,42
-doc002.pdf,98304,15
+filename,source_url,page_count,file_size,checksum,license
+doc001.pdf,https://example.com/doc001.pdf,10,102400,abc123...,public-domain
+doc002.pdf,https://arxiv.org/pdf/1234.5678.pdf,15,98304,def456...,cc-by-4.0
 ...
 ```
+
+### Fields
+
+- **filename**: Relative path from `corpus/` directory (e.g., `doc001.pdf`)
+- **source_url**: URL where the PDF was downloaded from
+- **page_count**: Number of pages in the PDF
+- **file_size**: File size in bytes
+- **checksum**: SHA256 hash of the file contents (for integrity verification)
+- **license**: License identifier:
+  - `public-domain`: Public domain
+  - `cc-by-4.0`: Creative Commons Attribution 4.0
+  - `cc-by-sa-4.0`: Creative Commons Attribution-ShareAlike 4.0
+  - `mit`: MIT License
+  - `other`: Other permissive license (document in source_url comments)

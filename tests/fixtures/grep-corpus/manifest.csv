@@ -1,7 +1,15 @@
 # grep-corpus manifest
-# Format: filename,size_bytes,expected_matches_for_pattern_the
+# Format: filename,source_url,page_count,file_size,checksum,license
 #
-# This file documents the expected properties of each PDF in the corpus.
-# Used by the benchmark to validate correctness.
+# This file documents the metadata and provenance of each PDF in the corpus.
+# Used by the benchmark to validate corpus integrity and track sources.
+#
+# Fields:
+# - filename: Relative path from corpus/ directory (e.g., "doc001.pdf")
+# - source_url: URL where the PDF was downloaded from
+# - page_count: Number of pages in the PDF
+# - file_size: File size in bytes
+# - checksum: SHA256 hash of the file contents
+# - license: License identifier (e.g., public-domain, cc-by-4.0, cc-by-sa-4.0)
 #
 # TODO: Populate with actual corpus data (blocks on 7.8.x grep implementation)
