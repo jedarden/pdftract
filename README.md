@@ -1,7 +1,7 @@
 # pdftract
 
-[![crates.io](https://img.shields.io/crates/v/pdftract)](https://crates.io/crates/pdftract)
-[![PyPI](https://img.shields.io/pypi/v/pdftract)](https://pypi.org/project/pdftract/)
+[![crates.io](https://img.shields.io/badge/crates.io-coming--soon-orange)](https://github.com/jedarden/pdftract/blob/main/docs/plan/plan.md)
+[![PyPI](https://img.shields.io/badge/PyPI-coming--soon-orange)](https://github.com/jedarden/pdftract/blob/main/docs/plan/plan.md)
 [![docs.rs](https://img.shields.io/docsrs/pdftract-core)](https://docs.rs/pdftract-core)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](LICENSE-MIT)
 [![MSRV](https://img.shields.io/badge/MSRV-1.78-orange)](https://blog.rust-lang.org/2024/05/02/Rust-1.78.0.html)
@@ -38,37 +38,63 @@ See [docs/operations/manual-platform-smoke.md](docs/operations/manual-platform-s
 
 ## Installation
 
+**🚧 Public releases coming soon** — pdftract is preparing for its first public release (v0.1.0). The install commands below are planned but not yet available. For now, use the development installation instructions below.
+
 **Minimum Supported Rust Version (MSRV):** 1.78
 
-### Cargo
+### Development installation
+
+Build from source:
 
 ```bash
-cargo add pdftract-core
+# Clone the repository
+git clone https://github.com/jedarden/pdftract.git
+cd pdftract
+
+# Build the CLI
+cargo build --release
+
+# Install the CLI locally
+cargo install --path .
 ```
 
-Or install the CLI:
+### Planned release channels (coming soon)
+
+#### Cargo
 
 ```bash
+# Add as a library dependency
+cargo add pdftract-core
+
+# Or install the CLI
 cargo install pdftract
 ```
 
-### pip
+*Status: Not yet published to crates.io — tracked in [bf-10qd4](https://github.com/jedarden/pdftract/commit/bf-10qd4)*
+
+#### pip
 
 ```bash
 pip install pdftract
 ```
 
-### Docker
+*Status: Not yet published to PyPI — tracked in [bf-10qd4](https://github.com/jedarden/pdftract/commit/bf-10qd4)*
+
+#### Docker
 
 ```bash
 docker pull ronaldraygun/pdftract:latest
 ```
 
-### Homebrew
+*Status: Not yet published to Docker Hub — tracked in [bf-10qd4](https://github.com/jedarden/pdftract/commit/bf-10qd4)*
+
+#### Homebrew
 
 ```bash
 brew install pdftract
 ```
+
+*Status: Not yet submitted to Homebrew — tracked in [bf-10qd4](https://github.com/jedarden/pdftract/commit/bf-10qd4)*
 
 ## Quickstart
 
@@ -204,12 +230,12 @@ pdftract ships multiple integration surfaces from a single Rust core:
 
 | SDK | Package | Notes |
 |---|---|---|
-| Rust library | [`pdftract-core`](https://crates.io/crates/pdftract-core) on crates.io | Primary API |
-| CLI binary | [`pdftract`](https://crates.io/crates/pdftract) on crates.io | Wraps the library |
-| Python bindings | [`pdftract`](https://pypi.org/project/pdftract/) on PyPI | PyO3-based, wheels for Linux/macOS/Windows |
-| C shared library | `libpdftract` | Stable C ABI; use `pdftract codegen` to generate FFI headers for your language |
-| Docker image | [`ronaldraygun/pdftract`](https://hub.docker.com/r/ronaldraygun/pdftract) | Includes `serve` mode HTTP microservice |
-| HTTP microservice | `pdftract serve` | REST API for language-agnostic integration |
+| Rust library | [`pdftract-core`](https://crates.io/crates/pdftract-core) on crates.io | Primary API — **🚧 coming soon** |
+| CLI binary | [`pdftract`](https://crates.io/crates/pdftract) on crates.io | Wraps the library — **🚧 coming soon** |
+| Python bindings | [`pdftract`](https://pypi.org/project/pdftract/) on PyPI | PyO3-based, wheels for Linux/macOS/Windows — **🚧 coming soon** |
+| C shared library | `libpdftract` | Stable C ABI; use `pdftract codegen` to generate FFI headers for your language — **🚧 coming soon** |
+| Docker image | [`ronaldraygun/pdftract`](https://hub.docker.com/r/ronaldraygun/pdftract) | Includes `serve` mode HTTP microservice — **🚧 coming soon** |
+| HTTP microservice | `pdftract serve` | REST API for language-agnostic integration (build from source) |
 
 Additional language SDK packages (Go, Node.js, Ruby) are in progress, built on top of the C ABI.
 
