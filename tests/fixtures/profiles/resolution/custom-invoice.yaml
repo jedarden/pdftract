@@ -1,0 +1,37 @@
+# Custom invoice profile for testing resolution priority
+# This should override the built-in invoice profile when loaded from --profile-dir
+name: invoice
+description: Custom invoice profile for resolution testing (overrides built-in)
+priority: 100  # Higher priority than built-in (50)
+
+match:
+  all:
+    - text_contains:
+        patterns: ["invoice", "custom override"]
+    - structural:
+        has_table: true
+
+extraction:
+  reading_order: line_dominant
+  table_detection: strict_borders
+
+fields:
+  invoice_number:
+    type: string
+    extraction:
+      regex: "INV-([\\w-]+)"
+      near: ["Invoice"]
+      parse: string
+
+  total:
+    type: decimal
+    extraction:
+      regex: "([\\d,]+\\.\\d{2})"
+      near: ["Total", "Grand Total"]
+      parse: decimal
+
+  custom_field:
+    type: string
+    extraction:
+      regex: "CUSTOM: (.*)"
+      parse: string

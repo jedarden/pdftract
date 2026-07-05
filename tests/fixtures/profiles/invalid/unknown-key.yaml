@@ -1,0 +1,23 @@
+# Profile with unrecognized keys (should fail validation)
+name: unknown_key_test
+description: This profile contains keys not recognized by the schema
+priority: 10
+
+match:
+  any:
+    - text_contains:
+        patterns: ["test"]
+
+# Invalid: not_a_real_key is not a recognized extraction tuning option
+extraction:
+  reading_order: line_dominant
+  not_a_real_key: this_value_should_fail
+  table_detection: strict_borders
+
+fields:
+  test_field:
+    type: string
+    extraction:
+      patterns:
+        - "(.*)"
+      fallback: null

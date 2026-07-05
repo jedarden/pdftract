@@ -1,0 +1,20 @@
+# Profile with malformed combinators (should fail YAML parsing)
+name: bad_combinator_test
+description: This profile has malformed match combinators
+priority: 10
+
+# Invalid: 'all' requires a list, not a single value
+match:
+  all:
+    text_contains:
+      patterns: ["test"]
+
+extraction:
+  reading_order: line_dominant
+
+fields:
+  test_field:
+    type: string
+    extraction:
+      patterns:
+        - "(.*)"

@@ -1,0 +1,33 @@
+# Minimal invoice profile - simplified invoice extraction
+name: invoice-minimal
+description: Minimal invoice profile for testing
+priority: 50
+
+match:
+  all:
+    - any:
+        - text_contains:
+            patterns: ["invoice", "bill to", "invoice #"]
+        - heading_matches:
+            pattern: "^Invoice\\b"
+    - structural:
+        has_table: true
+
+extraction:
+  reading_order: line_dominant
+  table_detection: strict_borders
+
+fields:
+  invoice_number:
+    type: string
+    extraction:
+      regex: "Invoice\\s*#\\s*([\\w-]+)"
+      near: ["Invoice", "Invoice #"]
+      parse: string
+
+  total:
+    type: decimal
+    extraction:
+      regex: "([\\d,]+\\.\\d{2})"
+      near: ["Total", "Amount Due"]
+      parse: decimal

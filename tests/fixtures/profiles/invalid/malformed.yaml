@@ -1,0 +1,11 @@
+# Malformed YAML - unclosed bracket (should fail YAML parsing)
+name: malformed_test
+description: This profile has malformed YAML syntax
+priority: 10
+
+match:
+  any:
+    - text_contains:
+        patterns: ["test"
+
+# This should fail YAML parsing due to unclosed bracket above

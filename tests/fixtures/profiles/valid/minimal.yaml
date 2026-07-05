@@ -1,0 +1,4 @@
+# Minimal valid profile - smallest possible profile
+name: minimal
+description: Minimal valid profile with only required fields
+priority: 10
