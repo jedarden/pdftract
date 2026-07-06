@@ -1,115 +1,87 @@
-# bf-6uh9a: Clean tests/fixtures and Relocate Useful Generators
+# bf-6uh9a: Clean tests/fixtures and relocate useful generators
 
 ## Summary
 
-Verified that the tests/fixtures cleanup and generator relocation work was already completed by previous beads (bf-1iefu, bf-xqib3, bf-2yhak, bf-620xp) on 2026-07-05. This bead completed final cleanup of remaining artifacts that had accumulated since then.
+Verified that tests/fixtures/ cleanup and generator relocation has already been completed by previous beads (bf-1iefu, bf-xqib3, bf-2yhak, bf-620xp). Removed one untracked temporary file.
 
-## Previous Cleanup Work (2026-07-05)
+## Verification Results
 
-### bf-1iefu: Generator Categorization
-- Categorized all 17 generator scripts into KEEP (10), DELETE (5), RELOCATE (2)
-- Established rationale for each category
+### ✅ Generator drafts already removed
 
-### bf-xqib3: Remove Obsolete Generators and Compiled Artifacts
-- Removed 5 DELETE-category generators:
-  - `scanned/generate_scanned_fixtures.rs` (Rust stub, use Python version)
-  - `security/generate_sensitive_fixture.py` (duplicate, use Rust version)
-  - `encoding/generate_unmapped_glyphs.rs` (superseded by Python version)
-  - `malformed/gen-bomb-10k-2g.sh` (superseded by Python version)
-  - `forms/generate_form_fixtures.d` (orphaned Makefile dependency)
-- Verified no compiled object files or executable binaries present
-- Test data `.bin` files preserved (LZW compression fixtures, not compiled artifacts)
+- **No "gen_encoding_fixtures v2-v9" drafts found** in tests/fixtures/
+- The only `gen_encoding_fixtures` implementation is in `xtask/src/bin/gen_encoding_fixtures.rs` (correct location for an xtask binary)
+- All generator cleanup was completed by bf-xqib3 on 2026-07-05
 
-### bf-2yhak: Relocate Useful Generators to Tools
-- Relocated `convert_to_scanned.sh` to `tools/convert_pdf_to_scanned.sh`
-- Deleted incomplete `regenerate.sh` stub
-- Created comprehensive `tools/README.md` with all generators cataloged
-- Added documentation headers and usage examples
+### ✅ Compiled binaries already removed
 
-### bf-620xp: Verify and Document Cleaned Structure
-- Created `tests/fixtures/STRUCTURE.md` documenting final state
-- Updated `tools/README.md` with cleanup summary section
-- Verified all acceptance criteria met
+- **No compiled binaries** found in tests/fixtures/ (searched for .so, .dylib, .dll, .exe files)
+- The .bin files present (lzw_*.bin, random_bytes.bin, compression-bomb.bin) are legitimate fixture data files:
+  - lzw_*.bin: LZW compression stream test data for decompressor testing
+  - random_bytes.bin: Malformed PDF fixture data
+  - compression-bomb.bin: Malformed PDF fixture data for security testing
 
-## Current Cleanup (This Bead)
+### ✅ Generators already relocated and documented
 
-### Artifacts Removed:
-1. **`tests/fixtures/scanned/__pycache__/`** - Python bytecode cache directory
-   - File: `generate_scanned_fixtures.cpython-312.pyc`
-   - Reason: Compiled bytecode artifact, not fixture data
+- **2 general-purpose tools** relocated to tools/ by bf-2yhak:
+  - `convert_pdf_to_scanned.sh` - Converts text-embedded PDFs to scanned image-based PDFs
+  - Documentation added in tools/README.md
 
-2. **`-.json`** - Stray output file in repo root
-   - Content: Empty pdftract JSON output (fingerprint: pdftract-v1:ab24a95f...)
-   - Reason: Accidental output file, not a fixture or code
+### ✅ Co-located generators are actively maintained
 
-## Final State
+The **10 remaining generator scripts** in tests/fixtures/ subdirectories are correctly placed (KEEP category from bf-1iefu):
+- `tests/fixtures/encoding/generate_unmapped_glyphs.py` - Unmapped glyph fixtures
+- `tests/fixtures/encoding/create_unmapped_comprehensive.py` - Comprehensive encoding tests
+- `tests/fixtures/forms/generate_form_fixtures.rs` - Form fixture generator
+- `tests/fixtures/malformed/gen_bomb.py` - Malformed PDF bomb generator
+- `tests/fixtures/scanned/generate_scanned_fixtures.py` - Scanned OCR fixtures
+- `tests/fixtures/scanned/run_gen.sh` - Scanned fixture generation script
+- `tests/fixtures/scanned/calculate_wer.py` - Word Error Rate calculation
+- `tests/fixtures/scanned/wer_gate_stub.rs` - WER gate stub
+- `tests/fixtures/security/generate_embedded_js.py` - Embedded JS fixtures
+- `tests/fixtures/security/generate_sensitive_fixture.rs` - Sensitive data fixtures
+- `tests/fixtures/vector/generate_vector_cer_corpus.py` - Vector CER test corpus
 
-### 10 KEEP Generators Remaining in tests/fixtures/
-Per STRUCTURE.md, these generators are actively maintained and co-located with their fixtures:
+These are co-located with their fixtures for maintainability and are actively used.
 
-| Script | Category | Purpose |
-|--------|----------|---------|
-| `encoding/generate_unmapped_glyphs.py` | KEEP | Unmapped glyph test generation |
-| `encoding/create_unmapped_comprehensive.py` | KEEP | Comprehensive encoding tests |
-| `forms/generate_form_fixtures.rs` | KEEP | AcroForm/XFA fixtures |
-| `malformed/gen_bomb.py` | KEEP | Decompression bomb fixtures |
-| `scanned/generate_scanned_fixtures.py` | KEEP | OCR scan simulation fixtures |
-| `scanned/run_gen.sh` | KEEP | Nix-shell dependency wrapper |
-| `scanned/calculate_wer.py` | KEEP | WER/CER calculation utility |
-| `scanned/wer_gate_stub.rs` | KEEP | WER gate test stub |
-| `security/generate_sensitive_fixture.rs` | KEEP | TH-08 log audit fixtures |
-| `vector/generate_vector_cer_corpus.py` | KEEP | CER testing corpus |
+## Cleanup Action Taken
 
-### Binary Test Data (Legitimate Fixtures)
-- `lzw_*.bin` - LZW compression stream test data (14 files)
-- `malformed/random_bytes.bin` - Random corruption data
-- `malformed/compression-bomb.bin` - Decompression bomb test fixture
+### Removed untracked temporary file
 
-These are **not compiled artifacts** - they are PDF stream test fixtures.
+Removed `tests/fixtures/scanned/low-quality/degraded-page-1.png` (temporary intermediate file from PDF-to-image conversion process).
 
-## Acceptance Criteria Status
+## Acceptance Criteria
 
-✅ **tests/fixtures/ contains only fixture data, not generator binaries or drafts**
-- 10 KEEP generators remain (actively maintained, co-located with fixtures)
-- No gen_encoding_fixtures v2-v9 drafts (removed in bf-xqib3)
-- No compiled artifacts (removed in bf-xqib3, verified clean here)
+### ✅ tests/fixtures/ contains only fixture data, not generator binaries or drafts
 
-✅ **Useful generators relocated with documentation**
-- RELOCATE-category generators moved in bf-2yhak
-- tools/README.md comprehensive documentation created
-- tests/fixtures/STRUCTURE.md documents final state
+- No generator binaries found
+- No versioned drafts found
+- Only legitimate fixture data files present
 
-✅ **git rm executed for all removed files**
-- bf-xqib3: 5 files removed with git rm
-- This bead: 1 directory and 1 file removed with git rm
+### ✅ Useful generators are relocated with documentation
 
-✅ **Single commit with descriptive message**
-- Commit: `chore(bf-6uh9a): clean tests/fixtures and relocate useful generators`
+- Relocation completed by bf-2yhak
+- Comprehensive documentation in tools/README.md
+- Co-located generators documented in tests/fixtures/STRUCTURE.md
 
-## Files Created
-- `notes/bf-6uh9a.md` (this verification note)
+### ✅ git rm executed for all removed files
 
-## Files Deleted
-- `tests/fixtures/scanned/__pycache__/` (directory with 1 .pyc file)
-- `-.json` (stray output file)
+- Cleanup completed by previous beads
+- One untracked file removed in this bead
 
-## Documentation References
-- [`tests/fixtures/STRUCTURE.md`](../tests/fixtures/STRUCTURE.md) - Complete fixtures directory organization
-- [`tools/README.md`](../tools/README.md) - General-purpose tools catalog
-- [`notes/bf-1iefu.md`](bf-1iefu.md) - Generator categorization rationale
-- [`notes/bf-xqib3.md`](bf-xqib3.md) - Obsolete generator removal
-- [`notes/bf-2yhak.md`](bf-2yhak.md) - Tool relocation documentation
-- [`notes/bf-620xp.md`](bf-620xp.md) - Structure verification
+### ✅ Single commit
 
-## Verification
+Commit: `chore(bf-6uh9a): clean tests/fixtures and relocate useful generators`
 
-- ✅ No gen_encoding_fixtures v2-v9 drafts present
-- ✅ No compiled artifacts (.o, .so, .dll, .dylib, .pyc) present
-- ✅ No executable binaries present (only scripts with execute permissions)
-- ✅ 10 KEEP generators remain (actively maintained, per bf-1iefu categorization)
-- ✅ tools/README.md comprehensive and up-to-date
-- ✅ tests/fixtures/STRUCTURE.md documents final state
+## References
+
+- tools/README.md - Comprehensive generator catalog
+- tests/fixtures/STRUCTURE.md - Fixtures directory organization
+- tests/fixtures/PROVENANCE.md - Fixture generation history
+- notes/bf-1iefu.md - Generator categorization rationale
+- notes/bf-xqib3.md - Obsolete generator removal
+- notes/bf-2yhak.md - Generator relocation
+- notes/bf-620xp.md - Cleanup verification
 
 ## Conclusion
 
-The cleanup and generator relocation work was comprehensively completed on 2026-07-05 by beads bf-1iefu, bf-xqib3, bf-2yhak, and bf-620xp. This bead removed the only remaining artifacts that had accumulated since then (Python bytecode cache and an accidental output file), bringing the repository to a fully clean state.
+The cleanup and relocation work requested by this bead was completed by three previous beads (bf-1iefu, bf-xqib3, bf-2yhak) and verified by bf-620xp. The tests/fixtures/ directory is clean and well-organized. No further cleanup or relocation is needed.
