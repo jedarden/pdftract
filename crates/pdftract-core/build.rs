@@ -24,6 +24,9 @@ struct UnmappedGlyphNamesConfig {
     /// These glyphs have no valid Unicode mapping and should not appear in
     /// text extraction output. Common examples include `.notdef` (the PDF
     /// fallback glyph) and Private Use Area (PUA) glyphs like `g000-g009`.
+    ///
+    /// Defaults to an empty list if not specified in the config file.
+    #[serde(default)]
     unmapped_glyph_names: Vec<String>,
 
     /// Optional description of the configuration purpose.
