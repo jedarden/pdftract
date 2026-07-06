@@ -1,27 +1,36 @@
-# bf-32by8-step3: Execute pdftract command with RUST_LOG unset
+# bf-32by8-step3: Execute pdftract command with captured output
+
+## State: FAIL
 
 **Date:** 2026-07-06
 
 ## Command Executed
 
 ```bash
-unset RUST_LOG; cargo run --quiet -- extract tests/fixtures/encoding/fingerprint-match.pdf --json - 2>&1
+unset RUST_LOG; cargo run -- extract tests/fixtures/encoding/fingerprint-match.pdf --json - 2>&1
 ```
 
-## Exit Code
+**Exit Code:** 1 (failure)
 
-**1** (failure - extraction failed)
+## Captured Output Summary
 
-## Captured Output
+### Build Phase
+- **Warnings:** 205 warnings (unused imports, unused variables, dead code)
+- **Build Status:** SUCCESS (completed in 43.78s)
+- **Binary:** `target/debug/pdftract`
 
-### Compiler Warnings (truncated)
-The command produced extensive Rust compiler warnings (unused imports, dead code, etc.) during the build phase. These are standard compilation warnings and do not affect the extraction functionality.
-
-### Actual Command Output
-
+### Execution Result
 ```
+Running `target/debug/pdftract extract tests/fixtures/encoding/fingerprint-match.pdf --json -`
 Error: Failed to extract PDF
 ```
+
+### Detailed Output Structure
+1. **Compiler warnings** - 205 warnings about unused code (does not affect functionality)
+2. **Build completion** - "Finished `dev` profile" message
+3. **Execution start** - "Running" message with full command
+4. **Error** - "Failed to extract PDF"
+5. **Exit code** - 1
 
 ## Analysis
 
