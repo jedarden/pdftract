@@ -1,0 +1,96 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PDFtract Baseline Metrics Schema",
+  "description": "Schema for baseline benchmark metrics stored in benches/baselines/",
+  "type": "object",
+  "required": ["commit_sha", "timestamp", "pdftract_geomean", "grep_1000_mean_ms"],
+  "properties": {
+    "commit_sha": {
+      "type": "string",
+      "description": "Git commit SHA (short or full) for the pdftract version used",
+      "pattern": "^[a-fA-F0-9]{7,40}$|main$",
+      "examples": ["abc1234", "deadbeef1234567890", "main"]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when the baseline was recorded",
+      "examples": ["2024-01-01T00:00:00Z", "2024-07-06T10:30:45+00:00"]
+    },
+    "pdftract_geomean": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Geometric mean extraction time in seconds across all fixtures for pdftract",
+      "unit": "seconds"
+    },
+    "pdfminer_geomean": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Geometric mean extraction time in seconds across all fixtures for pdfminer.six",
+      "unit": "seconds"
+    },
+    "pypdf_geomean": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Geometric mean extraction time in seconds across all fixtures for pypdf",
+      "unit": "seconds"
+    },
+    "pdfplumber_geomean": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Geometric mean extraction time in seconds across all fixtures for pdfplumber",
+      "unit": "seconds"
+    },
+    "grep_1000_mean_ms": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Mean time in milliseconds for searching across 1000-PDF corpus",
+      "unit": "milliseconds"
+    },
+    "throughput_mb_per_sec": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Aggregate throughput in megabytes per second for grep-corpus benchmark",
+      "unit": "MB/s"
+    },
+    "files_per_sec": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Files processed per second in grep-corpus benchmark",
+      "unit": "files/second"
+    },
+    "total_runtime_sec": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Total wall-clock runtime in seconds for the complete benchmark suite",
+      "unit": "seconds"
+    },
+    "corpus_size": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of PDF files in the test corpus",
+      "unit": "count"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Free-form notes about this baseline (e.g., placeholder, experimental, environmental factors)"
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "commit_sha": "main",
+      "timestamp": "2024-01-01T00:00:00Z",
+      "pdftract_geomean": 10.0,
+      "pdfminer_geomean": 100.0,
+      "pypdf_geomean": 120.0,
+      "pdfplumber_geomean": 150.0,
+      "grep_1000_mean_ms": 50.0,
+      "throughput_mb_per_sec": 78.5,
+      "files_per_sec": 850.0,
+      "total_runtime_sec": 1.18,
+      "corpus_size": 1000,
+      "notes": "Baseline for v0.1.0 release"
+    }
+  ]
+}
