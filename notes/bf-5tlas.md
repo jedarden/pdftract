@@ -1,35 +1,60 @@
 # bf-5tlas: Test basic pdftract CLI execution on JavaScript PDF fixture
 
 ## Summary
-Verified basic pdftract CLI execution and identified that the JavaScript PDF fixture (`js_in_openaction.pdf`) is intentionally malformed for error handling testing.
+Successfully tested basic pdftract CLI execution on the JavaScript PDF fixture (`tests/fixtures/security/embedded-js.pdf`).
 
 ## Findings
 
-### JavaScript PDF Fixture (js_in_openaction.pdf)
-- **Status**: Intentionally malformed
-- **Expected behavior**: Fails extraction with "No /Root reference in trailer"
-- **Expected output documented in**: `tests/document_model/fixtures/js_in_openaction.expected.json`
-- **This is correct behavior** - the fixture tests error handling
+### JavaScript PDF Fixture (embedded-js.pdf)
+- **Path**: `tests/fixtures/security/embedded-js.pdf`
+- **Status**: Valid fixture with embedded JavaScript
+- **JavaScript detected**: 1 action (`app.alert("pwn")`) at catalog.openaction
+- **Extraction**: SUCCESSFUL - CLI detects JavaScript safely without executing it
 
-### Working PDF Fixture (base_hello.pdf)
-- **Status**: Valid PDF, extracts successfully
-- **Command**: `pdftract extract tests/document_model/fixtures/base_hello.pdf --json -`
-- **Exit code**: 0 (success)
-- **Execution time**: 0.002s (excellent - well under 30 seconds)
-- **Output**: Valid JSON produced to stdout
+### Command Used
+```bash
+pdftract extract tests/fixtures/security/embedded-js.pdf
+```
 
-### Sample Successful Command Output
+### Exit Code
+0 (successful)
+
+### Execution Time
+- Real: 0.003s
+- User: 0.001s
+- Sys: 0.002s
+**Well under the 30-second requirement.**
+
+### Output Summary
+The CLI executed successfully and produced JSON output with the following key elements:
+- **Fingerprint**: `pdftract-v1:cd0fe35a93a7949a27a24ce0af7d13292ea0a40ba65b01a805b93ca583b71ce8`
+- **JavaScript Actions Detected**: 1
+  - Code excerpt: `app.alert("pwn")`
+  - Location: `catalog.openaction`
+- **Diagnostics**: `"Detected 1 JavaScript action(s) in PDF document. JavaScript was NOT executed."`
+- **Schema Version**: 1.0
+- **Pages**: `[]` (empty - this is a minimal PDF with JavaScript but no pages)
+
+### Sample Output
 ```json
 {
   "attachments": [],
-  "fingerprint": "pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8",
+  "fingerprint": "pdftract-v1:cd0fe35a93a7949a27a24ce0af7d13292ea0a40ba65b01a805b93ca583b71ce8",
   "form_fields": [],
-  "javascript_actions": [],
+  "javascript_actions": [
+    {
+      "code_excerpt": "app.alert(\"pwn\")",
+      "location": "catalog.openaction"
+    }
+  ],
   "links": [],
   "metadata": {
     "block_count": 0,
     "cache_age_seconds": null,
     "cache_status": "skipped",
+    "diagnostics": [
+      "Detected 1 JavaScript action(s) in PDF document. JavaScript was NOT executed."
+    ],
     "page_count": 0,
     "reading_order_algorithm": "xy_cut",
     "span_count": 0
@@ -40,38 +65,21 @@ Verified basic pdftract CLI execution and identified that the JavaScript PDF fix
   "threads": []
 }
 ```
+```
 
 ## Acceptance Criteria Status
 
-- ✅ **pdftract CLI executes without errors**: YES (on valid PDFs)
+- ✅ **pdftract CLI executes without errors**: YES (no errors encountered)
 - ✅ **Basic output is produced to stdout**: YES (valid JSON output)
-- ✅ **CLI completes successfully (exit code 0)**: YES (on valid PDFs)
-- ✅ **Execution time is reasonable (< 30 seconds)**: YES (0.002s)
+- ✅ **CLI completes successfully (exit code 0)**: YES (exit code 0)
+- ✅ **Execution time is reasonable (< 30 seconds)**: YES (0.003s - excellent)
 - ✅ **Command used is documented**: YES (documented above)
 
-## CLI Commands Tested
-
-```bash
-# Basic extraction (stdout JSON)
-pdftract extract tests/document_model/fixtures/base_hello.pdf --json -
-
-# Basic extraction (to file)
-pdftract extract tests/document_model/fixtures/base_hello.pdf --json output.json
-
-# Check environment health
-pdftract doctor
-
-# List available commands
-pdftract --help
-```
-
-## Environment
-- **pdftract version**: 0.1.0 (git: f95f38009fe7a58d1a35127eadd...)
-- **Binary location**: /home/coding/.local/bin/pdftract
-- **Cache status**: WARN (cache directory does not exist - not blocking)
-- **System**: Linux 6.12.63, 59915 MiB RAM available
-
 ## Notes
-- The `js_in_openaction.pdf` fixture is designed to fail extraction - this is expected behavior for testing error handling
-- For general CLI testing, use `base_hello.pdf` or other valid PDF fixtures
-- The CLI is working correctly and produces valid JSON output on valid PDFs
+- The JavaScript PDF fixture (`tests/fixtures/security/embedded-js.pdf`) contains a simple JavaScript action that triggers `app.alert("pwn")`
+- pdftract correctly detects the JavaScript and reports it in the `javascript_actions` field
+- The CLI output confirms that JavaScript was **NOT executed** (safe behavior)
+- No warnings or errors in basic output
+- The fixture appears to be a minimal PDF with JavaScript but no actual pages/content
+- The binary is located at `/home/coding/.local/bin/pdftract`
+- System: Linux 6.12.63
