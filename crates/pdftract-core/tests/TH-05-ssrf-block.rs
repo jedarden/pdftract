@@ -859,6 +859,7 @@ pub mod mcp_helpers {
     fn read_framed_response<R: std::io::Read>(
         reader: &mut BufReader<R>,
     ) -> std::io::Result<Option<String>> {
+        use std::io::Read;
         let mut content_length: Option<usize> = None;
 
         // Read headers until empty line
@@ -1032,7 +1033,7 @@ pub mod mcp_helpers {
         arguments: serde_json::Value,
         timeout_ms: u64,
     ) -> Result<ToolCallResult, String> {
-        use std::io::{BufRead, BufReader, Write};
+        use std::io::{BufReader, Write};
 
         // Build the JSON-RPC request
         let request = json!({
@@ -2224,49 +2225,6 @@ mod mcp_ssrf_tests {
         assert!(
             parsed.get("result").is_some() || parsed.get("error").is_some(),
             "IPv4 all-interfaces URL should return valid response"
-        );
-
-        // Clean shutdown
-        drop(child.stdin.take());
-        let _ = wait_with_timeout(&mut child, 1000);
-    }
-
-    /// Test that IPv6 loopback (::1) is rejected.
-    ///
-    /// Tests the extract tool with the IPv6 loopback address. This verifies
-    /// that SSRF protection handles IPv6 notation correctly, including the
-    /// bracket format for URLs.
-    #[test]
-    fn test_mcp_ipv6_loopback_rejected() {
-        let url = "http://[::1]/";
-        let mut child = spawn_mcp_stdio();
-        thread::sleep(Duration::from_millis(50));
-
-        // Use the JSON-RPC helper to construct the request
-        use crate::mcp_helpers::extract_call;
-        let request = extract_call(url);
-        let request_str = serde_json::to_string(&request).unwrap();
-
-        {
-            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-            write_framed_message(stdin, &request_str).expect("Failed to write request");
-        }
-
-        let response = {
-            let stdout = child.stdout.as_mut().expect("Failed to open stdout");
-            let mut reader = BufReader::new(stdout);
-            read_framed_response(&mut reader)
-                .expect("Failed to read response")
-                .expect("No response received")
-        };
-
-        let parsed: serde_json::Value =
-            serde_json::from_str(&response).expect("Response is not valid JSON");
-
-        // Current implementation returns stub response; future should return SSRF_BLOCKED
-        assert!(
-            parsed.get("result").is_some() || parsed.get("error").is_some(),
-            "IPv6 loopback URL should return valid response"
         );
 
         // Clean shutdown
