@@ -1,42 +1,36 @@
-EMPLOYEE TIME SHEET
-Week Ending: June 15, 2026
-Employee ID: 1047
-Name: Robert Chen
-Department: Engineering
+ABRAHAM LINCOLN: THE PEOPLE'S LEADER IN THE STRUGGLE FOR NATIONAL EXISTENCE
 
-| Date       | Start  | End    | Break | Total Hours | Project      | Task                |
-|------------|--------|--------|-------|-------------|--------------|---------------------|
-| 06/10/2026 | 9:00   | 17:30  | 1.0   | 7.5         | Core System  | API Integration     |
-| 06/11/2026 | 9:00   | 18:00  | 1.0   | 8.0         | Core System  | Database Migration  |
-| 06/12/2026 | 8:45   | 17:15  | 0.75  | 7.75        | UI Refresh   | Component Testing   |
-| 06/13/2026 | 9:15   | 18:30  | 1.0   | 8.15        | Core System  | Performance Tuning  |
-| 06/14/2026 | 9:00   | 17:00  | 1.0   | 7.0         | Documentation | User Guide Update   |
-| 06/15/2026 | 10:00  | 14:00  | 0.5   | 3.5         | Planning     | Sprint Review       |
+By GEORGE HAVEN PUTNAM, LITT. D.
+Author of "Books and Their Makers in the Middle Ages," "The Censorship of the Church," etc.
 
-----------------------------------------------------------------
+With the above is included the speech delivered by Lincoln in New York, February 27, 1860;
+with an introduction by Charles C. Nott, late Chief Justice of the Court of Claims, and
+annotations by Judge Nott and by Cephas Brainerd of New York Bar.
 
-Weekly Summary:
-Regular Hours: 40.25
-Overtime Hours: 1.65
-Total Hours: 41.90
+1909
 
-Hourly Rate: $42.50
-Regular Pay: $1,710.63
-Overtime Pay: $87.45
-Gross Pay: $1,798.08
+INTRODUCTORY NOTE
 
-----------------------------------------------------------------
+The twelfth of February, 1909, was the hundredth anniversary of the birth of Abraham Lincoln.
+In New York, as in other cities and towns throughout the Union, the day was devoted to
+commemoration exercises, and even in the South, in centres like Atlanta (the capture of which
+in 1864 had indicated the collapse of the cause of the Confederacy), representative Southerners
+gave their testimony to the life and character of the great American.
 
-Approved By: Maria Rodriguez
-Date: June 17, 2026
-Signature: _________________
+The Committee in charge of the commemoration in New York arranged for a series of addresses
+to be given to the people of the city and it was my privilege to be selected as one of the
+speakers. It was an indication of the rapid passing away of the generation which had had to
+do with the events of the War, that the list of orators, forty-six in all, included only four
+men who had ever seen the hero whose life and character they were describing.
 
-Employee Signature: _________________
-Date: June 15, 2026
-
-----------------------------------------------------------------
-Company: TechFlow Inc.
-Address: 456 Innovation Boulevard
-San Jose, CA 95112
-Pay Period: June 10-16, 2026
-Form ID: TS-2026-06-1047
+I had assumed that the report of my own address would be preserved in the columns of
+the Tribune and, with a copy of that report in hand, I had planned to prepare from it
+a revised narrative for my friends. I found, however, that the report had been garbled and
+that the portion submitted to me was so inaccurate that I could not work from it. I had no
+alternative but to sit down and reproduce from memory the address which I had delivered
+without notes and of which, of course, I had preserved no record. In doing this, I was able
+to recall the main points of the argument and the facts on which it was based. I wrote out
+the address and, as it seemed to me that the presentation might be of interest to others
+than my immediate friends, I sent it to the New York History Society for publication
+in their Proceedings. I received a courteous acknowledgment from the secretary,
+who informed me that the paper would be published in an early issue.
