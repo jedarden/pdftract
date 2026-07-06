@@ -99,6 +99,8 @@ struct BenchmarkResult {
     matches_total: usize,
     /// Throughput in MB/s
     throughput_mb_s: f64,
+    /// Files processed per second
+    files_per_second: f64,
     /// Peak RSS in MB
     peak_rss_mb: Option<u64>,
 }
@@ -111,6 +113,15 @@ impl BenchmarkResult {
         }
         let bytes_per_sec = (self.bytes_total as f64 * 1000.0) / self.duration_ms as f64;
         bytes_per_sec / (1024.0 * 1024.0)
+    }
+
+    /// Calculate files per second
+    fn calculate_files_per_second(&self) -> f64 {
+        if self.duration_ms == 0 {
+            return 0.0;
+        }
+        let duration_sec = self.duration_ms as f64 / 1000.0;
+        self.files_total as f64 / duration_sec
     }
 
     /// Validate against CI gates
@@ -130,6 +141,38 @@ impl BenchmarkResult {
         // TODO: Add pdfgrep and pdftotext+ripgrep comparisons
         // TODO: Add historical regression check
 
+        Ok(())
+    }
+
+    /// Save benchmark result to JSON file
+    ///
+    /// Creates a file named `<commit-sha>.json` in the benches/results directory.
+    fn save_to_file(&self) -> Result<(), std::io::Error> {
+        use std::fs;
+        use std::io::Write;
+
+        // Create results directory if it doesn't exist
+        let results_dir = PathBuf::from("benches/results");
+        fs::create_dir_all(&results_dir)?;
+
+        // Create filename from commit SHA (short form, 8 chars)
+        let commit_short = if self.commit.len() > 8 {
+            &self.commit[..8]
+        } else {
+            &self.commit
+        };
+        let filename = format!("{}.json", commit_short);
+        let filepath = results_dir.join(&filename);
+
+        // Serialize to JSON
+        let json_str = serde_json::to_string_pretty(self)?;
+
+        // Write to file
+        let mut file = fs::File::create(&filepath)?;
+        file.write_all(json_str.as_bytes())?;
+        file.flush()?;
+
+        eprintln!("Benchmark result saved to: {}", filepath.display());
         Ok(())
     }
 }
@@ -214,7 +257,7 @@ fn run_benchmark() -> Result<BenchmarkResult, String> {
         eprintln!("Run tests/fixtures/grep-corpus/regenerate.sh to populate the corpus.");
 
         // Return a placeholder result that won't fail CI gates
-        return Ok(BenchmarkResult {
+        let placeholder = BenchmarkResult {
             commit: get_commit_sha(),
             started_at: chrono::Utc::now().to_rfc3339(),
             files_total: 0,
@@ -222,8 +265,10 @@ fn run_benchmark() -> Result<BenchmarkResult, String> {
             duration_ms: 0,
             matches_total: 0,
             throughput_mb_s: 0.0,
+            files_per_second: 0.0,
             peak_rss_mb: None,
-        });
+        };
+        return Ok(placeholder);
     }
 
     eprintln!(
@@ -251,8 +296,19 @@ fn run_benchmark() -> Result<BenchmarkResult, String> {
         bytes_total,
         duration_ms,
         matches_total,
-        throughput_mb_s: 0.0, // Calculated below
-        peak_rss_mb: None,    // TODO: measure via /usr/bin/time -v or rusage
+        throughput_mb_s: 0.0, // Will be calculated below
+        files_per_second: 0.0, // Will be calculated below
+        peak_rss_mb: None,     // TODO: measure via /usr/bin/time -v or rusage
+    };
+
+    // Calculate derived metrics
+    let throughput = result.calculate_throughput();
+    let files_per_sec = result.calculate_files_per_second();
+
+    let result = BenchmarkResult {
+        throughput_mb_s: throughput,
+        files_per_second: files_per_sec,
+        ..result
     };
 
     // Validate against gates
@@ -300,6 +356,13 @@ fn main() {
         Ok(result) => {
             println!("{:#?}", result);
             println!("\nThroughput: {:.2} MB/s", result.calculate_throughput());
+            println!("Files/sec: {:.2}", result.calculate_files_per_second());
+
+            // Save to JSON file for baseline recording
+            if let Err(e) = result.save_to_file() {
+                eprintln!("Warning: Failed to save results to file: {}", e);
+            }
+
             println!("All CI gates passed!");
         }
         Err(e) => {
