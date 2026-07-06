@@ -39,3 +39,7 @@ path = "fuzz_targets/cmap_parser.rs"
 [[bin]]
 name = "content"
 path = "fuzz_targets/content.rs"
+
+[[bin]]
+name = "profile_yaml"
+path = "fuzz_targets/profile_yaml.rs"
