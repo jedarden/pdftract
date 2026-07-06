@@ -1,6 +1,34 @@
 #!/usr/bin/env bash
-# Convert text-embedded PDFs to scanned image-based PDFs at 300 DPI
-# This creates proper OCR test fixtures from text-embedded source PDFs
+#
+# convert_pdf_to_scanned.sh - Convert text-embedded PDFs to scanned image-based PDFs
+#
+# Description:
+#   Converts text-embedded PDFs to scanned image-based PDFs at 300 DPI.
+#   This creates proper OCR test fixtures from text-embedded source PDFs.
+#
+# Usage:
+#   ./tools/convert_pdf_to_scanned.sh
+#
+# Requirements:
+#   - pdftoppm (poppler-utils): For PDF to PPM conversion
+#   - ImageMagick: For PPM to PDF conversion
+#   - nix-shell: For dependency management (or install ImageMagick directly)
+#
+# Fixtures Generated:
+#   - invoice/invoice-300dpi.pdf (and backup invoice-300dpi-text-embedded.pdf)
+#   - letter/letter-300dpi.pdf (and backup letter-300dpi-text-embedded.pdf)
+#   - form/form-300dpi.pdf (and backup form-300dpi-text-embedded.pdf)
+#
+# Process:
+#   1. Backs up original text-embedded versions with -text-embedded.pdf suffix
+#   2. Converts PDF to PPM images at specified DPI using pdftoppm
+#   3. Converts PPM images back to PDF using ImageMagick
+#   4. Cleans up temporary files
+#
+# Notes:
+#   - Default DPI is 300 (configurable)
+#   - Original text-embedded versions are preserved as backups
+#   - Uses nix-shell for reproducible ImageMagick environment
 
 set -euo pipefail
 
