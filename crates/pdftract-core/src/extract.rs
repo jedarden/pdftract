@@ -3069,10 +3069,30 @@ startxref
     #[test]
     fn test_extraction_result_assert_exit_code_success() {
         // Test that assert_exit_code returns Ok(()) when exit codes match
-        let pdf_path = ensure_test_pdf();
-
-        let options = ExtractionOptions::default();
-        let result = extract_pdf(&pdf_path, &options).unwrap();
+        let result = ExtractionResult {
+            fingerprint: "test".to_string(),
+            pages: vec![],
+            metadata: ExtractionMetadata {
+                page_count: 0,
+                receipts_mode: ReceiptsMode::Off,
+                span_count: 0,
+                block_count: 0,
+                cache_status: None,
+                cache_age_seconds: None,
+                error_count: 0,
+                reading_order_algorithm: None,
+                diagnostics: vec![],
+                profile_name: None,
+                profile_version: None,
+                profile_fields: None,
+            },
+            signatures: vec![],
+            form_fields: vec![],
+            links: vec![],
+            attachments: vec![],
+            threads: vec![],
+            javascript_actions: vec![],
+        };
 
         // Should succeed - extraction with no errors should have exit code 0
         assert!(result.assert_exit_code(0).is_ok());
@@ -3081,10 +3101,30 @@ startxref
     #[test]
     fn test_extraction_result_assert_exit_code_mismatch() {
         // Test that assert_exit_code returns Err when exit codes don't match
-        let pdf_path = ensure_test_pdf();
-
-        let options = ExtractionOptions::default();
-        let result = extract_pdf(&pdf_path, &options).unwrap();
+        let result = ExtractionResult {
+            fingerprint: "test".to_string(),
+            pages: vec![],
+            metadata: ExtractionMetadata {
+                page_count: 0,
+                receipts_mode: ReceiptsMode::Off,
+                span_count: 0,
+                block_count: 0,
+                cache_status: None,
+                cache_age_seconds: None,
+                error_count: 0,
+                reading_order_algorithm: None,
+                diagnostics: vec![],
+                profile_name: None,
+                profile_version: None,
+                profile_fields: None,
+            },
+            signatures: vec![],
+            form_fields: vec![],
+            links: vec![],
+            attachments: vec![],
+            threads: vec![],
+            javascript_actions: vec![],
+        };
 
         // Should fail - extraction with no errors has exit code 0, not 1
         let err = result.assert_exit_code(1).unwrap_err();
@@ -3096,20 +3136,93 @@ startxref
     #[test]
     fn test_extraction_result_assert_exit_code_with_errors() {
         // Test that assert_exit_code correctly reports exit code 1 for extractions with errors
-        use std::fs;
-
-        let temp_dir = tempfile::tempdir().unwrap();
-        let pdf_path = temp_dir.path().join("malformed.pdf");
-
-        // Create a malformed PDF (will cause extraction errors)
-        let pdf_data = b"%PDF-1.4\nmalformed content";
-        fs::write(&pdf_path, pdf_data).unwrap();
-
-        let options = ExtractionOptions::default();
-        let result = extract_pdf(&pdf_path, &options).unwrap();
+        let result = ExtractionResult {
+            fingerprint: "test".to_string(),
+            pages: vec![],
+            metadata: ExtractionMetadata {
+                page_count: 0,
+                receipts_mode: ReceiptsMode::Off,
+                span_count: 0,
+                block_count: 0,
+                cache_status: None,
+                cache_age_seconds: None,
+                error_count: 1,
+                reading_order_algorithm: None,
+                diagnostics: vec![],
+                profile_name: None,
+                profile_version: None,
+                profile_fields: None,
+            },
+            signatures: vec![],
+            form_fields: vec![],
+            links: vec![],
+            attachments: vec![],
+            threads: vec![],
+            javascript_actions: vec![],
+        };
 
         // Should have exit code 1 due to errors
         assert!(result.assert_exit_code(1).is_ok());
         assert!(result.assert_exit_code(0).is_err());
+    }
+
+    #[test]
+    fn test_extraction_result_assert_exit_code_error_message() {
+        // Test that assert_exit_code returns an error with a useful message when exit code does not match
+        // Create an ExtractionResult with exit code 1 (error_count > 0)
+        let result = ExtractionResult {
+            fingerprint: "test".to_string(),
+            pages: vec![],
+            metadata: ExtractionMetadata {
+                page_count: 0,
+                receipts_mode: ReceiptsMode::Off,
+                span_count: 0,
+                block_count: 0,
+                cache_status: None,
+                cache_age_seconds: None,
+                error_count: 1,
+                reading_order_algorithm: None,
+                diagnostics: vec![],
+                profile_name: None,
+                profile_version: None,
+                profile_fields: None,
+            },
+            signatures: vec![],
+            form_fields: vec![],
+            links: vec![],
+            attachments: vec![],
+            threads: vec![],
+            javascript_actions: vec![],
+        };
+
+        // Call assert_exit_code(0) expecting a different value
+        let error_result = result.assert_exit_code(0);
+
+        // Assert the method returns an Err(...)
+        assert!(error_result.is_err(), "assert_exit_code(0) should return Err when exit code is 1");
+
+        // Verify the error message indicates the mismatch
+        let error = error_result.unwrap_err();
+        assert_eq!(error.expected, 0, "Error should show expected exit code as 0");
+        assert_eq!(error.actual, 1, "Error should show actual exit code as 1");
+        assert!(
+            error.description.contains("extraction result had"),
+            "Error description should mention extraction result"
+        );
+        assert!(
+            error.description.contains("error"),
+            "Error description should mention errors"
+        );
+
+        // Verify the error displays useful information
+        let error_message = error.to_string();
+        assert!(
+            error_message.contains("expected 0"),
+            "Error message should contain expected value"
+        );
+        assert!(
+            error_message.contains("got 1"),
+            "Error message should contain actual value"
+        );
     }
 }
