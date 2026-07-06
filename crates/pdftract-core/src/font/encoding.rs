@@ -771,4 +771,143 @@ mod tests {
         assert_eq!(overlay.len(), 1);
         assert!(diagnostics.is_empty());
     }
+
+    #[test]
+    fn test_differences_overlay_custom_unmapped_glyph_names() {
+        // Test that custom unmapped_glyph_names configuration works correctly
+        // Create a custom set that skips "custom1" and "custom2" but allows other glyphs
+        let mut custom_unmapped = std::collections::HashSet::new();
+        custom_unmapped.insert("custom1".to_string());
+        custom_unmapped.insert("custom2".to_string());
+
+        // Parse a /Differences array with mixed glyphs:
+        // - custom1 (should be skipped)
+        // - A (normal glyph, should appear)
+        // - custom2 (should be skipped)
+        // - B (normal glyph, should appear)
+        // - .notdef (default unmapped, but NOT in our custom set, so should appear)
+        let mut diagnostics = Vec::new();
+        let arr = PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(10),
+            PdfObject::Name(Arc::from("custom1")),
+            PdfObject::Integer(11),
+            PdfObject::Name(Arc::from("A")),
+            PdfObject::Integer(12),
+            PdfObject::Name(Arc::from("custom2")),
+            PdfObject::Integer(13),
+            PdfObject::Name(Arc::from("B")),
+            PdfObject::Integer(14),
+            PdfObject::Name(Arc::from(".notdef")),
+        ]));
+
+        // Use parse() which creates overlay with default unmapped set
+        let overlay_default = DifferencesOverlay::parse(&arr.clone(), &mut diagnostics);
+
+        // With default config, .notdef should be skipped but custom1/custom2 should appear
+        assert_eq!(overlay_default.get(10), Some(Arc::from("custom1"))); // Not in default set
+        assert_eq!(overlay_default.get(11), Some(Arc::from("A")));
+        assert_eq!(overlay_default.get(12), Some(Arc::from("custom2"))); // Not in default set
+        assert_eq!(overlay_default.get(13), Some(Arc::from("B")));
+        assert_eq!(overlay_default.get(14), None); // .notdef is in default set, should be skipped
+        assert_eq!(overlay_default.len(), 4); // custom1, A, custom2, B
+        assert!(diagnostics.is_empty());
+
+        // Now test with custom unmapped set
+        let mut overlay_custom = DifferencesOverlay::with_unmapped_glyph_names(custom_unmapped);
+
+        // Manually add entries (simulating what parse() does with custom config)
+        for (i, obj) in arr.as_array().unwrap().iter().enumerate() {
+            if let PdfObject::Integer(code) = obj {
+                let next_obj = arr.as_array().unwrap().get(i + 1);
+                if let Some(PdfObject::Name(name)) = next_obj {
+                    if *code <= 255 && !overlay_custom.is_unmapped_glyph_name(name) {
+                        overlay_custom.entries.push((*code as u8, Arc::clone(name)));
+                    }
+                }
+            }
+        }
+
+        // With custom config, custom1 and custom2 should be skipped, but .notdef should appear
+        assert_eq!(overlay_custom.get(10), None); // custom1 is in custom set, should be skipped
+        assert_eq!(overlay_custom.get(11), Some(Arc::from("A")));
+        assert_eq!(overlay_custom.get(12), None); // custom2 is in custom set, should be skipped
+        assert_eq!(overlay_custom.get(13), Some(Arc::from("B")));
+        assert_eq!(overlay_custom.get(14), Some(Arc::from(".notdef"))); // Not in custom set, should appear
+        assert_eq!(overlay_custom.len(), 3); // A, B, .notdef
+    }
+
+    #[test]
+    fn test_differences_overlay_empty_unmapped_glyph_names() {
+        // Test that providing an empty unmapped_glyph_names set allows all glyphs
+        let empty_unmapped = std::collections::HashSet::new();
+
+        let mut diagnostics: Vec<Diagnostic> = Vec::new();
+        let arr = PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(10),
+            PdfObject::Name(Arc::from(".notdef")),
+            PdfObject::Integer(11),
+            PdfObject::Name(Arc::from("A")),
+        ]));
+
+        let mut overlay = DifferencesOverlay::with_unmapped_glyph_names(empty_unmapped);
+
+        // Manually add entries (simulating what parse() does with empty config)
+        for (i, obj) in arr.as_array().unwrap().iter().enumerate() {
+            if let PdfObject::Integer(code) = obj {
+                let next_obj = arr.as_array().unwrap().get(i + 1);
+                if let Some(PdfObject::Name(name)) = next_obj {
+                    if *code <= 255 && !overlay.is_unmapped_glyph_name(name) {
+                        overlay.entries.push((*code as u8, Arc::clone(name)));
+                    }
+                }
+            }
+        }
+
+        // With empty config, ALL glyphs should appear including .notdef
+        assert_eq!(overlay.get(10), Some(Arc::from(".notdef")));
+        assert_eq!(overlay.get(11), Some(Arc::from("A")));
+        assert_eq!(overlay.len(), 2);
+        assert!(diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_unmapped_glyph_skip_behavior() {
+        // Demonstrates that unmapped glyphs are skipped while mapped glyphs appear.
+        // This test verifies the core CMAP generation behavior for glyph filtering.
+        let mut diagnostics = Vec::new();
+
+        // Create a /Differences array with mixed glyphs:
+        // - .notdef (unmapped, should be skipped)
+        // - A (normal glyph, should appear)
+        // - space (normal glyph, should appear)
+        // - .notdef again (unmapped, should be skipped)
+        // - B (normal glyph, should appear)
+        let arr = PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(32),
+            PdfObject::Name(Arc::from(".notdef")),   // code 32: unmapped, should skip
+            PdfObject::Integer(65),
+            PdfObject::Name(Arc::from("A")),          // code 65: normal, should appear
+            PdfObject::Integer(66),
+            PdfObject::Name(Arc::from("space")),      // code 66: normal, should appear
+            PdfObject::Integer(67),
+            PdfObject::Name(Arc::from(".notdef")),    // code 67: unmapped, should skip
+            PdfObject::Integer(68),
+            PdfObject::Name(Arc::from("B")),          // code 68: normal, should appear
+        ]));
+
+        let overlay = DifferencesOverlay::parse(&arr, &mut diagnostics);
+
+        // Verify unmapped glyphs do NOT appear in CMAP
+        assert_eq!(overlay.get(32), None, ".notdef should be skipped");
+        assert_eq!(overlay.get(67), None, ".notdef should be skipped");
+
+        // Verify mapped glyphs DO appear in CMAP
+        assert_eq!(overlay.get(65), Some(Arc::from("A")), "A should appear");
+        assert_eq!(overlay.get(66), Some(Arc::from("space")), "space should appear");
+        assert_eq!(overlay.get(68), Some(Arc::from("B")), "B should appear");
+
+        // Verify final state
+        assert_eq!(overlay.len(), 3, "Should have exactly 3 mapped glyphs");
+        assert!(diagnostics.is_empty(), "Should not emit diagnostics for skipping");
+    }
 }
