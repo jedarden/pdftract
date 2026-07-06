@@ -1,0 +1,27 @@
+{
+  "attachments": [],
+  "fingerprint": "pdftract-v1:cd0fe35a93a7949a27a24ce0af7d13292ea0a40ba65b01a805b93ca583b71ce8",
+  "form_fields": [],
+  "javascript_actions": [
+    {
+      "code_excerpt": "app.alert(\"pwn\")",
+      "location": "catalog.openaction"
+    }
+  ],
+  "links": [],
+  "metadata": {
+    "block_count": 0,
+    "cache_age_seconds": null,
+    "cache_status": "skipped",
+    "diagnostics": [
+      "Detected 1 JavaScript action(s) in PDF document. JavaScript was NOT executed."
+    ],
+    "page_count": 0,
+    "reading_order_algorithm": "xy_cut",
+    "span_count": 0
+  },
+  "pages": [],
+  "schema_version": "1.0",
+  "signatures": [],
+  "threads": []
+}
