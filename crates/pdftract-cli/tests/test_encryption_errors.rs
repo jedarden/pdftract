@@ -19,11 +19,9 @@
 //! - Plan line 1132: RC4 and AES-128/256 decryption implementation
 //! - Plan line 1149: Encrypted file with unknown handler error handling
 
-use std::error::Error;
 use std::fs;
-use std::io;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 // CLI module imports for encryption testing
 use pdftract_cli::password;
@@ -125,9 +123,9 @@ mod unsupported_handlers {
 
         let output = Command::new(pdftract_bin())
             .args(["extract", fixture.to_str().unwrap()])
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .output()
             .expect("Failed to run pdftract extract with password stdin");
 

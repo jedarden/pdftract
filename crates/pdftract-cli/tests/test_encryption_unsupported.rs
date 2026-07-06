@@ -4,9 +4,7 @@
 //! and exits with code 3 when run on an owner-password-only encrypted PDF
 //! (or a PDF with an unsupported encryption handler like Adobe LiveCycle).
 
-use std::error::Error;
-use std::io;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 // CLI module imports for encryption testing
 use pdftract_cli::password;
@@ -72,9 +70,9 @@ fn test_livecycle_pdf_with_password_also_fails() {
             // We can't use --password directly due to INSECURE_CLI_PASSWORD check,
             // so we'll use --password-stdin with echo
         ])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .output()
         .expect("Failed to run pdftract extract with password stdin");
 

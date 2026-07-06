@@ -13,8 +13,7 @@
 
 #![cfg(feature = "decrypt")]
 
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
 // Import exit code constants from CLI module
