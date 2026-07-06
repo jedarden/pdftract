@@ -1,9 +1,9 @@
 # pdftract Implementation Plan
 
-**Version:** 1.1  
-**Status:** Active  
-**Repo:** jedarden/pdftract  
-**Last updated:** 2026-05-16
+**Version:** 1.2
+**Status:** Active
+**Repo:** jedarden/pdftract
+**Last updated:** 2026-07-05
 
 ---
 
@@ -13,6 +13,7 @@
 |---|---|---|
 | 1.0 | 2026-05-16 | Initial plan: Phases 0–7, vector + OCR extraction, JSON/NDJSON/text output, PyO3 bindings, HTTP serve, StructTree, tables, forms, signatures, attachments. |
 | 1.1 | 2026-05-16 | Brilliant-ideas integration round: added MCP server (Phase 6.7), Markdown output (6.5), multi-output emission (6.6), visual citation receipts (6.8), content-addressed cache (6.9), folder grep (7.8), inspector web viewer (7.9), document profiles (7.10), structural fingerprint (1.7), remote HTTP range source (1.8), document type classification (5.6). Plus pre-flight categories 1–4: Non-Goals, Glossary, ADRs, Open Questions, Proof Obligations, Acceptance Scenarios, Edge Case Catalog, Failure Mode Taxonomy, Diagnostic Code Catalog, Cross-Cutting Concerns, Anti-Patterns Catalog, Invariants. |
+| 1.2 | 2026-07-05 | Workspace reconciliation: updated File and Module Layout to reflect shipped artifacts missing from v1.1 tree — added C ABI library (pdftract-libpdftract), CER diff tool (pdftract-cer-diff), schema migration tool (pdftract-schema-migrate), xtask build utilities, SDK skeleton templates, language SDK bindings (Node, Java, .NET, Go, Ruby, PHP, Swift), Python subprocess SDK, E2E phone smoke tests, built-in profiles at repo root, CI gate scripts, and tools directory. Cross-referenced SDK strategy to docs/notes/sdk-architecture.md. No semantic changes to phase specifications. |
 
 Future revisions MUST append a new row before any material change lands in subsequent sections. The revision history is the single source of truth for "what changed when" — section-level edits MUST NOT silently mutate already-shipped semantics.
 
@@ -235,8 +236,39 @@ pdftract/
 │   │       └── verify_receipt.rs             (Phase 6.8)
 │   ├── pdftract-py/
 │   │   └── src/lib.rs                        (PyO3 bindings, Phase 6.3)
+│   ├── pdftract-libpdftract/
+│   │   └── src/lib.rs                        (C ABI library; FFI layer for C/C++ integrations)
+│   ├── pdftract-cer-diff/
+│   │   └── src/main.rs                       (Character error rate diff tool; compares extractions)
+│   ├── pdftract-schema-migrate/
+│   │   └── src/main.rs                       (Schema migration tool; validates/translates schema versions)
 │   └── pdftract-inspector-ui/
 │       └── ...                               (HTML/CSS/JS bundled via include_bytes!, Phase 7.9)
+├── xtask/
+│   ├── Cargo.toml
+│   └── src/
+│       ├── main.rs                           (Build automation tasks: codegen, dist, schema generation)
+│       ├── migrate/                          (Schema migration utilities)
+│       └── bin/                              (Generated executables)
+├── sdk/
+│   ├── php/                                  (PHP subprocess SDK)
+│   └── python-subprocess/                    (Python subprocess SDK)
+├── templates/
+│   └── sdk-skeleton/                        (SDK template for new language bindings)
+├── Language SDK repositories (sibling repos under jedarden/):
+│   ├── pdftract-node/                       (Node.js/TypeScript SDK)
+│   ├── pdftract-java/                       (Java SDK)
+│   ├── pdftract-dotnet/                      (.NET SDK)
+│   ├── pdftract-go/                          (Go SDK)
+│   ├── pdftract-ruby/                        (Ruby SDK)
+│   ├── pdftract-php/                         (PHP SDK)
+│   ├── pdftract-swift/                       (Swift SDK)
+│   └── swift-sdk/                            (Swift native SDK)
+├── e2e/
+│   └── phone-smoke/                          (End-to-end phone smoke tests)
+├── profiles/
+│   ├── builtin/                              (Built-in document profiles; Phase 7.10)
+│   └── community/                            (Community-contributed profiles)
 ├── benches/
 │   └── competitors/
 │       ├── requirements.txt                  (pdfminer.six, pypdf, pdfplumber pins)
@@ -244,12 +276,40 @@ pdftract/
 ├── build/
 │   ├── font-fingerprints.json                (Phase 2.2 Level 3 source data)
 │   └── glyph-shapes.json                     (Phase 2.5 shape DB source data)
+├── ci/
+│   ├── rustdoc-gate.sh                       (Documentation coverage gate)
+│   ├── schema-gate.sh                         (Schema validation gate)
+│   └── wer-gate.sh                           (Word error rate gate)
+├── tools/
+│   ├── README.md                             (Tools documentation)
+│   ├── convert_pdf_to_scanned.sh             (PDF to scanned image converter)
+│   ├── count_docs.py, count_docs.sh          (Documentation counters)
+│   ├── count_public_api.py                   (Public API surface counter)
+│   ├── generate_encoding_fixtures.py, .rs   (Encoding test fixture generator)
+│   ├── generate_encrypted_pdf_fixtures.py, .rs (Encrypted PDF fixture generator)
+│   ├── generate_invoice_fixture.rs, .py      (Invoice test fixture generator)
+│   ├── generate_stress_pdf.py                (Stress test PDF generator)
+│   ├── build-objstm-fixture/                 (Object stream fixture builder)
+│   ├── build-xref-fixture/                   (XRef fixture builder)
+│   ├── debug-fingerprint/                    (Font fingerprint debugging utilities)
+│   └── debug-fingerprint-diff/              (Fingerprint diff utilities)
 ├── docs/
 │   ├── plan/plan.md                          (this document)
 │   ├── research/                             (per-feature deep dives referenced from phases)
 │   ├── schema/v1.0/pdftract.schema.json      (Phase 6.1 deliverable)
 │   ├── integrations/                         (MCP config snippets, IDE setup; populated post-v1)
-│   └── notes/                                (sdk-architecture.md, sdk-invocation.md, etc.)
+│   ├── user-docs/                            (User-facing documentation)
+│   ├── notes/
+│   │   ├── sdk-architecture.md               (SDK strategy and architecture — SEE: SDK cross-reference)
+│   │   ├── sdk-conformance-runner.md         (SDK conformance test runner)
+│   │   ├── sdk-contract.md                   (SDK contract specification)
+│   │   ├── sdk-invocation.md                 (SDK invocation patterns)
+│   │   └── ...                               (Additional project notes)
+│   ├── adr/                                  (Architecture Decision Records)
+│   ├── operations/                           (Operational procedures)
+│   ├── security/                             (Security documentation)
+│   ├── conformance/                          (Conformance test specifications)
+│   └── research-index.md                     (Research document index)
 └── tests/
     └── fixtures/
         ├── vector/                           (clean LaTeX/Word/InDesign PDFs)
@@ -264,6 +324,8 @@ pdftract/
         ├── grep-corpus/                      (1000-PDF Phase 7.8 benchmark corpus)
         └── profiles/                         (per-profile fixture sets, Phase 7.10)
 ```
+
+**SDK cross-reference:** The SDK strategy and architecture is documented in [`docs/notes/sdk-architecture.md`](docs/notes/sdk-architecture.md). Language SDK repositories are sibling repositories under the `jedarden/` organization; each SDK implements the contract specified in the SDK architecture document.
 
 The layout is normative: phase-specific code MUST land in the file indicated for its phase. New top-level modules added in future revisions MUST be reflected here in the same plan revision that introduces them.
 
