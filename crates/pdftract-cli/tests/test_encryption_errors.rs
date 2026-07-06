@@ -19,9 +19,13 @@
 //! - Plan line 1132: RC4 and AES-128/256 decryption implementation
 //! - Plan line 1149: Encrypted file with unknown handler error handling
 
+use std::error::Error;
+use std::env;
 use std::fs;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::Duration;
 
 // CLI module imports for encryption testing
 use pdftract_cli::password;
@@ -31,7 +35,7 @@ use pdftract_core::diagnostics::{
 
 /// Get the workspace root directory
 fn workspace_root() -> PathBuf {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let path = PathBuf::from(manifest_dir);
     // We're in crates/pdftract-cli, so go up two levels to reach workspace root
     path.parent().unwrap().parent().unwrap().to_path_buf()
