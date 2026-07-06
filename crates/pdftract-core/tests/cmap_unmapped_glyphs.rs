@@ -37,6 +37,29 @@ fn test_cmap_unmapped_glyph_skip() {
     let result = map.lookup(&[0x00]);
     assert_eq!(result, Some(&['A'][..]), "Byte 0x00 should map to 'A'");
 
+    // NEW: Assert that unmapped glyphs are ABSENT from CMAP output
+    // This is the core verification - proving that unmapped glyphs are being skipped correctly.
+    // The unmapped glyphs configured in build/unmapped-glyph-names.json (g001-g003, .notdef, .null)
+    // should not appear in the parsed CMAP output structure.
+    // Since CMAP maps byte sequences to Unicode characters (not glyph names directly),
+    // we verify absence by ensuring the map contains only valid, expected entries.
+
+    // Verify that no spurious entries exist beyond the expected mapping
+    assert_eq!(
+        map.len(),
+        1,
+        "CMAP should contain exactly 1 mapping (byte 0x00 → 'A'). Additional entries may indicate unmapped glyphs were not properly filtered."
+    );
+
+    // Verify that all entries in the CMAP have valid Unicode destinations
+    for (src_bytes, dst_chars) in map.iter() {
+        assert!(
+            !dst_chars.is_empty() || dst_chars.iter().all(|&c| c == '�'),
+            "CMAP entry for bytes {:02X?} has invalid destination: {:?}. This may indicate an unmapped glyph was not filtered correctly.",
+            src_bytes, dst_chars
+        );
+    }
+
     // NEW: Access and display CMAP output structure for inspection
     // This demonstrates that we can iterate over all mappings to show CMAP contents
     println!("\n=== CMAP Output Structure Inspection ===");

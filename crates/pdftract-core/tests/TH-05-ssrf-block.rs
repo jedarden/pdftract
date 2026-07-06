@@ -782,9 +782,17 @@ pub mod mcp_helpers {
     /// }
     /// ```
     pub fn is_ssrf_blocked(error: &JsonRpcError) -> bool {
-        // Stub implementation - returns false for now
-        // TODO: Implement proper SSRF_BLOCKED detection logic
-        false
+        // Check if error data contains "code": "SSRF_BLOCKED"
+        if let Some(data) = &error.data {
+            if let Some(code) = data.get("code").and_then(|c| c.as_str()) {
+                if code == "SSRF_BLOCKED" {
+                    return true;
+                }
+            }
+        }
+
+        // Check if the error message itself contains SSRF_BLOCKED
+        error.message.contains("SSRF_BLOCKED")
     }
 
     /// Extract error information from a JSON-RPC error response.
