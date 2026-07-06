@@ -8,10 +8,16 @@ Understand the format and structure of the diagnostic output files found in the 
 ### ✅ PASS: File format is identified (text/JSON/structured/etc.)
 Identified **four distinct diagnostic file formats** in the pdftract project:
 
-#### 1. Compiler/Build Output Format
+#### 1. Compiler/Build Output Format (Human-Readable)
 - **Example file**: `notes/bf-677eo-output.txt` (106KB, 2967 lines)
 - **Format**: Plain text with structured compiler diagnostic messages
 - **Purpose**: Rust compiler warnings, dead code analysis, and cfg condition checks
+
+#### 1b. Compiler JSON-Lines Format (Machine-Readable)
+- **Example file**: `target/debug/.fingerprint/pdftract-cli-8b8c0ec31cd61f5b/output-test-lib-pdftract_cli` (87KB, 50 lines)
+- **Format**: JSON-Lines (JSONL) - one complete JSON object per line
+- **Purpose**: Machine-readable Rust compiler diagnostics for tooling/analysis
+- **Key difference**: Each line is a complete JSON diagnostic object with rich metadata
 
 #### 2. Cargo Build Stderr Format
 - **Example file**: `target/debug/build/pdftract-core-ffeb7d8a650f4c25/stderr` (11 lines)
@@ -85,6 +91,60 @@ cargo:warning=<message text>
 - Empty arrays for optional features
 - Metadata object with diagnostic array
 - Fingerprint for change detection
+
+#### Compiler JSON-Lines Structure (Machine-Readable Format):
+
+Located in `target/debug/.fingerprint/<crate-hash>/output-test-*`, these files contain Rust compiler diagnostics in JSON-Lines format (one JSON object per line).
+
+```json
+{
+  "$message_type": "diagnostic",
+  "message": "unused import: `PathBuf`",
+  "code": {
+    "code": "unused_imports",
+    "explanation": null
+  },
+  "level": "warning",
+  "spans": [
+    {
+      "file_name": "crates/pdftract-cli/src/cache_cmd.rs",
+      "byte_start": 544,
+      "byte_end": 551,
+      "line_start": 13,
+      "line_end": 13,
+      "column_start": 23,
+      "column_end": 30,
+      "is_primary": true,
+      "text": [{"text": "use std::path::{Path, PathBuf};", "highlight_start": 23, "highlight_end": 30}],
+      "label": null,
+      "suggested_replacement": null,
+      "suggestion_applicability": null,
+      "expansion": null
+    }
+  ],
+  "children": [
+    {"message": "`#[warn(unused_imports)]` on by default", "level": "note", ...},
+    {"message": "remove the unused import", "level": "help", "suggestion_applicability": "MachineApplicable", ...}
+  ],
+  "rendered": "ANSI-formatted terminal output with escape codes"
+}
+```
+
+**Key characteristics**:
+- `$message_type` always `"diagnostic"` for Rust compiler output
+- Rich span information: file paths, byte ranges, line/column numbers
+- `children` array contains sub-diagnostics (notes, help messages)
+- `rendered` field contains terminal-ready ANSI-formatted output
+- `suggestion_applicability`: `MachineApplicable`, `MaybeIncorrect`, `HasPlaceholders`, or `null`
+
+**Common diagnostic codes in JSON-Lines format**:
+- `unused_imports` - Import never used
+- `unused_variables` - Variable never read
+- `dead_code` - Function/struct/field never used
+- `unreachable_code` - Code after bail!/return
+- `redundant_semicolons` - Unnecessary semicolon
+- `unused_assignments` - Value assigned but never read
+- `unused_mut` - Variable declared mutable but never mutated
 
 #### Expected Diagnostics Structure:
 ```json
