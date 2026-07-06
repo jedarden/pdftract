@@ -1,0 +1,7 @@
+{
+  "commit_sha": "77eeaecc",
+  "timestamp": "2026-07-06T16:06:55+00:00",
+  "corpus_size": 1000,
+  "bytes_total": 6870672,
+  "notes": "Baseline captured before grep implementation (blocked on 7.8.x beads). Corpus metrics only - timing throughput not yet available. Grep subcommand not yet implemented."
+}
