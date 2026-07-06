@@ -1,0 +1,166 @@
+# pdftract-docs-build WorkflowTemplate
+#
+# Builds the user documentation mdBook from docs/user-docs/ and deploys to Cloudflare Pages
+# at pdftract.com. Triggered by milestone tag, after pdftract-crates-publish completes
+# (so docs.rs links resolve).
+#
+# === Build Process ===
+# 1. Clone pdftract repo at the specified tag
+# 2. Install mdBook and mdbook-linkcheck (cached in emptyDir)
+# 3. Run mdbook-linkcheck (internal links block deploy, external links warn)
+# 4. Build mdBook to docs/user-docs/build/user-docs/ (per book.toml build-dir setting)
+# 5. Deploy to Cloudflare Pages using wrangler
+#
+# === Idempotency ===
+# Re-running against the same tag overwrites the Cloudflare Pages deployment cleanly.
+#
+# === Linkcheck Policy ===
+# - Internal links: MUST pass (broken links block the deploy)
+# - External links: Emit warnings but allow deploy (network flakiness should not block releases)
+#
+# === Cloudflare Pages Token ===
+# Uses ExternalSecret `cloudflare-pages-secret` (shared across projects).
+# Token sourced from OpenBao via ESO.
+#
+# === DNS ===
+# pdftract.com DNS must point to Cloudflare Pages (one-time setup, tracked separately).
+#
+# Bead: pdftract-26pc
+# Plan section: Release Engineering / Distribution Channels, line 3395
+# Plan section: Argo WorkflowTemplates, line 3412
+#
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: pdftract-docs-build
+  namespace: argo-workflows
+  labels:
+    app.kubernetes.io/name: pdftract-docs-build
+    app.kubernetes.io/component: ci
+    app.kubernetes.io/part-of: pdftract
+spec:
+  entrypoint: build-and-deploy-docs
+  serviceAccountName: argo-workflow
+
+  podGC:
+    strategy: OnPodCompletion
+
+  ttlStrategy:
+    secondsAfterSuccess: 1800
+    secondsAfterFailure: 7200
+
+  arguments:
+    parameters:
+      - name: tag
+        value: ""
+        description: "Git tag triggering the docs build (e.g., v0.3.0)"
+
+  volumes:
+    - name: cargo-home
+      emptyDir: {}
+    - name: cargo-registry
+      emptyDir: {}
+
+  podMetadata:
+    labels:
+      app.kubernetes.io/name: pdftract-docs-build
+      tag: "{{workflow.parameters.tag}}"
+
+  templates:
+    - name: build-and-deploy-docs
+      retryStrategy:
+        limit: 2
+        retryPolicy: OnError
+      script:
+        image: docker.io/library/rust:1.83-slim
+        command: [bash]
+        source: |
+          set -e
+
+          TAG="{{workflow.parameters.tag}}"
+          echo "Building pdftract docs for tag $TAG"
+
+          # Install git and curl
+          apt-get update -qq && apt-get install -y -qq git curl >/dev/null 2>&1
+
+          # Clone repo at the tag
+          git clone --depth 1 --branch "$TAG" \
+            "https://github.com/jedarden/pdftract.git" /workspace
+          cd /workspace
+
+          # Install mdBook tools (cached in cargo home for speed)
+          echo "Installing mdBook and mdbook-linkcheck..."
+          cargo install mdbook mdbook-linkcheck --locked
+
+          # Verify book.toml exists
+          if [ ! -f "docs/user-docs/book.toml" ]; then
+            echo "Error: docs/user-docs/book.toml not found"
+            exit 1
+          fi
+
+          # Run linkcheck
+          echo "Running mdbook-linkcheck..."
+          # mdbook-linkcheck returns 2 for warnings, 1 for errors
+          # We want to fail on errors (internal links) but allow warnings (external links)
+          LINKCHECK_EXIT=0
+          cd docs/user-docs
+          mdbook-linkcheck . || LINKCHECK_EXIT=$?
+
+          if [ "$LINKCHECK_EXIT" -eq 1 ]; then
+            echo "Error: mdbook-linkcheck found broken internal links"
+            exit 1
+          elif [ "$LINKCHECK_EXIT" -eq 2 ]; then
+            echo "Warning: mdbook-linkcheck found issues with external links (continuing)"
+          fi
+
+          # Build mdBook (respects book.toml build-dir = "build/user-docs")
+          echo "Building mdBook..."
+          mdbook build
+
+          # Verify build output
+          if [ ! -f "build/user-docs/index.html" ]; then
+            echo "Error: mdBook build failed - index.html not found"
+            exit 1
+          fi
+
+          # Verify schema rendering present
+          if [ ! -d "build/user-docs/schema" ]; then
+            echo "Error: Schema docs missing from build output"
+            exit 1
+          fi
+
+          # Install wrangler for Cloudflare Pages deploy
+          echo "Installing wrangler..."
+          npm install -g wrangler@latest
+
+          # Deploy to Cloudflare Pages (production environment at pdftract.com)
+          echo "Deploying to Cloudflare Pages (pdftract.com)..."
+          wrangler pages deploy build/user-docs \
+            --project-name=pdftract-com \
+            --branch="$TAG" \
+            --commit-dirty=true
+
+          echo "Docs deployed successfully to pdftract.com for tag $TAG"
+        env:
+          - name: CARGO_HOME
+            value: /cargo
+          - name: CLOUDFLARE_API_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: cloudflare-pages-secret
+                key: CF_API_TOKEN
+          - name: CLOUDFLARE_ACCOUNT_ID
+            value: "e26f015c7ba47a6ad6219385e77072b7"
+        volumeMounts:
+          - name: cargo-home
+            mountPath: /cargo
+          - name: cargo-registry
+            mountPath: /cargo/registry
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+      activeDeadlineSeconds: 1200

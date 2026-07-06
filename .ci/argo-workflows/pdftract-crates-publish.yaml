@@ -1,0 +1,283 @@
+# pdftract-crates-publish WorkflowTemplate
+#
+# Publishes pdftract-core, pdftract-cli, and optionally pdftract-libpdftract to crates.io.
+# Triggered by milestone tag after pdftract-build-binaries completes successfully.
+#
+# === Critical Ordering Requirement ===
+# crates.io has a hard ordering requirement: a crate cannot depend on a sibling whose
+# version is not yet visible in the registry index. This template enforces the ordering:
+#   1. publish-core: Publish pdftract-core to crates.io
+#   2. wait-index-core: Poll crates.io sparse index until core version appears
+#   3. publish-cli: Publish pdftract-cli (depends on pdftract-core)
+#   4. wait-index-cli: Poll crates.io sparse index until cli version appears
+#   5. publish-libpdftract: (optional) Publish pdftract-libpdftract
+#
+# The index-propagation wait CANNOT be skipped — crates.io's sparse index has up to
+# 60 seconds of propagation delay even on green API responses. Without the wait,
+# pdftract-cli publish would fail with "no matching version" errors.
+#
+# === Idempotency ===
+# crates.io rejects duplicate publishes. The publish step treats "already uploaded"
+# errors as success, making re-runs after partial failure safe.
+#
+# === Partial Failure Recovery ===
+# If a publish run fails partway through, the half-published version can be yanked:
+#   cargo yank --vers X.Y.Z pdftract-core
+# Then re-run the workflow.
+#
+# === crates.io API Token ===
+# Uses token from ExternalSecret `crates-io-token-pdftract` (synced from OpenBao).
+# Token rotation: every 90 days per docs/operations/secrets-rotation.md.
+#
+# Bead: pdftract-5x3u
+# Plan section: Release Engineering / Argo WorkflowTemplates, line 3391
+#
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: pdftract-crates-publish
+  namespace: argo-workflows
+  labels:
+    app.kubernetes.io/name: pdftract-crates-publish
+    app.kubernetes.io/component: ci
+    app.kubernetes.io/part-of: pdftract
+spec:
+  entrypoint: publish-crates
+  serviceAccountName: argo-workflow
+
+  podGC:
+    strategy: OnPodCompletion
+
+  ttlStrategy:
+    secondsAfterSuccess: 1800
+    secondsAfterFailure: 7200
+
+  arguments:
+    parameters:
+      - name: tag
+        value: ""
+        description: "Git tag triggering the publish (e.g., v0.3.0)"
+      - name: dry_run
+        value: "false"
+        description: "Set to 'true' for testing -- skips actual publish"
+      - name: publish_libpdftract
+        value: "false"
+        description: "Set to 'true' to also publish pdftract-libpdftract after cli"
+
+  volumes:
+    - name: cargo-home
+      emptyDir: {}
+    - name: cargo-registry
+      emptyDir: {}
+
+  podMetadata:
+    labels:
+      app.kubernetes.io/name: pdftract-crates-publish
+      tag: "{{workflow.parameters.tag}}"
+  templates:
+    - name: publish-crates
+      dag:
+        tasks:
+          - name: publish-core
+            template: publish-crate
+            arguments:
+              parameters:
+                - name: crate
+                  value: pdftract-core
+                - name: tag
+                  value: "{{workflow.parameters.tag}}"
+                - name: dry_run
+                  value: "{{workflow.parameters.dry_run}}"
+
+          - name: wait-index-core
+            template: wait-crates-index
+            dependencies: [publish-core]
+            arguments:
+              parameters:
+                - name: crate
+                  value: pdftract-core
+                - name: tag
+                  value: "{{workflow.parameters.tag}}"
+
+          - name: publish-cli
+            template: publish-crate
+            dependencies: [wait-index-core]
+            arguments:
+              parameters:
+                - name: crate
+                  value: pdftract-cli
+                - name: tag
+                  value: "{{workflow.parameters.tag}}"
+                - name: dry_run
+                  value: "{{workflow.parameters.dry_run}}"
+
+          - name: wait-index-cli
+            template: wait-crates-index
+            dependencies: [publish-cli]
+            arguments:
+              parameters:
+                - name: crate
+                  value: pdftract-cli
+                - name: tag
+                  value: "{{workflow.parameters.tag}}"
+
+          - name: publish-libpdftract
+            template: publish-crate
+            when: "{{workflow.parameters.publish_libpdftract}} == true"
+            dependencies: [wait-index-cli]
+            arguments:
+              parameters:
+                - name: crate
+                  value: pdftract-libpdftract
+                - name: tag
+                  value: "{{workflow.parameters.tag}}"
+                - name: dry_run
+                  value: "{{workflow.parameters.dry_run}}"
+
+    - name: publish-crate
+      inputs:
+        parameters:
+          - name: crate
+          - name: tag
+          - name: dry_run
+      retryStrategy:
+        limit: 2
+        retryPolicy: OnError
+      script:
+        image: rust:1.78-slim
+        command: [bash]
+        source: |
+          set -e
+
+          CRATE="{{inputs.parameters.crate}}"
+          TAG="{{inputs.parameters.tag}}"
+          DRY_RUN="{{inputs.parameters.dry_run}}"
+
+          # Clone repo at the tag
+          git clone --depth 1 --branch "$TAG" \
+            "https://github.com/jedarden/pdftract.git" /workspace
+          cd /workspace
+
+          # Install cargo config with credentials
+          mkdir -p "$CARGO_HOME/registry"
+          cat > "$CARGO_HOME/config" <<'EOF'
+          [registry]
+          default = "crates-io"
+
+          [http]
+          timeout = 60
+          EOF
+
+          # Extract version from tag (strip 'v' prefix if present)
+          VERSION="${TAG#v}"
+          echo "Publishing $CRATE version $VERSION"
+
+          # Verify version matches Cargo.toml
+          CARGO_VERSION=$(grep -A10 "^\[package\]" crates/$CRATE/Cargo.toml 2>/dev/null | grep '^version' | sed 's/.*= *"\(.*\)".*/\1/')
+          if [ "$CRATE" = "pdftract-core" ]; then
+            CARGO_VERSION=$(grep -A10 "^\[package\]" Cargo.toml | grep '^version' | sed 's/.*= *"\(.*\)".*/\1/')
+          elif [ "$CRATE" = "pdftract-cli" ]; then
+            CARGO_VERSION=$(grep -A10 "^\[package\]" crates/pdftract-cli/Cargo.toml | grep '^version' | sed 's/.*= *"\(.*\)".*/\1/')
+          elif [ "$CRATE" = "pdftract-libpdftract" ]; then
+            CARGO_VERSION=$(grep -A10 "^\[package\]" crates/pdftract-libpdftract/Cargo.toml 2>/dev/null | grep '^version' | sed 's/.*= *"\(.*\)".*/\1/')
+          fi
+
+          if [ "$VERSION" != "$CARGO_VERSION" ]; then
+            echo "Error: Tag version $VERSION does not match Cargo.toml version $CARGO_VERSION"
+            exit 1
+          fi
+
+          # Build dry-run or publish command
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "[DRY RUN] Would publish $CRATE $VERSION"
+            cargo publish -p "$CRATE" --locked --token "$CARGO_REGISTRY_TOKEN" --dry-run
+            exit 0
+          fi
+
+          # Attempt publish; treat "already uploaded" as success (idempotent)
+          if cargo publish -p "$CRATE" --locked --token "$CARGO_REGISTRY_TOKEN" 2>&1 | tee /tmp/publish.log; then
+            echo "Published $CRATE $VERSION successfully"
+          else
+            EXIT_CODE=$?
+            if grep -q "already uploaded" /tmp/publish.log; then
+              echo "$CRATE $VERSION is already published (idempotent — continuing)"
+              exit 0
+            else
+              echo "Publish failed with exit code $EXIT_CODE"
+              cat /tmp/publish.log
+              exit $EXIT_CODE
+            fi
+          fi
+        env:
+          - name: CARGO_HOME
+            value: /cargo
+          - name: CARGO_REGISTRY_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: crates-io-token-pdftract
+                key: token
+        volumeMounts:
+          - name: cargo-home
+            mountPath: /cargo
+          - name: cargo-registry
+            mountPath: /cargo/registry
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+      activeDeadlineSeconds: 600
+
+    - name: wait-crates-index
+      inputs:
+        parameters:
+          - name: crate
+          - name: tag
+      retryStrategy:
+        limit: 1
+      script:
+        image: alpine:3.19
+        command: [sh]
+        source: |
+          set -e
+
+          CRATE="{{inputs.parameters.crate}}"
+          TAG="{{inputs.parameters.tag}}"
+          VERSION="${TAG#v}"
+
+          # crates.io sparse index path: first 2 chars of reversed crate name, then next 2
+          # e.g. pdftract-core -> er-octfpdf -> core-pdftract
+          CRATE_REVERSED=$(echo "$CRATE" | rev)
+          INDEX_PATH="${CRATE_REVERSED:0:2}/${CRATE_REVERSED:2:2}/$CRATE"
+
+          echo "Waiting for $CRATE $VERSION to appear in crates.io index..."
+          echo "Index path: $INDEX_PATH"
+
+          TIMEOUT=300
+          INTERVAL=10
+          ELAPSED=0
+
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            if curl -fsS "https://index.crates.io/$INDEX_PATH" 2>/dev/null | grep -q "\"$VERSION\""; then
+              echo "Version $VERSION found in crates.io index after ${ELAPSED}s"
+              exit 0
+            fi
+
+            echo "Not yet indexed (${ELAPSED}s)... waiting ${INTERVAL}s"
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          echo "ERROR: Timeout after ${TIMEOUT}s — version $VERSION not found in crates.io index"
+          echo "Recovery: cargo yank --vers $VERSION $CRATE"
+          exit 1
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+      activeDeadlineSeconds: 360

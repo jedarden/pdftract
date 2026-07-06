@@ -1,0 +1,379 @@
+# pdftract-node-publish WorkflowTemplate
+#
+# Publishes the @pdftract/sdk package to npm by building the Node.js SDK,
+# running conformance tests, and publishing. Triggered by the pdftract-release-cascade
+# after pdftract-build-binaries completes.
+#
+# === Parameter Reference ===
+# - tag: Git tag from the main repo (e.g., v0.1.0)
+# - version: SemVer version string (e.g., 0.1.0)
+#
+# === Steps ===
+# 1. clone-sdk-repo: Clone github.com/jedarden/pdftract-node
+# 2. sync-version: Bump package.json version to match the binary tag
+# 3. install-deps: npm ci (uses package-lock.json for reproducibility)
+# 4. build: npm run build (produces dist/esm, dist/cjs, dist/types)
+# 5. conformance: npm test -- conformance (runs shared suite against bundled binary)
+# 6. publish: npm publish --access public --provenance
+#
+# === Re-runnability ===
+# npm rejects duplicate publishes (409 Conflict). The workflow treats this as success
+# (idempotent) and continues. Pre-release tags use --tag rc.
+#
+# Bead: pdftract-62x5c
+# Plan section: SDK Architecture / Per-SDK Release Channels, line 3570
+# ADR-009: Argo Workflows on iad-ci only
+#
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: pdftract-node-publish
+  namespace: argo-workflows
+  labels:
+    app.kubernetes.io/name: pdftract-node-publish
+    app.kubernetes.io/component: ci
+    app.kubernetes.io/part-of: pdftract
+spec:
+  entrypoint: publish-node-sdk
+  serviceAccountName: argo-workflow
+
+  podGC:
+    strategy: OnPodCompletion
+
+  ttlStrategy:
+    secondsAfterSuccess: 1800
+    secondsAfterFailure: 7200
+
+  arguments:
+    parameters:
+      - name: tag
+        value: ""
+        description: "Git tag from main repo (e.g., v0.1.0)"
+      - name: version
+        value: ""
+        description: "Version extracted from tag (e.g., 0.1.0)"
+
+  volumeClaimTemplates:
+    - metadata:
+        name: workspace
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: sata-large
+        resources:
+          requests:
+            storage: 5Gi
+
+  podMetadata:
+    labels:
+      app.kubernetes.io/name: pdftract-node-publish
+      tag: "{{workflow.parameters.tag}}"
+
+  templates:
+    # === Main DAG ===
+    # Orchestrates the Node.js SDK publish steps
+    - name: publish-node-sdk
+      dag:
+        tasks:
+          - name: clone-sdk-repo
+            template: clone-sdk-repo
+
+          - name: sync-version
+            template: sync-version
+            dependencies: [clone-sdk-repo]
+
+          - name: install-deps
+            template: install-deps
+            dependencies: [sync-version]
+
+          - name: build
+            template: build
+            dependencies: [install-deps]
+
+          - name: conformance
+            template: conformance
+            dependencies: [build]
+
+          - name: publish
+            template: publish
+            dependencies: [conformance]
+
+    # === Clone SDK Repo ===
+    # Clones the pdftract-node repository from GitHub
+    - name: clone-sdk-repo
+      activeDeadlineSeconds: 300
+      container:
+        image: node:22-slim
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            VERSION="{{workflow.parameters.version}}"
+            TAG="{{workflow.parameters.tag}}"
+
+            echo "Cloning pdftract-node repository..."
+            git clone --branch main \
+              "https://x-access-token:${GH_TOKEN}@github.com/jedarden/pdftract-node.git" \
+              /workspace/sdk-node
+
+            cd /workspace/sdk-node
+            echo "Cloned commit: $(git rev-parse HEAD)"
+            echo "Branch: $(git branch --show-current)"
+      env:
+        - name: GH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: github-pat-pdftract
+              key: token
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      resources:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+        limits:
+          cpu: 500m
+          memory: 1Gi
+
+    # === Sync Version ===
+    # Bumps package.json version to match the binary tag and commits the change
+    - name: sync-version
+      activeDeadlineSeconds: 300
+      container:
+        image: node:22-slim
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            VERSION="{{workflow.parameters.version}}"
+            TAG="{{workflow.parameters.tag}}"
+
+            cd /workspace/sdk-node
+
+            echo "Syncing version to ${VERSION} (tag: ${TAG})"
+
+            # Update package.json version
+            npm version "${VERSION}" --no-git-tag-version
+
+            # Verify package.json exists and was updated
+            if [ ! -f package.json ]; then
+              echo "ERROR: package.json not found in pdftract-node repo"
+              exit 1
+            fi
+
+            # Commit the version bump
+            git config user.name "pdftract-ci"
+            git config user.email "ci@pdftract.com"
+            git add package.json
+            git commit -m "chore: bump version to ${VERSION} (matches pdftract ${TAG})"
+            git push origin main
+
+            echo "Version sync complete: package.json now at ${VERSION}"
+      env:
+        - name: GH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: github-pat-pdftract
+              key: token
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      resources:
+        requests:
+          cpu: 200m
+          memory: 256Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+
+    # === Install Dependencies ===
+    # Installs npm dependencies using npm ci for reproducibility
+    - name: install-deps
+      activeDeadlineSeconds: 600
+      container:
+        image: node:22-slim
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+
+            cd /workspace/sdk-node
+
+            echo "Installing dependencies with npm ci..."
+
+            # Use npm ci for reproducible installs (requires package-lock.json)
+            if [ -f package-lock.json ]; then
+              npm ci
+            else
+              echo "Warning: package-lock.json not found, using npm install"
+              npm install
+            fi
+
+            echo "Dependencies installed successfully"
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      resources:
+        requests:
+          cpu: 500m
+          memory: 1Gi
+        limits:
+          cpu: 1000m
+          memory: 2Gi
+
+    # === Build ===
+    # Builds the SDK: produces ESM, CJS, and TypeScript type definitions
+    - name: build
+      activeDeadlineSeconds: 600
+      container:
+        image: node:22-slim
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+
+            echo "=========================================="
+            echo "Building @pdftract/sdk"
+            echo "=========================================="
+
+            cd /workspace/sdk-node
+
+            # Run the build script
+            # Expected to produce: dist/esm, dist/cjs, dist/types
+            npm run build
+
+            # Verify build outputs
+            if [ ! -d dist/esm ]; then
+              echo "ERROR: dist/esm not found after build"
+              exit 1
+            fi
+            if [ ! -d dist/cjs ]; then
+              echo "ERROR: dist/cjs not found after build"
+              exit 1
+            fi
+            if [ ! -d dist/types ]; then
+              echo "ERROR: dist/types not found after build"
+              exit 1
+            fi
+
+            echo "=========================================="
+            echo "Build complete"
+            echo "=========================================="
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      resources:
+        requests:
+          cpu: 1000m
+          memory: 2Gi
+        limits:
+          cpu: 2000m
+          memory: 4Gi
+
+    # === Conformance Tests ===
+    # Runs the SDK conformance test suite against the bundled binary
+    # This step MUST pass for the publish to proceed
+    - name: conformance
+      activeDeadlineSeconds: 1200
+      container:
+        image: node:22-slim
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+
+            echo "=========================================="
+            echo "Running Node.js SDK Conformance Tests"
+            echo "=========================================="
+
+            cd /workspace/sdk-node
+
+            # Run the conformance test suite
+            # The test should be named "conformance" in package.json
+            echo "Running: npm test -- conformance"
+            npm test -- conformance
+
+            echo "=========================================="
+            echo "Conformance tests PASSED"
+            echo "=========================================="
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      resources:
+        requests:
+          cpu: 1000m
+          memory: 2Gi
+        limits:
+          cpu: 2000m
+          memory: 4Gi
+
+    # === Publish ===
+    # Publishes the package to npm registry
+    # Pre-release versions use --tag rc
+    - name: publish
+      activeDeadlineSeconds: 600
+      container:
+        image: node:22-slim
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            VERSION="{{workflow.parameters.version}}"
+            TAG="{{workflow.parameters.tag}}"
+
+            echo "=========================================="
+            echo "Publishing @pdftract/sdk@${VERSION}"
+            echo "=========================================="
+
+            cd /workspace/sdk-node
+
+            # Detect if this is a pre-release version
+            if echo "${VERSION}" | grep -q '-'; then
+              echo "Pre-release version detected, using --tag rc"
+              PUBLISH_TAG="--tag rc"
+            else
+              PUBLISH_TAG=""
+            fi
+
+            # Attempt to publish
+            # If the package already exists (409), treat as success (idempotent)
+            if npm publish --access public --provenance ${PUBLISH_TAG} 2>&1 | tee /tmp/publish.log; then
+              echo "=========================================="
+              echo "Published successfully to npm"
+              echo "=========================================="
+            else
+              EXIT_CODE=$?
+              if grep -q "409\|Cannot publish over existing version" /tmp/publish.log; then
+                echo "Package already published (idempotent re-run)"
+                echo "=========================================="
+                echo "@pdftract/sdk@${VERSION} is already on npm"
+                echo "=========================================="
+              else
+                echo "ERROR: npm publish failed with exit code ${EXIT_CODE}"
+                cat /tmp/publish.log
+                exit 1
+              fi
+            fi
+
+            echo ""
+            echo "Installation command:"
+            echo "  npm install @pdftract/sdk@${VERSION}"
+            if echo "${VERSION}" | grep -q '-'; then
+              echo "  npm install @pdftract/sdk@rc"
+            fi
+      env:
+        - name: NPM_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: npm-token-pdftract
+              key: token
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      resources:
+        requests:
+          cpu: 500m
+          memory: 1Gi
+        limits:
+          cpu: 1000m
+          memory: 2Gi

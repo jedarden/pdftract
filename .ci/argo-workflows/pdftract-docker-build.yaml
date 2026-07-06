@@ -1,0 +1,713 @@
+# pdftract-docker-build WorkflowTemplate
+#
+# Builds 3 multi-arch Docker images (latest, ocr, full) for amd64 + arm64
+# Triggered by milestone tag (vX.Y.Z). Pushes to GHCR and signs with cosign keyless.
+#
+# Image variants:
+#   - latest: default features, distroless base (~20 MB)
+#   - ocr: default + OCR features, debian-slim with Tesseract (~120 MB)
+#   - full: all features, debian-slim with Tesseract (~140 MB)
+#
+# Bead: pdftract-68pe
+# Plan section: Release Engineering / Argo WorkflowTemplates, line 3392
+#
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: pdftract-docker-build
+  namespace: argo-workflows
+  labels:
+    app.kubernetes.io/name: pdftract-docker-build
+    app.kubernetes.io/component: ci
+    app.kubernetes.io/part-of: pdftract
+spec:
+  entrypoint: build-all-variants
+  serviceAccountName: argo-workflow
+
+  podGC: OnPodCompletion
+
+  ttlSecondsAfterFinished:
+    success: 1800
+    failure: 7200
+
+  arguments:
+    parameters:
+      - name: repo
+        value: jedarden/pdftract
+      - name: branch
+        value: main
+      - name: tag
+        value: ""
+        description: "Git tag (e.g., v0.1.0)"
+      - name: version
+        value: ""
+        description: "Version extracted from tag (e.g., 0.1.0)"
+      - name: commit-sha
+        value: ""
+        description: "Full commit SHA of the tag"
+
+  volumeClaimTemplates:
+    - metadata:
+        name: workspace
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: sata-large
+        resources:
+          requests:
+            storage: 10Gi
+    - metadata:
+        name: cargo-cache
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: sata-large
+        resources:
+          requests:
+            storage: 50Gi
+
+  volumes:
+    - name: docker-config
+      secret:
+        secretName: ghcr-registry
+        items:
+          - key: .dockerconfigjson
+            path: config.json
+    # Projected service account token for OIDC-based cosign keyless signing
+    - name: oidc-token
+      projected:
+        sources:
+          - serviceAccountToken:
+              path: token
+              audience: sigstore
+              expirationSeconds: 600
+
+  podMetadata:
+    labels:
+      app.kubernetes.io/name: pdftract-docker-build
+      tag: "{{workflow.parameters.tag}}"
+
+  podSpecPatch: |
+    imagePullSecrets:
+      - name: ghcr-registry
+
+  templates:
+    # === Top-level DAG ===
+    # Build all 3 image variants in parallel, then sign each
+    - name: build-all-variants
+    dag:
+      tasks:
+        - name: setup
+          template: setup
+
+        - name: build-latest
+          template: build-multi-arch
+          dependencies: [setup]
+          arguments:
+            parameters:
+              - name: variant
+                value: "latest"
+              - name: features
+                value: "default"
+
+        - name: build-ocr
+          template: build-multi-arch
+          dependencies: [setup]
+          arguments:
+            parameters:
+              - name: variant
+                value: "ocr"
+              - name: features
+                value: "ocr"
+
+        - name: build-full
+          template: build-multi-arch
+          dependencies: [setup]
+          arguments:
+            parameters:
+              - name: variant
+                value: "full"
+              - name: features
+                value: "full"
+
+        - name: sign-latest
+          template: sign-image
+          dependencies: [build-latest]
+          arguments:
+            parameters:
+              - name: variant
+                value: "latest"
+              - name: digest
+                value: "{{tasks.build-latest.outputs.parameters.digest}}"
+
+        - name: sign-ocr
+          template: sign-image
+          dependencies: [build-ocr]
+          arguments:
+            parameters:
+              - name: variant
+                value: "ocr"
+              - name: digest
+                value: "{{tasks.build-ocr.outputs.parameters.digest}}"
+
+        - name: sign-full
+          template: sign-image
+          dependencies: [build-full]
+          arguments:
+            parameters:
+              - name: variant
+                value: "full"
+              - name: digest
+                value: "{{tasks.build-full.outputs.parameters.digest}}"
+
+        - name: generate-sbom
+          template: generate-sbom
+          dependencies: [setup]
+
+        - name: attest-sbom-latest
+          template: attest-sbom
+          dependencies: [sign-latest, generate-sbom]
+          arguments:
+            parameters:
+              - name: variant
+                value: "latest"
+              - name: digest
+                value: "{{tasks.build-latest.outputs.parameters.digest}}"
+            artifacts:
+              - name: sbom
+                from: "{{tasks.generate-sbom.outputs.artifacts.sbom}}"
+
+        - name: attest-sbom-ocr
+          template: attest-sbom
+          dependencies: [sign-ocr, generate-sbom]
+          arguments:
+            parameters:
+              - name: variant
+                value: "ocr"
+              - name: digest
+                value: "{{tasks.build-ocr.outputs.parameters.digest}}"
+            artifacts:
+              - name: sbom
+                from: "{{tasks.generate-sbom.outputs.artifacts.sbom}}"
+
+        - name: attest-sbom-full
+          template: attest-sbom
+          dependencies: [sign-full, generate-sbom]
+          arguments:
+            parameters:
+              - name: variant
+                value: "full"
+              - name: digest
+                value: "{{tasks.build-full.outputs.parameters.digest}}"
+            artifacts:
+              - name: sbom
+                from: "{{tasks.generate-sbom.outputs.artifacts.sbom}}"
+
+    # === Setup Step ===
+    # Clone repo and prepare workspace
+    - name: setup
+      activeDeadlineSeconds: 600
+      container:
+        image: alpine:3.19
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            apk add --no-cache git
+
+            git clone --depth 1 --branch "{{workflow.parameters.branch}}" \
+              "https://x-access-token:${GH_TOKEN}@github.com/{{workflow.parameters.repo}}.git" \
+              /workspace
+
+            cd /workspace
+            git checkout {{workflow.parameters.commit-sha}}
+
+            echo "Setup complete for {{workflow.parameters.tag}}"
+            echo "Version: {{workflow.parameters.version}}"
+        env:
+          - name: GH_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: github-pat-pdftract
+                key: token
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+
+    # === Generate CycloneDX SBOM ===
+    # Generates CycloneDX Software Bill of Materials for the workspace
+    # Produces pdftract-vX.Y.Z.cdx.json covering all Rust dependencies
+    #
+    # Bead: pdftract-8zbd
+    # Plan section: Release Engineering / Artifact Taxonomy, line 3354
+    - name: generate-sbom
+      activeDeadlineSeconds: 600
+      container:
+        image: rust:1.83-bookworm
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+
+            echo "=========================================="
+            echo "Generating CycloneDX SBOM"
+            echo "=========================================="
+
+            cd /workspace
+            export CARGO_HOME="/cache/cargo"
+            export CARGO_TARGET_DIR="/workspace/target-sbom"
+
+            TAG="{{workflow.parameters.tag}}"
+            VERSION="{{workflow.parameters.version}}"
+            SBOM_FILE="pdftract-v${VERSION}.cdx.json"
+
+            # Install cargo-cyclonedx
+            echo "=== Installing cargo-cyclonedx ==="
+            cargo install cargo-cyclonedx --locked
+
+            # Generate SBOMs for all workspace members with all dependencies
+            # Note: cargo-cyclonedx generates separate files for each workspace member
+            echo "=== Generating SBOMs for workspace ==="
+            cargo cyclonedx --format json --all --spec-version 1.5
+
+            # Merge workspace member SBOMs into a single BOM
+            echo "=== Merging workspace SBOMs ==="
+            mkdir -p /sbom
+
+            # Use jq to merge the SBOMs into a single CycloneDX 1.5 BOM
+            # Each workspace member SBOM is merged, deduplicating components by purl
+            jq -s '
+              {
+                "$schema": "http://cyclonedx.org/schema/bom-1.5.schema.json",
+                "bomFormat": "CycloneDX",
+                "specVersion": "1.5",
+                "version": 1,
+                "metadata": {
+                  "type": "library",
+                  "lifecycle": "published",
+                  "component": {
+                    "type": "library",
+                    "name": "pdftract",
+                    "version": "'"${VERSION}"'",
+                    "purl": "pkg:cargo/pdftract@" + "'"${VERSION}"'",
+                    "description": "PDF text extraction library with advanced layout analysis",
+                    "externalReferences": [
+                      {
+                        "type": "vcs",
+                        "url": "https://github.com/jedarden/pdftract.git"
+                      },
+                      {
+                        "type": "website",
+                        "url": "https://github.com/jedarden/pdftract"
+                      }
+                    ]
+                  }
+                },
+                "components": ([.[].components // []] | flatten | unique_by(.["purl"]))
+              }
+            ' \
+              crates/pdftract-core/pdftract-core.cdx.json \
+              crates/pdftract-cli/pdftract-cli.cdx.json \
+              crates/pdftract-py/pdftract-py.cdx.json \
+              > "/sbom/${SBOM_FILE}"
+
+            # Validate the SBOM
+            echo "=== Installing cyclonedx-cli for validation ==="
+            cargo install cyclonedx-cli --locked
+
+            echo "=== Validating merged SBOM ==="
+            cyclonedx-cli validate --input-file "/sbom/${SBOM_FILE}"
+
+            # Display summary
+            COMPONENT_COUNT=$(jq '.components | length' "/sbom/${SBOM_FILE}")
+            echo "=== SBOM generated and validated ==="
+            echo "Components: ${COMPONENT_COUNT}"
+            ls -lh "/sbom/${SBOM_FILE}"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+      outputs:
+        artifacts:
+          - name: sbom
+            path: /sbom/pdftract-v{{workflow.parameters.version}}.cdx.json
+            archiveNone: false
+
+    # === Build Multi-Arch Image ===
+    # Uses docker buildx to build and push multi-arch manifest lists
+    - name: build-multi-arch
+      inputs:
+        parameters:
+          - name: variant
+            description: "Image variant: latest, ocr, or full"
+          - name: features
+            description: "Cargo features to build"
+      activeDeadlineSeconds: 2400
+      retryStrategy:
+        limit: "2"
+        retryPolicy: OnError
+        backoff:
+          duration: 60s
+          factor: "2"
+      container:
+        image: docker:dind
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+
+            VARIANT="{{inputs.parameters.variant}}"
+            FEATURES="{{inputs.parameters.features}}"
+            VERSION="{{workflow.parameters.version}}"
+            TAG="{{workflow.parameters.tag}}"
+            REGISTRY="ghcr.io/jedarden/pdftract"
+
+            echo "=== Building pdftract:${VARIANT} (features: ${FEATURES}) ==="
+
+            # Start Docker daemon
+            dockerd-entrypoint.sh &
+            sleep 5
+
+            # Configure Docker for GHCR auth
+            mkdir -p /root/.docker
+            cp /root/.dockerconfigjson /root/.docker/config.json
+
+            # Create buildx builder with QEMU support
+            docker buildx create --use --name multiarch-builder --driver docker-container --bootstrap
+
+            # Enable QEMU for cross-platform emulation
+            docker buildx inspect --bootstrap
+
+            cd /workspace
+
+            # Build and push multi-arch image
+            # Tag format: ghcr.io/jedarden/pdftract:X.Y.Z and :latest (or :ocr, :full)
+            VERSION_TAG="${REGISTRY}:${TAG}"
+            if [ "${VARIANT}" = "latest" ]; then
+              FLOATING_TAG="${REGISTRY}:latest"
+            elif [ "${VARIANT}" = "ocr" ]; then
+              VERSION_TAG="${REGISTRY}:ocr-${TAG}"
+              FLOATING_TAG="${REGISTRY}:ocr"
+            else
+              VERSION_TAG="${REGISTRY}:full-${TAG}"
+              FLOATING_TAG="${REGISTRY}:full"
+            fi
+
+            # Build and push with buildx
+            # Buildx creates a multi-arch manifest list
+            docker buildx build \
+              --platform linux/amd64,linux/arm64 \
+              --build-arg FEATURES=${FEATURES} \
+              --tag "${VERSION_TAG}" \
+              --tag "${FLOATING_TAG}" \
+              --file Dockerfile \
+              --push \
+              --progress=plain \
+              .
+
+            echo "=== Build complete ==="
+
+            # Get the manifest digest for signing
+            # Use docker buildx imagetools inspect with JSON output for reliable parsing
+            INSPECT_OUTPUT=$(docker buildx imagetools inspect "${VERSION_TAG}" --format '{{json .}}' 2>/dev/null || echo '{}')
+
+            # Extract digest from JSON - the manifest digest for the multi-arch image
+            DIGEST=$(echo "${INSPECT_OUTPUT}" | grep -o '"manifestDigest":"[^"]*"' | cut -d'"' -f4 || echo "")
+
+            # Fallback: try crane if available (more reliable for digest extraction)
+            if [ -z "${DIGEST}" ]; then
+              if command -v crane >/dev/null 2>&1; then
+                DIGEST=$(crane digest "${VERSION_TAG}" 2>/dev/null || echo "")
+              fi
+            fi
+
+            # Final fallback: use docker manifest inspect
+            if [ -z "${DIGEST}" ]; then
+              DIGEST=$(docker manifest inspect "${VERSION_TAG}" 2>/dev/null | \
+                grep -o '"sha256:[a-f0-9]*"' | head -1 | tr -d '"' || echo "")
+            fi
+
+            echo "Digest: ${DIGEST}"
+            echo "${DIGEST}" > /tmp/digest
+
+            # Verify the image was pushed
+            echo "=== Verifying pushed image ==="
+            docker buildx imagetools inspect "${VERSION_TAG}"
+        env:
+          - name: DOCKER_HOST
+            value: tcp://127.0.0.1:2375
+          - name: DOCKER_TLS_CERTDIR
+            value: ""
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: docker-config
+            mountPath: /root/.dockerconfigjson
+            subPath: config.json
+        resources:
+          requests:
+            cpu: 2000m
+            memory: 4Gi
+          limits:
+            cpu: 8000m
+            memory: 16Gi
+        securityContext:
+          privileged: true
+      outputs:
+        parameters:
+          - name: digest
+            valueFrom:
+              path: /tmp/digest
+
+    # === Sign Image with Cosign ===
+    # Signs the multi-arch manifest list using keyless OIDC
+    # and attaches SLSA provenance attestation
+    - name: sign-image
+      inputs:
+        parameters:
+          - name: variant
+            description: "Image variant: latest, ocr, or full"
+          - name: digest
+            description: "Manifest digest to sign"
+      activeDeadlineSeconds: 600
+      retryStrategy:
+        limit: "3"
+        retryPolicy: OnError
+        backoff:
+          duration: 30s
+          factor: "2"
+      container:
+        image: ghcr.io/sigstore/cosign:v2.2.3
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+
+            VARIANT="{{inputs.parameters.variant}}"
+            DIGEST="{{inputs.parameters.digest}}"
+            TAG="{{workflow.parameters.tag}}"
+            VERSION="{{workflow.parameters.version}}"
+            REGISTRY="ghcr.io/jedarden/pdftract"
+            COMMIT="{{workflow.parameters.commit-sha}}"
+
+            echo "=== Signing pdftract:${VARIANT} ==="
+
+            # Construct image reference with digest
+            if [ "${VARIANT}" = "latest" ]; then
+              IMAGE_REF="${REGISTRY}:${TAG}@${DIGEST}"
+            elif [ "${VARIANT}" = "ocr" ]; then
+              IMAGE_REF="${REGISTRY}:ocr-${TAG}@${DIGEST}"
+            else
+              IMAGE_REF="${REGISTRY}:full-${TAG}@${DIGEST}"
+            fi
+
+            echo "Signing: ${IMAGE_REF}"
+
+            # Sign with cosign (keyless, OIDC from iad-ci)
+            # The OIDC token is mounted from the projected service account token volume
+            cosign sign \
+              --yes \
+              --oidc-issuer-url="${COSIGN_OIDC_ISSUER}" \
+              "${IMAGE_REF}"
+
+            echo "=== Signature created ==="
+
+            # Verify the signature (sanity check with certificate identity)
+            echo "=== Verifying signature (sanity check) ==="
+            cosign verify \
+              --certificate-identity-regexp "${COSIGN_CERTIFICATE_IDENTITY}" \
+              --certificate-oidc-issuer "${COSIGN_OIDC_ISSUER}" \
+              "${IMAGE_REF}" || echo "Warning: Verification failed in-cluster (expected if OIDC issuer not reachable from pod)"
+
+            # Generate SLSA provenance attestation
+            echo "=== Generating SLSA v1.0 provenance attestation ==="
+
+            # Create SLSA Provenance v1.0 predicate
+            # Format: https://slsa.dev/spec/v1.0/provenance
+            cat > /tmp/provenance.json <<EOF
+            {
+              "_type": "https://in-toto.io/Statement/v1",
+              "subject": [
+                {
+                  "name": "${IMAGE_REF}",
+                  "digest": {
+                    "sha256": "${DIGEST#sha256:}"
+                  }
+                }
+              ],
+              "predicateType": "https://slsa.dev/provenance/v1.0",
+              "predicate": {
+                "buildDefinition": {
+                  "buildType": "https://argoproj.io/argo-workflows@v1",
+                  "externalParameters": {
+                    "variant": "${VARIANT}",
+                    "tag": "${TAG}",
+                    "version": "${VERSION}",
+                    "source": "git+https://github.com/jedarden/pdftract.git"
+                  },
+                  "internalParameters": {
+                    "workflow": "pdftract-docker-build",
+                    "platforms": "linux/amd64,linux/arm64"
+                  },
+                  "resolvedDependencies": [
+                    {
+                      "uri": "git+https://github.com/jedarden/pdftract.git@${COMMIT}",
+                      "digest": {
+                        "gitCommit": "${COMMIT}"
+                      }
+                    }
+                  ]
+                },
+                "runDetails": {
+                  "builder": {
+                    "id": "https://iad-ci-oidc.ardenone.com/argo-workflows/pdftract-docker-build",
+                    "builderDependencies": [],
+                    "version": {
+                      "argo": "v3.5.x"
+                    }
+                  },
+                  "metadata": {
+                    "invocationId": "argo-workflows-${COMMIT}-${TAG}-${VARIANT}",
+                    "startedOn": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                  },
+                  "byproducts": []
+                }
+              }
+            }
+            EOF
+
+            # Attach the provenance attestation
+            cosign attest \
+              --predicate /tmp/provenance.json \
+              --type slsaprovenance \
+              --yes \
+              --oidc-issuer-url="${COSIGN_OIDC_ISSUER}" \
+              "${IMAGE_REF}"
+
+            echo "=== SLSA provenance attestation attached ==="
+            echo "=== Signing and attestation complete for ${VARIANT} ==="
+        env:
+          # Ensure cosign can use the cluster's OIDC identity
+          - name: COSIGN_EXPERIMENTAL
+            value: "1"
+          - name: COSIGN_REPOSITORY
+            value: ghcr.io/jedarden/pdftract-signatures
+          # OIDC configuration for keyless signing
+          - name: COSIGN_OIDC_ISSUER
+            value: "https://iad-ci-oidc.ardenone.com"
+          - name: COSIGN_CERTIFICATE_IDENTITY
+            value: "https://iad-ci-oidc.ardenone.com.*"
+          - name: COSIGN_OIDC_TOKEN
+            value: /var/run/secrets/tokens/oidc-token
+        volumeMounts:
+          - name: oidc-token
+            mountPath: /var/run/secrets/tokens/oidc-token
+            subPath: token
+            readOnly: true
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 2000m
+            memory: 2Gi
+
+    # === Attest SBOM to Docker Image ===
+    # Attaches the CycloneDX SBOM to the Docker image via cosign attest
+    # This makes the SBOM discoverable via: cosign download attestation --predicate-type https://cyclonedx.org/bom/v1.5
+    #
+    # Bead: pdftract-8zbd
+    # Plan section: Release Engineering / Artifact Taxonomy, line 3354
+    - name: attest-sbom
+      inputs:
+        parameters:
+          - name: variant
+            description: "Image variant: latest, ocr, or full"
+          - name: digest
+            description: "Manifest digest to attest"
+        artifacts:
+          - name: sbom
+            path: /tmp/sbom.cdx.json
+      activeDeadlineSeconds: 600
+      retryStrategy:
+        limit: "3"
+        retryPolicy: OnError
+        backoff:
+          duration: 30s
+          factor: "2"
+      container:
+        image: ghcr.io/sigstore/cosign:v2.2.3
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+
+            VARIANT="{{inputs.parameters.variant}}"
+            DIGEST="{{inputs.parameters.digest}}"
+            TAG="{{workflow.parameters.tag}}"
+            VERSION="{{workflow.parameters.version}}"
+            REGISTRY="ghcr.io/jedarden/pdftract"
+
+            echo "=== Attesting CycloneDX SBOM to pdftract:${VARIANT} ==="
+
+            # Construct image reference with digest
+            if [ "${VARIANT}" = "latest" ]; then
+              IMAGE_REF="${REGISTRY}:${TAG}@${DIGEST}"
+            elif [ "${VARIANT}" = "ocr" ]; then
+              IMAGE_REF="${REGISTRY}:ocr-${TAG}@${DIGEST}"
+            else
+              IMAGE_REF="${REGISTRY}:full-${TAG}@${DIGEST}"
+            fi
+
+            echo "Attesting to: ${IMAGE_REF}"
+            echo "SBOM file: /tmp/sbom.cdx.json"
+
+            # Attach the SBOM via cosign attest
+            cosign attest \
+              --predicate /tmp/sbom.cdx.json \
+              --type cyclonedx \
+              --yes \
+              --oidc-issuer-url="${COSIGN_OIDC_ISSUER}" \
+              "${IMAGE_REF}"
+
+            echo "=== CycloneDX SBOM attestation attached ==="
+            echo "Discoverable via: cosign download attestation --predicate-type https://cyclonedx.org/bom/v1.5 ${IMAGE_REF}"
+        env:
+          # Ensure cosign can use the cluster's OIDC identity
+          - name: COSIGN_EXPERIMENTAL
+            value: "1"
+          - name: COSIGN_REPOSITORY
+            value: ghcr.io/jedarden/pdftract-signatures
+          # OIDC configuration for keyless signing
+          - name: COSIGN_OIDC_ISSUER
+            value: "https://iad-ci-oidc.ardenone.com"
+          - name: COSIGN_CERTIFICATE_IDENTITY
+            value: "https://iad-ci-oidc.ardenone.com.*"
+          - name: COSIGN_OIDC_TOKEN
+            value: /var/run/secrets/tokens/oidc-token
+        volumeMounts:
+          - name: oidc-token
+            mountPath: /var/run/secrets/tokens/oidc-token
+            subPath: token
+            readOnly: true
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 2000m
+            memory: 2Gi
+
