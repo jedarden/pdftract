@@ -27,7 +27,8 @@
 //! - [ ] Wire up CI gate (50 MB/s threshold)
 
 use std::path::PathBuf;
-use std::time::Instant;
+use std::path::Path;
+use std::time::{Instant, Duration};
 
 /// Get the corpus directory path (parent of corpus/ subdirectory)
 ///
@@ -221,6 +222,105 @@ fn validate_corpus() -> Result<usize, String> {
 /// Chosen as a high-frequency word that appears in most English documents.
 const SEARCH_PATTERN: &str = "the";
 
+/// Timeout for read operations (prevents hanging reads)
+///
+/// Set to 5 minutes, which should be more than enough for the benchmark
+/// to complete even on slow hardware.
+const READ_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Maximum buffer size for output capture (prevents unbounded memory growth)
+///
+/// 100 MB should be more than sufficient for benchmark output.
+const MAX_OUTPUT_SIZE: usize = 100 * 1024 * 1024;
+
+/// Helper to read from a pipe with timeout protection
+///
+/// This function reads from a pipe handle with timeout protection to prevent
+/// indefinite hangs. It enforces both a timeout and a maximum buffer size.
+///
+/// # Arguments
+/// * `handle` - The pipe handle to read from
+/// * `stream_name` - Name of the stream (for error messages)
+///
+/// # Returns
+/// * `Ok(String)` - Successfully read output
+/// * `Err(String)` - Read failed or timeout occurred
+fn read_pipe_with_timeout<R: std::io::Read>(
+    mut handle: R,
+    stream_name: &str,
+) -> Result<String, String> {
+    use std::io::{self, Read};
+    use std::thread;
+    use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+
+    // Create a flag to signal timeout
+    let timeout_flag = Arc::new(AtomicBool::new(false));
+    let timeout_flag_clone = timeout_flag.clone();
+
+    // Spawn a watchdog thread to enforce timeout
+    let watchdog = thread::spawn(move || {
+        thread::sleep(READ_TIMEOUT);
+        timeout_flag_clone.store(true, Ordering::SeqCst);
+    });
+
+    // Read with size limit protection
+    let mut output = String::with_capacity(64 * 1024); // Start with 64 KB
+    let mut buffer = vec![0u8; 64 * 1024]; // 64 KB read buffer
+    let mut total_read = 0;
+
+    loop {
+        // Check for timeout before each read
+        if timeout_flag.load(Ordering::SeqCst) {
+            watchdog.join().ok(); // Clean up watchdog thread
+            return Err(format!(
+                "Read timeout after {:?} on {}",
+                READ_TIMEOUT, stream_name
+            ));
+        }
+
+        // Check if we've exceeded the maximum buffer size
+        if total_read >= MAX_OUTPUT_SIZE {
+            watchdog.join().ok(); // Clean up watchdog thread
+            return Err(format!(
+                "Output size exceeded {} MB limit on {}",
+                MAX_OUTPUT_SIZE / (1024 * 1024),
+                stream_name
+            ));
+        }
+
+        // Perform the read
+        match handle.read(&mut buffer) {
+            Ok(0) => {
+                // EOF - stream closed
+                break;
+            }
+            Ok(n) => {
+                // Convert buffer to UTF-8, replacing invalid sequences
+                let chunk = String::from_utf8_lossy(&buffer[..n]);
+                output.push_str(&chunk);
+                total_read += n;
+            }
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => {
+                // Interrupted - retry
+                continue;
+            }
+            Err(e) => {
+                watchdog.join().ok(); // Clean up watchdog thread
+                return Err(format!(
+                    "Failed to read from {}: {}",
+                    stream_name, e
+                ));
+            }
+        }
+    }
+
+    // Signal successful completion to watchdog
+    // (The watchdog thread will exit on its own after the timeout)
+    watchdog.join().ok();
+
+    Ok(output)
+}
+
 /// Expected match count (for correctness validation)
 ///
 /// This should be computed during corpus generation and stored in a manifest.
@@ -378,6 +478,129 @@ fn count_corpus_files() -> usize {
         .unwrap_or(0)
 }
 
+/// Execute pdftract grep command as a subprocess
+///
+/// Spawns the pdftract binary with the grep subcommand and captures output.
+///
+/// # Arguments
+/// * `pattern` - Search pattern to grep for
+/// * `corpus_path` - Path to the corpus directory
+/// * `threads` - Number of worker threads
+///
+/// # Returns
+/// * `Ok((duration_ms, matches_total, stdout, stderr))` - Command executed successfully
+/// * `Err(String)` - Command execution failed
+///
+/// # Output capture guarantees
+/// - Both stdout and stderr are captured completely
+/// - Read operations are protected by timeout (READ_TIMEOUT)
+/// - Output size is limited to MAX_OUTPUT_SIZE
+/// - Both streams are captured even if one is empty
+fn execute_grep_command(
+    pattern: &str,
+    corpus_path: &Path,
+    threads: usize,
+) -> Result<(u128, usize, String, String), String> {
+    use std::process::{Command, Stdio};
+
+    // Build the pdftract grep command
+    // pdftract grep "the" tests/fixtures/grep-corpus/corpus/ -j 4 --progress-json
+    let mut cmd = Command::new("pdftract");
+    cmd.arg("grep")
+        .arg(pattern)
+        .arg(corpus_path)
+        .arg("-j")
+        .arg(threads.to_string())
+        .arg("--progress-json");
+
+    // Configure stdout/stderr pipes for output capture
+    cmd.stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    eprintln!("Executing: {:?}", cmd);
+
+    // Spawn the process
+    let start = std::time::Instant::now();
+    let mut child = cmd.spawn().map_err(|e| {
+        format!("Failed to spawn pdftract grep command: {}", e)
+    })?;
+
+    // Take stdout and stderr handles
+    let stdout_handle = child.stdout.take().ok_or("Failed to capture stdout")?;
+    let stderr_handle = child.stderr.take().ok_or("Failed to capture stderr")?;
+
+    // Spawn threads to read pipes with timeout protection
+    // Using threads ensures both streams are captured concurrently,
+    // preventing deadlocks if one pipe buffer fills up
+    let stdout_thread = std::thread::spawn(move || {
+        read_pipe_with_timeout(stdout_handle, "stdout")
+    });
+
+    let stderr_thread = std::thread::spawn(move || {
+        read_pipe_with_timeout(stderr_handle, "stderr")
+    });
+
+    // Wait for command to complete (with process-level timeout)
+    let status = child.wait().map_err(|e| {
+        // Kill the read threads if process wait fails
+        stdout_thread.thread().unpark();
+        stderr_thread.thread().unpark();
+        format!("Failed to wait for pdftract grep command: {}", e)
+    })?;
+
+    let duration_ms = start.elapsed().as_millis();
+
+    // Collect output from threads (both complete or error)
+    let stdout_result = stdout_thread.join().map_err(|_| "Failed to join stdout thread")?;
+    let stderr_result = stderr_thread.join().map_err(|_| "Failed to join stderr thread")?;
+
+    let stdout = stdout_result?;
+    let stderr = stderr_result?;
+
+    // Check exit status
+    if !status.success() {
+        return Err(format!(
+            "pdftract grep command failed with exit code {:?}\nstdout: {}\nstderr: {}",
+            status.code(), stdout, stderr
+        ));
+    }
+
+    // Parse stderr to count matches from progress events
+    // Progress JSON format: {"type":"file_done","matches":N,...}
+    let matches_total = parse_match_count_from_stderr(&stderr);
+
+    // Log stderr if progress-json is enabled (for debugging)
+    if !stderr.trim().is_empty() {
+        eprintln!("pdftract grep stderr (progress events):\n{}", stderr);
+    }
+
+    Ok((duration_ms, matches_total, stdout, stderr))
+}
+
+/// Parse match count from progress JSON events
+///
+/// Extracts total match count from stderr containing progress events.
+/// Progress events look like: {"type":"file_done","matches":N,...}
+fn parse_match_count_from_stderr(stderr: &str) -> usize {
+    use std::io::BufRead;
+
+    let mut total_matches = 0;
+
+    for line in stderr.lines() {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(line) {
+            if let Some(event_type) = value.get("type").and_then(|t| t.as_str()) {
+                if event_type == "file_done" {
+                    if let Some(matches) = value.get("matches").and_then(|m| m.as_u64()) {
+                        total_matches += matches as usize;
+                    }
+                }
+            }
+        }
+    }
+
+    total_matches
+}
+
 /// Main benchmark function
 ///
 /// TODO: Wire up to actual grep implementation once 7.8.x is complete.
@@ -417,17 +640,25 @@ fn run_benchmark() -> Result<BenchmarkResult, String> {
         bytes_total / 1024 / 1024
     );
 
-    // TODO: Run actual grep search
-    // For now, this is a placeholder that simulates the benchmark structure
     let started_at = chrono::Utc::now().to_rfc3339();
-    let start = Instant::now(); // Placeholder - won't measure anything yet
 
-    // TODO: Invoke pdftract grep subprocess or call directly
-    // pdftract grep "the" tests/fixtures/grep-corpus/ -j 4 --progress-json
-    // Capture: wall-clock time, match count, peak RSS
+    // Execute pdftract grep command
+    let corpus_path = get_corpus_files_dir();
+    let pattern = SEARCH_PATTERN;
+    let threads = 4; // Use 4 threads for benchmark (CI standard)
 
-    let duration_ms = start.elapsed().as_millis();
-    let matches_total = 0; // TODO: from grep output
+    eprintln!(
+        "Running: pdftract grep '{}' {} -j {} --progress-json",
+        pattern,
+        corpus_path.display(),
+        threads
+    );
+
+    let (duration_ms, matches_total, stdout, stderr) = execute_grep_command(pattern, &corpus_path, threads)?;
+
+    // Log output for debugging (stdout contains grep results, stderr contains progress events)
+    eprintln!("Benchmark stdout length: {} bytes", stdout.len());
+    eprintln!("Benchmark stderr length: {} bytes", stderr.len());
 
     let result = BenchmarkResult {
         commit: get_commit_sha(),

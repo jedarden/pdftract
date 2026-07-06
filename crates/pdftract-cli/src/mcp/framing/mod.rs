@@ -241,6 +241,42 @@ impl std::fmt::Display for ErrorObject {
 impl ErrorObject {
     // JSON-RPC 2.0 spec-defined error constructors
 
+    /// Check if this error is an SSRF_BLOCKED error.
+    ///
+    /// Returns true if the error data contains a "code" field with value "SSRF_BLOCKED"
+    /// or if the error message contains the substring "SSRF_BLOCKED".
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use pdftract_cli::mcp::framing::ErrorObject;
+    /// use serde_json::json;
+    ///
+    /// let error = ErrorObject::new(-32001, "SSRF_BLOCKED: URL targets private network")
+    ///     .with_data(json!({"code": "SSRF_BLOCKED"}));
+    /// assert!(error.is_ssrf_blocked());
+    ///
+    /// let error2 = ErrorObject::new(-32001, "Method not found");
+    /// assert!(!error2.is_ssrf_blocked());
+    /// ```
+    pub fn is_ssrf_blocked(&self) -> bool {
+        // Check if error data contains "code": "SSRF_BLOCKED"
+        if let Some(data) = &self.data {
+            if let Some(code) = data.get("code").and_then(|c| c.as_str()) {
+                if code == "SSRF_BLOCKED" {
+                    return true;
+                }
+            }
+        }
+
+        // Check if the error message itself contains SSRF_BLOCKED
+        if self.message.contains("SSRF_BLOCKED") {
+            return true;
+        }
+
+        false
+    }
+
     /// Parse error (-32700): Invalid JSON was received.
     pub fn parse_error() -> Self {
         Self::new(-32700, "Parse error")
@@ -666,5 +702,78 @@ mod tests {
         let resp = Response::error(Id::Null, ErrorObject::parse_error());
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains(r#""id":null"#));
+    }
+
+    // SSRF_BLOCKED detection tests
+    #[test]
+    fn test_is_ssrf_blocked_with_code_in_data() {
+        let error = ErrorObject::new(-32001, "SSRF protection blocked this URL")
+            .with_data(Value::Object({
+                let mut map = serde_json::Map::new();
+                map.insert("code".to_string(), Value::String("SSRF_BLOCKED".to_string()));
+                map
+            }));
+        assert!(error.is_ssrf_blocked());
+    }
+
+    #[test]
+    fn test_is_ssrf_blocked_with_message() {
+        let error = ErrorObject::new(
+            -32001,
+            "SSRF_BLOCKED: URL targets private network",
+        );
+        assert!(error.is_ssrf_blocked());
+    }
+
+    #[test]
+    fn test_is_ssrf_blocked_not_blocked() {
+        let error = ErrorObject::method_not_found("test");
+        assert!(!error.is_ssrf_blocked());
+    }
+
+    #[test]
+    fn test_is_ssrf_blocked_empty_data() {
+        let error = ErrorObject::new(-32001, "Some error").with_data(Value::Object(serde_json::Map::new()));
+        assert!(!error.is_ssrf_blocked());
+    }
+
+    #[test]
+    fn test_is_ssrf_blocked_different_code_in_data() {
+        let error = ErrorObject::new(-32001, "Some error")
+            .with_data(Value::Object({
+                let mut map = serde_json::Map::new();
+                map.insert("code".to_string(), Value::String("OTHER_ERROR".to_string()));
+                map
+            }));
+        assert!(!error.is_ssrf_blocked());
+    }
+
+    #[test]
+    fn test_is_ssrf_blocked_case_sensitive_in_message() {
+        let error = ErrorObject::new(-32001, "ssrf_blocked: lowercase");
+        assert!(!error.is_ssrf_blocked(), "Should be case-sensitive");
+    }
+
+    #[test]
+    fn test_is_ssrf_blocked_case_sensitive_in_data() {
+        let error = ErrorObject::new(-32001, "Some error")
+            .with_data(Value::Object({
+                let mut map = serde_json::Map::new();
+                map.insert("code".to_string(), Value::String("ssrf_blocked".to_string()));
+                map
+            }));
+        assert!(!error.is_ssrf_blocked(), "Should be case-sensitive");
+    }
+
+    #[test]
+    fn test_is_ssrf_blocked_partial_match_in_message() {
+        let error = ErrorObject::new(-32001, "SSRF_BLOCKED detected in request");
+        assert!(error.is_ssrf_blocked(), "Should detect partial match");
+    }
+
+    #[test]
+    fn test_is_ssrf_blocked_no_data() {
+        let error = ErrorObject::new(-32001, "Some error");
+        assert!(!error.is_ssrf_blocked());
     }
 }
