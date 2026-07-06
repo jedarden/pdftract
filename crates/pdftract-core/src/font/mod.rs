@@ -16,6 +16,7 @@ pub mod std14;
 pub mod type0;
 pub mod type3;
 pub mod type3_rasterizer;
+pub mod unmapped;
 
 #[cfg(feature = "cjk")]
 pub mod cjk_encoding;
@@ -35,6 +36,7 @@ pub use resolver::{
 pub use shape::{hamming_distance, lookup_shape, phash_glyph, ShapeEntry, ShapeMatch};
 pub use type0::{CIDToGIDMap, DescendantCIDFont, Type0Font};
 pub use type3::Type3Font;
+pub use unmapped::{is_unmapped_glyph_name, UNMAPPED_GLYPH_NAMES};
 
 #[cfg(feature = "cjk")]
 pub use cjk_encoding::{decode_cjk_bytes, CjkEncoding};

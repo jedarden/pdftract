@@ -1,4 +1,4 @@
-# Truncated-Flate Test Scaffold Examination
+# bf-4g6dj: Truncated-Flate Test Scaffold Examination
 
 ## Summary
 
@@ -6,120 +6,133 @@ Examined the existing truncated-flate test scaffold and extraction result struct
 
 ## Test Location
 
-**File**: `/home/coding/pdftract/crates/pdftract-core/tests/error_recovery_integration.rs`
+**File**: `/home/coding/pdftract/crates/pdftract-core/tests/stream_decoder_fixtures.rs`
 
-**Test function**: `test_truncated_mid_stream()` (lines 165-188)
+**Test function**: `test_all_stream_decoder_fixtures()` (lines 264-364)
 
 ## Test Fixture Structure
 
 ### Fixture Locations
-- **PDF**: `/home/coding/pdftract/tests/error_recovery/fixtures/truncated_mid_stream.pdf`
-- **Expected diagnostics JSON**: `/home/coding/pdftract/tests/error_recovery/fixtures/truncated_mid_stream.expected_diagnostics.json`
+- **Binary fixture**: `/home/coding/pdftract/tests/stream_decoder/fixtures/flate_truncated.bin`
+- **Expected output**: `/home/coding/pdftract/tests/stream_decoder/fixtures/flate_truncated.expected`
+- **Metadata**: `/home/coding/pdftract/tests/stream_decoder/fixtures/flate_truncated.meta`
 
-### Expected Diagnostics JSON Format
-```json
-{
-  "description": "FlateDecode stream truncated mid-decompression",
-  "expected_diagnostics": [
-    {
-      "code": "STREAM_DECODE_ERROR",
-      "min_count": 1,
-      "description": "Truncated FlateDecode stream should emit STREAM_DECODE_ERROR"
-    }
-  ],
-  "expected_behavior": "partial output returned, no panic"
-}
+### Fixture Metadata Content
+```
+FlateDecode: mid-stream EOF; expects partial bytes + STREAM_DECODE_ERROR
 ```
 
 ## Current Test Implementation
 
-The current test at `test_truncated_mid_stream()` only verifies:
-1. The fixture PDF exists and starts with `%PDF-`
-2. The expected_diagnostics JSON structure contains STREAM_DECODE_ERROR
+### Current Fixture Definition (lines 61-65)
+```rust
+FixtureInfo {
+    name: "flate_truncated",
+    filter: FixtureFilter::Single("FlateDecode", None),
+    expected_diags: vec![],  // ⚠️ EMPTY - but .meta file expects STREAM_DECODE_ERROR
+    bomb_limit: None,
+},
+```
 
-The test does NOT actually:
-- Open the PDF with `PdfExtractor`
-- Extract pages or streams
-- Verify diagnostics are emitted during actual extraction
-- Check for partial output behavior
+### Current Test Behavior
+The `test_all_stream_decoder_fixtures()` function:
+1. Loads each fixture from `.bin` file
+2. Decodes using the specified filter (e.g., `FlateDecoder`)
+3. Compares output against `.expected` file
+4. **Checks `expected_diags` match** - but `flate_truncated` has empty expectations
+
+### Key Issue Identified
+The `.meta` file explicitly states the fixture should produce a `STREAM_DECODE_ERROR`, but the current test has an empty `expected_diags` vector. This is the core issue that needs to be fixed.
 
 ## Extraction Result Structure
 
-### ExtractionResult Fields (from `extract.rs`)
+### For Stream Decoder Tests
+The stream decoder tests work at a lower level - they test individual `StreamDecoder` implementations directly:
+
+```rust
+pub trait StreamDecoder {
+    fn decode(
+        &self,
+        data: &[u8],
+        params: Option<&PdfObject>,
+        bytes_written: &mut u64,
+        max_bytes: u64
+    ) -> Result<Vec<u8>, String>;
+}
+```
+
+### For Full PDF Extraction Tests
+When doing full PDF extraction (which might be needed for integration tests), the error structure is:
+
+**Document-Level Errors**:
 ```rust
 pub struct ExtractionResult {
-    pub fingerprint: String,
-    pub pages: Vec<PageResult>,
     pub metadata: ExtractionMetadata,
-    pub signatures: Vec<SignatureJson>,
-    pub form_fields: Vec<FormFieldJson>,
-    pub links: Vec<LinkJson>,
     // ... other fields
 }
-```
 
-### ExtractionMetadata Diagnostics Field
-```rust
 pub struct ExtractionMetadata {
-    pub page_count: usize,
+    pub diagnostics: Vec<String>,  // Document-level diagnostics
     pub error_count: usize,
     // ... other fields
-    pub diagnostics: Vec<String>,  // ← This is where diagnostics appear
+}
+```
+
+**Page-Level Errors**:
+```rust
+pub struct PageResult {
+    pub error: Option<String>,  // Individual page extraction error
     // ... other fields
 }
 ```
-
-### Diagnostic Structure (from `diagnostics.rs`)
-```rust
-pub struct Diagnostic {
-    pub code: DiagCode,              // e.g., DiagCode::StreamDecodeError
-    pub byte_offset: Option<u64>,     // Where in the PDF the error occurred
-    pub object_ref: Option<ObjRef>,   // Which object had the error
-    pub message: Cow<'static, str>,   // Human-readable message
-}
-```
-
-When serialized to JSON, diagnostics become String representations like:
-- `"STREAM_DECODE_ERROR"`
-- `"STRUCT_INVALID_NAME"`
-- etc.
-
-## STREAM_DECODE_ERROR Diagnostic Code
-
-**Code**: `DiagCode::StreamDecodeError`  
-**Category**: `STREAM_*`  
-**Severity**: `Warning`  
-**Recoverable**: `true`  
-**Phase origin**: `1.5`  
-**Description**: "Emitted when a stream decoder encounters corrupt data mid-decompression. Partial bytes decoded so far are returned."  
-**String representation**: `"STREAM_DECODE_ERROR"`
 
 ## Where to Add the Assertion
 
-When implementing the full extraction test for `test_truncated_mid_stream()`, the assertion should check:
+### For Stream Decoder Test (Current Context)
+The assertion should be added to the `FixtureInfo` definition:
 
 ```rust
-// After extracting the PDF:
-let result = extractor.extract()?;
-
-// Check that STREAM_DECODE_ERROR appears in diagnostics:
-let has_stream_error = result.metadata.diagnostics
-    .iter()
-    .any(|d| d.contains("STREAM_DECODE_ERROR"));
-
-assert!(has_stream_error, "Expected STREAM_DECODE_ERROR diagnostic");
+FixtureInfo {
+    name: "flate_truncated",
+    filter: FixtureFilter::Single("FlateDecode", None),
+    expected_diags: vec![DiagCode::StreamDecodeError],  // ← Add this
+    bomb_limit: None,
+},
 ```
 
-The assertion belongs in `test_truncated_mid_stream()` at line 169-186, replacing the placeholder fixture existence check with actual extraction and diagnostic verification.
+The test framework already checks `expected_diags` in the test loop.
 
-## Related Fixtures
+### For Full Extraction Test (Future Enhancement)
+If a full extraction test is needed, it would check:
 
-**Note**: There is also a `/home/coding/pdftract/tests/fixtures/malformed/truncated-flate.pdf` fixture, but it is not currently referenced by any test. This appears to be a different fixture than the one used in `error_recovery_integration.rs`.
+```rust
+let result = extract_pdf(&pdf_path, &options)?;
 
-## Test Pattern
+assert!(
+    result.metadata.diagnostics.iter().any(|d| d.contains("STREAM_DECODE_ERROR")),
+    "Expected STREAM_DECODE_ERROR in extraction diagnostics"
+);
+```
 
-Other tests in `error_recovery_integration.rs` follow this pattern:
-1. Load fixture and expected diagnostics JSON
-2. Perform extraction (currently TODO/placeholder)
-3. Verify diagnostics count >= min_count using `assert_diagnostic_count_at_least()`
-4. Verify no panic via `assert_no_panic()`
+## Diagnostic Code Reference
+
+From `diagnostics.rs`:
+- **Code**: `DiagCode::StreamDecodeError`
+- **String representation**: `"STREAM_DECODE_ERROR"`
+- **Description**: Emitted when a stream decoder encounters corrupt data mid-decompression
+
+## Next Steps (for Dependent Beads)
+
+1. **bf-2h1nt** - Research existing error assertion patterns in test suite
+2. **bf-4bx00** - Add STREAM_DECODE_ERROR assertion to truncated-flate test (depends on bf-2h1nt)
+3. **bf-2897m** - Add clear assertion failure messages and verify test compiles (depends on bf-4bx00)
+
+## Conclusion
+
+The test scaffold exists and is functional in `/home/coding/pdftract/crates/pdftract-core/tests/stream_decoder_fixtures.rs`. The `flate_truncated` fixture currently has an empty `expected_diags` vector when it should contain `DiagCode::StreamDecodeError` based on the fixture's `.meta` file specification.
+
+The extraction result structure supports error reporting at both:
+- **Document level**: `ExtractionResult.metadata.diagnostics: Vec<String>`
+- **Page level**: Each `PageResult.error: Option<String>`
+
+For stream decoder tests specifically, errors are handled through the `Result<Vec<u8>, String>` return type from the `StreamDecoder::decode()` trait method, and the test framework validates expected diagnostic codes via the `expected_diags` field in `FixtureInfo`.

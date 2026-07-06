@@ -194,7 +194,12 @@ impl DifferencesOverlay {
                     // MARKER: CMAP entry creation point - Type1 font encoding differences.
                     // See notes/bf-e4uvb-child-1.md for documentation.
                     if cursor <= 255 {
-                        overlay.entries.push((cursor as u8, Arc::clone(name)));
+                        // Skip unmapped glyph names (e.g., .notdef) to prevent them from
+                        // appearing in text extraction output. These glyphs have no valid
+                        // Unicode mapping and should emit GLYPH_UNMAPPED diagnostics instead.
+                        if !crate::font::is_unmapped_glyph_name(&name) {
+                            overlay.entries.push((cursor as u8, Arc::clone(name)));
+                        }
                     }
                     cursor = cursor.saturating_add(1);
                 }
@@ -665,5 +670,45 @@ mod tests {
         assert_eq!(enc.glyph_name_for(0x92), Some(Arc::from("override")));
         // Base encoding still works for non-overlaid codes
         assert_eq!(enc.glyph_name_for(0x80), Some(Arc::from("Euro")));
+    }
+
+    #[test]
+    fn test_differences_overlay_skips_notdef() {
+        // .notdef should be skipped during parsing
+        let mut diagnostics = Vec::new();
+        let arr = PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(39),
+            PdfObject::Name(Arc::from(".notdef")),
+            PdfObject::Integer(96),
+            PdfObject::Name(Arc::from("grave")),
+        ]));
+
+        let overlay = DifferencesOverlay::parse(&arr, &mut diagnostics);
+
+        // .notdef should be skipped, only grave should be present
+        assert_eq!(overlay.get(39), None); // .notdef was skipped
+        assert_eq!(overlay.get(96), Some(Arc::from("grave")));
+        assert_eq!(overlay.len(), 1);
+        assert!(diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_differences_overlay_skips_notdef_with_slash() {
+        // .notdef with leading slash should also be skipped
+        let mut diagnostics = Vec::new();
+        let arr = PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(10),
+            PdfObject::Name(Arc::from("/.notdef")),
+            PdfObject::Integer(11),
+            PdfObject::Name(Arc::from("A")),
+        ]));
+
+        let overlay = DifferencesOverlay::parse(&arr, &mut diagnostics);
+
+        // /.notdef should be skipped, only A should be present
+        assert_eq!(overlay.get(10), None); // /.notdef was skipped
+        assert_eq!(overlay.get(11), Some(Arc::from("A")));
+        assert_eq!(overlay.len(), 1);
+        assert!(diagnostics.is_empty());
     }
 }
