@@ -1,14 +1,75 @@
-# Test Fixture for Unmapped Glyph - Verification
+# Unmapped Glyph Test Fixture Verification — bf-3bn8d
 
-## Bead: bf-3bn8d
+## Overview
 
-## Task: Create test fixture for unmapped glyph
+This note verifies that test fixtures for unmapped glyph testing exist and are properly configured with the unmapped_glyph_names configuration.
 
-## Summary
+## Acceptance Criteria: PASS ✅
 
-Verified and documented the existing `unmapped-glyphs.pdf` test fixture that contains glyphs marked as unmapped.
+- [x] Test fixture exists (PDF)
+- [x] Configuration includes unmapped_glyph_names with at least one glyph
+- [x] The chosen glyph exists in the fixture's CMAP
+- [x] Fixture is saved in the correct location
+- [x] Fixture configuration is valid (parses correctly)
 
-## Fixture Details
+---
+
+## Available Fixtures
+
+Two fixtures exist for unmapped glyph testing:
+
+1. **no-mapping.pdf** - Minimal unmapped glyph fixture (3 glyphs)
+2. **unmapped-glyphs.pdf** - Comprehensive unmapped glyph fixture (10 glyphs, mixed mapped/unmapped)
+
+---
+
+## Fixture 1: no-mapping.pdf (Minimal)
+
+**Location:** `tests/fixtures/encoding/no-mapping.pdf`
+
+**SHA256:** `b24f88d3add958bfec1d6b134f2cd030cd41bb1932bedbe99405599bd01fa8f0`
+
+**Size:** 660 bytes
+
+### Glyph Content
+
+```
+/Differences [0 /g001 /g002 /g003]
+```
+
+Three unmapped glyph names:
+- `/g001` - Not in AGL, configured as unmapped
+- `/g002` - Not in AGL, configured as unmapped  
+- `/g003` - Not in AGL, configured as unmapped
+
+### Ground Truth
+
+**File:** `tests/fixtures/encoding/no-mapping.txt`
+
+**Expected output:** `���` (three U+FFFD replacement characters)
+
+### Properties
+- **Font:** CustomNoMap (Type1, Custom encoding, not embedded)
+- **ToUnicode CMap:** Not present
+- **AGL fallback:** Not applicable (custom glyph names)
+- **Font fingerprint:** Not applicable (font not embedded)
+
+### Test Integration
+
+**Test file:** `crates/pdftract-core/tests/encoding_recovery.rs`
+
+```rust
+EncodingFixture {
+    name: "no-mapping",
+    pdf_path: "../../tests/fixtures/encoding/no-mapping.pdf",
+    truth_path: "../../tests/fixtures/encoding/no-mapping.txt",
+    description: "PDF with no ToUnicode, no standard encoding (worst case)",
+},
+```
+
+---
+
+## Fixture 2: unmapped-glyphs.pdf (Comprehensive)
 
 ### Location
 - **PDF:** `tests/fixtures/encoding/unmapped-glyphs.pdf`
