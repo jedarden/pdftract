@@ -383,8 +383,68 @@ fn test_current_network_range_blocked() {
 #[cfg(feature = "remote")]
 #[cfg(test)]
 pub mod mcp_helpers {
-    use pdftract_cli::mcp::framing::{Id, Request};
     use serde_json::json;
+
+    // ============================================================================
+    // Local JSON-RPC Type Definitions (to avoid cross-crate imports)
+    // ============================================================================
+
+    /// A JSON-RPC request identifier.
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub enum Id {
+        Number(i64),
+        String(String),
+        Null,
+    }
+
+    impl serde::Serialize for Id {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            match self {
+                Id::Number(n) => n.serialize(serializer),
+                Id::String(s) => s.serialize(serializer),
+                Id::Null => serializer.serialize_none(),
+            }
+        }
+    }
+
+    /// A JSON-RPC request object.
+    #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+    pub struct Request {
+        #[serde(rename = "jsonrpc")]
+        pub jsonrpc_version: String,
+        pub method: String,
+        pub params: Option<serde_json::Value>,
+        pub id: Option<Id>,
+    }
+
+    impl Request {
+        /// Create a new request with the given method and optional params.
+        pub fn new(method: impl Into<String>, params: Option<serde_json::Value>, id: Option<Id>) -> Self {
+            Self {
+                jsonrpc_version: "2.0".to_string(),
+                method: method.into(),
+                params,
+                id,
+            }
+        }
+
+        /// Returns true if this is a notification (no id field).
+        pub fn is_notification(&self) -> bool {
+            self.id.is_none()
+        }
+
+        /// Get the request ID, or Id::Null for notifications.
+        pub fn request_id(&self) -> Id {
+            self.id.clone().unwrap_or(Id::Null)
+        }
+    }
+
+    // ============================================================================
+    // Tool Call Builder
+    // ============================================================================
 
     /// Builder for constructing MCP tools/call JSON-RPC requests.
     ///
@@ -470,7 +530,22 @@ pub mod mcp_helpers {
         /// Convenience method that combines build() and serde_json::to_string().
         pub fn build_json(self) -> String {
             let request = self.build();
-            serde_json::to_string(&request)
+            // Manual serialization to include jsonrpc field
+            let id_value = match request.id {
+                Some(Id::Number(n)) => serde_json::json!(n),
+                Some(Id::String(s)) => serde_json::json!(s),
+                Some(Id::Null) => serde_json::json!(null),
+                None => serde_json::json!(null),
+            };
+
+            let output = json!({
+                "jsonrpc": "2.0",
+                "method": request.method,
+                "params": request.params,
+                "id": id_value
+            });
+
+            serde_json::to_string(&output)
                 .expect("ToolCallRequest should always be serializable")
         }
     }
@@ -491,6 +566,293 @@ pub mod mcp_helpers {
     /// Quick helper to create a get_metadata tool call with just a URL.
     pub fn get_metadata_call(url: impl Into<String>) -> Request {
         ToolCallBuilder::get_metadata().with_url(url).build()
+    }
+
+    // ============================================================================
+    // JSON-RPC Response Parsing Helpers
+    // ============================================================================
+
+    /// JSON-RPC 2.0 error object structure.
+    ///
+    /// Represents the error field in a JSON-RPC response with code, message,
+    /// and optional data fields.
+    #[derive(Debug, Clone, serde::Deserialize)]
+    struct JsonRpcError {
+        /// The error code (negative for server errors in the -32099..-32000 range)
+        code: i64,
+        /// Human-readable error message
+        message: String,
+        /// Optional additional error data
+        data: Option<serde_json::Value>,
+    }
+
+    /// JSON-RPC 2.0 response structure.
+    ///
+    /// A response has either a result field (success) or an error field (failure),
+    /// never both. The id field must match the request id.
+    #[derive(Debug, Clone, serde::Deserialize)]
+    struct JsonRpcResponse {
+        /// Must be exactly "2.0"
+        jsonrpc: String,
+        /// The successful result value (present only on success)
+        result: Option<serde_json::Value>,
+        /// The error object (present only on failure)
+        error: Option<JsonRpcError>,
+        /// Request identifier
+        id: serde_json::Value,
+    }
+
+    impl JsonRpcResponse {
+        /// Check if this is a successful response (has result field).
+        pub fn is_success(&self) -> bool {
+            self.result.is_some()
+        }
+
+        /// Check if this is an error response (has error field).
+        pub fn is_error(&self) -> bool {
+            self.error.is_some()
+        }
+
+        /// Get the error object if present.
+        pub fn get_error(&self) -> Option<&JsonRpcError> {
+            self.error.as_ref()
+        }
+    }
+
+    /// Check if a JSON-RPC error response contains the SSRF_BLOCKED error code.
+    ///
+    /// This helper parses the error data field and checks for the SSRF_BLOCKED
+    /// code that indicates a URL was rejected due to SSRF protection.
+    ///
+    /// # Arguments
+    ///
+    /// * `response_json` - The JSON string of the response to parse
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(true)` if the response is an error with SSRF_BLOCKED code
+    /// * `Ok(false)` if the response is not an SSRF_BLOCKED error
+    /// * `Err(_)` if the JSON is invalid or not a valid JSON-RPC response
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use mcp_helpers::is_ssrf_blocked_error;
+    ///
+    /// let error_json = r#"{"jsonrpc":"2.0","error":{"code":-32001,"message":"SSRF_BLOCKED","data":{"code":"SSRF_BLOCKED"}},"id":1}"#;
+    /// assert!(is_ssrf_blocked_error(error_json).unwrap());
+    /// ```
+    pub fn is_ssrf_blocked_error(response_json: &str) -> Result<bool, String> {
+        // Parse the JSON-RPC response
+        let parsed: JsonRpcResponse =
+            serde_json::from_str(response_json).map_err(|e| format!("Invalid JSON: {}", e))?;
+
+        // Check if it has an error field
+        let error = parsed
+            .error
+            .ok_or_else(|| "Response has no error field".to_string())?;
+
+        // Check the error data for SSRF_BLOCKED code
+        if let Some(data) = &error.data {
+            if let Some(code) = data.get("code").and_then(|c| c.as_str()) {
+                return Ok(code == "SSRF_BLOCKED");
+            }
+        }
+
+        // Check if the error message itself contains SSRF_BLOCKED
+        if error.message.contains("SSRF_BLOCKED") {
+            return Ok(true);
+        }
+
+        Ok(false)
+    }
+
+    /// Extract error information from a JSON-RPC error response.
+    ///
+    /// Returns a tuple of (code, message, optional_data) for easier error handling.
+    ///
+    /// # Arguments
+    ///
+    /// * `response_json` - The JSON string of the error response
+    ///
+    /// # Returns
+    ///
+    /// * `Ok((code, message, data))` with the error details
+    /// * `Err(_)` if parsing fails or response is not an error
+    pub fn extract_error_info(
+        response_json: &str,
+    ) -> Result<(i64, String, Option<serde_json::Value>), String> {
+        let parsed: JsonRpcResponse =
+            serde_json::from_str(response_json).map_err(|e| format!("Failed to parse response: {}", e))?;
+
+        let error = parsed
+            .error
+            .ok_or_else(|| "Response is not an error".to_string())?;
+
+        Ok((error.code, error.message, error.data))
+    }
+
+    /// Parse a JSON-RPC response string into a JsonRpcResponse object.
+    ///
+    /// This is a convenience wrapper around serde_json::from_str with better
+    /// error messages for JSON-RPC specific issues.
+    ///
+    /// # Arguments
+    ///
+    /// * `response_json` - The JSON string of the response
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(JsonRpcResponse)` if parsing succeeds
+    /// * `Err(String)` if parsing fails with descriptive error message
+    pub fn parse_response(response_json: &str) -> Result<JsonRpcResponse, String> {
+        serde_json::from_str(response_json)
+            .map_err(|e| format!("Failed to parse JSON-RPC response: {}", e))
+    }
+
+    mod mcp_helpers_tests {
+        use super::*;
+
+        #[test]
+        fn test_is_ssrf_blocked_error_with_code_in_data() {
+            let error_json = r#"{
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32001,
+                    "message": "SSRF protection blocked this URL",
+                    "data": {"code": "SSRF_BLOCKED"}
+                },
+                "id": 1
+            }"#;
+
+            let result = is_ssrf_blocked_error(error_json);
+            assert!(result.is_ok());
+            assert!(result.unwrap(), "Should detect SSRF_BLOCKED in data.code");
+        }
+
+        #[test]
+        fn test_is_ssrf_blocked_error_with_message() {
+            let error_json = r#"{
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32001,
+                    "message": "SSRF_BLOCKED: URL targets private network"
+                },
+                "id": 1
+            }"#;
+
+            let result = is_ssrf_blocked_error(error_json);
+            assert!(result.is_ok());
+            assert!(result.unwrap(), "Should detect SSRF_BLOCKED in message");
+        }
+
+        #[test]
+        fn test_is_ssrf_blocked_error_not_blocked() {
+            let error_json = r#"{
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32601,
+                    "message": "Method not found"
+                },
+                "id": 1
+            }"#;
+
+            let result = is_ssrf_blocked_error(error_json);
+            assert!(result.is_ok());
+            assert!(!result.unwrap(), "Should not detect SSRF_BLOCKED");
+        }
+
+        #[test]
+        fn test_is_ssrf_blocked_error_success_response() {
+            let success_json = r#"{
+                "jsonrpc": "2.0",
+                "result": {"status": "ok"},
+                "id": 1
+            }"#;
+
+            let result = is_ssrf_blocked_error(success_json);
+            assert!(result.is_err());
+            assert!(result.unwrap_err().contains("no error field"));
+        }
+
+        #[test]
+        fn test_extract_error_info_success() {
+            let error_json = r#"{
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32001,
+                    "message": "SSRF_BLOCKED",
+                    "data": {"url": "http://127.0.0.1/"}
+                },
+                "id": 1
+            }"#;
+
+            let (code, message, data) = extract_error_info(error_json).unwrap();
+            assert_eq!(code, -32001);
+            assert_eq!(message, "SSRF_BLOCKED");
+            assert!(data.is_some());
+            assert_eq!(data.unwrap()["url"], "http://127.0.0.1/");
+        }
+
+        #[test]
+        fn test_extract_error_info_not_an_error() {
+            let success_json = r#"{
+                "jsonrpc": "2.0",
+                "result": {"status": "ok"},
+                "id": 1
+            }"#;
+
+            let result = extract_error_info(success_json);
+            assert!(result.is_err());
+            assert!(result.unwrap_err().contains("not an error"));
+        }
+
+        #[test]
+        fn test_parse_response_success() {
+            let success_json = r#"{
+                "jsonrpc": "2.0",
+                "result": {"tools": []},
+                "id": 1
+            }"#;
+
+            let response = parse_response(success_json).unwrap();
+            assert!(response.is_success());
+            assert!(!response.is_error());
+        }
+
+        #[test]
+        fn test_parse_response_error() {
+            let error_json = r#"{
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32601,
+                    "message": "Method not found"
+                },
+                "id": 1
+            }"#;
+
+            let response = parse_response(error_json).unwrap();
+            assert!(!response.is_success());
+            assert!(response.is_error());
+            assert_eq!(response.get_error().unwrap().code, -32601);
+        }
+
+        #[test]
+        fn test_parse_response_invalid_json() {
+            let invalid_json = r#"{not valid json}"#;
+
+            let result = parse_response(invalid_json);
+            assert!(result.is_err());
+            assert!(result.unwrap_err().contains("Failed to parse JSON-RPC response"));
+        }
+
+        #[test]
+        fn test_parse_response_missing_jsonrpc_field() {
+            let invalid_json = r#"{"result": {}, "id": 1}"#;
+
+            let result = parse_response(invalid_json);
+            assert!(result.is_err());
+        }
     }
 
     #[cfg(test)]
@@ -525,7 +887,7 @@ pub mod mcp_helpers {
         fn test_tool_call_builder_with_custom_argument() {
             let request = ToolCallBuilder::extract()
                 .with_url("https://example.com/")
-                .with_argument("ocr", true)
+                .with_argument("ocr", serde_json::Value::Bool(true))
                 .build();
 
             let params = request.params.unwrap();
@@ -575,8 +937,8 @@ pub mod mcp_helpers {
         fn test_multiple_arguments() {
             let request = ToolCallBuilder::extract()
                 .with_url("https://example.com/")
-                .with_argument("password", "secret123")
-                .with_argument("ocr", true)
+                .with_argument("password", serde_json::Value::String("secret123".to_string()))
+                .with_argument("ocr", serde_json::Value::Bool(true))
                 .with_argument("pages", serde_json::Value::String("1-5".to_string()))
                 .build();
 

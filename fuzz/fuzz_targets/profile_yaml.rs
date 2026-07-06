@@ -19,5 +19,5 @@ fuzz_target!(|data: &[u8]| {
     };
 
     // Test that the YAML parser doesn't panic on malformed input
-    let _ = pdftract_core::profiles::loader::load_profile_yaml(yaml_content);
+    let _ = pdftract_core::profiles::load_profile_yaml(yaml_content);
 });

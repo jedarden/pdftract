@@ -8,8 +8,7 @@
 //! in normal log output, making substring-based leak detection reliable.
 
 use lopdf::dictionary;
-use lopdf::object::{Dictionary, Object};
-use lopdf::{Document, ObjectId};
+use lopdf::{Dictionary, Document, Object, ObjectId};
 use std::fs::File;
 use std::io::Write;
 
@@ -68,7 +67,7 @@ fn create_sensitive_pdf() -> Document {
     let pages_id = doc.add_object(pages_dict);
 
     // Update page parent reference
-    if let Ok(Object::Dictionary(ref mut page_dict)) = doc.objects.get_mut(page_id) {
+    if let Some(Object::Dictionary(ref mut page_dict)) = doc.objects.get_mut(&page_id) {
         page_dict.set("Parent", Object::Reference(pages_id));
     }
 
@@ -102,8 +101,9 @@ fn main() {
     match doc.encrypt(user_password, owner_password) {
         Ok(_) => {
             let output_path = "tests/fixtures/security/sensitive.pdf";
+            let bytes = doc.save_to_bytes().unwrap();
             let mut file = File::create(output_path).unwrap();
-            file.write_all(doc.to_vec().as_slice()).unwrap();
+            file.write_all(&bytes).unwrap();
             println!("Created {}", output_path);
             println!("  Password: {}", PASSWORD);
             println!("  Body text marker: {}", BODY_TEXT);

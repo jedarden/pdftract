@@ -14,6 +14,7 @@ fuzz_target!(|data: &[u8]| {
         FlateDecoder, ASCII85Decoder, ASCIIHexDecoder, LZWDecoder,
         DEFAULT_MAX_DECOMPRESS_BYTES,
     };
+    use pdftract_core::parser::StreamDecoder;
 
     let mut counter = 0;
 

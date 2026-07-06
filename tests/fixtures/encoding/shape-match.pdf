@@ -18,66 +18,70 @@ endobj
 /Parent 2 0 R
 /MediaBox [0 0 612 792]
 /Resources <<
-  /Font <<
-    /F1 4 0 R
-  >>
+/Font <<
+/F1 4 0 R
 >>
-/Contents 6 0 R
+>>
+/Contents 5 0 R
 >>
 endobj
 4 0 obj
 <<
 /Type /Font
-/Subtype /Type3
-/FontBBox [0 0 100 100]
-/FontMatrix [0.001 0 0 0.001 0 0]
-/CharProcs <<
-  /S 5 0 R
->>
-/Encoding <<
-  /Type /Encoding
-  /Differences [83 /S]
->>
+/Subtype /TrueType
+/BaseFont /ABCDEF+Helvetica
+/FontDescriptor 6 0 R
 >>
 endobj
 5 0 obj
 <<
-/Length 19
->>
-stream
-50 0 0 50 0 0 cm
-S
-
-endstream
-endobj
-6 0 obj
-<<
-/Length 35
+/Length 42
 >>
 stream
 BT
 /F1 12 Tf
 100 700 Td
-(/S) Tj
+(Shape) Tj
 ET
-
+endstream
+endobj
+6 0 obj
+<<
+/Type /FontDescriptor
+/FontName /ABCDEF+Helvetica
+/Flags 4
+/FontBBox [0 0 100 100]
+/ItalicAngle 0
+/Ascent 100
+/Descent 0
+/CapHeight 100
+/StemV 80
+/FontFile2 7 0 R
+>>
+endobj
+7 0 obj
+<<
+/Length 60
+>>
+stream
+Minimal TrueType font program for shape testing
 endstream
 endobj
 xref
-0 7
+0 8
 0000000000 65535 f
 0000000009 00000 n
 0000000058 00000 n
 0000000115 00000 n
-0000000249 00000 n
-0000000441 00000 n
-0000000510 00000 n
-
+0000000329 00000 n
+0000000477 00000 n
+0000000536 00000 n
+0000000664 00000 n
 trailer
 <<
-/Size 7
+/Size 8
 /Root 1 0 R
 >>
 startxref
-595
+768
 %%EOF

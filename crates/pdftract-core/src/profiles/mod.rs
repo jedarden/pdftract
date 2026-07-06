@@ -44,7 +44,8 @@ pub use extraction_loader::{
 };
 pub use field_extractor::{extract_profile_fields, FieldExtractionResult};
 pub use loader::{
-    check_forbidden_keys, load_profiles_from_dir, ForbiddenKeyError, ProfileLoadError,
+    check_forbidden_keys, load_profile_yaml, load_profiles_from_dir, ForbiddenKeyError,
+    ProfileLoadError,
 };
 pub use match_eval::{evaluate_match, MatchResult};
 pub use signals::{extract_feature_signals, extract_signals_from_results, PageSignalAccumulator};

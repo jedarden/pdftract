@@ -29,7 +29,7 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-/// Get the corpus directory path
+/// Get the corpus directory path (parent of corpus/ subdirectory)
 ///
 /// Tries multiple strategies to find the corpus:
 /// 1. Environment variable PDFTRACT_CORPUS_DIR
@@ -70,6 +70,150 @@ fn get_corpus_dir() -> PathBuf {
 
     // Fall back to relative path from current directory
     PathBuf::from("tests/fixtures/grep-corpus")
+}
+
+/// Get the corpus files subdirectory path
+///
+/// Returns the path to the corpus/ subdirectory containing actual PDF files.
+fn get_corpus_files_dir() -> PathBuf {
+    get_corpus_dir().join("corpus")
+}
+
+/// Validate the corpus directory structure and contents
+///
+/// Checks that:
+/// - The corpus directory exists
+/// - The corpus/ subdirectory exists
+/// - Contains at least one PDF file
+/// - All PDF files are readable and accessible
+///
+/// Returns Ok(()) if validation passes, Err with clear message if it fails.
+fn validate_corpus() -> Result<usize, String> {
+    use std::fs;
+
+    let corpus_dir = get_corpus_dir();
+    let corpus_files_dir = get_corpus_files_dir();
+
+    // Check parent directory exists
+    if !corpus_dir.exists() {
+        return Err(format!(
+            "Corpus directory not found: {:?}. \
+             Run tests/fixtures/grep-corpus/regenerate.sh or set PDFTRACT_CORPUS_DIR",
+            corpus_dir
+        ));
+    }
+
+    // Check corpus/ subdirectory exists
+    if !corpus_files_dir.exists() {
+        return Err(format!(
+            "Corpus files subdirectory not found: {:?}. \
+             Expected structure: tests/fixtures/grep-corpus/corpus/*.pdf",
+            corpus_files_dir
+        ));
+    }
+
+    // Check it's a directory
+    if !corpus_files_dir.is_dir() {
+        return Err(format!(
+            "Corpus path is not a directory: {:?}",
+            corpus_files_dir
+        ));
+    }
+
+    // Count PDF files and validate readability
+    let entries = match fs::read_dir(&corpus_files_dir) {
+        Ok(entries) => entries,
+        Err(e) => {
+            return Err(format!(
+                "Cannot read corpus directory {:?}: {}",
+                corpus_files_dir, e
+            ));
+        }
+    };
+
+    let mut pdf_count = 0;
+    let mut unreadable_files = Vec::new();
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(e) => {
+                return Err(format!(
+                    "Error reading directory entry in {:?}: {}",
+                    corpus_files_dir, e
+                ));
+            }
+        };
+
+        let path = entry.path();
+
+        // Skip hidden files and .gitkeep
+        if path.file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| n.starts_with('.'))
+            .unwrap_or(false)
+        {
+            continue;
+        }
+
+        // Check if it's a PDF file
+        if path.extension().and_then(|e| e.to_str()) != Some("pdf") {
+            continue;
+        }
+
+        // Check file metadata to verify readability
+        match entry.metadata() {
+            Ok(metadata) => {
+                if !metadata.is_file() {
+                    continue;
+                }
+
+                // Verify file is readable by attempting to get its len
+                // This will fail if permissions are wrong
+                if metadata.len() == 0 {
+                    unreadable_files.push(format!("{} (empty)", path.display()));
+                    continue;
+                }
+
+                pdf_count += 1;
+            }
+            Err(e) => {
+                unreadable_files.push(format!("{} (metadata error: {})", path.display(), e));
+            }
+        }
+    }
+
+    // Check if we found any PDFs
+    if pdf_count == 0 {
+        return Err(format!(
+            "No PDF files found in corpus directory: {:?}. \
+             Run tests/fixtures/grep-corpus/regenerate.sh to populate the corpus.\
+             {}",
+            corpus_files_dir,
+            if unreadable_files.is_empty() {
+                String::new()
+            } else {
+                format!("\nUnreadable files: {}", unreadable_files.join(", "))
+            }
+        ));
+    }
+
+    // Warn about unreadable files but don't fail if we have at least some good PDFs
+    if !unreadable_files.is_empty() {
+        eprintln!(
+            "WARNING: Found {} unreadable files (skipped): {}",
+            unreadable_files.len(),
+            unreadable_files.join(", ")
+        );
+    }
+
+    eprintln!(
+        "Corpus validation passed: {} PDF files in {:?}",
+        pdf_count,
+        corpus_files_dir
+    );
+
+    Ok(pdf_count)
 }
 
 /// Search pattern for benchmark: "the"
@@ -192,7 +336,7 @@ fn get_commit_sha() -> String {
 /// Get corpus size in bytes
 fn get_corpus_size() -> u64 {
     use std::fs;
-    let path = get_corpus_dir();
+    let path = get_corpus_files_dir();
     if !path.exists() {
         return 0;
     }
@@ -213,7 +357,7 @@ fn get_corpus_size() -> u64 {
 /// Count PDF files in corpus
 fn count_corpus_files() -> usize {
     use std::fs;
-    let path = get_corpus_dir();
+    let path = get_corpus_files_dir();
     if !path.exists() {
         return 0;
     }
@@ -238,18 +382,14 @@ fn count_corpus_files() -> usize {
 ///
 /// TODO: Wire up to actual grep implementation once 7.8.x is complete.
 fn run_benchmark() -> Result<BenchmarkResult, String> {
-    // Check corpus exists
-    let corpus_path = get_corpus_dir();
-    if !corpus_path.exists() {
-        return Err(format!(
-            "Corpus directory not found: {:?}. Run tests/fixtures/grep-corpus/regenerate.sh",
-            corpus_path
-        ));
-    }
+    // Validate corpus exists and contains readable files
+    // This checks directory structure, file count, and readability before proceeding
+    let files_total = validate_corpus()?;
 
-    let files_total = count_corpus_files();
     let bytes_total = get_corpus_size();
 
+    // If validate_corpus() returned 0, it would have already returned an error
+    // So we should never reach here with 0 files, but let's be defensive
     if files_total == 0 {
         // During development, empty corpus is OK - just warn and return a placeholder result
         eprintln!("WARN: Corpus is empty (no PDF files found)");
@@ -326,17 +466,22 @@ mod benches {
 
     #[test]
     fn bench_grep_1000() {
-        // Check if corpus exists; skip if not
-        let corpus_path = get_corpus_dir();
-        if !corpus_path.exists() {
-            eprintln!("SKIP: Corpus not found at {:?}", corpus_path);
-            eprintln!("Run tests/fixtures/grep-corpus/regenerate.sh to create corpus");
-            return;
-        }
+        // Validate corpus exists and contains readable files
+        // This performs comprehensive validation before attempting the benchmark
+        let corpus_path = get_corpus_files_dir();
+
+        // If validation fails, skip the test with clear error message
+        let files = match validate_corpus() {
+            Ok(count) => count,
+            Err(e) => {
+                eprintln!("SKIP: Corpus validation failed: {}", e);
+                eprintln!("Run tests/fixtures/grep-corpus/regenerate.sh to create corpus");
+                return;
+            }
+        };
 
         // TODO: Run full benchmark with criterion
         // For now, just verify the corpus structure
-        let files = count_corpus_files();
         let bytes = get_corpus_size();
 
         eprintln!("Corpus: {} files, {} bytes", files, bytes);

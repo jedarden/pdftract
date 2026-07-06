@@ -2,6 +2,44 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
+/// Configuration for unmapped glyph names.
+///
+/// This structure represents the JSON configuration file at
+/// `build/unmapped-glyph-names.json` that specifies which glyph names
+/// should be skipped during CMAP and ToUnicode entry creation.
+///
+/// # Example JSON structure
+///
+/// ```json
+/// {
+///   "unmapped_glyph_names": [".notdef", ".null", "g000", ...],
+///   "description": "Glyph names that should be skipped...",
+///   "version": "1.0"
+/// }
+/// ```
+#[derive(Debug, serde::Deserialize)]
+struct UnmappedGlyphNamesConfig {
+    /// List of glyph names to skip during CMAP and ToUnicode entry creation.
+    ///
+    /// These glyphs have no valid Unicode mapping and should not appear in
+    /// text extraction output. Common examples include `.notdef` (the PDF
+    /// fallback glyph) and Private Use Area (PUA) glyphs like `g000-g009`.
+    unmapped_glyph_names: Vec<String>,
+
+    /// Optional description of the configuration purpose.
+    ///
+    /// Provides human-readable documentation about why these glyphs are
+    /// excluded from text extraction.
+    #[serde(default)]
+    description: Option<String>,
+
+    /// Configuration format version identifier.
+    ///
+    /// Used to track changes to the config format structure.
+    #[serde(default)]
+    version: Option<String>,
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=build/std14-metrics.json");
     println!("cargo:rerun-if-changed=build/named-encodings.json");

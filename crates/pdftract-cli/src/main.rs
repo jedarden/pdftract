@@ -542,6 +542,16 @@ enum ProfilesCommands {
 }
 
 fn main() -> Result<()> {
+    // Initialize tracing subscriber to capture and output debug events
+    // This respects the RUST_LOG environment variable (e.g., RUST_LOG=debug)
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive(tracing::Level::WARN.into())
+        )
+        .with_writer(std::io::stderr)
+        .init();
+
     // Install panic hook for SecretString redaction in backtraces
     // This ensures credentials never leak in crash dumps
     panic_hook::install_panic_hook();

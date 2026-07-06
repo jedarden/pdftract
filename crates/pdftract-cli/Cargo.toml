@@ -34,6 +34,10 @@ path = "../../tools/debug-fingerprint/main.rs"
 name = "gen-cli-reference"
 path = "src/bin/generate-cli-reference.rs"
 
+[[bin]]
+name = "generate-form-fixtures"
+path = "../../tests/fixtures/forms/generate_form_fixtures.rs"
+
 # Removed: generate_fixtures, generate_expected_json (files do not exist)
 
 [[bench]]
@@ -71,6 +75,7 @@ num_cpus = "1"
 rayon = "1"
 libloading = { version = "0.8", optional = true }
 lzw = { workspace = true }
+lopdf = "0.34"
 multer = "3"
 pdftract-core = { path = "../pdftract-core" }
 regex = "1.10"
@@ -95,6 +100,7 @@ uuid = { version = "1.0", features = ["v4", "serde"] }
 walkdir = "2"
 chromiumoxide = { version = "0.6", optional = true }
 jsonschema = "0.18"
+tracing-subscriber = { version = "0.3.23", features = ["fmt", "env-filter"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
