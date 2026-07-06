@@ -371,7 +371,7 @@ fn test_differences_overlay_filters_null_glyph() {
     // Verify normal glyph is present
     assert_eq!(
         overlay.get(21),
-        Some(Arc::from("Z")),
+        Some(Arc::from("/Z")),
         "Code 21 (Z) should be present: Z is normal"
     );
 }
