@@ -259,8 +259,26 @@ When adding new generators:
 3. Update this README with the new tool
 4. Follow existing patterns (Python for encoding/OCR, Rust for security/crypto)
 
+## Cleanup Summary (2026-07-05)
+
+The tools/ directory and tests/fixtures/ structure were cleaned up and organized through three coordinated beads:
+
+- **bf-1iefu** (2026-07-05): Categorized all 17 generator scripts in tests/fixtures/ into KEEP (10), DELETE (5), RELOCATE (2)
+- **bf-xqib3** (2026-07-05): Removed 5 obsolete generators and all compiled artifacts from tests/fixtures/
+- **bf-2yhak** (2026-07-05): Relocated 2 general-purpose tools to tools/ with comprehensive documentation
+- **bf-620xp** (2026-07-05): Verified and documented the cleaned structure
+
+**Results:**
+- 10 KEEP generators remain in tests/fixtures/ (actively maintained, co-located with their fixtures)
+- 5 DELETE generators removed (obsolete duplicates and stubs)
+- 2 RELOCATE tools moved to tools/ (general-purpose utilities)
+- No compiled artifacts remain in tests/fixtures/
+- tools/README.md created with comprehensive generator catalog
+- tests/fixtures/STRUCTURE.md created documenting the final state
+
 ## Related Documentation
 
-- [Test Fixtures Documentation](../tests/fixtures/README.md)
-- [Generator Categorization (bf-1iefu)](../notes/bf-1iefu.md)
-- [Obsolete Generator Removal (bf-xqib3)](../notes/bf-xqib3.md)
+- [Test Fixtures Structure](../tests/fixtures/STRUCTURE.md) - Complete fixtures directory organization
+- [Fixture Provenance Log](../tests/fixtures/PROVENANCE.md) - Generation history for each fixture
+- [Generator Categorization (bf-1iefu)](../notes/bf-1iefu.md) - Rationale for KEEP/DELETE/RELOCATE decisions
+- [Obsolete Generator Removal (bf-xqib3)](../notes/bf-xqib3.md) - Cleanup verification
