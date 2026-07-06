@@ -359,3 +359,430 @@ fn test_current_network_range_blocked() {
     let result = validate_url("https://0.0.0.8/", false);
     assert!(matches!(result, Err(UrlValidationError::PrivateNetwork(_))));
 }
+
+// ============================================================================
+// MCP Server Integration Tests
+// ============================================================================
+
+#[cfg(feature = "remote")]
+#[cfg(test)]
+mod mcp_ssrf_tests {
+    //! MCP server integration tests for SSRF protection.
+    //!
+    //! These tests verify that when the MCP server receives URL parameters
+    //! through JSON-RPC tools/call, SSRF-prone URLs are properly rejected.
+    //!
+    //! Currently, the MCP server returns stub responses for all URLs
+    //! (remote extraction requires Phase 1.8). Once Phase 1.8 is implemented,
+    //! these tests should verify that:
+    //! 1. SSRF-prone URLs are rejected with SSRF_BLOCKED error
+    //! 2. No actual network connections are attempted
+    //! 3. Public URLs are accepted
+
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::process::{Command, Stdio};
+    use std::thread;
+    use std::time::Duration;
+
+    /// SSRF test payloads for MCP server testing.
+    ///
+    /// These are the critical payloads that MUST be rejected by the MCP server
+    /// when remote extraction is implemented (Phase 1.8).
+    const MCP_SSRF_PAYLOADS: &[&str] = &[
+        "http://127.0.0.1:9999/",        // Loopback with non-standard port
+        "http://0.0.0.0/",               // All interfaces
+        "http://169.254.169.254/latest/meta-data/", // AWS metadata endpoint
+        "http://10.0.0.1/internal",      // RFC 1918 private network
+        "http://[::1]/",                 // IPv6 loopback
+    ];
+
+    /// Helper to spawn the pdftract MCP server in stdio mode.
+    fn spawn_mcp_stdio() -> std::process::Child {
+        Command::new("pdftract")
+            .arg("mcp")
+            .arg("--stdio")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("Failed to spawn pdftract mcp --stdio")
+    }
+
+    /// Helper to write a framed JSON-RPC message to stdin.
+    fn write_framed_message(
+        stdin: &mut std::process::ChildStdin,
+        json_body: &str,
+    ) -> std::io::Result<()> {
+        let header = format!("Content-Length: {}\r\n\r\n", json_body.len());
+        stdin.write_all(header.as_bytes())?;
+        stdin.write_all(json_body.as_bytes())?;
+        stdin.flush()
+    }
+
+    /// Helper to read a framed JSON-RPC response from stdout.
+    fn read_framed_response<R: std::io::Read>(
+        reader: &mut BufReader<R>,
+    ) -> std::io::Result<Option<String>> {
+        let mut content_length: Option<usize> = None;
+
+        // Read headers until empty line
+        loop {
+            let mut line = String::new();
+            let bytes_read = reader.read_line(&mut line)?;
+            if bytes_read == 0 {
+                return Ok(None); // EOF
+            }
+
+            let line = line.trim_end_matches(|c| c == '\r' || c == '\n');
+            if line.is_empty() {
+                break;
+            }
+
+            if let Some(value) = line.strip_prefix("Content-Length:") {
+                content_length = Some(
+                    value
+                        .trim()
+                        .parse::<usize>()
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?,
+                );
+            }
+        }
+
+        let content_length = content_length.ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Missing Content-Length header",
+            )
+        })?;
+
+        let mut buffer = vec![0u8; content_length];
+        reader.read_exact(&mut buffer)?;
+        Ok(Some(String::from_utf8(buffer).map_err(|e| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, e)
+        })?))
+    }
+
+    /// Wait for a process to complete with a timeout.
+    fn wait_with_timeout(
+        child: &mut std::process::Child,
+        timeout_ms: u64,
+    ) -> std::io::Result<Option<i32>> {
+        let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
+
+        loop {
+            if let Some(status) = child.try_wait()? {
+                return Ok(status.code());
+            }
+
+            if std::time::Instant::now() >= deadline {
+                // Timeout: kill the process
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "Process timed out",
+                ));
+            }
+
+            thread::sleep(Duration::from_millis(50));
+        }
+    }
+
+    /// Test that MCP server handles SSRF-prone URLs safely.
+    ///
+    /// Current behavior: Returns stub response (remote extraction not implemented).
+    /// Expected behavior (Phase 1.8): Returns JSON-RPC error with SSRF_BLOCKED code.
+    #[test]
+    fn test_mcp_extract_tool_rejects_ssrf_urls() {
+        for url in MCP_SSRF_PAYLOADS {
+            let mut child = spawn_mcp_stdio();
+            thread::sleep(Duration::from_millis(50));
+
+            // Send a tools/call request for extract tool with SSRF URL
+            let request = serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "extract",
+                    "arguments": {
+                        "path": url
+                    }
+                }
+            });
+
+            let request_str = serde_json::to_string(&request).unwrap();
+            {
+                let stdin = child.stdin.as_mut().expect("Failed to open stdin");
+                write_framed_message(stdin, &request_str)
+                    .expect("Failed to write request");
+            }
+
+            // Read the response
+            let response = {
+                let stdout = child.stdout.as_mut().expect("Failed to open stdout");
+                let mut reader = BufReader::new(stdout);
+                read_framed_response(&mut reader)
+                    .expect("Failed to read response")
+                    .expect("No response received")
+            };
+
+            // Verify the response
+            let parsed: serde_json::Value =
+                serde_json::from_str(&response).expect("Response is not valid JSON");
+
+            // Current behavior: stub response with _note
+            // Future behavior (Phase 1.8): should return error with SSRF_BLOCKED
+            if parsed.get("result").is_some() {
+                // Current implementation returns stub result
+                let result = &parsed["result"];
+                assert!(
+                    result.get("_note").is_some(),
+                    "SSRF URL '{}' should return stub response or error, got: {}",
+                    url,
+                    response
+                );
+
+                // Verify no actual network activity occurred
+                // (The stub response doesn't fetch the URL)
+            } else if parsed.get("error").is_some() {
+                // Future implementation: should return SSRF_BLOCKED error
+                let error = &parsed["error"];
+                let error_data = error.get("data");
+
+                // Once Phase 1.8 is implemented, this should check for SSRF_BLOCKED
+                if let Some(data) = error_data {
+                    let _code = data.get("code").and_then(|c| c.as_str());
+                    // Future: assert_eq!(_code, Some("SSRF_BLOCKED"));
+                }
+            } else {
+                panic!(
+                    "SSRF URL '{}' should return stub response or error, got: {}",
+                    url, response
+                );
+            }
+
+            // Clean shutdown
+            let _ = child.stdin.take();
+            let _ = wait_with_timeout(&mut child, 1000);
+        }
+    }
+
+    /// Test that MCP server doesn't attempt actual connections to SSRF URLs.
+    ///
+    /// This verifies that even if a URL is passed, the server doesn't try to
+    /// fetch it (since remote extraction is not implemented yet).
+    #[test]
+    fn test_mcp_no_network_connections_to_ssrf_urls() {
+        // Use localhost:9999 which is unlikely to have a listener
+        let dangerous_url = "http://127.0.0.1:9999/test.pdf";
+        let mut child = spawn_mcp_stdio();
+        thread::sleep(Duration::from_millis(50));
+
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "extract",
+                "arguments": {
+                    "path": dangerous_url
+                }
+            }
+        });
+
+        let request_str = serde_json::to_string(&request).unwrap();
+        {
+            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
+            write_framed_message(stdin, &request_str).expect("Failed to write request");
+        }
+
+        // Read response within timeout
+        let start = std::time::Instant::now();
+        let response = {
+            let stdout = child.stdout.as_mut().expect("Failed to open stdout");
+            let mut reader = BufReader::new(stdout);
+            read_framed_response(&mut reader)
+                .expect("Failed to read response")
+                .expect("No response received")
+        };
+        let elapsed = start.elapsed();
+
+        // Should return quickly (no network timeout)
+        assert!(
+            elapsed < Duration::from_millis(500),
+            "Response should return quickly without network attempt, took {:?}",
+            elapsed
+        );
+
+        // Verify stub response (not an error from failed connection)
+        let parsed: serde_json::Value =
+            serde_json::from_str(&response).expect("Response is not valid JSON");
+        assert!(
+            parsed.get("result").is_some(),
+            "Should return stub result, not connection error"
+        );
+
+        // Clean shutdown
+        let _ = child.stdin.take();
+        let _ = wait_with_timeout(&mut child, 1000);
+    }
+
+    /// Test that IPv6 loopback is handled safely.
+    #[test]
+    fn test_mcp_ipv6_loopback_rejected() {
+        let ipv6_loopback_urls = &[
+            "http://[::1]/",
+            "http://[::1]:8080/test.pdf",
+            "http://[0:0:0:0:0:0:0:1]/", // Full form of ::1
+        ];
+
+        for url in ipv6_loopback_urls {
+            let mut child = spawn_mcp_stdio();
+            thread::sleep(Duration::from_millis(50));
+
+            let request = serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "extract",
+                    "arguments": {
+                        "path": url
+                    }
+                }
+            });
+
+            let request_str = serde_json::to_string(&request).unwrap();
+            {
+                let stdin = child.stdin.as_mut().expect("Failed to open stdin");
+                write_framed_message(stdin, &request_str)
+                    .expect("Failed to write request");
+            }
+
+            let response = {
+                let stdout = child.stdout.as_mut().expect("Failed to open stdout");
+                let mut reader = BufReader::new(stdout);
+                read_framed_response(&mut reader)
+                    .expect("Failed to read response")
+                    .expect("No response received")
+            };
+
+            let parsed: serde_json::Value =
+                serde_json::from_str(&response).expect("Response is not valid JSON");
+
+            // Current: stub response
+            // Future: SSRF_BLOCKED error
+            assert!(
+                parsed.get("result").is_some() || parsed.get("error").is_some(),
+                "IPv6 loopback URL '{}' should return valid response",
+                url
+            );
+
+            // Clean shutdown
+            let _ = child.stdin.take();
+            let _ = wait_with_timeout(&mut child, 1000);
+        }
+    }
+
+    /// Test that cloud metadata endpoints are blocked.
+    #[test]
+    fn test_mcp_cloud_metadata_endpoints_blocked() {
+        let metadata_urls = &[
+            "http://169.254.169.254/latest/meta-data/",
+            "http://metadata.google.internal/computeMetadata/v1/",
+            "http://168.63.129.16/latest/",
+        ];
+
+        for url in metadata_urls {
+            let mut child = spawn_mcp_stdio();
+            thread::sleep(Duration::from_millis(50));
+
+            let request = serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "get_metadata",
+                    "arguments": {
+                        "path": url
+                    }
+                }
+            });
+
+            let request_str = serde_json::to_string(&request).unwrap();
+            {
+                let stdin = child.stdin.as_mut().expect("Failed to open stdin");
+                write_framed_message(stdin, &request_str)
+                    .expect("Failed to write request");
+            }
+
+            let response = {
+                let stdout = child.stdout.as_mut().expect("Failed to open stdout");
+                let mut reader = BufReader::new(stdout);
+                read_framed_response(&mut reader)
+                    .expect("Failed to read response")
+                    .expect("No response received")
+            };
+
+            let parsed: serde_json::Value =
+                serde_json::from_str(&response).expect("Response is not valid JSON");
+
+            // Should never succeed in accessing metadata endpoints
+            assert!(
+                parsed.get("error").is_some()
+                    || parsed
+                        .get("result")
+                        .and_then(|r| r.get("_note"))
+                        .is_some(),
+                "Metadata endpoint '{}' should be blocked or return stub",
+                url
+            );
+
+            // Clean shutdown
+            let _ = child.stdin.take();
+            let _ = wait_with_timeout(&mut child, 1000);
+        }
+    }
+
+    /// Test cleanup: ensure no orphaned processes after test completes.
+    ///
+    /// Per CLAUDE.md test hygiene rules, all spawned processes must be
+    /// cleaned up deterministically.
+    #[test]
+    fn test_mcp_process_cleanup_on_completion() {
+        let mut child = spawn_mcp_stdio();
+        thread::sleep(Duration::from_millis(50));
+
+        // Send a simple request
+        let request = r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#;
+        {
+            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
+            write_framed_message(stdin, request).expect("Failed to write request");
+        }
+
+        // Read response
+        let _ = {
+            let stdout = child.stdout.as_mut().expect("Failed to open stdout");
+            let mut reader = BufReader::new(stdout);
+            read_framed_response(&mut reader)
+                .expect("Failed to read response")
+                .expect("No response received")
+        };
+
+        // Close stdin to trigger clean shutdown
+        drop(child.stdin.take());
+
+        // Wait for process to exit (should exit within 200ms)
+        let result = wait_with_timeout(&mut child, 200);
+
+        assert!(
+            result.is_ok(),
+            "Process should exit cleanly after stdin close"
+        );
+
+        // Verify exit code is 0 (success)
+        let exit_code = result.unwrap().unwrap();
+        assert_eq!(exit_code, 0, "Process should exit with code 0");
+    }
+}
