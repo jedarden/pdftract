@@ -1,0 +1,26 @@
+pdftract CLI - PDF extraction and conformance testing
+
+Usage: pdftract <COMMAND>
+
+Commands:
+  list-diagnostics    List all diagnostic codes with their metadata
+  explain-diagnostic  Explain a specific diagnostic code in detail
+  compare             Compare actual results against expected values with tolerances (for conformance testing)
+  conformance         Run SDK conformance test suite
+  sdk                 SDK code generation commands
+  extract             Extract text and structure from a PDF file
+  classify            Classify document type (runs metadata + signal extraction, not full text extraction)
+  inspect             Inspect a PDF file in a local web browser with debugging overlays
+  verify-receipt      Verify a receipt against a PDF file
+  hash                Compute the PDF structural fingerprint (hash)
+  cache               Manage the extraction cache
+  profiles            Manage document type profiles
+  serve               Start the HTTP server for extraction
+  mcp                 Start the MCP (Model Context Protocol) server
+  validate            Validate a JSON file against the pdftract schema
+  migrate-schema      Migrate JSON output between schema versions
+  doctor              Check environment health and dependencies
+  help                Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help

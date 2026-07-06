@@ -9,7 +9,7 @@ publish = false
 cargo-fuzz = true
 
 [dependencies]
-pdftract-core = { path = "../crates/pdftract-core" }
+pdftract-core = { path = "../crates/pdftract-core", features = ["profiles"] }
 libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
 
 # Prevent this from interfering with the workspace library
