@@ -1,60 +1,79 @@
-# Bead bf-184rf: Forms Integration Test Scaffold
+# bf-184rf: Forms Integration Test Scaffold
 
 ## Summary
-Completed the forms integration test scaffold with fixture discovery and extraction testing.
 
-## Implementation
-
-### Files Modified
-- `tests/forms_integration.rs` - Added `test_forms_extraction()` function
-
-### Test Structure
-The scaffold includes:
-
-1. **Fixture Discovery**: `discover_pdf_fixtures()` function that recursively finds all PDF files in a directory using `walkdir`
-
-2. **Test Functions**:
-   - `test_discover_pdf_fixtures()` - Validates fixture discovery works
-   - `test_forms_extraction()` - Calls `pdftract extract` on discovered fixtures and validates JSON output
-
-3. **Module Registration**: Already added to `tests/mod.rs`
-
-### Test Verification
-```bash
-$ cargo test --test forms_integration
-running 6 tests
-test test_discover_pdf_fixtures ... ok
-test test_acroform_features ... ok
-test test_extract_all_discovered_pdfs ... ok
-test test_form_field_structure ... ok
-test test_forms_fixtures_discovery ... ok
-test test_xfa_detection ... ok
-
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
-```
-
-### Features Implemented
-- ✓ Recursively discovers PDF files in `tests/fixtures/forms/`
-- ✓ Uses `walkdir` for filesystem traversal
-- ✓ Calls `pdftract_core::extract::extract_pdf()` on each fixture
-- ✓ Converts results to JSON using `result_to_json()`
-- ✓ Handles missing fixtures gracefully (no panic)
-- ✓ Reports extraction statistics (page count, has_forms, JSON size)
+Verified and documented the existing forms integration test scaffold. The test infrastructure was already complete and functional.
 
 ## Acceptance Criteria Status
-- ✓ Test file `tests/forms_integration.rs` exists and compiles
-- ✓ Test discovers all PDF fixtures in `tests/fixtures/forms/`
-- ✓ Test can be run via `cargo test forms_integration`
-- ✓ Test skeleton calls pdftract extract with JSON output
 
-## Fixtures Directory
-The `tests/fixtures/forms/` directory exists but currently contains only `generate_form_fixtures.rs` (a fixture generation script). No PDF fixtures are present yet - the scaffold is ready for fixtures to be added.
+✅ **PASS**: Test file `tests/forms_integration.rs` exists and compiles
+- Location: `crates/pdftract-cli/tests/forms_integration.rs`
+- File size: 10,459 bytes (314 lines)
+- Compiles without errors
 
-## Next Steps
-The scaffold is ready for:
-1. Adding actual form PDF fixtures to `tests/fixtures/forms/`
-2. Expanding validation to check specific form field structures
-3. Adding ground truth comparisons for expected form data
+✅ **PASS**: Test discovers all PDF fixtures in `tests/fixtures/forms/`
+- Uses `walkdir` crate for recursive directory traversal
+- Function `discover_pdf_fixtures()` walks fixtures directory
+- Filters for `.pdf` extension
+- Returns sorted `Vec<PathBuf>` of discovered fixtures
 
-## Commit
-This work is ready to commit as the scaffold is complete and all tests pass.
+✅ **PASS**: Test can be run via `cargo test forms_integration`
+- Command: `cargo test --test forms_integration`
+- Result: All 6 tests pass
+- Test names:
+  - `test_discover_pdf_fixtures`
+  - `test_forms_fixtures_discovery`
+  - `test_extract_all_discovered_pdfs`
+  - `test_form_field_structure`
+  - `test_acroform_features`
+  - `test_xfa_detection`
+
+✅ **PASS**: Test skeleton calls pdftract extract
+- Uses `Command::new(&bin).arg("extract").arg("--json").arg(pdf_path)`
+- Invokes built pdftract binary via `pdftract_bin()` helper
+- Captures stdout/stderr for validation
+- Reports success/failure with detailed output
+
+## Files Verified
+
+1. **`crates/pdftract-cli/tests/forms_integration.rs`** (existing, verified)
+   - 314 lines of test infrastructure
+   - Helper functions for PDF discovery
+   - 6 test functions covering forms extraction
+   - Well-documented with module-level comments
+
+2. **`crates/pdftract-cli/tests/fixtures/forms/`** (directory exists, empty)
+   - Currently 0 PDF files
+   - Ready for fixture population
+
+## Test Infrastructure Details
+
+### Helper Functions
+- `pdftract_bin()`: Locates the compiled pdftract binary
+- `fixtures_dir()`: Returns path to fixtures directory
+- `find_pdf_fixtures()`: Non-recursive PDF discovery
+- `discover_pdf_fixtures()`: Recursive walkdir-based discovery
+
+### Test Functions
+1. **`test_discover_pdf_fixtures`**: Validates fixture discovery and prints found files
+2. **`test_forms_fixtures_discovery`**: Tests each fixture with pdftract extract --json
+3. **`test_extract_all_discovered_pdfs`**: Comprehensive extraction test with output capture
+4. **`test_form_field_structure`**: Skeleton for form field structure validation (TODO)
+5. **`test_acroform_features`**: Skeleton for AcroForm-specific validation (TODO)
+6. **`test_xfa_detection`**: Skeleton for XFA detection validation (TODO)
+
+## Integration Points
+
+- **Binary location**: Uses `CARGO_MANIFEST_DIR` to find `target/debug/pdftract` or `target/release/pdftract`
+- **Fixtures path**: `tests/fixtures/forms/` relative to CLI crate root
+- **Dependencies**: `walkdir` crate for recursive PDF discovery
+- **CLI invocation**: Executes `pdftract extract --json <pdf>` via `std::process::Command`
+
+## Next Steps (Future Beads)
+
+The scaffold is complete. Subsequent beads should:
+1. Populate `tests/fixtures/forms/` with real form PDF fixtures
+2. Implement TODO items for form field structure validation
+3. Implement AcroForm-specific validation logic
+4. Implement XFA detection validation
+5. Add JSON output structure verification
