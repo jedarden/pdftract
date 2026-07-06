@@ -4,26 +4,9 @@
 //! CMAP and ToUnicode entry creation. These glyphs have no valid Unicode mapping
 //! and should not appear in text extraction output.
 
-use std::collections::HashSet;
-use std::sync::LazyLock;
-
-/// Set of glyph names that are known to be unmapped and should be skipped during
-/// CMAP and ToUnicode entry creation.
-///
-/// This includes:
-/// - `.notdef`: The special fallback glyph defined by PDF and font specifications
-///   that represents "no glyph available". It has no Unicode mapping and should be
-///   skipped to prevent it from appearing in text extraction output.
-///
-/// Additional unmapped glyph names can be added to this set as needed.
-pub static UNMAPPED_GLYPH_NAMES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
-    let mut set = HashSet::new();
-    set.insert(".notdef");
-    // Additional unmapped glyph names can be added here
-    // e.g., set.insert("g001");
-    // e.g., set.insert("g002");
-    set
-});
+// Include auto-generated unmapped glyph names from build.rs
+// This defines UNMAPPED_GLYPH_NAMES as a LazyLock<HashSet<&'static str>>
+include!(concat!(env!("OUT_DIR"), "/unmapped_glyph_names.rs"));
 
 /// Check if a glyph name is in the unmapped glyph names set.
 ///

@@ -7,6 +7,7 @@ fn main() {
     println!("cargo:rerun-if-changed=build/named-encodings.json");
     println!("cargo:rerun-if-changed=build/agl.json");
     println!("cargo:rerun-if-changed=build/font-fingerprints.json");
+    println!("cargo:rerun-if-changed=build/unmapped-glyph-names.json");
     println!("cargo:rerun-if-changed=build/predefined-cmaps/");
     println!("cargo:rerun-if-changed=build/glyph-shapes.json");
     println!("cargo:rerun-if-changed=build/wordlist-en-20k.txt");
@@ -40,6 +41,10 @@ fn main() {
     // Generate font fingerprint phf map
     let fingerprints_path = Path::new("build/font-fingerprints.json");
     generate_font_fingerprints(out_path, fingerprints_path);
+
+    // Generate unmapped glyph names set
+    let unmapped_path = Path::new("build/unmapped-glyph-names.json");
+    generate_unmapped_glyph_names(out_path, unmapped_path);
 
     // Generate predefined CMap registry
     generate_predefined_cmaps(out_path);
@@ -936,6 +941,112 @@ pub static EN_WORDLIST_20K: phf::Set<&'static str> = {};
 
     fs::write(Path::new(out_dir).join("wordlist.rs"), rust_code)
         .expect("Failed to write wordlist.rs");
+}
+
+/// Generate unmapped glyph names set from unmapped-glyph-names.json.
+///
+/// Reads build/unmapped-glyph-names.json and emits a compile-time HashSet
+/// containing glyph names that should be skipped during CMAP and ToUnicode
+/// entry creation.
+///
+/// # JSON format
+///
+/// ```json
+/// {
+///   "unmapped_glyph_names": [".notdef", ".null", "g000", ...],
+///   "description": "...",
+///   "version": "1.0"
+/// }
+/// ```
+fn generate_unmapped_glyph_names(out_dir: &Path, _unmapped_path: &Path) {
+    // Resolve unmapped_path relative to the workspace root
+    // build.rs runs from the crate directory, but the build/ dir is at workspace root
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_dir.ancestors().nth(2).unwrap_or(crate_dir);
+    let actual_unmapped_path = workspace_root.join("build").join("unmapped-glyph-names.json");
+
+    // Check if the JSON file exists
+    if !actual_unmapped_path.exists() {
+        // Emit a build warning and use minimal default set
+        println!(
+            "cargo:warning=unmapped-glyph-names.json not found at {}, using default set",
+            actual_unmapped_path.display()
+        );
+        let rust_code = r#"
+// Auto-generated unmapped glyph names set.
+// Source: build/unmapped-glyph-names.json (not found - using default)
+// Do not edit manually.
+
+use std::collections::HashSet;
+use std::sync::LazyLock;
+
+/// Set of glyph names that are known to be unmapped and should be skipped during
+/// CMAP and ToUnicode entry creation.
+///
+/// This is the default set when unmapped-glyph-names.json is not available.
+pub static UNMAPPED_GLYPH_NAMES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    let mut set = HashSet::new();
+    set.insert(".notdef");
+    set
+});
+"#;
+        fs::write(Path::new(out_dir).join("unmapped_glyph_names.rs"), rust_code)
+            .expect("Failed to write unmapped_glyph_names.rs");
+        return;
+    }
+
+    let json_content = fs::read_to_string(&actual_unmapped_path)
+        .unwrap_or_else(|_| panic!("Failed to read {}", actual_unmapped_path.display()));
+
+    let data: serde_json::Value = serde_json::from_str(&json_content)
+        .unwrap_or_else(|_| panic!("Failed to parse {}", actual_unmapped_path.display()));
+
+    // Extract the unmapped_glyph_names array
+    let names_array = data
+        .get("unmapped_glyph_names")
+        .and_then(|v| v.as_array())
+        .expect("unmapped_glyph_names array missing");
+
+    // Generate HashSet insertions
+    let mut insertions = Vec::new();
+    for name in names_array {
+        let name_str = name.as_str().unwrap_or_else(|| {
+            panic!(
+                "Invalid glyph name (not a string): {:?}",
+                name
+            )
+        });
+        insertions.push(format!("    set.insert({:?});", name_str));
+    }
+
+    let rust_code = format!(
+        r#"
+// Auto-generated unmapped glyph names set.
+// Source: build/unmapped-glyph-names.json
+// Do not edit manually.
+
+use std::collections::HashSet;
+use std::sync::LazyLock;
+
+/// Set of glyph names that are known to be unmapped and should be skipped during
+/// CMAP and ToUnicode entry creation.
+///
+/// This includes glyphs that have no valid Unicode mapping and should not appear
+/// in text extraction output. The set is loaded from build/unmapped-glyph-names.json.
+///
+/// Glyph count: {}
+pub static UNMAPPED_GLYPH_NAMES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {{
+    let mut set = HashSet::new();
+{}
+    set
+}});
+"#,
+        names_array.len(),
+        insertions.join("\n")
+    );
+
+    fs::write(Path::new(out_dir).join("unmapped_glyph_names.rs"), rust_code)
+        .expect("Failed to write unmapped_glyph_names.rs");
 }
 
 /// Verify SHA-256 checksums of build-time data files.
