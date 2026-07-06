@@ -16,6 +16,7 @@ use pdftract_core::document::{parse_pdf_file, PdfExtractor};
 use std::path::PathBuf;
 
 /// Returns the path to the truncated-flate.pdf fixture.
+/// This fixture has a valid PDF structure but contains a truncated FlateDecode stream.
 fn fixture_path() -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.push("../../tests/fixtures/malformed/truncated-flate.pdf");
@@ -38,9 +39,12 @@ fn test_truncated_flate_fixture_exists() {
     let metadata = std::fs::metadata(&path)
         .expect("Should be able to read fixture metadata");
     assert!(metadata.len() > 0, "Fixture file should not be empty");
+
+    println!("✓ Fixture exists: {}", path.display());
+    println!("  Size: {} bytes", metadata.len());
 }
 
-/// Test that the truncated-flate.pdf can be parsed as a PDF document.
+/// Test that the truncated_mid_stream.pdf can be parsed as a PDF document.
 ///
 /// This verifies that the file has a valid PDF structure even if one
 /// or more streams contain truncated FlateDecode data.
@@ -107,17 +111,19 @@ fn test_truncated_flate_partial_content_accessible() {
     println!("Page accessible with {} content streams", first_page.contents.len());
 }
 
-/// Test extraction of truncated-flate.pdf using PdfExtractor.
+/// Test extraction of truncated_mid_stream.pdf using PdfExtractor.
 ///
 /// This test examines the extraction result structure, particularly
-/// the error field to understand how truncation errors are reported.
+/// the errors/diagnostics field to understand how truncation errors are reported.
 #[test]
 fn test_truncated_flate_extraction_result_structure() {
     let path = fixture_path();
 
+    println!("Testing extraction of: {}", path.display());
+
     // Open the PDF with PdfExtractor
     let extractor = PdfExtractor::open(&path)
-        .expect("Should open truncated-flate.pdf with PdfExtractor");
+        .expect("Should open truncated_mid_stream.pdf with PdfExtractor");
 
     println!("✓ PdfExtractor::open() succeeded");
     println!("  Fingerprint: {}", extractor.fingerprint());
@@ -145,10 +151,14 @@ fn test_truncated_flate_extraction_result_structure() {
                 println!("  Number of spans: {}", extraction.spans.len());
                 println!("  Number of blocks: {}", extraction.blocks.len());
 
-                // Print the extraction structure as JSON to see the full structure
+                // Check if there are any errors/diagnostics in the result
+                // Look for fields that might contain error information
+                println!("\n  Checking for error/diagnostic fields in extraction result...");
+
+                // Try to serialize to see the full structure
                 match serde_json::to_string_pretty(&extraction) {
                     Ok(json) => {
-                        println!("\n  Extraction result (JSON):");
+                        println!("\n  Full extraction result structure (JSON):");
                         println!("  {}", json.replace("\n", "\n  "));
                     },
                     Err(e) => {
@@ -158,7 +168,7 @@ fn test_truncated_flate_extraction_result_structure() {
             },
             Err(e) => {
                 println!("✗ extract_page(0) failed: {}", e);
-                println!("  Error: {}", e);
+                println!("  Error details: {:?}", e);
             }
         }
     } else {

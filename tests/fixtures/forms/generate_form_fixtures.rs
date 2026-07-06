@@ -62,10 +62,10 @@ fn create_acroform_text_fields_pdf() {
     // Create AcroForm fields
     // Field 1: Text field with value
     let mut field1_dict = Dictionary::new();
-    field1_dict.set("T", Object::String(b"employee_name".to_vec(), false));
+    field1_dict.set("T", Object::String(b"employee_name".to_vec(), lopdf::StringFormat::Literal));
     field1_dict.set("FT", Object::Name(b"Tx".to_vec()));
-    field1_dict.set("V", Object::String(b"John Doe".to_vec(), false));
-    field1_dict.set("DV", Object::String(b"Jane Doe".to_vec(), false));
+    field1_dict.set("V", Object::String(b"John Doe".to_vec(), StringFormat::Literal));
+    field1_dict.set("DV", Object::String(b"Jane Doe".to_vec(), StringFormat::Literal));
     field1_dict.set("Ff", Object::Integer(2)); // Required flag
     field1_dict.set("MaxLen", Object::Integer(50));
     field1_dict.set("Rect", Object::Array(vec![
@@ -76,9 +76,9 @@ fn create_acroform_text_fields_pdf() {
 
     // Field 2: Multiline text field
     let mut field2_dict = Dictionary::new();
-    field2_dict.set("T", Object::String(b"address".to_vec(), false));
+    field2_dict.set("T", Object::String(b"address".to_vec(), StringFormat::Literal));
     field2_dict.set("FT", Object::Name(b"Tx".to_vec()));
-    field2_dict.set("V", Object::String(b"123 Main St\nAnytown, USA".to_vec(), false));
+    field2_dict.set("V", Object::String(b"123 Main St\nAnytown, USA".to_vec(), StringFormat::Literal));
     field2_dict.set("Ff", Object::Integer(1 << 12)); // Multiline flag
     field2_dict.set("Rect", Object::Array(vec![
         Object::Real(100.0), Object::Real(600.0),
@@ -88,7 +88,7 @@ fn create_acroform_text_fields_pdf() {
 
     // Field 3: Checkbox (checked)
     let mut field3_dict = Dictionary::new();
-    field3_dict.set("T", Object::String(b"is_manager".to_vec(), false));
+    field3_dict.set("T", Object::String(b"is_manager".to_vec(), StringFormat::Literal));
     field3_dict.set("FT", Object::Name(b"Btn".to_vec()));
     field3_dict.set("V", Object::Name(b"Yes".to_vec()));
     field3_dict.set("DV", Object::Name(b"Off".to_vec()));
@@ -100,13 +100,13 @@ fn create_acroform_text_fields_pdf() {
 
     // Field 4: Radio button group with two options
     let mut radio_group_dict = Dictionary::new();
-    radio_group_dict.set("T", Object::String(b"department".to_vec(), false));
+    radio_group_dict.set("T", Object::String(b"department".to_vec(), StringFormat::Literal));
     radio_group_dict.set("FT", Object::Name(b"Btn".to_vec()));
     radio_group_dict.set("Ff", Object::Integer(1 << 24)); // Radio flag
     radio_group_dict.set("V", Object::Name(b"sales".to_vec()));
 
     let mut radio_option1_dict = Dictionary::new();
-    radio_option1_dict.set("T", Object::String(b"sales".to_vec(), false));
+    radio_option1_dict.set("T", Object::String(b"sales".to_vec(), StringFormat::Literal));
     radio_option1_dict.set("FT", Object::Name(b"Btn".to_vec()));
     radio_option1_dict.set("Ff", Object::Integer(1 << 24)); // Radio
     radio_option1_dict.set("V", Object::Name(b"sales".to_vec()));
@@ -117,7 +117,7 @@ fn create_acroform_text_fields_pdf() {
     let radio_option1_id = doc.add_object(radio_option1_dict);
 
     let mut radio_option2_dict = Dictionary::new();
-    radio_option2_dict.set("T", Object::String(b"engineering".to_vec(), false));
+    radio_option2_dict.set("T", Object::String(b"engineering".to_vec(), StringFormat::Literal));
     radio_option2_dict.set("FT", Object::Name(b"Btn".to_vec()));
     radio_option2_dict.set("Ff", Object::Integer(1 << 24)); // Radio
     radio_option2_dict.set("V", Object::Name(b"Off".to_vec()));
@@ -135,14 +135,14 @@ fn create_acroform_text_fields_pdf() {
 
     // Field 5: Dropdown (Choice field with combo flag)
     let mut field5_dict = Dictionary::new();
-    field5_dict.set("T", Object::String(b"role".to_vec(), false));
+    field5_dict.set("T", Object::String(b"role".to_vec(), StringFormat::Literal));
     field5_dict.set("FT", Object::Name(b"Ch".to_vec()));
-    field5_dict.set("V", Object::String(b"developer".to_vec(), false));
+    field5_dict.set("V", Object::String(b"developer".to_vec(), StringFormat::Literal));
     field5_dict.set("Ff", Object::Integer(1 << 17)); // Combo flag
     field5_dict.set("Opt", Object::Array(vec![
-        Object::String(b"manager".to_vec(), false),
-        Object::String(b"developer".to_vec(), false),
-        Object::String(b"designer".to_vec(), false),
+        Object::String(b"manager".to_vec(), lopdf::StringFormat::Literal),
+        Object::String(b"developer".to_vec(), StringFormat::Literal),
+        Object::String(b"designer".to_vec(), StringFormat::Literal),
     ]));
     field5_dict.set("Rect", Object::Array(vec![
         Object::Real(100.0), Object::Real(490.0),
@@ -287,9 +287,9 @@ fn create_acroform_readonly_pdf() {
 
     // Create read-only text field
     let mut field1_dict = Dictionary::new();
-    field1_dict.set("T", Object::String(b"company_name".to_vec(), false));
+    field1_dict.set("T", Object::String(b"company_name".to_vec(), StringFormat::Literal));
     field1_dict.set("FT", Object::Name(b"Tx".to_vec()));
-    field1_dict.set("V", Object::String(b"Acme Corporation".to_vec(), false));
+    field1_dict.set("V", Object::String(b"Acme Corporation".to_vec(), StringFormat::Literal));
     field1_dict.set("Ff", Object::Integer(1)); // ReadOnly flag (bit 0)
     field1_dict.set("Rect", Object::Array(vec![
         Object::Real(100.0), Object::Real(650.0),
@@ -299,9 +299,9 @@ fn create_acroform_readonly_pdf() {
 
     // Create pre-filled but not read-only field
     let mut field2_dict = Dictionary::new();
-    field2_dict.set("T", Object::String(b"contact_email".to_vec(), false));
+    field2_dict.set("T", Object::String(b"contact_email".to_vec(), StringFormat::Literal));
     field2_dict.set("FT", Object::Name(b"Tx".to_vec()));
-    field2_dict.set("V", Object::String(b"contact@example.com".to_vec(), false));
+    field2_dict.set("V", Object::String(b"contact@example.com".to_vec(), StringFormat::Literal));
     field2_dict.set("Ff", Object::Integer(0)); // Not read-only
     field2_dict.set("Rect", Object::Array(vec![
         Object::Real(100.0), Object::Real(620.0),
@@ -311,7 +311,7 @@ fn create_acroform_readonly_pdf() {
 
     // Create read-only checkbox
     let mut field3_dict = Dictionary::new();
-    field3_dict.set("T", Object::String(b"verified".to_vec(), false));
+    field3_dict.set("T", Object::String(b"verified".to_vec(), StringFormat::Literal));
     field3_dict.set("FT", Object::Name(b"Btn".to_vec()));
     field3_dict.set("V", Object::Name(b"Yes".to_vec()));
     field3_dict.set("Ff", Object::Integer(1)); // ReadOnly flag
@@ -340,7 +340,9 @@ fn create_acroform_readonly_pdf() {
     doc.trailer.set("Root", Object::Reference(catalog_id));
 
     // Save PDF
-    let bytes = doc.save_to_bytes().unwrap();
+    let mut buffer = Vec::new();
+    doc.save_to(&mut std::io::Cursor::new(&mut buffer)).unwrap();
+    let bytes = buffer;
     let mut file = File::create("tests/fixtures/forms/acroform-readonly.pdf").unwrap();
     file.write_all(&bytes).unwrap();
     println!("Created acroform-readonly.pdf");
@@ -417,9 +419,9 @@ fn create_acroform_submit_pdf() {
 
     // Create text field
     let mut field1_dict = Dictionary::new();
-    field1_dict.set("T", Object::String(b"username".to_vec(), false));
+    field1_dict.set("T", Object::String(b"username".to_vec(), StringFormat::Literal));
     field1_dict.set("FT", Object::Name(b"Tx".to_vec()));
-    field1_dict.set("V", Object::String(b"".to_vec(), false));
+    field1_dict.set("V", Object::String(b"".to_vec(), StringFormat::Literal));
     field1_dict.set("Ff", Object::Integer(2)); // Required flag
     field1_dict.set("Rect", Object::Array(vec![
         Object::Real(100.0), Object::Real(650.0),
@@ -429,7 +431,7 @@ fn create_acroform_submit_pdf() {
 
     // Create submit button
     let mut submit_dict = Dictionary::new();
-    submit_dict.set("T", Object::String(b"submit".to_vec(), false));
+    submit_dict.set("T", Object::String(b"submit".to_vec(), StringFormat::Literal));
     submit_dict.set("FT", Object::Name(b"Btn".to_vec()));
     submit_dict.set("Ff", Object::Integer(1 << 25)); // Pushbutton flag
     submit_dict.set("Rect", Object::Array(vec![
@@ -441,7 +443,7 @@ fn create_acroform_submit_pdf() {
     let mut action_dict = Dictionary::new();
     action_dict.set("Type", Object::Name(b"Action".to_vec()));
     action_dict.set("S", Object::Name(b"SubmitForm".to_vec()));
-    action_dict.set("F", Object::String(b"https://example.com/submit".to_vec(), false));
+    action_dict.set("F", Object::String(b"https://example.com/submit".to_vec(), StringFormat::Literal));
     let action_id = doc.add_object(action_dict);
     submit_dict.set("A", Object::Reference(action_id));
 
@@ -449,7 +451,7 @@ fn create_acroform_submit_pdf() {
 
     // Create reset button
     let mut reset_dict = Dictionary::new();
-    reset_dict.set("T", Object::String(b"reset".to_vec(), false));
+    reset_dict.set("T", Object::String(b"reset".to_vec(), StringFormat::Literal));
     reset_dict.set("FT", Object::Name(b"Btn".to_vec()));
     reset_dict.set("Ff", Object::Integer(1 << 25)); // Pushbutton flag
     reset_dict.set("Rect", Object::Array(vec![
@@ -485,7 +487,9 @@ fn create_acroform_submit_pdf() {
     doc.trailer.set("Root", Object::Reference(catalog_id));
 
     // Save PDF
-    let bytes = doc.save_to_bytes().unwrap();
+    let mut buffer = Vec::new();
+    doc.save_to(&mut std::io::Cursor::new(&mut buffer)).unwrap();
+    let bytes = buffer;
     let mut file = File::create("tests/fixtures/forms/acroform-submit.pdf").unwrap();
     file.write_all(&bytes).unwrap();
     println!("Created acroform-submit.pdf");
@@ -581,9 +585,9 @@ fn create_xfa_dynamic_pdf() {
 
     // Create simple AcroForm field as fallback
     let mut field1_dict = Dictionary::new();
-    field1_dict.set("T", Object::String(b"xfa_field1".to_vec(), false));
+    field1_dict.set("T", Object::String(b"xfa_field1".to_vec(), lopdf::StringFormat::Literal));
     field1_dict.set("FT", Object::Name(b"Tx".to_vec()));
-    field1_dict.set("V", Object::String(b"XFA Value".to_vec(), false));
+    field1_dict.set("V", Object::String(b"XFA Value".to_vec(), lopdf::StringFormat::Literal));
     field1_dict.set("Rect", Object::Array(vec![
         Object::Real(100.0), Object::Real(650.0),
         Object::Real(300.0), Object::Real(670.0)
@@ -610,7 +614,9 @@ fn create_xfa_dynamic_pdf() {
     doc.trailer.set("Root", Object::Reference(catalog_id));
 
     // Save PDF
-    let bytes = doc.save_to_bytes().unwrap();
+    let mut buffer = Vec::new();
+    doc.save_to(&mut std::io::Cursor::new(&mut buffer)).unwrap();
+    let bytes = buffer;
     let mut file = File::create("tests/fixtures/forms/xfa-dynamic.pdf").unwrap();
     file.write_all(&bytes).unwrap();
     println!("Created xfa-dynamic.pdf");
