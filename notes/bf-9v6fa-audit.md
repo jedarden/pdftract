@@ -346,3 +346,49 @@ Bead bf-3ewah completed handling of tracked modifications in `crates/pdftract-co
 
 ### Outcome
 All tracked modifications in `crates/pdftract-core/src` have been properly dispositioned according to the audit findings. The working tree is now clean for this directory, and changes belonging to open beads will be committed when those beads are claimed.
+
+## bf-4kv4g Final Disposition
+
+### Completed Actions (2026-07-06)
+
+Bead bf-4kv4g completed handling of tracked modifications in `crates/pdftract-cli/src` and fuzz infrastructure:
+
+#### Files Reverted (pending bead assignment)
+
+1. **crates/pdftract-cli/src/cli.rs**
+   - Action: REVERTED via `git checkout HEAD`
+   - Rationale: No open bead found for grep feature work; defer until bead assignment
+   - Changes: Added `#[cfg(feature = "grep")]` re-export for `GrepArgs`
+
+2. **crates/pdftract-cli/tests/test_encryption_errors.rs**
+   - Action: REVERTED via `git checkout HEAD`
+   - Rationale: Test infrastructure improvement with no owning bead; defer until assignment
+   - Changes: Added error message constants, encryption type constants, improved documentation
+
+#### Fuzz Infrastructure Changes
+
+3. **fuzz/Cargo.lock and fuzz/Cargo.toml**
+   - Status: Already committed in prior bead (bf-1bpzw or related)
+   - Verification: No tracked changes remain in fuzz/ directory
+   - Rationale: Infrastructure changes properly handled in earlier work
+
+#### Build Artifacts
+
+4. **build/agl.json**
+   - Status: File does not exist in this repository
+   - Action: N/A (not applicable to this codebase)
+
+#### Verification
+- ✅ No tracked changes remain in crates/pdftract-cli/src/
+- ✅ No tracked changes remain in fuzz/ directory
+- ✅ cargo check passed with no errors
+- ✅ Verification note created: notes/bf-4kv4g.md
+- ✅ Audit document updated with final disposition
+
+### Outcome
+All tracked modifications in target areas have been properly dispositioned according to the audit findings:
+- CLI changes reverted pending bead assignment
+- Fuzz infrastructure changes already committed in earlier work
+- No uncommitted tracked changes remain in target directories
+- The working tree is clean for pdftract-cli/src and fuzz/ directories
+

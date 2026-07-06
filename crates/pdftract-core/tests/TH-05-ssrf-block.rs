@@ -380,9 +380,51 @@ mod mcp_ssrf_tests {
     //! 3. Public URLs are accepted
 
     use std::io::{BufRead, BufReader, Read, Write};
-    use std::process::{Command, Stdio};
+    use std::process::{Child, Command, Stdio};
     use std::thread;
     use std::time::Duration;
+
+    /// RAII guard for spawned child processes.
+    ///
+    /// Ensures deterministic cleanup on Drop (even on panic) by:
+    /// 1. Killing the child process
+    /// 2. Waiting with a timeout to reap the zombie
+    ///
+    /// Per CLAUDE.md test hygiene rules, this prevents orphaned processes
+    /// and hung tests.
+    struct ProcessGuard {
+        child: Option<Child>,
+    }
+
+    impl ProcessGuard {
+        /// Create a new guard from a spawned child process.
+        fn new(child: Child) -> Self {
+            Self { child: Some(child) }
+        }
+
+        /// Get a mutable reference to the child process.
+        fn child_mut(&mut self) -> &mut Child {
+            self.child.as_mut().expect("ProcessGuard: child taken without replacement")
+        }
+
+        /// Take ownership of the child, dropping the guard without cleanup.
+        ///
+        /// Use this when you want manual control over cleanup.
+        fn take(mut self) -> Child {
+            self.child.take().expect("ProcessGuard: child already taken")
+        }
+    }
+
+    impl Drop for ProcessGuard {
+        fn drop(&mut self) {
+            if let Some(mut child) = self.child.take() {
+                // Kill the process (signal-based, may fail if already dead)
+                let _ = child.kill();
+                // Wait with timeout to reap zombie, don't block forever
+                let _ = wait_with_timeout(&mut child, 1000);
+            }
+        }
+    }
 
     /// SSRF test payloads for MCP server testing.
     ///
