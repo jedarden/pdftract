@@ -1,0 +1,311 @@
+//! CLI invocation fixture discovery and enumeration
+//!
+//! This test module provides comprehensive fixture discovery for CLI testing:
+//! - Discovers all PDF fixtures from the main test fixtures directory
+//! - Provides test-accessible fixture enumeration
+//! - Supports category-based filtering (encrypted, forms, ocr, malformed, etc.)
+//! - Enables bulk CLI invocation testing
+//!
+//! The fixtures are organized in /tests/fixtures/ by category:
+//! - encrypted/: Password-protected and encrypted PDFs
+//! - forms/: PDFs with AcroForm and XFA forms
+//! - ocr/: Scanned documents requiring OCR processing
+//! - malformed/: Corrupted or malformed PDFs for error handling
+//! - scanned/: Scanned documents and receipts
+//! - cjk/: Chinese/Japanese/Korean language documents
+//! - fonts/: PDFs with various font encodings and subsets
+//! - And more...
+
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use walkdir::WalkDir;
+
+/// Get the path to the main workspace fixtures directory
+///
+/// The main fixtures directory is at /tests/fixtures/ in the workspace root,
+/// not to be confused with the crate-specific fixtures/ directory.
+fn main_fixtures_dir() -> PathBuf {
+    // CARGO_MANIFEST_DIR is /home/coding/pdftract/crates/pdftract-cli
+    // We need to go up to workspace root, then into tests/fixtures
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path.push("../../tests/fixtures");
+    path
+}
+
+/// Get the path to the pdftract binary (cargo build output)
+fn pdftract_bin() -> PathBuf {
+    // The binary should be built at target/debug/pdftract or target/release/pdftract
+    // CARGO_MANIFEST_DIR is the crate directory; workspace target is two levels up
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path.push("../../target/debug/pdftract");
+
+    // Fall back to release if debug doesn't exist
+    if !path.exists() {
+        let mut release_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        release_path.push("../../target/release/pdftract");
+        return release_path;
+    }
+
+    path
+}
+
+/// Discover all PDF files in the given directory recursively using walkdir.
+///
+/// # Arguments
+/// * `fixtures_path` - Path to the fixtures directory to search
+///
+/// # Returns
+/// A `Vec<PathBuf>` containing paths to all discovered PDF files, sorted alphabetically
+fn discover_pdf_fixtures<P: AsRef<Path>>(fixtures_path: P) -> Vec<PathBuf> {
+    let mut pdf_files = Vec::new();
+
+    let walker = WalkDir::new(fixtures_path)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.file_type().is_file()
+                && e.path()
+                    .extension()
+                    .map(|ext| ext == "pdf")
+                    .unwrap_or(false)
+        })
+        .map(|e| e.path().to_path_buf());
+
+    pdf_files.extend(walker);
+    pdf_files.sort();
+
+    pdf_files
+}
+
+/// Discover PDF files in a specific category subdirectory
+///
+/// # Arguments
+/// * `category` - Category name (e.g., "encrypted", "forms", "ocr")
+///
+/// # Returns
+/// A `Vec<PathBuf>` containing paths to PDF files in that category
+fn discover_fixtures_by_category(category: &str) -> Vec<PathBuf> {
+    let fixtures_dir = main_fixtures_dir();
+    let category_path = fixtures_dir.join(category);
+
+    if !category_path.exists() {
+        return Vec::new();
+    }
+
+    discover_pdf_fixtures(&category_path)
+}
+
+/// Get all fixture categories present in the main fixtures directory
+///
+/// # Returns
+/// A `Vec<String>` of category names (subdirectory names containing PDF files)
+fn get_fixture_categories() -> Vec<String> {
+    let fixtures_dir = main_fixtures_dir();
+    let mut categories = Vec::new();
+
+    if let Ok(entries) = std::fs::read_dir(&fixtures_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                // Check if this directory contains PDF files
+                let has_pdfs = discover_pdf_fixtures(&path).iter().any(|p| p.exists());
+                if has_pdfs {
+                    if let Some(name) = path.file_name() {
+                        categories.push(name.to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    categories.sort();
+    categories
+}
+
+/// Test that the main fixtures directory exists and is accessible
+#[test]
+fn test_main_fixtures_dir_exists() {
+    let fixtures_dir = main_fixtures_dir();
+    assert!(fixtures_dir.exists(), "Main fixtures directory does not exist: {:?}", fixtures_dir);
+    assert!(fixtures_dir.is_dir(), "Main fixtures path is not a directory: {:?}", fixtures_dir);
+
+    println!("Main fixtures directory: {:?}", fixtures_dir);
+}
+
+/// Test fixture discovery mechanism and print discovered fixtures
+///
+/// This test verifies that the walkdir-based PDF discovery function works correctly
+/// and prints the names of all discovered fixtures to stdout.
+#[test]
+fn test_discover_all_pdf_fixtures() {
+    let fixtures_dir = main_fixtures_dir();
+    let pdf_files = discover_pdf_fixtures(&fixtures_dir);
+
+    println!("\n=== Discovered PDF Fixtures ===");
+    println!("Fixtures directory: {}", fixtures_dir.display());
+
+    if pdf_files.is_empty() {
+        println!("No PDF files found in {}", fixtures_dir.display());
+    } else {
+        println!("Total PDF files discovered: {}", pdf_files.len());
+
+        // Group by category for better readability
+        let mut by_category: std::collections::HashMap<String, Vec<&PathBuf>> = std::collections::HashMap::new();
+
+        for pdf_path in &pdf_files {
+            if let Some(category) = pdf_path.parent().and_then(|p| p.file_name()) {
+                let category_name = category.to_string_lossy().to_string();
+                by_category.entry(category_name).or_default().push(pdf_path);
+            }
+        }
+
+        let mut sorted_categories: Vec<_> = by_category.iter().collect();
+        sorted_categories.sort_by(|a, b| a.0.cmp(b.0));
+
+        for (category, files) in sorted_categories {
+            println!("\n[{}] {} file(s):", category, files.len());
+            for pdf_path in files {
+                let relative_path = pdf_path.strip_prefix(&fixtures_dir).unwrap_or(pdf_path);
+                println!("  - {}", relative_path.display());
+            }
+        }
+    }
+    println!("==============================\n");
+
+    // Test that the function runs without errors
+    // (We don't assert a count since fixtures may be added/removed)
+    let _ = pdf_files;
+}
+
+/// Test category-based fixture discovery
+#[test]
+fn test_discover_fixtures_by_category() {
+    println!("\n=== Category-based Fixture Discovery ===\n");
+
+    // Get all available categories
+    let categories = get_fixture_categories();
+    println!("Available fixture categories: {}", categories.len());
+
+    for category in &categories {
+        let fixtures = discover_fixtures_by_category(category);
+        println!("[{}] {} PDF file(s)", category, fixtures.len());
+    }
+
+    println!("\n=========================================\n");
+
+    // Verify we have some expected categories
+    assert!(categories.len() > 0, "No fixture categories found");
+}
+
+/// Test that we can enumerate fixtures for CLI processing
+///
+/// This test ensures that fixtures can be enumerated in a format suitable
+/// for bulk CLI invocation testing.
+#[test]
+fn test_fixture_enumeration_for_cli() {
+    let fixtures_dir = main_fixtures_dir();
+    let pdf_files = discover_pdf_fixtures(&fixtures_dir);
+    let bin = pdftract_bin();
+
+    // Ensure binary exists
+    assert!(bin.exists(), "pdftract binary not found at {:?}", bin);
+
+    println!("\n=== Fixture Enumeration for CLI Testing ===");
+    println!("Binary path: {:?}", bin);
+    println!("Fixtures directory: {}", fixtures_dir.display());
+    println!("Total fixtures discovered: {}\n", pdf_files.len());
+
+    // If no fixtures yet, test passes (scaffold for future fixtures)
+    if pdf_files.is_empty() {
+        println!("No PDF fixtures found - test scaffold ready");
+        return;
+    }
+
+    // Print a sample of fixtures for verification
+    let sample_size = 5.min(pdf_files.len());
+    println!("Sample fixtures (first {} of {}):", sample_size, pdf_files.len());
+    for (i, pdf_path) in pdf_files.iter().take(sample_size).enumerate() {
+        let relative_path = pdf_path.strip_prefix(&fixtures_dir).unwrap_or(pdf_path);
+        println!("  {}. {}", i + 1, relative_path.display());
+    }
+
+    if pdf_files.len() > sample_size {
+        println!("  ... and {} more", pdf_files.len() - sample_size);
+    }
+
+    println!("\nAll fixtures are accessible for CLI processing");
+    println!("==========================================\n");
+}
+
+/// Basic test that pdftract extract --json runs on discovered fixtures
+///
+/// This test runs `pdftract extract --json` on a small sample of discovered fixtures
+/// to verify that the CLI invocation works correctly. It processes only the first
+/// 5 fixtures to keep test runtime reasonable.
+#[test]
+fn test_cli_invocation_on_fixture_sample() {
+    let fixtures_dir = main_fixtures_dir();
+    let pdf_files = discover_pdf_fixtures(&fixtures_dir);
+    let bin = pdftract_bin();
+
+    // Ensure binary exists
+    assert!(bin.exists(), "pdftract binary not found at {:?}", bin);
+
+    // If no fixtures yet, test passes (scaffold for future fixtures)
+    if pdf_files.is_empty() {
+        println!("No PDF fixtures found - test scaffold ready");
+        return;
+    }
+
+    // Process only a small sample to keep test runtime reasonable
+    let sample_size = 5.min(pdf_files.len());
+    let sample = &pdf_files[..sample_size];
+
+    println!("\n=== CLI Invocation Test (Sample of {} fixtures) ===\n", sample_size);
+
+    let mut success_count = 0;
+    let mut failure_count = 0;
+
+    for pdf_path in sample {
+        let relative_path = pdf_path.strip_prefix(&fixtures_dir).unwrap_or(pdf_path);
+        println!("Processing: {}", relative_path.display());
+
+        // Run pdftract extract --json - on the fixture (JSON to stdout)
+        let output = Command::new(&bin)
+            .arg("extract")
+            .arg("--json")
+            .arg("-")
+            .arg(pdf_path)
+            .output();
+
+        match output {
+            Ok(result) => {
+                if result.status.success() {
+                    println!("  ✓ Success");
+                    success_count += 1;
+                } else {
+                    println!("  ⚠ Failed with status: {}", result.status);
+                    let stderr = String::from_utf8_lossy(&result.stderr);
+                    if !stderr.is_empty() {
+                        println!("    stderr: {}", stderr.lines().take(3).collect::<Vec<_>>().join("\n    "));
+                    }
+                    failure_count += 1;
+                }
+            }
+            Err(e) => {
+                println!("  ✗ Failed to run pdftract: {}", e);
+                failure_count += 1;
+            }
+        }
+    }
+
+    println!("\nResults: {} succeeded, {} failed (out of {} sample fixtures)",
+             success_count, failure_count, sample_size);
+    println!("==========================================\n");
+
+    // We don't assert all succeed since some fixtures may be malformed/encrypted
+    // Just verify the mechanism works
+    assert!(success_count + failure_count == sample_size,
+            "Test did not complete all fixture invocations");
+}

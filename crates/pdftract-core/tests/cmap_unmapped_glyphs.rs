@@ -12,6 +12,7 @@ use pdftract_core::font::unmapped::is_unmapped_glyph_name;
 /// 1. The CMAP parser can be instantiated
 /// 2. The unmapped glyph check function works
 /// 3. A minimal end-to-end flow compiles
+/// 4. CMAP output structure can be accessed and inspected
 ///
 /// More comprehensive tests will be added in follow-up work.
 #[test]
@@ -35,6 +36,19 @@ fn test_cmap_unmapped_glyph_skip() {
     // Verify the mapping works
     let result = map.lookup(&[0x00]);
     assert_eq!(result, Some(&['A'][..]), "Byte 0x00 should map to 'A'");
+
+    // NEW: Access and display CMAP output structure for inspection
+    // This demonstrates that we can iterate over all mappings to show CMAP contents
+    println!("\n=== CMAP Output Structure Inspection ===");
+    for (src_bytes, dst_chars) in map.iter() {
+        println!("  Source bytes: {:02X?}", src_bytes);
+        println!("  Target chars: {:?} (Unicode: {:04X?})",
+            dst_chars.iter().collect::<String>(),
+            dst_chars.iter().map(|c| *c as u32).collect::<Vec<_>>()
+        );
+    }
+    println!("  Total mappings: {}", map.len());
+    println!("=== End CMAP Inspection ===\n");
 }
 
 /// Test that CMAP with multiple mappings handles unmapped glyphs correctly.
@@ -58,6 +72,14 @@ fn test_cmap_multiple_mappings_with_unmapped_check() {
 
     // Verify unmapped glyph check still works
     assert!(is_unmapped_glyph_name(".notdef"), "Unmapped check should work");
+
+    // NEW: Display CMAP output structure for inspection
+    println!("\n=== CMAP Multiple Mappings Inspection ===");
+    for (src_bytes, dst_chars) in map.iter() {
+        println!("  [{:02X?}] → {}", src_bytes, dst_chars.iter().collect::<String>());
+    }
+    println!("  Total mappings: {}", map.len());
+    println!("=== End Inspection ===\n");
 }
 
 /// Test CMAP range mapping with unmapped glyph awareness.

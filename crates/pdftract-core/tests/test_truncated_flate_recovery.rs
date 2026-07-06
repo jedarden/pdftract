@@ -175,3 +175,28 @@ fn test_truncated_flate_extraction_result_structure() {
         println!("  No pages to extract");
     }
 }
+
+/// Test that truncated-flate.pdf opens with PdfExtractor without panic.
+///
+/// This is a basic smoke test to verify that the PdfExtractor can handle
+/// the truncated-flate.pdf fixture without crashing or hanging. It tests
+/// the minimal requirement: the file opens successfully and an extractor
+/// handle is available.
+#[test]
+fn test_truncated_flate_opens_with_extractor() {
+    let path = fixture_path();
+
+    println!("Testing PdfExtractor::open() with: {}", path.display());
+
+    // Open the PDF with PdfExtractor - this should not panic
+    let extractor = PdfExtractor::open(&path)
+        .expect("Should open truncated-flate.pdf with PdfExtractor");
+
+    println!("✓ PdfExtractor::open() succeeded without panic");
+    println!("  Fingerprint: {}", extractor.fingerprint());
+    println!("  Page count: {:?}", extractor.page_count());
+
+    // The extractor handle is now available for further operations
+    // This test verifies the basic opening behavior only
+    assert!(extractor.fingerprint().len() > 0, "Should have a fingerprint");
+}

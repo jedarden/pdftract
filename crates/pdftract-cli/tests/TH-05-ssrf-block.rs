@@ -225,8 +225,8 @@ fn test_ipv4_loopback_blocked() {
         }
     };
 
-    // Assert SSRF_BLOCKED error or stub response (Phase 1.8 not yet implemented)
-    assert_ssrf_blocked_or_stub(&response, "IPv4 loopback (127.0.0.1)");
+    // Assert SSRF_BLOCKED error (Phase 1.8 implemented)
+    assert_ssrf_blocked_error(&response, "IPv4 loopback (127.0.0.1)");
 }
 
 /// Test case 2: IPv4 wildcard (0.0.0.0) is blocked.
@@ -262,8 +262,8 @@ fn test_ipv4_wildcard_blocked() {
         }
     };
 
-    // Assert SSRF_BLOCKED error or stub response (Phase 1.8 not yet implemented)
-    assert_ssrf_blocked_or_stub(&response, "IPv4 wildcard (0.0.0.0)");
+    // Assert SSRF_BLOCKED error (Phase 1.8 implemented)
+    assert_ssrf_blocked_error(&response, "IPv4 wildcard (0.0.0.0)");
 }
 
 /// Test case 3: Cloud metadata endpoint (169.254.169.254) is blocked.

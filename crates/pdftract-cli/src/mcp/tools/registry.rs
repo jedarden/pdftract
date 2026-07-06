@@ -6,7 +6,8 @@
 
 use super::args::*;
 use super::{
-    CODE_IO_ERROR, CODE_PATH_INVALID, ERROR_IO_ERROR, ERROR_NOT_YET_IMPLEMENTED, ERROR_PATH_INVALID,
+    CODE_IO_ERROR, CODE_PATH_INVALID, CODE_SSRF_BLOCKED, ERROR_IO_ERROR, ERROR_NOT_YET_IMPLEMENTED,
+    ERROR_PATH_INVALID, ERROR_SSRF_BLOCKED,
 };
 use crate::mcp::framing::ErrorObject;
 use crate::mcp::root::resolve_path;
@@ -333,6 +334,119 @@ fn is_url(path: &str) -> bool {
     path.starts_with("http://") || path.starts_with("https://")
 }
 
+/// Validate a URL for SSRF (Server-Side Request Forgery) protection.
+///
+/// Returns an error if the URL should be blocked:
+/// - http:// scheme is not allowed (only https://)
+/// - Private network ranges (RFC 1918, loopback, link-local, cloud metadata)
+/// - IPv6 loopback and other private ranges
+///
+/// Returns Ok(()) if the URL is safe to fetch.
+fn validate_url_no_ssrf(url: &str) -> Result<(), String> {
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+    // Parse URL to extract host
+    let host = if let Some(start) = url.find("://") {
+        let after_scheme = &url[start + 3..];
+
+        // Extract host (before first / or ?)
+        let host_end = after_scheme
+            .find('/')
+            .or_else(|| after_scheme.find('?'))
+            .unwrap_or(after_scheme.len());
+
+        // Remove auth if present (user:pass@host)
+        let host_part = &after_scheme[..host_end];
+        if let Some(auth_end) = host_part.rfind('@') {
+            &host_part[auth_end + 1..]
+        } else {
+            host_part
+        }
+    } else {
+        return Err("Invalid URL format".to_string());
+    };
+
+    // Remove port if present
+    let host = host.split(':').next().unwrap_or(host);
+
+    // Remove brackets from IPv6 addresses
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+
+    // Check scheme: http:// is blocked
+    if url.starts_with("http://") {
+        return Err("URL scheme must be https://, not http://".to_string());
+    }
+
+    // Parse as IP address
+    if let Ok(ip_addr) = host.parse::<IpAddr>() {
+        match ip_addr {
+            IpAddr::V4(ipv4) => {
+                // Block IPv4 loopback (127.0.0.0/8)
+                if ipv4.is_loopback() {
+                    return Err("IPv4 loopback addresses are blocked (SSRF protection)".to_string());
+                }
+
+                // Block IPv4 wildcard (0.0.0.0)
+                if ipv4.is_unspecified() {
+                    return Err("IPv4 wildcard addresses are blocked (SSRF protection)".to_string());
+                }
+
+                // Block RFC 1918 private networks
+                let octets = ipv4.octets();
+                if octets[0] == 10 {
+                    return Err("RFC 1918 private network (10.0.0.0/8) is blocked (SSRF protection)".to_string());
+                }
+                if octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31 {
+                    return Err("RFC 1918 private network (172.16.0.0/12) is blocked (SSRF protection)".to_string());
+                }
+                if octets[0] == 192 && octets[1] == 168 {
+                    return Err("RFC 1918 private network (192.168.0.0/16) is blocked (SSRF protection)".to_string());
+                }
+
+                // Block link-local (169.254.0.0/16) - includes cloud metadata
+                if octets[0] == 169 && octets[1] == 254 {
+                    return Err("Link-local addresses (169.254.0.0/16) are blocked (SSRF protection)".to_string());
+                }
+            }
+            IpAddr::V6(ipv6) => {
+                // Block IPv6 loopback
+                if ipv6.is_loopback() {
+                    return Err("IPv6 loopback addresses are blocked (SSRF protection)".to_string());
+                }
+
+                // Block IPv6 unspecified
+                if ipv6.is_unspecified() {
+                    return Err("IPv6 unspecified addresses are blocked (SSRF protection)".to_string());
+                }
+
+                // Block IPv6 private ranges (fc00::/7, fd00::/8)
+                let segments = ipv6.segments();
+                if segments[0] & 0xfe00 == 0xfc00 {
+                    return Err("IPv6 private addresses (fc00::/7) are blocked (SSRF protection)".to_string());
+                }
+
+                // Block IPv6 unique local (fd00::/8)
+                if segments[0] & 0xff00 == 0xfd00 {
+                    return Err("IPv6 unique local addresses (fd00::/8) are blocked (SSRF protection)".to_string());
+                }
+
+                // Block IPv6 link-local (fe80::/10)
+                if segments[0] & 0xffc0 == 0xfe80 {
+                    return Err("IPv6 link-local addresses (fe80::/10) are blocked (SSRF protection)".to_string());
+                }
+            }
+        }
+    } else {
+        // Hostname - block localhost variants
+        let host_lower = host.to_lowercase();
+        if host_lower == "localhost" || host_lower.ends_with(".localhost") {
+            return Err("localhost hostname is blocked (SSRF protection)".to_string());
+        }
+    }
+
+    Ok(())
+}
+
 /// Build ExtractionOptions from MCP tool arguments.
 fn build_extraction_options(
     pages: &Option<String>,
@@ -424,6 +538,15 @@ impl Tool for ExtractTool {
 
         // Check if path is a URL
         if is_url(&tool_args.path) {
+            // Validate URL for SSRF protection
+            if let Err(reason) = validate_url_no_ssrf(&tool_args.path) {
+                return Err(ErrorObject::server_error(
+                    ERROR_SSRF_BLOCKED,
+                    format!("URL blocked: {}", reason)
+                ).with_data(json!({"code": CODE_SSRF_BLOCKED})));
+            }
+
+            // URL passed SSRF checks, but remote extraction is not yet implemented
             return Ok(json!({
                 "_note": "Remote PDF extraction requires Phase 1.8 remote source adapter",
                 "_tool": "extract",

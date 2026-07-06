@@ -103,6 +103,15 @@ impl ToUnicodeMap {
     pub fn len(&self) -> usize {
         self.mappings.len()
     }
+
+    /// Iterate over all mappings in the map.
+    ///
+    /// Returns an iterator over (source_bytes, target_chars) pairs.
+    /// This is useful for debugging and testing to inspect the full contents
+    /// of the CMAP structure.
+    pub fn iter(&self) -> impl Iterator<Item = (&Vec<u8>, &Vec<char>)> {
+        self.mappings.iter()
+    }
 }
 
 impl Default for ToUnicodeMap {
