@@ -693,7 +693,9 @@ where
         // Column grouping: floor divide by page width
         let col_a = (ca_x / 100.0).floor() as i32;
         let col_b = (cb_x / 100.0).floor() as i32;
-        col_a.cmp(&col_b).then_with(|| cb_y.partial_cmp(&ca_y).unwrap_or(std::cmp::Ordering::Equal))
+        col_a
+            .cmp(&col_b)
+            .then_with(|| cb_y.partial_cmp(&ca_y).unwrap_or(std::cmp::Ordering::Equal))
     });
 
     // Traverse connected components
@@ -721,11 +723,7 @@ struct Edge {
 }
 
 /// Build adjacency graph with k-nearest neighbors and angle constraints.
-fn build_adjacency_graph<B>(
-    blocks: &[B],
-    centers: &[(f32, f32)],
-    k: usize,
-) -> Vec<Edge>
+fn build_adjacency_graph<B>(blocks: &[B], centers: &[(f32, f32)], k: usize) -> Vec<Edge>
 where
     B: HasBBox,
 {
@@ -756,10 +754,7 @@ where
         // Sort by distance and take k nearest
         distances.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
         let n_dist = distances.len();
-        let k_nearest: Vec<(usize, f32)> = distances
-            .into_iter()
-            .take(k.min(n_dist))
-            .collect();
+        let k_nearest: Vec<(usize, f32)> = distances.into_iter().take(k.min(n_dist)).collect();
 
         // Create edges for k-nearest neighbors that pass angle constraints
         for &(j, dist) in &k_nearest {
@@ -827,11 +822,7 @@ fn find_roots(edges: &[Edge], centers: &[(f32, f32)]) -> Vec<usize> {
 }
 
 /// Traverse connected components via DFS in y-then-x order.
-fn traverse_components(
-    edges: &[Edge],
-    roots: &[usize],
-    centers: &[(f32, f32)],
-) -> Vec<usize> {
+fn traverse_components(edges: &[Edge], roots: &[usize], centers: &[(f32, f32)]) -> Vec<usize> {
     let n = centers.len();
     if n == 0 {
         return Vec::new();
@@ -1173,11 +1164,9 @@ mod tests {
         let main_pos: Vec<_> = result.order.iter().filter(|&&i| i < 3).collect();
         let sidebar_pos: Vec<_> = result.order.iter().filter(|&&i| i >= 3).collect();
         // Main column indices should appear before sidebar indices
-        if let (Some(&first_main), Some(&last_main), Some(&first_sidebar)) = (
-            main_pos.first(),
-            main_pos.last(),
-            sidebar_pos.first(),
-        ) {
+        if let (Some(&first_main), Some(&last_main), Some(&first_sidebar)) =
+            (main_pos.first(), main_pos.last(), sidebar_pos.first())
+        {
             assert!(last_main < first_sidebar);
         }
     }
@@ -1197,11 +1186,7 @@ mod tests {
         // Should visit left-to-right
         assert_eq!(result.algorithm, "docstrum");
         // All y coordinates are same, so order by x ascending
-        let x_coords: Vec<f32> = result
-            .order
-            .iter()
-            .map(|&i| blocks[i].bbox()[0])
-            .collect();
+        let x_coords: Vec<f32> = result.order.iter().map(|&i| blocks[i].bbox()[0]).collect();
         // Verify strictly increasing x coordinates
         for i in 1..x_coords.len() {
             assert!(x_coords[i] > x_coords[i - 1]);

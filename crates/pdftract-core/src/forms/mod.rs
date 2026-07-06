@@ -28,7 +28,7 @@ pub use xfa::{extract_xfa_fields, XfaField};
 pub use combiner::{combine, ChoiceValue, FormFieldValue};
 pub use value_button::{extract_button_value, ButtonKind, ButtonValue};
 pub use value_choice::{extract_choice_value, ChoiceKind, ChoiceValue as ChoiceValueData};
-pub use value_text::{extract_text_value, decode_pdf_string, TextValue};
+pub use value_text::{decode_pdf_string, extract_text_value, TextValue};
 
 /// Convert an AcroFormField to FormFieldValue.
 ///
@@ -1299,8 +1299,8 @@ mod tests {
             None,
             None,
             None,
-            None,  // opt
-            None,  // max_len
+            None, // opt
+            None, // max_len
         );
 
         let (btn_ref, btn) = make_field_dict_with_id(
@@ -1312,8 +1312,8 @@ mod tests {
             None,
             None,
             None,
-            None,  // opt
-            None,  // max_len
+            None, // opt
+            None, // max_len
         );
 
         let (ch_ref, ch) = make_field_dict_with_id(
@@ -1325,8 +1325,8 @@ mod tests {
             None,
             None,
             None,
-            None,  // opt
-            None,  // max_len
+            None, // opt
+            None, // max_len
         );
 
         let (sig_ref, sig) = make_field_dict_with_id(
@@ -1338,8 +1338,8 @@ mod tests {
             None,
             None,
             None,
-            None,  // opt
-            None,  // max_len
+            None, // opt
+            None, // max_len
         );
 
         let fields = vec![
@@ -1589,7 +1589,10 @@ mod tests {
                 is_multi_select,
             } => {
                 assert_eq!(value, &ChoiceValue::Single("opt2".to_string()));
-                assert_eq!(default.as_ref().unwrap(), &ChoiceValue::Single("opt1".to_string()));
+                assert_eq!(
+                    default.as_ref().unwrap(),
+                    &ChoiceValue::Single("opt1".to_string())
+                );
                 assert_eq!(options.len(), 3);
                 assert_eq!(options[0], ("opt1".to_string(), "Option 1".to_string()));
                 assert_eq!(options[1], ("opt2".to_string(), "Option 2".to_string()));
@@ -1814,7 +1817,10 @@ mod tests {
                 // Verify options are 2-tuples with different export and display values
                 assert_eq!(options.len(), 3);
                 assert_eq!(options[0], ("val1".to_string(), "First Option".to_string()));
-                assert_eq!(options[1], ("val2".to_string(), "Second Option".to_string()));
+                assert_eq!(
+                    options[1],
+                    ("val2".to_string(), "Second Option".to_string())
+                );
                 assert_eq!(options[2], ("val3".to_string(), "Third Option".to_string()));
             }
             _ => panic!("Expected Choice field"),
@@ -1843,9 +1849,7 @@ mod tests {
 
         match &extracted[0].1 {
             FormFieldValue::Text {
-                value,
-                multiline,
-                ..
+                value, multiline, ..
             } => {
                 assert!(value.as_ref().unwrap().contains('\n'));
                 assert!(value.as_ref().unwrap().contains('\r'));

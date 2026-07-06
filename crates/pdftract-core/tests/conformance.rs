@@ -156,7 +156,7 @@ fn resolve_path<'a>(value: &'a Value, path: &str) -> Option<&'a Value> {
             Value::Array(arr) => {
                 // Handle array indexing like [0]
                 if part.starts_with('[') && part.ends_with(']') {
-                    let index: usize = part[1..part.len()-1].parse().ok()?;
+                    let index: usize = part[1..part.len() - 1].parse().ok()?;
                     current = arr.get(index)?;
                 } else {
                     return None;
@@ -170,7 +170,12 @@ fn resolve_path<'a>(value: &'a Value, path: &str) -> Option<&'a Value> {
 }
 
 /// Compare a value against expected with tolerances.
-fn compare_with_tolerances(actual: &Value, expected: &Value, tolerances: &Value, path: &str) -> Vec<String> {
+fn compare_with_tolerances(
+    actual: &Value,
+    expected: &Value,
+    tolerances: &Value,
+    path: &str,
+) -> Vec<String> {
     let mut errors = Vec::new();
 
     match (expected, actual) {
@@ -193,7 +198,8 @@ fn compare_with_tolerances(actual: &Value, expected: &Value, tolerances: &Value,
                     }
                 };
 
-                let field_errors = compare_with_tolerances(act_value, exp_value, tolerances, &field_path);
+                let field_errors =
+                    compare_with_tolerances(act_value, exp_value, tolerances, &field_path);
                 errors.extend(field_errors);
             }
         }
@@ -223,24 +229,19 @@ fn compare_with_tolerances(actual: &Value, expected: &Value, tolerances: &Value,
                     // Single value to compare against all elements
                     for (i, act_elem) in act_arr.iter().enumerate() {
                         let elem_path = format!("{}[{}]", path, i);
-                        let elem_errors = compare_with_tolerances(act_elem, single, tolerances, &elem_path);
+                        let elem_errors =
+                            compare_with_tolerances(act_elem, single, tolerances, &elem_path);
                         errors.extend(elem_errors);
                     }
                 }
             } else if exp_arr.len() == 2 {
                 // Range [min, max]
-                if let (Some(min), Some(max)) = (
-                    exp_arr[0].as_u64(),
-                    exp_arr[1].as_u64()
-                ) {
+                if let (Some(min), Some(max)) = (exp_arr[0].as_u64(), exp_arr[1].as_u64()) {
                     let len = act_arr.len() as u64;
                     if len < min || len > max {
                         errors.push(format!(
                             "{}: Expected length in range [{}..{}], got {}",
-                            path,
-                            min,
-                            max,
-                            len
+                            path, min, max, len
                         ));
                     }
                 }
@@ -248,7 +249,8 @@ fn compare_with_tolerances(actual: &Value, expected: &Value, tolerances: &Value,
                 // Compare element by element
                 for (i, (exp_elem, act_elem)) in exp_arr.iter().zip(act_arr.iter()).enumerate() {
                     let elem_path = format!("{}[{}]", path, i);
-                    let elem_errors = compare_with_tolerances(act_elem, exp_elem, tolerances, &elem_path);
+                    let elem_errors =
+                        compare_with_tolerances(act_elem, exp_elem, tolerances, &elem_path);
                     errors.extend(elem_errors);
                 }
             }
@@ -286,10 +288,7 @@ fn compare_with_tolerances(actual: &Value, expected: &Value, tolerances: &Value,
 
             // No tolerance, exact match required
             if (act_f64 - exp_f64).abs() > f64::EPSILON {
-                errors.push(format!(
-                    "{}: Expected {}, got {}",
-                    path, exp_num, act_num
-                ));
+                errors.push(format!("{}: Expected {}, got {}", path, exp_num, act_num));
             }
         }
         (Value::String(exp_str), Value::String(act_str)) => {
@@ -302,10 +301,7 @@ fn compare_with_tolerances(actual: &Value, expected: &Value, tolerances: &Value,
         }
         (Value::Bool(exp_bool), Value::Bool(act_bool)) => {
             if exp_bool != act_bool {
-                errors.push(format!(
-                    "{}: Expected {}, got {}",
-                    path, exp_bool, act_bool
-                ));
+                errors.push(format!("{}: Expected {}, got {}", path, exp_bool, act_bool));
             }
         }
         (Value::Null, Value::Null) => {
@@ -387,15 +383,16 @@ fn run_extract_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
 
     // Skip URLs if remote feature is not enabled
     if case.fixture.starts_with("http") && !cfg!(feature = "remote") {
-        return Ok((Value::Null, vec![
-            format!("Remote sources require 'remote' feature")
-        ]));
+        return Ok((
+            Value::Null,
+            vec![format!("Remote sources require 'remote' feature")],
+        ));
     }
 
     let options = options_from_value(&case.options);
 
-    let result = sdk::extract(&fixture_path, &options)
-        .map_err(|e| anyhow!("Extract failed: {}", e))?;
+    let result =
+        sdk::extract(&fixture_path, &options).map_err(|e| anyhow!("Extract failed: {}", e))?;
 
     let json_value = result_to_json_value(&result);
 
@@ -434,9 +431,10 @@ fn run_extract_text_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
             .collect();
 
         if !missing.is_empty() {
-            return Ok((result, vec![
-                format!("Text missing expected substrings: {:?}", missing)
-            ]));
+            return Ok((
+                result,
+                vec![format!("Text missing expected substrings: {:?}", missing)],
+            ));
         }
     }
 
@@ -471,9 +469,13 @@ fn run_extract_markdown_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
             .collect();
 
         if !missing.is_empty() {
-            return Ok((result, vec![
-                format!("Markdown missing expected substrings: {:?}", missing)
-            ]));
+            return Ok((
+                result,
+                vec![format!(
+                    "Markdown missing expected substrings: {:?}",
+                    missing
+                )],
+            ));
         }
     }
 
@@ -500,11 +502,21 @@ fn run_extract_stream_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
     });
 
     // Check expectations
-    if let Some(min) = case.expected.get("frame_count").and_then(|v| v.get("min")).and_then(|v| v.as_u64()) {
+    if let Some(min) = case
+        .expected
+        .get("frame_count")
+        .and_then(|v| v.get("min"))
+        .and_then(|v| v.as_u64())
+    {
         if pages.len() < min as usize {
-            return Ok((result, vec![
-                format!("Expected at least {} frames, got {}", min, pages.len())
-            ]));
+            return Ok((
+                result,
+                vec![format!(
+                    "Expected at least {} frames, got {}",
+                    min,
+                    pages.len()
+                )],
+            ));
         }
     }
 
@@ -520,24 +532,38 @@ fn run_search_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
         .ok_or_else(|| anyhow!("Fixture path not found: {}", case.fixture))?;
 
     // Get search parameters from options
-    let pattern = case.options.get("pattern")
+    let pattern = case
+        .options
+        .get("pattern")
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow!("Missing pattern in search options"))?;
 
-    let case_insensitive = case.options.get("case_insensitive")
+    let case_insensitive = case
+        .options
+        .get("case_insensitive")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let use_regex = case.options.get("regex")
+    let use_regex = case
+        .options
+        .get("regex")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let whole_word = case.options.get("whole_word")
+    let whole_word = case
+        .options
+        .get("whole_word")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let matches = sdk::search(&fixture_path, pattern, case_insensitive, use_regex, whole_word)
-        .map_err(|e| anyhow!("Search failed: {}", e))?;
+    let matches = sdk::search(
+        &fixture_path,
+        pattern,
+        case_insensitive,
+        use_regex,
+        whole_word,
+    )
+    .map_err(|e| anyhow!("Search failed: {}", e))?;
 
     let result = serde_json::json!({
         "output_type": "iterator",
@@ -549,11 +575,14 @@ fn run_search_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
     if let Some(expected_first) = case.expected.get("first_match_text") {
         if let Some(first_match) = matches.first() {
             if first_match.text != expected_first.as_str().unwrap_or("") {
-                return Ok((result, vec![
-                    format!("First match text mismatch: expected '{}', got '{}'",
+                return Ok((
+                    result,
+                    vec![format!(
+                        "First match text mismatch: expected '{}', got '{}'",
                         expected_first.as_str().unwrap_or(""),
-                        first_match.text)
-                ]));
+                        first_match.text
+                    )],
+                ));
             }
         }
     }
@@ -583,10 +612,18 @@ fn run_get_metadata_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
                 }
             });
 
-            let errors = compare_with_tolerances(&actual_result, &case.expected, &Value::Object(Map::new()), "");
+            let errors = compare_with_tolerances(
+                &actual_result,
+                &case.expected,
+                &Value::Object(Map::new()),
+                "",
+            );
             Ok((actual_result, errors))
         }
-        Err(e) => Ok((serde_json::json!({"error": e.to_string()}), vec![format!("Failed to get metadata: {}", e)]))
+        Err(e) => Ok((
+            serde_json::json!({"error": e.to_string()}),
+            vec![format!("Failed to get metadata: {}", e)],
+        )),
     }
 }
 
@@ -595,8 +632,7 @@ fn run_hash_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
     let fixture_path = resolve_fixture_path(&case.fixture)
         .ok_or_else(|| anyhow!("Fixture path not found: {}", case.fixture))?;
 
-    let hash = sdk::hash(&fixture_path)
-        .map_err(|e| anyhow!("Hash failed: {}", e))?;
+    let hash = sdk::hash(&fixture_path).map_err(|e| anyhow!("Hash failed: {}", e))?;
 
     // Parse the hash to get hex part (format: "pdftract-v1:<hex>")
     let hash_prefix = "pdftract-v1:";
@@ -619,7 +655,12 @@ fn run_hash_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
         "content_hash_stable": content_hash_stable,
     });
 
-    let errors = compare_with_tolerances(&actual_result, &case.expected, &Value::Object(Map::new()), "");
+    let errors = compare_with_tolerances(
+        &actual_result,
+        &case.expected,
+        &Value::Object(Map::new()),
+        "",
+    );
     Ok((actual_result, errors))
 }
 
@@ -629,15 +670,18 @@ fn run_classify_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
         .ok_or_else(|| anyhow!("Fixture path not found: {}", case.fixture))?;
 
     // classify() requires a page_index - use 0 (first page)
-    let classification = sdk::classify(&fixture_path, 0)
-        .map_err(|e| anyhow!("Classify failed: {}", e))?;
+    let classification =
+        sdk::classify(&fixture_path, 0).map_err(|e| anyhow!("Classify failed: {}", e))?;
 
     // Map PageClass to category string using the as_type_str() method
     let category = classification.class.as_type_str();
 
     // Create tags based on classification
     let mut tags = vec![category.to_string()];
-    if matches!(classification.class, pdftract_core::classify::PageClass::Scanned) {
+    if matches!(
+        classification.class,
+        pdftract_core::classify::PageClass::Scanned
+    ) {
         tags.push("ocr".to_string());
     }
 
@@ -652,11 +696,26 @@ fn run_classify_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
         if let Some(first_page) = result.pages.first() {
             let text: String = first_page.spans.iter().map(|s| s.text.clone()).collect();
 
-            heuristics.insert("has_abstract".to_string(), json!(text.to_lowercase().contains("abstract")));
-            heuristics.insert("has_references".to_string(), json!(text.to_lowercase().contains("references")));
-            heuristics.insert("has_methods".to_string(), json!(text.to_lowercase().contains("methods")));
-            heuristics.insert("has_results".to_string(), json!(text.to_lowercase().contains("results")));
-            heuristics.insert("has_form_fields".to_string(), json!(!result.form_fields.is_empty()));
+            heuristics.insert(
+                "has_abstract".to_string(),
+                json!(text.to_lowercase().contains("abstract")),
+            );
+            heuristics.insert(
+                "has_references".to_string(),
+                json!(text.to_lowercase().contains("references")),
+            );
+            heuristics.insert(
+                "has_methods".to_string(),
+                json!(text.to_lowercase().contains("methods")),
+            );
+            heuristics.insert(
+                "has_results".to_string(),
+                json!(text.to_lowercase().contains("results")),
+            );
+            heuristics.insert(
+                "has_form_fields".to_string(),
+                json!(!result.form_fields.is_empty()),
+            );
         }
     }
 
@@ -667,7 +726,12 @@ fn run_classify_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
         "heuristics": heuristics,
     });
 
-    let errors = compare_with_tolerances(&actual_result, &case.expected, &Value::Object(Map::new()), "");
+    let errors = compare_with_tolerances(
+        &actual_result,
+        &case.expected,
+        &Value::Object(Map::new()),
+        "",
+    );
     Ok((actual_result, errors))
 }
 
@@ -679,7 +743,9 @@ fn run_verify_receipt_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
         let fixture_path = resolve_fixture_path(&case.fixture);
 
         // Get receipt path from options
-        let receipt_path = case.options.get("receipt")
+        let receipt_path = case
+            .options
+            .get("receipt")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("Missing receipt path in options"))?;
 
@@ -692,7 +758,10 @@ fn run_verify_receipt_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
         };
 
         if !full_receipt_path.exists() {
-            return Ok((serde_json::json!({"valid": false, "reason": "Receipt file not found"}), vec![]));
+            return Ok((
+                serde_json::json!({"valid": false, "reason": "Receipt file not found"}),
+                vec![],
+            ));
         }
 
         // Read receipt JSON
@@ -700,10 +769,8 @@ fn run_verify_receipt_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
             .map_err(|e| anyhow!("Failed to read receipt: {}", e))?;
 
         // Try to verify the receipt
-        let verification_result = pdftract_core::receipts::verifier::verify_receipt(
-            &fixture_path,
-            &receipt_content,
-        );
+        let verification_result =
+            pdftract_core::receipts::verifier::verify_receipt(&fixture_path, &receipt_content);
 
         let valid = verification_result.is_ok();
 
@@ -711,15 +778,21 @@ fn run_verify_receipt_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
             "valid": valid,
         });
 
-        let errors = compare_with_tolerances(&actual_result, &case.expected, &Value::Object(Map::new()), "");
+        let errors = compare_with_tolerances(
+            &actual_result,
+            &case.expected,
+            &Value::Object(Map::new()),
+            "",
+        );
         Ok((actual_result, errors))
     }
 
     #[cfg(not(feature = "receipts"))]
     {
-        Ok((serde_json::json!({"output_type": "error"}), vec![
-            "Receipt verification requires 'receipts' feature".to_string()
-        ]))
+        Ok((
+            serde_json::json!({"output_type": "error"}),
+            vec!["Receipt verification requires 'receipts' feature".to_string()],
+        ))
     }
 }
 
@@ -752,10 +825,16 @@ fn result_to_json_value(result: &ExtractionResult) -> Value {
 /// Determine page type based on content.
 fn determine_page_type(page: &pdftract_core::extract::PageResult) -> String {
     // Check if page has any scanned content
-    let has_scanned = page.spans.iter().any(|s| s.confidence_source.as_deref() == Some("ocr"));
+    let has_scanned = page
+        .spans
+        .iter()
+        .any(|s| s.confidence_source.as_deref() == Some("ocr"));
 
     // Check if page has vector content
-    let has_vector = page.spans.iter().any(|s| s.confidence_source.as_deref() == Some("vector"));
+    let has_vector = page
+        .spans
+        .iter()
+        .any(|s| s.confidence_source.as_deref() == Some("vector"));
 
     if has_scanned && has_vector {
         "mixed".to_string()
@@ -780,8 +859,13 @@ fn load_conformance_suite() -> Result<ConformanceSuite> {
     let mut suite_content = None;
     for suite_path in possible_paths {
         if suite_path.exists() {
-            suite_content = Some(fs::read_to_string(&suite_path)
-                .map_err(|e| anyhow!("Failed to read conformance suite from {}: {}", suite_path.display(), e))?);
+            suite_content = Some(fs::read_to_string(&suite_path).map_err(|e| {
+                anyhow!(
+                    "Failed to read conformance suite from {}: {}",
+                    suite_path.display(),
+                    e
+                )
+            })?);
             break;
         }
     }
@@ -789,11 +873,16 @@ fn load_conformance_suite() -> Result<ConformanceSuite> {
     // Try using CARGO_MANIFEST_DIR
     if suite_content.is_none() {
         if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
-            let from_manifest = PathBuf::from(manifest_dir)
-                .join("../../tests/sdk-conformance/cases.json");
+            let from_manifest =
+                PathBuf::from(manifest_dir).join("../../tests/sdk-conformance/cases.json");
             if from_manifest.exists() {
-                suite_content = Some(fs::read_to_string(&from_manifest)
-                    .map_err(|e| anyhow!("Failed to read conformance suite from {}: {}", from_manifest.display(), e))?);
+                suite_content = Some(fs::read_to_string(&from_manifest).map_err(|e| {
+                    anyhow!(
+                        "Failed to read conformance suite from {}: {}",
+                        from_manifest.display(),
+                        e
+                    )
+                })?);
             }
         }
     }
@@ -874,7 +963,9 @@ fn run_all_tests() -> Vec<TestResult> {
                 test_result.passed = test_result.errors.is_empty();
             }
             Err(e) => {
-                test_result.errors.push(format!("Test execution error: {}", e));
+                test_result
+                    .errors
+                    .push(format!("Test execution error: {}", e));
                 test_result.passed = false;
             }
         }
@@ -896,7 +987,11 @@ fn test_sdk_conformance() {
     for result in &results {
         if result.skipped {
             skipped += 1;
-            println!("SKIP: {} - {}", result.id, result.skip_reason.as_ref().unwrap_or(&"?".to_string()));
+            println!(
+                "SKIP: {} - {}",
+                result.id,
+                result.skip_reason.as_ref().unwrap_or(&"?".to_string())
+            );
         } else if result.passed {
             passed += 1;
             println!("PASS: {}", result.id);

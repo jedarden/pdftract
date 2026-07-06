@@ -17,12 +17,12 @@ use crate::parser::catalog::{parse_catalog, Catalog};
 use crate::parser::object::PdfDict;
 use crate::parser::pages::{flatten_page_tree, LazyPageIter, PageDict};
 use crate::parser::stream::{FileSource as ParserFileSource, PdfSource as ParserPdfSource};
-use crate::source::{FileSource, PdfSource};
 use crate::parser::xref::{
     detect_linearization, load_xref_linearized, load_xref_with_prev_chain, LinearizationInfo,
     XrefResolver, XrefSection,
 };
 use crate::receipts::verifier::SpanData;
+use crate::source::{FileSource, PdfSource};
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -81,15 +81,14 @@ pub fn parse_pdf_file(
         .ok_or_else(|| anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn ParserPdfSource)).map_err(
-        |diagnostics| {
+    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn ParserPdfSource))
+        .map_err(|diagnostics| {
             let msg = diagnostics
                 .first()
                 .map(|d| d.message.as_ref())
                 .unwrap_or("unknown error");
             anyhow!("Failed to parse catalog: {}", msg)
-        },
-    )?;
+        })?;
 
     // Flatten the page tree
     let pages = flatten_page_tree(&resolver, catalog.pages_ref).map_err(|diagnostics| {
@@ -101,7 +100,8 @@ pub fn parse_pdf_file(
     })?;
 
     // Resolve AcroForm dictionary if present
-    let acroform = catalog.acroform_ref
+    let acroform = catalog
+        .acroform_ref
         .and_then(|r| resolver.resolve(r).ok())
         .and_then(|o| o.as_dict().map(|d| d.clone()));
 
@@ -109,7 +109,11 @@ pub fn parse_pdf_file(
     let fingerprint_input = build_fingerprint_input(&catalog, &pages, &resolver, &acroform);
 
     // Compute fingerprint with source available for content stream decoding
-    let fingerprint = compute_fingerprint(&fingerprint_input, &resolver, Some(&source as &dyn ParserPdfSource));
+    let fingerprint = compute_fingerprint(
+        &fingerprint_input,
+        &resolver,
+        Some(&source as &dyn ParserPdfSource),
+    );
 
     Ok((fingerprint, catalog, pages, resolver))
 }
@@ -158,15 +162,14 @@ pub fn parse_pdf_source(
         .ok_or_else(|| anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref, Some(&*source as &dyn ParserPdfSource)).map_err(
-        |diagnostics| {
+    let catalog = parse_catalog(&resolver, root_ref, Some(&*source as &dyn ParserPdfSource))
+        .map_err(|diagnostics| {
             let msg = diagnostics
                 .first()
                 .map(|d| d.message.as_ref())
                 .unwrap_or("unknown error");
             anyhow!("Failed to parse catalog: {}", msg)
-        },
-    )?;
+        })?;
 
     // Flatten the page tree
     let pages = flatten_page_tree(&resolver, catalog.pages_ref).map_err(|diagnostics| {
@@ -178,7 +181,8 @@ pub fn parse_pdf_source(
     })?;
 
     // Resolve AcroForm dictionary if present
-    let acroform = catalog.acroform_ref
+    let acroform = catalog
+        .acroform_ref
         .and_then(|r| resolver.resolve(r).ok())
         .and_then(|o| o.as_dict().map(|d| d.clone()));
 
@@ -186,7 +190,11 @@ pub fn parse_pdf_source(
     let fingerprint_input = build_fingerprint_input(&catalog, &pages, &resolver, &acroform);
 
     // Compute fingerprint with source available
-    let fingerprint = compute_fingerprint(&fingerprint_input, &resolver, Some(&*source as &dyn ParserPdfSource));
+    let fingerprint = compute_fingerprint(
+        &fingerprint_input,
+        &resolver,
+        Some(&*source as &dyn ParserPdfSource),
+    );
 
     Ok((fingerprint, catalog, pages, resolver))
 }
@@ -446,18 +454,18 @@ impl PdfExtractor {
             .ok_or_else(|| anyhow!("No /Root reference in trailer"))?;
 
         // Parse the catalog
-        let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn ParserPdfSource)).map_err(
-            |diagnostics| {
+        let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn ParserPdfSource))
+            .map_err(|diagnostics| {
                 let msg = diagnostics
                     .first()
                     .map(|d| d.message.as_ref())
                     .unwrap_or("unknown error");
                 anyhow!("Failed to parse catalog: {}", msg)
-            },
-        )?;
+            })?;
 
         // Resolve AcroForm dictionary if present (for XFA detection)
-        let acroform = catalog.acroform_ref
+        let acroform = catalog
+            .acroform_ref
             .and_then(|r| resolver.resolve(r).ok())
             .and_then(|o| o.as_dict().map(|d| d.clone()));
 
@@ -786,7 +794,8 @@ impl Document {
     pub fn open_remote(url: &str, opts: &RemoteOpts) -> Result<Self> {
         use crate::parser::stream::SourceAdapter;
         use crate::source::open_remote as open_remote_source;
-        let source = open_remote_source(url, opts, None).context("Failed to open remote PDF source")?;
+        let source =
+            open_remote_source(url, opts, None).context("Failed to open remote PDF source")?;
         let adapted = Box::new(SourceAdapter::new(source)) as Box<dyn ParserPdfSource>;
         Self::from_source(adapted, true)
     }
@@ -796,7 +805,8 @@ impl Document {
     /// This is used internally by both `open` and `open_remote`.
     fn from_source(source: Box<dyn ParserPdfSource>, is_remote: bool) -> Result<Self> {
         // Find the startxref offset
-        let startxref_offset = find_startxref(&*source).context("Failed to find startxref offset")?;
+        let startxref_offset =
+            find_startxref(&*source).context("Failed to find startxref offset")?;
 
         // Load the xref table (forward-scan is disabled for remote sources automatically)
         let xref_section = load_xref_with_prev_chain(&*source, startxref_offset);
@@ -813,13 +823,14 @@ impl Document {
             .ok_or_else(|| anyhow!("No /Root reference in trailer"))?;
 
         // Parse the catalog
-        let catalog = parse_catalog(&resolver, root_ref, Some(&*source)).map_err(|diagnostics| {
-            let msg = diagnostics
-                .first()
-                .map(|d| d.message.as_ref())
-                .unwrap_or("unknown error");
-            anyhow!("Failed to parse catalog: {}", msg)
-        })?;
+        let catalog =
+            parse_catalog(&resolver, root_ref, Some(&*source)).map_err(|diagnostics| {
+                let msg = diagnostics
+                    .first()
+                    .map(|d| d.message.as_ref())
+                    .unwrap_or("unknown error");
+                anyhow!("Failed to parse catalog: {}", msg)
+            })?;
 
         // Resolve AcroForm dictionary if present (for XFA detection)
         let acroform = catalog
@@ -1071,7 +1082,10 @@ pub fn open_remote_url(url: &str) -> std::io::Result<Box<dyn PdfSource>> {
 /// let source = open_remote_url_with_opts("https://example.com/doc.pdf", &opts)?;
 /// ```
 #[cfg(feature = "remote")]
-pub fn open_remote_url_with_opts(url: &str, opts: &RemoteOpts) -> std::io::Result<Box<dyn PdfSource>> {
+pub fn open_remote_url_with_opts(
+    url: &str,
+    opts: &RemoteOpts,
+) -> std::io::Result<Box<dyn PdfSource>> {
     use crate::source::open_remote as open_remote_source;
     open_remote_source(url, opts, None)
 }

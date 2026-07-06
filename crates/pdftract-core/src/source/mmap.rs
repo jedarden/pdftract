@@ -226,7 +226,10 @@ mod tests {
 
         let source = MmapSource::open(temp_file.path()).unwrap();
         let result = source.read_range(0, 100);
-        assert!(matches!(result.unwrap_err().kind(), io::ErrorKind::UnexpectedEof));
+        assert!(matches!(
+            result.unwrap_err().kind(),
+            io::ErrorKind::UnexpectedEof
+        ));
     }
 
     #[test]
@@ -236,7 +239,10 @@ mod tests {
 
         let source = MmapSource::open(temp_file.path()).unwrap();
         let result = source.read_range(u64::MAX, 10);
-        assert!(matches!(result.unwrap_err().kind(), io::ErrorKind::InvalidInput));
+        assert!(matches!(
+            result.unwrap_err().kind(),
+            io::ErrorKind::InvalidInput
+        ));
     }
 
     #[test]
@@ -301,7 +307,10 @@ mod tests {
 
         let mut source = MmapSource::open(temp_file.path()).unwrap();
         let result = source.seek(SeekFrom::End(-100));
-        assert!(matches!(result.unwrap_err().kind(), io::ErrorKind::InvalidInput));
+        assert!(matches!(
+            result.unwrap_err().kind(),
+            io::ErrorKind::InvalidInput
+        ));
     }
 
     #[test]
@@ -373,7 +382,10 @@ mod tests {
 
         let source = MmapSource::open(temp_file.path()).unwrap();
         let result = source.advise_sequential(0, 100);
-        assert!(matches!(result.unwrap_err().kind(), io::ErrorKind::InvalidInput));
+        assert!(matches!(
+            result.unwrap_err().kind(),
+            io::ErrorKind::InvalidInput
+        ));
     }
 
     #[test]
@@ -383,7 +395,10 @@ mod tests {
 
         let source = MmapSource::open(temp_file.path()).unwrap();
         let result = source.advise_sequential(u64::MAX, 10);
-        assert!(matches!(result.unwrap_err().kind(), io::ErrorKind::InvalidInput));
+        assert!(matches!(
+            result.unwrap_err().kind(),
+            io::ErrorKind::InvalidInput
+        ));
     }
 
     #[test]

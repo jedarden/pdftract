@@ -116,7 +116,10 @@ impl std::error::Error for PageRangeError {}
 /// let pages = parse_page_range("1-5,7,12-", 20).unwrap();
 /// // Returns 0-4, 6, 11-19 (0-based)
 /// ```
-pub fn parse_page_range(range_str: &str, page_count: usize) -> Result<BTreeSet<usize>, PageRangeError> {
+pub fn parse_page_range(
+    range_str: &str,
+    page_count: usize,
+) -> Result<BTreeSet<usize>, PageRangeError> {
     if range_str.trim().is_empty() {
         return Err(PageRangeError::EmptyRange);
     }
@@ -159,7 +162,10 @@ pub fn parse_page_range(range_str: &str, page_count: usize) -> Result<BTreeSet<u
                     let end = parse_page_number(after_dash)?;
 
                     if start > end {
-                        return Err(PageRangeError::InvalidRange(before_dash.to_string(), after_dash.to_string()));
+                        return Err(PageRangeError::InvalidRange(
+                            before_dash.to_string(),
+                            after_dash.to_string(),
+                        ));
                     }
 
                     let start_idx = to_0based(start, page_count)?;
@@ -188,7 +194,9 @@ pub fn parse_page_range(range_str: &str, page_count: usize) -> Result<BTreeSet<u
 ///
 /// Returns an error if the string is not a valid positive integer.
 fn parse_page_number(s: &str) -> Result<usize, PageRangeError> {
-    let n: usize = s.parse().map_err(|_| PageRangeError::InvalidPageNumber(s.to_string()))?;
+    let n: usize = s
+        .parse()
+        .map_err(|_| PageRangeError::InvalidPageNumber(s.to_string()))?;
     if n == 0 {
         Err(PageRangeError::NonPositivePageNumber(s.to_string()))
     } else {
@@ -312,7 +320,10 @@ mod tests {
         assert_eq!(pages.into_iter().collect::<Vec<_>>(), vec![0, 1, 2, 3, 4]);
 
         let pages = parse_page_range("5-10", 10).unwrap();
-        assert_eq!(pages.into_iter().collect::<Vec<_>>(), vec![4, 5, 6, 7, 8, 9]);
+        assert_eq!(
+            pages.into_iter().collect::<Vec<_>>(),
+            vec![4, 5, 6, 7, 8, 9]
+        );
 
         let pages = parse_page_range("3-3", 10).unwrap();
         assert_eq!(pages.into_iter().collect::<Vec<_>>(), vec![2]);
@@ -367,10 +378,7 @@ mod tests {
     #[test]
     fn test_parse_invalid_range_start_greater_than_end() {
         let result = parse_page_range("5-3", 10);
-        assert!(matches!(
-            result,
-            Err(PageRangeError::InvalidRange(_, _))
-        ));
+        assert!(matches!(result, Err(PageRangeError::InvalidRange(_, _))));
     }
 
     #[test]
@@ -446,7 +454,10 @@ mod tests {
         let pages = parse_page_range("1-5,3,7,3-5", 10).unwrap();
         // Should dedupe: 0-4 (1-5), 6 (7)
         assert_eq!(pages.len(), 6);
-        assert_eq!(pages.into_iter().collect::<Vec<_>>(), vec![0, 1, 2, 3, 4, 6]);
+        assert_eq!(
+            pages.into_iter().collect::<Vec<_>>(),
+            vec![0, 1, 2, 3, 4, 6]
+        );
     }
 
     #[test]

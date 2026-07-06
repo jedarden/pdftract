@@ -153,7 +153,6 @@
 //! The extraction pipeline is designed for single-threaded use, but you can
 //! process multiple independent PDFs in parallel using rayon or similar.
 
-
 pub mod annotation;
 pub mod atomic_file_writer;
 pub mod attachment;
@@ -196,10 +195,10 @@ pub mod preprocess;
 #[cfg(feature = "profiles")]
 pub mod profiles;
 pub mod receipts;
-#[cfg(feature = "ocr")]
-pub mod render;
 #[cfg(feature = "remote")]
 pub mod remote;
+#[cfg(feature = "ocr")]
+pub mod render;
 pub mod source;
 pub mod text;
 #[cfg(feature = "remote")]
@@ -230,8 +229,8 @@ pub use forms::{
     combine, walk_acroform_fields, AcroFieldType, AcroFormField, ChoiceValue, FormFieldValue,
 };
 pub use markdown::{
-    block_to_markdown, form_fields_to_markdown, MarkdownOptions, page_to_markdown,
-    page_to_markdown_with_links, parse_anchors, span_to_markdown, Anchor,
+    block_to_markdown, form_fields_to_markdown, page_to_markdown, page_to_markdown_with_links,
+    parse_anchors, span_to_markdown, Anchor, MarkdownOptions,
 };
 pub use options::{ExtractionOptions, OutputOptions, ReceiptsMode};
 pub use page_class::{page_type_string, PageClass, PageClassification};
@@ -255,7 +254,7 @@ pub use source::{HttpRangeSource, RemoteOpts};
 pub use glyph::{emit_glyph, new_raw_glyph_list, Glyph};
 
 // Re-export Phase 4.1 Span types (pdftract-31ag5)
-pub use span::{CssHexColor, Span, merge_glyphs_to_spans};
+pub use span::{merge_glyphs_to_spans, CssHexColor, Span};
 
 #[cfg(feature = "ocr")]
 pub use dpi::{select_dpi, FontSizeSpan, Pdf1Filter};

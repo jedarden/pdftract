@@ -32,8 +32,7 @@ fn pdftract_bin() -> PathBuf {
 
 /// Path to fixtures directory
 fn fixtures_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/forms")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/forms")
 }
 
 /// Find all PDF files in the fixtures directory (non-recursive)
@@ -70,7 +69,10 @@ fn discover_pdf_fixtures<P: AsRef<Path>>(fixtures_path: P) -> Vec<PathBuf> {
         .filter_map(|e| e.ok())
         .filter(|e| {
             e.file_type().is_file()
-                && e.path().extension().map(|ext| ext == "pdf").unwrap_or(false)
+                && e.path()
+                    .extension()
+                    .map(|ext| ext == "pdf")
+                    .unwrap_or(false)
         })
         .map(|e| e.path().to_path_buf());
 
@@ -119,7 +121,10 @@ fn test_forms_fixtures_discovery() {
 
     // If no fixtures yet, test passes (scaffold for future fixtures)
     if pdf_files.is_empty() {
-        println!("No PDF fixtures found in {:?} - test scaffold ready for fixtures", fixtures_dir());
+        println!(
+            "No PDF fixtures found in {:?} - test scaffold ready for fixtures",
+            fixtures_dir()
+        );
         return;
     }
 
@@ -236,7 +241,10 @@ fn test_extract_all_discovered_pdfs() {
         println!();
     }
 
-    println!("=== Summary: {} succeeded, {} failed ===\n", success_count, failure_count);
+    println!(
+        "=== Summary: {} succeeded, {} failed ===\n",
+        success_count, failure_count
+    );
 
     // For this skeleton test, we don't assert success_count > 0
     // PDF extraction failures are OK at this stage - we're just verifying

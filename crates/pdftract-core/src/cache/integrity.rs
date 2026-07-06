@@ -78,7 +78,8 @@ pub fn init_cache_key(cache_dir: &Path) -> Result<()> {
     let key = generate_key();
 
     // Write key file with restricted permissions
-    fs::write(&key_path, &key).with_context(|| format!("Failed to write key file: {}", key_path.display()))?;
+    fs::write(&key_path, &key)
+        .with_context(|| format!("Failed to write key file: {}", key_path.display()))?;
 
     // Set mode 0600 on Unix (owner read/write only)
     #[cfg(unix)]
@@ -88,8 +89,9 @@ pub fn init_cache_key(cache_dir: &Path) -> Result<()> {
             .with_context(|| format!("Failed to get key file metadata: {}", key_path.display()))?
             .permissions();
         perms.set_mode(0o600);
-        fs::set_permissions(&key_path, perms)
-            .with_context(|| format!("Failed to set key file permissions: {}", key_path.display()))?;
+        fs::set_permissions(&key_path, perms).with_context(|| {
+            format!("Failed to set key file permissions: {}", key_path.display())
+        })?;
     }
 
     Ok(())
@@ -220,7 +222,10 @@ mod tests {
 
         let result = init_cache_key(cache_dir);
         assert!(result.is_err(), "Should fail if key already exists");
-        assert!(result.unwrap_err().to_string().contains("already initialized"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("already initialized"));
     }
 
     #[test]
@@ -317,7 +322,10 @@ mod tests {
         let sig1 = compute_hmac(&key, fp1, opts_hash, blob);
         let sig2 = compute_hmac(&key, fp2, opts_hash, blob);
 
-        assert_ne!(sig1, sig2, "Different fingerprints should produce different HMACs");
+        assert_ne!(
+            sig1, sig2,
+            "Different fingerprints should produce different HMACs"
+        );
     }
 
     #[test]

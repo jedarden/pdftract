@@ -2,11 +2,11 @@
 //!
 //! Run with: cargo test -p pdftract-core --test generate_document_model_golden -- --ignored
 
+use pdftract_core::detection;
+use pdftract_core::document::parse_pdf_file;
+use serde_json::json;
 use std::fs;
 use std::path::{Path, PathBuf};
-use pdftract_core::document::parse_pdf_file;
-use pdftract_core::detection;
-use serde_json::json;
 
 #[test]
 #[ignore = "Use --ignored to run this golden file generator"]
@@ -62,8 +62,11 @@ fn generate_expected_json_files() {
                     "contains_xfa": false,
                     "pages": []
                 });
-                fs::write(&expected_path, &serde_json::to_string_pretty(&fallback).unwrap())
-                    .expect(&format!("Failed to write {}", expected_path.display()));
+                fs::write(
+                    &expected_path,
+                    &serde_json::to_string_pretty(&fallback).unwrap(),
+                )
+                .expect(&format!("Failed to write {}", expected_path.display()));
                 println!("  Created fallback {}", expected_path.display());
             }
         }
@@ -75,20 +78,25 @@ fn generate_expected_json_files() {
 fn generate_expected_json(pdf_path: &Path, name: &str) -> Result<String, String> {
     // Parse the PDF - for now we use the unencrypted parse since the test
     // infrastructure doesn't support password-protected files yet
-    let (_fingerprint, catalog, pages, resolver) = parse_pdf_file(pdf_path)
-        .map_err(|e| format!("Failed to parse PDF: {}", e))?;
+    let (_fingerprint, catalog, pages, resolver) =
+        parse_pdf_file(pdf_path).map_err(|e| format!("Failed to parse PDF: {}", e))?;
 
     // Check for encryption
-    let is_encrypted = catalog.diagnostics.iter()
+    let is_encrypted = catalog
+        .diagnostics
+        .iter()
         .any(|d| d.code.category() == "ENCRYPTION");
 
     // Get encryption status from diagnostics
-    let encryption_status = catalog.diagnostics.iter()
+    let encryption_status = catalog
+        .diagnostics
+        .iter()
         .find(|d| d.code.category() == "ENCRYPTION")
         .map(|d| d.message.clone());
 
     // Resolve AcroForm if present
-    let acroform = catalog.acroform_ref
+    let acroform = catalog
+        .acroform_ref
         .and_then(|r| resolver.resolve(r).ok())
         .and_then(|o| o.as_dict().cloned());
 
@@ -97,13 +105,21 @@ fn generate_expected_json(pdf_path: &Path, name: &str) -> Result<String, String>
     let contains_xfa = detection::detect_xfa(&acroform);
 
     // Get OCG information
-    let ocg_present = catalog.oc_properties.as_ref().map(|p| p.present).unwrap_or(false);
-    let ocg_base_state = catalog.oc_properties.as_ref()
+    let ocg_present = catalog
+        .oc_properties
+        .as_ref()
+        .map(|p| p.present)
+        .unwrap_or(false);
+    let ocg_base_state = catalog
+        .oc_properties
+        .as_ref()
         .map(|p| format!("{:?}", p.base_state));
 
     // Get page labels
     let page_labels: Vec<serde_json::Value> = if let Some(ref labels_tree) = catalog.page_labels {
-        labels_tree.labels().iter()
+        labels_tree
+            .labels()
+            .iter()
             .map(|(idx, label)| {
                 json!({
                     "index": idx,
@@ -130,44 +146,66 @@ fn generate_expected_json(pdf_path: &Path, name: &str) -> Result<String, String>
 
     // Add encryption status if present
     if let Some(status) = encryption_status {
-        doc.as_object_mut().unwrap().insert("encryption_status".to_string(), json!(status));
+        doc.as_object_mut()
+            .unwrap()
+            .insert("encryption_status".to_string(), json!(status));
     }
 
     // Add OCG base state if present
     if let Some(base_state) = ocg_base_state {
-        doc.as_object_mut().unwrap().insert("ocg_base_state".to_string(), json!(base_state));
+        doc.as_object_mut()
+            .unwrap()
+            .insert("ocg_base_state".to_string(), json!(base_state));
     }
 
     // Add page labels if present
     if !page_labels.is_empty() {
-        doc.as_object_mut().unwrap().insert("page_labels".to_string(), json!(page_labels));
+        doc.as_object_mut()
+            .unwrap()
+            .insert("page_labels".to_string(), json!(page_labels));
     }
 
     // Add page-level information
-    let pages_array: Vec<serde_json::Value> = pages.iter().enumerate().map(|(i, page)| {
-        let mut page_obj = json!({
-            "page_index": i,
-            "media_box": page.media_box,
-            "rotate": page.rotate,
-        });
+    let pages_array: Vec<serde_json::Value> = pages
+        .iter()
+        .enumerate()
+        .map(|(i, page)| {
+            let mut page_obj = json!({
+                "page_index": i,
+                "media_box": page.media_box,
+                "rotate": page.rotate,
+            });
 
-        // Add crop_box if present
-        if let Some(crop_box) = page.crop_box {
-            page_obj.as_object_mut().unwrap().insert("crop_box".to_string(), json!(crop_box));
-        } else {
-            page_obj.as_object_mut().unwrap().insert("crop_box".to_string(), json!(page.media_box));
-        }
+            // Add crop_box if present
+            if let Some(crop_box) = page.crop_box {
+                page_obj
+                    .as_object_mut()
+                    .unwrap()
+                    .insert("crop_box".to_string(), json!(crop_box));
+            } else {
+                page_obj
+                    .as_object_mut()
+                    .unwrap()
+                    .insert("crop_box".to_string(), json!(page.media_box));
+            }
 
-        // Track inheritance - add font info if present
-        if !page.resources.fonts.is_empty() {
-            let fonts: std::collections::HashMap<_, _> = page.resources.fonts.iter()
-                .map(|(name, _)| (name.clone(), "present".to_string()))
-                .collect();
-            page_obj.as_object_mut().unwrap().insert("fonts".to_string(), json!(fonts));
-        }
+            // Track inheritance - add font info if present
+            if !page.resources.fonts.is_empty() {
+                let fonts: std::collections::HashMap<_, _> = page
+                    .resources
+                    .fonts
+                    .iter()
+                    .map(|(name, _)| (name.clone(), "present".to_string()))
+                    .collect();
+                page_obj
+                    .as_object_mut()
+                    .unwrap()
+                    .insert("fonts".to_string(), json!(fonts));
+            }
 
-        page_obj
-    }).collect();
+            page_obj
+        })
+        .collect();
 
     doc.as_object_mut()
         .unwrap()

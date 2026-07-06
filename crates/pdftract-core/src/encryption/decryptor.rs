@@ -12,7 +12,9 @@ use crate::encryption::{
     aes_128::{aes_128_decrypt, derive_aes_128_object_key},
     aes_256::{aes_256_decrypt, Aes256Decryptor, FileKeyResult as Aes256FileKeyResult},
     detection::{detect_encryption, CryptFilterMethod, EncryptionInfo},
-    rc4::{decrypt_object, derive_file_key, validate_user_password, FileKeyResult as Rc4FileKeyResult},
+    rc4::{
+        decrypt_object, derive_file_key, validate_user_password, FileKeyResult as Rc4FileKeyResult,
+    },
 };
 #[cfg(feature = "decrypt")]
 use crate::parser::xref::XrefResolver;
@@ -171,12 +173,8 @@ impl DecryptionContext {
             CryptFilterMethod::Identity => Ok(encrypted_data.to_vec()),
             CryptFilterMethod::V2 => {
                 // RC4 decryption
-                let decrypted = decrypt_object(
-                    &self.file_key,
-                    object_number,
-                    generation,
-                    encrypted_data,
-                );
+                let decrypted =
+                    decrypt_object(&self.file_key, object_number, generation, encrypted_data);
                 Ok(decrypted)
             }
             CryptFilterMethod::AesV2 => {
@@ -192,7 +190,8 @@ impl DecryptionContext {
                     .as_slice()
                     .try_into()
                     .map_err(|_| DecryptionError::InvalidFormat)?;
-                aes_256_decrypt(&key_array, encrypted_data).map_err(|_| DecryptionError::DecryptionFailed)
+                aes_256_decrypt(&key_array, encrypted_data)
+                    .map_err(|_| DecryptionError::DecryptionFailed)
             }
         }
     }
@@ -238,12 +237,8 @@ impl DecryptionContext {
             CryptFilterMethod::Identity => Ok(encrypted_data.to_vec()),
             CryptFilterMethod::V2 => {
                 // RC4 decryption
-                let decrypted = decrypt_object(
-                    &self.file_key,
-                    object_number,
-                    generation,
-                    encrypted_data,
-                );
+                let decrypted =
+                    decrypt_object(&self.file_key, object_number, generation, encrypted_data);
                 Ok(decrypted)
             }
             CryptFilterMethod::AesV2 => {
@@ -258,7 +253,8 @@ impl DecryptionContext {
                     .as_slice()
                     .try_into()
                     .map_err(|_| DecryptionError::InvalidFormat)?;
-                aes_256_decrypt(&key_array, encrypted_data).map_err(|_| DecryptionError::DecryptionFailed)
+                aes_256_decrypt(&key_array, encrypted_data)
+                    .map_err(|_| DecryptionError::DecryptionFailed)
             }
         }
     }
@@ -321,7 +317,8 @@ pub fn decrypt_with_password(
     if info.file_id.is_empty() || info.file_id.len() < 16 {
         diagnostics.push(Diagnostic::with_dynamic_no_offset(
             DiagCode::EncryptionUnsupported,
-            "Cannot decrypt: /ID array missing or too short (required for key derivation)".to_string(),
+            "Cannot decrypt: /ID array missing or too short (required for key derivation)"
+                .to_string(),
         ));
         return Err(DecryptionError::MissingField("/ID".to_string()));
     }
@@ -333,9 +330,7 @@ pub fn decrypt_with_password(
     };
 
     match result {
-        Ok((file_key, source)) => {
-            Ok(Some(DecryptionContext::new(info, file_key, source)?))
-        }
+        Ok((file_key, source)) => Ok(Some(DecryptionContext::new(info, file_key, source)?)),
         Err(e) => {
             // Emit diagnostic and return error
             let diag = e.to_diagnostic();
@@ -355,11 +350,17 @@ fn decrypt_v5(
     // Extract required fields for V=5 decryption
     let user_hash = &info.user_hash;
     let owner_hash = &info.owner_hash;
-    let user_key_encrypted = info.user_key_encrypted.as_ref()
+    let user_key_encrypted = info
+        .user_key_encrypted
+        .as_ref()
         .ok_or_else(|| DecryptionError::MissingField("/UE".to_string()))?;
-    let owner_key_encrypted = info.owner_key_encrypted.as_ref()
+    let owner_key_encrypted = info
+        .owner_key_encrypted
+        .as_ref()
         .ok_or_else(|| DecryptionError::MissingField("/OE".to_string()))?;
-    let perms_encrypted = info.perms_encrypted.as_ref()
+    let perms_encrypted = info
+        .perms_encrypted
+        .as_ref()
         .ok_or_else(|| DecryptionError::MissingField("/Perms".to_string()))?
         .clone();
 
@@ -371,7 +372,8 @@ fn decrypt_v5(
         owner_key_encrypted.clone(),
         perms_encrypted,
         info.file_id.clone(),
-    ).ok_or_else(|| DecryptionError::InvalidFormat)?;
+    )
+    .ok_or_else(|| DecryptionError::InvalidFormat)?;
 
     // Attempt 1: Empty password (for documents with empty owner password)
     let result = decryptor.derive_file_key_user("");
@@ -491,7 +493,13 @@ mod tests {
     #[cfg(feature = "decrypt")]
     #[test]
     fn test_password_validation_equality() {
-        assert_eq!(PasswordValidation::EmptyPassword, PasswordValidation::EmptyPassword);
-        assert_ne!(PasswordValidation::UserPassword, PasswordValidation::OwnerPassword);
+        assert_eq!(
+            PasswordValidation::EmptyPassword,
+            PasswordValidation::EmptyPassword
+        );
+        assert_ne!(
+            PasswordValidation::UserPassword,
+            PasswordValidation::OwnerPassword
+        );
     }
 }

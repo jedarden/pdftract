@@ -48,9 +48,13 @@ pub fn evaluate_match(expr: &MatchExpr, signals: &FeatureSignals) -> MatchResult
             }
 
             if result.matched {
-                result.reasons.push("all: all sub-expressions matched".to_string());
+                result
+                    .reasons
+                    .push("all: all sub-expressions matched".to_string());
             } else {
-                result.reasons.push("all: some sub-expressions did not match".to_string());
+                result
+                    .reasons
+                    .push("all: some sub-expressions did not match".to_string());
             }
 
             result
@@ -98,14 +102,17 @@ pub fn evaluate_match(expr: &MatchExpr, signals: &FeatureSignals) -> MatchResult
                 if sub_result.matched {
                     result.matched = false;
                     result.confidence = 0.0;
-                    result
-                        .reasons
-                        .push(format!("none: excluded sub-expression matched: {:?}", sub_result.reasons));
+                    result.reasons.push(format!(
+                        "none: excluded sub-expression matched: {:?}",
+                        sub_result.reasons
+                    ));
                 }
             }
 
             if result.matched {
-                result.reasons.push("none: no excluded sub-expressions matched".to_string());
+                result
+                    .reasons
+                    .push("none: no excluded sub-expressions matched".to_string());
             }
 
             result
@@ -167,7 +174,10 @@ fn evaluate_predicate(pred: &ExtractionMatchPredicate, signals: &FeatureSignals)
                 Err(e) => {
                     return MatchResult {
                         matched: false,
-                        reasons: vec![format!("heading_matches: invalid regex '{}': {}", pattern, e)],
+                        reasons: vec![format!(
+                            "heading_matches: invalid regex '{}': {}",
+                            pattern, e
+                        )],
                         confidence: 0.0,
                     }
                 }
@@ -188,7 +198,10 @@ fn evaluate_predicate(pred: &ExtractionMatchPredicate, signals: &FeatureSignals)
 
             MatchResult {
                 matched: false,
-                reasons: vec![format!("heading_matches: no headings matched '{}'", pattern)],
+                reasons: vec![format!(
+                    "heading_matches: no headings matched '{}'",
+                    pattern
+                )],
                 confidence: 0.0,
             }
         }
@@ -266,7 +279,10 @@ fn evaluate_predicate(pred: &ExtractionMatchPredicate, signals: &FeatureSignals)
 
             if *has_table {
                 if signals.table_block_count > 0 {
-                    reasons.push(format!("structural.has_table: {} tables found", signals.table_block_count));
+                    reasons.push(format!(
+                        "structural.has_table: {} tables found",
+                        signals.table_block_count
+                    ));
                 } else {
                     reasons.push("structural.has_table: no tables found".to_string());
                     matched = false;
@@ -324,7 +340,10 @@ fn evaluate_predicate(pred: &ExtractionMatchPredicate, signals: &FeatureSignals)
 fn has_currency_pattern_impl(text: &str) -> bool {
     // Simple check for currency symbols followed by digits
     let text_lower = text.to_lowercase();
-    text_lower.contains('$') || text_lower.contains('€') || text_lower.contains('£') || text_lower.contains('¥')
+    text_lower.contains('$')
+        || text_lower.contains('€')
+        || text_lower.contains('£')
+        || text_lower.contains('¥')
 }
 
 /// Simple regex cache (thread-safe, LRU-bounded).
@@ -463,7 +482,10 @@ mod tests {
 
         let result = evaluate_match(&expr, &signals);
         assert!(result.matched);
-        assert!(result.reasons.iter().any(|r| r.contains("all: all sub-expressions matched")));
+        assert!(result
+            .reasons
+            .iter()
+            .any(|r| r.contains("all: all sub-expressions matched")));
     }
 
     #[test]
@@ -488,9 +510,11 @@ mod tests {
     fn test_match_expr_none() {
         let signals = test_signals();
         let expr = MatchExpr::None {
-            none: vec![MatchExpr::Predicate(ExtractionMatchPredicate::TextContains {
-                patterns: vec!["abstract".to_string()],
-            })],
+            none: vec![MatchExpr::Predicate(
+                ExtractionMatchPredicate::TextContains {
+                    patterns: vec!["abstract".to_string()],
+                },
+            )],
         };
 
         let result = evaluate_match(&expr, &signals);

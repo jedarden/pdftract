@@ -411,7 +411,7 @@ fn generate_font_fingerprints(out_dir: &Path, fingerprints_path: &Path) {
         }
 
         // Convert hex string to [u8; 32] bytes
-        let hash_bytes: [u8; 32] = hex_decode_to_array(sha256_hex);
+        let _hash_bytes: [u8; 32] = hex_decode_to_array(sha256_hex);
 
         // Get entries
         let entries = font_entry

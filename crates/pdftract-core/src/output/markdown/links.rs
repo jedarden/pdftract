@@ -380,7 +380,10 @@ pub fn find_spans_in_link_json(spans: &[SpanJson], link: &LinkJson) -> Vec<usize
 /// # Returns
 ///
 /// A vector of (span_indices, markdown_string) tuples.
-pub fn emit_page_links_from_json(spans: &[SpanJson], links: &[LinkJson]) -> Vec<(Vec<usize>, String)> {
+pub fn emit_page_links_from_json(
+    spans: &[SpanJson],
+    links: &[LinkJson],
+) -> Vec<(Vec<usize>, String)> {
     let mut results = Vec::new();
     let mut used_spans = std::collections::HashSet::new();
 
@@ -514,12 +517,19 @@ mod tests {
     fn test_resolve_link_target_external_http() {
         let link = make_test_link([0.0, 0.0, 100.0, 20.0], Some("https://example.com"), None);
         let target = resolve_link_target(&link);
-        assert_eq!(target, LinkTarget::External("https://example.com".to_string()));
+        assert_eq!(
+            target,
+            LinkTarget::External("https://example.com".to_string())
+        );
     }
 
     #[test]
     fn test_resolve_link_target_external_mailto() {
-        let link = make_test_link([0.0, 0.0, 100.0, 20.0], Some("mailto:test@example.com"), None);
+        let link = make_test_link(
+            [0.0, 0.0, 100.0, 20.0],
+            Some("mailto:test@example.com"),
+            None,
+        );
         let target = resolve_link_target(&link);
         assert_eq!(
             target,
@@ -529,11 +539,7 @@ mod tests {
 
     #[test]
     fn test_resolve_link_target_javascript_rejected() {
-        let link = make_test_link(
-            [0.0, 0.0, 100.0, 20.0],
-            Some("javascript:alert(1)"),
-            None,
-        );
+        let link = make_test_link([0.0, 0.0, 100.0, 20.0], Some("javascript:alert(1)"), None);
         let target = resolve_link_target(&link);
         assert_eq!(target, LinkTarget::None);
     }
@@ -568,7 +574,10 @@ mod tests {
 
     #[test]
     fn test_percent_encode_url() {
-        assert_eq!(percent_encode_url("https://example.com"), "https://example.com");
+        assert_eq!(
+            percent_encode_url("https://example.com"),
+            "https://example.com"
+        );
         assert_eq!(
             percent_encode_url("https://example.com/path(with)parens"),
             "https://example.com/path%28with%29parens"
@@ -596,8 +605,10 @@ mod tests {
 
     #[test]
     fn test_emit_inline_link_internal_named() {
-        let markdown =
-            emit_inline_link("Appendix", &LinkTarget::InternalNamed("AppendixA".to_string()));
+        let markdown = emit_inline_link(
+            "Appendix",
+            &LinkTarget::InternalNamed("AppendixA".to_string()),
+        );
         assert_eq!(markdown, "[Appendix](#AppendixA)");
     }
 
@@ -613,7 +624,10 @@ mod tests {
             "See [Chapter 1] for details",
             &LinkTarget::External("https://example.com".to_string()),
         );
-        assert_eq!(markdown, r"[See \[Chapter 1\] for details](https://example.com)");
+        assert_eq!(
+            markdown,
+            r"[See \[Chapter 1\] for details](https://example.com)"
+        );
     }
 
     #[test]
@@ -622,7 +636,11 @@ mod tests {
             make_test_span("Hello", 100.0, 720.0, 150.0, 730.0),
             make_test_span("World", 160.0, 720.0, 210.0, 730.0),
         ];
-        let link = make_test_link([90.0, 710.0, 160.0, 740.0], Some("https://example.com"), None);
+        let link = make_test_link(
+            [90.0, 710.0, 160.0, 740.0],
+            Some("https://example.com"),
+            None,
+        );
 
         let matched = find_spans_in_link(&spans, &link);
         assert_eq!(matched, vec![0]); // Only first span's center is in the link
@@ -635,7 +653,11 @@ mod tests {
             make_test_span("here", 145.0, 720.0, 180.0, 730.0),
             make_test_span("now", 185.0, 720.0, 210.0, 730.0),
         ];
-        let link = make_test_link([90.0, 710.0, 200.0, 740.0], Some("https://example.com"), None);
+        let link = make_test_link(
+            [90.0, 710.0, 200.0, 740.0],
+            Some("https://example.com"),
+            None,
+        );
 
         let matched = find_spans_in_link(&spans, &link);
         assert_eq!(matched, vec![0, 1, 2]); // All three spans
@@ -700,7 +722,10 @@ mod tests {
     #[test]
     fn test_emit_page_links_internal_destination() {
         let spans = vec![make_test_span("Chapter 1", 100.0, 720.0, 180.0, 730.0)];
-        let links = vec![make_test_link_with_dest_array([90.0, 710.0, 190.0, 740.0], 0)];
+        let links = vec![make_test_link_with_dest_array(
+            [90.0, 710.0, 190.0, 740.0],
+            0,
+        )];
 
         let results = emit_page_links(&spans, &links);
         assert_eq!(results.len(), 1);
@@ -710,7 +735,11 @@ mod tests {
     #[test]
     fn test_emit_page_links_no_anchor_text() {
         let spans = vec![make_test_span("Text", 100.0, 720.0, 140.0, 730.0)];
-        let links = vec![make_test_link([200.0, 720.0, 300.0, 730.0], Some("https://example.com"), None)];
+        let links = vec![make_test_link(
+            [200.0, 720.0, 300.0, 730.0],
+            Some("https://example.com"),
+            None,
+        )];
 
         let results = emit_page_links(&spans, &links);
         assert!(results.is_empty()); // No spans in link rect
@@ -736,7 +765,11 @@ mod tests {
         // Two overlapping links
         let links = vec![
             make_test_link([90.0, 710.0, 150.0, 740.0], Some("https://first.com"), None),
-            make_test_link([110.0, 710.0, 170.0, 740.0], Some("https://second.com"), None),
+            make_test_link(
+                [110.0, 710.0, 170.0, 740.0],
+                Some("https://second.com"),
+                None,
+            ),
         ];
 
         let results = emit_page_links(&spans, &links);

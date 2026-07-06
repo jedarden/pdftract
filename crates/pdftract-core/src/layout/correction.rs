@@ -138,8 +138,13 @@ pub fn detect_script(text: &str) -> Script {
             // Kannada: U+0C80..U+0CFF
             // Malayalam: U+0D00..U+0D7F
             // Odia: U+0B00..U+0B7F
-            0x0A00..=0x0A7F | 0x0A80..=0x0AFF | 0x0B00..=0x0B7F | 0x0B80..=0x0BFF |
-            0x0C00..=0x0C7F | 0x0C80..=0x0CFF | 0x0D00..=0x0D7F => indic_count += 1,
+            0x0A00..=0x0A7F
+            | 0x0A80..=0x0AFF
+            | 0x0B00..=0x0B7F
+            | 0x0B80..=0x0BFF
+            | 0x0C00..=0x0C7F
+            | 0x0C80..=0x0CFF
+            | 0x0D00..=0x0D7F => indic_count += 1,
             // Thai: U+0E00..U+0E7F
             0x0E00..=0x0E7F => thai_count += 1,
             // Lao: U+0E80..U+0EFF
@@ -492,60 +497,60 @@ fn contains_mojibake_indicators(text: &str) -> bool {
     const INDICATORS: &[&str] = &[
         // Latin-1 vowels with diacritics (common French/Spanish/Portuguese)
         // These are UTF-8 lead bytes (0xC2, 0xC3) interpreted as Windows-1252
-        "Ã©",  // U+00C3 U+00A9 (from 0xC3 0xA9 - é in UTF-8)
-        "Ã¨",  // U+00C3 U+00A8 (from 0xC3 0xA8 - è in UTF-8)
-        "Ãª",  // U+00C3 U+00AA (from 0xC3 0xAA - ê in UTF-8)
-        "Ã®",  // U+00C3 U+00AE (from 0xC3 0xAE - î in UTF-8)
-        "Ã´",  // U+00C3 U+00B4 (from 0xC3 0xB4 - ô in UTF-8)
-        "Ã»",  // U+00C3 U+00BB (from 0xC3 0xBB - û in UTF-8)
-        "Ã¢",  // U+00C3 U+00A2 (from 0xC3 0xA2 - â in UTF-8)
-        "Ã§",  // U+00C3 U+00E7 (from 0xC3 0xE7 - ç in UTF-8)
-        "Ã±",  // U+00C3 U+00F1 (from 0xC3 0xF1 - ñ in UTF-8)
-        "Ã£",  // U+00C3 U+00E3 (from 0xC3 0xE3 - ã in UTF-8)
-        "Ãº",  // U+00C3 U+00FA (from 0xC3 0xFA - ú in UTF-8)
+        "Ã©", // U+00C3 U+00A9 (from 0xC3 0xA9 - é in UTF-8)
+        "Ã¨", // U+00C3 U+00A8 (from 0xC3 0xA8 - è in UTF-8)
+        "Ãª", // U+00C3 U+00AA (from 0xC3 0xAA - ê in UTF-8)
+        "Ã®", // U+00C3 U+00AE (from 0xC3 0xAE - î in UTF-8)
+        "Ã´", // U+00C3 U+00B4 (from 0xC3 0xB4 - ô in UTF-8)
+        "Ã»", // U+00C3 U+00BB (from 0xC3 0xBB - û in UTF-8)
+        "Ã¢", // U+00C3 U+00A2 (from 0xC3 0xA2 - â in UTF-8)
+        "Ã§", // U+00C3 U+00E7 (from 0xC3 0xE7 - ç in UTF-8)
+        "Ã±", // U+00C3 U+00F1 (from 0xC3 0xF1 - ñ in UTF-8)
+        "Ã£", // U+00C3 U+00E3 (from 0xC3 0xE3 - ã in UTF-8)
+        "Ãº", // U+00C3 U+00FA (from 0xC3 0xFA - ú in UTF-8)
         "Ã­",  // U+00C3 U+00AD (from 0xC3 0xAD - í in UTF-8)
-        "Ã³",  // U+00C3 U+00B3 (from 0xC3 0xB3 - ó in UTF-8)
-        "Ã¡",  // U+00C3 U+00A1 (from 0xC3 0xA1 - á in UTF-8)
+        "Ã³", // U+00C3 U+00B3 (from 0xC3 0xB3 - ó in UTF-8)
+        "Ã¡", // U+00C3 U+00A1 (from 0xC3 0xA1 - á in UTF-8)
         // 0xC2 lead byte patterns (Â followed by Latin-1 character)
-        "Â ",  // U+00C2 U+00A0 (from 0xC2 0xA0 - NBSP in UTF-8)
-        "Â¡",  // U+00C2 U+00A1 (from 0xC2 0xA1 - ¡ in UTF-8)
-        "Â¢",  // U+00C2 U+00A2 (from 0xC2 0xA2 - ¢ in UTF-8)
-        "Â£",  // U+00C2 U+00A3 (from 0xC2 0xA3 - £ in UTF-8)
-        "Â¤",  // U+00C2 U+00A4 (from 0xC2 0xA4 - ¤ in UTF-8)
-        "Â¥",  // U+00C2 U+00A5 (from 0xC2 0xA5 - ¥ in UTF-8)
-        "Â¦",  // U+00C2 U+00A6 (from 0xC2 0xA6 - ¦ in UTF-8)
-        "Â§",  // U+00C2 U+00A7 (from 0xC2 0xA7 - § in UTF-8)
-        "Â¨",  // U+00C2 U+00A8 (from 0xC2 0xA8 - ¨ in UTF-8)
-        "Â©",  // U+00C2 U+00A9 (from 0xC2 0xA9 - © in UTF-8)
-        "Âª",  // U+00C2 U+00AA (from 0xC2 0xAA - ª in UTF-8)
-        "Â«",  // U+00C2 U+00AB (from 0xC2 0xAB - « in UTF-8)
-        "Â¬",  // U+00C2 U+00AC (from 0xC2 0xAC - ¬ in UTF-8)
-        "Â®",  // U+00C2 U+00AE (from 0xC2 0xAE - ® in UTF-8)
-        "Â¯",  // U+00C2 U+00AF (from 0xC2 0xAF - ¯ in UTF-8)
-        "Â°",  // U+00C2 U+00B0 (from 0xC2 0xB0 - ° in UTF-8)
-        "Â±",  // U+00C2 U+00B1 (from 0xC2 0xB1 - ± in UTF-8)
-        "Â²",  // U+00C2 U+00B2 (from 0xC2 0xB2 - ² in UTF-8)
-        "Â³",  // U+00C2 U+00B3 (from 0xC2 0xB3 - ³ in UTF-8)
-        "Âµ",  // U+00C2 U+00B5 (from 0xC2 0xB5 - µ in UTF-8)
-        "Â¶",  // U+00C2 U+00B6 (from 0xC2 0xB6 - ¶ in UTF-8)
-        "Â·",  // U+00C2 U+00B7 (from 0xC2 0xB7 - · in UTF-8)
-        "Â¸",  // U+00C2 U+00B8 (from 0xC2 0xB8 - ¸ in UTF-8)
-        "Â¹",  // U+00C2 U+00B9 (from 0xC2 0xB9 - ¹ in UTF-8)
-        "Âº",  // U+00C2 U+00BA (from 0xC2 0xBA - º in UTF-8)
-        "Â»",  // U+00C2 U+00BB (from 0xC2 0xBB - » in UTF-8)
-        "Â¼",  // U+00C2 U+00BC (from 0xC2 0xBC - ¼ in UTF-8)
-        "Â½",  // U+00C2 U+00BD (from 0xC2 0xBD - ½ in UTF-8)
-        "Â¾",  // U+00C2 U+00BE (from 0xC2 0xBE - ¾ in UTF-8)
-        "Â¿",  // U+00C2 U+00BF (from 0xC2 0xBF - ¿ in UTF-8)
+        "Â ",        // U+00C2 U+00A0 (from 0xC2 0xA0 - NBSP in UTF-8)
+        "Â¡",        // U+00C2 U+00A1 (from 0xC2 0xA1 - ¡ in UTF-8)
+        "Â¢",        // U+00C2 U+00A2 (from 0xC2 0xA2 - ¢ in UTF-8)
+        "Â£",        // U+00C2 U+00A3 (from 0xC2 0xA3 - £ in UTF-8)
+        "Â¤",        // U+00C2 U+00A4 (from 0xC2 0xA4 - ¤ in UTF-8)
+        "Â¥",        // U+00C2 U+00A5 (from 0xC2 0xA5 - ¥ in UTF-8)
+        "Â¦",        // U+00C2 U+00A6 (from 0xC2 0xA6 - ¦ in UTF-8)
+        "Â§",        // U+00C2 U+00A7 (from 0xC2 0xA7 - § in UTF-8)
+        "Â¨",        // U+00C2 U+00A8 (from 0xC2 0xA8 - ¨ in UTF-8)
+        "Â©",        // U+00C2 U+00A9 (from 0xC2 0xA9 - © in UTF-8)
+        "Âª",        // U+00C2 U+00AA (from 0xC2 0xAA - ª in UTF-8)
+        "Â«",        // U+00C2 U+00AB (from 0xC2 0xAB - « in UTF-8)
+        "Â¬",        // U+00C2 U+00AC (from 0xC2 0xAC - ¬ in UTF-8)
+        "Â®",        // U+00C2 U+00AE (from 0xC2 0xAE - ® in UTF-8)
+        "Â¯",        // U+00C2 U+00AF (from 0xC2 0xAF - ¯ in UTF-8)
+        "Â°",        // U+00C2 U+00B0 (from 0xC2 0xB0 - ° in UTF-8)
+        "Â±",        // U+00C2 U+00B1 (from 0xC2 0xB1 - ± in UTF-8)
+        "Â²",        // U+00C2 U+00B2 (from 0xC2 0xB2 - ² in UTF-8)
+        "Â³",        // U+00C2 U+00B3 (from 0xC2 0xB3 - ³ in UTF-8)
+        "Âµ",        // U+00C2 U+00B5 (from 0xC2 0xB5 - µ in UTF-8)
+        "Â¶",        // U+00C2 U+00B6 (from 0xC2 0xB6 - ¶ in UTF-8)
+        "Â·",        // U+00C2 U+00B7 (from 0xC2 0xB7 - · in UTF-8)
+        "Â¸",        // U+00C2 U+00B8 (from 0xC2 0xB8 - ¸ in UTF-8)
+        "Â¹",        // U+00C2 U+00B9 (from 0xC2 0xB9 - ¹ in UTF-8)
+        "Âº",        // U+00C2 U+00BA (from 0xC2 0xBA - º in UTF-8)
+        "Â»",        // U+00C2 U+00BB (from 0xC2 0xBB - » in UTF-8)
+        "Â¼",        // U+00C2 U+00BC (from 0xC2 0xBC - ¼ in UTF-8)
+        "Â½",        // U+00C2 U+00BD (from 0xC2 0xBD - ½ in UTF-8)
+        "Â¾",        // U+00C2 U+00BE (from 0xC2 0xBE - ¾ in UTF-8)
+        "Â¿",        // U+00C2 U+00BF (from 0xC2 0xBF - ¿ in UTF-8)
         "Â\u{00a0}", // U+00C2 U+00A0 (NBSP mojibake - Â followed by non-breaking space)
-        "Ã€",  // U+00C3 U+20AC (from 0xC3 0x82 - â in UTF-8, but Windows-1252 0x82 is â‚¬)
+        "Ã€",        // U+00C3 U+20AC (from 0xC3 0x82 - â in UTF-8, but Windows-1252 0x82 is â‚¬)
         // Smart quotes and dashes from three-byte UTF-8 sequences interpreted as Windows-1252
-        "â€™",  // U+00E2 U+20AC U+2122 (from 0xE2 0x80 0x99 - ’ in UTF-8, 0x80=€ in Windows-1252)
-        "â€œ",  // U+00E2 U+20AC U+201C (from 0xE2 0x80 0x9C - “ in UTF-8)
-        "â€",   // U+00E2 U+20AC U+201D (from 0xE2 0x80 0x9D - ” in UTF-8)
-        "â€\u{00a0}",  // U+00E2 U+20AC U+00A0 (from 0xE2 0x80 0xA0 - † in UTF-8)
-        "â€¡",  // U+00E2 U+20AC U+2021 (from 0xE2 0x80 0xA1 - ‡ in UTF-8)
-        "â€¦",  // U+00E2 U+20AC U+2026 (from 0xE2 0x80 0xA6 - … in UTF-8)
+        "â€™", // U+00E2 U+20AC U+2122 (from 0xE2 0x80 0x99 - ’ in UTF-8, 0x80=€ in Windows-1252)
+        "â€œ", // U+00E2 U+20AC U+201C (from 0xE2 0x80 0x9C - “ in UTF-8)
+        "â€",  // U+00E2 U+20AC U+201D (from 0xE2 0x80 0x9D - ” in UTF-8)
+        "â€\u{00a0}", // U+00E2 U+20AC U+00A0 (from 0xE2 0x80 0xA0 - † in UTF-8)
+        "â€¡", // U+00E2 U+20AC U+2021 (from 0xE2 0x80 0xA1 - ‡ in UTF-8)
+        "â€¦", // U+00E2 U+20AC U+2026 (from 0xE2 0x80 0xA6 - … in UTF-8)
     ];
 
     let mut count = 0;
@@ -790,7 +795,7 @@ where
             if next_line_mut.spans.is_empty() {
                 block.lines.remove(i + 1);
                 repair_count += 1; // Count the repair before continuing
-                // Don't increment i - recheck current line with new next line
+                                   // Don't increment i - recheck current line with new next line
                 continue;
             }
         }
@@ -918,7 +923,9 @@ pub fn repair_split_ligatures(span: &mut Span, neighbor_glyphs: &[Glyph]) -> boo
         // For other characters, find a glyph with matching codepoint
         if ch == '\u{FFFD}' {
             // Find next U+FFFD glyph
-            while glyph_idx < neighbor_glyphs.len() && neighbor_glyphs[glyph_idx].codepoint != '\u{FFFD}' {
+            while glyph_idx < neighbor_glyphs.len()
+                && neighbor_glyphs[glyph_idx].codepoint != '\u{FFFD}'
+            {
                 glyph_idx += 1;
             }
             if glyph_idx < neighbor_glyphs.len() {
@@ -959,7 +966,11 @@ pub fn repair_split_ligatures(span: &mut Span, neighbor_glyphs: &[Glyph]) -> boo
 
         // Found U+FFFD - check if it's a split ligature
         let prev_char = if i > 0 { Some(chars[i - 1]) } else { None };
-        let next_char = if i + 1 < chars.len() { Some(chars[i + 1]) } else { None };
+        let next_char = if i + 1 < chars.len() {
+            Some(chars[i + 1])
+        } else {
+            None
+        };
 
         let ffd_glyph_idx = char_to_glyph.get(i).copied().unwrap_or(usize::MAX);
 
@@ -985,9 +996,11 @@ pub fn repair_split_ligatures(span: &mut Span, neighbor_glyphs: &[Glyph]) -> boo
         if prev_char == Some('f') {
             // Check position adjacency between 'f' glyph and U+FFFD glyph
             let prev_glyph_idx = char_to_glyph.get(i - 1).copied().unwrap_or(usize::MAX);
-            let is_adjacent = if prev_glyph_idx != usize::MAX && prev_glyph_idx + 1 == ffd_glyph_idx {
+            let is_adjacent = if prev_glyph_idx != usize::MAX && prev_glyph_idx + 1 == ffd_glyph_idx
+            {
                 // Consecutive glyphs - check bbox gap
-                let gap = neighbor_glyphs[ffd_glyph_idx].bbox[0] - neighbor_glyphs[prev_glyph_idx].bbox[2];
+                let gap = neighbor_glyphs[ffd_glyph_idx].bbox[0]
+                    - neighbor_glyphs[prev_glyph_idx].bbox[2];
                 gap < LIGATURE_GAP_THRESHOLD
             } else {
                 false
@@ -1025,8 +1038,10 @@ pub fn repair_split_ligatures(span: &mut Span, neighbor_glyphs: &[Glyph]) -> boo
         // Pattern 3-4: ff<U+FFFD>i or ff<U+FFFD>l
         if ligature.is_none() && i >= 2 && chars[i - 2] == 'f' && chars[i - 1] == 'f' {
             let prev_glyph_idx = char_to_glyph.get(i - 1).copied().unwrap_or(usize::MAX);
-            let is_adjacent = if prev_glyph_idx != usize::MAX && prev_glyph_idx + 1 == ffd_glyph_idx {
-                let gap = neighbor_glyphs[ffd_glyph_idx].bbox[0] - neighbor_glyphs[prev_glyph_idx].bbox[2];
+            let is_adjacent = if prev_glyph_idx != usize::MAX && prev_glyph_idx + 1 == ffd_glyph_idx
+            {
+                let gap = neighbor_glyphs[ffd_glyph_idx].bbox[0]
+                    - neighbor_glyphs[prev_glyph_idx].bbox[2];
                 gap < LIGATURE_GAP_THRESHOLD
             } else {
                 false
@@ -1072,7 +1087,10 @@ pub fn repair_split_ligatures(span: &mut Span, neighbor_glyphs: &[Glyph]) -> boo
             // Push the decomposed ligature
             result.push_str(lig.decomposed());
             // Skip the next character (i/l after f<U+FFFD>, or second 'f' after f<U+FFFD>f)
-            if matches!(lig, Ligature::Fi | Ligature::Fl | Ligature::Ffi | Ligature::Ffl | Ligature::Ff) {
+            if matches!(
+                lig,
+                Ligature::Fi | Ligature::Fl | Ligature::Ffi | Ligature::Ffl | Ligature::Ff
+            ) {
                 skip_next = true;
             }
             modified = true;
@@ -1203,7 +1221,8 @@ mod tests {
         // e.g., "cafÃ©" where Ã© is U+00C3 U+00A9
         if text.contains("Ã©") || // Ã© (U+00C3 U+00A9) - mojibake for é
            text.contains("Ã¨") || // Ã¨ (U+00C3 U+00A8) - mojibake for è
-           text.contains("â€™")   // â€™ (U+00E2 U+20AC U+2122) - mojibake for '
+           text.contains("â€™")
+        // â€™ (U+00E2 U+20AC U+2122) - mojibake for '
         {
             0.3
         } else {
@@ -1244,7 +1263,9 @@ mod tests {
         // produces "cafÃ©" where Ã comes from C3 and © comes from A9
         // To create "cafÃ©" in Rust (UTF-8 encoded), we need:
         // c=99, a=97, f=102, Ã=U+00C3->UTF8[195,131], ©=U+00A9->UTF8[194,169]
-        let mojibake_bytes = [99, 97, 102, 195, 131, 194, 169, 32, 99, 97, 102, 195, 131, 194, 168]; // "cafÃ© cafÃ¨"
+        let mojibake_bytes = [
+            99, 97, 102, 195, 131, 194, 169, 32, 99, 97, 102, 195, 131, 194, 168,
+        ]; // "cafÃ© cafÃ¨"
         let mojibake = String::from_utf8(mojibake_bytes.to_vec()).unwrap();
 
         let mut span = TestSpan::new(mojibake, [0.0, 0.0, 200.0, 20.0]);
@@ -1257,7 +1278,10 @@ mod tests {
     fn test_mojibake_multiple_indicators() {
         // Multiple indicators: Ã©Ã¨ (café + è)
         // Bytes for "cafÃ© rÃ¨stÃ©"
-        let mojibake_bytes = [99, 97, 102, 195, 131, 194, 169, 32, 114, 195, 131, 194, 168, 115, 116, 195, 131, 194, 169];
+        let mojibake_bytes = [
+            99, 97, 102, 195, 131, 194, 169, 32, 114, 195, 131, 194, 168, 115, 116, 195, 131, 194,
+            169,
+        ];
         let mojibake = String::from_utf8(mojibake_bytes.to_vec()).unwrap();
 
         let mut span = TestSpan::new(&mojibake, [0.0, 0.0, 200.0, 20.0]);
@@ -1271,7 +1295,9 @@ mod tests {
     fn test_mojibake_single_indicator_threshold() {
         // Single Ã© without other indicators: below threshold
         // Use actual bytes to create correct mojibake
-        let mojibake_bytes = [99, 97, 102, 195, 131, 194, 169, 115, 97, 110, 100, 98, 97, 114]; // "cafÃ©sandbar"
+        let mojibake_bytes = [
+            99, 97, 102, 195, 131, 194, 169, 115, 97, 110, 100, 98, 97, 114,
+        ]; // "cafÃ©sandbar"
         let mojibake = String::from_utf8(mojibake_bytes.to_vec()).unwrap();
 
         let mut span = TestSpan::new(&mojibake, [0.0, 0.0, 200.0, 20.0]);
@@ -1315,11 +1341,11 @@ mod tests {
         // € = U+20AC = 0xE2 0x82 0xAC
         // " = U+201D = 0xE2 0x80 0x9D
         let mojibake_bytes = [
-            104, 101, 108, 108, 111,             // "hello"
-            0xC3, 0xA2,                           // â (U+00E2)
-            0xE2, 0x82, 0xAC,                     // € (U+20AC)
-            0xE2, 0x80, 0x9D,                     // " (U+201D)
-            119, 111, 114, 108, 100,              // "world"
+            104, 101, 108, 108, 111, // "hello"
+            0xC3, 0xA2, // â (U+00E2)
+            0xE2, 0x82, 0xAC, // € (U+20AC)
+            0xE2, 0x80, 0x9D, // " (U+201D)
+            119, 111, 114, 108, 100, // "world"
         ]; // "helloâ€"world"
         let mojibake = String::from_utf8(mojibake_bytes.to_vec()).unwrap();
 
@@ -1345,7 +1371,7 @@ mod tests {
 
         let mut span = TestSpan::new(&mojibake, [0.0, 0.0, 100.0, 20.0]);
         let repaired = detect_and_repair_mojibake(&mut span, |_| 0.5); // Both score 0.5
-        // No replacement because candidate_score (0.5) is not > original_score (0.5) + 0.05
+                                                                       // No replacement because candidate_score (0.5) is not > original_score (0.5) + 0.05
         assert!(!repaired);
         assert_eq!(span.text(), mojibake);
     }
@@ -1410,13 +1436,20 @@ mod tests {
         // Ã (U+00C3) UTF-8: [0xC3, 0x83]
         // © (U+00A9) UTF-8: [0xC2, 0xA9]
         // "cafÃ©": [99, 97, 102, 0xC3, 0x83, 0xC2, 0xA9]
-        let mojibake_bytes = [84, 104, 101, 32, 119, 111, 114, 100, 32, 105, 115, 32, 99, 97, 102, 0xC3, 0x83, 0xC2, 0xA9, 32, 97, 110, 100, 32, 114, 0xC3, 0x83, 0xC2, 0xA9, 115, 117, 109, 0xC3, 0x83, 0xC2, 0xA9];
+        let mojibake_bytes = [
+            84, 104, 101, 32, 119, 111, 114, 100, 32, 105, 115, 32, 99, 97, 102, 0xC3, 0x83, 0xC2,
+            0xA9, 32, 97, 110, 100, 32, 114, 0xC3, 0x83, 0xC2, 0xA9, 115, 117, 109, 0xC3, 0x83,
+            0xC2, 0xA9,
+        ];
         let mojibake = String::from_utf8(mojibake_bytes.to_vec()).unwrap();
 
         let mut span = TestSpan::new(mojibake, [0.0, 0.0, 400.0, 20.0]);
         let repaired = detect_and_repair_mojibake(&mut span, simple_scorer);
         assert!(repaired);
-        assert_eq!(span.text(), "The word is caf\u{00e9} and r\u{00e9}sum\u{00e9}");
+        assert_eq!(
+            span.text(),
+            "The word is caf\u{00e9} and r\u{00e9}sum\u{00e9}"
+        );
     }
 
     #[test]
@@ -1426,7 +1459,9 @@ mod tests {
         // Â (U+00C2) in UTF-8 is [0xC3, 0x82]
         // NBSP (U+00A0) in UTF-8 is [0xC2, 0xA0]
         // So the mojibake text when read as UTF-8 bytes is: [0xC3, 0x82, 0xC2, 0xA0] = "Â "
-        let mojibake_bytes = [104, 101, 108, 108, 111, 32, 195, 130, 194, 160, 32, 119, 111, 114, 108, 100]; // "hello Â  world"
+        let mojibake_bytes = [
+            104, 101, 108, 108, 111, 32, 195, 130, 194, 160, 32, 119, 111, 114, 108, 100,
+        ]; // "hello Â  world"
         let mojibake = String::from_utf8(mojibake_bytes.to_vec()).unwrap();
 
         let mut span = TestSpan::new(mojibake, [0.0, 0.0, 200.0, 20.0]);
@@ -1978,18 +2013,54 @@ mod tests {
         // Create glyphs: 'f' at [0,0,5,10], U+FFFD at [5.05,0,10,10], 'i' at [10,0,15,10]
         // The gap between 'f' and U+FFFD is 0.05pt < 0.1pt threshold
         let glyphs = vec![
-            Glyph::new('f', UnicodeSource::ToUnicode, 1.0, [0.0, 0.0, 5.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('\u{FFFD}', UnicodeSource::Unknown, 0.0, [5.05, 0.0, 10.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('i', UnicodeSource::ToUnicode, 1.0, [10.0, 0.0, 15.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new(
+                'f',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [0.0, 0.0, 5.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                '\u{FFFD}',
+                UnicodeSource::Unknown,
+                0.0,
+                [5.05, 0.0, 10.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'i',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [10.0, 0.0, 15.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
         ];
 
         let repaired = repair_split_ligatures(&mut span, &glyphs);
         assert!(repaired, "Should repair f + U+FFFD + i to 'fi'");
         assert_eq!(span.text, "fi", "Should replace f + U+FFFD + i with 'fi'");
-        assert_eq!(span.confidence_source, crate::confidence::ConfidenceSource::Heuristic);
+        assert_eq!(
+            span.confidence_source,
+            crate::confidence::ConfidenceSource::Heuristic
+        );
     }
 
     #[test]
@@ -1999,20 +2070,78 @@ mod tests {
         span.text = String::from("abc\u{FFFD}def");
 
         let glyphs = vec![
-            Glyph::new('a', UnicodeSource::ToUnicode, 1.0, [0.0, 0.0, 5.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('b', UnicodeSource::ToUnicode, 1.0, [5.0, 0.0, 10.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('c', UnicodeSource::ToUnicode, 1.0, [10.0, 0.0, 15.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('\u{FFFD}', UnicodeSource::Unknown, 0.0, [15.0, 0.0, 20.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('d', UnicodeSource::ToUnicode, 1.0, [20.0, 0.0, 25.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new(
+                'a',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [0.0, 0.0, 5.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'b',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [5.0, 0.0, 10.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'c',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [10.0, 0.0, 15.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                '\u{FFFD}',
+                UnicodeSource::Unknown,
+                0.0,
+                [15.0, 0.0, 20.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'd',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [20.0, 0.0, 25.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
         ];
 
         let repaired = repair_split_ligatures(&mut span, &glyphs);
-        assert!(!repaired, "Should not repair when U+FFFD is not adjacent to f/l/i");
+        assert!(
+            !repaired,
+            "Should not repair when U+FFFD is not adjacent to f/l/i"
+        );
         assert_eq!(span.text, "abc\u{FFFD}def", "Text should remain unchanged");
     }
 
@@ -2024,12 +2153,45 @@ mod tests {
 
         // Create glyphs with gap 0.2pt > 0.1pt threshold
         let glyphs = vec![
-            Glyph::new('f', UnicodeSource::ToUnicode, 1.0, [0.0, 0.0, 5.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('\u{FFFD}', UnicodeSource::Unknown, 0.0, [5.2, 0.0, 10.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('e', UnicodeSource::ToUnicode, 1.0, [10.0, 0.0, 15.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new(
+                'f',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [0.0, 0.0, 5.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                '\u{FFFD}',
+                UnicodeSource::Unknown,
+                0.0,
+                [5.2, 0.0, 10.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'e',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [10.0, 0.0, 15.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
         ];
 
         let repaired = repair_split_ligatures(&mut span, &glyphs);
@@ -2044,12 +2206,45 @@ mod tests {
         span.text = String::from("f\u{FFFD}y");
 
         let glyphs = vec![
-            Glyph::new('f', UnicodeSource::ToUnicode, 1.0, [0.0, 0.0, 5.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('\u{FFFD}', UnicodeSource::Unknown, 0.0, [5.05, 0.0, 10.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('y', UnicodeSource::ToUnicode, 1.0, [10.0, 0.0, 15.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new(
+                'f',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [0.0, 0.0, 5.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                '\u{FFFD}',
+                UnicodeSource::Unknown,
+                0.0,
+                [5.05, 0.0, 10.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'y',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [10.0, 0.0, 15.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
         ];
 
         // This won't repair because 'y' is not 'l' - need proper test data
@@ -2064,12 +2259,45 @@ mod tests {
         span.text = String::from("f\u{FFFD}l");
 
         let glyphs = vec![
-            Glyph::new('f', UnicodeSource::ToUnicode, 1.0, [0.0, 0.0, 5.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('\u{FFFD}', UnicodeSource::Unknown, 0.0, [5.05, 0.0, 10.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [10.0, 0.0, 15.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new(
+                'f',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [0.0, 0.0, 5.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                '\u{FFFD}',
+                UnicodeSource::Unknown,
+                0.0,
+                [5.05, 0.0, 10.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'l',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [10.0, 0.0, 15.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
         ];
 
         let repaired = repair_split_ligatures(&mut span, &glyphs);
@@ -2086,34 +2314,177 @@ mod tests {
         // Create complete glyph sequence for all characters
         let glyphs = vec![
             // "f<U+FFFD>ect"
-            Glyph::new('f', UnicodeSource::ToUnicode, 1.0, [0.0, 0.0, 5.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('\u{FFFD}', UnicodeSource::Unknown, 0.0, [5.05, 0.0, 10.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('e', UnicodeSource::ToUnicode, 1.0, [10.0, 0.0, 15.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('c', UnicodeSource::ToUnicode, 1.0, [15.0, 0.0, 20.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('t', UnicodeSource::ToUnicode, 1.0, [20.0, 0.0, 25.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new(
+                'f',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [0.0, 0.0, 5.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                '\u{FFFD}',
+                UnicodeSource::Unknown,
+                0.0,
+                [5.05, 0.0, 10.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'e',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [10.0, 0.0, 15.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'c',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [15.0, 0.0, 20.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                't',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [20.0, 0.0, 25.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
             // " and "
-            Glyph::new(' ', UnicodeSource::ToUnicode, 1.0, [25.0, 0.0, 30.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('a', UnicodeSource::ToUnicode, 1.0, [30.0, 0.0, 35.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('n', UnicodeSource::ToUnicode, 1.0, [35.0, 0.0, 40.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('d', UnicodeSource::ToUnicode, 1.0, [40.0, 0.0, 45.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new(' ', UnicodeSource::ToUnicode, 1.0, [45.0, 0.0, 50.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new(
+                ' ',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [25.0, 0.0, 30.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'a',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [30.0, 0.0, 35.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'n',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [35.0, 0.0, 40.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'd',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [40.0, 0.0, 45.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                ' ',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [45.0, 0.0, 50.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
             // "f<U+FFFD>l"
-            Glyph::new('f', UnicodeSource::ToUnicode, 1.0, [50.0, 0.0, 55.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('\u{FFFD}', UnicodeSource::Unknown, 0.0, [55.05, 0.0, 60.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [60.0, 0.0, 65.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new(
+                'f',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [50.0, 0.0, 55.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                '\u{FFFD}',
+                UnicodeSource::Unknown,
+                0.0,
+                [55.05, 0.0, 60.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'l',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [60.0, 0.0, 65.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
         ];
 
         let repaired = repair_split_ligatures(&mut span, &glyphs);
@@ -2141,10 +2512,19 @@ mod tests {
         let mut span = Span::empty();
         span.text = String::from("normal text");
 
-        let glyphs = vec![
-            Glyph::new('n', UnicodeSource::ToUnicode, 1.0, [0.0, 0.0, 5.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-        ];
+        let glyphs = vec![Glyph::new(
+            'n',
+            UnicodeSource::ToUnicode,
+            1.0,
+            [0.0, 0.0, 5.0, 10.0],
+            Arc::from("Helvetica"),
+            12.0,
+            0,
+            crate::graphics_state::Color::DeviceGray(0.0),
+            false,
+            None,
+            false,
+        )];
 
         let repaired = repair_split_ligatures(&mut span, &glyphs);
         assert!(!repaired);
@@ -2179,19 +2559,66 @@ mod tests {
         span.text = String::from("ff\u{FFFD}i");
 
         let glyphs = vec![
-            Glyph::new('f', UnicodeSource::ToUnicode, 1.0, [0.0, 0.0, 5.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('f', UnicodeSource::ToUnicode, 1.0, [5.0, 0.0, 10.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('\u{FFFD}', UnicodeSource::Unknown, 0.0, [10.05, 0.0, 15.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('i', UnicodeSource::ToUnicode, 1.0, [15.0, 0.0, 20.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new(
+                'f',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [0.0, 0.0, 5.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'f',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [5.0, 0.0, 10.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                '\u{FFFD}',
+                UnicodeSource::Unknown,
+                0.0,
+                [10.05, 0.0, 15.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'i',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [15.0, 0.0, 20.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
         ];
 
         let repaired = repair_split_ligatures(&mut span, &glyphs);
         assert!(repaired, "Should repair ff + U+FFFD + i to 'ffi'");
-        assert_eq!(span.text, "ffi", "Should replace ff + U+FFFD + i with 'ffi'");
+        assert_eq!(
+            span.text, "ffi",
+            "Should replace ff + U+FFFD + i with 'ffi'"
+        );
     }
 
     #[test]
@@ -2201,19 +2628,66 @@ mod tests {
         span.text = String::from("ff\u{FFFD}l");
 
         let glyphs = vec![
-            Glyph::new('f', UnicodeSource::ToUnicode, 1.0, [0.0, 0.0, 5.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('f', UnicodeSource::ToUnicode, 1.0, [5.0, 0.0, 10.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('\u{FFFD}', UnicodeSource::Unknown, 0.0, [10.05, 0.0, 15.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [15.0, 0.0, 20.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new(
+                'f',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [0.0, 0.0, 5.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'f',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [5.0, 0.0, 10.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                '\u{FFFD}',
+                UnicodeSource::Unknown,
+                0.0,
+                [10.05, 0.0, 15.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'l',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [15.0, 0.0, 20.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
         ];
 
         let repaired = repair_split_ligatures(&mut span, &glyphs);
         assert!(repaired, "Should repair ff + U+FFFD + l to 'ffl'");
-        assert_eq!(span.text, "ffl", "Should replace ff + U+FFFD + l with 'ffl'");
+        assert_eq!(
+            span.text, "ffl",
+            "Should replace ff + U+FFFD + l with 'ffl'"
+        );
     }
 
     #[test]
@@ -2223,14 +2697,58 @@ mod tests {
         span.text = String::from("f\u{FFFD}ft");
 
         let glyphs = vec![
-            Glyph::new('f', UnicodeSource::ToUnicode, 1.0, [0.0, 0.0, 5.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('\u{FFFD}', UnicodeSource::Unknown, 0.0, [5.05, 0.0, 10.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('f', UnicodeSource::ToUnicode, 1.0, [10.0, 0.0, 15.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('t', UnicodeSource::ToUnicode, 1.0, [15.0, 0.0, 20.0, 10.0],
-                       Arc::from("Helvetica"), 12.0, 0, crate::graphics_state::Color::DeviceGray(0.0), false, None, false),
+            Glyph::new(
+                'f',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [0.0, 0.0, 5.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                '\u{FFFD}',
+                UnicodeSource::Unknown,
+                0.0,
+                [5.05, 0.0, 10.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'f',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [10.0, 0.0, 15.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                't',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [15.0, 0.0, 20.0, 10.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                crate::graphics_state::Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
         ];
 
         let repaired = repair_split_ligatures(&mut span, &glyphs);

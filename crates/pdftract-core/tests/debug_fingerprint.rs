@@ -1,7 +1,9 @@
 //! Debug test for fingerprint content stream resolution.
 
 use pdftract_core::document::parse_pdf_file;
-use pdftract_core::fingerprint::{compute_fingerprint, ContentStreamData, FingerprintInput, PageFingerprintData};
+use pdftract_core::fingerprint::{
+    compute_fingerprint, ContentStreamData, FingerprintInput, PageFingerprintData,
+};
 use pdftract_core::parser::xref::XrefResolver;
 
 #[test]
@@ -18,8 +20,8 @@ fn debug_content_stream_resolution() {
     println!("DEBUG: file exists = {:?}", fixture_path.exists());
 
     // Parse the PDF
-    let (fingerprint, catalog, pages, resolver) = parse_pdf_file(&fixture_path)
-        .expect("Failed to parse PDF");
+    let (fingerprint, catalog, pages, resolver) =
+        parse_pdf_file(&fixture_path).expect("Failed to parse PDF");
 
     println!("Fingerprint from parse_pdf_file: {}", fingerprint);
     println!("Number of pages: {}", pages.len());
@@ -58,7 +60,14 @@ fn debug_content_stream_resolution() {
                     println!("    -> Discriminant: {:?}", std::mem::discriminant(&obj));
                     if let Some(stream) = obj.as_stream() {
                         println!("    -> IS STREAM! Length: {:?}", stream.dict.get("/Length"));
-                        println!("    -> Dict: {:?}", stream.dict.iter().map(|(k, v)| (k, std::mem::discriminant(v))).collect::<Vec<_>>());
+                        println!(
+                            "    -> Dict: {:?}",
+                            stream
+                                .dict
+                                .iter()
+                                .map(|(k, v)| (k, std::mem::discriminant(v)))
+                                .collect::<Vec<_>>()
+                        );
                     } else if obj.is_null() {
                         println!("    -> IS NULL (stub resolver)");
                     }
@@ -83,7 +92,9 @@ fn debug_direct_content_stream_hash() {
     let input_v1 = FingerprintInput {
         page_count: 1,
         pages: vec![PageFingerprintData {
-            content_streams: vec![ContentStreamData::Direct(b"BT /F1 12 Tf 50 700 Td (Hello World) Tj ET".to_vec())],
+            content_streams: vec![ContentStreamData::Direct(
+                b"BT /F1 12 Tf 50 700 Td (Hello World) Tj ET".to_vec(),
+            )],
             resources: None,
             media_box: [0.0, 0.0, 612.0, 792.0],
             crop_box: None,
@@ -97,7 +108,9 @@ fn debug_direct_content_stream_hash() {
     let input_v2 = FingerprintInput {
         page_count: 1,
         pages: vec![PageFingerprintData {
-            content_streams: vec![ContentStreamData::Direct(b"BT /F1 12 Tf 50 700 Td (Hello Worl) Tj ET".to_vec())],
+            content_streams: vec![ContentStreamData::Direct(
+                b"BT /F1 12 Tf 50 700 Td (Hello Worl) Tj ET".to_vec(),
+            )],
             resources: None,
             media_box: [0.0, 0.0, 612.0, 792.0],
             crop_box: None,
@@ -114,5 +127,8 @@ fn debug_direct_content_stream_hash() {
     println!("Direct content v1 fingerprint: {}", fp_v1);
     println!("Direct content v2 fingerprint: {}", fp_v2);
 
-    assert_ne!(fp_v1, fp_v2, "Different direct content streams must produce different fingerprints");
+    assert_ne!(
+        fp_v1, fp_v2,
+        "Different direct content streams must produce different fingerprints"
+    );
 }

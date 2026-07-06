@@ -10,11 +10,11 @@ use crate::source::PdfSource;
 use bytes::Bytes;
 use lru::LruCache;
 use parking_lot::Mutex;
+use std::cell::Cell;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
-use std::cell::Cell;
 
 /// Block size for cache (64 KiB).
 const BLOCK_SIZE: u64 = 65536;
@@ -152,9 +152,7 @@ impl HttpRangeSource {
             .and_then(|v| v.parse().ok())
             .unwrap_or(0);
 
-        let accept_ranges = response
-            .header("accept-ranges")
-            .map(|v| v.to_lowercase());
+        let accept_ranges = response.header("accept-ranges").map(|v| v.to_lowercase());
         let supports_range = accept_ranges.as_deref() == Some("bytes");
 
         // Initialize LRU cache
@@ -194,15 +192,19 @@ impl HttpRangeSource {
     ///
     /// This is a fallback for servers that don't support HEAD requests (return 405).
     /// We use a minimal Range request to check for Range support and get Content-Length.
-    fn open_with_get_probe(agent: &ureq::Agent, url: &str, headers: &[(String, String)]) -> io::Result<Self> {
+    fn open_with_get_probe(
+        agent: &ureq::Agent,
+        url: &str,
+        headers: &[(String, String)],
+    ) -> io::Result<Self> {
         // Try GET with Range: bytes=0-0 to probe server
         let get_req = agent.get(url);
         let get_req = apply_headers(get_req, headers);
         let get_req = get_req.set("Range", "bytes=0-0");
 
-        let response = get_req.call().map_err(|e| {
-            classify_http_error(&e, "GET probe request failed")
-        })?;
+        let response = get_req
+            .call()
+            .map_err(|e| classify_http_error(&e, "GET probe request failed"))?;
 
         // Check status
         let status = response.status();
@@ -218,24 +220,25 @@ impl HttpRangeSource {
             // Try Content-Range header: "bytes 0-0/TOTAL"
             response
                 .header("content-range")
-                .and_then(|v| {
-                    v.rsplit('/').next().and_then(|s| s.parse().ok())
-                })
+                .and_then(|v| v.rsplit('/').next().and_then(|s| s.parse().ok()))
         } else if status == 416 {
             // Range Not Satisfiable - check Content-Range for *
             // Or use Content-Length
             response
                 .header("content-range")
-                .and_then(|v| {
-                    v.rsplit('/').next().and_then(|s| s.parse().ok())
-                })
+                .and_then(|v| v.rsplit('/').next().and_then(|s| s.parse().ok()))
                 .or_else(|| {
-                    response.header("content-length").and_then(|v| v.parse().ok())
+                    response
+                        .header("content-length")
+                        .and_then(|v| v.parse().ok())
                 })
         } else {
             // 200 OK or other - use Content-Length
-            response.header("content-length").and_then(|v| v.parse().ok())
-        }.unwrap_or(0);
+            response
+                .header("content-length")
+                .and_then(|v| v.parse().ok())
+        }
+        .unwrap_or(0);
 
         // Initialize LRU cache
         let cache = LruCache::new(NonZeroUsize::new(CACHE_CAPACITY).unwrap());
@@ -266,9 +269,9 @@ impl HttpRangeSource {
         let req = apply_headers(req, &self.headers);
         let req = req.set("Range", &range_header);
 
-        let response = req.call().map_err(|e| {
-            classify_http_error(&e, "Range request failed")
-        })?;
+        let response = req
+            .call()
+            .map_err(|e| classify_http_error(&e, "Range request failed"))?;
 
         let status = response.status();
 
@@ -323,7 +326,10 @@ impl PdfSource for HttpRangeSource {
         if offset > self.content_length {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("offset {} exceeds content length {}", offset, self.content_length),
+                format!(
+                    "offset {} exceeds content length {}",
+                    offset, self.content_length
+                ),
             ));
         }
 
@@ -346,7 +352,8 @@ impl PdfSource for HttpRangeSource {
         let end_block = end_offset / BLOCK_SIZE;
 
         // Identify cached vs. missing blocks
-        let mut cached_blocks: Vec<Option<Bytes>> = Vec::with_capacity((end_block - start_block + 1) as usize);
+        let mut cached_blocks: Vec<Option<Bytes>> =
+            Vec::with_capacity((end_block - start_block + 1) as usize);
         let mut missing_runs: Vec<(u64, u64)> = Vec::new(); // (start_block, end_block) inclusive
 
         {
@@ -389,10 +396,7 @@ impl PdfSource for HttpRangeSource {
             let mut data_offset = 0;
             for block_index in run_start..=run_end {
                 let block_start = block_index * BLOCK_SIZE;
-                let block_end = std::cmp::min(
-                    block_start + BLOCK_SIZE,
-                    self.content_length,
-                );
+                let block_end = std::cmp::min(block_start + BLOCK_SIZE, self.content_length);
                 let block_len = (block_end - block_start) as usize;
 
                 if data_offset + block_len <= data.len() {
@@ -425,10 +429,7 @@ impl PdfSource for HttpRangeSource {
                 };
 
                 let slice_end = if block_index == end_block {
-                    std::cmp::min(
-                        block_data.len(),
-                        (end_offset - block_start + 1) as usize
-                    )
+                    std::cmp::min(block_data.len(), (end_offset - block_start + 1) as usize)
                 } else {
                     block_data.len()
                 };
@@ -576,10 +577,7 @@ fn classify_http_error(err: &ureq::Error, context: &str) -> io::Error {
                     format!("{}: HTTP {} (service unavailable)", context, code),
                 );
             }
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("{}: HTTP {}", context, code),
-            )
+            io::Error::new(io::ErrorKind::Other, format!("{}: HTTP {}", context, code))
         }
         ureq::Error::Transport(transport_err) => {
             let msg = transport_err.to_string().to_lowercase();
@@ -649,8 +647,8 @@ pub fn download_to_temp_and_mmap(
 ) -> io::Result<(tempfile::NamedTempFile, super::MmapSource)> {
     #[cfg(feature = "remote")]
     {
+        use crate::diagnostics::{DiagCode, Diagnostic};
         use std::io::Write;
-        use crate::diagnostics::{Diagnostic, DiagCode};
 
         // Build agent and request
         let agent = ureq::AgentBuilder::new()
@@ -661,9 +659,9 @@ pub fn download_to_temp_and_mmap(
         let req = apply_headers(req, headers);
 
         // Get response to check Content-Length first
-        let response = req.call().map_err(|e| {
-            classify_http_error(&e, "Fallback download request failed")
-        })?;
+        let response = req
+            .call()
+            .map_err(|e| classify_http_error(&e, "Fallback download request failed"))?;
 
         if response.status() < 200 || response.status() >= 300 {
             return Err(io::Error::new(

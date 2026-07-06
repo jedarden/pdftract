@@ -8,8 +8,8 @@
 
 use anyhow::Result;
 use pdftract_core::document::{compute_pdf_fingerprint, extract_spans_from_page};
-use pdftract_core::receipts::Receipt;
 use pdftract_core::receipts::verifier::{verify_receipt, VerificationResult};
+use pdftract_core::receipts::Receipt;
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -17,7 +17,10 @@ use std::path::Path;
 fn main() -> Result<()> {
     // Get paths from command line
     let args: Vec<String> = env::args().collect();
-    let pdf_path = args.get(1).map(|s| s.as_str()).unwrap_or("tests/fixtures/sample.pdf");
+    let pdf_path = args
+        .get(1)
+        .map(|s| s.as_str())
+        .unwrap_or("tests/fixtures/sample.pdf");
     let receipt_path = args.get(2).map(|s| s.as_str()).unwrap_or("receipt.json");
 
     // Load receipt
@@ -27,7 +30,10 @@ fn main() -> Result<()> {
     println!("Verifying receipt:");
     println!("  PDF fingerprint: {}", receipt.pdf_fingerprint);
     println!("  Page index: {}", receipt.page_index);
-    println!("  Bbox: [{}, {}, {}, {}]", receipt.bbox[0], receipt.bbox[1], receipt.bbox[2], receipt.bbox[3]);
+    println!(
+        "  Bbox: [{}, {}, {}, {}]",
+        receipt.bbox[0], receipt.bbox[1], receipt.bbox[2], receipt.bbox[3]
+    );
     println!("  Content hash: {}", receipt.content_hash);
     println!();
 
@@ -42,26 +48,33 @@ fn main() -> Result<()> {
     }
 
     // Extract spans from the target page
-    let spans = extract_spans_from_page(
-        Path::new(pdf_path),
-        receipt.page_index,
-    )?;
+    let spans = extract_spans_from_page(Path::new(pdf_path), receipt.page_index)?;
 
     // Verify receipt
     let result = verify_receipt(&receipt, &spans, &actual_fingerprint);
 
     match result {
-        VerificationResult::Ok { best_iou, actual_content_hash } => {
+        VerificationResult::Ok {
+            best_iou,
+            actual_content_hash,
+        } => {
             println!("VERIFIED: Receipt is valid");
             println!("  Best IoU: {:.3}", best_iou);
             println!("  Content hash: {}", actual_content_hash);
         }
-        VerificationResult::BboxMismatch { best_iou, threshold } => {
+        VerificationResult::BboxMismatch {
+            best_iou,
+            threshold,
+        } => {
             println!("FAILED: Bbox mismatch");
             println!("  Best IoU: {:.3}", best_iou);
             println!("  Required: {:.3}", threshold);
         }
-        VerificationResult::ContentMismatch { best_iou, expected_hash, actual_hash } => {
+        VerificationResult::ContentMismatch {
+            best_iou,
+            expected_hash,
+            actual_hash,
+        } => {
             println!("FAILED: Content hash mismatch");
             println!("  Best IoU: {:.3}", best_iou);
             println!("  Expected: {}", expected_hash);

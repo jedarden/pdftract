@@ -1,7 +1,7 @@
 // Debug tool for fingerprint computation
+use pdftract_core::document::compute_pdf_fingerprint;
 use std::path::Path;
 use std::time::Instant;
-use pdftract_core::document::compute_pdf_fingerprint;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

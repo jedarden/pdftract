@@ -81,11 +81,7 @@ mod unsupported_handlers {
     #[ignore = "Requires ENCRYPTION_UNSUPPORTED exit code implementation"]
     fn test_livecycle_pdf_emits_encryption_unsupported() {
         let fixture = encrypted_fixture("livecycle.pdf");
-        assert!(
-            fixture.exists(),
-            "Fixture not found: {}",
-            fixture.display()
-        );
+        assert!(fixture.exists(), "Fixture not found: {}", fixture.display());
 
         let output = Command::new(pdftract_bin())
             .args(["extract", fixture.to_str().unwrap()])
@@ -125,11 +121,7 @@ mod unsupported_handlers {
     #[ignore = "Requires --password-stdin implementation or INSECURE_CLI_PASSWORD handling"]
     fn test_livecycle_pdf_with_password_also_fails() {
         let fixture = encrypted_fixture("livecycle.pdf");
-        assert!(
-            fixture.exists(),
-            "Fixture not found: {}",
-            fixture.display()
-        );
+        assert!(fixture.exists(), "Fixture not found: {}", fixture.display());
 
         let output = Command::new(pdftract_bin())
             .args(["extract", fixture.to_str().unwrap()])
@@ -162,11 +154,7 @@ mod supported_encryption {
     #[ignore = "Requires password-based decryption implementation"]
     fn test_rc4_encrypted_with_correct_password() {
         let fixture = encrypted_fixture("EC-04-rc4-encrypted.pdf");
-        assert!(
-            fixture.exists(),
-            "Fixture not found: {}",
-            fixture.display()
-        );
+        assert!(fixture.exists(), "Fixture not found: {}", fixture.display());
 
         // TODO: Implement once password CLI flag is available
         // Expected: successful extraction with correct password
@@ -177,11 +165,7 @@ mod supported_encryption {
     #[ignore = "Requires password-based decryption implementation"]
     fn test_aes128_encrypted_with_correct_password() {
         let fixture = encrypted_fixture("EC-05-aes128-encrypted.pdf");
-        assert!(
-            fixture.exists(),
-            "Fixture not found: {}",
-            fixture.display()
-        );
+        assert!(fixture.exists(), "Fixture not found: {}", fixture.display());
 
         // TODO: Implement once password CLI flag is available
         // Expected: successful extraction with correct password
@@ -192,11 +176,7 @@ mod supported_encryption {
     #[ignore = "Requires password-based decryption implementation"]
     fn test_aes256_encrypted_with_correct_password() {
         let fixture = encrypted_fixture("EC-06-aes256-encrypted.pdf");
-        assert!(
-            fixture.exists(),
-            "Fixture not found: {}",
-            fixture.display()
-        );
+        assert!(fixture.exists(), "Fixture not found: {}", fixture.display());
 
         // TODO: Implement once password CLI flag is available
         // Expected: successful extraction with correct password
@@ -207,11 +187,7 @@ mod supported_encryption {
     #[ignore = "Requires empty password handling implementation"]
     fn test_empty_password_pdf_opens() {
         let fixture = encrypted_fixture("EC-empty-password.pdf");
-        assert!(
-            fixture.exists(),
-            "Fixture not found: {}",
-            fixture.display()
-        );
+        assert!(fixture.exists(), "Fixture not found: {}", fixture.display());
 
         // TODO: Implement once empty password auto-detection is available
         // Expected: successful extraction without password
@@ -230,11 +206,7 @@ mod password_errors {
     #[ignore = "Requires password-based decryption implementation"]
     fn test_wrong_password_emits_error() {
         let fixture = encrypted_fixture("EC-04-rc4-encrypted.pdf");
-        assert!(
-            fixture.exists(),
-            "Fixture not found: {}",
-            fixture.display()
-        );
+        assert!(fixture.exists(), "Fixture not found: {}", fixture.display());
 
         // TODO: Implement once password CLI flag is available
         // Expected: exit code 3 with appropriate error message
@@ -245,11 +217,7 @@ mod password_errors {
     #[ignore = "Requires password-based decryption implementation"]
     fn test_missing_required_password_emits_error() {
         let fixture = encrypted_fixture("EC-05-aes128-encrypted.pdf");
-        assert!(
-            fixture.exists(),
-            "Fixture not found: {}",
-            fixture.display()
-        );
+        assert!(fixture.exists(), "Fixture not found: {}", fixture.display());
 
         // TODO: Implement once password requirement detection is available
         // Expected: exit code 3 with appropriate error message
@@ -289,10 +257,8 @@ mod fixture_validation {
         for fixture_name in ENCRYPTED_FIXTURES {
             let path = encrypted_fixture(fixture_name);
 
-            let content = fs::read(&path).expect(&format!(
-                "Failed to read fixture: {}",
-                path.display()
-            ));
+            let content =
+                fs::read(&path).expect(&format!("Failed to read fixture: {}", path.display()));
 
             // Check for PDF magic number (%PDF-)
             assert!(

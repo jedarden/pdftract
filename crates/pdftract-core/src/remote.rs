@@ -66,19 +66,25 @@ use anyhow::{anyhow, Context, Result};
 pub fn open_remote(
     url: &str,
     opts: &RemoteOpts,
-) -> Result<(Catalog, XrefResolver, Box<dyn crate::parser::stream::PdfSource>, String)> {
+) -> Result<(
+    Catalog,
+    XrefResolver,
+    Box<dyn crate::parser::stream::PdfSource>,
+    String,
+)> {
     use crate::parser::stream::PdfSource as ParserPdfSource;
 
     // Open the remote PDF source
     let source = open_remote_source(url, opts, None).context("Failed to open remote PDF source")?;
 
     // Convert source to parser PdfSource using SourceAdapter
-    let parser_source: Box<dyn ParserPdfSource> = Box::new(crate::parser::stream::SourceAdapter::new(source));
+    let parser_source: Box<dyn ParserPdfSource> =
+        Box::new(crate::parser::stream::SourceAdapter::new(source));
 
     // Find the startxref offset using progressive tail fetch for remote sources
     // This starts with 16 KB and progressively fetches larger tails if needed
-    let startxref_offset = find_startxref_progressive(&*parser_source)
-        .context("Failed to find startxref offset")?;
+    let startxref_offset =
+        find_startxref_progressive(&*parser_source).context("Failed to find startxref offset")?;
 
     // Load the xref table (forward-scan is disabled for remote sources)
     let xref_section = load_xref_with_prev_chain(&*parser_source, startxref_offset);
@@ -95,14 +101,18 @@ pub fn open_remote(
         .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref, Some(&*parser_source as &dyn ParserPdfSource))
-        .map_err(|diagnostics| {
-            let msg = diagnostics
-                .first()
-                .map(|d| d.message.as_ref())
-                .unwrap_or("unknown error");
-            anyhow::anyhow!("Failed to parse catalog: {}", msg)
-        })?;
+    let catalog = parse_catalog(
+        &resolver,
+        root_ref,
+        Some(&*parser_source as &dyn ParserPdfSource),
+    )
+    .map_err(|diagnostics| {
+        let msg = diagnostics
+            .first()
+            .map(|d| d.message.as_ref())
+            .unwrap_or("unknown error");
+        anyhow::anyhow!("Failed to parse catalog: {}", msg)
+    })?;
 
     // Resolve AcroForm dictionary if present (for XFA detection and fingerprint)
     let acroform = catalog
@@ -176,7 +186,7 @@ fn find_startxref(source: &dyn crate::parser::stream::PdfSource) -> Result<u64> 
 /// The startxref offset, or an error if not found after progressive fetching
 fn find_startxref_progressive(source: &dyn crate::parser::stream::PdfSource) -> Result<u64> {
     const INITIAL_TAIL: u64 = 16 * 1024; // 16 KB
-    const MAX_TAIL: u64 = 1024 * 1024;  // 1 MB maximum
+    const MAX_TAIL: u64 = 1024 * 1024; // 1 MB maximum
 
     let file_len = source.len()?;
 

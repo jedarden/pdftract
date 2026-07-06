@@ -38,13 +38,10 @@ const SCHEMA_JSON: &str = include_str!("../../../docs/schema/v1.0/pdftract.schem
 /// Compiled JSON Schema validator.
 ///
 /// Initialized once and reused across all tests for efficiency.
-static SCHEMA: once_cell::sync::Lazy<jsonschema::Validator> =
-    once_cell::sync::Lazy::new(|| {
-        let schema: Value = serde_json::from_str(SCHEMA_JSON)
-            .expect("Schema file is valid JSON");
-        jsonschema::validator_for(&schema)
-            .expect("Schema is valid JSON Schema Draft 2020-12")
-    });
+static SCHEMA: once_cell::sync::Lazy<jsonschema::Validator> = once_cell::sync::Lazy::new(|| {
+    let schema: Value = serde_json::from_str(SCHEMA_JSON).expect("Schema file is valid JSON");
+    jsonschema::validator_for(&schema).expect("Schema is valid JSON Schema Draft 2020-12")
+});
 
 /// Format a validation error into a human-readable message with path.
 fn format_validation_error(error: &jsonschema::ValidationError) -> String {
@@ -73,8 +70,7 @@ impl Fixture {
 
         // Create fixtures directory if it doesn't exist
         if !fixtures_dir.exists() {
-            fs::create_dir_all(&fixtures_dir)
-                .expect("Failed to create fixtures directory");
+            fs::create_dir_all(&fixtures_dir).expect("Failed to create fixtures directory");
         }
 
         // Scan for PDF files
@@ -86,7 +82,8 @@ impl Fixture {
             let path = entry.path();
 
             if path.extension().and_then(|s| s.to_str()) == Some("pdf") {
-                let name = path.file_stem()
+                let name = path
+                    .file_stem()
                     .and_then(|s| s.to_str())
                     .expect("Invalid PDF filename")
                     .to_string();
@@ -121,10 +118,8 @@ impl Fixture {
         println!("Validating fixture: {}", self.name);
 
         // Extract PDF to ExtractionResult
-        let extraction_result = extract_pdf(
-            &self.pdf_path,
-            &ExtractionOptions::default(),
-        ).unwrap_or_else(|e| panic!("Failed to extract fixture {}: {}", self.name, e));
+        let extraction_result = extract_pdf(&self.pdf_path, &ExtractionOptions::default())
+            .unwrap_or_else(|e| panic!("Failed to extract fixture {}: {}", self.name, e));
 
         // Convert to JSON
         let json_value = result_to_json(&extraction_result);
@@ -155,17 +150,22 @@ impl Fixture {
 
         // If expected.json exists, validate semantic equivalence
         if let Some(ref expected_path) = self.expected_path {
-            let expected_str = fs::read_to_string(expected_path)
-                .unwrap_or_else(|e| panic!("Failed to read expected.json for {}: {}", self.name, e));
+            let expected_str = fs::read_to_string(expected_path).unwrap_or_else(|e| {
+                panic!("Failed to read expected.json for {}: {}", self.name, e)
+            });
 
-            let expected: Value = serde_json::from_str(&expected_str)
-                .unwrap_or_else(|e| panic!("Failed to parse expected.json for {}: {}", self.name, e));
+            let expected: Value = serde_json::from_str(&expected_str).unwrap_or_else(|e| {
+                panic!("Failed to parse expected.json for {}: {}", self.name, e)
+            });
 
             // Deep equality check for semantic equivalence
             if expected != json_value {
                 println!("\n=== Semantic Mismatch ===");
                 println!("Fixture: {}", self.name);
-                println!("Expected: {}", serde_json::to_string_pretty(&expected).unwrap());
+                println!(
+                    "Expected: {}",
+                    serde_json::to_string_pretty(&expected).unwrap()
+                );
                 println!("Actual: {}", json_str);
                 println!("========================\n");
                 panic!("Fixture {} output does not match expected.json", self.name);
@@ -184,7 +184,10 @@ fn test_all_fixtures_validate_against_schema() {
         return;
     }
 
-    println!("Running JSON schema validation on {} fixtures", fixtures.len());
+    println!(
+        "Running JSON schema validation on {} fixtures",
+        fixtures.len()
+    );
 
     for fixture in &fixtures {
         fixture.validate();
@@ -196,22 +199,18 @@ fn test_all_fixtures_validate_against_schema() {
 #[test]
 fn test_schema_itself_is_valid() {
     // Verify the schema file is valid JSON Schema Draft 2020-12
-    let schema: Value = serde_json::from_str(SCHEMA_JSON)
-        .expect("Schema file is valid JSON");
+    let schema: Value = serde_json::from_str(SCHEMA_JSON).expect("Schema file is valid JSON");
 
     // validator_for should succeed if schema is valid
-    let _compiled = jsonschema::validator_for(&schema)
-        .expect("Schema is valid JSON Schema Draft 2020-12");
+    let _compiled =
+        jsonschema::validator_for(&schema).expect("Schema is valid JSON Schema Draft 2020-12");
 
     // Verify top-level structure
     assert!(
         schema.get("$schema").is_some(),
         "Schema must declare $schema version"
     );
-    assert!(
-        schema.get("$id").is_some(),
-        "Schema must declare $id"
-    );
+    assert!(schema.get("$id").is_some(), "Schema must declare $id");
     assert!(
         schema.get("properties").is_some(),
         "Schema must have properties object"
@@ -223,7 +222,8 @@ fn test_schema_itself_is_valid() {
 #[test]
 fn test_schema_has_required_document_level_fields() {
     let schema: Value = serde_json::from_str(SCHEMA_JSON).unwrap();
-    let properties = schema.get("properties")
+    let properties = schema
+        .get("properties")
         .and_then(|p| p.as_object())
         .expect("Schema properties must be an object");
 
@@ -245,7 +245,8 @@ fn test_schema_has_required_document_level_fields() {
     }
 
     // Verify required fields are marked as required
-    let required = schema.get("required")
+    let required = schema
+        .get("required")
         .and_then(|r| r.as_array())
         .expect("Schema must have required array");
 
@@ -266,11 +267,13 @@ fn test_schema_page_json_structure() {
     let schema: Value = serde_json::from_str(SCHEMA_JSON).unwrap();
 
     // Navigate to PageJson definition
-    let page_json = schema.get("$defs")
+    let page_json = schema
+        .get("$defs")
         .and_then(|defs| defs.get("PageJson"))
         .expect("Schema must define PageJson");
 
-    let page_props = page_json.get("properties")
+    let page_props = page_json
+        .get("properties")
         .and_then(|p| p.as_object())
         .expect("PageJson must have properties");
 
@@ -295,7 +298,8 @@ fn test_schema_page_json_structure() {
     // Verify arrays with default values
     let array_fields = vec!["spans", "blocks", "tables", "annotations"];
     for field in array_fields {
-        let field_def = page_props.get(field)
+        let field_def = page_props
+            .get(field)
             .expect(format!("PageJson must have field: {}", field).as_str());
         assert!(
             field_def.get("type").and_then(|t| t.as_str()) == Some("array"),
@@ -312,21 +316,18 @@ fn test_schema_span_json_structure() {
     let schema: Value = serde_json::from_str(SCHEMA_JSON).unwrap();
 
     // Navigate to SpanJson definition
-    let span_json = schema.get("$defs")
+    let span_json = schema
+        .get("$defs")
         .and_then(|defs| defs.get("SpanJson"))
         .expect("Schema must define SpanJson");
 
-    let span_props = span_json.get("properties")
+    let span_props = span_json
+        .get("properties")
         .and_then(|p| p.as_object())
         .expect("SpanJson must have properties");
 
     // Verify critical span fields exist
-    let required_span_fields = vec![
-        "text",
-        "bbox",
-        "font",
-        "size",
-    ];
+    let required_span_fields = vec!["text", "bbox", "font", "size"];
 
     for field in required_span_fields {
         assert!(
@@ -406,7 +407,11 @@ fn debug_list_available_fixtures() {
     } else {
         println!("Available fixtures ({} total):", fixtures.len());
         for fixture in &fixtures {
-            let has_expected = if fixture.expected_path.is_some() { " [has expected.json]" } else { "" };
+            let has_expected = if fixture.expected_path.is_some() {
+                " [has expected.json]"
+            } else {
+                ""
+            };
             println!("  - {}{}", fixture.name, has_expected);
         }
     }

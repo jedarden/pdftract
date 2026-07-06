@@ -1,11 +1,12 @@
 //! Quick test to verify SDK extraction works with fixtures
 
-use pdftract_core::sdk;
 use pdftract_core::options::ExtractionOptions;
+use pdftract_core::sdk;
 
 #[test]
 fn test_simple_extract() {
-    let fixture_path = std::path::Path::new("../../../tests/sdk-conformance/fixtures/scientific_paper/01.pdf");
+    let fixture_path =
+        std::path::Path::new("../../../tests/sdk-conformance/fixtures/scientific_paper/01.pdf");
 
     println!("Testing extraction with: {:?}", fixture_path);
 

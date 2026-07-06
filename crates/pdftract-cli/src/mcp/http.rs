@@ -23,8 +23,8 @@
 
 use crate::mcp::framing::{BatchMessage, ErrorObject, Id, Notification, Request, Response};
 use crate::mcp::tools;
-use crate::middleware::{audit_middleware, AuditState};
 use crate::middleware::audit::RequestMetadata;
+use crate::middleware::{audit_middleware, AuditState};
 use anyhow::{anyhow, Context, Result};
 use axum::{
     body::Body,

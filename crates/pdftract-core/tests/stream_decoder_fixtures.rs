@@ -3,17 +3,16 @@
 //! Walks all fixtures in tests/stream_decoder/fixtures/, runs the appropriate
 //! filter decoder, compares against .expected files, and validates diagnostics.
 
+use indexmap::IndexMap;
+use pdftract_core::diagnostics::DiagCode;
+use pdftract_core::parser::object::{PdfDict, PdfObject};
 use pdftract_core::parser::stream::{
-    FlateDecoder, LZWDecoder, ASCII85Decoder, ASCIIHexDecoder,
-    RunLengthDecoder, DCTDecoder, JpxStreamDecoder, CCITTFaxDecoder,
-    CryptDecoder, PassthroughDecoder, normalize_filter_name,
+    normalize_filter_name, ASCII85Decoder, ASCIIHexDecoder, CCITTFaxDecoder, CryptDecoder,
+    DCTDecoder, FlateDecoder, JpxStreamDecoder, LZWDecoder, PassthroughDecoder, RunLengthDecoder,
     StreamDecoder, DEFAULT_MAX_DECOMPRESS_BYTES,
 };
-use pdftract_core::parser::object::{PdfObject, PdfDict};
-use pdftract_core::diagnostics::DiagCode;
-use indexmap::IndexMap;
-use std::path::PathBuf;
 use std::fs;
+use std::path::PathBuf;
 
 /// Fixture metadata describing the filter and parameters to use.
 struct FixtureInfo {
@@ -69,7 +68,6 @@ fn get_fixtures() -> Vec<FixtureInfo> {
             expected_diags: vec![DiagCode::StreamBomb],
             bomb_limit: Some(2_000_000_000), // 2GB limit
         },
-
         // LZW fixtures
         FixtureInfo {
             name: "lzw_early_change_0",
@@ -83,7 +81,6 @@ fn get_fixtures() -> Vec<FixtureInfo> {
             expected_diags: vec![],
             bomb_limit: None,
         },
-
         // ASCII85 fixtures
         FixtureInfo {
             name: "ascii85_z_shortcut",
@@ -97,7 +94,6 @@ fn get_fixtures() -> Vec<FixtureInfo> {
             expected_diags: vec![],
             bomb_limit: None,
         },
-
         // ASCIIHex fixture
         FixtureInfo {
             name: "asciihex_odd_length",
@@ -105,7 +101,6 @@ fn get_fixtures() -> Vec<FixtureInfo> {
             expected_diags: vec![],
             bomb_limit: None,
         },
-
         // RunLength fixture
         FixtureInfo {
             name: "runlength_basic",
@@ -113,7 +108,6 @@ fn get_fixtures() -> Vec<FixtureInfo> {
             expected_diags: vec![],
             bomb_limit: None,
         },
-
         // DCTDecode fixtures
         FixtureInfo {
             name: "dct_valid_jpeg",
@@ -127,7 +121,6 @@ fn get_fixtures() -> Vec<FixtureInfo> {
             expected_diags: vec![DiagCode::StreamInvalidJpeg],
             bomb_limit: None,
         },
-
         // JBIG2 fixture
         FixtureInfo {
             name: "jbig2_passthrough",
@@ -135,7 +128,6 @@ fn get_fixtures() -> Vec<FixtureInfo> {
             expected_diags: vec![DiagCode::OcrJbig2Unsupported],
             bomb_limit: None,
         },
-
         // Crypt fixture
         FixtureInfo {
             name: "crypt_identity",
@@ -143,18 +135,13 @@ fn get_fixtures() -> Vec<FixtureInfo> {
             expected_diags: vec![],
             bomb_limit: None,
         },
-
         // Filter array fixture
         FixtureInfo {
             name: "filter_array_a85_then_flate",
-            filter: FixtureFilter::Array(vec![
-                ("ASCII85Decode", None),
-                ("FlateDecode", None),
-            ]),
+            filter: FixtureFilter::Array(vec![("ASCII85Decode", None), ("FlateDecode", None)]),
             expected_diags: vec![],
             bomb_limit: None,
         },
-
         // Unknown filter fixture
         FixtureInfo {
             name: "unknown_filter",
@@ -238,7 +225,8 @@ fn decode_fixture(fixture: &FixtureInfo, input: &[u8]) -> Result<Vec<u8>, String
         FixtureFilter::Single(filter_name, params) => {
             let decoder = get_decoder(filter_name)
                 .ok_or_else(|| format!("Unknown filter: {}", filter_name))?;
-            decoder.decode(input, params.as_ref(), &mut counter, max_bytes)
+            decoder
+                .decode(input, params.as_ref(), &mut counter, max_bytes)
                 .map_err(|e| format!("Decode error: {}", e))
         }
         FixtureFilter::Array(filters) => {
@@ -246,7 +234,8 @@ fn decode_fixture(fixture: &FixtureInfo, input: &[u8]) -> Result<Vec<u8>, String
             for (filter_name, params) in filters {
                 let decoder = get_decoder(filter_name)
                     .ok_or_else(|| format!("Unknown filter in array: {}", filter_name))?;
-                current = decoder.decode(&current, params.as_ref(), &mut counter, max_bytes)
+                current = decoder
+                    .decode(&current, params.as_ref(), &mut counter, max_bytes)
                     .map_err(|e| format!("Decode error in {}: {}", filter_name, e))?;
             }
             Ok(current)
@@ -254,7 +243,8 @@ fn decode_fixture(fixture: &FixtureInfo, input: &[u8]) -> Result<Vec<u8>, String
         FixtureFilter::Unknown(filter_name) => {
             // Unknown filter should return passthrough
             let decoder = PassthroughDecoder::new(filter_name);
-            decoder.decode(input, None, &mut counter, max_bytes)
+            decoder
+                .decode(input, None, &mut counter, max_bytes)
                 .map_err(|e| format!("Passthrough error: {}", e))
         }
     }
@@ -341,9 +331,15 @@ fn test_all_stream_decoder_fixtures() {
             // The fixture expands from 10KB to 3GB, but we cap at 2GB
             // The expected file contains the first 1KB of the expected output
             // We should have decoded at least that much
-            assert!(decoded.len() >= expected.len(), "Bomb test: output too short");
+            assert!(
+                decoded.len() >= expected.len(),
+                "Bomb test: output too short"
+            );
             // And we should have hit the bomb limit (output should be truncated)
-            assert!(decoded.len() < 3_000_000_000, "Bomb test: should have truncated");
+            assert!(
+                decoded.len() < 3_000_000_000,
+                "Bomb test: should have truncated"
+            );
         }
 
         passed += 1;
@@ -388,6 +384,10 @@ fn test_each_filter_exercised() {
     ];
 
     for filter in expected_filters {
-        assert!(filters_exercised.contains(filter), "Filter {} is not exercised by any fixture", filter);
+        assert!(
+            filters_exercised.contains(filter),
+            "Filter {} is not exercised by any fixture",
+            filter
+        );
     }
 }

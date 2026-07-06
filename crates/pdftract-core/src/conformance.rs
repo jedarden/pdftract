@@ -14,9 +14,9 @@
 //! stream as XMP XML with the pdfaid namespace.
 
 use crate::diagnostics::{DiagCode, Diagnostic};
+use crate::parser::object::PdfObject;
 use crate::parser::stream::PdfSource;
 use crate::parser::xref::XrefResolver;
-use crate::parser::object::PdfObject;
 use anyhow::Result;
 
 /// Detect PDF/A conformance from an XMP metadata stream.

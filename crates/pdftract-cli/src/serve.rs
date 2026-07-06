@@ -72,7 +72,7 @@ use anyhow::{Context, Result};
 use axum::{
     body::Body,
     extract::{DefaultBodyLimit, Extension, Multipart, State},
-    http::{HeaderMap, HeaderValue, StatusCode, Request, Response},
+    http::{HeaderMap, HeaderValue, Request, Response, StatusCode},
     response::{IntoResponse, Json, Response as AxumResponse},
     routing::{get, post},
     Router,
@@ -87,8 +87,8 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tower_http::trace::TraceLayer;
 use tower_http::limit::RequestBodyLimitLayer;
+use tower_http::trace::TraceLayer;
 
 /// Cache state for the HTTP server.
 #[derive(Clone)]
@@ -263,7 +263,8 @@ fn extract_diag_code_from_error(msg: &str) -> Option<DiagCode> {
     }
 
     // Stream decode errors
-    if msg_lower.contains("decode") && (msg_lower.contains("error") || msg_lower.contains("failed")) {
+    if msg_lower.contains("decode") && (msg_lower.contains("error") || msg_lower.contains("failed"))
+    {
         return Some(DiagCode::StreamDecodeError);
     }
 
@@ -273,7 +274,9 @@ fn extract_diag_code_from_error(msg: &str) -> Option<DiagCode> {
     }
 
     // Xref errors
-    if msg_lower.contains("xref") && (msg_lower.contains("invalid") || msg_lower.contains("not found")) {
+    if msg_lower.contains("xref")
+        && (msg_lower.contains("invalid") || msg_lower.contains("not found"))
+    {
         return Some(DiagCode::XrefTrailerNotFound);
     }
 
@@ -412,7 +415,10 @@ pub async fn run(
     let limit_bytes = max_body_bytes;
     let app = Router::new()
         .route("/", get(root_handler))
-        .route("/extract", get(extract_get_not_found_handler).post(extract_handler))
+        .route(
+            "/extract",
+            get(extract_get_not_found_handler).post(extract_handler),
+        )
         .route("/extract/text", post(extract_text_handler))
         .route("/extract/stream", post(extract_stream_handler))
         .route("/health", get(health_handler))
@@ -429,7 +435,8 @@ pub async fn run(
                             if len > limit_bytes {
                                 let api_error = ApiError {
                                     error: "REQUEST_TOO_LARGE".to_string(),
-                                    message: "Request body exceeds the configured limit".to_string(),
+                                    message: "Request body exceeds the configured limit"
+                                        .to_string(),
                                     hint: None,
                                 };
                                 let body = serde_json::to_vec(&api_error).unwrap_or_default();
@@ -800,8 +807,15 @@ async fn receive_pdf(multipart: &mut Multipart) -> Result<(PathBuf, ExtractParam
 
     // Known form fields for validation (forward-compatibility: unknown fields are warned)
     const KNOWN_FIELDS: &[&str] = &[
-        "file", "pdf", "receipts", "no_cache", "full_render",
-        "max_decompress_gb", "ocr_language", "ocr_dpi", "markdown_anchors",
+        "file",
+        "pdf",
+        "receipts",
+        "no_cache",
+        "full_render",
+        "max_decompress_gb",
+        "ocr_language",
+        "ocr_dpi",
+        "markdown_anchors",
         "pages",
     ];
 
@@ -852,8 +866,7 @@ async fn receive_pdf(multipart: &mut Multipart) -> Result<(PathBuf, ExtractParam
             }
             "full_render" => {
                 if let Ok(value) = field.text().await {
-                    params.full_render = parse_bool("full_render", &value)
-                        .unwrap_or(false);
+                    params.full_render = parse_bool("full_render", &value).unwrap_or(false);
                 } else {
                     // Checkbox without value also means true
                     params.full_render = true;
@@ -861,7 +874,9 @@ async fn receive_pdf(multipart: &mut Multipart) -> Result<(PathBuf, ExtractParam
             }
             "max_decompress_gb" => {
                 if let Ok(value) = field.text().await {
-                    params.max_decompress_gb = parse_int("max_decompress_gb", &value).ok().map(|v| v as usize);
+                    params.max_decompress_gb = parse_int("max_decompress_gb", &value)
+                        .ok()
+                        .map(|v| v as usize);
                 }
             }
             "ocr_language" => {
@@ -876,8 +891,8 @@ async fn receive_pdf(multipart: &mut Multipart) -> Result<(PathBuf, ExtractParam
             }
             "markdown_anchors" => {
                 if let Ok(value) = field.text().await {
-                    params.markdown_anchors = parse_bool("markdown_anchors", &value)
-                        .unwrap_or(false);
+                    params.markdown_anchors =
+                        parse_bool("markdown_anchors", &value).unwrap_or(false);
                 } else {
                     params.markdown_anchors = true;
                 }
@@ -901,10 +916,9 @@ async fn receive_pdf(multipart: &mut Multipart) -> Result<(PathBuf, ExtractParam
     }
 
     // Validate that a PDF was uploaded
-    let pdf_path = pdf_path.ok_or_else(|| AxumError::MissingField(
-        "No PDF file uploaded".to_string(),
-        "file".to_string(),
-    ))?;
+    let pdf_path = pdf_path.ok_or_else(|| {
+        AxumError::MissingField("No PDF file uploaded".to_string(), "file".to_string())
+    })?;
 
     Ok((pdf_path, params))
 }
@@ -936,7 +950,7 @@ fn build_options(
                     "max_decompress_gb value {} exceeds hard cap of {} GB",
                     gb, MAX_DECOMPRESS_GB_HARD_CAP
                 ),
-                Some(format!("Use a value <= {} GB", MAX_DECOMPRESS_GB_HARD_CAP))
+                Some(format!("Use a value <= {} GB", MAX_DECOMPRESS_GB_HARD_CAP)),
             ));
         }
     }
@@ -952,7 +966,7 @@ fn build_options(
                     "full_render requested but PDFium is not available at runtime. \
                     Ensure the PDFium native library is installed."
                         .to_string(),
-                    Some("Install PDFium or build with --features full-render".to_string())
+                    Some("Install PDFium or build with --features full-render".to_string()),
                 ));
             }
         }
@@ -968,7 +982,9 @@ fn build_options(
     }
 
     // Parse OCR language list (default: ["eng"])
-    let ocr_language = params.ocr_language.as_deref()
+    let ocr_language = params
+        .ocr_language
+        .as_deref()
         .map(parse_comma_list)
         .unwrap_or_else(|| vec!["eng".to_string()]);
 
@@ -1017,10 +1033,8 @@ impl IntoResponse for AxumError {
                 message: "Request body exceeds the configured limit".to_string(),
                 hint: None,
             },
-            AxumError::MissingField(msg, field_name) => {
-                ApiError::new("MISSING_FIELD", msg)
-                    .with_hint(format!("Supply the '{}' multipart field", field_name))
-            }
+            AxumError::MissingField(msg, field_name) => ApiError::new("MISSING_FIELD", msg)
+                .with_hint(format!("Supply the '{}' multipart field", field_name)),
             AxumError::BadRequest(msg, hint) => {
                 let mut err = ApiError::new("BAD_REQUEST", msg);
                 if let Some(h) = hint {
@@ -1062,10 +1076,8 @@ impl IntoResponse for AxumError {
                 // Generate a tracing tag for ops to correlate with logs
                 let tag = format!("{:x}", uuid::Uuid::new_v4().as_u128());
                 tracing::error!("Internal error [{}]: {}", tag, msg);
-                ApiError::new(
-                    "INTERNAL",
-                    "Internal error during extraction".to_string(),
-                ).with_hint(format!("Reference tag {} for debugging", tag))
+                ApiError::new("INTERNAL", "Internal error during extraction".to_string())
+                    .with_hint(format!("Reference tag {} for debugging", tag))
             }
             AxumError::InternalPanic(msg) => {
                 let tag = format!("{:x}", uuid::Uuid::new_v4().as_u128());
@@ -1073,14 +1085,19 @@ impl IntoResponse for AxumError {
                 ApiError::new(
                     "INTERNAL_PANIC",
                     "Extraction task panicked (indicates a bug)".to_string(),
-                ).with_hint(format!("Reference tag {} for debugging", tag))
+                )
+                .with_hint(format!("Reference tag {} for debugging", tag))
             }
         };
 
         let status = match api_error.error.as_str() {
             "REQUEST_TOO_LARGE" => StatusCode::PAYLOAD_TOO_LARGE, // 413
             "BAD_REQUEST" | "MISSING_FIELD" => StatusCode::BAD_REQUEST, // 400
-            "ENCRYPTED" | "WRONG_PASSWORD" | "EXTRACTION_ERROR" | "CORRUPT_PDF" | "DECOMPRESSION_LIMIT" => StatusCode::UNPROCESSABLE_ENTITY, // 422
+            "ENCRYPTED"
+            | "WRONG_PASSWORD"
+            | "EXTRACTION_ERROR"
+            | "CORRUPT_PDF"
+            | "DECOMPRESSION_LIMIT" => StatusCode::UNPROCESSABLE_ENTITY, // 422
             "INTERNAL" | "INTERNAL_PANIC" => StatusCode::INTERNAL_SERVER_ERROR, // 500
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
@@ -1159,13 +1176,16 @@ mod tests {
     async fn test_extract_get_returns_404() {
         use axum::{
             body::Body,
-            http::{StatusCode, Request},
+            http::{Request, StatusCode},
         };
         use tower::ServiceExt;
 
         let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30, false);
         let app = Router::new()
-            .route("/extract", get(extract_get_not_found_handler).post(extract_handler))
+            .route(
+                "/extract",
+                get(extract_get_not_found_handler).post(extract_handler),
+            )
             .with_state(state);
 
         // Test GET /extract (should return 404, not 405)
@@ -1174,10 +1194,7 @@ mod tests {
             .method("GET")
             .body(Body::empty())
             .unwrap();
-        let response = app
-            .oneshot(request)
-            .await
-            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
 
         // Verify the error message is descriptive

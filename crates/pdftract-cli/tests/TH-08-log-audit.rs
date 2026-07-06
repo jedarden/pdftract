@@ -56,10 +56,7 @@ const SENSITIVE_BODY_TEXT: &str = "UNIQUE-MARKER-IN-BODY-TEXT-7f9a";
 const SENSITIVE_TOKEN: &str = "UNIQUE-TOKEN-FOR-TH08-7f9a";
 
 /// Verify trace logging is actually enabled by checking for expected log patterns.
-const EXPECTED_TRACE_PATTERNS: &[&str] = &[
-    "extract",
-    "pdftract",
-];
+const EXPECTED_TRACE_PATTERNS: &[&str] = &["extract", "pdftract"];
 
 /// Test that extraction with RUST_LOG=trace doesn't leak sensitive content.
 #[test]
@@ -67,7 +64,10 @@ fn test_log_audit_no_content_leak_trace() {
     let fixture_path = get_fixture_path("security/sensitive.pdf");
 
     if !fixture_path.exists() {
-        eprintln!("Skipping TH-08 test: fixture not found at {}", fixture_path.display());
+        eprintln!(
+            "Skipping TH-08 test: fixture not found at {}",
+            fixture_path.display()
+        );
         return;
     }
 
@@ -87,7 +87,9 @@ fn test_log_audit_no_content_leak_trace() {
 
     // Write password to stdin
     let mut stdin = output.stdin.take().expect("Failed to open stdin");
-    stdin.write_all(SENSITIVE_PASSWORD.as_bytes()).expect("Failed to write password");
+    stdin
+        .write_all(SENSITIVE_PASSWORD.as_bytes())
+        .expect("Failed to write password");
     drop(stdin);
 
     let result = output.wait_with_output().expect("Failed to read output");
@@ -97,9 +99,14 @@ fn test_log_audit_no_content_leak_trace() {
     let combined = format!("{}\n{}", stdout, stderr);
 
     // Verify trace logging is active
-    let trace_active = EXPECTED_TRACE_PATTERNS.iter().any(|&p| combined.contains(p));
+    let trace_active = EXPECTED_TRACE_PATTERNS
+        .iter()
+        .any(|&p| combined.contains(p));
     if !trace_active {
-        eprintln!("Warning: trace logging may not be active. Output:\n{}", combined);
+        eprintln!(
+            "Warning: trace logging may not be active. Output:\n{}",
+            combined
+        );
     }
 
     // Check that sensitive patterns do NOT appear in log output
@@ -128,7 +135,10 @@ fn test_log_audit_no_content_leak_with_debug() {
     let fixture_path = get_fixture_path("security/sensitive.pdf");
 
     if !fixture_path.exists() {
-        eprintln!("Skipping TH-08 test: fixture not found at {}", fixture_path.display());
+        eprintln!(
+            "Skipping TH-08 test: fixture not found at {}",
+            fixture_path.display()
+        );
         return;
     }
 
@@ -148,7 +158,9 @@ fn test_log_audit_no_content_leak_with_debug() {
 
     // Write password to stdin
     let mut stdin = output.stdin.take().expect("Failed to open stdin");
-    stdin.write_all(SENSITIVE_PASSWORD.as_bytes()).expect("Failed to write password");
+    stdin
+        .write_all(SENSITIVE_PASSWORD.as_bytes())
+        .expect("Failed to write password");
     drop(stdin);
 
     let result = output.wait_with_output().expect("Failed to read output");
@@ -196,8 +208,14 @@ fn test_log_audit_no_bearer_token_leak() {
         "Token should be long and distinctive"
     );
 
-    assert!(test_token.contains("UNIQUE-TOKEN"), "Token should contain marker");
-    assert!(test_token.contains("TH08"), "Token should reference the test");
+    assert!(
+        test_token.contains("UNIQUE-TOKEN"),
+        "Token should contain marker"
+    );
+    assert!(
+        test_token.contains("TH08"),
+        "Token should reference the test"
+    );
 
     // The actual enforcement happens in the MCP server code:
     // - Tokens are wrapped in secrecy::Secret
@@ -205,7 +223,10 @@ fn test_log_audit_no_bearer_token_leak() {
     // - Log statements never include raw token values
     //
     // This test is a placeholder to ensure the policy is considered.
-    assert!(true, "Bearer token redaction is enforced by secrecy wrapper and code review");
+    assert!(
+        true,
+        "Bearer token redaction is enforced by secrecy wrapper and code review"
+    );
 }
 
 /// Test that PDF byte contents are never logged.
@@ -240,7 +261,9 @@ fn test_log_audit_no_pdf_bytes_leak() {
 
     // Write password to stdin
     let mut stdin = output.stdin.take().expect("Failed to open stdin");
-    stdin.write_all(SENSITIVE_PASSWORD.as_bytes()).expect("Failed to write password");
+    stdin
+        .write_all(SENSITIVE_PASSWORD.as_bytes())
+        .expect("Failed to write password");
     drop(stdin);
 
     let result = output.wait_with_output().expect("Failed to read output");
@@ -298,7 +321,11 @@ fn test_log_audit_no_sensitive_headers_leak() {
         // - When headers are logged, they go through redaction logic
         // - Sensitive values are replaced with [REDACTED]
         // - This is verified in integration tests (TH-03) for the HTTP server
-        assert!(true, "Sensitive header {} redaction is enforced by secrecy wrapper and code review", header_name);
+        assert!(
+            true,
+            "Sensitive header {} redaction is enforced by secrecy wrapper and code review",
+            header_name
+        );
     }
 }
 
@@ -333,14 +360,19 @@ fn test_log_audit_audit_log_no_leak() {
 
     // Write password to stdin
     let mut stdin = output.stdin.take().expect("Failed to open stdin");
-    stdin.write_all(SENSITIVE_PASSWORD.as_bytes()).expect("Failed to write password");
+    stdin
+        .write_all(SENSITIVE_PASSWORD.as_bytes())
+        .expect("Failed to write password");
     drop(stdin);
 
     let result = output.wait_with_output().expect("Failed to read output");
 
     // Check the command succeeded
     if !result.status.success() {
-        eprintln!("pdftract extract failed: {}", String::from_utf8_lossy(&result.stderr));
+        eprintln!(
+            "pdftract extract failed: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
     }
 
     // Read the audit log
@@ -353,10 +385,7 @@ fn test_log_audit_audit_log_no_leak() {
             has_fingerprint,
             "Audit log should contain fingerprint field"
         );
-        assert!(
-            has_timestamp,
-            "Audit log should contain timestamp field"
-        );
+        assert!(has_timestamp, "Audit log should contain timestamp field");
 
         // Verify audit log does NOT contain sensitive content
         assert!(

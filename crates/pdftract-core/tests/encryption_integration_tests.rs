@@ -14,8 +14,11 @@ use pdftract_core::diagnostics::{DiagCode, Diagnostic};
 use pdftract_core::encryption::{
     aes_128::{aes_128_decrypt, derive_aes_128_object_key},
     aes_256::{aes_256_decrypt, Aes256Decryptor, FileKeyResult as Aes256FileKeyResult},
-    detection::{detect_encryption, CryptFilterMethod, EncryptionInfo, XrefResolver as DetectionXrefResolver, ResolveError as DetectionResolveError},
     decryptor::{decrypt_with_password, DecryptionError, PasswordValidation},
+    detection::{
+        detect_encryption, CryptFilterMethod, EncryptionInfo,
+        ResolveError as DetectionResolveError, XrefResolver as DetectionXrefResolver,
+    },
     rc4::{
         decrypt_object, derive_file_key, derive_object_key, pad_password, rc4_decrypt,
         validate_user_password, FileKeyResult as Rc4FileKeyResult,
@@ -24,7 +27,7 @@ use pdftract_core::encryption::{
 #[cfg(feature = "decrypt")]
 use pdftract_core::parser::object::{PdfDict, PdfObject};
 #[cfg(feature = "decrypt")]
-use pdftract_core::parser::xref::{XrefResolver, XrefEntry};
+use pdftract_core::parser::xref::{XrefEntry, XrefResolver};
 
 /// Mock resolver for testing.
 #[cfg(feature = "decrypt")]
@@ -46,7 +49,10 @@ impl MockResolver {
 
 #[cfg(feature = "decrypt")]
 impl DetectionXrefResolver for MockResolver {
-    fn resolve(&self, obj_ref: pdftract_core::parser::object::ObjRef) -> Result<PdfObject, DetectionResolveError> {
+    fn resolve(
+        &self,
+        obj_ref: pdftract_core::parser::object::ObjRef,
+    ) -> Result<PdfObject, DetectionResolveError> {
         if obj_ref.object == 1 {
             if let Some(ref dict) = self.encrypt_dict {
                 Ok(PdfObject::Dict(Box::new(dict.clone())))
@@ -67,14 +73,18 @@ fn make_dict(entries: Vec<(&str, PdfObject)>) -> PdfDict {
 #[cfg(feature = "decrypt")]
 fn make_trailer(encrypt_dict: PdfDict, id: Option<Vec<u8>>) -> PdfDict {
     let mut trailer = make_dict(vec![
-        ("/Root", PdfObject::Ref(pdftract_core::parser::object::ObjRef::new(1, 0))),
+        (
+            "/Root",
+            PdfObject::Ref(pdftract_core::parser::object::ObjRef::new(1, 0)),
+        ),
         ("/Encrypt", PdfObject::Dict(Box::new(encrypt_dict))),
     ]);
 
     if let Some(id_bytes) = id {
-        trailer.insert("/ID".into(), PdfObject::Array(Box::new(vec![
-            PdfObject::String(Box::new(id_bytes)),
-        ])));
+        trailer.insert(
+            "/ID".into(),
+            PdfObject::Array(Box::new(vec![PdfObject::String(Box::new(id_bytes))])),
+        );
     }
 
     trailer
@@ -147,11 +157,14 @@ fn test_ec06_aes256_encryption_detection() {
         ("/P", PdfObject::Integer(0xFFFFFFFF_i64)),
         ("/UE", PdfObject::String(Box::new(vec![0u8; 32]))),
         ("/OE", PdfObject::String(Box::new(vec![0u8; 32]))),
-        ("/Perms", PdfObject::String(Box::new({
-            let mut perms = [0u8; 16];
-            perms[0..4].copy_from_slice(&0xFFFFFFFFu32.to_le_bytes());
-            perms.to_vec()
-        }))),
+        (
+            "/Perms",
+            PdfObject::String(Box::new({
+                let mut perms = [0u8; 16];
+                perms[0..4].copy_from_slice(&0xFFFFFFFFu32.to_le_bytes());
+                perms.to_vec()
+            })),
+        ),
     ]);
 
     let trailer = make_trailer(encrypt_dict, Some(vec![0u8; 16]));
@@ -183,8 +196,14 @@ fn test_unsupported_encryption_filter() {
 
     let result = detect_encryption(&trailer, &resolver, &mut diagnostics);
 
-    assert!(result.is_none(), "Should not support non-Standard encryption");
-    assert!(!diagnostics.is_empty(), "Should emit ENCRYPTION_UNSUPPORTED diagnostic");
+    assert!(
+        result.is_none(),
+        "Should not support non-Standard encryption"
+    );
+    assert!(
+        !diagnostics.is_empty(),
+        "Should emit ENCRYPTION_UNSUPPORTED diagnostic"
+    );
     assert_eq!(diagnostics[0].code, DiagCode::EncryptionUnsupported);
 }
 
@@ -259,7 +278,10 @@ fn test_aes128_object_key_derivation() {
     let key1 = derive_aes_128_object_key(&file_key, 1, 0);
     let key2 = derive_aes_128_object_key(&file_key, 2, 0);
 
-    assert_ne!(key1, key2, "Different objects should have different AES-128 keys");
+    assert_ne!(
+        key1, key2,
+        "Different objects should have different AES-128 keys"
+    );
 }
 
 #[test]
@@ -318,7 +340,10 @@ fn test_aes256_decryptor_invalid_length() {
         document_id,
     );
 
-    assert!(decryptor.is_none(), "Should fail with invalid user_hash length");
+    assert!(
+        decryptor.is_none(),
+        "Should fail with invalid user_hash length"
+    );
 }
 
 #[test]
@@ -362,7 +387,10 @@ fn test_decrypt_with_password_missing_id() {
     ]);
 
     let trailer = make_dict(vec![
-        ("/Root", PdfObject::Ref(pdftract_core::parser::object::ObjRef::new(1, 0))),
+        (
+            "/Root",
+            PdfObject::Ref(pdftract_core::parser::object::ObjRef::new(1, 0)),
+        ),
         ("/Encrypt", PdfObject::Dict(Box::new(encrypt_dict))),
     ]);
 
@@ -373,16 +401,20 @@ fn test_decrypt_with_password_missing_id() {
 
     assert!(result.is_some(), "Should detect encryption");
     let info = result.unwrap();
-    assert!(info.file_id.is_empty(), "File ID should be empty when /ID missing");
+    assert!(
+        info.file_id.is_empty(),
+        "File ID should be empty when /ID missing"
+    );
 }
 
 #[test]
 #[cfg(feature = "decrypt")]
 fn test_non_encrypted_pdf() {
     // Test non-encrypted PDF (no /Encrypt in trailer)
-    let trailer = make_dict(vec![
-        ("/Root", PdfObject::Ref(pdftract_core::parser::object::ObjRef::new(1, 0))),
-    ]);
+    let trailer = make_dict(vec![(
+        "/Root",
+        PdfObject::Ref(pdftract_core::parser::object::ObjRef::new(1, 0)),
+    )]);
 
     let resolver = MockResolver::new();
     let mut diagnostics = Vec::new();
@@ -390,7 +422,10 @@ fn test_non_encrypted_pdf() {
     let result = detect_encryption(&trailer, &resolver, &mut diagnostics);
 
     assert!(result.is_none(), "Should return None for non-encrypted PDF");
-    assert!(diagnostics.is_empty(), "Should not emit diagnostics for non-encrypted PDF");
+    assert!(
+        diagnostics.is_empty(),
+        "Should not emit diagnostics for non-encrypted PDF"
+    );
 }
 
 #[test]

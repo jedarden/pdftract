@@ -13,13 +13,13 @@ use std::io::Read;
 use std::io::Seek;
 use std::path::Path;
 
-use flate2::read::{ZlibDecoder, DeflateDecoder};
+use flate2::read::{DeflateDecoder, ZlibDecoder};
 use lzw::{Decoder, DecoderEarlyChange, MsbReader};
 use secrecy::SecretString;
 
-use crate::diagnostics::{DiagCode, Diagnostic};
-use crate::parser::object::{PdfObject, PdfStream, ObjRef};
 use crate::decoder::jbig2::Jbig2GlobalsRef;
+use crate::diagnostics::{DiagCode, Diagnostic};
+use crate::parser::object::{ObjRef, PdfObject, PdfStream};
 
 #[cfg(feature = "decrypt")]
 use crate::encryption::decryptor::DecryptionContext;
@@ -494,11 +494,7 @@ impl FlateDecoder {
     /// but many PDFs in the wild use raw deflate (RFC 1951) without the
     /// zlib wrapper. This function tries zlib first, then falls back to
     /// raw deflate if zlib fails with a data error.
-    fn decode_with_fallback(
-        input: &[u8],
-        doc_counter: &mut u64,
-        max_bytes: u64,
-    ) -> Vec<u8> {
+    fn decode_with_fallback(input: &[u8], doc_counter: &mut u64, max_bytes: u64) -> Vec<u8> {
         // Try ZlibDecoder first
         let output = Self::decode_impl(ZlibDecoder::new(input), doc_counter, max_bytes);
 
@@ -1229,10 +1225,7 @@ impl JpxStreamDecoder {
     ///
     /// This validates the JP2 signature at the start of the data and emits
     /// appropriate diagnostics for missing support or invalid magic.
-    fn validate_and_emit_diagnostics(
-        input: &[u8],
-        _params: Option<&PdfObject>,
-    ) -> Vec<Diagnostic> {
+    fn validate_and_emit_diagnostics(input: &[u8], _params: Option<&PdfObject>) -> Vec<Diagnostic> {
         let mut diagnostics = Vec::new();
         let decoder = crate::decoder::jpx::JpxDecoder::new();
 
@@ -2098,12 +2091,14 @@ mod tests {
     fn test_jpxstream_passthrough_valid_jp2() {
         // Valid JP2 with signature box at start
         let mut jp2_data = vec![
-            0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87, 0x0A, // JP2 signature
+            0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87,
+            0x0A, // JP2 signature
         ];
         jp2_data.extend_from_slice(b"fake_jp2_data");
 
         let mut counter = 0;
-        let result = JpxStreamDecoder.decode(&jp2_data, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        let result =
+            JpxStreamDecoder.decode(&jp2_data, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
         assert!(result.is_ok());
         let output = result.unwrap();
         // Pass through unchanged
@@ -2122,7 +2117,8 @@ mod tests {
         ];
 
         let mut counter = 0;
-        let result = JpxStreamDecoder.decode(&j2k_data, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        let result =
+            JpxStreamDecoder.decode(&j2k_data, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
         assert!(result.is_ok());
         let output = result.unwrap();
         // Still passes through unchanged even without JP2 wrapper
@@ -2135,7 +2131,8 @@ mod tests {
         let jpx_data = b"";
 
         let mut counter = 0;
-        let result = JpxStreamDecoder.decode(jpx_data, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        let result =
+            JpxStreamDecoder.decode(jpx_data, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
         assert!(result.is_ok());
         let output = result.unwrap();
         assert_eq!(output.len(), 0);
@@ -2144,10 +2141,13 @@ mod tests {
     #[test]
     fn test_jpxstream_passthrough_truncated() {
         // Data too short for JP2 signature (less than 12 bytes)
-        let jpx_data = [0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87]; // 11 bytes
+        let jpx_data = [
+            0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87,
+        ]; // 11 bytes
 
         let mut counter = 0;
-        let result = JpxStreamDecoder.decode(&jpx_data, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
+        let result =
+            JpxStreamDecoder.decode(&jpx_data, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES);
         assert!(result.is_ok());
         let output = result.unwrap();
         // Still passes through unchanged even though truncated
@@ -2158,7 +2158,8 @@ mod tests {
     fn test_jpxstream_bomb_limit() {
         // Test that bomb limit is enforced
         let mut jp2_data = vec![
-            0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87, 0x0A, // JP2 signature
+            0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87,
+            0x0A, // JP2 signature
         ];
         jp2_data.extend_from_slice(&[0u8; 1000]); // 1000 bytes of data
 
@@ -3589,7 +3590,11 @@ impl DecodeResult {
     }
 
     /// Create a decode result with metadata and add a diagnostic.
-    pub fn with_meta_and_diagnostic(bytes: Vec<u8>, meta: StreamMeta, diagnostic: Diagnostic) -> Self {
+    pub fn with_meta_and_diagnostic(
+        bytes: Vec<u8>,
+        meta: StreamMeta,
+        diagnostic: Diagnostic,
+    ) -> Self {
         Self {
             bytes,
             diagnostics: vec![diagnostic],
@@ -3694,7 +3699,15 @@ pub fn decode_stream_with_decryption(
     obj_ref: Option<ObjRef>,
     #[cfg(feature = "decrypt")] decryption_context: Option<&DecryptionContext>,
 ) -> Vec<u8> {
-    decode_stream_impl(stream, source, opts, doc_decompress_counter, obj_ref, decryption_context).bytes
+    decode_stream_impl(
+        stream,
+        source,
+        opts,
+        doc_decompress_counter,
+        obj_ref,
+        decryption_context,
+    )
+    .bytes
 }
 
 /// Internal implementation that returns both bytes and diagnostics.
@@ -3735,11 +3748,7 @@ fn decode_stream_impl(
     if let (Some(ctx), Some(obj_ref)) = (decryption_context, obj_ref) {
         use crate::encryption::decryptor::DecryptionContext;
         // Decrypt the stream data using the per-object key
-        match ctx.decrypt_stream(
-            &current_bytes,
-            obj_ref.object,
-            obj_ref.generation as u16,
-        ) {
+        match ctx.decrypt_stream(&current_bytes, obj_ref.object, obj_ref.generation as u16) {
             Ok(decrypted) => {
                 current_bytes = decrypted;
             }
@@ -3750,7 +3759,8 @@ fn decode_stream_impl(
                     stream_meta,
                     Diagnostic::with_dynamic_no_offset(
                         DiagCode::EncryptionWrongPassword,
-                        "Stream decryption failed: incorrect password or corrupt crypt filter".to_string(),
+                        "Stream decryption failed: incorrect password or corrupt crypt filter"
+                            .to_string(),
                     ),
                 );
             }
@@ -3887,7 +3897,8 @@ fn decode_stream_impl(
             }
 
             // Validate EOI marker at end
-            let has_eoi = current_bytes.len() >= 2 && &current_bytes[current_bytes.len() - 2..] == &DCTDecoder::JPEG_EOI;
+            let has_eoi = current_bytes.len() >= 2
+                && &current_bytes[current_bytes.len() - 2..] == &DCTDecoder::JPEG_EOI;
             if !has_eoi {
                 diagnostics.push(Diagnostic::with_dynamic(
                     DiagCode::StreamInvalidJpeg,
@@ -6182,8 +6193,8 @@ endobj
         let mut counter = 0;
         let limit = 100; // Only allow 100 bytes
 
-        let result = PassthroughDecoder::new("JBIG2Decode")
-            .decode(&jbig2_data, None, &mut counter, limit);
+        let result =
+            PassthroughDecoder::new("JBIG2Decode").decode(&jbig2_data, None, &mut counter, limit);
         assert!(result.is_ok());
         let output = result.unwrap();
         assert_eq!(output.len(), 100); // Should truncate at bomb limit

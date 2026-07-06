@@ -227,7 +227,10 @@ pub fn extract(py: Python<'_>, path: &str, kwargs: Option<&PyDict>) -> PyResult<
                 PyErr::new::<crate::EncryptionError, _>(msg)
             } else if err_str.contains("corrupt") || err_str.contains("invalid") {
                 PyErr::new::<crate::CorruptPdfError, _>(msg)
-            } else if err_str.contains("tls") || err_str.contains("certificate") || err_str.contains("ssl") {
+            } else if err_str.contains("tls")
+                || err_str.contains("certificate")
+                || err_str.contains("ssl")
+            {
                 PyErr::new::<crate::TlsError, _>(msg)
             } else if err_str.contains("network") || err_str.contains("interrupted") {
                 PyErr::new::<crate::RemoteFetchInterruptedError, _>(msg)

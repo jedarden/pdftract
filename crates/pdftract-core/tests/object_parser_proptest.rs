@@ -3,7 +3,7 @@
 //! These tests verify that the object parser maintains its core invariants
 //! across all possible inputs, following INV-8 (no panic at public boundary).
 
-use pdftract_core::parser::object::{ObjectParser, PdfObject, PdfDict, intern};
+use pdftract_core::parser::object::{intern, ObjectParser, PdfDict, PdfObject};
 use proptest::prelude::*;
 
 /// Property: The parser never panics on any arbitrary byte sequence.

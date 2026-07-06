@@ -8,7 +8,7 @@
 //! to group lines into semantic blocks.
 
 use serde::{Deserialize, Serialize};
-use unicode_bidi::{BidiClass, bidi_class};
+use unicode_bidi::{bidi_class, BidiClass};
 
 /// Text direction for a line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -715,7 +715,7 @@ where
         bbox: union_bbox,
         baseline,
         direction,
-        page_relative_y: 0.0,          // TODO: Compute from page_height
+        page_relative_y: 0.0, // TODO: Compute from page_height
         median_font_size,
         rendering_mode: None, // TODO: Extract from span metadata
         column: None,         // Set by Phase 4.3 column detection
@@ -860,12 +860,20 @@ mod tests {
     impl TestSpan {
         /// Create a new test span.
         fn new(bbox: [f32; 4], font_size: f32) -> Self {
-            Self { bbox, font_size, text: String::new() }
+            Self {
+                bbox,
+                font_size,
+                text: String::new(),
+            }
         }
 
         /// Create a new test span with text.
         fn with_text(bbox: [f32; 4], font_size: f32, text: &str) -> Self {
-            Self { bbox, font_size, text: text.to_string() }
+            Self {
+                bbox,
+                font_size,
+                text: text.to_string(),
+            }
         }
     }
 
@@ -964,7 +972,10 @@ mod tests {
     #[test]
     fn test_detect_line_direction_latin_dominant() {
         // Latin text with some punctuation -> Ltr
-        assert_eq!(detect_line_direction("Hello, World! 123"), LineDirection::Ltr);
+        assert_eq!(
+            detect_line_direction("Hello, World! 123"),
+            LineDirection::Ltr
+        );
     }
 
     #[test]
@@ -1233,15 +1244,23 @@ mod tests {
         // Expected: ONE block (entire paragraph stays together)
         let lines = vec![
             make_test_line(100.0, [10.0, 95.0, 100.0, 105.0], 12.0, Some(0)), // Indented first line (drop cap)
-            make_test_line(90.0, [0.0, 85.0, 100.0, 95.0], 12.0, Some(0)),    // Not indented (continuation)
-            make_test_line(80.0, [0.0, 75.0, 100.0, 85.0], 12.0, Some(0)),    // Not indented
+            make_test_line(90.0, [0.0, 85.0, 100.0, 95.0], 12.0, Some(0)), // Not indented (continuation)
+            make_test_line(80.0, [0.0, 75.0, 100.0, 85.0], 12.0, Some(0)), // Not indented
         ];
         let column_widths = vec![300.0]; // 0.03 * 300 = 9pt threshold, indent delta = 10pt
         let blocks = group_lines_into_blocks(lines, &column_widths);
         // Currently this FAILS (creates 2 blocks), but the coordinator acceptance criterion says it should PASS (1 block)
         // TODO: Fix indent trigger to not split at first line of block
-        assert_eq!(blocks.len(), 1, "Indented first line of paragraph should NOT split into two blocks");
-        assert_eq!(blocks[0].lines.len(), 3, "All three lines should be in one block");
+        assert_eq!(
+            blocks.len(),
+            1,
+            "Indented first line of paragraph should NOT split into two blocks"
+        );
+        assert_eq!(
+            blocks[0].lines.len(),
+            3,
+            "All three lines should be in one block"
+        );
     }
 
     #[test]
@@ -1441,7 +1460,12 @@ mod tests {
     fn test_classify_heading_18pt_block_12pt_body_one_line_heading() {
         // AC: 18pt block, body 12pt, 1 line: Heading (1.5 > 1.2)
         let mut block = BlockInput {
-            lines: vec![make_test_line(100.0, [0.0, 95.0, 100.0, 105.0], 18.0, Some(0))],
+            lines: vec![make_test_line(
+                100.0,
+                [0.0, 95.0, 100.0, 105.0],
+                18.0,
+                Some(0),
+            )],
             bbox: [0.0, 95.0, 100.0, 105.0],
             median_font_size: 18.0,
             column: 0,
@@ -1455,7 +1479,12 @@ mod tests {
     fn test_classify_heading_14pt_block_12pt_body_one_line_not_heading() {
         // AC: 14pt block, body 12pt, 1 line: NOT (1.17 < 1.2)
         let mut block = BlockInput {
-            lines: vec![make_test_line(100.0, [0.0, 95.0, 100.0, 105.0], 14.0, Some(0))],
+            lines: vec![make_test_line(
+                100.0,
+                [0.0, 95.0, 100.0, 105.0],
+                14.0,
+                Some(0),
+            )],
             bbox: [0.0, 95.0, 100.0, 105.0],
             median_font_size: 14.0,
             column: 0,
@@ -1489,7 +1518,12 @@ mod tests {
     fn test_classify_heading_12pt_block_12pt_body_not_heading() {
         // AC: 12pt block, body 12pt: NOT
         let mut block = BlockInput {
-            lines: vec![make_test_line(100.0, [0.0, 95.0, 100.0, 105.0], 12.0, Some(0))],
+            lines: vec![make_test_line(
+                100.0,
+                [0.0, 95.0, 100.0, 105.0],
+                12.0,
+                Some(0),
+            )],
             bbox: [0.0, 95.0, 100.0, 105.0],
             median_font_size: 12.0,
             column: 0,
@@ -1504,7 +1538,12 @@ mod tests {
     fn test_classify_heading_threshold_exactly_1_2_not_heading() {
         // Exactly 1.2 threshold: NOT heading (strict inequality)
         let mut block = BlockInput {
-            lines: vec![make_test_line(100.0, [0.0, 95.0, 100.0, 105.0], 12.0, Some(0))],
+            lines: vec![make_test_line(
+                100.0,
+                [0.0, 95.0, 100.0, 105.0],
+                12.0,
+                Some(0),
+            )],
             bbox: [0.0, 95.0, 100.0, 105.0],
             median_font_size: 12.0,
             column: 0,
@@ -1519,7 +1558,12 @@ mod tests {
     fn test_classify_heading_threshold_just_above_1_2_is_heading() {
         // Just above 1.2 threshold: IS heading
         let mut block = BlockInput {
-            lines: vec![make_test_line(100.0, [0.0, 95.0, 100.0, 105.0], 12.1, Some(0))],
+            lines: vec![make_test_line(
+                100.0,
+                [0.0, 95.0, 100.0, 105.0],
+                12.1,
+                Some(0),
+            )],
             bbox: [0.0, 95.0, 100.0, 105.0],
             median_font_size: 12.1,
             column: 0,
@@ -1567,7 +1611,12 @@ mod tests {
     fn test_classify_heading_small_page_body_median() {
         // Small page body median (e.g., 8pt) with 10pt block
         let mut block = BlockInput {
-            lines: vec![make_test_line(100.0, [0.0, 95.0, 100.0, 105.0], 10.0, Some(0))],
+            lines: vec![make_test_line(
+                100.0,
+                [0.0, 95.0, 100.0, 105.0],
+                10.0,
+                Some(0),
+            )],
             bbox: [0.0, 95.0, 100.0, 105.0],
             median_font_size: 10.0,
             column: 0,
@@ -1582,7 +1631,12 @@ mod tests {
     fn test_classify_heading_large_page_body_median() {
         // Large page body median (e.g., 16pt) with 20pt block
         let mut block = BlockInput {
-            lines: vec![make_test_line(100.0, [0.0, 95.0, 100.0, 105.0], 20.0, Some(0))],
+            lines: vec![make_test_line(
+                100.0,
+                [0.0, 95.0, 100.0, 105.0],
+                20.0,
+                Some(0),
+            )],
             bbox: [0.0, 95.0, 100.0, 105.0],
             median_font_size: 20.0,
             column: 0,
@@ -1598,19 +1652,34 @@ mod tests {
         // Test classify_page_headings with multiple blocks
         let mut blocks = vec![
             BlockInput {
-                lines: vec![make_test_line(100.0, [0.0, 95.0, 100.0, 105.0], 18.0, Some(0))],
+                lines: vec![make_test_line(
+                    100.0,
+                    [0.0, 95.0, 100.0, 105.0],
+                    18.0,
+                    Some(0),
+                )],
                 bbox: [0.0, 95.0, 100.0, 105.0],
                 median_font_size: 18.0,
                 column: 0,
             },
             BlockInput {
-                lines: vec![make_test_line(90.0, [0.0, 85.0, 100.0, 95.0], 12.0, Some(0))],
+                lines: vec![make_test_line(
+                    90.0,
+                    [0.0, 85.0, 100.0, 95.0],
+                    12.0,
+                    Some(0),
+                )],
                 bbox: [0.0, 85.0, 100.0, 95.0],
                 median_font_size: 12.0,
                 column: 0,
             },
             BlockInput {
-                lines: vec![make_test_line(80.0, [0.0, 75.0, 100.0, 85.0], 15.0, Some(0))],
+                lines: vec![make_test_line(
+                    80.0,
+                    [0.0, 75.0, 100.0, 85.0],
+                    15.0,
+                    Some(0),
+                )],
                 bbox: [0.0, 75.0, 100.0, 85.0],
                 median_font_size: 15.0,
                 column: 0,

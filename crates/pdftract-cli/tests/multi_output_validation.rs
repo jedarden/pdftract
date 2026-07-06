@@ -25,7 +25,10 @@ fn test_default_single_json_to_stdout() {
     // Default: no output flags -> single JSON to stdout
     let (success, stdout, _stderr) = run_extract(&["tests/fixtures/empty.pdf"]);
     assert!(success, "extraction should succeed");
-    assert!(stdout.contains("{") || stdout.contains("[]"), "should output JSON");
+    assert!(
+        stdout.contains("{") || stdout.contains("[]"),
+        "should output JSON"
+    );
 }
 
 #[test]
@@ -34,9 +37,13 @@ fn test_json_flag_creates_file() {
     let output_path = "/tmp/test_json_output.json";
     let _ = std::fs::remove_file(output_path); // Clean up first
 
-    let (success, _stdout, _stderr) = run_extract(&["--json", output_path, "tests/fixtures/empty.pdf"]);
+    let (success, _stdout, _stderr) =
+        run_extract(&["--json", output_path, "tests/fixtures/empty.pdf"]);
     assert!(success, "extraction should succeed");
-    assert!(std::path::Path::new(output_path).exists(), "output file should be created");
+    assert!(
+        std::path::Path::new(output_path).exists(),
+        "output file should be created"
+    );
 
     let _ = std::fs::remove_file(output_path); // Clean up
 }
@@ -50,13 +57,21 @@ fn test_json_and_md_flags_create_two_files() {
     let _ = std::fs::remove_file(md_path);
 
     let (success, _stdout, _stderr) = run_extract(&[
-        "--json", json_path,
-        "--md", md_path,
+        "--json",
+        json_path,
+        "--md",
+        md_path,
         "tests/fixtures/empty.pdf",
     ]);
     assert!(success, "extraction should succeed with two output files");
-    assert!(std::path::Path::new(json_path).exists(), "JSON output file should be created");
-    assert!(std::path::Path::new(md_path).exists(), "MD output file should be created");
+    assert!(
+        std::path::Path::new(json_path).exists(),
+        "JSON output file should be created"
+    );
+    assert!(
+        std::path::Path::new(md_path).exists(),
+        "MD output file should be created"
+    );
 
     let _ = std::fs::remove_file(json_path);
     let _ = std::fs::remove_file(md_path);
@@ -68,8 +83,10 @@ fn test_duplicate_json_flag_rejected() {
     // Note: clap prevents duplicate flags on the same command line,
     // so we test via --format with duplicate json in the list
     let (success, _stdout, stderr) = run_extract(&[
-        "--format", "json,json",
-        "-o", "/tmp/out",
+        "--format",
+        "json,json",
+        "-o",
+        "/tmp/out",
         "tests/fixtures/empty.pdf",
     ]);
     assert!(!success, "duplicate format should be rejected");
@@ -85,7 +102,8 @@ fn test_ndjson_conflicts_with_md() {
     // This should be caught by clap's conflicts_with_all
     let (success, _stdout, stderr) = run_extract(&[
         "--ndjson",
-        "--md", "/tmp/out.md",
+        "--md",
+        "/tmp/out.md",
         "tests/fixtures/empty.pdf",
     ]);
     assert!(!success, "ndjson with md should be rejected");
@@ -100,8 +118,10 @@ fn test_ndjson_conflicts_with_format_list() {
     // --ndjson --format json,md -> CLI error
     let (success, _stdout, stderr) = run_extract(&[
         "--ndjson",
-        "--format", "json",
-        "-o", "/tmp/out",
+        "--format",
+        "json",
+        "-o",
+        "/tmp/out",
         "tests/fixtures/empty.pdf",
     ]);
     assert!(!success, "ndjson with --format should be rejected");
@@ -117,14 +137,14 @@ fn test_md_to_stdout_and_json_to_file() {
     let json_path = "/tmp/test_stdout_file.json";
     let _ = std::fs::remove_file(json_path);
 
-    let (success, stdout, _stderr) = run_extract(&[
-        "--md", "-",
-        "--json", json_path,
-        "tests/fixtures/empty.pdf",
-    ]);
+    let (success, stdout, _stderr) =
+        run_extract(&["--md", "-", "--json", json_path, "tests/fixtures/empty.pdf"]);
     assert!(success, "extraction should succeed");
     assert!(!stdout.is_empty(), "should have stdout output (Markdown)");
-    assert!(std::path::Path::new(json_path).exists(), "JSON file should be created");
+    assert!(
+        std::path::Path::new(json_path).exists(),
+        "JSON file should be created"
+    );
 
     let _ = std::fs::remove_file(json_path);
 }
@@ -132,11 +152,8 @@ fn test_md_to_stdout_and_json_to_file() {
 #[test]
 fn test_multiple_stdout_rejected() {
     // --md - --json - -> CLI error "at most one stdout"
-    let (success, _stdout, stderr) = run_extract(&[
-        "--md", "-",
-        "--json", "-",
-        "tests/fixtures/empty.pdf",
-    ]);
+    let (success, _stdout, stderr) =
+        run_extract(&["--md", "-", "--json", "-", "tests/fixtures/empty.pdf"]);
     assert!(!success, "multiple stdout destinations should be rejected");
     assert!(
         stderr.contains("at most one") || stderr.contains("stdout"),
@@ -154,13 +171,21 @@ fn test_format_with_output_base() {
     let _ = std::fs::remove_file(&md_path);
 
     let (success, _stdout, _stderr) = run_extract(&[
-        "--format", "json,md",
-        "-o", base,
+        "--format",
+        "json,md",
+        "-o",
+        base,
         "tests/fixtures/empty.pdf",
     ]);
     assert!(success, "extraction should succeed");
-    assert!(std::path::Path::new(&json_path).exists(), "JSON file should be created");
-    assert!(std::path::Path::new(&md_path).exists(), "MD file should be created");
+    assert!(
+        std::path::Path::new(&json_path).exists(),
+        "JSON file should be created"
+    );
+    assert!(
+        std::path::Path::new(&md_path).exists(),
+        "MD file should be created"
+    );
 
     let _ = std::fs::remove_file(&json_path);
     let _ = std::fs::remove_file(&md_path);
@@ -169,10 +194,7 @@ fn test_format_with_output_base() {
 #[test]
 fn test_format_requires_output_base() {
     // --format json (without -o) -> CLI error
-    let (success, _stdout, stderr) = run_extract(&[
-        "--format", "json",
-        "tests/fixtures/empty.pdf",
-    ]);
+    let (success, _stdout, stderr) = run_extract(&["--format", "json", "tests/fixtures/empty.pdf"]);
     assert!(!success, "--format without -o should be rejected");
     assert!(
         stderr.contains("requires") || stderr.contains("output"),
@@ -184,8 +206,10 @@ fn test_format_requires_output_base() {
 fn test_invalid_format_name() {
     // --format invalid,json -> CLI error
     let (success, _stdout, stderr) = run_extract(&[
-        "--format", "invalid,json",
-        "-o", "/tmp/out",
+        "--format",
+        "invalid,json",
+        "-o",
+        "/tmp/out",
         "tests/fixtures/empty.pdf",
     ]);
     assert!(!success, "invalid format name should be rejected");
@@ -207,14 +231,25 @@ fn test_format_text_md_json_creates_three_files() {
     let _ = std::fs::remove_file(&json_path);
 
     let (success, _stdout, _stderr) = run_extract(&[
-        "--format", "text,md,json",
-        "-o", base,
+        "--format",
+        "text,md,json",
+        "-o",
+        base,
         "tests/fixtures/empty.pdf",
     ]);
     assert!(success, "extraction with three formats should succeed");
-    assert!(std::path::Path::new(&text_path).exists(), "Text file should be created");
-    assert!(std::path::Path::new(&md_path).exists(), "MD file should be created");
-    assert!(std::path::Path::new(&json_path).exists(), "JSON file should be created");
+    assert!(
+        std::path::Path::new(&text_path).exists(),
+        "Text file should be created"
+    );
+    assert!(
+        std::path::Path::new(&md_path).exists(),
+        "MD file should be created"
+    );
+    assert!(
+        std::path::Path::new(&json_path).exists(),
+        "JSON file should be created"
+    );
 
     let _ = std::fs::remove_file(&text_path);
     let _ = std::fs::remove_file(&md_path);
@@ -224,10 +259,7 @@ fn test_format_text_md_json_creates_three_files() {
 #[test]
 fn test_text_flag_with_dash_for_stdout() {
     // --text - -> plain text to stdout
-    let (success, stdout, _stderr) = run_extract(&[
-        "--text", "-",
-        "tests/fixtures/empty.pdf",
-    ]);
+    let (success, stdout, _stderr) = run_extract(&["--text", "-", "tests/fixtures/empty.pdf"]);
     assert!(success, "text to stdout should succeed");
     // Empty PDF might have no text, but we should not get JSON
     assert!(!stdout.contains("{"), "should not output JSON");

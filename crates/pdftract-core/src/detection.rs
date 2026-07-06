@@ -63,7 +63,10 @@ pub fn detect_javascript(
     for (page_idx, page) in pages.iter().enumerate() {
         // Check page /AA
         if has_js_in_aa(&page.aa, resolver) {
-            info!("JavaScript actions detected: page {} /AA (Additional Actions)", page_idx);
+            info!(
+                "JavaScript actions detected: page {} /AA (Additional Actions)",
+                page_idx
+            );
             warn!("JavaScript execution attempted but not supported - detection only (per TH-04 threat model)");
             return true;
         }
@@ -171,7 +174,10 @@ fn has_js_in_aa(aa: &Option<PdfObject>, resolver: &XrefResolver) -> bool {
         for key in &action_keys {
             if let Some(action_obj) = dict.get(*key) {
                 if has_js_action(&Some(action_obj.clone()), resolver) {
-                    debug!("JavaScript detected in /AA dictionary with action key: /{}", key);
+                    debug!(
+                        "JavaScript detected in /AA dictionary with action key: /{}",
+                        key
+                    );
                     return true;
                 }
             }
@@ -373,7 +379,10 @@ mod tests {
         // Create a JavaScript action dict
         let mut js_dict = PdfDict::new();
         js_dict.insert(Arc::from("S"), PdfObject::Name(Arc::from("JavaScript")));
-        js_dict.insert(Arc::from("JS"), PdfObject::String(Box::new(b"app.alert('hello')".to_vec())));
+        js_dict.insert(
+            Arc::from("JS"),
+            PdfObject::String(Box::new(b"app.alert('hello')".to_vec())),
+        );
         let js_obj = PdfObject::Dict(Box::new(js_dict));
 
         catalog.open_action = Some(js_obj);
@@ -393,7 +402,10 @@ mod tests {
         let mut aa_dict = PdfDict::new();
         let mut js_dict = PdfDict::new();
         js_dict.insert(Arc::from("S"), PdfObject::Name(Arc::from("JavaScript")));
-        js_dict.insert(Arc::from("JS"), PdfObject::String(Box::new(b"app.alert('open')".to_vec())));
+        js_dict.insert(
+            Arc::from("JS"),
+            PdfObject::String(Box::new(b"app.alert('open')".to_vec())),
+        );
         aa_dict.insert(Arc::from("O"), PdfObject::Dict(Box::new(js_dict)));
         let aa_obj = PdfObject::Dict(Box::new(aa_dict));
 
@@ -432,7 +444,10 @@ mod tests {
         let mut annot_dict = PdfDict::new();
         let mut js_dict = PdfDict::new();
         js_dict.insert(Arc::from("S"), PdfObject::Name(Arc::from("JavaScript")));
-        js_dict.insert(Arc::from("JS"), PdfObject::String(Box::new(b"app.alert('annot')".to_vec())));
+        js_dict.insert(
+            Arc::from("JS"),
+            PdfObject::String(Box::new(b"app.alert('annot')".to_vec())),
+        );
         annot_dict.insert(Arc::from("A"), PdfObject::Dict(Box::new(js_dict)));
         resolver.cache_object(annot_ref, PdfObject::Dict(Box::new(annot_dict)));
 
@@ -456,7 +471,10 @@ mod tests {
         let mut aa_dict = PdfDict::new();
         let mut js_dict = PdfDict::new();
         js_dict.insert(Arc::from("S"), PdfObject::Name(Arc::from("JavaScript")));
-        js_dict.insert(Arc::from("JS"), PdfObject::String(Box::new(b"app.alert('page')".to_vec())));
+        js_dict.insert(
+            Arc::from("JS"),
+            PdfObject::String(Box::new(b"app.alert('page')".to_vec())),
+        );
         aa_dict.insert(Arc::from("O"), PdfObject::Dict(Box::new(js_dict)));
         page.aa = Some(PdfObject::Dict(Box::new(aa_dict)));
 
@@ -480,14 +498,22 @@ mod tests {
         let mut aa_dict = PdfDict::new();
         let mut js_dict = PdfDict::new();
         js_dict.insert(Arc::from("S"), PdfObject::Name(Arc::from("JavaScript")));
-        js_dict.insert(Arc::from("JS"), PdfObject::String(Box::new(b"app.alert('field')".to_vec())));
+        js_dict.insert(
+            Arc::from("JS"),
+            PdfObject::String(Box::new(b"app.alert('field')".to_vec())),
+        );
         aa_dict.insert(Arc::from("C"), PdfObject::Dict(Box::new(js_dict)));
         field_dict.insert(Arc::from("AA"), PdfObject::Dict(Box::new(aa_dict)));
 
         let fields = vec![PdfObject::Dict(Box::new(field_dict))];
         acroform.insert(Arc::from("Fields"), PdfObject::Array(Box::new(fields)));
 
-        assert!(detect_javascript(&catalog, &pages, &Some(acroform), &resolver));
+        assert!(detect_javascript(
+            &catalog,
+            &pages,
+            &Some(acroform),
+            &resolver
+        ));
     }
 
     #[test]
@@ -496,7 +522,10 @@ mod tests {
 
         let mut dict = PdfDict::new();
         dict.insert(Arc::from("S"), PdfObject::Name(Arc::from("JavaScript")));
-        dict.insert(Arc::from("JS"), PdfObject::String(Box::new(b"test".to_vec())));
+        dict.insert(
+            Arc::from("JS"),
+            PdfObject::String(Box::new(b"test".to_vec())),
+        );
         let obj = PdfObject::Dict(Box::new(dict));
 
         assert!(has_js_action(&Some(obj), &resolver));
@@ -508,7 +537,10 @@ mod tests {
 
         let mut dict = PdfDict::new();
         dict.insert(Arc::from("S"), PdfObject::Name(Arc::from("JS")));
-        dict.insert(Arc::from("JS"), PdfObject::String(Box::new(b"test".to_vec())));
+        dict.insert(
+            Arc::from("JS"),
+            PdfObject::String(Box::new(b"test".to_vec())),
+        );
         let obj = PdfObject::Dict(Box::new(dict));
 
         assert!(has_js_action(&Some(obj), &resolver));

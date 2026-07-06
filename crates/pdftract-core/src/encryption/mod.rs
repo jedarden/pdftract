@@ -40,8 +40,7 @@ pub use rc4::{
 };
 
 pub use detection::{
-    detect_encryption, AuthEvent, CryptFilterDef, CryptFilterMethod, CryptFiltersV4,
-    EncryptionInfo,
+    detect_encryption, AuthEvent, CryptFilterDef, CryptFilterMethod, CryptFiltersV4, EncryptionInfo,
 };
 
 use crate::diagnostics::{DiagCode, Diagnostic};

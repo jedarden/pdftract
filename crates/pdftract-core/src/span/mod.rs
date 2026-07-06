@@ -366,7 +366,10 @@ fn normalize_color_for_comparison(color: &Color) -> Option<(u8, u8, u8)> {
 /// For DeviceGray, DeviceRGB, and DeviceCMYK, compares using normalized RGB values.
 /// For Spot and Other, compares by variant equality (Spot colors compared by name AND tint exactly).
 fn colors_equal(a: &Color, b: &Color) -> bool {
-    match (normalize_color_for_comparison(a), normalize_color_for_comparison(b)) {
+    match (
+        normalize_color_for_comparison(a),
+        normalize_color_for_comparison(b),
+    ) {
         (Some(rgb_a), Some(rgb_b)) => rgb_a == rgb_b,
         (None, None) => a == b, // Both Spot/Other: compare by variant (Spot by name+tint)
         _ => false,             // One normalizable, one not: different
@@ -466,7 +469,7 @@ pub fn merge_glyphs_to_spans(glyphs: &[Glyph]) -> Vec<Span> {
                 result.push(span);
             }
             prev_fill_color = None; // Reset on word boundary
-            // Skip the boundary marker glyph itself (it's synthetic, not a real glyph)
+                                    // Skip the boundary marker glyph itself (it's synthetic, not a real glyph)
             continue;
         }
 
@@ -512,8 +515,8 @@ pub fn merge_glyphs_to_spans(glyphs: &[Glyph]) -> Vec<Span> {
                 glyph.rendering_mode,
                 glyph.confidence,
                 confidence_source,
-                None,  // lang: filled in Phase 7
-                0,     // flags: filled in Phase 4.1 flag detector
+                None, // lang: filled in Phase 7
+                0,    // flags: filled in Phase 4.1 flag detector
             ));
             prev_fill_color = Some(&glyph.fill_color);
         } else {
@@ -840,30 +843,151 @@ mod tests {
 
         let glyphs = vec![
             // "Hello" - 5 glyphs with same font/size/color
-            Glyph::new('H', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('e', UnicodeSource::ToUnicode, 1.0, [10.0, 10.0, 20.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [20.0, 10.0, 30.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [30.0, 10.0, 40.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('o', UnicodeSource::ToUnicode, 1.0, [40.0, 10.0, 50.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new(
+                'H',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [0.0, 10.0, 10.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'e',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [10.0, 10.0, 20.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'l',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [20.0, 10.0, 30.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'l',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [30.0, 10.0, 40.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'o',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [40.0, 10.0, 50.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
             // Word boundary marker (is_word_boundary = true)
-            Glyph::new(' ', UnicodeSource::ToUnicode, 1.0, [50.0, 10.0, 60.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), true, None, false),
+            Glyph::new(
+                ' ',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [50.0, 10.0, 60.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                true,
+                None,
+                false,
+            ),
             // "World" - 5 glyphs with same font/size/color
-            Glyph::new('W', UnicodeSource::ToUnicode, 1.0, [60.0, 10.0, 70.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('o', UnicodeSource::ToUnicode, 1.0, [70.0, 10.0, 80.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('r', UnicodeSource::ToUnicode, 1.0, [80.0, 10.0, 90.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [90.0, 10.0, 100.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('d', UnicodeSource::ToUnicode, 1.0, [100.0, 10.0, 110.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new(
+                'W',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [60.0, 10.0, 70.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'o',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [70.0, 10.0, 80.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'r',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [80.0, 10.0, 90.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'l',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [90.0, 10.0, 100.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'd',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [100.0, 10.0, 110.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
         ];
 
         let spans = merge_glyphs_to_spans(&glyphs);
@@ -881,15 +1005,59 @@ mod tests {
 
         let glyphs = vec![
             // "He" - regular Helvetica
-            Glyph::new('H', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('e', UnicodeSource::ToUnicode, 1.0, [10.0, 10.0, 20.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new(
+                'H',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [0.0, 10.0, 10.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'e',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [10.0, 10.0, 20.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
             // "lo" - Helvetica-Bold (font name change)
-            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [20.0, 10.0, 30.0, 20.0],
-                       Arc::from("Helvetica-Bold"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('o', UnicodeSource::ToUnicode, 1.0, [30.0, 10.0, 40.0, 20.0],
-                       Arc::from("Helvetica-Bold"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new(
+                'l',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [20.0, 10.0, 30.0, 20.0],
+                Arc::from("Helvetica-Bold"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'o',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [30.0, 10.0, 40.0, 20.0],
+                Arc::from("Helvetica-Bold"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
         ];
 
         let spans = merge_glyphs_to_spans(&glyphs);
@@ -908,12 +1076,45 @@ mod tests {
         use crate::graphics_state::Color;
 
         let glyphs = vec![
-            Glyph::new('H', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('e', UnicodeSource::ToUnicode, 1.0, [10.0, 10.0, 20.0, 20.0],
-                       Arc::from("Helvetica"), 12.2, 0, Color::DeviceGray(0.0), false, None, false), // delta = 0.2pt < 0.5
-            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [20.0, 10.0, 30.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new(
+                'H',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [0.0, 10.0, 10.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'e',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [10.0, 10.0, 20.0, 20.0],
+                Arc::from("Helvetica"),
+                12.2,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ), // delta = 0.2pt < 0.5
+            Glyph::new(
+                'l',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [20.0, 10.0, 30.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
         ];
 
         let spans = merge_glyphs_to_spans(&glyphs);
@@ -929,10 +1130,32 @@ mod tests {
         use crate::graphics_state::Color;
 
         let glyphs = vec![
-            Glyph::new('H', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('e', UnicodeSource::ToUnicode, 1.0, [10.0, 10.0, 20.0, 20.0],
-                       Arc::from("Helvetica"), 12.6, 0, Color::DeviceGray(0.0), false, None, false), // delta = 0.6pt > 0.5
+            Glyph::new(
+                'H',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [0.0, 10.0, 10.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'e',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [10.0, 10.0, 20.0, 20.0],
+                Arc::from("Helvetica"),
+                12.6,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ), // delta = 0.6pt > 0.5
         ];
 
         let spans = merge_glyphs_to_spans(&glyphs);
@@ -949,17 +1172,54 @@ mod tests {
         use crate::graphics_state::Color;
 
         let glyphs = vec![
-            Glyph::new('H', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.5), false, None, false),
-            Glyph::new('e', UnicodeSource::ToUnicode, 1.0, [10.0, 10.0, 20.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceRGB([0.5, 0.5, 0.5]), false, None, false),
-            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [20.0, 10.0, 30.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.5), false, None, false),
+            Glyph::new(
+                'H',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [0.0, 10.0, 10.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.5),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'e',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [10.0, 10.0, 20.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceRGB([0.5, 0.5, 0.5]),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'l',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [20.0, 10.0, 30.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.5),
+                false,
+                None,
+                false,
+            ),
         ];
 
         let spans = merge_glyphs_to_spans(&glyphs);
 
-        assert_eq!(spans.len(), 1, "Expected 1 span for RGB-normalized same colors");
+        assert_eq!(
+            spans.len(),
+            1,
+            "Expected 1 span for RGB-normalized same colors"
+        );
         assert_eq!(spans[0].text, "Hel");
         // DeviceGray(0.5) -> (0.5 * 255).round() = 128 -> #808080
         assert_eq!(spans[0].color.as_ref().unwrap().as_str(), "#808080");
@@ -972,15 +1232,41 @@ mod tests {
         use crate::graphics_state::Color;
 
         let glyphs = vec![
-            Glyph::new('H', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::Spot(Arc::from("PANTONE-123"), 1.0), false, None, false),
-            Glyph::new('e', UnicodeSource::ToUnicode, 1.0, [10.0, 10.0, 20.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceRGB([1.0, 0.0, 0.0]), false, None, false),
+            Glyph::new(
+                'H',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [0.0, 10.0, 10.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::Spot(Arc::from("PANTONE-123"), 1.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'e',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [10.0, 10.0, 20.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceRGB([1.0, 0.0, 0.0]),
+                false,
+                None,
+                false,
+            ),
         ];
 
         let spans = merge_glyphs_to_spans(&glyphs);
 
-        assert_eq!(spans.len(), 2, "Expected 2 spans: Spot color != DeviceRGB even if visual appearance is similar");
+        assert_eq!(
+            spans.len(),
+            2,
+            "Expected 2 spans: Spot color != DeviceRGB even if visual appearance is similar"
+        );
         assert_eq!(spans[0].text, "H");
         assert_eq!(spans[0].color, None, "Spot color serializes as None");
         assert_eq!(spans[1].text, "e");
@@ -1005,10 +1291,32 @@ mod tests {
         use crate::graphics_state::Color;
 
         let glyphs = vec![
-            Glyph::new('H', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('e', UnicodeSource::ToUnicode, 1.0, [10.0, 10.0, 20.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 2, Color::DeviceGray(0.0), false, None, false), // mode 2
+            Glyph::new(
+                'H',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [0.0, 10.0, 10.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'e',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [10.0, 10.0, 20.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                2,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ), // mode 2
         ];
 
         let spans = merge_glyphs_to_spans(&glyphs);
@@ -1025,12 +1333,45 @@ mod tests {
         use crate::graphics_state::Color;
 
         let glyphs = vec![
-            Glyph::new('H', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('e', UnicodeSource::ShapeMatch, 0.7, [10.0, 10.0, 20.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('l', UnicodeSource::Agl, 0.9, [20.0, 10.0, 30.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new(
+                'H',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [0.0, 10.0, 10.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'e',
+                UnicodeSource::ShapeMatch,
+                0.7,
+                [10.0, 10.0, 20.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'l',
+                UnicodeSource::Agl,
+                0.9,
+                [20.0, 10.0, 30.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
         ];
 
         let spans = merge_glyphs_to_spans(&glyphs);
@@ -1047,10 +1388,32 @@ mod tests {
         use crate::graphics_state::Color;
 
         let glyphs = vec![
-            Glyph::new('H', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('e', UnicodeSource::ShapeMatch, 0.7, [10.0, 10.0, 20.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new(
+                'H',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [0.0, 10.0, 10.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'e',
+                UnicodeSource::ShapeMatch,
+                0.7,
+                [10.0, 10.0, 20.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
         ];
 
         let spans = merge_glyphs_to_spans(&glyphs);
@@ -1067,12 +1430,45 @@ mod tests {
         use crate::graphics_state::Color;
 
         let glyphs = vec![
-            Glyph::new('H', UnicodeSource::ToUnicode, 1.0, [10.0, 20.0, 20.0, 30.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('e', UnicodeSource::ToUnicode, 1.0, [25.0, 15.0, 35.0, 25.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [40.0, 18.0, 50.0, 28.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new(
+                'H',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [10.0, 20.0, 20.0, 30.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'e',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [25.0, 15.0, 35.0, 25.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'l',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [40.0, 18.0, 50.0, 28.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
         ];
 
         let spans = merge_glyphs_to_spans(&glyphs);
@@ -1089,42 +1485,87 @@ mod tests {
         use crate::graphics_state::Color;
 
         // Test ToUnicode → Native
-        let glyphs = vec![
-            Glyph::new('A', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-        ];
+        let glyphs = vec![Glyph::new(
+            'A',
+            UnicodeSource::ToUnicode,
+            1.0,
+            [0.0, 10.0, 10.0, 20.0],
+            Arc::from("Helvetica"),
+            12.0,
+            0,
+            Color::DeviceGray(0.0),
+            false,
+            None,
+            false,
+        )];
         let spans = merge_glyphs_to_spans(&glyphs);
         assert_eq!(spans[0].confidence_source, ConfidenceSource::Native);
 
         // Test Agl → Native
-        let glyphs = vec![
-            Glyph::new('A', UnicodeSource::Agl, 0.9, [0.0, 10.0, 10.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-        ];
+        let glyphs = vec![Glyph::new(
+            'A',
+            UnicodeSource::Agl,
+            0.9,
+            [0.0, 10.0, 10.0, 20.0],
+            Arc::from("Helvetica"),
+            12.0,
+            0,
+            Color::DeviceGray(0.0),
+            false,
+            None,
+            false,
+        )];
         let spans = merge_glyphs_to_spans(&glyphs);
         assert_eq!(spans[0].confidence_source, ConfidenceSource::Native);
 
         // Test Fingerprint → Native
-        let glyphs = vec![
-            Glyph::new('A', UnicodeSource::Fingerprint, 0.85, [0.0, 10.0, 10.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-        ];
+        let glyphs = vec![Glyph::new(
+            'A',
+            UnicodeSource::Fingerprint,
+            0.85,
+            [0.0, 10.0, 10.0, 20.0],
+            Arc::from("Helvetica"),
+            12.0,
+            0,
+            Color::DeviceGray(0.0),
+            false,
+            None,
+            false,
+        )];
         let spans = merge_glyphs_to_spans(&glyphs);
         assert_eq!(spans[0].confidence_source, ConfidenceSource::Native);
 
         // Test ShapeMatch → Heuristic
-        let glyphs = vec![
-            Glyph::new('A', UnicodeSource::ShapeMatch, 0.7, [0.0, 10.0, 10.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-        ];
+        let glyphs = vec![Glyph::new(
+            'A',
+            UnicodeSource::ShapeMatch,
+            0.7,
+            [0.0, 10.0, 10.0, 20.0],
+            Arc::from("Helvetica"),
+            12.0,
+            0,
+            Color::DeviceGray(0.0),
+            false,
+            None,
+            false,
+        )];
         let spans = merge_glyphs_to_spans(&glyphs);
         assert_eq!(spans[0].confidence_source, ConfidenceSource::Heuristic);
 
         // Test Unknown → Heuristic
-        let glyphs = vec![
-            Glyph::new('A', UnicodeSource::Unknown, 0.0, [0.0, 10.0, 10.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-        ];
+        let glyphs = vec![Glyph::new(
+            'A',
+            UnicodeSource::Unknown,
+            0.0,
+            [0.0, 10.0, 10.0, 20.0],
+            Arc::from("Helvetica"),
+            12.0,
+            0,
+            Color::DeviceGray(0.0),
+            false,
+            None,
+            false,
+        )];
         let spans = merge_glyphs_to_spans(&glyphs);
         assert_eq!(spans[0].confidence_source, ConfidenceSource::Heuristic);
     }
@@ -1250,16 +1691,71 @@ mod tests {
         use crate::font::UnicodeSource;
 
         let glyphs = vec![
-            Glyph::new('H', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('e', UnicodeSource::ToUnicode, 1.0, [10.0, 10.0, 20.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [20.0, 10.0, 30.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [30.0, 10.0, 40.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('o', UnicodeSource::ToUnicode, 1.0, [40.0, 10.0, 50.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new(
+                'H',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [0.0, 10.0, 10.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'e',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [10.0, 10.0, 20.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'l',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [20.0, 10.0, 30.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'l',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [30.0, 10.0, 40.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'o',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [40.0, 10.0, 50.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
         ];
 
         let spans = merge_glyphs_to_spans(&glyphs);
@@ -1274,36 +1770,163 @@ mod tests {
         use crate::font::UnicodeSource;
 
         let glyphs = vec![
-            Glyph::new('H', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('e', UnicodeSource::ToUnicode, 1.0, [10.0, 10.0, 20.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [20.0, 10.0, 30.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [30.0, 10.0, 40.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('o', UnicodeSource::ToUnicode, 1.0, [40.0, 10.0, 50.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new(
+                'H',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [0.0, 10.0, 10.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'e',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [10.0, 10.0, 20.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'l',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [20.0, 10.0, 30.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'l',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [30.0, 10.0, 40.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'o',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [40.0, 10.0, 50.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
             // Word boundary
-            Glyph::new(' ', UnicodeSource::ToUnicode, 1.0, [50.0, 10.0, 60.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), true, None, false),
-            Glyph::new('W', UnicodeSource::ToUnicode, 1.0, [60.0, 10.0, 70.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('o', UnicodeSource::ToUnicode, 1.0, [70.0, 10.0, 80.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('r', UnicodeSource::ToUnicode, 1.0, [80.0, 10.0, 90.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('l', UnicodeSource::ToUnicode, 1.0, [90.0, 10.0, 100.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('d', UnicodeSource::ToUnicode, 1.0, [100.0, 10.0, 110.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new(
+                ' ',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [50.0, 10.0, 60.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                true,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'W',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [60.0, 10.0, 70.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'o',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [70.0, 10.0, 80.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'r',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [80.0, 10.0, 90.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'l',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [90.0, 10.0, 100.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'd',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [100.0, 10.0, 110.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
         ];
 
         let spans = merge_glyphs_to_spans(&glyphs);
 
         assert_eq!(spans.len(), 2);
-        assert_eq!(spans[0].text, "Hello ", "First span should have trailing space");
-        assert_eq!(spans[1].text, "World", "Second span should not have leading space");
+        assert_eq!(
+            spans[0].text, "Hello ",
+            "First span should have trailing space"
+        );
+        assert_eq!(
+            spans[1].text, "World",
+            "Second span should not have leading space"
+        );
     }
 
     #[test]
@@ -1315,16 +1938,41 @@ mod tests {
         // Simulate a ligature that was expanded into two glyphs with shared bbox
         let shared_bbox = [0.0, 10.0, 12.0, 20.0];
         let glyphs = vec![
-            Glyph::new('f', UnicodeSource::ToUnicode, 1.0, shared_bbox,
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('i', UnicodeSource::ToUnicode, 1.0, shared_bbox,
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new(
+                'f',
+                UnicodeSource::ToUnicode,
+                1.0,
+                shared_bbox,
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'i',
+                UnicodeSource::ToUnicode,
+                1.0,
+                shared_bbox,
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
         ];
 
         let spans = merge_glyphs_to_spans(&glyphs);
 
         assert_eq!(spans.len(), 1);
-        assert_eq!(spans[0].text, "fi", "Ligature expansion should concatenate both codepoints");
+        assert_eq!(
+            spans[0].text, "fi",
+            "Ligature expansion should concatenate both codepoints"
+        );
     }
 
     #[test]
@@ -1336,14 +1984,58 @@ mod tests {
 
         // Arabic letters in their logical order (as they appear in the content stream)
         let glyphs = vec![
-            Glyph::new('\u{0643}', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0], // keheh (k)
-                       Arc::from("Arial"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('\u{062A}', UnicodeSource::ToUnicode, 1.0, [10.0, 10.0, 20.0, 20.0], // teh (t)
-                       Arc::from("Arial"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('\u{0627}', UnicodeSource::ToUnicode, 1.0, [20.0, 10.0, 30.0, 20.0], // alef (a)
-                       Arc::from("Arial"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('\u{0628}', UnicodeSource::ToUnicode, 1.0, [30.0, 10.0, 40.0, 20.0], // beh (b)
-                       Arc::from("Arial"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new(
+                '\u{0643}',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [0.0, 10.0, 10.0, 20.0], // keheh (k)
+                Arc::from("Arial"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                '\u{062A}',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [10.0, 10.0, 20.0, 20.0], // teh (t)
+                Arc::from("Arial"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                '\u{0627}',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [20.0, 10.0, 30.0, 20.0], // alef (a)
+                Arc::from("Arial"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                '\u{0628}',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [30.0, 10.0, 40.0, 20.0], // beh (b)
+                Arc::from("Arial"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
         ];
 
         let spans = merge_glyphs_to_spans(&glyphs);
@@ -1361,19 +2053,55 @@ mod tests {
 
         // First glyph is a word boundary (odd but possible)
         let glyphs = vec![
-            Glyph::new(' ', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), true, None, false),
-            Glyph::new('H', UnicodeSource::ToUnicode, 1.0, [10.0, 10.0, 20.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('e', UnicodeSource::ToUnicode, 1.0, [20.0, 10.0, 30.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new(
+                ' ',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [0.0, 10.0, 10.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                true,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'H',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [10.0, 10.0, 20.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                'e',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [20.0, 10.0, 30.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
         ];
 
         let spans = merge_glyphs_to_spans(&glyphs);
 
         // Should produce one span with "He" (no leading space)
         assert_eq!(spans.len(), 1);
-        assert_eq!(spans[0].text, "He", "No leading space when boundary is first glyph");
+        assert_eq!(
+            spans[0].text, "He",
+            "No leading space when boundary is first glyph"
+        );
     }
 
     #[test]
@@ -1382,10 +2110,32 @@ mod tests {
         use crate::font::UnicodeSource;
 
         let mut span = Span::empty();
-        let glyph1 = Glyph::new('A', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
-                                 Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false);
-        let glyph2 = Glyph::new('B', UnicodeSource::ToUnicode, 1.0, [10.0, 10.0, 20.0, 20.0],
-                                 Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false);
+        let glyph1 = Glyph::new(
+            'A',
+            UnicodeSource::ToUnicode,
+            1.0,
+            [0.0, 10.0, 10.0, 20.0],
+            Arc::from("Helvetica"),
+            12.0,
+            0,
+            Color::DeviceGray(0.0),
+            false,
+            None,
+            false,
+        );
+        let glyph2 = Glyph::new(
+            'B',
+            UnicodeSource::ToUnicode,
+            1.0,
+            [10.0, 10.0, 20.0, 20.0],
+            Arc::from("Helvetica"),
+            12.0,
+            0,
+            Color::DeviceGray(0.0),
+            false,
+            None,
+            false,
+        );
 
         assemble_text(&mut span, &glyph1);
         assert_eq!(span.text, "A");
@@ -1400,16 +2150,71 @@ mod tests {
         use crate::font::UnicodeSource;
 
         let glyphs = vec![
-            Glyph::new('a', UnicodeSource::ToUnicode, 1.0, [0.0, 10.0, 10.0, 20.0],
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('\u{00AD}', UnicodeSource::ToUnicode, 1.0, [10.0, 10.0, 20.0, 20.0], // soft hyphen
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('\u{200D}', UnicodeSource::ToUnicode, 1.0, [20.0, 10.0, 30.0, 20.0], // ZWJ
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('\u{200C}', UnicodeSource::ToUnicode, 1.0, [30.0, 10.0, 40.0, 20.0], // ZWNJ
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
-            Glyph::new('\u{FFFD}', UnicodeSource::Unknown, 0.0, [40.0, 10.0, 50.0, 20.0], // replacement char
-                       Arc::from("Helvetica"), 12.0, 0, Color::DeviceGray(0.0), false, None, false),
+            Glyph::new(
+                'a',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [0.0, 10.0, 10.0, 20.0],
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                '\u{00AD}',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [10.0, 10.0, 20.0, 20.0], // soft hyphen
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                '\u{200D}',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [20.0, 10.0, 30.0, 20.0], // ZWJ
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                '\u{200C}',
+                UnicodeSource::ToUnicode,
+                1.0,
+                [30.0, 10.0, 40.0, 20.0], // ZWNJ
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
+            Glyph::new(
+                '\u{FFFD}',
+                UnicodeSource::Unknown,
+                0.0,
+                [40.0, 10.0, 50.0, 20.0], // replacement char
+                Arc::from("Helvetica"),
+                12.0,
+                0,
+                Color::DeviceGray(0.0),
+                false,
+                None,
+                false,
+            ),
         ];
 
         let spans = merge_glyphs_to_spans(&glyphs);
@@ -1546,12 +2351,36 @@ mod tests {
 
         // Test all current variants
         for (source, expected_without_correction, expected_with_correction) in &[
-            (UnicodeSource::ToUnicode, ConfidenceSource::Native, ConfidenceSource::Heuristic),
-            (UnicodeSource::Agl, ConfidenceSource::Native, ConfidenceSource::Heuristic),
-            (UnicodeSource::Fingerprint, ConfidenceSource::Native, ConfidenceSource::Heuristic),
-            (UnicodeSource::ShapeMatch, ConfidenceSource::Heuristic, ConfidenceSource::Heuristic),
-            (UnicodeSource::Unknown, ConfidenceSource::Heuristic, ConfidenceSource::Heuristic),
-            (UnicodeSource::Ocr, ConfidenceSource::Ocr, ConfidenceSource::Ocr),
+            (
+                UnicodeSource::ToUnicode,
+                ConfidenceSource::Native,
+                ConfidenceSource::Heuristic,
+            ),
+            (
+                UnicodeSource::Agl,
+                ConfidenceSource::Native,
+                ConfidenceSource::Heuristic,
+            ),
+            (
+                UnicodeSource::Fingerprint,
+                ConfidenceSource::Native,
+                ConfidenceSource::Heuristic,
+            ),
+            (
+                UnicodeSource::ShapeMatch,
+                ConfidenceSource::Heuristic,
+                ConfidenceSource::Heuristic,
+            ),
+            (
+                UnicodeSource::Unknown,
+                ConfidenceSource::Heuristic,
+                ConfidenceSource::Heuristic,
+            ),
+            (
+                UnicodeSource::Ocr,
+                ConfidenceSource::Ocr,
+                ConfidenceSource::Ocr,
+            ),
         ] {
             assert_eq!(
                 map_confidence_source(*source, false),

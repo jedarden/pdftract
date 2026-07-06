@@ -1454,7 +1454,7 @@ pub enum BlockKind {
     /// Heading with level 1-6
     Heading {
         /// Heading level (1 = highest, 6 = lowest)
-        level: u8
+        level: u8,
     },
     /// Table structure
     Table,

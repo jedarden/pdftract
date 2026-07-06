@@ -64,8 +64,14 @@ fn test_parse_hint_stream_valid() {
 
     let result = parse_hint_stream(&hint_data, &mut diagnostics);
 
-    assert!(result.is_some(), "Should successfully parse valid hint stream");
-    assert!(diagnostics.is_empty(), "Should not emit diagnostics for valid hint stream");
+    assert!(
+        result.is_some(),
+        "Should successfully parse valid hint stream"
+    );
+    assert!(
+        diagnostics.is_empty(),
+        "Should not emit diagnostics for valid hint stream"
+    );
 
     let table = result.unwrap();
     assert_eq!(table.page_count(), 5);
@@ -73,8 +79,14 @@ fn test_parse_hint_stream_valid() {
     // Verify each page's predicted range matches expected
     for (i, (start, end)) in expected_ranges.iter().enumerate() {
         let predicted = table.predict_page_range(i as u32);
-        assert_eq!(predicted, Some(*start..*end),
-                   "Page {} range mismatch: expected {:?}, got {:?}", i, (*start..*end), predicted);
+        assert_eq!(
+            predicted,
+            Some(*start..*end),
+            "Page {} range mismatch: expected {:?}, got {:?}",
+            i,
+            (*start..*end),
+            predicted
+        );
     }
 }
 
@@ -89,7 +101,10 @@ fn test_parse_hint_stream_malformed_version() {
     let mut diagnostics = vec![];
     let result = parse_hint_stream(&data, &mut diagnostics);
 
-    assert!(result.is_none(), "Should reject hint stream with invalid version");
+    assert!(
+        result.is_none(),
+        "Should reject hint stream with invalid version"
+    );
 }
 
 #[test]
@@ -109,7 +124,10 @@ fn test_parse_hint_stream_zero_page_count() {
     let mut diagnostics = vec![];
     let result = parse_hint_stream(&data, &mut diagnostics);
 
-    assert!(result.is_none(), "Should reject hint stream with zero page count");
+    assert!(
+        result.is_none(),
+        "Should reject hint stream with zero page count"
+    );
 }
 
 #[test]
@@ -122,7 +140,10 @@ fn test_hint_predict_shared_objects_minimal() {
 
     // Phase 1: shared object hints not implemented
     let shared = table.predict_shared_objects();
-    assert!(shared.is_empty(), "Phase 1 minimal implementation returns empty shared object ranges");
+    assert!(
+        shared.is_empty(),
+        "Phase 1 minimal implementation returns empty shared object ranges"
+    );
 }
 
 #[test]
@@ -134,7 +155,10 @@ fn test_hint_stream_out_of_bounds_page() {
 
     // Page 10 is out of bounds (only 3 pages)
     let result = table.predict_page_range(10);
-    assert!(result.is_none(), "Should return None for out-of-bounds page index");
+    assert!(
+        result.is_none(),
+        "Should return None for out-of-bounds page index"
+    );
 }
 
 #[test]
@@ -148,8 +172,14 @@ fn test_hint_table_predict_page_range() {
     // Verify each page's predicted range matches expected
     for (i, (start, end)) in expected_ranges.iter().enumerate() {
         let predicted = table.predict_page_range(i as u32);
-        assert_eq!(predicted, Some(*start..*end),
-                   "Page {} range mismatch: expected {:?}, got {:?}", i, (*start..*end), predicted);
+        assert_eq!(
+            predicted,
+            Some(*start..*end),
+            "Page {} range mismatch: expected {:?}, got {:?}",
+            i,
+            (*start..*end),
+            predicted
+        );
     }
 }
 
@@ -184,29 +214,29 @@ fn create_linearized_pdf_with_hint_stream() -> Vec<u8> {
     // Format: [type (1 byte)] [offset (4 bytes, big-endian)] [gen (2 bytes, big-endian)]
     pdf.extend_from_slice(&[
         // Object 0: free entry
-        0,              // type: free
-        0, 0, 0, 0,    // offset: 0
-        0, 0,           // generation: 0 (was 65535, but that doesn't fit in u16)
+        0, // type: free
+        0, 0, 0, 0, // offset: 0
+        0, 0, // generation: 0 (was 65535, but that doesn't fit in u16)
         // Object 1: in-use at offset ~17
-        1,              // type: in-use
-        0, 0, 0, 17,    // offset: 17
-        0, 0,           // generation: 0
+        1, // type: in-use
+        0, 0, 0, 17, // offset: 17
+        0, 0, // generation: 0
         // Object 2: in-use at offset ~120
-        1,              // type: in-use
-        0, 0, 0, 120,   // offset: 120
-        0, 0,           // generation: 0
+        1, // type: in-use
+        0, 0, 0, 120, // offset: 120
+        0, 0, // generation: 0
         // Object 3: in-use at offset ~300
-        1,              // type: in-use
-        0, 0, 1, 44,    // offset: 300 (256 + 44)
-        0, 0,           // generation: 0
+        1, // type: in-use
+        0, 0, 1, 44, // offset: 300 (256 + 44)
+        0, 0, // generation: 0
         // Object 4: in-use at offset ~456
-        1,              // type: in-use
-        0, 0, 1, 200,   // offset: 456 (256 + 200)
-        0, 0,           // generation: 0
+        1, // type: in-use
+        0, 0, 1, 200, // offset: 456 (256 + 200)
+        0, 0, // generation: 0
         // Object 5: in-use at offset ~556
-        1,              // type: in-use
-        0, 0, 2, 44,    // offset: 556 (512 + 44)
-        0, 0,           // generation: 0
+        1, // type: in-use
+        0, 0, 2, 44, // offset: 556 (512 + 44)
+        0, 0, // generation: 0
     ]);
     pdf.extend_from_slice(b"\nendstream\n");
     pdf.extend_from_slice(b"endobj\n");
@@ -279,7 +309,11 @@ fn create_linearized_pdf_with_hint_stream() -> Vec<u8> {
         let after_l = l_abs_pos + 2;
         // Find the number after /L
         let num_start = after_l + 1; // skip space
-        let num_end = pdf[num_start..].windows(1).position(|w| w[0] == b'\n').unwrap() + num_start;
+        let num_end = pdf[num_start..]
+            .windows(1)
+            .position(|w| w[0] == b'\n')
+            .unwrap()
+            + num_start;
         // Replace with actual file length
         let new_l_str = file_length.to_string();
         let new_l_bytes = new_l_str.as_bytes();
@@ -314,7 +348,10 @@ fn test_linearized_pdf_with_hint_stream() {
         &mut diagnostics,
     );
 
-    assert!(hint_table.is_some(), "Should successfully parse hint stream from linearized PDF");
+    assert!(
+        hint_table.is_some(),
+        "Should successfully parse hint stream from linearized PDF"
+    );
     assert_eq!(hint_table.unwrap().page_count(), 5);
 }
 

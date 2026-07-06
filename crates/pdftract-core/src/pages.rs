@@ -35,7 +35,7 @@
 //! assert_eq!(indices, BTreeSet::from([0, 1, 2, 3, 4]));
 //! ```
 
-use crate::diagnostics::{Diagnostic, DiagCode};
+use crate::diagnostics::{DiagCode, Diagnostic};
 use std::collections::BTreeSet;
 
 /// Error type for page range parsing failures.
@@ -132,9 +132,10 @@ pub fn parse_pages(
         // by counting dashes - if more than one, it's malformed
         let dash_count = part.chars().filter(|&c| c == '-').count();
         if dash_count > 1 {
-            return Err(PageRangeError::MalformedRange(
-                format!("range '{}' has multiple dashes", part),
-            ));
+            return Err(PageRangeError::MalformedRange(format!(
+                "range '{}' has multiple dashes",
+                part
+            )));
         }
 
         // Check if this is a range (contains '-')

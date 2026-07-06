@@ -15,8 +15,9 @@ fn main() {
     let frontend_dir = [
         std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default(),
         "static".to_string(),
-    ].iter()
-        .collect::<std::path::PathBuf>();
+    ]
+    .iter()
+    .collect::<std::path::PathBuf>();
 
     let html_path = frontend_dir.join("index.html");
     let css_path = frontend_dir.join("style.css");
@@ -47,9 +48,11 @@ fn main() {
     // Emit the size information to build logs
     println!("cargo:warning=Inspector frontend bundle size:");
     println!("cargo:warning=  Raw: {:.2} KB", raw_size_kb);
-    println!("cargo:warning=  Gzipped: {:.2} KB / {} KB limit",
-             gzipped_size_kb,
-             MAX_BUNDLE_SIZE_BYTES / 1024);
+    println!(
+        "cargo:warning=  Gzipped: {:.2} KB / {} KB limit",
+        gzipped_size_kb,
+        MAX_BUNDLE_SIZE_BYTES / 1024
+    );
 
     // Fail the build if the bundle exceeds the size limit
     if gzipped_bytes.len() > MAX_BUNDLE_SIZE_BYTES {
@@ -76,12 +79,12 @@ fn main() {
              - {}\n\
              - {}\n\
              ================================================\n",
-             gzipped_size_kb,
-             MAX_BUNDLE_SIZE_BYTES / 1024,
-             MAX_BUNDLE_SIZE_BYTES / 1024,
-             html_path.display(),
-             css_path.display(),
-             js_path.display()
+            gzipped_size_kb,
+            MAX_BUNDLE_SIZE_BYTES / 1024,
+            MAX_BUNDLE_SIZE_BYTES / 1024,
+            html_path.display(),
+            css_path.display(),
+            js_path.display()
         );
         std::process::exit(1);
     }

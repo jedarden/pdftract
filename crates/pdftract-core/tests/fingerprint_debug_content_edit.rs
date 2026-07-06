@@ -39,11 +39,22 @@ fn debug_content_edit_one_glyph() {
             println!("v1 stream filter: {:?}", stream.dict.get("/Filter"));
 
             // Try to decode
-            use pdftract_core::parser::stream::{ExtractionOptions, decode_stream};
+            use pdftract_core::parser::stream::{decode_stream, ExtractionOptions};
             let mut decompress_counter = 0u64;
-            let decoded = decode_stream(&*stream, &v1_source, &ExtractionOptions::default(), &mut decompress_counter);
-            println!("v1 decoded stream (first 100 bytes): {:?}", &decoded[..decoded.len().min(100)]);
-            println!("v1 decoded as text: {:?}", String::from_utf8_lossy(&decoded));
+            let decoded = decode_stream(
+                &*stream,
+                &v1_source,
+                &ExtractionOptions::default(),
+                &mut decompress_counter,
+            );
+            println!(
+                "v1 decoded stream (first 100 bytes): {:?}",
+                &decoded[..decoded.len().min(100)]
+            );
+            println!(
+                "v1 decoded as text: {:?}",
+                String::from_utf8_lossy(&decoded)
+            );
         }
     }
 
@@ -54,11 +65,22 @@ fn debug_content_edit_one_glyph() {
             println!("v2 stream filter: {:?}", stream.dict.get("/Filter"));
 
             // Try to decode
-            use pdftract_core::parser::stream::{ExtractionOptions, decode_stream};
+            use pdftract_core::parser::stream::{decode_stream, ExtractionOptions};
             let mut decompress_counter = 0u64;
-            let decoded = decode_stream(&*stream, &v2_source, &ExtractionOptions::default(), &mut decompress_counter);
-            println!("v2 decoded stream (first 100 bytes): {:?}", &decoded[..decoded.len().min(100)]);
-            println!("v2 decoded as text: {:?}", String::from_utf8_lossy(&decoded));
+            let decoded = decode_stream(
+                &*stream,
+                &v2_source,
+                &ExtractionOptions::default(),
+                &mut decompress_counter,
+            );
+            println!(
+                "v2 decoded stream (first 100 bytes): {:?}",
+                &decoded[..decoded.len().min(100)]
+            );
+            println!(
+                "v2 decoded as text: {:?}",
+                String::from_utf8_lossy(&decoded)
+            );
         }
     }
 

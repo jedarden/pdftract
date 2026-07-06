@@ -1206,7 +1206,9 @@ impl DiagCode {
             DiagCode::McpToolInvalidParams | DiagCode::McpPathTraversal => "MCP",
 
             // CACHE_*
-            DiagCode::CacheEntryCorrupt | DiagCode::CacheIntegrityFail | DiagCode::CacheWriteFailed => "CACHE",
+            DiagCode::CacheEntryCorrupt
+            | DiagCode::CacheIntegrityFail
+            | DiagCode::CacheWriteFailed => "CACHE",
 
             // MARKED_CONTENT_*
             DiagCode::EmcWithoutBmc

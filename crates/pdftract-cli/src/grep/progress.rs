@@ -160,10 +160,7 @@ impl ProgressManager {
                 // Update current bar with page progress
                 if let Some(ref bar) = self.current_bar {
                     let path = self.current_file.lock().unwrap();
-                    bar.set_message(format!(
-                        "{} (page {}/{})",
-                        path, pages_done, pages_total
-                    ));
+                    bar.set_message(format!("{} (page {}/{})", path, pages_done, pages_total));
                 }
             }
             ProgressEvent::FileDone {

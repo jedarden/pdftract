@@ -65,7 +65,11 @@ pub fn load_extraction_profiles(
     // 2. Load community profiles
     let community_dir = PathBuf::from("profiles/community");
     if community_dir.exists() {
-        load_profiles_from_dir(&community_dir, ProfileOrigin::Community, &mut profiles_by_name)?;
+        load_profiles_from_dir(
+            &community_dir,
+            ProfileOrigin::Community,
+            &mut profiles_by_name,
+        )?;
     }
 
     // 3. Load system profiles
@@ -118,42 +122,69 @@ fn load_builtin_profiles(
     {
         // Load each built-in profile individually
         let profile_results: Vec<(&str, Result<ExtractionProfile, ProfileLoadError>)> = vec![
-            ("invoice", load_profile_yaml(
-                include_str!("../../../../profiles/builtin/invoice/profile.yaml"),
-                "profiles/builtin/invoice/profile.yaml"
-            )),
-            ("receipt", load_profile_yaml(
-                include_str!("../../../../profiles/builtin/receipt/profile.yaml"),
-                "profiles/builtin/receipt/profile.yaml"
-            )),
-            ("contract", load_profile_yaml(
-                include_str!("../../../../profiles/builtin/contract/profile.yaml"),
-                "profiles/builtin/contract/profile.yaml"
-            )),
-            ("scientific_paper", load_profile_yaml(
-                include_str!("../../../../profiles/builtin/scientific_paper/profile.yaml"),
-                "profiles/builtin/scientific_paper/profile.yaml"
-            )),
-            ("slide_deck", load_profile_yaml(
-                include_str!("../../../../profiles/builtin/slide_deck/profile.yaml"),
-                "profiles/builtin/slide_deck/profile.yaml"
-            )),
-            ("form", load_profile_yaml(
-                include_str!("../../../../profiles/builtin/form/profile.yaml"),
-                "profiles/builtin/form/profile.yaml"
-            )),
-            ("bank_statement", load_profile_yaml(
-                include_str!("../../../../profiles/builtin/bank_statement/profile.yaml"),
-                "profiles/builtin/bank_statement/profile.yaml"
-            )),
-            ("legal_filing", load_profile_yaml(
-                include_str!("../../../../profiles/builtin/legal_filing/profile.yaml"),
-                "profiles/builtin/legal_filing/profile.yaml"
-            )),
-            ("book_chapter", load_profile_yaml(
-                include_str!("../../../../profiles/builtin/book_chapter/profile.yaml"),
-                "profiles/builtin/book_chapter/profile.yaml"
-            )),
+            (
+                "invoice",
+                load_profile_yaml(
+                    include_str!("../../../../profiles/builtin/invoice/profile.yaml"),
+                    "profiles/builtin/invoice/profile.yaml",
+                ),
+            ),
+            (
+                "receipt",
+                load_profile_yaml(
+                    include_str!("../../../../profiles/builtin/receipt/profile.yaml"),
+                    "profiles/builtin/receipt/profile.yaml",
+                ),
+            ),
+            (
+                "contract",
+                load_profile_yaml(
+                    include_str!("../../../../profiles/builtin/contract/profile.yaml"),
+                    "profiles/builtin/contract/profile.yaml",
+                ),
+            ),
+            (
+                "scientific_paper",
+                load_profile_yaml(
+                    include_str!("../../../../profiles/builtin/scientific_paper/profile.yaml"),
+                    "profiles/builtin/scientific_paper/profile.yaml",
+                ),
+            ),
+            (
+                "slide_deck",
+                load_profile_yaml(
+                    include_str!("../../../../profiles/builtin/slide_deck/profile.yaml"),
+                    "profiles/builtin/slide_deck/profile.yaml",
+                ),
+            ),
+            (
+                "form",
+                load_profile_yaml(
+                    include_str!("../../../../profiles/builtin/form/profile.yaml"),
+                    "profiles/builtin/form/profile.yaml",
+                ),
+            ),
+            (
+                "bank_statement",
+                load_profile_yaml(
+                    include_str!("../../../../profiles/builtin/bank_statement/profile.yaml"),
+                    "profiles/builtin/bank_statement/profile.yaml",
+                ),
+            ),
+            (
+                "legal_filing",
+                load_profile_yaml(
+                    include_str!("../../../../profiles/builtin/legal_filing/profile.yaml"),
+                    "profiles/builtin/legal_filing/profile.yaml",
+                ),
+            ),
+            (
+                "book_chapter",
+                load_profile_yaml(
+                    include_str!("../../../../profiles/builtin/book_chapter/profile.yaml"),
+                    "profiles/builtin/book_chapter/profile.yaml",
+                ),
+            ),
         ];
 
         for (name, result) in profile_results {
@@ -180,7 +211,10 @@ fn load_builtin_profiles(
 }
 
 /// Load a profile from YAML content.
-fn load_profile_yaml(content: &str, source_path: &str) -> Result<ExtractionProfile, ProfileLoadError> {
+fn load_profile_yaml(
+    content: &str,
+    source_path: &str,
+) -> Result<ExtractionProfile, ProfileLoadError> {
     // Check for forbidden keys first
     let yaml_value = serde_yaml::from_str::<serde_yaml::Value>(content)?;
 
@@ -218,15 +252,16 @@ fn load_profiles_from_dir(
             let profile_yaml = path.join("profile.yaml");
             if profile_yaml.exists() {
                 if let Ok(profile) = load_profile_file(&profile_yaml) {
-                    let (overrides_builtin, overrides_community) = if let Some(existing) = profiles.get(&profile.name) {
-                        match &existing.source {
-                            ProfileOrigin::BuiltIn => (true, false),
-                            ProfileOrigin::Community => (false, true),
-                            _ => (false, false),
-                        }
-                    } else {
-                        (false, false)
-                    };
+                    let (overrides_builtin, overrides_community) =
+                        if let Some(existing) = profiles.get(&profile.name) {
+                            match &existing.source {
+                                ProfileOrigin::BuiltIn => (true, false),
+                                ProfileOrigin::Community => (false, true),
+                                _ => (false, false),
+                            }
+                        } else {
+                            (false, false)
+                        };
 
                     profiles.insert(
                         profile.name.clone(),
@@ -248,15 +283,16 @@ fn load_profiles_from_dir(
         }
 
         if let Ok(profile) = load_profile_file(&path) {
-            let (overrides_builtin, overrides_community) = if let Some(existing) = profiles.get(&profile.name) {
-                match &existing.source {
-                    ProfileOrigin::BuiltIn => (true, false),
-                    ProfileOrigin::Community => (false, true),
-                    _ => (false, false),
-                }
-            } else {
-                (false, false)
-            };
+            let (overrides_builtin, overrides_community) =
+                if let Some(existing) = profiles.get(&profile.name) {
+                    match &existing.source {
+                        ProfileOrigin::BuiltIn => (true, false),
+                        ProfileOrigin::Community => (false, true),
+                        _ => (false, false),
+                    }
+                } else {
+                    (false, false)
+                };
 
             profiles.insert(
                 profile.name.clone(),
@@ -313,18 +349,20 @@ pub fn validate_profile_file(path: &Path) -> Result<(), ProfileLoadError> {
     let content = fs::read_to_string(path).map_err(ProfileLoadError::IoError)?;
 
     // Check for forbidden keys
-    let yaml_value = serde_yaml::from_str::<serde_yaml::Value>(&content)
-        .map_err(ProfileLoadError::YamlError)?;
+    let yaml_value =
+        serde_yaml::from_str::<serde_yaml::Value>(&content).map_err(ProfileLoadError::YamlError)?;
 
-    check_forbidden_keys(&yaml_value, "", &content)
-        .map_err(|e| ProfileLoadError::ForbiddenKey {
+    check_forbidden_keys(&yaml_value, "", &content).map_err(|e| {
+        ProfileLoadError::ForbiddenKey {
             key: e.key,
             path: e.path,
             line: e.line,
-        })?;
+        }
+    })?;
 
     // Try to parse as ExtractionProfile
-    let _: ExtractionProfile = serde_yaml::from_str(&content).map_err(ProfileLoadError::YamlError)?;
+    let _: ExtractionProfile =
+        serde_yaml::from_str(&content).map_err(ProfileLoadError::YamlError)?;
 
     Ok(())
 }

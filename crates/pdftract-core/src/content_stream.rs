@@ -1927,8 +1927,12 @@ fn parse_inline_dict_from_buffer(
     use indexmap::IndexMap;
 
     // Find the DictStart and DictEnd positions
-    let dict_start = operand_buffer.iter().position(|t| matches!(t, Token::DictStart));
-    let dict_end = operand_buffer.iter().rposition(|t| matches!(t, Token::DictEnd));
+    let dict_start = operand_buffer
+        .iter()
+        .position(|t| matches!(t, Token::DictStart));
+    let dict_end = operand_buffer
+        .iter()
+        .rposition(|t| matches!(t, Token::DictEnd));
 
     match (dict_start, dict_end) {
         (Some(start), Some(end)) if end > start => {

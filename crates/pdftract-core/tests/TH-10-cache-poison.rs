@@ -10,8 +10,8 @@
 use pdftract_core::cache::integrity;
 use pdftract_core::cache::layout::entry_path;
 use pdftract_core::cache::multi_process::{Reader, Writer};
-use tempfile::TempDir;
 use std::fs;
+use tempfile::TempDir;
 
 const TEST_FINGERPRINT: &str = "pdftract-v1:testfingerprint1234567890abcdef1234567890abcdef";
 const TEST_OPTS_HASH: &str = "9b21c0ffee0000000000000000000000000000000000000000000000000000000";
@@ -57,7 +57,12 @@ fn test_legitimate_entry_has_valid_hmac() {
     let writer = Writer::new(cache_dir);
     let compressed = compress_data(TEST_DATA);
     writer
-        .write(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len(), &compressed)
+        .write(
+            TEST_FINGERPRINT,
+            TEST_OPTS_HASH,
+            compressed.len(),
+            &compressed,
+        )
         .unwrap();
 
     // Verify the entry can be read
@@ -83,12 +88,22 @@ fn test_forged_entry_with_wrong_hmac_rejected() {
     let writer = Writer::new(cache_dir);
     let compressed = compress_data(TEST_DATA);
     writer
-        .write(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len(), &compressed)
+        .write(
+            TEST_FINGERPRINT,
+            TEST_OPTS_HASH,
+            compressed.len(),
+            &compressed,
+        )
         .unwrap();
 
     // Read the legitimate entry to get its HMAC
     let reader = Reader::new(cache_dir);
-    let entry_path = entry_path(cache_dir, TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len() + 8);
+    let entry_path = entry_path(
+        cache_dir,
+        TEST_FINGERPRINT,
+        TEST_OPTS_HASH,
+        compressed.len() + 8,
+    );
 
     let file_data = fs::read(&entry_path).unwrap();
     let _legitimate_hmac = &file_data[0..8];
@@ -131,7 +146,12 @@ fn test_forged_entry_triggers_cache_miss() {
     // Create a forged entry directly (wrong HMAC)
     let _writer = Writer::new(cache_dir);
     let compressed = compress_data(FORGED_DATA);
-    let entry_path = entry_path(cache_dir, TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len() + 8);
+    let entry_path = entry_path(
+        cache_dir,
+        TEST_FINGERPRINT,
+        TEST_OPTS_HASH,
+        compressed.len() + 8,
+    );
 
     let forged_data = {
         let mut data = Vec::with_capacity(8 + compressed.len());
@@ -149,14 +169,23 @@ fn test_forged_entry_triggers_cache_miss() {
     let read_result = reader.read(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len() + 8);
 
     assert!(read_result.is_err(), "Forged entry should be rejected");
-    assert_eq!(read_result.unwrap_err().kind(), std::io::ErrorKind::InvalidData);
+    assert_eq!(
+        read_result.unwrap_err().kind(),
+        std::io::ErrorKind::InvalidData
+    );
 
     // Entry should be deleted (cache miss)
-    assert!(!entry_path.exists(), "Forged entry should be deleted after rejection");
+    assert!(
+        !entry_path.exists(),
+        "Forged entry should be deleted after rejection"
+    );
 
     // Subsequent read should return NotFound (cache miss, not corrupt)
     let read_result2 = reader.read(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len() + 8);
-    assert_eq!(read_result2.unwrap_err().kind(), std::io::ErrorKind::NotFound);
+    assert_eq!(
+        read_result2.unwrap_err().kind(),
+        std::io::ErrorKind::NotFound
+    );
 }
 
 #[test]
@@ -173,9 +202,15 @@ fn test_forged_entry_with_correct_hmac_key_compromise() {
     // Attacker has the key (key compromise scenario)
     // They can forge a valid HMAC for their malicious data
     let forged_compressed = compress_data(FORGED_DATA);
-    let forged_hmac = integrity::compute_hmac(&key, TEST_FINGERPRINT, TEST_OPTS_HASH, &forged_compressed);
+    let forged_hmac =
+        integrity::compute_hmac(&key, TEST_FINGERPRINT, TEST_OPTS_HASH, &forged_compressed);
 
-    let entry_path = entry_path(cache_dir, TEST_FINGERPRINT, TEST_OPTS_HASH, forged_compressed.len() + 8);
+    let entry_path = entry_path(
+        cache_dir,
+        TEST_FINGERPRINT,
+        TEST_OPTS_HASH,
+        forged_compressed.len() + 8,
+    );
 
     // Write the forged entry with VALID HMAC (attacker has the key)
     let mut forged_data = Vec::with_capacity(8 + forged_compressed.len());
@@ -187,10 +222,21 @@ fn test_forged_entry_with_correct_hmac_key_compromise() {
 
     // The forged entry will be ACCEPTED (HMAC is valid)
     let reader = Reader::new(cache_dir);
-    let read_result = reader.read(TEST_FINGERPRINT, TEST_OPTS_HASH, forged_compressed.len() + 8);
+    let read_result = reader.read(
+        TEST_FINGERPRINT,
+        TEST_OPTS_HASH,
+        forged_compressed.len() + 8,
+    );
 
-    assert!(read_result.is_ok(), "Entry with valid HMAC should be accepted");
-    assert_eq!(read_result.unwrap(), FORGED_DATA, "Forged data should be returned");
+    assert!(
+        read_result.is_ok(),
+        "Entry with valid HMAC should be accepted"
+    );
+    assert_eq!(
+        read_result.unwrap(),
+        FORGED_DATA,
+        "Forged data should be returned"
+    );
 
     // This is a known limitation - key compromise allows undetected forgeries
     // Mitigation: key rotation (out of scope for v1.0)
@@ -212,14 +258,25 @@ fn test_hmac_input_is_fingerprint_opts_hash_and_blob() {
 
     // Different fingerprint → different HMAC
     let hmac2 = integrity::compute_hmac(&key, "different_fp", TEST_OPTS_HASH, &compressed);
-    assert_ne!(hmac1, hmac2, "Different fingerprint should produce different HMAC");
+    assert_ne!(
+        hmac1, hmac2,
+        "Different fingerprint should produce different HMAC"
+    );
 
     // Different opts_hash → different HMAC
     let hmac3 = integrity::compute_hmac(&key, TEST_FINGERPRINT, "different_opts", &compressed);
-    assert_ne!(hmac1, hmac3, "Different opts_hash should produce different HMAC");
+    assert_ne!(
+        hmac1, hmac3,
+        "Different opts_hash should produce different HMAC"
+    );
 
     // Different blob → different HMAC
-    let hmac4 = integrity::compute_hmac(&key, TEST_FINGERPRINT, TEST_OPTS_HASH, &compress_data(b"different"));
+    let hmac4 = integrity::compute_hmac(
+        &key,
+        TEST_FINGERPRINT,
+        TEST_OPTS_HASH,
+        &compress_data(b"different"),
+    );
     assert_ne!(hmac1, hmac4, "Different blob should produce different HMAC");
 
     // Same input → same HMAC
@@ -237,7 +294,12 @@ fn test_cache_rewrites_forged_entry_on_miss() {
 
     // Create a forged entry (wrong HMAC)
     let compressed = compress_data(FORGED_DATA);
-    let entry_path = entry_path(cache_dir, TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len() + 8);
+    let entry_path = entry_path(
+        cache_dir,
+        TEST_FINGERPRINT,
+        TEST_OPTS_HASH,
+        compressed.len() + 8,
+    );
 
     let mut forged_data = Vec::with_capacity(8 + compressed.len());
     forged_data.extend_from_slice(&[0xFFu8; 8]); // Wrong HMAC
@@ -257,11 +319,20 @@ fn test_cache_rewrites_forged_entry_on_miss() {
     let writer = Writer::new(cache_dir);
     let legitimate_compressed = compress_data(TEST_DATA);
     writer
-        .write(TEST_FINGERPRINT, TEST_OPTS_HASH, legitimate_compressed.len(), &legitimate_compressed)
+        .write(
+            TEST_FINGERPRINT,
+            TEST_OPTS_HASH,
+            legitimate_compressed.len(),
+            &legitimate_compressed,
+        )
         .unwrap();
 
     // The legitimate entry should now be readable
-    let read_result2 = reader.read(TEST_FINGERPRINT, TEST_OPTS_HASH, legitimate_compressed.len() + 8);
+    let read_result2 = reader.read(
+        TEST_FINGERPRINT,
+        TEST_OPTS_HASH,
+        legitimate_compressed.len() + 8,
+    );
     assert!(read_result2.is_ok(), "Legitimate entry should be readable");
     assert_eq!(read_result2.unwrap(), TEST_DATA);
 }
@@ -280,13 +351,21 @@ fn test_multiple_forgeries_all_rejected() {
 
     // Write the legitimate entry
     writer
-        .write(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len(), &compressed)
+        .write(
+            TEST_FINGERPRINT,
+            TEST_OPTS_HASH,
+            compressed.len(),
+            &compressed,
+        )
         .unwrap();
 
     // Try to read with wrong size (simulating wrong HMAC in different-sized entry)
     let wrong_size = compressed.len() + 100;
     let read_result = reader.read(TEST_FINGERPRINT, TEST_OPTS_HASH, wrong_size + 8);
-    assert_eq!(read_result.unwrap_err().kind(), std::io::ErrorKind::NotFound);
+    assert_eq!(
+        read_result.unwrap_err().kind(),
+        std::io::ErrorKind::NotFound
+    );
 }
 
 #[test]
@@ -303,7 +382,12 @@ fn test_key_file_persistence() {
     let writer = Writer::new(cache_dir);
     let compressed = compress_data(TEST_DATA);
     writer
-        .write(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len(), &compressed)
+        .write(
+            TEST_FINGERPRINT,
+            TEST_OPTS_HASH,
+            compressed.len(),
+            &compressed,
+        )
         .unwrap();
 
     // Reload the key - should be the same
@@ -331,11 +415,21 @@ fn test_repeated_poisoning_attack_simulation() {
 
     // Write legitimate entry
     writer
-        .write(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len(), &compressed)
+        .write(
+            TEST_FINGERPRINT,
+            TEST_OPTS_HASH,
+            compressed.len(),
+            &compressed,
+        )
         .unwrap();
 
     // Attacker writes forgery (wrong HMAC)
-    let entry_path = entry_path(cache_dir, TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len() + 8);
+    let entry_path = entry_path(
+        cache_dir,
+        TEST_FINGERPRINT,
+        TEST_OPTS_HASH,
+        compressed.len() + 8,
+    );
 
     let mut forged_data = Vec::with_capacity(8 + compressed.len());
     forged_data.extend_from_slice(&[0xFFu8; 8]);

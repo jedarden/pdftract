@@ -82,11 +82,7 @@ fn test_csp_header_on_index() {
         .send()
         .expect("Failed to fetch inspector index");
 
-    assert_eq!(
-        response.status(),
-        200,
-        "Inspector index should return 200"
-    );
+    assert_eq!(response.status(), 200, "Inspector index should return 200");
 
     // Verify CSP header
     let csp_header = response
@@ -137,11 +133,7 @@ fn test_csp_header_on_api_endpoints() {
         .send()
         .expect("Failed to fetch /api/document");
 
-    assert_eq!(
-        response.status(),
-        200,
-        "/api/document should return 200"
-    );
+    assert_eq!(response.status(), 200, "/api/document should return 200");
 
     let csp_header = response
         .headers()
@@ -202,9 +194,8 @@ fn test_inspector_renders_svg() {
 #[test]
 fn test_inspector_handles_normal_content() {
     // Use a different fixture (password-protected.pdf which exists)
-    let (url, mut child) =
-        spawn_inspector("../../tests/fixtures/security/password-protected.pdf")
-            .expect("Failed to spawn inspector");
+    let (url, mut child) = spawn_inspector("../../tests/fixtures/security/password-protected.pdf")
+        .expect("Failed to spawn inspector");
 
     // Give server a moment to fully start
     std::thread::sleep(Duration::from_millis(500));
@@ -263,11 +254,8 @@ fn test_headless_browser_no_script_execution() {
             use chromiumoxide::page::Page;
 
             // Configure headless Chrome
-            let (browser, mut handler) = Browser::launch(
-                BrowserConfig::builder()
-                    .with_head(true)
-                    .build()?,
-            ).await?;
+            let (browser, mut handler) =
+                Browser::launch(BrowserConfig::builder().with_head(true).build()?).await?;
 
             // Spawn the handler task
             tokio::spawn(async move {

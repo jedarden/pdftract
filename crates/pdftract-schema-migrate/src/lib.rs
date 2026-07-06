@@ -84,16 +84,15 @@ pub fn parse_version(version: &str) -> Result<(u32, u32)> {
         );
     }
 
-    let major: u32 = parts[0]
-        .parse()
-        .context("Major version must be a number")?;
-    let minor: u32 = parts[1]
-        .parse()
-        .context("Minor version must be a number")?;
+    let major: u32 = parts[0].parse().context("Major version must be a number")?;
+    let minor: u32 = parts[1].parse().context("Minor version must be a number")?;
 
     // Only support v1.x for now
     if major != 1 {
-        bail!("Major version {} is not supported (only v1.x migrations are implemented)", major);
+        bail!(
+            "Major version {} is not supported (only v1.x migrations are implemented)",
+            major
+        );
     }
 
     Ok((major, minor))
@@ -151,7 +150,8 @@ pub fn migrate(from: &str, to: &str, json: Value) -> Result<Value> {
 pub fn read_json(path: &str) -> Result<Value> {
     let json_str = if path == "-" {
         let mut buffer = String::new();
-        io::stdin().read_to_string(&mut buffer)
+        io::stdin()
+            .read_to_string(&mut buffer)
             .context("Failed to read JSON from stdin")?;
         buffer
     } else {
@@ -159,8 +159,7 @@ pub fn read_json(path: &str) -> Result<Value> {
             .with_context(|| format!("Failed to read JSON from '{}'", path))?
     };
 
-    serde_json::from_str(&json_str)
-        .with_context(|| format!("Failed to parse JSON from '{}'", path))
+    serde_json::from_str(&json_str).with_context(|| format!("Failed to parse JSON from '{}'", path))
 }
 
 /// Write JSON to a file path or stdout.

@@ -23,7 +23,12 @@ struct Page {
 
 /// Flatten extraction result to a single string for CER computation.
 fn normalize_to_text(result: &ExtractionResult) -> String {
-    result.pages.iter().map(|p| p.text.as_str()).collect::<Vec<_>>().join("\n")
+    result
+        .pages
+        .iter()
+        .map(|p| p.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Compute Character Error Rate (CER) between two strings.
@@ -56,10 +61,14 @@ fn compute_cer(reference: &str, hypothesis: &str) -> f64 {
     // Fill DP table
     for i in 1..=ref_len {
         for j in 1..=hyp_len {
-            let cost = if ref_chars[i - 1] == hyp_chars[j - 1] { 0 } else { 1 };
+            let cost = if ref_chars[i - 1] == hyp_chars[j - 1] {
+                0
+            } else {
+                1
+            };
             dp[i][j] = [
-                dp[i - 1][j] + 1,      // deletion
-                dp[i][j - 1] + 1,      // insertion
+                dp[i - 1][j] + 1,        // deletion
+                dp[i][j - 1] + 1,        // insertion
                 dp[i - 1][j - 1] + cost, // substitution
             ]
             .into_iter()
@@ -127,7 +136,10 @@ fn parse_args() -> Result<Args, String> {
     let baseline = baseline.ok_or("missing baseline file argument")?;
 
     if !(0.0..=1.0).contains(&threshold) {
-        return Err(format!("threshold must be between 0 and 1, got {}", threshold));
+        return Err(format!(
+            "threshold must be between 0 and 1, got {}",
+            threshold
+        ));
     }
 
     Ok(Args {

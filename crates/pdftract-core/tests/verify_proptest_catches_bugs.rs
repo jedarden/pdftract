@@ -4,7 +4,7 @@
 //! to verify that the proptest properties catch them. After verification,
 //! the bugs are removed and the test passes.
 
-use pdftract_core::parser::object::{ObjectParser, PdfDict, PdfObject, intern};
+use pdftract_core::parser::object::{intern, ObjectParser, PdfDict, PdfObject};
 
 #[test]
 fn verify_prop_parser_never_panics_catches_deliberate_panic() {
@@ -44,12 +44,9 @@ fn verify_prop_dict_order_preserved_catches_nondeterminism() {
     }
 
     // Verify iteration order matches insertion order
-    let actual_order: Vec<_> = dict.iter()
-        .map(|(k, _)| k.as_ref().to_string())
-        .collect();
+    let actual_order: Vec<_> = dict.iter().map(|(k, _)| k.as_ref().to_string()).collect();
 
-    assert_eq!(actual_order, keys,
-        "Dict order should be deterministic");
+    assert_eq!(actual_order, keys, "Dict order should be deterministic");
 
     // If we introduced non-determinism like:
     //   use std::collections::HashMap instead of IndexMap
@@ -70,9 +67,16 @@ fn verify_infrastructure_complete() {
     use std::path::{Path, PathBuf};
     let fixtures_dir = PathBuf::from("tests/object_parser/fixtures");
     let required_fixtures = vec![
-        "nested_dict", "mixed_array", "indirect_simple", "indirect_stream",
-        "objstm_basic", "objstm_extends", "circular_self", "circular_three",
-        "truncated_dict", "deep_nesting",
+        "nested_dict",
+        "mixed_array",
+        "indirect_simple",
+        "indirect_stream",
+        "objstm_basic",
+        "objstm_extends",
+        "circular_self",
+        "circular_three",
+        "truncated_dict",
+        "deep_nesting",
     ];
 
     for fixture in required_fixtures {

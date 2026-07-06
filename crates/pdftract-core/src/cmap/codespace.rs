@@ -32,7 +32,7 @@
 
 use std::fmt;
 
-use crate::{emit, diagnostics::DiagCode};
+use crate::{diagnostics::DiagCode, emit};
 
 /// A single codespace range.
 ///
@@ -96,8 +96,16 @@ impl CodespaceRange {
 
 impl fmt::Display for CodespaceRange {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let lo_hex: String = self.lo_slice().iter().map(|b| format!("{:02X}", b)).collect();
-        let hi_hex: String = self.hi_slice().iter().map(|b| format!("{:02X}", b)).collect();
+        let lo_hex: String = self
+            .lo_slice()
+            .iter()
+            .map(|b| format!("{:02X}", b))
+            .collect();
+        let hi_hex: String = self
+            .hi_slice()
+            .iter()
+            .map(|b| format!("{:02X}", b))
+            .collect();
         write!(
             f,
             "<{}> <{}> ({} byte{})",
@@ -147,9 +155,7 @@ impl CodespaceRanges {
     ///
     /// Returns the index of the matching range, or None if no range matches.
     pub fn find_range(&self, bytes: &[u8]) -> Option<usize> {
-        self.ranges
-            .iter()
-            .position(|range| range.contains(bytes))
+        self.ranges.iter().position(|range| range.contains(bytes))
     }
 
     /// Get all ranges in this collection.
@@ -201,9 +207,15 @@ impl fmt::Display for CodespaceError {
         match self {
             CodespaceError::InvalidHexString(msg) => write!(f, "invalid hex string: {}", msg),
             CodespaceError::WidthMismatch { lo_width, hi_width } => {
-                write!(f, "width mismatch: lo has {} bytes, hi has {} bytes", lo_width, hi_width)
+                write!(
+                    f,
+                    "width mismatch: lo has {} bytes, hi has {} bytes",
+                    lo_width, hi_width
+                )
             }
-            CodespaceError::InvalidWidth(width) => write!(f, "invalid width: {} (must be 1-4)", width),
+            CodespaceError::InvalidWidth(width) => {
+                write!(f, "invalid width: {} (must be 1-4)", width)
+            }
             CodespaceError::UnexpectedToken(msg) => write!(f, "unexpected token: {}", msg),
         }
     }
@@ -283,7 +295,10 @@ impl<'a> CodespaceParser<'a> {
     }
 
     /// Parse a begincodespacerange...endcodespacerange block.
-    fn parse_codespace_block(&mut self, ranges: &mut CodespaceRanges) -> Result<(), CodespaceError> {
+    fn parse_codespace_block(
+        &mut self,
+        ranges: &mut CodespaceRanges,
+    ) -> Result<(), CodespaceError> {
         // Read count - may be pending (from before keyword) or after keyword
         let count = match self.pending_count.take() {
             Some(n) => {
@@ -527,7 +542,12 @@ impl<'a> CodespaceParser<'a> {
         if self.position < self.input.len() && self.input[self.position] == b'/' {
             self.position += 1;
             // Skip to next whitespace or delimiter
-            while self.position < self.input.len() && !self.input[self.position].is_ascii_whitespace() && self.input[self.position] != b'/' && self.input[self.position] != b'<' && self.input[self.position] != b'>' {
+            while self.position < self.input.len()
+                && !self.input[self.position].is_ascii_whitespace()
+                && self.input[self.position] != b'/'
+                && self.input[self.position] != b'<'
+                && self.input[self.position] != b'>'
+            {
                 self.position += 1;
             }
         }
@@ -548,7 +568,9 @@ impl<'a> CodespaceParser<'a> {
                 "expected integer, got {:?}",
                 other
             ))),
-            None => Err(CodespaceError::UnexpectedToken("expected integer".to_string())),
+            None => Err(CodespaceError::UnexpectedToken(
+                "expected integer".to_string(),
+            )),
         }
     }
 
@@ -560,7 +582,9 @@ impl<'a> CodespaceParser<'a> {
                 "expected hex string, got {:?}",
                 other
             ))),
-            None => Err(CodespaceError::UnexpectedToken("expected hex string".to_string())),
+            None => Err(CodespaceError::UnexpectedToken(
+                "expected hex string".to_string(),
+            )),
         }
     }
 
@@ -592,11 +616,12 @@ impl<'a> CodespaceParser<'a> {
 
     /// Emit an error as a diagnostic.
     fn emit_error(&mut self, error: &CodespaceError) {
-        self.diagnostics.push(crate::diagnostics::Diagnostic::with_dynamic(
-            DiagCode::CmapInvalidCodespace,
-            self.position as u64,
-            error.to_string(),
-        ));
+        self.diagnostics
+            .push(crate::diagnostics::Diagnostic::with_dynamic(
+                DiagCode::CmapInvalidCodespace,
+                self.position as u64,
+                error.to_string(),
+            ));
     }
 }
 
@@ -632,7 +657,9 @@ pub fn parse_codespace_ranges(input: &[u8]) -> CodespaceRanges {
 /// Parse codespace ranges from raw CMap bytes with diagnostics.
 ///
 /// Returns both the ranges and any diagnostics generated during parsing.
-pub fn parse_codespace_ranges_with_diags(input: &[u8]) -> (CodespaceRanges, Vec<crate::diagnostics::Diagnostic>) {
+pub fn parse_codespace_ranges_with_diags(
+    input: &[u8],
+) -> (CodespaceRanges, Vec<crate::diagnostics::Diagnostic>) {
     let parser = CodespaceParser::new(input);
     parser.parse()
 }
@@ -709,7 +736,9 @@ mod tests {
 
         // Should have diagnostic and empty ranges (recovery)
         assert!(!diags.is_empty());
-        assert!(diags.iter().any(|d| d.code == DiagCode::CmapInvalidCodespace));
+        assert!(diags
+            .iter()
+            .any(|d| d.code == DiagCode::CmapInvalidCodespace));
         // The malformed range should be skipped
         assert_eq!(ranges.len(), 0);
     }
@@ -775,7 +804,11 @@ mod tests {
     fn test_find_range() {
         let mut ranges = CodespaceRanges::new();
         ranges.push(CodespaceRange::new([0x00, 0, 0, 0], [0x7F, 0, 0, 0], 1));
-        ranges.push(CodespaceRange::new([0x80, 0x00, 0, 0], [0xFF, 0xFF, 0, 0], 2));
+        ranges.push(CodespaceRange::new(
+            [0x80, 0x00, 0, 0],
+            [0xFF, 0xFF, 0, 0],
+            2,
+        ));
 
         // 1-byte sequence
         assert_eq!(ranges.find_range(&[0x40]), Some(0));
@@ -795,7 +828,9 @@ mod tests {
 
         // Should have diagnostic
         assert!(!diags.is_empty());
-        assert!(diags.iter().any(|d| d.code == DiagCode::CmapInvalidCodespace));
+        assert!(diags
+            .iter()
+            .any(|d| d.code == DiagCode::CmapInvalidCodespace));
     }
 
     #[test]

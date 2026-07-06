@@ -36,8 +36,7 @@ fn load_schema(schema_path: Option<&str>) -> Result<jsonschema::JSONSchema> {
         BUNDLED_SCHEMA_JSON.to_string()
     };
 
-    let schema: Value = serde_json::from_str(&schema_json)
-        .context("Schema is not valid JSON")?;
+    let schema: Value = serde_json::from_str(&schema_json).context("Schema is not valid JSON")?;
 
     // Compile the schema - this takes ownership and returns a valid JSONSchema
     let compiled = jsonschema::JSONSchema::compile(&schema)
@@ -51,17 +50,16 @@ fn read_json(file: &str) -> Result<Value> {
     let json_str = if file == "-" {
         // Read from stdin
         let mut buffer = String::new();
-        io::stdin().read_to_string(&mut buffer)
+        io::stdin()
+            .read_to_string(&mut buffer)
             .context("Failed to read JSON from stdin")?;
         buffer
     } else {
         // Read from file
-        fs::read_to_string(file)
-            .with_context(|| format!("Failed to read JSON from '{}'", file))?
+        fs::read_to_string(file).with_context(|| format!("Failed to read JSON from '{}'", file))?
     };
 
-    serde_json::from_str(&json_str)
-        .with_context(|| format!("Failed to parse JSON from '{}'", file))
+    serde_json::from_str(&json_str).with_context(|| format!("Failed to parse JSON from '{}'", file))
 }
 
 /// Format a JSON path to use '/' separators instead of JSON pointer notation.
@@ -90,10 +88,12 @@ pub fn run_validate(args: ValidateArgs) -> Result<()> {
 
     if let Err(errors) = result {
         // Collect all validation errors
-        let error_details: Vec<String> = errors.map(|e| {
-            let path = format_path(&e.instance_path.to_string());
-            format!("{} {}", path, e)
-        }).collect();
+        let error_details: Vec<String> = errors
+            .map(|e| {
+                let path = format_path(&e.instance_path.to_string());
+                format!("{} {}", path, e)
+            })
+            .collect();
 
         if !args.quiet {
             for error in &error_details {
@@ -102,7 +102,10 @@ pub fn run_validate(args: ValidateArgs) -> Result<()> {
         }
 
         // Return error to trigger exit code 1
-        anyhow::bail!("JSON validation failed with {} error(s)", error_details.len());
+        anyhow::bail!(
+            "JSON validation failed with {} error(s)",
+            error_details.len()
+        );
     }
 
     Ok(())
@@ -115,7 +118,10 @@ mod tests {
     #[test]
     fn test_format_path() {
         assert_eq!(format_path(""), "/");
-        assert_eq!(format_path("/pages/0/spans/3/text"), "/pages/0/spans/3/text");
+        assert_eq!(
+            format_path("/pages/0/spans/3/text"),
+            "/pages/0/spans/3/text"
+        );
         assert_eq!(format_path("pages/0/spans/3/text"), "/pages/0/spans/3/text");
     }
 

@@ -5,9 +5,9 @@
 //! toggleable via CSS classes and all layers are present in every page
 //! SVG output.
 
-use std::fmt::Write;
-use crate::schema::{BlockJson, SpanJson};
 use crate::output::inspector::colors;
+use crate::schema::{BlockJson, SpanJson};
+use std::fmt::Write;
 
 /// A single SVG layer group with its CSS class name.
 ///
@@ -23,7 +23,10 @@ pub struct LayerGroup {
 impl LayerGroup {
     /// Create a new layer group.
     fn new(class_name: &'static str, content: String) -> Self {
-        Self { class_name, content }
+        Self {
+            class_name,
+            content,
+        }
     }
 
     /// Render this layer as an SVG `&lt;g&gt;` element.
@@ -316,7 +319,9 @@ fn render_confidence_heatmap_layer(spans: &[SpanJson]) -> LayerGroup {
         // Render a small colored cell at each span position
         // For dense glyph coverage, this samples 1 in 4 to keep SVG manageable
         let span_width = bbox[2] - bbox[0];
-        let cell_size = (span_width / span.text.chars().count() as f64).max(2.0).min(8.0);
+        let cell_size = (span_width / span.text.chars().count() as f64)
+            .max(2.0)
+            .min(8.0);
 
         let _ = write!(
             content,
@@ -583,7 +588,9 @@ mod tests {
         assert!(layer.content.contains("#00ffff"));
 
         // Should reference the pattern
-        assert!(layer.content.contains("fill=\"url(#ocr-diagonal-stripes)\""));
+        assert!(layer
+            .content
+            .contains("fill=\"url(#ocr-diagonal-stripes)\""));
     }
 
     #[test]
@@ -639,7 +646,17 @@ mod tests {
     fn test_reading_order_max_arrows_limit() {
         // Create many blocks to test the MAX_ARROWS limit
         let blocks: Vec<BlockJson> = (0..100)
-            .map(|i| create_test_block("paragraph", [50.0, 700.0 - (i as f64 * 10.0), 250.0, 750.0 - (i as f64 * 10.0)]))
+            .map(|i| {
+                create_test_block(
+                    "paragraph",
+                    [
+                        50.0,
+                        700.0 - (i as f64 * 10.0),
+                        250.0,
+                        750.0 - (i as f64 * 10.0),
+                    ],
+                )
+            })
             .collect();
 
         let reading_order: Vec<usize> = (0..100).collect();
@@ -648,12 +665,26 @@ mod tests {
 
         // Should only render arrows for first 50 blocks
         // Count the number of arrow paths (should be 49, since there's no arrow from the last item)
-        let arrow_count = layer.content.matches("class=\"reading-order-arrow\"").count();
-        assert!(arrow_count <= 50, "Should have at most 50 arrows, got {}", arrow_count);
+        let arrow_count = layer
+            .content
+            .matches("class=\"reading-order-arrow\"")
+            .count();
+        assert!(
+            arrow_count <= 50,
+            "Should have at most 50 arrows, got {}",
+            arrow_count
+        );
 
         // But should still have all 50 labels (limit applies to arrows, not labels)
-        let label_count = layer.content.matches("class=\"reading-order-label\"").count();
-        assert!(label_count <= 50, "Should have at most 50 labels, got {}", label_count);
+        let label_count = layer
+            .content
+            .matches("class=\"reading-order-label\"")
+            .count();
+        assert!(
+            label_count <= 50,
+            "Should have at most 50 labels, got {}",
+            label_count
+        );
     }
 
     #[test]
@@ -674,7 +705,16 @@ mod tests {
     #[test]
     fn test_block_kind_color_coverage() {
         // Test that all expected block kinds have colors defined
-        let kinds = ["heading", "paragraph", "table", "list", "code", "header_footer", "figure", "caption"];
+        let kinds = [
+            "heading",
+            "paragraph",
+            "table",
+            "list",
+            "code",
+            "header_footer",
+            "figure",
+            "caption",
+        ];
 
         for kind in &kinds {
             let color = colors::kind_to_color(kind);
@@ -707,7 +747,10 @@ mod tests {
 
             // No unescaped ampersands in attributes (except &amp;)
             let content_without_escaped = rendered.replace("&amp;", "");
-            assert!(!content_without_escaped.contains("&"), "Unescaped ampersand in SVG");
+            assert!(
+                !content_without_escaped.contains("&"),
+                "Unescaped ampersand in SVG"
+            );
         }
     }
 }

@@ -8,8 +8,8 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use std::path::Path;
 
-use pdftract_core::{extract_text, ExtractionOptions};
 use pdftract_core::options::ReceiptsMode;
+use pdftract_core::{extract_text, ExtractionOptions};
 
 /// Allowed kwarg names for strict validation.
 const ALLOWED_KWARGS: &[&str] = &[
@@ -210,7 +210,10 @@ pub fn extract_text_fn(py: Python<'_>, path: &str, kwargs: Option<&PyDict>) -> P
                 PyErr::new::<crate::EncryptionError, _>(msg)
             } else if err_str.contains("corrupt") || err_str.contains("invalid") {
                 PyErr::new::<crate::CorruptPdfError, _>(msg)
-            } else if err_str.contains("tls") || err_str.contains("certificate") || err_str.contains("ssl") {
+            } else if err_str.contains("tls")
+                || err_str.contains("certificate")
+                || err_str.contains("ssl")
+            {
                 PyErr::new::<crate::TlsError, _>(msg)
             } else if err_str.contains("network") || err_str.contains("interrupted") {
                 PyErr::new::<crate::RemoteFetchInterruptedError, _>(msg)

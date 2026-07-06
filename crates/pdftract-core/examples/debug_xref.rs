@@ -14,7 +14,10 @@ fn main() {
     // We need to access it indirectly by checking what we can resolve
 
     // Try to resolve object 2 0 R
-    let obj_2_ref = pdftract_core::parser::object::ObjRef { object: 2, generation: 0 };
+    let obj_2_ref = pdftract_core::parser::object::ObjRef {
+        object: 2,
+        generation: 0,
+    };
     println!("=== Resolving object 2 0 R ===");
     match resolver.resolve(obj_2_ref) {
         Ok(obj) => println!("Resolved to: {:?}", obj),
@@ -41,7 +44,7 @@ fn main() {
     // Try to find object 2 in the raw data
     println!("\n=== Looking for object 2 0 obj ===");
     for i in 0..data.len().saturating_sub(10) {
-        if &data[i..i+10] == b"2 0 obj\n" || &data[i..i+10] == b"2 0 obj\r" {
+        if &data[i..i + 10] == b"2 0 obj\n" || &data[i..i + 10] == b"2 0 obj\r" {
             println!("Found '2 0 obj' at offset {}", i);
             let obj_data = &data[i..std::cmp::min(i + 100, data.len())];
             println!("{}", String::from_utf8_lossy(obj_data));

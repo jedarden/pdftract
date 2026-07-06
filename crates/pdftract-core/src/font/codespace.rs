@@ -219,7 +219,10 @@ impl<'a> CodespaceParser<'a> {
     }
 
     /// Parse a begincodespacerange...endcodespacerange block.
-    fn parse_codespace_block(&mut self, ranges: &mut CodespaceRanges) -> Result<(), CodespaceError> {
+    fn parse_codespace_block(
+        &mut self,
+        ranges: &mut CodespaceRanges,
+    ) -> Result<(), CodespaceError> {
         // Read count (optional in some CMaps, but standard requires it)
         let count = if let Ok(n) = self.try_integer() {
             if n < 0 {
@@ -273,7 +276,9 @@ impl<'a> CodespaceParser<'a> {
 
         // If we had a count, expect endcodespacerange
         if count != usize::MAX && !self.try_keyword(b"endcodespacerange") {
-            return Err(CodespaceError::MissingKeyword("endcodespacerace".to_string()));
+            return Err(CodespaceError::MissingKeyword(
+                "endcodespacerace".to_string(),
+            ));
         }
 
         Ok(())
@@ -285,7 +290,9 @@ impl<'a> CodespaceParser<'a> {
         let start = self.pos;
 
         // Optional sign
-        if self.pos < self.input.len() && (self.input[self.pos] == b'-' || self.input[self.pos] == b'+') {
+        if self.pos < self.input.len()
+            && (self.input[self.pos] == b'-' || self.input[self.pos] == b'+')
+        {
             self.pos += 1;
         }
 
@@ -302,7 +309,8 @@ impl<'a> CodespaceParser<'a> {
 
         // Parse the integer
         let s = unsafe { std::str::from_utf8_unchecked(&self.input[start..self.pos]) };
-        s.parse().map_err(|_| CodespaceError::UnexpectedToken("invalid integer".to_string()))
+        s.parse()
+            .map_err(|_| CodespaceError::UnexpectedToken("invalid integer".to_string()))
     }
 
     /// Expect a hex string at the current position.
@@ -445,7 +453,10 @@ impl<'a> CodespaceParser<'a> {
 
     /// Check if a byte is a delimiter.
     fn is_delimiter(b: u8) -> bool {
-        matches!(b, b'<' | b'>' | b'[' | b']' | b'{' | b'}' | b'/' | b'%' | b'(' | b')')
+        matches!(
+            b,
+            b'<' | b'>' | b'[' | b']' | b'{' | b'}' | b'/' | b'%' | b'(' | b')'
+        )
     }
 
     /// Convert a hex digit character to its 4-bit value.
@@ -705,7 +716,8 @@ mod tests {
     #[test]
     fn test_recovery_on_error() {
         // Parse should continue after a malformed entry
-        let input = b"3 begincodespacerange\n<00> <7F>\n<00> <FFFF>\n<8000> <FFFF>\nendcodespacerange";
+        let input =
+            b"3 begincodespacerange\n<00> <7F>\n<00> <FFFF>\n<8000> <FFFF>\nendcodespacerange";
         let parser = CodespaceParser::new(input);
         let (ranges, diags) = parser.parse();
 

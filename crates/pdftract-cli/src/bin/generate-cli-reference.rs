@@ -55,7 +55,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let existing = fs::read_to_string(&output_path)?;
         if let Some(idx) = existing.find(AUTOGEN_END_MARKER) {
             // Trim leading whitespace from curated content to prevent newline accumulation
-            Some(existing[idx + AUTOGEN_END_MARKER.len()..].trim_start().to_string())
+            Some(
+                existing[idx + AUTOGEN_END_MARKER.len()..]
+                    .trim_start()
+                    .to_string(),
+            )
         } else {
             None
         }
@@ -82,16 +86,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         // Add a default hand-curated section header
         final_output.push_str("## Hand-Curated Content\n\n");
-        final_output.push_str("> **Note:** Any content added after this marker will be preserved\n");
+        final_output
+            .push_str("> **Note:** Any content added after this marker will be preserved\n");
         final_output.push_str("> when the CLI reference is regenerated. This section is for\n");
-        final_output.push_str("> additional context that doesn't fit in the auto-generated sections.\n\n");
+        final_output
+            .push_str("> additional context that doesn't fit in the auto-generated sections.\n\n");
         final_output.push_str("### Common Patterns\n\n");
         final_output.push_str("#### Basic Extraction\n\n");
         final_output.push_str("```bash\npdftract extract document.pdf\n```\n\n");
         final_output.push_str("#### JSON Output\n\n");
         final_output.push_str("```bash\npdftract extract --json output.json document.pdf\n```\n\n");
         final_output.push_str("#### Markdown with Anchors\n\n");
-        final_output.push_str("```bash\npdftract extract --md-anchors --md output.md document.pdf\n```\n\n");
+        final_output.push_str(
+            "```bash\npdftract extract --md-anchors --md output.md document.pdf\n```\n\n",
+        );
         final_output.push_str("### Exit Codes\n\n");
         final_output.push_str("- `0`: Success\n");
         final_output.push_str("- `1`: General error (extraction failed, file not found, etc.)\n");

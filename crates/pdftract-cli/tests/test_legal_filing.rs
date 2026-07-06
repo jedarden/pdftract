@@ -358,7 +358,10 @@ fn test_fixture_count() {
         expected_count
     );
 
-    println!("Legal filing fixture count: {} (minimum: 5)", expected_count);
+    println!(
+        "Legal filing fixture count: {} (minimum: 5)",
+        expected_count
+    );
 }
 
 /// Verify PROVENANCE.md has required fields
@@ -508,9 +511,11 @@ fn test_parties_field_variations() {
     let parties_str = serde_yaml::to_string(parties_field).unwrap_or_default();
 
     assert!(
-        parties_str.contains("Plaintiff") || parties_str.contains("Defendant") ||
-        parties_str.contains("Petitioner") || parties_str.contains("Respondent") ||
-        parties_str.contains("v."),
+        parties_str.contains("Plaintiff")
+            || parties_str.contains("Defendant")
+            || parties_str.contains("Petitioner")
+            || parties_str.contains("Respondent")
+            || parties_str.contains("v."),
         "Parties field should handle common party type markers"
     );
 }

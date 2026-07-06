@@ -30,7 +30,7 @@
 use std::collections::HashSet;
 
 use crate::diagnostics::DiagCode;
-use crate::{emit, diagnostics::Diagnostic};
+use crate::{diagnostics::Diagnostic, emit};
 
 use super::{CodespaceRange, CodespaceRanges};
 
@@ -191,7 +191,11 @@ mod tests {
     fn test_2_byte_cjk() {
         // Acceptance criterion: Input 2-byte CJK 0x82 0xA0 with codespace <8000><FFFF> → codes [0x82A0]
         let mut codespace = CodespaceRanges::new();
-        codespace.push(CodespaceRange::new([0x80, 0x00, 0, 0], [0xFF, 0xFF, 0, 0], 2));
+        codespace.push(CodespaceRange::new(
+            [0x80, 0x00, 0, 0],
+            [0xFF, 0xFF, 0, 0],
+            2,
+        ));
 
         let bytes = &[0x82, 0xA0];
         let mut diagnostics = Vec::new();
@@ -206,7 +210,11 @@ mod tests {
         // Acceptance criterion: Mixed 1+2 byte input: 0x48 0x82 0xA0 with codespace <00><7F><8000><FFFF> → [0x48, 0x82A0]
         let mut codespace = CodespaceRanges::new();
         codespace.push(CodespaceRange::new([0x00, 0, 0, 0], [0x7F, 0, 0, 0], 1));
-        codespace.push(CodespaceRange::new([0x80, 0x00, 0, 0], [0xFF, 0xFF, 0, 0], 2));
+        codespace.push(CodespaceRange::new(
+            [0x80, 0x00, 0, 0],
+            [0xFF, 0xFF, 0, 0],
+            2,
+        ));
 
         let bytes = &[0x48, 0x82, 0xA0];
         let mut diagnostics = Vec::new();
@@ -248,7 +256,9 @@ mod tests {
         assert_eq!(codes, &[0x48, 0xFFFD, 0xFFFD, 0xFFFD, 0xFFFD]);
         // Two diagnostics: one for 0x80, one for 0x90
         assert_eq!(diagnostics.len(), 2);
-        assert!(diagnostics.iter().all(|d| d.code == DiagCode::CjkTokenizeUnknownByte));
+        assert!(diagnostics
+            .iter()
+            .all(|d| d.code == DiagCode::CjkTokenizeUnknownByte));
     }
 
     #[test]
@@ -271,7 +281,11 @@ mod tests {
         // 0x80 in both 1-byte and 2-byte lead range should match 2-byte
         let mut codespace = CodespaceRanges::new();
         codespace.push(CodespaceRange::new([0x80, 0, 0, 0], [0xFF, 0, 0, 0], 1));
-        codespace.push(CodespaceRange::new([0x80, 0x00, 0, 0], [0xFF, 0xFF, 0, 0], 2));
+        codespace.push(CodespaceRange::new(
+            [0x80, 0x00, 0, 0],
+            [0xFF, 0xFF, 0, 0],
+            2,
+        ));
 
         let bytes = &[0x80, 0xA0];
         let mut diagnostics = Vec::new();
@@ -285,7 +299,11 @@ mod tests {
     #[test]
     fn test_3_byte_range() {
         let mut codespace = CodespaceRanges::new();
-        codespace.push(CodespaceRange::new([0x80, 0x00, 0x00, 0], [0xFF, 0xFF, 0xFF, 0], 3));
+        codespace.push(CodespaceRange::new(
+            [0x80, 0x00, 0x00, 0],
+            [0xFF, 0xFF, 0xFF, 0],
+            3,
+        ));
 
         let bytes = &[0x81, 0x40, 0xA0];
         let mut diagnostics = Vec::new();
@@ -317,7 +335,11 @@ mod tests {
         // Realistic JIS CMap: 1-byte ASCII + 2-byte CJK
         let mut codespace = CodespaceRanges::new();
         codespace.push(CodespaceRange::new([0x00, 0, 0, 0], [0x7F, 0, 0, 0], 1));
-        codespace.push(CodespaceRange::new([0x81, 0x40, 0, 0], [0xFE, 0xFE, 0, 0], 2));
+        codespace.push(CodespaceRange::new(
+            [0x81, 0x40, 0, 0],
+            [0xFE, 0xFE, 0, 0],
+            2,
+        ));
 
         // "Hello" followed by two CJK characters
         let bytes = &[0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x81, 0x40, 0x82, 0xA0];
@@ -335,7 +357,11 @@ mod tests {
         // we should fall through to unrecognized byte handling
         let mut codespace = CodespaceRanges::new();
         codespace.push(CodespaceRange::new([0x00, 0, 0, 0], [0x7F, 0, 0, 0], 1));
-        codespace.push(CodespaceRange::new([0x80, 0x00, 0, 0], [0xFF, 0xFF, 0, 0], 2));
+        codespace.push(CodespaceRange::new(
+            [0x80, 0x00, 0, 0],
+            [0xFF, 0xFF, 0, 0],
+            2,
+        ));
 
         // 0x81 at end of input (partial 2-byte sequence)
         let bytes = &[0x48, 0x81];
@@ -352,7 +378,11 @@ mod tests {
         // Ensure range matching is per-byte, not just comparing packed values
         let mut codespace = CodespaceRanges::new();
         // Range: first byte 0x80-0x9F, second byte 0x40-0x7F
-        codespace.push(CodespaceRange::new([0x80, 0x40, 0, 0], [0x9F, 0x7F, 0, 0], 2));
+        codespace.push(CodespaceRange::new(
+            [0x80, 0x40, 0, 0],
+            [0x9F, 0x7F, 0, 0],
+            2,
+        ));
 
         let bytes = &[0x85, 0x50]; // Both bytes in range
         let mut diagnostics = Vec::new();
@@ -391,7 +421,11 @@ mod tests {
         // Identity-H CMap: <00><FF> for 1-byte, <0100><FFFF> for 2-byte
         let mut codespace = CodespaceRanges::new();
         codespace.push(CodespaceRange::new([0x00, 0, 0, 0], [0xFF, 0, 0, 0], 1));
-        codespace.push(CodespaceRange::new([0x01, 0x00, 0, 0], [0xFF, 0xFF, 0, 0], 2));
+        codespace.push(CodespaceRange::new(
+            [0x01, 0x00, 0, 0],
+            [0xFF, 0xFF, 0, 0],
+            2,
+        ));
 
         // Mix of 1-byte and 2-byte codes
         let bytes = &[0x41, 0x01, 0x00, 0xFF, 0x01, 0x23, 0x45];
@@ -411,8 +445,16 @@ mod tests {
         // Test that widest-first correctly prefers 3-byte over 2-byte and 1-byte
         let mut codespace = CodespaceRanges::new();
         codespace.push(CodespaceRange::new([0x80, 0, 0, 0], [0xFF, 0, 0, 0], 1));
-        codespace.push(CodespaceRange::new([0x80, 0x00, 0, 0], [0xFF, 0xFF, 0, 0], 2));
-        codespace.push(CodespaceRange::new([0x80, 0x00, 0x00, 0], [0xFF, 0xFF, 0xFF, 0], 3));
+        codespace.push(CodespaceRange::new(
+            [0x80, 0x00, 0, 0],
+            [0xFF, 0xFF, 0, 0],
+            2,
+        ));
+        codespace.push(CodespaceRange::new(
+            [0x80, 0x00, 0x00, 0],
+            [0xFF, 0xFF, 0xFF, 0],
+            3,
+        ));
 
         let bytes = &[0x81, 0x40, 0xA0];
         let mut diagnostics = Vec::new();

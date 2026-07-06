@@ -143,10 +143,7 @@ fn run_list() -> Result<()> {
             println!("Custom profiles:");
             for source in custom {
                 let profile = &source.profile;
-                println!(
-                    "  {} - Priority: {}",
-                    profile.name, profile.priority
-                );
+                println!("  {} - Priority: {}", profile.name, profile.priority);
                 println!("    {}", profile.description);
             }
             println!();
@@ -177,8 +174,8 @@ fn run_show(name_or_path: &str) -> Result<()> {
         let profile = extraction_loader::find_profile(name_or_path, &profiles)?;
 
         // Serialize back to YAML
-        let yaml = serde_yaml::to_string(&profile)
-            .context("Failed to serialize profile to YAML")?;
+        let yaml =
+            serde_yaml::to_string(&profile).context("Failed to serialize profile to YAML")?;
 
         println!("{}", yaml);
     }
@@ -203,12 +200,15 @@ fn run_export(name: &str) -> Result<()> {
         // Find the built-in profile by name
         let profile = profiles
             .iter()
-            .find(|s| s.profile.name == name && matches!(s.source, extraction_loader::ProfileOrigin::BuiltIn))
+            .find(|s| {
+                s.profile.name == name
+                    && matches!(s.source, extraction_loader::ProfileOrigin::BuiltIn)
+            })
             .context(format!("Built-in profile '{}' not found", name))?;
 
         // Serialize to YAML
-        let yaml = serde_yaml::to_string(&profile)
-            .context("Failed to serialize profile to YAML")?;
+        let yaml =
+            serde_yaml::to_string(&profile).context("Failed to serialize profile to YAML")?;
 
         println!("{}", yaml);
     }
@@ -237,25 +237,30 @@ fn run_install(path: &PathBuf) -> Result<()> {
             .context("Failed to determine XDG config directory")?;
 
         // Create directory if it doesn't exist
-        fs::create_dir_all(&xdg_dir)
-            .context(format!("Failed to create profile directory: {}", xdg_dir.display()))?;
+        fs::create_dir_all(&xdg_dir).context(format!(
+            "Failed to create profile directory: {}",
+            xdg_dir.display()
+        ))?;
 
         // Read the profile to get its name
         let content = fs::read_to_string(path)
             .context(format!("Failed to read profile file: {}", path.display()))?;
 
         // Parse to get the profile name
-        let profile: pdftract_core::profiles::ExtractionProfile = serde_yaml::from_str(&content)
-            .context("Failed to parse profile YAML")?;
+        let profile: pdftract_core::profiles::ExtractionProfile =
+            serde_yaml::from_str(&content).context("Failed to parse profile YAML")?;
 
         // Destination path
         let dest = xdg_dir.join(format!("{}.yaml", profile.name));
 
         // Copy file
-        fs::copy(path, &dest)
-            .context(format!("Failed to copy profile to: {}", dest.display()))?;
+        fs::copy(path, &dest).context(format!("Failed to copy profile to: {}", dest.display()))?;
 
-        println!("Installed profile '{}' to: {}", profile.name, dest.display());
+        println!(
+            "Installed profile '{}' to: {}",
+            profile.name,
+            dest.display()
+        );
         println!();
         println!("You can now use this profile with:");
         println!("  pdftract extract --profile {}", profile.name);

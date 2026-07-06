@@ -1420,19 +1420,19 @@ pub enum AnnotationSpecificJson {
     /// Contains quad points for the highlighted regions.
     TextMarkup {
         /// Array of 8-element quadpoint arrays [x0, y0, x1, y1, x2, y2, x3, y3].
-        quads: Vec<[f32; 8]>
+        quads: Vec<[f32; 8]>,
     },
 
     /// Stamp annotation with icon name.
     Stamp {
         /// Stamp icon name (e.g., "Approved", "Draft", "Confidential").
-        name: Option<String>
+        name: Option<String>,
     },
 
     /// FreeText annotation with default appearance string.
     FreeText {
         /// Default appearance string for text rendering.
-        da: Option<String>
+        da: Option<String>,
     },
 
     /// Text (sticky note) annotation.

@@ -60,10 +60,7 @@ pub struct EmbeddedFileEntry {
 impl EmbeddedFileEntry {
     /// Create a new embedded file entry.
     pub fn new(name: String, filespec_ref: ObjRef) -> Self {
-        Self {
-            name,
-            filespec_ref,
-        }
+        Self { name, filespec_ref }
     }
 }
 
@@ -444,11 +441,7 @@ mod tests {
     }
 
     /// Helper to create an intermediate node with /Kids.
-    fn make_intermediate_node(
-        resolver: &XrefResolver,
-        node_ref: ObjRef,
-        kids: &[ObjRef],
-    ) {
+    fn make_intermediate_node(resolver: &XrefResolver, node_ref: ObjRef, kids: &[ObjRef]) {
         let kids_array: Vec<PdfObject> = kids.iter().map(|&r| PdfObject::Ref(r)).collect();
         let mut dict = IndexMap::new();
         dict.insert(intern("/Kids"), PdfObject::Array(Box::new(kids_array)));
@@ -459,7 +452,10 @@ mod tests {
     fn make_filespec(resolver: &XrefResolver, filespec_ref: ObjRef, filename: &str) {
         let mut dict = IndexMap::new();
         dict.insert(intern("/Type"), PdfObject::Name(intern("Filespec")));
-        dict.insert(intern("/F"), PdfObject::String(Box::new(filename.as_bytes().to_vec())));
+        dict.insert(
+            intern("/F"),
+            PdfObject::String(Box::new(filename.as_bytes().to_vec())),
+        );
 
         let mut ef_dict = IndexMap::new();
         ef_dict.insert(intern("/F"), PdfObject::Ref(ObjRef::new(999, 0))); // Dummy stream ref
@@ -563,13 +559,21 @@ mod tests {
         make_filespec(&resolver, fs5, "gamma.txt");
 
         // First kid has 2 entries
-        make_leaf_node(&resolver, kid1_ref, &[(b"delta.txt".to_vec(), fs1), (b"alpha.txt".to_vec(), fs2)]);
+        make_leaf_node(
+            &resolver,
+            kid1_ref,
+            &[(b"delta.txt".to_vec(), fs1), (b"alpha.txt".to_vec(), fs2)],
+        );
 
         // Second kid has 3 entries
         make_leaf_node(
             &resolver,
             kid2_ref,
-            &[(b"epsilon.txt".to_vec(), fs3), (b"beta.txt".to_vec(), fs4), (b"gamma.txt".to_vec(), fs5)],
+            &[
+                (b"epsilon.txt".to_vec(), fs3),
+                (b"beta.txt".to_vec(), fs4),
+                (b"gamma.txt".to_vec(), fs5),
+            ],
         );
 
         // Root has /Kids pointing to both leaves
@@ -609,7 +613,11 @@ mod tests {
 
         // Level 2 leaves
         make_leaf_node(&resolver, leaf1_ref, &[(b"charlie.txt".to_vec(), fs1)]);
-        make_leaf_node(&resolver, leaf2_ref, &[(b"alpha.txt".to_vec(), fs2), (b"bravo.txt".to_vec(), fs3)]);
+        make_leaf_node(
+            &resolver,
+            leaf2_ref,
+            &[(b"alpha.txt".to_vec(), fs2), (b"bravo.txt".to_vec(), fs3)],
+        );
 
         // Level 1 intermediate node
         make_intermediate_node(&resolver, mid_ref, &[leaf1_ref, leaf2_ref]);
@@ -783,7 +791,7 @@ mod tests {
         assert_eq!(decoded, "Hello");
 
         // Odd length (7 bytes) - fallback to PDFDocEncoding (treat each byte as char)
-        let bytes = b"\x00H\x00e\x00l\x00";  // 7 bytes (odd)
+        let bytes = b"\x00H\x00e\x00l\x00"; // 7 bytes (odd)
         let decoded = decode_utf16be_bom(bytes);
         assert_eq!(decoded, "\u{0}H\u{0}e\u{0}l\u{0}"); // Each 0x00 becomes null char
     }

@@ -52,12 +52,7 @@ const BOOK_CHAPTER_FIXTURES: &[&str] = &[
 const EXPECTED_SUFFIX: &str = "-expected.json";
 
 /// Profile field names that should be extracted
-const PROFILE_FIELDS: &[&str] = &[
-    "title",
-    "chapter_number",
-    "author",
-    "sections",
-];
+const PROFILE_FIELDS: &[&str] = &["title", "chapter_number", "author", "sections"];
 
 /// Verify the book chapter profile YAML exists and is valid
 #[test]
@@ -195,7 +190,8 @@ fn test_book_chapter_profile_schema() {
     );
 
     // Verify priority is 5 (lowest among the 9 built-in profiles)
-    let priority = yaml_value["priority"].as_i64()
+    let priority = yaml_value["priority"]
+        .as_i64()
         .or_else(|| yaml_value["priority"].as_u64().map(|u| u as i64));
     assert_eq!(
         priority,
@@ -343,13 +339,17 @@ fn test_book_chapter_match_predicates() {
 
     // Should match chapter/section heading patterns
     assert!(
-        match_str.contains("Chapter") || match_str.contains("Part") || match_str.contains("Section"),
+        match_str.contains("Chapter")
+            || match_str.contains("Part")
+            || match_str.contains("Section"),
         "Match predicates should include chapter/section patterns"
     );
 
     // Should exclude more specific document types
     assert!(
-        match_str.contains("Abstract") || match_str.contains("Invoice") || match_str.contains("WHEREAS"),
+        match_str.contains("Abstract")
+            || match_str.contains("Invoice")
+            || match_str.contains("WHEREAS"),
         "Match predicates should exclude more specific document types"
     );
 }
@@ -365,7 +365,10 @@ fn test_fixture_count() {
         expected_count
     );
 
-    println!("Book chapter fixture count: {} (minimum: 5)", expected_count);
+    println!(
+        "Book chapter fixture count: {} (minimum: 5)",
+        expected_count
+    );
 }
 
 /// Verify PROVENANCE.md has required fields
@@ -522,7 +525,8 @@ fn test_lowest_priority() {
         serde_yaml::from_str(&content).expect("Book chapter profile is not valid YAML");
 
     // Verify priority is 5 (lowest among the 9 built-in profiles)
-    let priority = yaml_value["priority"].as_i64()
+    let priority = yaml_value["priority"]
+        .as_i64()
         .or_else(|| yaml_value["priority"].as_u64().map(|u| u as i64));
     assert_eq!(
         priority,

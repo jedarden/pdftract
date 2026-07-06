@@ -245,10 +245,7 @@ mod tests {
 
         // JBIG2 as first → Jbig2 (even if followed by FlateDecode)
         let filters = vec![Pdf1Filter::Jbig2Decode, Pdf1Filter::FlateDecode];
-        assert_eq!(
-            image_source_from_filters(&filters),
-            ImageSource::Jbig2
-        );
+        assert_eq!(image_source_from_filters(&filters), ImageSource::Jbig2);
     }
 
     #[test]

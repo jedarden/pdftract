@@ -122,7 +122,10 @@ pub fn sauvola_binarize(image: &GrayImage, window_size: u32, k: f32) -> GrayImag
                 // we panic to surface the issue early
                 panic!(
                     "Failed to convert GrayImage to Pix: {:?}",
-                    diag.iter().map(|d| d.message.as_str()).collect::<Vec<_>>().join("; ")
+                    diag.iter()
+                        .map(|d| d.message.as_str())
+                        .collect::<Vec<_>>()
+                        .join("; ")
                 );
             }
         };
@@ -165,7 +168,10 @@ pub fn sauvola_binarize(image: &GrayImage, window_size: u32, k: f32) -> GrayImag
                 unsafe { pixDestroy(binary_pix) };
                 panic!(
                     "Failed to convert Pix to GrayImage: {:?}",
-                    diag.iter().map(|d| d.message.as_str()).collect::<Vec<_>>().join("; ")
+                    diag.iter()
+                        .map(|d| d.message.as_str())
+                        .collect::<Vec<_>>()
+                        .join("; ")
                 );
             }
         };
@@ -510,7 +516,10 @@ mod tests {
         for y in 0..20 {
             for x in 0..20 {
                 let pixel = binary2.get_pixel(x, y)[0];
-                assert!(pixel == 0 || pixel == 255, "Small image should produce binary output");
+                assert!(
+                    pixel == 0 || pixel == 255,
+                    "Small image should produce binary output"
+                );
             }
         }
     }

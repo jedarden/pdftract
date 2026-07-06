@@ -65,9 +65,7 @@ pub fn render_ocr_regions(spans: &[SpanJson]) -> Vec<String> {
         let [x0, y0, x1, y1] = span.bbox;
         let width = x1 - x0;
         let height = y1 - y0;
-        let data_source = escape_xml_attr(
-            span.confidence_source.as_deref().unwrap_or("")
-        );
+        let data_source = escape_xml_attr(span.confidence_source.as_deref().unwrap_or(""));
         let confidence_str = span.confidence.map(|c| c.to_string()).unwrap_or_default();
         let data_confidence = escape_xml_attr(&confidence_str);
 
@@ -238,7 +236,11 @@ mod tests {
         ];
 
         for (source, expected_render) in test_cases {
-            let spans = vec![make_test_span("Test", [0.0, 0.0, 100.0, 20.0], Some(source))];
+            let spans = vec![make_test_span(
+                "Test",
+                [0.0, 0.0, 100.0, 20.0],
+                Some(source),
+            )];
             let output = render_ocr_regions(&spans);
 
             if expected_render {

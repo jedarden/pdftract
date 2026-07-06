@@ -48,15 +48,15 @@ pub fn confidence_to_color(confidence: f64) -> &'static str {
 /// CSS hex color string with opacity for translucent effect.
 pub fn kind_to_color(kind: &str) -> &'static str {
     match kind {
-        "heading" => "#4a90e2",     // blue
-        "paragraph" => "#808080",   // gray
-        "table" => "#50c8c8",       // teal
-        "list" => "#9b59b6",        // purple
-        "code" => "#f39c12",        // orange
+        "heading" => "#4a90e2",       // blue
+        "paragraph" => "#808080",     // gray
+        "table" => "#50c8c8",         // teal
+        "list" => "#9b59b6",          // purple
+        "code" => "#f39c12",          // orange
         "header_footer" => "#d3d3d3", // light gray
-        "figure" => "#8b4513",      // brown
-        "caption" => "#ff69b4",     // pink
-        _ => "#cccccc",             // default gray
+        "figure" => "#8b4513",        // brown
+        "caption" => "#ff69b4",       // pink
+        _ => "#cccccc",               // default gray
     }
 }
 
@@ -65,15 +65,15 @@ pub fn kind_to_color(kind: &str) -> &'static str {
 /// Used for block outline borders to provide better contrast.
 pub fn kind_to_stroke_color(kind: &str) -> &'static str {
     match kind {
-        "heading" => "#2a5a8a",     // darker blue
-        "paragraph" => "#505050",   // darker gray
-        "table" => "#30a0a0",       // darker teal
-        "list" => "#6b3a86",        // darker purple
-        "code" => "#c47c0a",        // darker orange
+        "heading" => "#2a5a8a",       // darker blue
+        "paragraph" => "#505050",     // darker gray
+        "table" => "#30a0a0",         // darker teal
+        "list" => "#6b3a86",          // darker purple
+        "code" => "#c47c0a",          // darker orange
         "header_footer" => "#a3a3a3", // darker light gray
-        "figure" => "#5a2a0a",      // darker brown
-        "caption" => "#d43984",     // darker pink
-        _ => "#999999",             // default darker gray
+        "figure" => "#5a2a0a",        // darker brown
+        "caption" => "#d43984",       // darker pink
+        _ => "#999999",               // default darker gray
     }
 }
 

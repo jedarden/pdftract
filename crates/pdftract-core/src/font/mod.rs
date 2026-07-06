@@ -23,7 +23,9 @@ pub mod cjk_encoding;
 
 pub use agl::{unicode_for_glyph_name, unicode_for_glyph_name_multi};
 pub use cmap::{parse_to_unicode, parse_to_unicode_with_diags, ToUnicodeMap};
-pub use codespace::{parse_codespace_ranges, parse_codespace_ranges_with_diags, CodespaceRange, CodespaceRanges};
+pub use codespace::{
+    parse_codespace_ranges, parse_codespace_ranges_with_diags, CodespaceRange, CodespaceRanges,
+};
 pub use embedded::{EmbeddedFont, EmptyFontMetrics, FontMetrics, GlyphBbox};
 pub use encoding::{DifferencesOverlay, FontEncoding, NamedEncoding};
 pub use fingerprint::{lookup_font_fingerprint, CachedFingerprint, FontFingerprint};

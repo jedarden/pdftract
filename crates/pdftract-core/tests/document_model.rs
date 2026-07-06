@@ -22,7 +22,9 @@ fn debug_ocg_default_off() {
     let read_size = 1024.min(file_size);
     let read_offset = file_size - read_size;
 
-    let tail = source.read_at(read_offset, read_size as usize).expect("Failed to read tail");
+    let tail = source
+        .read_at(read_offset, read_size as usize)
+        .expect("Failed to read tail");
     let tail_str = std::str::from_utf8(&tail).expect("Invalid UTF-8 in tail");
 
     println!("Tail (last 1KB): {}", tail_str);
@@ -49,14 +51,14 @@ fn debug_ocg_default_off() {
         }
     }
 }
-use std::fs;
-use std::path::PathBuf;
 use pdftract_core::detection;
 use pdftract_core::document::parse_pdf_file;
 use pdftract_core::parser::catalog::Catalog;
 use pdftract_core::parser::pages::PageDict;
 use pdftract_core::parser::xref::XrefResolver;
 use serde_json::Value;
+use std::fs;
+use std::path::PathBuf;
 
 /// A single test fixture for document model construction.
 struct Fixture {
@@ -105,7 +107,10 @@ fn assert_json_eq(expected: &Value, actual: &Value, context: &str) {
     if expected != actual {
         println!("\n=== JSON MISMATCH ===");
         println!("Context: {}", context);
-        println!("Expected: {}", serde_json::to_string_pretty(expected).unwrap());
+        println!(
+            "Expected: {}",
+            serde_json::to_string_pretty(expected).unwrap()
+        );
         println!("Actual: {}", serde_json::to_string_pretty(actual).unwrap());
         println!("=====================\n");
         panic!("JSON mismatch at: {}", context);
@@ -124,8 +129,11 @@ fn test_fixture(fixture: Fixture) {
     let expected_json = if fixture.expected_path.exists() {
         let json_str = fs::read_to_string(&fixture.expected_path)
             .unwrap_or_else(|e| panic!("Failed to read expected.json for {}: {}", fixture.name, e));
-        Some(serde_json::from_str::<Value>(&json_str)
-            .unwrap_or_else(|e| panic!("Failed to parse expected.json for {}: {}", fixture.name, e)))
+        Some(
+            serde_json::from_str::<Value>(&json_str).unwrap_or_else(|e| {
+                panic!("Failed to parse expected.json for {}: {}", fixture.name, e)
+            }),
+        )
     } else {
         None
     };
@@ -150,16 +158,21 @@ fn build_document_json(
     resolver: &XrefResolver,
 ) -> Value {
     // Check for encryption
-    let is_encrypted = catalog.diagnostics.iter()
+    let is_encrypted = catalog
+        .diagnostics
+        .iter()
         .any(|d| d.code.category() == "ENCRYPTION");
 
     // Get encryption status from diagnostics
-    let encryption_status = catalog.diagnostics.iter()
+    let encryption_status = catalog
+        .diagnostics
+        .iter()
         .find(|d| d.code.category() == "ENCRYPTION")
         .map(|d| d.message.clone());
 
     // Resolve AcroForm if present
-    let acroform = catalog.acroform_ref
+    let acroform = catalog
+        .acroform_ref
         .and_then(|r| resolver.resolve(r).ok())
         .and_then(|o| o.as_dict().cloned());
 
@@ -168,13 +181,21 @@ fn build_document_json(
     let contains_xfa = detection::detect_xfa(&acroform);
 
     // Get OCG information
-    let ocg_present = catalog.oc_properties.as_ref().map(|p| p.present).unwrap_or(false);
-    let ocg_base_state = catalog.oc_properties.as_ref()
+    let ocg_present = catalog
+        .oc_properties
+        .as_ref()
+        .map(|p| p.present)
+        .unwrap_or(false);
+    let ocg_base_state = catalog
+        .oc_properties
+        .as_ref()
         .and_then(|p| Some(format!("{:?}", p.base_state)));
 
     // Get page labels
     let page_labels: Vec<Value> = if let Some(ref labels_tree) = catalog.page_labels {
-        labels_tree.labels().iter()
+        labels_tree
+            .labels()
+            .iter()
             .map(|(idx, label)| {
                 serde_json::json!({
                     "index": idx,
@@ -201,44 +222,67 @@ fn build_document_json(
 
     // Add encryption status if present
     if let Some(status) = encryption_status {
-        doc.as_object_mut().unwrap().insert("encryption_status".to_string(), Value::String(status.to_string()));
+        doc.as_object_mut().unwrap().insert(
+            "encryption_status".to_string(),
+            Value::String(status.to_string()),
+        );
     }
 
     // Add OCG base state if present
     if let Some(base_state) = ocg_base_state {
-        doc.as_object_mut().unwrap().insert("ocg_base_state".to_string(), Value::String(base_state));
+        doc.as_object_mut()
+            .unwrap()
+            .insert("ocg_base_state".to_string(), Value::String(base_state));
     }
 
     // Add page labels if present
     if !page_labels.is_empty() {
-        doc.as_object_mut().unwrap().insert("page_labels".to_string(), Value::Array(page_labels));
+        doc.as_object_mut()
+            .unwrap()
+            .insert("page_labels".to_string(), Value::Array(page_labels));
     }
 
     // Add page-level information
-    let pages_array: Vec<Value> = pages.iter().enumerate().map(|(i, page)| {
-        let mut page_obj = serde_json::json!({
-            "page_index": i,
-            "media_box": page.media_box,
-            "rotate": page.rotate,
-        });
+    let pages_array: Vec<Value> = pages
+        .iter()
+        .enumerate()
+        .map(|(i, page)| {
+            let mut page_obj = serde_json::json!({
+                "page_index": i,
+                "media_box": page.media_box,
+                "rotate": page.rotate,
+            });
 
-        // Add crop_box if present
-        if let Some(crop_box) = page.crop_box {
-            page_obj.as_object_mut().unwrap().insert("crop_box".to_string(), serde_json::json!(crop_box));
-        } else {
-            page_obj.as_object_mut().unwrap().insert("crop_box".to_string(), serde_json::json!(page.media_box));
-        }
+            // Add crop_box if present
+            if let Some(crop_box) = page.crop_box {
+                page_obj
+                    .as_object_mut()
+                    .unwrap()
+                    .insert("crop_box".to_string(), serde_json::json!(crop_box));
+            } else {
+                page_obj
+                    .as_object_mut()
+                    .unwrap()
+                    .insert("crop_box".to_string(), serde_json::json!(page.media_box));
+            }
 
-        // Track inheritance
-        if !page.resources.fonts.is_empty() {
-            let fonts: HashMap<_, _> = page.resources.fonts.iter()
-                .map(|(name, _)| (name.clone(), "present".to_string()))
-                .collect();
-            page_obj.as_object_mut().unwrap().insert("fonts".to_string(), serde_json::json!(fonts));
-        }
+            // Track inheritance
+            if !page.resources.fonts.is_empty() {
+                let fonts: HashMap<_, _> = page
+                    .resources
+                    .fonts
+                    .iter()
+                    .map(|(name, _)| (name.clone(), "present".to_string()))
+                    .collect();
+                page_obj
+                    .as_object_mut()
+                    .unwrap()
+                    .insert("fonts".to_string(), serde_json::json!(fonts));
+            }
 
-        page_obj
-    }).collect();
+            page_obj
+        })
+        .collect();
 
     doc.as_object_mut()
         .unwrap()

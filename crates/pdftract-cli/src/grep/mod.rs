@@ -394,7 +394,8 @@ pub fn run_grep(args: GrepArgs) -> Result<()> {
         }
     } else if config.count {
         // -c mode: output match counts per file
-        let mut counts: std::collections::HashMap<&String, usize> = std::collections::HashMap::new();
+        let mut counts: std::collections::HashMap<&String, usize> =
+            std::collections::HashMap::new();
         for m in &all_matches {
             *counts.entry(&m.path).or_insert(0) += 1;
         }
@@ -422,13 +423,7 @@ pub fn run_grep(args: GrepArgs) -> Result<()> {
                 let page_human = m.page_index + 1;
                 println!(
                     "{}:p{}:[{:.1},{:.1},{:.1},{:.1}]:{}",
-                    m.path,
-                    page_human,
-                    m.bbox[0],
-                    m.bbox[1],
-                    m.bbox[2],
-                    m.bbox[3],
-                    m.match_text
+                    m.path, page_human, m.bbox[0], m.bbox[1], m.bbox[2], m.bbox[3], m.match_text
                 );
             }
         }

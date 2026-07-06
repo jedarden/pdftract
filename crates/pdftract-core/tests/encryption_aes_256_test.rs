@@ -51,7 +51,10 @@ mod tests {
             vec![],
         );
 
-        assert!(decryptor.is_none(), "Invalid user_hash length should be rejected");
+        assert!(
+            decryptor.is_none(),
+            "Invalid user_hash length should be rejected"
+        );
 
         // Invalid owner_key_encrypted length
         let decryptor = Aes256Decryptor::new(
@@ -63,7 +66,10 @@ mod tests {
             vec![],
         );
 
-        assert!(decryptor.is_none(), "Invalid owner_key_encrypted length should be rejected");
+        assert!(
+            decryptor.is_none(),
+            "Invalid owner_key_encrypted length should be rejected"
+        );
 
         // Invalid perms_encrypted length
         let decryptor = Aes256Decryptor::new(
@@ -75,7 +81,10 @@ mod tests {
             vec![],
         );
 
-        assert!(decryptor.is_none(), "Invalid perms_encrypted length should be rejected");
+        assert!(
+            decryptor.is_none(),
+            "Invalid perms_encrypted length should be rejected"
+        );
     }
 
     /// Test: AES-256 decryptor rejects wrong password.
@@ -191,8 +200,11 @@ mod tests {
         )
         .unwrap();
 
-        let file_key = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
-            0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20];
+        let file_key = [
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
+            0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C,
+            0x1D, 0x1E, 0x1F, 0x20,
+        ];
         let plaintext = b"Hello, AES-256 world! This is a test with padding.";
 
         // Create IV

@@ -36,10 +36,7 @@ use strsim::generic_levenshtein;
 /// - 5% threshold accommodates page-number differences
 /// - 7% page-height window: 43pt zone on 612pt page
 /// - 3+ consecutive required (prevents one-off detection)
-pub fn detect_headers_and_footers(
-    pages: &mut [Vec<BlockJson>],
-    page_heights: &[f64],
-) -> usize {
+pub fn detect_headers_and_footers(pages: &mut [Vec<BlockJson>], page_heights: &[f64]) -> usize {
     if pages.is_empty() || page_heights.is_empty() {
         return 0;
     }
@@ -98,12 +95,9 @@ pub fn detect_headers_and_footers(
                     };
 
                     // Find the matching block on this page and classify it
-                    if let Some(matching_idx) = find_matching_block_idx(
-                        &block,
-                        zone,
-                        &pages[page_idx],
-                        page_height,
-                    ) {
+                    if let Some(matching_idx) =
+                        find_matching_block_idx(&block, zone, &pages[page_idx], page_height)
+                    {
                         // Only count and classify if not already a header/footer
                         let current_kind = pages[page_idx][matching_idx].kind.as_str();
                         if current_kind != "header" && current_kind != "footer" {
@@ -178,11 +172,15 @@ fn find_matching_block_idx(
     page_blocks: &[BlockJson],
     page_height: f64,
 ) -> Option<usize> {
-    page_blocks.iter().enumerate().find(|(_, block)| {
-        classify_zone(block, page_height) == zone
-            && is_same_position(target, block)
-            && is_similar_text(&target.text, &block.text)
-    }).map(|(idx, _)| idx)
+    page_blocks
+        .iter()
+        .enumerate()
+        .find(|(_, block)| {
+            classify_zone(block, page_height) == zone
+                && is_same_position(target, block)
+                && is_similar_text(&target.text, &block.text)
+        })
+        .map(|(idx, _)| idx)
 }
 
 /// Zone classification for a block based on its position.
@@ -296,7 +294,8 @@ fn is_same_position(block_a: &BlockJson, block_b: &BlockJson) -> bool {
 
     // Check for full-width blocks (both are wide enough to be considered full-width)
     const FULL_WIDTH_THRESHOLD: f64 = 400.0; // 400pt is considered full-width
-    let both_full_width = (ax1 - ax0) >= FULL_WIDTH_THRESHOLD && (bx1 - bx0) >= FULL_WIDTH_THRESHOLD;
+    let both_full_width =
+        (ax1 - ax0) >= FULL_WIDTH_THRESHOLD && (bx1 - bx0) >= FULL_WIDTH_THRESHOLD;
 
     same_column || both_full_width
 }
@@ -508,9 +507,7 @@ mod tests {
 
     #[test]
     fn test_detect_headers_and_footers_single_page() {
-        let mut pages = vec![vec![
-            make_block("ACME Corp", [50.0, 740.0, 550.0, 750.0]),
-        ]];
+        let mut pages = vec![vec![make_block("ACME Corp", [50.0, 740.0, 550.0, 750.0])]];
         let page_heights = vec![792.0];
 
         // Single page should not be classified (need 3+ consecutive)
@@ -668,7 +665,10 @@ mod tests {
         // These should NOT be classified because the text differs > 5%
         let mut pages: Vec<Vec<BlockJson>> = (1..=10)
             .map(|n| {
-                vec![make_block(&format!("Page {} of 10", n), [50.0, 40.0, 550.0, 50.0])]
+                vec![make_block(
+                    &format!("Page {} of 10", n),
+                    [50.0, 40.0, 550.0, 50.0],
+                )]
             })
             .collect();
         let page_heights: Vec<f64> = vec![792.0; 10];

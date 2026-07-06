@@ -19,7 +19,6 @@ use crate::attachment::filespec::extract_one;
 use crate::attachment::name_tree::walk_embedded_files;
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::document::compute_fingerprint_lazy;
-use secrecy::ExposeSecret;
 use crate::forms::{
     acro_field_to_value, combine, walk_acroform_fields, AcroFormField, FormFieldValue,
 };
@@ -28,8 +27,8 @@ use crate::parser::catalog::ReadingOrderAlgorithm;
 use crate::parser::marked_content::{track_mcids_from_content_stream, McidTracker};
 use crate::parser::stream::DEFAULT_MAX_DECOMPRESS_BYTES;
 use crate::source::FileSource;
+use secrecy::ExposeSecret;
 // Import both PdfSource traits with aliases to avoid ambiguity
-use crate::source::PdfSource as SourcePdfSource;
 use crate::parser::stream::PdfSource as ParserPdfSource;
 use crate::parser::struct_tree::{check_coverage_for_pages, parse_struct_tree};
 use crate::receipts::Receipt;
@@ -40,6 +39,7 @@ use crate::schema::{
 };
 use crate::semaphore::{Semaphore, SemaphoreExt};
 use crate::signature::{discover, extract_signatures};
+use crate::source::PdfSource as SourcePdfSource;
 use crate::table::{
     detect_two_page_tables, grid_to_table_json, GridCandidate, PageContext, TableDetector,
 };
@@ -48,13 +48,13 @@ use crate::table::{TableCell as Cell, TableSpan};
 // Phase 4 imports for full layout analysis pipeline
 use crate::glyph::{emit_glyph, new_raw_glyph_list, Glyph};
 use crate::graphics_state::GraphicsState;
+use crate::layout::reading_order::XYCutResult;
 use crate::layout::{
-    assign_columns_to_lines, build_x0_histogram, classify_caption, classify_code,
-    classify_figure, classify_formula, classify_list, classify_watermark, cluster_spans_into_lines,
+    assign_columns_to_lines, build_x0_histogram, classify_caption, classify_code, classify_figure,
+    classify_formula, classify_list, classify_watermark, cluster_spans_into_lines,
     compute_baseline, detect_headers_and_footers, group_lines_into_blocks, xy_cut, Block,
     BlockInput, Column, Line, PageContext as LayoutPageContext,
 };
-use crate::layout::reading_order::XYCutResult;
 use crate::span::merge_glyphs_to_spans;
 use crate::span::{CssHexColor, Span};
 
@@ -165,8 +165,13 @@ fn process_content_stream_to_glyphs(
     // For now, use the existing content_stream processor and convert results
     // This is a bridge implementation - a full Phase 3 processor would use glyph::emit_glyph directly
     // The PageDict already has resources merged during page tree traversal
-    let content_glyphs = process_with_mode(decoded_streams, &page.resources, ProcessingMode::Normal, None)
-        .map_err(|e| anyhow::anyhow!("Content stream processing failed: {:?}", e))?;
+    let content_glyphs = process_with_mode(
+        decoded_streams,
+        &page.resources,
+        ProcessingMode::Normal,
+        None,
+    )
+    .map_err(|e| anyhow::anyhow!("Content stream processing failed: {:?}", e))?;
 
     // Convert content_stream::Glyph to glyph::Glyph
     let mut glyphs = Vec::with_capacity(content_glyphs.len());
@@ -204,7 +209,12 @@ fn process_content_stream_to_glyphs(
             cg.unicode,
             unicode_source,
             confidence,
-            [cg.bbox[0] as f32, cg.bbox[1] as f32, cg.bbox[2] as f32, cg.bbox[3] as f32],
+            [
+                cg.bbox[0] as f32,
+                cg.bbox[1] as f32,
+                cg.bbox[2] as f32,
+                cg.bbox[3] as f32,
+            ],
             std::sync::Arc::from(font_name),
             size,
             0, // rendering_mode - not tracked by content_stream processor
@@ -591,19 +601,21 @@ pub fn extract_pdf(
         .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn ParserPdfSource)).map_err(
-        |diagnostics| {
+    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn ParserPdfSource))
+        .map_err(|diagnostics| {
             let msg = diagnostics
                 .first()
                 .map(|d| d.message.as_ref())
                 .unwrap_or("unknown error");
             anyhow::anyhow!("Failed to parse catalog: {}", msg)
-        },
-    )?;
+        })?;
 
     // Resolve AcroForm if present for fingerprint computation
     let acroform = catalog.acroform_ref.and_then(|ref_| {
-        resolver.resolve(ref_).ok().and_then(|obj| obj.as_dict().cloned())
+        resolver
+            .resolve(ref_)
+            .ok()
+            .and_then(|obj| obj.as_dict().cloned())
     });
 
     // Build fingerprint input (without full page tree for lazy extraction)
@@ -663,22 +675,29 @@ pub fn extract_pdf(
     // Parse page range if specified
     let mut page_count = all_pages.len();
     let mut page_range_diagnostics = Vec::new();
-    let page_filter: Option<std::collections::BTreeSet<usize>> = if let Some(ref range_str) = options.pages {
-        Some(crate::pages::parse_pages(range_str, page_count, &mut page_range_diagnostics)?)
-    } else {
-        None
-    };
+    let page_filter: Option<std::collections::BTreeSet<usize>> =
+        if let Some(ref range_str) = options.pages {
+            Some(crate::pages::parse_pages(
+                range_str,
+                page_count,
+                &mut page_range_diagnostics,
+            )?)
+        } else {
+            None
+        };
 
     // Phase 1.8: Hint stream prefetch for linearized PDFs
     // If the PDF is linearized and has a hint stream, prefetch the pages
     // that will be extracted. This reduces latency by pipelining HTTP requests.
     if let Some(ref page_filter) = page_filter {
-        use crate::parser::xref::detect_linearization;
         use crate::parser::hint_stream::prefetch_from_hint_stream;
+        use crate::parser::xref::detect_linearization;
 
         let mut prefetch_diagnostics = Vec::new();
         if let Some(lin_info) = detect_linearization(&source) {
-            if let (Some(hint_offset), Some(hint_length)) = (lin_info.hint_stream_offset, lin_info.hint_stream_length) {
+            if let (Some(hint_offset), Some(hint_length)) =
+                (lin_info.hint_stream_offset, lin_info.hint_stream_length)
+            {
                 // Prefetch the pages that will be extracted
                 // page_filter contains 0-based page indices
                 prefetch_from_hint_stream(
@@ -886,7 +905,11 @@ pub fn extract_pdf(
     // Phase 7.5: Extract embedded file attachments from /EmbeddedFiles and /AF
     let attachments = match resolver_arc.resolve(root_ref) {
         Ok(catalog_obj) => match catalog_obj.as_dict() {
-            Some(catalog_dict) => extract_attachments(&resolver_arc, catalog_dict, Some(&source as &dyn ParserPdfSource)),
+            Some(catalog_dict) => extract_attachments(
+                &resolver_arc,
+                catalog_dict,
+                Some(&source as &dyn ParserPdfSource),
+            ),
             None => Vec::new(),
         },
         Err(_) => Vec::new(),
@@ -1540,10 +1563,7 @@ pub fn result_to_json(result: &ExtractionResult) -> serde_json::Value {
 /// - Each span's text is followed by a newline
 /// - Pages are concatenated without separator
 /// - Invisible text (rendering_mode=3) is excluded unless `include_invisible` is set
-pub fn extract_text(
-    pdf_path: &std::path::Path,
-    options: &ExtractionOptions,
-) -> Result<String> {
+pub fn extract_text(pdf_path: &std::path::Path, options: &ExtractionOptions) -> Result<String> {
     let result = extract_pdf(pdf_path, options)?;
 
     let mut text = String::new();
@@ -1656,15 +1676,14 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
         .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn ParserPdfSource)).map_err(
-        |diagnostics| {
+    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn ParserPdfSource))
+        .map_err(|diagnostics| {
             let msg = diagnostics
                 .first()
                 .map(|d| d.message.as_ref())
                 .unwrap_or("unknown error");
             anyhow::anyhow!("Failed to parse catalog: {}", msg)
-        },
-    )?;
+        })?;
 
     // Phase 4.5: Determine reading order algorithm
     // For v0.1.0-v0.3.0: Tagged PDFs emit TAGGED_PDF_STRUCT_TREE_DEFERRED and use XY-cut
@@ -1743,22 +1762,29 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
     // Parse page range if specified
     let mut page_count = all_pages.len();
     let mut page_range_diagnostics = Vec::new();
-    let page_filter: Option<std::collections::BTreeSet<usize>> = if let Some(ref range_str) = options.pages {
-        Some(crate::pages::parse_pages(range_str, page_count, &mut page_range_diagnostics)?)
-    } else {
-        None
-    };
+    let page_filter: Option<std::collections::BTreeSet<usize>> =
+        if let Some(ref range_str) = options.pages {
+            Some(crate::pages::parse_pages(
+                range_str,
+                page_count,
+                &mut page_range_diagnostics,
+            )?)
+        } else {
+            None
+        };
 
     // Phase 1.8: Hint stream prefetch for linearized PDFs
     // If the PDF is linearized and has a hint stream, prefetch the pages
     // that will be extracted. This reduces latency by pipelining HTTP requests.
     if let Some(ref page_filter) = page_filter {
-        use crate::parser::xref::detect_linearization;
         use crate::parser::hint_stream::prefetch_from_hint_stream;
+        use crate::parser::xref::detect_linearization;
 
         let mut prefetch_diagnostics = Vec::new();
         if let Some(lin_info) = detect_linearization(&source) {
-            if let (Some(hint_offset), Some(hint_length)) = (lin_info.hint_stream_offset, lin_info.hint_stream_length) {
+            if let (Some(hint_offset), Some(hint_length)) =
+                (lin_info.hint_stream_offset, lin_info.hint_stream_length)
+            {
                 // Prefetch the pages that will be extracted
                 // page_filter contains 0-based page indices
                 prefetch_from_hint_stream(
@@ -2004,19 +2030,21 @@ where
         .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn ParserPdfSource)).map_err(
-        |diagnostics| {
+    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn ParserPdfSource))
+        .map_err(|diagnostics| {
             let msg = diagnostics
                 .first()
                 .map(|d| d.message.as_ref())
                 .unwrap_or("unknown error");
             anyhow::anyhow!("Failed to parse catalog: {}", msg)
-        },
-    )?;
+        })?;
 
     // Resolve AcroForm if present for fingerprint computation
     let acroform = catalog.acroform_ref.and_then(|ref_| {
-        resolver.resolve(ref_).ok().and_then(|obj| obj.as_dict().cloned())
+        resolver
+            .resolve(ref_)
+            .ok()
+            .and_then(|obj| obj.as_dict().cloned())
     });
 
     // Wrap resolver in Arc for sharing across threads
@@ -2390,10 +2418,7 @@ fn extract_page_from_dict(
         let XYCutResult { order, .. } = xy_cut(&block_with_bbox, page_width_f32, page_height_f32);
 
         // Reorder blocks according to XY-cut result
-        order
-            .into_iter()
-            .map(|i| blocks[i].clone())
-            .collect()
+        order.into_iter().map(|i| blocks[i].clone()).collect()
     } else {
         blocks
     };
@@ -2418,7 +2443,8 @@ fn extract_page_from_dict(
         for line in &mut block.lines {
             for span in &mut line.spans {
                 // Mojibake detection and repair using the correction pipeline
-                let _repaired = crate::layout::correction::detect_and_repair_mojibake(span, simple_scorer);
+                let _repaired =
+                    crate::layout::correction::detect_and_repair_mojibake(span, simple_scorer);
 
                 // Hyphenation repair (end-of-line hyphens)
                 // This would require more context; for now just handle simple cases
@@ -2482,7 +2508,8 @@ fn extract_page_from_dict(
         }
 
         // Compute block text by concatenating line texts with spaces
-        let block_text: String = block.lines
+        let block_text: String = block
+            .lines
             .iter()
             .flat_map(|line| line.spans.iter().map(|span| span.text.as_str()))
             .collect::<Vec<&str>>()

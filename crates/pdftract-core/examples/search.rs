@@ -22,7 +22,10 @@ struct Match {
 fn main() -> Result<()> {
     // Get PDF path and pattern from command line
     let args: Vec<String> = env::args().collect();
-    let pdf_path = args.get(1).map(|s| s.as_str()).unwrap_or("tests/fixtures/sample.pdf");
+    let pdf_path = args
+        .get(1)
+        .map(|s| s.as_str())
+        .unwrap_or("tests/fixtures/sample.pdf");
     let pattern = args.get(2).map(|s| s.as_str()).unwrap_or("the");
 
     // Compile regex pattern (case-insensitive by default)
@@ -56,7 +59,10 @@ fn main() -> Result<()> {
 
         for m in &matches {
             println!("Page {}: \"{}\"", m.page_number, m.text);
-            println!("  Bbox: [{}, {}, {}, {}]", m.bbox[0], m.bbox[1], m.bbox[2], m.bbox[3]);
+            println!(
+                "  Bbox: [{}, {}, {}, {}]",
+                m.bbox[0], m.bbox[1], m.bbox[2], m.bbox[3]
+            );
             println!();
         }
     }

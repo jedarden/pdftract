@@ -253,11 +253,8 @@ pub fn open_source(
         // Check if Range is supported; if not, trigger fallback
         if !source.supports_range() {
             // Download to temp file and memory-map
-            let (temp_file, mmap_source) = http_range::download_to_temp_and_mmap(
-                source.url(),
-                source.headers(),
-                None,
-            )?;
+            let (temp_file, mmap_source) =
+                http_range::download_to_temp_and_mmap(source.url(), source.headers(), None)?;
 
             // Wrap in TempMmapSource to keep temp file alive
             return Ok(Box::new(TempMmapSource::new(temp_file, mmap_source)));
@@ -327,7 +324,7 @@ pub fn open_remote(
     if !source.supports_range() {
         // Emit REMOTE_NO_RANGE_SUPPORT diagnostic
         if let Some(diags) = diagnostics.as_mut() {
-            use crate::diagnostics::{Diagnostic, DiagCode};
+            use crate::diagnostics::{DiagCode, Diagnostic};
             diags.push(Diagnostic::with_static_no_offset(
                 DiagCode::RemoteNoRangeSupport,
                 "Server does not support Range requests; falling back to full file download",
@@ -335,11 +332,8 @@ pub fn open_remote(
         }
 
         // Download to temp file and memory-map
-        let (temp_file, mmap_source) = http_range::download_to_temp_and_mmap(
-            source.url(),
-            source.headers(),
-            diagnostics,
-        )?;
+        let (temp_file, mmap_source) =
+            http_range::download_to_temp_and_mmap(source.url(), source.headers(), diagnostics)?;
 
         // Wrap in TempMmapSource to keep temp file alive
         return Ok(Box::new(TempMmapSource::new(temp_file, mmap_source)));
@@ -389,9 +383,9 @@ mod memory;
 mod mmap;
 
 pub use file_source::FileSource;
-pub use memory::MemorySource;
 #[cfg(feature = "remote")]
 pub use http_range::HttpRangeSource;
+pub use memory::MemorySource;
 pub use mmap::MmapSource;
 
 /// Wrapper that keeps a temp file alive for the lifetime of a MmapSource.

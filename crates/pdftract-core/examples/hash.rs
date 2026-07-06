@@ -21,7 +21,10 @@ use std::path::Path;
 fn main() -> Result<()> {
     // Get PDF path from command line, or use a default
     let args: Vec<String> = env::args().collect();
-    let pdf_path = args.get(1).map(|s| s.as_str()).unwrap_or("tests/fixtures/sample.pdf");
+    let pdf_path = args
+        .get(1)
+        .map(|s| s.as_str())
+        .unwrap_or("tests/fixtures/sample.pdf");
 
     // Open the PDF
     let source = FileSource::open(Path::new(pdf_path))?;
@@ -58,19 +61,32 @@ fn main() -> Result<()> {
         .and_then(|o| o.as_ref())
         .ok_or_else(|| anyhow::anyhow!("No /Root in trailer"))?;
 
-    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource))
-        .map_err(|d| anyhow::anyhow!("Catalog parse failed: {}", d.first().map(|d| d.message.as_ref()).unwrap_or("unknown")))?;
+    let catalog =
+        parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource)).map_err(|d| {
+            anyhow::anyhow!(
+                "Catalog parse failed: {}",
+                d.first().map(|d| d.message.as_ref()).unwrap_or("unknown")
+            )
+        })?;
 
     // Flatten page tree
-    let pages = flatten_page_tree(&resolver, catalog.pages_ref)
-        .map_err(|d| anyhow::anyhow!("Page tree parse failed: {}", d.first().map(|d| d.message.as_ref()).unwrap_or("unknown")))?;
+    let pages = flatten_page_tree(&resolver, catalog.pages_ref).map_err(|d| {
+        anyhow::anyhow!(
+            "Page tree parse failed: {}",
+            d.first().map(|d| d.message.as_ref()).unwrap_or("unknown")
+        )
+    })?;
 
     // Build fingerprint input
     let page_count = pages.len() as u32;
     let fingerprint_pages = pages
         .iter()
         .map(|page| PageFingerprintData {
-            content_streams: page.contents.iter().map(|&r| ContentStreamData::Indirect(r)).collect(),
+            content_streams: page
+                .contents
+                .iter()
+                .map(|&r| ContentStreamData::Indirect(r))
+                .collect(),
             resources: None,
             media_box: page.media_box,
             crop_box: page.crop_box,
@@ -87,7 +103,11 @@ fn main() -> Result<()> {
     };
 
     // Compute fingerprint
-    let fingerprint = compute_fingerprint(&fingerprint_input, &resolver, Some(&source as &dyn PdfSource));
+    let fingerprint = compute_fingerprint(
+        &fingerprint_input,
+        &resolver,
+        Some(&source as &dyn PdfSource),
+    );
 
     println!("{}", fingerprint);
 

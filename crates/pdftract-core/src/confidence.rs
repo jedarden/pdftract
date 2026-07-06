@@ -137,7 +137,10 @@ pub enum ConfidenceSource {
 /// This function uses an exhaustive match on [`UnicodeSource`]. If a new
 /// variant is added to the enum, this function will fail to compile until
 /// a match arm is added, ensuring the mapping is always complete.
-pub fn map_confidence_source(unicode_source: UnicodeSource, corrected_in_4_7: bool) -> ConfidenceSource {
+pub fn map_confidence_source(
+    unicode_source: UnicodeSource,
+    corrected_in_4_7: bool,
+) -> ConfidenceSource {
     match unicode_source {
         UnicodeSource::Ocr => ConfidenceSource::Ocr,
         UnicodeSource::ShapeMatch | UnicodeSource::Unknown => ConfidenceSource::Heuristic,
@@ -314,8 +317,16 @@ mod tests {
             (UnicodeSource::Agl, false, ConfidenceSource::Native),
             (UnicodeSource::Agl, true, ConfidenceSource::Heuristic),
             (UnicodeSource::Fingerprint, false, ConfidenceSource::Native),
-            (UnicodeSource::Fingerprint, true, ConfidenceSource::Heuristic),
-            (UnicodeSource::ShapeMatch, false, ConfidenceSource::Heuristic),
+            (
+                UnicodeSource::Fingerprint,
+                true,
+                ConfidenceSource::Heuristic,
+            ),
+            (
+                UnicodeSource::ShapeMatch,
+                false,
+                ConfidenceSource::Heuristic,
+            ),
             (UnicodeSource::ShapeMatch, true, ConfidenceSource::Heuristic),
             (UnicodeSource::Unknown, false, ConfidenceSource::Heuristic),
             (UnicodeSource::Unknown, true, ConfidenceSource::Heuristic),
@@ -328,7 +339,9 @@ mod tests {
                 map_confidence_source(*source, *corrected),
                 *expected,
                 "map_confidence_source({:?}, {}) should be {:?}",
-                source, corrected, expected
+                source,
+                corrected,
+                expected
             );
         }
     }

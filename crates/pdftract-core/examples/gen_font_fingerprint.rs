@@ -37,7 +37,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Scan Unicode ranges that the font likely supports
     // We test each codepoint and record the mapping
-    for cp in 0x20..0x7F {  // Printable ASCII
+    for cp in 0x20..0x7F {
+        // Printable ASCII
         let c = char::from_u32(cp).unwrap();
         if let Some(gid) = face.glyph_index(c) {
             gid_to_cp.push((gid.0, cp));

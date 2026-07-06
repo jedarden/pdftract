@@ -17,10 +17,10 @@
 //! exact match. Fixtures without expected files generate them for
 //! manual review on first run.
 
-use std::fs;
-use std::path::{PathBuf};
 use pdftract_core::extract::extract_pdf;
 use pdftract_core::options::ExtractionOptions;
+use std::fs;
+use std::path::PathBuf;
 
 /// Fixture directory for JSON schema validation tests
 const FIXTURES_DIR: &str = "tests/fixtures/json_schema";
@@ -38,8 +38,12 @@ impl Fixture {
         let fixtures_dir = PathBuf::from(FIXTURES_DIR);
         let mut fixtures = Vec::new();
 
-        let entries = fs::read_dir(&fixtures_dir)
-            .unwrap_or_else(|e| panic!("Failed to read fixtures directory '{}': {}", FIXTURES_DIR, e));
+        let entries = fs::read_dir(&fixtures_dir).unwrap_or_else(|e| {
+            panic!(
+                "Failed to read fixtures directory '{}': {}",
+                FIXTURES_DIR, e
+            )
+        });
 
         for entry in entries {
             let entry = entry.unwrap();
@@ -50,7 +54,8 @@ impl Fixture {
                 continue;
             }
 
-            let name = path.file_stem()
+            let name = path
+                .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or("unknown")
                 .to_string();
@@ -60,7 +65,11 @@ impl Fixture {
             fixtures.push(Fixture {
                 name,
                 pdf_path: path,
-                expected_path: if expected_path.exists() { Some(expected_path) } else { None },
+                expected_path: if expected_path.exists() {
+                    Some(expected_path)
+                } else {
+                    None
+                },
             });
         }
 
@@ -73,16 +82,18 @@ impl Fixture {
 /// Load the bundled JSON Schema for validation.
 fn load_schema() -> jsonschema::Validator {
     let schema_json = include_str!("../../../docs/schema/v1.0/pdftract.schema.json");
-    let schema: serde_json::Value = serde_json::from_str(schema_json)
-        .expect("Bundled schema is not valid JSON");
-    jsonschema::validator_for(&schema)
-        .expect("Bundled schema is not valid JSON Schema")
+    let schema: serde_json::Value =
+        serde_json::from_str(schema_json).expect("Bundled schema is not valid JSON");
+    jsonschema::validator_for(&schema).expect("Bundled schema is not valid JSON Schema")
 }
 
 /// Validate a JSON value against the schema.
 ///
 /// Returns Ok(()) if validation passes, Err with error details otherwise.
-fn validate_json(schema: &jsonschema::Validator, value: &serde_json::Value) -> Result<(), Vec<String>> {
+fn validate_json(
+    schema: &jsonschema::Validator,
+    value: &serde_json::Value,
+) -> Result<(), Vec<String>> {
     let result = schema.validate(value);
     match result {
         Ok(_) => Ok(()),
@@ -126,11 +137,17 @@ fn test_fixture(fixture: &Fixture) {
 
     // If expected JSON exists, verify exact match (for regression detection)
     if let Some(ref expected_path) = fixture.expected_path {
-        let expected_json = fs::read_to_string(expected_path)
-            .unwrap_or_else(|e| panic!("Failed to read expected JSON for '{}': {}", fixture.name, e));
+        let expected_json = fs::read_to_string(expected_path).unwrap_or_else(|e| {
+            panic!("Failed to read expected JSON for '{}': {}", fixture.name, e)
+        });
 
         let expected_value: serde_json::Value = serde_json::from_str(&expected_json)
-            .unwrap_or_else(|e| panic!("Failed to parse expected JSON for '{}': {}", fixture.name, e));
+            .unwrap_or_else(|e| {
+                panic!(
+                    "Failed to parse expected JSON for '{}': {}",
+                    fixture.name, e
+                )
+            });
 
         if json_value != expected_value {
             // For helpful debugging, show a diff-like comparison
@@ -146,7 +163,10 @@ fn test_fixture(fixture: &Fixture) {
             fs::write(&actual_path, json_str)
                 .unwrap_or_else(|e| eprintln!("Warning: Failed to write actual JSON: {}", e));
 
-            panic!("Fixture '{}' output does not match expected JSON", fixture.name);
+            panic!(
+                "Fixture '{}' output does not match expected JSON",
+                fixture.name
+            );
         }
     } else {
         // No expected file exists - generate it for manual review
@@ -165,7 +185,11 @@ fn test_fixture(fixture: &Fixture) {
 #[test]
 fn test_all_fixtures_schema_compliance() {
     let fixtures = Fixture::load_all();
-    assert!(!fixtures.is_empty(), "No fixtures found in '{}'", FIXTURES_DIR);
+    assert!(
+        !fixtures.is_empty(),
+        "No fixtures found in '{}'",
+        FIXTURES_DIR
+    );
 
     for fixture in &fixtures {
         test_fixture(fixture);
@@ -179,7 +203,10 @@ fn test_simple_invoice() {
     let fixture = Fixture {
         name: "simple_invoice".to_string(),
         pdf_path: PathBuf::from(format!("{}/simple_invoice.pdf", FIXTURES_DIR)),
-        expected_path: Some(PathBuf::from(format!("{}/simple_invoice.expected.json", FIXTURES_DIR))),
+        expected_path: Some(PathBuf::from(format!(
+            "{}/simple_invoice.expected.json",
+            FIXTURES_DIR
+        ))),
     };
     if fixture.pdf_path.exists() {
         test_fixture(&fixture);
@@ -191,7 +218,10 @@ fn test_sample() {
     let fixture = Fixture {
         name: "sample".to_string(),
         pdf_path: PathBuf::from(format!("{}/sample.pdf", FIXTURES_DIR)),
-        expected_path: Some(PathBuf::from(format!("{}/sample.expected.json", FIXTURES_DIR))),
+        expected_path: Some(PathBuf::from(format!(
+            "{}/sample.expected.json",
+            FIXTURES_DIR
+        ))),
     };
     if fixture.pdf_path.exists() {
         test_fixture(&fixture);
@@ -203,7 +233,10 @@ fn test_encrypted_rc4() {
     let fixture = Fixture {
         name: "EC-04-rc4-encrypted".to_string(),
         pdf_path: PathBuf::from(format!("{}/EC-04-rc4-encrypted.pdf", FIXTURES_DIR)),
-        expected_path: Some(PathBuf::from(format!("{}/EC-04-rc4-encrypted.expected.json", FIXTURES_DIR))),
+        expected_path: Some(PathBuf::from(format!(
+            "{}/EC-04-rc4-encrypted.expected.json",
+            FIXTURES_DIR
+        ))),
     };
     if fixture.pdf_path.exists() {
         test_fixture(&fixture);
@@ -215,7 +248,10 @@ fn test_encrypted_aes128() {
     let fixture = Fixture {
         name: "EC-05-aes128-encrypted".to_string(),
         pdf_path: PathBuf::from(format!("{}/EC-05-aes128-encrypted.pdf", FIXTURES_DIR)),
-        expected_path: Some(PathBuf::from(format!("{}/EC-05-aes128-encrypted.expected.json", FIXTURES_DIR))),
+        expected_path: Some(PathBuf::from(format!(
+            "{}/EC-05-aes128-encrypted.expected.json",
+            FIXTURES_DIR
+        ))),
     };
     if fixture.pdf_path.exists() {
         test_fixture(&fixture);
@@ -227,7 +263,10 @@ fn test_valid_minimal() {
     let fixture = Fixture {
         name: "valid-minimal".to_string(),
         pdf_path: PathBuf::from(format!("{}/valid-minimal.pdf", FIXTURES_DIR)),
-        expected_path: Some(PathBuf::from(format!("{}/valid-minimal.expected.json", FIXTURES_DIR))),
+        expected_path: Some(PathBuf::from(format!(
+            "{}/valid-minimal.expected.json",
+            FIXTURES_DIR
+        ))),
     };
     if fixture.pdf_path.exists() {
         test_fixture(&fixture);

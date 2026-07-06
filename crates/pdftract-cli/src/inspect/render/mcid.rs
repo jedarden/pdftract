@@ -61,7 +61,7 @@ pub fn render_mcid_labels(
         // Position text at top-right corner with a small offset
         // In PDF coordinates, y1 is the top (higher y value)
         let x = x1 - 4.0; // Small offset from right edge (text-anchor: end)
-        let y = y1 - 4.0;  // Small offset from top edge (text baseline)
+        let y = y1 - 4.0; // Small offset from top edge (text baseline)
 
         labels.push(format!(
             r##"<text x="{:.2}" y="{:.2}" class="mcid-label" fill="{}" font-size="10" font-family="monospace" font-weight="bold" text-anchor="end" data-mcid="{}" data-block-index="{}" data-block-kind="{}">{}</text>"##,
@@ -106,14 +106,22 @@ mod tests {
 
     #[test]
     fn test_render_mcid_labels_none_map() {
-        let blocks = vec![make_test_block("paragraph", "Test", [0.0, 0.0, 100.0, 20.0])];
+        let blocks = vec![make_test_block(
+            "paragraph",
+            "Test",
+            [0.0, 0.0, 100.0, 20.0],
+        )];
         let result = render_mcid_labels(&None, &blocks);
         assert!(result.is_empty());
     }
 
     #[test]
     fn test_render_mcid_labels_empty_map() {
-        let blocks = vec![make_test_block("paragraph", "Test", [0.0, 0.0, 100.0, 20.0])];
+        let blocks = vec![make_test_block(
+            "paragraph",
+            "Test",
+            [0.0, 0.0, 100.0, 20.0],
+        )];
         let empty_map: HashMap<u32, usize> = HashMap::new();
         let result = render_mcid_labels(&Some(empty_map), &blocks);
         assert!(result.is_empty());
@@ -222,11 +230,15 @@ mod tests {
 
     #[test]
     fn test_render_mcid_labels_out_of_bounds() {
-        let blocks = vec![make_test_block("paragraph", "Test", [0.0, 0.0, 100.0, 20.0])];
+        let blocks = vec![make_test_block(
+            "paragraph",
+            "Test",
+            [0.0, 0.0, 100.0, 20.0],
+        )];
 
         let mut mcid_map: HashMap<u32, usize> = HashMap::new();
-        mcid_map.insert(10, 0);  // Valid
-        mcid_map.insert(20, 5);  // Out of bounds (only 1 block)
+        mcid_map.insert(10, 0); // Valid
+        mcid_map.insert(20, 5); // Out of bounds (only 1 block)
 
         let result = render_mcid_labels(&Some(mcid_map), &blocks);
         // Should only have one label (the valid one)
@@ -237,7 +249,11 @@ mod tests {
     #[test]
     fn test_render_mcid_labels_zero_mcid() {
         // MCID 0 is valid (per plan)
-        let blocks = vec![make_test_block("paragraph", "Test", [0.0, 0.0, 100.0, 20.0])];
+        let blocks = vec![make_test_block(
+            "paragraph",
+            "Test",
+            [0.0, 0.0, 100.0, 20.0],
+        )];
 
         let mut mcid_map: HashMap<u32, usize> = HashMap::new();
         mcid_map.insert(0, 0);
@@ -250,7 +266,11 @@ mod tests {
 
     #[test]
     fn test_render_mcid_labels_output_is_valid_svg() {
-        let blocks = vec![make_test_block("paragraph", "Test", [0.0, 0.0, 100.0, 20.0])];
+        let blocks = vec![make_test_block(
+            "paragraph",
+            "Test",
+            [0.0, 0.0, 100.0, 20.0],
+        )];
 
         let mut mcid_map: HashMap<u32, usize> = HashMap::new();
         mcid_map.insert(42, 0);
@@ -278,7 +298,11 @@ mod tests {
 
     #[test]
     fn test_render_mcid_labels_css_class() {
-        let blocks = vec![make_test_block("paragraph", "Test", [0.0, 0.0, 100.0, 20.0])];
+        let blocks = vec![make_test_block(
+            "paragraph",
+            "Test",
+            [0.0, 0.0, 100.0, 20.0],
+        )];
 
         let mut mcid_map: HashMap<u32, usize> = HashMap::new();
         mcid_map.insert(7, 0);
@@ -289,7 +313,11 @@ mod tests {
 
     #[test]
     fn test_render_mcid_labels_color() {
-        let blocks = vec![make_test_block("paragraph", "Test", [0.0, 0.0, 100.0, 20.0])];
+        let blocks = vec![make_test_block(
+            "paragraph",
+            "Test",
+            [0.0, 0.0, 100.0, 20.0],
+        )];
 
         let mut mcid_map: HashMap<u32, usize> = HashMap::new();
         mcid_map.insert(3, 0);
@@ -301,7 +329,11 @@ mod tests {
 
     #[test]
     fn test_render_mcid_labels_font_properties() {
-        let blocks = vec![make_test_block("paragraph", "Test", [0.0, 0.0, 100.0, 20.0])];
+        let blocks = vec![make_test_block(
+            "paragraph",
+            "Test",
+            [0.0, 0.0, 100.0, 20.0],
+        )];
 
         let mut mcid_map: HashMap<u32, usize> = HashMap::new();
         mcid_map.insert(15, 0);

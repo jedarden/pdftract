@@ -5,8 +5,8 @@
 
 #![cfg(feature = "remote")]
 
-use std::io;
 use pdftract_core::source::{open_remote, RemoteOpts};
+use std::io;
 
 /// Test 1: TLS handshake with self-signed cert (via badssl.com).
 ///
@@ -36,7 +36,10 @@ async fn test_tls_self_signed_cert_rejected() {
         // Error message should mention TLS or certificate
         let msg = e.to_string().to_lowercase();
         assert!(
-            msg.contains("tls") || msg.contains("certificate") || msg.contains("handshake") || msg.contains("verify"),
+            msg.contains("tls")
+                || msg.contains("certificate")
+                || msg.contains("handshake")
+                || msg.contains("verify"),
             "Error message should mention TLS/certificate/handshake/verify, got: {}",
             e
         );
@@ -58,7 +61,10 @@ async fn test_tls_expired_cert_rejected() {
     if let Err(e) = result {
         let msg = e.to_string().to_lowercase();
         assert!(
-            msg.contains("tls") || msg.contains("certificate") || msg.contains("expired") || msg.contains("valid"),
+            msg.contains("tls")
+                || msg.contains("certificate")
+                || msg.contains("expired")
+                || msg.contains("valid"),
             "Error message should mention TLS/certificate/expired/valid, got: {}",
             e
         );
@@ -81,7 +87,10 @@ async fn test_tls_wrong_host_rejected() {
         let msg = e.to_string().to_lowercase();
         // The error should be related to TLS validation
         assert!(
-            msg.contains("tls") || msg.contains("certificate") || msg.contains("host") || msg.contains("verify"),
+            msg.contains("tls")
+                || msg.contains("certificate")
+                || msg.contains("host")
+                || msg.contains("verify"),
             "Error should mention TLS/certificate/host/verify, got: {}",
             e
         );
@@ -100,8 +109,11 @@ async fn test_tls_error_exit_code() {
     if let Err(e) = result {
         // TLS errors should produce PermissionDenied kind
         // The CLI maps PermissionDenied to exit code 6
-        assert_eq!(e.kind(), io::ErrorKind::PermissionDenied,
-                   "TLS failure should produce PermissionDenied error kind for exit code 6");
+        assert_eq!(
+            e.kind(),
+            io::ErrorKind::PermissionDenied,
+            "TLS failure should produce PermissionDenied error kind for exit code 6"
+        );
     }
 }
 
@@ -120,8 +132,11 @@ async fn test_tls_valid_cert_works() {
     if let Err(e) = result {
         let msg = e.to_string().to_lowercase();
         // Should NOT be a TLS/certificate error
-        assert!(!msg.contains("tls") && !msg.contains("certificate") && !msg.contains("handshake"),
-               "Valid HTTPS should not trigger TLS errors, got: {}", e);
+        assert!(
+            !msg.contains("tls") && !msg.contains("certificate") && !msg.contains("handshake"),
+            "Valid HTTPS should not trigger TLS errors, got: {}",
+            e
+        );
     }
 }
 
@@ -165,7 +180,10 @@ async fn test_inv8_no_panic_on_tls_errors() {
 #[tokio::test]
 #[cfg(feature = "remote")]
 async fn test_http_no_tls_validation() {
-    use wiremock::{MockServer, Mock, ResponseTemplate, matchers::{method, path}};
+    use wiremock::{
+        matchers::{method, path},
+        Mock, MockServer, ResponseTemplate,
+    };
 
     let mock_server = MockServer::start().await;
 
@@ -176,7 +194,7 @@ async fn test_http_no_tls_validation() {
                 .insert_header("Content-Length", "1000")
                 .insert_header("Accept-Ranges", "bytes")
                 .insert_header("Content-Type", "application/pdf")
-                .set_body_bytes("")
+                .set_body_bytes(""),
         )
         .mount(&mock_server)
         .await;
@@ -185,7 +203,10 @@ async fn test_http_no_tls_validation() {
     let url = format!("{}/test.pdf", mock_server.uri());
 
     // Verify it's HTTP, not HTTPS
-    assert!(url.starts_with("http://"), "Wiremock should provide HTTP URLs");
+    assert!(
+        url.starts_with("http://"),
+        "Wiremock should provide HTTP URLs"
+    );
 
     let opts = RemoteOpts::new();
     let result = open_remote(&url, &opts, None);
@@ -195,7 +216,10 @@ async fn test_http_no_tls_validation() {
     if let Err(e) = result {
         // If it fails, it shouldn't be a TLS error
         let msg = e.to_string().to_lowercase();
-        assert!(!msg.contains("tls") && !msg.contains("certificate") && !msg.contains("handshake"),
-               "HTTP URLs should not trigger TLS validation errors, got: {}", e);
+        assert!(
+            !msg.contains("tls") && !msg.contains("certificate") && !msg.contains("handshake"),
+            "HTTP URLs should not trigger TLS validation errors, got: {}",
+            e
+        );
     }
 }

@@ -19,7 +19,7 @@
 
 use anyhow::Result;
 use regex::Regex;
-use std::sync::{Arc, OnceLock, LazyLock};
+use std::sync::{Arc, LazyLock, OnceLock};
 
 /// Known-secret patterns that should never appear in log output.
 ///
@@ -72,9 +72,7 @@ pub fn redact_log_line(line: &str) -> String {
 
     // Apply each secret pattern
     for pattern in get_secret_patterns().iter() {
-        redacted = pattern
-            .replace_all(&redacted, "[REDACTED]")
-            .to_string();
+        redacted = pattern.replace_all(&redacted, "[REDACTED]").to_string();
     }
 
     // Additional redaction for very long strings that might be secrets
@@ -105,7 +103,9 @@ pub fn redact_log_line(line: &str) -> String {
 /// true if the header is sensitive and should be redacted
 pub fn is_sensitive_header(header_name: &str) -> bool {
     let name_lower = header_name.to_lowercase();
-    SENSITIVE_HEADERS.iter().any(|&sensitive| name_lower == sensitive)
+    SENSITIVE_HEADERS
+        .iter()
+        .any(|&sensitive| name_lower == sensitive)
 }
 
 /// Redact a header value for logging.
@@ -146,9 +146,7 @@ pub fn redact_audit_log_line(line: &str) -> String {
 
     // Apply each secret pattern (same as redact_log_line)
     for pattern in get_secret_patterns().iter() {
-        redacted = pattern
-            .replace_all(&redacted, "[REDACTED]")
-            .to_string();
+        redacted = pattern.replace_all(&redacted, "[REDACTED]").to_string();
     }
 
     // Note: We do NOT apply the long-word truncation here because audit logs
@@ -180,7 +178,7 @@ impl LogPolicyFilter {
     ///
     /// # Returns
     ///
-/// The filtered log message with secrets redacted
+    /// The filtered log message with secrets redacted
     pub fn filter_message(&self, message: &str) -> String {
         redact_log_line(message)
     }
@@ -249,8 +247,14 @@ mod tests {
 
     #[test]
     fn test_redact_header_value() {
-        assert_eq!(redact_header_value("Authorization", "Bearer token"), "[REDACTED]");
-        assert_eq!(redact_header_value("Content-Type", "application/json"), "application/json");
+        assert_eq!(
+            redact_header_value("Authorization", "Bearer token"),
+            "[REDACTED]"
+        );
+        assert_eq!(
+            redact_header_value("Content-Type", "application/json"),
+            "application/json"
+        );
     }
 
     #[test]

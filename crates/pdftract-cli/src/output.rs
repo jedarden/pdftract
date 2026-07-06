@@ -19,7 +19,10 @@ impl Format {
             "markdown" | "md" => Ok(Format::Markdown),
             "text" | "txt" => Ok(Format::Text),
             "ndjson" => Ok(Format::Ndjson),
-            _ => Err(anyhow!("unknown format: '{}', expected one of: json, markdown, text, ndjson", s)),
+            _ => Err(anyhow!(
+                "unknown format: '{}', expected one of: json, markdown, text, ndjson",
+                s
+            )),
         }
     }
 
@@ -147,10 +150,18 @@ impl OutputConfig {
         if !self.json.is_empty() {
             let format = Format::Json;
             if self.json.len() > 1 {
-                return Err(Self::duplicate_format_error(format, &FormatSource::Flag("--json"), &FormatSource::Flag("--json")));
+                return Err(Self::duplicate_format_error(
+                    format,
+                    &FormatSource::Flag("--json"),
+                    &FormatSource::Flag("--json"),
+                ));
             }
             if let Some(existing) = format_sources.get(&format) {
-                return Err(Self::duplicate_format_error(format, existing, &FormatSource::Flag("--json")));
+                return Err(Self::duplicate_format_error(
+                    format,
+                    existing,
+                    &FormatSource::Flag("--json"),
+                ));
             }
             format_sources.insert(format, FormatSource::Flag("--json"));
             let dest = Destination::from_path(self.json[0].clone());
@@ -165,10 +176,18 @@ impl OutputConfig {
         if !self.md.is_empty() {
             let format = Format::Markdown;
             if self.md.len() > 1 {
-                return Err(Self::duplicate_format_error(format, &FormatSource::Flag("--md"), &FormatSource::Flag("--md")));
+                return Err(Self::duplicate_format_error(
+                    format,
+                    &FormatSource::Flag("--md"),
+                    &FormatSource::Flag("--md"),
+                ));
             }
             if let Some(existing) = format_sources.get(&format) {
-                return Err(Self::duplicate_format_error(format, existing, &FormatSource::Flag("--md")));
+                return Err(Self::duplicate_format_error(
+                    format,
+                    existing,
+                    &FormatSource::Flag("--md"),
+                ));
             }
             format_sources.insert(format, FormatSource::Flag("--md"));
             let dest = Destination::from_path(self.md[0].clone());
@@ -183,10 +202,18 @@ impl OutputConfig {
         if !self.text.is_empty() {
             let format = Format::Text;
             if self.text.len() > 1 {
-                return Err(Self::duplicate_format_error(format, &FormatSource::Flag("--text"), &FormatSource::Flag("--text")));
+                return Err(Self::duplicate_format_error(
+                    format,
+                    &FormatSource::Flag("--text"),
+                    &FormatSource::Flag("--text"),
+                ));
             }
             if let Some(existing) = format_sources.get(&format) {
-                return Err(Self::duplicate_format_error(format, existing, &FormatSource::Flag("--text")));
+                return Err(Self::duplicate_format_error(
+                    format,
+                    existing,
+                    &FormatSource::Flag("--text"),
+                ));
             }
             format_sources.insert(format, FormatSource::Flag("--text"));
             let dest = Destination::from_path(self.text[0].clone());
@@ -201,7 +228,11 @@ impl OutputConfig {
         if self.ndjson {
             let format = Format::Ndjson;
             if let Some(existing) = format_sources.get(&format) {
-                return Err(Self::duplicate_format_error(format, existing, &FormatSource::Flag("--ndjson")));
+                return Err(Self::duplicate_format_error(
+                    format,
+                    existing,
+                    &FormatSource::Flag("--ndjson"),
+                ));
             }
             format_sources.insert(format, FormatSource::Flag("--ndjson"));
             stdout_spec = Some(OutputSpec::new(format, Destination::Stdout));
@@ -218,7 +249,11 @@ impl OutputConfig {
             for format_str in &self.format_list {
                 let format = Format::from_str(format_str)?;
                 if let Some(existing) = format_sources.get(&format) {
-                    return Err(Self::duplicate_format_error(format, existing, &FormatSource::FormatList));
+                    return Err(Self::duplicate_format_error(
+                        format,
+                        existing,
+                        &FormatSource::FormatList,
+                    ));
                 }
                 format_sources.insert(format, FormatSource::FormatList);
 
@@ -240,7 +275,9 @@ impl OutputConfig {
         }
 
         // Validation: ndjson is exclusive
-        if format_sources.contains_key(&Format::Ndjson) && specs.len() + stdout_spec.is_some() as usize > 1 {
+        if format_sources.contains_key(&Format::Ndjson)
+            && specs.len() + stdout_spec.is_some() as usize > 1
+        {
             return Err(anyhow!(
                 "--ndjson cannot be combined with other output formats"
             ));
@@ -262,7 +299,11 @@ impl OutputConfig {
     }
 
     /// Generate a helpful error message for duplicate format specifications
-    fn duplicate_format_error(format: Format, existing: &FormatSource, new: &FormatSource) -> anyhow::Error {
+    fn duplicate_format_error(
+        format: Format,
+        existing: &FormatSource,
+        new: &FormatSource,
+    ) -> anyhow::Error {
         match (existing, new) {
             (FormatSource::Flag(existing_flag), FormatSource::Flag(new_flag)) => {
                 anyhow!(
@@ -469,7 +510,9 @@ mod tests {
         let specs = config.build_specs().unwrap();
         assert_eq!(specs.len(), 2);
         assert_eq!(specs[0].format, Format::Json);
-        assert!(matches!(&specs[0].dest, Destination::File(p) if p.to_str().unwrap() == "out.json"));
+        assert!(
+            matches!(&specs[0].dest, Destination::File(p) if p.to_str().unwrap() == "out.json")
+        );
         assert_eq!(specs[1].format, Format::Markdown);
         assert!(matches!(&specs[1].dest, Destination::File(p) if p.to_str().unwrap() == "out.md"));
     }
@@ -481,9 +524,15 @@ mod tests {
         config.output_base = Some(PathBuf::from("output"));
         let specs = config.build_specs().unwrap();
         assert_eq!(specs.len(), 3);
-        assert!(matches!(&specs[0].dest, Destination::File(p) if p.to_str().unwrap() == "output.json"));
-        assert!(matches!(&specs[1].dest, Destination::File(p) if p.to_str().unwrap() == "output.md"));
-        assert!(matches!(&specs[2].dest, Destination::File(p) if p.to_str().unwrap() == "output.txt"));
+        assert!(
+            matches!(&specs[0].dest, Destination::File(p) if p.to_str().unwrap() == "output.json")
+        );
+        assert!(
+            matches!(&specs[1].dest, Destination::File(p) if p.to_str().unwrap() == "output.md")
+        );
+        assert!(
+            matches!(&specs[2].dest, Destination::File(p) if p.to_str().unwrap() == "output.txt")
+        );
     }
 
     #[test]
@@ -543,7 +592,9 @@ mod tests {
 
         let spec = OutputSpec::auto_named(Format::Ndjson, &base);
         assert_eq!(spec.format, Format::Ndjson);
-        assert!(matches!(spec.dest, Destination::File(p) if p.to_str().unwrap() == "output.ndjson"));
+        assert!(
+            matches!(spec.dest, Destination::File(p) if p.to_str().unwrap() == "output.ndjson")
+        );
     }
 
     #[test]

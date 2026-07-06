@@ -18,9 +18,9 @@
 #[cfg(feature = "decrypt")]
 use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
 #[cfg(feature = "decrypt")]
-use md5::Md5;
-#[cfg(feature = "decrypt")]
 use digest::Digest;
+#[cfg(feature = "decrypt")]
+use md5::Md5;
 
 type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
 
@@ -43,7 +43,11 @@ const AES_SALT: [u8; 4] = [0x73, 0x41, 0x6C, 0x54];
 /// The 16-byte AES-128 per-object key.
 #[cfg(feature = "decrypt")]
 #[must_use]
-pub fn derive_aes_128_object_key(file_key: &[u8], object_number: u32, generation: u16) -> [u8; AES_BLOCK_SIZE] {
+pub fn derive_aes_128_object_key(
+    file_key: &[u8],
+    object_number: u32,
+    generation: u16,
+) -> [u8; AES_BLOCK_SIZE] {
     // Object number as 3-byte little-endian
     let obj_bytes = object_number.to_le_bytes();
     // Generation as 2-byte little-endian
@@ -178,7 +182,10 @@ mod tests {
         let key1 = derive_aes_128_object_key(&file_key, 42, 0);
         let key2 = derive_aes_128_object_key(&file_key, 42, 1);
 
-        assert_ne!(key1, key2, "Different generation numbers should produce different keys");
+        assert_ne!(
+            key1, key2,
+            "Different generation numbers should produce different keys"
+        );
     }
 
     #[test]

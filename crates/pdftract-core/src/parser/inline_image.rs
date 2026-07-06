@@ -44,7 +44,7 @@ const EI_PRECEDING_WHITESPACE: [u8; 6] = [0x00, 0x09, 0x0A, 0x0C, 0x0D, 0x20];
 /// Shorthand key expansion table (ISO 32000-1 Table 92).
 ///
 /// Maps shorthand keys to their full key names.
-const SHORTHAND_EXPANSION: &[( &[u8], &[u8] )] = &[
+const SHORTHAND_EXPANSION: &[(&[u8], &[u8])] = &[
     (b"W", b"Width"),
     (b"H", b"Height"),
     (b"BPC", b"BitsPerComponent"),
@@ -397,9 +397,9 @@ fn validate_id_whitespace(lexer: &mut Lexer) {
     let remaining = lexer.remaining_bytes();
 
     // Check if the next byte is a valid whitespace character
-    let has_whitespace = remaining.first().map_or(false, |&b| {
-        matches!(b, b'\n' | b'\r' | b' ')
-    });
+    let has_whitespace = remaining
+        .first()
+        .map_or(false, |&b| matches!(b, b'\n' | b'\r' | b' '));
 
     if !has_whitespace {
         lexer.push_diagnostic(Diag::with_static_no_offset(
@@ -448,7 +448,10 @@ fn set_header_field(
             } else {
                 lexer.push_diagnostic(Diag::with_dynamic_no_offset(
                     DiagCode::StructInvalidType,
-                    format!("Expected integer for /BitsPerComponent, got {:?}", value_token),
+                    format!(
+                        "Expected integer for /BitsPerComponent, got {:?}",
+                        value_token
+                    ),
                 ));
             }
         }
@@ -486,7 +489,10 @@ fn set_header_field(
             } else {
                 lexer.push_diagnostic(Diag::with_dynamic_no_offset(
                     DiagCode::StructInvalidType,
-                    format!("Expected boolean or integer for /Interpolate, got {:?}", value_token),
+                    format!(
+                        "Expected boolean or integer for /Interpolate, got {:?}",
+                        value_token
+                    ),
                 ));
             }
         }
@@ -511,10 +517,7 @@ fn set_header_field(
 }
 
 /// Parse a color space value from a token.
-fn parse_color_space_value(
-    token: Token,
-    lexer: &mut Lexer,
-) -> Option<ColorSpaceValue> {
+fn parse_color_space_value(token: Token, lexer: &mut Lexer) -> Option<ColorSpaceValue> {
     match token {
         Token::Name(name_bytes) => {
             let name = String::from_utf8_lossy(&name_bytes).to_string();
@@ -568,10 +571,7 @@ fn parse_color_space_value(
 }
 
 /// Parse a filter value from a token.
-fn parse_filter_value(
-    token: Token,
-    lexer: &mut Lexer,
-) -> Option<FilterValue> {
+fn parse_filter_value(token: Token, lexer: &mut Lexer) -> Option<FilterValue> {
     match token {
         Token::Name(name_bytes) => {
             let name = String::from_utf8_lossy(&name_bytes).to_string();
@@ -619,10 +619,7 @@ fn parse_filter_value(
 }
 
 /// Parse a decode parameters value from a token.
-fn parse_decode_parms_value(
-    token: Token,
-    lexer: &mut Lexer,
-) -> Option<DecodeParmsValue> {
+fn parse_decode_parms_value(token: Token, lexer: &mut Lexer) -> Option<DecodeParmsValue> {
     match token {
         Token::DictStart => {
             // Parse dictionary key-value pairs
@@ -688,10 +685,7 @@ fn parse_decode_parms_value(
 }
 
 /// Parse a decode array from a token.
-fn parse_decode_array(
-    token: Token,
-    lexer: &mut Lexer,
-) -> Option<Vec<f64>> {
+fn parse_decode_array(token: Token, lexer: &mut Lexer) -> Option<Vec<f64>> {
     match token {
         Token::ArrayStart => {
             let mut values = Vec::new();
@@ -769,20 +763,42 @@ fn recover_to_next_key(lexer: &mut Lexer) {
                 true // At start of input, so it's a boundary
             } else {
                 let prev = remaining[i - 1];
-                prev == b' ' || prev == b'\t' || prev == b'\n' || prev == b'\r'
-                    || prev == b'\x0C' || prev == b'(' || prev == b')' || prev == b'<'
-                    || prev == b'>' || prev == b'[' || prev == b']' || prev == b'{'
-                    || prev == b'}' || prev == b'/' || prev == b'%'
+                prev == b' '
+                    || prev == b'\t'
+                    || prev == b'\n'
+                    || prev == b'\r'
+                    || prev == b'\x0C'
+                    || prev == b'('
+                    || prev == b')'
+                    || prev == b'<'
+                    || prev == b'>'
+                    || prev == b'['
+                    || prev == b']'
+                    || prev == b'{'
+                    || prev == b'}'
+                    || prev == b'/'
+                    || prev == b'%'
             };
 
             let followed_by_delim = if i + 2 >= remaining.len() {
                 true // At end of input, so it's a boundary
             } else {
                 let next = remaining[i + 2];
-                next == b' ' || next == b'\t' || next == b'\n' || next == b'\r'
-                    || next == b'\x0C' || next == b'(' || next == b')' || next == b'<'
-                    || next == b'>' || next == b'[' || next == b']' || next == b'{'
-                    || next == b'}' || next == b'/' || next == b'%'
+                next == b' '
+                    || next == b'\t'
+                    || next == b'\n'
+                    || next == b'\r'
+                    || next == b'\x0C'
+                    || next == b'('
+                    || next == b')'
+                    || next == b'<'
+                    || next == b'>'
+                    || next == b'['
+                    || next == b']'
+                    || next == b'{'
+                    || next == b'}'
+                    || next == b'/'
+                    || next == b'%'
             };
 
             if preceded_by_delim && followed_by_delim {
@@ -879,10 +895,7 @@ mod tests {
         let header = result.unwrap();
         assert_eq!(header.width, Some(100));
         assert_eq!(header.height, Some(100));
-        assert!(matches!(
-            header.filter,
-            Some(FilterValue::Array(_))
-        ));
+        assert!(matches!(header.filter, Some(FilterValue::Array(_))));
     }
 
     #[test]
@@ -914,7 +927,9 @@ mod tests {
         assert!(result.is_ok());
 
         let diagnostics = lexer2.take_diagnostics();
-        assert!(diagnostics.iter().any(|d| d.code == DiagCode::InlineImageIdWhitespaceMissing));
+        assert!(diagnostics
+            .iter()
+            .any(|d| d.code == DiagCode::InlineImageIdWhitespaceMissing));
     }
 
     #[test]

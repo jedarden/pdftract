@@ -9,16 +9,16 @@
 
 #![cfg(feature = "remote")]
 
+use pdftract_core::diagnostics::{DiagCode, Diagnostic};
+use pdftract_core::source::{open_remote, RemoteOpts};
 use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
 use wiremock::{
-    MockServer, Mock, ResponseTemplate, matchers::{method, path},
-    Respond, Request as WiremockRequest,
+    matchers::{method, path},
+    Mock, MockServer, Request as WiremockRequest, Respond, ResponseTemplate,
 };
-use pdftract_core::source::{open_remote, RemoteOpts};
-use pdftract_core::diagnostics::{Diagnostic, DiagCode};
 
 /// Test fixture PDFs - use actual valid PDF files for reliable testing.
 const TEST_FIXTURE_100P: &[u8] = include_bytes!("fixtures/multipage-100.pdf");
@@ -135,7 +135,10 @@ async fn critical_1_range_support_bandwidth_efficient() {
                         tracker_clone_get.record_request(data.len(), true, false);
 
                         return ResponseTemplate::new(206)
-                            .insert_header("Content-Range", format!("bytes {}-{}/{}", start, end, pdf_data.len()))
+                            .insert_header(
+                                "Content-Range",
+                                format!("bytes {}-{}/{}", start, end, pdf_data.len()),
+                            )
                             .insert_header("Accept-Ranges", "bytes")
                             .insert_header("Content-Length", data.len().to_string())
                             .set_body_bytes(data.to_vec());
@@ -157,12 +160,17 @@ async fn critical_1_range_support_bandwidth_efficient() {
     let opts = RemoteOpts::new();
 
     let result = open_remote(&url, &opts, None);
-    assert!(result.is_ok(), "Should successfully open remote PDF with Range support");
+    assert!(
+        result.is_ok(),
+        "Should successfully open remote PDF with Range support"
+    );
 
     let source = result.unwrap();
 
     // Simulate extracting page 5: read tail for xref (~16 KB)
-    let _ = source.read_range(source.len().saturating_sub(16384), 16384).unwrap();
+    let _ = source
+        .read_range(source.len().saturating_sub(16384), 16384)
+        .unwrap();
 
     // Verify bandwidth: < 100 KB for page 5 extraction
     assert_bytes_transferred(&tracker, 100_000);
@@ -190,7 +198,7 @@ async fn critical_2_no_range_support_fallback() {
                 .insert_header("Content-Length", pdf_data.len().to_string())
                 .insert_header("Accept-Ranges", "none")
                 .insert_header("Content-Type", "application/pdf")
-                .set_body_bytes("")
+                .set_body_bytes(""),
         )
         .mount(&mock_server)
         .await;
@@ -216,10 +224,13 @@ async fn critical_2_no_range_support_fallback() {
     assert!(result.is_ok(), "Should succeed with fallback download");
 
     // Verify REMOTE_NO_RANGE_SUPPORT diagnostic was emitted
-    let has_diagnostic = diagnostics.iter().any(|d| {
-        matches!(d.code, DiagCode::RemoteNoRangeSupport)
-    });
-    assert!(has_diagnostic, "REMOTE_NO_RANGE_SUPPORT diagnostic should be emitted for fallback");
+    let has_diagnostic = diagnostics
+        .iter()
+        .any(|d| matches!(d.code, DiagCode::RemoteNoRangeSupport));
+    assert!(
+        has_diagnostic,
+        "REMOTE_NO_RANGE_SUPPORT diagnostic should be emitted for fallback"
+    );
 }
 
 /// Critical Test 3: Mock server returning 416 Range Not Satisfiable.
@@ -273,7 +284,7 @@ async fn critical_3_416_retry_without_range() {
                 .insert_header("Content-Length", pdf_data.len().to_string())
                 .insert_header("Accept-Ranges", "bytes")
                 .insert_header("Content-Type", "application/pdf")
-                .set_body_bytes("")
+                .set_body_bytes(""),
         )
         .mount(&mock_server)
         .await;
@@ -304,7 +315,10 @@ async fn critical_3_416_retry_without_range() {
     let read_result = source.read_range(0, 1024);
 
     // Should succeed after automatic retry without Range
-    assert!(read_result.is_ok(), "Should succeed after automatic retry on 416");
+    assert!(
+        read_result.is_ok(),
+        "Should succeed after automatic retry on 416"
+    );
 
     let data = read_result.unwrap();
 
@@ -314,14 +328,24 @@ async fn critical_3_416_retry_without_range() {
 
     // Verify we made exactly one Range request that got 416
     let range_count = range_416_count.load(Ordering::SeqCst);
-    assert_eq!(range_count, 1, "Should make exactly one Range request that got 416");
+    assert_eq!(
+        range_count, 1,
+        "Should make exactly one Range request that got 416"
+    );
 
     // Verify we made exactly one retry without Range
     let no_range = no_range_count.load(Ordering::SeqCst);
-    assert_eq!(no_range, 1, "Should make exactly one retry without Range header");
+    assert_eq!(
+        no_range, 1,
+        "Should make exactly one retry without Range header"
+    );
 
     // Verify the data matches the expected content
-    assert_eq!(&data[..], &pdf_data[..expected_len], "Data should match fixture after retry");
+    assert_eq!(
+        &data[..],
+        &pdf_data[..expected_len],
+        "Data should match fixture after retry"
+    );
 }
 
 /// Critical Test 4: Document with linearized hint stream.
@@ -341,7 +365,10 @@ async fn critical_4_linearized_hint_stream_prefetch() {
     Mock::given(method("HEAD"))
         .and(path("/linearized.pdf"))
         .respond_with(move |_: &wiremock::Request| {
-            request_times_clone_head.lock().unwrap().push(std::time::Instant::now());
+            request_times_clone_head
+                .lock()
+                .unwrap()
+                .push(std::time::Instant::now());
             ResponseTemplate::new(200)
                 .insert_header("Content-Length", pdf_data.len().to_string())
                 .insert_header("Accept-Ranges", "bytes")
@@ -354,7 +381,10 @@ async fn critical_4_linearized_hint_stream_prefetch() {
     Mock::given(method("GET"))
         .and(path("/linearized.pdf"))
         .respond_with(move |req: &wiremock::Request| {
-            request_times_clone_get.lock().unwrap().push(std::time::Instant::now());
+            request_times_clone_get
+                .lock()
+                .unwrap()
+                .push(std::time::Instant::now());
 
             // Parse Range header
             let range_header = req.headers.get("Range").and_then(|h| h.to_str().ok());
@@ -368,7 +398,10 @@ async fn critical_4_linearized_hint_stream_prefetch() {
                         let data = &pdf_data[start..=end];
 
                         return ResponseTemplate::new(206)
-                            .insert_header("Content-Range", format!("bytes {}-{}/{}", start, end, pdf_data.len()))
+                            .insert_header(
+                                "Content-Range",
+                                format!("bytes {}-{}/{}", start, end, pdf_data.len()),
+                            )
                             .insert_header("Accept-Ranges", "bytes")
                             .insert_header("Content-Length", data.len().to_string())
                             .set_body_bytes(data.to_vec());
@@ -395,11 +428,17 @@ async fn critical_4_linearized_hint_stream_prefetch() {
     let tail_offset = source.len().saturating_sub(16384);
     let tail_len = (source.len() - tail_offset) as usize;
     let tail_data = source.read_range(tail_offset, tail_len);
-    assert!(tail_data.is_ok(), "Should be able to read linearized PDF tail");
+    assert!(
+        tail_data.is_ok(),
+        "Should be able to read linearized PDF tail"
+    );
 
     // Check request timeline
     let times = request_times.lock().unwrap();
-    assert!(times.len() >= 2, "Should make at least HEAD + one Range request");
+    assert!(
+        times.len() >= 2,
+        "Should make at least HEAD + one Range request"
+    );
 
     // For a linearized PDF with hint stream:
     // - Request 1: HEAD (metadata)
@@ -448,7 +487,10 @@ async fn critical_5_connection_drop_interrupted() {
                         let data = &self.pdf_data[start..=end];
 
                         return ResponseTemplate::new(206)
-                            .insert_header("Content-Range", format!("bytes {}-{}/{}", start, end, self.pdf_data.len()))
+                            .insert_header(
+                                "Content-Range",
+                                format!("bytes {}-{}/{}", start, end, self.pdf_data.len()),
+                            )
                             .insert_header("Accept-Ranges", "bytes")
                             .insert_header("Content-Length", data.len().to_string())
                             .set_body_bytes(data.to_vec());
@@ -467,7 +509,7 @@ async fn critical_5_connection_drop_interrupted() {
                 .insert_header("Content-Length", pdf_data.len().to_string())
                 .insert_header("Accept-Ranges", "bytes")
                 .insert_header("Content-Type", "application/pdf")
-                .set_body_bytes("")
+                .set_body_bytes(""),
         )
         .mount(&mock_server)
         .await;
@@ -488,7 +530,10 @@ async fn critical_5_connection_drop_interrupted() {
     let result = open_remote(&url, &opts, None);
 
     // Should succeed initially (trailer fetch works)
-    assert!(result.is_ok(), "Should successfully open (trailer fetch succeeds)");
+    assert!(
+        result.is_ok(),
+        "Should successfully open (trailer fetch succeeds)"
+    );
 
     let source = result.unwrap();
 
@@ -498,7 +543,10 @@ async fn critical_5_connection_drop_interrupted() {
     let read_result = source.read_range(100000, 1000);
 
     // This should fail due to connection drop (503 Service Unavailable)
-    assert!(read_result.is_err(), "Connection drop should cause read failure");
+    assert!(
+        read_result.is_err(),
+        "Connection drop should cause read failure"
+    );
 
     if let Err(e) = read_result {
         // Should be an Interrupted error (503 is classified as Interrupted)
@@ -513,5 +561,8 @@ async fn critical_5_connection_drop_interrupted() {
     // Pages already buffered (before the drop) should still be accessible
     // Read from the safe region (before drop point, in block 0)
     let safe_result = source.read_range(10000, 1000);
-    assert!(safe_result.is_ok(), "Pages already buffered should still be accessible");
+    assert!(
+        safe_result.is_ok(),
+        "Pages already buffered should still be accessible"
+    );
 }

@@ -45,7 +45,11 @@ impl std::fmt::Display for UrlError {
                 write!(f, "Invalid URL: '{}'", s)
             }
             UrlError::UnsupportedScheme(scheme) => {
-                write!(f, "Unsupported URL scheme '{}': only http and https are supported", scheme)
+                write!(
+                    f,
+                    "Unsupported URL scheme '{}': only http and https are supported",
+                    scheme
+                )
             }
             UrlError::MissingHost(s) => {
                 write!(f, "URL missing host: '{}'", s)
@@ -171,7 +175,11 @@ pub fn parse_url(url_str: &str) -> Result<ParsedUrl, UrlError> {
 
     Ok(ParsedUrl {
         url: reconstructed,
-        username: if has_username { Some(username.to_string()) } else { None },
+        username: if has_username {
+            Some(username.to_string())
+        } else {
+            None
+        },
         password,
         has_credentials,
     })
@@ -387,7 +395,8 @@ mod tests {
         let password = extract_password_from_url("https://user:pass@example.com/doc.pdf", "user");
         assert_eq!(password, Some("pass".to_string()));
 
-        let password = extract_password_from_url("https://user:password123@example.com/doc.pdf", "user");
+        let password =
+            extract_password_from_url("https://user:password123@example.com/doc.pdf", "user");
         assert_eq!(password, Some("password123".to_string()));
 
         let password = extract_password_from_url("https://user:@example.com/doc.pdf", "user");

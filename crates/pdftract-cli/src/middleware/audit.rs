@@ -84,9 +84,7 @@ fn extract_client_ip_from_headers(headers: &HeaderMap) -> Option<String> {
         .and_then(|s| {
             // X-Forwarded-For format: "client, proxy1, proxy2"
             // The leftmost address is the original client
-            s.split(',')
-                .next()
-                .map(|addr| addr.trim().to_string())
+            s.split(',').next().map(|addr| addr.trim().to_string())
         })
 }
 
@@ -155,7 +153,10 @@ mod tests {
     #[test]
     fn test_extract_client_ip_from_headers_multiple() {
         let mut headers = HeaderMap::new();
-        headers.insert("x-forwarded-for", "10.0.0.1, 10.0.0.2, 10.0.0.3".parse().unwrap());
+        headers.insert(
+            "x-forwarded-for",
+            "10.0.0.1, 10.0.0.2, 10.0.0.3".parse().unwrap(),
+        );
         let ip = extract_client_ip_from_headers(&headers);
         // Leftmost address should be used
         assert_eq!(ip, Some("10.0.0.1".to_string()));
@@ -187,7 +188,9 @@ mod tests {
     fn test_audit_state_with_writer() {
         // This test just verifies the constructor works
         // Actual file I/O is tested in pdftract-core
-        let _state = AuditState::new(Some(AuditLogWriter::open(Path::new("/dev/stdout")).unwrap()));
+        let _state = AuditState::new(Some(
+            AuditLogWriter::open(Path::new("/dev/stdout")).unwrap(),
+        ));
     }
 
     #[test]

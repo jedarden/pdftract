@@ -21,15 +21,29 @@ pub mod reading_order;
 pub mod spans;
 
 pub use colors::{
-    confidence_to_color, kind_to_color, column_boundary_color,
-    // Confidence colors
-    RED_LOW, YELLOW_MEDIUM, GREEN_HIGH, GRAY_NEUTRAL,
+    column_boundary_color,
+    confidence_to_color,
+    kind_to_color,
+    BLACK_ANCHOR,
     // Block kind colors
-    BLUE_HEADING, GRAY_PARAGRAPH, TEAL_TABLE, PURPLE_LIST,
-    ORANGE_CODE, GRAY_LIGHT_HEADER, BROWN_FIGURE, PINK_CAPTION,
-    GRAY_DEFAULT,
+    BLUE_HEADING,
     // Special layer colors
-    BLUE_READING_ORDER, PURPLE_MCID, BLACK_ANCHOR, CYAN_OCR,
+    BLUE_READING_ORDER,
+    BROWN_FIGURE,
+    CYAN_OCR,
+    GRAY_DEFAULT,
+    GRAY_LIGHT_HEADER,
+    GRAY_NEUTRAL,
+    GRAY_PARAGRAPH,
+    GREEN_HIGH,
+    ORANGE_CODE,
+    PINK_CAPTION,
+    PURPLE_LIST,
+    PURPLE_MCID,
+    // Confidence colors
+    RED_LOW,
+    TEAL_TABLE,
+    YELLOW_MEDIUM,
 };
 
 use pdftract_core::schema::{BlockJson, SpanJson};
@@ -186,7 +200,10 @@ pub fn render_all(
     if blocks.len() > 1 && !reading_order.is_empty() {
         let reading_order_elements = reading_order::render_reading_order(blocks, reading_order);
         if !reading_order_elements.is_empty() {
-            layers.push(LayerGroup::new("layer-reading-order", reading_order_elements));
+            layers.push(LayerGroup::new(
+                "layer-reading-order",
+                reading_order_elements,
+            ));
         } else {
             layers.push(LayerGroup::empty("layer-reading-order"));
         }
@@ -198,7 +215,10 @@ pub fn render_all(
     if !spans.is_empty() {
         let heatmap_elements = confidence_heatmap::render_confidence_heatmap(spans);
         if !heatmap_elements.is_empty() {
-            layers.push(LayerGroup::new("layer-confidence-heatmap", heatmap_elements));
+            layers.push(LayerGroup::new(
+                "layer-confidence-heatmap",
+                heatmap_elements,
+            ));
         } else {
             layers.push(LayerGroup::empty("layer-confidence-heatmap"));
         }
@@ -246,7 +266,10 @@ pub fn render_all(
 ///
 /// Groups spans by their column field and creates Column objects
 /// for rendering column boundaries.
-fn extract_columns_from_spans(spans: &[SpanJson], _page_height: f32) -> Vec<pdftract_core::layout::columns::Column> {
+fn extract_columns_from_spans(
+    spans: &[SpanJson],
+    _page_height: f32,
+) -> Vec<pdftract_core::layout::columns::Column> {
     use pdftract_core::layout::columns::Column;
     use std::collections::HashMap;
 
@@ -264,8 +287,14 @@ fn extract_columns_from_spans(spans: &[SpanJson], _page_height: f32) -> Vec<pdft
         .into_iter()
         .map(|(col_index, col_spans)| {
             // Find the x-range for this column
-            let x0 = col_spans.iter().map(|s| s.bbox[0]).fold(f64::INFINITY, f64::min);
-            let x1 = col_spans.iter().map(|s| s.bbox[2]).fold(f64::NEG_INFINITY, f64::max);
+            let x0 = col_spans
+                .iter()
+                .map(|s| s.bbox[0])
+                .fold(f64::INFINITY, f64::min);
+            let x1 = col_spans
+                .iter()
+                .map(|s| s.bbox[2])
+                .fold(f64::NEG_INFINITY, f64::max);
 
             Column {
                 index: col_index,
@@ -342,9 +371,10 @@ mod tests {
 
     #[test]
     fn test_layer_group_render_as_svg_group() {
-        let layer = LayerGroup::new("test-layer", vec![
-            r#"<rect x="10" y="20" width="100" height="50" />"#.to_string(),
-        ]);
+        let layer = LayerGroup::new(
+            "test-layer",
+            vec![r#"<rect x="10" y="20" width="100" height="50" />"#.to_string()],
+        );
 
         let svg = layer.render_as_svg_group();
         assert!(svg.contains(r#"class="test-layer""#));
@@ -354,9 +384,10 @@ mod tests {
 
     #[test]
     fn test_layer_group_render_as_svg_group_visible() {
-        let layer = LayerGroup::new_visible("test-layer", vec![
-            r#"<rect x="10" y="20" width="100" height="50" />"#.to_string(),
-        ]);
+        let layer = LayerGroup::new_visible(
+            "test-layer",
+            vec![r#"<rect x="10" y="20" width="100" height="50" />"#.to_string()],
+        );
 
         let svg = layer.render_as_svg_group();
         assert!(svg.contains(r#"class="test-layer""#));
@@ -374,9 +405,9 @@ mod tests {
     #[test]
     fn test_render_all_empty_page() {
         let layers = render_all(
-            0,  // page_index
-            1,  // page_number
-            792.0,  // page_height
+            0,     // page_index
+            1,     // page_number
+            792.0, // page_height
             &[],
             &[],
             &[],
@@ -407,17 +438,13 @@ mod tests {
             make_test_span("Hello", [100.0, 200.0, 200.0, 220.0], Some(0)),
             make_test_span("World", [100.0, 230.0, 200.0, 250.0], Some(0)),
         ];
-        let blocks = vec![
-            make_test_block("paragraph", "Hello World", [100.0, 200.0, 200.0, 250.0]),
-        ];
+        let blocks = vec![make_test_block(
+            "paragraph",
+            "Hello World",
+            [100.0, 200.0, 200.0, 250.0],
+        )];
 
-        let layers = render_all(
-            0, 1, 792.0,
-            &spans,
-            &blocks,
-            &[0],
-            &None,
-        );
+        let layers = render_all(0, 1, 792.0, &spans, &blocks, &[0], &None);
 
         assert_eq!(layers.len(), 8);
 
@@ -449,13 +476,7 @@ mod tests {
         mcid_map.insert(10, 0);
         mcid_map.insert(20, 1);
 
-        let layers = render_all(
-            0, 1, 792.0,
-            &[],
-            &blocks,
-            &[0, 1],
-            &Some(mcid_map),
-        );
+        let layers = render_all(0, 1, 792.0, &[], &blocks, &[0, 1], &Some(mcid_map));
 
         // MCID layer should have content
         assert!(!layers[6].is_empty());

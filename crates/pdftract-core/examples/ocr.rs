@@ -29,7 +29,10 @@ fn main() -> Result<()> {
     {
         // Get PDF path from command line, or use a default
         let args: Vec<String> = env::args().collect();
-        let pdf_path = args.get(1).map(|s| s.as_str()).unwrap_or("tests/sdk-conformance/fixtures/misc/01.pdf");
+        let pdf_path = args
+            .get(1)
+            .map(|s| s.as_str())
+            .unwrap_or("tests/sdk-conformance/fixtures/misc/01.pdf");
 
         // Extract with OCR enabled
         let options = ExtractionOptions {
@@ -44,12 +47,18 @@ fn main() -> Result<()> {
 
         for (i, page) in result.pages.iter().enumerate() {
             println!("=== Page {} ===", i + 1);
-            println!("  Dimensions: {} x {}", page.width.unwrap_or(0.0), page.height.unwrap_or(0.0));
+            println!(
+                "  Dimensions: {} x {}",
+                page.width.unwrap_or(0.0),
+                page.height.unwrap_or(0.0)
+            );
             println!("  Spans: {}", page.spans.len());
             println!("  Blocks: {}", page.blocks.len());
 
             // Show a preview of extracted text
-            let preview: String = page.spans.iter()
+            let preview: String = page
+                .spans
+                .iter()
                 .map(|s| s.text.clone())
                 .collect::<Vec<_>>()
                 .join(" ");

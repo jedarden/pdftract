@@ -84,13 +84,13 @@ impl Jbig2Decoder {
     /// # Arguments
     ///
     /// * `stream_dict` - The stream dictionary (from PdfStream.dict)
-    pub fn extract_globals_ref(stream_dict: &crate::parser::object::PdfDict) -> Option<Jbig2GlobalsRef> {
+    pub fn extract_globals_ref(
+        stream_dict: &crate::parser::object::PdfDict,
+    ) -> Option<Jbig2GlobalsRef> {
         let globals_obj = stream_dict.get("/JBIG2Globals")?;
 
         match globals_obj {
-            PdfObject::Ref(ref_obj) => {
-                Some(Jbig2GlobalsRef::new(*ref_obj))
-            }
+            PdfObject::Ref(ref_obj) => Some(Jbig2GlobalsRef::new(*ref_obj)),
             _ => {
                 // /JBIG2Globals must be an indirect reference per PDF spec.
                 // Inline or invalid types are treated as missing (self-contained stream).

@@ -1,8 +1,8 @@
 //! Debug test for page tree resolution
 
 use pdftract_core::document::parse_pdf_file;
-use pdftract_core::parser::xref::XrefResolver;
 use pdftract_core::parser::object::PdfObject;
+use pdftract_core::parser::xref::XrefResolver;
 use std::path::Path;
 
 fn main() {

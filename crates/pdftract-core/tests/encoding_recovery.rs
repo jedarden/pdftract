@@ -9,8 +9,8 @@
 //! Acceptance criteria: ≥90% recovery rate on this corpus (Tier 1 CI gate)
 
 use pdftract_core::document::PdfExtractor;
-use std::path::Path;
 use std::fs;
+use std::path::Path;
 
 /// Test fixture describing a no-ToUnicode PDF and its expected text output.
 struct EncodingFixture {
@@ -52,9 +52,7 @@ fn calculate_cer(extracted: &str, ground_truth: &str) -> f64 {
             } else {
                 1
             };
-            dp[i][j] = dp[i - 1][j - 1] + cost
-                .min(dp[i - 1][j] + 1)
-                .min(dp[i][j - 1] + 1);
+            dp[i][j] = dp[i - 1][j - 1] + cost.min(dp[i - 1][j] + 1).min(dp[i][j - 1] + 1);
         }
     }
 
@@ -103,23 +101,28 @@ fn get_fixtures() -> Vec<EncodingFixture> {
 }
 
 /// Test a single encoding fixture and return recovery metrics.
-fn test_encoding_fixture(fixture: &EncodingFixture) -> Result<FixtureResult, Box<dyn std::error::Error>> {
+fn test_encoding_fixture(
+    fixture: &EncodingFixture,
+) -> Result<FixtureResult, Box<dyn std::error::Error>> {
     let pdf_path = Path::new(fixture.pdf_path);
 
     // Open the PDF
-    let mut extractor = PdfExtractor::open(pdf_path)
-        .map_err(|e| format!("Failed to open PDF: {}", e))?;
+    let mut extractor =
+        PdfExtractor::open(pdf_path).map_err(|e| format!("Failed to open PDF: {}", e))?;
 
     // Materialize pages for extraction
-    extractor.materialize_pages()
+    extractor
+        .materialize_pages()
         .map_err(|e| format!("Failed to materialize pages: {}", e))?;
 
     // Extract text from first page (all fixtures have single pages)
-    let page_extraction = extractor.extract_page(0)
+    let page_extraction = extractor
+        .extract_page(0)
         .map_err(|e| format!("Failed to extract page: {}", e))?;
 
     // Concatenate text from all blocks
-    let extracted_text: String = page_extraction.blocks
+    let extracted_text: String = page_extraction
+        .blocks
         .iter()
         .map(|block| block.text.as_str())
         .collect::<Vec<&str>>()
@@ -168,10 +171,16 @@ fn test_agl_only_fixture() {
     let result = test_encoding_fixture(fixture).unwrap();
 
     // AGL should successfully recover "Hello\nWorld"
-    assert_eq!(result.extracted.trim(), result.ground_truth.trim(),
-        "AGL-only fixture should recover text correctly via glyph name mapping");
+    assert_eq!(
+        result.extracted.trim(),
+        result.ground_truth.trim(),
+        "AGL-only fixture should recover text correctly via glyph name mapping"
+    );
     assert_eq!(result.cer, 0.0, "CER should be 0 for perfect match");
-    assert_eq!(result.recovery_rate, 1.0, "Recovery rate should be 1.0 for perfect match");
+    assert_eq!(
+        result.recovery_rate, 1.0,
+        "Recovery rate should be 1.0 for perfect match"
+    );
 }
 
 #[test]
@@ -197,10 +206,16 @@ fn test_shape_match_fixture() {
 #[test]
 fn test_all_encoding_fixtures_exist() {
     for fixture in get_fixtures() {
-        assert!(Path::new(fixture.pdf_path).exists(),
-            "Encoding fixture PDF should exist: {}", fixture.pdf_path);
-        assert!(Path::new(fixture.truth_path).exists(),
-            "Encoding fixture ground truth should exist: {}", fixture.truth_path);
+        assert!(
+            Path::new(fixture.pdf_path).exists(),
+            "Encoding fixture PDF should exist: {}",
+            fixture.pdf_path
+        );
+        assert!(
+            Path::new(fixture.truth_path).exists(),
+            "Encoding fixture ground truth should exist: {}",
+            fixture.truth_path
+        );
     }
 }
 

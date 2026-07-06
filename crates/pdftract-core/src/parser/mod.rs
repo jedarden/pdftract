@@ -27,10 +27,13 @@ pub use catalog::{
     parse_catalog, Catalog, MarkInfo, PageLabel, PageLabelStyle, PageLabelsTree,
     ReadingOrderAlgorithm,
 };
+pub use hint_stream::{
+    parse_hint_stream, parse_hint_stream_from_linearized, prefetch_from_hint_stream, HintTable,
+};
+pub use inline_image::{parse_inline_image_header, scan_inline_image_data, InlineImageHeader};
 pub use marked_content::{
     compute_coverage, compute_coverage_from_sets, CoverageResult, McidTracker,
 };
-pub use inline_image::{parse_inline_image_header, scan_inline_image_data, InlineImageHeader};
 pub use marked_content_operators::{parse_bdc, parse_bmc, parse_emc};
 pub use marked_content_stack::{MarkedContentFrame, MarkedContentStack};
 pub use object::PdfObject;
@@ -47,9 +50,8 @@ pub use struct_tree::{
     structure_type_to_block_kind, BlockKind, CoverageCheckResult, Kid, MappingResult,
     ParentTreeEntry, ParentTreeResolver, RoleMap, StructElemNode, StructTreeRoot, StructureType,
 };
-pub use hint_stream::{parse_hint_stream, parse_hint_stream_from_linearized, prefetch_from_hint_stream, HintTable};
 pub use xref::{
     detect_linearization, is_hybrid_trailer, load_xref_linearized, load_xref_with_prev_chain,
-    merge_hybrid, parse_traditional_xref, parse_xref_stream,
-    LinearizationInfo, ResolveError, ResolveResult, XrefEntry, XrefResolver, XrefSection,
+    merge_hybrid, parse_traditional_xref, parse_xref_stream, LinearizationInfo, ResolveError,
+    ResolveResult, XrefEntry, XrefResolver, XrefSection,
 };

@@ -210,7 +210,11 @@ impl TextOptions {
 /// let text = serialize_page_text(&blocks, &[], &options);
 /// assert_eq!(text, "First paragraph.\n\nSecond paragraph.");
 /// ```
-pub fn serialize_page_text(blocks: &[BlockJson], spans: &[SpanJson], options: &TextOptions) -> String {
+pub fn serialize_page_text(
+    blocks: &[BlockJson],
+    spans: &[SpanJson],
+    options: &TextOptions,
+) -> String {
     let mut result_parts = Vec::new();
 
     for block in blocks {
@@ -232,11 +236,7 @@ pub fn serialize_page_text(blocks: &[BlockJson], spans: &[SpanJson], options: &T
             // No span data available - use pre-computed text (backward compatibility)
             block.text.clone()
         } else {
-            compute_block_text_from_spans(
-                spans,
-                &block.spans,
-                options.include_invisible_text,
-            )
+            compute_block_text_from_spans(spans, &block.spans, options.include_invisible_text)
         };
 
         // Skip empty blocks (no spurious newlines) - includes all-invisible blocks
@@ -792,9 +792,7 @@ mod tests {
     #[test]
     fn test_serialize_page_text_all_invisible_block_omitted() {
         // AC: All-invisible block omitted from output (no spurious \n\n)
-        let spans = vec![
-            make_test_span("hidden", [0.0, 0.0, 100.0, 20.0], Some(3)),
-        ];
+        let spans = vec![make_test_span("hidden", [0.0, 0.0, 100.0, 20.0], Some(3))];
 
         let blocks = vec![
             BlockJson {
@@ -874,7 +872,11 @@ mod tests {
         let text = serialize_document_text(&pages, &options);
 
         assert_eq!(text, "P1");
-        assert_eq!(text.matches('\x0c').count(), 0, "1 page should have 0 form feeds");
+        assert_eq!(
+            text.matches('\x0c').count(),
+            0,
+            "1 page should have 0 form feeds"
+        );
     }
 
     #[test]
@@ -889,7 +891,11 @@ mod tests {
         let text = serialize_document_text(&pages, &options);
 
         assert_eq!(text, "P1\x0cP2");
-        assert_eq!(text.matches('\x0c').count(), 1, "2 pages should have 1 form feed");
+        assert_eq!(
+            text.matches('\x0c').count(),
+            1,
+            "2 pages should have 1 form feed"
+        );
     }
 
     #[test]
@@ -897,7 +903,13 @@ mod tests {
         // AC: 10 pages: 9 form feeds (critical test from plan)
         // Store all blocks to keep them alive for the duration of the test
         let blocks_vec: Vec<Vec<BlockJson>> = (1..=10)
-            .map(|i| vec![make_test_block("paragraph", &format!("P{}", i), [0.0, 0.0, 100.0, 20.0])])
+            .map(|i| {
+                vec![make_test_block(
+                    "paragraph",
+                    &format!("P{}", i),
+                    [0.0, 0.0, 100.0, 20.0],
+                )]
+            })
             .collect();
         let spans: Vec<SpanJson> = vec![];
 
@@ -909,11 +921,21 @@ mod tests {
         let options = TextOptions::default();
         let text = serialize_document_text(&pages, &options);
 
-        assert_eq!(text.matches('\x0c').count(), 9, "10 pages should have exactly 9 form feeds");
+        assert_eq!(
+            text.matches('\x0c').count(),
+            9,
+            "10 pages should have exactly 9 form feeds"
+        );
         // Verify no leading form feed
-        assert!(!text.starts_with('\x0c'), "Should not have leading form feed");
+        assert!(
+            !text.starts_with('\x0c'),
+            "Should not have leading form feed"
+        );
         // Verify no trailing form feed
-        assert!(!text.ends_with('\x0c'), "Should not have trailing form feed");
+        assert!(
+            !text.ends_with('\x0c'),
+            "Should not have trailing form feed"
+        );
     }
 
     #[test]
@@ -923,13 +945,21 @@ mod tests {
         let blocks2: Vec<BlockJson> = vec![]; // Empty page
         let blocks3 = vec![make_test_block("paragraph", "P3", [0.0, 0.0, 100.0, 20.0])];
         let spans: Vec<SpanJson> = vec![];
-        let pages = vec![(&blocks1[..], &spans[..]), (&blocks2[..], &spans[..]), (&blocks3[..], &spans[..])];
+        let pages = vec![
+            (&blocks1[..], &spans[..]),
+            (&blocks2[..], &spans[..]),
+            (&blocks3[..], &spans[..]),
+        ];
 
         let options = TextOptions::default();
         let text = serialize_document_text(&pages, &options);
 
         // Should be: "P1\x0c\x0cP3" (two form feeds for the empty page)
-        assert_eq!(text.matches('\x0c').count(), 2, "3 pages with empty middle should have 2 form feeds");
+        assert_eq!(
+            text.matches('\x0c').count(),
+            2,
+            "3 pages with empty middle should have 2 form feeds"
+        );
         assert!(text.contains("P1\x0c\x0cP3"));
     }
 
@@ -960,7 +990,10 @@ mod tests {
         let options = TextOptions::default();
         let text = serialize_document_text(&pages, &options);
 
-        assert!(!text.contains("Header"), "Headers should be excluded by default");
+        assert!(
+            !text.contains("Header"),
+            "Headers should be excluded by default"
+        );
         assert!(text.contains("P1"));
         assert!(text.contains("P2"));
     }
@@ -978,7 +1011,10 @@ mod tests {
         let options = TextOptions::new().with_headers_footers();
         let text = serialize_document_text(&pages, &options);
 
-        assert!(text.contains("Header1"), "Headers should be included when flag is set");
+        assert!(
+            text.contains("Header1"),
+            "Headers should be included when flag is set"
+        );
         assert!(text.contains("P1"));
     }
 }

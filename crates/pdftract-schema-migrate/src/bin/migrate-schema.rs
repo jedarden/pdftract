@@ -6,7 +6,7 @@
 //!   migrate-schema --from 1.0 --to 1.0 input.json -o output.json
 
 use anyhow::{Context, Result};
-use pdftract_schema_migrate::{read_json, write_json, run_migration};
+use pdftract_schema_migrate::{read_json, run_migration, write_json};
 use std::io::{self, IsTerminal};
 
 fn main() -> Result<()> {

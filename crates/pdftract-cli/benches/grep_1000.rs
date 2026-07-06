@@ -296,7 +296,7 @@ fn run_benchmark() -> Result<BenchmarkResult, String> {
         bytes_total,
         duration_ms,
         matches_total,
-        throughput_mb_s: 0.0, // Will be calculated below
+        throughput_mb_s: 0.0,  // Will be calculated below
         files_per_second: 0.0, // Will be calculated below
         peak_rss_mb: None,     // TODO: measure via /usr/bin/time -v or rusage
     };

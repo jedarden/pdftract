@@ -414,7 +414,10 @@ fn decode_pdfdocencoding(bytes: &[u8]) -> Result<String, String> {
         }
     }
 
-    Ok(bytes.iter().map(|&b| pdfdoc_override(b).unwrap_or(b as char)).collect::<String>())
+    Ok(bytes
+        .iter()
+        .map(|&b| pdfdoc_override(b).unwrap_or(b as char))
+        .collect::<String>())
 }
 
 /// Extract text field value from raw PDF objects.
@@ -486,7 +489,10 @@ fn extract_string_from_value(value: Option<&PdfObject>) -> Option<String> {
     match value {
         Some(PdfObject::String(bytes)) => {
             // Decode via PDFDocEncoding or UTF-16BE BOM
-            Some(decode_pdf_string(bytes).unwrap_or_else(|_| String::from_utf8_lossy(bytes).to_string()))
+            Some(
+                decode_pdf_string(bytes)
+                    .unwrap_or_else(|_| String::from_utf8_lossy(bytes).to_string()),
+            )
         }
         Some(PdfObject::Name(name)) => {
             // Rare case: /V as Name (e.g., /Off-style placeholder)
@@ -512,7 +518,9 @@ mod tests {
 
     #[test]
     fn test_decode_pdf_string_utf16be_bom() {
-        let utf16be = [0xFE, 0xFF, 0x00, 0x48, 0x00, 0x65, 0x00, 0x6C, 0x00, 0x6C, 0x00, 0x6F];
+        let utf16be = [
+            0xFE, 0xFF, 0x00, 0x48, 0x00, 0x65, 0x00, 0x6C, 0x00, 0x6C, 0x00, 0x6F,
+        ];
         let result = decode_pdf_string(&utf16be).unwrap();
         assert_eq!(result, "Hello");
     }
@@ -530,7 +538,7 @@ mod tests {
         // Bytes 0xE9, 0xE8, 0xE0 map to uppercase É, È, À per PDF spec Annex D.2
         let latin1 = [0xE9, 0xE8, 0xE0]; // É È À in PDFDocEncoding
         let result = decode_pdf_string(&latin1).unwrap();
-        assert_eq!(result, "ÉÈÀ");  // Uppercase per PDF spec
+        assert_eq!(result, "ÉÈÀ"); // Uppercase per PDF spec
     }
 
     #[test]
@@ -696,8 +704,7 @@ mod tests {
 
     #[test]
     fn test_extract_text_value_utf16be_bom() {
-        let utf16be = vec
- ![0xFE, 0xFF, 0x00, 0x4A, 0x00, 0x6F, 0x00, 0x68, 0x00, 0x6E]; // "John"
+        let utf16be = vec![0xFE, 0xFF, 0x00, 0x4A, 0x00, 0x6F, 0x00, 0x68, 0x00, 0x6E]; // "John"
         let value = PdfObject::String(Box::new(utf16be));
         let flags = 0;
 

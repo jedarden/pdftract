@@ -35,11 +35,11 @@
 use super::cycle::{is_resolving, ResolutionGuard, RESOLVING};
 use super::{ObjRef, PdfObject};
 use crate::diagnostics::{DiagCode, Diagnostic as Diag};
+use lru::LruCache;
 use std::cell::Cell;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::num::NonZeroUsize;
-use lru::LruCache;
 
 /// Maximum resolution depth for object references.
 ///
@@ -259,10 +259,7 @@ impl ObjectCache {
     /// ```
     #[inline]
     pub fn stats(&self) -> CacheStats {
-        self.stats
-            .lock()
-            .map(|s| s.clone())
-            .unwrap_or_default()
+        self.stats.lock().map(|s| s.clone()).unwrap_or_default()
     }
 
     /// Reset the cache statistics.
@@ -287,10 +284,7 @@ impl ObjectCache {
     /// ```
     #[inline]
     pub fn len(&self) -> usize {
-        self.cache
-            .lock()
-            .map(|c| c.len())
-            .unwrap_or(0)
+        self.cache.lock().map(|c| c.len()).unwrap_or(0)
     }
 
     /// Check if the cache is empty.
@@ -407,19 +401,14 @@ impl ObjectCache {
     ///
     /// Used for testing cache eviction behavior.
     pub fn is_lru(&self, obj_ref: ObjRef) -> bool {
-        self.peek_lru()
-            .map(|(k, _)| k == obj_ref)
-            .unwrap_or(false)
+        self.peek_lru().map(|(k, _)| k == obj_ref).unwrap_or(false)
     }
 
     /// Get the current resolution depth for testing.
     ///
     /// Used for testing depth tracking behavior.
     pub fn depth(&self) -> u16 {
-        self.depth
-            .lock()
-            .map(|d| *d)
-            .unwrap_or(0)
+        self.depth.lock().map(|d| *d).unwrap_or(0)
     }
 }
 
@@ -640,11 +629,7 @@ mod tests {
     fn test_peek_lru() {
         let cache = ObjectCache::with_capacity(3);
 
-        let refs = [
-            ObjRef::new(1, 0),
-            ObjRef::new(2, 0),
-            ObjRef::new(3, 0),
-        ];
+        let refs = [ObjRef::new(1, 0), ObjRef::new(2, 0), ObjRef::new(3, 0)];
 
         // Insert in order: 1, 2, 3
         for i in 0..3 {
@@ -672,11 +657,7 @@ mod tests {
     fn test_is_lru() {
         let cache = ObjectCache::with_capacity(3);
 
-        let refs = [
-            ObjRef::new(1, 0),
-            ObjRef::new(2, 0),
-            ObjRef::new(3, 0),
-        ];
+        let refs = [ObjRef::new(1, 0), ObjRef::new(2, 0), ObjRef::new(3, 0)];
 
         for i in 0..3 {
             cache.insert(refs[i], Arc::new(PdfObject::Integer(i as i64)));
@@ -709,7 +690,10 @@ mod tests {
         let handle = thread::spawn(move || {
             // This thread should NOT see A as resolving (different thread-local set)
             let result = cache_clone.begin_resolution(ref_a);
-            assert!(result.is_ok(), "Should succeed - different thread-local RESOLVING set");
+            assert!(
+                result.is_ok(),
+                "Should succeed - different thread-local RESOLVING set"
+            );
         });
 
         handle.join().unwrap();

@@ -10,12 +10,18 @@ fn main() {
     println!("=== v1 stream (Hello World) ===");
     let v1_normalized = normalize_content_stream(v1_stream);
     println!("Normalized bytes: {:?}", v1_normalized);
-    println!("Normalized as text: {}", String::from_utf8_lossy(&v1_normalized));
+    println!(
+        "Normalized as text: {}",
+        String::from_utf8_lossy(&v1_normalized)
+    );
 
     println!("\n=== v2 stream (Hello Worl) ===");
     let v2_normalized = normalize_content_stream(v2_stream);
     println!("Normalized bytes: {:?}", v2_normalized);
-    println!("Normalized as text: {}", String::from_utf8_lossy(&v2_normalized));
+    println!(
+        "Normalized as text: {}",
+        String::from_utf8_lossy(&v2_normalized)
+    );
 
     println!("\n=== Are they equal? ===");
     println!("{}", v1_normalized == v2_normalized);

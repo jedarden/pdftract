@@ -114,7 +114,8 @@ impl TestHttpServer {
                 let has_range = request_lines.iter().any(|l| l.starts_with("Range:"));
 
                 if has_range {
-                    let range_line = request_lines.iter()
+                    let range_line = request_lines
+                        .iter()
                         .find(|l| l.starts_with("Range:"))
                         .unwrap();
                     let range_val = range_line["Range: ".len()..].trim();
@@ -123,7 +124,8 @@ impl TestHttpServer {
                         let parts: Vec<&str> = bytes_part.split('-').collect();
                         if parts.len() == 2 {
                             let start: u64 = parts[0].parse().unwrap_or(0);
-                            let end: u64 = parts[1].parse().unwrap_or(self.pdf_data.len() as u64 - 1);
+                            let end: u64 =
+                                parts[1].parse().unwrap_or(self.pdf_data.len() as u64 - 1);
                             let end = end.min(self.pdf_data.len() as u64 - 1);
                             let data_start = start as usize;
                             let data_end = (end + 1) as usize;
@@ -131,7 +133,9 @@ impl TestHttpServer {
 
                             response.extend_from_slice(b"HTTP/1.1 206 Partial Content\r\n");
                             response.extend_from_slice(b"Content-Range: bytes ");
-                            response.extend_from_slice(format!("{}-{}/{}", start, end, self.pdf_data.len()).as_bytes());
+                            response.extend_from_slice(
+                                format!("{}-{}/{}", start, end, self.pdf_data.len()).as_bytes(),
+                            );
                             response.extend_from_slice(b"\r\n");
                             response.extend_from_slice(b"Content-Length: ");
                             response.extend_from_slice(data.len().to_string().as_bytes());
@@ -223,8 +227,11 @@ fn create_large_pdf(size_kb: usize) -> Vec<u8> {
     pdf.push_str("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
     pdf.push_str("2 0 obj\n<< /Type /Pages /Kids [ 3 0 R ] /Count 1 >>\nendobj\n");
     pdf.push_str("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>\nendobj\n");
-    pdf.push_str(&format!("4 0 obj\n<< /Length {} >>\nstream\n{}\nendstream\nendobj\n",
-        repeated_content.len(), repeated_content));
+    pdf.push_str(&format!(
+        "4 0 obj\n<< /Length {} >>\nstream\n{}\nendstream\nendobj\n",
+        repeated_content.len(),
+        repeated_content
+    ));
 
     let xref_offset = pdf.len();
     pdf.push_str("xref\n0 5\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \n");
@@ -277,8 +284,8 @@ fn test_inv8_no_panic_on_network_errors() {
     });
 
     assert!(result.is_ok()); // Should not panic
-    // The function should return an error (connection refused)
-    // We just verify it doesn't panic - the actual error may vary
+                             // The function should return an error (connection refused)
+                             // We just verify it doesn't panic - the actual error may vary
 }
 
 /// Test 5: URL validation.

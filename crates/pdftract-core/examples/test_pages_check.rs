@@ -2,7 +2,7 @@ use pdftract_core::document::parse_pdf_file;
 
 fn main() {
     let v1_path = "tests/fingerprint/fixtures/content_edit_one_glyph/v1.pdf";
-    
+
     match parse_pdf_file(std::path::Path::new(v1_path)) {
         Ok((fp, cat, pages, resolver)) => {
             println!("Fingerprint: {}", fp);

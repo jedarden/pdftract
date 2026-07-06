@@ -52,12 +52,7 @@ const SLIDE_DECK_FIXTURES: &[&str] = &[
 const EXPECTED_SUFFIX: &str = "-expected.json";
 
 /// Profile field names that should be extracted
-const PROFILE_FIELDS: &[&str] = &[
-    "title",
-    "presenter",
-    "date",
-    "slide_titles",
-];
+const PROFILE_FIELDS: &[&str] = &["title", "presenter", "date", "slide_titles"];
 
 /// Verify the slide deck profile YAML exists and is valid
 #[test]
@@ -343,7 +338,9 @@ fn test_slide_deck_match_predicates() {
 
     // Should exclude non-slide-deck document types
     assert!(
-        match_str.contains("Abstract") || match_str.contains("References") || match_str.contains("WHEREAS"),
+        match_str.contains("Abstract")
+            || match_str.contains("References")
+            || match_str.contains("WHEREAS"),
         "Match predicates should exclude scientific paper, contract patterns"
     );
 }

@@ -27,11 +27,17 @@ fn test_self_cycle_returns_null_with_diagnostic() {
     // While resolving A, we encounter a reference back to A (cycle!)
     // This should fail with STRUCT_CIRCULAR_REF
     let result = cache.begin_resolution(ref_a);
-    assert!(result.is_err(), "Should detect cycle when re-entering same object");
+    assert!(
+        result.is_err(),
+        "Should detect cycle when re-entering same object"
+    );
 
     let diag = result.unwrap_err();
     assert_eq!(diag.code, DiagCode::StructCircularRef);
-    assert!(diag.message.contains("Circular reference detected"), "Error message should mention circular reference");
+    assert!(
+        diag.message.contains("Circular reference detected"),
+        "Error message should mention circular reference"
+    );
 
     drop(guard1);
 }
@@ -74,8 +80,8 @@ fn test_three_cycle_abc_detected() {
 #[test]
 fn test_legitimate_object_after_cycle() {
     let cache = ObjectCache::new();
-    let ref_a = ObjRef::new(1, 0);  // Part of cycle
-    let ref_legit = ObjRef::new(99, 0);  // Legitimate object
+    let ref_a = ObjRef::new(1, 0); // Part of cycle
+    let ref_legit = ObjRef::new(99, 0); // Legitimate object
 
     // Simulate a cycle on A
     let guard_a = cache.begin_resolution(ref_a).unwrap();
@@ -99,7 +105,10 @@ fn test_legitimate_object_after_cycle() {
 
     // Cycle object should NOT be cached (PdfNull is not cached)
     let null_cached = cache.get(ref_a);
-    assert!(null_cached.is_none(), "Cycle-detected PdfNull should not be cached");
+    assert!(
+        null_cached.is_none(),
+        "Cycle-detected PdfNull should not be cached"
+    );
 }
 
 /// Test cache statistics: after 1000 resolutions of 100 unique objects.
@@ -187,7 +196,8 @@ fn test_resolution_depth_limit_256() {
     let mut guards = Vec::with_capacity(256);
     for i in 0..256u32 {
         let obj_ref = ObjRef::new(i, 0);
-        let guard = cache.begin_resolution(obj_ref)
+        let guard = cache
+            .begin_resolution(obj_ref)
             .expect(&format!("Resolution {} should succeed", i));
         guards.push(guard);
     }
@@ -199,7 +209,10 @@ fn test_resolution_depth_limit_256() {
 
     let diag = result.unwrap_err();
     assert_eq!(diag.code, DiagCode::StructDepthExceeded);
-    assert!(diag.message.contains("256"), "Error should mention the limit");
+    assert!(
+        diag.message.contains("256"),
+        "Error should mention the limit"
+    );
 
     // Cleanup
     drop(guards);
@@ -223,14 +236,20 @@ fn test_thread_local_cycle_detection() {
     let handle = thread::spawn(move || {
         // This thread should NOT see A as resolving (different thread-local set)
         let result = cache_clone.begin_resolution(ref_a);
-        assert!(result.is_ok(), "Should succeed - different thread-local RESOLVING set");
+        assert!(
+            result.is_ok(),
+            "Should succeed - different thread-local RESOLVING set"
+        );
 
         // Keep the guard active to show this thread is now resolving A
         let thread_guard = result.unwrap();
 
         // Now this thread CANNOT begin resolving A again (cycle within this thread)
         let cycle_result = cache_clone.begin_resolution(ref_a);
-        assert!(cycle_result.is_err(), "Should detect cycle within this thread");
+        assert!(
+            cycle_result.is_err(),
+            "Should detect cycle within this thread"
+        );
         let diag = cycle_result.unwrap_err();
         assert_eq!(diag.code, DiagCode::StructCircularRef);
 
@@ -308,7 +327,8 @@ fn test_random_resolution_sequences_terminate() {
             Err(diag) => {
                 // Should only fail on cycle detection or depth exceeded
                 assert!(
-                    diag.code == DiagCode::StructCircularRef || diag.code == DiagCode::StructDepthExceeded,
+                    diag.code == DiagCode::StructCircularRef
+                        || diag.code == DiagCode::StructDepthExceeded,
                     "Unexpected error code: {:?}",
                     diag.code
                 );
@@ -321,11 +341,17 @@ fn test_random_resolution_sequences_terminate() {
             let stats = cache.stats();
             let _total = stats.hits + stats.misses;
             // len should be <= total accesses (but not strictly equal due to nulls not being cached)
-            assert!(len <= (seen_refs.len() as usize), "Cache length should not exceed unique inserts");
+            assert!(
+                len <= (seen_refs.len() as usize),
+                "Cache length should not exceed unique inserts"
+            );
         }
     }
 
     // Final sanity check - we should have cache activity from all the get() calls
     let stats = cache.stats();
-    assert!(stats.hits + stats.misses > 0, "Should have some cache activity from get() calls");
+    assert!(
+        stats.hits + stats.misses > 0,
+        "Should have some cache activity from get() calls"
+    );
 }

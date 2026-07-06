@@ -31,8 +31,8 @@ use pdftract_core::parser::object::PdfObject;
 use pdftract_core::parser::pages::{flatten_page_tree, PageDict};
 use pdftract_core::parser::resources::ResourceDict;
 use pdftract_core::parser::stream::{FileSource, SourceAdapter};
-use pdftract_core::source::PdfSource as SourcePdfSource;
 use pdftract_core::parser::xref::{load_xref_with_prev_chain, XrefResolver, XrefSection};
+use pdftract_core::source::PdfSource as SourcePdfSource;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -218,9 +218,12 @@ pub fn worker_run(
     let pages_total = pages.len();
 
     // Parse page range if specified
-    let page_filter: Option<std::collections::BTreeSet<usize>> = if let Some(ref range_str) = config.pages {
+    let page_filter: Option<std::collections::BTreeSet<usize>> = if let Some(ref range_str) =
+        config.pages
+    {
         let mut page_range_diagnostics = Vec::new();
-        match pdftract_core::pages::parse_pages(range_str, pages_total, &mut page_range_diagnostics) {
+        match pdftract_core::pages::parse_pages(range_str, pages_total, &mut page_range_diagnostics)
+        {
             Ok(filter) => {
                 // Emit diagnostics for out-of-range pages
                 for diag in page_range_diagnostics {

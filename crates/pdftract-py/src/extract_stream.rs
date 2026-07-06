@@ -4,11 +4,11 @@ use pyo3::exceptions::PyStopIteration;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use std::sync::mpsc;
-use std::thread;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::thread;
 
-use pdftract_core::{ExtractionOptions, extract_pdf_streaming, ReceiptsMode};
+use pdftract_core::{extract_pdf_streaming, ExtractionOptions, ReceiptsMode};
 use secrecy::SecretString;
 
 // Type alias for PyO3 owned references

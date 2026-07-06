@@ -224,7 +224,8 @@ pub fn extract_choice_value(
 
     // Extract default value from /DV
     // Combo boxes are always single-select (multi-select flag is ignored for combo)
-    let default_val = default.map(|dv| extract_selected_value(Some(dv), is_multi_select && !is_combo));
+    let default_val =
+        default.map(|dv| extract_selected_value(Some(dv), is_multi_select && !is_combo));
 
     // Extract options from /Opt
     let options = extract_options(options);
@@ -252,9 +253,8 @@ fn extract_selected_value(value: Option<&PdfObject>, is_multi_select: bool) -> C
     match value {
         Some(PdfObject::String(bytes)) => {
             // Single selection from string
-            let decoded = decode_pdf_string(bytes).unwrap_or_else(|_| {
-                String::from_utf8_lossy(bytes).to_string()
-            });
+            let decoded = decode_pdf_string(bytes)
+                .unwrap_or_else(|_| String::from_utf8_lossy(bytes).to_string());
             ChoiceValue::Single(Some(decoded))
         }
         Some(PdfObject::Name(name)) => {
@@ -284,11 +284,9 @@ fn extract_selected_value(value: Option<&PdfObject>, is_multi_select: bool) -> C
 /// Extract a decoded string from a PDF object (String or Name).
 fn extract_string_from_object(obj: &PdfObject) -> Option<String> {
     match obj {
-        PdfObject::String(bytes) => {
-            Some(decode_pdf_string(bytes).unwrap_or_else(|_| {
-                String::from_utf8_lossy(bytes).to_string()
-            }))
-        }
+        PdfObject::String(bytes) => Some(
+            decode_pdf_string(bytes).unwrap_or_else(|_| String::from_utf8_lossy(bytes).to_string()),
+        ),
         PdfObject::Name(name) => Some(name.as_ref().to_string()),
         _ => None,
     }
@@ -362,7 +360,10 @@ mod tests {
 
         assert_eq!(result.kind, ChoiceKind::Combo);
         assert!(!result.multi_select);
-        assert_eq!(result.selected, ChoiceValue::Single(Some("Option B".to_string())));
+        assert_eq!(
+            result.selected,
+            ChoiceValue::Single(Some("Option B".to_string()))
+        );
         assert!(result.default.is_none());
         assert!(result.options.is_empty());
     }
@@ -377,7 +378,10 @@ mod tests {
 
         assert_eq!(result.kind, ChoiceKind::List);
         assert!(!result.multi_select);
-        assert_eq!(result.selected, ChoiceValue::Single(Some("Item 1".to_string())));
+        assert_eq!(
+            result.selected,
+            ChoiceValue::Single(Some("Item 1".to_string()))
+        );
     }
 
     #[test]
@@ -417,7 +421,10 @@ mod tests {
 
         let result = extract_choice_value(Some(&value), Some(&default), None, flags);
 
-        assert_eq!(result.selected, ChoiceValue::Single(Some("Current".to_string())));
+        assert_eq!(
+            result.selected,
+            ChoiceValue::Single(Some("Current".to_string()))
+        );
         assert_eq!(
             result.default,
             Some(ChoiceValue::Single(Some("Default".to_string())))
@@ -437,9 +444,18 @@ mod tests {
         let result = extract_choice_value(None, None, Some(&options), flags);
 
         assert_eq!(result.options.len(), 3);
-        assert_eq!(result.options[0], ("Option 1".to_string(), "Option 1".to_string()));
-        assert_eq!(result.options[1], ("Option 2".to_string(), "Option 2".to_string()));
-        assert_eq!(result.options[2], ("Option 3".to_string(), "Option 3".to_string()));
+        assert_eq!(
+            result.options[0],
+            ("Option 1".to_string(), "Option 1".to_string())
+        );
+        assert_eq!(
+            result.options[1],
+            ("Option 2".to_string(), "Option 2".to_string())
+        );
+        assert_eq!(
+            result.options[2],
+            ("Option 3".to_string(), "Option 3".to_string())
+        );
     }
 
     #[test]
@@ -460,8 +476,14 @@ mod tests {
         let result = extract_choice_value(None, None, Some(&options), flags);
 
         assert_eq!(result.options.len(), 2);
-        assert_eq!(result.options[0], ("v1".to_string(), "Display 1".to_string()));
-        assert_eq!(result.options[1], ("v2".to_string(), "Display 2".to_string()));
+        assert_eq!(
+            result.options[0],
+            ("v1".to_string(), "Display 1".to_string())
+        );
+        assert_eq!(
+            result.options[1],
+            ("v2".to_string(), "Display 2".to_string())
+        );
     }
 
     #[test]
@@ -479,8 +501,14 @@ mod tests {
         let result = extract_choice_value(None, None, Some(&options), flags);
 
         assert_eq!(result.options.len(), 2);
-        assert_eq!(result.options[0], ("Simple".to_string(), "Simple".to_string()));
-        assert_eq!(result.options[1], ("export".to_string(), "Display".to_string()));
+        assert_eq!(
+            result.options[0],
+            ("Simple".to_string(), "Simple".to_string())
+        );
+        assert_eq!(
+            result.options[1],
+            ("export".to_string(), "Display".to_string())
+        );
     }
 
     #[test]
@@ -491,7 +519,10 @@ mod tests {
 
         let result = extract_choice_value(Some(&value), None, None, flags);
 
-        assert_eq!(result.selected, ChoiceValue::Single(Some("SelectedOption".to_string())));
+        assert_eq!(
+            result.selected,
+            ChoiceValue::Single(Some("SelectedOption".to_string()))
+        );
     }
 
     #[test]
@@ -508,7 +539,7 @@ mod tests {
         // Combo kind takes precedence, multi-select is stored but values interpreted as array
         assert_eq!(result.kind, ChoiceKind::Combo);
         assert!(result.multi_select); // Flag is set even for combo
-        // For combo with array, we take first value (malformed but handled)
+                                      // For combo with array, we take first value (malformed but handled)
         match result.selected {
             ChoiceValue::Single(Some(v)) => assert_eq!(v, "A"),
             _ => panic!("Expected Single(Some) for combo with array"),
@@ -547,7 +578,10 @@ mod tests {
     #[test]
     fn test_choice_value_as_display_string() {
         assert_eq!(ChoiceValue::Single(None).as_display_string(), "");
-        assert_eq!(ChoiceValue::Single(Some("test".to_string())).as_display_string(), "test");
+        assert_eq!(
+            ChoiceValue::Single(Some("test".to_string())).as_display_string(),
+            "test"
+        );
         assert_eq!(
             ChoiceValue::Multiple(vec!["a".to_string(), "b".to_string()]).as_display_string(),
             "a,b"
@@ -597,7 +631,8 @@ mod tests {
         let options = PdfObject::Array(Box::new(vec![
             PdfObject::String(Box::new(b"Good".to_vec())),
             PdfObject::Integer(42), // Malformed: should be skipped
-            PdfObject::Array(Box::new(vec![ // Malformed: missing second element
+            PdfObject::Array(Box::new(vec![
+                // Malformed: missing second element
                 PdfObject::String(Box::new(b"partial".to_vec())),
             ])),
         ]));
@@ -641,7 +676,10 @@ mod tests {
 
         assert_eq!(
             result.default,
-            Some(ChoiceValue::Multiple(vec!["X".to_string(), "Y".to_string()]))
+            Some(ChoiceValue::Multiple(vec![
+                "X".to_string(),
+                "Y".to_string()
+            ]))
         );
     }
 
@@ -705,10 +743,7 @@ mod tests {
     fn test_extract_string_from_object_variants() {
         // String object
         let s = PdfObject::String(Box::new(b"test".to_vec()));
-        assert_eq!(
-            extract_string_from_object(&s),
-            Some("test".to_string())
-        );
+        assert_eq!(extract_string_from_object(&s), Some("test".to_string()));
 
         // Name object
         let n = PdfObject::Name(intern("NameValue"));

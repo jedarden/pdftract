@@ -139,7 +139,11 @@ pub fn classify_figure(ctx: &FigurePageContext) -> Vec<Block> {
     }
 
     // Sort by bbox top y (descending) so highest figures appear first
-    figures.sort_by(|a, b| b.top().partial_cmp(&a.top()).unwrap_or(std::cmp::Ordering::Equal));
+    figures.sort_by(|a, b| {
+        b.top()
+            .partial_cmp(&a.top())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     figures
 }
@@ -264,7 +268,10 @@ mod tests {
     fn make_image(x0: f32, y0: f32, x1: f32, y1: f32) -> ImageXObject {
         ImageXObject {
             bbox: [x0, y0, x1, y1],
-            xobject_ref: ObjRef { object: 1, generation: 0 },
+            xobject_ref: ObjRef {
+                object: 1,
+                generation: 0,
+            },
             name: Arc::from("test"),
         }
     }
@@ -278,16 +285,28 @@ mod tests {
     #[test]
     fn test_bboxes_intersect() {
         // Overlapping
-        assert!(bboxes_intersect(&[0.0, 0.0, 10.0, 10.0], &[5.0, 5.0, 15.0, 15.0]));
+        assert!(bboxes_intersect(
+            &[0.0, 0.0, 10.0, 10.0],
+            &[5.0, 5.0, 15.0, 15.0]
+        ));
 
         // Touching at edge (no actual overlap)
-        assert!(!bboxes_intersect(&[0.0, 0.0, 10.0, 10.0], &[10.0, 0.0, 20.0, 10.0]));
+        assert!(!bboxes_intersect(
+            &[0.0, 0.0, 10.0, 10.0],
+            &[10.0, 0.0, 20.0, 10.0]
+        ));
 
         // Disjoint
-        assert!(!bboxes_intersect(&[0.0, 0.0, 10.0, 10.0], &[20.0, 20.0, 30.0, 30.0]));
+        assert!(!bboxes_intersect(
+            &[0.0, 0.0, 10.0, 10.0],
+            &[20.0, 20.0, 30.0, 30.0]
+        ));
 
         // One inside the other
-        assert!(bboxes_intersect(&[0.0, 0.0, 100.0, 100.0], &[10.0, 10.0, 20.0, 20.0]));
+        assert!(bboxes_intersect(
+            &[0.0, 0.0, 100.0, 100.0],
+            &[10.0, 10.0, 20.0, 20.0]
+        ));
     }
 
     #[test]
@@ -365,7 +384,11 @@ mod tests {
             ],
         );
         let figures = classify_figure(&ctx);
-        assert_eq!(figures.len(), 1, "49% overlap should be classified as figure");
+        assert_eq!(
+            figures.len(),
+            1,
+            "49% overlap should be classified as figure"
+        );
 
         // 50% overlap (sqrt(5000) ≈ 70.71)
         let ctx = FigurePageContext::with_data(
@@ -375,7 +398,11 @@ mod tests {
             ],
         );
         let figures = classify_figure(&ctx);
-        assert_eq!(figures.len(), 0, ">=50% overlap should NOT be classified as figure");
+        assert_eq!(
+            figures.len(),
+            0,
+            ">=50% overlap should NOT be classified as figure"
+        );
     }
 
     #[test]
@@ -406,10 +433,7 @@ mod tests {
 
     #[test]
     fn test_classify_figure_no_images() {
-        let ctx = FigurePageContext::with_data(
-            vec![],
-            vec![[0.0, 0.0, 100.0, 100.0]],
-        );
+        let ctx = FigurePageContext::with_data(vec![], vec![[0.0, 0.0, 100.0, 100.0]]);
         let figures = classify_figure(&ctx);
         assert_eq!(figures.len(), 0);
     }
@@ -434,9 +458,9 @@ mod tests {
         // Multiple overlapping glyphs should produce a union area
         let image_bbox = [0.0, 0.0, 100.0, 100.0];
         let glyph_bboxes = vec![
-            [0.0, 0.0, 40.0, 40.0],   // Bottom-left
-            [60.0, 0.0, 100.0, 40.0],  // Bottom-right
-            [0.0, 60.0, 40.0, 100.0], // Top-left
+            [0.0, 0.0, 40.0, 40.0],     // Bottom-left
+            [60.0, 0.0, 100.0, 40.0],   // Bottom-right
+            [0.0, 60.0, 40.0, 100.0],   // Top-left
             [60.0, 60.0, 100.0, 100.0], // Top-right
         ];
 
@@ -450,7 +474,7 @@ mod tests {
         // Overlapping glyphs should produce union (not sum)
         let image_bbox = [0.0, 0.0, 100.0, 100.0];
         let glyph_bboxes = vec![
-            [0.0, 0.0, 60.0, 60.0],   // Large area
+            [0.0, 0.0, 60.0, 60.0],     // Large area
             [40.0, 40.0, 100.0, 100.0], // Overlaps with first
         ];
 
@@ -458,16 +482,19 @@ mod tests {
         // Union of [0,0,60,60] and [40,40,100,100] = 6800 (not 7200 sum due to overlap)
         // The overlapping region [40,40,60,60] is counted only once
         let expected = 6800.0;
-        assert!((overlap - expected).abs() < 1.0, "Union area should be {}, got {}", expected, overlap);
+        assert!(
+            (overlap - expected).abs() < 1.0,
+            "Union area should be {}, got {}",
+            expected,
+            overlap
+        );
         assert!(overlap < 10000.0, "Union should not exceed image bounds");
     }
 
     #[test]
     fn test_figure_block_properties() {
-        let ctx = FigurePageContext::with_data(
-            vec![make_image(100.0, 400.0, 300.0, 600.0)],
-            vec![],
-        );
+        let ctx =
+            FigurePageContext::with_data(vec![make_image(100.0, 400.0, 300.0, 600.0)], vec![]);
 
         let figures = classify_figure(&ctx);
         assert_eq!(figures.len(), 1);

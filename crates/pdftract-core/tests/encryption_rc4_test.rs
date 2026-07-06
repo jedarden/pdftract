@@ -21,9 +21,9 @@
 mod tests {
     use digest::Digest;
     use pdftract_core::encryption::rc4::{
-        decrypt_object, derive_file_key, derive_object_key, pad_password,
-        rc4_decrypt, validate_user_password, validate_user_password_r2,
-        validate_user_password_r3, FileKeyResult,
+        decrypt_object, derive_file_key, derive_object_key, pad_password, rc4_decrypt,
+        validate_user_password, validate_user_password_r2, validate_user_password_r3,
+        FileKeyResult,
     };
 
     /// PDF spec Appendix A worked example: RC4-40 key derivation.
@@ -98,7 +98,10 @@ mod tests {
         let key_obj2 = derive_object_key(&file_key, 2, 0);
         let key_obj3 = derive_object_key(&file_key, 1, 1); // Same obj, different gen
 
-        assert_ne!(key_obj1, key_obj2, "Different objects must have different keys");
+        assert_ne!(
+            key_obj1, key_obj2,
+            "Different objects must have different keys"
+        );
         assert_ne!(
             key_obj1, key_obj3,
             "Same object, different generation must have different keys"
@@ -204,16 +207,31 @@ mod tests {
         let user_hash = rc4_decrypt(file_key_correct, &pad_password(b""));
 
         // Validate with correct file key
-        assert!(validate_user_password_r2(password, file_key_correct, &user_hash));
+        assert!(validate_user_password_r2(
+            password,
+            file_key_correct,
+            &user_hash
+        ));
 
         // Derive file key for wrong password
         let wrong_password = b"wrong";
-        let result_wrong = derive_file_key(wrong_password, &owner_hash, permissions, &document_id, 40, 2);
+        let result_wrong = derive_file_key(
+            wrong_password,
+            &owner_hash,
+            permissions,
+            &document_id,
+            40,
+            2,
+        );
         assert!(result_wrong.is_success());
         let file_key_wrong = result_wrong.key().unwrap();
 
         // Wrong file key should not validate against the same user_hash
-        assert!(!validate_user_password_r2(wrong_password, file_key_wrong, &user_hash));
+        assert!(!validate_user_password_r2(
+            wrong_password,
+            file_key_wrong,
+            &user_hash
+        ));
     }
 
     /// Test: password validation for R=3.
@@ -246,7 +264,12 @@ mod tests {
         }
         let user_hash = data;
 
-        assert!(validate_user_password_r3(password, file_key, &user_hash, &document_id));
+        assert!(validate_user_password_r3(
+            password,
+            file_key,
+            &user_hash,
+            &document_id
+        ));
     }
 
     /// Test: password validation dispatch function.
@@ -261,8 +284,7 @@ mod tests {
         let document_id = vec![0u8; 16];
 
         // R=2
-        let result_r2 =
-            derive_file_key(password, &owner_hash, permissions, &document_id, 40, 2);
+        let result_r2 = derive_file_key(password, &owner_hash, permissions, &document_id, 40, 2);
         let file_key_r2 = result_r2.key().unwrap();
         let user_hash_r2 = rc4_decrypt(file_key_r2, &pad_password(b""));
         assert!(validate_user_password(
@@ -274,8 +296,7 @@ mod tests {
         ));
 
         // R=3
-        let result_r3 =
-            derive_file_key(password, &owner_hash, permissions, &document_id, 40, 3);
+        let result_r3 = derive_file_key(password, &owner_hash, permissions, &document_id, 40, 3);
         let file_key_r3 = result_r3.key().unwrap();
         let mut md5 = md5::Md5::new();
         md5.update(&pad_password(password));
@@ -303,11 +324,7 @@ mod tests {
     #[test]
     fn test_invalid_key_length() {
         let result = derive_file_key(
-            b"test",
-            &[0u8; 32],
-            0xFFFFFFFF,
-            &[0u8; 16],
-            256, // Too long for RC4 (max 128)
+            b"test", &[0u8; 32], 0xFFFFFFFF, &[0u8; 16], 256, // Too long for RC4 (max 128)
             2,
         );
 
@@ -324,12 +341,8 @@ mod tests {
     #[test]
     fn test_short_document_id() {
         let result = derive_file_key(
-            b"test",
-            &[0u8; 32],
-            0xFFFFFFFF,
-            &[0u8; 8], // Too short (must be at least 16)
-            40,
-            2,
+            b"test", &[0u8; 32], 0xFFFFFFFF, &[0u8; 8], // Too short (must be at least 16)
+            40, 2,
         );
 
         assert!(!result.is_success());

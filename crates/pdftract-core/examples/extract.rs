@@ -15,7 +15,10 @@ use std::path::Path;
 fn main() -> Result<()> {
     // Get PDF path from command line, or use a default
     let args: Vec<String> = env::args().collect();
-    let pdf_path = args.get(1).map(|s| s.as_str()).unwrap_or("tests/fixtures/sample.pdf");
+    let pdf_path = args
+        .get(1)
+        .map(|s| s.as_str())
+        .unwrap_or("tests/fixtures/sample.pdf");
 
     // Extract with default options
     let options = ExtractionOptions::default();

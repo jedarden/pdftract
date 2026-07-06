@@ -8,16 +8,16 @@
 //! - Fixture pair tests: verify MATCH/DIFFER expectations
 //! - Cross-platform: fingerprints match across platforms (CI only)
 
-use std::path::Path;
 use pdftract_core::document::parse_pdf_file;
+use std::path::Path;
 
 /// Helper: compute fingerprint from a PDF file path.
 /// Path is relative to the crate root (where fixtures are located).
 fn fingerprint_from_path(relative_path: &str) -> Result<String, Box<dyn std::error::Error>> {
     // The fixtures are at tests/fingerprint/fixtures/ from the repo root
     // When running from crates/pdftract-core/, we need to go up two levels
-    let cargo_manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
-        .unwrap_or_else(|_| ".".to_string());
+    let cargo_manifest_dir =
+        std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
     let base = Path::new(&cargo_manifest_dir);
     let fixture_path = base
         .parent() // crates
@@ -38,8 +38,7 @@ fn test_inv3_reproducibility_100_invocations() {
     let fixture_path = "tests/fingerprint/fixtures/acrobat_resave/v1.pdf";
 
     // First fingerprint
-    let first = fingerprint_from_path(fixture_path)
-        .expect("Failed to compute first fingerprint");
+    let first = fingerprint_from_path(fixture_path).expect("Failed to compute first fingerprint");
 
     // 99 more invocations, all must match
     for i in 0..99 {
@@ -61,7 +60,10 @@ fn test_fixture_byte_identical() {
     let v2 = fingerprint_from_path("tests/fingerprint/fixtures/byte_identical/v2.pdf")
         .expect("Failed to fingerprint v2");
 
-    assert_eq!(v1, v2, "Byte-identical files must have matching fingerprints");
+    assert_eq!(
+        v1, v2,
+        "Byte-identical files must have matching fingerprints"
+    );
 }
 
 #[test]
@@ -83,7 +85,10 @@ fn test_fixture_acrobat_resave() {
     let v2 = fingerprint_from_path("tests/fingerprint/fixtures/acrobat_resave/v2.pdf")
         .expect("Failed to fingerprint v2");
 
-    assert_eq!(v1, v2, "Acrobat re-save simulation must preserve fingerprint");
+    assert_eq!(
+        v1, v2,
+        "Acrobat re-save simulation must preserve fingerprint"
+    );
 }
 
 #[test]
@@ -105,7 +110,10 @@ fn test_fixture_linearization_toggle() {
     let v2 = fingerprint_from_path("tests/fingerprint/fixtures/linearization_toggle/v2.pdf")
         .expect("Failed to fingerprint v2");
 
-    assert_eq!(v1, v2, "Linearization toggle must preserve fingerprint (KU-7)");
+    assert_eq!(
+        v1, v2,
+        "Linearization toggle must preserve fingerprint (KU-7)"
+    );
 }
 
 #[test]
@@ -116,7 +124,10 @@ fn test_fixture_metadata_only() {
     let v2 = fingerprint_from_path("tests/fingerprint/fixtures/metadata_only/v2.pdf")
         .expect("Failed to fingerprint v2");
 
-    assert_eq!(v1, v2, "Metadata-only changes must preserve fingerprint (ADR-008)");
+    assert_eq!(
+        v1, v2,
+        "Metadata-only changes must preserve fingerprint (ADR-008)"
+    );
 }
 
 #[test]
@@ -141,7 +152,10 @@ fn test_fixture_content_edit_one_paragraph() {
     let v2 = fingerprint_from_path("tests/fingerprint/fixtures/content_edit_one_paragraph/v2.pdf")
         .expect("Failed to fingerprint v2");
 
-    assert_ne!(v1, v2, "Content edit (one paragraph) must change fingerprint");
+    assert_ne!(
+        v1, v2,
+        "Content edit (one paragraph) must change fingerprint"
+    );
 }
 
 #[test]
@@ -164,12 +178,13 @@ fn test_inv13_fingerprint_format() {
     ];
 
     for path in fixtures {
-        let fingerprint = fingerprint_from_path(path)
-            .expect(&format!("Failed to fingerprint {}", path));
+        let fingerprint =
+            fingerprint_from_path(path).expect(&format!("Failed to fingerprint {}", path));
         assert!(
             regex.is_match(&fingerprint),
             "Fingerprint '{}' for {} must match INV-13 format",
-            fingerprint, path
+            fingerprint,
+            path
         );
     }
 }

@@ -4,17 +4,19 @@
 //! Rust users import pdftract-core directly and use these functions to match the SDK contract.
 
 use crate::classify::{classify_page, PageClassification, PageContext};
-use crate::extract::{extract_pdf, extract_text as extract_text_impl, ExtractionResult, PageResult};
-use crate::options::ExtractionOptions;
+use crate::extract::{
+    extract_pdf, extract_text as extract_text_impl, ExtractionResult, PageResult,
+};
 use crate::fingerprint::compute_fingerprint;
 use crate::markdown::page_to_markdown;
+use crate::options::ExtractionOptions;
 use crate::parser::catalog::parse_catalog;
 use crate::parser::pages::{flatten_page_tree, LazyPageIter, PageDict};
+use crate::parser::stream::PdfSource as ParserPdfSource;
 use crate::parser::xref::{load_xref_with_prev_chain, XrefResolver};
 use crate::receipts::verifier::{verify_receipt, SpanData, VerificationResult};
 use crate::receipts::Receipt;
 use crate::source::FileSource;
-use crate::parser::stream::PdfSource as ParserPdfSource;
 use anyhow::{Context, Result};
 use regex::Regex;
 use serde_json::Value;
@@ -78,7 +80,9 @@ pub fn extract_markdown(pdf_path: &Path, options: &ExtractionOptions) -> Result<
         }
 
         // Filter links to only those that belong to this page
-        let page_links: Vec<_> = result.links.iter()
+        let page_links: Vec<_> = result
+            .links
+            .iter()
             .filter(|link| link.page_index == i)
             .cloned()
             .collect();
@@ -89,7 +93,7 @@ pub fn extract_markdown(pdf_path: &Path, options: &ExtractionOptions) -> Result<
             &[], // No separate tables storage - tables are in blocks
             page_links.as_slice(),
             i,
-            false,  // include_anchor
+            false, // include_anchor
             &crate::markdown::MarkdownOptions::default(),
         ));
     }
@@ -266,7 +270,9 @@ pub fn classify(pdf_path: &Path, page_index: usize) -> Result<PageClassification
     let options = ExtractionOptions::default();
     let result = extract_pdf(pdf_path, &options)?;
 
-    let page = result.pages.get(page_index)
+    let page = result
+        .pages
+        .get(page_index)
         .ok_or_else(|| anyhow::anyhow!("Page index {} out of bounds", page_index))?;
 
     // Create a minimal page context for classification
@@ -300,23 +306,28 @@ pub fn verify_receipt_from_path(
     receipt_path: &Path,
 ) -> Result<VerificationResult> {
     // Load the receipt
-    let receipt_data = std::fs::read_to_string(receipt_path)
-        .context("Failed to read receipt file")?;
-    let receipt: Receipt = serde_json::from_str(&receipt_data)
-        .context("Failed to parse receipt JSON")?;
+    let receipt_data =
+        std::fs::read_to_string(receipt_path).context("Failed to read receipt file")?;
+    let receipt: Receipt =
+        serde_json::from_str(&receipt_data).context("Failed to parse receipt JSON")?;
 
     // Extract spans from the PDF
     let options = ExtractionOptions::default();
     let result = extract_pdf(pdf_path, &options)?;
 
-    let page = result.pages.get(receipt.page_index)
-        .ok_or_else(|| anyhow::anyhow!("Receipt page index {} out of bounds", receipt.page_index))?;
+    let page = result.pages.get(receipt.page_index).ok_or_else(|| {
+        anyhow::anyhow!("Receipt page index {} out of bounds", receipt.page_index)
+    })?;
 
     // Convert spans to SpanData
-    let spans: Vec<SpanData> = page.spans.iter().map(|span| SpanData {
-        text: span.text.clone(),
-        bbox: span.bbox,
-    }).collect();
+    let spans: Vec<SpanData> = page
+        .spans
+        .iter()
+        .map(|span| SpanData {
+            text: span.text.clone(),
+            bbox: span.bbox,
+        })
+        .collect();
 
     // Compute the actual fingerprint
     let actual_fingerprint = hash(pdf_path)?;

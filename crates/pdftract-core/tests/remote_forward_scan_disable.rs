@@ -5,8 +5,8 @@
 
 #![cfg(feature = "remote")]
 
-use pdftract_core::parser::xref::{forward_scan_xref, XrefSection};
 use pdftract_core::parser::stream::PdfSource;
+use pdftract_core::parser::xref::{forward_scan_xref, XrefSection};
 
 /// Mock remote PDF source that returns is_remote() = true.
 struct MockRemoteSource {
@@ -82,7 +82,8 @@ trailer
 startxref
 412
 %%EOF
-".to_vec();
+"
+    .to_vec();
 
     let remote_source = MockRemoteSource { data: pdf_data };
     let result = forward_scan_xref(&remote_source, false);
@@ -93,10 +94,14 @@ startxref
 
     // Should emit STRUCT_REMOTE_NO_FORWARD_SCAN diagnostic
     use pdftract_core::diagnostics::DiagCode;
-    let has_remote_diagnostic = result.diagnostics.iter().any(|d| {
-        matches!(d.code, DiagCode::XrefRemoteNoForwardScan)
-    });
-    assert!(has_remote_diagnostic, "Expected XREF_REMOTE_NO_FORWARD_SCAN diagnostic for remote source");
+    let has_remote_diagnostic = result
+        .diagnostics
+        .iter()
+        .any(|d| matches!(d.code, DiagCode::XrefRemoteNoForwardScan));
+    assert!(
+        has_remote_diagnostic,
+        "Expected XREF_REMOTE_NO_FORWARD_SCAN diagnostic for remote source"
+    );
 }
 
 /// Test that forward-scan works for local sources.
@@ -115,7 +120,8 @@ trailer
 startxref
 52
 %%EOF
-".to_vec();
+"
+    .to_vec();
 
     let local_source = MockLocalSource { data: pdf_data };
     let result = forward_scan_xref(&local_source, false);
@@ -141,7 +147,8 @@ trailer
 startxref
 52
 %%EOF
-".to_vec();
+"
+    .to_vec();
 
     let local_source = MockLocalSource { data: pdf_data };
     let result = forward_scan_xref(&local_source, true); // is_linearized = true
@@ -151,10 +158,14 @@ startxref
 
     // Should emit LINEARIZED_NO_FORWARD_SCAN diagnostic
     use pdftract_core::diagnostics::DiagCode;
-    let has_linearized_diagnostic = result.diagnostics.iter().any(|d| {
-        matches!(d.code, DiagCode::XrefLinearizedNoForwardScan)
-    });
-    assert!(has_linearized_diagnostic, "Expected XREF_LINEARIZED_NO_FORWARD_SCAN diagnostic for linearized PDF");
+    let has_linearized_diagnostic = result
+        .diagnostics
+        .iter()
+        .any(|d| matches!(d.code, DiagCode::XrefLinearizedNoForwardScan));
+    assert!(
+        has_linearized_diagnostic,
+        "Expected XREF_LINEARIZED_NO_FORWARD_SCAN diagnostic for linearized PDF"
+    );
 }
 
 /// Test that linearized + remote prioritizes linearized diagnostic.
@@ -173,7 +184,8 @@ trailer
 startxref
 52
 %%EOF
-".to_vec();
+"
+    .to_vec();
 
     let remote_source = MockRemoteSource { data: pdf_data };
     let result = forward_scan_xref(&remote_source, true); // Both linearized AND remote
@@ -183,8 +195,12 @@ startxref
 
     // Should emit LINEARIZED_NO_FORWARD_SCAN (checked first)
     use pdftract_core::diagnostics::DiagCode;
-    let has_linearized_diagnostic = result.diagnostics.iter().any(|d| {
-        matches!(d.code, DiagCode::XrefLinearizedNoForwardScan)
-    });
-    assert!(has_linearized_diagnostic, "Expected linearized check to come first");
+    let has_linearized_diagnostic = result
+        .diagnostics
+        .iter()
+        .any(|d| matches!(d.code, DiagCode::XrefLinearizedNoForwardScan));
+    assert!(
+        has_linearized_diagnostic,
+        "Expected linearized check to come first"
+    );
 }

@@ -4,7 +4,9 @@
 //! and outputs it to stdout with appropriate exit codes.
 
 use anyhow::{anyhow, Context, Result};
-use pdftract_core::fingerprint::{compute_fingerprint, CatalogFlags, ContentStreamData, FingerprintInput, PageFingerprintData};
+use pdftract_core::fingerprint::{
+    compute_fingerprint, CatalogFlags, ContentStreamData, FingerprintInput, PageFingerprintData,
+};
 use pdftract_core::parser::catalog::parse_catalog;
 use pdftract_core::parser::pages::{flatten_page_tree, PageDict};
 use pdftract_core::parser::stream::{FileSource, PdfSource};
@@ -34,7 +36,8 @@ pub fn map_error_to_exit_code(err: &anyhow::Error) -> i32 {
     let err_msg = err.to_string().to_lowercase();
 
     // Check for encryption-related errors
-    if err_msg.contains("encryption") || err_msg.contains("password") || err_msg.contains("decrypt") {
+    if err_msg.contains("encryption") || err_msg.contains("password") || err_msg.contains("decrypt")
+    {
         return EXIT_ENCRYPTED;
     }
 
@@ -43,7 +46,8 @@ pub fn map_error_to_exit_code(err: &anyhow::Error) -> i32 {
         return EXIT_TLS_FAILURE;
     }
 
-    if err_msg.contains("network") || err_msg.contains("timeout") || err_msg.contains("connection") {
+    if err_msg.contains("network") || err_msg.contains("timeout") || err_msg.contains("connection")
+    {
         return EXIT_NETWORK_FAILURE;
     }
 
@@ -71,10 +75,7 @@ fn is_url(s: &str) -> bool {
 }
 
 /// Compute the fingerprint for a PDF from a local file.
-fn compute_fingerprint_from_file(
-    path: &Path,
-    _password: Option<&str>,
-) -> Result<String> {
+fn compute_fingerprint_from_file(path: &Path, _password: Option<&str>) -> Result<String> {
     // Open the PDF file
     let source = FileSource::open(path).context("Failed to open PDF file")?;
 
@@ -96,14 +97,15 @@ fn compute_fingerprint_from_file(
         .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource))
-        .map_err(|diagnostics| {
+    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource)).map_err(
+        |diagnostics| {
             let msg = diagnostics
                 .first()
                 .map(|d| d.message.as_ref())
                 .unwrap_or("unknown error");
             anyhow::anyhow!("Failed to parse catalog: {}", msg)
-        })?;
+        },
+    )?;
 
     // Flatten the page tree
     let pages = flatten_page_tree(&resolver, catalog.pages_ref).map_err(|diagnostics| {
@@ -118,17 +120,18 @@ fn compute_fingerprint_from_file(
     let fingerprint_input = build_fingerprint_input(&catalog, &pages, &xref_section);
 
     // Compute fingerprint
-    let fingerprint = compute_fingerprint(&fingerprint_input, &resolver, Some(&source as &dyn PdfSource));
+    let fingerprint = compute_fingerprint(
+        &fingerprint_input,
+        &resolver,
+        Some(&source as &dyn PdfSource),
+    );
 
     Ok(fingerprint)
 }
 
 /// Compute the fingerprint for a PDF from a remote URL.
 #[cfg(feature = "remote")]
-fn compute_fingerprint_from_url(
-    url: &str,
-    headers: &[(String, String)],
-) -> Result<String> {
+fn compute_fingerprint_from_url(url: &str, headers: &[(String, String)]) -> Result<String> {
     use pdftract_core::source::HttpRangeSource;
 
     // Open the remote PDF
@@ -153,14 +156,15 @@ fn compute_fingerprint_from_url(
         .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource))
-        .map_err(|diagnostics| {
+    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource)).map_err(
+        |diagnostics| {
             let msg = diagnostics
                 .first()
                 .map(|d| d.message.as_ref())
                 .unwrap_or("unknown error");
             anyhow::anyhow!("Failed to parse catalog: {}", msg)
-        })?;
+        },
+    )?;
 
     // Flatten the page tree
     let pages = flatten_page_tree(&resolver, catalog.pages_ref).map_err(|diagnostics| {
@@ -175,7 +179,11 @@ fn compute_fingerprint_from_url(
     let fingerprint_input = build_fingerprint_input(&catalog, &pages, &xref_section);
 
     // Compute fingerprint
-    let fingerprint = compute_fingerprint(&fingerprint_input, &resolver, Some(&source as &dyn PdfSource));
+    let fingerprint = compute_fingerprint(
+        &fingerprint_input,
+        &resolver,
+        Some(&source as &dyn PdfSource),
+    );
 
     Ok(fingerprint)
 }
@@ -237,7 +245,9 @@ fn build_fingerprint_input(
         .trailer
         .as_ref()
         .and_then(|trailer| trailer.get("Encrypt"))
-        .map_or(false, |obj| !matches!(obj, pdftract_core::parser::object::PdfObject::Null));
+        .map_or(false, |obj| {
+            !matches!(obj, pdftract_core::parser::object::PdfObject::Null)
+        });
 
     // Check for XFA forms via /AcroForm in trailer
     let contains_xfa = xref_section
@@ -246,7 +256,9 @@ fn build_fingerprint_input(
         .and_then(|trailer| trailer.get("AcroForm"))
         .and_then(|acroform_obj| acroform_obj.as_dict())
         .and_then(|acroform_dict| acroform_dict.get("XFA"))
-        .map_or(false, |obj| !matches!(obj, pdftract_core::parser::object::PdfObject::Null));
+        .map_or(false, |obj| {
+            !matches!(obj, pdftract_core::parser::object::PdfObject::Null)
+        });
 
     let fingerprint_pages = pages
         .iter()

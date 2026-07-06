@@ -74,10 +74,14 @@ fn test_scientific_paper_profile_exists() {
         profile_path.display()
     );
 
-    let content = fs::read_to_string(profile_path).expect("Failed to read scientific paper profile");
+    let content =
+        fs::read_to_string(profile_path).expect("Failed to read scientific paper profile");
 
     // Verify profile is not empty
-    assert!(!content.trim().is_empty(), "Scientific paper profile is empty");
+    assert!(
+        !content.trim().is_empty(),
+        "Scientific paper profile is empty"
+    );
 
     // Verify required top-level keys exist (Phase 7.10 schema)
     assert!(content.contains("name:"), "Profile missing 'name' key");
@@ -176,7 +180,8 @@ fn test_scientific_paper_fixture_structure() {
 #[test]
 fn test_scientific_paper_profile_schema() {
     let profile_path = profile_path();
-    let content = fs::read_to_string(profile_path).expect("Failed to read scientific paper profile");
+    let content =
+        fs::read_to_string(profile_path).expect("Failed to read scientific paper profile");
 
     // Parse YAML as JSON to verify structure
     let yaml_value: serde_yaml::Value =
@@ -317,7 +322,8 @@ fn test_expected_output_consistency() {
 #[test]
 fn test_scientific_paper_match_predicates() {
     let profile_path = profile_path();
-    let content = fs::read_to_string(profile_path).expect("Failed to read scientific paper profile");
+    let content =
+        fs::read_to_string(profile_path).expect("Failed to read scientific paper profile");
 
     let yaml_value: serde_yaml::Value =
         serde_yaml::from_str(&content).expect("Scientific paper profile is not valid YAML");
@@ -360,7 +366,10 @@ fn test_fixture_count() {
         expected_count
     );
 
-    println!("Scientific paper fixture count: {} (minimum: 5)", expected_count);
+    println!(
+        "Scientific paper fixture count: {} (minimum: 5)",
+        expected_count
+    );
 }
 
 /// Verify PROVENANCE.md has required fields
@@ -461,7 +470,8 @@ fn test_fixture_diversity() {
 #[test]
 fn test_xy_cut_reading_order() {
     let profile_path = profile_path();
-    let content = fs::read_to_string(profile_path).expect("Failed to read scientific paper profile");
+    let content =
+        fs::read_to_string(profile_path).expect("Failed to read scientific paper profile");
 
     let yaml_value: serde_yaml::Value =
         serde_yaml::from_str(&content).expect("Scientific paper profile is not valid YAML");
@@ -481,7 +491,8 @@ fn test_xy_cut_reading_order() {
 #[test]
 fn test_doi_regex_format() {
     let profile_path = profile_path();
-    let content = fs::read_to_string(profile_path).expect("Failed to read scientific paper profile");
+    let content =
+        fs::read_to_string(profile_path).expect("Failed to read scientific paper profile");
 
     // Verify DOI regex matches the canonical doi.org format (10.NNNN/...)
     assert!(

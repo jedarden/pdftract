@@ -5,7 +5,14 @@ use std::process::Command;
 #[test]
 fn test_hash_nonexistent_file() {
     let output = Command::new("cargo")
-        .args(["run", "--bin", "pdftract", "--", "hash", "/nonexistent/file.pdf"])
+        .args([
+            "run",
+            "--bin",
+            "pdftract",
+            "--",
+            "hash",
+            "/nonexistent/file.pdf",
+        ])
         .output()
         .expect("Failed to run pdftract hash");
 
@@ -63,7 +70,11 @@ fn test_hash_url_not_found() {
 
     // Exit code 4 for URL not found/DNS failure
     let code = output.status.code();
-    assert!(code == Some(4) || code == Some(5), "Expected exit code 4 or 5, got {:?}", code);
+    assert!(
+        code == Some(4) || code == Some(5),
+        "Expected exit code 4 or 5, got {:?}",
+        code
+    );
 }
 
 #[test]

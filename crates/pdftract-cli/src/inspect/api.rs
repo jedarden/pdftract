@@ -423,8 +423,8 @@ pub fn levenshtein_distance(a: &str, b: &str) -> usize {
             };
 
             matrix[i][j] = *[
-                matrix[i - 1][j] + 1,       // deletion
-                matrix[i][j - 1] + 1,       // insertion
+                matrix[i - 1][j] + 1,        // deletion
+                matrix[i][j - 1] + 1,        // insertion
                 matrix[i - 1][j - 1] + cost, // substitution
             ]
             .iter()
@@ -695,7 +695,10 @@ pub async fn api_compare_page_svg(
 
     // Get pages from the appropriate document
     let pages = if side == "a" {
-        state_guard.document_a.get("pages").and_then(|p| p.as_array())
+        state_guard
+            .document_a
+            .get("pages")
+            .and_then(|p| p.as_array())
     } else if let Some(ref doc_b) = state_guard.document_b {
         doc_b.get("pages").and_then(|p| p.as_array())
     } else {
@@ -948,13 +951,18 @@ fn render_page_svg(page: &JsonValue, width: f64, height: f64, thumbnail: bool) -
     // Note: Full glyph path rendering requires font data which isn't available in JSON
     // For now, we render a simple white background. This can be extended later
     // to include actual glyph paths via ttf-parser when font data is available.
-    svg_layers.push(r#"<g class="background"><rect width="100%" height="100%" fill="white"/></g>"#.to_string());
+    svg_layers.push(
+        r#"<g class="background"><rect width="100%" height="100%" fill="white"/></g>"#.to_string(),
+    );
 
     // 2. Selection layer - invisible <text> elements for browser text selection
     // This layer is always rendered (even in thumbnails) to enable text selection
     if !spans.is_empty() {
         let selection_elements = render_selection_layer(&spans, height);
-        svg_layers.push(format!(r#"<g class="selection" style="pointer-events: none;">{}</g>"#, selection_elements.join("")));
+        svg_layers.push(format!(
+            r#"<g class="selection" style="pointer-events: none;">{}</g>"#,
+            selection_elements.join("")
+        ));
     }
 
     // Overlay layers (only in full version, not thumbnails)
@@ -962,13 +970,19 @@ fn render_page_svg(page: &JsonValue, width: f64, height: f64, thumbnail: bool) -
         // 3. Spans layer - thin outline rectangles per span, color-coded by confidence
         if !spans.is_empty() {
             let span_elements = spans::render_spans(&spans, &blocks);
-            svg_layers.push(format!(r#"<g class="layer-spans" style="display: none;">{}</g>"#, span_elements.join("")));
+            svg_layers.push(format!(
+                r#"<g class="layer-spans" style="display: none;">{}</g>"#,
+                span_elements.join("")
+            ));
         }
 
         // 4. Blocks layer - translucent block rects, color-coded by kind
         if !blocks.is_empty() {
             let block_elements = blocks::render_blocks(&blocks);
-            svg_layers.push(format!(r#"<g class="layer-blocks" style="display: none;">{}</g>"#, block_elements.join("")));
+            svg_layers.push(format!(
+                r#"<g class="layer-blocks" style="display: none;">{}</g>"#,
+                block_elements.join("")
+            ));
         }
 
         // 5. Columns layer - dashed vertical lines at column boundaries
@@ -977,7 +991,10 @@ fn render_page_svg(page: &JsonValue, width: f64, height: f64, thumbnail: bool) -
         let detected_columns = extract_columns_from_spans(&spans, page_height_f32);
         if !detected_columns.is_empty() {
             let column_elements = columns::render_columns(&detected_columns, page_height_f32);
-            svg_layers.push(format!(r#"<g class="layer-columns" style="display: none;">{}</g>"#, column_elements.join("")));
+            svg_layers.push(format!(
+                r#"<g class="layer-columns" style="display: none;">{}</g>"#,
+                column_elements.join("")
+            ));
         }
 
         // 6. Reading order layer - curved arrows with numeric labels
@@ -986,7 +1003,10 @@ fn render_page_svg(page: &JsonValue, width: f64, height: f64, thumbnail: bool) -
             let order: Vec<usize> = (0..blocks.len()).collect();
             let reading_order_elements = reading_order::render_reading_order(&blocks, &order);
             if !reading_order_elements.is_empty() {
-                svg_layers.push(format!(r#"<g class="layer-reading-order" style="display: none;">{}</g>"#, reading_order_elements.join("")));
+                svg_layers.push(format!(
+                    r#"<g class="layer-reading-order" style="display: none;">{}</g>"#,
+                    reading_order_elements.join("")
+                ));
             }
         }
 
@@ -994,14 +1014,20 @@ fn render_page_svg(page: &JsonValue, width: f64, height: f64, thumbnail: bool) -
         if !spans.is_empty() {
             let heatmap_elements = confidence_heatmap::render_confidence_heatmap(&spans);
             if !heatmap_elements.is_empty() {
-                svg_layers.push(format!(r#"<g class="layer-confidence-heatmap" style="display: none;">{}</g>"#, heatmap_elements.join("")));
+                svg_layers.push(format!(
+                    r#"<g class="layer-confidence-heatmap" style="display: none;">{}</g>"#,
+                    heatmap_elements.join("")
+                ));
             }
         }
 
         // 8. OCR layer - cyan diagonal-stripe overlay on OCR'd regions
         let ocr_elements = ocr_regions::render_ocr_regions(&spans);
         if !ocr_elements.is_empty() {
-            svg_layers.push(format!(r#"<g class="layer-ocr" style="display: none;">{}</g>"#, ocr_elements.join("")));
+            svg_layers.push(format!(
+                r#"<g class="layer-ocr" style="display: none;">{}</g>"#,
+                ocr_elements.join("")
+            ));
         }
 
         // 9. MCID layer - numeric MCID labels for marked-content blocks
@@ -1012,7 +1038,10 @@ fn render_page_svg(page: &JsonValue, width: f64, height: f64, thumbnail: bool) -
         // 10. Anchors layer - block-ID labels at top-left of each block
         if !blocks.is_empty() {
             let anchor_elements = anchors::render_anchors(page_index, page_number, &blocks);
-            svg_layers.push(format!(r#"<g class="layer-anchors" style="display: none;">{}</g>"#, anchor_elements.join("")));
+            svg_layers.push(format!(
+                r#"<g class="layer-anchors" style="display: none;">{}</g>"#,
+                anchor_elements.join("")
+            ));
         }
     }
 
@@ -1085,7 +1114,10 @@ fn render_ocr_layer(spans: &[SpanJson]) -> Vec<String> {
 ///
 /// Groups spans by their column field and creates Column objects
 /// for rendering column boundaries.
-fn extract_columns_from_spans(spans: &[SpanJson], _page_height: f32) -> Vec<pdftract_core::layout::columns::Column> {
+fn extract_columns_from_spans(
+    spans: &[SpanJson],
+    _page_height: f32,
+) -> Vec<pdftract_core::layout::columns::Column> {
     use pdftract_core::layout::columns::Column;
     use std::collections::HashMap;
 
@@ -1103,8 +1135,14 @@ fn extract_columns_from_spans(spans: &[SpanJson], _page_height: f32) -> Vec<pdft
         .into_iter()
         .map(|(col_index, col_spans)| {
             // Find the x-range for this column
-            let x0 = col_spans.iter().map(|s| s.bbox[0]).fold(f64::INFINITY, f64::min);
-            let x1 = col_spans.iter().map(|s| s.bbox[2]).fold(f64::NEG_INFINITY, f64::max);
+            let x0 = col_spans
+                .iter()
+                .map(|s| s.bbox[0])
+                .fold(f64::INFINITY, f64::min);
+            let x1 = col_spans
+                .iter()
+                .map(|s| s.bbox[2])
+                .fold(f64::NEG_INFINITY, f64::max);
 
             Column {
                 index: col_index,

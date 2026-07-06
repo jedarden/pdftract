@@ -184,7 +184,10 @@ pub fn compute_iou(a: [f64; 4], b: [f64; 4]) -> f64 {
 /// The returned spans are sorted by top-to-bottom, left-to-right order
 /// (reading order). Note: Phase 4.5 recomputes the final reading order;
 /// this task only produces the merged list.
-pub fn merge_vector_and_ocr_spans(vector_spans: &[HybridSpan], ocr_spans: &[HybridSpan]) -> Vec<HybridSpan> {
+pub fn merge_vector_and_ocr_spans(
+    vector_spans: &[HybridSpan],
+    ocr_spans: &[HybridSpan],
+) -> Vec<HybridSpan> {
     let mut result = Vec::new();
 
     // Add all vector spans (they're always kept unless overlapping with higher-confidence OCR)
@@ -591,7 +594,11 @@ mod tests {
             0.9,
             "vector".to_string(),
         )];
-        let ocr = vec![HybridSpan::ocr([20.0, 20.0, 30.0, 30.0], 0.8, "ocr".to_string())];
+        let ocr = vec![HybridSpan::ocr(
+            [20.0, 20.0, 30.0, 30.0],
+            0.8,
+            "ocr".to_string(),
+        )];
 
         let result = merge_vector_and_ocr_spans(&vector, &ocr);
         assert_eq!(result.len(), 2);

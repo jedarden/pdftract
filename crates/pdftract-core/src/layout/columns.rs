@@ -259,8 +259,7 @@ where
         let line_count = lines
             .iter()
             .filter(|line| {
-                line
-                    .first_span_bbox()
+                line.first_span_bbox()
                     .map_or(false, |bbox| bbox[0] >= 0.0 && bbox[0] < page_width)
             })
             .count();
@@ -978,9 +977,9 @@ mod tests {
     fn test_detect_column_gaps_multiple_gaps() {
         // Multiple gaps separated by non-zero regions
         let mut hist = vec![1u32; 50];
-        hist.extend(vec![0u32; 20]);  // gap 1
+        hist.extend(vec![0u32; 20]); // gap 1
         hist.extend(vec![1u32; 30]);
-        hist.extend(vec![0u32; 25]);  // gap 2
+        hist.extend(vec![0u32; 25]); // gap 2
         hist.extend(vec![1u32; 50]);
 
         let gaps = detect_column_gaps(&hist, 600.0_f32);
@@ -1053,9 +1052,9 @@ mod tests {
     #[test]
     fn test_detect_column_gaps_leading_and_trailing() {
         // Both leading and trailing gaps
-        let mut hist = vec![0u32; 20];  // leading
+        let mut hist = vec![0u32; 20]; // leading
         hist.extend(vec![1u32; 100]);
-        hist.extend(vec![0u32; 20]);  // trailing
+        hist.extend(vec![0u32; 20]); // trailing
 
         let page_width = 600.0_f32;
         let threshold = (page_width * 0.03_f32).ceil() as usize; // 18
@@ -1080,7 +1079,9 @@ mod tests {
 
     impl TestLineWithSpans {
         fn new(bbox: Option<[f32; 4]>) -> Self {
-            Self { first_span_bbox: bbox }
+            Self {
+                first_span_bbox: bbox,
+            }
         }
     }
 

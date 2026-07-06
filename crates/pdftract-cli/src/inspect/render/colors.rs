@@ -21,10 +21,10 @@
 /// - `Some(c) where c >= 0.8`: green (#22c55e) - high confidence
 pub fn confidence_to_color(confidence: Option<f64>) -> &'static str {
     match confidence {
-        None => GRAY_NEUTRAL,               // gray - direct extraction
-        Some(c) if c < 0.5 => RED_LOW,      // red - low confidence
+        None => GRAY_NEUTRAL,                // gray - direct extraction
+        Some(c) if c < 0.5 => RED_LOW,       // red - low confidence
         Some(c) if c < 0.8 => YELLOW_MEDIUM, // yellow - medium confidence
-        Some(_) => GREEN_HIGH,              // green - high confidence
+        Some(_) => GREEN_HIGH,               // green - high confidence
     }
 }
 
@@ -89,7 +89,11 @@ pub fn column_boundary_color(column_index: usize, is_left: bool) -> &'static str
     ];
 
     let (light, dark) = PALETTE[column_index % PALETTE.len()];
-    if is_left { light } else { dark }
+    if is_left {
+        light
+    } else {
+        dark
+    }
 }
 
 // ============== Confidence Colors ==============
@@ -245,22 +249,49 @@ mod tests {
     fn test_color_constants_are_valid_hex() {
         // All color constants should be valid 7-character hex codes
         let colors = [
-            RED_LOW, YELLOW_MEDIUM, GREEN_HIGH, GRAY_NEUTRAL,
-            BLUE_HEADING, GRAY_PARAGRAPH, TEAL_TABLE, PURPLE_LIST,
-            ORANGE_CODE, GRAY_LIGHT_HEADER, BROWN_FIGURE, PINK_CAPTION,
-            CYAN_COL_LEFT, CYAN_COL_RIGHT, MAGENTA_COL_LEFT, MAGENTA_COL_RIGHT,
-            YELLOW_COL_LEFT, YELLOW_COL_RIGHT, GREEN_COL_LEFT, GREEN_COL_RIGHT,
-            ORANGE_COL_LEFT, ORANGE_COL_RIGHT, BLUE_COL_LEFT, BLUE_COL_RIGHT,
-            PURPLE_COL_LEFT, PURPLE_COL_RIGHT, RED_COL_LEFT, RED_COL_RIGHT,
-            BLUE_READING_ORDER, PURPLE_MCID, BLACK_ANCHOR, CYAN_OCR,
+            RED_LOW,
+            YELLOW_MEDIUM,
+            GREEN_HIGH,
+            GRAY_NEUTRAL,
+            BLUE_HEADING,
+            GRAY_PARAGRAPH,
+            TEAL_TABLE,
+            PURPLE_LIST,
+            ORANGE_CODE,
+            GRAY_LIGHT_HEADER,
+            BROWN_FIGURE,
+            PINK_CAPTION,
+            CYAN_COL_LEFT,
+            CYAN_COL_RIGHT,
+            MAGENTA_COL_LEFT,
+            MAGENTA_COL_RIGHT,
+            YELLOW_COL_LEFT,
+            YELLOW_COL_RIGHT,
+            GREEN_COL_LEFT,
+            GREEN_COL_RIGHT,
+            ORANGE_COL_LEFT,
+            ORANGE_COL_RIGHT,
+            BLUE_COL_LEFT,
+            BLUE_COL_RIGHT,
+            PURPLE_COL_LEFT,
+            PURPLE_COL_RIGHT,
+            RED_COL_LEFT,
+            RED_COL_RIGHT,
+            BLUE_READING_ORDER,
+            PURPLE_MCID,
+            BLACK_ANCHOR,
+            CYAN_OCR,
         ];
 
         for color in colors {
             assert!(color.starts_with('#'), "{} should start with #", color);
             assert!(color.len() == 7, "{} should be 7 characters", color);
             // All chars after # should be hex digits
-            assert!(color[1..].chars().all(|c| c.is_ascii_hexdigit()),
-                    "{} should be valid hex", color);
+            assert!(
+                color[1..].chars().all(|c| c.is_ascii_hexdigit()),
+                "{} should be valid hex",
+                color
+            );
         }
     }
 }

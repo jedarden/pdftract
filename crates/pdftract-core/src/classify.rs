@@ -335,7 +335,9 @@ impl SignalEvaluator for LowCharValiditySignal {
             let validity = ctx.char_validity_rate();
             if validity < SignalsConfig::CHAR_VALIDITY_LOW_THRESHOLD {
                 // Very low validity = broken encoding
-                return Some(Vote::broken_vector(SignalsConfig::CHAR_VALIDITY_LOW_STRENGTH));
+                return Some(Vote::broken_vector(
+                    SignalsConfig::CHAR_VALIDITY_LOW_STRENGTH,
+                ));
             }
         }
         None
@@ -398,7 +400,8 @@ impl SignalEvaluator for CharDensityRatioSignal {
     fn evaluate(&self, ctx: &PageContext) -> Option<Vote> {
         // Skip if high character validity is present (mutually exclusive with HighCharValiditySignal)
         // If text decodes well, density doesn't matter - it's good vector text
-        if ctx.has_text() && ctx.char_validity_rate() > SignalsConfig::CHAR_VALIDITY_HIGH_THRESHOLD {
+        if ctx.has_text() && ctx.char_validity_rate() > SignalsConfig::CHAR_VALIDITY_HIGH_THRESHOLD
+        {
             return None;
         }
 
@@ -2249,7 +2252,7 @@ mod tests {
         ctx.valid_char_count = 40; // 80% validity (below 0.85 threshold)
         ctx.width = 612.0; // US Letter width
         ctx.height = 792.0; // US Letter height
-        // density = 50 / (612 * 792) = 50 / 484,704 ≈ 0.0001 (well below 0.03)
+                            // density = 50 / (612 * 792) = 50 / 484,704 ≈ 0.0001 (well below 0.03)
         ctx.has_visible_text = true;
 
         let signal = CharDensityRatioSignal;

@@ -13,16 +13,16 @@
 
 #![cfg(feature = "remote")]
 
+use pdftract_core::diagnostics::DiagCode;
+use pdftract_core::source::{open_remote, RemoteOpts};
 use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
 use wiremock::{
-    MockServer, Mock, ResponseTemplate, matchers::{method, header, path},
-    Respond,
+    matchers::{header, method, path},
+    Mock, MockServer, Respond, ResponseTemplate,
 };
-use pdftract_core::source::{open_remote, RemoteOpts};
-use pdftract_core::diagnostics::DiagCode;
 
 /// Test fixture PDFs - use actual valid PDF files for reliable testing.
 const TEST_FIXTURE_100P: &[u8] = include_bytes!("fixtures/multipage-100.pdf");
@@ -116,7 +116,10 @@ async fn test_bandwidth_limited_extraction() {
                         tracker_clone_get.record_request(data.len(), true, false);
 
                         return ResponseTemplate::new(206)
-                            .insert_header("Content-Range", format!("bytes {}-{}/{}", start, end, pdf_data.len()))
+                            .insert_header(
+                                "Content-Range",
+                                format!("bytes {}-{}/{}", start, end, pdf_data.len()),
+                            )
                             .insert_header("Accept-Ranges", "bytes")
                             .insert_header("Content-Length", data.len().to_string())
                             .set_body_bytes(data.to_vec());
@@ -239,8 +242,12 @@ fn create_multipage_pdf(page_count: usize) -> Vec<u8> {
     // Content streams
     for i in 0..page_count {
         let content_obj = 3 + page_count + i;
-        pdf.push_str(&format!("{} 0 obj\n<< /Length {} >>\nstream\n{}\nendstream\nendobj\n",
-            content_obj, repeated_content.len(), repeated_content));
+        pdf.push_str(&format!(
+            "{} 0 obj\n<< /Length {} >>\nstream\n{}\nendstream\nendobj\n",
+            content_obj,
+            repeated_content.len(),
+            repeated_content
+        ));
     }
 
     // Xref table
@@ -350,7 +357,10 @@ impl Respond for RangeResponder {
                     let data = &self.pdf_data[start..=end];
 
                     return ResponseTemplate::new(206)
-                        .insert_header("Content-Range", format!("bytes {}-{}/{}", start, end, self.pdf_data.len()))
+                        .insert_header(
+                            "Content-Range",
+                            format!("bytes {}-{}/{}", start, end, self.pdf_data.len()),
+                        )
                         .insert_header("Accept-Ranges", "bytes")
                         .insert_header("Content-Length", data.len().to_string())
                         .set_body_bytes(data.to_vec());
@@ -381,7 +391,7 @@ async fn test_no_range_support() {
                 .insert_header("Content-Length", pdf_data.len().to_string())
                 .insert_header("Accept-Ranges", "none")
                 .insert_header("Content-Type", "application/pdf")
-                .set_body_bytes("")
+                .set_body_bytes(""),
         )
         .mount(&mock_server)
         .await;
@@ -411,10 +421,13 @@ async fn test_no_range_support() {
     assert!(result.is_ok());
 
     // Verify REMOTE_NO_RANGE_SUPPORT diagnostic was emitted
-    let has_diagnostic = diagnostics.iter().any(|d| {
-        matches!(d.code, DiagCode::RemoteNoRangeSupport)
-    });
-    assert!(has_diagnostic, "REMOTE_NO_RANGE_SUPPORT diagnostic should be emitted");
+    let has_diagnostic = diagnostics
+        .iter()
+        .any(|d| matches!(d.code, DiagCode::RemoteNoRangeSupport));
+    assert!(
+        has_diagnostic,
+        "REMOTE_NO_RANGE_SUPPORT diagnostic should be emitted"
+    );
 }
 
 /// Server returns 416 Range Not Satisfiable.
@@ -439,7 +452,7 @@ async fn test_416_retry_without_range() {
                 .insert_header("Content-Length", pdf_data.len().to_string())
                 .insert_header("Accept-Ranges", "bytes")
                 .insert_header("Content-Type", "application/pdf")
-                .set_body_bytes("")
+                .set_body_bytes(""),
         )
         .mount(&mock_server)
         .await;
@@ -479,17 +492,26 @@ async fn test_416_retry_without_range() {
 
     // Verify we got exactly one Range request that returned 416
     let range_count = range_requests.load(Ordering::SeqCst);
-    assert_eq!(range_count, 1, "Should make exactly one Range request that got 416");
+    assert_eq!(
+        range_count, 1,
+        "Should make exactly one Range request that got 416"
+    );
 
     // Verify we retried without Range header
     let non_range_count = non_range_requests.load(Ordering::SeqCst);
-    assert!(non_range_count >= 1, "Should retry without Range header after 416");
+    assert!(
+        non_range_count >= 1,
+        "Should retry without Range header after 416"
+    );
 
     // Verify REMOTE_NO_RANGE_SUPPORT diagnostic was emitted (fallback triggered)
-    let has_diagnostic = diagnostics.iter().any(|d| {
-        matches!(d.code, DiagCode::RemoteNoRangeSupport)
-    });
-    assert!(has_diagnostic, "REMOTE_NO_RANGE_SUPPORT diagnostic should be emitted after 416");
+    let has_diagnostic = diagnostics
+        .iter()
+        .any(|d| matches!(d.code, DiagCode::RemoteNoRangeSupport));
+    assert!(
+        has_diagnostic,
+        "REMOTE_NO_RANGE_SUPPORT diagnostic should be emitted after 416"
+    );
 }
 
 /// Linearized PDF with hint stream timeline verification.
@@ -508,7 +530,10 @@ async fn test_linearized_pdf() {
     Mock::given(method("HEAD"))
         .and(path("/linearized.pdf"))
         .respond_with(move |_: &wiremock::Request| {
-            request_times_clone_head.lock().unwrap().push(std::time::Instant::now());
+            request_times_clone_head
+                .lock()
+                .unwrap()
+                .push(std::time::Instant::now());
             ResponseTemplate::new(200)
                 .insert_header("Content-Length", pdf_data_clone.len().to_string())
                 .insert_header("Accept-Ranges", "bytes")
@@ -522,7 +547,10 @@ async fn test_linearized_pdf() {
         .and(path("/linearized.pdf"))
         .and(header("Range", "*"))
         .respond_with(move |req: &wiremock::Request| {
-            request_times_clone_get.lock().unwrap().push(std::time::Instant::now());
+            request_times_clone_get
+                .lock()
+                .unwrap()
+                .push(std::time::Instant::now());
 
             // Parse Range header
             let range_header = req.headers.get("Range").and_then(|h| h.to_str().ok());
@@ -536,7 +564,10 @@ async fn test_linearized_pdf() {
                         let data = &pdf_data[start..=end];
 
                         return ResponseTemplate::new(206)
-                            .insert_header("Content-Range", format!("bytes {}-{}/{}", start, end, pdf_data.len()))
+                            .insert_header(
+                                "Content-Range",
+                                format!("bytes {}-{}/{}", start, end, pdf_data.len()),
+                            )
                             .insert_header("Accept-Ranges", "bytes")
                             .insert_header("Content-Length", data.len().to_string())
                             .set_body_bytes(data.to_vec());
@@ -564,11 +595,17 @@ async fn test_linearized_pdf() {
     let tail_offset = source.len().saturating_sub(16384);
     let tail_len = (source.len() - tail_offset) as usize;
     let tail_data = source.read_range(tail_offset, tail_len);
-    assert!(tail_data.is_ok(), "Should be able to read linearized PDF tail");
+    assert!(
+        tail_data.is_ok(),
+        "Should be able to read linearized PDF tail"
+    );
 
     // Check request timeline
     let times = request_times.lock().unwrap();
-    assert!(times.len() >= 2, "Should make at least HEAD + one Range request");
+    assert!(
+        times.len() >= 2,
+        "Should make at least HEAD + one Range request"
+    );
 
     // For a linearized PDF with hint stream:
     // - Request 1: HEAD (metadata)
@@ -594,7 +631,7 @@ async fn test_connection_drop() {
                 .insert_header("Content-Length", pdf_data.len().to_string())
                 .insert_header("Accept-Ranges", "bytes")
                 .insert_header("Content-Type", "application/pdf")
-                .set_body_bytes("")
+                .set_body_bytes(""),
         )
         .mount(&mock_server)
         .await;
@@ -623,7 +660,10 @@ async fn test_connection_drop() {
                         let data = &pdf_data[start..=end];
 
                         return ResponseTemplate::new(206)
-                            .insert_header("Content-Range", format!("bytes {}-{}/{}", start, end, pdf_data.len()))
+                            .insert_header(
+                                "Content-Range",
+                                format!("bytes {}-{}/{}", start, end, pdf_data.len()),
+                            )
                             .insert_header("Accept-Ranges", "bytes")
                             .insert_header("Content-Length", data.len().to_string())
                             .set_body_bytes(data.to_vec());
@@ -651,8 +691,11 @@ async fn test_connection_drop() {
         if read_result.is_err() {
             let err = read_result.unwrap_err();
             // Should be an Interrupted error
-            assert_eq!(err.kind(), io::ErrorKind::Interrupted,
-                       "Connection drop should produce Interrupted error");
+            assert_eq!(
+                err.kind(),
+                io::ErrorKind::Interrupted,
+                "Connection drop should produce Interrupted error"
+            );
         }
     }
 }
@@ -672,7 +715,7 @@ async fn test_basic_auth() {
                 .insert_header("Content-Length", pdf_data.len().to_string())
                 .insert_header("Accept-Ranges", "bytes")
                 .insert_header("Content-Type", "application/pdf")
-                .set_body_bytes("")
+                .set_body_bytes(""),
         )
         .mount(&mock_server)
         .await;
@@ -685,8 +728,7 @@ async fn test_basic_auth() {
         .await;
 
     let url = format!("{}/test.pdf", mock_server.uri());
-    let opts = RemoteOpts::new()
-        .with_credentials("testuser", "testpass");
+    let opts = RemoteOpts::new().with_credentials("testuser", "testpass");
 
     let result = open_remote(&url, &opts, None);
     assert!(result.is_ok(), "Basic auth should succeed");
@@ -700,8 +742,7 @@ async fn test_unauthorized() {
     Mock::given(method("HEAD"))
         .and(path("/test.pdf"))
         .respond_with(
-            ResponseTemplate::new(401)
-                .insert_header("WWW-Authenticate", "Basic realm=\"test\"")
+            ResponseTemplate::new(401).insert_header("WWW-Authenticate", "Basic realm=\"test\""),
         )
         .mount(&mock_server)
         .await;
@@ -724,10 +765,7 @@ async fn test_forbidden() {
 
     Mock::given(method("HEAD"))
         .and(path("/test.pdf"))
-        .respond_with(
-            ResponseTemplate::new(403)
-                .insert_header("Content-Length", "0")
-        )
+        .respond_with(ResponseTemplate::new(403).insert_header("Content-Length", "0"))
         .mount(&mock_server)
         .await;
 
@@ -758,7 +796,7 @@ async fn test_custom_headers() {
                 .insert_header("Content-Length", pdf_data.len().to_string())
                 .insert_header("Accept-Ranges", "bytes")
                 .insert_header("Content-Type", "application/pdf")
-                .set_body_bytes("")
+                .set_body_bytes(""),
         )
         .mount(&mock_server)
         .await;
@@ -811,7 +849,7 @@ async fn test_cache_behavior() {
                 .insert_header("Content-Length", pdf_data.len().to_string())
                 .insert_header("Accept-Ranges", "bytes")
                 .insert_header("Content-Type", "application/pdf")
-                .set_body_bytes("")
+                .set_body_bytes(""),
         )
         .mount(&mock_server)
         .await;
@@ -855,7 +893,7 @@ async fn test_block_boundary_crossing() {
                 .insert_header("Content-Length", pdf_data.len().to_string())
                 .insert_header("Accept-Ranges", "bytes")
                 .insert_header("Content-Type", "application/pdf")
-                .set_body_bytes("")
+                .set_body_bytes(""),
         )
         .mount(&mock_server)
         .await;
@@ -911,7 +949,7 @@ async fn test_read_beyond_eof() {
                 .insert_header("Content-Length", pdf_data.len().to_string())
                 .insert_header("Accept-Ranges", "bytes")
                 .insert_header("Content-Type", "application/pdf")
-                .set_body_bytes("")
+                .set_body_bytes(""),
         )
         .mount(&mock_server)
         .await;

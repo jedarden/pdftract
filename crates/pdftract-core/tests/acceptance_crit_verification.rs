@@ -36,8 +36,14 @@ fn verify_circular_self_with_limited_stack() {
                 let value = dict.get("A").unwrap();
                 match value {
                     PdfObject::Ref(ref_obj) => {
-                        assert_eq!(ref_obj.object, 1, "Circular reference should point to obj 1");
-                        assert_eq!(ref_obj.generation, 0, "Circular reference should point to gen 0");
+                        assert_eq!(
+                            ref_obj.object, 1,
+                            "Circular reference should point to obj 1"
+                        );
+                        assert_eq!(
+                            ref_obj.generation, 0,
+                            "Circular reference should point to gen 0"
+                        );
                     }
                     _ => panic!("Expected Ref for key 'A', got {:?}", value),
                 }
@@ -67,14 +73,18 @@ fn verify_deep_nesting_trips_depth_limit() {
     let result = parser.parse_direct_object();
 
     // Should parse successfully (truncated at depth 256)
-    assert!(result.is_some(), "Should parse deep_nesting fixture (truncated)");
+    assert!(
+        result.is_some(),
+        "Should parse deep_nesting fixture (truncated)"
+    );
 
     let diagnostics = parser.take_diagnostics();
 
     // Check for STRUCT_DEPTH_EXCEEDED diagnostic
     let has_depth_exceeded = diagnostics.iter().any(|d| {
-        format!("{:?}", d.code).contains("STRUCT_DEPTH_EXCEEDED") ||
-        format!("{:?}", d).contains("DEPTH") || format!("{:?}", d).contains("depth")
+        format!("{:?}", d.code).contains("STRUCT_DEPTH_EXCEEDED")
+            || format!("{:?}", d).contains("DEPTH")
+            || format!("{:?}", d).contains("depth")
     });
 
     if has_depth_exceeded {

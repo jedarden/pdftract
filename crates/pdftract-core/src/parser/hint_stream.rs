@@ -269,10 +269,7 @@ fn parse_hint_header(reader: &mut BitReader) -> Option<HintHeader> {
 ///
 /// Note: The object number is read but not used in the minimal implementation.
 /// We assume pages appear in order and return hints by index.
-fn parse_page_hints(
-    reader: &mut BitReader,
-    header: &HintHeader,
-) -> Option<Vec<PageHint>> {
+fn parse_page_hints(reader: &mut BitReader, header: &HintHeader) -> Option<Vec<PageHint>> {
     let mut page_hints = Vec::with_capacity(header.page_count as usize);
 
     for _ in 0..header.page_count {
@@ -316,10 +313,16 @@ fn parse_page_hints(
 /// # Returns
 /// - `Some(HintTable)`: Successfully parsed hint stream
 /// - `None`: Malformed hint stream (emits STRUCT_INVALID_HINT_STREAM)
-pub fn parse_hint_stream(data: &[u8], diagnostics: &mut Vec<crate::diagnostics::Diagnostic>) -> Option<HintTable> {
+pub fn parse_hint_stream(
+    data: &[u8],
+    diagnostics: &mut Vec<crate::diagnostics::Diagnostic>,
+) -> Option<HintTable> {
     if data.is_empty() {
-        emit!(diagnostics, StructInvalidHintStream,
-              message = "hint stream is empty".to_string());
+        emit!(
+            diagnostics,
+            StructInvalidHintStream,
+            message = "hint stream is empty".to_string()
+        );
         return None;
     }
 
@@ -328,20 +331,26 @@ pub fn parse_hint_stream(data: &[u8], diagnostics: &mut Vec<crate::diagnostics::
     // Parse header
     let header = parse_hint_header(&mut reader)?;
     if header.page_count == 0 {
-        emit!(diagnostics, StructInvalidHintStream,
-              message = "hint stream reports zero pages".to_string());
+        emit!(
+            diagnostics,
+            StructInvalidHintStream,
+            message = "hint stream reports zero pages".to_string()
+        );
         return None;
     }
 
     // Parse page hints
     let page_hints = parse_page_hints(&mut reader, &header)?;
     if page_hints.len() != header.page_count as usize {
-        emit!(diagnostics, StructInvalidHintStream,
-              message = format!(
-                  "hint stream page count mismatch: header reports {}, parsed {}",
-                  header.page_count,
-                  page_hints.len()
-              ));
+        emit!(
+            diagnostics,
+            StructInvalidHintStream,
+            message = format!(
+                "hint stream page count mismatch: header reports {}, parsed {}",
+                header.page_count,
+                page_hints.len()
+            )
+        );
         return None;
     }
 
@@ -384,16 +393,29 @@ pub fn parse_hint_stream_from_linearized(
         Some(decoder) => {
             // Check if it's a FlateDecoder and decode
             if decoder.name() == "FlateDecode" {
-                decoder.decode(&hint_stream_data, None, &mut counter, DEFAULT_MAX_DECOMPRESS_BYTES).ok()?
+                decoder
+                    .decode(
+                        &hint_stream_data,
+                        None,
+                        &mut counter,
+                        DEFAULT_MAX_DECOMPRESS_BYTES,
+                    )
+                    .ok()?
             } else {
-                emit!(diagnostics, StructInvalidHintStream,
-                      message = "hint stream is not FlateDecode".to_string());
+                emit!(
+                    diagnostics,
+                    StructInvalidHintStream,
+                    message = "hint stream is not FlateDecode".to_string()
+                );
                 return None;
             }
         }
         _ => {
-            emit!(diagnostics, StructInvalidHintStream,
-                  message = "hint stream is not FlateDecode".to_string());
+            emit!(
+                diagnostics,
+                StructInvalidHintStream,
+                message = "hint stream is not FlateDecode".to_string()
+            );
             return None;
         }
     };
@@ -494,7 +516,7 @@ mod tests {
     fn test_bit_reader_single_bit() {
         let data = vec![0b10101010]; // 0xAA
         let mut reader = BitReader::new(data);
-        assert_eq!(reader.read_bit(), Some(true));   // MSB first
+        assert_eq!(reader.read_bit(), Some(true)); // MSB first
         assert_eq!(reader.read_bit(), Some(false));
         assert_eq!(reader.read_bit(), Some(true));
         assert_eq!(reader.read_bit(), Some(false));
@@ -567,13 +589,13 @@ mod tests {
         // Bit widths: 20-bit value 0x88888 packed MSB-first (bits 32-51)
         // This spans bytes 4-6 with bit alignment
         data.extend_from_slice(&[0x88, 0x88, 0x80]); // 20 bits: 0x88888
-        // Page count: 1 (8 bits, starting at bit 52)
-        // This starts in byte 6 (after the 20-bit bit_widths field)
+                                                     // Page count: 1 (8 bits, starting at bit 52)
+                                                     // This starts in byte 6 (after the 20-bit bit_widths field)
         data.push(0x01); // byte 6: lower 4 bits are padding, upper 4 bits start page count
-        // Actually, we need to track bit position more carefully.
-        // After 52 bits (version + bit_widths), we're at bit 52, which is:
-        // - byte 6, bit 4 (0-indexed within byte)
-        // So page count (8 bits) spans bytes 6-7
+                         // Actually, we need to track bit position more carefully.
+                         // After 52 bits (version + bit_widths), we're at bit 52, which is:
+                         // - byte 6, bit 4 (0-indexed within byte)
+                         // So page count (8 bits) spans bytes 6-7
 
         // Let me recalculate with exact bit positions:
         // - Version: bits 0-31 (bytes 0-3)
@@ -730,9 +752,18 @@ mod tests {
     #[test]
     fn test_hint_table_predict_page_range() {
         let page_hints = vec![
-            PageHint { offset: 100, length: 50 },
-            PageHint { offset: 200, length: 75 },
-            PageHint { offset: 300, length: 100 },
+            PageHint {
+                offset: 100,
+                length: 50,
+            },
+            PageHint {
+                offset: 200,
+                length: 75,
+            },
+            PageHint {
+                offset: 300,
+                length: 100,
+            },
         ];
         let table = HintTable::new(page_hints);
 
@@ -745,8 +776,14 @@ mod tests {
     #[test]
     fn test_hint_table_page_count() {
         let page_hints = vec![
-            PageHint { offset: 0, length: 100 },
-            PageHint { offset: 100, length: 200 },
+            PageHint {
+                offset: 0,
+                length: 100,
+            },
+            PageHint {
+                offset: 100,
+                length: 200,
+            },
         ];
         let table = HintTable::new(page_hints);
         assert_eq!(table.page_count(), 2);

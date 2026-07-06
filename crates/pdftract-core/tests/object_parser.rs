@@ -11,11 +11,11 @@
 //! - *.pdf.in: Raw PDF object snippet (not a complete PDF)
 //! - *.expected.json: Expected JSON output from parsing
 
+use base64::prelude::Engine;
 use pdftract_core::parser::object::{ObjectParser, PdfObject};
+use serde_json::{json, Value};
 use std::fs;
 use std::path::PathBuf;
-use serde_json::{json, Value};
-use base64::prelude::Engine;
 
 /// Fixture directory
 const FIXTURES_DIR: &str = "tests/object_parser/fixtures";
@@ -130,7 +130,8 @@ fn test_fixture(name: &str) {
         PathBuf::from("../../../tests/object_parser/fixtures").join(format!("{}.pdf.in", name)),
     ];
 
-    let fixture_path = paths.iter()
+    let fixture_path = paths
+        .iter()
         .find(|p| p.exists())
         .unwrap_or_else(|| panic!("Fixture '{}' not found in any known location", name));
 
@@ -170,7 +171,11 @@ fn test_fixture(name: &str) {
     if name == "deep_nesting" {
         // For deep_nesting, just verify the file exists and that we successfully parsed something
         // The actual JSON is too large for serde_json to parse, so we don't compare it
-        assert!(expected_path.exists(), "Expected JSON file not found for {}", name);
+        assert!(
+            expected_path.exists(),
+            "Expected JSON file not found for {}",
+            name
+        );
         assert!(obj.is_some(), "Failed to parse deep_nesting fixture");
         return;
     }
@@ -196,7 +201,10 @@ fn test_fixture(name: &str) {
     } else {
         // Compare with expected
         if !expected_path.exists() {
-            panic!("Expected JSON file not found: {}. Run with BLESS=1 to generate.", expected_path.display());
+            panic!(
+                "Expected JSON file not found: {}. Run with BLESS=1 to generate.",
+                expected_path.display()
+            );
         }
 
         let expected_json = fs::read_to_string(&expected_path)
@@ -209,9 +217,11 @@ fn test_fixture(name: &str) {
             // Just verify the type matches, ignore note
             if let Some(expected_type) = expected.get("type") {
                 if let Some(actual_type) = actual_json.get("type") {
-                    assert_eq!(expected_type, actual_type,
+                    assert_eq!(
+                        expected_type, actual_type,
                         "Type mismatch for fixture '{}': expected {}, got {}",
-                        name, expected_type, actual_type);
+                        name, expected_type, actual_type
+                    );
                 }
             }
             return;
@@ -219,8 +229,14 @@ fn test_fixture(name: &str) {
 
         if actual_json != expected {
             eprintln!("=== MISMATCH for fixture '{}' ===", name);
-            eprintln!("Expected:\n{}", serde_json::to_string_pretty(&expected).unwrap());
-            eprintln!("\nActual:\n{}", serde_json::to_string_pretty(&actual_json).unwrap());
+            eprintln!(
+                "Expected:\n{}",
+                serde_json::to_string_pretty(&expected).unwrap()
+            );
+            eprintln!(
+                "\nActual:\n{}",
+                serde_json::to_string_pretty(&actual_json).unwrap()
+            );
             panic!("Fixture '{}' output does not match expected JSON", name);
         }
     }

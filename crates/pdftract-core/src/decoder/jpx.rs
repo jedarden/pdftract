@@ -87,10 +87,7 @@ impl JpxDecoder {
         }
 
         // Fallback to ldconfig -p grep
-        if let Ok(output) = std::process::Command::new("ldconfig")
-            .arg("-p")
-            .output()
-        {
+        if let Ok(output) = std::process::Command::new("ldconfig").arg("-p").output() {
             let stdout = String::from_utf8_lossy(&output.stdout);
             if stdout.contains("libopenjp2") {
                 return true;
@@ -144,11 +141,13 @@ impl JpxDecoder {
             let message = if Self::has_full_render() {
                 // This case shouldn't happen with the has_jpx_support check,
                 // but is kept for clarity
-                "JPXDecode filter encountered with full-render feature (should not emit)".to_string()
+                "JPXDecode filter encountered with full-render feature (should not emit)"
+                    .to_string()
             } else if Self::has_libopenjp2() {
                 // This case shouldn't happen with the has_jpx_support check,
                 // but is kept for clarity
-                "JPXDecode filter encountered with libopenjp2 available (should not emit)".to_string()
+                "JPXDecode filter encountered with libopenjp2 available (should not emit)"
+                    .to_string()
             } else {
                 format!(
                     "JPXDecode filter encountered; build with --features full-render or install libopenjp2 ({})",
@@ -156,7 +155,10 @@ impl JpxDecoder {
                 )
             };
 
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(DiagCode::OcrJpxUnsupported, message));
+            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                DiagCode::OcrJpxUnsupported,
+                message,
+            ));
             return true;
         }
         false
@@ -200,7 +202,10 @@ mod tests {
     #[test]
     fn test_jp2_signature_constant() {
         // Verify the JP2 signature matches the spec
-        assert_eq!(JP2_SIGNATURE, [0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87, 0x0A]);
+        assert_eq!(
+            JP2_SIGNATURE,
+            [0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87, 0x0A]
+        );
     }
 
     #[test]
@@ -223,7 +228,9 @@ mod tests {
     #[test]
     fn test_validate_jp2_magic_with_truncated_data() {
         // Data too short for JP2 signature
-        let data = [0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87]; // Only 11 bytes
+        let data = [
+            0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87,
+        ]; // Only 11 bytes
 
         assert!(!JpxDecoder::validate_jp2_magic(&data));
     }
@@ -268,7 +275,9 @@ mod tests {
 
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].code, DiagCode::StreamInvalidJpx);
-        assert!(diagnostics[0].message.contains("JP2 box magic signature not found"));
+        assert!(diagnostics[0]
+            .message
+            .contains("JP2 box magic signature not found"));
     }
 
     #[test]
@@ -330,8 +339,9 @@ mod tests {
         let j2k_data = [
             0xFF, 0x4F, // SOC (Start of Codestream)
             0xFF, 0x51, // SIZ (Image and tile size)
-            0x00, 0x29, 0x00, 0x01, // Lsiz (length), Rsiz (capabilities)
-            // ... rest of SIZ segment
+            0x00, 0x29, 0x00,
+            0x01, // Lsiz (length), Rsiz (capabilities)
+                  // ... rest of SIZ segment
         ];
 
         assert!(!JpxDecoder::validate_jp2_magic(&j2k_data));

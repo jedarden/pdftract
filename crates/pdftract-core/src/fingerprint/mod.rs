@@ -29,9 +29,9 @@ use sha2::{Digest, Sha256};
 use crate::diagnostics::Diagnostic;
 use crate::parser::lexer::Lexer;
 use crate::parser::object::{ObjRef, PdfDict, PdfObject};
-use crate::parser::stream::{ExtractionOptions, decode_stream};
-use crate::parser::xref::XrefResolver;
 use crate::parser::stream::PdfSource as ParserPdfSource;
+use crate::parser::stream::{decode_stream, ExtractionOptions};
+use crate::parser::xref::XrefResolver;
 
 /// Version prefix for fingerprint output.
 pub const FINGERPRINT_VERSION: &str = "pdftract-v1";
@@ -212,7 +212,8 @@ fn hash_content_streams(
                         if let Some(src) = source {
                             let opts = ExtractionOptions::default();
                             let mut decompress_counter = 0u64;
-                            let decoded = decode_stream(&*stream, src, &opts, &mut decompress_counter);
+                            let decoded =
+                                decode_stream(&*stream, src, &opts, &mut decompress_counter);
                             normalize_content_bytes(&decoded)
                         } else {
                             // Lazy mode: no source available, use empty bytes

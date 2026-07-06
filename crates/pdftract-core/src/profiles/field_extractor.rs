@@ -21,7 +21,9 @@ fn convert_yaml_to_json(yaml_value: &serde_yaml::Value) -> Value {
             if let Some(i) = n.as_i64() {
                 Value::Number(i.into())
             } else if let Some(f) = n.as_f64() {
-                serde_json::Number::from_f64(f).map(Value::Number).unwrap_or(Value::Null)
+                serde_json::Number::from_f64(f)
+                    .map(Value::Number)
+                    .unwrap_or(Value::Null)
             } else {
                 Value::Null
             }
@@ -332,7 +334,10 @@ mod tests {
             parse_value("hello", Some("string")),
             Value::String("hello".to_string())
         );
-        assert_eq!(parse_value("world", None), Value::String("world".to_string()));
+        assert_eq!(
+            parse_value("world", None),
+            Value::String("world".to_string())
+        );
     }
 
     #[test]

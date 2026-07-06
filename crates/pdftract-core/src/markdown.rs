@@ -432,7 +432,12 @@ fn emit_list_blocks(list_blocks: &[BlockJson]) -> String {
         if level == 0 && indent_levels.iter().all(|&v| (x0 - v).abs() >= 5.0) {
             level = indent_levels.len();
             indent_levels.push(x0);
-        } else if level < indent_levels.len() && indent_levels.iter().enumerate().all(|(i, &v)| i != level || (x0 - v).abs() >= 5.0) {
+        } else if level < indent_levels.len()
+            && indent_levels
+                .iter()
+                .enumerate()
+                .all(|(i, &v)| i != level || (x0 - v).abs() >= 5.0)
+        {
             // x0 is a new level beyond current ones
             level = indent_levels.len();
             indent_levels.push(x0);
@@ -832,7 +837,10 @@ pub fn page_to_markdown_with_options(
 /// // If "here" is part of a link, it will be emitted as [here](https://example.com)
 /// let md = spans_to_markdown_with_links(&spans, &[]);
 /// ```
-pub fn spans_to_markdown_with_links(spans: &[SpanJson], page_links: &[crate::schema::LinkJson]) -> String {
+pub fn spans_to_markdown_with_links(
+    spans: &[SpanJson],
+    page_links: &[crate::schema::LinkJson],
+) -> String {
     use crate::output::markdown::links;
 
     if page_links.is_empty() {
@@ -845,7 +853,8 @@ pub fn spans_to_markdown_with_links(spans: &[SpanJson], page_links: &[crate::sch
 
     // Build a map of span index -> link markdown, but only for the FIRST span in each link
     // Other spans in the link are skipped because their text is already included in the anchor text
-    let mut span_to_link: std::collections::HashMap<usize, String> = std::collections::HashMap::new();
+    let mut span_to_link: std::collections::HashMap<usize, String> =
+        std::collections::HashMap::new();
     let mut span_is_in_link: std::collections::HashSet<usize> = std::collections::HashSet::new();
     for (span_indices, link_markdown) in &link_data {
         if let Some(&first_idx) = span_indices.first() {
@@ -926,7 +935,10 @@ pub fn spans_to_markdown_with_links_and_footnotes(
     let has_footnotes = footnotes.as_ref().map_or(false, |f| !f.is_empty());
 
     if !has_links && !has_footnotes {
-        return spans.iter().map(|s| span_to_markdown_with_optional_footnote(s, None)).collect::<String>();
+        return spans
+            .iter()
+            .map(|s| span_to_markdown_with_optional_footnote(s, None))
+            .collect::<String>();
     }
 
     // Build link data if we have links
@@ -937,7 +949,8 @@ pub fn spans_to_markdown_with_links_and_footnotes(
     };
 
     // Build link span tracking
-    let mut span_to_link: std::collections::HashMap<usize, String> = std::collections::HashMap::new();
+    let mut span_to_link: std::collections::HashMap<usize, String> =
+        std::collections::HashMap::new();
     let mut span_is_in_link: std::collections::HashSet<usize> = std::collections::HashSet::new();
     for (span_indices, link_markdown) in &link_data {
         if let Some(&first_idx) = span_indices.first() {
@@ -1038,9 +1051,11 @@ pub fn block_to_markdown_with_links_and_footnotes(
     use crate::output::markdown::links;
 
     // Find which spans belong to this block
-    let block_span_indices: Vec<usize> = block.spans.iter().filter_map(|&idx| {
-        if idx < spans.len() { Some(idx) } else { None }
-    }).collect();
+    let block_span_indices: Vec<usize> = block
+        .spans
+        .iter()
+        .filter_map(|&idx| if idx < spans.len() { Some(idx) } else { None })
+        .collect();
 
     if block_span_indices.is_empty() {
         // No spans for this block - return text as-is
@@ -1071,7 +1086,11 @@ pub fn block_to_markdown_with_links_and_footnotes(
                 }
             }
         }
-        if filtered.is_empty() { None } else { Some(filtered) }
+        if filtered.is_empty() {
+            None
+        } else {
+            Some(filtered)
+        }
     } else {
         None
     };
@@ -1087,12 +1106,14 @@ pub fn block_to_markdown_with_links_and_footnotes(
         .filter_map(|&idx| spans.get(idx).cloned())
         .collect();
 
-    let block_links_refs: Vec<crate::schema::LinkJson> = block_links
-        .iter()
-        .map(|&link| link.clone())
-        .collect();
+    let block_links_refs: Vec<crate::schema::LinkJson> =
+        block_links.iter().map(|&link| link.clone()).collect();
 
-    spans_to_markdown_with_links_and_footnotes(&block_spans, &block_links_refs, block_footnotes.as_ref())
+    spans_to_markdown_with_links_and_footnotes(
+        &block_spans,
+        &block_links_refs,
+        block_footnotes.as_ref(),
+    )
 }
 
 /// Emit all blocks from a page with inline link support.
@@ -1225,7 +1246,9 @@ pub fn page_to_markdown_with_links_and_footnotes(
 
             // For list items with links and footnotes, emit each item with combined support
             for list_block in list_blocks {
-                let block_with_content = block_to_markdown_with_links_and_footnotes(list_block, spans, page_links, footnotes);
+                let block_with_content = block_to_markdown_with_links_and_footnotes(
+                    list_block, spans, page_links, footnotes,
+                );
                 if !block_with_content.is_empty() {
                     // Detect if numbered or bulleted
                     let is_numbered = block_with_content
@@ -1249,7 +1272,8 @@ pub fn page_to_markdown_with_links_and_footnotes(
             i = list_end;
         } else {
             // Non-list block - emit individually
-            let block_with_content = block_to_markdown_with_links_and_footnotes(block, spans, page_links, footnotes);
+            let block_with_content =
+                block_to_markdown_with_links_and_footnotes(block, spans, page_links, footnotes);
 
             // For non-list blocks, use the existing block emission logic
             // but replace the text content with link-aware content
@@ -1270,7 +1294,9 @@ pub fn page_to_markdown_with_links_and_footnotes(
     // Footnote definitions are emitted at the end of page content, before page breaks
     if let Some(footnotes_data) = footnotes {
         if !footnotes_data.is_empty() {
-            result.push_str(&crate::output::markdown::footnotes::emit_footnote_defs(footnotes_data));
+            result.push_str(&crate::output::markdown::footnotes::emit_footnote_defs(
+                footnotes_data,
+            ));
         }
     }
 
@@ -1492,8 +1518,8 @@ Some text."#;
     fn test_block_to_markdown_figure() {
         let block = make_test_block("figure", "Alt text", [72.0, 300.0, 540.0, 350.0]);
         let md = block_to_markdown(&block, &[], 0, 0, false);
-        assert!(md.contains("!["));  // Markdown image syntax start
-        assert!(md.contains("]()"));  // Markdown image syntax end
+        assert!(md.contains("![")); // Markdown image syntax start
+        assert!(md.contains("]()")); // Markdown image syntax end
         assert!(md.contains("Alt text"));
     }
 
@@ -1554,7 +1580,11 @@ Some text."#;
     #[test]
     fn test_block_to_markdown_paragraph_soft_line_break() {
         // Paragraph with internal newlines should emit soft breaks as "  \n"
-        let block = make_test_block("paragraph", "Line 1\nLine 2\nLine 3", [72.0, 600.0, 540.0, 630.0]);
+        let block = make_test_block(
+            "paragraph",
+            "Line 1\nLine 2\nLine 3",
+            [72.0, 600.0, 540.0, 630.0],
+        );
         let md = block_to_markdown(&block, &[], 0, 0, false);
         // Internal newlines become "  \n" (soft breaks)
         assert!(md.contains("Line 1  \n"));
@@ -1642,7 +1672,11 @@ Some text."#;
     #[test]
     fn test_emit_list_blocks_single_item() {
         // Single list item should still work
-        let list_blocks = vec![make_test_block("list", "Single item", [72.0, 500.0, 540.0, 520.0])];
+        let list_blocks = vec![make_test_block(
+            "list",
+            "Single item",
+            [72.0, 500.0, 540.0, 520.0],
+        )];
         let md = emit_list_blocks(&list_blocks);
         assert!(md.contains("* Single item"));
     }
@@ -2778,7 +2812,10 @@ mod span_tests {
         }
     }
 
-    fn make_test_row(cells: Vec<crate::schema::CellJson>, is_header: bool) -> crate::schema::RowJson {
+    fn make_test_row(
+        cells: Vec<crate::schema::CellJson>,
+        is_header: bool,
+    ) -> crate::schema::RowJson {
         crate::schema::RowJson {
             bbox: [0.0, 0.0, 100.0, 20.0],
             cells,
@@ -3243,17 +3280,15 @@ mod span_tests {
             },
         ];
 
-        let blocks = vec![
-            BlockJson {
-                kind: "paragraph".to_string(),
-                text: "See Chapter 1".to_string(),
-                bbox: [100.0, 700.0, 200.0, 720.0],
-                level: None,
-                table_index: None,
-                spans: vec![0, 1],
-                receipt: None,
-            },
-        ];
+        let blocks = vec![BlockJson {
+            kind: "paragraph".to_string(),
+            text: "See Chapter 1".to_string(),
+            bbox: [100.0, 700.0, 200.0, 720.0],
+            level: None,
+            table_index: None,
+            spans: vec![0, 1],
+            receipt: None,
+        }];
 
         let mut footnotes = PageFootnotes::new();
         footnotes.add_ref(1, 1); // Span index 1 is footnote ref 1
@@ -3283,7 +3318,10 @@ mod span_tests {
         assert!(md.contains("[^1]"), "Footnote ref [^1] should be in body");
 
         // Should contain footnote definition at end
-        assert!(md.contains("[^1]: First chapter introduces the topic"), "Footnote definition should be at page end");
+        assert!(
+            md.contains("[^1]: First chapter introduces the topic"),
+            "Footnote definition should be at page end"
+        );
     }
 
     #[test]
@@ -3292,34 +3330,30 @@ mod span_tests {
         use crate::output::markdown::footnotes::PageFootnotes;
         use crate::schema::LinkJson;
 
-        let spans = vec![
-            SpanJson {
-                text: "Regular text".to_string(),
-                bbox: [100.0, 700.0, 200.0, 720.0],
-                font: "Helvetica".to_string(),
-                size: 12.0,
-                color: Some("#000000".to_string()),
-                rendering_mode: Some(0),
-                confidence: Some(1.0),
-                confidence_source: Some("vector".to_string()),
-                lang: Some("en".to_string()),
-                flags: vec![],
-                receipt: None,
-                column: Some(0),
-            },
-        ];
+        let spans = vec![SpanJson {
+            text: "Regular text".to_string(),
+            bbox: [100.0, 700.0, 200.0, 720.0],
+            font: "Helvetica".to_string(),
+            size: 12.0,
+            color: Some("#000000".to_string()),
+            rendering_mode: Some(0),
+            confidence: Some(1.0),
+            confidence_source: Some("vector".to_string()),
+            lang: Some("en".to_string()),
+            flags: vec![],
+            receipt: None,
+            column: Some(0),
+        }];
 
-        let blocks = vec![
-            BlockJson {
-                kind: "paragraph".to_string(),
-                text: "Regular text".to_string(),
-                bbox: [100.0, 700.0, 200.0, 720.0],
-                level: None,
-                table_index: None,
-                spans: vec![0],
-                receipt: None,
-            },
-        ];
+        let blocks = vec![BlockJson {
+            kind: "paragraph".to_string(),
+            text: "Regular text".to_string(),
+            bbox: [100.0, 700.0, 200.0, 720.0],
+            level: None,
+            table_index: None,
+            spans: vec![0],
+            receipt: None,
+        }];
 
         let footnotes = PageFootnotes::new(); // Empty footnotes
         let links: Vec<LinkJson> = vec![];
@@ -3344,7 +3378,10 @@ mod span_tests {
 
         // Should NOT contain any footnote markers
         assert!(!md.contains("[^"), "No footnote markers should be present");
-        assert!(!md.contains("]:"), "No footnote definitions should be present");
+        assert!(
+            !md.contains("]:"),
+            "No footnote definitions should be present"
+        );
     }
 
     #[test]
@@ -3383,28 +3420,24 @@ mod span_tests {
             },
         ];
 
-        let blocks = vec![
-            BlockJson {
-                kind: "paragraph".to_string(),
-                text: "Visit our website".to_string(),
-                bbox: [100.0, 700.0, 220.0, 720.0],
-                level: None,
-                table_index: None,
-                spans: vec![0, 1],
-                receipt: None,
-            },
-        ];
+        let blocks = vec![BlockJson {
+            kind: "paragraph".to_string(),
+            text: "Visit our website".to_string(),
+            bbox: [100.0, 700.0, 220.0, 720.0],
+            level: None,
+            table_index: None,
+            spans: vec![0, 1],
+            receipt: None,
+        }];
 
         // Link annotation covering the "website" span
-        let links = vec![
-            LinkJson {
-                page_index: 0,
-                rect: [165.0, 695.0, 225.0, 725.0], // Covers "website" span
-                uri: Some("https://example.com".to_string()),
-                dest: None,
-                dest_array: None,
-            },
-        ];
+        let links = vec![LinkJson {
+            page_index: 0,
+            rect: [165.0, 695.0, 225.0, 725.0], // Covers "website" span
+            uri: Some("https://example.com".to_string()),
+            dest: None,
+            dest_array: None,
+        }];
 
         let tables: Vec<TableJson> = vec![];
 
@@ -3415,67 +3448,57 @@ mod span_tests {
         };
 
         let md = page_to_markdown_with_links_and_footnotes(
-            &blocks,
-            &spans,
-            &tables,
-            &links,
-            0,
-            false,
-            &options,
-            None,
+            &blocks, &spans, &tables, &links, 0, false, &options, None,
         );
 
         // Should contain inline markdown link
-        assert!(md.contains("[website](https://example.com)"), "Inline link should be emitted");
+        assert!(
+            md.contains("[website](https://example.com)"),
+            "Inline link should be emitted"
+        );
     }
 
     #[test]
     fn test_page_to_markdown_with_links_emits_internal_page_link() {
         // Internal destination link: [text](#page-N)
-        use crate::schema::{LinkJson, DestArrayJson, DestTypeJson};
+        use crate::schema::{DestArrayJson, DestTypeJson, LinkJson};
 
-        let spans = vec![
-            SpanJson {
-                text: "See next page".to_string(),
-                bbox: [100.0, 700.0, 200.0, 720.0],
-                font: "Helvetica".to_string(),
-                size: 12.0,
-                color: Some("#0000FF".to_string()),
-                rendering_mode: Some(0),
-                confidence: Some(1.0),
-                confidence_source: Some("vector".to_string()),
-                lang: Some("en".to_string()),
-                flags: vec!["underline".to_string()],
-                receipt: None,
-                column: Some(0),
-            },
-        ];
+        let spans = vec![SpanJson {
+            text: "See next page".to_string(),
+            bbox: [100.0, 700.0, 200.0, 720.0],
+            font: "Helvetica".to_string(),
+            size: 12.0,
+            color: Some("#0000FF".to_string()),
+            rendering_mode: Some(0),
+            confidence: Some(1.0),
+            confidence_source: Some("vector".to_string()),
+            lang: Some("en".to_string()),
+            flags: vec!["underline".to_string()],
+            receipt: None,
+            column: Some(0),
+        }];
 
-        let blocks = vec![
-            BlockJson {
-                kind: "paragraph".to_string(),
-                text: "See next page".to_string(),
-                bbox: [100.0, 700.0, 200.0, 720.0],
-                level: None,
-                table_index: None,
-                spans: vec![0],
-                receipt: None,
-            },
-        ];
+        let blocks = vec![BlockJson {
+            kind: "paragraph".to_string(),
+            text: "See next page".to_string(),
+            bbox: [100.0, 700.0, 200.0, 720.0],
+            level: None,
+            table_index: None,
+            spans: vec![0],
+            receipt: None,
+        }];
 
         // Internal destination link to page 5
-        let links = vec![
-            LinkJson {
-                page_index: 0,
-                rect: [95.0, 695.0, 205.0, 725.0],
-                uri: None,
-                dest: None,
-                dest_array: Some(DestArrayJson {
-                    page_index: 5,
-                    dest: DestTypeJson::Fit,
-                }),
-            },
-        ];
+        let links = vec![LinkJson {
+            page_index: 0,
+            rect: [95.0, 695.0, 205.0, 725.0],
+            uri: None,
+            dest: None,
+            dest_array: Some(DestArrayJson {
+                page_index: 5,
+                dest: DestTypeJson::Fit,
+            }),
+        }];
 
         let tables: Vec<TableJson> = vec![];
 
@@ -3485,46 +3508,37 @@ mod span_tests {
             include_page_breaks: false,
         };
 
-        let md = page_to_markdown_with_links(
-            &blocks,
-            &spans,
-            &tables,
-            &links,
-            0,
-            false,
-            &options,
-        );
+        let md = page_to_markdown_with_links(&blocks, &spans, &tables, &links, 0, false, &options);
 
         // Should contain internal page link (page_index 5 -> page-6 in markdown)
-        assert!(md.contains("[See next page](#page-6)"), "Internal page link should be emitted");
+        assert!(
+            md.contains("[See next page](#page-6)"),
+            "Internal page link should be emitted"
+        );
     }
 
     #[test]
     fn test_markdown_no_page_breaks_omits_horizontal_rule() {
         // --md-no-page-breaks: no "---" between pages; "\n\n" separation only
-        let blocks1 = vec![
-            BlockJson {
-                kind: "heading".to_string(),
-                text: "Page 1".to_string(),
-                bbox: [100.0, 700.0, 200.0, 720.0],
-                level: Some(1),
-                table_index: None,
-                spans: vec![],
-                receipt: None,
-            },
-        ];
+        let blocks1 = vec![BlockJson {
+            kind: "heading".to_string(),
+            text: "Page 1".to_string(),
+            bbox: [100.0, 700.0, 200.0, 720.0],
+            level: Some(1),
+            table_index: None,
+            spans: vec![],
+            receipt: None,
+        }];
 
-        let blocks2 = vec![
-            BlockJson {
-                kind: "heading".to_string(),
-                text: "Page 2".to_string(),
-                bbox: [100.0, 700.0, 200.0, 720.0],
-                level: Some(1),
-                table_index: None,
-                spans: vec![],
-                receipt: None,
-            },
-        ];
+        let blocks2 = vec![BlockJson {
+            kind: "heading".to_string(),
+            text: "Page 2".to_string(),
+            bbox: [100.0, 700.0, 200.0, 720.0],
+            level: Some(1),
+            table_index: None,
+            spans: vec![],
+            receipt: None,
+        }];
 
         let options_no_breaks = MarkdownOptions {
             include_headers_footers: false,
@@ -3537,37 +3551,39 @@ mod span_tests {
 
         // Combined output should NOT contain "---" between pages
         let combined = format!("{}{}", md1, md2);
-        assert!(!combined.contains("---\n\n"), "Should NOT contain horizontal rule between pages");
+        assert!(
+            !combined.contains("---\n\n"),
+            "Should NOT contain horizontal rule between pages"
+        );
         // Should have blank line separation
-        assert!(combined.contains("\n\n"), "Should have blank line separation");
+        assert!(
+            combined.contains("\n\n"),
+            "Should have blank line separation"
+        );
     }
 
     #[test]
     fn test_markdown_with_page_breaks_emits_horizontal_rule() {
         // Default behavior: "---" between pages
-        let blocks1 = vec![
-            BlockJson {
-                kind: "heading".to_string(),
-                text: "Page 1".to_string(),
-                bbox: [100.0, 700.0, 200.0, 720.0],
-                level: Some(1),
-                table_index: None,
-                spans: vec![],
-                receipt: None,
-            },
-        ];
+        let blocks1 = vec![BlockJson {
+            kind: "heading".to_string(),
+            text: "Page 1".to_string(),
+            bbox: [100.0, 700.0, 200.0, 720.0],
+            level: Some(1),
+            table_index: None,
+            spans: vec![],
+            receipt: None,
+        }];
 
-        let blocks2 = vec![
-            BlockJson {
-                kind: "heading".to_string(),
-                text: "Page 2".to_string(),
-                bbox: [100.0, 700.0, 200.0, 720.0],
-                level: Some(1),
-                table_index: None,
-                spans: vec![],
-                receipt: None,
-            },
-        ];
+        let blocks2 = vec![BlockJson {
+            kind: "heading".to_string(),
+            text: "Page 2".to_string(),
+            bbox: [100.0, 700.0, 200.0, 720.0],
+            level: Some(1),
+            table_index: None,
+            spans: vec![],
+            receipt: None,
+        }];
 
         let options_with_breaks = MarkdownOptions {
             include_headers_footers: false,
@@ -3579,10 +3595,16 @@ mod span_tests {
         let md2 = page_to_markdown_with_options(&blocks2, &[], 1, false, &options_with_breaks);
 
         // First page should end with "---\n\n"
-        assert!(md1.contains("---\n\n"), "Page 1 should end with horizontal rule");
+        assert!(
+            md1.contains("---\n\n"),
+            "Page 1 should end with horizontal rule"
+        );
         // Combined output should contain "---"
         let combined = format!("{}{}", md1, md2);
-        assert!(combined.contains("---"), "Should contain horizontal rule between pages");
+        assert!(
+            combined.contains("---"),
+            "Should contain horizontal rule between pages"
+        );
     }
 
     #[test]
@@ -3591,44 +3613,43 @@ mod span_tests {
         use crate::output::markdown::footnotes::PageFootnotes;
         use crate::schema::LinkJson;
 
-        let spans = vec![
-            SpanJson {
-                text: "1".to_string(), // This is both a footnote ref and part of a link
-                bbox: [100.0, 700.0, 110.0, 720.0],
-                font: "Helvetica".to_string(),
-                size: 12.0,
-                color: Some("#000000".to_string()),
-                rendering_mode: Some(0),
-                confidence: Some(1.0),
-                confidence_source: Some("vector".to_string()),
-                lang: Some("en".to_string()),
-                flags: vec!["superscript".to_string()],
-                receipt: None,
-                column: Some(0),
-            },
-        ];
+        let spans = vec![SpanJson {
+            text: "1".to_string(), // This is both a footnote ref and part of a link
+            bbox: [100.0, 700.0, 110.0, 720.0],
+            font: "Helvetica".to_string(),
+            size: 12.0,
+            color: Some("#000000".to_string()),
+            rendering_mode: Some(0),
+            confidence: Some(1.0),
+            confidence_source: Some("vector".to_string()),
+            lang: Some("en".to_string()),
+            flags: vec!["superscript".to_string()],
+            receipt: None,
+            column: Some(0),
+        }];
 
         let mut footnotes = PageFootnotes::new();
         footnotes.add_ref(0, 1); // Span 0 is footnote ref 1
         footnotes.add_definition(1, "First footnote".to_string());
 
         // Link annotation also covering the same span (first link wins)
-        let links = vec![
-            LinkJson {
-                page_index: 0,
-                rect: [95.0, 695.0, 115.0, 725.0],
-                uri: Some("https://example.com".to_string()),
-                dest: None,
-                dest_array: None,
-            },
-        ];
+        let links = vec![LinkJson {
+            page_index: 0,
+            rect: [95.0, 695.0, 115.0, 725.0],
+            uri: Some("https://example.com".to_string()),
+            dest: None,
+            dest_array: None,
+        }];
 
         let md = spans_to_markdown_with_links_and_footnotes(&spans, &links, Some(&footnotes));
 
         // Footnote ref should be emitted (takes precedence)
         assert!(md.contains("[^1]"), "Footnote ref should be emitted");
         // Link should NOT be emitted (footnote takes precedence)
-        assert!(!md.contains("[1](https://example.com)"), "Link should not be emitted for footnote span");
+        assert!(
+            !md.contains("[1](https://example.com)"),
+            "Link should not be emitted for footnote span"
+        );
     }
 
     #[test]
@@ -3637,22 +3658,20 @@ mod span_tests {
         use crate::output::markdown::footnotes::PageFootnotes;
         use crate::schema::LinkJson;
 
-        let spans = vec![
-            SpanJson {
-                text: "Regular text".to_string(),
-                bbox: [100.0, 700.0, 200.0, 720.0],
-                font: "Helvetica".to_string(),
-                size: 12.0,
-                color: Some("#000000".to_string()),
-                rendering_mode: Some(0),
-                confidence: Some(1.0),
-                confidence_source: Some("vector".to_string()),
-                lang: Some("en".to_string()),
-                flags: vec![],
-                receipt: None,
-                column: Some(0),
-            },
-        ];
+        let spans = vec![SpanJson {
+            text: "Regular text".to_string(),
+            bbox: [100.0, 700.0, 200.0, 720.0],
+            font: "Helvetica".to_string(),
+            size: 12.0,
+            color: Some("#000000".to_string()),
+            rendering_mode: Some(0),
+            confidence: Some(1.0),
+            confidence_source: Some("vector".to_string()),
+            lang: Some("en".to_string()),
+            flags: vec![],
+            receipt: None,
+            column: Some(0),
+        }];
 
         let block = BlockJson {
             kind: "paragraph".to_string(),
@@ -3667,7 +3686,8 @@ mod span_tests {
         let footnotes = PageFootnotes::new(); // Empty
         let links: Vec<LinkJson> = vec![];
 
-        let md = block_to_markdown_with_links_and_footnotes(&block, &spans, &links, Some(&footnotes));
+        let md =
+            block_to_markdown_with_links_and_footnotes(&block, &spans, &links, Some(&footnotes));
 
         // Should return original text (no links or footnotes)
         assert_eq!(md, "Regular text");

@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand, ArgAction};
+use clap::{ArgAction, Parser, Subcommand};
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
@@ -14,8 +14,8 @@ mod hash;
 mod header;
 mod inspect;
 mod mcp;
-mod migrate;
 mod middleware;
+mod migrate;
 mod output;
 mod pages;
 mod panic_hook;
@@ -30,7 +30,10 @@ use output::OutputConfig;
 use pdftract_core::atomic_file_writer::AtomicFileWriter;
 use pdftract_core::cache;
 use pdftract_core::extract::{extract_pdf, result_to_json};
-use pdftract_core::markdown::{block_to_markdown, page_to_markdown, page_to_markdown_with_links, page_to_markdown_with_links_and_footnotes, MarkdownOptions};
+use pdftract_core::markdown::{
+    block_to_markdown, page_to_markdown, page_to_markdown_with_links,
+    page_to_markdown_with_links_and_footnotes, MarkdownOptions,
+};
 use pdftract_core::options::{ExtractionOptions, ReceiptsMode};
 use pdftract_core::text::{serialize_document_text, TextOptions};
 
@@ -633,10 +636,11 @@ fn main() -> Result<()> {
                 eprintln!("Error: {}", error_msg);
 
                 // Exit code 3 for encryption errors (per spec)
-                if error_msg.contains("decryption failed") ||
-                   error_msg.contains("PDF decryption failed") ||
-                   error_msg.contains("Unsupported encryption") ||
-                   error_msg.contains("Wrong password") {
+                if error_msg.contains("decryption failed")
+                    || error_msg.contains("PDF decryption failed")
+                    || error_msg.contains("Unsupported encryption")
+                    || error_msg.contains("Wrong password")
+                {
                     std::process::exit(3);
                 }
                 std::process::exit(1);
@@ -664,10 +668,11 @@ fn main() -> Result<()> {
                 eprintln!("Error: {}", error_msg);
 
                 // Exit code 3 for encryption errors (per spec)
-                if error_msg.contains("decryption failed") ||
-                   error_msg.contains("PDF decryption failed") ||
-                   error_msg.contains("Unsupported encryption") ||
-                   error_msg.contains("Wrong password") {
+                if error_msg.contains("decryption failed")
+                    || error_msg.contains("PDF decryption failed")
+                    || error_msg.contains("Unsupported encryption")
+                    || error_msg.contains("Wrong password")
+                {
                     std::process::exit(3);
                 }
                 std::process::exit(1);
@@ -1014,7 +1019,9 @@ fn cmd_extract(
         match url::parse_url(&input_str) {
             Ok(parsed) => {
                 if parsed.has_credentials {
-                    eprintln!("Warning: URL contains credentials that are visible in shell history.");
+                    eprintln!(
+                        "Warning: URL contains credentials that are visible in shell history."
+                    );
                     eprintln!("Consider using --header 'Authorization: Bearer TOKEN' instead.");
                 }
                 (parsed.url.clone(), Some(parsed))
@@ -1050,8 +1057,8 @@ fn cmd_extract(
         eprintln!("Auto-detecting document type...");
 
         use pdftract_core::profiles::{
-            classify_and_select_profile, extract_signals_from_results, load_extraction_profiles,
-            apply_extraction_tuning, apply_profile_to_metadata,
+            apply_extraction_tuning, apply_profile_to_metadata, classify_and_select_profile,
+            extract_signals_from_results, load_extraction_profiles,
         };
 
         // Load all extraction profiles
@@ -1071,7 +1078,10 @@ fn cmd_extract(
                     .collect();
 
                 let selected_profile = classify_and_select_profile(
-                    &profiles.iter().map(|p| p.profile.clone()).collect::<Vec<_>>(),
+                    &profiles
+                        .iter()
+                        .map(|p| p.profile.clone())
+                        .collect::<Vec<_>>(),
                     &page_data,
                     has_signature_field,
                     has_form_field,
@@ -1113,9 +1123,7 @@ fn cmd_extract(
     // Handle --profile flag: load and apply specific profile
     #[cfg(feature = "profiles")]
     if let Some(ref profile_name_or_path) = profile {
-        use pdftract_core::profiles::{
-            load_extraction_profiles, apply_extraction_tuning,
-        };
+        use pdftract_core::profiles::{apply_extraction_tuning, load_extraction_profiles};
 
         eprintln!("Applying profile: {}", profile_name_or_path);
 
@@ -1134,7 +1142,8 @@ fn cmd_extract(
             }
         } else {
             // Find by name
-            profiles.iter()
+            profiles
+                .iter()
                 .find(|p| p.profile.name == *profile_name_or_path)
                 .map(|p| p.profile.clone())
         };
@@ -1228,13 +1237,11 @@ fn cmd_extract(
 
         #[cfg(feature = "remote")]
         {
-            use pdftract_core::source::{HttpRangeSource, open_source};
+            use pdftract_core::source::{open_source, HttpRangeSource};
 
             // Combine custom headers with URL credentials
-            let mut headers_vec: Vec<(String, String)> = custom_headers
-                .into_iter()
-                .map(|(k, v)| (k, v))
-                .collect();
+            let mut headers_vec: Vec<(String, String)> =
+                custom_headers.into_iter().map(|(k, v)| (k, v)).collect();
 
             // If URL has credentials, ureq will automatically add Authorization header
             // We just pass the URL with credentials to HttpRangeSource
@@ -1251,7 +1258,7 @@ fn cmd_extract(
             let source = HttpRangeSource::with_headers(&extraction_url, headers_vec)
                 .context("Failed to open remote PDF source")?;
 
-            use pdftract_core::extract::{ExtractionSource, extract_pdf_from_source};
+            use pdftract_core::extract::{extract_pdf_from_source, ExtractionSource};
             let extraction_source = ExtractionSource::Remote(Box::new(source));
 
             let result = extract_pdf_from_source(extraction_source, &options)
@@ -1272,9 +1279,7 @@ fn cmd_extract(
     // Extract profile fields if --auto or --profile was used
     #[cfg(feature = "profiles")]
     {
-        use pdftract_core::profiles::{
-            load_extraction_profiles, apply_profile_to_metadata,
-        };
+        use pdftract_core::profiles::{apply_profile_to_metadata, load_extraction_profiles};
 
         let profile_to_apply = if auto {
             // Re-run classification to get the selected profile
@@ -1289,11 +1294,15 @@ fn cmd_extract(
 
             use pdftract_core::profiles::classify_and_select_profile;
             classify_and_select_profile(
-                &profiles.iter().map(|p| p.profile.clone()).collect::<Vec<_>>(),
+                &profiles
+                    .iter()
+                    .map(|p| p.profile.clone())
+                    .collect::<Vec<_>>(),
                 &page_data,
                 has_signature_field,
                 has_form_field,
-            ).map(|(p, _)| p)
+            )
+            .map(|(p, _)| p)
         } else if profile.is_some() {
             // Load the specified profile
             let profile_name_or_path = profile.as_ref().unwrap();
@@ -1303,7 +1312,8 @@ fn cmd_extract(
                 use pdftract_core::profiles::load_profile_file;
                 load_profile_file(&std::path::PathBuf::from(profile_name_or_path)).ok()
             } else {
-                profiles.iter()
+                profiles
+                    .iter()
                     .find(|p| p.profile.name == *profile_name_or_path)
                     .map(|p| p.profile.clone())
             }
@@ -1330,10 +1340,14 @@ fn cmd_extract(
             }
             output::Destination::File(ref path) => {
                 // Create atomic file writer for file output
-                let mut writer = AtomicFileWriter::create(path)
-                    .context(format!("Failed to create output file writer: {}", path.display()))?;
+                let mut writer = AtomicFileWriter::create(path).context(format!(
+                    "Failed to create output file writer: {}",
+                    path.display()
+                ))?;
                 write_output(&result, &options, spec.format, &mut writer)?;
-                writer.commit().context(format!("Failed to commit output file: {}", path.display()))?;
+                writer
+                    .commit()
+                    .context(format!("Failed to commit output file: {}", path.display()))?;
             }
         }
     }
@@ -1360,13 +1374,18 @@ fn write_output<W: std::io::Write>(
             // Plain text output: block-level serialization with form feeds between pages
             // Phase 4.6: serialize blocks in reading order, join with \n\n, pages with \f
             let text_options = TextOptions {
-                include_headers_footers: options.output.include_headers || options.output.include_footers,
+                include_headers_footers: options.output.include_headers
+                    || options.output.include_footers,
                 include_invisible_text: options.output.include_invisible,
                 include_watermarks: options.output.include_watermarks,
             };
 
             // Build pages array for document-level serialization
-            let pages: Vec<(&[pdftract_core::schema::BlockJson], &[pdftract_core::schema::SpanJson])> = result.pages
+            let pages: Vec<(
+                &[pdftract_core::schema::BlockJson],
+                &[pdftract_core::schema::SpanJson],
+            )> = result
+                .pages
                 .iter()
                 .map(|p| (&p.blocks[..], &p.spans[..]))
                 .collect();
@@ -1385,14 +1404,17 @@ fn write_output<W: std::io::Write>(
                 let include_break = include_page_breaks && !is_last_page;
 
                 // Filter links to only those belonging to this page
-                let page_links: Vec<_> = result.links.iter()
+                let page_links: Vec<_> = result
+                    .links
+                    .iter()
                     .filter(|link| link.page_index == page_idx)
                     .cloned()
                     .collect();
 
                 // Use markdown module with inline link support (Phase 6.5.5b)
                 let md_options = MarkdownOptions {
-                    include_headers_footers: options.output.include_headers || options.output.include_footers,
+                    include_headers_footers: options.output.include_headers
+                        || options.output.include_footers,
                     include_watermarks: options.output.include_watermarks,
                     include_page_breaks: include_break,
                 };
@@ -2081,7 +2103,10 @@ fn cmd_serve(
 ) -> Result<()> {
     // Warn if binding to 0.0.0.0 (no auth, exposed to all interfaces)
     if bind.starts_with("0.0.0.0") || bind.starts_with("[::]") {
-        eprintln!("*** WARNING: Binding to {} exposes pdftract serve on ALL interfaces.", bind);
+        eprintln!(
+            "*** WARNING: Binding to {} exposes pdftract serve on ALL interfaces.",
+            bind
+        );
         eprintln!("*** pdftract serve has NO BUILT-IN AUTHENTICATION.");
         eprintln!("*** Deploy behind a reverse proxy (nginx, Traefik, Caddy) for production use.");
         eprintln!();

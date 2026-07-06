@@ -36,9 +36,9 @@
 //! - Single span: returns its score
 //! - All spans have same score: returns that score
 
+use crate::layout::wordlist::is_english_word;
 use std::borrow::Cow;
 use unicode_segmentation::UnicodeSegmentation;
-use crate::layout::wordlist::is_english_word;
 
 /// Readability signal weights (sum to 1.0).
 ///
@@ -73,8 +73,8 @@ const WHITESPACE_MAX: f32 = 0.40;
 /// properly reconstructed in Phase 2. Each pattern is (before, after) where
 /// the presence of this sequence indicates a split ligature.
 const SPLIT_LIGATURE_PATTERNS: &[(&str, &str)] = &[
-    ("f", "\u{FFFD}i"), // f + U+FFFD + i (should be "fi")
-    ("f", "\u{FFFD}l"), // f + U+FFFD + l (should be "fl")
+    ("f", "\u{FFFD}i"),  // f + U+FFFD + i (should be "fi")
+    ("f", "\u{FFFD}l"),  // f + U+FFFD + l (should be "fl")
     ("ff", "\u{FFFD}i"), // ff + U+FFFD + i (should be "ffi")
     ("ff", "\u{FFFD}l"), // ff + U+FFFD + l (should be "ffl")
     ("fi", "\u{FFFD}"),  // fi + U+FFFD (partial ligature)
@@ -552,7 +552,11 @@ mod tests {
         // AC1: All-printable English high coverage: > 0.9
         let text = "The quick brown fox jumps over the lazy dog";
         let score = score_span_readability(text, 1.0, Some("en"));
-        assert!(score > 0.9, "Expected high score for clean English, got {}", score);
+        assert!(
+            score > 0.9,
+            "Expected high score for clean English, got {}",
+            score
+        );
     }
 
     #[test]
@@ -562,8 +566,15 @@ mod tests {
         // (dict_coverage=0 because U+FFFD sequences are not English words)
         let text = "\u{FFFD}\u{FFFD}\u{FFFD}\u{FFFD}\u{FFFD}";
         let score = score_span_readability(text, 1.0, Some("en"));
-        assert!(score < 0.7, "Expected reduced score for all U+FFFD, got {}", score);
-        assert!(score > 0.1, "Score should still be >0 due to lig/conf signals");
+        assert!(
+            score < 0.7,
+            "Expected reduced score for all U+FFFD, got {}",
+            score
+        );
+        assert!(
+            score > 0.1,
+            "Score should still be >0 due to lig/conf signals"
+        );
     }
 
     #[test]
@@ -572,10 +583,16 @@ mod tests {
         // The key is that whitespace_score signal is 0.0, not that total score is low
         let text = "     \n\t\r\n     ";
         let white_sig = whitespace_score(text);
-        assert_eq!(white_sig, 0.0, "whitespace_score should be 0.0 for all-whitespace");
+        assert_eq!(
+            white_sig, 0.0,
+            "whitespace_score should be 0.0 for all-whitespace"
+        );
         // Total score may still be decent due to other signals
         let score = score_span_readability(text, 1.0, Some("en"));
-        assert!(score < 1.0, "Score should be reduced due to whitespace penalty");
+        assert!(
+            score < 1.0,
+            "Score should be reduced due to whitespace penalty"
+        );
     }
 
     #[test]
@@ -588,7 +605,11 @@ mod tests {
         // 0.3 confidence -> 0.3/0.6 = 0.5 confidence_floor
         // Confidence weight is 0.10, so max reduction is 0.10 * 0.5 = 0.05
         let diff = score_high - score_low;
-        assert!(diff > 0.0 && diff < 0.10, "Confidence penalty should be small, got {}", diff);
+        assert!(
+            diff > 0.0 && diff < 0.10,
+            "Confidence penalty should be small, got {}",
+            diff
+        );
     }
 
     #[test]
@@ -600,9 +621,16 @@ mod tests {
         // Non-English should have different score since dict_coverage is disabled
         // Dict weight is 0.30, so max difference is ~0.30 (all other signals equal)
         let diff = (score_en - score_zh).abs();
-        assert!(diff <= 0.31, "Dict weight is 0.30, max diff should be ~0.30, got {}", diff);
+        assert!(
+            diff <= 0.31,
+            "Dict weight is 0.30, max diff should be ~0.30, got {}",
+            diff
+        );
         // Both should still be decent (printable, whitespace, ligature, confidence all good)
-        assert!(score_zh > 0.6, "Non-English with clean text should still score well");
+        assert!(
+            score_zh > 0.6,
+            "Non-English with clean text should still score well"
+        );
     }
 
     #[test]
@@ -615,10 +643,17 @@ mod tests {
         let score_clean = score_span_readability(clean_text, 1.0, Some("en"));
         let score_split = score_span_readability(split_ligature, 1.0, Some("en"));
 
-        assert!(score_split < score_clean, "Split ligature should lower score");
+        assert!(
+            score_split < score_clean,
+            "Split ligature should lower score"
+        );
         // Ligature integrity weight is 0.10, plus some printable_fraction effect
         let diff = score_clean - score_split;
-        assert!(diff >= 0.09, "Ligature penalty should be at least 0.09, got {}", diff);
+        assert!(
+            diff >= 0.09,
+            "Ligature penalty should be at least 0.09, got {}",
+            diff
+        );
     }
 
     #[test]
@@ -669,7 +704,7 @@ mod tests {
     fn test_non_english_enables_dict_only_for_en() {
         // Verify dict coverage is enabled ONLY for "en" prefix
         // Use text with non-dictionary words to show the difference
-        let text = "xyzzy plugh";  // Non-words not in the 20k wordlist
+        let text = "xyzzy plugh"; // Non-words not in the 20k wordlist
         let score_en = score_span_readability(text, 1.0, Some("en"));
         let score_en_us = score_span_readability(text, 1.0, Some("en-US"));
         let score_zh = score_span_readability(text, 1.0, Some("zh"));
@@ -678,12 +713,21 @@ mod tests {
         // English variants should have same score (dict enabled, both words fail -> lower score)
         assert_eq!(score_en, score_en_us, "en and en-US should have same score");
         // Non-English and None should have same score (dict disabled -> higher score)
-        assert_eq!(score_zh, score_none, "Non-English and None should have same score");
+        assert_eq!(
+            score_zh, score_none,
+            "Non-English and None should have same score"
+        );
         // English should be DIFFERENT from non-English (dict enabled for en, disabled for zh)
         // For "xyzzy plugh", dict_coverage=0 for en (words not in dict), but 1.0 for zh (disabled)
         // Dict weight is 0.30, so max difference is 0.30
-        assert_ne!(score_en, score_zh, "English and non-English should differ due to dict");
+        assert_ne!(
+            score_en, score_zh,
+            "English and non-English should differ due to dict"
+        );
         // Verify non-English score is higher (dict disabled gives 1.0 vs 0.0 for en)
-        assert!(score_zh > score_en, "Non-English should have higher score when words not in dict");
+        assert!(
+            score_zh > score_en,
+            "Non-English should have higher score when words not in dict"
+        );
     }
 }

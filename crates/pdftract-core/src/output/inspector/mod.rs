@@ -18,4 +18,4 @@
 pub mod colors;
 pub mod layers;
 
-pub use layers::{LayerGroup, render_all};
+pub use layers::{render_all, LayerGroup};

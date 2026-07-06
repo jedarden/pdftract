@@ -28,17 +28,19 @@ mod match_eval;
 mod signals;
 mod types;
 
-pub use apply_profile::{apply_extraction_tuning, apply_profile_to_metadata, classify_and_select_profile};
+pub use apply_profile::{
+    apply_extraction_tuning, apply_profile_to_metadata, classify_and_select_profile,
+};
 pub use engine::{
     classify, has_currency_pattern, ClassificationResult, ClassifierEngine, FeatureSignals,
 };
 pub use extraction::{
-    ExtractionProfile, ExtractionTuning, FieldExtraction, FieldSchema, FieldSpec, MatchExpr,
-    ExtractionMatchPredicate,
+    ExtractionMatchPredicate, ExtractionProfile, ExtractionTuning, FieldExtraction, FieldSchema,
+    FieldSpec, MatchExpr,
 };
 pub use extraction_loader::{
-    find_profile, get_xdg_profile_dir, load_extraction_profiles, load_profile_file, ProfileOrigin,
-    ProfileSource, validate_profile_file,
+    find_profile, get_xdg_profile_dir, load_extraction_profiles, load_profile_file,
+    validate_profile_file, ProfileOrigin, ProfileSource,
 };
 pub use field_extractor::{extract_profile_fields, FieldExtractionResult};
 pub use loader::{

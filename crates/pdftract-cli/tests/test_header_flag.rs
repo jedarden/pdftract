@@ -6,8 +6,8 @@
 //! 3. Silently ignores headers for local file extraction
 //! 4. Would pass headers to HttpRangeSource for URLs (when Phase 1.8 is implemented)
 
-use std::process::Command;
 use std::path::PathBuf;
+use std::process::Command;
 
 /// Path to the pdftract CLI binary.
 fn pdftract_bin() -> PathBuf {
@@ -91,12 +91,7 @@ fn test_header_flag_no_colon() {
     assert!(pdf.exists(), "Fixture PDF not found: {:?}", pdf);
 
     let output = Command::new(pdftract_bin())
-        .args([
-            "extract",
-            "--header",
-            "NoColonHere",
-            pdf.to_str().unwrap(),
-        ])
+        .args(["extract", "--header", "NoColonHere", pdf.to_str().unwrap()])
         .output()
         .expect("Failed to run pdftract");
 
@@ -218,12 +213,7 @@ fn test_header_flag_empty_name() {
     assert!(pdf.exists(), "Fixture PDF not found: {:?}", pdf);
 
     let output = Command::new(pdftract_bin())
-        .args([
-            "extract",
-            "--header",
-            ":value",
-            pdf.to_str().unwrap(),
-        ])
+        .args(["extract", "--header", ":value", pdf.to_str().unwrap()])
         .output()
         .expect("Failed to run pdftract");
 
@@ -243,12 +233,7 @@ fn test_header_flag_empty_value() {
     assert!(pdf.exists(), "Fixture PDF not found: {:?}", pdf);
 
     let output = Command::new(pdftract_bin())
-        .args([
-            "extract",
-            "--header",
-            "Name:",
-            pdf.to_str().unwrap(),
-        ])
+        .args(["extract", "--header", "Name:", pdf.to_str().unwrap()])
         .output()
         .expect("Failed to run pdftract");
 

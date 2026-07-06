@@ -26,8 +26,10 @@ pub static NUMBER_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::n
 
 /// Initialize the regex patterns
 fn init_regex() {
-    BULLET_RE.get_or_init(|| regex::Regex::new(r"^\s*[•‣◦⁃\-\*]\s").expect("invalid BULLET_RE regex"));
-    NUMBER_RE.get_or_init(|| regex::Regex::new(r"^\s*\d+[.\)]\s").expect("invalid NUMBER_RE regex"));
+    BULLET_RE
+        .get_or_init(|| regex::Regex::new(r"^\s*[•‣◦⁃\-\*]\s").expect("invalid BULLET_RE regex"));
+    NUMBER_RE
+        .get_or_init(|| regex::Regex::new(r"^\s*\d+[.\)]\s").expect("invalid NUMBER_RE regex"));
 }
 
 /// Check if a line starts with a bullet pattern.
@@ -137,7 +139,11 @@ where
     let mut list_item_count = 0;
 
     for line in &block.lines {
-        let line_text = line.spans.first().map(|s| s.line_text()).unwrap_or_default();
+        let line_text = line
+            .spans
+            .first()
+            .map(|s| s.line_text())
+            .unwrap_or_default();
 
         if starts_with_bullet(&line_text) || starts_with_number(&line_text) {
             list_item_count += 1;

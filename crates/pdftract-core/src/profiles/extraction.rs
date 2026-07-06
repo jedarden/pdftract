@@ -54,19 +54,19 @@ pub enum MatchExpr {
     /// All of these must match
     All {
         /// All match expressions must evaluate to true
-        all: Vec<MatchExpr>
+        all: Vec<MatchExpr>,
     },
 
     /// Any of these can match
     Any {
         /// At least one match expression must evaluate to true
-        any: Vec<MatchExpr>
+        any: Vec<MatchExpr>,
     },
 
     /// None of these must match
     None {
         /// All match expressions must evaluate to false
-        none: Vec<MatchExpr>
+        none: Vec<MatchExpr>,
     },
 }
 
@@ -405,7 +405,12 @@ invoice_number:
         let field: FieldSpec = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(field.field_type, "string");
         match field.extraction {
-            FieldExtraction::Rich { regex, near, max_distance_pt, .. } => {
+            FieldExtraction::Rich {
+                regex,
+                near,
+                max_distance_pt,
+                ..
+            } => {
                 assert!(regex.is_some());
                 assert!(near.is_some());
                 assert_eq!(max_distance_pt, Some(200));

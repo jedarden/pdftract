@@ -11,6 +11,9 @@ fn debug_serialization() {
     dict.insert(Arc::from("/M"), PdfObject::Integer(2));
 
     let bytes = serialize_dict_canonical(&dict);
-    println!("serialize_dict_canonical output: {}", String::from_utf8_lossy(&bytes));
+    println!(
+        "serialize_dict_canonical output: {}",
+        String::from_utf8_lossy(&bytes)
+    );
     println!("bytes: {:?}", bytes);
 }

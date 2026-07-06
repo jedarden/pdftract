@@ -138,7 +138,8 @@ impl BandwidthTrackingServer {
                 let has_range = request_lines.iter().any(|l| l.starts_with("Range:"));
 
                 if has_range {
-                    let range_line = request_lines.iter()
+                    let range_line = request_lines
+                        .iter()
                         .find(|l| l.starts_with("Range:"))
                         .unwrap();
                     let range_val = range_line["Range: ".len()..].trim();
@@ -147,7 +148,8 @@ impl BandwidthTrackingServer {
                         let parts: Vec<&str> = bytes_part.split('-').collect();
                         if parts.len() == 2 {
                             let start: u64 = parts[0].parse().unwrap_or(0);
-                            let end: u64 = parts[1].parse().unwrap_or(self.pdf_data.len() as u64 - 1);
+                            let end: u64 =
+                                parts[1].parse().unwrap_or(self.pdf_data.len() as u64 - 1);
                             let end = end.min(self.pdf_data.len() as u64 - 1);
                             let data_start = start as usize;
                             let data_end = (end + 1) as usize;
@@ -155,7 +157,9 @@ impl BandwidthTrackingServer {
 
                             response.extend_from_slice(b"HTTP/1.1 206 Partial Content\r\n");
                             response.extend_from_slice(b"Content-Range: bytes ");
-                            response.extend_from_slice(format!("{}-{}/{}", start, end, self.pdf_data.len()).as_bytes());
+                            response.extend_from_slice(
+                                format!("{}-{}/{}", start, end, self.pdf_data.len()).as_bytes(),
+                            );
                             response.extend_from_slice(b"\r\n");
                             response.extend_from_slice(b"Content-Length: ");
                             response.extend_from_slice(data.len().to_string().as_bytes());
@@ -239,8 +243,12 @@ fn create_multipage_pdf(page_count: usize) -> Vec<u8> {
     // Content streams
     for i in 0..page_count {
         let content_obj = 3 + page_count + i;
-        pdf.push_str(&format!("{} 0 obj\n<< /Length {} >>\nstream\n{}\nendstream\nendobj\n",
-            content_obj, repeated_content.len(), repeated_content));
+        pdf.push_str(&format!(
+            "{} 0 obj\n<< /Length {} >>\nstream\n{}\nendstream\nendobj\n",
+            content_obj,
+            repeated_content.len(),
+            repeated_content
+        ));
     }
 
     // Xref table
@@ -573,8 +581,7 @@ fn test_basic_authentication() {
 
     thread::sleep(Duration::from_millis(100));
 
-    let opts = RemoteOpts::new()
-        .with_credentials("testuser", "testpass");
+    let opts = RemoteOpts::new().with_credentials("testuser", "testpass");
 
     let result = open_remote(&url, &opts, None);
 
@@ -585,8 +592,8 @@ fn test_basic_authentication() {
 /// Test 11: Verify forward-scan is disabled for remote sources.
 #[test]
 fn test_forward_scan_disabled_remote() {
-    use pdftract_core::parser::xref::forward_scan_xref;
     use pdftract_core::parser::stream::PdfSource;
+    use pdftract_core::parser::xref::forward_scan_xref;
 
     // Mock remote source
     struct MockRemote {
@@ -617,9 +624,10 @@ fn test_forward_scan_disabled_remote() {
 
     // Should emit XrefRemoteNoForwardScan diagnostic
     use pdftract_core::diagnostics::DiagCode;
-    let has_diagnostic = result.diagnostics.iter().any(|d| {
-        matches!(d.code, DiagCode::XrefRemoteNoForwardScan)
-    });
+    let has_diagnostic = result
+        .diagnostics
+        .iter()
+        .any(|d| matches!(d.code, DiagCode::XrefRemoteNoForwardScan));
     assert!(has_diagnostic);
 }
 

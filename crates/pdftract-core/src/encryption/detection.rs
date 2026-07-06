@@ -8,8 +8,11 @@
 
 use std::collections::BTreeMap;
 
-use crate::{emit, diagnostics::{Diagnostic, DiagCode}};
 use crate::parser::object::{ObjRef, PdfDict, PdfObject};
+use crate::{
+    diagnostics::{DiagCode, Diagnostic},
+    emit,
+};
 
 /// Encryption metadata extracted from the PDF's /Encrypt dictionary.
 #[derive(Debug, Clone)]
@@ -173,7 +176,12 @@ pub fn detect_encryption(
         let user_key_encrypted = parse_v5_key(encrypt_dict, "/UE")?;
         let owner_key_encrypted = parse_v5_key(encrypt_dict, "/OE")?;
         let perms_encrypted = parse_v5_perms_bytes(encrypt_dict)?;
-        (perms, Some(user_key_encrypted), Some(owner_key_encrypted), Some(perms_encrypted))
+        (
+            perms,
+            Some(user_key_encrypted),
+            Some(owner_key_encrypted),
+            Some(perms_encrypted),
+        )
     } else {
         (perms, None, None, None)
     };
@@ -232,7 +240,9 @@ impl XrefResolver for crate::parser::xref::XrefResolver {
         // Convert ResolveError from xref module to detection module's ResolveError
         self.resolve(obj_ref).map_err(|e| match e {
             crate::parser::xref::ResolveError::NotFound(obj_ref) => ResolveError::NotFound(obj_ref),
-            crate::parser::xref::ResolveError::CircularRef(obj_ref) => ResolveError::CircularRef(obj_ref),
+            crate::parser::xref::ResolveError::CircularRef(obj_ref) => {
+                ResolveError::CircularRef(obj_ref)
+            }
             crate::parser::xref::ResolveError::Io(msg) => ResolveError::Io(msg),
         })
     }
@@ -383,7 +393,10 @@ fn parse_filter_name(obj: Option<&PdfObject>) -> Option<String> {
 /// Parse a single crypt filter definition.
 fn parse_crypt_filter_def(dict: &PdfDict) -> Option<CryptFilterDef> {
     let cfm = parse_cfm(dict.get("/CFM"))?;
-    let length = dict.get("/Length").and_then(|l| l.as_int()).map(|l| l as u32);
+    let length = dict
+        .get("/Length")
+        .and_then(|l| l.as_int())
+        .map(|l| l as u32);
     let auth_event = parse_auth_event(dict.get("/AuthEvent")).unwrap_or(AuthEvent::DocOpen);
 
     Some(CryptFilterDef {
@@ -435,10 +448,7 @@ mod tests {
     }
 
     fn make_dict(entries: Vec<(&str, PdfObject)>) -> PdfDict {
-        entries
-            .into_iter()
-            .map(|(k, v)| (k.into(), v))
-            .collect()
+        entries.into_iter().map(|(k, v)| (k.into(), v)).collect()
     }
 
     #[test]
@@ -465,7 +475,10 @@ mod tests {
 
         let trailer = make_dict(vec![
             ("/Encrypt", PdfObject::Dict(Box::new(encrypt_dict))),
-            ("/ID", PdfObject::Array(Box::new(vec![PdfObject::String(Box::new(vec![0u8; 16]))]))),
+            (
+                "/ID",
+                PdfObject::Array(Box::new(vec![PdfObject::String(Box::new(vec![0u8; 16]))])),
+            ),
         ]);
 
         let resolver = MockResolver;
@@ -495,16 +508,22 @@ mod tests {
             ("/P", PdfObject::Integer(0xFFFFFFFF_i64)),
             ("/UE", PdfObject::String(Box::new(vec![0u8; 32]))),
             ("/OE", PdfObject::String(Box::new(vec![0u8; 32]))),
-            ("/Perms", PdfObject::String(Box::new({
-                let mut perms = [0u8; 16];
-                perms[0..4].copy_from_slice(&0xFFFFFFFFu32.to_le_bytes());
-                perms.to_vec()
-            }))),
+            (
+                "/Perms",
+                PdfObject::String(Box::new({
+                    let mut perms = [0u8; 16];
+                    perms[0..4].copy_from_slice(&0xFFFFFFFFu32.to_le_bytes());
+                    perms.to_vec()
+                })),
+            ),
         ]);
 
         let trailer = make_dict(vec![
             ("/Encrypt", PdfObject::Dict(Box::new(encrypt_dict))),
-            ("/ID", PdfObject::Array(Box::new(vec![PdfObject::String(Box::new(vec![0u8; 16]))]))),
+            (
+                "/ID",
+                PdfObject::Array(Box::new(vec![PdfObject::String(Box::new(vec![0u8; 16]))])),
+            ),
         ]);
 
         let resolver = MockResolver;
@@ -698,7 +717,10 @@ mod tests {
         ]);
         let trailer = make_dict(vec![
             ("/Encrypt", PdfObject::Dict(Box::new(encrypt_dict))),
-            ("/ID", PdfObject::Array(Box::new(vec![PdfObject::String(Box::new(vec![0u8; 16]))]))),
+            (
+                "/ID",
+                PdfObject::Array(Box::new(vec![PdfObject::String(Box::new(vec![0u8; 16]))])),
+            ),
         ]);
         let mut diagnostics = Vec::new();
         let result = detect_encryption(&trailer, &MockResolver, &mut diagnostics);
@@ -716,7 +738,10 @@ mod tests {
         ]);
         let trailer = make_dict(vec![
             ("/Encrypt", PdfObject::Dict(Box::new(encrypt_dict))),
-            ("/ID", PdfObject::Array(Box::new(vec![PdfObject::String(Box::new(vec![0u8; 16]))]))),
+            (
+                "/ID",
+                PdfObject::Array(Box::new(vec![PdfObject::String(Box::new(vec![0u8; 16]))])),
+            ),
         ]);
         let mut diagnostics = Vec::new();
         let result = detect_encryption(&trailer, &MockResolver, &mut diagnostics);
@@ -734,7 +759,10 @@ mod tests {
         ]);
         let trailer = make_dict(vec![
             ("/Encrypt", PdfObject::Dict(Box::new(encrypt_dict))),
-            ("/ID", PdfObject::Array(Box::new(vec![PdfObject::String(Box::new(vec![0u8; 16]))]))),
+            (
+                "/ID",
+                PdfObject::Array(Box::new(vec![PdfObject::String(Box::new(vec![0u8; 16]))])),
+            ),
         ]);
         let mut diagnostics = Vec::new();
         let result = detect_encryption(&trailer, &MockResolver, &mut diagnostics);

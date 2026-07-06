@@ -4,11 +4,7 @@
 //! inspector responses. The policy permits only same-origin scripts and
 //! default sources, preventing execution of any injected content.
 
-use axum::{
-    extract::Request,
-    middleware::Next,
-    response::Response,
-};
+use axum::{extract::Request, middleware::Next, response::Response};
 
 /// CSP header value for inspector responses.
 ///
@@ -28,10 +24,9 @@ pub async fn csp_middleware(req: Request, next: Next) -> Response {
     let mut response = next.run(req).await;
 
     // Add CSP header to all responses
-    response.headers_mut().insert(
-        "Content-Security-Policy",
-        CSP_HEADER_VALUE.parse().unwrap(),
-    );
+    response
+        .headers_mut()
+        .insert("Content-Security-Policy", CSP_HEADER_VALUE.parse().unwrap());
 
     response
 }
@@ -39,8 +34,8 @@ pub async fn csp_middleware(req: Request, next: Next) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{routing::get, Router};
     use axum::http::StatusCode;
+    use axum::{routing::get, Router};
     use tower::ServiceExt;
 
     #[tokio::test]

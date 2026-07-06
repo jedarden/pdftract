@@ -1074,7 +1074,9 @@ mod tests {
 
         // Read should return second version
         let reader = Reader::new(cache_dir);
-        let result = reader.read(TEST_FINGERPRINT, TEST_OPTS_HASH, size + 8).unwrap();
+        let result = reader
+            .read(TEST_FINGERPRINT, TEST_OPTS_HASH, size + 8)
+            .unwrap();
 
         assert_eq!(result, b"second version");
     }

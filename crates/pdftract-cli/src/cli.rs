@@ -3,7 +3,7 @@
 //! This module contains the clap derive structs that define the CLI interface.
 //! These are used by both main.rs (for the actual CLI) and lib.rs (for documentation).
 
-use clap::{Parser, Subcommand, ArgAction};
+use clap::{ArgAction, Parser, Subcommand};
 use std::path::PathBuf;
 
 // Language type is re-exported from codegen module (declared in main.rs/lib.rs)
@@ -12,6 +12,10 @@ pub use crate::codegen::Language;
 // Import inspect and verify_receipt modules for use in Commands enum
 pub use crate::inspect::InspectArgs;
 pub use crate::verify_receipt::VerifyReceiptCommand;
+
+// Import grep module for use in Commands enum (feature-gated)
+#[cfg(feature = "grep")]
+pub use crate::grep::GrepArgs;
 
 #[derive(Parser)]
 #[command(name = "pdftract")]
@@ -203,7 +207,7 @@ pub enum Commands {
     },
     /// Search for text patterns in PDF files with bounding-box results
     #[cfg(feature = "grep")]
-    Grep(grep::GrepArgs),
+    Grep(GrepArgs),
     /// Inspect a PDF file in a local web browser with debugging overlays
     Inspect(InspectArgs),
     /// Verify a receipt against a PDF file

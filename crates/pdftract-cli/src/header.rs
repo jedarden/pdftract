@@ -194,9 +194,9 @@ pub fn parse_header(header_str: &str) -> Result<(String, String), HeaderError> {
     }
 
     // Split on the FIRST colon only (values may contain colons, e.g., URLs)
-    let colon_pos = header_str.find(':').ok_or_else(|| {
-        HeaderError::MissingColon(header_str.to_string())
-    })?;
+    let colon_pos = header_str
+        .find(':')
+        .ok_or_else(|| HeaderError::MissingColon(header_str.to_string()))?;
 
     let name = header_str[..colon_pos].trim();
     let value = header_str[colon_pos + 1..].trim();
