@@ -21,8 +21,8 @@ if [[ ! -f "$PROVENANCE_FILE" ]]; then
     exit 1
 fi
 
-# Find all fixture files
-FIXTURE_COUNT=$(find "$FIXTURES_DIR" -type f \( -name "*.pdf" -o -name "*.yml" -o -name "*.yaml" \) ! -name "PROVENANCE.md" | wc -l)
+# Find all fixture files (exclude grep-corpus which uses its own manifest.csv)
+FIXTURE_COUNT=$(find "$FIXTURES_DIR" -type f \( -name "*.pdf" -o -name "*.yml" -o -name "*.yaml" \) ! -name "PROVENANCE.md" ! -path "*/grep-corpus/*" | wc -l)
 echo "Found $FIXTURE_COUNT fixture files"
 
 # Track errors and warnings in temp files for subprocess safety
@@ -81,13 +81,14 @@ while IFS= read -r line; do
 done < <(grep -E "^\|" "$PROVENANCE_FILE")
 
 # Check for orphaned files (files without provenance entries)
+# Exclude grep-corpus which uses its own manifest.csv system
 echo "Checking for orphaned fixture files..."
 while read fixture_file; do
     REL_PATH="${fixture_file#$FIXTURES_DIR/}"
     if ! grep -q "| $REL_PATH " "$PROVENANCE_FILE"; then
         echo "ERROR: Fixture file missing from PROVENANCE.md: $REL_PATH" >> "$ERROR_FILE"
     fi
-done < <(find "$FIXTURES_DIR" -type f \( -name "*.pdf" -o -name "*.yml" -o -name "*.yaml" \) ! -name "PROVENANCE.md")
+done < <(find "$FIXTURES_DIR" -type f \( -name "*.pdf" -o -name "*.yml" -o -name "*.yaml" \) ! -name "PROVENANCE.md" ! -path "*/grep-corpus/*")
 
 # Count errors and warnings
 ERRORS=$(wc -l < "$ERROR_FILE" 2>/dev/null || echo 0)
