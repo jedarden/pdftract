@@ -751,6 +751,42 @@ pub mod mcp_helpers {
         Ok(false)
     }
 
+    /// Check if a JsonRpcError indicates an SSRF_BLOCKED error.
+    ///
+    /// This is a standalone helper function that accepts a JsonRpcError reference
+    /// and returns a boolean indicating whether the error represents an SSRF_BLOCKED
+    /// condition.
+    ///
+    /// # Arguments
+    ///
+    /// * `error` - Reference to the JsonRpcError to check
+    ///
+    /// # Returns
+    ///
+    /// * `true` if the error indicates SSRF_BLOCKED
+    /// * `false` otherwise (currently a stub implementation)
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use mcp_helpers::{is_ssrf_blocked, JsonRpcError};
+    ///
+    /// let error = JsonRpcError {
+    ///     code: -32001,
+    ///     message: "SSRF_BLOCKED: URL rejected".to_string(),
+    ///     data: None,
+    /// };
+    ///
+    /// if is_ssrf_blocked(&error) {
+    ///     // Handle SSRF blocked error
+    /// }
+    /// ```
+    pub fn is_ssrf_blocked(error: &JsonRpcError) -> bool {
+        // Stub implementation - returns false for now
+        // TODO: Implement proper SSRF_BLOCKED detection logic
+        false
+    }
+
     /// Extract error information from a JSON-RPC error response.
     ///
     /// Returns a tuple of (code, message, optional_data) for easier error handling.
