@@ -361,6 +361,237 @@ fn test_current_network_range_blocked() {
 }
 
 // ============================================================================
+// MCP JSON-RPC Message Construction Helpers
+// ============================================================================
+
+/// Helper module for constructing JSON-RPC MCP tool call messages.
+///
+/// This module provides type-safe helpers for building MCP tools/call requests,
+/// particularly for SSRF testing. It uses the JSON-RPC framing types from
+/// pdftract_cli::mcp::framing and provides convenient constructors for
+/// common tool call patterns.
+///
+/// ## Example
+///
+/// ```rust
+/// use mcp_helpers::ToolCallBuilder;
+///
+/// let request = ToolCallBuilder::extract()
+///     .with_url("https://example.com/doc.pdf")
+///     .build();
+/// ```
+#[cfg(feature = "remote")]
+#[cfg(test)]
+pub mod mcp_helpers {
+    use pdftract_cli::mcp::framing::{Id, Request};
+    use serde_json::json;
+
+    /// Builder for constructing MCP tools/call JSON-RPC requests.
+    ///
+    /// Provides a fluent API for building tool call requests with proper
+    /// JSON-RPC structure and type-safe parameter construction.
+    pub struct ToolCallBuilder {
+        tool_name: String,
+        arguments: serde_json::Map<String, serde_json::Value>,
+        request_id: Id,
+    }
+
+    impl ToolCallBuilder {
+        /// Create a new ToolCallBuilder for the specified tool name.
+        fn new(tool_name: impl Into<String>) -> Self {
+            Self {
+                tool_name: tool_name.into(),
+                arguments: serde_json::Map::new(),
+                request_id: Id::Number(1),
+            }
+        }
+
+        /// Create a builder for the "extract" tool.
+        ///
+        /// This is the primary tool for PDF extraction and accepts URL
+        /// parameters that must be validated for SSRF protection.
+        pub fn extract() -> Self {
+            Self::new("extract")
+        }
+
+        /// Create a builder for the "get_metadata" tool.
+        ///
+        /// This tool fetches document metadata and also accepts URL parameters.
+        pub fn get_metadata() -> Self {
+            Self::new("get_metadata")
+        }
+
+        /// Set the request ID.
+        ///
+        /// Default is Id::Number(1). This allows customizing the ID for
+        /// concurrent request tracking.
+        pub fn with_id(mut self, id: Id) -> Self {
+            self.request_id = id;
+            self
+        }
+
+        /// Add a URL parameter to the tool arguments.
+        ///
+        /// This is the primary parameter for extract and get_metadata tools
+        /// when fetching remote PDFs.
+        pub fn with_url(mut self, url: impl Into<String>) -> Self {
+            self.arguments
+                .insert("path".to_string(), serde_json::Value::String(url.into()));
+            self
+        }
+
+        /// Add a custom argument to the tool arguments.
+        ///
+        /// Allows adding arbitrary parameters like "password", "ocr", etc.
+        pub fn with_argument(
+            mut self,
+            key: impl Into<String>,
+            value: serde_json::Value,
+        ) -> Self {
+            self.arguments.insert(key.into(), value);
+            self
+        }
+
+        /// Build the JSON-RPC request.
+        ///
+        /// Returns a Request object that can be serialized to JSON and sent
+        /// to the MCP server via stdio or HTTP transport.
+        pub fn build(self) -> Request {
+            let params = json!({
+                "name": self.tool_name,
+                "arguments": self.arguments
+            });
+
+            Request::new("tools/call", Some(params), Some(self.request_id))
+        }
+
+        /// Build the request and serialize to JSON string.
+        ///
+        /// Convenience method that combines build() and serde_json::to_string().
+        pub fn build_json(self) -> String {
+            let request = self.build();
+            serde_json::to_string(&request)
+                .expect("ToolCallRequest should always be serializable")
+        }
+    }
+
+    /// Quick helper to create an extract tool call with just a URL.
+    ///
+    /// This is the most common pattern for SSRF testing.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// let request = extract_call("https://127.0.0.1/");
+    /// ```
+    pub fn extract_call(url: impl Into<String>) -> Request {
+        ToolCallBuilder::extract().with_url(url).build()
+    }
+
+    /// Quick helper to create a get_metadata tool call with just a URL.
+    pub fn get_metadata_call(url: impl Into<String>) -> Request {
+        ToolCallBuilder::get_metadata().with_url(url).build()
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn test_tool_call_builder_extract_basic() {
+            let request = ToolCallBuilder::extract()
+                .with_url("https://example.com/")
+                .build();
+
+            assert_eq!(request.method, "tools/call");
+            assert!(request.params.is_some());
+
+            let params = request.params.unwrap();
+            assert_eq!(params["name"], "extract");
+            assert_eq!(params["arguments"]["path"], "https://example.com/");
+        }
+
+        #[test]
+        fn test_tool_call_builder_extract_with_id() {
+            let request = ToolCallBuilder::extract()
+                .with_url("https://example.com/")
+                .with_id(Id::String("test-123".to_string()))
+                .build();
+
+            assert_eq!(request.request_id(), Id::String("test-123".to_string()));
+        }
+
+        #[test]
+        fn test_tool_call_builder_with_custom_argument() {
+            let request = ToolCallBuilder::extract()
+                .with_url("https://example.com/")
+                .with_argument("ocr", true)
+                .build();
+
+            let params = request.params.unwrap();
+            assert_eq!(params["arguments"]["ocr"], true);
+        }
+
+        #[test]
+        fn test_extract_call_quick_helper() {
+            let request = extract_call("https://example.com/doc.pdf");
+
+            assert_eq!(request.method, "tools/call");
+            let params = request.params.unwrap();
+            assert_eq!(params["name"], "extract");
+            assert_eq!(params["arguments"]["path"], "https://example.com/doc.pdf");
+        }
+
+        #[test]
+        fn test_get_metadata_call_quick_helper() {
+            let request = get_metadata_call("https://example.com/doc.pdf");
+
+            assert_eq!(request.method, "tools/call");
+            let params = request.params.unwrap();
+            assert_eq!(params["name"], "get_metadata");
+            assert_eq!(
+                params["arguments"]["path"],
+                "https://example.com/doc.pdf"
+            );
+        }
+
+        #[test]
+        fn test_serialization_format() {
+            let request = ToolCallBuilder::extract()
+                .with_url("https://example.com/")
+                .build();
+
+            let json = serde_json::to_string(&request).unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+            assert_eq!(parsed["jsonrpc"], "2.0");
+            assert_eq!(parsed["method"], "tools/call");
+            assert_eq!(parsed["params"]["name"], "extract");
+            assert_eq!(parsed["params"]["arguments"]["path"], "https://example.com/");
+            assert_eq!(parsed["id"], 1);
+        }
+
+        #[test]
+        fn test_multiple_arguments() {
+            let request = ToolCallBuilder::extract()
+                .with_url("https://example.com/")
+                .with_argument("password", "secret123")
+                .with_argument("ocr", true)
+                .with_argument("pages", serde_json::Value::String("1-5".to_string()))
+                .build();
+
+            let params = request.params.unwrap();
+            let args = &params["arguments"];
+
+            assert_eq!(args["path"], "https://example.com/");
+            assert_eq!(args["password"], "secret123");
+            assert_eq!(args["ocr"], true);
+            assert_eq!(args["pages"], "1-5");
+        }
+    }
+}
+
+// ============================================================================
 // MCP Server Integration Tests
 // ============================================================================
 
@@ -540,19 +771,9 @@ mod mcp_ssrf_tests {
             let mut child = spawn_mcp_stdio();
             thread::sleep(Duration::from_millis(50));
 
-            // Send a tools/call request for extract tool with SSRF URL
-            let request = serde_json::json!({
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/call",
-                "params": {
-                    "name": "extract",
-                    "arguments": {
-                        "path": url
-                    }
-                }
-            });
-
+            // Use the helper to construct a proper JSON-RPC tools/call request
+            use crate::mcp_helpers::extract_call;
+            let request = extract_call(*url);
             let request_str = serde_json::to_string(&request).unwrap();
             {
                 let stdin = child.stdin.as_mut().expect("Failed to open stdin");
@@ -621,18 +842,9 @@ mod mcp_ssrf_tests {
         let mut child = spawn_mcp_stdio();
         thread::sleep(Duration::from_millis(50));
 
-        let request = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/call",
-            "params": {
-                "name": "extract",
-                "arguments": {
-                    "path": dangerous_url
-                }
-            }
-        });
-
+        // Use the helper to construct the request
+        use crate::mcp_helpers::extract_call;
+        let request = extract_call(dangerous_url);
         let request_str = serde_json::to_string(&request).unwrap();
         {
             let stdin = child.stdin.as_mut().expect("Failed to open stdin");
@@ -683,18 +895,9 @@ mod mcp_ssrf_tests {
             let mut child = spawn_mcp_stdio();
             thread::sleep(Duration::from_millis(50));
 
-            let request = serde_json::json!({
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/call",
-                "params": {
-                    "name": "extract",
-                    "arguments": {
-                        "path": url
-                    }
-                }
-            });
-
+            // Use the helper to construct the request
+            use crate::mcp_helpers::extract_call;
+            let request = extract_call(*url);
             let request_str = serde_json::to_string(&request).unwrap();
             {
                 let stdin = child.stdin.as_mut().expect("Failed to open stdin");
@@ -740,18 +943,9 @@ mod mcp_ssrf_tests {
             let mut child = spawn_mcp_stdio();
             thread::sleep(Duration::from_millis(50));
 
-            let request = serde_json::json!({
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/call",
-                "params": {
-                    "name": "get_metadata",
-                    "arguments": {
-                        "path": url
-                    }
-                }
-            });
-
+            // Use the helper to construct the request for get_metadata tool
+            use crate::mcp_helpers::get_metadata_call;
+            let request = get_metadata_call(*url);
             let request_str = serde_json::to_string(&request).unwrap();
             {
                 let stdin = child.stdin.as_mut().expect("Failed to open stdin");
