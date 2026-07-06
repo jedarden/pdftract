@@ -192,10 +192,8 @@ fn extract_error_message(response: &str) -> Option<String> {
 
 /// Test case 1: IPv4 loopback (127.0.0.1) is blocked.
 ///
-/// This test verifies that attempting to extract from 127.0.0.1 is rejected.
-/// Currently, the MCP server returns a stub response since SSRF blocking
-/// is not yet implemented. Once SSRF blocking is implemented, this will
-/// return a JSON-RPC error.
+/// This test verifies that attempting to extract from 127.0.0.1 is rejected
+/// with a SSRF_BLOCKED error in the JSON-RPC response.
 #[test]
 fn test_ipv4_loopback_blocked() {
     let mut server = spawn_mcp_server();
@@ -227,54 +225,14 @@ fn test_ipv4_loopback_blocked() {
         }
     };
 
-    // Parse response
-    let parsed: serde_json::Value =
-        serde_json::from_str(&response).expect("Response is not valid JSON");
-
-    // Check if we got an error (SSRF blocking implemented) or a stub response
-    if let Some(error) = parsed.get("error") {
-        // SSRF blocking is implemented - verify the error
-        let code = error.get("code").and_then(|c| c.as_i64()).expect("Error should have a code");
-
-        // The code should be in the server error range or a specific SSRF error
-        assert!(
-            code == SSRF_BLOCKED_CODE || (-32099..=-32000).contains(&code),
-            "Error code {} should be SSRF_BLOCKED_CODE or in server error range",
-            code
-        );
-
-        let message = error
-            .get("message")
-            .and_then(|m| m.as_str())
-            .expect("Error should have a message");
-
-        // The message should mention SSRF, private network, or URL rejection
-        let msg_lower = message.to_lowercase();
-        assert!(
-            msg_lower.contains("ssrf")
-                || msg_lower.contains("private")
-                || msg_lower.contains("block")
-                || msg_lower.contains("reject")
-                || msg_lower.contains("localhost")
-                || msg_lower.contains("loopback"),
-            "Error message should mention SSRF/private network blocking: {}",
-            message
-        );
-    } else if let Some(result) = parsed.get("result") {
-        // SSRF blocking not yet implemented - verify stub response
-        let note = result.get("_note").and_then(|n| n.as_str());
-        assert!(
-            note.is_some() && note.unwrap().contains("Phase"),
-            "Expected stub response with _note field, got: {}",
-            response
-        );
-        eprintln!("WARNING: SSRF blocking not yet implemented - received stub response");
-    } else {
-        panic!("Response should contain either an error or a result");
-    }
+    // Assert SSRF_BLOCKED error
+    assert_ssrf_blocked_error(&response, "IPv4 loopback (127.0.0.1)");
 }
 
 /// Test case 2: IPv4 wildcard (0.0.0.0) is blocked.
+///
+/// This test verifies that attempting to extract from 0.0.0.0 is rejected
+/// with a SSRF_BLOCKED error in the JSON-RPC response.
 #[test]
 fn test_ipv4_wildcard_blocked() {
     let mut server = spawn_mcp_server();
@@ -304,44 +262,14 @@ fn test_ipv4_wildcard_blocked() {
         }
     };
 
-    let parsed: serde_json::Value =
-        serde_json::from_str(&response).expect("Response is not valid JSON");
-
-    // Check if we got an error (SSRF blocking implemented) or a stub response
-    if let Some(error) = parsed.get("error") {
-        // SSRF blocking is implemented - verify the error
-        let message = error
-            .get("message")
-            .and_then(|m| m.as_str())
-            .expect("Error should have a message");
-
-        // Should mention blocking or rejection
-        let msg_lower = message.to_lowercase();
-        assert!(
-            msg_lower.contains("ssrf")
-                || msg_lower.contains("private")
-                || msg_lower.contains("block")
-                || msg_lower.contains("reject")
-                || msg_lower.contains("wildcard")
-                || msg_lower.contains("0.0.0.0"),
-            "Error message should mention blocking: {}",
-            message
-        );
-    } else if let Some(result) = parsed.get("result") {
-        // SSRF blocking not yet implemented - verify stub response
-        let note = result.get("_note").and_then(|n| n.as_str());
-        assert!(
-            note.is_some() && note.unwrap().contains("Phase"),
-            "Expected stub response with _note field, got: {}",
-            response
-        );
-        eprintln!("WARNING: SSRF blocking not yet implemented - received stub response");
-    } else {
-        panic!("Response should contain either an error or a result");
-    }
+    // Assert SSRF_BLOCKED error
+    assert_ssrf_blocked_error(&response, "IPv4 wildcard (0.0.0.0)");
 }
 
 /// Test case 3: Cloud metadata endpoint (169.254.169.254) is blocked.
+///
+/// This test verifies that attempting to extract from the AWS metadata endpoint
+/// is rejected with a SSRF_BLOCKED error in the JSON-RPC response.
 #[test]
 fn test_cloud_metadata_blocked() {
     let mut server = spawn_mcp_server();
@@ -371,44 +299,14 @@ fn test_cloud_metadata_blocked() {
         }
     };
 
-    let parsed: serde_json::Value =
-        serde_json::from_str(&response).expect("Response is not valid JSON");
-
-    // Check if we got an error (SSRF blocking implemented) or a stub response
-    if let Some(error) = parsed.get("error") {
-        // SSRF blocking is implemented - verify the error
-        let message = error
-            .get("message")
-            .and_then(|m| m.as_str())
-            .expect("Error should have a message");
-
-        // Should explicitly block link-local or private network
-        let msg_lower = message.to_lowercase();
-        assert!(
-            msg_lower.contains("ssrf")
-                || msg_lower.contains("private")
-                || msg_lower.contains("link-local")
-                || msg_lower.contains("block")
-                || msg_lower.contains("169.254")
-                || msg_lower.contains("metadata"),
-            "Error message should block link-local addresses: {}",
-            message
-        );
-    } else if let Some(result) = parsed.get("result") {
-        // SSRF blocking not yet implemented - verify stub response
-        let note = result.get("_note").and_then(|n| n.as_str());
-        assert!(
-            note.is_some() && note.unwrap().contains("Phase"),
-            "Expected stub response with _note field, got: {}",
-            response
-        );
-        eprintln!("WARNING: SSRF blocking not yet implemented - received stub response");
-    } else {
-        panic!("Response should contain either an error or a result");
-    }
+    // Assert SSRF_BLOCKED error
+    assert_ssrf_blocked_error(&response, "Cloud metadata endpoint (169.254.169.254)");
 }
 
 /// Test case 4: RFC 1918 private network (10.0.0.1) is blocked.
+///
+/// This test verifies that attempting to extract from a private network IP
+/// is rejected with a SSRF_BLOCKED error in the JSON-RPC response.
 #[test]
 fn test_rfc1918_private_blocked() {
     let mut server = spawn_mcp_server();
@@ -438,44 +336,14 @@ fn test_rfc1918_private_blocked() {
         }
     };
 
-    let parsed: serde_json::Value =
-        serde_json::from_str(&response).expect("Response is not valid JSON");
-
-    // Check if we got an error (SSRF blocking implemented) or a stub response
-    if let Some(error) = parsed.get("error") {
-        // SSRF blocking is implemented - verify the error
-        let message = error
-            .get("message")
-            .and_then(|m| m.as_str())
-            .expect("Error should have a message");
-
-        // Should explicitly block private network
-        let msg_lower = message.to_lowercase();
-        assert!(
-            msg_lower.contains("ssrf")
-                || msg_lower.contains("private")
-                || msg_lower.contains("rfc")
-                || msg_lower.contains("block")
-                || msg_lower.contains("10.")
-                || msg_lower.contains("internal"),
-            "Error message should block RFC 1918 addresses: {}",
-            message
-        );
-    } else if let Some(result) = parsed.get("result") {
-        // SSRF blocking not yet implemented - verify stub response
-        let note = result.get("_note").and_then(|n| n.as_str());
-        assert!(
-            note.is_some() && note.unwrap().contains("Phase"),
-            "Expected stub response with _note field, got: {}",
-            response
-        );
-        eprintln!("WARNING: SSRF blocking not yet implemented - received stub response");
-    } else {
-        panic!("Response should contain either an error or a result");
-    }
+    // Assert SSRF_BLOCKED error
+    assert_ssrf_blocked_error(&response, "RFC 1918 private network (10.0.0.1)");
 }
 
 /// Test case 5: IPv6 loopback ([::1]) is blocked.
+///
+/// This test verifies that attempting to extract from IPv6 loopback
+/// is rejected with a SSRF_BLOCKED error in the JSON-RPC response.
 #[test]
 fn test_ipv6_loopback_blocked() {
     let mut server = spawn_mcp_server();
@@ -505,45 +373,83 @@ fn test_ipv6_loopback_blocked() {
         }
     };
 
+    // Assert SSRF_BLOCKED error
+    assert_ssrf_blocked_error(&response, "IPv6 loopback ([::1])");
+}
+
+// ============================================================================
+// SSRF_BLOCKED Error Assertion Helper
+// ============================================================================
+
+/// Assertion helper that checks a JSON-RPC response for SSRF_BLOCKED error.
+///
+/// This function verifies that:
+/// 1. The response is an error response (not a result)
+/// 2. The error contains SSRF_BLOCKED in either:
+///    - The error data's "code" field (preferred)
+///    - The error message (fallback)
+///
+/// # Arguments
+///
+/// * `response_json` - The JSON-RPC response string to check
+/// * `test_description` - Description of the test case (for error messages)
+///
+/// # Panics
+///
+/// * If the response is not a valid JSON-RPC error response
+/// * If the error does not contain SSRF_BLOCKED
+fn assert_ssrf_blocked_error(response_json: &str, test_description: &str) {
     let parsed: serde_json::Value =
-        serde_json::from_str(&response).expect("Response is not valid JSON");
+        serde_json::from_str(response_json).expect("Response is not valid JSON");
 
-    // Check if we got an error (SSRF blocking implemented) or a stub response
-    if let Some(error) = parsed.get("error") {
-        // SSRF blocking is implemented - verify the error
-        let message = error
-            .get("message")
-            .and_then(|m| m.as_str())
-            .expect("Error should have a message");
+    // Must have an error field
+    let error = parsed
+        .get("error")
+        .expect(&format!(
+            "Response should be an error for {}, got: {}",
+            test_description, response_json
+        ));
 
-        // Should block IPv6 loopback
-        let msg_lower = message.to_lowercase();
-        assert!(
-            msg_lower.contains("ssrf")
-                || msg_lower.contains("private")
-                || msg_lower.contains("loopback")
-                || msg_lower.contains("localhost")
-                || msg_lower.contains("block")
-                || msg_lower.contains("ipv6")
-                || msg_lower.contains("::1"),
-            "Error message should block IPv6 loopback: {}",
-            message
-        );
-    } else if let Some(result) = parsed.get("result") {
-        // SSRF blocking not yet implemented - verify stub response
-        let note = result.get("_note").and_then(|n| n.as_str());
-        assert!(
-            note.is_some() && note.unwrap().contains("Phase"),
-            "Expected stub response with _note field, got: {}",
-            response
-        );
-        eprintln!("WARNING: SSRF blocking not yet implemented - received stub response");
-    } else {
-        panic!("Response should contain either an error or a result");
-    }
+    // Check if error data contains "code": "SSRF_BLOCKED"
+    let has_ssrf_blocked_code = error
+        .get("data")
+        .and_then(|data| data.get("code"))
+        .and_then(|code| code.as_str())
+        .map(|code| code == "SSRF_BLOCKED")
+        .unwrap_or(false);
+
+    // Check if error message contains SSRF_BLOCKED
+    let error_message = error
+        .get("message")
+        .and_then(|m| m.as_str())
+        .unwrap_or("");
+    let has_ssrf_in_message = error_message.contains("SSRF_BLOCKED");
+
+    assert!(
+        has_ssrf_blocked_code || has_ssrf_in_message,
+        "Error response for {} should contain SSRF_BLOCKED in data.code or message. \
+         Response: {}",
+        test_description, response_json
+    );
+
+    // Additional verification: ensure we're dealing with a proper error structure
+    let error_code = error
+        .get("code")
+        .and_then(|c| c.as_i64())
+        .expect("Error should have a numeric code");
+
+    // Error code should be in the server error range or the specific SSRF blocked code
+    assert!(
+        error_code == SSRF_BLOCKED_CODE || (-32099..=-32000).contains(&error_code),
+        "Error code {} for {} should be SSRF_BLOCKED_CODE or in server error range",
+        error_code, test_description
+    );
 }
 
 /// Test case 6: Verify http:// scheme is rejected (https:// required).
+///
+/// This test verifies that attempting to use http:// scheme (even with a
+/// public hostname) is rejected with a SSRF_BLOCKED error.
 #[test]
 fn test_http_scheme_rejected() {
     let mut server = spawn_mcp_server();
@@ -574,47 +480,17 @@ fn test_http_scheme_rejected() {
         }
     };
 
-    let parsed: serde_json::Value =
-        serde_json::from_str(&response).expect("Response is not valid JSON");
-
-    // Check if we got an error (SSRF blocking implemented) or a stub response
-    if let Some(error) = parsed.get("error") {
-        // SSRF blocking is implemented - verify the error
-        let message = error
-            .get("message")
-            .and_then(|m| m.as_str())
-            .expect("Error should have a message");
-
-        // Should reject http:// scheme
-        let msg_lower = message.to_lowercase();
-        assert!(
-            msg_lower.contains("http")
-                || msg_lower.contains("scheme")
-                || msg_lower.contains("https")
-                || msg_lower.contains("tls")
-                || msg_lower.contains("secure"),
-            "Error message should reject http:// scheme: {}",
-            message
-        );
-    } else if let Some(result) = parsed.get("result") {
-        // SSRF blocking not yet implemented - verify stub response
-        let note = result.get("_note").and_then(|n| n.as_str());
-        assert!(
-            note.is_some() && note.unwrap().contains("Phase"),
-            "Expected stub response with _note field, got: {}",
-            response
-        );
-        eprintln!("WARNING: SSRF blocking not yet implemented - received stub response");
-    } else {
-        panic!("Response should contain either an error or a result");
-    }
+    // Assert SSRF_BLOCKED error
+    assert_ssrf_blocked_error(&response, "http:// scheme (not https)");
 }
 
 /// Test case 7: Verify no network connections are attempted.
 ///
-/// This test checks that when SSRF-prone URLs are rejected, no actual
-/// network connection is made. We verify this by checking that the response
-/// is immediate (no timeout) and contains an error (not a successful result).
+/// This test verifies that when SSRF-prone URLs are rejected, no actual
+/// network connection is made. We ensure this by checking:
+/// 1. The response is quick (< 500ms) — no network timeout
+/// 2. The response is an error (not a successful result)
+/// 3. The error contains SSRF_BLOCKED
 #[test]
 fn test_no_network_connection_attempted() {
     let mut server = spawn_mcp_server();
@@ -655,27 +531,16 @@ fn test_no_network_connection_attempted() {
         elapsed.as_millis()
     );
 
+    // Parse response to verify it's not a success result
     let parsed: serde_json::Value =
         serde_json::from_str(&response).expect("Response is not valid JSON");
 
-    // Check if we got an error (SSRF blocking implemented) or a stub response
-    if let Some(_error) = parsed.get("error") {
-        // SSRF blocking is implemented - URL was rejected, no network connection made
-        assert!(
-            parsed.get("result").is_none(),
-            "Response should not contain a result (URL should be rejected)"
-        );
-    } else if let Some(result) = parsed.get("result") {
-        // SSRF blocking not yet implemented - verify stub response
-        // Even in stub mode, the response should be quick (< 500ms)
-        let note = result.get("_note").and_then(|n| n.as_str());
-        assert!(
-            note.is_some() && note.unwrap().contains("Phase"),
-            "Expected stub response with _note field, got: {}",
-            response
-        );
-        eprintln!("WARNING: SSRF blocking not yet implemented - received stub response");
-    } else {
-        panic!("Response should contain either an error or a result");
-    }
+    // Verify the response is an error (SSRF blocking implemented)
+    assert!(
+        parsed.get("error").is_some(),
+        "Response should be an error (URL should be rejected)"
+    );
+
+    // Assert SSRF_BLOCKED error to verify proper rejection
+    assert_ssrf_blocked_error(&response, "RFC 1918 private network (192.168.1.1)");
 }

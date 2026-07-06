@@ -577,6 +577,30 @@ fn execute_grep_command(
     Ok((duration_ms, matches_total, stdout, stderr))
 }
 
+/// Raw timing metrics extracted from benchmark output
+///
+/// This structure holds the parsed metrics before they're aggregated
+/// into the final BenchmarkResult.
+#[derive(Debug, Default)]
+struct RawTimingMetrics {
+    /// Wall-clock runtime in milliseconds
+    pub wall_time_ms: u128,
+    /// User CPU time in seconds (if available)
+    pub user_time_sec: Option<f64>,
+    /// System CPU time in seconds (if available)
+    pub system_time_sec: Option<f64>,
+    /// Total number of files processed
+    pub files_processed: usize,
+    /// Total number of matches found
+    pub total_matches: usize,
+    /// Total bytes processed
+    pub total_bytes: u64,
+    /// Files processed per second
+    pub files_per_second: f64,
+    /// Throughput in MB/s
+    pub throughput_mb_s: f64,
+}
+
 /// Parse match count from progress JSON events
 ///
 /// Extracts total match count from stderr containing progress events.
@@ -599,6 +623,136 @@ fn parse_match_count_from_stderr(stderr: &str) -> usize {
     }
 
     total_matches
+}
+
+/// Extract raw timing metrics from benchmark output
+///
+/// This function parses the captured stdout and stderr from the benchmark
+/// command to extract timing information, throughput metrics, and file counts.
+///
+/// # Arguments
+/// * `stdout` - Captured stdout from benchmark command
+/// * `stderr` - Captured stderr from benchmark command (contains progress events)
+/// * `wall_time_ms` - Wall-clock duration measured by the benchmark harness
+/// * `total_bytes` - Total bytes processed (from corpus size)
+///
+/// # Returns
+/// * `RawTimingMetrics` - Structured metrics extracted from the output
+fn extract_raw_timing_metrics(
+    stdout: &str,
+    stderr: &str,
+    wall_time_ms: u128,
+    total_bytes: u64,
+) -> RawTimingMetrics {
+    use std::io::BufRead;
+
+    let mut metrics = RawTimingMetrics {
+        wall_time_ms,
+        total_bytes,
+        ..Default::default()
+    };
+
+    // Parse progress events from stderr for file counts and match counts
+    let mut files_processed = 0;
+    let mut total_matches = 0;
+
+    for line in stderr.lines() {
+        // Skip empty lines and non-JSON lines
+        let line_trimmed = line.trim();
+        if line_trimmed.is_empty() {
+            continue;
+        }
+
+        // Try to parse as JSON progress event
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(line_trimmed) {
+            if let Some(event_type) = value.get("type").and_then(|t| t.as_str()) {
+                match event_type {
+                    "file_done" => {
+                        // Extract match count from file_done event
+                        if let Some(matches) = value.get("matches").and_then(|m| m.as_u64()) {
+                            total_matches += matches as usize;
+                        }
+                        // Count files processed
+                        files_processed += 1;
+                    }
+                    "progress" => {
+                        // Extract progress information if available
+                        if let Some(files) = value.get("files_processed").and_then(|f| f.as_u64()) {
+                            files_processed = files as usize;
+                        }
+                    }
+                    _ => {
+                        // Ignore other event types
+                    }
+                }
+            }
+        }
+    }
+
+    metrics.files_processed = files_processed;
+    metrics.total_matches = total_matches;
+
+    // Calculate throughput metrics
+    if wall_time_ms > 0 {
+        let duration_sec = wall_time_ms as f64 / 1000.0;
+
+        // Files per second
+        if files_processed > 0 {
+            metrics.files_per_second = files_processed as f64 / duration_sec;
+        }
+
+        // Throughput in MB/s
+        if total_bytes > 0 {
+            let bytes_per_sec = (total_bytes as f64 * 1000.0) / wall_time_ms as f64;
+            metrics.throughput_mb_s = bytes_per_sec / (1024.0 * 1024.0);
+        }
+    }
+
+    // Extract CPU time from stdout if available (some tools may report it)
+    // This would be in formats like "user 0.12s, sys 0.05s" or similar
+    for line in stdout.lines() {
+        let line_lower = line.to_lowercase();
+        if line_lower.contains("user") && line_lower.contains("sys") {
+            // Parse CPU time format: "user 0.12s, sys 0.05s"
+            let user_time = extract_time_value(line, "user");
+            let sys_time = extract_time_value(line, "sys");
+            metrics.user_time_sec = user_time;
+            metrics.system_time_sec = sys_time;
+        }
+    }
+
+    metrics
+}
+
+/// Extract time value from a line containing time information
+///
+/// Parses time values from strings like "user 0.12s" or "sys: 0.05s"
+fn extract_time_value(line: &str, prefix: &str) -> Option<f64> {
+    let line_lower = line.to_lowercase();
+    let prefix_lower = prefix.to_lowercase();
+
+    // Find the prefix in the line
+    if let Some(pos) = line_lower.find(&prefix_lower) {
+        // Extract the substring after the prefix
+        let after_prefix = &line[pos + prefix.len()..];
+
+        // Look for a number followed by 's' (for seconds)
+        let time_str: String = after_prefix
+            .chars()
+            .skip_while(|c| c.is_whitespace() || *c == ':' || *c == '=')
+            .take_while(|c| c.is_ascii_digit() || *c == '.' || *c == ',')
+            .collect();
+
+        if !time_str.is_empty() {
+            // Replace comma with dot for European format
+            let normalized = time_str.replace(',', ".");
+            normalized.parse::<f64>().ok()
+        } else {
+            None
+        }
+    } else {
+        None
+    }
 }
 
 /// Main benchmark function
@@ -660,26 +814,29 @@ fn run_benchmark() -> Result<BenchmarkResult, String> {
     eprintln!("Benchmark stdout length: {} bytes", stdout.len());
     eprintln!("Benchmark stderr length: {} bytes", stderr.len());
 
+    // Extract raw timing metrics from the captured output
+    // This parses the stdout/stderr for timing information, throughput metrics, and file counts
+    let raw_metrics = extract_raw_timing_metrics(&stdout, &stderr, duration_ms, bytes_total);
+
+    // Log extracted metrics for debugging
+    eprintln!("Extracted metrics:");
+    eprintln!("  Wall time: {} ms", raw_metrics.wall_time_ms);
+    eprintln!("  Files processed: {}", raw_metrics.files_processed);
+    eprintln!("  Total matches: {}", raw_metrics.total_matches);
+    eprintln!("  Throughput: {:.2} MB/s", raw_metrics.throughput_mb_s);
+    eprintln!("  Files/sec: {:.2}", raw_metrics.files_per_second);
+
+    // Use the extracted metrics (prefer extracted values over command return values)
     let result = BenchmarkResult {
         commit: get_commit_sha(),
         started_at,
         files_total,
         bytes_total,
-        duration_ms,
-        matches_total,
-        throughput_mb_s: 0.0,  // Will be calculated below
-        files_per_second: 0.0, // Will be calculated below
-        peak_rss_mb: None,     // TODO: measure via /usr/bin/time -v or rusage
-    };
-
-    // Calculate derived metrics
-    let throughput = result.calculate_throughput();
-    let files_per_sec = result.calculate_files_per_second();
-
-    let result = BenchmarkResult {
-        throughput_mb_s: throughput,
-        files_per_second: files_per_sec,
-        ..result
+        duration_ms: raw_metrics.wall_time_ms,
+        matches_total: raw_metrics.total_matches.max(matches_total), // Use max of both sources
+        throughput_mb_s: raw_metrics.throughput_mb_s,
+        files_per_second: raw_metrics.files_per_second,
+        peak_rss_mb: None, // TODO: measure via /usr/bin/time -v or rusage
     };
 
     // Validate against gates

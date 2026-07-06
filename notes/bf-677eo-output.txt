@@ -1,0 +1,2967 @@
+warning: fields `description` and `version` are never read
+  --> crates/pdftract-core/build.rs:37:5
+   |
+21 | struct UnmappedGlyphNamesConfig {
+   |        ------------------------ fields in this struct
+...
+37 |     description: Option<String>,
+   |     ^^^^^^^^^^^
+...
+43 |     version: Option<String>,
+   |     ^^^^^^^
+   |
+   = note: `UnmappedGlyphNamesConfig` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: unexpected `cfg` condition value: `full_render`
+  --> crates/pdftract-cli/build.rs:36:30
+   |
+36 |         ("FULL_RENDER", cfg!(feature = "full_render")),
+   |                              ^^^^^^^^^^-------------
+   |                                        |
+   |                                        help: there is a expected value with a similar name: `"full-render"`
+   |
+   = note: expected values for `feature` are: `cache`, `chrome-test`, `chromiumoxide`, `default`, `full-render`, `grep`, `inspect`, `markdown`, `mcp`, `ocr`, `profiles`, `receipts`, `remote`, and `serve`
+   = help: consider adding `full_render` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: `#[warn(unexpected_cfgs)]` on by default
+
+warning: unused import: `DestArray`
+ --> crates/pdftract-core/src/annotation/json.rs:6:32
+  |
+6 | use crate::annotation::links::{DestArray, FitType, LinkAnnotation};
+  |                                ^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `Map`
+  --> crates/pdftract-core/src/cache/key.rs:10:24
+   |
+10 | use serde_json::{json, Map, Value};
+   |                        ^^^
+
+warning: unused import: `entry_path`
+ --> crates/pdftract-core/src/cache/lru.rs:8:5
+  |
+8 |     entry_path, parse_opts_hash_from_filename, parse_size_from_filename, sentinel_path,
+  |     ^^^^^^^^^^
+
+warning: unused import: `crate::parser::object::PdfObject`
+  --> crates/pdftract-core/src/conformance.rs:17:5
+   |
+17 | use crate::parser::object::PdfObject;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `anyhow::Result`
+  --> crates/pdftract-core/src/conformance.rs:20:5
+   |
+20 | use anyhow::Result;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `intern`
+  --> crates/pdftract-core/src/content_stream.rs:34:29
+   |
+34 | use crate::parser::object::{intern, ObjRef, PdfDict, PdfObject};
+   |                             ^^^^^^
+
+warning: unused import: `PdfDict`
+    --> crates/pdftract-core/src/content_stream.rs:1926:41
+     |
+1926 |     use crate::parser::object::{intern, PdfDict};
+     |                                         ^^^^^^^
+
+warning: unused import: `ObjRef`
+  --> crates/pdftract-core/src/detection.rs:11:29
+   |
+11 | use crate::parser::object::{ObjRef, PdfDict, PdfObject};
+   |                             ^^^^^^
+
+warning: unused imports: `LinearizationInfo` and `XrefSection`
+  --> crates/pdftract-core/src/document.rs:21:76
+   |
+21 |     detect_linearization, load_xref_linearized, load_xref_with_prev_chain, LinearizationInfo,
+   |                                                                            ^^^^^^^^^^^^^^^^^
+22 |     XrefResolver, XrefSection,
+   |                   ^^^^^^^^^^^
+
+warning: unused import: `DiagCode`
+  --> crates/pdftract-core/src/encryption/detection.rs:13:19
+   |
+13 |     diagnostics::{DiagCode, Diagnostic},
+   |                   ^^^^^^^^
+
+warning: unused import: `derive_aes_128_object_key`
+  --> crates/pdftract-core/src/encryption/decryptor.rs:12:32
+   |
+12 |     aes_128::{aes_128_decrypt, derive_aes_128_object_key},
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `secrecy::SecretString`
+  --> crates/pdftract-core/src/encryption/decryptor.rs:22:5
+   |
+22 | use secrecy::SecretString;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `AcroFormField`
+  --> crates/pdftract-core/src/extract.rs:23:57
+   |
+23 |     acro_field_to_value, combine, walk_acroform_fields, AcroFormField, FormFieldValue,
+   |                                                         ^^^^^^^^^^^^^
+
+warning: unused import: `parse_struct_tree`
+  --> crates/pdftract-core/src/extract.rs:33:60
+   |
+33 | use crate::parser::struct_tree::{check_coverage_for_pages, parse_struct_tree};
+   |                                                            ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `PageContext`
+  --> crates/pdftract-core/src/extract.rs:44:64
+   |
+44 |     detect_two_page_tables, grid_to_table_json, GridCandidate, PageContext, TableDetector,
+   |                                                                ^^^^^^^^^^^
+
+warning: unused import: `TableSpan`
+  --> crates/pdftract-core/src/extract.rs:46:39
+   |
+46 | use crate::table::{TableCell as Cell, TableSpan};
+   |                                       ^^^^^^^^^
+
+warning: unused imports: `emit_glyph` and `new_raw_glyph_list`
+  --> crates/pdftract-core/src/extract.rs:49:20
+   |
+49 | use crate::glyph::{emit_glyph, new_raw_glyph_list, Glyph};
+   |                    ^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::graphics_state::GraphicsState`
+  --> crates/pdftract-core/src/extract.rs:50:5
+   |
+50 | use crate::graphics_state::GraphicsState;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `BlockInput`, `Block`, `Column`, `Line`, `PageContext as LayoutPageContext`, `assign_columns_to_lines`, `classify_caption`, `classify_code`, `classify_figure`, `classify_formula`, `classify_list`, `classify_watermark`, `compute_baseline`, and `detect_headers_and_footers`
+  --> crates/pdftract-core/src/extract.rs:53:5
+   |
+53 |     assign_columns_to_lines, build_x0_histogram, classify_caption, classify_code, classify_figure,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^                      ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^
+54 |     classify_formula, classify_list, classify_watermark, cluster_spans_into_lines,
+   |     ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+55 |     compute_baseline, detect_headers_and_footers, group_lines_into_blocks, xy_cut, Block,
+   |     ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^                                   ^^^^^
+56 |     BlockInput, Column, Line, PageContext as LayoutPageContext,
+   |     ^^^^^^^^^^  ^^^^^^  ^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Span`
+  --> crates/pdftract-core/src/extract.rs:59:32
+   |
+59 | use crate::span::{CssHexColor, Span};
+   |                                ^^^^
+
+warning: unused import: `std::cmp::Ordering`
+  --> crates/pdftract-core/src/extract.rs:67:5
+   |
+67 | use std::cmp::Ordering;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::parser::xref::XrefResolver`
+   --> crates/pdftract-core/src/extract.rs:930:13
+    |
+930 |         use crate::parser::xref::XrefResolver;
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::diagnostics::DiagCode`
+  --> crates/pdftract-core/src/font/agl.rs:14:5
+   |
+14 | use crate::diagnostics::DiagCode;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+  --> crates/pdftract-core/src/font/fingerprint.rs:26:5
+   |
+26 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused imports: `lookup_shape` and `phash_glyph`
+  --> crates/pdftract-core/src/font/resolver.rs:24:26
+   |
+24 | use crate::font::shape::{lookup_shape, phash_glyph};
+   |                          ^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused import: `crate::font::type3_rasterizer::rasterize_type3_glyph`
+  --> crates/pdftract-core/src/font/resolver.rs:26:5
+   |
+26 | use crate::font::type3_rasterizer::rasterize_type3_glyph;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `OpenTypeMetrics`
+  --> crates/pdftract-core/src/font/type0.rs:11:43
+   |
+11 | use crate::font::embedded::{EmbeddedFont, OpenTypeMetrics};
+   |                                           ^^^^^^^^^^^^^^^
+
+warning: unused import: `intern`
+   --> crates/pdftract-core/src/forms/mod.rs:251:29
+    |
+251 | use crate::parser::object::{intern, ObjRef, PdfDict, PdfObject};
+    |                             ^^^^^^
+
+warning: unused import: `std::sync::Arc`
+   --> crates/pdftract-core/src/forms/mod.rs:255:5
+    |
+255 | use std::sync::Arc;
+    |     ^^^^^^^^^^^^^^
+
+warning: unused import: `ObjRef`
+ --> crates/pdftract-core/src/javascript.rs:9:29
+  |
+9 | use crate::parser::object::{ObjRef, PdfObject};
+  |                             ^^^^^^
+
+warning: unused import: `encoding_rs::WINDOWS_1252`
+  --> crates/pdftract-core/src/layout/correction.rs:16:5
+   |
+16 | use encoding_rs::WINDOWS_1252;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::font::UnicodeSource`
+  --> crates/pdftract-core/src/layout/correction.rs:18:5
+   |
+18 | use crate::font::UnicodeSource;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Line`
+  --> crates/pdftract-core/src/layout/correction.rs:20:34
+   |
+20 | use crate::layout::line::{Block, Line, LineMetadata};
+   |                                  ^^^^
+
+warning: unused import: `std::sync::Arc`
+  --> crates/pdftract-core/src/layout/figure.rs:25:5
+   |
+25 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `std::sync::OnceLock`
+  --> crates/pdftract-core/src/layout/list.rs:13:5
+   |
+13 | use std::sync::OnceLock;
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashSet`
+  --> crates/pdftract-core/src/layout/reading_order.rs:20:5
+   |
+20 | use std::collections::HashSet;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `anyhow::Result`
+  --> crates/pdftract-core/src/log_policy.rs:20:5
+   |
+20 | use anyhow::Result;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `FitType`
+ --> crates/pdftract-core/src/output/markdown/links.rs:8:43
+  |
+8 | use crate::annotation::links::{DestArray, FitType, LinkAnnotation};
+  |                                           ^^^^^^^
+
+warning: unused import: `crate::page_class::PageClass`
+  --> crates/pdftract-core/src/output/ndjson/pipeline.rs:15:5
+   |
+15 | use crate::page_class::PageClass;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `intern`
+ --> crates/pdftract-core/src/parser/catalog.rs:8:29
+  |
+8 | use crate::parser::object::{intern, ObjRef, PdfObject};
+  |                             ^^^^^^
+
+warning: unused import: `FlateDecoder`
+   --> crates/pdftract-core/src/parser/hint_stream.rs:382:46
+    |
+382 |     use crate::parser::stream::{get_decoder, FlateDecoder, DEFAULT_MAX_DECOMPRESS_BYTES};
+    |                                              ^^^^^^^^^^^^
+
+warning: unused import: `crate::parser::object::PdfObject`
+  --> crates/pdftract-core/src/parser/marked_content.rs:22:5
+   |
+22 | use crate::parser::object::PdfObject;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashSet`
+   --> crates/pdftract-core/src/parser/marked_content.rs:247:9
+    |
+247 |     use std::collections::HashSet;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused doc comment
+  --> crates/pdftract-core/src/parser/object/cache.rs:50:1
+   |
+50 | / /// Per-thread resolution depth counter.
+51 | | ///
+52 | | /// Each thread gets its own independent depth counter, allowing concurrent
+53 | | /// page processing in rayon without lock contention.
+   | |_----------------------------------------------------^
+   |   |
+   |   rustdoc does not generate documentation for macro invocations
+   |
+   = help: to document an item produced by a macro, the macro must produce the documentation as part of its expansion
+   = note: `#[warn(unused_doc_comments)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `RESOLVING`
+  --> crates/pdftract-core/src/parser/object/cache.rs:35:51
+   |
+35 | use super::cycle::{is_resolving, ResolutionGuard, RESOLVING};
+   |                                                   ^^^^^^^^^
+
+warning: unused doc comment
+  --> crates/pdftract-core/src/parser/object/cycle.rs:33:1
+   |
+33 | / /// Per-thread set of object references currently being resolved.
+34 | | ///
+35 | | /// Each thread gets its own independent HashSet, allowing concurrent
+36 | | /// page processing in rayon without lock contention.
+37 | | ///
+38 | | /// Capacity of 64 is conservative: typical PDF resolution depth is < 10.
+   | |_------------------------------------------------------------------------^
+   |   |
+   |   rustdoc does not generate documentation for macro invocations
+   |
+   = help: to document an item produced by a macro, the macro must produce the documentation as part of its expansion
+
+warning: unused import: `intern`
+  --> crates/pdftract-core/src/parser/ocg.rs:11:29
+   |
+11 | use crate::parser::object::{intern, ObjRef, PdfDict, PdfObject};
+   |                             ^^^^^^
+
+warning: unused import: `intern`
+  --> crates/pdftract-core/src/parser/pages.rs:14:29
+   |
+14 | use crate::parser::object::{intern, ObjRef, PdfDict, PdfObject};
+   |                             ^^^^^^
+
+warning: unused import: `PdfDict`
+  --> crates/pdftract-core/src/parser/resources.rs:10:45
+   |
+10 | use crate::parser::object::{intern, ObjRef, PdfDict, PdfObject};
+   |                                             ^^^^^^^
+
+warning: unused import: `std::io::Seek`
+  --> crates/pdftract-core/src/parser/stream.rs:13:5
+   |
+13 | use std::io::Seek;
+   |     ^^^^^^^^^^^^^
+
+warning: unused import: `SeqAccess`
+    --> crates/pdftract-core/src/parser/stream.rs:3243:42
+     |
+3243 |         use serde::de::{self, MapAccess, SeqAccess, Visitor};
+     |                                          ^^^^^^^^^
+
+warning: unused import: `bytes::Buf`
+    --> crates/pdftract-core/src/parser/stream.rs:3333:13
+     |
+3333 |         use bytes::Buf;
+     |             ^^^^^^^^^^
+
+warning: unused import: `bytes::Buf`
+    --> crates/pdftract-core/src/parser/stream.rs:3373:13
+     |
+3373 |         use bytes::Buf;
+     |             ^^^^^^^^^^
+
+warning: unused import: `crate::encryption::decryptor::DecryptionContext`
+    --> crates/pdftract-core/src/parser/stream.rs:3749:13
+     |
+3749 |         use crate::encryption::decryptor::DecryptionContext;
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `MarkInfo`
+   --> crates/pdftract-core/src/parser/struct_tree.rs:696:34
+    |
+696 |     use crate::parser::catalog::{MarkInfo, ReadingOrderAlgorithm};
+    |                                  ^^^^^^^^
+
+warning: unused import: `PdfStream`
+  --> crates/pdftract-core/src/parser/xref.rs:10:71
+   |
+10 | use crate::parser::object::{ObjRef, ObjectParser, PdfDict, PdfObject, PdfStream};
+   |                                                                       ^^^^^^^^^
+
+warning: unused import: `MemorySource`
+  --> crates/pdftract-core/src/parser/xref.rs:11:29
+   |
+11 | use crate::parser::stream::{MemorySource, PdfSource};
+   |                             ^^^^^^^^^^^^
+
+warning: unused import: `memchr`
+  --> crates/pdftract-core/src/parser/xref.rs:16:14
+   |
+16 | use memchr::{memchr, memchr_iter};
+   |              ^^^^^^
+
+warning: unused import: `std::sync::Arc`
+   --> crates/pdftract-core/src/parser/xref.rs:273:13
+    |
+273 |         use std::sync::Arc;
+    |             ^^^^^^^^^^^^^^
+
+warning: unused import: `base64::prelude::*`
+  --> crates/pdftract-core/src/receipts/ocr_fallback.rs:11:5
+   |
+11 | use base64::prelude::*;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::fs::File`
+  --> crates/pdftract-core/src/source/mod.rs:27:5
+   |
+27 | use std::fs::File;
+   |     ^^^^^^^^^^^^^
+
+warning: unused import: `SeekFrom`
+  --> crates/pdftract-core/src/source/mod.rs:28:33
+   |
+28 | use std::io::{self, Read, Seek, SeekFrom};
+   |                                 ^^^^^^^^
+
+warning: unused import: `std::path::Path`
+  --> crates/pdftract-core/src/source/mod.rs:29:5
+   |
+29 | use std::path::Path;
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `serde_json::json`
+  --> crates/pdftract-core/src/schema/mod.rs:22:5
+   |
+22 | use serde_json::json;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::fingerprint::compute_fingerprint`
+  --> crates/pdftract-core/src/sdk.rs:10:5
+   |
+10 | use crate::fingerprint::compute_fingerprint;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::markdown::page_to_markdown`
+  --> crates/pdftract-core/src/sdk.rs:11:5
+   |
+11 | use crate::markdown::page_to_markdown;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::parser::catalog::parse_catalog`
+  --> crates/pdftract-core/src/sdk.rs:13:5
+   |
+13 | use crate::parser::catalog::parse_catalog;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `LazyPageIter`, `PageDict`, and `flatten_page_tree`
+  --> crates/pdftract-core/src/sdk.rs:14:28
+   |
+14 | use crate::parser::pages::{flatten_page_tree, LazyPageIter, PageDict};
+   |                            ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^
+
+warning: unused imports: `XrefResolver` and `load_xref_with_prev_chain`
+  --> crates/pdftract-core/src/sdk.rs:16:27
+   |
+16 | use crate::parser::xref::{load_xref_with_prev_chain, XrefResolver};
+   |                           ^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused import: `crate::source::FileSource`
+  --> crates/pdftract-core/src/sdk.rs:19:5
+   |
+19 | use crate::source::FileSource;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `serde_json::Value`
+  --> crates/pdftract-core/src/sdk.rs:22:5
+   |
+22 | use serde_json::Value;
+   |     ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+  --> crates/pdftract-core/src/sdk.rs:23:5
+   |
+23 | use std::collections::HashMap;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `PdfDict` and `intern`
+  --> crates/pdftract-core/src/signature/mod.rs:20:29
+   |
+20 | use crate::parser::object::{intern, ObjRef, PdfDict, PdfObject};
+   |                             ^^^^^^          ^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+  --> crates/pdftract-core/src/signature/mod.rs:22:5
+   |
+22 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `crate::table::cell::TableSpan`
+ --> crates/pdftract-core/src/table/output.rs:7:5
+  |
+7 | use crate::table::cell::TableSpan;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `anyhow::Result`
+ --> crates/pdftract-core/src/table/output.rs:9:5
+  |
+9 | use anyhow::Result;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `crate::parser::stream::PdfSource`
+  --> crates/pdftract-core/src/sdk.rs:15:5
+   |
+15 | use crate::parser::stream::PdfSource as ParserPdfSource;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Write`
+   --> crates/pdftract-core/src/atomic_file_writer.rs:191:33
+    |
+191 |             use std::io::{self, Write};
+    |                                 ^^^^^
+
+warning: unused import: `std::io::Read`
+  --> crates/pdftract-core/src/parser/stream.rs:12:5
+   |
+12 | use std::io::Read;
+   |     ^^^^^^^^^^^^^
+
+warning: unused import: `PdfSource`
+  --> crates/pdftract-core/src/document.rs:25:33
+   |
+25 | use crate::source::{FileSource, PdfSource};
+   |                                 ^^^^^^^^^
+
+warning: unused import: `rayon::prelude`
+  --> crates/pdftract-core/src/extract.rs:62:5
+   |
+62 | use rayon::prelude::*;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `std::io::Write`
+    --> crates/pdftract-core/src/extract.rs:1656:9
+     |
+1656 |     use std::io::Write;
+     |         ^^^^^^^^^^^^^^
+
+warning: unused import: `LineMetadata`
+  --> crates/pdftract-core/src/layout/correction.rs:20:40
+   |
+20 | use crate::layout::line::{Block, Line, LineMetadata};
+   |                                        ^^^^^^^^^^^^
+
+warning: unused variable: `page_ref_to_index`
+  --> crates/pdftract-core/src/annotation/json.rs:29:5
+   |
+29 |     page_ref_to_index: &Option<HashMap<u64, usize>>,
+   |     ^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_page_ref_to_index`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/attachment/filespec.rs:156:9
+    |
+156 |     let mut diagnostics = Vec::new();
+    |         ----^^^^^^^^^^^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/cache/compression.rs:131:13
+    |
+131 |         let mut decoder = zstd::Decoder::new(data)?;
+    |             ----^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/cache/compression.rs:255:9
+    |
+255 |     let mut decoder = zstd::Decoder::new(data)?;
+    |         ----^^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: unused variable: `ctx`
+   --> crates/pdftract-core/src/classify.rs:690:31
+    |
+690 |     fn classify_hybrid(&self, ctx: &PageContext, cells: &[CellData; 64]) -> PageClassification {
+    |                               ^^^ help: if this is intentional, prefix it with an underscore: `_ctx`
+
+warning: variable does not need to be mutable
+  --> crates/pdftract-core/src/encryption/aes_128.rs:62:9
+   |
+62 |     let mut hash = md5.finalize();
+   |         ----^^^^
+   |         |
+   |         help: remove this `mut`
+
+warning: unused variable: `decrypted_len`
+   --> crates/pdftract-core/src/encryption/aes_256.rs:231:13
+    |
+231 |         let decrypted_len = decryptor
+    |             ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_decrypted_len`
+
+warning: unused variable: `k`
+   --> crates/pdftract-core/src/encryption/rc4.rs:242:10
+    |
+242 |     for (k, byte) in result.iter_mut().enumerate() {
+    |          ^ help: if this is intentional, prefix it with an underscore: `_k`
+
+warning: unused variable: `padded_password`
+   --> crates/pdftract-core/src/encryption/rc4.rs:295:9
+    |
+295 |     let padded_password = pad_password(password);
+    |         ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_padded_password`
+
+warning: unused variable: `resolver`
+   --> crates/pdftract-core/src/extract.rs:158:5
+    |
+158 |     resolver: &crate::parser::xref::XrefResolver,
+    |     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_resolver`
+
+warning: unused variable: `page_index`
+   --> crates/pdftract-core/src/extract.rs:159:5
+    |
+159 |     page_index: usize,
+    |     ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_page_index`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/extract.rs:676:9
+    |
+676 |     let mut page_count = all_pages.len();
+    |         ----^^^^^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: unused variable: `decryption_context`
+   --> crates/pdftract-core/src/extract.rs:569:9
+    |
+569 |     let decryption_context = {
+    |         ^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_decryption_context`
+
+warning: unused variable: `semaphore`
+   --> crates/pdftract-core/src/extract.rs:658:9
+    |
+658 |     let semaphore = Arc::new(Semaphore::new(options.max_parallel_pages));
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_semaphore`
+
+warning: unused variable: `resolver`
+    --> crates/pdftract-core/src/extract.rs:1101:5
+     |
+1101 |     resolver: &crate::parser::xref::XrefResolver,
+     |     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_resolver`
+
+warning: unused variable: `catalog`
+    --> crates/pdftract-core/src/extract.rs:1102:5
+     |
+1102 |     catalog: &crate::parser::catalog::Catalog,
+     |     ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_catalog`
+
+warning: unused variable: `kind`
+    --> crates/pdftract-core/src/extract.rs:1130:13
+     |
+1130 |             kind,
+     |             ^^^^ help: try ignoring the field: `kind: _`
+
+warning: unused variable: `is_combo`
+    --> crates/pdftract-core/src/extract.rs:1159:13
+     |
+1159 |             is_combo,
+     |             ^^^^^^^^ help: try ignoring the field: `is_combo: _`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/extract.rs:1734:9
+     |
+1734 |     let mut page_count = 0usize;
+     |         ----^^^^^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/extract.rs:1763:9
+     |
+1763 |     let mut page_count = all_pages.len();
+     |         ----^^^^^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: unused variable: `page_count`
+    --> crates/pdftract-core/src/extract.rs:1734:9
+     |
+1734 |     let mut page_count = 0usize;
+     |         ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_page_count`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/extract.rs:2357:9
+     |
+2357 |     let mut spans = merge_glyphs_to_spans(&glyphs);
+     |         ----^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: unused variable: `expected_type`
+   --> crates/pdftract-core/src/font/embedded.rs:345:26
+    |
+345 |         let (stream_key, expected_type) = match kind {
+    |                          ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_expected_type`
+
+warning: unused variable: `glyph_name_for_l4`
+   --> crates/pdftract-core/src/font/resolver.rs:551:9
+    |
+551 |     let glyph_name_for_l4 = encoding.glyph_name_for(char_code);
+    |         ^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_glyph_name_for_l4`
+
+warning: unused variable: `name`
+   --> crates/pdftract-core/src/font/type3_rasterizer.rs:500:13
+    |
+500 |         let name = name_stack.pop().unwrap();
+    |             ^^^^ help: if this is intentional, prefix it with an underscore: `_name`
+
+warning: unused variable: `diagnostics`
+   --> crates/pdftract-core/src/forms/mod.rs:552:5
+    |
+552 |     diagnostics: &mut Vec<Diagnostic>,
+    |     ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_diagnostics`
+
+warning: unused variable: `font_dict`
+   --> crates/pdftract-core/src/glyph/mod.rs:459:22
+    |
+459 | fn get_type0_advance(font_dict: &PdfDict, char_code: u32) -> u16 {
+    |                      ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_font_dict`
+
+warning: unused variable: `char_code`
+   --> crates/pdftract-core/src/glyph/mod.rs:459:43
+    |
+459 | fn get_type0_advance(font_dict: &PdfDict, char_code: u32) -> u16 {
+    |                                           ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_char_code`
+
+warning: unused variable: `char_code`
+   --> crates/pdftract-core/src/glyph/mod.rs:519:45
+    |
+519 | fn get_font_glyph_bbox(font_dict: &PdfDict, char_code: u32) -> [f64; 4] {
+    |                                             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_char_code`
+
+warning: unused variable: `descriptor_ref`
+   --> crates/pdftract-core/src/glyph/mod.rs:559:40
+    |
+559 |             if let Some(PdfObject::Ref(descriptor_ref)) = font_dict.get("/FontDescriptor") {
+    |                                        ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_descriptor_ref`
+
+warning: unreachable pattern
+   --> crates/pdftract-core/src/layout/correction.rs:376:13
+    |
+362 |             0x0178 => 0x8E, // Ÿ (Latin capital letter Y with diaeresis)
+    |             ------ matches all the relevant values
+...
+376 |             0x0178 => 0x9E, // Ÿ (Latin small letter y with diaeresis) - duplicate codepoint, 9F is correct
+    |             ^^^^^^ no value can reach this
+    |
+    = note: `#[warn(unreachable_patterns)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `original_text`
+   --> crates/pdftract-core/src/layout/correction.rs:904:9
+    |
+904 |     let original_text = span.text.clone();
+    |         ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_original_text`
+
+warning: unused variable: `char_idx`
+   --> crates/pdftract-core/src/layout/correction.rs:921:10
+    |
+921 |     for (char_idx, &ch) in chars.iter().enumerate() {
+    |          ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_char_idx`
+
+warning: unused variable: `x0`
+   --> crates/pdftract-core/src/layout/header_footer.rs:203:10
+    |
+203 |     let [x0, y0, x1, y1] = block.bbox;
+    |          ^^ help: if this is intentional, prefix it with an underscore: `_x0`
+
+warning: unused variable: `x1`
+   --> crates/pdftract-core/src/layout/header_footer.rs:203:18
+    |
+203 |     let [x0, y0, x1, y1] = block.bbox;
+    |                  ^^ help: if this is intentional, prefix it with an underscore: `_x1`
+
+warning: unused variable: `avg_x0`
+   --> crates/pdftract-core/src/layout/line.rs:395:5
+    |
+395 |     avg_x0: f32,
+    |     ^^^^^^ help: if this is intentional, prefix it with an underscore: `_avg_x0`
+
+warning: value assigned to `region_count` is never read
+   --> crates/pdftract-core/src/layout/reading_order.rs:112:28
+    |
+112 |     let mut region_count = 0;
+    |                            ^ this value is reassigned later and never used
+...
+119 |     region_count = stats.region_count;
+    |     --------------------------------- `region_count` is overwritten here before the previous value is read
+    |
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `small_region_count` is never read
+   --> crates/pdftract-core/src/layout/reading_order.rs:113:34
+    |
+113 |     let mut small_region_count = 0;
+    |                                  ^ this value is reassigned later and never used
+...
+120 |     small_region_count = stats.small_region_count;
+    |     --------------------------------------------- `small_region_count` is overwritten here before the previous value is read
+
+warning: unused variable: `x_split`
+   --> crates/pdftract-core/src/layout/reading_order.rs:190:18
+    |
+190 |     if let Some((x_split, left_indices, right_indices)) =
+    |                  ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_x_split`
+
+warning: unused variable: `y_split`
+   --> crates/pdftract-core/src/layout/reading_order.rs:211:18
+    |
+211 |     if let Some((y_split, top_indices, bottom_indices)) =
+    |                  ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_y_split`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/inline_image.rs:668:29
+    |
+668 |                         let mut dict = Vec::new();
+    |                             ----^^^^
+    |                             |
+    |                             help: remove this `mut`
+
+warning: variable `sign_count` is assigned to, but never used
+   --> crates/pdftract-core/src/parser/lexer/mod.rs:528:13
+    |
+528 |         let mut sign_count = 0;
+    |             ^^^^^^^^^^^^^^
+    |
+    = note: consider using `_sign_count` instead
+
+warning: value assigned to `sign_count` is never read
+   --> crates/pdftract-core/src/parser/lexer/mod.rs:537:13
+    |
+537 |             sign_count = 1;
+    |             ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: unused variable: `diagnostics`
+   --> crates/pdftract-core/src/parser/ocg.rs:144:31
+    |
+144 |     fn parse(obj: &PdfObject, diagnostics: &mut Vec<Diagnostic>) -> Self {
+    |                               ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_diagnostics`
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1588:25
+     |
+1588 |                         inherited = parent_inherited;
+     |                         ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1569:41
+     |
+1569 | ...                   inherited = parent_inherited;
+     |                       ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1557:37
+     |
+1557 | ...                   inherited = parent_inherited;
+     |                       ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1580:33
+     |
+1580 | ...                   inherited = parent_inherited;
+     |                       ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1521:29
+     |
+1521 | ...                   inherited = parent_inherited;
+     |                       ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1512:29
+     |
+1512 | ...                   inherited = parent_inherited;
+     |                       ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1593:21
+     |
+1593 |                     inherited = parent_inherited;
+     |                     ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: unused variable: `buf`
+    --> crates/pdftract-core/src/parser/stream.rs:3477:24
+     |
+3477 |     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+     |                        ^^^ help: if this is intentional, prefix it with an underscore: `_buf`
+
+warning: unused variable: `e`
+    --> crates/pdftract-core/src/parser/stream.rs:3959:25
+     |
+3959 |                     Err(e) => {
+     |                         ^ help: if this is intentional, prefix it with an underscore: `_e`
+
+warning: unused variable: `std_type`
+    --> crates/pdftract-core/src/parser/struct_tree.rs:1654:20
+     |
+1654 | pub fn is_artifact(std_type: StructureType) -> bool {
+     |                    ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_std_type`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/xref.rs:826:41
+    |
+826 | fn read_line_at(source: &dyn PdfSource, mut pos: u64) -> Option<String> {
+    |                                         ----^^^
+    |                                         |
+    |                                         help: remove this `mut`
+
+warning: unused variable: `diagnostics`
+   --> crates/pdftract-core/src/parser/xref.rs:876:53
+    |
+876 | fn read_line(source: &dyn PdfSource, pos: &mut u64, diagnostics: &mut Vec<Diag>) -> Option<String> {
+    |                                                     ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_diagnostics`
+
+warning: value assigned to `depth` is never read
+   --> crates/pdftract-core/src/parser/xref.rs:909:21
+    |
+909 |     let mut depth = 0;
+    |                     ^ this value is reassigned later and never used
+...
+938 |                         depth = 1;
+    |                         --------- `depth` is overwritten here before the previous value is read
+
+warning: unused variable: `source_len`
+    --> crates/pdftract-core/src/parser/xref.rs:1229:37
+     |
+1229 | fn forward_scan_memory(data: &[u8], source_len: u64) -> XrefSection {
+     |                                     ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_source_len`
+
+warning: unused variable: `prev`
+  --> crates/pdftract-core/src/semaphore.rs:65:13
+   |
+65 |         let prev = self.permits.fetch_add(1, Ordering::Release);
+   |             ^^^^ help: if this is intentional, prefix it with an underscore: `_prev`
+
+warning: unused variable: `col_count`
+   --> crates/pdftract-core/src/table/cell.rs:495:5
+    |
+495 |     col_count: usize,
+    |     ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_col_count`
+
+warning: variable does not need to be mutable
+  --> crates/pdftract-core/src/table/grid.rs:52:9
+   |
+52 |         mut intersections: Vec<(f32, f32)>,
+   |         ----^^^^^^^^^^^^^
+   |         |
+   |         help: remove this `mut`
+
+warning: unused variable: `page_idx`
+   --> crates/pdftract-core/src/table/output.rs:192:10
+    |
+192 |     for (page_idx, page_tables) in all_tables.iter().enumerate() {
+    |          ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_page_idx`
+
+warning: unused variable: `current_page_height`
+   --> crates/pdftract-core/src/table/output.rs:203:13
+    |
+203 |         let current_page_height = page_heights.get(page_idx).copied().unwrap_or(792.0);
+    |             ^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_current_page_height`
+
+warning: unused variable: `other`
+   --> crates/pdftract-core/src/threads/mod.rs:361:19
+    |
+361 |             (Some(other), _) => {
+    |                   ^^^^^ help: if this is intentional, prefix it with an underscore: `_other`
+
+warning: unused variable: `current_ref`
+   --> crates/pdftract-core/src/threads/mod.rs:535:43
+    |
+535 | fn extract_bead_rect(bead_dict: &PdfDict, current_ref: ObjRef) -> Option<[f32; 4]> {
+    |                                           ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_current_ref`
+
+warning: function `extract_destination_name` is never used
+   --> crates/pdftract-core/src/annotation/links.rs:491:4
+    |
+491 | fn extract_destination_name(dest_obj: Option<&PdfObject>) -> Option<String> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `canonical_json` is never used
+   --> crates/pdftract-core/src/cache/key.rs:127:4
+    |
+127 | fn canonical_json(value: &Value) -> String {
+    |    ^^^^^^^^^^^^^^
+
+warning: function `canonical_json_value` is never used
+   --> crates/pdftract-core/src/cache/key.rs:145:4
+    |
+145 | fn canonical_json_value(value: &Value) -> Value {
+    |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: method `name` is never used
+   --> crates/pdftract-core/src/classify.rs:275:8
+    |
+268 | trait SignalEvaluator: Send + Sync {
+    |       --------------- method in this trait
+...
+275 |     fn name(&self) -> &'static str;
+    |        ^^^^
+
+warning: field `rotation` is never read
+    --> crates/pdftract-core/src/classify.rs:1202:5
+     |
+1196 | pub struct GridClassifier {
+     |            -------------- field in this struct
+...
+1202 |     rotation: i32,
+     |     ^^^^^^^^
+
+warning: field `0` is never read
+   --> crates/pdftract-core/src/cmap/codespace.rs:644:16
+    |
+644 |     Unexpected(u8),
+    |     ---------- ^^
+    |     |
+    |     field in this variant
+    |
+    = note: `Token` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+    |
+644 -     Unexpected(u8),
+644 +     Unexpected(()),
+    |
+
+warning: method `depth` is never used
+   --> crates/pdftract-core/src/content_stream.rs:200:8
+    |
+153 | impl ExecutionContext {
+    | --------------------- method in this implementation
+...
+200 |     fn depth(&self) -> usize {
+    |        ^^^^^
+
+warning: variants `Stream` and `Error` are never constructed
+    --> crates/pdftract-core/src/content_stream.rs:1609:5
+     |
+1608 | enum XObjectResolveResult {
+     |      -------------------- variants in this enum
+1609 |     Stream(PdfDict, Vec<u8>),
+     |     ^^^^^^
+1610 |     Error(Diagnostic),
+     |     ^^^^^
+
+warning: field `source` is never read
+   --> crates/pdftract-core/src/document.rs:949:5
+    |
+941 | pub struct PageIter<'a> {
+    |            -------- field in this struct
+...
+949 |     source: Option<&'a dyn ParserPdfSource>,
+    |     ^^^^^^
+
+warning: field `page_height` is never read
+   --> crates/pdftract-core/src/extract.rs:371:9
+    |
+357 | struct PageResultInternal {
+    |        ------------------ field in this struct
+...
+371 |     pub page_height: f64,
+    |         ^^^^^^^^^^^
+    |
+    = note: `PageResultInternal` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: function `extract_page` is never used
+    --> crates/pdftract-core/src/extract.rs:1315:4
+     |
+1315 | fn extract_page(
+     |    ^^^^^^^^^^^^
+
+warning: field `has_valid_encoding` is never read
+   --> crates/pdftract-core/src/font/embedded.rs:202:5
+    |
+194 | pub struct Type1Metrics {
+    |            ------------ field in this struct
+...
+202 |     has_valid_encoding: bool,
+    |     ^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_GLYPH_DEPTH` is never used
+  --> crates/pdftract-core/src/font/type3_rasterizer.rs:27:7
+   |
+27 | const MAX_GLYPH_DEPTH: usize = 20;
+   |       ^^^^^^^^^^^^^^^
+
+warning: enum `PathCommand` is never used
+   --> crates/pdftract-core/src/font/type3_rasterizer.rs:121:6
+    |
+121 | enum PathCommand {
+    |      ^^^^^^^^^^^
+
+warning: struct `CurrentPath` is never constructed
+   --> crates/pdftract-core/src/font/type3_rasterizer.rs:140:8
+    |
+140 | struct CurrentPath {
+    |        ^^^^^^^^^^^
+
+warning: multiple associated items are never used
+   --> crates/pdftract-core/src/font/type3_rasterizer.rs:147:12
+    |
+146 | impl CurrentPath {
+    | ---------------- associated items in this implementation
+147 |     pub fn new() -> Self {
+    |            ^^^
+...
+151 |     pub fn move_to(&mut self, p: Point) {
+    |            ^^^^^^^
+...
+157 |     pub fn line_to(&mut self, p: Point) {
+    |            ^^^^^^^
+...
+162 |     pub fn cubic_to(&mut self, c1: Point, c2: Point, end: Point) {
+    |            ^^^^^^^^
+...
+167 |     pub fn shorthand_cubic_to(&mut self, c2: Point, end: Point) {
+    |            ^^^^^^^^^^^^^^^^^^
+...
+172 |     pub fn shorthand_cubic_to_y(&mut self, c1: Point, end: Point) {
+    |            ^^^^^^^^^^^^^^^^^^^^
+...
+177 |     pub fn rect(&mut self, x: f64, y: f64, width: f64, height: f64) {
+    |            ^^^^
+...
+183 |     pub fn close_path(&mut self) {
+    |            ^^^^^^^^^^
+...
+190 |     pub fn clear(&mut self) {
+    |            ^^^^^
+
+warning: struct `RasterizerContext` is never constructed
+   --> crates/pdftract-core/src/font/type3_rasterizer.rs:198:8
+    |
+198 | struct RasterizerContext<'a> {
+    |        ^^^^^^^^^^^^^^^^^
+
+warning: multiple associated items are never used
+   --> crates/pdftract-core/src/font/type3_rasterizer.rs:216:8
+    |
+215 | impl<'a> RasterizerContext<'a> {
+    | ------------------------------ associated items in this implementation
+216 |     fn new(font: &'a Type3Font) -> Self {
+    |        ^^^
+...
+229 |     fn execute_content_stream(&mut self, stream_bytes: &[u8]) {
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+...
+255 |     fn execute_operator(
+    |        ^^^^^^^^^^^^^^^^
+...
+296 |     fn op_move_to(&mut self, stack: &mut Vec<f64>) {
+    |        ^^^^^^^^^^
+...
+306 |     fn op_line_to(&mut self, stack: &mut Vec<f64>) {
+    |        ^^^^^^^^^^
+...
+316 |     fn op_cubic_to(&mut self, stack: &mut Vec<f64>) {
+    |        ^^^^^^^^^^^
+...
+331 |     fn op_shorthand_cubic_to(&mut self, stack: &mut Vec<f64>) {
+    |        ^^^^^^^^^^^^^^^^^^^^^
+...
+344 |     fn op_shorthand_cubic_to_y(&mut self, stack: &mut Vec<f64>) {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^
+...
+357 |     fn op_rect(&mut self, stack: &mut Vec<f64>) {
+    |        ^^^^^^^
+...
+369 |     fn op_close_path(&mut self) {
+    |        ^^^^^^^^^^^^^
+...
+374 |     fn op_no_op(&mut self) {
+    |        ^^^^^^^^
+...
+379 |     fn op_stroke(&mut self) {
+    |        ^^^^^^^^^
+...
+385 |     fn op_close_stroke(&mut self) {
+    |        ^^^^^^^^^^^^^^^
+...
+392 |     fn op_fill(&mut self) {
+    |        ^^^^^^^
+...
+398 |     fn op_eofill(&mut self) {
+    |        ^^^^^^^^^
+...
+405 |     fn op_fill_stroke(&mut self) {
+    |        ^^^^^^^^^^^^^^
+...
+412 |     fn op_eofill_stroke(&mut self) {
+    |        ^^^^^^^^^^^^^^^^
+...
+419 |     fn op_close_fill_stroke(&mut self) {
+    |        ^^^^^^^^^^^^^^^^^^^^
+...
+427 |     fn op_close_eofill_stroke(&mut self) {
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+...
+435 |     fn op_save(&mut self) {
+    |        ^^^^^^^
+...
+445 |     fn op_restore(&mut self) {
+    |        ^^^^^^^^^^
+...
+457 |     fn op_concat(&mut self, stack: &mut Vec<f64>) {
+    |        ^^^^^^^^^
+...
+496 |     fn op_do(&mut self, name_stack: &mut Vec<Arc<str>>) {
+    |        ^^^^^
+...
+519 |     fn rasterize_path(&mut self, _stroke: bool) {
+    |        ^^^^^^^^^^^^^^
+
+warning: associated function `is_component` is never used
+   --> crates/pdftract-core/src/layout/correction.rs:838:8
+    |
+825 | impl Ligature {
+    | ------------- associated function in this implementation
+...
+838 |     fn is_component(c: char) -> bool {
+    |        ^^^^^^^^^^^^
+
+warning: function `is_repeated_header_footer` is never used
+   --> crates/pdftract-core/src/layout/header_footer.rs:225:4
+    |
+225 | fn is_repeated_header_footer(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `REGION_COUNT_THRESHOLD` is never used
+  --> crates/pdftract-core/src/layout/reading_order.rs:27:7
+   |
+27 | const REGION_COUNT_THRESHOLD: usize = 10;
+   |       ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `union_bboxes` is never used
+   --> crates/pdftract-core/src/layout/reading_order.rs:567:4
+    |
+567 | fn union_bboxes<B>(blocks: &[B]) -> [f32; 4]
+    |    ^^^^^^^^^^^^
+
+warning: fields `distance` and `angle` are never read
+   --> crates/pdftract-core/src/layout/reading_order.rs:720:5
+    |
+714 | struct Edge {
+    |        ---- fields in this struct
+...
+720 |     distance: f32,
+    |     ^^^^^^^^
+721 |     /// Angle in radians between centers.
+722 |     angle: f32,
+    |     ^^^^^
+    |
+    = note: `Edge` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: method `emit_diagnostic` is never used
+   --> crates/pdftract-core/src/parser/catalog.rs:421:8
+    |
+399 | impl Catalog {
+    | ------------ method in this implementation
+...
+421 |     fn emit_diagnostic(&mut self, code: DiagCode, message: String) {
+    |        ^^^^^^^^^^^^^^^
+
+warning: method `has_bits` is never used
+   --> crates/pdftract-core/src/parser/hint_stream.rs:165:8
+    |
+112 | impl BitReader {
+    | -------------- method in this implementation
+...
+165 |     fn has_bits(&self, n: usize) -> bool {
+    |        ^^^^^^^^
+
+warning: fields `shared_object_number_bits`, `shared_group_length_bits`, and `shared_group_count` are never read
+   --> crates/pdftract-core/src/parser/hint_stream.rs:180:5
+    |
+172 | struct HintHeader {
+    |        ---------- fields in this struct
+...
+180 |     shared_object_number_bits: u8,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+181 |     /// Bit width for shared object hint group lengths
+182 |     shared_group_length_bits: u8,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+186 |     shared_group_count: u32,
+    |     ^^^^^^^^^^^^^^^^^^
+    |
+    = note: `HintHeader` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: method `lex_unknown` is never used
+    --> crates/pdftract-core/src/parser/lexer/mod.rs:1108:8
+     |
+ 117 | impl<'a> Lexer<'a> {
+     | ------------------ method in this implementation
+...
+1108 |     fn lex_unknown(&mut self) -> Option<Token> {
+     |        ^^^^^^^^^^^
+
+warning: method `emit_diagnostic` is never used
+  --> crates/pdftract-core/src/parser/marked_content.rs:83:8
+   |
+41 | impl McidTracker {
+   | ---------------- method in this implementation
+...
+83 |     fn emit_diagnostic(&mut self, code: DiagCode, message: String) {
+   |        ^^^^^^^^^^^^^^^
+
+warning: associated function `from_name` is never used
+  --> crates/pdftract-core/src/parser/ocg.rs:69:8
+   |
+67 | impl OcmdPolicy {
+   | --------------- associated function in this implementation
+68 |     /// Parse a policy from a name object.
+69 |     fn from_name(name: &str) -> Option<Self> {
+   |        ^^^^^^^^^
+
+warning: associated function `parse` is never used
+  --> crates/pdftract-core/src/parser/ocg.rs:99:8
+   |
+92 | impl Ocmd {
+   | --------- associated function in this implementation
+...
+99 |     fn parse(obj: &PdfObject) -> Option<Self> {
+   |        ^^^^^
+
+warning: function `read_line` is never used
+   --> crates/pdftract-core/src/parser/xref.rs:876:4
+    |
+876 | fn read_line(source: &dyn PdfSource, pos: &mut u64, diagnostics: &mut Vec<Diag>) -> Option<String> {
+    |    ^^^^^^^^^
+
+warning: function `round_coord` is never used
+   --> crates/pdftract-core/src/receipts/ocr_fallback.rs:239:4
+    |
+239 | fn round_coord(value: f64) -> f64 {
+    |    ^^^^^^^^^^^
+
+warning: function `get_block_text` is never used
+   --> crates/pdftract-core/src/text.rs:329:4
+    |
+329 | fn get_block_text(block: &BlockJson) -> String {
+    |    ^^^^^^^^^^^^^^
+
+warning: field `font_id` is never read
+  --> crates/pdftract-core/src/word_boundary.rs:39:5
+   |
+37 | pub struct WordBoundaryDetector {
+   |            -------------------- field in this struct
+38 |     /// Font identifier for this detector.
+39 |     font_id: FontId,
+   |     ^^^^^^^
+   |
+   = note: `WordBoundaryDetector` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: static variable `HASH_56a45233d29f11b4dfb86d248e921939d115778f87325e7ae8cc108383d6664d` should have an upper case name
+ --> /home/coding/pdftract/target/debug/build/pdftract-core-e1c4362566728e63/out/font_fingerprints.rs:7:8
+  |
+7 | static HASH_56a45233d29f11b4dfb86d248e921939d115778f87325e7ae8cc108383d6664d: &[(u16, u32)] = &[(1, 32), (2, 33), (3, 34), (4, 35), (...
+  |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(non_upper_case_globals)]` (part of `#[warn(nonstandard_style)]`) on by default
+help: convert the identifier to upper case
+  |
+7 - static HASH_56a45233d29f11b4dfb86d248e921939d115778f87325e7ae8cc108383d6664d: &[(u16, u32)] = &[(1, 32), (2, 33), (3, 34), (4, 35), (5, 36), (6, 37), (7, 38), (8, 39), (9, 40), (10, 41), (11, 42), (12, 43), (13, 44), (14, 45), (15, 46), (16, 47), (17, 48), (18, 49), (19, 50), (20, 51), (21, 52), (22, 53), (23, 54), (24, 55), (25, 56), (26, 57), (27, 58), (28, 59), (29, 60), (30, 61), (31, 62), (32, 63), (33, 64), (34, 65), (35, 66), (36, 67), (37, 68), (38, 69), (39, 70), (40, 71), (41, 72), (42, 73), (43, 74), (44, 75), (45, 76), (46, 77), (47, 78), (48, 79), (49, 80), (50, 81), (51, 82), (52, 83), (53, 84), (54, 85), (55, 86), (56, 87), (57, 88), (58, 89), (59, 90), (60, 91), (61, 92), (62, 93), (63, 94), (64, 95), (65, 96), (66, 97), (67, 98), (68, 99), (69, 100), (70, 101), (71, 102), (72, 103), (73, 104), (74, 105), (75, 106), (76, 107), (77, 108), (78, 109), (79, 110), (80, 111), (81, 112), (82, 113), (83, 114), (84, 115), (85, 116), (86, 117), (87, 118), (88, 119), (89, 120), (90, 121), (91, 122), (92, 123), (93, 124), (94, 125), (95, 126)];
+7 + static HASH_56A45233D29F11B4DFB86D248E921939D115778F87325E7AE8CC108383D6664D: &[(u16, u32)] = &[(1, 32), (2, 33), (3, 34), (4, 35), (5, 36), (6, 37), (7, 38), (8, 39), (9, 40), (10, 41), (11, 42), (12, 43), (13, 44), (14, 45), (15, 46), (16, 47), (17, 48), (18, 49), (19, 50), (20, 51), (21, 52), (22, 53), (23, 54), (24, 55), (25, 56), (26, 57), (27, 58), (28, 59), (29, 60), (30, 61), (31, 62), (32, 63), (33, 64), (34, 65), (35, 66), (36, 67), (37, 68), (38, 69), (39, 70), (40, 71), (41, 72), (42, 73), (43, 74), (44, 75), (45, 76), (46, 77), (47, 78), (48, 79), (49, 80), (50, 81), (51, 82), (52, 83), (53, 84), (54, 85), (55, 86), (56, 87), (57, 88), (58, 89), (59, 90), (60, 91), (61, 92), (62, 93), (63, 94), (64, 95), (65, 96), (66, 97), (67, 98), (68, 99), (69, 100), (70, 101), (71, 102), (72, 103), (73, 104), (74, 105), (75, 106), (76, 107), (77, 108), (78, 109), (79, 110), (80, 111), (81, 112), (82, 113), (83, 114), (84, 115), (85, 116), (86, 117), (87, 118), (88, 119), (89, 120), (90, 121), (91, 122), (92, 123), (93, 124), (94, 125), (95, 126)];
+  |
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/pdftract-core/src/layout/readability.rs:244:13
+    |
+244 |     fn text(&self) -> Cow<str>;
+    |             ^^^^^     ^^^^^^^^ the same lifetime is hidden here
+    |             |
+    |             the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+    = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+    |
+244 |     fn text(&self) -> Cow<'_, str>;
+    |                           +++
+
+warning: unused import: `CacheIndex`
+  --> crates/pdftract-cli/src/cache_cmd.rs:10:42
+   |
+10 | use pdftract_core::cache::layout::{self, CacheIndex};
+   |                                          ^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `PathBuf`
+  --> crates/pdftract-cli/src/cache_cmd.rs:13:23
+   |
+13 | use std::path::{Path, PathBuf};
+   |                       ^^^^^^^
+
+warning: unused import: `pdftract_core::extract::extract_pdf`
+ --> crates/pdftract-cli/src/classify.rs:7:5
+  |
+7 | use pdftract_core::extract::extract_pdf;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `pdftract_core::options::ExtractionOptions`
+ --> crates/pdftract-cli/src/classify.rs:8:5
+  |
+8 | use pdftract_core::options::ExtractionOptions;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::render::mcid`
+  --> crates/pdftract-cli/src/inspect/api.rs:21:5
+   |
+21 | use super::render::mcid;
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+  --> crates/pdftract-cli/src/inspect/api.rs:34:5
+   |
+34 | use std::collections::HashMap;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `anyhow`
+  --> crates/pdftract-cli/src/mcp/http.rs:28:14
+   |
+28 | use anyhow::{anyhow, Context, Result};
+   |              ^^^^^^
+
+warning: unused import: `body::Body`
+  --> crates/pdftract-cli/src/mcp/http.rs:30:5
+   |
+30 |     body::Body,
+   |     ^^^^^^^^^^
+
+warning: unused import: `std::path::Path`
+ --> crates/pdftract-cli/src/mcp/server.rs:6:5
+  |
+6 | use std::path::Path;
+  |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `ERROR_NOT_YET_IMPLEMENTED`
+ --> crates/pdftract-cli/src/mcp/tools/registry.rs:9:55
+  |
+9 |     CODE_IO_ERROR, CODE_PATH_INVALID, ERROR_IO_ERROR, ERROR_NOT_YET_IMPLEMENTED, ERROR_PATH_INVALID,
+  |                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::path::Path`
+  --> crates/pdftract-cli/src/mcp/tools/mod.rs:25:5
+   |
+25 | use std::path::Path;
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `anyhow::Result`
+  --> crates/pdftract-cli/src/middleware/audit.rs:16:5
+   |
+16 | use anyhow::Result;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `std::path::Path`
+  --> crates/pdftract-cli/src/middleware/audit.rs:24:5
+   |
+24 | use std::path::Path;
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `Context`
+ --> crates/pdftract-cli/src/profiles_cmd.rs:6:14
+  |
+6 | use anyhow::{Context, Result};
+  |              ^^^^^^^
+
+warning: unused import: `std::fs`
+ --> crates/pdftract-cli/src/profiles_cmd.rs:7:5
+  |
+7 | use std::fs;
+  |     ^^^^^^^
+
+warning: unused import: `HeaderMap`
+  --> crates/pdftract-cli/src/serve.rs:75:12
+   |
+75 |     http::{HeaderMap, HeaderValue, Request, Response, StatusCode},
+   |            ^^^^^^^^^
+
+warning: unused imports: `extract_pdf_ndjson` and `extract_pdf`
+  --> crates/pdftract-cli/src/serve.rs:84:30
+   |
+84 | use pdftract_core::extract::{extract_pdf, extract_pdf_ndjson, result_to_json};
+   |                              ^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Deserialize`
+  --> crates/pdftract-cli/src/serve.rs:86:13
+   |
+86 | use serde::{Deserialize, Serialize};
+   |             ^^^^^^^^^^^
+
+warning: unused import: `Path`
+  --> crates/pdftract-cli/src/serve.rs:87:17
+   |
+87 | use std::path::{Path, PathBuf};
+   |                 ^^^^
+
+warning: unused import: `tower_http::limit::RequestBodyLimitLayer`
+  --> crates/pdftract-cli/src/serve.rs:90:5
+   |
+90 | use tower_http::limit::RequestBodyLimitLayer;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `tower_http::trace::TraceLayer`
+  --> crates/pdftract-cli/src/serve.rs:91:5
+   |
+91 | use tower_http::trace::TraceLayer;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unnecessary trailing semicolon
+   --> crates/pdftract-cli/src/serve.rs:736:10
+    |
+736 |         };
+    |          ^ help: remove this semicolon
+    |
+    = note: `#[warn(redundant_semicolons)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `url::Url`
+  --> crates/pdftract-cli/src/url.rs:28:5
+   |
+28 | use url::Url;
+   |     ^^^^^^^^
+
+warning: unused import: `std::path::Path`
+  --> crates/pdftract-cli/src/validate.rs:11:5
+   |
+11 | use std::path::Path;
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused imports: `compute_pdf_fingerprint` and `extract_spans_from_page`
+ --> crates/pdftract-cli/src/verify_receipt.rs:8:37
+  |
+8 | use pdftract_core::document::{self, compute_pdf_fingerprint, extract_spans_from_page};
+  |                                     ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `SpanData`
+ --> crates/pdftract-cli/src/verify_receipt.rs:9:52
+  |
+9 | use pdftract_core::receipts::verifier::{exit_code, SpanData, VerificationResult};
+  |                                                    ^^^^^^^^
+
+warning: unreachable expression
+   --> crates/pdftract-cli/src/profiles_cmd.rs:188:5
+    |
+185 |         anyhow::bail!("Profiles feature is not enabled. Build with: --features profiles");
+    |         --------------------------------------------------------------------------------- any code following this expression is unreachable
+...
+188 |     Ok(())
+    |     ^^^^^^ unreachable expression
+    |
+    = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: unreachable expression
+   --> crates/pdftract-cli/src/profiles_cmd.rs:221:5
+    |
+218 |         anyhow::bail!("Profiles feature is not enabled. Build with: --features profiles");
+    |         --------------------------------------------------------------------------------- any code following this expression is unreachable
+...
+221 |     Ok(())
+    |     ^^^^^^ unreachable expression
+
+warning: unreachable expression
+   --> crates/pdftract-cli/src/profiles_cmd.rs:274:5
+    |
+271 |         anyhow::bail!("Profiles feature is not enabled. Build with: --features profiles");
+    |         --------------------------------------------------------------------------------- any code following this expression is unreachable
+...
+274 |     Ok(())
+    |     ^^^^^^ unreachable expression
+
+warning: unreachable expression
+   --> crates/pdftract-cli/src/profiles_cmd.rs:305:5
+    |
+302 |         anyhow::bail!("Profiles feature is not enabled. Build with: --features profiles");
+    |         --------------------------------------------------------------------------------- any code following this expression is unreachable
+...
+305 |     Ok(())
+    |     ^^^^^^ unreachable expression
+
+warning: unused variable: `y0`
+    --> crates/pdftract-cli/src/inspect/api.rs:1076:18
+     |
+1076 |         let [x0, y0, x1, y1] = span.bbox;
+     |                  ^^ help: if this is intentional, prefix it with an underscore: `_y0`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `x1`
+    --> crates/pdftract-cli/src/inspect/api.rs:1076:22
+     |
+1076 |         let [x0, y0, x1, y1] = span.bbox;
+     |                      ^^ help: if this is intentional, prefix it with an underscore: `_x1`
+
+warning: unused variable: `x0`
+  --> crates/pdftract-cli/src/inspect/render/mcid.rs:58:14
+   |
+58 |         let [x0, _y0, x1, y1] = block.bbox;
+   |              ^^ help: if this is intentional, prefix it with an underscore: `_x0`
+
+warning: unused variable: `blocks`
+  --> crates/pdftract-cli/src/inspect/render/spans.rs:51:41
+   |
+51 | pub fn render_spans(spans: &[SpanJson], blocks: &[BlockJson]) -> Vec<String> {
+   |                                         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_blocks`
+
+warning: unused variable: `max_body_bytes`
+   --> crates/pdftract-cli/src/mcp/http.rs:163:9
+    |
+163 |     let max_body_bytes = state.max_body_bytes;
+    |         ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_max_body_bytes`
+
+warning: unused variable: `password`
+   --> crates/pdftract-cli/src/mcp/tools/registry.rs:211:5
+    |
+211 |     password: Option<&str>,
+    |     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_password`
+
+warning: unused variable: `name_or_path`
+   --> crates/pdftract-cli/src/profiles_cmd.rs:165:13
+    |
+165 | fn run_show(name_or_path: &str) -> Result<()> {
+    |             ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_name_or_path`
+
+warning: unused variable: `name`
+   --> crates/pdftract-cli/src/profiles_cmd.rs:192:15
+    |
+192 | fn run_export(name: &str) -> Result<()> {
+    |               ^^^^ help: if this is intentional, prefix it with an underscore: `_name`
+
+warning: unused variable: `path`
+   --> crates/pdftract-cli/src/profiles_cmd.rs:225:16
+    |
+225 | fn run_install(path: &PathBuf) -> Result<()> {
+    |                ^^^^ help: if this is intentional, prefix it with an underscore: `_path`
+
+warning: unused variable: `path`
+   --> crates/pdftract-cli/src/profiles_cmd.rs:278:17
+    |
+278 | fn run_validate(path: &PathBuf) -> Result<()> {
+    |                 ^^^^ help: if this is intentional, prefix it with an underscore: `_path`
+
+warning: variable `pdf_bytes` is assigned to, but never used
+   --> crates/pdftract-cli/src/serve.rs:805:9
+    |
+805 |     let mut pdf_bytes: Option<Vec<u8>> = None;
+    |         ^^^^^^^^^^^^^
+    |
+    = note: consider using `_pdf_bytes` instead
+
+warning: value assigned to `pdf_bytes` is never read
+   --> crates/pdftract-cli/src/serve.rs:844:13
+    |
+844 |             pdf_bytes = Some(data.to_vec());
+    |             ^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-cli/src/url.rs:301:9
+    |
+301 |     let mut result = custom_headers.clone();
+    |         ----^^^^^^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `canonicalize_profiles_dir` is never used
+   --> crates/pdftract-cli/src/classify.rs:159:4
+    |
+159 | fn canonicalize_profiles_dir(dir: &Path) -> Result<PathBuf> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `render_ocr_layer` is never used
+    --> crates/pdftract-cli/src/inspect/api.rs:1096:4
+     |
+1096 | fn render_ocr_layer(spans: &[SpanJson]) -> Vec<String> {
+     |    ^^^^^^^^^^^^^^^^
+
+warning: field `jsonrpc` is never read
+   --> crates/pdftract-cli/src/mcp/framing/mod.rs:331:5
+    |
+329 | pub struct Response {
+    |            -------- field in this struct
+330 |     /// Protocol version - always "2.0"
+331 |     jsonrpc: (),
+    |     ^^^^^^^
+    |
+    = note: `Response` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: struct `PasswordArg` is never constructed
+  --> crates/pdftract-cli/src/mcp/tools/args.rs:12:12
+   |
+12 | pub struct PasswordArg {
+   |            ^^^^^^^^^^^
+
+warning: function `find_startxref_offset` is never used
+   --> crates/pdftract-cli/src/mcp/tools/registry.rs:134:4
+    |
+134 | fn find_startxref_offset(data: &[u8]) -> Result<u64, ErrorObject> {
+    |    ^^^^^^^^^^^^^^^^^^^^^
+
+warning: fields `path` and `xref_section` are never read
+   --> crates/pdftract-cli/src/mcp/tools/registry.rs:186:5
+    |
+184 | struct PdfContext {
+    |        ---------- fields in this struct
+185 |     /// The file path
+186 |     path: PathBuf,
+    |     ^^^^
+...
+190 |     xref_section: xref::XrefSection,
+    |     ^^^^^^^^^^^^
+
+warning: function `parse_float` is never used
+   --> crates/pdftract-cli/src/serve.rs:317:12
+    |
+317 |     pub fn parse_float(field_name: &str, value: &str) -> Result<f32, String> {
+    |            ^^^^^^^^^^^
+
+warning: method `warn_password_not_supported` is never used
+  --> crates/pdftract-cli/src/verify_receipt.rs:56:8
+   |
+51 | impl VerifyReceiptCommand {
+   | ------------------------- method in this implementation
+...
+56 |     fn warn_password_not_supported(&self) {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+ --> crates/pdftract-cli/src/main.rs:3:5
+  |
+3 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `CacheIndex`
+  --> crates/pdftract-cli/src/cache_cmd.rs:10:42
+   |
+10 | use pdftract_core::cache::layout::{self, CacheIndex};
+   |                                          ^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+ --> crates/pdftract-cli/src/grep/mod.rs:5:5
+  |
+5 | use std::sync::Arc;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `Context`
+  --> crates/pdftract-cli/src/grep/matcher.rs:12:28
+   |
+12 | use anyhow::{anyhow, bail, Context, Result};
+   |                            ^^^^^^^
+
+warning: unused imports: `MatchRange` and `Matcher`
+  --> crates/pdftract-cli/src/grep/mod.rs:12:19
+   |
+12 | pub use matcher::{MatchRange, Matcher};
+   |                   ^^^^^^^^^^  ^^^^^^^
+
+warning: unused imports: `CountEvent`, `FileOnlyEvent`, `JsonSink`, and `MatchEvent`
+  --> crates/pdftract-cli/src/grep/mod.rs:16:17
+   |
+16 | pub use event::{CountEvent, FileOnlyEvent, JsonSink, MatchEvent, ProgressEvent};
+   |                 ^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^  ^^^^^^^^^^
+
+warning: unused import: `PathOrUrl`
+  --> crates/pdftract-cli/src/grep/mod.rs:20:46
+   |
+20 | pub use expand::{expand_paths, FileWorkItem, PathOrUrl};
+   |                                              ^^^^^^^^^
+
+warning: unused import: `pdftract_core::parser::resources::ResourceDict`
+  --> crates/pdftract-cli/src/grep/worker.rs:32:5
+   |
+32 | use pdftract_core::parser::resources::ResourceDict;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `worker::worker_run`
+  --> crates/pdftract-cli/src/grep/mod.rs:24:9
+   |
+24 | pub use worker::worker_run;
+   |         ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `anyhow`
+  --> crates/pdftract-cli/src/grep/highlight.rs:14:14
+   |
+14 | use anyhow::{anyhow, Context, Result};
+   |              ^^^^^^
+
+warning: unused import: `ObjRef`
+  --> crates/pdftract-cli/src/grep/highlight.rs:15:37
+   |
+15 | use pdftract_core::parser::object::{ObjRef, PdfDict, PdfObject};
+   |                                     ^^^^^^
+
+warning: unused import: `pdftract_core::parser::stream::FileSource`
+  --> crates/pdftract-cli/src/grep/highlight.rs:16:5
+   |
+16 | use pdftract_core::parser::stream::FileSource;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `XrefEntry`, `XrefSection`, and `load_xref_with_prev_chain`
+  --> crates/pdftract-cli/src/grep/highlight.rs:17:35
+   |
+17 | use pdftract_core::parser::xref::{load_xref_with_prev_chain, XrefEntry, XrefSection};
+   |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused imports: `group_matches_by_file_and_page` and `write_highlighted_pdfs`
+  --> crates/pdftract-cli/src/grep/mod.rs:34:21
+   |
+34 | pub use highlight::{group_matches_by_file_and_page, write_highlighted_pdfs};
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `BLACK_ANCHOR`, `BLUE_HEADING`, `BLUE_READING_ORDER`, `BROWN_FIGURE`, `CYAN_OCR`, `GRAY_DEFAULT`, `GRAY_LIGHT_HEADER`, `GRAY_NEUTRAL`, `GRAY_PARAGRAPH`, `GREEN_HIGH`, `ORANGE_CODE`, `PINK_CAPTION`, `PURPLE_LIST`, `PURPLE_MCID`, `RED_LOW`, `TEAL_TABLE`, `YELLOW_MEDIUM`, `column_boundary_color`, `confidence_to_color`, and `kind_to_color`
+  --> crates/pdftract-cli/src/inspect/render/mod.rs:24:5
+   |
+24 |     column_boundary_color,
+   |     ^^^^^^^^^^^^^^^^^^^^^
+25 |     confidence_to_color,
+   |     ^^^^^^^^^^^^^^^^^^^
+26 |     kind_to_color,
+   |     ^^^^^^^^^^^^^
+27 |     BLACK_ANCHOR,
+   |     ^^^^^^^^^^^^
+28 |     // Block kind colors
+29 |     BLUE_HEADING,
+   |     ^^^^^^^^^^^^
+30 |     // Special layer colors
+31 |     BLUE_READING_ORDER,
+   |     ^^^^^^^^^^^^^^^^^^
+32 |     BROWN_FIGURE,
+   |     ^^^^^^^^^^^^
+33 |     CYAN_OCR,
+   |     ^^^^^^^^
+34 |     GRAY_DEFAULT,
+   |     ^^^^^^^^^^^^
+35 |     GRAY_LIGHT_HEADER,
+   |     ^^^^^^^^^^^^^^^^^
+36 |     GRAY_NEUTRAL,
+   |     ^^^^^^^^^^^^
+37 |     GRAY_PARAGRAPH,
+   |     ^^^^^^^^^^^^^^
+38 |     GREEN_HIGH,
+   |     ^^^^^^^^^^
+39 |     ORANGE_CODE,
+   |     ^^^^^^^^^^^
+40 |     PINK_CAPTION,
+   |     ^^^^^^^^^^^^
+41 |     PURPLE_LIST,
+   |     ^^^^^^^^^^^
+42 |     PURPLE_MCID,
+   |     ^^^^^^^^^^^
+43 |     // Confidence colors
+44 |     RED_LOW,
+   |     ^^^^^^^
+45 |     TEAL_TABLE,
+   |     ^^^^^^^^^^
+46 |     YELLOW_MEDIUM,
+   |     ^^^^^^^^^^^^^
+
+warning: unused imports: `ToolResult` and `Tool`
+  --> crates/pdftract-cli/src/mcp/tools/mod.rs:11:31
+   |
+11 | pub use registry::{all_tools, Tool, ToolRegistry, ToolResult};
+   |                               ^^^^                ^^^^^^^^^^
+
+warning: unused imports: `EXIT_USAGE_ERROR` and `resolve_token`
+  --> crates/pdftract-cli/src/mcp/mod.rs:10:16
+   |
+10 | pub use auth::{resolve_token, AuthSource, EXIT_USAGE_ERROR};
+   |                ^^^^^^^^^^^^^              ^^^^^^^^^^^^^^^^
+
+warning: unused imports: `EXIT_CONFIG_ERROR` and `check_bind_security`
+  --> crates/pdftract-cli/src/mcp/mod.rs:11:16
+   |
+11 | pub use bind::{check_bind_security, EXIT_CONFIG_ERROR};
+   |                ^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `resolve_path`
+  --> crates/pdftract-cli/src/mcp/mod.rs:12:35
+   |
+12 | pub use root::{canonicalize_root, resolve_path};
+   |                                   ^^^^^^^^^^^^
+
+warning: unused imports: `BatchMessage`, `ErrorObject`, `Id`, `Notification`, `Request`, and `Response`
+  --> crates/pdftract-cli/src/mcp/mod.rs:16:19
+   |
+16 | pub use framing::{BatchMessage, ErrorObject, Id, Notification, Request, Response};
+   |                   ^^^^^^^^^^^^  ^^^^^^^^^^^  ^^  ^^^^^^^^^^^^  ^^^^^^^  ^^^^^^^^
+
+warning: unexpected `cfg` condition value: `backtrace`
+  --> crates/pdftract-cli/src/panic_hook.rs:10:7
+   |
+10 | #[cfg(feature = "backtrace")]
+   |       ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `cache`, `chrome-test`, `chromiumoxide`, `default`, `full-render`, `grep`, `inspect`, `markdown`, `mcp`, `ocr`, `profiles`, `receipts`, `remote`, and `serve`
+   = help: consider adding `backtrace` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: `#[warn(unexpected_cfgs)]` on by default
+
+warning: unused import: `std::thread`
+ --> crates/pdftract-cli/src/panic_hook.rs:8:5
+  |
+8 | use std::thread;
+  |     ^^^^^^^^^^^
+
+warning: unused import: `extract_pdf`
+  --> crates/pdftract-cli/src/main.rs:32:30
+   |
+32 | use pdftract_core::extract::{extract_pdf, result_to_json};
+   |                              ^^^^^^^^^^^
+
+warning: unused imports: `block_to_markdown`, `page_to_markdown_with_links`, and `page_to_markdown`
+  --> crates/pdftract-cli/src/main.rs:34:5
+   |
+34 |     block_to_markdown, page_to_markdown, page_to_markdown_with_links,
+   |     ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated type alias `std::panic::PanicInfo`: use `PanicHookInfo` instead
+ --> crates/pdftract-cli/src/panic_hook.rs:7:24
+  |
+7 | use std::panic::{self, PanicInfo};
+  |                        ^^^^^^^^^
+  |
+  = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated type alias `std::panic::PanicInfo`: use `PanicHookInfo` instead
+  --> crates/pdftract-cli/src/panic_hook.rs:23:49
+   |
+23 |     panic::set_hook(Box::new(move |panic_info: &PanicInfo| {
+   |                                                 ^^^^^^^^^
+
+warning: unreachable statement
+   --> crates/pdftract-cli/src/grep/mod.rs:160:9
+    |
+156 |               anyhow::bail!("feature 'grep' not compiled in. Build pdftract with: --features grep");
+    |               ------------------------------------------------------------------------------------- any code following this expression is unreachable
+...
+160 | /         if self.pattern.is_empty() {
+161 | |             anyhow::bail!("PATTERN may not be empty");
+162 | |         }
+    | |_________^ unreachable statement
+    |
+    = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: unreachable expression
+   --> crates/pdftract-cli/src/profiles_cmd.rs:188:5
+    |
+185 |         anyhow::bail!("Profiles feature is not enabled. Build with: --features profiles");
+    |         --------------------------------------------------------------------------------- any code following this expression is unreachable
+...
+188 |     Ok(())
+    |     ^^^^^^ unreachable expression
+
+warning: unused import: `std::io::Write`
+    --> crates/pdftract-cli/src/main.rs:1375:9
+     |
+1375 |     use std::io::Write;
+     |         ^^^^^^^^^^^^^^
+
+warning: unused import: `std::io::Write`
+ --> crates/pdftract-cli/src/main.rs:5:5
+  |
+5 | use std::io::Write;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused variable: `xref_section`
+   --> crates/pdftract-cli/src/grep/worker.rs:315:5
+    |
+315 |     xref_section: &XrefSection,
+    |     ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_xref_section`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable `last_font_size` is assigned to, but never used
+   --> crates/pdftract-cli/src/grep/worker.rs:428:9
+    |
+428 |     let mut last_font_size: Option<f64> = None;
+    |         ^^^^^^^^^^^^^^^^^^
+    |
+    = note: consider using `_last_font_size` instead
+
+warning: value assigned to `last_font_size` is never read
+   --> crates/pdftract-cli/src/grep/worker.rs:467:9
+    |
+467 |         last_font_size = Some(font_size);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `page_matches`
+   --> crates/pdftract-cli/src/grep/highlight.rs:110:5
+    |
+110 |     page_matches: &HashMap<u32, Vec<&MatchEvent>>,
+    |     ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_page_matches`
+
+warning: unused variable: `y0`
+    --> crates/pdftract-cli/src/inspect/api.rs:1076:18
+     |
+1076 |         let [x0, y0, x1, y1] = span.bbox;
+     |                  ^^ help: if this is intentional, prefix it with an underscore: `_y0`
+
+warning: value assigned to `pdf_bytes` is never read
+   --> crates/pdftract-cli/src/serve.rs:844:13
+    |
+844 |             pdf_bytes = Some(data.to_vec());
+    |             ^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: unused variable: `profile_dir`
+   --> crates/pdftract-cli/src/main.rs:725:13
+    |
+725 |             profile_dir,
+    |             ^^^^^^^^^^^ help: try ignoring the field: `profile_dir: _`
+
+warning: unused variable: `profile_hot_reload`
+   --> crates/pdftract-cli/src/main.rs:726:13
+    |
+726 |             profile_hot_reload,
+    |             ^^^^^^^^^^^^^^^^^^ help: try ignoring the field: `profile_hot_reload: _`
+
+warning: unused variable: `custom_headers`
+    --> crates/pdftract-cli/src/main.rs:1007:9
+     |
+1007 |     let custom_headers = if !header.is_empty() {
+     |         ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_custom_headers`
+
+warning: unused variable: `url_for_source`
+    --> crates/pdftract-cli/src/main.rs:1028:10
+     |
+1028 |     let (url_for_source, parsed_url) = if is_url {
+     |          ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_url_for_source`
+
+warning: unused variable: `parsed_url`
+    --> crates/pdftract-cli/src/main.rs:1028:26
+     |
+1028 |     let (url_for_source, parsed_url) = if is_url {
+     |                          ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_parsed_url`
+
+warning: variant `Missing` is never constructed
+    --> crates/pdftract-cli/src/main.rs:2210:5
+     |
+2207 | enum CompareResult {
+     |      ------------- variant in this enum
+...
+2210 |     Missing,
+     |     ^^^^^^^
+     |
+     = note: `CompareResult` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: fields `input`, `profiles_dir`, `pretty`, `top_k`, and `exit_on_unknown` are never read
+  --> crates/pdftract-cli/src/classify.rs:33:9
+   |
+31 | pub struct ClassifyArgs {
+   |            ------------ fields in this struct
+32 |     /// Path to the PDF file
+33 |     pub input: PathBuf,
+   |         ^^^^^
+34 |     /// Optional profiles directory
+35 |     pub profiles_dir: Option<PathBuf>,
+   |         ^^^^^^^^^^^^
+36 |     /// Pretty-print JSON output
+37 |     pub pretty: bool,
+   |         ^^^^^^
+38 |     /// Top-K reasons to include (0 = all)
+39 |     pub top_k: usize,
+   |         ^^^^^
+40 |     /// Exit with code 1 if document_type is unknown
+41 |     pub exit_on_unknown: bool,
+   |         ^^^^^^^^^^^^^^^
+
+warning: function `canonicalize_profiles_dir` is never used
+   --> crates/pdftract-cli/src/classify.rs:159:4
+    |
+159 | fn canonicalize_profiles_dir(dir: &Path) -> Result<PathBuf> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `source_ext` is never used
+  --> crates/pdftract-cli/src/codegen.rs:42:12
+   |
+25 | impl Language {
+   | ------------- method in this implementation
+...
+42 |     pub fn source_ext(&self) -> &str {
+   |            ^^^^^^^^^^
+
+warning: method `snake_name` is never used
+  --> crates/pdftract-cli/src/codegen.rs:85:12
+   |
+83 | impl Method {
+   | ----------- method in this implementation
+84 |     /// Returns the snake_case name for Python/Ruby SDKs.
+85 |     pub fn snake_name(&self) -> &str {
+   |            ^^^^^^^^^^
+
+warning: fields `requested_langs`, `profile_dir`, and `features` are never read
+  --> crates/pdftract-cli/src/doctor/mod.rs:41:9
+   |
+39 | pub struct DoctorCtx {
+   |            --------- fields in this struct
+40 |     /// Requested OCR languages (from --lang flag)
+41 |     pub requested_langs: Vec<String>,
+   |         ^^^^^^^^^^^^^^^
+...
+45 |     pub profile_dir: Option<PathBuf>,
+   |         ^^^^^^^^^^^
+46 |     /// Feature flags compiled in
+47 |     pub features: DoctorFeatures,
+   |         ^^^^^^^^
+   |
+   = note: `DoctorCtx` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: function `version_info` is never used
+   --> crates/pdftract-cli/src/doctor/mod.rs:121:8
+    |
+121 | pub fn version_info() -> String {
+    |        ^^^^^^^^^^^^
+
+warning: field `exit_on_fail` is never read
+   --> crates/pdftract-cli/src/doctor/mod.rs:139:9
+    |
+131 | pub struct DoctorOptions {
+    |            ------------- field in this struct
+...
+139 |     pub exit_on_fail: bool,
+    |         ^^^^^^^^^^^^
+
+warning: enum `ProgressMode` is never used
+  --> crates/pdftract-cli/src/grep/mod.rs:38:10
+   |
+38 | pub enum ProgressMode {
+   |          ^^^^^^^^^^^^
+
+warning: methods `progress_mode` and `validate` are never used
+   --> crates/pdftract-cli/src/grep/mod.rs:137:12
+    |
+135 | impl GrepArgs {
+    | ------------- methods in this implementation
+136 |     /// Get the progress mode based on flags and TTY detection
+137 |     pub fn progress_mode(&self) -> ProgressMode {
+    |            ^^^^^^^^^^^^^
+...
+152 |     pub fn validate(&self) -> Result<GrepConfig> {
+    |            ^^^^^^^^
+
+warning: struct `GrepConfig` is never constructed
+   --> crates/pdftract-cli/src/grep/mod.rs:230:12
+    |
+230 | pub struct GrepConfig {
+    |            ^^^^^^^^^^
+
+warning: constant `REMOTE_ENABLED` is never used
+   --> crates/pdftract-cli/src/grep/mod.rs:255:7
+    |
+255 | const REMOTE_ENABLED: bool = cfg!(feature = "remote");
+    |       ^^^^^^^^^^^^^^
+
+warning: function `produce_work_items` is never used
+   --> crates/pdftract-cli/src/grep/mod.rs:270:8
+    |
+270 | pub fn produce_work_items(config: &GrepConfig) -> Result<(Vec<FileWorkItem>, u64)> {
+    |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `emit_progress_json` is never used
+   --> crates/pdftract-cli/src/grep/mod.rs:451:4
+    |
+451 | fn emit_progress_json(event: &ProgressEvent) -> Result<()> {
+    |    ^^^^^^^^^^^^^^^^^^
+
+warning: struct `MatchRange` is never constructed
+  --> crates/pdftract-cli/src/grep/matcher.rs:17:12
+   |
+17 | pub struct MatchRange {
+   |            ^^^^^^^^^^
+
+warning: associated items `new`, `len`, `is_empty`, and `get` are never used
+  --> crates/pdftract-cli/src/grep/matcher.rs:30:12
+   |
+24 | impl MatchRange {
+   | --------------- associated items in this implementation
+...
+30 |     pub fn new(start: usize, end: usize) -> Self {
+   |            ^^^
+...
+37 |     pub const fn len(&self) -> usize {
+   |                  ^^^
+...
+43 |     pub const fn is_empty(&self) -> bool {
+   |                  ^^^^^^^^
+...
+49 |     pub fn get<'a>(&self, text: &'a str) -> Option<&'a str> {
+   |            ^^^
+
+warning: enum `Matcher` is never used
+  --> crates/pdftract-cli/src/grep/matcher.rs:56:10
+   |
+56 | pub enum Matcher {
+   |          ^^^^^^^
+
+warning: associated items `build`, `find_iter`, `find_iter_with_word_boundary`, and `is_match` are never used
+   --> crates/pdftract-cli/src/grep/matcher.rs:78:12
+    |
+ 63 | impl Matcher {
+    | ------------ associated items in this implementation
+...
+ 78 |     pub fn build(
+    |            ^^^^^
+...
+148 |     pub fn find_iter<'a>(&'a self, text: &'a str) -> Box<dyn Iterator<Item = MatchRange> + 'a> {
+    |            ^^^^^^^^^
+...
+183 |     pub fn find_iter_with_word_boundary<'a>(
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+208 |     pub fn is_match(&self, text: &str) -> bool {
+    |            ^^^^^^^^
+
+warning: function `is_word_boundary_match` is never used
+   --> crates/pdftract-cli/src/grep/matcher.rs:223:4
+    |
+223 | fn is_word_boundary_match(text: &str, start: usize, end: usize) -> bool {
+    |    ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `is_ascii_word_char` is never used
+   --> crates/pdftract-cli/src/grep/matcher.rs:250:10
+    |
+250 | const fn is_ascii_word_char(b: u8) -> bool {
+    |          ^^^^^^^^^^^^^^^^^^
+
+warning: struct `RegexBuilder` is never constructed
+   --> crates/pdftract-cli/src/grep/matcher.rs:255:8
+    |
+255 | struct RegexBuilder(regex::RegexBuilder);
+    |        ^^^^^^^^^^^^
+
+warning: associated items `new`, `case_insensitive`, and `build` are never used
+   --> crates/pdftract-cli/src/grep/matcher.rs:258:8
+    |
+257 | impl RegexBuilder {
+    | ----------------- associated items in this implementation
+258 |     fn new(pattern: &str) -> Self {
+    |        ^^^
+...
+262 |     fn case_insensitive(&mut self, yes: bool) -> &mut Self {
+    |        ^^^^^^^^^^^^^^^^
+...
+267 |     fn build(&self) -> Result<Regex> {
+    |        ^^^^^
+
+warning: struct `MatchEvent` is never constructed
+  --> crates/pdftract-cli/src/grep/event.rs:16:12
+   |
+16 | pub struct MatchEvent {
+   |            ^^^^^^^^^^
+
+warning: associated items `new`, `to_jsonl`, `file_only`, and `count_event` are never used
+   --> crates/pdftract-cli/src/grep/event.rs:67:12
+    |
+ 53 | impl MatchEvent {
+    | --------------- associated items in this implementation
+...
+ 67 |     pub fn new(
+    |            ^^^
+...
+ 97 |     pub fn to_jsonl(&self) -> Result<String, serde_json::Error> {
+    |            ^^^^^^^^
+...
+106 |     pub fn file_only(path: String) -> FileOnlyEvent {
+    |            ^^^^^^^^^
+...
+114 |     pub fn count_event(path: String, count: usize) -> CountEvent {
+    |            ^^^^^^^^^^^
+
+warning: struct `FileOnlyEvent` is never constructed
+   --> crates/pdftract-cli/src/grep/event.rs:123:12
+    |
+123 | pub struct FileOnlyEvent {
+    |            ^^^^^^^^^^^^^
+
+warning: struct `CountEvent` is never constructed
+   --> crates/pdftract-cli/src/grep/event.rs:132:12
+    |
+132 | pub struct CountEvent {
+    |            ^^^^^^^^^^
+
+warning: function `should_skip_confidence` is never used
+   --> crates/pdftract-cli/src/grep/event.rs:144:4
+    |
+144 | fn should_skip_confidence(confidence: &f32) -> bool {
+    |    ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `is_false` is never used
+   --> crates/pdftract-cli/src/grep/event.rs:149:4
+    |
+149 | fn is_false(value: &bool) -> bool {
+    |    ^^^^^^^^
+
+warning: enum `ProgressEvent` is never used
+   --> crates/pdftract-cli/src/grep/event.rs:158:10
+    |
+158 | pub enum ProgressEvent {
+    |          ^^^^^^^^^^^^^
+
+warning: struct `JsonSink` is never constructed
+   --> crates/pdftract-cli/src/grep/event.rs:187:12
+    |
+187 | pub struct JsonSink {
+    |            ^^^^^^^^
+
+warning: associated items `new`, `write_match`, `write_file_only`, and `write_count` are never used
+   --> crates/pdftract-cli/src/grep/event.rs:197:12
+    |
+192 | impl JsonSink {
+    | ------------- associated items in this implementation
+...
+197 |     pub fn new() -> Self {
+    |            ^^^
+...
+220 |     pub fn write_match(&mut self, event: &MatchEvent) -> std::io::Result<()> {
+    |            ^^^^^^^^^^^
+...
+234 |     pub fn write_file_only(&mut self, event: &FileOnlyEvent) -> std::io::Result<()> {
+    |            ^^^^^^^^^^^^^^^
+...
+248 |     pub fn write_count(&mut self, event: &CountEvent) -> std::io::Result<()> {
+    |            ^^^^^^^^^^^
+
+warning: type alias `StdoutLock` is never used
+   --> crates/pdftract-cli/src/grep/event.rs:265:6
+    |
+265 | type StdoutLock<'a> = std::io::StdoutLock<'a>;
+    |      ^^^^^^^^^^
+
+warning: struct `FileWorkItem` is never constructed
+  --> crates/pdftract-cli/src/grep/expand.rs:14:12
+   |
+14 | pub struct FileWorkItem {
+   |            ^^^^^^^^^^^^
+
+warning: enum `PathOrUrl` is never used
+  --> crates/pdftract-cli/src/grep/expand.rs:23:10
+   |
+23 | pub enum PathOrUrl {
+   |          ^^^^^^^^^
+
+warning: methods `is_remote` and `display` are never used
+  --> crates/pdftract-cli/src/grep/expand.rs:33:12
+   |
+30 | impl PathOrUrl {
+   | -------------- methods in this implementation
+...
+33 |     pub fn is_remote(&self) -> bool {
+   |            ^^^^^^^^^
+...
+39 |     pub fn display(&self) -> String {
+   |            ^^^^^^^
+
+warning: function `expand_paths` is never used
+  --> crates/pdftract-cli/src/grep/expand.rs:68:8
+   |
+68 | pub fn expand_paths(paths: &[PathBuf], remote_enabled: bool) -> Result<(Vec<FileWorkItem>, u64)> {
+   |        ^^^^^^^^^^^^
+
+warning: function `walk_directory` is never used
+   --> crates/pdftract-cli/src/grep/expand.rs:128:4
+    |
+128 | fn walk_directory(dir: &Path) -> Result<(Vec<FileWorkItem>, u64)> {
+    |    ^^^^^^^^^^^^^^
+
+warning: function `is_pdf_file` is never used
+   --> crates/pdftract-cli/src/grep/expand.rs:195:4
+    |
+195 | fn is_pdf_file(path: &str) -> bool {
+    |    ^^^^^^^^^^^
+
+warning: function `get_file_size` is never used
+   --> crates/pdftract-cli/src/grep/expand.rs:203:4
+    |
+203 | fn get_file_size(path: &Path) -> Result<u64> {
+    |    ^^^^^^^^^^^^^
+
+warning: struct `WorkerResult` is never constructed
+  --> crates/pdftract-cli/src/grep/worker.rs:45:12
+   |
+45 | pub struct WorkerResult {
+   |            ^^^^^^^^^^^^
+
+warning: function `worker_run` is never used
+  --> crates/pdftract-cli/src/grep/worker.rs:76:8
+   |
+76 | pub fn worker_run(
+   |        ^^^^^^^^^^
+
+warning: function `compute_fingerprint_for_grep` is never used
+   --> crates/pdftract-cli/src/grep/worker.rs:312:4
+    |
+312 | fn compute_fingerprint_for_grep(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `Span` is never constructed
+   --> crates/pdftract-cli/src/grep/worker.rs:363:8
+    |
+363 | struct Span {
+    |        ^^^^
+
+warning: function `extract_spans_from_page` is never used
+   --> crates/pdftract-cli/src/grep/worker.rs:382:4
+    |
+382 | fn extract_spans_from_page(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `group_glyphs_into_spans` is never used
+   --> crates/pdftract-cli/src/grep/worker.rs:418:4
+    |
+418 | fn group_glyphs_into_spans(glyphs: Vec<Glyph>) -> Vec<Span> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `create_span_from_glyphs` is never used
+   --> crates/pdftract-cli/src/grep/worker.rs:479:4
+    |
+479 | fn create_span_from_glyphs(glyphs: &[Glyph]) -> Span {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `decode_page_streams` is never used
+   --> crates/pdftract-cli/src/grep/worker.rs:528:4
+    |
+528 | fn decode_page_streams(
+    |    ^^^^^^^^^^^^^^^^^^^
+
+warning: function `process_span` is never used
+   --> crates/pdftract-cli/src/grep/worker.rs:564:4
+    |
+564 | fn process_span(
+    |    ^^^^^^^^^^^^
+
+warning: function `find_startxref` is never used
+   --> crates/pdftract-cli/src/grep/worker.rs:618:4
+    |
+618 | fn find_startxref(source: &dyn SourcePdfSource) -> Result<u64> {
+    |    ^^^^^^^^^^^^^^
+
+warning: function `parse_catalog_with_resolver` is never used
+   --> crates/pdftract-cli/src/grep/worker.rs:662:4
+    |
+662 | fn parse_catalog_with_resolver(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `group_matches_by_file_and_page` is never used
+  --> crates/pdftract-cli/src/grep/highlight.rs:21:8
+   |
+21 | pub fn group_matches_by_file_and_page(
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `write_highlighted_pdfs` is never used
+  --> crates/pdftract-cli/src/grep/highlight.rs:51:8
+   |
+51 | pub fn write_highlighted_pdfs(
+   |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `write_single_highlighted_pdf` is never used
+   --> crates/pdftract-cli/src/grep/highlight.rs:107:4
+    |
+107 | fn write_single_highlighted_pdf(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `create_highlight_annotation` is never used
+   --> crates/pdftract-cli/src/grep/highlight.rs:147:4
+    |
+147 | fn create_highlight_annotation(match_event: &MatchEvent) -> PdfDict {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `EXIT_SUCCESS` is never used
+  --> crates/pdftract-cli/src/hash.rs:17:11
+   |
+17 | pub const EXIT_SUCCESS: i32 = 0;
+   |           ^^^^^^^^^^^^
+
+warning: field `headers` is never read
+  --> crates/pdftract-cli/src/hash.rs:31:9
+   |
+25 | pub struct HashArgs {
+   |            -------- field in this struct
+...
+31 |     pub headers: Vec<(String, String)>,
+   |         ^^^^^^^
+
+warning: struct `LayerGroup` is never constructed
+  --> crates/pdftract-cli/src/inspect/render/mod.rs:57:12
+   |
+57 | pub struct LayerGroup {
+   |            ^^^^^^^^^^
+
+warning: associated items `new`, `new_visible`, `empty`, `is_empty`, and `render_as_svg_group` are never used
+   --> crates/pdftract-cli/src/inspect/render/mod.rs:68:12
+    |
+ 66 | impl LayerGroup {
+    | --------------- associated items in this implementation
+ 67 |     /// Create a new layer group.
+ 68 |     pub fn new(class: impl Into<String>, elements: Vec<String>) -> Self {
+    |            ^^^
+...
+ 77 |     pub fn new_visible(class: impl Into<String>, elements: Vec<String>) -> Self {
+    |            ^^^^^^^^^^^
+...
+ 86 |     pub fn empty(class: impl Into<String>) -> Self {
+    |            ^^^^^
+...
+ 95 |     pub fn is_empty(&self) -> bool {
+    |            ^^^^^^^^
+...
+102 |     pub fn render_as_svg_group(&self) -> String {
+    |            ^^^^^^^^^^^^^^^^^^^
+
+warning: function `render_all` is never used
+   --> crates/pdftract-cli/src/inspect/render/mod.rs:162:8
+    |
+162 | pub fn render_all(
+    |        ^^^^^^^^^^
+
+warning: function `extract_columns_from_spans` is never used
+   --> crates/pdftract-cli/src/inspect/render/mod.rs:269:4
+    |
+269 | fn extract_columns_from_spans(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `confidence_to_color` is never used
+  --> crates/pdftract-cli/src/inspect/render/colors.rs:22:8
+   |
+22 | pub fn confidence_to_color(confidence: Option<f64>) -> &'static str {
+   |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `kind_to_color` is never used
+  --> crates/pdftract-cli/src/inspect/render/colors.rs:52:8
+   |
+52 | pub fn kind_to_color(kind: &str) -> &'static str {
+   |        ^^^^^^^^^^^^^
+
+warning: function `column_boundary_color` is never used
+  --> crates/pdftract-cli/src/inspect/render/colors.rs:79:8
+   |
+79 | pub fn column_boundary_color(column_index: usize, is_left: bool) -> &'static str {
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `RED_LOW` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:102:11
+    |
+102 | pub const RED_LOW: &str = "#ef4444";
+    |           ^^^^^^^
+
+warning: constant `YELLOW_MEDIUM` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:105:11
+    |
+105 | pub const YELLOW_MEDIUM: &str = "#eab308";
+    |           ^^^^^^^^^^^^^
+
+warning: constant `GREEN_HIGH` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:108:11
+    |
+108 | pub const GREEN_HIGH: &str = "#22c55e";
+    |           ^^^^^^^^^^
+
+warning: constant `GRAY_NEUTRAL` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:111:11
+    |
+111 | pub const GRAY_NEUTRAL: &str = "#94a3b8";
+    |           ^^^^^^^^^^^^
+
+warning: constant `BLUE_HEADING` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:116:11
+    |
+116 | pub const BLUE_HEADING: &str = "#3b82f6";
+    |           ^^^^^^^^^^^^
+
+warning: constant `GRAY_PARAGRAPH` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:119:11
+    |
+119 | pub const GRAY_PARAGRAPH: &str = "#9ca3af";
+    |           ^^^^^^^^^^^^^^
+
+warning: constant `GRAY_DEFAULT` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:122:11
+    |
+122 | pub const GRAY_DEFAULT: &str = "#9ca3af";
+    |           ^^^^^^^^^^^^
+
+warning: constant `TEAL_TABLE` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:125:11
+    |
+125 | pub const TEAL_TABLE: &str = "#14b8a6";
+    |           ^^^^^^^^^^
+
+warning: constant `PURPLE_LIST` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:128:11
+    |
+128 | pub const PURPLE_LIST: &str = "#a855f7";
+    |           ^^^^^^^^^^^
+
+warning: constant `ORANGE_CODE` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:131:11
+    |
+131 | pub const ORANGE_CODE: &str = "#f97316";
+    |           ^^^^^^^^^^^
+
+warning: constant `GRAY_LIGHT_HEADER` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:134:11
+    |
+134 | pub const GRAY_LIGHT_HEADER: &str = "#d1d5db";
+    |           ^^^^^^^^^^^^^^^^^
+
+warning: constant `BROWN_FIGURE` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:137:11
+    |
+137 | pub const BROWN_FIGURE: &str = "#a52a2a";
+    |           ^^^^^^^^^^^^
+
+warning: constant `PINK_CAPTION` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:140:11
+    |
+140 | pub const PINK_CAPTION: &str = "#ec4899";
+    |           ^^^^^^^^^^^^
+
+warning: constant `CYAN_COL_LEFT` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:145:11
+    |
+145 | pub const CYAN_COL_LEFT: &str = "#06b6d4";
+    |           ^^^^^^^^^^^^^
+
+warning: constant `CYAN_COL_RIGHT` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:148:11
+    |
+148 | pub const CYAN_COL_RIGHT: &str = "#0891b2";
+    |           ^^^^^^^^^^^^^^
+
+warning: constant `MAGENTA_COL_LEFT` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:151:11
+    |
+151 | pub const MAGENTA_COL_LEFT: &str = "#d946ef";
+    |           ^^^^^^^^^^^^^^^^
+
+warning: constant `MAGENTA_COL_RIGHT` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:154:11
+    |
+154 | pub const MAGENTA_COL_RIGHT: &str = "#c026d3";
+    |           ^^^^^^^^^^^^^^^^^
+
+warning: constant `YELLOW_COL_LEFT` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:157:11
+    |
+157 | pub const YELLOW_COL_LEFT: &str = "#facc15";
+    |           ^^^^^^^^^^^^^^^
+
+warning: constant `YELLOW_COL_RIGHT` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:160:11
+    |
+160 | pub const YELLOW_COL_RIGHT: &str = "#ca8a04";
+    |           ^^^^^^^^^^^^^^^^
+
+warning: constant `GREEN_COL_LEFT` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:163:11
+    |
+163 | pub const GREEN_COL_LEFT: &str = "#22c55e";
+    |           ^^^^^^^^^^^^^^
+
+warning: constant `GREEN_COL_RIGHT` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:166:11
+    |
+166 | pub const GREEN_COL_RIGHT: &str = "#16a34a";
+    |           ^^^^^^^^^^^^^^^
+
+warning: constant `ORANGE_COL_LEFT` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:169:11
+    |
+169 | pub const ORANGE_COL_LEFT: &str = "#f97316";
+    |           ^^^^^^^^^^^^^^^
+
+warning: constant `ORANGE_COL_RIGHT` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:172:11
+    |
+172 | pub const ORANGE_COL_RIGHT: &str = "#ea580c";
+    |           ^^^^^^^^^^^^^^^^
+
+warning: constant `BLUE_COL_LEFT` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:175:11
+    |
+175 | pub const BLUE_COL_LEFT: &str = "#3b82f6";
+    |           ^^^^^^^^^^^^^
+
+warning: constant `BLUE_COL_RIGHT` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:178:11
+    |
+178 | pub const BLUE_COL_RIGHT: &str = "#2563eb";
+    |           ^^^^^^^^^^^^^^
+
+warning: constant `PURPLE_COL_LEFT` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:181:11
+    |
+181 | pub const PURPLE_COL_LEFT: &str = "#a855f7";
+    |           ^^^^^^^^^^^^^^^
+
+warning: constant `PURPLE_COL_RIGHT` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:184:11
+    |
+184 | pub const PURPLE_COL_RIGHT: &str = "#9333ea";
+    |           ^^^^^^^^^^^^^^^^
+
+warning: constant `RED_COL_LEFT` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:187:11
+    |
+187 | pub const RED_COL_LEFT: &str = "#f43f5e";
+    |           ^^^^^^^^^^^^
+
+warning: constant `RED_COL_RIGHT` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:190:11
+    |
+190 | pub const RED_COL_RIGHT: &str = "#e11d48";
+    |           ^^^^^^^^^^^^^
+
+warning: constant `BLUE_READING_ORDER` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:195:11
+    |
+195 | pub const BLUE_READING_ORDER: &str = "#3b82f6";
+    |           ^^^^^^^^^^^^^^^^^^
+
+warning: constant `PURPLE_MCID` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:198:11
+    |
+198 | pub const PURPLE_MCID: &str = "#9333ea";
+    |           ^^^^^^^^^^^
+
+warning: constant `BLACK_ANCHOR` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:201:11
+    |
+201 | pub const BLACK_ANCHOR: &str = "#000000";
+    |           ^^^^^^^^^^^^
+
+warning: constant `CYAN_OCR` is never used
+   --> crates/pdftract-cli/src/inspect/render/colors.rs:204:11
+    |
+204 | pub const CYAN_OCR: &str = "#00d9ff";
+    |           ^^^^^^^^
+
+warning: function `render_mcid_labels` is never used
+  --> crates/pdftract-cli/src/inspect/render/mcid.rs:39:8
+   |
+39 | pub fn render_mcid_labels(
+   |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `escape_xml_attr` is never used
+  --> crates/pdftract-cli/src/inspect/render/mcid.rs:83:4
+   |
+83 | fn escape_xml_attr(s: &str) -> String {
+   |    ^^^^^^^^^^^^^^^
+
+warning: associated items `new` and `is_notification` are never used
+   --> crates/pdftract-cli/src/mcp/framing/mod.rs:122:12
+    |
+120 | impl Request {
+    | ------------ associated items in this implementation
+121 |     /// Create a new request with the given method and optional params.
+122 |     pub fn new(method: impl Into<String>, params: Option<Value>, id: Option<Id>) -> Self {
+    |            ^^^
+...
+132 |     pub fn is_notification(&self) -> bool {
+    |            ^^^^^^^^^^^^^^^
+
+warning: associated function `new` is never used
+   --> crates/pdftract-cli/src/mcp/framing/mod.rs:171:12
+    |
+169 | impl Notification {
+    | ----------------- associated function in this implementation
+170 |     /// Create a new notification with the given method and optional params.
+171 |     pub fn new(method: impl Into<String>, params: Option<Value>) -> Self {
+    |            ^^^
+
+warning: associated items `is_ssrf_blocked` and `internal_error` are never used
+   --> crates/pdftract-cli/src/mcp/framing/mod.rs:262:12
+    |
+241 | impl ErrorObject {
+    | ---------------- associated items in this implementation
+...
+262 |     pub fn is_ssrf_blocked(&self) -> bool {
+    |            ^^^^^^^^^^^^^^^
+...
+301 |     pub fn internal_error() -> Self {
+    |            ^^^^^^^^^^^^^^
+
+warning: methods `is_error` and `get_result` are never used
+   --> crates/pdftract-cli/src/mcp/framing/mod.rs:370:12
+    |
+343 | impl Response {
+    | ------------- methods in this implementation
+...
+370 |     pub fn is_error(&self) -> bool {
+    |            ^^^^^^^^
+...
+375 |     pub fn get_result(&self) -> Option<&Value> {
+    |            ^^^^^^^^^^
+
+warning: methods `is_batch`, `len`, and `is_empty` are never used
+   --> crates/pdftract-cli/src/mcp/framing/mod.rs:461:12
+    |
+459 | impl BatchMessage {
+    | ----------------- methods in this implementation
+460 |     /// Returns true if this is a batch message.
+461 |     pub fn is_batch(&self) -> bool {
+    |            ^^^^^^^^
+...
+466 |     pub fn len(&self) -> usize {
+    |            ^^^
+...
+474 |     pub fn is_empty(&self) -> bool {
+    |            ^^^^^^^^
+
+warning: methods `broadcast_notification` and `client_count` are never used
+   --> crates/pdftract-cli/src/mcp/http.rs:108:12
+    |
+ 82 | impl McpServerState {
+    | ------------------- methods in this implementation
+...
+108 |     pub fn broadcast_notification(&self, notification: Notification) -> usize {
+    |            ^^^^^^^^^^^^^^^^^^^^^^
+...
+117 |     pub fn client_count(&self) -> usize {
+    |            ^^^^^^^^^^^^
+
+warning: constant `CODE_ROOT_INVALID` is never used
+  --> crates/pdftract-cli/src/mcp/root.rs:17:11
+   |
+17 | pub const CODE_ROOT_INVALID: &str = "ROOT_INVALID";
+   |           ^^^^^^^^^^^^^^^^^
+
+warning: method `flag_name` is never used
+  --> crates/pdftract-cli/src/output.rs:50:12
+   |
+14 | impl Format {
+   | ----------- method in this implementation
+...
+50 |     pub fn flag_name(&self) -> &'static str {
+   |            ^^^^^^^^^
+
+warning: associated function `from_path` is never used
+  --> crates/pdftract-cli/src/output.rs:98:12
+   |
+91 | impl OutputSpec {
+   | --------------- associated function in this implementation
+...
+98 |     pub fn from_path(format: Format, path: PathBuf) -> Self {
+   |            ^^^^^^^^^
+
+warning: method `is_empty` is never used
+   --> crates/pdftract-cli/src/output.rs:132:12
+    |
+130 | impl OutputConfig {
+    | ----------------- method in this implementation
+131 |     /// Check if no output flags were specified
+132 |     pub fn is_empty(&self) -> bool {
+    |            ^^^^^^^^
+
+warning: enum `PageRangeError` is never used
+  --> crates/pdftract-cli/src/pages.rs:33:10
+   |
+33 | pub enum PageRangeError {
+   |          ^^^^^^^^^^^^^^
+
+warning: function `parse_page_range` is never used
+   --> crates/pdftract-cli/src/pages.rs:119:8
+    |
+119 | pub fn parse_page_range(
+    |        ^^^^^^^^^^^^^^^^
+
+warning: function `parse_page_number` is never used
+   --> crates/pdftract-cli/src/pages.rs:196:4
+    |
+196 | fn parse_page_number(s: &str) -> Result<usize, PageRangeError> {
+    |    ^^^^^^^^^^^^^^^^^
+
+warning: function `to_0based` is never used
+   --> crates/pdftract-cli/src/pages.rs:210:4
+    |
+210 | fn to_0based(page: usize, page_count: usize) -> Result<usize, PageRangeError> {
+    |    ^^^^^^^^^
+
+warning: function `filter_out_of_range` is never used
+   --> crates/pdftract-cli/src/pages.rs:253:8
+    |
+253 | pub fn filter_out_of_range(
+    |        ^^^^^^^^^^^^^^^^^^^
+
+warning: variant `RequestTooLarge` is never constructed
+    --> crates/pdftract-cli/src/serve.rs:1019:5
+     |
+1013 | pub enum AxumError {
+     |          --------- variant in this enum
+...
+1019 |     RequestTooLarge,
+     |     ^^^^^^^^^^^^^^^
+     |
+     = note: `AxumError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: fields `username` and `password` are never read
+  --> crates/pdftract-cli/src/url.rs:70:9
+   |
+65 | pub struct ParsedUrl {
+   |            --------- fields in this struct
+...
+70 |     pub username: Option<String>,
+   |         ^^^^^^^^
+71 |     /// Optional password extracted from the URL
+72 |     pub password: Option<String>,
+   |         ^^^^^^^^
+   |
+   = note: `ParsedUrl` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: function `credentials_to_headers` is never used
+   --> crates/pdftract-cli/src/url.rs:246:8
+    |
+246 | pub fn credentials_to_headers(parsed: &ParsedUrl) -> Vec<(String, String)> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `combine_headers_with_credentials` is never used
+   --> crates/pdftract-cli/src/url.rs:297:8
+    |
+297 | pub fn combine_headers_with_credentials(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Error: --ocr requires the 'ocr' feature to be enabled
+Build pdftract with: --features ocr
