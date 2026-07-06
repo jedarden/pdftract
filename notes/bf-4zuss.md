@@ -1,34 +1,31 @@
-# Verification Note: bf-4zuss - Corpus Manifest and Validation
+# bf-4zuss: Corpus manifest and validation
 
 ## Summary
-All acceptance criteria for bead bf-4zuss are **PASS**. The corpus manifest and validation system is fully implemented and functional.
+Verified that the grep-corpus manifest and validation infrastructure is fully operational.
 
-## Acceptance Criteria Status
+## Acceptance Criteria Verification
 
-### 1. manifest.csv exists with proper schema ✓ PASS
-**File:** `/home/coding/pdftract/tests/fixtures/grep-corpus/manifest.csv`
-- **Schema:** filename, source_url, page_count, file_size, checksum, license
-- **Entries:** Exactly 1,000 PDF entries
-- **Header:** Comprehensive documentation with field descriptions
+### PASS: `tests/fixtures/grep-corpus/manifest.csv` exists with proper schema
+- **Location**: `/home/coding/pdftract/tests/fixtures/grep-corpus/manifest.csv`
+- **Schema**: filename,source_url,page_count,file_size,checksum,license
+- **Sample entry**: `synthetic_1000.pdf,synthetic-generation,5,3751,<sha256>,public-domain`
 
-### 2. validate-corpus.sh exists and is executable ✓ PASS
-**File:** `/home/coding/pdftract/scripts/validate-corpus.sh`
-- **Permissions:** `-rwxr-xr-x` (executable)
-- **Capabilities:**
-  - Verifies all files in manifest exist
-  - Checks file sizes match manifest
-  - Validates SHA256 checksums
-  - Reports corpus quality metrics (page count, total size)
-  - Exit codes: 0 (pass), 1 (fail), 2 (usage error)
+### PASS: `scripts/validate-corpus.sh` exists and is executable
+- **Location**: `/home/coding/pdftract/scripts/validate-corpus.sh`
+- **Permissions**: `-rwxr-xr-x` (executable)
+- **Lines**: 183 lines of bash validation logic
 
-### 3. make validate-corpus runs validation successfully ✓ PASS
-**Command:** `make validate-corpus`
+### PASS: `make validate-corpus` runs validation successfully
 ```bash
-make validate-corpus
-```
+$ make validate-corpus
+Validating grep-corpus...
+[INFO] Validated 200 files...
+[INFO] Validated 400 files...
+[INFO] Validated 600 files...
+[INFO] Validated 800 files...
+[INFO] Validated 1000 files...
 
-**Output:**
-```
+=== Corpus Validation Summary ===
 Total files in manifest: 1000
 Valid files:             1000
 
@@ -36,95 +33,53 @@ Corpus metrics (for valid files):
   Total pages:  10590
   Total size:   6870643 bytes
 
-VALIDATION PASSED
+[✓] VALIDATION PASSED
 ```
 
-### 4. Manifest contains ≥1000 entries ✓ PASS
-**Count:** Exactly 1,000 entries (excludes comments and empty lines)
-**Files:** 1,000 PDFs in `tests/fixtures/grep-corpus/corpus/`
+### PASS: Manifest contains ≥1000 entries with all required fields
+- **Entry count**: 1000 PDF files
+- **All fields present**: filename, source_url, page_count, file_size, checksum, license
+- **All entries validated**: 0 missing files, 0 size mismatches, 0 checksum mismatches
 
-### 5. Validation script confirms corpus meets targets ✓ PASS
-**Corpus Metrics:**
-- Total PDFs: 1,000 files
-- Total pages: 10,590 pages
-- Total size: 6.87 MB (6,870,643 bytes)
-- License: All files have `public-domain` license (synthetic generation)
-- Checksums: All SHA256 checksums valid
+### PASS: Validation script confirms corpus meets size/count targets
+- **Files validated**: 1000/1000
+- **Total pages**: 10,590 pages
+- **Total size**: 6,870,643 bytes (~6.5 MB)
+- **Licenses**: All synthetic PDFs marked as `public-domain`
 
-## Implementation Details
+## Related Files
 
-### Schema Design (manifest.csv)
-```
-filename,source_url,page_count,file_size,checksum,license
-```
+### Core Implementation
+- `tests/fixtures/grep-corpus/manifest.csv` - Corpus manifest with 1000 entries
+- `tests/fixtures/grep-corpus/corpus/` - Directory containing 1000 synthetic PDFs
+- `scripts/validate-corpus.sh` - Validation script that verifies:
+  - File existence
+  - File size matching
+  - SHA256 checksum verification
+  - License presence
+  - Corpus quality metrics
 
-**Fields:**
-- `filename`: Relative path from corpus directory (e.g., "synthetic_100.pdf")
-- `source_url`: Provenance (e.g., "synthetic-generation" for generated PDFs)
-- `page_count`: Number of pages extracted via pdfinfo
-- `file_size`: File size in bytes
-- `checksum`: SHA256 hash for integrity verification
-- `license`: License identifier (public-domain, cc-by-4.0, cc-by-sa-4.0)
+### Supporting Scripts
+- `scripts/download-grep-corpus.sh` - Downloads PDFs and generates manifest entries
+- `scripts/grep-corpus-generate-manifest.sh` - Bootstraps manifest for existing corpus
 
-### Download Script Integration
-**File:** `scripts/download-grep-corpus.sh`
-- **Lines 100-134:** Helper functions for checksum, page count, file size, and manifest entry
-- **Lines 182-188:** Manifest entry generation for each downloaded PDF
-- **Lines 252-267:** Manifest entry generation for synthetic PDFs
-
-### Validation Script Features
-**File:** `scripts/validate-corpus.sh`
-- **Lines 79-137:** CSV parsing with error handling
-- **Lines 90-94:** File existence validation
-- **Lines 101-106:** File size verification
-- **Lines 109-115:** SHA256 checksum verification
-- **Lines 118-122:** License information validation
-- **Lines 139-182:** Summary reporting with exit codes
-
-## Supporting Scripts
-
-### grep-corpus-generate-manifest.sh
-**File:** `scripts/grep-corpus-generate-manifest.sh`
-- Bootstraps manifest for existing corpus PDFs
-- Useful for regeneration after manual corpus changes
-- Handles filename pattern detection for license assignment
+### Makefile Integration
+- `Makefile:22-24` - `validate-corpus` target that calls the validation script
 
 ## Corpus Quality Metrics
+- **Corpus type**: Synthetic PDFs generated via ReportLab (public-domain)
+- **Page count distribution**: 1-20 pages per PDF
+- **Average file size**: ~6.9 KB per PDF
+- **Total corpus size**: ~6.5 MB for 1000 PDFs
+- **Validation status**: All 1000 files valid with correct checksums
 
-### Content Distribution
-- **Synthetic PDFs:** 1,000 files (100%)
-- **Page count range:** 1-20 pages per PDF (deterministic random)
-- **Average pages per PDF:** 10.59 pages
-- **License:** Public domain (synthetic generation)
+## Implementation Notes
+The corpus generation uses synthetic PDFs rather than downloaded content to ensure:
+1. **Determinism**: Same script produces identical corpus
+2. **Known license**: Public domain (no licensing concerns)
+3. **Controlled variety**: Mix of page counts (1-20) and content
+4. **Fast regeneration**: No network dependencies
 
-### Validation Health
-- **Missing files:** 0
-- **Size mismatches:** 0
-- **Checksum mismatches:** 0
-- **Missing licenses:** 0
-- **Validation status:** PASSED
-
-## Integration with Build System
-
-### Makefile Targets
-**File:** `/home/coding/pdftract/Makefile` (Lines 22-24)
-```makefile
-validate-corpus:
-	@bash scripts/validate-corpus.sh tests/fixtures/grep-corpus
-```
-
-### Dependencies
-- **pdfinfo:** Required for page count extraction (poppler-utils)
-- **sha256sum:** Required for checksum generation
-- **curl:** Required for corpus download (network operations)
-
-## Conclusion
-
-The grep-corpus manifest and validation system is **fully implemented** with:
-- Proper schema and documentation
-- Comprehensive validation logic
-- Makefile integration
-- 100% validation success rate
-- 1,000 PDF files tracked
-
-**All acceptance criteria: PASS** ✅
+## References
+- Parent bead: bf-38sa3
+- Phase 7.8 (plan lines 2796–2824)
