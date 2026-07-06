@@ -12,7 +12,7 @@
 //! - Partial decompression where possible
 //! - Fallback to raw stream data when decompression fails
 
-use pdftract_core::document::parse_pdf_file;
+use pdftract_core::document::{parse_pdf_file, PdfExtractor};
 use std::path::PathBuf;
 
 /// Returns the path to the truncated-flate.pdf fixture.
@@ -105,4 +105,63 @@ fn test_truncated_flate_partial_content_accessible() {
     // Content streams may be affected by truncation - we just verify
     // the page structure is accessible without crashing
     println!("Page accessible with {} content streams", first_page.contents.len());
+}
+
+/// Test extraction of truncated-flate.pdf using PdfExtractor.
+///
+/// This test examines the extraction result structure, particularly
+/// the error field to understand how truncation errors are reported.
+#[test]
+fn test_truncated_flate_extraction_result_structure() {
+    let path = fixture_path();
+
+    // Open the PDF with PdfExtractor
+    let extractor = PdfExtractor::open(&path)
+        .expect("Should open truncated-flate.pdf with PdfExtractor");
+
+    println!("✓ PdfExtractor::open() succeeded");
+    println!("  Fingerprint: {}", extractor.fingerprint());
+    println!("  Page count: {:?}", extractor.page_count());
+
+    // Materialize pages to enable extraction
+    let mut extractor_mut = extractor;
+    let pages = extractor_mut.materialize_pages()
+        .expect("Should materialize pages");
+
+    println!("✓ materialize_pages() succeeded");
+    println!("  Number of pages: {}", pages.len());
+
+    // Try to extract the first page (if it exists)
+    if !pages.is_empty() {
+        let page_result = extractor_mut.extract_page(0);
+
+        match page_result {
+            Ok(extraction) => {
+                println!("✓ extract_page(0) succeeded");
+                println!("  Page index: {}", extraction.index);
+                println!("  Width: {}", extraction.width);
+                println!("  Height: {}", extraction.height);
+                println!("  Rotation: {}", extraction.rotation);
+                println!("  Number of spans: {}", extraction.spans.len());
+                println!("  Number of blocks: {}", extraction.blocks.len());
+
+                // Print the extraction structure as JSON to see the full structure
+                match serde_json::to_string_pretty(&extraction) {
+                    Ok(json) => {
+                        println!("\n  Extraction result (JSON):");
+                        println!("  {}", json.replace("\n", "\n  "));
+                    },
+                    Err(e) => {
+                        println!("  Warning: Could not serialize extraction result: {}", e);
+                    }
+                }
+            },
+            Err(e) => {
+                println!("✗ extract_page(0) failed: {}", e);
+                println!("  Error: {}", e);
+            }
+        }
+    } else {
+        println!("  No pages to extract");
+    }
 }

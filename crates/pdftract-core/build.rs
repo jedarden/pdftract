@@ -1036,25 +1036,17 @@ pub static UNMAPPED_GLYPH_NAMES: LazyLock<HashSet<&'static str>> = LazyLock::new
     let json_content = fs::read_to_string(&actual_unmapped_path)
         .unwrap_or_else(|_| panic!("Failed to read {}", actual_unmapped_path.display()));
 
-    let data: serde_json::Value = serde_json::from_str(&json_content)
-        .unwrap_or_else(|_| panic!("Failed to parse {}", actual_unmapped_path.display()));
+    // Parse using UnmappedGlyphNamesConfig struct for proper deserialization
+    let config: UnmappedGlyphNamesConfig = serde_json::from_str(&json_content)
+        .unwrap_or_else(|e| panic!("Failed to parse {}: {}", actual_unmapped_path.display(), e));
 
-    // Extract the unmapped_glyph_names array
-    let names_array = data
-        .get("unmapped_glyph_names")
-        .and_then(|v| v.as_array())
-        .expect("unmapped_glyph_names array missing");
+    // Extract the unmapped_glyph_names array from the config
+    let names_array = &config.unmapped_glyph_names;
 
     // Generate HashSet insertions
     let mut insertions = Vec::new();
     for name in names_array {
-        let name_str = name.as_str().unwrap_or_else(|| {
-            panic!(
-                "Invalid glyph name (not a string): {:?}",
-                name
-            )
-        });
-        insertions.push(format!("    set.insert({:?});", name_str));
+        insertions.push(format!("    set.insert({:?});", name));
     }
 
     let rust_code = format!(
