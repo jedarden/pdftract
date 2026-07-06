@@ -59,10 +59,48 @@ pdftract extract --ocr --text - tests/fixtures/scanned/low-quality/degraded-200d
 - File is readable: ✅
 - PDF structure is intact: ✅
 
+## Latest Execution (2026-07-06)
+
+### Attempted Build with OCR Feature
+```bash
+cargo build --release --features ocr
+```
+
+**Build Failure:**
+```
+thread 'main' panicked at 'leptonica-sys-0.4.9/build.rs:55:54:
+called `Result::unwrap()` on an `Err` value: 
+pkg-config exited with status code 1
+> Package lept was not found in the pkg-config search path.
+No package 'lept' found
+```
+
+### Dependency Status (Current Environment)
+- `tesseract` binary: ✅ Installed at `/home/coding/.nix-profile/bin/tesseract`
+- `leptonica` development headers: ❌ NOT available (`lept.pc` missing)
+
+### Root Cause
+The `leptonica-sys` crate requires leptonica C library development headers for compilation. On NixOS, these must be explicitly provided in the build environment.
+
+## Acceptance Criteria Final Status
+
+**CRITERIA 1: Command executes without immediate errors**
+**PARTIAL PASS** - CLI invocation and syntax are valid, but compilation fails due to missing system dependencies.
+
+**CRITERIA 2: Process starts and runs (not blocked by missing dependencies)**
+**FAIL** - Blocked by missing `leptonica` development headers required for OCR feature.
+
+**CRITERIA 3: OCR process begins on the fixture file**
+**FAIL** - Build failure prevents OCR from executing.
+
+## Conclusion
+The pdftract CLI structure is correct and the fixture file is accessible. However, the OCR feature cannot be used in this environment due to missing leptonica system library dependencies. This is an environmental limitation, not a code defect.
+
 ## Next Steps
 
 To complete OCR testing on degraded fixtures:
-1. Set up proper build environment with all dependencies
-2. Build with `cargo build --release --features ocr`
-3. Re-run the extraction command
-4. Validate OCR output quality on degraded input
+1. Install leptonica development headers in NixOS environment
+2. Use `nix-shell` to provide build dependencies temporarily
+3. Build with `cargo build --release --features ocr`
+4. Re-run the extraction command
+5. Validate OCR output quality on degraded input

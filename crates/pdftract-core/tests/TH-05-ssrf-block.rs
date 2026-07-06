@@ -1509,6 +1509,107 @@ pub mod mcp_helpers {
             };
             assert!(error.is_ssrf_blocked(), "Should detect SSRF_BLOCKED in both data and message");
         }
+
+        // Tests for standalone is_ssrf_blocked() function
+
+        #[test]
+        fn test_standalone_is_ssrf_blocked_with_code_in_data() {
+            use crate::mcp_helpers::is_ssrf_blocked;
+            let error = JsonRpcError {
+                code: -32001,
+                message: "SSRF protection blocked this URL".to_string(),
+                data: Some(json!({"code": "SSRF_BLOCKED"})),
+            };
+            assert!(is_ssrf_blocked(&error), "Standalone function should detect SSRF_BLOCKED in data.code");
+        }
+
+        #[test]
+        fn test_standalone_is_ssrf_blocked_with_message() {
+            use crate::mcp_helpers::is_ssrf_blocked;
+            let error = JsonRpcError {
+                code: -32001,
+                message: "SSRF_BLOCKED: URL targets private network".to_string(),
+                data: None,
+            };
+            assert!(is_ssrf_blocked(&error), "Standalone function should detect SSRF_BLOCKED in message");
+        }
+
+        #[test]
+        fn test_standalone_is_ssrf_blocked_not_blocked() {
+            use crate::mcp_helpers::is_ssrf_blocked;
+            let error = JsonRpcError {
+                code: -32601,
+                message: "Method not found".to_string(),
+                data: None,
+            };
+            assert!(!is_ssrf_blocked(&error), "Standalone function should not detect SSRF_BLOCKED");
+        }
+
+        #[test]
+        fn test_standalone_is_ssrf_blocked_empty_data() {
+            use crate::mcp_helpers::is_ssrf_blocked;
+            let error = JsonRpcError {
+                code: -32001,
+                message: "Some error".to_string(),
+                data: Some(json!({})),
+            };
+            assert!(!is_ssrf_blocked(&error), "Standalone function should not detect SSRF_BLOCKED with empty data");
+        }
+
+        #[test]
+        fn test_standalone_is_ssrf_blocked_different_code_in_data() {
+            use crate::mcp_helpers::is_ssrf_blocked;
+            let error = JsonRpcError {
+                code: -32001,
+                message: "Some error".to_string(),
+                data: Some(json!({"code": "OTHER_ERROR"})),
+            };
+            assert!(!is_ssrf_blocked(&error), "Standalone function should not detect OTHER_ERROR as SSRF_BLOCKED");
+        }
+
+        #[test]
+        fn test_standalone_is_ssrf_blocked_case_sensitive_in_message() {
+            use crate::mcp_helpers::is_ssrf_blocked;
+            let error = JsonRpcError {
+                code: -32001,
+                message: "ssrf_blocked: lowercase".to_string(),
+                data: None,
+            };
+            assert!(!is_ssrf_blocked(&error), "Standalone function should be case-sensitive in message");
+        }
+
+        #[test]
+        fn test_standalone_is_ssrf_blocked_case_sensitive_in_data() {
+            use crate::mcp_helpers::is_ssrf_blocked;
+            let error = JsonRpcError {
+                code: -32001,
+                message: "Some error".to_string(),
+                data: Some(json!({"code": "ssrf_blocked"})),
+            };
+            assert!(!is_ssrf_blocked(&error), "Standalone function should be case-sensitive in data");
+        }
+
+        #[test]
+        fn test_standalone_is_ssrf_blocked_partial_match_in_message() {
+            use crate::mcp_helpers::is_ssrf_blocked;
+            let error = JsonRpcError {
+                code: -32001,
+                message: "SSRF_BLOCKED detected in request".to_string(),
+                data: None,
+            };
+            assert!(is_ssrf_blocked(&error), "Standalone function should detect partial match in message");
+        }
+
+        #[test]
+        fn test_standalone_is_ssrf_blocked_both_data_and_message() {
+            use crate::mcp_helpers::is_ssrf_blocked;
+            let error = JsonRpcError {
+                code: -32001,
+                message: "SSRF_BLOCKED: URL rejected".to_string(),
+                data: Some(json!({"code": "SSRF_BLOCKED"})),
+            };
+            assert!(is_ssrf_blocked(&error), "Standalone function should detect SSRF_BLOCKED in both data and message");
+        }
     }
 
     #[cfg(test)]

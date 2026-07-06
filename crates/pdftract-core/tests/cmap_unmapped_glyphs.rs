@@ -25,17 +25,64 @@ fn test_cmap_unmapped_glyph_skip() {
     assert!(!is_unmapped_glyph_name("A"), "A should not be unmapped");
     assert!(!is_unmapped_glyph_name("space"), "space should not be unmapped");
 
-    // Basic CMAP parsing test with simple mapping
-    let cmap_data = b"beginbfchar 1 <00> <0041> endbfchar";
+    // Basic CMAP parsing test with multiple normal glyph mappings
+    // Tests multiple glyph types: letters, space, and custom names
+    let cmap_data = b"beginbfchar 4 <00> <0041> <01> <0042> <02> <0020> <03> <0043> endbfchar";
     let map = parse_to_unicode(cmap_data);
 
     // Verify the map was created
     assert!(!map.is_empty(), "CMAP should not be empty after parsing");
-    assert_eq!(map.len(), 1, "CMAP should have 1 mapping");
+    assert_eq!(map.len(), 4, "CMAP should have 4 mappings");
 
-    // Verify the mapping works
+    // Verify the mapping works for individual glyphs
     let result = map.lookup(&[0x00]);
     assert_eq!(result, Some(&['A'][..]), "Byte 0x00 should map to 'A'");
+
+    // NEW: Assert that normal glyphs ARE PRESENT in CMAP output
+    // This verifies the positive case - that normal glyphs are NOT being incorrectly filtered out.
+    // We verify presence by checking that each expected glyph type can be looked up successfully.
+
+    // Verify letter 'A' is present (basic Latin letter)
+    let result_a = map.lookup(&[0x00]);
+    assert_eq!(
+        result_a,
+        Some(&['A'][..]),
+        "Normal glyph 'A' should be present in CMAP: letter glyphs should not be filtered"
+    );
+
+    // Verify letter 'B' is present (basic Latin letter)
+    let result_b = map.lookup(&[0x01]);
+    assert_eq!(
+        result_b,
+        Some(&['B'][..]),
+        "Normal glyph 'B' should be present in CMAP: letter glyphs should not be filtered"
+    );
+
+    // Verify space is present (whitespace character)
+    let result_space = map.lookup(&[0x02]);
+    assert_eq!(
+        result_space,
+        Some(&[' '][..]),
+        "Normal glyph 'space' should be present in CMAP: whitespace glyphs should not be filtered"
+    );
+
+    // Verify 'C' is present (another letter to ensure multiple letters work)
+    let result_c = map.lookup(&[0x03]);
+    assert_eq!(
+        result_c,
+        Some(&['C'][..]),
+        "Normal glyph 'C' should be present in CMAP: multiple letter glyphs should all be present"
+    );
+
+    // Verify all normal glyph types are accounted for
+    // This ensures the CMAP contains exactly the expected normal glyphs
+    // and no spurious entries were added
+    assert_eq!(
+        map.len(),
+        4,
+        "CMAP should contain exactly 4 normal glyph mappings (A, B, space, C). \
+        Different count may indicate a glyph was incorrectly filtered or an extra entry was added."
+    );
 
     // NEW: Assert that unmapped glyphs are ABSENT from CMAP output
     // This is the core verification - proving that unmapped glyphs are being skipped correctly.
@@ -44,17 +91,11 @@ fn test_cmap_unmapped_glyph_skip() {
     // Since CMAP maps byte sequences to Unicode characters (not glyph names directly),
     // we verify absence by ensuring the map contains only valid, expected entries.
 
-    // Verify that no spurious entries exist beyond the expected mapping
-    assert_eq!(
-        map.len(),
-        1,
-        "CMAP should contain exactly 1 mapping (byte 0x00 → 'A'). Additional entries may indicate unmapped glyphs were not properly filtered."
-    );
-
     // Verify that all entries in the CMAP have valid Unicode destinations
+    // (no unmapped glyphs made it through)
     for (src_bytes, dst_chars) in map.iter() {
         assert!(
-            !dst_chars.is_empty() || dst_chars.iter().all(|&c| c == '�'),
+            !dst_chars.is_empty() && dst_chars.iter().all(|&c| c != '�'),
             "CMAP entry for bytes {:02X?} has invalid destination: {:?}. This may indicate an unmapped glyph was not filtered correctly.",
             src_bytes, dst_chars
         );
