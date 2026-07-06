@@ -130,14 +130,41 @@ pub struct DifferencesOverlay {
     /// Sparse list of (code, glyph_name) overrides.
     /// Sorted by code for binary search, though linear search is fine for <32 entries.
     entries: Vec<(u8, Arc<str>)>,
+    /// Glyph names that should be skipped during CMAP entry creation.
+    /// These glyphs have no valid Unicode mapping and should not appear in text extraction.
+    /// Defaults to the global UNMAPPED_GLYPH_NAMES set if not explicitly configured.
+    unmapped_glyph_names: std::collections::HashSet<String>,
 }
 
 impl DifferencesOverlay {
-    /// Create an empty overlay.
+    /// Create an empty overlay with default unmapped glyph names.
     pub fn new() -> Self {
         Self {
             entries: Vec::new(),
+            unmapped_glyph_names: Self::default_unmapped_glyph_names(),
         }
+    }
+
+    /// Create an empty overlay with custom unmapped glyph names.
+    ///
+    /// # Arguments
+    ///
+    /// * `unmapped_glyph_names` - Set of glyph names to skip during CMAP entry creation
+    pub fn with_unmapped_glyph_names(unmapped_glyph_names: std::collections::HashSet<String>) -> Self {
+        Self {
+            entries: Vec::new(),
+            unmapped_glyph_names,
+        }
+    }
+
+    /// Get the default set of unmapped glyph names.
+    ///
+    /// Returns the global UNMAPPED_GLYPH_NAMES set as a HashSet<String>.
+    fn default_unmapped_glyph_names() -> std::collections::HashSet<String> {
+        crate::font::unmapped::UNMAPPED_GLYPH_NAMES
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
     }
 
     /// Parse a /Differences array into an overlay.
@@ -197,7 +224,7 @@ impl DifferencesOverlay {
                         // Skip unmapped glyph names (e.g., .notdef) to prevent them from
                         // appearing in text extraction output. These glyphs have no valid
                         // Unicode mapping and should emit GLYPH_UNMAPPED diagnostics instead.
-                        if !crate::font::is_unmapped_glyph_name(&name) {
+                        if !overlay.is_unmapped_glyph_name(&name) {
                             overlay.entries.push((cursor as u8, Arc::clone(name)));
                         }
                     }
@@ -233,6 +260,39 @@ impl DifferencesOverlay {
     /// Get the number of entries in the overlay.
     pub fn len(&self) -> usize {
         self.entries.len()
+    }
+
+    /// Check if a glyph name is in the unmapped glyph names set.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The glyph name to check (with or without leading `/`)
+    ///
+    /// # Returns
+    ///
+    /// `true` if the glyph name is in the unmapped set, `false` otherwise.
+    fn is_unmapped_glyph_name(&self, name: &str) -> bool {
+        // Strip leading slash if present
+        let clean_name = if name.starts_with('/') {
+            &name[1..]
+        } else {
+            name
+        };
+        self.unmapped_glyph_names.contains(clean_name)
+    }
+
+    /// Get a reference to the unmapped glyph names set.
+    pub fn unmapped_glyph_names(&self) -> &std::collections::HashSet<String> {
+        &self.unmapped_glyph_names
+    }
+
+    /// Set the unmapped glyph names set.
+    ///
+    /// # Arguments
+    ///
+    /// * `unmapped_glyph_names` - New set of glyph names to skip during CMAP entry creation
+    pub fn set_unmapped_glyph_names(&mut self, unmapped_glyph_names: std::collections::HashSet<String>) {
+        self.unmapped_glyph_names = unmapped_glyph_names;
     }
 }
 
