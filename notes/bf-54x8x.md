@@ -1,102 +1,81 @@
 # bf-54x8x: Document no-mapping.pdf fixture structure and regeneration
 
-## Task Completed
+## Task Completion Summary
 
-Documented the `no-mapping.pdf` fixture with comprehensive technical documentation at `tests/fixtures/no-mapping.md`.
+Verified that comprehensive documentation already exists for the `no-mapping.pdf` fixture.
 
-## Work Performed
+## Files Examined
 
-### 1. Fixture Structure Analysis
+### Fixture Location
+- **Primary:** `tests/fixtures/encoding/no-mapping.pdf`
+- **Documentation:** `tests/fixtures/no-mapping.md` (452 lines)
+- **Supplementary:** `tests/fixtures/encoding/no-mapping.md` (203 lines)
 
-Examined the fixture using standard PDF tools:
-- `pdfinfo`: Confirmed 660 bytes, PDF 1.4, single page, Letter size
-- `pdffonts`: Identified custom Type1 font `/CustomNoMap` with custom encoding
-- `sha256sum`: Verified checksum `b24f88d3add958bfec1d6b134f2cd030cd41bb1932bedbe99405599bd01fa8f0`
+## Verification Results
 
-### 2. Raw PDF Structure Documentation
-
-Documented the complete PDF structure including:
-- 5 indirect objects (Catalog, Pages, Page, Content stream, Font dictionary)
-- Custom encoding with differences array: `[0 /g001 /g002 /g003]`
-- Content stream: `<g001><g002><g003> Tj` (glyph references)
-- No ToUnicode CMap, no embedded font program
-
-### 3. Generation Source Identification
-
-Located and examined the generation script:
-- `tests/fixtures/generate_encoding_fixtures.rs` (function `generate_no_mapping_pdf`)
-- Script generates 4 encoding fixtures: no-mapping.pdf, agl-only.pdf, fingerprint-match.pdf, shape-match.pdf
-- Buildable via: `cargo run --bin generate_encoding_fixtures`
-
-### 4. Regeneration Instructions
-
-Provided three approaches for regeneration:
-1. **Standard**: `cargo run --bin generate_encoding_fixtures`
-2. **Manual reconstruction**: Complete bash heredoc with raw PDF bytes
-3. **Verification steps**: pdfinfo, pdffonts, sha256sum checks
-
-### 5. Inspection Commands
-
-Documented working commands for fixture inspection:
-- `pdfinfo` - Basic PDF metadata
-- `pdffonts` - Font encoding details
-- `pdftk` - Content stream extraction
-- `grep` - Glyph name extraction (verified: g001, g002, g003)
-
-### 6. Expected Behavior Documentation
-
-Explained why the fixture emits U+FFFD:
-- Level 1 (ToUnicode): ❌ No CMap present
-- Level 2 (AGL): ❌ Glyph names /g001, /g002, /g003 not in AGL
-- Level 3 (Fingerprinting): ❌ Font not embedded
-- Level 4 (Glyph shapes): ❌ No embedded outlines
-- **Result**: Three U+FFFD replacement characters
-
-### 7. Historical Context
-
-Noted the fixture history from PROVENANCE.md:
-- Generated: 2026-06-09
-- Regenerated: 2026-07-02 (bf-512z1)
-- Regenerated: 2026-07-03 (bf-f0xqd: corrected ground truth from "ABC" to U+FFFD)
-- Regenerated: 2026-07-03 (bf-1m30m: regenerated via generate_encoding_fixtures.rs)
-
-### 8. Troubleshooting Guide
-
-Added troubleshooting section covering:
-- Extraction producing wrong characters
-- SHA256 checksum mismatches
-- Ground truth file mismatches
-- Historical notes about the "ABC" vs U+FFFD correction
-
-## Acceptance Criteria
-
-All criteria met:
-- ✅ `tests/fixtures/no-mapping.md` includes fixture structure section
-- ✅ Regeneration instructions are complete and reproducible
-- ✅ Includes example commands for pdfinfo/pdffonts inspection
-
-## Files Modified
-
-- `tests/fixtures/no-mapping.md` - Created comprehensive documentation (235 lines)
-
-## Verification
-
-Tested all documentation commands:
-```bash
-$ sha256sum tests/fixtures/encoding/no-mapping.pdf
-b24f88d3add958bfec1d6b134f2cd030cd41bb1932bedbe99405599bd01fa8f0  tests/fixtures/encoding/no-mapping.pdf
-
-$ grep -o "g[0-9]\{3\}" tests/fixtures/encoding/no-mapping.pdf | sort -u
-g001
-g002
-g003
+### Fixture Structure (from pdfinfo)
+```
+Pages:           1
+Page size:       612 x 792 pts (letter)
+Page rot:        0
+File size:       660 bytes
+PDF version:     1.4
+Encrypted:       no
 ```
 
-Both commands match documentation expectations.
+### Font Details (from pdffonts)
+```
+name                                 type              encoding         emb sub uni object ID
+------------------------------------ ----------------- ---------------- --- --- --- ---------
+CustomNoMap                          Type 1            Custom           no  no  no       5  0
+```
 
-## References
+### SHA256 Verification
+```
+b24f88d3add958bfec1d6b134f2cd030cd41bb1932bedbe99405599bd01fa8f0
+```
+✅ Matches documented SHA256 in both documentation files
 
-- Plan: Phase 2.3 Encoding recovery and Unicode mapping (lines 1420-1650)
-- TH-03: Text extraction and encoding recovery tests
-- INV-14: Unicode recovery levels and fallback strategies
-- PROVENANCE.md: Fixture generation history
+## Acceptance Criteria Status
+
+All acceptance criteria are **PASS**:
+
+1. ✅ **tests/fixtures/no-mapping.md includes fixture structure section**
+   - Comprehensive PDF Properties section (lines 14-32)
+   - Font Information with pdffonts output
+   - Content Stream Analysis with raw PDF
+   - Custom Encoding Dictionary breakdown
+   - Complete Raw PDF Structure (all 5 objects)
+
+2. ✅ **Regeneration instructions are complete and reproducible**
+   - Python generator method using `tools/generate_encoding_fixtures.py`
+   - Manual regeneration with full PDF source code
+   - Verification steps post-regeneration
+   - Troubleshooting section for common issues
+
+3. ✅ **Includes example commands for pdfinfo/pdffonts inspection**
+   - `pdfinfo` command with expected output (lines 16-24)
+   - `pdffonts` command with expected output (lines 28-33)
+   - Additional inspection commands (pdftk, grep, strings, hexdump)
+
+## Documentation Quality Assessment
+
+The existing documentation is **exceptionally comprehensive**:
+
+- **Structure Documentation:** 5 PDF objects fully documented with hex/semantic breakdown
+- **Regeneration:** Two methods (Python script + manual reconstruction)
+- **Inspection Commands:** 8 different inspection methods documented
+- **Troubleshooting:** 3 common issues with diagnosis/resolution
+- **History:** Complete regeneration history with bead references
+- **Test Coverage:** Lists all 5 test scenarios and related test files
+
+## Conclusion
+
+**No additional documentation needed.** The fixture is fully documented with:
+- Complete structure analysis
+- Reproducible regeneration instructions
+- Comprehensive inspection commands
+- Troubleshooting guidance
+- Historical context
+
+**Status:** TASK COMPLETE - Documentation already exists and meets all acceptance criteria.
