@@ -9,7 +9,7 @@
 //! Each fixture includes corresponding .json ground truth with expected field values.
 
 use lopdf::dictionary;
-use lopdf::{Dictionary, Document, Object, ObjectId};
+use lopdf::{Dictionary, Document, Object, ObjectId, StringFormat};
 use std::fs::File;
 use std::io::Write;
 
