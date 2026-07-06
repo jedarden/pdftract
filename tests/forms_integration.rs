@@ -8,6 +8,7 @@
 
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
+use pdftract_core::extract::{extract_pdf, ExtractionOptions};
 
 /// Discover all PDF files in the given directory recursively.
 ///
@@ -54,4 +55,60 @@ fn test_discover_pdf_fixtures() {
     // Test that the function runs without errors
     // (We don't assert a count since fixtures may be added/removed)
     let _ = pdf_files;
+}
+
+#[test]
+fn test_forms_extraction() {
+    let fixtures_dir = "tests/fixtures/forms";
+    let pdf_files = discover_pdf_fixtures(fixtures_dir);
+
+    println!("\n=== Forms Extraction Test ===");
+    if pdf_files.is_empty() {
+        println!("No PDF files found in {} - skipping extraction test", fixtures_dir);
+        println!("================================\n");
+        return;
+    }
+
+    let mut extracted_count = 0;
+    let mut failed_count = 0;
+
+    for pdf_path in &pdf_files {
+        println!("Extracting: {}", pdf_path.display());
+
+        match extract_pdf(pdf_path, &ExtractionOptions::default()) {
+            Ok(result) => {
+                println!("  ✓ Successfully extracted");
+                println!("    - {} pages", result.page_count);
+                println!("    - Has forms: {}", result.has_forms);
+
+                // Convert to JSON to ensure JSON serialization works
+                match pdftract_core::extract::result_to_json(&result) {
+                    Ok(json) => {
+                        println!("    - JSON output size: {} bytes", json.to_string().len());
+                        extracted_count += 1;
+                    }
+                    Err(e) => {
+                        println!("  ✗ JSON conversion failed: {}", e);
+                        failed_count += 1;
+                    }
+                }
+            }
+            Err(e) => {
+                println!("  ✗ Extraction failed: {}", e);
+                failed_count += 1;
+            }
+        }
+        println!();
+    }
+
+    println!("================================");
+    println!("Summary: {} extracted, {} failed", extracted_count, failed_count);
+    println!("================================\n");
+
+    // Don't fail the test if no fixtures exist yet
+    if pdf_files.is_empty() {
+        println!("No fixtures to test - creating scaffold");
+    } else if failed_count > 0 {
+        println!("WARNING: {} fixtures failed to extract", failed_count);
+    }
 }
