@@ -1,35 +1,45 @@
-# bf-4ce3y Verification: profile_yaml fuzz harness
+# bf-4ce3y: Verify profile_yaml fuzz harness file exists and is valid
 
 ## Task
-Verify that the profile_yaml fuzz harness file exists and is valid.
+
+Verify that the profile_yaml fuzz harness file exists at `fuzz/fuzz_targets/profile_yaml.rs` and has valid Rust syntax.
 
 ## Findings
 
-### File Existence Check
-**FAIL**: The file `fuzz/fuzz_targets/profile_yaml.rs` does **not exist**.
+**CRITICAL: The fuzz harness file does not exist.**
 
-### Existing Fuzz Harnesses
-The following fuzz harness files exist in `fuzz/fuzz_targets/`:
-- cmap_parser.rs
-- content.rs
-- lexer.rs
-- object_parser.rs
-- stream_decoder.rs
-- xref.rs
+### What exists
+- ✅ Corpus directory: `fuzz/corpus/profile_yaml/` (empty)
+- ✅ Plan reference: `docs/plan/plan.md` lists `fuzz/profile_yaml/` as an expected target
 
-### Search Results
-- No `profile_yaml` references found in the fuzz directory
-- No YAML-related functionality found in the source code that would require fuzzing
+### What's missing
+- ❌ Fuzz harness: `fuzz/fuzz_targets/profile_yaml.rs` does not exist
+- ❌ Cargo.toml registration: No `[[bin]]` entry for `profile_yaml` in `fuzz/Cargo.toml`
+
+### Acceptance criteria status
+- [ ] fuzz/fuzz_targets/profile_yaml.rs file exists - **FAIL**
+- [ ] rustc syntax check passes without errors - **BLOCKED** (file doesn't exist)
+- [ ] File contains proper harness function signature - **BLOCKED** (file doesn't exist)
+
+## Reference: Expected structure
+
+Based on existing `content.rs` fuzz target:
+```rust
+#![no_main]
+use libfuzzer_sys::fuzz_target;
+
+fuzz_target!(|data: &[u8]| {
+    // Fuzz logic here
+});
+```
+
+And Cargo.toml registration:
+```toml
+[[bin]]
+name = "profile_yaml"
+path = "fuzz_targets/profile_yaml.rs"
+```
 
 ## Conclusion
-The bead acceptance criteria require:
-1. ✓ fuzz/fuzz_targets/profile_yaml.rs file exists — **FAIL** (file does not exist)
-2. N/A rustc syntax check passes without errors — Cannot test without file
-3. N/A File contains a proper harness function — Cannot test without file
 
-The profile_yaml fuzz harness does not exist in the codebase. This may indicate:
-- The bead was created before the harness was implemented
-- The feature was deprioritized or removed
-- The bead references functionality that was never implemented
-
-**Recommendation**: Do not close this bead. The acceptance criteria are not met.
+The profile_yaml fuzz harness needs to be created before this bead can be closed. The corpus directory exists but is empty, suggesting this was planned but not implemented.
