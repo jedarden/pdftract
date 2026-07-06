@@ -101,11 +101,22 @@ def main():
         print(f"Error: Hypothesis file not found: {hyp_path}", file=sys.stderr)
         sys.exit(1)
 
-    with open(gt_path, 'r', encoding='utf-8') as f:
-        ground_truth = f.read()
+    # Read files with error handling for encoding issues
+    try:
+        with open(gt_path, 'r', encoding='utf-8') as f:
+            ground_truth = f.read()
+    except UnicodeDecodeError:
+        # Fallback to latin-1 for ground truth if UTF-8 fails
+        with open(gt_path, 'r', encoding='latin-1') as f:
+            ground_truth = f.read()
 
-    with open(hyp_path, 'r', encoding='utf-8') as f:
-        hypothesis = f.read()
+    try:
+        with open(hyp_path, 'r', encoding='utf-8') as f:
+            hypothesis = f.read()
+    except UnicodeDecodeError:
+        # Fallback to latin-1 for hypothesis (OCR output) if UTF-8 fails
+        with open(hyp_path, 'r', encoding='latin-1') as f:
+            hypothesis = f.read()
 
     wer = calculate_wer_basic(ground_truth, hypothesis)
     print(f"WER: {wer:.4f} ({wer * 100:.2f}%)")
