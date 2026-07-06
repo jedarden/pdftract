@@ -18,12 +18,41 @@ use pdftract_core::font::unmapped::is_unmapped_glyph_name;
 #[test]
 fn test_cmap_unmapped_glyph_skip() {
     // Verify that known unmapped glyph names are identified correctly
-    assert!(is_unmapped_glyph_name(".notdef"), ".notdef should be unmapped");
-    assert!(is_unmapped_glyph_name(".null"), ".null should be unmapped");
+    assert!(
+        is_unmapped_glyph_name(".notdef"),
+        ".notdef should be identified as unmapped. \
+         Expected: true. \
+         Found: {}. \
+         Why this matters: .notdef is the standard PDF fallback glyph configured in \
+         build/unmapped-glyph-names.json and must never appear in text extraction.",
+        is_unmapped_glyph_name(".notdef")
+    );
+    assert!(
+        is_unmapped_glyph_name(".null"),
+        ".null should be identified as unmapped. \
+         Expected: true. \
+         Found: {}. \
+         Why this matters: .null is a standard PDF special glyph configured as unmapped.",
+        is_unmapped_glyph_name(".null")
+    );
 
     // Verify that normal glyph names are not flagged as unmapped
-    assert!(!is_unmapped_glyph_name("A"), "A should not be unmapped");
-    assert!(!is_unmapped_glyph_name("space"), "space should not be unmapped");
+    assert!(
+        !is_unmapped_glyph_name("A"),
+        "A should NOT be identified as unmapped. \
+         Expected: false. \
+         Found: {}. \
+         Why this matters: A is a normal Latin letter that should always be preserved in text.",
+        is_unmapped_glyph_name("A")
+    );
+    assert!(
+        !is_unmapped_glyph_name("space"),
+        "space should NOT be identified as unmapped. \
+         Expected: false. \
+         Found: {}. \
+         Why this matters: space is a standard whitespace character that should be preserved.",
+        is_unmapped_glyph_name("space")
+    );
 
     // Basic CMAP parsing test with multiple normal glyph mappings
     // Tests multiple glyph types: letters, space, and custom names
@@ -31,12 +60,36 @@ fn test_cmap_unmapped_glyph_skip() {
     let map = parse_to_unicode(cmap_data);
 
     // Verify the map was created
-    assert!(!map.is_empty(), "CMAP should not be empty after parsing");
-    assert_eq!(map.len(), 4, "CMAP should have 4 mappings");
+    assert!(
+        !map.is_empty(),
+        "CMAP should not be empty after parsing valid glyph mappings. \
+         Expected: non-empty map. \
+         Found: empty map. \
+         Why this matters: If the CMAP parser produces an empty map from valid input, \
+         the parser is incorrectly rejecting all glyphs or has a parsing error."
+    );
+    assert_eq!(
+        map.len(),
+        4,
+        "CMAP should have exactly 4 mappings after parsing. \
+         Expected: 4 mappings (A, B, space, C). \
+         Found: {} mappings. \
+         Why this matters: Incorrect mapping count indicates the parser is dropping \
+         or duplicating entries.",
+        map.len()
+    );
 
     // Verify the mapping works for individual glyphs
     let result = map.lookup(&[0x00]);
-    assert_eq!(result, Some(&['A'][..]), "Byte 0x00 should map to 'A'");
+    assert_eq!(
+        result,
+        Some(&['A'][..]),
+        "Byte 0x00 should map to 'A'. \
+         Expected: Some(\"A\"). \
+         Found: {:?}. \
+         Why this matters: This verifies the basic lookup functionality works correctly.",
+        result
+    );
 
     // NEW: Assert that normal glyphs ARE PRESENT in CMAP output
     // This verifies the positive case - that normal glyphs are NOT being incorrectly filtered out.
@@ -96,7 +149,11 @@ fn test_cmap_unmapped_glyph_skip() {
     for (src_bytes, dst_chars) in map.iter() {
         assert!(
             !dst_chars.is_empty() && dst_chars.iter().all(|&c| c != '�'),
-            "CMAP entry for bytes {:02X?} has invalid destination: {:?}. This may indicate an unmapped glyph was not filtered correctly.",
+            "CMAP entry for bytes {:02X?} has invalid destination: {:?}. \
+             Expected: non-empty vector of valid Unicode characters (no replacement character). \
+             Found: empty or contains '�'. \
+             Why this matters: This may indicate an unmapped glyph was not filtered correctly, \
+             or the parser is generating invalid Unicode mappings.",
             src_bytes, dst_chars
         );
     }
@@ -127,15 +184,56 @@ fn test_cmap_multiple_mappings_with_unmapped_check() {
     let map = parse_to_unicode(cmap_data);
 
     // Verify all mappings were created
-    assert_eq!(map.len(), 3, "CMAP should have 3 mappings");
+    assert_eq!(
+        map.len(),
+        3,
+        "CMAP should have exactly 3 mappings. \
+         Expected: 3 mappings (A, B, C). \
+         Found: {} mappings. \
+         Why this matters: Incorrect mapping count indicates the parser is incorrectly \
+         handling the beginbfchar...endbfchar construct.",
+        map.len()
+    );
 
     // Verify each mapping
-    assert_eq!(map.lookup(&[0x00]), Some(&['A'][..]), "0x00 should map to 'A'");
-    assert_eq!(map.lookup(&[0x01]), Some(&['B'][..]), "0x01 should map to 'B'");
-    assert_eq!(map.lookup(&[0x02]), Some(&['C'][..]), "0x02 should map to 'C'");
+    assert_eq!(
+        map.lookup(&[0x00]),
+        Some(&['A'][..]),
+        "0x00 should map to 'A'. \
+         Expected: Some(\"A\"). \
+         Found: {:?}. \
+         Why this matters: Verifies the first mapping in the sequence is correct.",
+        map.lookup(&[0x00])
+    );
+    assert_eq!(
+        map.lookup(&[0x01]),
+        Some(&['B'][..]),
+        "0x01 should map to 'B'. \
+         Expected: Some(\"B\"). \
+         Found: {:?}. \
+         Why this matters: Verifies the second mapping in the sequence is correct.",
+        map.lookup(&[0x01])
+    );
+    assert_eq!(
+        map.lookup(&[0x02]),
+        Some(&['C'][..]),
+        "0x02 should map to 'C'. \
+         Expected: Some(\"C\"). \
+         Found: {:?}. \
+         Why this matters: Verifies the third mapping in the sequence is correct.",
+        map.lookup(&[0x02])
+    );
 
     // Verify unmapped glyph check still works
-    assert!(is_unmapped_glyph_name(".notdef"), "Unmapped check should work");
+    assert!(
+        is_unmapped_glyph_name(".notdef"),
+        "Unmapped glyph check should still work after parsing. \
+         Expected: true. \
+         Found: {}. \
+         Why this matters: This verifies the unmapped_glyph_name function is not affected \
+         by CMAP parsing operations.",
+        is_unmapped_glyph_name(".notdef")
+    );
 
     // NEW: Display CMAP output structure for inspection
     println!("\n=== CMAP Multiple Mappings Inspection ===");
@@ -158,15 +256,54 @@ fn test_cmap_range_mapping_with_unmapped_awareness() {
     let map = parse_to_unicode(cmap_data);
 
     // Verify range was expanded
-    assert_eq!(map.len(), 26, "Range should expand to 26 mappings (A-Z)");
+    assert_eq!(
+        map.len(),
+        26,
+        "Range should expand to exactly 26 mappings (A-Z). \
+         Expected: 26 mappings. \
+         Found: {} mappings. \
+         Why this matters: The beginbfrange...endbfrange construct should expand the range \
+         <0041>-<005A> to 26 individual mappings, one for each letter in the alphabet.",
+        map.len()
+    );
 
     // Verify first and last entries
-    assert_eq!(map.lookup(&[0x00, 0x41]), Some(&['A'][..]), "First should be 'A'");
-    assert_eq!(map.lookup(&[0x00, 0x5A]), Some(&['Z'][..]), "Last should be 'Z'");
+    assert_eq!(
+        map.lookup(&[0x00, 0x41]),
+        Some(&['A'][..]),
+        "First entry in range should be 'A'. \
+         Expected: Some(\"A\"). \
+         Found: {:?}. \
+         Why this matters: Verifies the range starts at the correct character (A = U+0041).",
+        map.lookup(&[0x00, 0x41])
+    );
+    assert_eq!(
+        map.lookup(&[0x00, 0x5A]),
+        Some(&['Z'][..]),
+        "Last entry in range should be 'Z'. \
+         Expected: Some(\"Z\"). \
+         Found: {:?}. \
+         Why this matters: Verifies the range ends at the correct character (Z = U+005A).",
+        map.lookup(&[0x00, 0x5A])
+    );
 
     // Verify unmapped glyph names are still recognized
-    assert!(is_unmapped_glyph_name(".notdef"));
-    assert!(is_unmapped_glyph_name("/.notdef"));  // With leading slash
+    assert!(
+        is_unmapped_glyph_name(".notdef"),
+        "Unmapped check should recognize '.notdef'. \
+         Expected: true. \
+         Found: {}. \
+         Why this matters: Verifies the unmapped_glyph_name function works without leading slash.",
+        is_unmapped_glyph_name(".notdef")
+    );
+    assert!(
+        is_unmapped_glyph_name("/.notdef"),
+        "Unmapped check should recognize '/.notdef' (with leading slash). \
+         Expected: true. \
+         Found: {}. \
+         Why this matters: PDF glyph names may include a leading slash; the check must handle both.",
+        is_unmapped_glyph_name("/.notdef")
+    );
 }
 
 /// Test that unmapped glyphs are filtered out during /Differences parsing.
@@ -218,47 +355,84 @@ fn test_differences_overlay_filters_unmapped_glyphs() {
     let overlay = DifferencesOverlay::parse(&diff_array, &mut diagnostics);
 
     // Verify that unmapped glyphs are ABSENT from the overlay
+    // These assertions verify the core skip behavior: glyphs configured as unmapped
+    // in build/unmapped-glyph-names.json must NOT appear in the parsed overlay.
     assert_eq!(
         overlay.get(0),
         None,
-        "Code 0 (g001) should be absent: g001 is configured as unmapped in build/unmapped-glyph-names.json"
+        "Code 0 (g001) should be absent from DifferencesOverlay. \
+         Expected: None (unmapped glyph should be filtered out). \
+         Found: {:?}. \
+         Why this matters: g001 is configured as unmapped in build/unmapped-glyph-names.json \
+         and should be skipped during parsing.",
+        overlay.get(0)
     );
     assert_eq!(
         overlay.get(1),
         None,
-        "Code 1 (g002) should be absent: g002 is configured as unmapped"
+        "Code 1 (g002) should be absent from DifferencesOverlay. \
+         Expected: None (unmapped glyph should be filtered out). \
+         Found: {:?}. \
+         Why this matters: g002 is configured as unmapped and should be skipped.",
+        overlay.get(1)
     );
     assert_eq!(
         overlay.get(2),
         None,
-        "Code 2 (g003) should be absent: g003 is configured as unmapped"
+        "Code 2 (g003) should be absent from DifferencesOverlay. \
+         Expected: None (unmapped glyph should be filtered out). \
+         Found: {:?}. \
+         Why this matters: g003 is configured as unmapped and should be skipped.",
+        overlay.get(2)
     );
     assert_eq!(
         overlay.get(5),
         None,
-        "Code 5 (.notdef) should be absent: .notdef is configured as unmapped"
+        "Code 5 (.notdef) should be absent from DifferencesOverlay. \
+         Expected: None (unmapped glyph should be filtered out). \
+         Found: {:?}. \
+         Why this matters: .notdef is the standard PDF fallback glyph that must never appear in text extraction.",
+        overlay.get(5)
     );
 
     // Verify that normal glyphs ARE PRESENT in the overlay
+    // This ensures we don't over-filter: normal glyphs that ARE NOT in the unmapped set
+    // must appear in the parsed overlay.
     assert_eq!(
         overlay.get(3),
         Some(Arc::from("/CustomA")),
-        "Code 3 (CustomA) should be present: CustomA is not in the unmapped set"
+        "Code 3 (CustomA) should be present in DifferencesOverlay. \
+         Expected: Some(\"/CustomA\"). \
+         Found: {:?}. \
+         Why this matters: CustomA is not configured as unmapped, so it should be preserved.",
+        overlay.get(3)
     );
     assert_eq!(
         overlay.get(4),
         Some(Arc::from("/CustomB")),
-        "Code 4 (CustomB) should be present: CustomB is not in the unmapped set"
+        "Code 4 (CustomB) should be present in DifferencesOverlay. \
+         Expected: Some(\"/CustomB\"). \
+         Found: {:?}. \
+         Why this matters: CustomB is not configured as unmapped, so it should be preserved.",
+        overlay.get(4)
     );
     assert_eq!(
         overlay.get(6),
         Some(Arc::from("/A")),
-        "Code 6 (A) should be present: A is not in the unmapped set"
+        "Code 6 (A) should be present in DifferencesOverlay. \
+         Expected: Some(\"/A\"). \
+         Found: {:?}. \
+         Why this matters: A is a normal Latin letter and should never be filtered.",
+        overlay.get(6)
     );
     assert_eq!(
         overlay.get(7),
         Some(Arc::from("/space")),
-        "Code 7 (space) should be present: space is not in the unmapped set"
+        "Code 7 (space) should be present in DifferencesOverlay. \
+         Expected: Some(\"/space\"). \
+         Found: {:?}. \
+         Why this matters: space is a standard whitespace character and should never be filtered.",
+        overlay.get(7)
     );
 
     // Verify total count: only 4 entries should remain (CustomA, CustomB, A, space)
@@ -304,32 +478,55 @@ fn test_differences_overlay_consecutive_with_unmapped_filtering() {
     let overlay = DifferencesOverlay::parse(&diff_array, &mut diagnostics);
 
     // Verify unmapped glyphs are absent (g001 at code 10, g002 at code 11, .notdef at code 13)
+    // In consecutive sequences, unmapped glyphs must be filtered out while preserving
+    // the correct code assignments for normal glyphs.
     assert_eq!(
         overlay.get(10),
         None,
-        "Code 10 (g001) should be absent: g001 is unmapped"
+        "Code 10 (g001) should be absent in consecutive sequence. \
+         Expected: None (unmapped glyph filtered out). \
+         Found: {:?}. \
+         Why this matters: In the sequence [10 → g001, g002, A, .notdef, B], \
+         g001 is at position 10 and is unmapped.",
+        overlay.get(10)
     );
     assert_eq!(
         overlay.get(11),
         None,
-        "Code 11 (g002) should be absent: g002 is unmapped"
+        "Code 11 (g002) should be absent in consecutive sequence. \
+         Expected: None (unmapped glyph filtered out). \
+         Found: {:?}. \
+         Why this matters: g002 is at position 11 (consecutive after g001) and is unmapped.",
+        overlay.get(11)
     );
     assert_eq!(
         overlay.get(13),
         None,
-        "Code 13 (.notdef) should be absent: .notdef is unmapped"
+        "Code 13 (.notdef) should be absent in consecutive sequence. \
+         Expected: None (unmapped glyph filtered out). \
+         Found: {:?}. \
+         Why this matters: .notdef is at position 13 (after A) and is unmapped.",
+        overlay.get(13)
     );
 
     // Verify normal glyphs are present (A at code 12, B at code 14)
     assert_eq!(
         overlay.get(12),
         Some(Arc::from("/A")),
-        "Code 12 (A) should be present: A is normal"
+        "Code 12 (A) should be present in consecutive sequence. \
+         Expected: Some(\"/A\"). \
+         Found: {:?}. \
+         Why this matters: A is at position 12 (third in consecutive sequence) and is normal.",
+        overlay.get(12)
     );
     assert_eq!(
         overlay.get(14),
         Some(Arc::from("/B")),
-        "Code 14 (B) should be present: B is normal"
+        "Code 14 (B) should be present in consecutive sequence. \
+         Expected: Some(\"/B\"). \
+         Found: {:?}. \
+         Why this matters: B is at position 14 (fifth in consecutive sequence) and is normal.",
+        overlay.get(14)
     );
 
     // Verify total count: only 2 entries should remain
@@ -365,14 +562,22 @@ fn test_differences_overlay_filters_null_glyph() {
     assert_eq!(
         overlay.get(20),
         None,
-        "Code 20 (.null) should be absent: .null is configured as unmapped"
+        "Code 20 (.null) should be absent. \
+         Expected: None (unmapped glyph filtered out). \
+         Found: {:?}. \
+         Why this matters: .null is a standard PDF special glyph that should never appear in text extraction output.",
+        overlay.get(20)
     );
 
     // Verify normal glyph is present
     assert_eq!(
         overlay.get(21),
         Some(Arc::from("/Z")),
-        "Code 21 (Z) should be present: Z is normal"
+        "Code 21 (Z) should be present. \
+         Expected: Some(\"/Z\"). \
+         Found: {:?}. \
+         Why this matters: Z is a normal Latin letter and should be preserved.",
+        overlay.get(21)
     );
 }
 
@@ -398,13 +603,19 @@ fn test_differences_overlay_filters_all_g_series_unmapped() {
     let overlay = DifferencesOverlay::parse(&diff_array, &mut diagnostics);
 
     // Verify all g000-g009 are absent
+    // This comprehensive test ensures the entire g-series range is properly filtered.
     for i in 0..=9 {
         let code = 30 + i;
         assert_eq!(
             overlay.get(code as u8),
             None,
-            "Code {} (g{:03}) should be absent: g{:03} is configured as unmapped",
-            code, i, i
+            "Code {} (g{:03}) should be absent. \
+             Expected: None (unmapped glyph filtered out). \
+             Found: {:?}. \
+             Why this matters: All g000-g009 glyphs are configured as unmapped in \
+             build/unmapped-glyph-names.json and should be filtered out. \
+             This is iteration {}/10 of the full g-series range.",
+            code, i, overlay.get(code as u8), i + 1
         );
     }
 
@@ -412,6 +623,11 @@ fn test_differences_overlay_filters_all_g_series_unmapped() {
     assert_eq!(
         overlay.len(),
         0,
-        "Overlay should be completely empty after filtering all 10 g-series unmapped glyphs"
+        "Overlay should be completely empty after filtering all 10 g-series unmapped glyphs. \
+         Expected: 0 entries. \
+         Found: {} entries. \
+         Why this matters: This proves the unmapped glyph filter works correctly across \
+         the entire configured g-series range (g000-g009).",
+        overlay.len()
     );
 }

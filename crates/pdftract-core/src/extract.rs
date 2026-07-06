@@ -2663,6 +2663,82 @@ fn create_empty_cells(grid: &crate::table::GridCandidate) -> Vec<Cell> {
     cells
 }
 
+/// Error type for assertion failures.
+///
+/// Used by assertion methods on `ExtractionResult` to report
+/// validation failures without panicking.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssertionError {
+    /// Expected value in the assertion
+    pub expected: i32,
+    /// Actual value that was found
+    pub actual: i32,
+    /// Description of what was being asserted
+    pub description: String,
+}
+
+impl std::fmt::Display for AssertionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Assertion failed: expected {}, got {}: {}",
+            self.expected, self.actual, self.description
+        )
+    }
+}
+
+impl std::error::Error for AssertionError {}
+
+impl ExtractionResult {
+    /// Assert that the extraction result's exit code matches an expected value.
+    ///
+    /// This method computes an exit code from the extraction result's metadata
+    /// (where 0 = success, 1 = one or more errors) and compares it against
+    /// an expected value.
+    ///
+    /// # Arguments
+    ///
+    /// * `expected` - The expected exit code (typically 0 for success)
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` if the exit codes match
+    /// * `Err(AssertionError)` if they don't match
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use pdftract_core::{extract_pdf, ExtractionOptions};
+    ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let result = extract_pdf("document.pdf", &ExtractionOptions::default())?;
+    /// result.assert_exit_code(0)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn assert_exit_code(&self, expected: i32) -> Result<(), AssertionError> {
+        // Compute exit code from metadata: 0 for success, 1 for any errors
+        let actual = if self.metadata.error_count == 0 {
+            0
+        } else {
+            1
+        };
+
+        if actual == expected {
+            Ok(())
+        } else {
+            Err(AssertionError {
+                expected,
+                actual,
+                description: format!(
+                    "extraction result had {} error(s)",
+                    self.metadata.error_count
+                ),
+            })
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2988,5 +3064,52 @@ startxref
             !has_deferred_diag,
             "Untagged PDFs should NOT emit TAGGED_PDF_STRUCT_TREE_DEFERRED diagnostic"
         );
+    }
+
+    #[test]
+    fn test_extraction_result_assert_exit_code_success() {
+        // Test that assert_exit_code returns Ok(()) when exit codes match
+        let pdf_path = ensure_test_pdf();
+
+        let options = ExtractionOptions::default();
+        let result = extract_pdf(&pdf_path, &options).unwrap();
+
+        // Should succeed - extraction with no errors should have exit code 0
+        assert!(result.assert_exit_code(0).is_ok());
+    }
+
+    #[test]
+    fn test_extraction_result_assert_exit_code_mismatch() {
+        // Test that assert_exit_code returns Err when exit codes don't match
+        let pdf_path = ensure_test_pdf();
+
+        let options = ExtractionOptions::default();
+        let result = extract_pdf(&pdf_path, &options).unwrap();
+
+        // Should fail - extraction with no errors has exit code 0, not 1
+        let err = result.assert_exit_code(1).unwrap_err();
+        assert_eq!(err.expected, 1);
+        assert_eq!(err.actual, 0);
+        assert!(err.description.contains("extraction result had"));
+    }
+
+    #[test]
+    fn test_extraction_result_assert_exit_code_with_errors() {
+        // Test that assert_exit_code correctly reports exit code 1 for extractions with errors
+        use std::fs;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("malformed.pdf");
+
+        // Create a malformed PDF (will cause extraction errors)
+        let pdf_data = b"%PDF-1.4\nmalformed content";
+        fs::write(&pdf_path, pdf_data).unwrap();
+
+        let options = ExtractionOptions::default();
+        let result = extract_pdf(&pdf_path, &options).unwrap();
+
+        // Should have exit code 1 due to errors
+        assert!(result.assert_exit_code(1).is_ok());
+        assert!(result.assert_exit_code(0).is_err());
     }
 }
