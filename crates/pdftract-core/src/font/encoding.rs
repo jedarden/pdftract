@@ -542,11 +542,35 @@ mod tests {
 
         let overlay = DifferencesOverlay::parse(&arr, &mut diagnostics);
 
-        assert_eq!(overlay.get(39), Some(Arc::from("quotesingle")));
-        assert_eq!(overlay.get(96), Some(Arc::from("grave")));
-        assert_eq!(overlay.get(40), None);
-        assert_eq!(overlay.len(), 2);
-        assert!(diagnostics.is_empty());
+        assert_eq!(
+            overlay.get(39),
+            Some(Arc::from("quotesingle")),
+            "Code 39 should map to quotesingle glyph. Expected: Some(\"quotesingle\"). Found: {:?}. Why: /Differences array [ 39 /quotesingle ] should create this mapping.",
+            overlay.get(39)
+        );
+        assert_eq!(
+            overlay.get(96),
+            Some(Arc::from("grave")),
+            "Code 96 should map to grave glyph. Expected: Some(\"grave\"). Found: {:?}. Why: /Differences array [ 96 /grave ] should create this mapping.",
+            overlay.get(96)
+        );
+        assert_eq!(
+            overlay.get(40),
+            None,
+            "Code 40 should not have a mapping. Expected: None (not defined in /Differences). Found: {:?}. Why: Only codes 39 and 96 are defined in this test.",
+            overlay.get(40)
+        );
+        assert_eq!(
+            overlay.len(),
+            2,
+            "Overlay should contain exactly 2 entries. Expected: 2 entries (quotesingle at 39, grave at 96). Found: {} entries. Why: /Differences array defines only 2 code-glyph pairs.",
+            overlay.len()
+        );
+        assert!(
+            diagnostics.is_empty(),
+            "Parsing should not generate diagnostics. Expected: empty diagnostics vector. Found: {} diagnostics. Why: /Differences array [ 39 /quotesingle 96 /grave ] is well-formed.",
+            diagnostics.len()
+        );
     }
 
     #[test]
@@ -562,11 +586,36 @@ mod tests {
 
         let overlay = DifferencesOverlay::parse(&arr, &mut diagnostics);
 
-        assert_eq!(overlay.get(39), Some(Arc::from("a")));
-        assert_eq!(overlay.get(40), Some(Arc::from("b")));
-        assert_eq!(overlay.get(41), Some(Arc::from("c")));
-        assert_eq!(overlay.get(42), None);
-        assert_eq!(overlay.len(), 3);
+        assert_eq!(
+            overlay.get(39),
+            Some(Arc::from("a")),
+            "Code 39 should map to 'a'. Expected: Some(\"a\"). Found: {:?}. Why: /Differences [ 39 /a /b /c ] assigns 'a' to starting code 39.",
+            overlay.get(39)
+        );
+        assert_eq!(
+            overlay.get(40),
+            Some(Arc::from("b")),
+            "Code 40 should map to 'b'. Expected: Some(\"b\"). Found: {:?}. Why: /Differences consecutive sequence auto-increments code: 39→a, 40→b, 41→c.",
+            overlay.get(40)
+        );
+        assert_eq!(
+            overlay.get(41),
+            Some(Arc::from("c")),
+            "Code 41 should map to 'c'. Expected: Some(\"c\"). Found: {:?}. Why: /Differences consecutive sequence auto-increments code: 39→a, 40→b, 41→c.",
+            overlay.get(41)
+        );
+        assert_eq!(
+            overlay.get(42),
+            None,
+            "Code 42 should not have a mapping. Expected: None (no glyph defined at this code). Found: {:?}. Why: /Differences array has only 3 names after code 39, covering codes 39-41.",
+            overlay.get(42)
+        );
+        assert_eq!(
+            overlay.len(),
+            3,
+            "Overlay should contain exactly 3 entries. Expected: 3 consecutive entries (a at 39, b at 40, c at 41). Found: {} entries. Why: /Differences [ 39 /a /b /c ] creates 3 mappings.",
+            overlay.len()
+        );
     }
 
     #[test]
@@ -584,11 +633,36 @@ mod tests {
 
         let overlay = DifferencesOverlay::parse(&arr, &mut diagnostics);
 
-        assert_eq!(overlay.get(39), Some(Arc::from("a")));
-        assert_eq!(overlay.get(40), Some(Arc::from("b")));
-        assert_eq!(overlay.get(100), Some(Arc::from("x")));
-        assert_eq!(overlay.get(101), Some(Arc::from("y")));
-        assert_eq!(overlay.len(), 4);
+        assert_eq!(
+            overlay.get(39),
+            Some(Arc::from("a")),
+            "Code 39 should map to 'a'. Expected: Some(\"a\"). Found: {:?}. Why: First block starts at 39 with /a /b.",
+            overlay.get(39)
+        );
+        assert_eq!(
+            overlay.get(40),
+            Some(Arc::from("b")),
+            "Code 40 should map to 'b'. Expected: Some(\"b\"). Found: {:?}. Why: Consecutive auto-increment from 39.",
+            overlay.get(40)
+        );
+        assert_eq!(
+            overlay.get(100),
+            Some(Arc::from("x")),
+            "Code 100 should map to 'x'. Expected: Some(\"x\"). Found: {:?}. Why: Second block starts at 100 with /x /y.",
+            overlay.get(100)
+        );
+        assert_eq!(
+            overlay.get(101),
+            Some(Arc::from("y")),
+            "Code 101 should map to 'y'. Expected: Some(\"y\"). Found: {:?}. Why: Consecutive auto-increment from 100.",
+            overlay.get(101)
+        );
+        assert_eq!(
+            overlay.len(),
+            4,
+            "Overlay should contain exactly 4 entries. Expected: 4 entries from 2 blocks (39→a, 40→b, 100→x, 101→y). Found: {} entries. Why: /Differences [ 39 /a /b 100 /x /y ] creates 2 separate blocks.",
+            overlay.len()
+        );
     }
 
     #[test]
@@ -602,11 +676,23 @@ mod tests {
 
         let overlay = DifferencesOverlay::parse(&arr, &mut diagnostics);
 
-        assert_eq!(overlay.get(255), Some(Arc::from("a")));
-        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            overlay.get(255),
+            Some(Arc::from("a")),
+            "Code 255 should map to 'a' (clamped from out-of-range). Expected: Some(\"a\") at clamped code 255. Found: {:?}. Why: Code 300 exceeds u8 max (255), so parser clamps to 255.",
+            overlay.get(255)
+        );
+        assert_eq!(
+            diagnostics.len(),
+            1,
+            "Should generate 1 diagnostic for out-of-range code. Expected: 1 diagnostic. Found: {} diagnostics. Why: Code 300 > 255 triggers FontEncodingDifferenceOutOfRange warning.",
+            diagnostics.len()
+        );
         assert_eq!(
             diagnostics[0].code,
-            DiagCode::FontEncodingDifferenceOutOfRange
+            DiagCode::FontEncodingDifferenceOutOfRange,
+            "Diagnostic should have FontEncodingDifferenceOutOfRange code. Expected: DiagCode::FontEncodingDifferenceOutOfRange. Found: {:?}. Why: Out-of-range codes generate this specific diagnostic.",
+            diagnostics[0].code
         );
     }
 
@@ -621,11 +707,23 @@ mod tests {
 
         let overlay = DifferencesOverlay::parse(&arr, &mut diagnostics);
 
-        assert_eq!(overlay.get(0), Some(Arc::from("a")));
-        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            overlay.get(0),
+            Some(Arc::from("a")),
+            "Code 0 should map to 'a' (clamped from negative). Expected: Some(\"a\") at clamped code 0. Found: {:?}. Why: Negative code -5 is below u8 min (0), so parser clamps to 0.",
+            overlay.get(0)
+        );
+        assert_eq!(
+            diagnostics.len(),
+            1,
+            "Should generate 1 diagnostic for negative code. Expected: 1 diagnostic. Found: {} diagnostics. Why: Code -5 < 0 triggers FontEncodingDifferenceOutOfRange warning.",
+            diagnostics.len()
+        );
         assert_eq!(
             diagnostics[0].code,
-            DiagCode::FontEncodingDifferenceOutOfRange
+            DiagCode::FontEncodingDifferenceOutOfRange,
+            "Diagnostic should have FontEncodingDifferenceOutOfRange code. Expected: DiagCode::FontEncodingDifferenceOutOfRange. Found: {:?}. Why: Out-of-range codes (even negative) generate this specific diagnostic.",
+            diagnostics[0].code
         );
     }
 
@@ -636,16 +734,38 @@ mod tests {
 
         let overlay = DifferencesOverlay::parse(&arr, &mut diagnostics);
 
-        assert!(overlay.is_empty());
-        assert_eq!(overlay.len(), 0);
-        assert!(diagnostics.is_empty());
+        assert!(
+            overlay.is_empty(),
+            "Empty /Differences array should produce empty overlay. Expected: is_empty() == true. Found: overlay with {} entries. Why: No code-glyph pairs to parse.",
+            overlay.len()
+        );
+        assert_eq!(
+            overlay.len(),
+            0,
+            "Empty overlay should have zero entries. Expected: 0 entries. Found: {} entries. Why: Empty input array produces no mappings.",
+            overlay.len()
+        );
+        assert!(
+            diagnostics.is_empty(),
+            "Empty array should not generate diagnostics. Expected: empty diagnostics. Found: {} diagnostics. Why: Empty input is valid, not an error.",
+            diagnostics.len()
+        );
     }
 
     #[test]
     fn test_differences_overlay_default() {
         let overlay = DifferencesOverlay::default();
-        assert!(overlay.is_empty());
-        assert_eq!(overlay.get(0), None);
+        assert!(
+            overlay.is_empty(),
+            "Default overlay should be empty. Expected: is_empty() == true. Found: overlay with {} entries. Why: Default constructor creates empty overlay.",
+            overlay.len()
+        );
+        assert_eq!(
+            overlay.get(0),
+            None,
+            "Default overlay should have no mappings. Expected: None for code 0. Found: {:?}. Why: No entries in default overlay.",
+            overlay.get(0)
+        );
     }
 
     // === FontEncoding tests ===
@@ -653,15 +773,33 @@ mod tests {
     #[test]
     fn test_font_encoding_new() {
         let enc = FontEncoding::new(Some(NamedEncoding::WinAnsi));
-        assert_eq!(enc.base_encoding(), Some(NamedEncoding::WinAnsi));
-        assert!(!enc.has_differences());
+        assert_eq!(
+            enc.base_encoding(),
+            Some(NamedEncoding::WinAnsi),
+            "FontEncoding should store the provided base encoding. Expected: Some(NamedEncoding::WinAnsi). Found: {:?}. Why: Constructor should preserve the base encoding parameter.",
+            enc.base_encoding()
+        );
+        assert!(
+            !enc.has_differences(),
+            "New FontEncoding should have no differences overlay. Expected: has_differences() == false. Found: has_differences() == true. Why: Constructor with only base encoding creates empty differences.",
+        );
     }
 
     #[test]
     fn test_font_encoding_glyph_name_base_only() {
         let enc = FontEncoding::new(Some(NamedEncoding::WinAnsi));
-        assert_eq!(enc.glyph_name_for(0x92), Some(Arc::from("quoteright")));
-        assert_eq!(enc.glyph_name_for(0x80), Some(Arc::from("Euro")));
+        assert_eq!(
+            enc.glyph_name_for(0x92),
+            Some(Arc::from("quoteright")),
+            "Code 0x92 should map to 'quoteright' in WinAnsi. Expected: Some(\"quoteright\"). Found: {:?}. Why: WinAnsi encoding defines 0x92 = quoteright.",
+            enc.glyph_name_for(0x92)
+        );
+        assert_eq!(
+            enc.glyph_name_for(0x80),
+            Some(Arc::from("Euro")),
+            "Code 0x80 should map to 'Euro' in WinAnsi. Expected: Some(\"Euro\"). Found: {:?}. Why: WinAnsi encoding defines 0x80 = Euro.",
+            enc.glyph_name_for(0x80)
+        );
     }
 
     #[test]
@@ -675,9 +813,19 @@ mod tests {
             differences,
         };
 
-        assert_eq!(enc.glyph_name_for(0x92), Some(Arc::from("customquote")));
+        assert_eq!(
+            enc.glyph_name_for(0x92),
+            Some(Arc::from("customquote")),
+            "Code 0x92 should use differences overlay, not base. Expected: Some(\"customquote\"). Found: {:?}. Why: Differences overlay takes precedence over base encoding.",
+            enc.glyph_name_for(0x92)
+        );
         // Non-overlaid codes still use base
-        assert_eq!(enc.glyph_name_for(0x80), Some(Arc::from("Euro")));
+        assert_eq!(
+            enc.glyph_name_for(0x80),
+            Some(Arc::from("Euro")),
+            "Code 0x80 should use base encoding (no overlay). Expected: Some(\"Euro\"). Found: {:?}. Why: Only 0x92 has a difference entry; 0x80 falls through to WinAnsi base.",
+            enc.glyph_name_for(0x80)
+        );
     }
 
     #[test]
@@ -691,8 +839,18 @@ mod tests {
             differences,
         };
 
-        assert_eq!(enc.glyph_name_for(0x20), Some(Arc::from("space")));
-        assert_eq!(enc.glyph_name_for(0x21), None); // Not in differences, no base
+        assert_eq!(
+            enc.glyph_name_for(0x20),
+            Some(Arc::from("space")),
+            "Code 0x20 should map to 'space' from differences. Expected: Some(\"space\"). Found: {:?}. Why: Differences overlay defines this mapping explicitly.",
+            enc.glyph_name_for(0x20)
+        );
+        assert_eq!(
+            enc.glyph_name_for(0x21),
+            None,
+            "Code 0x21 should not have a mapping. Expected: None (not in differences, no base). Found: {:?}. Why: No base encoding and no difference entry for 0x21.",
+            enc.glyph_name_for(0x21)
+        );
     }
 
     #[test]
@@ -711,7 +869,9 @@ mod tests {
         // Should return the custom name, not None
         assert_eq!(
             enc.glyph_name_for(0x20),
-            Some(Arc::from("ArbitraryCustomGlyph"))
+            Some(Arc::from("ArbitraryCustomGlyph")),
+            "Custom glyph names should be returned as-is. Expected: Some(\"ArbitraryCustomGlyph\"). Found: {:?}. Why: Differences overlay can contain arbitrary glyph names not in Adobe Glyph List.",
+            enc.glyph_name_for(0x20)
         );
     }
 
@@ -727,9 +887,19 @@ mod tests {
             differences,
         };
 
-        assert_eq!(enc.glyph_name_for(0x92), Some(Arc::from("override")));
+        assert_eq!(
+            enc.glyph_name_for(0x92),
+            Some(Arc::from("override")),
+            "Code 0x92 should use differences override. Expected: Some(\"override\"). Found: {:?}. Why: Differences take precedence over base encoding (WinAnsi has 0x92 = quoteright, but difference overrides it).",
+            enc.glyph_name_for(0x92)
+        );
         // Base encoding still works for non-overlaid codes
-        assert_eq!(enc.glyph_name_for(0x80), Some(Arc::from("Euro")));
+        assert_eq!(
+            enc.glyph_name_for(0x80),
+            Some(Arc::from("Euro")),
+            "Code 0x80 should use base encoding (no difference). Expected: Some(\"Euro\"). Found: {:?}. Why: No difference entry for 0x80, so lookup falls through to WinAnsi base.",
+            enc.glyph_name_for(0x80)
+        );
     }
 
     #[test]
@@ -746,10 +916,29 @@ mod tests {
         let overlay = DifferencesOverlay::parse(&arr, &mut diagnostics);
 
         // .notdef should be skipped, only grave should be present
-        assert_eq!(overlay.get(39), None); // .notdef was skipped
-        assert_eq!(overlay.get(96), Some(Arc::from("grave")));
-        assert_eq!(overlay.len(), 1);
-        assert!(diagnostics.is_empty());
+        assert_eq!(
+            overlay.get(39),
+            None,
+            "Code 39 should not have a mapping (.notdef skipped). Expected: None. Found: {:?}. Why: .notdef is in default unmapped_glyph_names set (from build/unmapped-glyph-names.json), so it's filtered during parsing.",
+            overlay.get(39)
+        );
+        assert_eq!(
+            overlay.get(96),
+            Some(Arc::from("grave")),
+            "Code 96 should map to 'grave'. Expected: Some(\"grave\"). Found: {:?}. Why: 'grave' is not in unmapped_glyph_names set, so it's included in the overlay.",
+            overlay.get(96)
+        );
+        assert_eq!(
+            overlay.len(),
+            1,
+            "Overlay should contain exactly 1 entry. Expected: 1 entry (grave at 96). Found: {} entries. Why: .notdef at 39 was skipped, leaving only grave.",
+            overlay.len()
+        );
+        assert!(
+            diagnostics.is_empty(),
+            "Skipping .notdef should not generate diagnostics. Expected: empty diagnostics. Found: {} diagnostics. Why: Skipping unmapped glyphs is silent behavior.",
+            diagnostics.len()
+        );
     }
 
     #[test]
@@ -766,10 +955,29 @@ mod tests {
         let overlay = DifferencesOverlay::parse(&arr, &mut diagnostics);
 
         // /.notdef should be skipped, only A should be present
-        assert_eq!(overlay.get(10), None); // /.notdef was skipped
-        assert_eq!(overlay.get(11), Some(Arc::from("A")));
-        assert_eq!(overlay.len(), 1);
-        assert!(diagnostics.is_empty());
+        assert_eq!(
+            overlay.get(10),
+            None,
+            "Code 10 should not have a mapping (/.notdef skipped). Expected: None. Found: {:?}. Why: /.notdef (with leading slash) is matched as unmapped glyph and filtered during parsing.",
+            overlay.get(10)
+        );
+        assert_eq!(
+            overlay.get(11),
+            Some(Arc::from("A")),
+            "Code 11 should map to 'A'. Expected: Some(\"A\"). Found: {:?}. Why: 'A' is not in unmapped_glyph_names set, so it's included.",
+            overlay.get(11)
+        );
+        assert_eq!(
+            overlay.len(),
+            1,
+            "Overlay should contain exactly 1 entry. Expected: 1 entry (A at 11). Found: {} entries. Why: /.notdef at 10 was skipped, leaving only A.",
+            overlay.len()
+        );
+        assert!(
+            diagnostics.is_empty(),
+            "Skipping /.notdef should not generate diagnostics. Expected: empty diagnostics. Found: {} diagnostics. Why: Skipping unmapped glyphs is silent behavior.",
+            diagnostics.len()
+        );
     }
 
     #[test]
@@ -804,13 +1012,47 @@ mod tests {
         let overlay_default = DifferencesOverlay::parse(&arr.clone(), &mut diagnostics);
 
         // With default config, .notdef should be skipped but custom1/custom2 should appear
-        assert_eq!(overlay_default.get(10), Some(Arc::from("custom1"))); // Not in default set
-        assert_eq!(overlay_default.get(11), Some(Arc::from("A")));
-        assert_eq!(overlay_default.get(12), Some(Arc::from("custom2"))); // Not in default set
-        assert_eq!(overlay_default.get(13), Some(Arc::from("B")));
-        assert_eq!(overlay_default.get(14), None); // .notdef is in default set, should be skipped
-        assert_eq!(overlay_default.len(), 4); // custom1, A, custom2, B
-        assert!(diagnostics.is_empty());
+        assert_eq!(
+            overlay_default.get(10),
+            Some(Arc::from("custom1")),
+            "Default config: custom1 should appear. Expected: Some(\"custom1\"). Found: {:?}. Why: custom1 is NOT in default unmapped_glyph_names set (from build/unmapped-glyph-names.json).",
+            overlay_default.get(10)
+        );
+        assert_eq!(
+            overlay_default.get(11),
+            Some(Arc::from("A")),
+            "Default config: 'A' should appear. Expected: Some(\"A\"). Found: {:?}. Why: 'A' is a normal glyph, not in unmapped_glyph_names.",
+            overlay_default.get(11)
+        );
+        assert_eq!(
+            overlay_default.get(12),
+            Some(Arc::from("custom2")),
+            "Default config: custom2 should appear. Expected: Some(\"custom2\"). Found: {:?}. Why: custom2 is NOT in default unmapped_glyph_names set.",
+            overlay_default.get(12)
+        );
+        assert_eq!(
+            overlay_default.get(13),
+            Some(Arc::from("B")),
+            "Default config: 'B' should appear. Expected: Some(\"B\"). Found: {:?}. Why: 'B' is a normal glyph, not in unmapped_glyph_names.",
+            overlay_default.get(13)
+        );
+        assert_eq!(
+            overlay_default.get(14),
+            None,
+            "Default config: .notdef should be skipped. Expected: None. Found: {:?}. Why: .notdef IS in default unmapped_glyph_names set (from build/unmapped-glyph-names.json).",
+            overlay_default.get(14)
+        );
+        assert_eq!(
+            overlay_default.len(),
+            4,
+            "Default config: overlay should have 4 entries. Expected: 4 entries (custom1, A, custom2, B). Found: {} entries. Why: Only .notdef is filtered by default config.",
+            overlay_default.len()
+        );
+        assert!(
+            diagnostics.is_empty(),
+            "Default config: should not generate diagnostics. Expected: empty diagnostics. Found: {} diagnostics. Why: All glyphs were processed normally.",
+            diagnostics.len()
+        );
 
         // Now test with custom unmapped set
         let mut overlay_custom = DifferencesOverlay::with_unmapped_glyph_names(custom_unmapped);
@@ -828,12 +1070,42 @@ mod tests {
         }
 
         // With custom config, custom1 and custom2 should be skipped, but .notdef should appear
-        assert_eq!(overlay_custom.get(10), None); // custom1 is in custom set, should be skipped
-        assert_eq!(overlay_custom.get(11), Some(Arc::from("A")));
-        assert_eq!(overlay_custom.get(12), None); // custom2 is in custom set, should be skipped
-        assert_eq!(overlay_custom.get(13), Some(Arc::from("B")));
-        assert_eq!(overlay_custom.get(14), Some(Arc::from(".notdef"))); // Not in custom set, should appear
-        assert_eq!(overlay_custom.len(), 3); // A, B, .notdef
+        assert_eq!(
+            overlay_custom.get(10),
+            None,
+            "Custom config: custom1 should be skipped. Expected: None. Found: {:?}. Why: custom1 IS in the custom unmapped_glyph_names set {{\"custom1\", \"custom2\"}}.",
+            overlay_custom.get(10)
+        );
+        assert_eq!(
+            overlay_custom.get(11),
+            Some(Arc::from("A")),
+            "Custom config: 'A' should appear. Expected: Some(\"A\"). Found: {:?}. Why: 'A' is NOT in custom unmapped_glyph_names set.",
+            overlay_custom.get(11)
+        );
+        assert_eq!(
+            overlay_custom.get(12),
+            None,
+            "Custom config: custom2 should be skipped. Expected: None. Found: {:?}. Why: custom2 IS in the custom unmapped_glyph_names set {{\"custom1\", \"custom2\"}}.",
+            overlay_custom.get(12)
+        );
+        assert_eq!(
+            overlay_custom.get(13),
+            Some(Arc::from("B")),
+            "Custom config: 'B' should appear. Expected: Some(\"B\"). Found: {:?}. Why: 'B' is NOT in custom unmapped_glyph_names set.",
+            overlay_custom.get(13)
+        );
+        assert_eq!(
+            overlay_custom.get(14),
+            Some(Arc::from(".notdef")),
+            "Custom config: .notdef should appear. Expected: Some(\".notdef\"). Found: {:?}. Why: .notdef is NOT in custom unmapped_glyph_names set {{\"custom1\", \"custom2\"}} (unlike default config).",
+            overlay_custom.get(14)
+        );
+        assert_eq!(
+            overlay_custom.len(),
+            3,
+            "Custom config: overlay should have 3 entries. Expected: 3 entries (A, B, .notdef). Found: {} entries. Why: custom1 and custom2 are filtered, .notdef is kept (custom set differs from default).",
+            overlay_custom.len()
+        );
     }
 
     #[test]
@@ -864,10 +1136,29 @@ mod tests {
         }
 
         // With empty config, ALL glyphs should appear including .notdef
-        assert_eq!(overlay.get(10), Some(Arc::from(".notdef")));
-        assert_eq!(overlay.get(11), Some(Arc::from("A")));
-        assert_eq!(overlay.len(), 2);
-        assert!(diagnostics.is_empty());
+        assert_eq!(
+            overlay.get(10),
+            Some(Arc::from(".notdef")),
+            "Empty config: .notdef should appear. Expected: Some(\".notdef\"). Found: {:?}. Why: Empty unmapped_glyph_names set means no glyphs are filtered, even .notdef.",
+            overlay.get(10)
+        );
+        assert_eq!(
+            overlay.get(11),
+            Some(Arc::from("A")),
+            "Empty config: 'A' should appear. Expected: Some(\"A\"). Found: {:?}. Why: Empty unmapped_glyph_names set allows all glyphs.",
+            overlay.get(11)
+        );
+        assert_eq!(
+            overlay.len(),
+            2,
+            "Empty config: overlay should have 2 entries. Expected: 2 entries (.notdef, A). Found: {} entries. Why: No glyphs are filtered when unmapped_glyph_names is empty.",
+            overlay.len()
+        );
+        assert!(
+            diagnostics.is_empty(),
+            "Empty config: should not generate diagnostics. Expected: empty diagnostics. Found: {} diagnostics. Why: Empty config is valid and processes all glyphs normally.",
+            diagnostics.len()
+        );
     }
 
     #[test]
