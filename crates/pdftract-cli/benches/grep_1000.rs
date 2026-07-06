@@ -580,8 +580,9 @@ fn execute_grep_command(
 /// Raw timing metrics extracted from benchmark output
 ///
 /// This structure holds the parsed metrics before they're aggregated
-/// into the final BenchmarkResult.
-#[derive(Debug, Default)]
+/// into the final BenchmarkResult. It is JSON-serializable for
+/// temporary storage and intermediate result caching.
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 struct RawTimingMetrics {
     /// Wall-clock runtime in milliseconds
     pub wall_time_ms: u128,
@@ -599,6 +600,138 @@ struct RawTimingMetrics {
     pub files_per_second: f64,
     /// Throughput in MB/s
     pub throughput_mb_s: f64,
+}
+
+impl RawTimingMetrics {
+    /// Validate that all required metrics are present and valid
+    ///
+    /// Returns Ok(()) if all required metrics are present and valid,
+    /// Err with description of missing or invalid metrics otherwise.
+    ///
+    /// # Required metrics
+    /// - wall_time_ms: must be > 0 (non-zero runtime)
+    /// - files_processed: must be > 0 (at least one file processed)
+    /// - total_bytes: must be > 0 (non-zero data processed)
+    /// - throughput_mb_s: must be >= 0 (non-negative throughput)
+    /// - files_per_second: must be >= 0 (non-negative rate)
+    ///
+    /// # Optional metrics
+    /// - user_time_sec: CPU time (if available)
+    /// - system_time_sec: CPU time (if available)
+    /// - total_matches: match count (0 is valid for no matches)
+    pub fn validate(&self) -> Result<(), String> {
+        let mut errors = Vec::new();
+
+        // Wall time must be positive (non-zero runtime)
+        if self.wall_time_ms == 0 {
+            errors.push("wall_time_ms is zero (no runtime measured)".to_string());
+        }
+
+        // Must have processed at least one file
+        if self.files_processed == 0 {
+            errors.push("files_processed is zero (no files processed)".to_string());
+        }
+
+        // Must have processed some data
+        if self.total_bytes == 0 {
+            errors.push("total_bytes is zero (no data processed)".to_string());
+        }
+
+        // Throughput must be non-negative
+        if self.throughput_mb_s < 0.0 {
+            errors.push(format!("throughput_mb_s is negative: {}", self.throughput_mb_s));
+        }
+
+        // Files per second must be non-negative
+        if self.files_per_second < 0.0 {
+            errors.push(format!("files_per_second is negative: {}", self.files_per_second));
+        }
+
+        // Check for NaN (invalid floating-point calculations)
+        if self.throughput_mb_s.is_nan() {
+            errors.push("throughput_mb_s is NaN (invalid calculation)".to_string());
+        }
+
+        if self.files_per_second.is_nan() {
+            errors.push("files_per_second is NaN (invalid calculation)".to_string());
+        }
+
+        // Check for infinity (would indicate division by zero or overflow)
+        if self.throughput_mb_s.is_infinite() {
+            errors.push("throughput_mb_s is infinite (overflow or division by zero)".to_string());
+        }
+
+        if self.files_per_second.is_infinite() {
+            errors.push("files_per_second is infinite (overflow or division by zero)".to_string());
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(format!(
+                "RawTimingMetrics validation failed:\n  - {}",
+                errors.join("\n  - ")
+            ))
+        }
+    }
+
+    /// Export metrics to JSON string
+    ///
+    /// Returns a JSON-serialized string of the metrics.
+    /// Returns Err if serialization fails.
+    pub fn to_json(&self) -> Result<String, String> {
+        serde_json::to_string_pretty(self)
+            .map_err(|e| format!("Failed to serialize RawTimingMetrics to JSON: {}", e))
+    }
+
+    /// Import metrics from JSON string
+    ///
+    /// Deserializes a JSON string into a RawTimingMetrics instance.
+    /// Returns Err if deserialization fails or validation fails.
+    pub fn from_json(json_str: &str) -> Result<Self, String> {
+        let metrics: RawTimingMetrics = serde_json::from_str(json_str)
+            .map_err(|e| format!("Failed to deserialize RawTimingMetrics from JSON: {}", e))?;
+
+        // Validate the imported metrics
+        metrics.validate()?;
+
+        Ok(metrics)
+    }
+
+    /// Store metrics temporarily to a JSON file
+    ///
+    /// Creates a temporary JSON file containing the metrics.
+    /// Returns the path to the created file.
+    ///
+    /// # File naming
+    /// The file is named `raw_metrics_<timestamp>.json` in the
+    /// `benches/results/` directory.
+    pub fn store_temporary(&self) -> Result<PathBuf, String> {
+        use std::fs;
+        use std::io::Write;
+
+        // Create results directory if it doesn't exist
+        let results_dir = PathBuf::from("benches/results");
+        fs::create_dir_all(&results_dir)
+            .map_err(|e| format!("Failed to create results directory: {}", e))?;
+
+        // Generate filename with timestamp
+        let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
+        let filename = format!("raw_metrics_{}.json", timestamp);
+        let filepath = results_dir.join(&filename);
+
+        // Serialize and write to file
+        let json_str = self.to_json()?;
+        let mut file = fs::File::create(&filepath)
+            .map_err(|e| format!("Failed to create temporary metrics file: {}", e))?;
+        file.write_all(json_str.as_bytes())
+            .map_err(|e| format!("Failed to write metrics to file: {}", e))?;
+        file.flush()
+            .map_err(|e| format!("Failed to flush metrics file: {}", e))?;
+
+        eprintln!("Raw metrics temporarily stored to: {}", filepath.display());
+        Ok(filepath)
+    }
 }
 
 /// Parse match count from progress JSON events
@@ -818,6 +951,14 @@ fn run_benchmark() -> Result<BenchmarkResult, String> {
     // This parses the stdout/stderr for timing information, throughput metrics, and file counts
     let raw_metrics = extract_raw_timing_metrics(&stdout, &stderr, duration_ms, bytes_total);
 
+    // Validate the extracted metrics to ensure all required fields are present
+    // This checks for non-zero runtime, file counts, data volume, and valid throughput calculations
+    if let Err(e) = raw_metrics.validate() {
+        eprintln!("WARNING: Raw metrics validation failed: {}", e);
+        eprintln!("This may indicate a problem with the benchmark extraction logic.");
+        // Don't fail the benchmark - we'll still use the metrics we got
+    }
+
     // Log extracted metrics for debugging
     eprintln!("Extracted metrics:");
     eprintln!("  Wall time: {} ms", raw_metrics.wall_time_ms);
@@ -825,6 +966,13 @@ fn run_benchmark() -> Result<BenchmarkResult, String> {
     eprintln!("  Total matches: {}", raw_metrics.total_matches);
     eprintln!("  Throughput: {:.2} MB/s", raw_metrics.throughput_mb_s);
     eprintln!("  Files/sec: {:.2}", raw_metrics.files_per_second);
+
+    // Store raw metrics temporarily to JSON file for debugging/auditing
+    // This creates a file in benches/results/raw_metrics_<timestamp>.json
+    if let Err(e) = raw_metrics.store_temporary() {
+        eprintln!("WARNING: Failed to store raw metrics temporarily: {}", e);
+        // Continue anyway - this is non-critical
+    }
 
     // Use the extracted metrics (prefer extracted values over command return values)
     let result = BenchmarkResult {

@@ -1020,24 +1020,23 @@ pub mod mcp_helpers {
 
         // Read the framed response with timeout
         let start = std::time::Instant::now();
-        let response = {
+        let response = loop {
             let stdout = server.stdout.as_mut()
                 .ok_or_else(|| "Failed to get stdout handle".to_string())?;
             let mut reader = BufReader::new(stdout);
 
-            loop {
-                match read_framed_response(&mut reader) {
-                    Ok(Some(resp)) => resp,
-                    Ok(None) => return Err("Unexpected EOF while reading response".to_string()),
-                    Err(e) if start.elapsed() >= std::time::Duration::from_millis(timeout_ms) => {
-                        return Err(format!("Timeout waiting for response: {}", e));
+            match read_framed_response(&mut reader) {
+                Ok(Some(resp)) => break resp,
+                Ok(None) => return Err("Unexpected EOF while reading response".to_string()),
+                Err(e) if start.elapsed() >= std::time::Duration::from_millis(timeout_ms) => {
+                    return Err(format!("Timeout waiting for response: {}", e));
+                }
+                Err(_) => {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                    if start.elapsed() >= std::time::Duration::from_millis(timeout_ms) {
+                        return Err("Timeout waiting for response".to_string());
                     }
-                    Err(_) => {
-                        std::thread::sleep(std::time::Duration::from_millis(10));
-                        if start.elapsed() >= std::time::Duration::from_millis(timeout_ms) {
-                            return Err("Timeout waiting for response".to_string());
-                        }
-                    }
+                    continue;
                 }
             }
         };
