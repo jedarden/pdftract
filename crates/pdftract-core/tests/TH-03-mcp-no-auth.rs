@@ -63,7 +63,9 @@ fn spawn_mcp_process(
 
 /// Wait for a process to complete with a timeout.
 ///
-/// If the timeout expires, the process is killed and an error is returned.
+/// Uses bounded waits throughout to prevent indefinite blocking.
+/// If the timeout expires, the process is killed and we wait with
+/// another bounded timeout for it to exit.
 fn wait_with_timeout(
     child: &mut std::process::Child,
     timeout_ms: u64,
@@ -78,11 +80,24 @@ fn wait_with_timeout(
         if std::time::Instant::now() >= deadline {
             // Timeout: kill the process
             let _ = child.kill();
-            let _ = child.wait();
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                "Process timed out",
-            ));
+
+            // Wait with bounded timeout after kill - never use bare wait()
+            let kill_deadline = std::time::Instant::now() + Duration::from_millis(100);
+            loop {
+                if let Some(status) = child.try_wait()? {
+                    return Ok(status.code());
+                }
+
+                if std::time::Instant::now() >= kill_deadline {
+                    // Process didn't exit after kill - return timeout error
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "Process did not exit within timeout after kill",
+                    ));
+                }
+
+                thread::sleep(Duration::from_millis(10));
+            }
         }
 
         thread::sleep(Duration::from_millis(50));

@@ -100,7 +100,11 @@ fn test_cmap_unmapped_glyph_skip() {
     assert_eq!(
         result_a,
         Some(&['A'][..]),
-        "Normal glyph 'A' should be present in CMAP: letter glyphs should not be filtered"
+        "Normal glyph 'A' should be present in CMAP. \
+         Expected: Some(\"A\"). \
+         Found: {:?}. \
+         Why this matters: Letter glyphs should not be filtered out - only unmapped glyphs should be excluded.",
+        result_a
     );
 
     // Verify letter 'B' is present (basic Latin letter)
@@ -108,7 +112,11 @@ fn test_cmap_unmapped_glyph_skip() {
     assert_eq!(
         result_b,
         Some(&['B'][..]),
-        "Normal glyph 'B' should be present in CMAP: letter glyphs should not be filtered"
+        "Normal glyph 'B' should be present in CMAP. \
+         Expected: Some(\"B\"). \
+         Found: {:?}. \
+         Why this matters: Letter glyphs should not be filtered out - only unmapped glyphs should be excluded.",
+        result_b
     );
 
     // Verify space is present (whitespace character)
@@ -116,7 +124,11 @@ fn test_cmap_unmapped_glyph_skip() {
     assert_eq!(
         result_space,
         Some(&[' '][..]),
-        "Normal glyph 'space' should be present in CMAP: whitespace glyphs should not be filtered"
+        "Normal glyph 'space' should be present in CMAP. \
+         Expected: Some(\" \"). \
+         Found: {:?}. \
+         Why this matters: Whitespace glyphs should not be filtered out - only unmapped glyphs should be excluded.",
+        result_space
     );
 
     // Verify 'C' is present (another letter to ensure multiple letters work)
@@ -124,7 +136,11 @@ fn test_cmap_unmapped_glyph_skip() {
     assert_eq!(
         result_c,
         Some(&['C'][..]),
-        "Normal glyph 'C' should be present in CMAP: multiple letter glyphs should all be present"
+        "Normal glyph 'C' should be present in CMAP. \
+         Expected: Some(\"C\"). \
+         Found: {:?}. \
+         Why this matters: Multiple letter glyphs should all be present - the parser should not filter out valid letters.",
+        result_c
     );
 
     // Verify all normal glyph types are accounted for
@@ -133,8 +149,11 @@ fn test_cmap_unmapped_glyph_skip() {
     assert_eq!(
         map.len(),
         4,
-        "CMAP should contain exactly 4 normal glyph mappings (A, B, space, C). \
-        Different count may indicate a glyph was incorrectly filtered or an extra entry was added."
+        "CMAP should contain exactly 4 normal glyph mappings. \
+         Expected: 4 mappings (A, B, space, C). \
+         Found: {} mappings. \
+         Why this matters: Different count may indicate a glyph was incorrectly filtered or an extra entry was added.",
+        map.len()
     );
 
     // NEW: Assert that unmapped glyphs are ABSENT from CMAP output
@@ -439,13 +458,21 @@ fn test_differences_overlay_filters_unmapped_glyphs() {
     assert_eq!(
         overlay.len(),
         4,
-        "Overlay should have exactly 4 entries after filtering out 5 unmapped glyphs (g001, g002, g003, .notdef, null)"
+        "Overlay should have exactly 4 entries after filtering out unmapped glyphs. \
+         Expected: 4 entries (CustomA, CustomB, A, space). \
+         Found: {} entries. \
+         Why this matters: 5 unmapped glyphs (g001, g002, g003, .notdef, null) were filtered from build/unmapped-glyph-names.json.",
+        overlay.len()
     );
 
     // Verify no diagnostics were generated (this is expected behavior, not an error)
     assert!(
         diagnostics.is_empty(),
-        "Parsing should not generate diagnostics when filtering unmapped glyphs"
+        "Parsing should not generate diagnostics when filtering unmapped glyphs. \
+         Expected: empty diagnostics vector. \
+         Found: {} diagnostics. \
+         Why this matters: Filtering unmapped glyphs is expected behavior, not an error condition.",
+        diagnostics.len()
     );
 }
 
@@ -533,7 +560,11 @@ fn test_differences_overlay_consecutive_with_unmapped_filtering() {
     assert_eq!(
         overlay.len(),
         2,
-        "Overlay should have exactly 2 entries after filtering out 3 unmapped glyphs from a 5-item consecutive sequence"
+        "Overlay should have exactly 2 entries after filtering consecutive sequence. \
+         Expected: 2 entries (A at code 12, B at code 14). \
+         Found: {} entries. \
+         Why this matters: 3 unmapped glyphs (g001, g002, .notdef) were filtered from the 5-item consecutive sequence.",
+        overlay.len()
     );
 }
 

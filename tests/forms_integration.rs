@@ -104,11 +104,24 @@ fn wait_with_timeout(
         if std::time::Instant::now() >= deadline {
             // Timeout: kill the process
             let _ = child.kill();
-            let _ = child.wait();
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                format!("Process timed out after {} seconds", timeout_secs),
-            ));
+
+            // Wait with bounded timeout after kill - never use bare wait()
+            let kill_deadline = std::time::Instant::now() + Duration::from_millis(100);
+            loop {
+                if let Some(status) = child.try_wait()? {
+                    return Ok(status.code());
+                }
+
+                if std::time::Instant::now() >= kill_deadline {
+                    // Process didn't exit after kill - return timeout error
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        format!("Process did not exit within timeout after kill ({}s)", timeout_secs),
+                    ));
+                }
+
+                std::thread::sleep(Duration::from_millis(10));
+            }
         }
 
         // Sleep for 100ms before checking again

@@ -70,11 +70,26 @@ impl Drop for McpServerGuard {
                 }
             };
 
-            // If graceful shutdown failed, force kill and wait
+            // If graceful shutdown failed, force kill and wait with bounded timeout
             if !exited {
                 let _ = child.kill();
-                // Wait a bit for the process to exit after kill
-                let _ = child.try_wait();
+                // Wait with bounded timeout after kill - never use bare wait()
+                let kill_start = std::time::Instant::now();
+                let _ = loop {
+                    match child.try_wait() {
+                        Ok(Some(_)) => break Ok(()),
+                        Ok(None) => {
+                            if kill_start.elapsed() >= Duration::from_millis(100) {
+                                break Err(std::io::Error::new(
+                                    std::io::ErrorKind::TimedOut,
+                                    "Process did not exit after kill within 100ms"
+                                ));
+                            }
+                            thread::sleep(Duration::from_millis(10));
+                        }
+                        Err(e) => break Err(e),
+                    }
+                };
             }
         }
     }

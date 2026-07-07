@@ -38,6 +38,14 @@ path = "src/bin/generate-cli-reference.rs"
 name = "generate-form-fixtures"
 path = "../../tests/fixtures/forms/generate_form_fixtures.rs"
 
+[[bin]]
+name = "list_pdf_fixtures"
+path = "../../tests/list_pdf_fixtures.rs"
+
+[[bin]]
+name = "test_glob_discovery"
+path = "../../tests/test_glob_discovery.rs"
+
 # Removed: generate_fixtures, generate_expected_json (files do not exist)
 
 [[bench]]
@@ -101,6 +109,7 @@ walkdir = "2"
 chromiumoxide = { version = "0.6", optional = true }
 jsonschema = "0.18"
 tracing-subscriber = { version = "0.3.23", features = ["fmt", "env-filter"] }
+glob = "0.3"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -150,3 +159,4 @@ chrono = { version = "0.4", features = ["serde"] }
 criterion = "0.5"
 chromiumoxide = "0.6"
 lopdf = "0.34"
+glob = "0.3"

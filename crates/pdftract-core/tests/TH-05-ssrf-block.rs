@@ -1769,10 +1769,46 @@ mod mcp_ssrf_tests {
     impl Drop for ProcessGuard {
         fn drop(&mut self) {
             if let Some(mut child) = self.child.take() {
-                // Kill the process (signal-based, may fail if already dead)
-                let _ = child.kill();
-                // Wait with timeout to reap zombie, don't block forever
-                let _ = wait_with_timeout(&mut child, 1000);
+                // Try graceful shutdown first by closing stdin
+                let _ = child.stdin.take();
+
+                // Wait for graceful shutdown with bounded timeout
+                let start = std::time::Instant::now();
+                let exited = loop {
+                    match child.try_wait() {
+                        Ok(Some(_)) => break true,
+                        Ok(None) => {
+                            if start.elapsed() >= Duration::from_millis(200) {
+                                break false;
+                            }
+                            thread::sleep(Duration::from_millis(10));
+                        }
+                        Err(_) => break false,
+                    }
+                };
+
+                // If graceful shutdown failed, force kill and wait with bounded timeout
+                if !exited {
+                    let _ = child.kill();
+
+                    // Wait with bounded timeout after kill - never use bare wait()
+                    let kill_start = std::time::Instant::now();
+                    let _ = loop {
+                        match child.try_wait() {
+                            Ok(Some(_)) => break Ok(()),
+                            Ok(None) => {
+                                if kill_start.elapsed() >= Duration::from_millis(100) {
+                                    break Err(std::io::Error::new(
+                                        std::io::ErrorKind::TimedOut,
+                                        "Process did not exit after kill within 100ms"
+                                    ));
+                                }
+                                thread::sleep(Duration::from_millis(10));
+                            }
+                            Err(e) => break Err(e),
+                        }
+                    };
+                }
             }
         }
     }
@@ -1856,6 +1892,10 @@ mod mcp_ssrf_tests {
     }
 
     /// Wait for a process to complete with a timeout.
+    ///
+    /// Uses bounded waits throughout to prevent indefinite blocking.
+    /// If the timeout expires, the process is killed and we wait with
+    /// another bounded timeout for it to exit.
     fn wait_with_timeout(
         child: &mut std::process::Child,
         timeout_ms: u64,
@@ -1870,11 +1910,24 @@ mod mcp_ssrf_tests {
             if std::time::Instant::now() >= deadline {
                 // Timeout: kill the process
                 let _ = child.kill();
-                let _ = child.wait();
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::TimedOut,
-                    "Process timed out",
-                ));
+
+                // Wait with bounded timeout after kill - never use bare wait()
+                let kill_deadline = std::time::Instant::now() + Duration::from_millis(100);
+                loop {
+                    if let Some(status) = child.try_wait()? {
+                        return Ok(status.code());
+                    }
+
+                    if std::time::Instant::now() >= kill_deadline {
+                        // Process didn't exit after kill - return timeout error
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "Process did not exit within timeout after kill",
+                        ));
+                    }
+
+                    thread::sleep(Duration::from_millis(10));
+                }
             }
 
             thread::sleep(Duration::from_millis(50));
