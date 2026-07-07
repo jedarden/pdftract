@@ -695,10 +695,271 @@ cat /proc/<PID>/status
 cat /proc/<PID>/stack  # If stuck
 ```
 
+## Common Issues and Resolutions
+
+This section documents frequently encountered orphaned process scenarios with step-by-step resolution procedures.
+
+### Issue 1: "Address Already in Use" Error
+
+**Symptoms:**
+```
+Error: Os { code: 98, kind: AddrInUse, message: "Address already in use" }
+```
+
+**Cause:** A previous test run left an MCP server or HTTP server running on the same port.
+
+**Resolution Steps:**
+
+1. **Identify the process holding the port:**
+   ```bash
+   # For port 8080 (common MCP server port)
+   ss -tlnp | grep :8080
+   # Output: tcp LISTEN 0 128 127.0.0.1:8080 0.0.0.0:0 users:(("pdftract",pid=12345,fd=4))
+   ```
+
+2. **Verify it's an orphan:**
+   ```bash
+   ps -fp 12345
+   # Check if PPID is 1 (parent died) or if age is > 5 minutes
+   ```
+
+3. **Kill the process:**
+   ```bash
+   # Graceful first
+   kill 12345
+   sleep 1
+   # Force if needed
+   kill -9 12345
+   ```
+
+4. **Verify port is free:**
+   ```bash
+   ss -tlnp | grep :8080
+   # Should return empty
+   ```
+
+5. **Prevent recurrence:**
+   - Use random ports in tests: `TcpListener::bind("127.0.0.1:0")?`
+   - Add `OrphanedProcessGuard` to all server-spawning tests
+   - Set server timeout to auto-terminate after inactivity
+
+---
+
+### Issue 2: Test Suite Hangs Indefinitely
+
+**Symptoms:**
+- `cargo test` or `cargo nextest run` appears to hang at 100% completion
+- Test runner process shows 0% CPU but won't exit
+- `ps aux` shows test runner still running
+
+**Cause:** A test spawned a subprocess with `Stdio::piped()` but never drained the pipe. The subprocess is blocked writing to a full buffer, and the parent test is blocked in `wait()`.
+
+**Resolution Steps:**
+
+1. **Identify the stuck test:**
+   ```bash
+   # Find the cargo test process
+   pgrep -af cargo test
+   # 12346 cargo test --test integration_tests
+   
+   # Check what children it has
+   pstree -p 12346
+   # Look for pdftract mcp or TH-0 processes with high wait time
+   ```
+
+2. **Confirm pipe block:**
+   ```bash
+   # Check process state
+   ps -fp <child_pid>
+   # If STAT shows 'S+' (sleeping) and it's a long-running server, likely pipe block
+   
+   # Check open file descriptors
+   lsof -p <child_pid> | grep PIPE
+   # Should show fifo or pipe if blocking
+   ```
+
+3. **Kill the entire process tree:**
+   ```bash
+   # Kill the test runner and all children
+   kill -9 12346  # This will also orphan the children
+   
+   # Then kill the orphans
+   pkill -9 -f "pdftract mcp|TH-0|TH_0"
+   ```
+
+4. **Fix the test:**
+   ```rust
+   // BAD - Pipe blocks forever
+   Command::new("pdftract")
+       .arg("mcp")
+       .stdout(Stdio::piped())  // Pipe fills, process blocks
+       .spawn()?;
+   
+   // GOOD - Use null for servers
+   Command::new("pdftract")
+       .arg("mcp")
+       .stdout(Stdio::null())  // No pipe, no block
+       .spawn()?;
+   
+   // OR drain the pipe on a thread
+   let mut child = Command::new("pdftract")
+       .arg("mcp")
+       .stdout(Stdio::piped())
+       .spawn()?;
+   
+   let stdout = child.stdout.take().unwrap();
+   thread::spawn(move || {
+       let _ = io::copy(&mut stdout.unwrap(), &mut io::sink());
+   });
+   ```
+
+---
+
+### Issue 3: Multiple Orphaned Processes After CI Timeout
+
+**Symptoms:**
+- CI workflow fails with "timeout" after 30 minutes
+- Post-test verification shows 50+ orphaned processes
+- Processes include multiple `TH_0` instances with different fuzz inputs
+
+**Cause:** Fuzz harness or property-based test was interrupted mid-run, leaving target processes alive.
+
+**Resolution Steps:**
+
+1. **Assess the scope:**
+   ```bash
+   ./scripts/check-orphaned-processes.sh --verbose
+   # Count the orphans
+   ./scripts/check-orphaned-processes.sh --json | jq .count
+   ```
+
+2. **Bulk cleanup:**
+   ```bash
+   # Kill all matching processes at once
+   pkill -9 -f "TH_0"
+   
+   # Verify cleanup
+   ./scripts/check-orphaned-processes.sh
+   ```
+
+3. **Identify the leaking test:**
+   ```bash
+   # Search tests that spawn TH_0 processes
+   grep -r "TH_0" crates/pdftract-core/tests/
+   # Look for fuzz tests or property tests
+   ```
+
+4. **Fix the test harness:**
+   ```rust
+   // Add signal handler to clean up on termination
+   #[test]
+   fn property_test_with_cleanup() {
+       let _guard = OrphanedProcessGuard::new();
+       
+       // Set up signal handler for Ctrl+C, timeout
+       ctrlc::set_handler(move || {
+           // Cleanup code
+           cleanup_children();
+       }).unwrap();
+       
+       // Run test
+   }
+   ```
+
+5. **Add pre-flight cleanup to CI:**
+   ```bash
+   # In CI workflow, before running tests
+   ./scripts/check-orphaned-processes.sh --kill
+   cargo nextest run
+   ./scripts/check-orphaned-processes.sh  # Should be clean
+   ```
+
+---
+
+### Issue 4: Zombie Process Accumulation
+
+**Symptoms:**
+- `ps aux | grep -c Z` shows 5-10 zombie processes
+- Zombies have pdftract or test harness in their command line
+- System performance slowly degrades over time
+
+**Cause:** Parent processes dying without reaping their children, or SIGKILL preventing normal cleanup.
+
+**Resolution Steps:**
+
+1. **Identify zombie processes:**
+   ```bash
+   ps aux | awk '$8 ~ /Z/ {print $2, $11, $12}'
+   # Output shows PID, command name
+   ```
+
+2. **Check if parent is still alive:**
+   ```bash
+   # For each zombie PID, check PPID
+   ps -fp <zombie_pid>
+   # If PPID is 1 (init), parent died without reaping
+   # If PPID is another number, parent might still be alive
+   ```
+
+3. **Kill the parent (if still alive):**
+   ```bash
+   # This forces init to adopt and reap the zombies
+   kill -9 <parent_pid>
+   sleep 1
+   # Zombies should be gone
+   ps aux | grep -c Z  # Should be 0 or 1
+   ```
+
+4. **If zombies persist with PPID 1:**
+   ```bash
+   # Last resort - system cleanup
+   sudo kill -9 -1  # ⚠️ DANGER: Kills all user processes
+   # Or just reboot if many zombies accumulated
+   ```
+
+5. **Prevent recurrence:**
+   - Use RAII guards that reap children in `Drop`
+   - Never use bare `kill -9` on parent without killing children first
+   - Add `child.wait()` after `child.kill()` in all cleanup code
+
+---
+
+### Issue 5: Permission Denied on Verification Script
+
+**Symptoms:**
+```bash
+$ ./scripts/check-orphaned-processes.sh
+bash: ./scripts/check-orphaned-processes.sh: Permission denied
+```
+
+**Cause:** Script file doesn't have execute permission.
+
+**Resolution Steps:**
+
+1. **Make script executable:**
+   ```bash
+   chmod +x scripts/check-orphaned-processes.sh
+   ```
+
+2. **Verify fix:**
+   ```bash
+   ./scripts/check-orphaned-processes.sh --help
+   # Should show usage message
+   ```
+
+3. **Prevent recurrence:**
+   ```bash
+   # Add execute permission to git
+   git update-index --chmod=+x scripts/check-orphaned-processes.sh
+   git commit -m "fix: make check-orphaned-processes.sh executable"
+   ```
+
+---
+
 ## Related Documentation
 
-- **Orphaned Process Verification:** `orphaned-process-verification.md`
-- **CI Integration:** `post-test-orphan-verification-integration.md`
+- **Orphaned Process Verification:** `orphaned-process-verification.md` - Comprehensive verification guide with process pattern explanations
+- **CI Integration:** `post-test-orphan-verification-integration.md` - CI workflow integration details
 - **Test Hygiene Rules:** `CLAUDE.md` section "Test hygiene — never let a hung test stall the loop"
 
 ## Implementation Date
@@ -707,4 +968,4 @@ cat /proc/<PID>/stack  # If stuck
 
 ## Implemented By
 
-Bead `bf-md1uka`: Add troubleshooting section and cleanup procedures
+Bead `bf-58z9ib`: Add common issues and resolutions section
