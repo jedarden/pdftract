@@ -870,7 +870,13 @@ mod tests {
         // Most codes in StandardEncoding are unmapped above 0x7F
         let encoding = FontEncoding::new(Some(NamedEncoding::Standard));
         let result = resolve_level2(&[0x80], Some(&encoding));
-        assert!(result.is_failure());
+        assert!(
+            result.is_failure(),
+            "Level 2 resolution should fail for unmapped character codes. \
+             Expected: result.is_failure() == true. \
+             Found: false. \
+             Why this matters: Most codes in StandardEncoding above 0x7F are unmapped and should fail Level 2 (encoding + AGL) resolution per build/unmapped-glyph-names.json filtering."
+        );
     }
 
     #[test]
