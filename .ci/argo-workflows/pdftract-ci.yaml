@@ -743,6 +743,13 @@ spec:
                 echo "=== All glibc tests passed ==="
                 echo "Unit tests: PASS"
                 echo "Property tests: PASS ($CASES cases per module)"
+
+                echo "=== Running post-test orphan verification (cgroup v2) ==="
+                bash ./.ci/scripts/post-test-check.sh --kill || {
+                  VERIFY_EXIT=$?
+                  echo "ERROR: Post-test verification failed with exit code $VERIFY_EXIT"
+                  exit $VERIFY_EXIT
+                }
               ) || {
                 EXIT_CODE=$?
                 # Clean up cgroup
@@ -810,6 +817,13 @@ spec:
                 echo "=== All glibc tests passed ==="
                 echo "Unit tests: PASS"
                 echo "Property tests: PASS ($CASES cases per module)"
+
+                echo "=== Running post-test orphan verification (cgroup v1) ==="
+                bash ./.ci/scripts/post-test-check.sh --kill || {
+                  VERIFY_EXIT=$?
+                  echo "ERROR: Post-test verification failed with exit code $VERIFY_EXIT"
+                  exit $VERIFY_EXIT
+                }
               ) || {
                 EXIT_CODE=$?
                 # Clean up cgroup
@@ -860,6 +874,13 @@ spec:
               echo "=== All glibc tests passed ==="
               echo "Unit tests: PASS"
               echo "Property tests: PASS ($CASES cases per module)"
+
+              echo "=== Running post-test orphan verification (no cgroup) ==="
+              bash ./.ci/scripts/post-test-check.sh --kill || {
+                VERIFY_EXIT=$?
+                echo "ERROR: Post-test verification failed with exit code $VERIFY_EXIT"
+                exit $VERIFY_EXIT
+              }
             fi
         volumeMounts:
           - name: workspace
@@ -978,6 +999,13 @@ spec:
                 echo "=== All musl tests passed ==="
                 echo "Feature set: default,serve,decrypt (no OCR)"
                 echo "JUnit XML: test-results-musl.xml"
+
+                echo "=== Running post-test orphan verification (musl, cgroup v2) ==="
+                bash ./.ci/scripts/post-test-check.sh --kill || {
+                  VERIFY_EXIT=$?
+                  echo "ERROR: Post-test verification failed with exit code $VERIFY_EXIT"
+                  exit $VERIFY_EXIT
+                }
               ) || {
                 EXIT_CODE=$?
                 # Clean up cgroup
@@ -1060,6 +1088,13 @@ spec:
                 echo "=== All musl tests passed ==="
                 echo "Feature set: default,serve,decrypt (no OCR)"
                 echo "JUnit XML: test-results-musl.xml"
+
+                echo "=== Running post-test orphan verification (musl, cgroup v1) ==="
+                bash ./.ci/scripts/post-test-check.sh --kill || {
+                  VERIFY_EXIT=$?
+                  echo "ERROR: Post-test verification failed with exit code $VERIFY_EXIT"
+                  exit $VERIFY_EXIT
+                }
               ) || {
                 EXIT_CODE=$?
                 # Clean up cgroup
@@ -1125,6 +1160,13 @@ spec:
               echo "=== All musl tests passed ==="
               echo "Feature set: default,serve,decrypt (no OCR)"
               echo "JUnit XML: test-results-musl.xml"
+
+              echo "=== Running post-test orphan verification (musl, no cgroup) ==="
+              bash ./.ci/scripts/post-test-check.sh --kill || {
+                VERIFY_EXIT=$?
+                echo "ERROR: Post-test verification failed with exit code $VERIFY_EXIT"
+                exit $VERIFY_EXIT
+              }
             fi
         volumeMounts:
           - name: workspace
