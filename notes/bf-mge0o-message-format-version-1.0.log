@@ -1,0 +1,7 @@
+error: error parsing message format version
+
+Caused by:
+  invalid format version: 1.0
+
+Caused by:
+  version component `major` value 1 is out of range 0..1

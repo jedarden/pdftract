@@ -1,0 +1,7 @@
+error: error parsing message format version
+
+Caused by:
+  invalid format version: 1
+
+Caused by:
+  expected format version in form of `<major>.<minor>`

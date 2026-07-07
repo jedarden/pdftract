@@ -1,0 +1,2894 @@
+    Blocking waiting for file lock on build directory
+warning: fields `description` and `version` are never read
+  --> crates/pdftract-core/build.rs:37:5
+   |
+21 | struct UnmappedGlyphNamesConfig {
+   |        ------------------------ fields in this struct
+...
+37 |     description: Option<String>,
+   |     ^^^^^^^^^^^
+...
+43 |     version: Option<String>,
+   |     ^^^^^^^
+   |
+   = note: `UnmappedGlyphNamesConfig` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `pdftract-core` (build script) generated 1 warning
+   Compiling pdftract-core v0.1.0 (/home/coding/pdftract/crates/pdftract-core)
+warning: unused import: `PdfDict`
+   --> crates/pdftract-core/src/attachment/filespec.rs:583:41
+    |
+583 |     use crate::parser::object::{intern, PdfDict, PdfObject, PdfStream};
+    |                                         ^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `PdfDict`
+   --> crates/pdftract-core/src/attachment/name_tree.rs:420:41
+    |
+420 |     use crate::parser::object::{intern, PdfDict, PdfObject};
+    |                                         ^^^^^^^
+
+warning: unused import: `std::io::Cursor`
+   --> crates/pdftract-core/src/audit.rs:183:9
+    |
+183 |     use std::io::Cursor;
+    |         ^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::parser::object::PdfObject`
+  --> crates/pdftract-core/src/conformance.rs:17:5
+   |
+17 | use crate::parser::object::PdfObject;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `anyhow::Result`
+  --> crates/pdftract-core/src/conformance.rs:20:5
+   |
+20 | use anyhow::Result;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `intern`
+  --> crates/pdftract-core/src/content_stream.rs:34:29
+   |
+34 | use crate::parser::object::{intern, ObjRef, PdfDict, PdfObject};
+   |                             ^^^^^^
+
+warning: unused import: `PdfDict`
+    --> crates/pdftract-core/src/content_stream.rs:1926:41
+     |
+1926 |     use crate::parser::object::{intern, PdfDict};
+     |                                         ^^^^^^^
+
+warning: unused import: `indexmap::indexmap`
+   --> crates/pdftract-core/src/decoder/jbig2.rs:154:9
+    |
+154 |     use indexmap::indexmap;
+    |         ^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `LinearizationInfo` and `XrefSection`
+  --> crates/pdftract-core/src/document.rs:21:76
+   |
+21 |     detect_linearization, load_xref_linearized, load_xref_with_prev_chain, LinearizationInfo,
+   |                                                                            ^^^^^^^^^^^^^^^^^
+22 |     XrefResolver, XrefSection,
+   |                   ^^^^^^^^^^^
+
+warning: unused import: `derive_aes_128_object_key`
+  --> crates/pdftract-core/src/encryption/decryptor.rs:12:32
+   |
+12 |     aes_128::{aes_128_decrypt, derive_aes_128_object_key},
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `secrecy::SecretString`
+  --> crates/pdftract-core/src/encryption/decryptor.rs:22:5
+   |
+22 | use secrecy::SecretString;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `AcroFormField`
+  --> crates/pdftract-core/src/extract.rs:23:57
+   |
+23 |     acro_field_to_value, combine, walk_acroform_fields, AcroFormField, FormFieldValue,
+   |                                                         ^^^^^^^^^^^^^
+
+warning: unused import: `parse_struct_tree`
+  --> crates/pdftract-core/src/extract.rs:33:60
+   |
+33 | use crate::parser::struct_tree::{check_coverage_for_pages, parse_struct_tree};
+   |                                                            ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `PageContext`
+  --> crates/pdftract-core/src/extract.rs:44:64
+   |
+44 |     detect_two_page_tables, grid_to_table_json, GridCandidate, PageContext, TableDetector,
+   |                                                                ^^^^^^^^^^^
+
+warning: unused import: `TableSpan`
+  --> crates/pdftract-core/src/extract.rs:46:39
+   |
+46 | use crate::table::{TableCell as Cell, TableSpan};
+   |                                       ^^^^^^^^^
+
+warning: unused imports: `emit_glyph` and `new_raw_glyph_list`
+  --> crates/pdftract-core/src/extract.rs:49:20
+   |
+49 | use crate::glyph::{emit_glyph, new_raw_glyph_list, Glyph};
+   |                    ^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::graphics_state::GraphicsState`
+  --> crates/pdftract-core/src/extract.rs:50:5
+   |
+50 | use crate::graphics_state::GraphicsState;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `BlockInput`, `Block`, `Column`, `Line`, `PageContext as LayoutPageContext`, `assign_columns_to_lines`, `classify_caption`, `classify_code`, `classify_figure`, `classify_formula`, `classify_list`, `classify_watermark`, `compute_baseline`, and `detect_headers_and_footers`
+  --> crates/pdftract-core/src/extract.rs:53:5
+   |
+53 |     assign_columns_to_lines, build_x0_histogram, classify_caption, classify_code, classify_figure,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^                      ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^
+54 |     classify_formula, classify_list, classify_watermark, cluster_spans_into_lines,
+   |     ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+55 |     compute_baseline, detect_headers_and_footers, group_lines_into_blocks, xy_cut, Block,
+   |     ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^                                   ^^^^^
+56 |     BlockInput, Column, Line, PageContext as LayoutPageContext,
+   |     ^^^^^^^^^^  ^^^^^^  ^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Span`
+  --> crates/pdftract-core/src/extract.rs:59:32
+   |
+59 | use crate::span::{CssHexColor, Span};
+   |                                ^^^^
+
+warning: unused import: `std::cmp::Ordering`
+  --> crates/pdftract-core/src/extract.rs:67:5
+   |
+67 | use std::cmp::Ordering;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::parser::xref::XrefResolver`
+   --> crates/pdftract-core/src/extract.rs:930:13
+    |
+930 |         use crate::parser::xref::XrefResolver;
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::diagnostics::DiagCode`
+    --> crates/pdftract-core/src/extract.rs:3004:13
+     |
+3004 |         use crate::diagnostics::DiagCode;
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::diagnostics::DiagCode`
+  --> crates/pdftract-core/src/font/agl.rs:14:5
+   |
+14 | use crate::diagnostics::DiagCode;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+  --> crates/pdftract-core/src/font/fingerprint.rs:26:5
+   |
+26 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused imports: `lookup_shape` and `phash_glyph`
+  --> crates/pdftract-core/src/font/resolver.rs:24:26
+   |
+24 | use crate::font::shape::{lookup_shape, phash_glyph};
+   |                          ^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused import: `crate::font::type3_rasterizer::rasterize_type3_glyph`
+  --> crates/pdftract-core/src/font/resolver.rs:26:5
+   |
+26 | use crate::font::type3_rasterizer::rasterize_type3_glyph;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `OpenTypeMetrics`
+  --> crates/pdftract-core/src/font/type0.rs:11:43
+   |
+11 | use crate::font::embedded::{EmbeddedFont, OpenTypeMetrics};
+   |                                           ^^^^^^^^^^^^^^^
+
+warning: unused import: `intern`
+   --> crates/pdftract-core/src/forms/mod.rs:251:29
+    |
+251 | use crate::parser::object::{intern, ObjRef, PdfDict, PdfObject};
+    |                             ^^^^^^
+
+warning: unused import: `std::sync::Arc`
+   --> crates/pdftract-core/src/forms/mod.rs:255:5
+    |
+255 | use std::sync::Arc;
+    |     ^^^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+   --> crates/pdftract-core/src/forms/mod.rs:836:9
+    |
+836 |     use std::sync::Arc;
+    |         ^^^^^^^^^^^^^^
+
+warning: unused import: `encoding_rs::WINDOWS_1252`
+  --> crates/pdftract-core/src/layout/correction.rs:16:5
+   |
+16 | use encoding_rs::WINDOWS_1252;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Line`
+  --> crates/pdftract-core/src/layout/correction.rs:20:34
+   |
+20 | use crate::layout::line::{Block, Line, LineMetadata};
+   |                                  ^^^^
+
+warning: unused import: `super::*`
+    --> crates/pdftract-core/src/layout/correction.rs:1215:9
+     |
+1215 |     use super::*;
+     |         ^^^^^^^^
+
+warning: unused import: `std::sync::OnceLock`
+  --> crates/pdftract-core/src/layout/list.rs:13:5
+   |
+13 | use std::sync::OnceLock;
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashSet`
+  --> crates/pdftract-core/src/layout/reading_order.rs:20:5
+   |
+20 | use std::collections::HashSet;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `anyhow::Result`
+  --> crates/pdftract-core/src/log_policy.rs:20:5
+   |
+20 | use anyhow::Result;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `std::io::Cursor`
+   --> crates/pdftract-core/src/output/ndjson/frames.rs:286:9
+    |
+286 |     use std::io::Cursor;
+    |         ^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::page_class::PageClass`
+  --> crates/pdftract-core/src/output/ndjson/pipeline.rs:15:5
+   |
+15 | use crate::page_class::PageClass;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::*`
+   --> crates/pdftract-core/src/output/ndjson/pipeline.rs:141:9
+    |
+141 |     use super::*;
+    |         ^^^^^^^^
+
+warning: unused import: `std::hash::Hasher`
+   --> crates/pdftract-core/src/page_class.rs:248:13
+    |
+248 |         use std::hash::Hasher;
+    |             ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `FlateDecoder`
+   --> crates/pdftract-core/src/parser/hint_stream.rs:382:46
+    |
+382 |     use crate::parser::stream::{get_decoder, FlateDecoder, DEFAULT_MAX_DECOMPRESS_BYTES};
+    |                                              ^^^^^^^^^^^^
+
+warning: unused import: `crate::parser::object::PdfObject`
+  --> crates/pdftract-core/src/parser/marked_content.rs:22:5
+   |
+22 | use crate::parser::object::PdfObject;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashSet`
+   --> crates/pdftract-core/src/parser/marked_content.rs:247:9
+    |
+247 |     use std::collections::HashSet;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused doc comment
+  --> crates/pdftract-core/src/parser/object/cache.rs:50:1
+   |
+50 | / /// Per-thread resolution depth counter.
+51 | | ///
+52 | | /// Each thread gets its own independent depth counter, allowing concurrent
+53 | | /// page processing in rayon without lock contention.
+   | |_----------------------------------------------------^
+   |   |
+   |   rustdoc does not generate documentation for macro invocations
+   |
+   = help: to document an item produced by a macro, the macro must produce the documentation as part of its expansion
+   = note: `#[warn(unused_doc_comments)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `RESOLVING`
+  --> crates/pdftract-core/src/parser/object/cache.rs:35:51
+   |
+35 | use super::cycle::{is_resolving, ResolutionGuard, RESOLVING};
+   |                                                   ^^^^^^^^^
+
+warning: unused doc comment
+  --> crates/pdftract-core/src/parser/object/cycle.rs:33:1
+   |
+33 | / /// Per-thread set of object references currently being resolved.
+34 | | ///
+35 | | /// Each thread gets its own independent HashSet, allowing concurrent
+36 | | /// page processing in rayon without lock contention.
+37 | | ///
+38 | | /// Capacity of 64 is conservative: typical PDF resolution depth is < 10.
+   | |_------------------------------------------------------------------------^
+   |   |
+   |   rustdoc does not generate documentation for macro invocations
+   |
+   = help: to document an item produced by a macro, the macro must produce the documentation as part of its expansion
+
+warning: unused import: `std::sync::Arc`
+   --> crates/pdftract-core/src/parser/ocg.rs:427:9
+    |
+427 |     use std::sync::Arc;
+    |         ^^^^^^^^^^^^^^
+
+warning: unused import: `std::io::Seek`
+  --> crates/pdftract-core/src/parser/stream.rs:13:5
+   |
+13 | use std::io::Seek;
+   |     ^^^^^^^^^^^^^
+
+warning: unused import: `Hasher`
+    --> crates/pdftract-core/src/parser/stream.rs:1919:31
+     |
+1919 |         use std::hash::{Hash, Hasher};
+     |                               ^^^^^^
+
+warning: unused import: `SeqAccess`
+    --> crates/pdftract-core/src/parser/stream.rs:3243:42
+     |
+3243 |         use serde::de::{self, MapAccess, SeqAccess, Visitor};
+     |                                          ^^^^^^^^^
+
+warning: unused import: `bytes::Buf`
+    --> crates/pdftract-core/src/parser/stream.rs:3333:13
+     |
+3333 |         use bytes::Buf;
+     |             ^^^^^^^^^^
+
+warning: unused import: `bytes::Buf`
+    --> crates/pdftract-core/src/parser/stream.rs:3373:13
+     |
+3373 |         use bytes::Buf;
+     |             ^^^^^^^^^^
+
+warning: unused import: `crate::encryption::decryptor::DecryptionContext`
+    --> crates/pdftract-core/src/parser/stream.rs:3749:13
+     |
+3749 |         use crate::encryption::decryptor::DecryptionContext;
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `secrecy::ExposeSecret`
+    --> crates/pdftract-core/src/parser/stream.rs:3997:9
+     |
+3997 |     use secrecy::ExposeSecret;
+     |         ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `secrecy::SecretString`
+    --> crates/pdftract-core/src/parser/stream.rs:5118:13
+     |
+5118 |         use secrecy::SecretString;
+     |             ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Jbig2GlobalsRef`
+    --> crates/pdftract-core/src/parser/stream.rs:6139:51
+     |
+6139 |         use crate::decoder::jbig2::{Jbig2Decoder, Jbig2GlobalsRef};
+     |                                                   ^^^^^^^^^^^^^^^
+
+warning: unused import: `MarkInfo`
+   --> crates/pdftract-core/src/parser/struct_tree.rs:696:34
+    |
+696 |     use crate::parser::catalog::{MarkInfo, ReadingOrderAlgorithm};
+    |                                  ^^^^^^^^
+
+warning: unused import: `PdfStream`
+  --> crates/pdftract-core/src/parser/xref.rs:10:71
+   |
+10 | use crate::parser::object::{ObjRef, ObjectParser, PdfDict, PdfObject, PdfStream};
+   |                                                                       ^^^^^^^^^
+
+warning: unused import: `memchr`
+  --> crates/pdftract-core/src/parser/xref.rs:16:14
+   |
+16 | use memchr::{memchr, memchr_iter};
+   |              ^^^^^^
+
+warning: unused import: `std::sync::Arc`
+   --> crates/pdftract-core/src/parser/xref.rs:273:13
+    |
+273 |         use std::sync::Arc;
+    |             ^^^^^^^^^^^^^^
+
+warning: unused import: `crate::parser::object::intern`
+    --> crates/pdftract-core/src/parser/xref.rs:3672:13
+     |
+3672 |         use crate::parser::object::intern;
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `base64::prelude::*`
+  --> crates/pdftract-core/src/receipts/ocr_fallback.rs:11:5
+   |
+11 | use base64::prelude::*;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::fs::File`
+  --> crates/pdftract-core/src/source/mod.rs:27:5
+   |
+27 | use std::fs::File;
+   |     ^^^^^^^^^^^^^
+
+warning: unused import: `SeekFrom`
+  --> crates/pdftract-core/src/source/mod.rs:28:33
+   |
+28 | use std::io::{self, Read, Seek, SeekFrom};
+   |                                 ^^^^^^^^
+
+warning: unused import: `std::path::Path`
+  --> crates/pdftract-core/src/source/mod.rs:29:5
+   |
+29 | use std::path::Path;
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `std::fs`
+   --> crates/pdftract-core/src/source/mmap.rs:178:9
+    |
+178 |     use std::fs;
+    |         ^^^^^^^
+
+warning: unused import: `crate::fingerprint::compute_fingerprint`
+  --> crates/pdftract-core/src/sdk.rs:10:5
+   |
+10 | use crate::fingerprint::compute_fingerprint;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::markdown::page_to_markdown`
+  --> crates/pdftract-core/src/sdk.rs:11:5
+   |
+11 | use crate::markdown::page_to_markdown;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::parser::catalog::parse_catalog`
+  --> crates/pdftract-core/src/sdk.rs:13:5
+   |
+13 | use crate::parser::catalog::parse_catalog;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `LazyPageIter`, `PageDict`, and `flatten_page_tree`
+  --> crates/pdftract-core/src/sdk.rs:14:28
+   |
+14 | use crate::parser::pages::{flatten_page_tree, LazyPageIter, PageDict};
+   |                            ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^
+
+warning: unused imports: `XrefResolver` and `load_xref_with_prev_chain`
+  --> crates/pdftract-core/src/sdk.rs:16:27
+   |
+16 | use crate::parser::xref::{load_xref_with_prev_chain, XrefResolver};
+   |                           ^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused import: `crate::source::FileSource`
+  --> crates/pdftract-core/src/sdk.rs:19:5
+   |
+19 | use crate::source::FileSource;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `serde_json::Value`
+  --> crates/pdftract-core/src/sdk.rs:22:5
+   |
+22 | use serde_json::Value;
+   |     ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+  --> crates/pdftract-core/src/sdk.rs:23:5
+   |
+23 | use std::collections::HashMap;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::*`
+   --> crates/pdftract-core/src/sdk.rs:341:9
+    |
+341 |     use super::*;
+    |         ^^^^^^^^
+
+warning: unused imports: `PdfDict` and `intern`
+  --> crates/pdftract-core/src/signature/mod.rs:20:29
+   |
+20 | use crate::parser::object::{intern, ObjRef, PdfDict, PdfObject};
+   |                             ^^^^^^          ^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+  --> crates/pdftract-core/src/signature/mod.rs:22:5
+   |
+22 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `crate::font::UnicodeSource`
+    --> crates/pdftract-core/src/span/mod.rs:1279:13
+     |
+1279 |         use crate::font::UnicodeSource;
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `anyhow::Result`
+ --> crates/pdftract-core/src/table/output.rs:9:5
+  |
+9 | use anyhow::Result;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `crate::table::Segment`
+   --> crates/pdftract-core/src/table/output.rs:275:9
+    |
+275 |     use crate::table::Segment;
+    |         ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Write`
+   --> crates/pdftract-core/src/atomic_file_writer.rs:191:33
+    |
+191 |             use std::io::{self, Write};
+    |                                 ^^^^^
+
+warning: unused import: `crate::parser::stream::PdfSource`
+  --> crates/pdftract-core/src/sdk.rs:15:5
+   |
+15 | use crate::parser::stream::PdfSource as ParserPdfSource;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `PdfSource`
+  --> crates/pdftract-core/src/document.rs:25:33
+   |
+25 | use crate::source::{FileSource, PdfSource};
+   |                                 ^^^^^^^^^
+
+warning: unused import: `std::io::Read`
+  --> crates/pdftract-core/src/parser/stream.rs:12:5
+   |
+12 | use std::io::Read;
+   |     ^^^^^^^^^^^^^
+
+warning: unused import: `rayon::prelude`
+  --> crates/pdftract-core/src/extract.rs:62:5
+   |
+62 | use rayon::prelude::*;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `std::io::Write`
+    --> crates/pdftract-core/src/extract.rs:1656:9
+     |
+1656 |     use std::io::Write;
+     |         ^^^^^^^^^^^^^^
+
+warning: unused import: `LineMetadata`
+  --> crates/pdftract-core/src/layout/correction.rs:20:40
+   |
+20 | use crate::layout::line::{Block, Line, LineMetadata};
+   |                                        ^^^^^^^^^^^^
+
+warning: unused variable: `page_ref_to_index`
+  --> crates/pdftract-core/src/annotation/json.rs:29:5
+   |
+29 |     page_ref_to_index: &Option<HashMap<u64, usize>>,
+   |     ^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_page_ref_to_index`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/atomic_file_writer.rs:295:13
+    |
+295 |         for mut writer in writers {
+    |             ----^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/attachment/filespec.rs:156:9
+    |
+156 |     let mut diagnostics = Vec::new();
+    |         ----^^^^^^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/attachment/filespec.rs:598:13
+    |
+598 |         let mut uf_bytes = filename
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/attachment/name_tree.rs:473:13
+    |
+473 |         let mut names_dict = IndexMap::new();
+    |             ----^^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/cache/compression.rs:131:13
+    |
+131 |         let mut decoder = zstd::Decoder::new(data)?;
+    |             ----^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/cache/compression.rs:255:9
+    |
+255 |     let mut decoder = zstd::Decoder::new(data)?;
+    |         ----^^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: unused variable: `ctx`
+   --> crates/pdftract-core/src/classify.rs:690:31
+    |
+690 |     fn classify_hybrid(&self, ctx: &PageContext, cells: &[CellData; 64]) -> PageClassification {
+    |                               ^^^ help: if this is intentional, prefix it with an underscore: `_ctx`
+
+warning: unused variable: `classifier`
+    --> crates/pdftract-core/src/classify.rs:2121:13
+     |
+2121 |         let classifier = PageClassifier::default();
+     |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_classifier`
+
+warning: unused variable: `classifier`
+    --> crates/pdftract-core/src/classify.rs:2145:13
+     |
+2145 |         let classifier = PageClassifier::default();
+     |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_classifier`
+
+warning: unused variable: `classifier`
+    --> crates/pdftract-core/src/classify.rs:2166:13
+     |
+2166 |         let classifier = PageClassifier::default();
+     |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_classifier`
+
+warning: unused variable: `ranges`
+   --> crates/pdftract-core/src/cmap/codespace.rs:827:14
+    |
+827 |         let (ranges, diags) = parser.parse();
+    |              ^^^^^^ help: if this is intentional, prefix it with an underscore: `_ranges`
+
+warning: unused variable: `input`
+   --> crates/pdftract-core/src/cmap/codespace.rs:884:13
+    |
+884 |         let input = b"1 begincodespacerace <00> <7F> endcodespacerace";
+    |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_input`
+
+warning: unused variable: `catalog`
+    --> crates/pdftract-core/src/document.rs:1183:27
+     |
+1183 |         let (fingerprint, catalog, pages, resolver) = parse_pdf_file(&pdf_path).unwrap();
+     |                           ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_catalog`
+
+warning: variable does not need to be mutable
+  --> crates/pdftract-core/src/encryption/aes_128.rs:62:9
+   |
+62 |     let mut hash = md5.finalize();
+   |         ----^^^^
+   |         |
+   |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/encryption/aes_128.rs:221:13
+    |
+221 |         let mut data = vec![0u8; 33];
+    |             ----^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: unused variable: `decrypted_len`
+   --> crates/pdftract-core/src/encryption/aes_256.rs:231:13
+    |
+231 |         let decrypted_len = decryptor
+    |             ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_decrypted_len`
+
+warning: unused variable: `k`
+   --> crates/pdftract-core/src/encryption/rc4.rs:242:10
+    |
+242 |     for (k, byte) in result.iter_mut().enumerate() {
+    |          ^ help: if this is intentional, prefix it with an underscore: `_k`
+
+warning: unused variable: `padded_password`
+   --> crates/pdftract-core/src/encryption/rc4.rs:295:9
+    |
+295 |     let padded_password = pad_password(password);
+    |         ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_padded_password`
+
+warning: unused variable: `resolver`
+   --> crates/pdftract-core/src/extract.rs:158:5
+    |
+158 |     resolver: &crate::parser::xref::XrefResolver,
+    |     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_resolver`
+
+warning: unused variable: `page_index`
+   --> crates/pdftract-core/src/extract.rs:159:5
+    |
+159 |     page_index: usize,
+    |     ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_page_index`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/extract.rs:676:9
+    |
+676 |     let mut page_count = all_pages.len();
+    |         ----^^^^^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: unused variable: `decryption_context`
+   --> crates/pdftract-core/src/extract.rs:569:9
+    |
+569 |     let decryption_context = {
+    |         ^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_decryption_context`
+
+warning: unused variable: `semaphore`
+   --> crates/pdftract-core/src/extract.rs:658:9
+    |
+658 |     let semaphore = Arc::new(Semaphore::new(options.max_parallel_pages));
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_semaphore`
+
+warning: unused variable: `resolver`
+    --> crates/pdftract-core/src/extract.rs:1101:5
+     |
+1101 |     resolver: &crate::parser::xref::XrefResolver,
+     |     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_resolver`
+
+warning: unused variable: `catalog`
+    --> crates/pdftract-core/src/extract.rs:1102:5
+     |
+1102 |     catalog: &crate::parser::catalog::Catalog,
+     |     ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_catalog`
+
+warning: unused variable: `kind`
+    --> crates/pdftract-core/src/extract.rs:1130:13
+     |
+1130 |             kind,
+     |             ^^^^ help: try ignoring the field: `kind: _`
+
+warning: unused variable: `is_combo`
+    --> crates/pdftract-core/src/extract.rs:1159:13
+     |
+1159 |             is_combo,
+     |             ^^^^^^^^ help: try ignoring the field: `is_combo: _`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/extract.rs:1734:9
+     |
+1734 |     let mut page_count = 0usize;
+     |         ----^^^^^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/extract.rs:1763:9
+     |
+1763 |     let mut page_count = all_pages.len();
+     |         ----^^^^^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: unused variable: `page_count`
+    --> crates/pdftract-core/src/extract.rs:1734:9
+     |
+1734 |     let mut page_count = 0usize;
+     |         ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_page_count`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/extract.rs:2357:9
+     |
+2357 |     let mut spans = merge_glyphs_to_spans(&glyphs);
+     |         ----^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: unused variable: `deferred_diag`
+    --> crates/pdftract-core/src/extract.rs:3033:13
+     |
+3033 |         let deferred_diag = result
+     |             ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_deferred_diag`
+
+warning: unused variable: `expected_type`
+   --> crates/pdftract-core/src/font/embedded.rs:345:26
+    |
+345 |         let (stream_key, expected_type) = match kind {
+    |                          ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_expected_type`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/font/encoding.rs:1195:13
+     |
+1195 |         let mut diagnostics: Vec<Diagnostic> = Vec::new();
+     |             ----^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: unused variable: `glyph_name_for_l4`
+   --> crates/pdftract-core/src/font/resolver.rs:551:9
+    |
+551 |     let glyph_name_for_l4 = encoding.glyph_name_for(char_code);
+    |         ^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_glyph_name_for_l4`
+
+warning: unused variable: `name`
+   --> crates/pdftract-core/src/font/type3_rasterizer.rs:500:13
+    |
+500 |         let name = name_stack.pop().unwrap();
+    |             ^^^^ help: if this is intentional, prefix it with an underscore: `_name`
+
+warning: unused variable: `diagnostics`
+   --> crates/pdftract-core/src/forms/mod.rs:552:5
+    |
+552 |     diagnostics: &mut Vec<Diagnostic>,
+    |     ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_diagnostics`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/forms/mod.rs:840:13
+    |
+840 |         let mut resolver = XrefResolver::new();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/forms/mod.rs:931:13
+    |
+931 |         let mut resolver = XrefResolver::new();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/forms/mod.rs:992:14
+    |
+992 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+    |              ----^^^^^^^
+    |              |
+    |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/forms/mod.rs:992:27
+    |
+992 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+    |                           ----^^^^^^^^
+    |                           |
+    |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1065:14
+     |
+1065 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1065:27
+     |
+1065 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1112:14
+     |
+1112 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1112:27
+     |
+1112 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1154:14
+     |
+1154 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1154:27
+     |
+1154 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1196:14
+     |
+1196 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1196:27
+     |
+1196 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1238:14
+     |
+1238 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1238:27
+     |
+1238 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1276:14
+     |
+1276 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1276:27
+     |
+1276 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1352:14
+     |
+1352 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1352:27
+     |
+1352 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: unused variable: `font_dict`
+   --> crates/pdftract-core/src/glyph/mod.rs:459:22
+    |
+459 | fn get_type0_advance(font_dict: &PdfDict, char_code: u32) -> u16 {
+    |                      ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_font_dict`
+
+warning: unused variable: `char_code`
+   --> crates/pdftract-core/src/glyph/mod.rs:459:43
+    |
+459 | fn get_type0_advance(font_dict: &PdfDict, char_code: u32) -> u16 {
+    |                                           ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_char_code`
+
+warning: unused variable: `char_code`
+   --> crates/pdftract-core/src/glyph/mod.rs:519:45
+    |
+519 | fn get_font_glyph_bbox(font_dict: &PdfDict, char_code: u32) -> [f64; 4] {
+    |                                             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_char_code`
+
+warning: unused variable: `descriptor_ref`
+   --> crates/pdftract-core/src/glyph/mod.rs:559:40
+    |
+559 |             if let Some(PdfObject::Ref(descriptor_ref)) = font_dict.get("/FontDescriptor") {
+    |                                        ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_descriptor_ref`
+
+warning: unused variable: `initial_ctm`
+    --> crates/pdftract-core/src/graphics_state.rs:1094:13
+     |
+1094 |         let initial_ctm = state.ctm;
+     |             ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_initial_ctm`
+
+warning: unused variable: `threshold`
+    --> crates/pdftract-core/src/layout/columns.rs:1041:13
+     |
+1041 |         let threshold = (page_width * 0.03_f32).ceil() as usize; // 9
+     |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_threshold`
+
+warning: unused variable: `threshold`
+    --> crates/pdftract-core/src/layout/columns.rs:1060:13
+     |
+1060 |         let threshold = (page_width * 0.03_f32).ceil() as usize; // 18
+     |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_threshold`
+
+warning: unreachable pattern
+   --> crates/pdftract-core/src/layout/correction.rs:376:13
+    |
+362 |             0x0178 => 0x8E, // Ÿ (Latin capital letter Y with diaeresis)
+    |             ------ matches all the relevant values
+...
+376 |             0x0178 => 0x9E, // Ÿ (Latin small letter y with diaeresis) - duplicate codepoint, 9F is correct
+    |             ^^^^^^ no value can reach this
+    |
+    = note: `#[warn(unreachable_patterns)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `original_text`
+   --> crates/pdftract-core/src/layout/correction.rs:904:9
+    |
+904 |     let original_text = span.text.clone();
+    |         ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_original_text`
+
+warning: unused variable: `char_idx`
+   --> crates/pdftract-core/src/layout/correction.rs:921:10
+    |
+921 |     for (char_idx, &ch) in chars.iter().enumerate() {
+    |          ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_char_idx`
+
+warning: unused variable: `x0`
+   --> crates/pdftract-core/src/layout/header_footer.rs:203:10
+    |
+203 |     let [x0, y0, x1, y1] = block.bbox;
+    |          ^^ help: if this is intentional, prefix it with an underscore: `_x0`
+
+warning: unused variable: `x1`
+   --> crates/pdftract-core/src/layout/header_footer.rs:203:18
+    |
+203 |     let [x0, y0, x1, y1] = block.bbox;
+    |                  ^^ help: if this is intentional, prefix it with an underscore: `_x1`
+
+warning: unused variable: `text_a`
+   --> crates/pdftract-core/src/layout/header_footer.rs:415:13
+    |
+415 |         let text_a = "ACME Corporation XYZ";
+    |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_text_a`
+
+warning: unused variable: `text_b`
+   --> crates/pdftract-core/src/layout/header_footer.rs:416:13
+    |
+416 |         let text_b = "ACME CorporationsXYZ"; // 1 char diff (added 's')
+    |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_text_b`
+
+warning: unused variable: `text_a`
+   --> crates/pdftract-core/src/layout/header_footer.rs:433:13
+    |
+433 |         let text_a = "ACME Corporation ".repeat(6); // ~114 chars
+    |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_text_a`
+
+warning: unused variable: `text_b`
+   --> crates/pdftract-core/src/layout/header_footer.rs:434:13
+    |
+434 |         let text_b = "ACME Corporation ".repeat(5).to_string() + "ACME Corporution "; // typo
+    |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_text_b`
+
+warning: unused variable: `avg_x0`
+   --> crates/pdftract-core/src/layout/line.rs:395:5
+    |
+395 |     avg_x0: f32,
+    |     ^^^^^^ help: if this is intentional, prefix it with an underscore: `_avg_x0`
+
+warning: value assigned to `region_count` is never read
+   --> crates/pdftract-core/src/layout/reading_order.rs:112:28
+    |
+112 |     let mut region_count = 0;
+    |                            ^ this value is reassigned later and never used
+...
+119 |     region_count = stats.region_count;
+    |     --------------------------------- `region_count` is overwritten here before the previous value is read
+    |
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `small_region_count` is never read
+   --> crates/pdftract-core/src/layout/reading_order.rs:113:34
+    |
+113 |     let mut small_region_count = 0;
+    |                                  ^ this value is reassigned later and never used
+...
+120 |     small_region_count = stats.small_region_count;
+    |     --------------------------------------------- `small_region_count` is overwritten here before the previous value is read
+
+warning: unused variable: `x_split`
+   --> crates/pdftract-core/src/layout/reading_order.rs:190:18
+    |
+190 |     if let Some((x_split, left_indices, right_indices)) =
+    |                  ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_x_split`
+
+warning: unused variable: `y_split`
+   --> crates/pdftract-core/src/layout/reading_order.rs:211:18
+    |
+211 |     if let Some((y_split, top_indices, bottom_indices)) =
+    |                  ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_y_split`
+
+warning: unused variable: `first_main`
+    --> crates/pdftract-core/src/layout/reading_order.rs:1167:23
+     |
+1167 |         if let (Some(&first_main), Some(&last_main), Some(&first_sidebar)) =
+     |                       ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_first_main`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/inline_image.rs:668:29
+    |
+668 |                         let mut dict = Vec::new();
+    |                             ----^^^^
+    |                             |
+    |                             help: remove this `mut`
+
+warning: variable `sign_count` is assigned to, but never used
+   --> crates/pdftract-core/src/parser/lexer/mod.rs:528:13
+    |
+528 |         let mut sign_count = 0;
+    |             ^^^^^^^^^^^^^^
+    |
+    = note: consider using `_sign_count` instead
+
+warning: value assigned to `sign_count` is never read
+   --> crates/pdftract-core/src/parser/lexer/mod.rs:537:13
+    |
+537 |             sign_count = 1;
+    |             ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/lexer/mod.rs:1761:20
+     |
+1761 |         .prop_map(|mut bytes| {
+     |                    ----^^^^^
+     |                    |
+     |                    help: remove this `mut`
+
+warning: value assigned to `offset` is never read
+   --> crates/pdftract-core/src/parser/objstm.rs:724:9
+    |
+724 |         offset += b"5 0 R\n".len() as u64;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/objstm.rs:781:13
+    |
+781 |         let mut dict = PdfDict::new();
+    |             ----^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: unused variable: `has_bomb_diag`
+    --> crates/pdftract-core/src/parser/objstm.rs:1159:13
+     |
+1159 |         let has_bomb_diag = diags.iter().any(|d| d.code == DiagCode::StreamBomb);
+     |             ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_has_bomb_diag`
+
+warning: unused variable: `diagnostics`
+   --> crates/pdftract-core/src/parser/ocg.rs:144:31
+    |
+144 |     fn parse(obj: &PdfObject, diagnostics: &mut Vec<Diagnostic>) -> Self {
+    |                               ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_diagnostics`
+
+warning: unused variable: `obj_ref`
+   --> crates/pdftract-core/src/parser/ocg.rs:433:22
+    |
+433 |     fn make_test_ocg(obj_ref: ObjRef, name: &str, intent: Option<&str>) -> PdfObject {
+    |                      ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_obj_ref`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/ocg.rs:493:13
+    |
+493 |         let mut resolver = make_test_resolver();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/ocg.rs:530:13
+    |
+530 |         let mut resolver = make_test_resolver();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/ocg.rs:563:13
+    |
+563 |         let mut resolver = make_test_resolver();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/ocg.rs:607:13
+    |
+607 |         let mut resolver = make_test_resolver();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/ocg.rs:644:13
+    |
+644 |         let mut resolver = make_test_resolver();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/ocg.rs:680:13
+    |
+680 |         let mut resolver = make_test_resolver();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: unused variable: `resolver`
+   --> crates/pdftract-core/src/parser/ocg.rs:706:13
+    |
+706 |         let resolver = make_test_resolver();
+    |             ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_resolver`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/ocg.rs:856:21
+    |
+856 |                 let mut resolver = make_test_resolver();
+    |                     ----^^^^^^^^
+    |                     |
+    |                     help: remove this `mut`
+
+warning: unused variable: `diags`
+    --> crates/pdftract-core/src/parser/outline.rs:1065:24
+     |
+1065 |         let (outlines, diags) = parse_outlines(&resolver, Some(ObjRef::new(99, 0)), &pages);
+     |                        ^^^^^ help: if this is intentional, prefix it with an underscore: `_diags`
+
+warning: unused variable: `diags`
+    --> crates/pdftract-core/src/parser/outline.rs:1107:24
+     |
+1107 |         let (outlines, diags) = parse_outlines(&resolver, Some(ObjRef::new(99, 0)), &pages);
+     |                        ^^^^^ help: if this is intentional, prefix it with an underscore: `_diags`
+
+warning: unused variable: `diags`
+    --> crates/pdftract-core/src/parser/outline.rs:1165:24
+     |
+1165 |         let (outlines, diags) = parse_outlines(&resolver, Some(ObjRef::new(99, 0)), &pages);
+     |                        ^^^^^ help: if this is intentional, prefix it with an underscore: `_diags`
+
+warning: unused variable: `diags`
+    --> crates/pdftract-core/src/parser/outline.rs:1222:24
+     |
+1222 |         let (outlines, diags) = parse_outlines(&resolver, Some(ObjRef::new(99, 0)), &pages);
+     |                        ^^^^^ help: if this is intentional, prefix it with an underscore: `_diags`
+
+warning: unused variable: `diags`
+    --> crates/pdftract-core/src/parser/outline.rs:1335:24
+     |
+1335 |         let (outlines, diags) = parse_outlines(&resolver, Some(ObjRef::new(99, 0)), &pages);
+     |                        ^^^^^ help: if this is intentional, prefix it with an underscore: `_diags`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/outline.rs:1434:13
+     |
+1434 |         let mut root_dict = IndexMap::new();
+     |             ----^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: unused variable: `diags`
+    --> crates/pdftract-core/src/parser/outline.rs:1485:24
+     |
+1485 |         let (outlines, diags) = parse_outlines(&resolver, Some(ObjRef::new(99, 0)), &pages);
+     |                        ^^^^^ help: if this is intentional, prefix it with an underscore: `_diags`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/pages.rs:1340:13
+     |
+1340 |         let mut root_resources = PdfDict::new(); // Empty resources dict
+     |             ----^^^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1588:25
+     |
+1588 |                         inherited = parent_inherited;
+     |                         ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1569:41
+     |
+1569 | ...                   inherited = parent_inherited;
+     |                       ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1557:37
+     |
+1557 | ...                   inherited = parent_inherited;
+     |                       ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1580:33
+     |
+1580 | ...                   inherited = parent_inherited;
+     |                       ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1521:29
+     |
+1521 | ...                   inherited = parent_inherited;
+     |                       ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1512:29
+     |
+1512 | ...                   inherited = parent_inherited;
+     |                       ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1593:21
+     |
+1593 |                     inherited = parent_inherited;
+     |                     ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: unused variable: `max_depth`
+    --> crates/pdftract-core/src/parser/pages.rs:1706:40
+     |
+1706 |     fn arb_pages_dict_with_direct_kids(max_depth: u8) -> impl Strategy<Value = PdfDict> {
+     |                                        ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_max_depth`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/resources.rs:323:13
+    |
+323 |         let mut ancestor = ResourceDict::new();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: unused variable: `buf`
+    --> crates/pdftract-core/src/parser/stream.rs:3477:24
+     |
+3477 |     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+     |                        ^^^ help: if this is intentional, prefix it with an underscore: `_buf`
+
+warning: unused variable: `e`
+    --> crates/pdftract-core/src/parser/stream.rs:3959:25
+     |
+3959 |                     Err(e) => {
+     |                         ^ help: if this is intentional, prefix it with an underscore: `_e`
+
+warning: unused variable: `std_type`
+    --> crates/pdftract-core/src/parser/struct_tree.rs:1654:20
+     |
+1654 | pub fn is_artifact(std_type: StructureType) -> bool {
+     |                    ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_std_type`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/xref.rs:826:41
+    |
+826 | fn read_line_at(source: &dyn PdfSource, mut pos: u64) -> Option<String> {
+    |                                         ----^^^
+    |                                         |
+    |                                         help: remove this `mut`
+
+warning: unused variable: `diagnostics`
+   --> crates/pdftract-core/src/parser/xref.rs:876:53
+    |
+876 | fn read_line(source: &dyn PdfSource, pos: &mut u64, diagnostics: &mut Vec<Diag>) -> Option<String> {
+    |                                                     ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_diagnostics`
+
+warning: value assigned to `depth` is never read
+   --> crates/pdftract-core/src/parser/xref.rs:909:21
+    |
+909 |     let mut depth = 0;
+    |                     ^ this value is reassigned later and never used
+...
+938 |                         depth = 1;
+    |                         --------- `depth` is overwritten here before the previous value is read
+
+warning: unused variable: `source_len`
+    --> crates/pdftract-core/src/parser/xref.rs:1229:37
+     |
+1229 | fn forward_scan_memory(data: &[u8], source_len: u64) -> XrefSection {
+     |                                     ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_source_len`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/xref.rs:4595:13
+     |
+4595 |         let mut rev2_with_prev = rev2.to_vec();
+     |             ----^^^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/xref.rs:4602:13
+     |
+4602 |         let mut rev3_with_prev = rev3.to_vec();
+     |             ----^^^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/xref.rs:4609:13
+     |
+4609 |         let mut rev4_with_prev = rev4.to_vec();
+     |             ----^^^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/xref.rs:4649:13
+     |
+4649 |         let mut rev2_with_prev = rev2.to_vec();
+     |             ----^^^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/xref.rs:4688:13
+     |
+4688 |         let mut rev2_with_prev = rev2.to_vec();
+     |             ----^^^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: unused variable: `rev_base`
+    --> crates/pdftract-core/src/parser/xref.rs:4720:13
+     |
+4720 |         let rev_base = b"xref\n0 1\n\
+     |             ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_rev_base`
+
+warning: unused variable: `rev1_offset`
+    --> crates/pdftract-core/src/parser/xref.rs:4840:13
+     |
+4840 |         let rev1_offset = file_data.len() as u64;
+     |             ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_rev1_offset`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/xref.rs:4931:13
+     |
+4931 |         let mut rev2_with_prev = rev2_trad.to_vec();
+     |             ----^^^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: unused variable: `has_prev`
+    --> crates/pdftract-core/src/parser/xref.rs:4970:51
+     |
+4970 |                 for (i, (obj_num, offset, gen_nr, has_prev)) in revisions.iter().enumerate() {
+     |                                                   ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_has_prev`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/word_boundary.rs:440:13
+    |
+440 |         let mut manager = WordBoundaryManager::new();
+    |             ----^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: unused variable: `prev`
+  --> crates/pdftract-core/src/semaphore.rs:65:13
+   |
+65 |         let prev = self.permits.fetch_add(1, Ordering::Release);
+   |             ^^^^ help: if this is intentional, prefix it with an underscore: `_prev`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/signature/mod.rs:838:13
+    |
+838 |         let mut resolver = XrefResolver::new();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/signature/mod.rs:909:13
+    |
+909 |         let mut resolver = XrefResolver::new();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/signature/mod.rs:933:14
+    |
+933 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+    |              ----^^^^^^^
+    |              |
+    |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/signature/mod.rs:933:27
+    |
+933 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+    |                           ----^^^^^^^^
+    |                           |
+    |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/signature/mod.rs:969:14
+    |
+969 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+    |              ----^^^^^^^
+    |              |
+    |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/signature/mod.rs:969:27
+    |
+969 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+    |                           ----^^^^^^^^
+    |                           |
+    |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1002:14
+     |
+1002 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1002:27
+     |
+1002 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1045:14
+     |
+1045 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1045:27
+     |
+1045 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1070:14
+     |
+1070 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1070:27
+     |
+1070 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1088:14
+     |
+1088 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1088:27
+     |
+1088 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1108:14
+     |
+1108 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1108:27
+     |
+1108 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1201:13
+     |
+1201 |         let mut resolver = XrefResolver::new();
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: unused variable: `v_ref`
+    --> crates/pdftract-core/src/signature/mod.rs:1183:13
+     |
+1183 |         let v_ref = ObjRef::new(500, 0);
+     |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_v_ref`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1259:13
+     |
+1259 |         let mut resolver = XrefResolver::new();
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1315:13
+     |
+1315 |         let mut resolver = XrefResolver::new();
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1401:13
+     |
+1401 |         let mut resolver = XrefResolver::new();
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1429:13
+     |
+1429 |         let mut resolver = XrefResolver::new();
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1457:13
+     |
+1457 |         let mut resolver = XrefResolver::new();
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1491:13
+     |
+1491 |         let mut resolver = XrefResolver::new();
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: unused variable: `col_count`
+   --> crates/pdftract-core/src/table/cell.rs:495:5
+    |
+495 |     col_count: usize,
+    |     ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_col_count`
+
+warning: variable does not need to be mutable
+  --> crates/pdftract-core/src/table/grid.rs:52:9
+   |
+52 |         mut intersections: Vec<(f32, f32)>,
+   |         ----^^^^^^^^^^^^^
+   |         |
+   |         help: remove this `mut`
+
+warning: unused variable: `page_idx`
+   --> crates/pdftract-core/src/table/output.rs:192:10
+    |
+192 |     for (page_idx, page_tables) in all_tables.iter().enumerate() {
+    |          ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_page_idx`
+
+warning: unused variable: `current_page_height`
+   --> crates/pdftract-core/src/table/output.rs:203:13
+    |
+203 |         let current_page_height = page_heights.get(page_idx).copied().unwrap_or(792.0);
+    |             ^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_current_page_height`
+
+warning: unused variable: `other`
+   --> crates/pdftract-core/src/threads/mod.rs:361:19
+    |
+361 |             (Some(other), _) => {
+    |                   ^^^^^ help: if this is intentional, prefix it with an underscore: `_other`
+
+warning: unused variable: `current_ref`
+   --> crates/pdftract-core/src/threads/mod.rs:535:43
+    |
+535 | fn extract_bead_rect(bead_dict: &PdfDict, current_ref: ObjRef) -> Option<[f32; 4]> {
+    |                                           ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_current_ref`
+
+warning: function `extract_destination_name` is never used
+   --> crates/pdftract-core/src/annotation/links.rs:491:4
+    |
+491 | fn extract_destination_name(dest_obj: Option<&PdfObject>) -> Option<String> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `make_filespec` is never used
+   --> crates/pdftract-core/src/attachment/filespec.rs:587:8
+    |
+587 |     fn make_filespec(
+    |        ^^^^^^^^^^^^^
+
+warning: function `make_ef_stream` is never used
+   --> crates/pdftract-core/src/attachment/filespec.rs:629:8
+    |
+629 |     fn make_ef_stream(
+    |        ^^^^^^^^^^^^^^
+
+warning: field `0` is never read
+   --> crates/pdftract-core/src/cmap/codespace.rs:644:16
+    |
+644 |     Unexpected(u8),
+    |     ---------- ^^
+    |     |
+    |     field in this variant
+    |
+    = note: `Token` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+    |
+644 -     Unexpected(u8),
+644 +     Unexpected(()),
+    |
+
+warning: variants `Stream` and `Error` are never constructed
+    --> crates/pdftract-core/src/content_stream.rs:1609:5
+     |
+1608 | enum XObjectResolveResult {
+     |      -------------------- variants in this enum
+1609 |     Stream(PdfDict, Vec<u8>),
+     |     ^^^^^^
+1610 |     Error(Diagnostic),
+     |     ^^^^^
+
+warning: constant `DECODER` is never used
+   --> crates/pdftract-core/src/decoder/jbig2.rs:221:15
+    |
+221 |         const DECODER: Jbig2Decoder = Jbig2Decoder::new();
+    |               ^^^^^^^
+
+warning: field `source` is never read
+   --> crates/pdftract-core/src/document.rs:949:5
+    |
+941 | pub struct PageIter<'a> {
+    |            -------- field in this struct
+...
+949 |     source: Option<&'a dyn ParserPdfSource>,
+    |     ^^^^^^
+
+warning: field `page_height` is never read
+   --> crates/pdftract-core/src/extract.rs:371:9
+    |
+357 | struct PageResultInternal {
+    |        ------------------ field in this struct
+...
+371 |     pub page_height: f64,
+    |         ^^^^^^^^^^^
+    |
+    = note: `PageResultInternal` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: function `extract_page` is never used
+    --> crates/pdftract-core/src/extract.rs:1315:4
+     |
+1315 | fn extract_page(
+     |    ^^^^^^^^^^^^
+
+warning: field `font` is never read
+   --> crates/pdftract-core/src/font/type3_rasterizer.rs:208:5
+    |
+198 | struct RasterizerContext<'a> {
+    |        ----------------- field in this struct
+...
+208 |     font: &'a Type3Font,
+    |     ^^^^
+
+warning: function `is_repeated_header_footer` is never used
+   --> crates/pdftract-core/src/layout/header_footer.rs:225:4
+    |
+225 | fn is_repeated_header_footer(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `with_text` is never used
+   --> crates/pdftract-core/src/layout/line.rs:871:12
+    |
+860 |     impl TestSpan {
+    |     ------------- associated function in this implementation
+...
+871 |         fn with_text(bbox: [f32; 4], font_size: f32, text: &str) -> Self {
+    |            ^^^^^^^^^
+
+warning: constant `REGION_COUNT_THRESHOLD` is never used
+  --> crates/pdftract-core/src/layout/reading_order.rs:27:7
+   |
+27 | const REGION_COUNT_THRESHOLD: usize = 10;
+   |       ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: fields `distance` and `angle` are never read
+   --> crates/pdftract-core/src/layout/reading_order.rs:720:5
+    |
+714 | struct Edge {
+    |        ---- fields in this struct
+...
+720 |     distance: f32,
+    |     ^^^^^^^^
+721 |     /// Angle in radians between centers.
+722 |     angle: f32,
+    |     ^^^^^
+    |
+    = note: `Edge` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: struct `TestBlock` is never constructed
+   --> crates/pdftract-core/src/layout/watermark_formula.rs:111:12
+    |
+111 |     struct TestBlock {
+    |            ^^^^^^^^^
+
+warning: method `emit_diagnostic` is never used
+   --> crates/pdftract-core/src/parser/catalog.rs:421:8
+    |
+399 | impl Catalog {
+    | ------------ method in this implementation
+...
+421 |     fn emit_diagnostic(&mut self, code: DiagCode, message: String) {
+    |        ^^^^^^^^^^^^^^^
+
+warning: fields `shared_object_number_bits` and `shared_group_length_bits` are never read
+   --> crates/pdftract-core/src/parser/hint_stream.rs:180:5
+    |
+172 | struct HintHeader {
+    |        ---------- fields in this struct
+...
+180 |     shared_object_number_bits: u8,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+181 |     /// Bit width for shared object hint group lengths
+182 |     shared_group_length_bits: u8,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `HintHeader` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: method `lex_unknown` is never used
+    --> crates/pdftract-core/src/parser/lexer/mod.rs:1108:8
+     |
+ 117 | impl<'a> Lexer<'a> {
+     | ------------------ method in this implementation
+...
+1108 |     fn lex_unknown(&mut self) -> Option<Token> {
+     |        ^^^^^^^^^^^
+
+warning: method `emit_diagnostic` is never used
+  --> crates/pdftract-core/src/parser/marked_content.rs:83:8
+   |
+41 | impl McidTracker {
+   | ---------------- method in this implementation
+...
+83 |     fn emit_diagnostic(&mut self, code: DiagCode, message: String) {
+   |        ^^^^^^^^^^^^^^^
+
+warning: function `make_test_resolver` is never used
+    --> crates/pdftract-core/src/parser/struct_tree.rs:1754:8
+     |
+1754 |     fn make_test_resolver() -> XrefResolver {
+     |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `round_coord` is never used
+   --> crates/pdftract-core/src/receipts/ocr_fallback.rs:239:4
+    |
+239 | fn round_coord(value: f64) -> f64 {
+    |    ^^^^^^^^^^^
+
+warning: field `font_id` is never read
+  --> crates/pdftract-core/src/word_boundary.rs:39:5
+   |
+37 | pub struct WordBoundaryDetector {
+   |            -------------------- field in this struct
+38 |     /// Font identifier for this detector.
+39 |     font_id: FontId,
+   |     ^^^^^^^
+   |
+   = note: `WordBoundaryDetector` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: comparison is useless due to type limits
+    --> crates/pdftract-core/src/content_stream.rs:3112:17
+     |
+3112 |         assert!(result.diagnostics.len() >= 0);
+     |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(unused_comparisons)]` on by default
+
+warning: static variable `HASH_56a45233d29f11b4dfb86d248e921939d115778f87325e7ae8cc108383d6664d` should have an upper case name
+ --> /home/coding/pdftract/target/debug/build/pdftract-core-0d428a00850f9797/out/font_fingerprints.rs:7:8
+  |
+7 | static HASH_56a45233d29f11b4dfb86d248e921939d115778f87325e7ae8cc108383d6664d: &[(u16, u32)] = &[(1, 32), (2, 33), (3, 34), (4, 35), (...
+  |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(non_upper_case_globals)]` (part of `#[warn(nonstandard_style)]`) on by default
+help: convert the identifier to upper case
+  |
+7 - static HASH_56a45233d29f11b4dfb86d248e921939d115778f87325e7ae8cc108383d6664d: &[(u16, u32)] = &[(1, 32), (2, 33), (3, 34), (4, 35), (5, 36), (6, 37), (7, 38), (8, 39), (9, 40), (10, 41), (11, 42), (12, 43), (13, 44), (14, 45), (15, 46), (16, 47), (17, 48), (18, 49), (19, 50), (20, 51), (21, 52), (22, 53), (23, 54), (24, 55), (25, 56), (26, 57), (27, 58), (28, 59), (29, 60), (30, 61), (31, 62), (32, 63), (33, 64), (34, 65), (35, 66), (36, 67), (37, 68), (38, 69), (39, 70), (40, 71), (41, 72), (42, 73), (43, 74), (44, 75), (45, 76), (46, 77), (47, 78), (48, 79), (49, 80), (50, 81), (51, 82), (52, 83), (53, 84), (54, 85), (55, 86), (56, 87), (57, 88), (58, 89), (59, 90), (60, 91), (61, 92), (62, 93), (63, 94), (64, 95), (65, 96), (66, 97), (67, 98), (68, 99), (69, 100), (70, 101), (71, 102), (72, 103), (73, 104), (74, 105), (75, 106), (76, 107), (77, 108), (78, 109), (79, 110), (80, 111), (81, 112), (82, 113), (83, 114), (84, 115), (85, 116), (86, 117), (87, 118), (88, 119), (89, 120), (90, 121), (91, 122), (92, 123), (93, 124), (94, 125), (95, 126)];
+7 + static HASH_56A45233D29F11B4DFB86D248E921939D115778F87325E7AE8CC108383D6664D: &[(u16, u32)] = &[(1, 32), (2, 33), (3, 34), (4, 35), (5, 36), (6, 37), (7, 38), (8, 39), (9, 40), (10, 41), (11, 42), (12, 43), (13, 44), (14, 45), (15, 46), (16, 47), (17, 48), (18, 49), (19, 50), (20, 51), (21, 52), (22, 53), (23, 54), (24, 55), (25, 56), (26, 57), (27, 58), (28, 59), (29, 60), (30, 61), (31, 62), (32, 63), (33, 64), (34, 65), (35, 66), (36, 67), (37, 68), (38, 69), (39, 70), (40, 71), (41, 72), (42, 73), (43, 74), (44, 75), (45, 76), (46, 77), (47, 78), (48, 79), (49, 80), (50, 81), (51, 82), (52, 83), (53, 84), (54, 85), (55, 86), (56, 87), (57, 88), (58, 89), (59, 90), (60, 91), (61, 92), (62, 93), (63, 94), (64, 95), (65, 96), (66, 97), (67, 98), (68, 99), (69, 100), (70, 101), (71, 102), (72, 103), (73, 104), (74, 105), (75, 106), (76, 107), (77, 108), (78, 109), (79, 110), (80, 111), (81, 112), (82, 113), (83, 114), (84, 115), (85, 116), (86, 117), (87, 118), (88, 119), (89, 120), (90, 121), (91, 122), (92, 123), (93, 124), (94, 125), (95, 126)];
+  |
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/pdftract-core/src/layout/readability.rs:244:13
+    |
+244 |     fn text(&self) -> Cow<str>;
+    |             ^^^^^     ^^^^^^^^ the same lifetime is hidden here
+    |             |
+    |             the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+    = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+    |
+244 |     fn text(&self) -> Cow<'_, str>;
+    |                           +++
+
+warning: `pdftract-core` (lib test) generated 272 warnings (run `cargo fix --lib -p pdftract-core --tests` to apply 226 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 51.47s
+────────────
+ Nextest run ID d6d2df86-a8a1-43ba-9fa1-88a99808fbf2 with nextest profile: default
+    Starting 2902 tests across 1 binary (2 tests skipped)
+        FAIL [   0.011s] (  11/2902) pdftract-core annotation::json::tests::test_sort_links
+  stdout ───
+
+    running 1 test
+    test annotation::json::tests::test_sort_links ... FAILED
+
+    failures:
+
+    failures:
+        annotation::json::tests::test_sort_links
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'annotation::json::tests::test_sort_links' (1444246) panicked at crates/pdftract-core/src/annotation/json.rs:410:9:
+    assertion `left == right` failed
+      left: 100.0
+     right: 50.0
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.021s] ( 203/2902) pdftract-core cache::multi_process::tests::test_acceptance_corrupt_entry_treated_as_miss
+  stdout ───
+
+    running 1 test
+    test cache::multi_process::tests::test_acceptance_corrupt_entry_treated_as_miss ... FAILED
+
+    failures:
+
+    failures:
+        cache::multi_process::tests::test_acceptance_corrupt_entry_treated_as_miss
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'cache::multi_process::tests::test_acceptance_corrupt_entry_treated_as_miss' (1444724) panicked at crates/pdftract-core/src/cache/multi_process.rs:1228:9:
+    assertion failed: result.is_err()
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.010s] ( 206/2902) pdftract-core cache::multi_process::tests::test_reader_corrupt_entry_deleted
+  stdout ───
+
+    running 1 test
+    test cache::multi_process::tests::test_reader_corrupt_entry_deleted ... FAILED
+
+    failures:
+
+    failures:
+        cache::multi_process::tests::test_reader_corrupt_entry_deleted
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'cache::multi_process::tests::test_reader_corrupt_entry_deleted' (1444796) panicked at crates/pdftract-core/src/cache/multi_process.rs:765:9:
+    assertion failed: result.is_err()
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.012s] ( 210/2902) pdftract-core cache::multi_process::tests::test_reader_exists
+  stdout ───
+
+    running 1 test
+    test cache::multi_process::tests::test_reader_exists ... FAILED
+
+    failures:
+
+    failures:
+        cache::multi_process::tests::test_reader_exists
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'cache::multi_process::tests::test_reader_exists' (1444799) panicked at crates/pdftract-core/src/cache/multi_process.rs:594:9:
+    assertion failed: reader.exists(TEST_FINGERPRINT, TEST_OPTS_HASH, compressed.len())
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.010s] ( 213/2902) pdftract-core cache::multi_process::tests::test_write_creates_parent_dirs
+  stdout ───
+
+    running 1 test
+    test cache::multi_process::tests::test_write_creates_parent_dirs ... FAILED
+
+    failures:
+
+    failures:
+        cache::multi_process::tests::test_write_creates_parent_dirs
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'cache::multi_process::tests::test_write_creates_parent_dirs' (1444815) panicked at crates/pdftract-core/src/cache/multi_process.rs:626:9:
+    assertion failed: entry.exists()
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.014s] ( 217/2902) pdftract-core cache::multi_process::tests::test_write_truncates_existing
+  stdout ───
+
+    running 1 test
+    test cache::multi_process::tests::test_write_truncates_existing ... FAILED
+
+    failures:
+
+    failures:
+        cache::multi_process::tests::test_write_truncates_existing
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'cache::multi_process::tests::test_write_truncates_existing' (1444820) panicked at crates/pdftract-core/src/cache/multi_process.rs:1081:9:
+    assertion `left == right` failed
+      left: [102, 105, 114, 115, 116, 32, 118, 101, 114, 115, 105, 111, 110]
+     right: [115, 101, 99, 111, 110, 100, 32, 118, 101, 114, 115, 105, 111, 110]
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.013s] ( 221/2902) pdftract-core cache::multi_process::tests::test_writer_basic
+  stdout ───
+
+    running 1 test
+    test cache::multi_process::tests::test_writer_basic ... FAILED
+
+    failures:
+
+    failures:
+        cache::multi_process::tests::test_writer_basic
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'cache::multi_process::tests::test_writer_basic' (1444823) panicked at crates/pdftract-core/src/cache/multi_process.rs:551:14:
+    called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.030s] ( 224/2902) pdftract-core cache::multi_process::tests::test_reader_mid_rename
+  stdout ───
+
+    running 1 test
+    test cache::multi_process::tests::test_reader_mid_rename ... FAILED
+
+    failures:
+
+    failures:
+        cache::multi_process::tests::test_reader_mid_rename
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.02s
+
+  stderr ───
+
+    thread 'cache::multi_process::tests::test_reader_mid_rename' (1444804) panicked at crates/pdftract-core/src/cache/multi_process.rs:974:9:
+    assertion failed: result.is_ok()
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.008s] ( 544/2902) pdftract-core document::tests::test_compute_pdf_fingerprint
+  stdout ───
+
+    running 1 test
+    test document::tests::test_compute_pdf_fingerprint ... FAILED
+
+    failures:
+
+    failures:
+        document::tests::test_compute_pdf_fingerprint
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'document::tests::test_compute_pdf_fingerprint' (1445496) panicked at crates/pdftract-core/src/document.rs:1200:62:
+    called `Result::unwrap()` on an `Err` value: No /Root reference in trailer
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.009s] ( 545/2902) pdftract-core document::tests::test_extract_spans_from_page
+  stdout ───
+
+    running 1 test
+    test document::tests::test_extract_spans_from_page ... FAILED
+
+    failures:
+
+    failures:
+        document::tests::test_extract_spans_from_page
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'document::tests::test_extract_spans_from_page' (1445499) panicked at crates/pdftract-core/src/document.rs:1216:59:
+    called `Result::unwrap()` on an `Err` value: No /Root reference in trailer
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.010s] ( 549/2902) pdftract-core document::tests::test_parse_pdf_file
+  stdout ───
+
+    running 1 test
+    test document::tests::test_parse_pdf_file ... FAILED
+
+    failures:
+
+    failures:
+        document::tests::test_parse_pdf_file
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'document::tests::test_parse_pdf_file' (1445507) panicked at crates/pdftract-core/src/document.rs:1183:81:
+    called `Result::unwrap()` on an `Err` value: No /Root reference in trailer
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.012s] ( 604/2902) pdftract-core extract::tests::test_extract_pdf_with_receipts_off
+  stdout ───
+
+    running 1 test
+    test extract::tests::test_extract_pdf_with_receipts_off ... FAILED
+
+    failures:
+
+    failures:
+        extract::tests::test_extract_pdf_with_receipts_off
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'extract::tests::test_extract_pdf_with_receipts_off' (1445615) panicked at crates/pdftract-core/src/extract.rs:2792:55:
+    called `Result::unwrap()` on an `Err` value: No /Root reference in trailer
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.013s] ( 606/2902) pdftract-core extract::tests::test_extract_pdf_with_receipts_lite
+  stdout ───
+
+    running 1 test
+    test extract::tests::test_extract_pdf_with_receipts_lite ... FAILED
+
+    failures:
+
+    failures:
+        extract::tests::test_extract_pdf_with_receipts_lite
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'extract::tests::test_extract_pdf_with_receipts_lite' (1445622) panicked at crates/pdftract-core/src/extract.rs:2814:55:
+    called `Result::unwrap()` on an `Err` value: No /Root reference in trailer
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.010s] ( 607/2902) pdftract-core extract::tests::test_extract_pdf_with_receipts_svg
+  stdout ───
+
+    running 1 test
+    test extract::tests::test_extract_pdf_with_receipts_svg ... FAILED
+
+    failures:
+
+    failures:
+        extract::tests::test_extract_pdf_with_receipts_svg
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'extract::tests::test_extract_pdf_with_receipts_svg' (1445620) panicked at crates/pdftract-core/src/extract.rs:2842:55:
+    called `Result::unwrap()` on an `Err` value: No /Root reference in trailer
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.011s] ( 610/2902) pdftract-core extract::tests::test_extraction_metadata
+  stdout ───
+
+    running 1 test
+    test extract::tests::test_extraction_metadata ... FAILED
+
+    failures:
+
+    failures:
+        extract::tests::test_extraction_metadata
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'extract::tests::test_extraction_metadata' (1445631) panicked at crates/pdftract-core/src/extract.rs:2914:55:
+    called `Result::unwrap()` on an `Err` value: No /Root reference in trailer
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.008s] ( 611/2902) pdftract-core extract::tests::test_result_to_json_with_receipts
+  stdout ───
+
+    running 1 test
+    test extract::tests::test_result_to_json_with_receipts ... FAILED
+
+    failures:
+
+    failures:
+        extract::tests::test_result_to_json_with_receipts
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'extract::tests::test_result_to_json_with_receipts' (1445634) panicked at crates/pdftract-core/src/extract.rs:2887:55:
+    called `Result::unwrap()` on an `Err` value: No /Root reference in trailer
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.014s] ( 614/2902) pdftract-core extract::tests::test_result_to_json_format
+  stdout ───
+
+    running 1 test
+    test extract::tests::test_result_to_json_format ... FAILED
+
+    failures:
+
+    failures:
+        extract::tests::test_result_to_json_format
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'extract::tests::test_result_to_json_format' (1445636) panicked at crates/pdftract-core/src/extract.rs:2864:55:
+    called `Result::unwrap()` on an `Err` value: No /Root reference in trailer
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.008s] ( 615/2902) pdftract-core extract::tests::test_untagged_pdf_no_deferred_diagnostic
+  stdout ───
+
+    running 1 test
+    test extract::tests::test_untagged_pdf_no_deferred_diagnostic ... FAILED
+
+    failures:
+
+    failures:
+        extract::tests::test_untagged_pdf_no_deferred_diagnostic
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'extract::tests::test_untagged_pdf_no_deferred_diagnostic' (1445638) panicked at crates/pdftract-core/src/extract.rs:3054:55:
+    called `Result::unwrap()` on an `Err` value: No /Root reference in trailer
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.011s] ( 617/2902) pdftract-core extract::tests::test_result_to_json_includes_signatures
+  stdout ───
+
+    running 1 test
+    test extract::tests::test_result_to_json_includes_signatures ... FAILED
+
+    failures:
+
+    failures:
+        extract::tests::test_result_to_json_includes_signatures
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'extract::tests::test_result_to_json_includes_signatures' (1445646) panicked at crates/pdftract-core/src/extract.rs:2928:55:
+    called `Result::unwrap()` on an `Err` value: No /Root reference in trailer
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.015s] ( 622/2902) pdftract-core extract::tests::test_signatures_always_not_checked
+  stdout ───
+
+    running 1 test
+    test extract::tests::test_signatures_always_not_checked ... FAILED
+
+    failures:
+
+    failures:
+        extract::tests::test_signatures_always_not_checked
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'extract::tests::test_signatures_always_not_checked' (1445652) panicked at crates/pdftract-core/src/extract.rs:2949:55:
+    called `Result::unwrap()` on an `Err` value: No /Root reference in trailer
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.016s] ( 623/2902) pdftract-core extract::tests::test_tagged_pdf_emits_deferred_diagnostic
+  stdout ───
+
+    running 1 test
+    test extract::tests::test_tagged_pdf_emits_deferred_diagnostic ... FAILED
+
+    failures:
+
+    failures:
+        extract::tests::test_tagged_pdf_emits_deferred_diagnostic
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'extract::tests::test_tagged_pdf_emits_deferred_diagnostic' (1445651) panicked at crates/pdftract-core/src/extract.rs:3029:55:
+    called `Result::unwrap()` on an `Err` value: No /Root reference in trailer
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.009s] ( 635/2902) pdftract-core fingerprint::canonicalize::tests::test_serialize_dict_canonical_sorted
+  stdout ───
+
+    running 1 test
+    test fingerprint::canonicalize::tests::test_serialize_dict_canonical_sorted ... FAILED
+
+    failures:
+
+    failures:
+        fingerprint::canonicalize::tests::test_serialize_dict_canonical_sorted
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'fingerprint::canonicalize::tests::test_serialize_dict_canonical_sorted' (1445676) panicked at crates/pdftract-core/src/fingerprint/canonicalize.rs:553:9:
+    assertion failed: bytes.windows(3).any(|w| w == b"/M 2")
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.010s] ( 637/2902) pdftract-core fingerprint::canonicalize::tests::test_serialize_object_canonical_dict
+  stdout ───
+
+    running 1 test
+    test fingerprint::canonicalize::tests::test_serialize_object_canonical_dict ... FAILED
+
+    failures:
+
+    failures:
+        fingerprint::canonicalize::tests::test_serialize_object_canonical_dict
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'fingerprint::canonicalize::tests::test_serialize_object_canonical_dict' (1445681) panicked at crates/pdftract-core/src/fingerprint/canonicalize.rs:648:9:
+    assertion failed: result.windows(3).any(|w| w == b"/A 1")
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.010s] ( 705/2902) pdftract-core font::codespace::tests::test_hex_string_with_whitespace
+  stdout ───
+
+    running 1 test
+    test font::codespace::tests::test_hex_string_with_whitespace ... FAILED
+
+    failures:
+
+    failures:
+        font::codespace::tests::test_hex_string_with_whitespace
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'font::codespace::tests::test_hex_string_with_whitespace' (1445831) panicked at crates/pdftract-core/src/font/codespace.rs:662:9:
+    assertion `left == right` failed
+      left: 0
+     right: 1
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.012s] (1502/2902) pdftract-core markdown::span_tests::test_spans_to_markdown_with_links_and_footnotes_footnote_takes_precedence
+  stdout ───
+
+    running 1 test
+    test markdown::span_tests::test_spans_to_markdown_with_links_and_footnotes_footnote_takes_precedence ... FAILED
+
+    failures:
+
+    failures:
+        markdown::span_tests::test_spans_to_markdown_with_links_and_footnotes_footnote_takes_precedence
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'markdown::span_tests::test_spans_to_markdown_with_links_and_footnotes_footnote_takes_precedence' (1447425) panicked at crates/pdftract-core/src/markdown.rs:3647:9:
+    Footnote ref should be emitted
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.013s] (1513/2902) pdftract-core markdown::tests::test_block_to_markdown_formula_display
+  stdout ───
+
+    running 1 test
+    test markdown::tests::test_block_to_markdown_formula_display ... FAILED
+
+    failures:
+
+    failures:
+        markdown::tests::test_block_to_markdown_formula_display
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'markdown::tests::test_block_to_markdown_formula_display' (1447446) panicked at crates/pdftract-core/src/markdown.rs:1620:9:
+    assertion failed: md.contains("$$\n")
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.016s] (1722/2902) pdftract-core parser::hint_stream::tests::test_parse_hint_stream_full_minimal
+  stdout ───
+
+    running 1 test
+    test parser::hint_stream::tests::test_parse_hint_stream_full_minimal ... FAILED
+
+    failures:
+
+    failures:
+        parser::hint_stream::tests::test_parse_hint_stream_full_minimal
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'parser::hint_stream::tests::test_parse_hint_stream_full_minimal' (1447878) panicked at crates/pdftract-core/src/parser/hint_stream.rs:840:9:
+    assertion failed: result.is_some()
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.009s] (1898/2902) pdftract-core parser::object::cache::tests::test_depth_tracking_across_resolutions
+  stdout ───
+
+    running 1 test
+    test parser::object::cache::tests::test_depth_tracking_across_resolutions ... FAILED
+
+    failures:
+
+    failures:
+        parser::object::cache::tests::test_depth_tracking_across_resolutions
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'parser::object::cache::tests::test_depth_tracking_across_resolutions' (1448227) panicked at crates/pdftract-core/src/parser/object/cache.rs:621:13:
+    assertion `left == right` failed
+      left: 0
+     right: 1
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.009s] (1900/2902) pdftract-core parser::object::cache::tests::test_end_resolution_manually
+  stdout ───
+
+    running 1 test
+    test parser::object::cache::tests::test_end_resolution_manually ... FAILED
+
+    failures:
+
+    failures:
+        parser::object::cache::tests::test_end_resolution_manually
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'parser::object::cache::tests::test_end_resolution_manually' (1448231) panicked at crates/pdftract-core/src/parser/object/cache.rs:735:9:
+    assertion `left == right` failed
+      left: 0
+     right: 1
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.010s] (2347/2902) pdftract-core parser::xref::tests::test_forward_scan_false_positive_handling
+  stdout ───
+
+    running 1 test
+    test parser::xref::tests::test_forward_scan_false_positive_handling ... FAILED
+
+    failures:
+
+    failures:
+        parser::xref::tests::test_forward_scan_false_positive_handling
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'parser::xref::tests::test_forward_scan_false_positive_handling' (1449157) panicked at crates/pdftract-core/src/parser/xref.rs:3157:9:
+    assertion failed: result.len() >= 1
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.014s] (2348/2902) pdftract-core parser::xref::tests::test_forward_scan_multi_revision
+  stdout ───
+
+    running 1 test
+    test parser::xref::tests::test_forward_scan_multi_revision ... FAILED
+
+    failures:
+
+    failures:
+        parser::xref::tests::test_forward_scan_multi_revision
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'parser::xref::tests::test_forward_scan_multi_revision' (1449167) panicked at crates/pdftract-core/src/parser/xref.rs:3131:9:
+    assertion `left == right` failed
+      left: 0
+     right: 2
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.018s] (2349/2902) pdftract-core parser::xref::tests::test_forward_scan_carriage_return
+  stdout ───
+
+    running 1 test
+    test parser::xref::tests::test_forward_scan_carriage_return ... FAILED
+
+    failures:
+
+    failures:
+        parser::xref::tests::test_forward_scan_carriage_return
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'parser::xref::tests::test_forward_scan_carriage_return' (1449165) panicked at crates/pdftract-core/src/parser/xref.rs:3228:9:
+    assertion `left == right` failed
+      left: 0
+     right: 2
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.008s] (2353/2902) pdftract-core parser::xref::tests::test_forward_scan_truncated_file
+  stdout ───
+
+    running 1 test
+    test parser::xref::tests::test_forward_scan_truncated_file ... FAILED
+
+    failures:
+
+    failures:
+        parser::xref::tests::test_forward_scan_truncated_file
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'parser::xref::tests::test_forward_scan_truncated_file' (1449171) panicked at crates/pdftract-core/src/parser/xref.rs:3091:9:
+    assertion `left == right` failed
+      left: 0
+     right: 4
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.010s] (2355/2902) pdftract-core parser::xref::tests::test_forward_scan_simple
+  stdout ───
+
+    running 1 test
+    test parser::xref::tests::test_forward_scan_simple ... FAILED
+
+    failures:
+
+    failures:
+        parser::xref::tests::test_forward_scan_simple
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'parser::xref::tests::test_forward_scan_simple' (1449173) panicked at crates/pdftract-core/src/parser/xref.rs:2999:9:
+    assertion `left == right` failed
+      left: 0
+     right: 3
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.011s] (2356/2902) pdftract-core parser::xref::tests::test_forward_scan_with_generations
+  stdout ───
+
+    running 1 test
+    test parser::xref::tests::test_forward_scan_with_generations ... FAILED
+
+    failures:
+
+    failures:
+        parser::xref::tests::test_forward_scan_with_generations
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'parser::xref::tests::test_forward_scan_with_generations' (1449176) panicked at crates/pdftract-core/src/parser/xref.rs:3021:9:
+    assertion `left == right` failed
+      left: 0
+     right: 3
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.010s] (2357/2902) pdftract-core parser::xref::tests::test_forward_scan_with_trailer
+  stdout ───
+
+    running 1 test
+    test parser::xref::tests::test_forward_scan_with_trailer ... FAILED
+
+    failures:
+
+    failures:
+        parser::xref::tests::test_forward_scan_with_trailer
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'parser::xref::tests::test_forward_scan_with_trailer' (1449180) panicked at crates/pdftract-core/src/parser/xref.rs:3114:9:
+    assertion `left == right` failed
+      left: 0
+     right: 3
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.022s] (2363/2902) pdftract-core parser::xref::tests::test_forward_scan_trailer_no_space
+  stdout ───
+
+    running 1 test
+    test parser::xref::tests::test_forward_scan_trailer_no_space ... FAILED
+
+    failures:
+
+    failures:
+        parser::xref::tests::test_forward_scan_trailer_no_space
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'parser::xref::tests::test_forward_scan_trailer_no_space' (1449188) panicked at crates/pdftract-core/src/parser/xref.rs:3241:9:
+    assertion `left == right` failed
+      left: 0
+     right: 1
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.010s] (2371/2902) pdftract-core parser::xref::tests::test_parse_multi_subsection_xref
+  stdout ───
+
+    running 1 test
+    test parser::xref::tests::test_parse_multi_subsection_xref ... FAILED
+
+    failures:
+
+    failures:
+        parser::xref::tests::test_parse_multi_subsection_xref
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'parser::xref::tests::test_parse_multi_subsection_xref' (1449203) panicked at crates/pdftract-core/src/parser/xref.rs:2716:9:
+    assertion `left == right` failed
+      left: 5
+     right: 4
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.011s] (2382/2902) pdftract-core parser::xref::tests::test_parse_xref_lf_only_19_byte_entries
+  stdout ───
+
+    running 1 test
+    test parser::xref::tests::test_parse_xref_lf_only_19_byte_entries ... FAILED
+
+    failures:
+
+    failures:
+        parser::xref::tests::test_parse_xref_lf_only_19_byte_entries
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'parser::xref::tests::test_parse_xref_lf_only_19_byte_entries' (1449230) panicked at crates/pdftract-core/src/parser/xref.rs:2683:9:
+    assertion `left == right` failed
+      left: 3
+     right: 2
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.011s] (2383/2902) pdftract-core parser::xref::tests::test_parse_xref_stream_field_width_zero_gen
+  stdout ───
+
+    running 1 test
+    test parser::xref::tests::test_parse_xref_stream_field_width_zero_gen ... FAILED
+
+    failures:
+
+    failures:
+        parser::xref::tests::test_parse_xref_stream_field_width_zero_gen
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'parser::xref::tests::test_parse_xref_stream_field_width_zero_gen' (1449231) panicked at crates/pdftract-core/src/parser/xref.rs:3408:9:
+    assertion `left == right` failed
+      left: 1
+     right: 2
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.009s] (2387/2902) pdftract-core parser::xref::tests::test_parse_xref_stream_type2_compressed
+  stdout ───
+
+    running 1 test
+    test parser::xref::tests::test_parse_xref_stream_type2_compressed ... FAILED
+
+    failures:
+
+    failures:
+        parser::xref::tests::test_parse_xref_stream_type2_compressed
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'parser::xref::tests::test_parse_xref_stream_type2_compressed' (1449241) panicked at crates/pdftract-core/src/parser/xref.rs:3449:9:
+    assertion `left == right` failed
+      left: 0
+     right: 3
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.014s] (2388/2902) pdftract-core parser::xref::tests::test_parse_xref_stream_multi_subsection
+  stdout ───
+
+    running 1 test
+    test parser::xref::tests::test_parse_xref_stream_multi_subsection ... FAILED
+
+    failures:
+
+    failures:
+        parser::xref::tests::test_parse_xref_stream_multi_subsection
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'parser::xref::tests::test_parse_xref_stream_multi_subsection' (1449237) panicked at crates/pdftract-core/src/parser/xref.rs:3365:9:
+    assertion `left == right` failed
+      left: 0
+     right: 4
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.020s] (2389/2902) pdftract-core parser::xref::tests::test_parse_xref_stream_invalid_entry_type
+  stdout ───
+
+    running 1 test
+    test parser::xref::tests::test_parse_xref_stream_invalid_entry_type ... FAILED
+
+    failures:
+
+    failures:
+        parser::xref::tests::test_parse_xref_stream_invalid_entry_type
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'parser::xref::tests::test_parse_xref_stream_invalid_entry_type' (1449244) panicked at crates/pdftract-core/src/parser/xref.rs:3525:9:
+    assertion `left == right` failed
+      left: 0
+     right: 1
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.018s] (2392/2902) pdftract-core parser::xref::tests::test_parse_xref_stream_simple
+  stdout ───
+
+    running 1 test
+    test parser::xref::tests::test_parse_xref_stream_simple ... FAILED
+
+    failures:
+
+    failures:
+        parser::xref::tests::test_parse_xref_stream_simple
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.00s
+
+  stderr ───
+    Test failed. Diagnostics: [Diagnostic { code: XrefInvalidStreamEntry, byte_offset: Some(0), object_ref: None, message: "Invalid xref entry type 120 for object 0" }, Diagnostic { code: XrefInvalidStreamEntry, byte_offset: Some(0), object_ref: None, message: "Invalid xref entry type 255 for object 1" }, Diagnostic { code: XrefInvalidStreamEntry, byte_offset: Some(0), object_ref: None, message: "Invalid xref entry type 48 for object 2" }, Diagnostic { code: XrefInvalidStreamEntry, byte_offset: Some(0), object_ref: None, message: "Invalid xref entry type 123 for object 3" }, Diagnostic { code: XrefInvalidStreamEntry, byte_offset: Some(0), object_ref: None, message: "Invalid xref entry type 132 for object 4" }, Diagnostic { code: XrefInvalidStreamEntry, byte_offset: Some(0), object_ref: None, message: "Xref stream truncated at object 5" }]
+    Entries: {}
+
+    thread 'parser::xref::tests::test_parse_xref_stream_simple' (1449245) panicked at crates/pdftract-core/src/parser/xref.rs:3297:9:
+    assertion `left == right` failed
+      left: 0
+     right: 5
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.071s] (2901/2902) pdftract-core threads::tests::test_walk_beads_max_iterations
+  stdout ───
+
+    running 1 test
+    test threads::tests::test_walk_beads_max_iterations ... FAILED
+
+    failures:
+
+    failures:
+        threads::tests::test_walk_beads_max_iterations
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.05s
+
+  stderr ───
+
+    thread 'threads::tests::test_walk_beads_max_iterations' (1450225) panicked at crates/pdftract-core/src/threads/mod.rs:1538:9:
+    assertion failed: result.is_err()
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   4.775s] 2902 tests run: 2857 passed, 45 failed, 2 skipped
+        FAIL [   0.011s] (  11/2902) pdftract-core annotation::json::tests::test_sort_links
+        FAIL [   0.021s] ( 203/2902) pdftract-core cache::multi_process::tests::test_acceptance_corrupt_entry_treated_as_miss
+        FAIL [   0.010s] ( 206/2902) pdftract-core cache::multi_process::tests::test_reader_corrupt_entry_deleted
+        FAIL [   0.012s] ( 210/2902) pdftract-core cache::multi_process::tests::test_reader_exists
+        FAIL [   0.010s] ( 213/2902) pdftract-core cache::multi_process::tests::test_write_creates_parent_dirs
+        FAIL [   0.014s] ( 217/2902) pdftract-core cache::multi_process::tests::test_write_truncates_existing
+        FAIL [   0.013s] ( 221/2902) pdftract-core cache::multi_process::tests::test_writer_basic
+        FAIL [   0.030s] ( 224/2902) pdftract-core cache::multi_process::tests::test_reader_mid_rename
+        FAIL [   0.008s] ( 544/2902) pdftract-core document::tests::test_compute_pdf_fingerprint
+        FAIL [   0.009s] ( 545/2902) pdftract-core document::tests::test_extract_spans_from_page
+        FAIL [   0.010s] ( 549/2902) pdftract-core document::tests::test_parse_pdf_file
+        FAIL [   0.012s] ( 604/2902) pdftract-core extract::tests::test_extract_pdf_with_receipts_off
+        FAIL [   0.013s] ( 606/2902) pdftract-core extract::tests::test_extract_pdf_with_receipts_lite
+        FAIL [   0.010s] ( 607/2902) pdftract-core extract::tests::test_extract_pdf_with_receipts_svg
+        FAIL [   0.011s] ( 610/2902) pdftract-core extract::tests::test_extraction_metadata
+        FAIL [   0.008s] ( 611/2902) pdftract-core extract::tests::test_result_to_json_with_receipts
+        FAIL [   0.014s] ( 614/2902) pdftract-core extract::tests::test_result_to_json_format
+        FAIL [   0.008s] ( 615/2902) pdftract-core extract::tests::test_untagged_pdf_no_deferred_diagnostic
+        FAIL [   0.011s] ( 617/2902) pdftract-core extract::tests::test_result_to_json_includes_signatures
+        FAIL [   0.015s] ( 622/2902) pdftract-core extract::tests::test_signatures_always_not_checked
+        FAIL [   0.016s] ( 623/2902) pdftract-core extract::tests::test_tagged_pdf_emits_deferred_diagnostic
+        FAIL [   0.009s] ( 635/2902) pdftract-core fingerprint::canonicalize::tests::test_serialize_dict_canonical_sorted
+        FAIL [   0.010s] ( 637/2902) pdftract-core fingerprint::canonicalize::tests::test_serialize_object_canonical_dict
+        FAIL [   0.010s] ( 705/2902) pdftract-core font::codespace::tests::test_hex_string_with_whitespace
+        FAIL [   0.012s] (1502/2902) pdftract-core markdown::span_tests::test_spans_to_markdown_with_links_and_footnotes_footnote_takes_precedence
+        FAIL [   0.013s] (1513/2902) pdftract-core markdown::tests::test_block_to_markdown_formula_display
+        FAIL [   0.016s] (1722/2902) pdftract-core parser::hint_stream::tests::test_parse_hint_stream_full_minimal
+        FAIL [   0.009s] (1898/2902) pdftract-core parser::object::cache::tests::test_depth_tracking_across_resolutions
+        FAIL [   0.009s] (1900/2902) pdftract-core parser::object::cache::tests::test_end_resolution_manually
+        FAIL [   0.010s] (2347/2902) pdftract-core parser::xref::tests::test_forward_scan_false_positive_handling
+        FAIL [   0.014s] (2348/2902) pdftract-core parser::xref::tests::test_forward_scan_multi_revision
+        FAIL [   0.018s] (2349/2902) pdftract-core parser::xref::tests::test_forward_scan_carriage_return
+        FAIL [   0.008s] (2353/2902) pdftract-core parser::xref::tests::test_forward_scan_truncated_file
+        FAIL [   0.010s] (2355/2902) pdftract-core parser::xref::tests::test_forward_scan_simple
+        FAIL [   0.011s] (2356/2902) pdftract-core parser::xref::tests::test_forward_scan_with_generations
+        FAIL [   0.010s] (2357/2902) pdftract-core parser::xref::tests::test_forward_scan_with_trailer
+        FAIL [   0.022s] (2363/2902) pdftract-core parser::xref::tests::test_forward_scan_trailer_no_space
+        FAIL [   0.010s] (2371/2902) pdftract-core parser::xref::tests::test_parse_multi_subsection_xref
+        FAIL [   0.011s] (2382/2902) pdftract-core parser::xref::tests::test_parse_xref_lf_only_19_byte_entries
+        FAIL [   0.011s] (2383/2902) pdftract-core parser::xref::tests::test_parse_xref_stream_field_width_zero_gen
+        FAIL [   0.009s] (2387/2902) pdftract-core parser::xref::tests::test_parse_xref_stream_type2_compressed
+        FAIL [   0.014s] (2388/2902) pdftract-core parser::xref::tests::test_parse_xref_stream_multi_subsection
+        FAIL [   0.020s] (2389/2902) pdftract-core parser::xref::tests::test_parse_xref_stream_invalid_entry_type
+        FAIL [   0.018s] (2392/2902) pdftract-core parser::xref::tests::test_parse_xref_stream_simple
+        FAIL [   0.071s] (2901/2902) pdftract-core threads::tests::test_walk_beads_max_iterations
+error: test run failed
