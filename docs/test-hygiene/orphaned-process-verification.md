@@ -654,5 +654,6 @@ pgrep --version  # Should show procps or similar
 ## References
 
 - CLAUDE.md Test Hygiene Rules
+- Post-Test Integration Documentation: `docs/test-hygiene/post-test-orphan-verification-integration.md` (CI workflow integration details)
 - Bead bf-5xh7g: Orphaned process verification implementation
 - Bead bf-119ys: TH-03 process cleanup with RAII guards
