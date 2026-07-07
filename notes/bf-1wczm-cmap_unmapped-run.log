@@ -1,0 +1,12 @@
+
+running 7 tests
+test test_cmap_multiple_mappings_with_unmapped_check ... ok
+test test_cmap_range_mapping_with_unmapped_awareness ... ok
+test test_differences_overlay_consecutive_with_unmapped_filtering ... ok
+test test_differences_overlay_filters_all_g_series_unmapped ... ok
+test test_cmap_unmapped_glyph_skip ... ok
+test test_differences_overlay_filters_null_glyph ... ok
+test test_differences_overlay_filters_unmapped_glyphs ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

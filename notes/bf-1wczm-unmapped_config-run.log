@@ -1,0 +1,9 @@
+
+running 4 tests
+test test_unmapped_glyph_names_defaults_to_empty ... ok
+test test_unmapped_glyph_names_empty_array ... ok
+test test_unmapped_glyph_names_minimal_config ... ok
+test test_unmapped_glyph_names_specified ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

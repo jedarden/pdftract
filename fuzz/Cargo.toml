@@ -8,13 +8,22 @@ publish = false
 [package.metadata]
 cargo-fuzz = true
 
-[dependencies]
-pdftract-core = { path = "../crates/pdftract-core", features = ["profiles"] }
-libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
-
-# Prevent this from interfering with the workspace library
+# Prevent this from interfering with the parent workspace
 [workspace]
-members = ["."]
+
+[features]
+default = []
+
+[dependencies]
+# Enable all necessary features for comprehensive fuzzing
+# - profiles: for profile_yaml target
+# - serde: for JSON/schema output used by content stream tests
+# - decrypt: for encryption-related fuzzing
+# - quick-xml: for XMP and structured content
+# - cjk: for CJK text extraction fuzzing
+pdftract-core = { path = "../crates/pdftract-core", features = ["profiles", "serde", "decrypt", "quick-xml", "cjk"] }
+libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
+serde_yaml = { version = "0.9" }
 
 [[bin]]
 name = "lexer"
