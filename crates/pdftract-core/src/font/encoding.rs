@@ -523,8 +523,24 @@ mod tests {
     fn test_unmapped_codes() {
         let enc = NamedEncoding::Standard;
         // Most codes 0x80-0x9F are unmapped in StandardEncoding
-        assert_eq!(enc.glyph_name(0x80), None);
-        assert_eq!(enc.glyph_name(0x92), None); // WinAnsi has this, Standard doesn't
+        assert_eq!(
+            enc.glyph_name(0x80),
+            None,
+            "StandardEncoding code 0x80 should be unmapped. \
+             Expected: None. \
+             Found: {:?}. \
+             Why this matters: Most codes in StandardEncoding above 0x7F are unmapped and should fail Level 2 (encoding + AGL) resolution per build/unmapped-glyph-names.json filtering.",
+            enc.glyph_name(0x80)
+        );
+        assert_eq!(
+            enc.glyph_name(0x92),
+            None,
+            "StandardEncoding code 0x92 should be unmapped. \
+             Expected: None. \
+             Found: {:?}. \
+             Why this matters: Code 0x92 is mapped in WinAnsi (quoteright) but unmapped in StandardEncoding - this test verifies the encoding tables are correctly differentiated.",
+            enc.glyph_name(0x92)
+        );
     }
 
     // === DifferencesOverlay tests ===
@@ -919,24 +935,36 @@ mod tests {
         assert_eq!(
             overlay.get(39),
             None,
-            "Code 39 should not have a mapping (.notdef skipped). Expected: None. Found: {:?}. Why: .notdef is in default unmapped_glyph_names set (from build/unmapped-glyph-names.json), so it's filtered during parsing.",
+            "Code 39 should not have a mapping (.notdef skipped). \
+             Expected: None. \
+             Found: {:?}. \
+             Why this matters: .notdef is in the default unmapped_glyph_names set (from build/unmapped-glyph-names.json), so it should be silently filtered during /Differences array parsing.",
             overlay.get(39)
         );
         assert_eq!(
             overlay.get(96),
             Some(Arc::from("grave")),
-            "Code 96 should map to 'grave'. Expected: Some(\"grave\"). Found: {:?}. Why: 'grave' is not in unmapped_glyph_names set, so it's included in the overlay.",
+            "Code 96 should map to 'grave'. \
+             Expected: Some(\"grave\"). \
+             Found: {:?}. \
+             Why this matters: 'grave' is not in the unmapped_glyph_names set (from build/unmapped-glyph-names.json), so it should be included in the /Differences overlay.",
             overlay.get(96)
         );
         assert_eq!(
             overlay.len(),
             1,
-            "Overlay should contain exactly 1 entry. Expected: 1 entry (grave at 96). Found: {} entries. Why: .notdef at 39 was skipped, leaving only grave.",
+            "Overlay should contain exactly 1 entry. \
+             Expected: 1 entry (grave at 96). \
+             Found: {} entries. \
+             Why this matters: .notdef at 39 was skipped per build/unmapped-glyph-names.json filtering rules, leaving only grave in the overlay.",
             overlay.len()
         );
         assert!(
             diagnostics.is_empty(),
-            "Skipping .notdef should not generate diagnostics. Expected: empty diagnostics. Found: {} diagnostics. Why: Skipping unmapped glyphs is silent behavior.",
+            "Skipping .notdef should not generate diagnostics. \
+             Expected: empty diagnostics. \
+             Found: {} diagnostics. \
+             Why this matters: Skipping unmapped glyphs is silent behavior by design - glyphs in build/unmapped-glyph-names.json are filtered during parsing without producing warnings.",
             diagnostics.len()
         );
     }
@@ -958,24 +986,36 @@ mod tests {
         assert_eq!(
             overlay.get(10),
             None,
-            "Code 10 should not have a mapping (/.notdef skipped). Expected: None. Found: {:?}. Why: /.notdef (with leading slash) is matched as unmapped glyph and filtered during parsing.",
+            "Code 10 should not have a mapping (/.notdef skipped). \
+             Expected: None. \
+             Found: {:?}. \
+             Why this matters: /.notdef (with leading slash) is matched as an unmapped glyph in build/unmapped-glyph-names.json and should be filtered during /Differences array parsing.",
             overlay.get(10)
         );
         assert_eq!(
             overlay.get(11),
             Some(Arc::from("A")),
-            "Code 11 should map to 'A'. Expected: Some(\"A\"). Found: {:?}. Why: 'A' is not in unmapped_glyph_names set, so it's included.",
+            "Code 11 should map to 'A'. \
+             Expected: Some(\"A\"). \
+             Found: {:?}. \
+             Why this matters: 'A' is not in the unmapped_glyph_names set (from build/unmapped-glyph-names.json), so it should be included in the /Differences overlay.",
             overlay.get(11)
         );
         assert_eq!(
             overlay.len(),
             1,
-            "Overlay should contain exactly 1 entry. Expected: 1 entry (A at 11). Found: {} entries. Why: /.notdef at 10 was skipped, leaving only A.",
+            "Overlay should contain exactly 1 entry. \
+             Expected: 1 entry (A at 11). \
+             Found: {} entries. \
+             Why this matters: /.notdef at 10 was skipped per build/unmapped-glyph-names.json filtering rules (slash variant matched), leaving only A.",
             overlay.len()
         );
         assert!(
             diagnostics.is_empty(),
-            "Skipping /.notdef should not generate diagnostics. Expected: empty diagnostics. Found: {} diagnostics. Why: Skipping unmapped glyphs is silent behavior.",
+            "Skipping /.notdef should not generate diagnostics. \
+             Expected: empty diagnostics. \
+             Found: {} diagnostics. \
+             Why this matters: Skipping unmapped glyphs (including slash variants from build/unmapped-glyph-names.json) is silent behavior - no warnings should be emitted.",
             diagnostics.len()
         );
     }
@@ -1015,42 +1055,63 @@ mod tests {
         assert_eq!(
             overlay_default.get(10),
             Some(Arc::from("custom1")),
-            "Default config: custom1 should appear. Expected: Some(\"custom1\"). Found: {:?}. Why: custom1 is NOT in default unmapped_glyph_names set (from build/unmapped-glyph-names.json).",
+            "Default config: custom1 should appear. \
+             Expected: Some(\"custom1\"). \
+             Found: {:?}. \
+             Why this matters: custom1 is NOT in the default unmapped_glyph_names set (from build/unmapped-glyph-names.json), so it should be included in /Differences overlay.",
             overlay_default.get(10)
         );
         assert_eq!(
             overlay_default.get(11),
             Some(Arc::from("A")),
-            "Default config: 'A' should appear. Expected: Some(\"A\"). Found: {:?}. Why: 'A' is a normal glyph, not in unmapped_glyph_names.",
+            "Default config: 'A' should appear. \
+             Expected: Some(\"A\"). \
+             Found: {:?}. \
+             Why this matters: 'A' is a normal glyph not in the unmapped_glyph_names set (from build/unmapped-glyph-names.json), so it should be included.",
             overlay_default.get(11)
         );
         assert_eq!(
             overlay_default.get(12),
             Some(Arc::from("custom2")),
-            "Default config: custom2 should appear. Expected: Some(\"custom2\"). Found: {:?}. Why: custom2 is NOT in default unmapped_glyph_names set.",
+            "Default config: custom2 should appear. \
+             Expected: Some(\"custom2\"). \
+             Found: {:?}. \
+             Why this matters: custom2 is NOT in the default unmapped_glyph_names set (from build/unmapped-glyph-names.json), so it should be included.",
             overlay_default.get(12)
         );
         assert_eq!(
             overlay_default.get(13),
             Some(Arc::from("B")),
-            "Default config: 'B' should appear. Expected: Some(\"B\"). Found: {:?}. Why: 'B' is a normal glyph, not in unmapped_glyph_names.",
+            "Default config: 'B' should appear. \
+             Expected: Some(\"B\"). \
+             Found: {:?}. \
+             Why this matters: 'B' is a normal glyph not in the unmapped_glyph_names set (from build/unmapped-glyph-names.json), so it should be included.",
             overlay_default.get(13)
         );
         assert_eq!(
             overlay_default.get(14),
             None,
-            "Default config: .notdef should be skipped. Expected: None. Found: {:?}. Why: .notdef IS in default unmapped_glyph_names set (from build/unmapped-glyph-names.json).",
+            "Default config: .notdef should be skipped. \
+             Expected: None. \
+             Found: {:?}. \
+             Why this matters: .notdef IS in the default unmapped_glyph_names set (from build/unmapped-glyph-names.json), so it must be filtered from the /Differences overlay.",
             overlay_default.get(14)
         );
         assert_eq!(
             overlay_default.len(),
             4,
-            "Default config: overlay should have 4 entries. Expected: 4 entries (custom1, A, custom2, B). Found: {} entries. Why: Only .notdef is filtered by default config.",
+            "Default config: overlay should have 4 entries. \
+             Expected: 4 entries (custom1, A, custom2, B). \
+             Found: {} entries. \
+             Why this matters: Only .notdef is filtered by default config per build/unmapped-glyph-names.json; all other glyphs should appear.",
             overlay_default.len()
         );
         assert!(
             diagnostics.is_empty(),
-            "Default config: should not generate diagnostics. Expected: empty diagnostics. Found: {} diagnostics. Why: All glyphs were processed normally.",
+            "Default config: should not generate diagnostics. \
+             Expected: empty diagnostics. \
+             Found: {} diagnostics. \
+             Why this matters: All glyphs were processed normally per build/unmapped-glyph-names.json filtering rules; no warnings expected.",
             diagnostics.len()
         );
 
@@ -1073,37 +1134,55 @@ mod tests {
         assert_eq!(
             overlay_custom.get(10),
             None,
-            "Custom config: custom1 should be skipped. Expected: None. Found: {:?}. Why: custom1 IS in the custom unmapped_glyph_names set {{\"custom1\", \"custom2\"}}.",
+            "Custom config: custom1 should be skipped. \
+             Expected: None. \
+             Found: {:?}. \
+             Why this matters: custom1 IS in the custom unmapped_glyph_names set {{\"custom1\", \"custom2\"}} (overriding default).",
             overlay_custom.get(10)
         );
         assert_eq!(
             overlay_custom.get(11),
             Some(Arc::from("A")),
-            "Custom config: 'A' should appear. Expected: Some(\"A\"). Found: {:?}. Why: 'A' is NOT in custom unmapped_glyph_names set.",
+            "Custom config: 'A' should appear. \
+             Expected: Some(\"A\"). \
+             Found: {:?}. \
+             Why this matters: 'A' is NOT in the custom unmapped_glyph_names set {{\"custom1\", \"custom2\"}}, so it should be included.",
             overlay_custom.get(11)
         );
         assert_eq!(
             overlay_custom.get(12),
             None,
-            "Custom config: custom2 should be skipped. Expected: None. Found: {:?}. Why: custom2 IS in the custom unmapped_glyph_names set {{\"custom1\", \"custom2\"}}.",
+            "Custom config: custom2 should be skipped. \
+             Expected: None. \
+             Found: {:?}. \
+             Why this matters: custom2 IS in the custom unmapped_glyph_names set {{\"custom1\", \"custom2\"}} (overriding default).",
             overlay_custom.get(12)
         );
         assert_eq!(
             overlay_custom.get(13),
             Some(Arc::from("B")),
-            "Custom config: 'B' should appear. Expected: Some(\"B\"). Found: {:?}. Why: 'B' is NOT in custom unmapped_glyph_names set.",
+            "Custom config: 'B' should appear. \
+             Expected: Some(\"B\"). \
+             Found: {:?}. \
+             Why this matters: 'B' is NOT in the custom unmapped_glyph_names set {{\"custom1\", \"custom2\"}}, so it should be included.",
             overlay_custom.get(13)
         );
         assert_eq!(
             overlay_custom.get(14),
             Some(Arc::from(".notdef")),
-            "Custom config: .notdef should appear. Expected: Some(\".notdef\"). Found: {:?}. Why: .notdef is NOT in custom unmapped_glyph_names set {{\"custom1\", \"custom2\"}} (unlike default config).",
+            "Custom config: .notdef should appear. \
+             Expected: Some(\".notdef\"). \
+             Found: {:?}. \
+             Why this matters: .notdef is NOT in the custom unmapped_glyph_names set {{\"custom1\", \"custom2\"}} (unlike default config from build/unmapped-glyph-names.json).",
             overlay_custom.get(14)
         );
         assert_eq!(
             overlay_custom.len(),
             3,
-            "Custom config: overlay should have 3 entries. Expected: 3 entries (A, B, .notdef). Found: {} entries. Why: custom1 and custom2 are filtered, .notdef is kept (custom set differs from default).",
+            "Custom config: overlay should have 3 entries. \
+             Expected: 3 entries (A, B, .notdef). \
+             Found: {} entries. \
+             Why this matters: custom1 and custom2 are filtered by custom set; .notdef is kept because custom set {{\"custom1\", \"custom2\"}} differs from default (build/unmapped-glyph-names.json).",
             overlay_custom.len()
         );
     }
@@ -1139,24 +1218,36 @@ mod tests {
         assert_eq!(
             overlay.get(10),
             Some(Arc::from(".notdef")),
-            "Empty config: .notdef should appear. Expected: Some(\".notdef\"). Found: {:?}. Why: Empty unmapped_glyph_names set means no glyphs are filtered, even .notdef.",
+            "Empty config: .notdef should appear. \
+             Expected: Some(\".notdef\"). \
+             Found: {:?}. \
+             Why this matters: Empty unmapped_glyph_names set means no glyphs are filtered, even .notdef from build/unmapped-glyph-names.json is not applied.",
             overlay.get(10)
         );
         assert_eq!(
             overlay.get(11),
             Some(Arc::from("A")),
-            "Empty config: 'A' should appear. Expected: Some(\"A\"). Found: {:?}. Why: Empty unmapped_glyph_names set allows all glyphs.",
+            "Empty config: 'A' should appear. \
+             Expected: Some(\"A\"). \
+             Found: {:?}. \
+             Why this matters: Empty unmapped_glyph_names set allows all glyphs without filtering from build/unmapped-glyph-names.json.",
             overlay.get(11)
         );
         assert_eq!(
             overlay.len(),
             2,
-            "Empty config: overlay should have 2 entries. Expected: 2 entries (.notdef, A). Found: {} entries. Why: No glyphs are filtered when unmapped_glyph_names is empty.",
+            "Empty config: overlay should have 2 entries. \
+             Expected: 2 entries (.notdef, A). \
+             Found: {} entries. \
+             Why this matters: No glyphs are filtered when unmapped_glyph_names is empty (override of build/unmapped-glyph-names.json).",
             overlay.len()
         );
         assert!(
             diagnostics.is_empty(),
-            "Empty config: should not generate diagnostics. Expected: empty diagnostics. Found: {} diagnostics. Why: Empty config is valid and processes all glyphs normally.",
+            "Empty config: should not generate diagnostics. \
+             Expected: empty diagnostics. \
+             Found: {} diagnostics. \
+             Why this matters: Empty config is valid and processes all glyphs normally without applying filtering from build/unmapped-glyph-names.json.",
             diagnostics.len()
         );
     }
@@ -1189,16 +1280,66 @@ mod tests {
         let overlay = DifferencesOverlay::parse(&arr, &mut diagnostics);
 
         // Verify unmapped glyphs do NOT appear in CMAP
-        assert_eq!(overlay.get(32), None, ".notdef should be skipped");
-        assert_eq!(overlay.get(67), None, ".notdef should be skipped");
+        assert_eq!(
+            overlay.get(32),
+            None,
+            ".notdef should be skipped. \
+             Expected: code 32 not present in final mapping. \
+             Found: present. \
+             Why this matters: .notdef is in build/unmapped-glyph-names.json and should be filtered during CMAP generation."
+        );
+        assert_eq!(
+            overlay.get(67),
+            None,
+            ".notdef should be skipped. \
+             Expected: code 67 not present in final mapping. \
+             Found: present. \
+             Why this matters: .notdef is in build/unmapped-glyph-names.json and should be filtered regardless of position in /Differences array."
+        );
 
         // Verify mapped glyphs DO appear in CMAP
-        assert_eq!(overlay.get(65), Some(Arc::from("A")), "A should appear");
-        assert_eq!(overlay.get(66), Some(Arc::from("space")), "space should appear");
-        assert_eq!(overlay.get(68), Some(Arc::from("B")), "B should appear");
+        assert_eq!(
+            overlay.get(65),
+            Some(Arc::from("A")),
+            "A should appear. \
+             Expected: code 65 present in final mapping. \
+             Found: absent. \
+             Why this matters: 'A' is not in build/unmapped-glyph-names.json and should be included in the CMAP."
+        );
+        assert_eq!(
+            overlay.get(66),
+            Some(Arc::from("space")),
+            "space should appear. \
+             Expected: code 66 present in final mapping. \
+             Found: absent. \
+             Why this matters: 'space' is not in build/unmapped-glyph-names.json and should be included for proper text spacing."
+        );
+        assert_eq!(
+            overlay.get(68),
+            Some(Arc::from("B")),
+            "B should appear. \
+             Expected: code 68 present in final mapping. \
+             Found: absent. \
+             Why this matters: 'B' is not in build/unmapped-glyph-names.json and should be included in the CMAP."
+        );
 
         // Verify final state
-        assert_eq!(overlay.len(), 3, "Should have exactly 3 mapped glyphs");
-        assert!(diagnostics.is_empty(), "Should not emit diagnostics for skipping");
+        assert_eq!(
+            overlay.len(),
+            3,
+            "Should have exactly 3 mapped glyphs. \
+             Expected: 3 entries (A, space, B). \
+             Found: {} entries. \
+             Why this matters: .notdef instances (codes 32, 67) were filtered per build/unmapped-glyph-names.json, leaving 3 normal glyphs.",
+            overlay.len()
+        );
+        assert!(
+            diagnostics.is_empty(),
+            "Should not emit diagnostics for skipping. \
+             Expected: empty diagnostics. \
+             Found: {} diagnostics. \
+             Why this matters: Skipping glyphs from build/unmapped-glyph-names.json is silent - no warnings should be emitted.",
+            diagnostics.len()
+        );
     }
 }
