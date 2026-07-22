@@ -8,6 +8,12 @@
 #   - ocr: default + OCR features, debian-slim with Tesseract (~120 MB)
 #   - full: all features, debian-slim with Tesseract (~140 MB)
 #
+# Each variant is size-gated immediately after push: the measured on-disk image
+# size (linux/amd64) must stay within its budget (+5% tolerance) or the build
+# fails. Measured sizes are emitted as the `image-size-bytes` output parameter
+# and an `image-size-report` artifact so drift is visible over time. This is the
+# Docker-image counterpart to the cargo-bloat binary-size gate in pdftract-ci.yaml.
+#
 # Bead: pdftract-68pe
 # Plan section: Release Engineering / Argo WorkflowTemplates, line 3392
 #
@@ -446,6 +452,80 @@ spec:
             # Verify the image was pushed
             echo "=== Verifying pushed image ==="
             docker buildx imagetools inspect "${VERSION_TAG}"
+
+            # === Image size budget gate ===
+            # Measure the on-disk (uncompressed) size of the pushed image for the
+            # native platform and fail if it exceeds the per-variant budget. This
+            # mirrors the pass/fail UX of the cargo-bloat binary-size gate in
+            # pdftract-ci.yaml. Budgets (see docs/plan/plan.md weight targets):
+            #   latest -> 20 MB  (distroless, CLI-only)
+            #   ocr    -> 120 MB (debian-slim + Tesseract)
+            #   full   -> 140 MB (all features + Tesseract)
+            echo "=== Measuring image size budget for pdftract:${VARIANT} ==="
+
+            case "${VARIANT}" in
+              latest) BUDGET_MB=20 ;;
+              ocr)    BUDGET_MB=120 ;;
+              full)   BUDGET_MB=140 ;;
+              *)      echo "ERROR: unknown variant '${VARIANT}'" >&2; exit 1 ;;
+            esac
+
+            # Pull the just-pushed image for the native platform so docker can
+            # report its on-disk (uncompressed) size via image inspect .Size.
+            docker pull --platform linux/amd64 "${VERSION_TAG}"
+            IMAGE_SIZE=$(docker image inspect "${VERSION_TAG}" --format '{{.Size}}')
+
+            if [ -z "${IMAGE_SIZE}" ]; then
+              echo "ERROR: could not determine image size for ${VERSION_TAG}" >&2
+              exit 1
+            fi
+
+            # Budget in bytes (MiB) with a 5% tolerance to absorb base-image drift.
+            BUDGET_BYTES=$(( BUDGET_MB * 1024 * 1024 ))
+            TOLERANCE_BYTES=$(( BUDGET_BYTES * 5 / 100 ))
+            CEILING_BYTES=$(( BUDGET_BYTES + TOLERANCE_BYTES ))
+            IMAGE_SIZE_MB=$(( IMAGE_SIZE / 1024 / 1024 ))
+
+            echo "Measured size : ${IMAGE_SIZE} bytes (~${IMAGE_SIZE_MB} MiB)"
+            echo "Budget        : ${BUDGET_BYTES} bytes (${BUDGET_MB} MiB)"
+            echo "Ceiling (+5%) : ${CEILING_BYTES} bytes"
+
+            # Emit the measured size as a workflow output parameter for drift tracking.
+            echo "${IMAGE_SIZE}" > /tmp/image-size
+
+            # Write a size report artifact (docker:dind has no jq, so hand-write JSON).
+            if [ "${IMAGE_SIZE}" -le "${CEILING_BYTES}" ]; then WITHIN=true; else WITHIN=false; fi
+            cat > /tmp/image-size-report.json <<EOF
+            {
+              "variant": "${VARIANT}",
+              "tag": "${VERSION_TAG}",
+              "platform": "linux/amd64",
+              "image_size_bytes": ${IMAGE_SIZE},
+              "budget_mb": ${BUDGET_MB},
+              "budget_bytes": ${BUDGET_BYTES},
+              "tolerance_bytes": ${TOLERANCE_BYTES},
+              "ceiling_bytes": ${CEILING_BYTES},
+              "within_budget": ${WITHIN}
+            }
+            EOF
+
+            if [ "${IMAGE_SIZE}" -gt "${CEILING_BYTES}" ]; then
+              echo "=========================================="
+              echo "IMAGE SIZE CHECK FAILED"
+              echo "=========================================="
+              echo "Image pdftract:${VARIANT} (${VERSION_TAG}) exceeds its size budget"
+              echo "Measured : ${IMAGE_SIZE} bytes (~${IMAGE_SIZE_MB} MiB)"
+              echo "Budget   : ${BUDGET_BYTES} bytes (${BUDGET_MB} MiB)"
+              echo "Ceiling  : ${CEILING_BYTES} bytes (budget + 5% tolerance)"
+              echo "Over     : $(( IMAGE_SIZE - CEILING_BYTES )) bytes"
+              echo ""
+              echo "Reduce image size (slimmer base, fewer/smaller layers, strip"
+              echo "binaries) or revisit the budget in docs/plan/plan.md before merging."
+              exit 1
+            fi
+
+            echo "=== Image size within budget for pdftract:${VARIANT} ==="
+            echo "Size: ${IMAGE_SIZE} bytes ($(( IMAGE_SIZE * 100 / BUDGET_BYTES ))% of ${BUDGET_MB} MiB budget)"
         env:
           - name: DOCKER_HOST
             value: tcp://127.0.0.1:2375
@@ -471,6 +551,16 @@ spec:
           - name: digest
             valueFrom:
               path: /tmp/digest
+          # Measured on-disk image size (bytes, linux/amd64). Surfaced so image-size
+          # drift is visible over time, mirroring the nightly supply-chain
+          # advisory-count output parameter.
+          - name: image-size-bytes
+            valueFrom:
+              path: /tmp/image-size
+        artifacts:
+          - name: image-size-report
+            path: /tmp/image-size-report.json
+            archiveNone: true
 
     # === Sign Image with Cosign ===
     # Signs the multi-arch manifest list using keyless OIDC
