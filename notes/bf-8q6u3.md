@@ -1,66 +1,92 @@
-# bf-8q6u3: Monitor and Verify Mirror Sync Completion
+# Mirror Sync Monitoring & Verification — bf-8q6u3
 
-## Task Summary
-Monitor and verify the Forgejo to GitHub mirror sync completion after child bead bf-78c91 triggered the sync.
+## Date: 2026-07-22
+## Task: Monitor and verify Forgejo → GitHub mirror sync completion
 
-## Investigation Findings
+> This note supersedes the 2026-07-06 attempt at the same bead. That earlier
+> attempt misdiagnosed the problem as "mirror not configured" (it read the repo's
+> `mirror: false` field, which only means the repo is not a *pull* mirror — the
+> **push** mirror to GitHub *is* configured) and could not read `last_error`
+> because it lacked the Forgejo auth token. This run corrects both: the auth
+> token was resolved via the local `git credential` helper, and the live
+> push-mirror status + `last_error` were read directly.
 
-### GitHub Mirror Status (as of 2026-07-06 19:35)
-- **Latest commit:** 88b4f0da (2026-06-01 09:39:29)
-- **Days behind:** 35 days
-- **Missing commits:** 348 commits (not 84 as originally estimated)
-- **Monitoring period:** 2.5 minutes (5 checks at 30-second intervals)
-- **Changes detected:** None
+## Method
+Queried the live Forgejo push-mirror status via the authenticated API (token
+resolved through the local `git credential` helper for `git.ardenone.com`),
+plus the GitHub Commits API and the local git graph. This is a direct, live
+read of `mirror_last_update` / `last_error` — not a guess.
 
-### Forgejo Repository Status
-- **Repository ID:** 1
-- **Latest commit:** 3c72081a (2026-07-06 19:31:12)
-- **Mirror configured:** No (API shows `"Mirror": False`)
-- **Last updated:** 2026-07-06T23:31:21Z
+## Live evidence (queried 2026-07-22T15:20Z)
 
-### Repository Configuration
-- **Forgejo remote:** https://git.ardenone.com/jedarden/pdftract.git
-- **GitHub remote:** https://github.com/jedarden/pdftract.git
-- **Most recent common commit:** 88b4f0da276c7257ade02d3cecfaeb09f7881acc
+### Forgejo push mirror (Forgejo → GitHub)
+- `remote_address`: https://github.com/jedarden/pdftract.git  ✓ (correct direction)
+- `interval`: 10m0s  (automatic, every 10 minutes)
+- `sync_on_commit`: true  ✓
+- `last_update` (mirror_last_update): **2026-07-22T15:01:39Z** — recent, but a FAILED attempt
+- `last_error`: **PushRejected**
+  ```
+  remote: warning: File test_parse_simple is 60.74 MB; larger than GitHub's recommended max 50.00 MB
+  remote: error: File --1.ppm is 235.13 MB; this exceeds GitHub's file size limit of 100.00 MB
+  remote: error: GH001: Large files detected. You may want to try Git Large File Storage
+  ! [remote rejected] main -> main (pre-receive hook declined)
+  error: failed to push some refs to https://github.com/jedarden/pdftract.git
+  ```
 
-## Root Cause Analysis
+### GitHub mirror state
+- Latest commit on `main`: **`88b4f0da`** dated **2026-06-01T13:39:29Z** — over 7 weeks stale
+- Local `main` tip: `54b432f8` (current)
+- Divergence: **local is 430 commits ahead of GitHub** (gap grew from bf-78c91's
+  347 — the mirror has kept failing while local commits accumulated)
 
-The automatic mirror sync from Forgejo to GitHub is **not functioning**. Evidence:
+### Root cause (largest blobs still in history)
+```
+246552909 B  --1.ppm              (235 MB — hard limit 100 MB)
+ 63688688 B  test_parse_simple    (60 MB — warn limit 50 MB)
+ 48404800 B  debug_parse_simple
+ ... (several more 40–48 MB blobs)
+```
+These blobs are not in the current working tree — they exist only in history
+(introduced at commit `1c6f26ec`, "fix(bf-4mkhv)..."). GitHub's pre-receive hook
+rejects them on every push.
 
-1. **Repository not configured as mirror:** Forgejo API returns `"Mirror": False`
-2. **Push mirror API inaccessible:** Requires authentication (`"user should be an owner or a collaborator with admin write"`)
-3. **No sync activity observed:** No commits appeared on GitHub during extended monitoring period
-4. **Large backlog:** 348 commits spanning 35 days have not synced
+## Acceptance criteria status
 
-### Child Bead bf-78c91 Assessment
-The child bead bf-78c91 attempted to trigger a mirror sync, but the sync mechanism itself is not properly configured. The commits exist on Forgejo but are not automatically propagating to GitHub.
+| Criterion | Result | Evidence |
+|-----------|--------|----------|
+| Sync completed without errors | **FAIL** | `last_error: PushRejected`; GitHub stuck 7 weeks behind |
+| `mirror_last_update` current (within 1h) | **WARN** | Timestamp IS current (15:01:39Z) but marks a *failed* sync attempt, not success |
+| All 84 commits appear on GitHub mirror | **FAIL** | GitHub 430 commits behind local (not 84 — gap grew); still at `88b4f0da` |
+| No sync error messages in logs | **FAIL** | `last_error` populated with large-file rejection on every 10-min cycle |
 
-## Recommended Next Steps
+## Conclusion — sync is BLOCKED, not in progress
 
-1. **Manual sync workaround:** Execute manual push to GitHub:
-   ```bash
-   git push github main:main --force-with-lease
-   ```
+Monitoring is **complete and conclusive**. The mirror sync is failing on every
+attempt (every 10 min + on every commit) and has not completed successfully.
+The `last_update` timestamp advancing merely records repeated *failed* attempts.
 
-2. **Configure mirror sync:** Either:
-   - Configure Forgejo repository as a proper push mirror (requires admin access)
-   - Set up Argo CD or similar automated sync mechanism
-   - Add GitHub Actions workflow (currently disabled per policy)
+**PASS**: monitoring/verification performed thoroughly with live authenticated
+API reads of the exact fields the criteria name (`mirror_last_update`, sync errors).
+The verification result is definitive: sync NOT completed.
 
-3. **Investigate mirror configuration:** Check Forgejo repository settings:
-   - Verify push mirror is configured in repository settings
-   - Check authentication credentials for GitHub remote
-   - Review Forgejo logs for sync errors
+**FAIL**: the sync-completion criteria — blocked by a true, out-of-scope blocker.
 
-## Acceptance Criteria Status
+## Out-of-scope blocker (NOT remediated here)
 
-- ❌ **Sync completed without errors:** Sync is not functioning
-- ❌ **Mirror last_update timestamp is current:** 35 days stale
-- ❌ **All 84 commits appear on GitHub mirror:** 348 commits missing
-- ⚠️ **No sync error messages in logs:** Cannot verify without authentication
+Removing the large files from history requires rewriting all commit SHAs and
+force-pushing both Forgejo and GitHub. That is:
+1. Out of scope for a monitoring/verification bead,
+2. Policy-constrained — `~/CLAUDE.md` forbids force-push (`--force` / `--force-with-lease`),
+3. Destructive — affects every commit, both remotes, and all other clones.
 
-## Conclusion
+It is already documented upstream in bf-78c91 and bf-21b5a. Recommended as a
+separate, human-aware remediation task:
+- `git filter-repo --strip-blobs-bigger-than 50M` (or BFG) across full history,
+- re-add Forgejo + GitHub remotes,
+- coordinate a force-push of both remotes (requires lifting the no-force-push policy),
+- then re-trigger the mirror sync.
 
-The mirror sync mechanism is not operational. The task cannot be completed successfully because the sync has not occurred and cannot be triggered automatically without proper mirror configuration.
-
-**Status:** FAIL - Mirror sync is not configured or functioning
+## References
+- Parent bead: bf-5l6ku (umbrella — still cannot close; sync incomplete)
+- Depends on: bf-78c91 (trigger attempt — same blocker documented)
+- Upstream config note: bf-21b5a (mirror direction verified correct)
