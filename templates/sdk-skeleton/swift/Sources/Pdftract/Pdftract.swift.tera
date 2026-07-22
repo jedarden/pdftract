@@ -26,6 +26,7 @@ public typealias Match = PdftractCodegen.Match
 public typealias Fingerprint = PdftractCodegen.Fingerprint
 public typealias Classification = PdftractCodegen.Classification
 public typealias Receipt = PdftractCodegen.Receipt
+public typealias ReceiptVerificationResult = PdftractCodegen.ReceiptVerificationResult
 public typealias PdftractError = PdftractCodegen.PdftractError
 
 {% for error in errors %}
