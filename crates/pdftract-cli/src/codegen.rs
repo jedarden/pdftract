@@ -114,6 +114,27 @@ impl CodeGenerator {
             Ok(Value::String(Utc::now().to_rfc3339()))
         });
 
+        // Lowercase the first character of a string: "ExtractText" -> "extractText".
+        // The Swift SDK template (`Methods.swift.tera`) uses this to emit lowerCamelCase
+        // method names per the Swift API Design Guidelines (methods/functions are
+        // lowerCamelCase; only types are UpperCamelCase). Tera ships no built-in
+        // `lc_first` filter, so it must be registered here.
+        tera.register_filter("lc_first", |value: &Value, _args: &HashMap<String, Value>| {
+            let s = value
+                .as_str()
+                .ok_or_else(|| tera::Error::msg("lc_first filter expects a string"))?;
+            let mut chars = s.chars();
+            let result = match chars.next() {
+                Some(first) => {
+                    let mut out = first.to_lowercase().collect::<String>();
+                    out.push_str(chars.as_str());
+                    out
+                }
+                None => String::new(),
+            };
+            Ok(Value::String(result))
+        });
+
         let contract = Self::load_contract()?;
 
         Ok(Self {
