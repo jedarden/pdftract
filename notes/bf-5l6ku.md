@@ -74,9 +74,24 @@ push that reaches back across them.
 Triggered via commit push to `origin` (sync_on_commit=true). Pre-push
 `last_update` captured immediately before the push; status re-queried after.
 
-### Post-trigger result
+### Post-trigger result (observed live, 2026-07-22 ~15:31Z)
 
-<!-- filled in after the push + poll, see below -->
+Triggered via commit `f41440c6` pushed to `origin` (`sync_on_commit=true`).
+Polled the push-mirror status before and after the push:
+
+| When | `last_update` | `last_error` |
+|------|---------------|--------------|
+| Pre-push (captured immediately before `git push`) | `2026-07-22T15:28:26Z` | PushRejected |
+| Post-push poll #2 (~15:31:57Z) | **`2026-07-22T15:31:45Z`** | **PushRejected** |
+
+The `last_update` timestamp **advanced from 15:28:26Z to 15:31:45Z** as a direct
+result of the push — confirming the trigger fired a fresh sync attempt. That
+fresh attempt was **rejected by GitHub with the same `PushRejected` error**
+(large blobs `--1.ppm` 235 MB + `test_parse_simple` 60 MB). GitHub is unchanged
+at `88b4f0da`; origin/main is now at `f41440c6`, 433 commits ahead.
+
+So: the mirror **does** sync on trigger; it just **cannot complete** because of
+the history-embedded large files.
 
 ## Acceptance-criteria status
 
