@@ -1,138 +1,133 @@
-# bf-4g6dj: Truncated-Flate Test Scaffold Examination
+# bf-4g6dj — Examine truncated-flate test scaffold and current extraction result
 
-## Summary
+**Type:** explore · **Parent:** [[bf-mzf4i]] · **Children (closed):** [[bf-4cyyf]], [[bf-4fb3b]]
+**Re-verified against current source:** 2026-07-22
 
-Examined the existing truncated-flate test scaffold and extraction result structure to understand where to add assertions for stream decode error diagnostics.
+This bead is the scaffold/extraction-result examination step for the STREAM_DECODE_ERROR
+assertion work ([[bf-mzf4i]]). Its children already produced detailed docs
+([[bf-4cyyf]] `docs/errors-array-format.md`, [[bf-4fb3b]] `notes/bf-4fb3b.md`); this note
+records the *examination itself* with line references re-verified against current source, and
+states the single most important structural fact an implementer must not miss. It supersedes an
+earlier draft of this note (Jul 6) which mis-located the scaffold as `stream_decoder_fixtures.rs`
+and incorrectly claimed the fixture loop "already checks `expected_diags`" — it does not (see §4).
 
-## Test Location
+---
 
-**File**: `/home/coding/pdftract/crates/pdftract-core/tests/stream_decoder_fixtures.rs`
+## 1. The scaffold: `tests/test_truncated_flate_recovery.rs`
 
-**Test function**: `test_all_stream_decoder_fixtures()` (lines 264-364)
+File examined in full (346 lines, 7 tests). Structure:
 
-## Test Fixture Structure
+| Test | What it does | Result surface it touches |
+|---|---|---|
+| `test_truncated_flate_fixture_exists` | fixture exists + non-empty | filesystem only |
+| `test_truncated_flate_parses_as_pdf` | `parse_pdf_file` → non-empty `pages` | `(fingerprint, catalog, pages, resolver)` tuple |
+| `test_truncated_flate_emits_diagnostics` | parses; **comments that "Diagnostics are not currently surfaced through parse_pdf_file"** (≈:83–88) | none (scaffold) |
+| `test_truncated_flate_partial_content_accessible` | first page mediabox = 4 values | `Page.media_box`, `Page.contents` |
+| `test_truncated_flate_extraction_result_structure` | `PdfExtractor::open` → `materialize_pages` → `extract_page(0)`; serializes result to JSON | `PageExtraction` (only called if pages non-empty) |
+| `test_truncated_flate_materialize_pages` | `materialize_pages()` returns `Ok`, stable across calls; **notes "the slice is expected to be empty"** (≈:186–187) | `Page` |
+| `test_truncated_flate_extract_page_returns_result` | calls `extract_page(0)` **unconditionally** as `Result<PageExtraction>`; **notes it returns `Err` index-out-of-bounds** (≈:301–304) | `PageExtraction` |
+| `test_truncated_flate_opens_with_extractor` | `open` + `fingerprint` + `page_count` | handle |
 
-### Fixture Locations
-- **Binary fixture**: `/home/coding/pdftract/tests/stream_decoder/fixtures/flate_truncated.bin`
-- **Expected output**: `/home/coding/pdftract/tests/stream_decoder/fixtures/flate_truncated.expected`
-- **Metadata**: `/home/coding/pdftract/tests/stream_decoder/fixtures/flate_truncated.meta`
+**Key behavior the scaffold encodes:** for `truncated-flate.pdf`, `materialize_pages()` yields
+an **empty** page slice, so `extract_page(0)` returns `Err` (index out of bounds). Nothing ever
+traverses the truncated FlateDecode stream through the full-extraction path on this fixture.
+That is the gap this chain is reconciling.
 
-### Fixture Metadata Content
-```
-FlateDecode: mid-stream EOF; expects partial bytes + STREAM_DECODE_ERROR
-```
+## 2. The "errors array" — location and format (re-verified)
 
-## Current Test Implementation
+There is **no single `errors` field on the type the scaffold's tests use**. Error/diagnostic
+information is split across two representations and three internal fields. Verified line refs:
 
-### Current Fixture Definition (lines 61-65)
+### 2a. `PageExtraction` — the type `extract_page()` returns — has NO errors field
+`crates/pdftract-core/src/document.rs:626`:
 ```rust
-FixtureInfo {
-    name: "flate_truncated",
-    filter: FixtureFilter::Single("FlateDecode", None),
-    expected_diags: vec![],  // ⚠️ EMPTY - but .meta file expects STREAM_DECODE_ERROR
-    bomb_limit: None,
-},
-```
-
-### Current Test Behavior
-The `test_all_stream_decoder_fixtures()` function:
-1. Loads each fixture from `.bin` file
-2. Decodes using the specified filter (e.g., `FlateDecoder`)
-3. Compares output against `.expected` file
-4. **Checks `expected_diags` match** - but `flate_truncated` has empty expectations
-
-### Key Issue Identified
-The `.meta` file explicitly states the fixture should produce a `STREAM_DECODE_ERROR`, but the current test has an empty `expected_diags` vector. This is the core issue that needs to be fixed.
-
-## Extraction Result Structure
-
-### For Stream Decoder Tests
-The stream decoder tests work at a lower level - they test individual `StreamDecoder` implementations directly:
-
-```rust
-pub trait StreamDecoder {
-    fn decode(
-        &self,
-        data: &[u8],
-        params: Option<&PdfObject>,
-        bytes_written: &mut u64,
-        max_bytes: u64
-    ) -> Result<Vec<u8>, String>;
+pub struct PageExtraction {
+    pub index: usize, width: f64, height: f64, rotation: i32,
+    pub spans: Vec<SpanData>, pub blocks: Vec<BlockData>,
 }
 ```
+**This is why a STREAM_DECODE_ERROR assertion cannot be read off the result of the existing
+scaffold's `extract_page()` call** — there is nowhere to read it from. This is the single most
+load-bearing fact for the implementer; it is what distinguishes this examination from a naïve
+"add an assertion that checks `result.errors`."
 
-### For Full PDF Extraction Tests
-When doing full PDF extraction (which might be needed for integration tests), the error structure is:
+### 2b. Internal `ExtractionResult` (unit/integration-test surface)
+`crates/pdftract-core/src/extract.rs`:
+- `ExtractionResult` (`:237`) — `pages: Vec<PageResult>`, `metadata: ExtractionMetadata`.
+- `ExtractionMetadata` (`:396`):
+  - `error_count: usize` (`:410`) — pages that failed to extract.
+  - `diagnostics: Vec<String>` (`:416`) — each `"CODE: message"`; `#[serde(skip_serializing_if = "Vec::is_empty")]`.
+- `PageResult.error: Option<String>` (`:336`) — per-page failure; skipped when `None`.
 
-**Document-Level Errors**:
-```rust
-pub struct ExtractionResult {
-    pub metadata: ExtractionMetadata,
-    // ... other fields
-}
+### 2c. JSON `Output.errors` (structured array / JSON consumer surface)
+`crates/pdftract-core/src/schema/mod.rs`:
+- `Output { ..., pub errors: Vec<DiagnosticJson> }` (`:1539`).
+- `DiagnosticJson` (`:813`): `code`, `message`, `severity` (`"info"|"warning"|"error"|"fatal"`),
+  `page_index: Option<usize>`, `location: Option<ObjectLocationJson>`, `hint: Option<String>`.
+- `ObjectLocationJson` (`:841`): `object_number`, `generation_number`.
+- Produced by `result_to_output()` in `output/json.rs`.
 
-pub struct ExtractionMetadata {
-    pub diagnostics: Vec<String>,  // Document-level diagnostics
-    pub error_count: usize,
-    // ... other fields
-}
-```
+### 2d. The code in play
+- `DiagCode::StreamDecodeError` → string `"STREAM_DECODE_ERROR"` (`src/diagnostics.rs:465`,
+  `:1278`).
+- **The bead chain's original title string `STREAM_DECOMPRESS_ERROR` does not exist** in the
+  codebase; the correct code is `STREAM_DECODE_ERROR` (settled by [[bf-348zd]]).
+- `STREAM_DECODE_ERROR` is severity `warning` (output usable but degraded).
 
-**Page-Level Errors**:
-```rust
-pub struct PageResult {
-    pub error: Option<String>,  // Individual page extraction error
-    // ... other fields
-}
-```
+## 3. Why the scaffold's path emits nothing for this fixture (re-verified)
 
-## Where to Add the Assertion
+`FlateDecoder::decode_impl` (`src/parser/stream.rs:520–554`) loops reading decoded bytes; on
+`UnexpectedEof` (`:542–544`) — a truncated stream — it **`break`s and returns the partial
+`output`** (INV-8 soft recovery). Every caller wraps that in `Ok`, so decode of the truncated
+fixture returns `Ok(partial)`, never `Err`.
 
-### For Stream Decoder Test (Current Context)
-The assertion should be added to the `FixtureInfo` definition:
+Because `materialize_pages()` yields an empty slice for this fixture (§1), the full extraction
+pipeline never traverses the truncated stream, so **no `emit!(… STREAM_DECODE_ERROR …)` fires
+on this path**, and `ExtractionMetadata.diagnostics` / `Output.errors` are both empty. Verified
+by [[bf-2goux]] running `dump_extraction_result`. An assertion of the form
+`output.errors.iter().any(|e| e.code == "STREAM_DECODE_ERROR")` therefore cannot pass for
+`truncated-flate.pdf` today — the sibling example in [[bf-4cyyf]] that uses this pattern is
+retracted by [[bf-4fb3b]] §0/§2.
 
-```rust
-FixtureInfo {
-    name: "flate_truncated",
-    filter: FixtureFilter::Single("FlateDecode", None),
-    expected_diags: vec![DiagCode::StreamDecodeError],  // ← Add this
-    bomb_limit: None,
-},
-```
+## 4. Where to add the assertion (AC-3)
 
-The test framework already checks `expected_diags` in the test loop.
+Given §2a + §3, the STREAM_DECODE_ERROR assertion does **not** belong in
+`test_truncated_flate_recovery.rs` (the file this bead examines) — that scaffold can only ever
+see a `PageExtraction` (no errors field) or an index-out-of-bounds `Err`. The canonical home is
+the low-level decoder fixture loop, keyed off the **decode outcome**, not the full-extraction
+errors array:
 
-### For Full Extraction Test (Future Enhancement)
-If a full extraction test is needed, it would check:
+- **File:** `crates/pdftract-core/tests/stream_decoder_fixtures.rs`,
+  `test_all_stream_decoder_fixtures()` per-fixture loop.
+- **Signal:** decode returns `Ok(partial)` (the `Ok` path), not `Err`.
+- **Hard prerequisite:** make `FixtureInfo.expected_diags` **live** (the loop currently does
+  *not* read it — it is dead data, `:62`) and set
+  `flate_truncated.expected_diags = vec![DiagCode::StreamDecodeError]` (currently `vec![]`).
+  The earlier note's claim that the loop "already checks `expected_diags`" is wrong.
+- **Avoid:** the false pass from the 0-byte `.expected` file, byte-asserting partial content,
+  and `decoded.len()` as an error proxy.
 
-```rust
-let result = extract_pdf(&pdf_path, &options)?;
+The full ordered implementation guide (steps, ready-to-adapt selector + INV-8 regression guard,
+failure-message contract, EC1–EC13 edge-case taxonomy, and the warning against running the
+~2 GB `flate_bomb_3gb` fixture) is consolidated in [[bf-4fb3b]] §5. The implementer bead is
+`bf-4bx00` (→ [[bf-mzf4i]]).
 
-assert!(
-    result.metadata.diagnostics.iter().any(|d| d.contains("STREAM_DECODE_ERROR")),
-    "Expected STREAM_DECODE_ERROR in extraction diagnostics"
-);
-```
+## 5. Acceptance criteria status
 
-## Diagnostic Code Reference
+- [x] **Test file examined and structure understood** — §1: all 7 tests mapped, with the empty-
+  page-slice / `extract_page`→`Err` behavior the scaffold documents.
+- [x] **Errors array location and format documented** — §2: `PageExtraction` (no errors field,
+  `document.rs:626`), internal `ExtractionResult.metadata.{error_count,diagnostics}` +
+  `PageResult.error` (`extract.rs:237/396/410/416/336`), and JSON
+  `Output.errors: Vec<DiagnosticJson>` (`schema/mod.rs:1539/813/841`); code
+  `STREAM_DECODE_ERROR` (`diagnostics.rs:1278`), all line-verified.
+- [x] **Clear understanding of where to add the assertion** — §3 + §4: not in this scaffold's
+  `PageExtraction`/`output.errors` path (vacuous for this fixture); in
+  `stream_decoder_fixtures.rs` keyed off the `Ok(partial)` decode outcome; handed off to
+  `bf-4bx00` with [[bf-4fb3b]] §5 as the implementation guide.
 
-From `diagnostics.rs`:
-- **Code**: `DiagCode::StreamDecodeError`
-- **String representation**: `"STREAM_DECODE_ERROR"`
-- **Description**: Emitted when a stream decoder encounters corrupt data mid-decompression
+## 6. References
 
-## Next Steps (for Dependent Beads)
-
-1. **bf-2h1nt** - Research existing error assertion patterns in test suite
-2. **bf-4bx00** - Add STREAM_DECODE_ERROR assertion to truncated-flate test (depends on bf-2h1nt)
-3. **bf-2897m** - Add clear assertion failure messages and verify test compiles (depends on bf-4bx00)
-
-## Conclusion
-
-The test scaffold exists and is functional in `/home/coding/pdftract/crates/pdftract-core/tests/stream_decoder_fixtures.rs`. The `flate_truncated` fixture currently has an empty `expected_diags` vector when it should contain `DiagCode::StreamDecodeError` based on the fixture's `.meta` file specification.
-
-The extraction result structure supports error reporting at both:
-- **Document level**: `ExtractionResult.metadata.diagnostics: Vec<String>`
-- **Page level**: Each `PageResult.error: Option<String>`
-
-For stream decoder tests specifically, errors are handled through the `Result<Vec<u8>, String>` return type from the `StreamDecoder::decode()` trait method, and the test framework validates expected diagnostic codes via the `expected_diags` field in `FixtureInfo`.
+- Parent: [[bf-mzf4i]] (umbrella — add STREAM_DECODE_ERROR assertion) → genesis `pdftract-qkc77`.
+- Children: [[bf-4cyyf]] (`docs/errors-array-format.md`), [[bf-4fb3b]] (`notes/bf-4fb3b.md`,
+  the exhaustive consolidation). Implementer: `bf-4bx00`.
