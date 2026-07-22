@@ -38,8 +38,81 @@
 //! - vector/ - Vector PDF fixtures
 //! - Various root-level fixtures
 
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
+
+/// Normalize a path to an absolute, canonical form.
+///
+/// This function resolves any `.` or `..` components in the path and returns
+/// a clean, absolute path suitable for reliable test invocation.
+///
+/// # Arguments
+///
+/// * `path` - The path to normalize
+///
+/// # Returns
+///
+/// A normalized `PathBuf` with all relative components resolved.
+fn normalize_path(path: &Path) -> PathBuf {
+    // Try to canonicalize the path first (resolves symlinks and .)
+    // If that fails (e.g., path doesn't exist), fall back to component-based normalization
+    match path.canonicalize() {
+        Ok(canonical) => canonical,
+        Err(_) => {
+            // Fallback: normalize components without requiring existence
+            let mut result = PathBuf::new();
+
+            // Start with absolute paths, otherwise use current directory
+            if path.is_absolute() {
+                for component in path.components() {
+                    match component {
+                        std::path::Component::Normal(_) => result.push(component),
+                        std::path::Component::ParentDir => {
+                            result.pop();
+                        }
+                        std::path::Component::CurDir => {
+                            // Skip .
+                        }
+                        std::path::Component::RootDir => {
+                            result.push(component);
+                        }
+                        std::path::Component::Prefix(_) => {
+                            result.push(component);
+                        }
+                    }
+                }
+            } else {
+                // For relative paths, resolve against current directory
+                if let Ok(current_dir) = std::env::current_dir() {
+                    result.push(current_dir);
+                    for component in path.components() {
+                        match component {
+                            std::path::Component::Normal(_) => result.push(component),
+                            std::path::Component::ParentDir => {
+                                result.pop();
+                            }
+                            std::path::Component::CurDir => {
+                                // Skip .
+                            }
+                            std::path::Component::RootDir => {
+                                result.push(component);
+                            }
+                            std::path::Component::Prefix(_) => {
+                                result.push(component);
+                            }
+                        }
+                    }
+                } else {
+                    // Last resort: return original path
+                    return path.to_path_buf();
+                }
+            }
+
+            result
+        }
+    }
+}
 
 /// Get the root fixtures directory for the pdftract CLI tests.
 ///
@@ -111,7 +184,7 @@ pub fn discover_fixtures_by_category(category: &str) -> Vec<PathBuf> {
 ///
 /// # Returns
 ///
-/// A sorted `Vec<PathBuf>` containing paths to discovered PDF files.
+/// A sorted `Vec<PathBuf>` containing normalized, absolute paths to discovered PDF files.
 pub fn discover_fixtures_flat<P: AsRef<Path>>(dir_path: P) -> Vec<PathBuf> {
     let mut pdf_files = Vec::new();
     let dir = dir_path.as_ref();
@@ -120,7 +193,7 @@ pub fn discover_fixtures_flat<P: AsRef<Path>>(dir_path: P) -> Vec<PathBuf> {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().and_then(|s| s.to_str()) == Some("pdf") {
-                pdf_files.push(path);
+                pdf_files.push(normalize_path(&path));
             }
         }
     }
@@ -129,7 +202,7 @@ pub fn discover_fixtures_flat<P: AsRef<Path>>(dir_path: P) -> Vec<PathBuf> {
     pdf_files
 }
 
-/// Internal function to discover PDFs in a directory using walkdir.
+/// Discover PDFs in a specific directory recursively (internal function).
 ///
 /// # Arguments
 ///
@@ -137,8 +210,8 @@ pub fn discover_fixtures_flat<P: AsRef<Path>>(dir_path: P) -> Vec<PathBuf> {
 ///
 /// # Returns
 ///
-/// A sorted `Vec<PathBuf>` containing paths to all discovered PDF files.
-fn discover_fixtures_in_dir<P: AsRef<Path>>(dir_path: P) -> Vec<PathBuf> {
+/// A sorted `Vec<PathBuf>` containing normalized, absolute paths to all discovered PDF files.
+pub fn discover_fixtures_in_dir<P: AsRef<Path>>(dir_path: P) -> Vec<PathBuf> {
     let mut pdf_files = Vec::new();
     let dir = dir_path.as_ref();
 
@@ -158,7 +231,7 @@ fn discover_fixtures_in_dir<P: AsRef<Path>>(dir_path: P) -> Vec<PathBuf> {
                     .map(|ext| ext == "pdf")
                     .unwrap_or(false)
         })
-        .map(|e| e.path().to_path_buf());
+        .map(|e| normalize_path(e.path()));
 
     pdf_files.extend(walker);
     pdf_files.sort();
@@ -220,6 +293,187 @@ pub fn fixture_statistics() -> FixtureStats {
         category_count: categories.len(),
         category_counts,
     }
+}
+
+// ===========================================================================
+// Fixture metadata — FixtureInfo
+// ===========================================================================
+//
+// The discovery functions above return bare `PathBuf`s — enough to answer
+// "where is this fixture?". `FixtureInfo` is the richer, test-accessible
+// record that CLI invocation tests need when they enumerate fixtures: it
+// pairs each path with a short `name` (for compact, human-readable test
+// output) and a `description` (prose identifying what the fixture represents,
+// derived from its category). It is the structured enumeration format called
+// for by the parent task "Discover and enumerate test fixtures for CLI
+// invocation".
+
+/// Metadata describing a single discovered PDF test fixture.
+///
+/// `FixtureInfo` pairs a fixture's filesystem path with human-readable
+/// metadata so that tests can enumerate, display, and assert on fixtures
+/// without re-deriving context from raw paths each time. Where a `PathBuf`
+/// answers "where is the fixture?", a `FixtureInfo` also answers "what is
+/// it?" (via [`name`](Self::name)) and "what does it represent?" (via
+/// [`description`](Self::description)).
+///
+/// Instances are cheap to clone and compare (all fields are owned), and the
+/// struct is `Serialize`/`Deserialize` so a discovered fixture set can be
+/// serialized into a snapshot or assertion fixture.
+///
+/// # Fields
+///
+/// - [`path`](Self::path) — absolute, normalized filesystem path to the PDF.
+/// - [`name`](Self::name) — short, human-readable fixture identifier
+///   (typically the PDF file stem, e.g. `"01"` for `01.pdf`).
+/// - [`description`](Self::description) — free-form prose describing what the
+///   fixture represents (e.g. its category or intended use).
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use fixture_discovery::{discover_all_fixture_infos, FixtureInfo};
+///
+/// let fixtures: Vec<FixtureInfo> = discover_all_fixture_infos();
+/// for f in &fixtures {
+///     println!("{f}"); // e.g. "01 (/abs/path/to/01.pdf)"
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FixtureInfo {
+    /// Absolute, normalized filesystem path to the PDF fixture.
+    pub path: PathBuf,
+    /// Short, human-readable fixture identifier (typically the PDF file stem).
+    pub name: String,
+    /// Free-form prose describing what the fixture represents.
+    pub description: String,
+}
+
+impl FixtureInfo {
+    /// Construct a `FixtureInfo` from its explicit components.
+    ///
+    /// Use this when the caller already knows the desired `name` and
+    /// `description` (e.g. when annotating a fixture from an external
+    /// manifest). To derive both from a path, use [`FixtureInfo::from_path`].
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let info = FixtureInfo::new("/abs/01.pdf", "01", "malformed fixture");
+    /// ```
+    pub fn new<P: Into<PathBuf>, S: Into<String>>(path: P, name: S, description: S) -> Self {
+        Self {
+            path: path.into(),
+            name: name.into(),
+            description: description.into(),
+        }
+    }
+
+    /// Build a `FixtureInfo` from a fixture path, deriving sensible metadata.
+    ///
+    /// - `name` is the PDF file stem (the filename without the `.pdf`
+    ///   extension), falling back to `"unknown"` if it cannot be read.
+    /// - `description` is derived from the fixture's category (the first path
+    ///   component below the fixtures root) via [`fixture_description`].
+    ///
+    /// The `path` is stored unchanged, so callers should pass the same
+    /// normalized, absolute paths produced by the `discover_*` functions.
+    pub fn from_path<P: Into<PathBuf>>(path: P) -> Self {
+        let path = path.into();
+        let name = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let description = fixture_description(&path);
+        Self { path, name, description }
+    }
+}
+
+impl std::fmt::Display for FixtureInfo {
+    /// Formats as `"<name> (<path>)"` — a compact, single-line rendering for
+    /// human-readable test output. The full structured view (including
+    /// `description`) is available via the derived [`Debug`] impl.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} ({})", self.name, self.path.display())
+    }
+}
+
+/// Derive a human-readable description for a fixture from its category.
+///
+/// The category is the first path component below the fixtures root
+/// (e.g. `"malformed"` for `tests/fixtures/malformed/broken.pdf`). Fixtures
+/// sitting directly in the root are described as `"root-level fixture"`, and
+/// paths that cannot be related to the fixtures root fall back to the generic
+/// `"PDF fixture"`.
+fn fixture_description(path: &Path) -> String {
+    let root = fixtures_root();
+    // Canonicalize the root so it matches the canonical paths produced by the
+    // discover_* functions (which canonicalize via normalize_path). Without
+    // this, strip_prefix compares byte-for-byte and fails: the discovered
+    // path is canonical while fixtures_root() retains its `../../` components.
+    // Fall back to component-normalization if canonicalization isn't possible.
+    let root = match root.canonicalize() {
+        Ok(canonical) => canonical,
+        Err(_) => normalize_path(&root),
+    };
+    if let Ok(rel) = path.strip_prefix(&root) {
+        // A category only exists when the fixture is nested under a
+        // subdirectory (i.e. the relative path has a non-empty parent).
+        if rel.parent().map(|p| !p.as_os_str().is_empty()).unwrap_or(false) {
+            if let Some(std::path::Component::Normal(cat)) = rel.components().next() {
+                return format!("{} fixture", cat.to_string_lossy());
+            }
+        }
+        return "root-level fixture".to_string();
+    }
+    "PDF fixture".to_string()
+}
+
+/// Discover all PDF fixtures and return them as rich [`FixtureInfo`] records.
+///
+/// This is the metadata-bearing counterpart to [`discover_all_fixtures`]: it
+/// walks the same `tests/fixtures/` tree and lifts each discovered path into a
+/// [`FixtureInfo`] (deriving `name` and `description`).
+///
+/// # Returns
+///
+/// A `Vec<FixtureInfo>` ordered identically to [`discover_all_fixtures`]
+/// (sorted by path).
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let infos = discover_all_fixture_infos();
+/// println!("Discovered {} fixtures", infos.len());
+/// for info in &infos {
+///     println!("- {info}");
+/// }
+/// ```
+pub fn discover_all_fixture_infos() -> Vec<FixtureInfo> {
+    discover_all_fixtures()
+        .into_iter()
+        .map(FixtureInfo::from_path)
+        .collect()
+}
+
+/// Discover PDF fixtures in a category and return them as [`FixtureInfo`]
+/// records.
+///
+/// Metadata-bearing counterpart to [`discover_fixtures_by_category`].
+///
+/// # Arguments
+///
+/// * `category` - The category name (e.g. `"malformed"`, `"encrypted"`)
+///
+/// # Returns
+///
+/// A `Vec<FixtureInfo>` for every PDF in the category, sorted by path.
+pub fn discover_fixture_infos_by_category(category: &str) -> Vec<FixtureInfo> {
+    discover_fixtures_by_category(category)
+        .into_iter()
+        .map(FixtureInfo::from_path)
+        .collect()
 }
 
 /// Statistics about the fixture collection.
@@ -379,6 +633,195 @@ mod tests {
         // Verify fixtures are sorted
         for i in 1..fixtures.len() {
             assert!(fixtures[i] >= fixtures[i-1], "Fixtures should be sorted");
+        }
+    }
+
+    #[test]
+    fn test_normalized_paths_no_relative_components() {
+        let fixtures = discover_all_fixtures();
+
+        // Verify no paths contain . or .. components
+        for path in &fixtures {
+            let path_str = path.to_string_lossy();
+            assert!(
+                !path_str.contains("/./") && !path_str.contains("/../"),
+                "Path should not contain relative components: {}",
+                path_str
+            );
+        }
+    }
+
+    #[test]
+    fn test_normalized_paths_work_in_test_context() {
+        let fixtures = discover_all_fixtures();
+
+        // Verify all normalized paths exist and are readable
+        for path in &fixtures {
+            assert!(path.exists(), "Normalized path should exist: {:?}", path);
+            assert!(path.is_file(), "Normalized path should be a file: {:?}", path);
+        }
+    }
+
+    #[test]
+    fn test_normalized_paths_are_consistent() {
+        // Test that calling discovery multiple times returns the same normalized paths
+        let fixtures1 = discover_all_fixtures();
+        let fixtures2 = discover_all_fixtures();
+
+        assert_eq!(fixtures1.len(), fixtures2.len());
+        for (p1, p2) in fixtures1.iter().zip(fixtures2.iter()) {
+            assert_eq!(p1, p2, "Normalized paths should be consistent across calls");
+        }
+    }
+
+    #[test]
+    fn test_category_discovery_returns_normalized_paths() {
+        let categories = fixture_categories();
+
+        // Test a few categories to ensure they return normalized paths
+        for category in categories.iter().take(3) {
+            let fixtures = discover_fixtures_by_category(category);
+
+            for path in &fixtures {
+                let path_str = path.to_string_lossy();
+                assert!(
+                    !path_str.contains("/./") && !path_str.contains("/../"),
+                    "Category {} path should be normalized: {}",
+                    category,
+                    path_str
+                );
+                assert!(path.exists(), "Category {} path should exist: {:?}", category, path);
+            }
+        }
+    }
+
+    // =======================================================================
+    // FixtureInfo — metadata-bearing fixture enumeration
+    // =======================================================================
+
+    #[test]
+    fn test_fixture_info_new_explicit() {
+        let info = FixtureInfo::new("/abs/path/to/01.pdf", "01", "malformed fixture");
+
+        assert_eq!(info.path, PathBuf::from("/abs/path/to/01.pdf"));
+        assert_eq!(info.name, "01");
+        assert_eq!(info.description, "malformed fixture");
+    }
+
+    #[test]
+    fn test_fixture_info_from_path_derives_name_and_description() {
+        let mut discovered = discover_all_fixtures();
+        assert!(!discovered.is_empty(), "Need at least one fixture to test");
+        // Use a nested fixture (under a category dir) so the category-derived
+        // description is exercised. Fall back to the first fixture if none are
+        // nested.
+        let sample = discovered
+            .iter()
+            .find(|p| {
+                p.strip_prefix(fixtures_root())
+                    .ok()
+                    .and_then(|r| r.parent())
+                    .map(|par| !par.as_os_str().is_empty())
+                    .unwrap_or(false)
+            })
+            .or(discovered.first())
+            .unwrap()
+            .clone();
+
+        let info = FixtureInfo::from_path(&sample);
+
+        // path is preserved unchanged
+        assert_eq!(info.path, sample);
+        // name is the file stem (no extension)
+        let expected_name = sample
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown");
+        assert_eq!(info.name, expected_name);
+        // description is non-empty and ends in "fixture"
+        assert!(!info.description.is_empty());
+        assert!(
+            info.description.ends_with("fixture"),
+            "description should end with 'fixture': {}",
+            info.description
+        );
+    }
+
+    #[test]
+    fn test_fixture_info_display() {
+        let info = FixtureInfo::new("/abs/path/to/01.pdf", "01", "ignored");
+        let rendered = format!("{info}");
+
+        assert_eq!(rendered, "01 (/abs/path/to/01.pdf)");
+        // Display includes the name (useful for test output)
+        assert!(rendered.contains("01"));
+    }
+
+    #[test]
+    fn test_fixture_info_debug() {
+        let info = FixtureInfo::new("/abs/path/to/01.pdf", "01", "malformed fixture");
+        let debug = format!("{info:?}");
+
+        // Derived Debug includes the struct name and all three fields
+        assert!(debug.contains("FixtureInfo"), "Debug should name the struct: {debug}");
+        assert!(debug.contains("path"), "Debug should show the path field: {debug}");
+        assert!(debug.contains("name"), "Debug should show the name field: {debug}");
+        assert!(debug.contains("description"), "Debug should show the description field: {debug}");
+    }
+
+    #[test]
+    fn test_fixture_info_clone_and_equality() {
+        let a = FixtureInfo::new("/abs/01.pdf", "01", "malformed fixture");
+        let a_clone = a.clone();
+        let b = FixtureInfo::new("/abs/02.pdf", "02", "encrypted fixture");
+
+        // Clone is equal to the original
+        assert_eq!(a, a_clone);
+        // Different fixtures are not equal
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn test_fixture_info_serialization_roundtrip() {
+        let original = FixtureInfo::new("/abs/path/to/01.pdf", "01", "malformed fixture");
+
+        // Serialize to JSON and back, verifying the round-trip is lossless.
+        let json = serde_json::to_string(&original).expect("serialize FixtureInfo");
+        let restored: FixtureInfo = serde_json::from_str(&json).expect("deserialize FixtureInfo");
+
+        assert_eq!(original, restored);
+        // The JSON carries all three fields
+        assert!(json.contains("\"path\""));
+        assert!(json.contains("\"name\""));
+        assert!(json.contains("\"description\""));
+    }
+
+    #[test]
+    fn test_discover_all_fixture_infos() {
+        let paths = discover_all_fixtures();
+        let infos = discover_all_fixture_infos();
+
+        // Same count and ordering as the path-based discovery
+        assert_eq!(infos.len(), paths.len());
+        for (info, path) in infos.iter().zip(paths.iter()) {
+            assert_eq!(info.path, *path);
+            assert!(!info.name.is_empty(), "name must not be empty");
+            assert!(!info.description.is_empty(), "description must not be empty");
+        }
+    }
+
+    #[test]
+    fn test_discover_fixture_infos_by_category() {
+        let malformed_paths = discover_fixtures_by_category("malformed");
+        let malformed_infos = discover_fixture_infos_by_category("malformed");
+
+        assert_eq!(malformed_infos.len(), malformed_paths.len());
+        for info in &malformed_infos {
+            assert!(
+                info.description.contains("malformed"),
+                "category fixtures should be described as malformed: {}",
+                info.description
+            );
         }
     }
 }
