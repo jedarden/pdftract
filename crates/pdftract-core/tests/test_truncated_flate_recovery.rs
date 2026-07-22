@@ -12,7 +12,8 @@
 //! - Partial decompression where possible
 //! - Fallback to raw stream data when decompression fails
 
-use pdftract_core::document::{parse_pdf_file, PdfExtractor};
+use anyhow::Result;
+use pdftract_core::document::{parse_pdf_file, PageExtraction, PdfExtractor};
 use std::path::PathBuf;
 
 /// Returns the path to the truncated-flate.pdf fixture.
@@ -239,6 +240,73 @@ fn test_truncated_flate_materialize_pages() {
         "✓ Page data materialized and cached ({} pages, stable across calls)",
         second_len
     );
+}
+
+/// Test that `extract_page()` is callable and yields a typed extraction result.
+///
+/// This is the focused verification for bead bf-45n42 (parent bf-2goux). Where
+/// [`test_truncated_flate_extraction_result_structure`] only calls
+/// `extract_page()` when the materialized slice is non-empty — and this fixture
+/// materializes to an empty slice — this test calls `extract_page()`
+/// **unconditionally** so the call is always exercised. It confirms that:
+///
+/// - `extract_page()` is invoked and returns without panicking.
+/// - The returned value is captured as a `Result<PageExtraction>`; the explicit
+///   type annotation makes the result-type structure visible to the compiler.
+/// - Both arms of the `Result` are valid outcomes: on this truncated fixture the
+///   page slice is empty, so `extract_page(0)` returns `Err` (index out of
+///   bounds) — which is a clean, non-panicking completion. On a fixture that
+///   materializes a page, the `Ok(PageExtraction)` arm exposes the extracted
+///   `index`, `width`, `height`, `rotation`, `spans`, and `blocks` fields.
+#[test]
+fn test_truncated_flate_extract_page_returns_result() {
+    let path = fixture_path();
+
+    println!("Testing extract_page() with: {}", path.display());
+
+    let mut extractor = PdfExtractor::open(&path)
+        .expect("Should open truncated-flate.pdf with PdfExtractor");
+
+    // extract_page() requires pages to be materialized first.
+    let page_count = extractor
+        .materialize_pages()
+        .expect("materialize_pages() should return Ok")
+        .len();
+    println!("  Materialized {} page(s)", page_count);
+
+    // Call extract_page() unconditionally and capture the result with an
+    // explicit type so the ExtractionResult/PageExtraction structure is visible
+    // to the compiler. This must complete without panicking regardless of
+    // whether the fixture yielded any materialized pages.
+    let result: Result<PageExtraction> = extractor.extract_page(0);
+
+    match result {
+        Ok(extraction) => {
+            // The Ok arm exposes the full PageExtraction structure.
+            println!("✓ extract_page(0) -> Ok(PageExtraction)");
+            println!(
+                "  index={}, width={}, height={}, rotation={}, spans={}, blocks={}",
+                extraction.index,
+                extraction.width,
+                extraction.height,
+                extraction.rotation,
+                extraction.spans.len(),
+                extraction.blocks.len()
+            );
+            assert_eq!(
+                extraction.index, 0,
+                "extract_page(0) should report index 0"
+            );
+        }
+        Err(e) => {
+            // On this truncated fixture the page slice is empty, so
+            // extract_page(0) cleanly returns an out-of-bounds error. This is a
+            // non-panicking completion — the acceptance criterion for this bead.
+            println!("✓ extract_page(0) -> Err (no panic): {}", e);
+        }
+    }
+
+    println!("✓ extract_page() completed without panic; result type is Result<PageExtraction>");
 }
 
 /// Test that truncated-flate.pdf opens with PdfExtractor without panic.
