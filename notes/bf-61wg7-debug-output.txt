@@ -1,0 +1,31 @@
+===== ExtractionResult (pretty debug) =====
+ExtractionResult {
+    fingerprint: "pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8",
+    pages: [],
+    metadata: ExtractionMetadata {
+        page_count: 0,
+        receipts_mode: Off,
+        span_count: 0,
+        block_count: 0,
+        cache_status: None,
+        cache_age_seconds: None,
+        error_count: 0,
+        reading_order_algorithm: Some(
+            "xy_cut",
+        ),
+        diagnostics: [],
+        profile_name: None,
+        profile_version: None,
+        profile_fields: None,
+    },
+    signatures: [],
+    form_fields: [],
+    links: [],
+    attachments: [],
+    threads: [],
+    javascript_actions: [],
+}
+
+===== Error / diagnostic locations =====
+metadata.error_count = 0
+metadata.diagnostics = []
