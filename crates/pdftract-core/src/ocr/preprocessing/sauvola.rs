@@ -29,6 +29,7 @@
 //! - ~500 ms for a 1080p image on a typical CPU
 //! - Significantly slower than Otsu, but necessary for scans with uneven lighting
 
+use crate::diagnostics::{DiagCode, Diagnostic};
 use image::{GrayImage, Luma};
 
 /// Default window size for Sauvola binarization.
@@ -73,6 +74,14 @@ const DEFAULT_K: f32 = 0.34;
 ///
 /// A new binary image where each pixel is either 0 (black) or 255 (white).
 ///
+/// If a leptonica Pix conversion fails (e.g. for a degenerate/zero-dimension
+/// input that leptonica cannot allocate a Pix for), the failure is treated as
+/// recoverable per the plan's no-panic error model: a `tracing::warn!` is
+/// emitted and the **unbinarized input image is returned unchanged** as a
+/// degraded result, so the OCR pipeline can still attempt extraction instead
+/// of aborting the host process. The function never panics on a conversion
+/// failure.
+///
 /// # Algorithm
 ///
 /// Uses leptonica's `pixSauvolaBinarize` implementation, which applies
@@ -105,6 +114,7 @@ pub fn sauvola_binarize(image: &GrayImage, window_size: u32, k: f32) -> GrayImag
     {
         use crate::preprocess::{grayimage_to_pix, pix_to_grayimage};
         use leptonica_plumbing::leptonica_sys::{l_float32, l_int32, pixDestroy, Pix};
+        use tracing::warn;
 
         assert!(
             window_size % 2 == 1,
@@ -112,21 +122,34 @@ pub fn sauvola_binarize(image: &GrayImage, window_size: u32, k: f32) -> GrayImag
             window_size
         );
 
-        let mut diagnostics = Vec::new();
+        // Diagnostics recorded when a recoverable leptonica conversion fails.
+        //
+        // Per the no-panic error model (plan.md §Error model and the Anti-Patterns
+        // table: "no `panic!` in library code"), each such failure is surfaced as a
+        // `tracing::warn!` and handled by falling back to a degraded result instead
+        // of aborting the host process through the FFI/PyO3 boundary.
+        let mut diagnostics: Vec<Diagnostic> = Vec::new();
 
-        // Convert GrayImage to leptonica Pix
+        // Convert GrayImage to leptonica Pix.
+        //
+        // If the conversion fails (e.g. leptonica cannot allocate a Pix for a
+        // degenerate/zero-dimension image), record the diagnostics and return the
+        // unbinarized input image as a degraded result so the OCR pipeline can
+        // still attempt extraction instead of aborting the whole process.
         let pix = match grayimage_to_pix(image) {
             Ok(p) => p,
             Err(diag) => {
-                // In production, we'd return an error here, but for now
-                // we panic to surface the issue early
-                panic!(
-                    "Failed to convert GrayImage to Pix: {:?}",
-                    diag.iter()
-                        .map(|d| d.message.as_str())
+                diagnostics.extend(diag);
+                warn!(
+                    "sauvola_binarize: GrayImage→Pix conversion failed; returning \
+                     unbinarized input as a degraded result ({})",
+                    diagnostics
+                        .iter()
+                        .map(|d| d.message.as_ref())
                         .collect::<Vec<_>>()
                         .join("; ")
                 );
+                return image.clone();
             }
         };
 
@@ -151,28 +174,40 @@ pub fn sauvola_binarize(image: &GrayImage, window_size: u32, k: f32) -> GrayImag
             let result = pixSauvolaBinarize(pix, wh, wl, factor);
 
             if result.is_null() {
+                // leptonica failed to binarize (e.g. internal allocation failure).
+                // Recoverable per the no-panic model: free the input Pix and fall
+                // back to the unbinarized input image as a degraded result.
                 pixDestroy(pix);
-                panic!(
-                    "pixSauvolaBinarize returned null (window_size={}, k={})",
+                warn!(
+                    "sauvola_binarize: pixSauvolaBinarize returned null; returning \
+                     unbinarized input as a degraded result (window_size={}, k={})",
                     window_size, k
                 );
+                return image.clone();
             }
 
             (result, ())
         };
 
-        // Convert back to GrayImage
+        // Convert back to GrayImage.
+        //
+        // If the back-conversion fails, record the diagnostics, free the Pix, and
+        // return the unbinarized input image as a degraded result.
         let result_image = match pix_to_grayimage(binary_pix) {
             Ok(img) => img,
             Err(diag) => {
                 unsafe { pixDestroy(binary_pix) };
-                panic!(
-                    "Failed to convert Pix to GrayImage: {:?}",
-                    diag.iter()
-                        .map(|d| d.message.as_str())
+                diagnostics.extend(diag);
+                warn!(
+                    "sauvola_binarize: Pix→GrayImage conversion failed; returning \
+                     unbinarized input as a degraded result ({})",
+                    diagnostics
+                        .iter()
+                        .map(|d| d.message.as_ref())
                         .collect::<Vec<_>>()
                         .join("; ")
                 );
+                return image.clone();
             }
         };
 

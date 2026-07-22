@@ -16,21 +16,11 @@
 //! - fonts/: PDFs with various font encodings and subsets
 //! - And more...
 
+mod fixture_discovery;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use walkdir::WalkDir;
-
-/// Get the path to the main workspace fixtures directory
-///
-/// The main fixtures directory is at /tests/fixtures/ in the workspace root,
-/// not to be confused with the crate-specific fixtures/ directory.
-fn main_fixtures_dir() -> PathBuf {
-    // CARGO_MANIFEST_DIR is /home/coding/pdftract/crates/pdftract-cli
-    // We need to go up to workspace root, then into tests/fixtures
-    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.push("../../tests/fixtures");
-    path
-}
+use fixture_discovery::{fixtures_root, discover_all_fixtures, discover_fixtures_by_category, discover_fixtures_in_dir, fixture_categories};
 
 /// Get the path to the pdftract binary (cargo build output)
 fn pdftract_bin() -> PathBuf {
@@ -49,84 +39,10 @@ fn pdftract_bin() -> PathBuf {
     path
 }
 
-/// Discover all PDF files in the given directory recursively using walkdir.
-///
-/// # Arguments
-/// * `fixtures_path` - Path to the fixtures directory to search
-///
-/// # Returns
-/// A `Vec<PathBuf>` containing paths to all discovered PDF files, sorted alphabetically
-fn discover_pdf_fixtures<P: AsRef<Path>>(fixtures_path: P) -> Vec<PathBuf> {
-    let mut pdf_files = Vec::new();
-
-    let walker = WalkDir::new(fixtures_path)
-        .follow_links(false)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.file_type().is_file()
-                && e.path()
-                    .extension()
-                    .map(|ext| ext == "pdf")
-                    .unwrap_or(false)
-        })
-        .map(|e| e.path().to_path_buf());
-
-    pdf_files.extend(walker);
-    pdf_files.sort();
-
-    pdf_files
-}
-
-/// Discover PDF files in a specific category subdirectory
-///
-/// # Arguments
-/// * `category` - Category name (e.g., "encrypted", "forms", "ocr")
-///
-/// # Returns
-/// A `Vec<PathBuf>` containing paths to PDF files in that category
-fn discover_fixtures_by_category(category: &str) -> Vec<PathBuf> {
-    let fixtures_dir = main_fixtures_dir();
-    let category_path = fixtures_dir.join(category);
-
-    if !category_path.exists() {
-        return Vec::new();
-    }
-
-    discover_pdf_fixtures(&category_path)
-}
-
-/// Get all fixture categories present in the main fixtures directory
-///
-/// # Returns
-/// A `Vec<String>` of category names (subdirectory names containing PDF files)
-fn get_fixture_categories() -> Vec<String> {
-    let fixtures_dir = main_fixtures_dir();
-    let mut categories = Vec::new();
-
-    if let Ok(entries) = std::fs::read_dir(&fixtures_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                // Check if this directory contains PDF files
-                let has_pdfs = discover_pdf_fixtures(&path).iter().any(|p| p.exists());
-                if has_pdfs {
-                    if let Some(name) = path.file_name() {
-                        categories.push(name.to_string_lossy().to_string());
-                    }
-                }
-            }
-        }
-    }
-
-    categories.sort();
-    categories
-}
-
 /// Test that the main fixtures directory exists and is accessible
 #[test]
 fn test_main_fixtures_dir_exists() {
-    let fixtures_dir = main_fixtures_dir();
+    let fixtures_dir = fixtures_root();
     assert!(fixtures_dir.exists(), "Main fixtures directory does not exist: {:?}", fixtures_dir);
     assert!(fixtures_dir.is_dir(), "Main fixtures path is not a directory: {:?}", fixtures_dir);
 
@@ -139,8 +55,8 @@ fn test_main_fixtures_dir_exists() {
 /// and prints the names of all discovered fixtures to stdout.
 #[test]
 fn test_discover_all_pdf_fixtures() {
-    let fixtures_dir = main_fixtures_dir();
-    let pdf_files = discover_pdf_fixtures(&fixtures_dir);
+    let fixtures_dir = fixtures_root();
+    let pdf_files = discover_all_fixtures();
 
     println!("\n=== Discovered PDF Fixtures ===");
     println!("Fixtures directory: {}", fixtures_dir.display());
@@ -184,7 +100,7 @@ fn test_discover_fixtures_by_category() {
     println!("\n=== Category-based Fixture Discovery ===\n");
 
     // Get all available categories
-    let categories = get_fixture_categories();
+    let categories = fixture_categories();
     println!("Available fixture categories: {}", categories.len());
 
     for category in &categories {
@@ -204,8 +120,8 @@ fn test_discover_fixtures_by_category() {
 /// for bulk CLI invocation testing.
 #[test]
 fn test_fixture_enumeration_for_cli() {
-    let fixtures_dir = main_fixtures_dir();
-    let pdf_files = discover_pdf_fixtures(&fixtures_dir);
+    let fixtures_dir = fixtures_root();
+    let pdf_files = discover_all_fixtures();
     let bin = pdftract_bin();
 
     // Ensure binary exists
@@ -245,8 +161,8 @@ fn test_fixture_enumeration_for_cli() {
 /// 5 fixtures to keep test runtime reasonable.
 #[test]
 fn test_cli_invocation_on_fixture_sample() {
-    let fixtures_dir = main_fixtures_dir();
-    let pdf_files = discover_pdf_fixtures(&fixtures_dir);
+    let fixtures_dir = fixtures_root();
+    let pdf_files = discover_all_fixtures();
     let bin = pdftract_bin();
 
     // Ensure binary exists

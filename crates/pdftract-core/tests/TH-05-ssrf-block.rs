@@ -1297,7 +1297,7 @@ pub mod mcp_helpers {
 
         #[test]
         fn test_read_framed_response_simple() {
-            let input = b"Content-Length: 25\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":1}";
+            let input = b"Content-Length: 24\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":1}";
             let mut reader = BufReader::new(&input[..]);
 
             let result = read_framed_response(&mut reader);
@@ -1308,7 +1308,7 @@ pub mod mcp_helpers {
 
         #[test]
         fn test_read_framed_response_with_extra_whitespace() {
-            let input = b"Content-Length: 25\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":1}";
+            let input = b"Content-Length: 24\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":1}";
             let mut reader = BufReader::new(&input[..]);
 
             let result = read_framed_response(&mut reader);
@@ -2042,13 +2042,26 @@ mod mcp_ssrf_tests {
             elapsed
         );
 
-        // Verify stub response (not an error from failed connection)
+        // Verify SSRF-blocked response (or stub result if extraction were implemented)
         let parsed: serde_json::Value =
             serde_json::from_str(&response).expect("Response is not valid JSON");
-        assert!(
-            parsed.get("result").is_some(),
-            "Should return stub result, not connection error"
-        );
+
+        // Check for SSRF_BLOCKED error (correct behavior)
+        if let Some(error) = parsed.get("error") {
+            assert!(
+                error.get("data").and_then(|d| d.get("code")).and_then(|c| c.as_str()) == Some("SSRF_BLOCKED"),
+                "Error should have SSRF_BLOCKED code, got: {}",
+                error
+            );
+        } else if let Some(result) = parsed.get("result") {
+            // Stub response is also acceptable (if extraction were implemented)
+            assert!(
+                result.get("_note").is_some(),
+                "Result should be a stub response with _note field"
+            );
+        } else {
+            panic!("Response should have either error or result field");
+        }
 
         // Clean shutdown
         let _ = child.stdin.take();

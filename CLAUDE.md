@@ -140,6 +140,10 @@ never advanced to the next bead. The worker made it worse by spawning four overl
    confirm nothing you spawned is still alive — `pgrep -af 'pdftract mcp|TH_0|TH-0'` must be
    empty.
 
+	   **Verification scripts and documentation:** See `docs/test-hygiene/orphaned-process-verification.md`
+	   for the verification script usage, manual verification examples, and troubleshooting steps.
+	   The post-test integration is documented in `docs/test-hygiene/post-test-orphan-verification-integration.md`.
+
 ## bf-specific features now available
 
 - **`bf velocity --by worker`** — historical pass/fail/duration per (model, harness, issue_type). Populates as beads close.

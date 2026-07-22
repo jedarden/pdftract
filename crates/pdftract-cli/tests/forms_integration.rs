@@ -9,9 +9,11 @@
 //! Tests iterate through PDF fixtures in tests/fixtures/forms/ and verify
 //! that form fields are correctly extracted and represented in JSON output.
 
-use std::path::{Path, PathBuf};
+mod fixture_discovery;
+
+use std::path::PathBuf;
 use std::process::Command;
-use walkdir::WalkDir;
+use fixture_discovery::{fixtures_root, discover_fixtures_by_category, discover_fixtures_flat};
 
 /// Get the path to the pdftract binary (cargo build output)
 fn pdftract_bin() -> PathBuf {
@@ -30,56 +32,19 @@ fn pdftract_bin() -> PathBuf {
     path
 }
 
-/// Path to fixtures directory
+/// Path to forms fixtures directory
 fn fixtures_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/forms")
+    fixtures_root().join("forms")
 }
 
-/// Find all PDF files in the fixtures directory (non-recursive)
+/// Find all PDF files in the forms fixtures directory (non-recursive)
 fn find_pdf_fixtures() -> Vec<PathBuf> {
-    let fixtures_dir = fixtures_dir();
-    let mut pdf_files = Vec::new();
-
-    if let Ok(entries) = std::fs::read_dir(&fixtures_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("pdf") {
-                pdf_files.push(path);
-            }
-        }
-    }
-
-    pdf_files.sort();
-    pdf_files
+    discover_fixtures_flat(fixtures_dir())
 }
 
-/// Discover all PDF files in the given directory recursively using walkdir.
-///
-/// # Arguments
-/// * `fixtures_path` - Path to the fixtures directory to search
-///
-/// # Returns
-/// A `Vec<PathBuf>` containing paths to all discovered PDF files
-fn discover_pdf_fixtures<P: AsRef<Path>>(fixtures_path: P) -> Vec<PathBuf> {
-    let mut pdf_files = Vec::new();
-
-    let walker = WalkDir::new(fixtures_path)
-        .follow_links(false)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.file_type().is_file()
-                && e.path()
-                    .extension()
-                    .map(|ext| ext == "pdf")
-                    .unwrap_or(false)
-        })
-        .map(|e| e.path().to_path_buf());
-
-    pdf_files.extend(walker);
-    pdf_files.sort();
-
-    pdf_files
+/// Discover all PDF files in the forms directory recursively
+fn discover_pdf_fixtures() -> Vec<PathBuf> {
+    discover_fixtures_by_category("forms")
 }
 
 /// Test discover_pdf_fixtures function and print discovered fixtures
@@ -88,12 +53,11 @@ fn discover_pdf_fixtures<P: AsRef<Path>>(fixtures_path: P) -> Vec<PathBuf> {
 /// and prints the names of all discovered fixtures to stdout.
 #[test]
 fn test_discover_pdf_fixtures() {
-    let fixtures_dir = fixtures_dir();
-    let pdf_files = discover_pdf_fixtures(&fixtures_dir);
+    let pdf_files = discover_pdf_fixtures();
 
     println!("\n=== Discovered PDF Fixtures ===");
     if pdf_files.is_empty() {
-        println!("No PDF files found in {}", fixtures_dir.display());
+        println!("No PDF files found in {}", fixtures_dir().display());
     } else {
         for pdf_path in &pdf_files {
             println!("  - {}", pdf_path.display());
@@ -166,8 +130,7 @@ fn test_forms_fixtures_discovery() {
 /// It captures stdout/stderr and prints results without strict validation.
 #[test]
 fn test_extract_all_discovered_pdfs() {
-    let fixtures_dir = fixtures_dir();
-    let pdf_files = discover_pdf_fixtures(&fixtures_dir);
+    let pdf_files = discover_pdf_fixtures();
     let bin = pdftract_bin();
 
     // Ensure binary exists
@@ -177,7 +140,7 @@ fn test_extract_all_discovered_pdfs() {
     if pdf_files.is_empty() {
         println!(
             "No PDF fixtures found in {:?} - test scaffold ready for fixtures",
-            fixtures_dir
+            fixtures_dir()
         );
         return;
     }

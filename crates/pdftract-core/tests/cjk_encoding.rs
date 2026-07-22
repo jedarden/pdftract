@@ -13,38 +13,43 @@ use std::fs;
 use std::path::Path;
 
 /// Test fixture describing a CJK PDF and its expected text output.
+#[derive(Debug, Clone)]
 struct CjkFixture {
     name: &'static str,
-    pdf_path: &'static str,
-    truth_path: &'static str,
+    pdf_path: String,
+    truth_path: String,
     description: &'static str,
 }
 
 /// Get all CJK fixtures with their configuration.
 fn get_fixtures() -> Vec<CjkFixture> {
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    // Go up from crates/pdftract-core to workspace root
+    let fixture_base = format!("{}/../../tests/fixtures/cjk", manifest_dir);
+
     vec![
         CjkFixture {
             name: "chinese-gb18030",
-            pdf_path: "../../../tests/fixtures/cjk/cjk-chinese-gb18030.pdf",
-            truth_path: "../../../tests/fixtures/cjk/cjk-chinese-gb18030.txt",
+            pdf_path: format!("{}/cjk-chinese-gb18030.pdf", fixture_base),
+            truth_path: format!("{}/cjk-chinese-gb18030.txt", fixture_base),
             description: "Simplified Chinese with GB18030 encoding",
         },
         CjkFixture {
             name: "japanese-shiftjis",
-            pdf_path: "../../../tests/fixtures/cjk/cjk-japanese-shiftjis.pdf",
-            truth_path: "../../../tests/fixtures/cjk/cjk-japanese-shiftjis.txt",
+            pdf_path: format!("{}/cjk-japanese-shiftjis.pdf", fixture_base),
+            truth_path: format!("{}/cjk-japanese-shiftjis.txt", fixture_base),
             description: "Japanese with Shift-JIS encoding",
         },
         CjkFixture {
             name: "korean-euckr",
-            pdf_path: "../../../tests/fixtures/cjk/cjk-korean-euckr.pdf",
-            truth_path: "../../../tests/fixtures/cjk/cjk-korean-euckr.txt",
+            pdf_path: format!("{}/cjk-korean-euckr.pdf", fixture_base),
+            truth_path: format!("{}/cjk-korean-euckr.txt", fixture_base),
             description: "Korean with EUC-KR encoding",
         },
         CjkFixture {
             name: "tc-big5",
-            pdf_path: "../../../tests/fixtures/cjk/cjk-tc-big5.pdf",
-            truth_path: "../../../tests/fixtures/cjk/cjk-tc-big5.txt",
+            pdf_path: format!("{}/cjk-tc-big5.pdf", fixture_base),
+            truth_path: format!("{}/cjk-tc-big5.txt", fixture_base),
             description: "Traditional Chinese with Big5 encoding",
         },
     ]
@@ -52,11 +57,16 @@ fn get_fixtures() -> Vec<CjkFixture> {
 
 /// Test a single CJK fixture.
 fn test_cjk_fixture(fixture: &CjkFixture) -> Result<String, Box<dyn std::error::Error>> {
-    let pdf_path = Path::new(fixture.pdf_path);
+    let pdf_path = Path::new(&fixture.pdf_path);
 
     // Open the PDF
-    let extractor =
+    let mut extractor =
         PdfExtractor::open(pdf_path).map_err(|e| format!("Failed to open PDF: {}", e))?;
+
+    // Materialize pages for extraction
+    extractor
+        .materialize_pages()
+        .map_err(|e| format!("Failed to materialize pages: {}", e))?;
 
     // Extract text from first page (all CJK fixtures have single pages)
     let page_extraction = extractor
@@ -86,7 +96,7 @@ fn test_cjk_gb18030_chinese() {
     );
 
     let extracted = result.unwrap();
-    let expected = fs::read_to_string(fixture.truth_path).expect("Failed to read ground truth");
+    let expected = fs::read_to_string(&fixture.truth_path).expect("Failed to read ground truth");
 
     assert_eq!(
         extracted.trim(),
@@ -107,7 +117,7 @@ fn test_cjk_shiftjis_japanese() {
     );
 
     let extracted = result.unwrap();
-    let expected = fs::read_to_string(fixture.truth_path).expect("Failed to read ground truth");
+    let expected = fs::read_to_string(&fixture.truth_path).expect("Failed to read ground truth");
 
     assert_eq!(
         extracted.trim(),
@@ -128,7 +138,7 @@ fn test_cjk_euckr_korean() {
     );
 
     let extracted = result.unwrap();
-    let expected = fs::read_to_string(fixture.truth_path).expect("Failed to read ground truth");
+    let expected = fs::read_to_string(&fixture.truth_path).expect("Failed to read ground truth");
 
     assert_eq!(
         extracted.trim(),
@@ -149,7 +159,7 @@ fn test_cjk_big5_traditional_chinese() {
     );
 
     let extracted = result.unwrap();
-    let expected = fs::read_to_string(fixture.truth_path).expect("Failed to read ground truth");
+    let expected = fs::read_to_string(&fixture.truth_path).expect("Failed to read ground truth");
 
     assert_eq!(
         extracted.trim(),
@@ -162,12 +172,12 @@ fn test_cjk_big5_traditional_chinese() {
 fn test_all_cjk_fixtures_exist() {
     for fixture in get_fixtures() {
         assert!(
-            Path::new(fixture.pdf_path).exists(),
+            Path::new(&fixture.pdf_path).exists(),
             "CJK fixture PDF should exist: {}",
             fixture.pdf_path
         );
         assert!(
-            Path::new(fixture.truth_path).exists(),
+            Path::new(&fixture.truth_path).exists(),
             "CJK fixture ground truth should exist: {}",
             fixture.truth_path
         );

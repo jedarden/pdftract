@@ -1,0 +1,6 @@
+error: unexpected value 'json' for '--timings' found; no more were expected
+
+Usage: cargo test --no-run --timings [TESTNAME] [-- [ARGS]...]
+
+For more information, try '--help'.
+error: command `/home/coding/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin/cargo test --no-run --message-format json-render-diagnostics '--timings=json'` exited with code 1

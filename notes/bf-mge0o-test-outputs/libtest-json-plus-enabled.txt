@@ -1,0 +1,100 @@
+    Blocking waiting for file lock on build directory
+warning: fields `description` and `version` are never read
+  --> crates/pdftract-core/build.rs:37:5
+   |
+21 | struct UnmappedGlyphNamesConfig {
+   |        ------------------------ fields in this struct
+...
+37 |     description: Option<String>,
+   |     ^^^^^^^^^^^
+...
+43 |     version: Option<String>,
+   |     ^^^^^^^
+   |
+   = note: `UnmappedGlyphNamesConfig` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `pdftract-core` (build script) generated 1 warning
+   Compiling pdftract-core v0.1.0 (/home/coding/pdftract/crates/pdftract-core)
+warning: pdftract-inspector-ui@0.1.0: Inspector frontend bundle size:
+warning: pdftract-inspector-ui@0.1.0:   Raw: 1.95 KB
+warning: pdftract-inspector-ui@0.1.0:   Gzipped: 0.87 KB / 80 KB limit
+warning: unused imports: `read_json` and `write_json`
+ --> crates/pdftract-schema-migrate/src/bin/migrate-schema.rs:9:31
+  |
+9 | use pdftract_schema_migrate::{read_json, run_migration, write_json};
+  |                               ^^^^^^^^^                 ^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `pdftract-schema-migrate` (bin "migrate-schema" test) generated 1 warning (run `cargo fix --bin "migrate-schema" -p pdftract-schema-migrate --tests` to apply 1 suggestion)
+warning: unused import: `DestArray`
+ --> crates/pdftract-core/src/annotation/json.rs:6:32
+  |
+6 | use crate::annotation::links::{DestArray, FitType, LinkAnnotation};
+  |                                ^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `Map`
+  --> crates/pdftract-core/src/cache/key.rs:10:24
+   |
+10 | use serde_json::{json, Map, Value};
+   |                        ^^^
+
+warning: unused import: `entry_path`
+ --> crates/pdftract-core/src/cache/lru.rs:8:5
+  |
+8 |     entry_path, parse_opts_hash_from_filename, parse_size_from_filename, sentinel_path,
+  |     ^^^^^^^^^^
+
+warning: unused import: `crate::parser::object::PdfObject`
+  --> crates/pdftract-core/src/conformance.rs:17:5
+   |
+17 | use crate::parser::object::PdfObject;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `anyhow::Result`
+  --> crates/pdftract-core/src/conformance.rs:20:5
+   |
+20 | use anyhow::Result;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `intern`
+  --> crates/pdftract-core/src/content_stream.rs:34:29
+   |
+34 | use crate::parser::object::{intern, ObjRef, PdfDict, PdfObject};
+   |                             ^^^^^^
+
+warning: unused import: `PdfDict`
+    --> crates/pdftract-core/src/content_stream.rs:1926:41
+     |
+1926 |     use crate::parser::object::{intern, PdfDict};
+     |                                         ^^^^^^^
+
+warning: unused import: `ObjRef`
+  --> crates/pdftract-core/src/detection.rs:11:29
+   |
+11 | use crate::parser::object::{ObjRef, PdfDict, PdfObject};
+   |                             ^^^^^^
+
+warning: unused imports: `LinearizationInfo` and `XrefSection`
+  --> crates/pdftract-core/src/document.rs:21:76
+   |
+21 |     detect_linearization, load_xref_linearized, load_xref_with_prev_chain, LinearizationInfo,
+   |                                                                            ^^^^^^^^^^^^^^^^^
+22 |     XrefResolver, XrefSection,
+   |                   ^^^^^^^^^^^
+
+warning: unused import: `DiagCode`
+  --> crates/pdftract-core/src/encryption/detection.rs:13:19
+   |
+13 |     diagnostics::{DiagCode, Diagnostic},
+   |                   ^^^^^^^^
+
+warning: unused import: `derive_aes_128_object_key`
+  --> crates/pdftract-core/src/encryption/decryptor.rs:12:32
+   |
+12 |     aes_128::{aes_128_decrypt, derive_aes_128_object_key},
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^^^
+

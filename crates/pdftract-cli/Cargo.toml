@@ -36,7 +36,7 @@ path = "src/bin/generate-cli-reference.rs"
 
 [[bin]]
 name = "generate-form-fixtures"
-path = "../../tests/fixtures/forms/generate_form_fixtures.rs"
+path = "../../tools/generate_form_fixtures.rs"
 
 [[bin]]
 name = "list_pdf_fixtures"

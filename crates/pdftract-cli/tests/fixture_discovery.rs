@@ -476,6 +476,193 @@ pub fn discover_fixture_infos_by_category(category: &str) -> Vec<FixtureInfo> {
         .collect()
 }
 
+// ===========================================================================
+// Fallible, glob-based discovery — discover_*_result
+// ===========================================================================
+//
+// The `discover_all_fixture_infos` family above is *infallible*: it returns a
+// plain `Vec<FixtureInfo>`, folding "the fixtures directory is missing" and
+// "the directory exists but holds no PDFs" into an indistinguishable empty
+// vector. The `Result`-returning functions below make those failure modes
+// explicit, so a test that expects fixtures can fail loudly (with a clear
+// error) instead of silently iterating over nothing.
+//
+// Discovery uses the `glob` crate's recursive `<root>/**/*.pdf` pattern. A
+// subtlety: `glob` 0.3 follows directory symlinks with no opt-out (unlike
+// `walkdir`'s `follow_links(false)`), and this fixture tree contains a
+// self-referential directory symlink
+// (`classifier/scientific_paper/scientific_paper` → its own parent). Unfiltered,
+// `glob` descends that symlink up to its internal recursion limit and emits
+// thousands of phantom duplicate paths (3353 raw entries vs. the true 1353).
+// Candidates reached by descending a symlinked *directory* are therefore
+// dropped via [`ancestor_is_symlink`]; symlinked *files* are kept, since they
+// are distinct fixture entries. See `tests/test_glob_discovery.rs` for the
+// standalone, fully documented version of the same technique.
+
+/// Error returned by [`discover_all_fixture_infos_result`] and
+/// [`discover_fixture_infos_result_in`].
+///
+/// Makes explicit the failure modes that the infallible
+/// [`discover_all_fixtures`] / [`discover_all_fixture_infos`] helpers collapse
+/// into an empty `Vec`: a missing root directory, an unreadable matched entry,
+/// or a directory that exists but contains no PDFs.
+#[derive(Debug)]
+pub(crate) enum FixtureDiscoveryError {
+    /// The fixtures root directory does not exist on disk.
+    RootMissing(PathBuf),
+    /// The computed glob pattern could not be parsed.
+    Pattern(glob::PatternError),
+    /// A filesystem error occurred while resolving a globbed entry.
+    Glob {
+        /// The entry whose metadata could not be read.
+        entry: PathBuf,
+        /// The underlying I/O error.
+        source: std::io::Error,
+    },
+    /// The root directory exists but contains no `.pdf` fixtures.
+    NoFixtures(PathBuf),
+}
+
+impl std::fmt::Display for FixtureDiscoveryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::RootMissing(p) => {
+                write!(f, "fixtures root directory does not exist: {}", p.display())
+            }
+            Self::Pattern(e) => write!(f, "invalid glob pattern: {e}"),
+            Self::Glob { entry, source } => {
+                write!(f, "failed to read {}: {source}", entry.display())
+            }
+            Self::NoFixtures(p) => {
+                write!(f, "no PDF fixtures found under: {}", p.display())
+            }
+        }
+    }
+}
+
+impl std::error::Error for FixtureDiscoveryError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Pattern(e) => Some(e),
+            Self::Glob { source, .. } => Some(source),
+            _ => None,
+        }
+    }
+}
+
+impl From<glob::PatternError> for FixtureDiscoveryError {
+    fn from(e: glob::PatternError) -> Self {
+        Self::Pattern(e)
+    }
+}
+
+/// Discover every PDF fixture as structured [`FixtureInfo`] records, returning
+/// a [`Result`] so real failures are not silently collapsed into an empty set.
+///
+/// Walks the same `tests/fixtures/` tree as [`discover_all_fixture_infos`] but
+/// via the `glob` crate (`<root>/**/*.pdf`, symlink-safe — see
+/// [`ancestor_is_symlink`]). Ordering matches the other discovery helpers:
+/// sorted ascending by path.
+///
+/// # Errors
+///
+/// - [`FixtureDiscoveryError::RootMissing`] — [`fixtures_root`] does not exist.
+/// - [`FixtureDiscoveryError::NoFixtures`] — the root exists but holds no PDFs.
+/// - [`FixtureDiscoveryError::Glob`] — a matched entry could not be read.
+/// - [`FixtureDiscoveryError::Pattern`] — the computed glob pattern is invalid.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use fixture_discovery::discover_all_fixture_infos_result;
+///
+/// let fixtures = discover_all_fixture_infos_result()
+///     .expect("fixtures root must exist and contain PDFs");
+/// println!("{} fixtures ready for CLI invocation", fixtures.len());
+/// ```
+pub(crate) fn discover_all_fixture_infos_result() -> Result<Vec<FixtureInfo>, FixtureDiscoveryError> {
+    discover_fixture_infos_result_in(&fixtures_root())
+}
+
+/// Discover every PDF fixture under `root` as structured [`FixtureInfo`]
+/// records, with explicit error reporting.
+///
+/// This is the parameterized worker behind [`discover_all_fixture_infos_result`];
+/// accepting an explicit `root` lets tests drive the missing-directory and
+/// empty-directory failure paths without disturbing the real fixtures tree.
+///
+/// The root is canonicalized before globbing because `glob` matches path
+/// components literally (it does not resolve `..`), and [`fixtures_root`] is
+/// built from `CARGO_MANIFEST_DIR` + `"../../tests/fixtures"`. Canonicalizing is
+/// also what keeps [`ancestor_is_symlink`] sound: a canonical path has no
+/// symlink components, so the only symlink ancestor it can ever report is a
+/// symlink *inside* the fixture tree (never a spurious one above it).
+///
+/// # Arguments
+///
+/// * `root` — directory to search recursively for `.pdf` files.
+///
+/// # Errors
+///
+/// See [`discover_all_fixture_infos_result`].
+pub(crate) fn discover_fixture_infos_result_in(
+    root: &Path,
+) -> Result<Vec<FixtureInfo>, FixtureDiscoveryError> {
+    if !root.exists() {
+        return Err(FixtureDiscoveryError::RootMissing(root.to_path_buf()));
+    }
+    // Canonicalize: glob matches `..` literally, and fixtures_root() carries
+    // `../../` components. unwrap_or_else falls back to component-normalization
+    // if canonicalize fails for any reason.
+    let root = root.canonicalize().unwrap_or_else(|_| normalize_path(root));
+    let pattern = format!("{}/**/*.pdf", root.display());
+
+    let mut infos: Vec<FixtureInfo> = Vec::new();
+    for entry in glob::glob(&pattern)? {
+        let path = entry.map_err(|e| FixtureDiscoveryError::Glob {
+            entry: e.path().to_path_buf(),
+            source: e.into_error(),
+        })?;
+        // Drop candidates reached by descending a symlinked *directory* (glob
+        // 0.3 follows directory symlinks with no opt-out; see module notes).
+        if ancestor_is_symlink(&path) {
+            continue;
+        }
+        infos.push(FixtureInfo::from_path(path));
+    }
+
+    if infos.is_empty() {
+        return Err(FixtureDiscoveryError::NoFixtures(root.to_path_buf()));
+    }
+    infos.sort_by(|a, b| a.path.cmp(&b.path));
+    infos.dedup_by(|a, b| a.path == b.path);
+    Ok(infos)
+}
+
+/// Return `true` if any *ancestor directory* of `path` is a symlink.
+///
+/// Only directory components are inspected — a symlinked *file* at the leaf is
+/// not a symlinked ancestor, so legitimate file-symlinks are retained. A `true`
+/// result means the path was reached by descending into a symlinked directory,
+/// which `glob` follows but a `follow_links(false)` walk (the
+/// [`discover_all_fixtures`] family) would not. Ported from the standalone
+/// `tests/test_glob_discovery.rs` helper of the same name.
+fn ancestor_is_symlink(mut path: &Path) -> bool {
+    while let Some(parent) = path.parent() {
+        if parent.as_os_str().is_empty() {
+            break;
+        }
+        if std::fs::symlink_metadata(parent)
+            .map(|md| md.file_type().is_symlink())
+            .unwrap_or(false)
+        {
+            return true;
+        }
+        path = parent;
+    }
+    false
+}
+
 /// Statistics about the fixture collection.
 #[derive(Debug)]
 pub struct FixtureStats {
@@ -823,5 +1010,164 @@ mod tests {
                 info.description
             );
         }
+    }
+
+    // =======================================================================
+    // Fallible (Result) glob-based discovery — discover_*_result
+    // =======================================================================
+
+    /// RAII temp directory, removed on drop, for exercising the empty-directory
+    /// failure mode without touching the real fixtures tree.
+    struct TempDir(PathBuf);
+    impl TempDir {
+        fn create() -> Self {
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static COUNTER: AtomicU64 = AtomicU64::new(0);
+            let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+            let path = std::env::temp_dir()
+                .join(format!("pdftract-bf-29u9w-{}-{}", std::process::id(), n));
+            std::fs::create_dir(&path).expect("create temp dir");
+            TempDir(path)
+        }
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn test_discover_all_fixture_infos_result_ok() {
+        let infos = discover_all_fixture_infos_result()
+            .expect("default fixtures root must exist and contain PDFs");
+
+        assert!(!infos.is_empty(), "should discover real fixtures");
+
+        // Glob discovers by filename, so it surfaces symlinked PDF fixtures
+        // (e.g. `profiles/invoice/07.pdf` -> `classifier/invoice/07.pdf`) that
+        // the walkdir-based [`discover_all_fixtures`] *excludes*: walkdir
+        // filters on `file_type().is_file()`, and a symlink reports
+        // `is_symlink()` rather than `is_file()`. The two counts therefore
+        // differ by exactly the number of symlinked `.pdf` files in the tree.
+        //
+        // Asserting that precise relationship — rather than naive equality —
+        // verifies glob returns every real file walkdir finds *plus* every
+        // symlinked fixture. It also guards the directory-symlink filter: the
+        // self-referential `classifier/scientific_paper/scientific_paper`
+        // directory symlink would, unfiltered, inflate the count into the
+        // thousands (see [`ancestor_is_symlink`]); any phantom loop-descended
+        // path would blow this bound past `walkdir_count + symlinked_pdf_count`.
+        let walkdir_count = discover_all_fixtures().len();
+        let symlinked_pdf_count = WalkDir::new(fixtures_root())
+            .follow_links(false)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.file_type().is_symlink()
+                    && e.path().extension().map(|ext| ext == "pdf").unwrap_or(false)
+            })
+            .count();
+        println!(
+            "glob result count: {}; walkdir real-file count: {}; symlinked pdfs: {}",
+            infos.len(),
+            walkdir_count,
+            symlinked_pdf_count
+        );
+        assert_eq!(
+            infos.len(),
+            walkdir_count + symlinked_pdf_count,
+            "glob count must equal walkdir real-file count plus symlinked-PDF count \
+             (glob includes symlinked fixtures that walkdir's is_file() filter drops; \
+             a larger count means the directory-symlink filter regressed)"
+        );
+
+        // No duplicate paths (dedup correctness).
+        let mut seen = std::collections::HashSet::new();
+        for info in &infos {
+            assert!(
+                seen.insert(&info.path),
+                "duplicate fixture path: {}",
+                info.path.display()
+            );
+        }
+    }
+
+    #[test]
+    fn test_discover_fixture_infos_result_sorted_and_populated() {
+        let infos = discover_all_fixture_infos_result().expect("fixtures");
+
+        // Sorted ascending by path.
+        for w in infos.windows(2) {
+            assert!(w[0].path <= w[1].path, "results must be sorted by path");
+        }
+        // Spot-check the structured fields on a sample.
+        for info in infos.iter().take(25) {
+            assert!(info.path.is_absolute(), "path must be absolute: {info}");
+            assert_eq!(
+                info.path.extension().and_then(|s| s.to_str()),
+                Some("pdf"),
+                "path must end in .pdf: {info}",
+            );
+            assert!(info.path.exists(), "path must exist: {info}");
+            assert!(!info.name.is_empty(), "name must be non-empty: {info}");
+            assert!(
+                !info.description.is_empty(),
+                "description must be non-empty: {info}",
+            );
+        }
+    }
+
+    #[test]
+    fn test_discover_fixture_infos_result_missing_root() {
+        let bogus = PathBuf::from("/this/path/should/not/exist/pdftract-bf-29u9w");
+        assert!(!bogus.exists(), "precondition: bogus path must not exist");
+
+        match discover_fixture_infos_result_in(&bogus) {
+            Err(FixtureDiscoveryError::RootMissing(p)) => {
+                assert_eq!(p, bogus, "RootMissing should carry the requested path");
+            }
+            other => panic!("expected RootMissing, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_discover_fixture_infos_result_empty_dir_is_no_fixtures() {
+        let tmp = TempDir::create();
+        assert!(tmp.path().exists(), "precondition: temp dir should exist");
+
+        match discover_fixture_infos_result_in(tmp.path()) {
+            Err(FixtureDiscoveryError::NoFixtures(_)) => {}
+            other => panic!("expected NoFixtures for empty dir, got {other:?}"),
+        }
+        // Discovery must not have side effects on the directory it scanned.
+        assert!(
+            tmp.path().exists(),
+            "empty dir should still exist after discovery"
+        );
+    }
+
+    #[test]
+    fn test_fixture_discovery_error_is_std_error() {
+        // FixtureDiscoveryError must implement std::error::Error (robust,
+        // chainable) — verified by the bound on `accepts`.
+        fn accepts<E: std::error::Error>(_: &E) {}
+        let err = discover_fixture_infos_result_in(&PathBuf::from(
+            "/nonexistent/pdftract-bf-29u9w",
+        ))
+        .unwrap_err();
+        accepts(&err);
+
+        // Display is human-readable and explains the missing path.
+        let msg = format!("{err}");
+        assert!(msg.contains("does not exist"), "Display should explain: {msg}");
+
+        // source() is None for RootMissing (no inner cause to chain).
+        assert!(
+            std::error::Error::source(&err).is_none(),
+            "RootMissing should have no source",
+        );
     }
 }

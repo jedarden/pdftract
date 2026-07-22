@@ -259,6 +259,34 @@ When adding new generators:
 3. Update this README with the new tool
 4. Follow existing patterns (Python for encoding/OCR, Rust for security/crypto)
 
+#### `create_degraded_200dpi.py`
+**Purpose:** Generate degraded 200 DPI OCR test fixture
+
+**Fixtures Generated:**
+- `tests/fixtures/scanned/low-quality/degraded-200dpi.pdf` - intentionally degraded PDF for OCR quality testing
+- Degradation effects: Gaussian blur, noise, reduced contrast, JPEG compression artifacts
+
+**Usage:**
+```bash
+python tools/create_degraded_200dpi.py
+```
+
+**Requirements:**
+- Python 3
+- `reportlab` - for PDF generation
+- `PIL` (Pillow) - for image processing
+- `pdftoppm` (poppler-utils) - for PDF-to-image conversion
+
+**Process:**
+1. Creates a clean PDF from Abraham Lincoln source text at 200 DPI
+2. Converts PDF to PPM images
+3. Applies degradation effects (blur, noise, contrast reduction, compression)
+4. Saves degraded images back to PDF
+
+**Location:** Writes to `tests/fixtures/scanned/low-quality/degraded-200dpi.pdf`
+
+---
+
 ## Cleanup Summary (2026-07-05)
 
 The tools/ directory and tests/fixtures/ structure were cleaned up and organized through three coordinated beads:

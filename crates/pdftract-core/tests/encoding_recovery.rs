@@ -13,10 +13,11 @@ use std::fs;
 use std::path::Path;
 
 /// Test fixture describing a no-ToUnicode PDF and its expected text output.
+#[derive(Debug, Clone)]
 struct EncodingFixture {
     name: &'static str,
-    pdf_path: &'static str,
-    truth_path: &'static str,
+    pdf_path: String,
+    truth_path: String,
     description: &'static str,
 }
 
@@ -72,29 +73,33 @@ fn calculate_recovery_rate(extracted: &str, ground_truth: &str) -> f64 {
 
 /// Get all encoding fixtures with their configuration.
 fn get_fixtures() -> Vec<EncodingFixture> {
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    // Go up from crates/pdftract-core to workspace root
+    let fixture_base = format!("{}/../../tests/fixtures/encoding", manifest_dir);
+
     vec![
         EncodingFixture {
             name: "no-mapping",
-            pdf_path: "../../tests/fixtures/encoding/no-mapping.pdf",
-            truth_path: "../../tests/fixtures/encoding/no-mapping.txt",
+            pdf_path: format!("{}/no-mapping.pdf", fixture_base),
+            truth_path: format!("{}/no-mapping.txt", fixture_base),
             description: "PDF with no ToUnicode, no standard encoding (worst case)",
         },
         EncodingFixture {
             name: "agl-only",
-            pdf_path: "../../tests/fixtures/encoding/agl-only.pdf",
-            truth_path: "../../tests/fixtures/encoding/agl-only.txt",
+            pdf_path: format!("{}/agl-only.pdf", fixture_base),
+            truth_path: format!("{}/agl-only.txt", fixture_base),
             description: "PDF with AGL glyph names only (Level 2 recovery)",
         },
         EncodingFixture {
             name: "fingerprint-match",
-            pdf_path: "../../tests/fixtures/encoding/fingerprint-match.pdf",
-            truth_path: "../../tests/fixtures/encoding/fingerprint-match.txt",
+            pdf_path: format!("{}/fingerprint-match.pdf", fixture_base),
+            truth_path: format!("{}/fingerprint-match.txt", fixture_base),
             description: "PDF with embedded font for fingerprint matching (Level 3)",
         },
         EncodingFixture {
             name: "shape-match",
-            pdf_path: "../../tests/fixtures/encoding/shape-match.pdf",
-            truth_path: "../../tests/fixtures/encoding/shape-match.txt",
+            pdf_path: format!("{}/shape-match.pdf", fixture_base),
+            truth_path: format!("{}/shape-match.txt", fixture_base),
             description: "PDF with subset font for shape recognition (Level 4)",
         },
     ]
@@ -104,7 +109,7 @@ fn get_fixtures() -> Vec<EncodingFixture> {
 fn test_encoding_fixture(
     fixture: &EncodingFixture,
 ) -> Result<FixtureResult, Box<dyn std::error::Error>> {
-    let pdf_path = Path::new(fixture.pdf_path);
+    let pdf_path = Path::new(&fixture.pdf_path);
 
     // Open the PDF
     let mut extractor =
@@ -128,7 +133,7 @@ fn test_encoding_fixture(
         .collect::<Vec<&str>>()
         .join("");
 
-    let ground_truth = fs::read_to_string(fixture.truth_path)
+    let ground_truth = fs::read_to_string(&fixture.truth_path)
         .map_err(|e| format!("Failed to read ground truth: {}", e))?;
 
     let cer = calculate_cer(&extracted_text, &ground_truth);
@@ -207,12 +212,12 @@ fn test_shape_match_fixture() {
 fn test_all_encoding_fixtures_exist() {
     for fixture in get_fixtures() {
         assert!(
-            Path::new(fixture.pdf_path).exists(),
+            Path::new(&fixture.pdf_path).exists(),
             "Encoding fixture PDF should exist: {}",
             fixture.pdf_path
         );
         assert!(
-            Path::new(fixture.truth_path).exists(),
+            Path::new(&fixture.truth_path).exists(),
             "Encoding fixture ground truth should exist: {}",
             fixture.truth_path
         );

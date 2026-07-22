@@ -63,12 +63,25 @@ This document tracks the generation status and specifications for all scanned fi
 For each fixture, complete these steps:
 
 1. [ ] Verify ground truth `.txt` file exists and is complete
-2. [ ] Run generation script: `python3 generate_scanned_fixtures.py <fixture-name>`
+2. [ ] Run generation script: `python3 tools/generate_scanned_fixtures.py <fixture-name>`
 3. [ ] Verify generated PDF is readable and displays correctly
 4. [ ] Test OCR extraction: `pdftract extract <pdf> --ocr --text`
-5. [ ] Compute WER against ground truth
+5. [ ] Compute WER against ground truth using `tools/calculate_wer.py`
 6. [ ] Update this manifest with WER result
 7. [ ] If WER < 3%, mark as PASS; otherwise, investigate
+
+## Low-Quality Fixtures
+
+The `low-quality/` subdirectory contains intentionally degraded OCR fixtures for testing robustness against poor scan quality.
+
+### degraded-200dpi
+- **Purpose**: Test OCR quality on degraded 200 DPI scans
+- **Ground Truth**: `low-quality/degraded-200dpi-ground-truth.txt`
+- **Target PDF**: `low-quality/degraded-200dpi.pdf`
+- **Generation**: `python tools/create_degraded_200dpi.py`
+- **Degradation Effects**: Gaussian blur (0.3px radius), noise (±12), reduced contrast (90%), reduced sharpness (85%), JPEG compression (85%)
+- **WER Target**: < 10% (degraded fixtures have higher acceptable WER)
+- **Status**: Generated, OCR output available (degraded-200dpi-ocr.txt)
 
 ## WER Results
 

@@ -29,6 +29,9 @@ public typealias Receipt = PdftractCodegen.Receipt
 public typealias ReceiptVerificationResult = PdftractCodegen.ReceiptVerificationResult
 public typealias PdftractError = PdftractCodegen.PdftractError
 
+// SDK-internal error (not CLI-exit-code-driven) for undecodable NDJSON stream lines.
+public typealias MalformedStreamError = PdftractCodegen.MalformedStreamError
+
 {% for error in errors %}
 {% if error.exit_code != 0 and error.exit_code != 10 %}
 public typealias {{ error.exception_name }} = PdftractCodegen.{{ error.exception_name }}

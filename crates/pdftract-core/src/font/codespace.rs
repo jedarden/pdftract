@@ -191,8 +191,18 @@ impl<'a> CodespaceParser<'a> {
     /// Returns the parsed ranges and any diagnostics generated during parsing.
     pub fn parse(mut self) -> (CodespaceRanges, Vec<Diagnostic>) {
         let mut ranges = CodespaceRanges::new();
+        let mut iterations = 0;
+        const MAX_ITERATIONS: usize = 10000; // Safety limit for infinite loop detection
 
         while self.pos < self.input.len() {
+            iterations += 1;
+            if iterations > MAX_ITERATIONS {
+                panic!("CodespaceParser::parse exceeded maximum iterations ({}), likely infinite loop. Current position: {}, input length: {}",
+                       MAX_ITERATIONS, self.pos, self.input.len());
+            }
+
+            let pos_before = self.pos;
+
             // Skip whitespace and comments
             self.skip_whitespace_and_comments();
 
@@ -213,6 +223,12 @@ impl<'a> CodespaceParser<'a> {
 
             // Skip unknown tokens
             self.skip_token();
+
+            // Safety check: ensure we made progress; if not, advance by one to prevent infinite loop
+            if self.pos == pos_before && self.pos < self.input.len() {
+                eprintln!("Warning: CodespaceParser made no progress, forcing position advance from {} to {}", self.pos, self.pos + 1);
+                self.pos += 1;
+            }
         }
 
         (ranges, self.diagnostics)
@@ -289,6 +305,13 @@ impl<'a> CodespaceParser<'a> {
         self.skip_whitespace_and_comments();
         let start = self.pos;
 
+        // Check if we're at EOF before attempting to access input
+        if self.pos >= self.input.len() {
+            return Err(CodespaceError::UnexpectedToken(
+                "expected integer".to_string(),
+            ));
+        }
+
         // Optional sign
         if self.pos < self.input.len()
             && (self.input[self.pos] == b'-' || self.input[self.pos] == b'+')
@@ -317,6 +340,7 @@ impl<'a> CodespaceParser<'a> {
     fn expect_hex_string(&mut self) -> Result<Vec<u8>, CodespaceError> {
         self.skip_whitespace_and_comments();
 
+        // Check if we're at EOF before attempting to access input
         if self.pos >= self.input.len() {
             return Err(CodespaceError::MissingKeyword("<hex string>".to_string()));
         }
@@ -372,6 +396,11 @@ impl<'a> CodespaceParser<'a> {
     fn try_keyword(&mut self, keyword: &[u8]) -> bool {
         self.skip_whitespace_and_comments();
 
+        // Check if we're at EOF before attempting to match
+        if self.pos >= self.input.len() {
+            return false;
+        }
+
         if self.input[self.pos..].starts_with(keyword) {
             // Check that the keyword is followed by whitespace or delimiter
             let next_pos = self.pos + keyword.len();
@@ -424,25 +453,57 @@ impl<'a> CodespaceParser<'a> {
     }
 
     /// Skip a single token (until whitespace or delimiter).
+    ///
+    /// Advances position past the current token. A delimiter is consumed
+    /// as a single-character token, whitespace stops before the token.
     fn skip_token(&mut self) {
         self.skip_whitespace_and_comments();
         while self.pos < self.input.len() {
             let b = self.input[self.pos];
-            if Self::is_whitespace(b) || Self::is_delimiter(b) {
+            if Self::is_whitespace(b) {
+                // Whitespace stops the token, don't consume it
                 break;
             }
+            // Consume this character
             self.pos += 1;
+            if Self::is_delimiter(b) {
+                // Delimiter stops after consuming it
+                break;
+            }
+            // Regular character, keep consuming
         }
     }
 
     /// Skip tokens until we find the expected keyword.
     fn skip_to_keyword(&mut self, keyword: &[u8]) {
+        let mut iterations = 0;
+        const MAX_ITERATIONS: usize = 10000; // Safety limit
+
         while self.pos < self.input.len() {
+            iterations += 1;
+            if iterations > MAX_ITERATIONS {
+                panic!("CodespaceParser::skip_to_keyword exceeded maximum iterations ({}), likely infinite loop. Keyword: {:?}, Current position: {}, input length: {}",
+                       MAX_ITERATIONS, std::str::from_utf8(keyword).unwrap_or("<invalid utf8>"), self.pos, self.input.len());
+            }
+
+            let pos_before = self.pos;
+
             self.skip_whitespace_and_comments();
             if self.try_keyword(keyword) {
                 break;
             }
             self.skip_token();
+
+            // Safety check: ensure we made progress; if not, advance by one to prevent infinite loop
+            if self.pos == pos_before && self.pos < self.input.len() {
+                eprintln!("Warning: skip_to_keyword made no progress, forcing position advance from {} to {}", self.pos, self.pos + 1);
+                self.pos += 1;
+            }
+
+            // Safety: don't loop forever searching for a keyword that might not exist
+            if self.pos >= self.input.len() {
+                break;
+            }
         }
     }
 

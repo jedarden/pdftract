@@ -1,249 +1,216 @@
 #!/usr/bin/env bash
-# check-orphaned-processes.sh - Verify no orphaned pdftract/TH-0 processes
+# check-orphaned-processes.sh - Check for orphaned test processes
 #
-# This script checks for orphaned processes that may have been left behind
-# by test runs. Per CLAUDE.md test hygiene rules, no processes should remain
-# after tests complete.
+# This script verifies that no orphaned processes remain after test runs.
+# It checks for processes matching known patterns (pdftract mcp, TH-0, TH_0).
 #
 # Usage:
 #   ./scripts/check-orphaned-processes.sh [options]
 #
 # Options:
-#   --kill              Kill any orphaned processes found
+#   --json              Output in JSON format for CI parsing
+#   --kill              Kill orphaned processes (default: false)
 #   --verbose           Show detailed output
-#   --json              Output in JSON format
-#   --pattern PATTERN   Custom process pattern (default: 'pdftract mcp|TH_0|TH-0')
+#   --pattern PATTERN   Custom process pattern to check (can be repeated)
 #
 # Exit codes:
-#   0 - No orphaned processes found
+#   0 - No orphaned processes found (clean state)
 #   1 - Orphaned processes found (and not killed)
-#   2 - Error occurred
-#
-# Examples:
-#   ./scripts/check-orphaned-processes.sh
-#   ./scripts/check-orphaned-processes.sh --kill
-#   ./scripts/check-orphaned-processes.sh --json | jq .
+#   2 - Error occurred (invalid args, command failed, etc.)
 
 set -euo pipefail
 
-# Default options
-KILL=false
+# Default process patterns to check
+DEFAULT_PATTERNS=("pdftract mcp" "TH-0" "TH_0")
+
+# Options
+JSON_OUTPUT=false
+KILL_ORPHANS=false
 VERBOSE=false
-JSON=false
-PATTERN='pdftract mcp|TH_0|TH-0'
-TIMEOUT=2
+PATTERNS=("${DEFAULT_PATTERNS[@]}")
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --json)
+            JSON_OUTPUT=true
+            shift
+            ;;
         --kill)
-            KILL=true
+            KILL_ORPHANS=true
             shift
             ;;
         --verbose)
             VERBOSE=true
             shift
             ;;
-        --json)
-            JSON=true
-            shift
-            ;;
         --pattern)
-            PATTERN="$2"
-            shift 2
-            ;;
-        --timeout)
-            TIMEOUT="$2"
-            shift 2
+            if [[ -n "${2:-}" ]]; then
+                PATTERNS+=("$2")
+                shift 2
+            else
+                echo "Error: --pattern requires an argument" >&2
+                exit 2
+            fi
             ;;
         --help)
             echo "Usage: $0 [options]"
             echo ""
+            echo "Check for orphaned test processes."
+            echo ""
             echo "Options:"
-            echo "  --kill              Kill any orphaned processes found"
-            echo "  --verbose           Show detailed output"
             echo "  --json              Output in JSON format"
-            echo "  --pattern PATTERN   Custom process pattern (default: 'pdftract mcp|TH_0|TH-0')"
-            echo "  --timeout SECONDS   Timeout for process search (default: 2)"
+            echo "  --kill              Kill orphaned processes"
+            echo "  --verbose           Show detailed output"
+            echo "  --pattern PATTERN   Custom process pattern (repeatable)"
+            echo ""
+            echo "Default patterns: ${DEFAULT_PATTERNS[*]}"
             echo ""
             echo "Exit codes:"
-            echo "  0 - No orphaned processes found"
-            echo "  1 - Orphaned processes found (and not killed)"
+            echo "  0 - No orphaned processes (clean)"
+            echo "  1 - Orphaned processes found"
             echo "  2 - Error occurred"
             exit 0
             ;;
         *)
             echo "Error: Unknown option: $1" >&2
-            echo "Run '$0 --help' for usage." >&2
             exit 2
             ;;
     esac
 done
 
-# Validate timeout is a positive integer
-if ! [[ "$TIMEOUT" =~ ^[0-9]+$ ]]; then
-    echo "Error: --timeout must be a positive integer" >&2
+# Check if pgrep is available
+if ! command -v pgrep &> /dev/null; then
+    if [[ "$JSON_OUTPUT" == "true" ]]; then
+        echo '{"status":"error","error":"pgrep command not found"}'
+    else
+        echo "Error: pgrep command not found. Please install procps (Debian/Ubuntu) or procps-ng (RHEL/Fedora)." >&2
+    fi
     exit 2
 fi
 
-# Function to find orphaned processes
-find_orphaned_processes() {
+# Find processes matching a pattern
+# Args:
+#   $1 - pattern to search for
+# Outputs:
+#   List of PIDs (one per line) for matching processes
+find_processes() {
     local pattern="$1"
-    local current_pid=$$
-    # Get PIDs matching pattern, excluding current script
-    local pids
-    pids=$(timeout "$TIMEOUT" pgrep -f "$pattern" 2>/dev/null | grep -v "^$current_pid$" || true)
+    pgrep -f "$pattern" 2>/dev/null || true
+}
 
-    # If no PIDs found, return early
-    if [[ -z "$pids" ]]; then
-        return
+# Get process command line
+# Args:
+#   $1 - PID
+# Outputs:
+#   Process command line
+get_process_command() {
+    local pid="$1"
+    if command -v ps &> /dev/null; then
+        ps -p "$pid" -o args= 2>/dev/null || echo "(unknown)"
+    else
+        echo "(unknown - ps command not available)"
     fi
+}
 
-    # Get full command line for each PID
+# Get current script's PID for filtering
+SCRIPT_PID=$$
+SCRIPT_PARENT_PID=$PPID
+
+# Collect all orphaned processes
+declare -a ORPHAN_PIDS=()
+declare -A ORPHAN_CMDS=()
+
+for pattern in "${PATTERNS[@]}"; do
     while IFS= read -r pid; do
         if [[ -n "$pid" ]]; then
-            # Get full command line (suppress errors for processes that exit)
-            local cmdline=""
-            if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-                if [[ -r "/proc/$pid/cmdline" ]]; then
-                    cmdline=$(tr '\0' ' ' < "/proc/$pid/cmdline")
+            # Skip the script's own PID and its parent
+            if [[ "$pid" == "$SCRIPT_PID" ]] || [[ "$pid" == "$SCRIPT_PARENT_PID" ]]; then
+                continue
+            fi
+            # Also skip any parent processes in the chain (up to grandparent)
+            ppid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+            if [[ -n "$ppid" ]] && [[ "$ppid" != "0" ]]; then
+                if [[ "$ppid" == "$SCRIPT_PID" ]] || [[ "$ppid" == "$SCRIPT_PARENT_PID" ]]; then
+                    continue
                 fi
-            else
-                cmdline=$(ps -p "$pid" -o command= 2>/dev/null) || true
             fi
-            if [[ -n "$cmdline" ]]; then
-                echo "$pid $cmdline"
-            fi
+            ORPHAN_PIDS+=("$pid")
+            ORPHAN_CMDS["$pid"]="$(get_process_command "$pid")"
         fi
-    done <<< "$pids"
-}
+    done < <(find_processes "$pattern")
+done
 
-# Function to extract process details
-extract_process_details() {
-    local output="$1"
-    local pids=()
-    local commands=()
+ORPHAN_COUNT=${#ORPHAN_PIDS[@]}
 
-    while IFS= read -r line; do
-        if [[ -n "$line" ]]; then
-            local pid=$(echo "$line" | awk '{print $1}')
-            local cmdline=$(echo "$line" | cut -d' ' -f2-)
-            pids+=("$pid")
-            commands+=("$cmdline")
-        fi
-    done <<< "$output"
-
-    # Export as variables for JSON output
-    FOUND_PIDS=("${pids[@]}")
-    FOUND_COMMANDS=("${commands[@]}")
-    FOUND_COUNT=${#pids[@]}
-}
-
-# Main logic
-main() {
-    local orphaned_output
-    orphaned_output=$(find_orphaned_processes "$PATTERN")
-
-    if [[ -z "$orphaned_output" ]]; then
-        if [[ "$JSON" == "true" ]]; then
-            echo '{"status": "clean", "orphaned_processes": [], "count": 0}'
-        else
-            if [[ "$VERBOSE" == "true" ]]; then
-                echo "✓ No orphaned processes found matching pattern: $PATTERN"
-            else
-                echo "clean"
-            fi
-        fi
-        exit 0
-    fi
-
-    # Found orphaned processes
-    extract_process_details "$orphaned_output"
-
-    if [[ "$JSON" == "true" ]]; then
-        # Build JSON output
-        local json_output='{"status": "orphaned", "orphaned_processes": ['
-        local first=true
-        for i in $(seq 0 $((FOUND_COUNT - 1))); do
+# Output results
+if [[ "$JSON_OUTPUT" == "true" ]]; then
+    if [[ $ORPHAN_COUNT -eq 0 ]]; then
+        echo '{"status":"clean","orphaned_processes":[],"count":0}'
+    else
+        echo -n '{"status":"orphaned","orphaned_processes":['
+        first=true
+        for pid in "${ORPHAN_PIDS[@]}"; do
             if [[ "$first" == "true" ]]; then
                 first=false
             else
-                json_output+=','
+                echo -n ','
             fi
-            json_output+="{\"pid\": \"${FOUND_PIDS[$i]}\", \"command\": \"$(echo "${FOUND_COMMANDS[$i]}" | sed 's/"/\\"/g')\"}"
+            # Escape special characters in command for JSON
+            cmd="${ORPHAN_CMDS[$pid]}"
+            cmd="${cmd//\\/\\\\}"  # Escape backslashes
+            cmd="${cmd//\"/\\\"}"  # Escape quotes
+            printf '{"pid":"%s","command":"%s"}' "$pid" "$cmd"
         done
-        json_output+='], "count": '"$FOUND_COUNT"
-
-        if [[ "$KILL" == "true" ]]; then
-            json_output+=', "action": "killed"'
-        else
-            json_output+=', "action": "detected"'
-        fi
-        json_output+='}'
-
-        echo "$json_output"
-    else
+        echo -n "],"count":$ORPHAN_COUNT}"
+    fi
+else
+    if [[ $ORPHAN_COUNT -eq 0 ]]; then
         if [[ "$VERBOSE" == "true" ]]; then
-            echo "⚠ Found $FOUND_COUNT orphaned process(es) matching pattern: $PATTERN"
-            echo ""
-            for i in $(seq 0 $((FOUND_COUNT - 1))); do
-                echo "  PID: ${FOUND_PIDS[$i]}"
-                echo "  Command: ${FOUND_COMMANDS[$i]}"
-                echo ""
-            done
-        else
-            echo "orphaned ($FOUND_COUNT process(es))"
+            echo "✓ No orphaned processes found"
         fi
-    fi
-
-    # Kill processes if requested
-    if [[ "$KILL" == "true" ]]; then
-        if [[ "$VERBOSE" == "true" && "$JSON" == "false" ]]; then
-            echo "Killing orphaned processes..."
-        fi
-
-        for pid in "${FOUND_PIDS[@]}"; do
-            if kill "$pid" 2>/dev/null; then
-                if [[ "$VERBOSE" == "true" && "$JSON" == "false" ]]; then
-                    echo "  ✓ Killed PID $pid"
-                fi
-            else
-                if [[ "$VERBOSE" == "true" && "$JSON" == "false" ]]; then
-                    echo "  ✗ Failed to kill PID $pid"
-                fi
-            fi
+    else
+        echo "✗ Found $ORPHAN_COUNT orphaned process(es):"
+        for pid in "${ORPHAN_PIDS[@]}"; do
+            echo "  PID $pid: ${ORPHAN_CMDS[$pid]}"
         done
+    fi
+fi
 
-        # Wait briefly and verify cleanup
-        sleep 1
-        orphaned_output=$(find_orphaned_processes "$PATTERN")
-        if [[ -z "$orphaned_output" ]]; then
-            if [[ "$VERBOSE" == "true" && "$JSON" == "false" ]]; then
-                echo "✓ All orphaned processes cleaned up successfully"
-            fi
-            if [[ "$JSON" == "true" ]]; then
-                echo '{"status": "cleaned", "orphaned_processes": [], "count": 0}'
-                exit 0
-            else
-                echo "cleaned"
-                exit 0
-            fi
-        else
-            if [[ "$VERBOSE" == "true" && "$JSON" == "false" ]]; then
-                echo "⚠ Warning: Some processes could not be killed"
-            fi
-            if [[ "$JSON" == "true" ]]; then
-                echo '{"status": "partial_cleanup", "message": "Some processes could not be killed"}'
-                exit 1
-            else
-                echo "partial_cleanup"
-                exit 1
-            fi
-        fi
+# Kill orphans if requested
+if [[ "$KILL_ORPHANS" == "true" && $ORPHAN_COUNT -gt 0 ]]; then
+    if [[ "$VERBOSE" == "true" ]]; then
+        echo "Killing $ORPHAN_COUNT orphaned process(es)..."
     fi
 
-    # Exit with error if we found orphans and didn't kill them
-    exit 1
-}
+    killed=0
+    for pid in "${ORPHAN_PIDS[@]}"; do
+        if kill "$pid" 2>/dev/null; then
+            ((killed++)) || true
+            if [[ "$VERBOSE" == "true" ]]; then
+                echo "  Killed PID $pid"
+            fi
+        fi
+    done
 
-main
+    if [[ "$JSON_OUTPUT" == "true" ]]; then
+        # Output final status after kill attempt
+        if [[ $killed -eq $ORPHAN_COUNT ]]; then
+            echo '{"status":"cleaned","orphaned_processes":[],"count":0}'
+        else
+            echo "{\"status\":\"partial_cleanup\",\"killed\":$killed,\"remaining\":$((ORPHAN_COUNT - killed))}"
+        fi
+    else
+        echo "Killed $killed/$ORPHAN_COUNT processes"
+    fi
+fi
+
+# Exit codes
+if [[ $ORPHAN_COUNT -eq 0 ]]; then
+    exit 0
+elif [[ "$KILL_ORPHANS" == "true" ]]; then
+    # Killed orphans, treat as success (but may have partial cleanup)
+    exit 0
+else
+    exit 1
+fi

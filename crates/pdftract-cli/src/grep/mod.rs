@@ -364,9 +364,14 @@ pub fn run_grep(args: GrepArgs) -> Result<()> {
             });
         });
 
-    // Drop senders to signal receivers that we're done
+    // Drop senders to signal receivers that we're done.
+    // Both the originals AND the worker-thread clones must be dropped, otherwise
+    // the channels never close: `match_rx.iter()` below and the progress
+    // consumer's `recv()` would block forever waiting for events that never come.
     drop(match_tx);
     drop(progress_tx);
+    drop(match_tx_clone);
+    drop(progress_tx_clone);
 
     // Collect all match events
     let mut all_matches: Vec<MatchEvent> = match_rx.iter().collect();

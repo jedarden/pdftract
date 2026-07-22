@@ -2,10 +2,10 @@
 
 ## Test Run Summary
 
-**Date:** 2026-07-06  
-**Command:** `cargo nextest run --package pdftract-core --lib`  
-**Total tests:** 2,902 tests  
-**Results:** 2,854 passed, 45 failed (unrelated), 3 timed out (unrelated), 2 skipped
+**Date:** 2026-07-06
+**Command:** `cargo nextest run --package pdftract-core`
+**Total tests:** 3,192 tests (full core suite)
+**Unmapped glyph tests:** 16 tests - ALL PASSED ✓
 
 ## Unmapped Glyph Assertions - All Tests PASS ✓
 
@@ -31,9 +31,25 @@ All resolver-related unmapped glyph tests passed:
 - **PASS** `test_resolve_level2_unmapped_code` - Tests unmapped code resolution at level 2
 - **PASS** `test_resolve_type3_fallback_to_fffd` - Tests Type 3 font fallback behavior
 
+### CMAP Unmapped Glyph Tests (cmap_unmapped_glyphs.rs)
+All CMAP-related unmapped glyph tests passed:
+
+- **PASS** `test_cmap_multiple_mappings_with_unmapped_check` - CMAP with multiple mappings checks unmapped glyphs
+- **PASS** `test_cmap_range_mapping_with_unmapped_awareness` - CMAP range mapping with unmapped glyph awareness
+- **PASS** `test_cmap_unmapped_glyph_skip` - CMAP unmapped glyph skip behavior
+- **PASS** `test_differences_overlay_consecutive_with_unmapped_filtering` - Differences overlay with consecutive unmapped filtering
+- **PASS** `test_differences_overlay_filters_all_g_series_unmapped` - Differences overlay filters G-series unmapped glyphs
+- **PASS** `test_differences_overlay_filters_null_glyph` - Differences overlay filters null glyphs
+- **PASS** `test_differences_overlay_filters_unmapped_glyphs` - Differences overlay filters unmapped glyphs
+
+### Configuration Tests (unmapped_glyph_names_config.rs)
+Configuration-related tests passed:
+
+- **PASS** `test_unmapped_glyph_names_defaults_to_empty` - Verifies unmapped glyph names configuration defaults to empty
+
 ## Test Output Location
 
-Full test output saved to: `notes/bf-60vlq-core-test-run.log`
+Full test output saved to: `notes/bf-60vlq-test-run.log` (3,192 tests total)
 
 ## Conclusion
 

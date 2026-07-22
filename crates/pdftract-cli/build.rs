@@ -33,7 +33,7 @@ fn main() {
     // Read from CARGO_FEATURE_<FEATURE_NAME> variables set by cargo
     let features = vec![
         ("OCR", cfg!(feature = "ocr")),
-        ("FULL_RENDER", cfg!(feature = "full_render")),
+        ("FULL_RENDER", cfg!(feature = "full-render")),
         ("REMOTE", cfg!(feature = "remote")),
         ("PROFILES", cfg!(feature = "profiles")),
         ("SERVE", cfg!(feature = "serve")),

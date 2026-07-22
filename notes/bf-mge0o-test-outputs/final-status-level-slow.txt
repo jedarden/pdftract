@@ -1,0 +1,50 @@
+          >>> referenced by exceptions.rs:266 (src/exceptions.rs:266)
+          >>>               pyo3-c0f9303980650dce.pyo3.c4c9c512c2686078-cgu.0.rcgu.o:(<pyo3::exceptions::PyOverflowError as pyo3::type_object::PyTypeInfo>::type_object_raw::{closure#0}) in archive /home/coding/pdftract/target/debug/deps/libpyo3-c0f9303980650dce.rlib
+          >>> referenced by exceptions.rs:266 (src/exceptions.rs:266)
+          >>>               pyo3-c0f9303980650dce.pyo3.c4c9c512c2686078-cgu.0.rcgu.o:(<pyo3::exceptions::PyOverflowError as pyo3::type_object::PyTypeInfo>::type_object_raw::{closure#0}) in archive /home/coding/pdftract/target/debug/deps/libpyo3-c0f9303980650dce.rlib
+          
+          rust-lld: error: undefined symbol: PyExc_TypeError
+          >>> referenced by exceptions.rs:266 (src/exceptions.rs:266)
+          >>>               pyo3-c0f9303980650dce.pyo3.c4c9c512c2686078-cgu.0.rcgu.o:(<pyo3::exceptions::PyTypeError as pyo3::type_object::PyTypeInfo>::type_object_raw::{closure#0}) in archive /home/coding/pdftract/target/debug/deps/libpyo3-c0f9303980650dce.rlib
+          >>> referenced by exceptions.rs:266 (src/exceptions.rs:266)
+          >>>               pyo3-c0f9303980650dce.pyo3.c4c9c512c2686078-cgu.0.rcgu.o:(<pyo3::exceptions::PyTypeError as pyo3::type_object::PyTypeInfo>::type_object_raw::{closure#0}) in archive /home/coding/pdftract/target/debug/deps/libpyo3-c0f9303980650dce.rlib
+          
+          rust-lld: error: undefined symbol: PyExc_ValueError
+          >>> referenced by exceptions.rs:266 (src/exceptions.rs:266)
+          >>>               pyo3-c0f9303980650dce.pyo3.c4c9c512c2686078-cgu.0.rcgu.o:(<pyo3::exceptions::PyValueError as pyo3::type_object::PyTypeInfo>::type_object_raw::{closure#0}) in archive /home/coding/pdftract/target/debug/deps/libpyo3-c0f9303980650dce.rlib
+          >>> referenced by exceptions.rs:266 (src/exceptions.rs:266)
+          >>>               pyo3-c0f9303980650dce.pyo3.c4c9c512c2686078-cgu.0.rcgu.o:(<pyo3::exceptions::PyValueError as pyo3::type_object::PyTypeInfo>::type_object_raw::{closure#0}) in archive /home/coding/pdftract/target/debug/deps/libpyo3-c0f9303980650dce.rlib
+          
+          rust-lld: error: undefined symbol: PyExc_BaseException
+          >>> referenced by exceptions.rs:266 (src/exceptions.rs:266)
+          >>>               pyo3-c0f9303980650dce.pyo3.c4c9c512c2686078-cgu.0.rcgu.o:(<pyo3::exceptions::PyBaseException as pyo3::type_object::PyTypeInfo>::type_object_raw::{closure#0}) in archive /home/coding/pdftract/target/debug/deps/libpyo3-c0f9303980650dce.rlib
+          >>> referenced by exceptions.rs:266 (src/exceptions.rs:266)
+          >>>               pyo3-c0f9303980650dce.pyo3.c4c9c512c2686078-cgu.0.rcgu.o:(<pyo3::exceptions::PyBaseException as pyo3::type_object::PyTypeInfo>::type_object_raw::{closure#0}) in archive /home/coding/pdftract/target/debug/deps/libpyo3-c0f9303980650dce.rlib
+          
+          rust-lld: error: undefined symbol: PyExc_Exception
+          >>> referenced by exceptions.rs:266 (src/exceptions.rs:266)
+          >>>               pyo3-c0f9303980650dce.pyo3.c4c9c512c2686078-cgu.0.rcgu.o:(<pyo3::exceptions::PyException as pyo3::type_object::PyTypeInfo>::type_object_raw::{closure#0}) in archive /home/coding/pdftract/target/debug/deps/libpyo3-c0f9303980650dce.rlib
+          >>> referenced by exceptions.rs:266 (src/exceptions.rs:266)
+          >>>               pyo3-c0f9303980650dce.pyo3.c4c9c512c2686078-cgu.0.rcgu.o:(<pyo3::exceptions::PyException as pyo3::type_object::PyTypeInfo>::type_object_raw::{closure#0}) in archive /home/coding/pdftract/target/debug/deps/libpyo3-c0f9303980650dce.rlib
+          
+          rust-lld: error: undefined symbol: PyGILState_Ensure
+          >>> referenced by gil.rs:224 (src/gil.rs:224)
+          >>>               pyo3-c0f9303980650dce.pyo3.c4c9c512c2686078-cgu.0.rcgu.o:(<pyo3::gil::GILGuard>::acquire_unchecked) in archive /home/coding/pdftract/target/debug/deps/libpyo3-c0f9303980650dce.rlib
+          
+          rust-lld: error: undefined symbol: PyDict_New
+          >>> referenced by dict.rs:57 (src/types/dict.rs:57)
+          >>>               pyo3-c0f9303980650dce.pyo3.c4c9c512c2686078-cgu.0.rcgu.o:(<pyo3::types::dict::PyDict>::new) in archive /home/coding/pdftract/target/debug/deps/libpyo3-c0f9303980650dce.rlib
+          
+          rust-lld: error: undefined symbol: PyDict_Keys
+          >>> referenced by dict.rs:250 (src/types/dict.rs:250)
+          >>>               pyo3-c0f9303980650dce.pyo3.c4c9c512c2686078-cgu.0.rcgu.o:(<pyo3::types::dict::PyDict>::keys) in archive /home/coding/pdftract/target/debug/deps/libpyo3-c0f9303980650dce.rlib
+          
+          rust-lld: error: too many errors emitted, stopping now (use --error-limit=0 to see all errors)
+          collect2: error: ld returned 1 exit status
+          
+
+warning: `pdftract-py` (lib test) generated 23 warnings (8 duplicates)
+error: could not compile `pdftract-py` (lib test) due to 1 previous error; 23 warnings emitted
+warning: build failed, waiting for other jobs to finish...
+warning: `pdftract-cli` (lib test) generated 49 warnings (48 duplicates) (run `cargo fix --lib -p pdftract-cli --tests` to apply 1 suggestion)
+error: command `/home/coding/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin/cargo test --no-run --message-format json-render-diagnostics` exited with code 101
