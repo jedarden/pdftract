@@ -226,13 +226,19 @@ impl Aes256Decryptor {
         let mut encrypted_copy = [0u8; KEY_SIZE];
         encrypted_copy.copy_from_slice(encrypted);
 
-        // Decrypt in-place
-        let decryptor = Aes256CbcDec::new(&key_copy.into(), &iv.into());
-        let decrypted_len = decryptor
-            .decrypt_padded_mut::<Pkcs7>(&mut encrypted_copy)
-            .expect("AES-256 decryption failed");
+        // Per PDF 2.0 Algorithm 8/2.A, the file key is recovered with raw
+        // AES-256-CBC and NO padding: the 32-byte /UE or /OE block decrypts
+        // directly to the 32-byte file encryption key. A raw key is not
+        // PKCS7-padded, so we must not attempt to strip padding here (doing so
+        // would fail for essentially every real key). Decrypting block-by-block
+        // is infallible for a block-aligned input, so this cannot panic.
+        let mut decryptor = Aes256CbcDec::new(&key_copy.into(), &iv.into());
+        for block in encrypted_copy.chunks_exact_mut(AES_BLOCK_SIZE) {
+            let block = aes::cipher::generic_array::GenericArray::from_mut_slice(block);
+            decryptor.decrypt_block_mut(block);
+        }
 
-        // Return the decrypted key (first 32 bytes)
+        // Return the full 32-byte decrypted file key.
         let mut result = [0u8; KEY_SIZE];
         result.copy_from_slice(&encrypted_copy[..KEY_SIZE]);
         result
@@ -566,5 +572,72 @@ mod tests {
         let result = aes_256_decrypt(&file_key, &encrypted_data);
         // Should not panic, though result may be garbage
         assert!(result.is_ok() || result.is_err());
+    }
+
+    /// Regression test for the /UE and /OE file-key recovery panic.
+    ///
+    /// Per PDF 2.0 Algorithm 8/2.A, the 32-byte /UE (or /OE) block holds the
+    /// file encryption key encrypted with AES-256-CBC, all-zero IV, and NO
+    /// padding. A raw file key is not PKCS7-padded, so the previous
+    /// implementation (`decrypt_padded_mut::<Pkcs7>(...).expect(...)`) panicked
+    /// for essentially every real key — here `file_key` ends in `0xAB`, which
+    /// is not a valid PKCS7 pad length, so the old code hit `UnpadError` and
+    /// `.expect()` panicked. This test builds the /UE block exactly as a
+    /// conforming producer would (raw NoPadding encrypt), recovers the key via
+    /// `decrypt_ue_or_oe`, and asserts it round-trips to all 32 bytes without
+    /// panicking. It then confirms the recovered key decrypts a stream to the
+    /// expected plaintext.
+    #[test]
+    fn test_decrypt_ue_or_oe_no_padding_roundtrip_no_panic() {
+        use aes::cipher::{block_padding::NoPadding, BlockEncryptMut};
+
+        type Aes256CbcEnc = cbc::Encryptor<aes::Aes256>;
+
+        // The intermediate hash used to encrypt /UE (Algorithm 8 step (b)).
+        let key_hash = [0x11u8; KEY_SIZE];
+        // A raw 32-byte file key whose final byte (0xAB) is NOT a valid PKCS7
+        // pad length — this is what made the old Pkcs7 path panic.
+        let file_key = [0xABu8; KEY_SIZE];
+
+        // Build the /UE block: AES-256-CBC, all-zero IV, no padding.
+        let zero_iv = [0u8; AES_BLOCK_SIZE];
+        let mut ue = file_key;
+        Aes256CbcEnc::new(&key_hash.into(), &zero_iv.into())
+            .encrypt_padded_mut::<NoPadding>(&mut ue, KEY_SIZE)
+            .expect("NoPadding encrypt of a 32-byte block is infallible");
+
+        let decryptor = Aes256Decryptor::new(
+            vec![0u8; 48],
+            vec![0u8; 48],
+            ue.to_vec(),
+            vec![0u8; 32],
+            vec![0u8; 16],
+            vec![],
+        )
+        .unwrap();
+
+        // Must NOT panic and must return the full 32-byte raw key.
+        let recovered = decryptor.decrypt_ue_or_oe(&ue, &key_hash);
+        assert_eq!(
+            recovered, file_key,
+            "recovered file key must equal the original raw 32-byte key"
+        );
+
+        // The recovered key must decrypt a stream to the expected plaintext.
+        let plaintext = b"pdftract V5/R6 file-key recovery works";
+        let iv = [0x22u8; AES_BLOCK_SIZE];
+        let mut buf = vec![0u8; plaintext.len() + AES_BLOCK_SIZE];
+        buf[..plaintext.len()].copy_from_slice(plaintext);
+        let ciphertext = Aes256CbcEnc::new(&file_key.into(), &iv.into())
+            .encrypt_padded_mut::<Pkcs7>(&mut buf, plaintext.len())
+            .expect("stream encryption should succeed");
+
+        let mut encrypted_data = iv.to_vec();
+        encrypted_data.extend_from_slice(ciphertext);
+
+        let decrypted = decryptor
+            .decrypt_stream(&recovered, &encrypted_data)
+            .expect("stream decryption with recovered key should succeed");
+        assert_eq!(decrypted, plaintext);
     }
 }
