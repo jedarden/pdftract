@@ -59,7 +59,10 @@ fn get_fixtures() -> Vec<FixtureInfo> {
         FixtureInfo {
             name: "flate_truncated",
             filter: FixtureFilter::Single("FlateDecode", None),
-            expected_diags: vec![],
+            // Truncated FlateDecode stream: INV-8 soft-recovery must produce Ok(partial)
+            // with a STREAM_DECODE_ERROR diagnostic, not a hard Err. See the contract
+            // assertion in `test_all_stream_decoder_fixtures` (bf-4bx00 / bf-4fb3b).
+            expected_diags: vec![DiagCode::StreamDecodeError],
             bomb_limit: None,
         },
         FixtureInfo {
@@ -297,12 +300,31 @@ fn test_all_stream_decoder_fixtures() {
             }
         };
 
+        // A fixture may declare that it expects a soft STREAM_DECODE_ERROR — i.e. a
+        // truncated/corrupt stream that the decoder should recover from via INV-8 soft
+        // partial-recovery (stream.rs:542-544: UnexpectedEof -> break -> partial output),
+        // producing `Ok(partial)` rather than a hard `Err`. (bf-4bx00 / bf-4fb3b §5)
+        let expects_decode_error = fixture
+            .expected_diags
+            .contains(&DiagCode::StreamDecodeError);
+
         // Decode the fixture
         let result = decode_fixture(&fixture, &input);
         let decoded = match result {
             Ok(data) => data,
             Err(e) => {
-                failures.push(format!("{}: {}", fixture.name, e));
+                if expects_decode_error {
+                    // INV-8 regression guard (bf-60qj2 EC2/EC12): a fixture declared to
+                    // expect a STREAM_DECODE_ERROR must soft-recover to Ok(partial); a hard
+                    // Err means INV-8 soft-recovery has regressed.
+                    failures.push(format!(
+                        "{}: expected STREAM_DECODE_ERROR (DiagCode::StreamDecodeError) \
+                         soft partial-recovery (Ok per INV-8), but decode returned hard Err: {}",
+                        fixture.name, e
+                    ));
+                } else {
+                    failures.push(format!("{}: {}", fixture.name, e));
+                }
                 continue;
             }
         };
@@ -342,6 +364,22 @@ fn test_all_stream_decoder_fixtures() {
             );
         }
 
+        // Contract assertion for STREAM_DECODE_ERROR fixtures (bf-4bx00). The low-level
+        // `StreamDecoder::decode` path returns `Result<Vec<u8>, FilterError>` with no
+        // diagnostics channel (stream.rs:74), so `STREAM_DECODE_ERROR` is never *collected*
+        // here — it is only emitted via `emit!()` on the full-extraction path, which this
+        // fixture loop bypasses (bf-60qj2 EC1). The observable contract on this path is
+        // therefore: the fixture declares a decode error AND decode did not hard-fail —
+        // i.e. we reached this `Ok` arm via INV-8 soft partial-recovery. Reaching this
+        // point (`passed += 1`) means the positive contract holds; the negative case — a
+        // hard `Err` on a fixture declared to expect STREAM_DECODE_ERROR — is caught by
+        // the `Err`-arm guard above (EC2/EC12).
+        //
+        // GAP (EC6/EC7/EC13): with no length hint, checksum, or collected diagnostic on
+        // this path, the assertion cannot distinguish "correct partial recovery" from
+        // "decoder silently produced clean output," and the partial bytes are not
+        // byte-stable — so there is no `decoded.len()` proxy and no byte-assertion on the
+        // partial content.
         passed += 1;
     }
 
