@@ -60,4 +60,23 @@ The target test `test_truncated_flate_opens_with_extractor` PASSES successfully.
 
 ### Files
 
-- `/home/coding/pdftract/crates/pdftract-core/tests/test_truncated_flate_recovery.rs` (lines 186-202)
+- `/home/coding/pdftract/crates/pdftract-core/tests/test_truncated_flate_recovery.rs` (lines 186-212)
+
+### Re-verification (2026-07-22)
+
+Re-ran the target test on retry to confirm the acceptance criteria still hold:
+
+```
+cargo test -p pdftract-core --test test_truncated_flate_recovery \
+  test_truncated_flate_opens_with_extractor -- --nocapture
+```
+
+Result: `test result: ok. 1 passed; 0 failed`. Output confirmed:
+
+- `PdfExtractor::open()` succeeded without panic
+- Fingerprint: `pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8` (non-empty)
+- `page_count()` -> `Ok(0)` (truncated fixture resolves 0 pages; call does not error)
+
+The extractor handle is available for the next step in the chain. No source
+changes were required — the instantiation added by sibling beads (bf-2dbmo,
+bf-11lko) already satisfies all acceptance criteria.
