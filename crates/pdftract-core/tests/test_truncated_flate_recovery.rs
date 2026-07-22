@@ -196,7 +196,17 @@ fn test_truncated_flate_opens_with_extractor() {
     println!("  Fingerprint: {}", extractor.fingerprint());
     println!("  Page count: {:?}", extractor.page_count());
 
-    // The extractor handle is now available for further operations
-    // This test verifies the basic opening behavior only
-    assert!(extractor.fingerprint().len() > 0, "Should have a fingerprint");
+    // The extractor handle is now available for further operations.
+    // fingerprint() must return a non-empty identifier.
+    assert!(
+        !extractor.fingerprint().is_empty(),
+        "Should have a non-empty fingerprint"
+    );
+
+    // page_count() must resolve to a valid count (Ok). For this truncated
+    // fixture the count may be 0, but the call must not error or panic.
+    let page_count = extractor
+        .page_count()
+        .expect("page_count() should return a valid count without error");
+    println!("  Validated page count: {}", page_count);
 }
