@@ -225,10 +225,8 @@ fn get_metadata<'py>(py: Python<'py>, path: &str, kwargs: Option<&PyDict>) -> Py
 // ============================================================================
 
 #[pyfunction]
-fn hash(_py: Python, _path: &str, _kwargs: Option<&PyDict>) -> PyResult<String> {
-    // Stub implementation - should compute fingerprint
-    // For now, return a placeholder
-    Ok(format!("pdftract-v1:{}", "0".repeat(64)))
+fn hash(py: Python, path: &str, _kwargs: Option<&PyDict>) -> PyResult<String> {
+    pdftract_core::sdk::hash(std::path::Path::new(path)).map_err(|e| map_error_to_py(py, e))
 }
 
 // ============================================================================
