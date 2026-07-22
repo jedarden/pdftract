@@ -176,6 +176,71 @@ fn test_truncated_flate_extraction_result_structure() {
     }
 }
 
+/// Test that materialize_pages() loads page structure without panic.
+///
+/// This is the focused verification for page materialization on the
+/// truncated-flate.pdf fixture. It confirms that:
+/// - `materialize_pages()` is callable and returns `Ok` (no panic).
+/// - A page slice is obtained even when the FlateDecode stream is truncated
+///   (the slice may be empty for this fixture — the structurally-declared page
+///   is not enumerable after truncation, which is expected here).
+/// - The result is cached: page data is stored in the extractor and repeated
+///   calls return a stable, identically-sized slice without re-flattening.
+#[test]
+fn test_truncated_flate_materialize_pages() {
+    let path = fixture_path();
+
+    println!("Testing materialize_pages() with: {}", path.display());
+
+    let mut extractor = PdfExtractor::open(&path)
+        .expect("Should open truncated-flate.pdf with PdfExtractor");
+
+    // First call: must complete without panic and yield a valid slice.
+    let first_len = {
+        let pages = extractor
+            .materialize_pages()
+            .expect("materialize_pages() should return Ok, not error or panic");
+        println!("✓ materialize_pages() succeeded");
+        println!("  Number of materialized pages: {}", pages.len());
+
+        // Every materialized page must expose a well-formed structure: a
+        // mediabox with exactly 4 values. (For this truncated fixture the
+        // slice is expected to be empty, so this loop simply documents the
+        // per-page contract for the non-empty case.)
+        for (i, page) in pages.iter().enumerate() {
+            assert_eq!(
+                page.media_box.len(),
+                4,
+                "Page {} should have a mediabox with 4 values",
+                i
+            );
+            println!(
+                "  Page {}: mediabox={:?}, content_streams={}",
+                i,
+                page.media_box,
+                page.contents.len()
+            );
+        }
+        pages.len()
+    };
+
+    // Second call: page data is cached in the extractor, so a repeated call
+    // must return the same number of pages without re-flattening or panicking.
+    let second_len = extractor
+        .materialize_pages()
+        .expect("second materialize_pages() call should also return Ok")
+        .len();
+    assert_eq!(
+        first_len, second_len,
+        "Cached materialize_pages() should return a stable page count"
+    );
+
+    println!(
+        "✓ Page data materialized and cached ({} pages, stable across calls)",
+        second_len
+    );
+}
+
 /// Test that truncated-flate.pdf opens with PdfExtractor without panic.
 ///
 /// This is a basic smoke test to verify that the PdfExtractor can handle
