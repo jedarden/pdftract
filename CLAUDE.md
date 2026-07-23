@@ -197,3 +197,19 @@ Before moving on, verify:
 - [ ] If the bead unblocks downstream work, `bf ready` now shows new options
 
 Then run `bf ready --limit 5` and pick the next bead.
+
+## Repo hygiene — never commit compiled binaries
+
+Compiled Rust binaries (ELF, no extension — test/conformance runners, `generate_*`/`gen_*`
+fixture generators, `test_hash_new`, `header`, etc.) belong in `target/` (gitignored), NOT
+in the tree. They were repeatedly built into `tests/` and fixture dirs and swept in by
+`git add -A`, bloating history — a 235 MB `--1.ppm` render once blocked the GitHub mirror.
+70 tracked ELF binaries were untracked and `.gitignore` hardened (commit `b101219`). Do
+NOT re-add them: build into `target/`; if a generator must write into the tree, emit a
+small data file, not the compiled binary. Sanity check before committing:
+
+```sh
+git ls-files | while IFS= read -r f; do
+  [ "$(head -c4 "$f" 2>/dev/null | od -An -tx1 | tr -d ' ')" = 7f454c46 ] && echo "TRACKED ELF: $f"
+done
+```
