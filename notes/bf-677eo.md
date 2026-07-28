@@ -2,7 +2,7 @@
 
 ## Task: Run pdftract CLI on degraded fixture
 
-### Date: 2026-07-06
+### Date: 2026-07-28 (updated from previous 2026-07-06 attempt)
 
 ### What was attempted:
 
