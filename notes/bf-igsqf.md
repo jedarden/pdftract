@@ -150,8 +150,24 @@ Result: `git rev-list --left-right --count main...origin/main` → `0  0`.
 
 ## 6. Live propagation proof
 
-Pushing this note to Forgejo propagated to GitHub immediately — see the
-`Propagation` section appended below, recorded right after the push.
+Pushing this note to Forgejo propagated to GitHub immediately. The push was a
+fast-forward:
+
+```
+$ git push origin main
+   c006c09..fee486d  main -> main
+```
+
+An `ls-remote` against both remotes right afterwards returned the same new SHA on
+each, with no manual mirror trigger in between:
+
+```
+origin  refs/heads/main   fee486d6972d1421ab93a660a9a256a7f20fb27b
+github  refs/heads/main   fee486d6972d1421ab93a660a9a256a7f20fb27b
+```
+
+So the two remotes are not merely equal at one snapshot — the `sync_on_commit`
+mirror path is confirmed working end-to-end, and will keep GitHub current.
 
 ## Acceptance criteria
 
