@@ -72,6 +72,12 @@ last_error:      ''        <-- empty; was "PushRejected" throughout bf-lmdn0
 
 The mirror is firing on schedule and succeeding.
 
+**Live end-to-end proof.** Pushing this note's own commit to Forgejo
+(`e981c23..cbfe495 main -> main`) propagated to GitHub immediately — an
+`ls-remote` against both remotes right after the push returned
+`cbfe495fc36d54252796327eff0d7963cc1f1878` on each. The `sync_on_commit` path
+works today.
+
 ## 4. How the divergence actually got resolved (not by this bead)
 
 `bf-lmdn0` (2026-07-22 15:32Z) recorded 435 commits on Forgejo missing from
