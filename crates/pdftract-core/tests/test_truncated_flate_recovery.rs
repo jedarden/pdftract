@@ -14,6 +14,7 @@
 
 use anyhow::Result;
 use pdftract_core::document::{parse_pdf_file, PageExtraction, PdfExtractor};
+use pdftract_core::extract::{extract_pdf, ExtractionOptions};
 use std::path::PathBuf;
 
 /// Returns the path to the truncated-flate.pdf fixture.
@@ -342,4 +343,55 @@ fn test_truncated_flate_opens_with_extractor() {
         .page_count()
         .expect("page_count() should return a valid count without error");
     println!("  Validated page count: {}", page_count);
+}
+
+/// Test that truncated-flate.pdf extraction emits STREAM_DECODE_ERROR diagnostic.
+///
+/// This test verifies that when a FlateDecode stream is truncated during
+/// extraction, the error is properly reported in the extraction metadata
+/// diagnostics. This follows the pattern from bf-2h1nt research on error
+/// assertion patterns in the test suite.
+///
+/// The test uses `extract_pdf` to get the full `ExtractionResult` which
+/// includes the `metadata.diagnostics` field, then asserts that
+/// "STREAM_DECODE_ERROR" appears in the diagnostics array.
+#[test]
+fn test_truncated_flate_emits_stream_decode_error() {
+    let path = fixture_path();
+
+    println!("Testing STREAM_DECODE_ERROR emission for: {}", path.display());
+
+    // Extract the PDF using extract_pdf to get the full ExtractionResult
+    // with metadata.diagnostics
+    let extraction_result = extract_pdf(&path, &ExtractionOptions::default())
+        .expect("Should extract truncated-flate.pdf");
+
+    println!("✓ extract_pdf() succeeded");
+    println!("  Fingerprint: {}", extraction_result.fingerprint);
+    println!("  Page count: {}", extraction_result.pages.len());
+
+    // Check the metadata.diagnostics field for STREAM_DECODE_ERROR
+    let diagnostics = &extraction_result.metadata.diagnostics;
+    println!("  Total diagnostics: {}", diagnostics.len());
+
+    // Print all diagnostics for debugging
+    for (i, diag) in diagnostics.iter().enumerate() {
+        println!("  Diagnostic[{}]: {}", i, diag);
+    }
+
+    // Assert that STREAM_DECODE_ERROR appears in the diagnostics
+    // Following the pattern from bf-2h1nt: use .contains() on Vec<String>
+    let has_stream_decode_error = diagnostics
+        .iter()
+        .any(|d| d.contains("STREAM_DECODE_ERROR"));
+
+    assert!(
+        has_stream_decode_error,
+        "Expected STREAM_DECODE_ERROR diagnostic not found. \
+         Got {} diagnostics: {:?}",
+        diagnostics.len(),
+        diagnostics
+    );
+
+    println!("✓ STREAM_DECODE_ERROR diagnostic found in extraction result");
 }
