@@ -2,6 +2,10 @@
 **/target/
 .beads/
 
+# Node.js and Python caches
+node_modules/
+__pycache__/
+
 # Fuzzing corpus is generated during CI, not committed
 fuzz/corpus/
 
