@@ -241,7 +241,7 @@ Additional language SDK packages (Go, Node.js, Ruby) are in progress, built on t
 
 ## Documentation
 
-- **User guide:** [pdftract.com](https://pdftract.com)
+- **User guide:** [pdftract.com](https://pdftract.com) — **🚧 coming soon, live after the first tagged release** (until then, see [docs/user-docs/src/](docs/user-docs/src/) for the full user guide)
 - **API reference:** [docs.rs/pdftract-core](https://docs.rs/pdftract-core)
 - **Extraction output schema:** [docs/research/extraction-output-schema.md](docs/research/extraction-output-schema.md)
 - **SDK architecture:** [docs/notes/sdk-architecture.md](docs/notes/sdk-architecture.md)
