@@ -1307,20 +1307,13 @@ pub fn execute_with_do(
 
                                     // Look up font in ResourceStack
                                     if let Some(_font_ref) = resource_stack.lookup_font(font_key) {
+                                        // Font found in resources.
                                         // TODO: Resolve font_ref to Arc<Font>
-                                        // For now, we emit a placeholder diagnostic since
-                                        // full font resolution requires access to the document
-                                        // structure which is not available in this context.
-                                        //
-                                        // The font binding will be fully implemented in Phase 3.2
-                                        // when the full font pipeline is available.
-                                        diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                                            DiagCode::FontResourceNotFound,
-                                            format!(
-                                                "Font '{}' found in resources but resolution not yet implemented; placeholder",
-                                                font_key
-                                            ),
-                                        ));
+                                        // Full font resolution requires access to the document structure
+                                        // which is not available in this context. This will be implemented
+                                        // in Phase 3.2 when the full font pipeline is available.
+                                        // For now, we silently skip emitting a diagnostic since the font
+                                        // lookup succeeded and we're just deferring full resolution.
                                     } else {
                                         // Font not found in resources
                                         diagnostics.push(Diagnostic::with_dynamic_no_offset(
