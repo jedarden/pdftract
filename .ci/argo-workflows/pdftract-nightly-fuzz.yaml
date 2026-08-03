@@ -33,8 +33,13 @@ metadata:
     app.kubernetes.io/part-of: pdftract
 spec:
   schedule: "0 4 * * *"  # Daily at 0400 UTC
+  workflowMetadata:
+    labels:
+      app.kubernetes.io/name: pdftract-nightly-fuzz
+      workflow-type: nightly-fuzz
   workflowSpec:
     serviceAccountName: argo-workflow
+    activeDeadlineSeconds: 86400  # 24 hours absolute max (5 targets × 4.8h + overhead)
     podGC: OnPodCompletion
     ttlSecondsAfterFinished:
       success: 43200   # 12 hours for success
@@ -221,7 +226,7 @@ spec:
       # === Fuzz Matrix ===
       # Run all 5 fuzz targets in parallel, 4.8 CPU-hours each
       - name: fuzz-matrix
-        activeDeadlineSeconds: 21600  # 6 hours hard limit
+        activeDeadlineSeconds: 28800  # 8 hours hard limit (5 targets × 4.8h in parallel = ~4.8h, plus overhead)
         dag:
           onExit: fuzz-matrix-exit
           tasks:
