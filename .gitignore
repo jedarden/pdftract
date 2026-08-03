@@ -6,6 +6,9 @@
 node_modules/
 __pycache__/
 
+# Documentation build outputs
+docs/user-docs/build/
+
 # Fuzzing corpus is generated during CI, not committed
 fuzz/corpus/
 
