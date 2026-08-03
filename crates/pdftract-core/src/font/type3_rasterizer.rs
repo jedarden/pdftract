@@ -23,9 +23,19 @@ use crate::font::type3::Type3Font;
 use crate::graphics_state::{GraphicsState, GraphicsStateStack, Matrix3x3};
 use crate::parser::lexer::Lexer;
 use crate::parser::object::types::ObjRef;
+use crate::parser::stream::{PdfSource};
 
 /// Maximum recursion depth for Type 3 glyph execution (form XObject + nested glyphs).
 const MAX_GLYPH_DEPTH: usize = 20;
+
+/// Document resolver context for Type3 glyph rasterization.
+///
+/// Provides access to the document's resolver and source for dereferencing
+/// content streams during glyph rasterization.
+pub struct DocumentContext<'a> {
+    /// PDF source for reading stream data
+    pub source: Option<&'a dyn PdfSource>,
+}
 
 /// 32x32 grayscale bitmap for glyph rasterization.
 ///
@@ -552,18 +562,28 @@ pub type StreamResolverFn = dyn Fn(ObjRef) -> Option<Vec<u8>> + Send + Sync;
 ///
 /// * `font` - The Type3 font containing the glyph
 /// * `glyph_name` - The name of the glyph to rasterize
+/// * `doc_context` - Document resolver context (may be None for placeholder)
 /// * `resolve_stream` - Callback to resolve ObjRef to stream bytes (may be None for placeholder)
 ///
 /// # Returns
 ///
 /// Some(bitmap) if the glyph exists and rasterized successfully,
 /// None if the glyph name is not in /CharProcs or stream resolution fails.
-pub fn rasterize_type3_glyph<R>(font: &Type3Font, glyph_name: &str, resolve_stream: Option<&R>) -> Option<[u8; 1024]>
+pub fn rasterize_type3_glyph<'a, R>(
+    font: &Type3Font,
+    glyph_name: &str,
+    doc_context: Option<&'a DocumentContext<'a>>,
+    resolve_stream: Option<&R>,
+) -> Option<[u8; 1024]>
 where
     R: Fn(ObjRef) -> Option<Vec<u8>> + ?Sized,
 {
     // Check if glyph exists and get its ObjRef
     let char_proc_ref = font.char_proc(glyph_name)?;
+
+    // Document context is now available for future ObjRefPtr resolution
+    // TODO: In next step, use doc_context to dereference ObjRefPtr when needed
+    let _doc_context = doc_context;
 
     // Try to resolve the content stream if a resolver is provided
     let stream_bytes = match resolve_stream {
@@ -728,6 +748,9 @@ mod tests {
         let font = Type3Font::load(&font_dict);
 
         // Unknown glyph returns None
-        assert_eq!(rasterize_type3_glyph(&font, "unknown", None::<&StreamResolverFn>), None);
+        assert_eq!(
+            rasterize_type3_glyph(&font, "unknown", None::<&DocumentContext>, None::<&StreamResolverFn>),
+            None
+        );
     }
 }

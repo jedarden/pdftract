@@ -23,7 +23,7 @@ use crate::font::encoding::FontEncoding;
 use crate::font::fingerprint::CachedFingerprint;
 use crate::font::shape::{lookup_shape, phash_glyph};
 use crate::font::type3::Type3Font;
-use crate::font::type3_rasterizer::{rasterize_type3_glyph, StreamResolverFn};
+use crate::font::type3_rasterizer::{rasterize_type3_glyph, DocumentContext as Type3DocumentContext, StreamResolverFn};
 use crate::parser::stream::{decode_stream, ExtractionOptions, PdfSource as ParserPdfSource};
 use crate::parser::xref::XrefResolver;
 
@@ -496,6 +496,9 @@ fn resolve_level4(
 /// * `font` - The Type3 font containing the glyph
 /// * `to_unicode` - Optional ToUnicode CMap (Level 1)
 /// * `char_code` - Character code (single byte for Type 3)
+/// * `resolver` - Optional XrefResolver for dereferencing content streams
+/// * `source` - Optional PdfSource for reading stream data
+/// * `doc_decompress_counter` - Optional decompression counter (bomb protection)
 /// * `diagnostics` - Diagnostics list for emitting GLYPH_UNMAPPED
 ///
 /// # Returns
@@ -530,6 +533,9 @@ pub fn resolve_type3(
     font: &Type3Font,
     to_unicode: Option<&ToUnicodeMap>,
     char_code: u8,
+    resolver: Option<&XrefResolver>,
+    source: Option<&dyn ParserPdfSource>,
+    doc_decompress_counter: Option<&mut u64>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> ResolvedGlyph {
     // Level 1: ToUnicode CMap
@@ -558,7 +564,15 @@ pub fn resolve_type3(
     // Level 4: Shape recognition
     #[cfg(feature = "shape-db")]
     {
-        let result = resolve_type3_level4(font, char_code, glyph_name_for_l4, diagnostics);
+        let result = resolve_type3_level4(
+            font,
+            char_code,
+            glyph_name_for_l4,
+            resolver,
+            source,
+            doc_decompress_counter,
+            diagnostics,
+        );
         if !result.is_failure() {
             return result;
         }
@@ -597,6 +611,9 @@ pub fn resolve_type3(
 /// * `font` - The Type3 font containing the glyph
 /// * `char_code` - Character code (single byte)
 /// * `glyph_name` - Optional glyph name from encoding (for diagnostics)
+/// * `resolver` - Optional XrefResolver for dereferencing content streams
+/// * `source` - Optional PdfSource for reading stream data
+/// * `doc_decompress_counter` - Optional decompression counter (bomb protection)
 /// * `diagnostics` - Diagnostics list
 ///
 /// # Returns
@@ -608,6 +625,9 @@ fn resolve_type3_level4(
     font: &Type3Font,
     char_code: u8,
     glyph_name: Option<Arc<str>>,
+    resolver: Option<&XrefResolver>,
+    source: Option<&dyn ParserPdfSource>,
+    doc_decompress_counter: Option<&mut u64>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> ResolvedGlyph {
     // Get the glyph name from encoding if we don't have it
@@ -641,10 +661,53 @@ fn resolve_type3_level4(
         return ResolvedGlyph::failure();
     }
 
-    // Rasterize the glyph to a 32×32 bitmap
-    // Note: resolver is None here, so we get a placeholder bitmap
-    // Full implementation requires threading document resolver through call chain
-    let bitmap = match rasterize_type3_glyph(font, &glyph_name, None::<&StreamResolverFn>) {
+    // Create stream resolver callback if document context is available
+    // Helper function to resolve a stream reference to decoded bytes
+    fn resolve_stream_bytes(
+        obj_ref: crate::parser::object::ObjRef,
+        resolver: &XrefResolver,
+        source: &dyn ParserPdfSource,
+        counter: &mut u64,
+    ) -> Option<Vec<u8>> {
+        use crate::parser::object::PdfObject;
+
+        // Resolve the object reference
+        let obj = resolver.resolve_with_source(obj_ref, source).ok()?;
+
+        // Extract the stream
+        let stream = match obj {
+            PdfObject::Stream(s) => *s,
+            _ => return None,
+        };
+
+        // Decode the stream
+        let bytes = decode_stream(
+            &stream,
+            source,
+            &ExtractionOptions::default(),
+            counter,
+        );
+
+        Some(bytes)
+    }
+
+    let bitmap = if let (Some(resolver), Some(source), Some(counter)) = (resolver, source, doc_decompress_counter) {
+        // Create document context for Type3 rasterization
+        let doc_ctx = Type3DocumentContext { source };
+
+        // Use helper function to create a closure-compatible callback
+        // This is a workaround for lifetime issues with closures capturing references
+        let callback = |obj_ref: crate::parser::object::ObjRef| -> Option<Vec<u8>> {
+            resolve_stream_bytes(obj_ref, resolver, source, counter)
+        };
+
+        rasterize_type3_glyph(font, &glyph_name, Some(&doc_ctx), Some(&callback))
+    } else {
+        // No document context available - use placeholder
+        rasterize_type3_glyph(font, &glyph_name, None::<&Type3DocumentContext>, None::<&StreamResolverFn>)
+    };
+
+    let bitmap = match bitmap {
         Some(bm) => bm,
         None => {
             diagnostics.push(Diagnostic::with_dynamic_no_offset(
@@ -1020,7 +1083,7 @@ mod tests {
         let cmap_data = b"beginbfchar 1 <41> <0041> endbfchar";
         let cmap = parse_to_unicode(cmap_data);
 
-        let result = resolve_type3(&font, Some(&cmap), 0x41, &mut diagnostics);
+        let result = resolve_type3(&font, Some(&cmap), 0x41, None, None, None, &mut diagnostics);
 
         assert!(!result.is_failure());
         assert_eq!(result.chars.as_slice(), ['A']);
@@ -1058,7 +1121,7 @@ mod tests {
         let font = Type3Font::load(&font_dict);
 
         // No ToUnicode, use encoding + AGL
-        let result = resolve_type3(&font, None, 0x41, &mut diagnostics);
+        let result = resolve_type3(&font, None, 0x41, None, None, None, &mut diagnostics);
 
         // 0x41 in WinAnsi is 'A' which maps to 'A' via AGL
         assert!(!result.is_failure());
@@ -1091,7 +1154,7 @@ mod tests {
         let font = Type3Font::load(&font_dict);
 
         // No ToUnicode, encoding has no glyph for 0x41, no /CharProcs
-        let result = resolve_type3(&font, None, 0x41, &mut diagnostics);
+        let result = resolve_type3(&font, None, 0x41, None, None, None, &mut diagnostics);
 
         assert!(result.is_failure());
         assert_eq!(result.chars.as_slice(), ['\u{FFFD}']);
