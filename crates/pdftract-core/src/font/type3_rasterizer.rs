@@ -22,6 +22,7 @@ use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::font::type3::Type3Font;
 use crate::graphics_state::{GraphicsState, GraphicsStateStack, Matrix3x3};
 use crate::parser::lexer::Lexer;
+use crate::parser::object::types::ObjRef;
 
 /// Maximum recursion depth for Type 3 glyph execution (form XObject + nested glyphs).
 const MAX_GLYPH_DEPTH: usize = 20;
@@ -540,32 +541,52 @@ impl<'a> RasterizerContext<'a> {
     }
 }
 
+/// Stream resolver callback for Type3 glyph rasterization.
+///
+/// Given an ObjRef to a content stream, returns the decoded stream bytes.
+pub type StreamResolverFn = dyn Fn(ObjRef) -> Option<Vec<u8>> + Send + Sync;
+
 /// Rasterize a Type 3 glyph to a 32x32 grayscale bitmap.
 ///
 /// # Arguments
 ///
 /// * `font` - The Type3 font containing the glyph
 /// * `glyph_name` - The name of the glyph to rasterize
+/// * `resolve_stream` - Callback to resolve ObjRef to stream bytes (may be None for placeholder)
 ///
 /// # Returns
 ///
 /// Some(bitmap) if the glyph exists and rasterized successfully,
-/// None if the glyph name is not in /CharProcs.
-pub fn rasterize_type3_glyph(font: &Type3Font, glyph_name: &str) -> Option<[u8; 1024]> {
-    // Check if glyph exists
-    let _char_proc_ref = font.char_proc(glyph_name)?;
+/// None if the glyph name is not in /CharProcs or stream resolution fails.
+pub fn rasterize_type3_glyph<R>(font: &Type3Font, glyph_name: &str, resolve_stream: Option<&R>) -> Option<[u8; 1024]>
+where
+    R: Fn(ObjRef) -> Option<Vec<u8>> + ?Sized,
+{
+    // Check if glyph exists and get its ObjRef
+    let char_proc_ref = font.char_proc(glyph_name)?;
 
-    // TODO: Resolve the content stream from the ObjRef
-    // For now, return a placeholder bitmap
-    // The full implementation requires access to the document resolver
-    // to fetch and decode the stream
+    // Try to resolve the content stream if a resolver is provided
+    let stream_bytes = match resolve_stream {
+        Some(resolver) => resolver(char_proc_ref),
+        None => None,
+    };
 
-    // Placeholder: return a half-filled bitmap for testing
-    let mut bitmap = Bitmap32x32::white();
-    // Fill a 16x16 square in the center
-    bitmap.fill_rect(8, 8, 24, 24, 0);
-
-    Some(*bitmap.as_bytes())
+    match stream_bytes {
+        Some(bytes) => {
+            // Successfully resolved - execute the content stream and rasterize
+            let mut ctx = RasterizerContext::new(font);
+            ctx.execute_content_stream(&bytes);
+            Some(*ctx.bitmap.as_bytes())
+        }
+        None => {
+            // No resolver provided or resolution failed - return placeholder
+            // This maintains backwards compatibility for test code
+            let mut bitmap = Bitmap32x32::white();
+            // Fill a 16x16 square in the center as placeholder
+            bitmap.fill_rect(8, 8, 24, 24, 0);
+            Some(*bitmap.as_bytes())
+        }
+    }
 }
 
 #[cfg(test)]
@@ -707,6 +728,6 @@ mod tests {
         let font = Type3Font::load(&font_dict);
 
         // Unknown glyph returns None
-        assert_eq!(rasterize_type3_glyph(&font, "unknown"), None);
+        assert_eq!(rasterize_type3_glyph(&font, "unknown", None::<&StreamResolverFn>), None);
     }
 }

@@ -5,6 +5,7 @@
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
+use std::path::Path;
 
 // Type alias for PyO3 owned references
 type PyResultAny<'py> = PyResult<Py<PyAny>>;
@@ -12,13 +13,16 @@ type PyResultAny<'py> = PyResult<Py<PyAny>>;
 mod extract;
 mod extract_stream;
 mod extract_text;
+mod extract_markdown;
 
 use extract::extract as extract_fn;
 use extract_stream::{extract_stream_fn, StreamIterator};
 use extract_text::extract_text_fn;
+use extract_markdown::extract_markdown_fn;
 
 // Re-export core types
 use pdftract_core::{AttachmentJson, ExtractionOptions, PageResult, TableJson};
+use pdftract_core::sdk::{search as sdk_search, SearchMatch};
 
 // Import diagnostics for error code mapping
 use pdftract_core::diagnostics::DIAGNOSTIC_CATALOG;
@@ -175,35 +179,99 @@ fn py_extract_text(py: Python, path: &str, kwargs: Option<&PyDict>) -> PyResult<
 }
 
 // ============================================================================
-// Contract method: extract_markdown (stub)
+// Contract method: extract_markdown
 // ============================================================================
 
-#[pyfunction]
-fn extract_markdown(py: Python, path: &str, kwargs: Option<&PyDict>) -> PyResult<String> {
-    // For now, just return extract_text output
-    // TODO: Implement proper markdown conversion
-    extract_text_fn(py, path, kwargs)
+/// Extract Markdown from a PDF, returning a String.
+///
+/// This function returns the document formatted as Markdown, preserving
+/// document structure with headers, links, and other formatting.
+///
+/// See the extract_markdown module for full documentation.
+#[pyfunction(name = "extract_markdown")]
+#[pyo3(signature = (path, **kwargs))]
+fn py_extract_markdown(py: Python, path: &str, kwargs: Option<&PyDict>) -> PyResult<String> {
+    extract_markdown_fn(py, path, kwargs)
 }
 
 // ============================================================================
-// Contract method: search (stub)
+// Contract method: search
 // ============================================================================
 
+/// Search for text patterns in a PDF.
+///
+/// This function searches for a pattern in the PDF text content and returns
+/// all matches with their locations (page, span, bounding box).
+///
+/// # Arguments
+///
+/// * `path` - Path to the PDF file
+/// * `pattern` - Text pattern to search for
+/// * `kwargs` - Optional search parameters:
+///   - `case_insensitive` (bool) - Ignore case when matching (default: false)
+///   - `regex` (bool) - Treat pattern as a regular expression (default: false)
+///   - `whole_word` (bool) - Match only whole words (default: false)
+///
+/// # Returns
+///
+/// A dictionary with:
+/// * `pattern` - The search pattern
+/// * `matches` - List of match dictionaries, each with:
+///   - `page_index` (int) - Page number where match was found
+///   - `span_index` (int) - Span index within the page
+///   - `text` (str) - Matched text content
+///   - `bbox` (list[float]) - Bounding box [x0, y0, x1, y1]
 #[pyfunction]
+#[pyo3(signature = (path, pattern, **kwargs))]
 fn search<'py>(
     py: Python<'py>,
-    _path: &str,
+    path: &str,
     pattern: &str,
-    _kwargs: Option<&PyDict>,
+    kwargs: Option<&PyDict>,
 ) -> PyResultAny<'py> {
-    // For now, extract and return empty match list
-    // TODO: Implement proper regex search
+    // Parse search options from kwargs
+    let case_insensitive = kwargs
+        .and_then(|k| k.get_item("case_insensitive").ok().flatten())
+        .and_then(|v| v.extract::<bool>().ok())
+        .unwrap_or(false);
+
+    let use_regex = kwargs
+        .and_then(|k| k.get_item("regex").ok().flatten())
+        .and_then(|v| v.extract::<bool>().ok())
+        .unwrap_or(false);
+
+    let whole_word = kwargs
+        .and_then(|k| k.get_item("whole_word").ok().flatten())
+        .and_then(|v| v.extract::<bool>().ok())
+        .unwrap_or(false);
+
+    // Call the SDK search function
+    let pdf_path = Path::new(path);
+    let result = sdk_search(pdf_path, pattern, case_insensitive, use_regex, whole_word);
+
+    // Map errors to Python exceptions
+    let matches = match result {
+        Ok(matches) => matches,
+        Err(err) => {
+            return Err(map_error_to_py(py, err));
+        }
+    };
+
+    // Build the result dictionary
     let dict = PyDict::new(py);
     dict.set_item("pattern", pattern)?;
 
-    // Return an empty match list for now
-    let matches = pyo3::types::PyList::empty(py);
-    dict.set_item("matches", matches)?;
+    // Convert matches to Python list of dicts
+    let matches_list = pyo3::types::PyList::empty(py);
+    for search_match in matches {
+        let match_dict = PyDict::new(py);
+        match_dict.set_item("page_index", search_match.page_index)?;
+        match_dict.set_item("span_index", search_match.span_index)?;
+        match_dict.set_item("text", search_match.text)?;
+        match_dict.set_item("bbox", search_match.bbox.to_vec())?;
+        matches_list.append(match_dict)?;
+    }
+    dict.set_item("matches", matches_list)?;
 
     Ok(dict.clone().into())
 }
@@ -230,16 +298,23 @@ fn hash(py: Python, path: &str, _kwargs: Option<&PyDict>) -> PyResult<String> {
 }
 
 // ============================================================================
-// Contract method: classify (stub)
+// Contract method: classify
 // ============================================================================
 
 #[pyfunction]
-fn classify<'py>(py: Python<'py>, _path: &str) -> PyResultAny<'py> {
-    // Stub implementation - should classify page type
+fn classify<'py>(py: Python<'py>, path: &str, page_index: Option<usize>) -> PyResultAny<'py> {
+    // Default to first page if page_index not provided
+    let page_idx = page_index.unwrap_or(0);
+
+    // Call the SDK classify function
+    let classification = pdftract_core::sdk::classify(std::path::Path::new(path), page_idx)
+        .map_err(|e| map_error_to_py(py, e))?;
+
+    // Convert to Python dict
     let dict = PyDict::new(py);
-    dict.set_item("class_name", "Unknown")?;
-    dict.set_item("confidence", 0.0f64)?;
-    Ok(dict.clone().into())
+    dict.set_item("class_name", classification.class.as_type_str())?;
+    dict.set_item("confidence", f64::from(classification.confidence))?;
+    Ok(dict.into())
 }
 
 // ============================================================================
@@ -429,7 +504,7 @@ fn _native(py: Python, m: &PyModule) -> PyResult<()> {
     // Add main extraction functions
     m.add_function(wrap_pyfunction!(extract::extract, m)?)?;
     m.add_function(wrap_pyfunction!(py_extract_text, m)?)?;
-    m.add_function(wrap_pyfunction!(extract_markdown, m)?)?;
+    m.add_function(wrap_pyfunction!(py_extract_markdown, m)?)?;
     m.add_function(wrap_pyfunction!(search, m)?)?;
     m.add_function(wrap_pyfunction!(get_metadata, m)?)?;
     m.add_function(wrap_pyfunction!(hash, m)?)?;

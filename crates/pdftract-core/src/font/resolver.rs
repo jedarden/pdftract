@@ -23,7 +23,9 @@ use crate::font::encoding::FontEncoding;
 use crate::font::fingerprint::CachedFingerprint;
 use crate::font::shape::{lookup_shape, phash_glyph};
 use crate::font::type3::Type3Font;
-use crate::font::type3_rasterizer::rasterize_type3_glyph;
+use crate::font::type3_rasterizer::{rasterize_type3_glyph, StreamResolverFn};
+use crate::parser::stream::{decode_stream, ExtractionOptions, PdfSource as ParserPdfSource};
+use crate::parser::xref::XrefResolver;
 
 /// A loaded PDF font with encoding resolution capabilities.
 ///
@@ -640,7 +642,9 @@ fn resolve_type3_level4(
     }
 
     // Rasterize the glyph to a 32×32 bitmap
-    let bitmap = match rasterize_type3_glyph(font, &glyph_name) {
+    // Note: resolver is None here, so we get a placeholder bitmap
+    // Full implementation requires threading document resolver through call chain
+    let bitmap = match rasterize_type3_glyph(font, &glyph_name, None::<&StreamResolverFn>) {
         Some(bm) => bm,
         None => {
             diagnostics.push(Diagnostic::with_dynamic_no_offset(

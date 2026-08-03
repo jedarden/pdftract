@@ -3678,6 +3678,7 @@ Each SDK lives in its own git repository to keep release cadence and issue track
 
 ### SDK Acceptance Criteria
 
+- **Hard gate (containerized conformance execution)**: All subprocess-generated SDKs (Ruby, PHP, .NET, Swift, Node, Go, Java) MUST pass containerized conformance execution before bead closure and before publish workflows proceed. Conformance must run inside the official language Docker image on iad-ci (e.g., `ruby:3.2-slim`, `node:22-slim`, `golang:1.22`), with pass/fail output (Argo Workflow log or link) attached to the bead as acceptance evidence. Structural completeness alone is insufficient; the code must actually execute and pass. **Closing a generated-SDK bead without a conformance-run link is a hygiene defect.**
 - 100% of the shared conformance suite passes on every SDK before publishing
 - SDK ships within 24 hours of binary release (Argo cascade is automatic)
 - SDK README documents: install command, three usage examples (basic extract, OCR, search), binary version compatibility matrix, troubleshooting (binary not found, version mismatch, network failure)
