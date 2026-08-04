@@ -1,0 +1,30 @@
+EMPLOYEE INFORMATION FORM
+Please complete all fields. Print clearly.
+
+Full Name: __________________________________
+Employee ID: __________________________________
+Department: __________________________________
+Email Address: __________________________________
+Phone Number: __________________________________
+
+OFFICE USE ONLY
+--------------------------------------------------
+Date: ____________  Approved: ____________
+
+SECTION A: PERSONAL INFORMATION
+- Please use permanent ink and print clearly.
+- Do not write above the line.
+
+SECTION B: EMPLOYMENT DETAILS
+Position: _________________________
+Start Date: _______________________
+Supervisor: _______________________
+
+SECTION C: EMERGENCY CONTACT
+Contact Name: ____________________
+Relationship: _____________________
+Phone: ____________________________
+
+I certify that the information provided is true and correct.
+
+Signature: ________________________  Date: ____________

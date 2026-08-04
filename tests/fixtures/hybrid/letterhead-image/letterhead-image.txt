@@ -1,0 +1,35 @@
+ACME CORPORATION
+123 Business Avenue, Suite 100
+New York, NY 10001
+Tel: (212) 555-0123 | Email: info@acmecorp.com
+
+Date: August 3, 2026
+
+Mr. John Smith
+456 Client Road
+Los Angeles, CA 90001
+
+Dear Mr. Smith:
+
+Thank you for your recent inquiry about our enterprise solutions. We are pleased to
+present our comprehensive proposal for your organization's document management needs.
+
+Our hybrid document processing system offers several key advantages:
+
+1. Automatic classification of document types (vector, scanned, hybrid)
+2. Intelligent OCR with confidence-based merging
+3. 8x8 grid cell detection for precise content region identification
+4. Bbox overlap rules to eliminate duplicate text extraction
+
+We believe our solution aligns perfectly with your requirements for processing
+mixed-format documents at scale. Our Phase 5.5 classifier tuning ensures optimal
+performance on known-tricky hybrid cases.
+
+Please find attached our technical specifications and pricing information. We look
+forward to discussing this proposal further at your convenience.
+
+Sincerely,
+
+Jane Johnson
+Senior Account Executive
+ACME Corporation

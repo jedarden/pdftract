@@ -1,0 +1,45 @@
+COMPLEX HYBRID TEST
+Checkerboard pattern: vector and scanned regions alternate
+
+This fixture tests worst-case merge scenarios.
+
+Vector blocks (32 cells):
+• Block 1 (0,0): Top-left vector region
+• Block 2 (0,2): Top-mid vector region
+• Block 3 (0,4): Top-right vector region
+• Block 4 (2,1): Mid-left vector region
+• Block 5 (2,3): Center vector region
+• Block 6 (2,5): Mid-right vector region
+• Block 7 (4,0): Lower-mid-left vector
+• Block 8 (4,2): Lower-mid-center vector
+• Block 9 (4,4): Lower-mid-right vector
+• Block 10 (6,1): Bottom-left vector
+• Block 11 (6,3): Bottom-center vector
+• Block 12 (6,5): Bottom-right vector
+
+Scanned blocks (32 cells): Complementary checkerboard
+The merge algorithm must handle 64 separate regions with alternating content types.
+
+COMPLEMENTARY SCANNED REGIONS
+--------------------------------------------------
+
+Scanned Block 1 (0,1): Top-left-scanned content
+Scanned Block 2 (0,3): Top-mid-scanned content
+Scanned Block 3 (0,5): Top-right-scanned content
+Scanned Block 4 (1,0): Second-row-left-scanned
+Scanned Block 5 (1,2): Second-row-mid-scanned
+Scanned Block 6 (1,4): Second-row-right-scanned
+
+Stress test parameters:
+• Total regions: 64 (32 vector + 32 scanned)
+• Overlap boundaries: ~120 cell edges
+• Merge calculations: ~2400 bbox comparisons
+• Expected runtime: < 500ms on modern hardware
+
+This fixture validates:
+1. Cell-level classification accuracy
+2. Merge rule correctness on complex patterns
+3. Performance under high overlap count
+
+Result: Hybrid classifier correctly identifies all 32 scanned cells
+and merges with 32 vector cells without duplicate text.

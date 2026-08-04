@@ -1,0 +1,250 @@
+# Hybrid PDF Fixtures for Page Classification Testing
+
+This directory contains hybrid PDF fixtures with mixed vector text and scanned image content for testing the PageClass::Hybrid classifier and hybrid extraction pipeline (Phase 5.2.4).
+
+## Purpose
+
+These fixtures support:
+- **KU-2 resolution**: Tesseract behaviour on Hybrid pages with overlapping vector + scan content
+- **Phase 5.5 classifier tuning**: 10 known-tricky hybrid cases for testing page-classifier decision rules
+- **8×8 grid cell evaluation**: Testing hybrid cell detection (≥15% image-heavy cells threshold)
+- **Merge rule validation**: Testing bbox overlap rule (IoU > 0.5) for merging vector and OCR spans
+
+## What Makes a PDF "Hybrid"?
+
+A hybrid PDF contains BOTH:
+1. **Vector text**: Text drawn via PDF content streams (selectable, in `/Text` operators)
+2. **Scanned/image regions**: Raster images that require OCR
+
+This is distinct from:
+- **Pure vector PDFs** (tests/fixtures/vector/): All text is vector, no images
+- **Pure scanned PDFs** (tests/fixtures/scanned/): All content is raster, OCR required
+- **BrokenVector pages**: Vector text present but encoding is broken (invisible text layer over scan)
+
+## Directory Structure
+
+```
+hybrid/
+├── README.md                     # This file
+├── GEN_MANIFEST.md              # Fixture metadata and generation records
+├── generate_hybrid_fixtures.py  # Generation script
+├── receipt-overtext/             # Receipt with scanned body + vector overlay text
+├── letterhead-image/             # Letterhead: vector header + scanned body
+├── form-mixed/                   # Form: vector fields + scanned background
+├── invoice-stamp/                # Invoice: vector line items + scanned stamp/logo
+├── document-annotation/          # Document: scanned page + vector annotations
+├── figure-caption/               # Academic: vector text + scanned figure
+├── sidebar-image/                # Article: vector main text + scanned sidebar
+├── watermark/                    # Document: vector text + scanned watermark overlay
+├── multi-column-scan/            # Multi-column: vector headers + scanned columns
+└── complex-overlap/              # Complex: interleaved vector and scanned regions
+```
+
+## Generation Strategy
+
+Each hybrid fixture is crafted to test specific aspects of the hybrid pipeline:
+
+### 1. receipt-overtext/
+**Challenge**: Scanned receipt body with vector prices overlaid
+- **Vector region**: Price totals, tax calculations (bottom 25%)
+- **Scanned region**: Receipt body, line items (top 75%)
+- **Hybrid cells**: ~24 cells (rows 5-7, all cols)
+- **Test**: Merge rule with overlapping vector/OCR on price区域
+
+### 2. letterhead-image/
+**Challenge**: Vector letterhead header + scanned letter body
+- **Vector region**: Company name, address, date (top 15%)
+- **Scanned region**: Letter content, signature (bottom 85%)
+- **Hybrid cells**: ~40 cells (rows 1-7, cols 0-7)
+- **Test**: Header extraction precision, OCR on body only
+
+### 3. form-mixed/
+**Challenge**: Vector form fields over scanned form background
+- **Vector region**: Fillable form fields, checkboxes (scattered cells)
+- **Scanned region**: Form labels, background, instructions (majority)
+- **Hybrid cells**: ~45 cells (image-heavy with scattered vector)
+- **Test**: Scattered vector extraction through cell-level OCR
+
+### 4. invoice-stamp/
+**Challenge**: Vector invoice line items + scanned approval stamp
+- **Vector region**: Line items, totals, table structure (80%)
+- **Scanned region**: Approval stamp, signature (20% overlap)
+- **Hybrid cells**: ~12 cells (partial overlap regions)
+- **Test**: Merge rule with high-confidence vector vs OCR
+
+### 5. document-annotation/
+**Challenge**: Scanned document with vector highlight annotations
+- **Vector region**: Highlight boxes, margin notes (overlay)
+- **Scanned region**: Original document content (background)
+- **Hybrid cells**: ~36 cells (most of page)
+- **Test**: OCR priority for underlying content vs vector annotations
+
+### 6. figure-caption/
+**Challenge**: Academic paper: vector figure caption + scanned figure
+- **Vector region**: Figure caption, reference number (bottom 10%)
+- **Scanned region**: Figure content, chart, graph (top 90%)
+- **Hybrid cells**: ~8 cells (figure area only)
+- **Test**: Precise caption extraction, figure OCR accuracy
+
+### 7. sidebar-image/
+**Challenge**: Newsletter: vector main text + scanned sidebar image
+- **Vector region**: Main article text (70% width, left side)
+- **Scanned region**: Sidebar image, photo (30% width, right side)
+- **Hybrid cells**: ~24 cells (rightmost 3 columns)
+- **Test**: Column-aware hybrid cell detection
+
+### 8. watermark/
+**Challenge**: Vector text over scanned watermark background
+- **Vector region**: Main document text (foreground)
+- **Scanned region**: Watermark, logo (background, partial overlap)
+- **Hybrid cells**: ~64 cells (full page, watermark is page-wide)
+- **Test**: Vector confidence vs OCR with low-contrast background
+
+### 9. multi-column-scan/
+**Challenge**: Multi-column doc with vector headers + scanned columns
+- **Vector region**: Column headers, section titles (top 20%)
+- **Scanned region**: Multi-column body content (bottom 80%)
+- **Hybrid cells**: ~48 cells (body area only)
+- **Test**: Column detection + hybrid cell grid alignment
+
+### 10. complex-overlap/
+**Challenge**: Interleaved vector and scanned regions (checkerboard pattern)
+- **Vector region**: Scattered blocks (checkerboard: 32 cells)
+- **Scanned region**: Complementary blocks (checkerboard: 32 cells)
+- **Hybrid cells**: ~32 cells (every other cell)
+- **Test**: Worst-case merge rule performance, complex bbox overlap
+
+## 8×8 Grid Cell Threshold
+
+Per Phase 5.5 classification rules:
+- Page is **Hybrid** when ≥ 15% of cells (≥ 12 of 64 cells) are image-heavy
+- Image-heavy cell = pixel coverage from images exceeds text coverage
+- Cells below threshold: Vector extraction only
+- Cells at/above threshold: OCR + merge with vector spans
+
+## Generation Instructions
+
+Use the provided generation script to create hybrid PDFs:
+
+```bash
+# Install dependencies
+# Python 3 with reportlab, PIL/Pillow, img2pdf
+pip3 install reportlab Pillow img2pdf
+
+# Generate all fixtures
+cd tests/fixtures/hybrid
+python3 generate_hybrid_fixtures.py
+```
+
+For manual generation:
+1. Create vector text regions using reportlab or similar
+2. Create scanned image regions (scan or render to image)
+3. Combine using reportlab's `drawImage` and `drawString`
+4. Ensure image and text regions overlap strategically per fixture design
+5. Export as PDF
+
+## Hybrid Extraction Pipeline
+
+When pdftract processes a hybrid page:
+
+1. **Classification** (Phase 5.1): Detect PageClass::Hybrid, compute hybrid_cells (≥15% threshold)
+2. **Render full page** (Phase 5.2.4): Render at selected DPI (default 300)
+3. **Crop cells**: For each hybrid cell, crop from rendered page
+4. **OCR per cell**: Run Tesseract on each cell image independently
+5. **Merge**: Combine vector spans + OCR spans using bbox overlap rule:
+   - If IoU(OCR, Vector) > 0.5 AND vector_confidence ≥ 0.5: keep vector
+   - If IoU(OCR, Vector) > 0.5 AND vector_confidence < 0.5: keep OCR
+   - If IoU(OCR, Vector) ≤ 0.5: keep both
+
+## Verification
+
+To verify hybrid extraction on a fixture:
+
+```bash
+# Extract with hybrid handling
+pdftract extract tests/fixtures/hybrid/receipt-overtext/receipt-overtext.pdf --text > output.txt
+
+# Check classification result
+pdftract classify tests/fixtures/hybrid/receipt-overtext/receipt-overtext.pdf
+# Should show: PageClass::Hybrid with hybrid_cells set
+
+# Verify merge quality
+# Compare output.txt with expected .txt ground truth
+# Check that no duplicate text from overlapping regions
+```
+
+## Test Scenarios
+
+Each fixture targets specific test scenarios:
+
+| Fixture | Primary Test | Merge Rule Stress | Cell Count |
+|---------|--------------|-------------------|------------|
+| receipt-overtext | Price precision | High (overlap) | ~24 |
+| letterhead-image | Header isolation | Low (separate) | ~40 |
+| form-mixed | Scattered vector | Medium (scattered) | ~45 |
+| invoice-stamp | High-conf vector | High (stamp overlap) | ~12 |
+| document-annotation | Annotation vs content | Medium (overlay) | ~36 |
+| figure-caption | Caption extraction | Low (separate) | ~8 |
+| sidebar-image | Column alignment | Low (side-by-side) | ~24 |
+| watermark | Low-contrast vector | High (page-wide) | ~64 |
+| multi-column-scan | Column detection | Medium (body) | ~48 |
+| complex-overlap | Worst-case merge | Very high (checkerboard) | ~32 |
+
+## Classifier Tuning Targets
+
+Phase 5.5 uses these fixtures to tune:
+
+1. **Cell image-heavy threshold**: Current default 15%, may need adjustment
+2. **Merge rule IoU threshold**: Current default 0.5, test for false positives/negatives
+3. **Vector confidence threshold**: Current default 0.5, test OCR preference
+4. **DPI selection**: Cell render DPI impacts OCR quality
+
+## Known Unknowns (KU-2)
+
+This fixture suite directly addresses KU-2: *Tesseract behaviour on Hybrid pages with overlapping vector + scan content*.
+
+Resolution strategy: Use these 10 fixtures to measure and tune:
+- False positive rate (Vector classified as Hybrid)
+- False negative rate (Hybrid classified as Vector)
+- Merge rule accuracy (duplicate elimination)
+- OCR confidence on hybrid cells vs pure scanned
+
+## Fixtures Status
+
+| Fixture | PDF | Vector Content | Scanned Content | Hybrid Cells | Status |
+|---------|-----|----------------|-----------------|--------------|--------|
+| receipt-overtext | ❌ | ✅ | ✅ | ~24 | Pending |
+| letterhead-image | ❌ | ✅ | ✅ | ~40 | Pending |
+| form-mixed | ❌ | ✅ | ✅ | ~45 | Pending |
+| invoice-stamp | ❌ | ✅ | ✅ | ~12 | Pending |
+| document-annotation | ❌ | ✅ | ✅ | ~36 | Pending |
+| figure-caption | ❌ | ✅ | ✅ | ~8 | Pending |
+| sidebar-image | ❌ | ✅ | ✅ | ~24 | Pending |
+| watermark | ❌ | ✅ | ✅ | ~64 | Pending |
+| multi-column-scan | ❌ | ✅ | ✅ | ~48 | Pending |
+| complex-overlap | ❌ | ✅ | ✅ | ~32 | Pending |
+
+## Adding New Hybrid Fixtures
+
+1. Design the hybrid case: Which cells are vector? Which are scanned?
+2. Create vector text content (headers, forms, annotations)
+3. Create scanned image content (body, figures, backgrounds)
+4. Combine with strategic overlap
+5. Verify ≥ 12 cells are image-heavy (15% threshold)
+6. Add to this README's table and GEN_MANIFEST.md
+
+## Notes
+
+- All fixtures use English language with Tesseract `eng` traineddata
+- Vector text uses standard fonts: Arial, Helvetica, Times New Roman
+- Scanned regions rendered at 300 DPI for realistic OCR testing
+- Image regions use JPEG/PNG with moderate compression (quality 85%)
+- Overlap regions are designed to stress-test the merge rule
+- For non-English hybrid fixtures, create a subdirectory with language-specific tests
+
+## Related Fixtures
+
+- `tests/fixtures/vector/` — Pure vector PDFs (no hybrid content)
+- `tests/fixtures/scanned/` — Pure scanned PDFs (no vector text)
+- `tests/fixtures/classifier/` — Page classification test corpus
+- `tests/fixtures/page_class/` — PageClass validation fixtures

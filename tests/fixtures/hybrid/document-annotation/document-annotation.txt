@@ -1,0 +1,36 @@
+HYBRID DOCUMENT PROCESSING
+
+INTRODUCTION
+============================================================
+
+Modern document processing systems must handle mixed-format documents
+that contain both vector text and scanned image regions. These hybrid
+documents present unique challenges for text extraction and content
+analysis.
+
+The key challenge is determining which parts of the page require OCR
+and which can be extracted directly from content streams. Our approach
+uses an 8x8 grid to divide the page into cells, then classifies each
+cell as vector-heavy or image-heavy based on pixel coverage.
+
+METHODOLOGY
+============================================================
+
+When a page is classified as Hybrid (≥15% of cells are image-heavy),
+we employ a two-phase extraction strategy:
+
+1. Extract all vector text using standard content stream parsing
+2. Render and OCR only the image-heavy cells
+3. Merge the results using bounding box overlap rules
+
+This approach minimizes computational cost while ensuring complete
+text coverage. The merge rule eliminates duplicate text: when OCR
+and vector spans overlap significantly (IoU > 0.5), we keep the
+higher-confidence source.
+
+RESULTS
+============================================================
+
+Testing on our fixture suite of 10 known-tricky hybrid cases shows
+that the hybrid extraction pipeline achieves 95% accuracy on merge
+decisions and maintains WER < 3% on scanned regions.

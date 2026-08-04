@@ -1,0 +1,19 @@
+MERCHANT: MARTINI GROCERY
+123 MAIN ST
+ANYTOWN, USA 12345
+
+2024-08-03 14:32:15
+----------------------------------------
+MILK 1GAL                    $4.29
+BREAD WHL WHT                $2.49
+EGGS LRG DOZ                $3.99
+CHEESE CHEDDAR 8OZ          $5.79
+APPLES GALA 3LB             $6.49
+CHICKEN BRST 3LB            $8.99
+PASTA PENNE 1LB             $1.89
+SAUCE TOMATO 24OZ           $2.29
+BANANAS 2LB                 $1.89
+COFFEE GROUND 12OZ          $4.39
+Subtotal: $42.50
+Tax (8.5%): $3.61
+TOTAL: $46.11

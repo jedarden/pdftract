@@ -1,0 +1,25 @@
+INVOICE #2024-0815
+
+GLOBAL SERVICES INC.
+789 Commerce Blvd, Suite 200
+Chicago, IL 60601
+Phone: (312) 555-9876
+
+Bill To:
+Premier Logistics LLC
+200 Freight Way
+Detroit, MI 48201
+
+Description                 Qty   Rate         Amount
+Consulting Services - Phase 1    40  $125.00   $5,000.00
+Technical Support              15   $95.00   $1,425.00
+Documentation Review           8  $150.00   $1,200.00
+Project Management            12  $110.00   $1,320.00
+Software License (Annual)      1  $2,400.00  $2,400.00
+
+                                             Subtotal: $10,945.00
+                                                Tax (6%):    $656.70
+                                                TOTAL: $11,601.70
+
+APPROVED
+Aug 5, 2024
