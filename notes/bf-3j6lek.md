@@ -1,67 +1,105 @@
-# Bead Verification: bf-3j6lek - .NET SDK NuGet Package Scaffolding
-
-## Date: 2026-08-06
+# bf-3j6lek: .NET SDK NuGet Package Scaffold Verification
 
 ## Summary
-
-Verified and fixed the .NET SDK NuGet package structure for Pdftract. All acceptance criteria are now met.
-
-## Changes Made
-
-1. **Fixed README.md path issue** (`src/Pdftract/README.md`):
-   - Removed incorrect symlink that pointed to monorepo root
-   - Created proper SDK-specific README with usage examples
-   - Updated `.csproj` to include correct README path for packaging
-
-2. **Verified project structure**:
-   - All required folders exist: `src/Pdftract/`, `src/Pdftract/Models/`, `src/Pdftract/Codegen/`, `src/Pdftract/Source/`, `tests/Pdftract.Tests/`
-   - Solution file: `Pdftract.sln`
-   - Main project: `src/Pdftract/Pdftract.csproj`
-   - Test project: `tests/Pdftract.Tests/Pdftract.Tests.csproj`
+Verified that the .NET SDK NuGet package structure is properly scaffolded at `/home/coding/pdftract/pdftract-dotnet/`.
 
 ## Acceptance Criteria Status
 
-### PASS
+### ✅ Repository structure
+- Location: `/home/coding/pdftract/pdftract-dotnet/`
+- RepositoryUrl configured for: `https://github.com/jedarden/pdftract-dotnet`
 
-- ✅ **Repository structure exists**: `pdftract-dotnet/` directory with all required components
-- ✅ **`.csproj` exists and compiles**: Both main and test projects compile successfully
-- ✅ **All required folders exist**:
-  - `src/Pdftract/` (main source code)
-  - `src/Pdftract/Models/` (data model records)
-  - `src/Pdftract/Codegen/` (generated code - Errors.cs)
-  - `src/Pdftract/Source/` (Source.cs and related files)
-  - `tests/Pdftract.Tests/` (xUnit test project)
-- ✅ **Test project references main project**: `ProjectReference` configured correctly
-- ✅ **`dotnet build` succeeds**: Release configuration builds successfully (only 1 warning about unused variable)
-- ✅ **`dotnet pack` produces valid `.nupkg`**: Creates both `Pdftract.1.0.0.nupkg` and `Pdftract.1.0.0.snupkg`
-- ✅ **.NET 8.0 and 9.0 support documented**: `<TargetFrameworks>net9.0;net8.0</TargetFrameworks>` with inline comment explaining LTS support
+### ✅ Project Files
+- `src/Pdftract/Pdftract.csproj` - Main project file
+- `tests/Pdftract.Tests/Pdftract.Tests.csproj` - Test project file
+- `Pdftract.sln` - Solution file
 
-## NuGet Package Metadata (Verified)
+### ✅ Folder Structure
+```
+src/Pdftract/        - Main source code
+src/Pdftract/Models/ - Data model records (Document, Page, Metadata, etc.)
+src/Pdftract/Codegen/ - Generated code (Errors.cs, Types.cs, Methods.cs)
+src/Pdftract/Source/ - Source abstraction (Source.cs)
+tests/Pdftract.Tests/ - xUnit test project
+```
 
-The `src/Pdftract/Pdftract.csproj` contains complete NuGet metadata:
-- PackageId: Pdftract
-- Version: 1.0.0
-- Authors: Jedarden
-- Description: Full description of SDK capabilities
-- RepositoryUrl: https://github.com/jedarden/pdftract-dotnet
-- LicenseExpression: MIT
-- PackageReadmeFile: README.md
-- Symbol packages enabled (snupkg format)
-- AOT compatibility enabled
+### ✅ Project Configuration
+**Pdftract.csproj properties:**
+- TargetFrameworks: `net9.0;net8.0` (with comment documenting .NET 8.0 LTS and 9.0 LTS support)
+- ImplicitUsings: `enable`
+- Nullable: `enable`
+- GenerateDocumentationFile: `true`
+- NuGet metadata configured:
+  - Version: `1.0.0`
+  - Authors: `Jedarden`
+  - Description: `pdftract SDK for .NET — subprocess wrapper around the pdftract binary for PDF text extraction, OCR, search, and metadata.`
+  - PackageTags: `pdf;extract;ocr;text;search;metadata`
+  - PackageProjectUrl: `https://github.com/jedarden/pdftract`
+  - RepositoryUrl: `https://github.com/jedarden/pdftract-dotnet`
+  - RepositoryType: `git`
+  - LicenseExpression: `MIT`
+  - PackageReadmeFile: `README.md`
+  - IncludeSymbols: `true`
+  - SymbolPackageFormat: `snupkg`
 
-## Build Output Verification
+### ✅ Test Project Configuration
+**Pdftract.Tests.csproj:**
+- TargetFrameworks: `net9.0;net8.0`
+- ProjectReference: `../../src/Pdftract/Pdftract.csproj`
+- xUnit package references:
+  - `xunit` v2.9.2
+  - `xunit.runner.visualstudio` v2.8.2
+  - `Microsoft.NET.Test.Sdk` v17.12.0
+  - `System.Text.Json` v9.0.1
 
-Build succeeds with 0 errors, producing both nupkg and snupkg files.
+### ✅ Build Verification
+```bash
+$ dotnet build src/Pdftract/Pdftract.csproj --no-restore
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+```
 
-## Integration with CI/CD
+### ✅ Pack Verification
+```bash
+$ dotnet pack src/Pdftract/Pdftract.csproj --no-restore
+Successfully created package '.../Pdftract.1.0.0.nupkg'.
+Successfully created package '.../Pdftract.1.0.0.snupkg'.
+```
 
-Argo WorkflowTemplate `.ci/argo-workflows/pdftract-dotnet-publish.yaml` configured for full CI/CD pipeline.
+**NuGet package contents:**
+- `lib/net8.0/Pdftract.dll` (116,736 bytes)
+- `lib/net8.0/Pdftract.xml` (24,909 bytes) - documentation
+- `lib/net9.0/Pdftract.dll` (127,488 bytes)
+- `lib/net9.0/Pdftract.xml` (24,909 bytes) - documentation
+- `README.md` (728 bytes)
+- Proper `.nuspec` and metadata files
 
-## Files Modified
+### ✅ Placeholder Classes
+- `src/Pdftract/Pdftract.cs` - Main `Pdftract` class with async/sync methods
+- `src/Pdftract/Pdftract.Sync.cs` - Synchronous wrapper methods
+- `src/Pdftract/Options.cs` - `ExtractOptions` class
+- Model classes in `Models/` namespace (Document, Page, Metadata, etc.)
 
-1. `src/Pdftract/README.md` - Replaced symlink with SDK-specific README
-2. `src/Pdftract/Pdftract.csproj` - Fixed README path
+## PASS Criteria
+All acceptance criteria PASS:
+- [PASS] Repository structure exists at correct location
+- [PASS] Pdftract.csproj exists and compiles without errors
+- [PASS] All required folders exist (src/, Models/, Codegen/, tests/)
+- [PASS] Test project references main project
+- [PASS] dotnet build succeeds (0 errors)
+- [PASS] dotnet pack produces valid .nupkg file
+- [PASS] .NET 8.0 and 9.0 support documented in project comments
 
-## Conclusion
+## Notes
+- The SDK is configured to support both .NET 8.0 LTS and .NET 9.0 LTS
+- NuGet package includes symbol packages (.snupkg) for debugging
+- Documentation files are generated automatically
+- Package is ready for publishing to NuGet.org
 
-All acceptance criteria met. The .NET SDK NuGet package structure is properly scaffolded.
+## Files Verified
+- `/home/coding/pdftract/pdftract-dotnet/src/Pdftract/Pdftract.csproj`
+- `/home/coding/pdftract/pdftract-dotnet/tests/Pdftract.Tests/Pdftract.Tests.csproj`
+- `/home/coding/pdftract/pdftract-dotnet/Pdftract.sln`
+- Build artifacts in `src/Pdftract/bin/Release/`
+- NuGet package `Pdftract.1.0.0.nupkg`

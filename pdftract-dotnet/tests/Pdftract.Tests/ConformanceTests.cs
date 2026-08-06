@@ -269,4 +269,51 @@ public class ConformanceTests : IAsyncLifetime
 
         Assert.NotNull(matches);
     }
+
+    [Fact]
+    public void JsonDeserialization_SnakeCaseToPascalCase()
+    {
+        // Test that snake_case JSON correctly maps to PascalCase properties
+        var json = """
+        {
+            "schema_version": "1.0",
+            "pages": [
+                {
+                    "page": 1,
+                    "width": 612.0,
+                    "height": 792.0,
+                    "rotation": 0,
+                    "spans": [],
+                    "blocks": []
+                }
+            ],
+            "metadata": {
+                "title": "Test Document",
+                "author": "Test Author",
+                "created": "2024-01-01T00:00:00Z",
+                "page_count": 1,
+                "is_encrypted": false,
+                "is_signed": false
+            }
+        }
+        """;
+
+        var doc = JsonSerializer.Deserialize(json, Models.PdftractJsonContext.Default.Document);
+
+        Assert.NotNull(doc);
+        Assert.Equal("1.0", doc.SchemaVersion);
+        Assert.NotNull(doc.Pages);
+        Assert.Single(doc.Pages);
+        Assert.Equal(1, doc.Pages[0].PageIndex);
+        Assert.Equal(612.0, doc.Pages[0].Width);
+        Assert.Equal(792.0, doc.Pages[0].Height);
+        Assert.Equal(0, doc.Pages[0].Rotation);
+        Assert.NotNull(doc.Metadata);
+        Assert.Equal("Test Document", doc.Metadata.Title);
+        Assert.Equal("Test Author", doc.Metadata.Author);
+        Assert.Equal("2024-01-01T00:00:00Z", doc.Metadata.Created);
+        Assert.Equal(1, doc.Metadata.PageCount);
+        Assert.False(doc.Metadata.IsEncrypted);
+        Assert.False(doc.Metadata.IsSigned);
+    }
 }
