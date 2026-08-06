@@ -79,13 +79,18 @@ pub struct Type3Font {
     /// Uses the same encoding structure as Type1 fonts (named encoding
     /// + /Differences overlay).
     pub encoding: FontEncoding,
+    /// /FontBBox: font bounding box in glyph space [llx lly urx ury].
+    ///
+    /// Default is [0, 0, 0, 0] if not specified. Per PDF spec section 9.6.5,
+    /// this is the bounding box of all glyphs in the font.
+    pub font_bbox: [f32; 4],
     /// Diagnostics emitted during loading.
     pub diagnostics: Vec<Diagnostic>,
-    /// Rasterized glyph cache: glyph name -> 32x32 bitmap.
+    /// Rasterized glyph cache: glyph name -> dynamic bitmap.
     ///
     /// Cached to avoid re-rasterizing the same glyph multiple times
     /// during shape recognition.
-    raster_cache: Arc<DashMap<Arc<str>, [u8; 1024]>>,
+    raster_cache: Arc<DashMap<Arc<str>, Vec<u8>>>,
 }
 
 impl Type3Font {
@@ -120,6 +125,9 @@ impl Type3Font {
         // Parse /Encoding (defaults to StandardEncoding)
         let encoding = FontEncoding::parse_from_font(font_dict, None, &mut diagnostics);
 
+        // Parse /FontBBox (default to [0, 0, 0, 0] if not specified)
+        let font_bbox = Self::load_font_bbox(font_dict, &mut diagnostics);
+
         Self {
             char_procs,
             first_char,
@@ -128,6 +136,7 @@ impl Type3Font {
             font_matrix,
             resources,
             encoding,
+            font_bbox,
             diagnostics,
             raster_cache: Arc::new(DashMap::new()),
         }
@@ -355,6 +364,36 @@ impl Type3Font {
         }
     }
 
+    /// Load /FontBBox.
+    ///
+    /// Returns the font bounding box [llx lly urx ury] in glyph space.
+    /// Defaults to [0, 0, 0, 0] if not specified.
+    fn load_font_bbox(font_dict: &PdfDict, diagnostics: &mut Vec<Diagnostic>) -> [f32; 4] {
+        match font_dict.get("/FontBBox") {
+            Some(PdfObject::Array(arr)) => {
+                let mut bbox = [0f32; 4];
+                for (i, elem) in arr.iter().take(4).enumerate() {
+                    bbox[i] = elem
+                        .as_real()
+                        .or(elem.as_int().map(|v| v as f64))
+                        .unwrap_or(0.0) as f32;
+                }
+                bbox
+            }
+            Some(PdfObject::Ref(_)) => {
+                diagnostics.push(Diagnostic::with_static_no_offset(
+                    DiagCode::FontParseFailed,
+                    "/FontBBox is indirect reference; treating as [0, 0, 0, 0]",
+                ));
+                [0.0, 0.0, 0.0, 0.0]
+            }
+            _ => {
+                // Default bounding box if not specified
+                [0.0, 0.0, 0.0, 0.0]
+            }
+        }
+    }
+
     /// Get the advance width for a character code in text space units.
     ///
     /// Returns 0 for codes outside [first_char, last_char].
@@ -406,19 +445,19 @@ impl Type3Font {
     /// Get a cached rasterized bitmap for a glyph.
     ///
     /// Returns None if the glyph is not in the cache.
-    pub fn get_cached_bitmap(&self, glyph_name: &str) -> Option<[u8; 1024]> {
+    pub fn get_cached_bitmap(&self, glyph_name: &str) -> Option<Vec<u8>> {
         self.raster_cache
             .get(glyph_name)
-            .map(|entry| *entry.value())
+            .map(|entry| entry.value().clone())
     }
 
     /// Cache a rasterized bitmap for a glyph.
-    pub fn cache_bitmap(&self, glyph_name: Arc<str>, bitmap: [u8; 1024]) {
+    pub fn cache_bitmap(&self, glyph_name: Arc<str>, bitmap: Vec<u8>) {
         self.raster_cache.entry(glyph_name).or_insert(bitmap);
     }
 
     /// Get the raster cache (for testing and diagnostics).
-    pub fn raster_cache(&self) -> &DashMap<Arc<str>, [u8; 1024]> {
+    pub fn raster_cache(&self) -> &DashMap<Arc<str>, Vec<u8>> {
         &self.raster_cache
     }
 }

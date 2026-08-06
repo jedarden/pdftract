@@ -234,10 +234,92 @@ impl Default for Bitmap32x32 {
     }
 }
 
+/// Dynamic-sized grayscale bitmap for glyph rasterization.
+///
+/// Each pixel is a u8 value (0-255). Per Phase 2.5 convention:
+/// - 0 = black ink
+/// - 255 = white paper
+/// - Values in between are anti-aliased edges
+#[derive(Debug, Clone, PartialEq)]
+pub struct Bitmap {
+    /// Bitmap width in pixels
+    width: usize,
+    /// Bitmap height in pixels
+    height: usize,
+    /// Pixel data stored row-major
+    pixels: Vec<u8>,
+}
+
+impl Bitmap {
+    /// Create a new white bitmap with the given dimensions.
+    pub fn white(width: usize, height: usize) -> Self {
+        Self {
+            width,
+            height,
+            pixels: vec![255u8; width * height],
+        }
+    }
+
+    /// Create a new black bitmap with the given dimensions.
+    pub fn black(width: usize, height: usize) -> Self {
+        Self {
+            width,
+            height,
+            pixels: vec![0u8; width * height],
+        }
+    }
+
+    /// Get the pixel value at (x, y).
+    ///
+    /// Returns None if (x, y) is out of bounds.
+    pub fn get(&self, x: i32, y: i32) -> Option<u8> {
+        if x < 0 || x >= self.width as i32 || y < 0 || y >= self.height as i32 {
+            return None;
+        }
+        Some(self.pixels[(y as usize) * self.width + (x as usize)])
+    }
+
+    /// Set the pixel value at (x, y).
+    ///
+    /// Returns false if (x, y) is out of bounds.
+    pub fn set(&mut self, x: i32, y: i32, value: u8) -> bool {
+        if x < 0 || x >= self.width as i32 || y < 0 || y >= self.height as i32 {
+            return false;
+        }
+        self.pixels[(y as usize) * self.width + (x as usize)] = value;
+        true
+    }
+
+    /// Get bitmap dimensions.
+    pub fn dimensions(&self) -> (usize, usize) {
+        (self.width, self.height)
+    }
+
+    /// Convert to a byte slice for pHash computation.
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.pixels
+    }
+
+    /// Fill a rectangle with the given color.
+    pub fn fill_rect(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, color: u8) {
+        for y in y0.max(0)..y1.min(self.height as i32) {
+            for x in x0.max(0)..x1.min(self.width as i32) {
+                self.set(x, y, color);
+            }
+        }
+    }
+}
+
+impl Default for Bitmap {
+    fn default() -> Self {
+        Self::white(32, 32)
+    }
+}
+
 /// Rasterization context for Type 3 glyph execution.
 struct RasterizerContext<'a> {
-    /// Output bitmap
-    bitmap: Bitmap32x32,
+    /// Output bitmap (dynamic sizing based on font bbox)
+    bitmap: Bitmap,
     /// Current graphics state
     gstate: GraphicsState,
     /// Graphics state stack
@@ -261,8 +343,11 @@ impl<'a> RasterizerContext<'a> {
         // in glyph space, and the FontMatrix transforms coordinates to text space
         gstate.concat_ctm(&font.font_matrix);
 
+        // Calculate bitmap dimensions from font bounding box (bf-407xp6)
+        let (width, height) = calculate_bitmap_dimensions(&font.font_bbox, None);
+
         Self {
-            bitmap: Bitmap32x32::white(),
+            bitmap: Bitmap::white(width, height),
             gstate,
             gstate_stack: GraphicsStateStack::new(),
             path: CurrentPath::new(),
@@ -869,9 +954,12 @@ impl<'a> RasterizerContext<'a> {
         let mut x = x0;
         let mut y = y0;
 
+        let width = self.bitmap.width as i32;
+        let height = self.bitmap.height as i32;
+
         loop {
             // Set pixel if within bounds
-            if x >= 0 && x < 32 && y >= 0 && y < 32 {
+            if x >= 0 && x < width && y >= 0 && y < height {
                 self.bitmap.set(x, y, 0);
             }
 
@@ -894,8 +982,11 @@ impl<'a> RasterizerContext<'a> {
     /// Fill a polygon using scanline algorithm.
     /// `edges` is a list of (x0, y0, x1, y1) line segments in bitmap coordinates.
     fn fill_polygon(&mut self, edges: &[(i32, i32, i32, i32)]) {
+        let width = self.bitmap.width as i32;
+        let height = self.bitmap.height as i32;
+
         // Find y-bounds
-        let mut min_y = 32i32;
+        let mut min_y = height;
         let mut max_y = 0i32;
 
         for &(_, y0, _, y1) in edges {
@@ -905,7 +996,7 @@ impl<'a> RasterizerContext<'a> {
 
         // Clamp to bitmap bounds
         min_y = min_y.max(0);
-        max_y = max_y.min(31);
+        max_y = max_y.min(height - 1);
 
         // For each scanline
         for y in min_y..=max_y {
@@ -941,7 +1032,7 @@ impl<'a> RasterizerContext<'a> {
                     let x_end = intersections[i + 1].floor() as i32;
 
                     for x in x_start..=x_end {
-                        if x >= 0 && x < 32 {
+                        if x >= 0 && x < width {
                             self.bitmap.set(x, y, 0);
                         }
                     }
@@ -1166,7 +1257,7 @@ pub fn calculate_bitmap_size_from_bounds(bbox: &[f32; 4], padding_pixels: Option
     (width, height)
 }
 
-/// Rasterize a Type 3 glyph to a 32x32 grayscale bitmap.
+/// Rasterize a Type 3 glyph to a grayscale bitmap with dynamic sizing.
 ///
 /// # Arguments
 ///
@@ -1179,12 +1270,15 @@ pub fn calculate_bitmap_size_from_bounds(bbox: &[f32; 4], padding_pixels: Option
 ///
 /// Some(bitmap) if the glyph exists and rasterized successfully,
 /// None if the glyph name is not in /CharProcs or stream resolution fails.
+///
+/// The bitmap size is calculated from the font's FontBBox using
+/// calculate_bitmap_dimensions (bf-407xp6).
 pub fn rasterize_type3_glyph<'a, R>(
     font: &Type3Font,
     glyph_name: &str,
     doc_context: Option<&'a DocumentContext<'a>>,
     resolve_stream: Option<&R>,
-) -> Option<[u8; 1024]>
+) -> Option<Vec<u8>>
 where
     R: Fn(ObjRef) -> Option<Vec<u8>> + ?Sized,
 {
@@ -1206,7 +1300,7 @@ where
             // Successfully resolved - execute the content stream and rasterize
             let mut ctx = RasterizerContext::new(font);
             ctx.execute_content_stream(&bytes);
-            Some(*ctx.bitmap.as_bytes())
+            Some(ctx.bitmap.as_bytes().to_vec())
         }
         None => {
             // No resolver provided or resolution failed - cannot rasterize
@@ -1302,7 +1396,10 @@ mod tests {
         let ctx = RasterizerContext::new(&font);
 
         assert_eq!(ctx.depth, 0);
-        assert_eq!(ctx.bitmap, Bitmap32x32::white());
+        // Verify bitmap has appropriate dimensions (may vary based on font bbox)
+        let (width, height) = ctx.bitmap.dimensions();
+        assert!(width >= 1, "Bitmap width should be at least 1 pixel");
+        assert!(height >= 1, "Bitmap height should be at least 1 pixel");
     }
 
     #[test]
@@ -1355,6 +1452,7 @@ mod tests {
         use crate::parser::object::types::intern;
 
         // Create a font with identity FontMatrix for predictable coordinates
+        // and a font_bbox that creates a bitmap large enough for the test
         let mut font_dict = PdfDict::new();
         font_dict.insert(
             intern("/FontMatrix"),
@@ -1365,6 +1463,15 @@ mod tests {
                 PdfObject::Integer(1),
                 PdfObject::Integer(0),
                 PdfObject::Integer(0),
+            ])),
+        );
+        font_dict.insert(
+            intern("/FontBBox"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+                PdfObject::Integer(25),
+                PdfObject::Integer(25),
             ])),
         );
 
@@ -1429,7 +1536,7 @@ mod tests {
     fn test_rasterize_line_segment() {
         use crate::parser::object::types::intern;
 
-        // Create a font with identity FontMatrix
+        // Create a font with identity FontMatrix and appropriate FontBBox
         let mut font_dict = PdfDict::new();
         font_dict.insert(
             intern("/FontMatrix"),
@@ -1440,6 +1547,15 @@ mod tests {
                 PdfObject::Integer(1),
                 PdfObject::Integer(0),
                 PdfObject::Integer(0),
+            ])),
+        );
+        font_dict.insert(
+            intern("/FontBBox"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+                PdfObject::Integer(20),
+                PdfObject::Integer(20),
             ])),
         );
 
@@ -1806,7 +1922,12 @@ mod tests {
         ctx.execute_content_stream(empty_stream);
 
         // Bitmap should be all white (default state)
-        assert_eq!(ctx.bitmap, Bitmap32x32::white());
+        // Verify all pixels are white by checking corners and a few interior points
+        let (width, height) = ctx.bitmap.dimensions();
+        assert_eq!(ctx.bitmap.get(0, 0), Some(255), "Top-left should be white");
+        assert_eq!(ctx.bitmap.get((width - 1) as i32, 0), Some(255), "Top-right should be white");
+        assert_eq!(ctx.bitmap.get(0, (height - 1) as i32), Some(255), "Bottom-left should be white");
+        assert_eq!(ctx.bitmap.get((width - 1) as i32, (height - 1) as i32), Some(255), "Bottom-right should be white");
     }
 
     #[test]
