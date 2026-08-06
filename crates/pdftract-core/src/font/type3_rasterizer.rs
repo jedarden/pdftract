@@ -527,25 +527,171 @@ impl<'a> RasterizerContext<'a> {
     }
 
     /// Rasterize the current path to the bitmap.
-    fn rasterize_path(&mut self, _stroke: bool) {
-        // Simple scanline rasterization for the path
-        // For now, just fill rectangles (re operator)
-        // A full implementation would scan-convert Bezier curves
+    fn rasterize_path(&mut self, stroke: bool) {
+        // Collect path segments from commands
+        let mut segments = Vec::new();
+        let mut current_point = None;
+        let mut move_point = None;
 
         for cmd in &self.path.commands {
-            if let PathCommand::Rect(x, y, width, height) = cmd {
-                // Transform rectangle by CTM
-                let (x0, y0) = self.gstate.ctm.transform_point(*x, *y);
-                let (x1, y1) = self.gstate.ctm.transform_point(x + width, y + height);
+            match cmd {
+                PathCommand::MoveTo(p) => {
+                    current_point = Some(*p);
+                    move_point = Some(*p);
+                }
+                PathCommand::LineTo(p) => {
+                    if let Some(start) = current_point {
+                        segments.push((start, *p));
+                    }
+                    current_point = Some(*p);
+                }
+                PathCommand::Rect(x, y, width, height) => {
+                    // Convert rectangle to 4 line segments
+                    let x0 = *x;
+                    let y0 = *y;
+                    let x1 = x + width;
+                    let y1 = y + height;
 
-                // Convert to bitmap coordinates (round to nearest pixel)
-                let bx0 = x0.round() as i32;
-                let by0 = y0.round() as i32;
-                let bx1 = x1.round() as i32;
-                let by1 = y1.round() as i32;
+                    // Rectangle: (x0,y0) -> (x1,y0) -> (x1,y1) -> (x0,y1) -> (x0,y0)
+                    let p0 = Point::new(x0, y0);
+                    let p1 = Point::new(x1, y0);
+                    let p2 = Point::new(x1, y1);
+                    let p3 = Point::new(x0, y1);
 
-                // Fill with black (0 = black ink)
-                self.bitmap.fill_rect(bx0, by0, bx1, by1, 0);
+                    segments.push((p0, p1));
+                    segments.push((p1, p2));
+                    segments.push((p2, p3));
+                    segments.push((p3, p0));
+
+                    current_point = Some(p0);
+                    move_point = Some(p0);
+                }
+                PathCommand::ClosePath => {
+                    // Close path by connecting to the move point
+                    if let (Some(current), Some(move_p)) = (current_point, move_point) {
+                        if current != move_p {
+                            segments.push((current, move_p));
+                        }
+                    }
+                    current_point = move_point;
+                }
+                _ => {
+                    // CubicTo and other curve commands are not yet implemented
+                    // They would require scan-converting Bezier curves
+                }
+            }
+        }
+
+        // Transform all segments and collect edges
+        let mut edges = Vec::new();
+        for (p0, p1) in segments {
+            // Transform points by CTM
+            let (x0, y0) = self.gstate.ctm.transform_point(p0.x, p0.y);
+            let (x1, y1) = self.gstate.ctm.transform_point(p1.x, p1.y);
+
+            // Convert to bitmap coordinates (round to nearest pixel)
+            let bx0 = x0.round() as i32;
+            let by0 = y0.round() as i32;
+            let bx1 = x1.round() as i32;
+            let by1 = y1.round() as i32;
+
+            edges.push((bx0, by0, bx1, by1));
+        }
+
+        if stroke {
+            // Stroke mode: draw line outlines
+            for (x0, y0, x1, y1) in edges {
+                self.draw_line(x0, y0, x1, y1);
+            }
+        } else {
+            // Fill mode: use scanline polygon fill
+            self.fill_polygon(&edges);
+        }
+    }
+
+    /// Draw a line segment from (x0, y0) to (x1, y1) using Bresenham's algorithm.
+    fn draw_line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) {
+        let dx = (x1 - x0).abs();
+        let dy = (y1 - y0).abs();
+        let sx = if x0 < x1 { 1 } else { -1 };
+        let sy = if y0 < y1 { 1 } else { -1 };
+
+        let mut err = dx - dy;
+        let mut x = x0;
+        let mut y = y0;
+
+        loop {
+            // Set pixel if within bounds
+            if x >= 0 && x < 32 && y >= 0 && y < 32 {
+                self.bitmap.set(x, y, 0);
+            }
+
+            if x == x1 && y == y1 {
+                break;
+            }
+
+            let e2 = 2 * err;
+            if e2 > -dy {
+                err -= dy;
+                x += sx;
+            }
+            if e2 < dx {
+                err += dx;
+                y += sy;
+            }
+        }
+    }
+
+    /// Fill a polygon using scanline algorithm.
+    /// `edges` is a list of (x0, y0, x1, y1) line segments in bitmap coordinates.
+    fn fill_polygon(&mut self, edges: &[(i32, i32, i32, i32)]) {
+        // Find y-bounds
+        let mut min_y = 32i32;
+        let mut max_y = 0i32;
+
+        for &(_, y0, _, y1) in edges {
+            min_y = min_y.min(y0.min(y1));
+            max_y = max_y.max(y0.max(y1));
+        }
+
+        // Clamp to bitmap bounds
+        min_y = min_y.max(0);
+        max_y = max_y.min(31);
+
+        // For each scanline
+        for y in min_y..=max_y {
+            let mut intersections = Vec::new();
+
+            // Find all intersections with this scanline
+            for &(x0, y0, x1, y1) in edges {
+                // Check if edge spans this scanline
+                if (y0 <= y && y1 > y) || (y1 <= y && y0 > y) {
+                    // Calculate x intersection
+                    // x = x0 + (y - y0) * (x1 - x0) / (y1 - y0)
+                    let dy = y1 - y0;
+                    if dy != 0 {
+                        let t = (y - y0) as f64 / dy as f64;
+                        let x = x0 as f64 + t * (x1 - x0) as f64;
+                        intersections.push(x);
+                    }
+                }
+            }
+
+            // Sort intersections
+            intersections.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+            // Fill between pairs of intersections
+            for i in (0..intersections.len()).step_by(2) {
+                if i + 1 < intersections.len() {
+                    let x_start = intersections[i].ceil() as i32;
+                    let x_end = intersections[i + 1].floor() as i32;
+
+                    for x in x_start..=x_end {
+                        if x >= 0 && x < 32 {
+                            self.bitmap.set(x, y, 0);
+                        }
+                    }
+                }
             }
         }
     }
@@ -581,8 +727,8 @@ where
     // Check if glyph exists and get its ObjRef
     let char_proc_ref = font.char_proc(glyph_name)?;
 
-    // Document context is now available for future ObjRefPtr resolution
-    // TODO: In next step, use doc_context to dereference ObjRefPtr when needed
+    // Document context is passed for potential future use (e.g., form XObject resolution)
+    // Stream resolution happens via the resolver callback pattern
     let _doc_context = doc_context;
 
     // Try to resolve the content stream if a resolver is provided
@@ -752,5 +898,45 @@ mod tests {
             rasterize_type3_glyph(&font, "unknown", None::<&DocumentContext>, None::<&StreamResolverFn>),
             None
         );
+    }
+
+    #[test]
+    fn test_rasterize_line_segment() {
+        let font_dict = PdfDict::new();
+        let font = Type3Font::load(&font_dict);
+        let mut ctx = RasterizerContext::new(&font);
+
+        // Draw a diagonal line from (5,5) to (15,15)
+        ctx.path.move_to(Point::new(5.0, 5.0));
+        ctx.path.line_to(Point::new(15.0, 15.0));
+        ctx.rasterize_path(true); // stroke mode
+
+        // Verify some pixels along the line are set
+        assert_eq!(ctx.bitmap.get(5, 5), Some(0)); // Start point
+        assert_eq!(ctx.bitmap.get(10, 10), Some(0)); // Middle point
+        assert_eq!(ctx.bitmap.get(15, 15), Some(0)); // End point
+    }
+
+    #[test]
+    fn test_rasterize_filled_triangle() {
+        let font_dict = PdfDict::new();
+        let font = Type3Font::load(&font_dict);
+        let mut ctx = RasterizerContext::new(&font);
+
+        // Draw a triangle: (10,5) -> (15,15) -> (5,15) -> close
+        ctx.path.move_to(Point::new(10.0, 5.0));
+        ctx.path.line_to(Point::new(15.0, 15.0));
+        ctx.path.line_to(Point::new(5.0, 15.0));
+        ctx.path.close_path();
+        ctx.rasterize_path(false); // fill mode
+
+        // Verify interior pixels are filled
+        assert_eq!(ctx.bitmap.get(10, 10), Some(0)); // Center interior
+        assert_eq!(ctx.bitmap.get(8, 12), Some(0)); // Left interior
+        assert_eq!(ctx.bitmap.get(12, 12), Some(0)); // Right interior
+
+        // Verify exterior pixels are still white
+        assert_eq!(ctx.bitmap.get(4, 10), Some(255)); // Outside left
+        assert_eq!(ctx.bitmap.get(16, 10), Some(255)); // Outside right
     }
 }
