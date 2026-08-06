@@ -1,0 +1,49 @@
+{
+  "fixture_name": "hybrid-002-vector-form-over-scan",
+  "fixture_id": "hybrid-002-vector-form-over-scan",
+  "description": "Vector form field annotations and text overlays positioned on top of a scanned form background",
+  "source": {
+    "type": "synthetic",
+    "generation_method": "Generated via tests/fixtures/hybrid/hybrid-002-generator.py using raw PDF construction: vector form field annotations (field labels, small red checkboxes, underline rectangles) with 1-bit grayscale image XObject (scanned employee information form background)",
+    "generated_date": "2026-08-06"
+  },
+  "pages_with_hybrid_content": [
+    1
+  ],
+  "hybrid_behavior": {
+    "vector_regions": "Form field annotations scattered throughout page: field label text (Helvetica, 9-10pt), red checkbox indicators (top-left corner), underline rectangles for text input fields, overlay annotations describing each field",
+    "scanned_regions": "Complete form background (all 8x8 grid cells): 1-bit grayscale image XObject with employee information form layout including title, field labels, underline patterns, section headers, certification text, and signature line",
+    "overlap_type": "partial-overlay",
+    "overlap_description": "Vector form field annotations overlay scanned form background at multiple positions: field name overlays, checkbox overlays in corners, underline rectangles directly over scanned underlines, creating complex overlapping patterns"
+  },
+  "grid_cell_coverage": {
+    "total_cells": 64,
+    "hybrid_cells_approx": 48,
+    "hybrid_percentage": 75.0,
+    "hybrid_cell_locations": "Most grid cells contain both vector annotations (field labels, checkboxes, underlines) and scanned form background. Only top and bottom edge cells may be predominantly scanned-only."
+  },
+  "classification_challenges": [
+    "Scattered vector distribution: vector annotations are distributed across the page rather than concentrated in a single region, making boundary detection difficult",
+    "Complex merge patterns: multiple small vector spans (text, rectangles, checkboxes) overlapping with larger scanned regions require precise bbox overlap calculations",
+    "Field-level extraction requires accurate OCR targeting to avoid duplicating vector field labels with scanned labels",
+    "Tests cell-level OCR granularity when vector form fields are interspersed throughout predominantly scanned form page",
+    "Vector and scanned text may overlap significantly (field labels), testing merge rule IoU thresholds",
+    "Small vector elements (checkboxes) may be missed by coarse grid detection"
+  ],
+  "test_focus": [
+    "Scattered vector extraction through cell-level OCR on form fields",
+    "Complex merge pattern handling with multiple overlapping vector and scanned regions",
+    "Form field isolation from scanned background labels",
+    "Cell-level OCR precision on hybrid forms with field annotations",
+    "Small vector element detection (checkbox indicators)",
+    "Merge rule accuracy when vector and scanned text overlap significantly"
+  ],
+  "expected_classification": {
+    "page_class": "Hybrid",
+    "hybrid_cells": "~48 cells (75% of page)",
+    "confidence_range": "0.80-0.95"
+  },
+  "file_size_bytes": 1507,
+  "validation_status": "pending",
+  "notes": "Synthetic fixture simulating a common real-world hybrid PDF pattern: a scanned paper form with vector fillable field annotations overlaid. This tests the hybrid extraction pipeline's ability to handle scattered vector content distributed across a predominantly scanned page. The vector elements include form field labels, small red checkbox indicators, underline rectangles for text input areas, and descriptive overlay annotations. The scanned background provides a complete employee information form layout. Key challenge: accurate merge of vector and scanned text when they describe the same field (e.g., 'Full Name:' appears in both vector and scanned regions)."
+}
