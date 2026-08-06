@@ -719,6 +719,11 @@ pub type StreamResolverFn = dyn Fn(ObjRef) -> Option<Vec<u8>> + Send + Sync;
 ///
 /// `Ok(PdfObject)` if the reference was successfully resolved,
 /// `Err` if resolution failed (not found, I/O error, or circular reference).
+///
+/// # Error Context
+///
+/// Error messages include the object reference being dereferenced to aid debugging.
+/// For example: "Failed to resolve Type3 char_proc reference 10 0 R: object not found"
 pub fn deref_char_proc_ref(
     char_proc_ref: ObjRef,
     doc_context: Option<&DocumentContext>,
@@ -726,20 +731,39 @@ pub fn deref_char_proc_ref(
     use crate::parser::xref::ResolveError;
 
     let doc_context = doc_context.ok_or_else(|| {
-        ResolveError::Io("DocumentContext not provided - cannot dereference char_proc_ref".to_string())
+        ResolveError::Io(format!(
+            "DocumentContext not provided - cannot dereference char_proc_ref {}",
+            char_proc_ref
+        ))
     })?;
 
     let resolver = doc_context.resolver.ok_or_else(|| {
-        ResolveError::Io("XrefResolver not provided in DocumentContext".to_string())
+        ResolveError::Io(format!(
+            "XrefResolver not provided in DocumentContext - cannot resolve char_proc_ref {}",
+            char_proc_ref
+        ))
     })?;
 
     let source = doc_context.source.ok_or_else(|| {
-        ResolveError::Io("PdfSource not provided in DocumentContext - cannot resolve stream".to_string())
+        ResolveError::Io(format!(
+            "PdfSource not provided in DocumentContext - cannot resolve stream for char_proc_ref {}",
+            char_proc_ref
+        ))
     })?;
 
     // Use resolver.resolve_with_source to get the actual PDF object
     // source is already &dyn PdfSource, which is what resolve_with_source expects
-    resolver.resolve_with_source(char_proc_ref, source)
+    resolver.resolve_with_source(char_proc_ref, source).map_err(|e| {
+        // Add context about which reference failed
+        match e {
+            ResolveError::NotFound(_) => ResolveError::NotFound(char_proc_ref),
+            ResolveError::CircularRef(_) => ResolveError::CircularRef(char_proc_ref),
+            ResolveError::Io(msg) => ResolveError::Io(format!(
+                "Failed to resolve Type3 char_proc_ref {}: {}",
+                char_proc_ref, msg
+            )),
+        }
+    })
 }
 
 /// Rasterize a Type 3 glyph to a 32x32 grayscale bitmap.

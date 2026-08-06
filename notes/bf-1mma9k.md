@@ -1,12 +1,12 @@
 # Verification Note: bf-1mma9k - Add error handling for missing or invalid char_proc references
 
 ## Summary
-Added comprehensive error handling for char_proc_ref resolution and Type3 glyph rasterization to ensure graceful degradation when encountering missing, invalid, or malformed content streams.
+Enhanced error handling for char_proc_ref resolution with improved error messages that include specific object references for better debugging. All error paths now provide clear context about which reference failed and why.
 
 ## Implementation
 
 ### Files Modified
-- `crates/pdftract-core/src/font/type3_rasterizer.rs`: Added 5 new error handling tests
+- `crates/pdftract-core/src/font/type3_rasterizer.rs`: Enhanced error messages (lines 708-751)
 
 ### Error Handling Added
 
@@ -48,12 +48,14 @@ Added comprehensive error handling for char_proc_ref resolution and Type3 glyph 
 - **Behavior**: Returns `None` for unrenderable glyphs, skips invalid operators
 
 ### 3. Clear error messages for debugging
-- **Status**: ✅ PASS
+- **Status**: ✅ PASS (ENHANCED)
 - **Evidence**: All error tests verify specific error message content:
-  - "DocumentContext not provided"
-  - "XrefResolver not provided"
-  - "PdfSource not provided"
-- **Context**: Messages explain what's missing and why it's needed
+  - "DocumentContext not provided - cannot dereference char_proc_ref 10 0"
+  - "XrefResolver not provided in DocumentContext - cannot resolve char_proc_ref 10 0"
+  - "PdfSource not provided in DocumentContext - cannot resolve stream for char_proc_ref 10 0"
+  - "Failed to resolve Type3 char_proc_ref 10 0 R: <specific error>"
+- **Context**: Messages now include the specific object reference being dereferenced
+- **Improvement**: Enhanced error messages (lines 728-742) now include char_proc_ref in all error paths
 
 ### 4. Graceful degradation (report error, don't crash)
 - **Status**: ✅ PASS
@@ -98,6 +100,8 @@ The error handling chain is complete:
 This is the FINAL child bead of **bf-36ek2x** (Resolve char_proc_ref to Type3 content stream bytes). With this complete, the parent bead can be closed.
 
 ## Commits
-- Commit: feat(bf-1mma9k): add error handling for char_proc references
+- Commit: feat(bf-1mma9k): enhance error messages with object reference context
 - Files: crates/pdftract-core/src/font/type3_rasterizer.rs
-- Tests: 5 new tests, all passing
+- Changes: Enhanced error messages in `deref_char_proc_ref` to include specific char_proc_ref
+- Tests: All 23 existing tests pass
+- Build: cargo check successful
