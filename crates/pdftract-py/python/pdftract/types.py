@@ -6,7 +6,7 @@ All types are implemented as frozen dataclasses for immutability.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Self, Tuple
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +35,20 @@ class Metadata:
     created: Optional[str] = None
     modified: Optional[str] = None
 
+    @classmethod
+    def from_native(cls, native_dict: dict) -> Self:
+        return cls(
+            page_count=native_dict.get("page_count", 0),
+            title=native_dict.get("title"),
+            author=native_dict.get("author"),
+            subject=native_dict.get("subject"),
+            keywords=native_dict.get("keywords"),
+            creator=native_dict.get("creator"),
+            producer=native_dict.get("producer"),
+            created=native_dict.get("created"),
+            modified=native_dict.get("modified"),
+        )
+
     def __repr__(self) -> str:
         cls_name = self.__class__.__name__
         return f"{cls_name}(page_count={self.page_count}, title={self.title!r})"
@@ -58,6 +72,16 @@ class Span:
     size: float
     confidence: Optional[float] = None
 
+    @classmethod
+    def from_native(cls, native_dict: dict) -> Self:
+        return cls(
+            text=native_dict["text"],
+            bbox=tuple(native_dict["bbox"]),
+            font=native_dict["font"],
+            size=native_dict["size"],
+            confidence=native_dict.get("confidence"),
+        )
+
     def __repr__(self) -> str:
         cls_name = self.__class__.__name__
         text_preview = self.text[:20] if self.text else ""
@@ -79,6 +103,15 @@ class Block:
     text: str
     bbox: Tuple[float, float, float, float]
     level: Optional[int] = None
+
+    @classmethod
+    def from_native(cls, native_dict: dict) -> Self:
+        return cls(
+            kind=native_dict["kind"],
+            text=native_dict["text"],
+            bbox=tuple(native_dict["bbox"]),
+            level=native_dict.get("level"),
+        )
 
     def __repr__(self) -> str:
         cls_name = self.__class__.__name__
@@ -110,6 +143,19 @@ class Cell:
     colspan: int
     is_header_row: bool
 
+    @classmethod
+    def from_native(cls, native_dict: dict) -> Self:
+        return cls(
+            bbox=tuple(native_dict["bbox"]),
+            text=native_dict["text"],
+            spans=list(native_dict["spans"]),
+            row=int(native_dict["row"]),
+            col=int(native_dict["col"]),
+            rowspan=int(native_dict["rowspan"]),
+            colspan=int(native_dict["colspan"]),
+            is_header_row=bool(native_dict["is_header_row"]),
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class Row:
@@ -124,6 +170,14 @@ class Row:
     bbox: Tuple[float, float, float, float]
     cells: List[Cell]
     is_header: bool
+
+    @classmethod
+    def from_native(cls, native_dict: dict) -> Self:
+        return cls(
+            bbox=tuple(native_dict["bbox"]),
+            cells=[Cell.from_native(cell_dict) for cell_dict in native_dict["cells"]],
+            is_header=bool(native_dict["is_header"]),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,6 +204,19 @@ class Table:
     continued_from_prev: bool
     page_index: int
 
+    @classmethod
+    def from_native(cls, native_dict: dict) -> Self:
+        return cls(
+            id=native_dict["id"],
+            bbox=tuple(native_dict["bbox"]),
+            rows=[Row.from_native(row_dict) for row_dict in native_dict["rows"]],
+            header_rows=int(native_dict["header_rows"]),
+            detection_method=native_dict["detection_method"],
+            continued=bool(native_dict["continued"]),
+            continued_from_prev=bool(native_dict["continued_from_prev"]),
+            page_index=int(native_dict["page_index"]),
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class Page:
@@ -171,6 +238,17 @@ class Page:
     spans: List[Span] = ()
     blocks: List[Block] = ()
 
+    @classmethod
+    def from_native(cls, native_dict: dict) -> Self:
+        return cls(
+            page=int(native_dict["page"]),
+            width=int(native_dict["width"]),
+            height=int(native_dict["height"]),
+            rotation=int(native_dict.get("rotation", 0)),
+            spans=tuple(Span.from_native(span_dict) for span_dict in native_dict.get("spans", [])),
+            blocks=tuple(Block.from_native(block_dict) for block_dict in native_dict.get("blocks", [])),
+        )
+
     def __repr__(self) -> str:
         cls_name = self.__class__.__name__
         return f"{cls_name}(page={self.page}, width={self.width}, height={self.height}, spans={len(self.spans)}, blocks={len(self.blocks)})"
@@ -189,6 +267,14 @@ class Document:
     schema_version: str
     pages: List[Page]
     metadata: Metadata
+
+    @classmethod
+    def from_native(cls, native_dict: dict) -> Self:
+        return cls(
+            schema_version=native_dict["schema_version"],
+            pages=[Page.from_native(page_dict) for page_dict in native_dict["pages"]],
+            metadata=Metadata.from_native(native_dict["metadata"]),
+        )
 
     def __repr__(self) -> str:
         cls_name = self.__class__.__name__
@@ -210,6 +296,15 @@ class Match:
     page: int
     bbox: Tuple[float, float, float, float]
     context: Optional[Dict[str, str]] = None
+
+    @classmethod
+    def from_native(cls, native_dict: dict) -> Self:
+        return cls(
+            text=native_dict["text"],
+            page=int(native_dict["page"]),
+            bbox=tuple(native_dict["bbox"]),
+            context=native_dict.get("context"),
+        )
 
     def __repr__(self) -> str:
         cls_name = self.__class__.__name__
@@ -233,6 +328,16 @@ class Fingerprint:
     page_count: int = 0
     metadata: Optional[Metadata] = None
 
+    @classmethod
+    def from_native(cls, native_dict: dict) -> Self:
+        metadata_dict = native_dict.get("metadata")
+        return cls(
+            hash=native_dict["hash"],
+            fast_hash=native_dict["fast_hash"],
+            page_count=int(native_dict.get("page_count", 0)),
+            metadata=Metadata.from_native(metadata_dict) if metadata_dict else None,
+        )
+
     def __repr__(self) -> str:
         cls_name = self.__class__.__name__
         hash_preview = self.hash[:12] if self.hash else ""
@@ -254,6 +359,15 @@ class Classification:
     confidence: float
     tags: List[str] = ()
     heuristics: Optional[Dict[str, bool]] = None
+
+    @classmethod
+    def from_native(cls, native_dict: dict) -> Self:
+        return cls(
+            category=native_dict["category"],
+            confidence=float(native_dict["confidence"]),
+            tags=tuple(native_dict.get("tags", [])),
+            heuristics=native_dict.get("heuristics"),
+        )
 
     @property
     def class_name(self) -> str:
