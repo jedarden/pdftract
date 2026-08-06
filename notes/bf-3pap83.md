@@ -1,78 +1,92 @@
-# Verification Note: bf-3pap83
+# Verification Note for bf-3pap83
 
-## Task: Resolve Type3 char_proc_ref to content stream
+## Task
+Resolve Type3 char_proc_ref to content stream
 
-**Date:** 2026-08-05
-**Bead ID:** bf-3pap83
-**Status:** COMPLETE
+## Implementation Status
+**COMPLETED** - Implementation already exists in `crates/pdftract-core/src/font/type3_rasterizer.rs`
 
-## Summary
+## What Was Done
+The `DocumentContext::resolve_char_proc` method (lines 78-125) implements the complete resolution logic:
 
-The `resolve_char_proc` method was already implemented in `DocumentContext` as part of the parent bead (bf-4d8fdu - resolver context setup). No new code was required for this bead.
-
-## Implementation Details
-
-**Location:** `crates/pdftract-core/src/font/type3_rasterizer.rs:78-125`
-
-**Method Signature:**
+### Core Implementation
 ```rust
 pub fn resolve_char_proc(&self, obj_ref: ObjRef) -> Option<Vec<u8>>
 ```
 
-**Resolution Process:**
-1. Extracts resolver and source from context (early return if missing)
-2. Resolves ObjRef to PdfObject via `resolver.resolve_with_source()`
-3. Validates object type (Stream required)
-4. Decodes stream with proper decompression counter handling
-5. Returns decoded bytes or None on any failure
+### Resolution Steps
+1. **ObjRef Resolution** (lines 80-85):
+   - Extracts resolver and source from DocumentContext
+   - Calls `resolver.resolve_with_source(obj_ref, source)` to get PdfObject
+   - Returns None on resolution failure
 
-## Acceptance Criteria Status
+2. **Stream Extraction** (lines 87-97):
+   - Matches on PdfObject variant
+   - Returns None for Null objects (graceful handling)
+   - Returns None for non-stream objects (invalid reference)
+   - Extracts Stream object for valid references
 
-| Criterion | Status | Evidence |
-|-----------|--------|----------|
-| Resolve char_proc_ref to content stream bytes | ✅ PASS | Returns `Some(Vec<u8>)` on success (line 124) |
-| Returns error for missing/invalid refs | ✅ PASS | Returns `None` via `?` propagation (lines 80-81, 84), explicit None for Null (lines 89-92) and non-Stream objects (lines 93-96) |
-| Handles empty streams | ✅ PASS | Explicit check at line 120 returns `None` |
-| Handles malformed refs | ✅ PASS | Resolution failures return `None` via `.ok()?` (line 84) |
-| Code compiles and tests pass | ✅ PASS | 15/15 tests pass (all type3_rasterizer tests) |
+3. **Stream Decoding** (lines 99-117):
+   - Uses `decode_stream` with filter pipeline
+   - Handles decompress counter via RefCell for interior mutability
+   - Falls back to zero counter when none available
 
-## Edge Cases Handled
+4. **Edge Case Handling** (lines 120-122):
+   - Returns None for empty streams
+   - Prevents propagation of invalid/empty data
 
-- **Missing resolver/source:** Returns `None` via early `?` propagation
-- **Null references:** Explicitly matched and returns `None`
-- **Non-stream objects:** Matched in catch-all case and returns `None`
-- **Empty streams:** Explicit check after decode returns `None`
-- **Decompression counter borrow panics:** Handled gracefully via `try_borrow_mut()?.ok()?`
+### Error Handling
+Returns `Option<Vec<u8>>` where:
+- `Some(bytes)` = Successfully resolved and decoded stream
+- `None` = Resolution failed (missing ref, invalid ref, decode error, empty stream)
+
+## Acceptance Criteria - All PASS
+1. ✅ **Can resolve char_proc_ref to content stream bytes**
+   - Line 84: `resolver.resolve_with_source(obj_ref, source)` resolves ObjRef
+   - Lines 100-117: `decode_stream` extracts decoded bytes
+
+2. ✅ **Returns error for missing/invalid refs**
+   - Lines 89-92: Null objects return None
+   - Lines 93-96: Non-stream objects return None
+   - Line 84: Resolution failures propagate as None
+
+3. ✅ **Handles edge cases**
+   - Lines 120-122: Empty streams return None
+   - Lines 89-96: Malformed/non-stream refs return None
+   - Line 101: `try_borrow_mut` gracefully handles borrow panics
+
+4. ✅ **Code compiles and tests pass**
+   - `cargo check --package pdftract-core` - No errors
+   - 15/15 Type3 rasterizer tests passed:
+     - `test_document_context_resolve_char_proc_no_resolver`
+     - `test_document_context_new`
+     - All other bitmap, path, and rasterization tests
 
 ## Test Results
-
-```bash
-$ cargo test --package pdftract-core --lib font::type3_rasterizer
+```
 running 15 tests
 test font::type3_rasterizer::tests::test_bitmap_black ... ok
 test font::type3_rasterizer::tests::test_bitmap_fill_rect ... ok
 test font::type3_rasterizer::tests::test_bitmap_set_get ... ok
 test font::type3_rasterizer::tests::test_bitmap_white ... ok
-test font::type3_rasterizer::tests::test_current_path_move_line ... ok
 test font::type3_rasterizer::tests::test_current_path_close ... ok
+test font::type3_rasterizer::tests::test_current_path_move_line ... ok
 test font::type3_rasterizer::tests::test_current_path_rect ... ok
 test font::type3_rasterizer::tests::test_document_context_resolve_char_proc_no_resolver ... ok
-test font::type3_rasterizer::tests::test_execute_rect ... ok
 test font::type3_rasterizer::tests::test_document_context_new ... ok
 test font::type3_rasterizer::tests::test_execute_simple_path ... ok
-test font::type3_rasterizer::tests::test_gstate_stack ... ok
+test font::type3_rasterizer::tests::test_execute_rect ... ok
 test font::type3_rasterizer::tests::test_point_new ... ok
+test font::type3_rasterizer::tests::test_gstate_stack ... ok
 test font::type3_rasterizer::tests::test_rasterizer_context_new ... ok
 test font::type3_rasterizer::tests::test_rasterize_type3_glyph_placeholder ... ok
 
 test result: ok. 15 passed; 0 failed; 0 ignored
 ```
 
-## Related Beads
-
-- **Parent:** bf-4d8fdu (resolver context available)
-- **Depends on:** Child bead 1 (resolver context) - already satisfied
+## Dependencies
+- Depends on: bf-4d8fdu (resolver context available)
+- Parent: bf-4d8fdu
 
 ## Conclusion
-
-No new code was required. The implementation satisfies all acceptance criteria and handles all specified edge cases. The method integrates properly with the existing Type3 rasterization pipeline via `rasterize_type3_glyph()`.
+The implementation is complete and all acceptance criteria PASS. The code was already implemented in a previous iteration, so no new code changes were required for this bead.
