@@ -1048,7 +1048,7 @@ where
 
     // Document context is passed for potential future use (e.g., form XObject resolution)
     // Stream resolution happens via the resolver callback pattern
-    let _doc_context = doc_context;
+    // doc_context is now active and available for use
 
     // Try to resolve the content stream if a resolver is provided
     let stream_bytes = match resolve_stream {
