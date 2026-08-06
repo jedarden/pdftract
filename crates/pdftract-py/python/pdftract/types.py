@@ -27,6 +27,22 @@ class Span:
     size: float
     confidence: Optional[float] = None
 
+    def __repr__(self) -> str:
+        cls_name = self.__class__.__name__
+        text_preview = self.text[:20] if self.text else ""
+        return f"{cls_name}(text={text_preview!r}..., font={self.font!r}, size={self.size})"
+
+    @classmethod
+    def from_native(cls, native_dict: dict) -> "Span":
+        """Create a Span from a native layer dict representation."""
+        return cls(
+            text=native_dict.get("text", ""),
+            bbox=native_dict.get("bbox", []),
+            font=native_dict.get("font", ""),
+            size=native_dict.get("size", 0.0),
+            confidence=native_dict.get("confidence"),
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class Block:
@@ -45,6 +61,22 @@ class Block:
     bbox: List[float]
     level: Optional[int] = None
     table_index: Optional[int] = None
+
+    def __repr__(self) -> str:
+        cls_name = self.__class__.__name__
+        text_preview = self.text[:20] if self.text else ""
+        return f"{cls_name}(kind={self.kind!r}, text={text_preview!r}...)"
+
+    @classmethod
+    def from_native(cls, native_dict: dict) -> "Block":
+        """Create a Block from a native layer dict representation."""
+        return cls(
+            kind=native_dict.get("kind", ""),
+            text=native_dict.get("text", ""),
+            bbox=native_dict.get("bbox", []),
+            level=native_dict.get("level"),
+            table_index=native_dict.get("table_index"),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,6 +161,15 @@ class Page:
     blocks: List[Block]
     tables: List[Table]
     error: Optional[str] = None
+
+    def __repr__(self) -> str:
+        cls_name = self.__class__.__name__
+        return f"{cls_name}(page_index={self.page_index}, spans={len(self.spans)}, blocks={len(self.blocks)})"
+
+    @classmethod
+    def from_native(cls, native_dict: dict) -> "Page":
+        """Create a Page from a native layer dict representation."""
+        return cls.from_dict(native_dict)
 
     @classmethod
     def from_dict(cls, data: dict) -> "Page":
@@ -234,6 +275,27 @@ class Metadata:
     fingerprint: Optional[str] = None
     outline: Optional[dict] = None
 
+    def __repr__(self) -> str:
+        cls_name = self.__class__.__name__
+        return f"{cls_name}(page_count={self.page_count}, title={self.title!r})"
+
+    @classmethod
+    def from_native(cls, native_dict: dict) -> "Metadata":
+        """Create a Metadata from a native layer dict representation."""
+        return cls(
+            page_count=native_dict.get("page_count", 0),
+            title=native_dict.get("title"),
+            author=native_dict.get("author"),
+            subject=native_dict.get("subject"),
+            keywords=native_dict.get("keywords"),
+            creator=native_dict.get("creator"),
+            producer=native_dict.get("producer"),
+            creation_date=native_dict.get("creation_date"),
+            mod_date=native_dict.get("mod_date"),
+            fingerprint=native_dict.get("fingerprint"),
+            outline=native_dict.get("outline"),
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class Document:
@@ -246,6 +308,15 @@ class Document:
 
     pages: List[Page]
     metadata: Metadata
+
+    def __repr__(self) -> str:
+        cls_name = self.__class__.__name__
+        return f"{cls_name}(pages={len(self.pages)}, metadata={self.metadata.title!r})"
+
+    @classmethod
+    def from_native(cls, native_dict: dict) -> "Document":
+        """Create a Document from a native layer dict representation."""
+        return cls.from_dict(native_dict)
 
     @classmethod
     def from_dict(cls, data: dict) -> "Document":
@@ -290,6 +361,22 @@ class Match:
     match_start: int
     match_end: int
 
+    def __repr__(self) -> str:
+        cls_name = self.__class__.__name__
+        return f"{cls_name}(text={self.text!r}, page_index={self.page_index}, span_index={self.span_index})"
+
+    @classmethod
+    def from_native(cls, native_dict: dict) -> "Match":
+        """Create a Match from a native layer dict representation."""
+        return cls(
+            text=native_dict.get("text", ""),
+            page_index=native_dict.get("page_index", 0),
+            span_index=native_dict.get("span_index", 0),
+            bbox=native_dict.get("bbox", []),
+            match_start=native_dict.get("match_start", 0),
+            match_end=native_dict.get("match_end", 0),
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class Fingerprint:
@@ -298,10 +385,28 @@ class Fingerprint:
     Attributes:
         value: The fingerprint string (e.g., "pdftract-v1:abc123...")
         version: Fingerprint algorithm version
+        fast_hash: Fast hash component
     """
 
     value: str
     version: str = "v1"
+    fast_hash: Optional[str] = None
+
+    def __repr__(self) -> str:
+        cls_name = self.__class__.__name__
+        value_preview = self.value[:20] if self.value else ""
+        return f"{cls_name}(value={value_preview!r}..., version={self.version!r})"
+
+    @classmethod
+    def from_native(cls, native_dict: dict) -> "Fingerprint":
+        """Create a Fingerprint from a native layer dict representation."""
+        if isinstance(native_dict, str):
+            return cls.from_string(native_dict)
+        return cls(
+            value=native_dict.get("value", ""),
+            version=native_dict.get("version", "v1"),
+            fast_hash=native_dict.get("fast_hash"),
+        )
 
     @classmethod
     def from_string(cls, value: str) -> "Fingerprint":
@@ -319,11 +424,31 @@ class Classification:
     """A page classification result.
 
     Attributes:
-        class_name: Classification class name
+        category: Classification category name
         confidence: Confidence score [0.0, 1.0]
         hybrid_cells: For Hybrid pages, set of scanned cell indexes
     """
 
-    class_name: str
+    category: str
     confidence: float
     hybrid_cells: Optional[set[int]] = None
+
+    @property
+    def class_name(self) -> str:
+        """Backward compatibility alias for category."""
+        return self.category
+
+    def __repr__(self) -> str:
+        cls_name = self.__class__.__name__
+        return f"{cls_name}(category={self.category!r}, confidence={self.confidence:.2f})"
+
+    @classmethod
+    def from_native(cls, native_dict: dict) -> "Classification":
+        """Create a Classification from a native layer dict representation."""
+        # Handle both category and class_name for backward compatibility
+        category = native_dict.get("category") or native_dict.get("class_name", "Unknown")
+        return cls(
+            category=category,
+            confidence=native_dict.get("confidence", 0.0),
+            hybrid_cells=native_dict.get("hybrid_cells"),
+        )
