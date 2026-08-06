@@ -27,6 +27,14 @@ A test PDF with clear Markdown-style structural elements for testing text extrac
 - `markdown-structures-expect-text.txt` - Expected output from `extract_text()`
 - `markdown-structures-expect-markdown.txt` - Expected output from `extract_markdown()`
 
+**Validation Status:** ✓ Validated
+- PDF opens successfully with `pdfinfo` (poppler-utils)
+- Single-page letter-size document (612 x 792 pts)
+- Created with ReportLab PDF Library, PDF version 1.4
+- Uses Helvetica and Helvetica-Bold fonts
+- Text extraction produces 57 lines of content
+- Contains all expected structural elements: headings (H1-H3), bare URLs, bullet lists (•), numbered lists (1-5), and a table
+
 ## Generating Fixtures
 
 To regenerate these fixtures (requires ReportLab):
