@@ -41,6 +41,82 @@ pub struct DocumentContext<'a> {
     pub source: Option<&'a dyn PdfSource>,
 }
 
+/// Calculate glyph bitmap dimensions from glyph bounds.
+///
+/// This function computes the proper bitmap dimensions (width, height) in pixels
+/// based on the glyph's bounding box coordinates. It handles scaling from PDF user
+/// space to pixel space, adds padding for anti-aliasing, and ensures non-zero dimensions.
+///
+/// # Arguments
+///
+/// * `bbox` - Glyph bounding box [x0, y0, x1, y1] in PDF user space (points)
+/// * `padding` - Optional padding margin in pixels (default: 1 for anti-aliasing)
+///
+/// # Returns
+///
+/// (width, height) as usize, where both dimensions are guaranteed to be >= 1.
+///
+/// # Calculation
+///
+/// ```text
+/// width_px = (x1 - x0) + 2 * padding
+/// height_px = (y1 - y0) + 2 * padding
+/// ```
+///
+/// If the bounding box is degenerate (x0 == x1 or y0 == y1), the dimension
+/// defaults to 1 pixel plus padding to ensure valid bitmap dimensions.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use pdftract_core::font::type3_rasterizer::calculate_bitmap_dimensions;
+///
+/// // Glyph with bbox [10.0, 20.0, 50.0, 60.0] in points
+/// // Raw size: 40x30 points
+/// // With default padding: 42x32 pixels
+/// let (width, height) = calculate_bitmap_dimensions(&[10.0, 20.0, 50.0, 60.0], None);
+/// assert_eq!(width, 42);
+/// assert_eq!(height, 32);
+/// ```
+pub fn calculate_bitmap_dimensions(bbox: &[f32; 4], padding: Option<u32>) -> (usize, usize) {
+    let padding = padding.unwrap_or(1);
+
+    // Extract bounding box coordinates
+    let x0 = bbox[0];
+    let y0 = bbox[1];
+    let x1 = bbox[2];
+    let y2 = bbox[3];
+
+    // Calculate raw dimensions in PDF user space (points)
+    let raw_width = x1 - x0;
+    let raw_height = y2 - y0;
+
+    // Handle degenerate cases (zero-width or zero-height bboxes)
+    // Default to 1 pixel minimum before padding
+    let width_points = if raw_width.abs() < 0.5 {
+        1.0
+    } else {
+        raw_width.abs()
+    };
+
+    let height_points = if raw_height.abs() < 0.5 {
+        1.0
+    } else {
+        raw_height.abs()
+    };
+
+    // Convert to pixel dimensions (1 point = 1 pixel for glyph rendering)
+    // Add padding for anti-aliasing margins
+    let width = (width_points.ceil() as u32) + 2 * padding;
+    let height = (height_points.ceil() as u32) + 2 * padding;
+
+    // Ensure minimum dimensions of 1x1 (even with zero padding)
+    let width = (width.max(1)) as usize;
+    let height = (height.max(1)) as usize;
+
+    (width, height)
+}
+
 /// 32x32 grayscale bitmap for glyph rasterization.
 ///
 /// Each pixel is a u8 value (0-255). Per Phase 2.5 convention:
@@ -892,6 +968,59 @@ pub fn extract_content_stream_bytes(
     }
 }
 
+/// Calculate bitmap dimensions from glyph bounding box.
+///
+/// This function computes appropriate bitmap dimensions for rendering a glyph
+/// based on its bounding box in PDF user space. It accounts for the glyph's
+/// actual size and adds padding for anti-aliasing.
+///
+/// # Arguments
+///
+/// * `bbox` - Glyph bounding box [x0, y0, x1, y1] in PDF user space (points)
+/// * `padding_pixels` - Optional padding in pixels for anti-aliasing (default: 2)
+///
+/// # Returns
+///
+/// (width, height) as usize dimensions in pixels. Minimum dimensions are
+/// clamped to 1 to ensure valid bitmap size.
+///
+/// # Calculation
+///
+/// Width and height are computed from the bounding box:
+/// - width = x1 - x0
+/// - height = y1 - y0
+///
+/// Values are converted to pixels (assuming 1 point = 1 pixel for Type3
+/// glyph space) and padding is added on all sides.
+///
+/// # Example
+///
+/// ```
+/// let bbox = [0.0, 0.0, 16.0, 16.0]; // 16x16 point glyph
+/// let (width, height) = calculate_bitmap_size_from_bounds(&bbox, None);
+/// assert_eq!(width, 20);  // 16 + 2*2 padding
+/// assert_eq!(height, 20); // 16 + 2*2 padding
+/// ```
+pub fn calculate_bitmap_size_from_bounds(bbox: &[f32; 4], padding_pixels: Option<u32>) -> (usize, usize) {
+    let padding = padding_pixels.unwrap_or(2) as i32;
+
+    // Extract bounds
+    let x0 = bbox[0] as i32;
+    let y0 = bbox[1] as i32;
+    let x1 = bbox[2] as i32;
+    let y1 = bbox[3] as i32;
+
+    // Calculate raw dimensions
+    let raw_width = (x1 - x0).abs();
+    let raw_height = (y1 - y0).abs();
+
+    // Add padding (2x for both sides)
+    let width = (raw_width + 2 * padding).max(1) as usize;
+    let height = (raw_height + 2 * padding).max(1) as usize;
+
+    (width, height)
+}
+
 /// Rasterize a Type 3 glyph to a 32x32 grayscale bitmap.
 ///
 /// # Arguments
@@ -1524,5 +1653,118 @@ mod tests {
         // Verify the rectangle was drawn at (10,10) to (20,20)
         // Center of the rectangle should be filled
         assert_eq!(ctx.bitmap.get(15, 15), Some(0));
+    }
+
+    // Tests for calculate_bitmap_dimensions (bf-407xp6)
+
+    #[test]
+    fn test_calculate_bitmap_dimensions_basic() {
+        // Test basic glyph with bbox [10.0, 20.0, 50.0, 60.0]
+        // Raw size: 40x40 points
+        // With default padding: 42x42 pixels
+        let bbox = [10.0f32, 20.0, 50.0, 60.0];
+        let (width, height) = calculate_bitmap_dimensions(&bbox, None);
+
+        assert_eq!(width, 42);
+        assert_eq!(height, 42);
+    }
+
+    #[test]
+    fn test_calculate_bitmap_dimensions_with_custom_padding() {
+        // Test with custom padding of 2 pixels
+        let bbox = [10.0f32, 20.0, 50.0, 60.0];
+        let (width, height) = calculate_bitmap_dimensions(&bbox, Some(2));
+
+        assert_eq!(width, 44); // 40 + 2*2
+        assert_eq!(height, 44); // 40 + 2*2
+    }
+
+    #[test]
+    fn test_calculate_bitmap_dimensions_zero_width() {
+        // Test degenerate case: zero-width bbox
+        // Should default to 1 pixel + padding
+        let bbox = [10.0f32, 20.0, 10.0, 60.0];
+        let (width, height) = calculate_bitmap_dimensions(&bbox, None);
+
+        assert_eq!(width, 3); // 1 + 2*1 (default padding)
+        assert_eq!(height, 42); // 40 + 2*1
+    }
+
+    #[test]
+    fn test_calculate_bitmap_dimensions_zero_height() {
+        // Test degenerate case: zero-height bbox
+        let bbox = [10.0f32, 20.0, 50.0, 20.0];
+        let (width, height) = calculate_bitmap_dimensions(&bbox, None);
+
+        assert_eq!(width, 42); // 40 + 2*1
+        assert_eq!(height, 3); // 1 + 2*1
+    }
+
+    #[test]
+    fn test_calculate_bitmap_dimensions_small_glyph() {
+        // Test very small glyph (less than 1 point)
+        let bbox = [10.0f32, 20.0, 10.5, 20.5];
+        let (width, height) = calculate_bitmap_dimensions(&bbox, None);
+
+        // Should round up to 1 pixel + padding
+        assert_eq!(width, 3); // 1 + 2*1
+        assert_eq!(height, 3); // 1 + 2*1
+    }
+
+    #[test]
+    fn test_calculate_bitmap_dimensions_negative_coordinates() {
+        // Test bbox with negative coordinates (valid in PDF)
+        let bbox = [-50.0f32, -30.0, -10.0, 10.0];
+        let (width, height) = calculate_bitmap_dimensions(&bbox, None);
+
+        // Width: 40 points, Height: 40 points
+        assert_eq!(width, 42); // 40 + 2*1
+        assert_eq!(height, 42); // 40 + 2*1
+    }
+
+    #[test]
+    fn test_calculate_bitmap_dimensions_returns_usize() {
+        // Verify return type is usize (for array indexing)
+        let bbox = [0.0f32, 0.0, 16.0, 16.0];
+        let (width, height) = calculate_bitmap_dimensions(&bbox, None);
+
+        // Should be usable as array indices
+        let mut dummy_array = [0u8; 100];
+        dummy_array[width - 1] = 1;
+        dummy_array[height - 1] = 2;
+
+        assert_eq!(width, 18); // 16 + 2*1
+        assert_eq!(height, 18); // 16 + 2*1
+    }
+
+    #[test]
+    fn test_calculate_bitmap_dimensions_non_integer_bounds() {
+        // Test bbox with non-integer coordinates
+        let bbox = [10.5f32, 20.7, 50.2, 60.9];
+        let (width, height) = calculate_bitmap_dimensions(&bbox, None);
+
+        // Should round up: 39.7 -> 40, 40.2 -> 41
+        assert_eq!(width, 42); // 40 + 2*1
+        assert_eq!(height, 43); // 41 + 2*1
+    }
+
+    #[test]
+    fn test_calculate_bitmap_dimensions_no_padding() {
+        // Test with zero padding
+        let bbox = [10.0f32, 20.0, 50.0, 60.0];
+        let (width, height) = calculate_bitmap_dimensions(&bbox, Some(0));
+
+        assert_eq!(width, 40); // 40 + 2*0
+        assert_eq!(height, 40); // 40 + 2*0
+    }
+
+    #[test]
+    fn test_calculate_bitmap_dimensions_large_glyph() {
+        // Test large glyph (e.g., full page size)
+        let bbox = [0.0f32, 0.0, 612.0, 792.0]; // US Letter size
+        let (width, height) = calculate_bitmap_dimensions(&bbox, Some(2));
+
+        assert_eq!(width, 616); // 612 + 2*2
+        assert_eq!(height, 796); // 792 + 2*2
     }
 }
