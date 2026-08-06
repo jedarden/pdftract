@@ -28,3 +28,10 @@ type BytesSource []byte
 func (b BytesSource) isSource()           {}
 func (b BytesSource) sourceType() string  { return "bytes" }
 func (b BytesSource) value() any          { return []byte(b) }
+
+// cleanup removes the temporary file created for BytesSource.
+// This is a no-op if no temp file was created.
+func (b *BytesSource) cleanup() {
+	// BytesSource may write to a temp file in the future
+	// For now, this is a no-op placeholder
+}
