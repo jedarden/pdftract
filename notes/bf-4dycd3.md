@@ -1,90 +1,69 @@
-# Verification: hybrid-007-textbox-overlay Fixture
+# Verification: hybrid-007-textbox-overlay fixture
 
-## Bead
-bf-4dycd3 - Create hybrid-007-textbox-overlay fixture
+## Status: ✅ COMPLETE (fixture already exists)
 
-## Status
-✅ COMPLETE - Fixture already existed and meets all requirements
+## Summary
+The hybrid-007-textbox-overlay fixture was created in commit f2bc02e as part of bead bf-401erx. All acceptance criteria are met.
+
+## Files Present
+- `tests/fixtures/hybrid/hybrid-007-textbox-overlay.pdf` (1,407 bytes)
+- `tests/fixtures/hybrid/hybrid-007-textbox-overlay.pdf.metadata.json` (3,512 bytes)
+- `tests/fixtures/hybrid/hybrid-007-generator.py` (4,585 bytes, executable)
 
 ## Acceptance Criteria Verification
 
-### 1. File exists in tests/fixtures/hybrid/
-- ✅ File: `tests/fixtures/hybrid/hybrid-007-textbox-overlay.pdf`
-- ✅ Size: 1,407 bytes (well under 5 MB limit)
-- ✅ Valid PDF header: `%PDF-1.4`
+### ✅ File exists in tests/fixtures/hybrid/
+Confirmed: `tests/fixtures/hybrid/hybrid-007-textbox-overlay.pdf` exists.
 
-### 2. Has .metadata.json sidecar with all required fields
-- ✅ File: `tests/fixtures/hybrid/hybrid-007-textbox-overlay.pdf.metadata.json`
-- ✅ Size: 3,512 bytes
-- ✅ Contains all required fields:
-  - `source.type`: "synthetic"
-  - `source.generation_method`: Full description via hybrid-007-generator.py
-  - `source.generated_date`: "2026-08-06"
-  - `pages_with_hybrid_content`: [1]
-  - `grid_cell_coverage.total_cells`: 64
-  - `grid_cell_coverage.hybrid_cells_approx`: 28
-  - `grid_cell_coverage.hybrid_percentage`: 43.75%
-  - `classification_challenges`: 5 detailed challenges listed
+### ✅ Has .metadata.json sidecar with all required fields
+Confirmed: `hybrid-007-textbox-overlay.pdf.metadata.json` contains:
+- **source**: type="synthetic", generation_method documented
+- **pages_with_hybrid_content**: [1]
+- **grid_cell_coverage**: 
+  - total_cells: 64
+  - hybrid_cells_approx: 28
+  - hybrid_percentage: 43.75%
+  - hybrid_cell_locations: distributed across form
+- **classification_challenges**: 5 documented challenges
+- **test_focus**: 5 test focus areas
+- **expected_classification**: page_class="Hybrid", confidence_range="0.80-0.92"
 
-### 3. File is < 5 MB
-- ✅ Actual size: 1.4 KB (far under 5 MB limit)
+### ✅ File is < 5 MB
+Confirmed: File size is 1,407 bytes (~1.4 KB), well under 5 MB limit.
 
-### 4. Textbox overlays are clearly vector on scan background
-- ✅ Generator creates hybrid-007-generator.py creates:
-  - **Scanned background**: 1-bit grayscale image XObject (612×792) simulating tax form with horizontal dividers every 60pts, vertical dividers, and form label patterns
-  - **Vector textbox overlays**: Multiple rectangular borders with gray stroke (1pt) and placeholder labels in 9-10pt Helvetica:
-    - "Form 1040 - U.S. Individual Income Tax Return" (title, 10pt)
-    - "First name" textbox (210, 680, 150×20)
-    - "Last name" textbox (210, 650, 150×20)
-    - "SSN" textbox (420, 680, 150×20)
-    - "Home address" textbox (210, 560, 360×60)
-    - "City, State, ZIP" (under Home address)
-    - "Total income" textbox (210, 480, 150×20)
-    - "Tax withheld" textbox (420, 480, 150×20)
+### ✅ Textbox overlays are clearly vector on scan background
+Verified via generator script (hybrid-007-generator.py):
+- **Scanned background**: Full-page 1-bit grayscale image XObject simulating tax form with horizontal dividers every 60pts, vertical dividers, and form label patterns
+- **Vector overlays**: Multiple fillable textboxes with:
+  - Rectangular borders (gray stroke, 1pt)
+  - Placeholder labels (9pt Helvetica): "First name", "Last name", "SSN", "Home address", "Total income", "Tax withheld"
+  - Form title (10pt Helvetica): "Form 1040 - U.S. Individual Income Tax Return"
 
-## Why This Case Is Tricky for Classification
+## Fixture Details
 
-From metadata, the fixture tests these classification challenges:
+### PDF Structure
+- **Pages**: 1
+- **Page size**: 612 x 792 pts (letter)
+- **PDF version**: 1.4
+- **Content stream**: Image XObject (scanned form) + vector graphics (textbox borders) + vector text (labels)
 
-1. **Scattered textbox distribution** - Similar to hybrid-002 but with form-specific layout (tax form pattern)
-2. **Rectangular textbox borders** - Additional vector content beyond just text labels
-3. **Multiple small hybrid regions** - May be missed if classifier doesn't accumulate distributed hybrid cells
-4. **Duplicate text** - Form field labels in both vector (textboxes) and scanned (background)
-5. **Merge rule accuracy** - Tests merge rules when vector and scanned content describe the same form field
+### Hybrid Content Pattern
+- **Overlap type**: scattered-overlay (multiple textboxes distributed across form)
+- **Vector regions**: Form title at top, fillable textboxes at various positions
+- **Scanned regions**: Full-page tax form background with horizontal/vertical dividers
+- **Hybrid cells**: ~28 of 64 (43.75%) - distributed across rows where textboxes overlap background
 
-## Expected Classification Results
+### Why This Case is Tricky for Classification
+1. **Scattered distribution**: Multiple small hybrid regions may be missed if classifier doesn't accumulate distributed hybrid cells
+2. **Form field duplicates**: Labels appear in both vector (textboxes) and scanned (background), creating potential duplicate text
+3. **Multiple content types**: Vector includes both text (labels) and graphics (rectangular borders)
+4. **Form-specific layout**: Tax form pattern with characteristic dividers may confuse classifiers expecting different layouts
 
-- **Page class**: "Hybrid"
-- **Hybrid cells**: ~28 cells (distributed across form)
-- **Confidence range**: 0.80-0.92
-- **Hybrid percentage**: 43.75% (28 of 64 grid cells)
+## Conclusion
+The fixture meets all acceptance criteria and is ready for use in testing hybrid PDF classification.
 
-## Real-World Pattern Representation
-
-This fixture represents a common real-world scenario: **fillable forms with vector field annotations overlaid on scanned form backgrounds**. Examples include:
-- Tax forms with fillable PDF textboxes
-- Government forms with electronic field overlays
-- Business applications with vector form fields on scanned originals
-
-## Files Generated
-- `tests/fixtures/hybrid/hybrid-007-textbox-overlay.pdf` (1,407 bytes)
-- `tests/fixtures/hybrid/hybrid-007-textbox-overlay.pdf.metadata.json` (3,512 bytes)
-- `tests/fixtures/hybrid/hybrid-007-generator.py` (generator script, executable)
-
-## Test Coverage
-
-This fixture complements:
-- **hybrid-002** (vector form over scan) - General form fields
-- **hybrid-007** (textbox overlay) - Tax form with fillable textboxes including borders
-
-Both test form-specific layouts but hybrid-007 adds:
-- Rectangular borders as vector graphics (not just text)
-- Tax form pattern with characteristic horizontal/vertical dividers
-- Distributed hybrid regions across multiple form sections
-
-## PASS Summary
-All acceptance criteria PASS:
-- ✅ File exists in correct location
-- ✅ Complete metadata with all required fields
-- ✅ File size well under 5 MB limit
-- ✅ Clear vector-on-scan hybrid pattern with textbox overlays
+## References
+- Generator: `tests/fixtures/hybrid/hybrid-007-generator.py`
+- Metadata: `tests/fixtures/hybrid/hybrid-007-textbox-overlay.pdf.metadata.json`
+- Original commit: f2bc02e (bf-401erx)
+- Bead: bf-4dycd3
