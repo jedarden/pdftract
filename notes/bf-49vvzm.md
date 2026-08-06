@@ -1,100 +1,187 @@
 # SDK Type Exports and Structure Exploration
 
-**Bead:** bf-49vvzm  
-**Date:** 2026-08-06  
+**Bead:** bf-49vvzm
+**Date:** 2026-08-06
 **Status:** COMPLETE
 
 ## Overview
 
-Explored the Python SDK type system to understand exported types, their definitions, and user import patterns. This ensures smoke tests target the correct types and imports.
+Explored the comprehensive SDK type system across the Rust core implementation and language bindings. This exploration covers the canonical SDK contract defined in Rust (`sdk.rs`) and how types are exported to users through various language SDKs.
 
 ## SDK Module Structure
 
-The SDK is located at `/home/coding/pdftract/crates/pdftract-py/python/pdftract/` with the following modules:
+### Canonical SDK Contract (Rust)
 
-| Module | Purpose |
-|--------|---------|
-| `__init__.py` | Main API entry point with public exports |
-| `types.py` | All type definitions (frozen dataclasses) |
-| `exceptions.py` | Exception hierarchy |
-| `asyncio.py` | Async wrappers for long-running methods |
-| `fallback.py` | Subprocess fallback when native module unavailable |
-| `_native.abi3.so` | Compiled Rust native module (PyO3 bindings) |
+The SDK contract is defined in `/home/coding/pdftract/crates/pdftract-core/src/sdk.rs` - this is the authoritative specification that all language SDKs implement.
+
+**9 Core Methods:**
+1. `extract()` - Full JSON extraction to structured Document
+2. `extract_text()` - Plain text extraction
+3. `extract_markdown()` - Markdown format extraction
+4. `extract_stream()` - Streaming page-by-page extraction
+5. `search()` - Pattern search with Match results
+6. `get_metadata()` - PDF metadata retrieval
+7. `hash()` - PDF fingerprinting/computing hash
+8. `classify()` - Page classification
+9. `verify_receipt_from_path()` - Cryptographic receipt verification
+
+### Language Bindings
+
+Multiple language SDKs implement this contract:
+- **Python**: `/home/coding/pdftract/crates/pdftract-py/` (PyO3 bindings)
+- **JavaScript/TypeScript**: `/home/coding/pdftract/pdftract-node/`
+- **Go**: `/home/coding/pdftract/pdftract-go/`
+- **Java**: `/home/coding/pdftract/pdftract-java/`
+- **C#/.NET**: `/home/coding/pdftract/pdftract-dotnet/`
+- **Ruby**: `/home/coding/pdftract/pdftract-ruby/`
+- **PHP**: `/home/coding/pdftract/pdftract-php/`
+- **Swift**: `/home/coding/pdftract/swift-sdk/`
 
 ## Exported Types (Public API)
 
-The main `__init__.py` exports these types via `__all__`:
+### SDK-Specific Types (from `sdk.rs`)
 
-### Core Data Types (from `pdftract.types`)
-- **Document** - Complete PDF extraction result with pages, metadata
-- **Page** - Single page with spans, blocks, dimensions
-- **Span** - Text span with font, position, confidence
-- **Block** - Semantic block (text/heading/list/table/figure)
-- **Match** - Regex match result from search
-- **Fingerprint** - PDF structural fingerprint for identity
-- **Classification** - Page classification result
-- **Metadata** - Document metadata (title, author, page count, etc.)
+**File**: `/home/coding/pdftract/crates/pdftract-core/src/sdk.rs`
 
-### Exception Types (from `pdftract.exceptions`)
-- **PdftractError** - Base exception
-- **CorruptPdfError** - Malformed PDF
-- **EncryptionError** - PDF encrypted with wrong/missing password
-- **SourceUnreachableError** - File or URL inaccessible
-- **RemoteFetchInterruptedError** - Network timeout/interruption
-- **TlsError** - TLS certificate validation failure
-- **ReceiptVerifyError** - Receipt verification failed
-- **UnsupportedOperationError** - Method not supported by binary version
+| Type | Definition | Purpose |
+|------|-----------|---------|
+| `SearchMatch` | `pub struct SearchMatch` | Single search match result with page_index, span_index, text, bbox |
+| `PdfMetadata` | `pub struct PdfMetadata` | Document metadata (page_count, is_encrypted, is_tagged, has_forms) |
 
-### Functions
-- `extract()` - Full extraction returning Document
-- `extract_text()` - Plain text extraction
-- `extract_markdown()` - Markdown extraction
-- `extract_stream()` - Streaming page iterator
-- `search()` - Regex search returning Match iterator
-- `get_metadata()` - Metadata-only extraction (cheap)
-- `hash()` - Fingerprint computation
-- `classify()` - Page classification
-- `verify_receipt()` - Receipt verification
-- `asyncio` - Async wrappers module
+### Extraction Types (from `extract.rs`)
 
-## Internal Types (NOT in `__all__`)
+**File**: `/home/coding/pdftract/crates/pdftract-core/src/extract.rs`
 
-These types in `types.py` are **not exported** in the public API:
-- **Cell** - Table cell (used within Table/Row)
-- **Row** - Table row (used within Table)  
-- **Table** - Table extraction result (nested within Page/Block)
+| Type | Definition | Purpose |
+|------|-----------|---------|
+| `ExtractionResult` | `pub struct ExtractionResult` | Complete extraction result with pages, metadata, signatures, form_fields, links, attachments, threads |
+| `PageResult` | `pub struct PageResult` | Single page with index, width, height, rotation, spans, blocks |
+| `ExtractionMetadata` | `pub struct ExtractionMetadata` | Extraction metadata |
 
-These are implementation details of the table structure and users access them through the Page.blocks hierarchy.
+### Schema JSON Types (from `schema/mod.rs`)
 
-## Type Implementation Details
+**File**: `/home/coding/pdftract/crates/pdftract-core/src/schema/mod.rs`
 
-All types are implemented as **frozen dataclasses with slots**:
+| Type | Definition | Purpose |
+|------|-----------|---------|
+| `SpanJson` | `pub struct SpanJson` | Text span with text, bbox, font, size, color, rendering_mode, confidence, confidence_source, lang, flags, receipt, column |
+| `BlockJson` | `pub struct BlockJson` | Semantic block with kind, text, bbox, level, reading_order, table_index, spans |
+| `CellJson` | `pub struct CellJson` | Table cell with bbox, text, spans, row, col, rowspan, colspan, is_header_row |
+| `RowJson` | `pub struct RowJson` | Table row with cells, bbox |
+| `TableJson` | `pub struct TableJson` | Table with bbox, columns, rows |
+| `AttachmentJson` | `pub struct AttachmentJson` | Embedded file attachment |
+| `LinkJson` | `pub struct LinkJson` | Hyperlink annotation |
+| `ThreadJson` | `pub struct ThreadJson` | Article thread chain |
+| `BeadJson` | `pub struct BeadJson` | Individual bead in thread |
+| `FormFieldJson` | `pub struct FormFieldJson` | Form field data |
+| `SignatureJson` | `pub struct SignatureJson` | Digital signature |
+| `JavascriptActionJson` | `pub struct JavascriptActionJson` | JavaScript action for security review |
 
-```python
-@dataclass(frozen=True, slots=True)
-class Document:
-    pages: List[Page]
-    schema_version: Optional[str] = None
-    metadata: Optional[Metadata] = None
-    
-    @classmethod
-    def from_native(cls, native_dict: dict) -> Self:
-        # Convert Rust dict to typed object
-        
-    def __repr__(self) -> str:
-        # Custom repr for debugging
+### Options Types (from `options.rs`)
+
+**File**: `/home/coding/pdftract/crates/pdftract-core/src/options.rs`
+
+| Type | Definition | Purpose |
+|------|-----------|---------|
+| `ExtractionOptions` | `pub struct ExtractionOptions` | Extraction configuration (OCR, password, etc.) |
+| `OutputOptions` | `pub struct OutputOptions` | Output filtering options (include_headers, include_footers, etc.) |
+| `ReceiptsMode` | `pub enum ReceiptsMode` | Receipt generation mode (Off, Lite, SvgClip) |
+
+### Page Classification Types (from `page_class.rs`)
+
+**File**: `/home/coding/pdftract/crates/pdftract-core/src/page_class.rs`
+
+| Type | Definition | Purpose |
+|------|-----------|---------|
+| `PageClass` | `pub enum PageClass` | Page category (Acoustic, Archaeology, ...) |
+| `PageClassification` | `pub struct PageClassification` | Classification result with category, confidence, tags |
+
+### Form Types (from `forms/`)
+
+**File**: `/home/coding/pdftract/crates/pdftract-core/src/forms/`
+
+| Type | Definition | Purpose |
+|------|-----------|---------|
+| `AcroFieldType` | `pub enum AcroFieldType` | Form field type (Text, Button, Choice, Signature) |
+| `AcroFormField` | `pub struct AcroFormField` | Form field definition |
+| `ChoiceValue` | `pub struct ChoiceValue` | Choice field value |
+| `FormFieldValue` | `pub enum FormFieldValue` | Form field value (Text, Buttons, Choice) |
+
+## Public API Surface (lib.rs Re-exports)
+
+**File**: `/home/coding/pdftract/crates/pdftract-core/src/lib.rs`
+
+The `lib.rs` file re-exports all key types for convenient access:
+
+```rust
+// Key extraction types
+pub use extract::{
+    extract_pdf, extract_pdf_ndjson, extract_pdf_streaming, extract_text,
+    ExtractionMetadata, ExtractionResult, PageResult,
+};
+
+// Options types
+pub use options::{ExtractionOptions, OutputOptions, ReceiptsMode};
+
+// Page classification types
+pub use page_class::{page_type_string, PageClass, PageClassification};
+
+// Schema JSON types
+pub use schema::{
+    AttachmentJson, BeadJson, BlockJson, CellJson, ExtractionQuality,
+    RowJson, SpanJson, SpanRef, TableJson, ThreadJson,
+};
+
+// Form types
+pub use forms::{
+    combine, walk_acroform_fields, AcroFieldType, AcroFormField,
+    ChoiceValue, FormFieldValue,
+};
+
+// Markdown types
+pub use markdown::{
+    block_to_markdown, form_fields_to_markdown, page_to_markdown,
+    page_to_markdown_with_links, parse_anchors, span_to_markdown,
+    Anchor, MarkdownOptions,
+};
+
+// Other utility types
+pub use confidence::{map_confidence_source, ConfidenceSource};
+pub use document::{Document, PageExtraction, PageIter, PdfExtractor};
+pub use font::std14::{get_std14_metrics, NamedEncoding, Std14Metrics};
+pub use parser::pages::{count_pages_tree, LazyPageIter, PageDict, DEFAULT_MEDIABOX};
+pub use table::{GridCandidate, PageContext as TablePageContext, TableDetector};
+pub use text::{serialize_document_text, serialize_page_text, TextOptions};
+pub use word_boundary::{TextState, WordBoundaryDetector, WordBoundaryManager};
+
+// Source types
+pub use source::{FileSource, MmapSource};
+
+// Phase 3 Glyph types
+pub use glyph::{emit_glyph, new_raw_glyph_list, Glyph};
+
+// Phase 4.1 Span types
+pub use span::{merge_glyphs_to_spans, CssHexColor, Span};
 ```
 
-Key characteristics:
-- **Immutable** - `frozen=True` prevents modification after creation
-- **Memory efficient** - `slots=True` reduces memory overhead
-- **Type-safe** - Constructor enforces field types
-- **Native conversion** - `from_native()` converts raw dicts from Rust
-- **IDE friendly** - Custom `__repr__()` for debugging
+## User Import Patterns
 
-## User Import Pattern
+### Rust Users
 
-Users should **import from the main `pdftract` module**, NOT from submodules:
+```rust
+// Pattern 1: Direct SDK module import
+use pdftract_core::sdk::{extract, extract_text, extract_markdown, search, get_metadata, hash, classify};
+
+// Pattern 2: Type imports via re-exports
+use pdftract_core::{ExtractionResult, PageResult, ExtractionOptions};
+
+// Pattern 3: Module-specific imports
+use pdftract_core::schema::{SpanJson, BlockJson};
+use pdftract_core::options::{ExtractionOptions, OutputOptions};
+use pdftract_core::page_class::{PageClass, PageClassification};
+```
+
+### Python Users
 
 ```python
 # ✅ CORRECT - import from main module
@@ -103,71 +190,67 @@ from pdftract import Document, Page, Span
 
 # ❌ INCORRECT - importing from submodules
 from pdftract.types import Document  # Works but not recommended
-from pdftract.exceptions import PdftractError  # Breaks if API changes
 ```
 
-The main `__init__.py` re-exports all public types and functions, providing a stable import path.
+## Type Structure Confirmation
 
-## Native Module Integration
+✅ **All SDK types are proper Rust structs** - These are NOT type aliases or dictionaries.
 
-The SDK wraps a Rust native module (`_native.abi3.so`) via PyO3 bindings:
+The SDK uses:
+- `pub struct` for main data types (`ExtractionResult`, `PageResult`, `SpanJson`, etc.)
+- `pub enum` for variant types (`PageClass`, `ReceiptsMode`, `ConfidenceSource`, etc.)
+- Proper field definitions with public visibility
+- Serde serialization support (`#[derive(Serialize, Deserialize)]`)
+- JSON Schema generation support (`#[cfg_attr(feature = "schemars"), derive(schemars::JsonSchema)]`)
 
-1. **Import fallback**: If native import fails, warns and uses subprocess fallback
-2. **Type wrapping**: Functions check if native returns dicts, wrap in typed objects
-3. **Streaming support**: Iterators yield typed objects by wrapping each item
-
-Example from `extract()`:
-```python
-def extract(source, **options) -> Document:
-    extractor = _get_extractor()
-    result = extractor.extract(source, **options)
-    # Wrap raw dict from native module in typed Document
-    if isinstance(result, dict):
-        return Document.from_native(result)
-    return result
-```
-
-## Verification: Existing Test Coverage
-
-The file `crates/pdftract-py/tests/test_types.py` already contains a smoke test that validates the type contract:
-
-- `test_extract_returns_typed_document()` - Verifies Document/Page/Span hierarchy
-- `test_extract_returns_typed_document_with_valid_minimal()` - Redundant check with different fixture
-
-This confirms the SDK is correctly returning typed objects rather than raw dicts.
-
-## Recommendations for Smoke Test Enhancement
-
-Based on this exploration, the smoke test should:
-
-1. ✅ **Already covered** - Test `extract()` returns Document instance
-2. ✅ **Already covered** - Test Page/Span object hierarchy  
-3. **Consider adding** - Test other extraction methods (`extract_text()`, `search()`)
-4. **Consider adding** - Test exception types are raised correctly
-5. **Consider adding** - Test Metadata.from_native() conversion
+This means language SDKs can generate proper native classes/structs from these definitions, not just dictionaries.
 
 ## File Locations Summary
 
 | Component | Location |
 |-----------|----------|
-| Main API | `/home/coding/pdftract/crates/pdftract-py/python/pdftract/__init__.py` |
-| Type definitions | `/home/coding/pdftract/crates/pdftract-py/python/pdftract/types.py` |
-| Exception hierarchy | `/home/coding/pdftract/crates/pdftract-py/python/pdftract/exceptions.py` |
-| Async wrappers | `/home/coding/pdftract/crates/pdftract-py/python/pdftract/asyncio.py` |
-| Native module | `/home/coding/pdftract/crates/pdftract-py/python/pdftract/_native.abi3.so` |
-| Existing tests | `/home/coding/pdftract/crates/pdftract-py/tests/test_types.py` |
+| Main SDK Module | `/home/coding/pdftract/crates/pdftract-core/src/sdk.rs` |
+| Public API | `/home/coding/pdftract/crates/pdftract-core/src/lib.rs` |
+| Schema Types | `/home/coding/pdftract/crates/pdftract-core/src/schema/mod.rs` |
+| Options | `/home/coding/pdftract/crates/pdftract-core/src/options.rs` |
+| Extraction Types | `/home/coding/pdftract/crates/pdftract-core/src/extract.rs` |
+| Page Classification | `/home/coding/pdftract/crates/pdftract-core/src/page_class.rs` |
+| Forms | `/home/coding/pdftract/crates/pdftract-core/src/forms/` |
+| Python SDK | `/home/coding/pdftract/crates/pdftract-py/python/pdftract/` |
+| Python Types | `/home/coding/pdftract/crates/pdftract-py/python/pdftract/types.py` |
+| Python Tests | `/home/coding/pdftract/crates/pdftract-py/tests/test_types.py` |
+| SDK Contract Doc | `/home/coding/pdftract/docs/notes/sdk-contract.md` |
+
+## Smoke Test Implications
+
+For SDK smoke testing, we should verify:
+
+1. **Core SDK types can be imported**: `ExtractionResult`, `PageResult`, `SpanJson`, `BlockJson`, etc.
+2. **Types have correct field structure**: Verify public fields exist
+3. **Types are properly serialized**: Test serde JSON serialization/deserialization
+4. **SDK functions return correct types**: Test that `extract()` returns `ExtractionResult`, etc.
+5. **Type compatibility**: Ensure types match across different SDK implementations
+
+## Verification: Existing Test Coverage
+
+The Python SDK already has smoke tests in `crates/pdftract-py/tests/test_types.py`:
+- `test_extract_returns_typed_document()` - Verifies Document/Page/Span hierarchy
+- `test_extract_returns_typed_document_with_valid_minimal()` - Redundant check with different fixture
+
+This confirms the SDK is correctly returning typed objects rather than raw dicts.
 
 ## Conclusion
 
 The SDK type system is well-structured with:
-- ✅ Clear public API via `__all__` exports
-- ✅ Immutable, memory-efficient dataclass types
-- ✅ Proper type conversion from native Rust layer
-- ✅ User-friendly import pattern from main module
-- ✅ Existing smoke test coverage for core types
+- ✅ Clear canonical contract defined in Rust (`sdk.rs`)
+- ✅ Comprehensive type exports across multiple modules
+- ✅ Proper Rust structs (not dicts) with Serde serialization
+- ✅ Re-export pattern for convenient user access
+- ✅ Multiple language bindings implementing the same contract
+- ✅ Existing smoke test coverage in Python SDK
 
 All acceptance criteria met:
 - ✅ List of all exported types documented above
 - ✅ File locations for each type identified
-- ✅ Import pattern documented (use `from pdftract import ...`)
-- ✅ Types are proper classes (frozen dataclasses), not dicts
+- ✅ Import pattern documented for Rust and Python users
+- ✅ Types are proper structs/classes (frozen dataclasses in Python), not dicts
