@@ -2,13 +2,17 @@
 
 This directory contains test fixtures for testing `extract_text()` vs `extract_markdown()` behavior.
 
+## Content Specification
+
+**IMPORTANT:** The authoritative content specification for these fixtures is documented in `SPECIFICATION.md`. That file defines the exact text strings, structural elements, and expected Markdown mappings for the PDF content. All fixture generation should reference that specification as the source of truth.
+
 ## Fixtures
 
 ### markdown-structures.pdf
 
 A test PDF with clear Markdown-style structural elements for testing text extraction.
 
-**Contents:**
+**Contents:** (See `SPECIFICATION.md` for exact content)
 - Multiple heading levels (H1, H2, H3)
 - Link text (URLs in various formats)
 - Bullet lists
@@ -17,7 +21,7 @@ A test PDF with clear Markdown-style structural elements for testing text extrac
 
 **Purpose:** Tests that `extract_markdown()` properly formats output with Markdown syntax while `extract_text()` returns plain text.
 
-**Generator:** `tests/fixtures/markdown_test_fixture.py`
+**Generator:** `tests/fixtures/markdown_test_fixture.py` (implements `SPECIFICATION.md`)
 
 **Ground truth files:**
 - `markdown-structures-expect-text.txt` - Expected output from `extract_text()`
