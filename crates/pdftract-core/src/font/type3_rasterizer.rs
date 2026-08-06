@@ -229,9 +229,16 @@ struct RasterizerContext<'a> {
 
 impl<'a> RasterizerContext<'a> {
     fn new(font: &'a Type3Font) -> Self {
+        let mut gstate = GraphicsState::new();
+
+        // Apply FontMatrix to transform from glyph space to text space
+        // Per PDF spec section 9.6.5, Type3 glyph content streams are executed
+        // in glyph space, and the FontMatrix transforms coordinates to text space
+        gstate.concat_ctm(&font.font_matrix);
+
         Self {
             bitmap: Bitmap32x32::white(),
-            gstate: GraphicsState::new(),
+            gstate,
             gstate_stack: GraphicsStateStack::new(),
             path: CurrentPath::new(),
             font,
