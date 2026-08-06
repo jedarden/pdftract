@@ -4,29 +4,35 @@ This directory contains hybrid PDF fixtures with mixed vector text and scanned i
 
 ## Primary Fixtures (First 3)
 
-### hybrid-001: letterhead-image (vector-header-over-scan)
-**Pattern**: Vector letterhead header + scanned letter body
-- **Vector regions**: Company name, address, contact info, date (top 15%)
-- **Scanned regions**: Letter content, signature (bottom 85%)
-- **Hybrid cells**: ~40 cells (62.5% of page)
-- **Classification challenge**: Clear regional separation may cause misclassification as separate Vector + Scanned regions rather than unified Hybrid
-- **Test focus**: Header extraction precision, OCR on body only, non-overlapping merge rule
+### hybrid-001: Vector Header Over Scan
+**File**: `hybrid-001-vector-header-over-scan.pdf` (1.2 KB)
+**Pattern**: Vector letterhead header + scanned letter body (vertical stack)
+- **Vector regions**: Company name "ACME Corp", report title "Annual Report 2024" (top ~15%, Helvetica 14pt)
+- **Scanned regions**: Letter body with horizontal line pattern (bottom ~85%, 1-bit grayscale image)
+- **Hybrid cells**: ~8 cells (12.5% of page, boundary row between header and body)
+- **Classification challenge**: Clean vertical separation may cause classifier to treat as separate Vector + Scanned regions rather than unified Hybrid page
+- **Test focus**: Header extraction precision, OCR on body only, non-overlapping merge rule, minimal fixture performance
+- **Generation**: `hybrid-001-generator.py`
 
-### hybrid-002: form-mixed (vector-form-over-scan)
-**Pattern**: Vector form fields over scanned form background
-- **Vector regions**: Fillable text fields, checkboxes (~15% scattered)
-- **Scanned regions**: Form labels, instructions, field borders (~85%)
-- **Hybrid cells**: ~45 cells (70.3% of page)
-- **Classification challenge**: Scattered vector distribution complicates boundary detection and cell-level OCR targeting
-- **Test focus**: Scattered vector extraction, complex merge patterns, form field isolation
+### hybrid-002: Vector Form Over Scan
+**File**: `hybrid-002-vector-form-over-scan.pdf` (1.5 KB)
+**Pattern**: Vector form field annotations over scanned form background (partial overlay)
+- **Vector regions**: Form field annotations scattered throughout: field labels, red checkbox indicators, underline rectangles (Helvetica 9-10pt)
+- **Scanned regions**: Complete employee information form background with title, labels, underlines, certification text (1-bit grayscale image)
+- **Hybrid cells**: ~48 cells (75.0% of page, most grid cells contain both vector and scanned content)
+- **Classification challenge**: Scattered vector distribution makes boundary detection difficult; complex merge patterns with multiple overlapping spans
+- **Test focus**: Scattered vector extraction through cell-level OCR, complex merge pattern handling, form field isolation, small vector element detection
+- **Generation**: `hybrid-002-generator.py`
 
-### hybrid-003: sidebar-image (mixed-column-layout)
-**Pattern**: Vector main text + scanned sidebar image
-- **Vector regions**: Main article text (left 70%, columns 0-4)
-- **Scanned regions**: Sidebar image, caption (right 30%, columns 5-7)
-- **Hybrid cells**: ~24 cells (37.5% of page)
-- **Classification challenge**: Column-aware detection required; only right columns should trigger hybrid processing
-- **Test focus**: Column-aware hybrid cell detection, selective OCR application
+### hybrid-003: Mixed Column Layout
+**File**: `hybrid-003-mixed-column-layout.pdf` (1.6 KB)
+**Pattern**: Vector text in left column + scanned content in right column (horizontal side-by-side)
+- **Vector regions**: Article title and content about document processing/OCR technology (left ~45%, columns 0-3 of 8×8 grid, Helvetica 9-10pt)
+- **Scanned regions**: Newspaper article content simulation with horizontal line pattern (right ~55%, columns 4-7, 1-bit grayscale image)
+- **Hybrid cells**: 0 cells (0.0% - no overlapping cells due to clean horizontal separation)
+- **Classification challenge**: Page-level hybrid detection required when no cells contain both content types; system may classify as separate Vector + Scanned regions
+- **Test focus**: Page-level hybrid detection for horizontally separated layouts, column boundary identification, side-by-side layout handling
+- **Generation**: `hybrid-003-generator.py`
 
 ## Purpose
 
@@ -51,19 +57,28 @@ This is distinct from:
 
 ```
 hybrid/
-├── README.md                     # This file
-├── GEN_MANIFEST.md              # Fixture metadata and generation records
-├── generate_hybrid_fixtures.py  # Generation script
-├── receipt-overtext/             # Receipt with scanned body + vector overlay text
-├── letterhead-image/             # Letterhead: vector header + scanned body
-├── form-mixed/                   # Form: vector fields + scanned background
-├── invoice-stamp/                # Invoice: vector line items + scanned stamp/logo
-├── document-annotation/          # Document: scanned page + vector annotations
-├── figure-caption/               # Academic: vector text + scanned figure
-├── sidebar-image/                # Article: vector main text + scanned sidebar
-├── watermark/                    # Document: vector text + scanned watermark overlay
-├── multi-column-scan/            # Multi-column: vector headers + scanned columns
-└── complex-overlap/              # Complex: interleaved vector and scanned regions
+├── README.md                                    # This file
+├── GEN_MANIFEST.md                             # Fixture metadata and generation records
+├── generate_hybrid_fixtures.py                 # Generation script
+├── hybrid-001-vector-header-over-scan.pdf      # Primary fixture 1: letterhead pattern
+├── hybrid-001-vector-header-over-scan.pdf.metadata.json
+├── hybrid-001-generator.py                     # Fixture 1 generator script
+├── hybrid-002-vector-form-over-scan.pdf        # Primary fixture 2: form pattern
+├── hybrid-002-vector-form-over-scan.pdf.metadata.json
+├── hybrid-002-generator.py                     # Fixture 2 generator script
+├── hybrid-003-mixed-column-layout.pdf          # Primary fixture 3: column layout pattern
+├── hybrid-003-mixed-column-layout.pdf.metadata.json
+├── hybrid-003-generator.py                     # Fixture 3 generator script
+├── receipt-overtext/                           # Receipt with scanned body + vector overlay text
+├── letterhead-image/                           # Letterhead: vector header + scanned body
+├── form-mixed/                                 # Form: vector fields + scanned background
+├── invoice-stamp/                              # Invoice: vector line items + scanned stamp/logo
+├── document-annotation/                        # Document: scanned page + vector annotations
+├── figure-caption/                             # Academic: vector text + scanned figure
+├── sidebar-image/                              # Article: vector main text + scanned sidebar
+├── watermark/                                  # Document: vector text + scanned watermark overlay
+├── multi-column-scan/                          # Multi-column: vector headers + scanned columns
+└── complex-overlap/                            # Complex: interleaved vector and scanned regions
 ```
 
 ## Generation Strategy
@@ -239,6 +254,9 @@ Resolution strategy: Use these 10 fixtures to measure and tune:
 
 | Fixture | PDF | Vector Content | Scanned Content | Hybrid Cells | Status |
 |---------|-----|----------------|-----------------|--------------|--------|
+| **hybrid-001** (vector-header-over-scan) | ✅ | ✅ | ✅ | ~8 (12.5%) | Complete |
+| **hybrid-002** (vector-form-over-scan) | ✅ | ✅ | ✅ | ~48 (75.0%) | Complete |
+| **hybrid-003** (mixed-column-layout) | ✅ | ✅ | ✅ | 0 (0.0%) | Complete |
 | receipt-overtext | ❌ | ✅ | ✅ | ~24 | Pending |
 | letterhead-image | ❌ | ✅ | ✅ | ~40 | Pending |
 | form-mixed | ❌ | ✅ | ✅ | ~45 | Pending |
