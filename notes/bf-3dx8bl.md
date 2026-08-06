@@ -1,7 +1,7 @@
 # Scanline Fill Algorithm Analysis
 
-**Bead:** bf-3dx8bl  
-**Reference Code:** `crates/pdftract-core/src/font/type3_rasterizer.rs` lines 994-1052  
+**Bead:** bf-3dx8bl
+**Reference Code:** `crates/pdftract-core/src/font/type3_rasterizer.rs` lines 994-1052
 **Date:** 2026-08-06
 
 ## Overview
