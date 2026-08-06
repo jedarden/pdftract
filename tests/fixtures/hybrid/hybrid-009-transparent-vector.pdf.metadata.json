@@ -1,0 +1,47 @@
+{
+  "fixture_name": "hybrid-009-transparent-vector",
+  "fixture_id": "hybrid-009-transparent-vector",
+  "description": "Scanned document with semi-transparent vector text overlay",
+  "source": {
+    "type": "synthetic",
+    "generation_method": "Generated via tests/fixtures/hybrid/hybrid-009-generator.py using raw PDF construction: full-page scanned document (1-bit grayscale image XObject) with semi-transparent vector text overlays using PDF ExtGState graphics state with ca/CA opacity values (0.5 and 0.7)",
+    "generated_date": "2026-08-06"
+  },
+  "pages_with_hybrid_content": [
+    1
+  ],
+  "hybrid_behavior": {
+    "vector_regions": "Page header text plus semi-transparent vector text overlays with varying opacity levels (50% and 30% transparency) positioned throughout the page",
+    "scanned_regions": "Full-page scanned document background (1-bit grayscale image XObject with horizontal text line pattern)",
+    "overlap_type": "transparent-overlay",
+    "overlap_description": "Semi-transparent vector text elements overlaid on scanned background using PDF ExtGState with opacity values, creating visible blended hybrid regions"
+  },
+  "grid_cell_coverage": {
+    "total_cells": 64,
+    "hybrid_cells_approx": 20,
+    "hybrid_percentage": 31.25,
+    "hybrid_cell_locations": "Cells containing semi-transparent overlay text (approximately 20 cells with both scanned background and transparent vector overlay)"
+  },
+  "classification_challenges": [
+    "Semi-transparent vector content may have lower visual weight but still represents true hybrid content",
+    "Transparency effects can affect OCR quality on underlying scanned content",
+    "Tests whether classifier detects hybrid content when vector layer has reduced opacity",
+    "Merge rule must handle transparency without false duplicate elimination",
+    "Grid cell evaluator should count transparent overlays as hybrid cells"
+  ],
+  "test_focus": [
+    "Transparency-aware hybrid cell detection",
+    "OCR quality on content behind semi-transparent overlays",
+    "Merge rule behavior with transparent vs opaque vector layers",
+    "Classification accuracy when vector content has reduced visual weight",
+    "Extraction precision preserving transparency semantics"
+  ],
+  "expected_classification": {
+    "page_class": "Hybrid",
+    "hybrid_cells": "~20 cells (transparent overlay)",
+    "confidence_range": "0.75-0.85"
+  },
+  "file_size_bytes": 1650,
+  "validation_status": "pending",
+  "notes": "Synthetic fixture designed to test semi-transparent vector overlay handling. PDF transparency (ExtGState with ca/CA values) creates visually blended content that tests whether the classifier correctly identifies hybrid pages when vector content has reduced opacity. This tests the grid cell evaluator's ability to detect hybrid cells regardless of transparency settings, and merge rule behavior when transparent overlays may affect OCR confidence on underlying scanned content."
+}

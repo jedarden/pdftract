@@ -1,0 +1,47 @@
+{
+  "fixture_name": "hybrid-008-rotated-vector",
+  "fixture_id": "hybrid-008-rotated-vector",
+  "description": "Scanned document with vector text overlay rotated at multiple angles",
+  "source": {
+    "type": "synthetic",
+    "generation_method": "Generated via tests/fixtures/hybrid/hybrid-008-generator.py using raw PDF construction: full-page scanned document (1-bit grayscale image XObject) with vector text overlays rotated at 15°, 30°, 45°, -15°, and -30° angles using CTM (Current Transformation Matrix) transformations",
+    "generated_date": "2026-08-06"
+  },
+  "pages_with_hybrid_content": [
+    1
+  ],
+  "hybrid_behavior": {
+    "vector_regions": "Page header text plus multiple rotated vector text elements positioned throughout the page at various angles: 15°, 30°, 45°, -15°, -30°",
+    "scanned_regions": "Full-page scanned document background (1-bit grayscale image XObject with horizontal text line pattern)",
+    "overlap_type": "distributed-rotated-overlay",
+    "overlap_description": "Vector text elements with multiple rotation angles overlaid on scanned background, creating hybrid cells at various positions with complex angular patterns"
+  },
+  "grid_cell_coverage": {
+    "total_cells": 64,
+    "hybrid_cells_approx": 24,
+    "hybrid_percentage": 37.5,
+    "hybrid_cell_locations": "Cells containing rotated text elements scattered across page center and edges (approximately 24 cells with both scanned background and rotated vector overlay)"
+  },
+  "classification_challenges": [
+    "Rotated text crosses grid cell boundaries at oblique angles, creating partial cell overlaps",
+    "Multiple rotation angles (15°, 30°, 45°, -15°, -30°) create diverse hybrid cell patterns",
+    "Text rotation affects OCR quality and merge rule accuracy",
+    "Grid cell evaluator must handle angular text boundaries not aligned with cell axes",
+    "Tests classifier robustness on non-axis-aligned vector elements"
+  ],
+  "test_focus": [
+    "Rotated text extraction precision across multiple angles",
+    "Hybrid cell detection with angular vector elements",
+    "Grid cell boundary handling for rotated content",
+    "Merge rule accuracy on rotated vs axis-aligned OCR spans",
+    "OCR confidence variation with rotation angle"
+  ],
+  "expected_classification": {
+    "page_class": "Hybrid",
+    "hybrid_cells": "~24 cells (distributed rotated overlay)",
+    "confidence_range": "0.80-0.90"
+  },
+  "file_size_bytes": 1435,
+  "validation_status": "pending",
+  "notes": "Synthetic fixture designed to test rotated vector text handling. Multiple rotation angles stress-test the grid cell evaluator and merge rules with angular content that doesn't align with the 8×8 grid axes. This tests the classifier's ability to detect hybrid content when vector elements are rotated and may cross multiple cell boundaries. OCR on rotated text typically has lower confidence, testing merge rule behavior with varying confidence levels."
+}

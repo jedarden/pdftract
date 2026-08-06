@@ -1,0 +1,47 @@
+{
+  "fixture_name": "hybrid-010-complex-layered",
+  "fixture_id": "hybrid-010-complex-layered",
+  "description": "Complex layered PDF with multiple overlapping vector and scanned elements",
+  "source": {
+    "type": "synthetic",
+    "generation_method": "Generated via tests/fixtures/hybrid/hybrid-010-generator.py using raw PDF construction: full-page scanned document (1-bit grayscale image XObject) with multiple overlapping vector layers including headers, footers, sidebar columns, annotations, and vector shapes (rectangles, lines) at different positions",
+    "generated_date": "2026-08-06"
+  },
+  "pages_with_hybrid_content": [
+    1
+  ],
+  "hybrid_behavior": {
+    "vector_regions": "Multiple distinct vector layers: header section (top ~10%), footer section (bottom ~10%), sidebar column (left ~25%), main column (right ~60%), annotation box (bottom right corner), vector shapes (horizontal dividers, vertical separator line, rectangular border)",
+    "scanned_regions": "Full-page scanned document background (1-bit grayscale image XObject with horizontal text line pattern)",
+    "overlap_type": "complex-layered",
+    "overlap_description": "Multiple overlapping vector layers at different page positions, creating distributed hybrid cells throughout the page with diverse patterns (headers, footers, columns, annotations, shapes)"
+  },
+  "grid_cell_coverage": {
+    "total_cells": 64,
+    "hybrid_cells_approx": 56,
+    "hybrid_percentage": 87.5,
+    "hybrid_cell_locations": "Most grid cells contain both scanned background and some vector layer (header cells: rows 0-1; footer cells: row 7; sidebar cells: rows 2-6, cols 0-1; main column cells: rows 2-6, cols 2-7; annotation cells: row 5-6, cols 6-7; shape cells: dividers at rows 1 and 7)"
+  },
+  "classification_challenges": [
+    "Multiple non-contiguous vector regions require comprehensive cell-level scanning",
+    "Complex layering with headers, footers, columns, and annotations tests merge rule comprehensiveness",
+    "Vector shapes (lines, rectangles) add geometric hybrid content beyond text",
+    "High hybrid cell percentage (87.5%) tests upper-bound classification behavior",
+    "Tests classification accuracy on documents with layered layout complexity similar to real-world forms/letters"
+  ],
+  "test_focus": [
+    "Complex multi-region hybrid cell detection across entire page",
+    "Merge rule accuracy with multiple non-overlapping vector regions",
+    "Geometric shape handling in hybrid context (lines, rectangles)",
+    "Classification confidence on high-percentage hybrid pages",
+    "Extraction quality with diverse vector layer types (text, shapes, layout elements)"
+  ],
+  "expected_classification": {
+    "page_class": "Hybrid",
+    "hybrid_cells": "~56 cells (complex layered)",
+    "confidence_range": "0.90-0.98"
+  },
+  "file_size_bytes": 1666,
+  "validation_status": "pending",
+  "notes": "Synthetic fixture designed to test complex multi-layered hybrid content. This fixture represents a realistic document with multiple structural elements (headers, footers, columns, annotations, shapes) creating hybrid cells across most of the page. With 87.5% hybrid cells, it tests the upper bound of hybrid detection and validates that the classifier correctly handles complex real-world layouts where vector elements serve both content and structural purposes (dividers, borders, layout guides)."
+}
