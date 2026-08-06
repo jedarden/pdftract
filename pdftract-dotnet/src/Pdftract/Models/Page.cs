@@ -12,7 +12,7 @@ public record Page
 {
     [Key(0)]
     [JsonPropertyName("page")]
-    public required int PageIndex { get; init; }
+    public required int PageNumber { get; init; }
 
     [Key(1)]
     [JsonPropertyName("width")]
@@ -23,22 +23,10 @@ public record Page
     public double? Height { get; init; }
 
     [Key(3)]
-    [JsonPropertyName("rotation")]
-    public int Rotation { get; init; } = 0;
-
-    [Key(4)]
     [JsonPropertyName("lines")]
     public IList<string> Lines { get; init; } = new List<string>();
 
-    [Key(5)]
+    [Key(4)]
     [JsonPropertyName("images")]
     public IList<string> Images { get; init; } = new List<string>();
-
-    [Key(6)]
-    [JsonPropertyName("spans")]
-    public IList<Span> Spans { get; init; } = new List<Span>();
-
-    [Key(7)]
-    [JsonPropertyName("blocks")]
-    public IList<Block> Blocks { get; init; } = new List<Block>();
 }
