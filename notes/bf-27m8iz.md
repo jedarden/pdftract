@@ -1,65 +1,48 @@
-# Bead bf-27m8iz: Add from_native classmethods to all SDK type classes
+# Verification Note: bf-27m8iz - Add from_native classmethods to SDK types
 
 ## Summary
-Added `@classmethod from_native(cls, native_dict: dict) -> Self` constructors to all 11 dataclass types in `types.py` (note: bead description mentioned 8 classes, but the file actually contains 11 classes).
+Verified that all 11 SDK type classes in `crates/pdftract-py/python/pdftract/types.py` have `from_native` classmethods properly implemented. The implementation was already complete.
 
-## Changes Made
+## Classes Verified
+All 11 classes have `from_native` classmethods:
+1. Metadata - handles optional metadata fields
+2. Span - converts bbox tuple and optional confidence
+3. Block - converts kind, text, bbox, optional level
+4. Cell - converts nested bbox, spans list, row/col indices
+5. Row - recursively converts Cell list
+6. Table - recursively converts Row list
+7. Page - recursively converts Span and Block lists
+8. Document - recursively converts Page list and Metadata
+9. Match - converts bbox and optional context
+10. Fingerprint - conditionally converts optional Metadata
+11. Classification - converts tags tuple and optional heuristics
 
-### File: `crates/pdftract-py/python/pdftract/types.py`
-
-1. **Added import**: Added `Self` to the typing imports
-
-2. **Added `from_native` methods to all classes**:
-   - `Metadata.from_native()` - Handles all optional fields with `.get()` and defaults
-   - `Span.from_native()` - Converts bbox list to tuple, handles optional confidence
-   - `Block.from_native()` - Converts bbox list to tuple, handles optional level
-   - `Cell.from_native()` - Converts bbox/spans lists to appropriate types, casts numeric fields
-   - `Row.from_native()` - Recursively converts nested Cell list
-   - `Table.from_native()` - Recursively converts nested Row list
-   - `Page.from_native()` - Recursively converts nested Span and Block lists
-   - `Document.from_native()` - Recursively converts Page list and Metadata
-   - `Match.from_native()` - Converts bbox list to tuple, handles optional context
-   - `Fingerprint.from_native()` - Handles optional Metadata with conditional conversion
-   - `Classification.from_native()` - Converts tags list to tuple, handles optional heuristics
-
-### Design Decisions
-
-- **Nested structures**: All nested custom types (Page→Span/Block, Document→Page/Metadata, Table→Row→Cell) are recursively converted using `from_native()` rather than passing raw dicts
-- **Tuples vs Lists**: Used `tuple()` comprehensions for list-to-tuple conversions on fields like `spans` and `blocks` in Page, `tags` in Classification
-- **Type casting**: Added explicit `int()`, `float()`, `bool()` casts for numeric/boolean fields to ensure type correctness from potentially untyped dict values
-- **Optional fields**: Used `.get()` with appropriate defaults for all optional fields
-- **Optional nested objects**: For `Fingerprint.metadata`, check if the key exists and is not None before calling `Metadata.from_native()`
-
-## Verification
-
-### Compilation
-```bash
-python3 -m py_compile crates/pdftract-py/python/pdftract/types.py
-# Result: PASS - no syntax errors
-```
-
-### Code Review Checklist
-- ✅ All 11 classes have `from_native` classmethods
-- ✅ Methods accept a single `native_dict: dict` argument
-- ✅ Methods return an instance of the class (`Self`)
-- ✅ Nested structures are recursively converted (Document→Page→Span/Block, Table→Row→Cell)
+## Implementation Quality
+- ✅ Nested structures recursively converted using `ChildClass.from_native()`
 - ✅ Optional fields handled with `.get()` or default values
-- ✅ Code compiles without errors
+- ✅ Type conversions applied (tuple, int, float, bool) where needed
+- ✅ Code compiles without syntax errors (verified with `python3 -m py_compile`)
 
-### Testing Notes
-No existing tests were found for `from_native` methods. The implementation follows standard patterns for PyO3 native dict conversion. Full integration testing will be covered when the PyO3 bridge layer is implemented in parent bead bf-5b55jv.
+## Issues Fixed
+The linter cleaned up duplicate method definitions that were present:
+- Match: removed duplicate `__repr__`
+- Fingerprint: removed duplicate `__repr__`
+- Classification: removed duplicate `class_name` property and `__repr__`
+
+## Files Modified
+- `crates/pdftract-py/python/pdftract/types.py` - duplicate methods removed by linter
 
 ## Acceptance Criteria Status
+**PASS** - All criteria met:
+- All classes have `from_native` classmethods (11/11, exceeding requirement of 8)
+- Methods accept `native_dict: dict` argument
+- Methods return `Self` instances
+- Nested structures recursively converted
+- Optional fields handled properly
+- Code compiles without errors
 
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| All 8 classes have `from_native` classmethods | PASS | All 11 classes (actual count) have methods |
-| Methods accept single `native_dict: dict` argument | PASS | All methods follow this signature |
-| Methods return instance of class (`Self`) | PASS | All methods return `cls(...)` |
-| Nested structures recursively converted | PASS | Document, Page, Table, Row, Cell all handle nesting |
-| Optional fields handled with `.get()` | PASS | All optional fields use `.get()` with defaults |
-| Code compiles without errors | PASS | `python3 -m py_compile` successful |
-
-## Commit
-- File: `crates/pdftract-py/python/pdftract/types.py`
-- Lines added: ~110 (11 classmethod implementations + import)
+## Test Commands
+```bash
+# Syntax verification
+python3 -m py_compile crates/pdftract-py/python/pdftract/types.py
+```
