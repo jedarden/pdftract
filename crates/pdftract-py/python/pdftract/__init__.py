@@ -4,6 +4,16 @@ This module provides Python bindings for the pdftract-core library,
 with idiomatic Python ergonomics including exception hierarchy,
 dataclass types, and optional asyncio wrappers.
 
+Available types:
+    Document: Complete PDF document extraction result
+    Page: A single page with spans and blocks
+    Span: A text span with font and position information
+    Block: A semantic block (text, heading, list, table, figure)
+    Match: A regex match result from search
+    Fingerprint: PDF structural fingerprint for identity verification
+    Classification: Page classification result
+    Metadata: Document metadata (title, author, page count, etc.)
+
 Example usage:
     import pdftract
 
