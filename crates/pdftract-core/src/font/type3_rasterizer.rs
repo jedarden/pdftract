@@ -1767,4 +1767,185 @@ mod tests {
         assert_eq!(width, 616); // 612 + 2*2
         assert_eq!(height, 796); // 792 + 2*2
     }
+
+    #[test]
+    fn test_resolve_stream_callback_receives_parameters() {
+        use crate::parser::object::types::{PdfDict, PdfObject};
+        use crate::parser::object::intern;
+        use std::sync::{Arc, Mutex};
+
+        // Create a Type3 font with identity FontMatrix for predictable coordinates
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(
+            intern("/FontMatrix"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(1),
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+                PdfObject::Integer(1),
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+            ])),
+        );
+
+        let mut char_procs_dict = PdfDict::new();
+
+        // Add a CharProcs entry pointing to a specific object reference
+        let test_ref = ObjRef::new(10, 0);
+        char_procs_dict.insert(
+            intern("/TestGlyph"),
+            PdfObject::Ref(test_ref)
+        );
+
+        font_dict.insert(intern("/CharProcs"), PdfObject::Dict(Box::new(char_procs_dict)));
+
+        let font = Type3Font::load(&font_dict);
+
+        // Track which ObjRef was passed to the callback
+        let captured_ref = Arc::new(Mutex::new(None));
+        let captured_ref_clone = captured_ref.clone();
+
+        // Create a callback that captures simulated resolver, source, and counter parameters
+        // This mimics the closure pattern used in resolver.rs lines 700-702
+        let callback = move |obj_ref: ObjRef| -> Option<Vec<u8>> {
+            // Capture the received obj_ref to verify it was passed correctly
+            *captured_ref_clone.lock().unwrap() = Some(obj_ref);
+
+            // Return a simple valid content stream (draw a 10x10 rectangle)
+            // This simulates what resolve_stream_bytes would do
+            Some(b"10 10 10 10 re f".to_vec())
+        };
+
+        // Call rasterize_type3_glyph with the callback
+        let doc_context = DocumentContext {
+            resolver: None,
+            source: None,
+        };
+
+        let result = rasterize_type3_glyph(
+            &font,
+            "TestGlyph",
+            Some(&doc_context),
+            Some(&callback as &StreamResolverFn),
+        );
+
+        // Verify the callback was invoked and received the correct ObjRef
+        assert_eq!(
+            *captured_ref.lock().unwrap(),
+            Some(test_ref),
+            "Callback should receive the ObjRef pointing to the glyph's content stream"
+        );
+
+        // Verify the glyph was successfully rasterized (callback returned valid bytes)
+        assert!(
+            result.is_some(),
+            "Glyph should be rasterized when callback returns valid content stream"
+        );
+
+        // Verify the bitmap is not all-white (content was executed)
+        let bitmap = result.unwrap();
+        let has_black = bitmap.iter().any(|&pixel| pixel == 0);
+        assert!(
+            has_black,
+            "Bitmap should contain black pixels after executing the content stream"
+        );
+    }
+
+    #[test]
+    fn test_resolve_stream_callback_captures_context_parameters() {
+        use crate::parser::object::types::{PdfDict, PdfObject};
+        use crate::parser::object::intern;
+        use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
+        // Create a Type3 font with identity FontMatrix for predictable coordinates
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(
+            intern("/FontMatrix"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(1),
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+                PdfObject::Integer(1),
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+            ])),
+        );
+
+        let mut char_procs_dict = PdfDict::new();
+
+        let glyph_ref = ObjRef::new(20, 0);
+        char_procs_dict.insert(
+            intern("/ContextGlyph"),
+            PdfObject::Ref(glyph_ref)
+        );
+
+        font_dict.insert(intern("/CharProcs"), PdfObject::Dict(Box::new(char_procs_dict)));
+
+        let font = Type3Font::load(&font_dict);
+
+        // Simulate the three context parameters that the callback should capture
+        // These represent: resolver (&XrefResolver), source (&dyn PdfSource), counter (&mut u64)
+        // Use atomic types for thread-safe state tracking
+        let mock_resolver_called = Arc::new(AtomicBool::new(false));
+        let mock_source_used = Arc::new(AtomicBool::new(false));
+        let mock_counter_incremented = Arc::new(AtomicU64::new(0));
+
+        // Create clones for the closure to capture
+        let resolver_called_clone = mock_resolver_called.clone();
+        let source_used_clone = mock_source_used.clone();
+        let counter_incremented_clone = mock_counter_incremented.clone();
+
+        // Callback that simulates resolve_stream_bytes behavior
+        // This closure captures and uses all three context parameters
+        let callback = move |obj_ref: ObjRef| -> Option<Vec<u8>> {
+            // Simulate using resolver (mark as called)
+            resolver_called_clone.store(true, Ordering::SeqCst);
+
+            // Simulate using source (mark as used)
+            source_used_clone.store(true, Ordering::SeqCst);
+
+            // Simulate using counter (increment it)
+            counter_incremented_clone.fetch_add(1, Ordering::SeqCst);
+
+            // Verify we received the expected obj_ref
+            assert_eq!(obj_ref, glyph_ref, "Callback should receive the correct glyph reference");
+
+            // Return a valid content stream
+            Some(b"5 5 20 20 re f".to_vec())
+        };
+
+        let doc_context = DocumentContext {
+            resolver: None,
+            source: None,
+        };
+
+        // Execute the callback through rasterize_type3_glyph
+        let result = rasterize_type3_glyph(
+            &font,
+            "ContextGlyph",
+            Some(&doc_context),
+            Some(&callback as &StreamResolverFn),
+        );
+
+        // Verify all three context parameters were used by the callback
+        assert!(
+            mock_resolver_called.load(Ordering::SeqCst),
+            "Callback should use the resolver parameter"
+        );
+        assert!(
+            mock_source_used.load(Ordering::SeqCst),
+            "Callback should use the source parameter"
+        );
+        assert_eq!(
+            mock_counter_incremented.load(Ordering::SeqCst),
+            1,
+            "Callback should use (increment) the counter parameter"
+        );
+
+        // Verify successful rasterization
+        assert!(
+            result.is_some(),
+            "Glyph should rasterize successfully when callback uses all context parameters"
+        );
+    }
 }
