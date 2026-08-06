@@ -5,18 +5,6 @@ import (
 	"encoding/json"
 )
 
-// PageResult represents either a Page or an error from streaming extraction.
-type PageResult struct {
-	Page *Page
-	Err  error
-}
-
-// MatchResult represents either a Match or an error from streaming search.
-type MatchResult struct {
-	Match *Match
-	Err   error
-}
-
 // extractStream streams page results from the pdftract binary.
 func (c *Client) extractStream(ctx context.Context, source Source, opts *ExtractOptions) (<-chan PageResult, error) {
 	args := []string{"extract", "--ndjson"}
