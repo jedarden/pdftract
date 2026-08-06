@@ -2,6 +2,32 @@
 
 This directory contains hybrid PDF fixtures with mixed vector text and scanned image content for testing the PageClass::Hybrid classifier and hybrid extraction pipeline (Phase 5.2.4).
 
+## Primary Fixtures (First 3)
+
+### hybrid-001: letterhead-image (vector-header-over-scan)
+**Pattern**: Vector letterhead header + scanned letter body
+- **Vector regions**: Company name, address, contact info, date (top 15%)
+- **Scanned regions**: Letter content, signature (bottom 85%)
+- **Hybrid cells**: ~40 cells (62.5% of page)
+- **Classification challenge**: Clear regional separation may cause misclassification as separate Vector + Scanned regions rather than unified Hybrid
+- **Test focus**: Header extraction precision, OCR on body only, non-overlapping merge rule
+
+### hybrid-002: form-mixed (vector-form-over-scan)
+**Pattern**: Vector form fields over scanned form background
+- **Vector regions**: Fillable text fields, checkboxes (~15% scattered)
+- **Scanned regions**: Form labels, instructions, field borders (~85%)
+- **Hybrid cells**: ~45 cells (70.3% of page)
+- **Classification challenge**: Scattered vector distribution complicates boundary detection and cell-level OCR targeting
+- **Test focus**: Scattered vector extraction, complex merge patterns, form field isolation
+
+### hybrid-003: sidebar-image (mixed-column-layout)
+**Pattern**: Vector main text + scanned sidebar image
+- **Vector regions**: Main article text (left 70%, columns 0-4)
+- **Scanned regions**: Sidebar image, caption (right 30%, columns 5-7)
+- **Hybrid cells**: ~24 cells (37.5% of page)
+- **Classification challenge**: Column-aware detection required; only right columns should trigger hybrid processing
+- **Test focus**: Column-aware hybrid cell detection, selective OCR application
+
 ## Purpose
 
 These fixtures support:

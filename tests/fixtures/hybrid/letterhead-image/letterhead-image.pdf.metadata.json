@@ -1,0 +1,45 @@
+{
+  "fixture_name": "letterhead-image",
+  "fixture_id": "hybrid-001-vector-header-over-scan",
+  "description": "Vector letterhead header overlaid on scanned letter body",
+  "source": {
+    "type": "synthetic",
+    "generation_method": "Generated via tests/fixtures/hybrid/generate_hybrid_fixtures.py using reportlab with vector header (top 15%) and simulated scanned body (bottom 85%)",
+    "generated_date": "2024-08-03"
+  },
+  "pages_with_hybrid_content": [
+    1
+  ],
+  "hybrid_behavior": {
+    "vector_regions": "Company name, address, contact info, date (top 15%, rows 0-1, columns 0-7)",
+    "scanned_regions": "Letter content, salutation, body paragraphs, signature (bottom 85%, rows 1-7)",
+    "overlap_type": "separate",
+    "overlap_description": "Clear boundary between vector header and scanned body with minimal overlap"
+  },
+  "grid_cell_coverage": {
+    "total_cells": 64,
+    "hybrid_cells_approx": 40,
+    "hybrid_percentage": 62.5,
+    "hybrid_cell_locations": "Rows 1-7, all columns (partial row 1)"
+  },
+  "classification_challenges": [
+    "Clear regional separation may cause classifier to treat as separate Vector + Scanned regions rather than unified Hybrid page",
+    "Header extraction precision: ensuring vector header is not incorrectly subjected to OCR",
+    "Boundary detection: accurate identification of where vector content ends and scanned content begins",
+    "Tests non-overlapping merge rule behavior when regions are cleanly separated"
+  ],
+  "test_focus": [
+    "Header extraction precision",
+    "OCR on body only without interference from vector header",
+    "Non-overlapping merge rule validation",
+    "Regional classification accuracy"
+  ],
+  "expected_classification": {
+    "page_class": "Hybrid",
+    "hybrid_cells": "~40 cells",
+    "confidence_range": "0.75-0.90"
+  },
+  "file_size_bytes": 460,
+  "validation_status": "pending",
+  "notes": "Common business letter format; tests that vector header doesn't trigger OCR on header cells. Synthetic fixture with ACME Corporation letterhead placeholder content."
+}

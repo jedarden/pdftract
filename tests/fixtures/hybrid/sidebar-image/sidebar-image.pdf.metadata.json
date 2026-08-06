@@ -1,0 +1,45 @@
+{
+  "fixture_name": "sidebar-image",
+  "fixture_id": "hybrid-003-mixed-column-layout",
+  "description": "Vector main text in left column with scanned sidebar image in right column",
+  "source": {
+    "type": "synthetic",
+    "generation_method": "Generated via tests/fixtures/hybrid/generate_hybrid_fixtures.py using reportlab with vector main text (left 70%) and simulated scanned sidebar image (right 30%)",
+    "generated_date": "2024-08-03"
+  },
+  "pages_with_hybrid_content": [
+    1
+  ],
+  "hybrid_behavior": {
+    "vector_regions": "Main article text, headlines, byline (70% width, left side, columns 0-4)",
+    "scanned_regions": "Sidebar image, photo, caption (30% width, right side, columns 5-7)",
+    "overlap_type": "separate",
+    "overlap_description": "Vertical split with clear boundary between vector and scanned regions"
+  },
+  "grid_cell_coverage": {
+    "total_cells": 64,
+    "hybrid_cells_approx": 24,
+    "hybrid_percentage": 37.5,
+    "hybrid_cell_locations": "Rightmost 3 columns (columns 5-7), all rows"
+  },
+  "classification_challenges": [
+    "Column-aware hybrid detection: system must recognize column layout and apply hybrid handling only to right columns",
+    "Side-by-side layout without overlap tests merge rule non-interference",
+    "Tests that OCR runs only on sidebar columns while vector extraction handles main text columns",
+    "Verifies column detection accuracy when only some columns contain hybrid content"
+  ],
+  "test_focus": [
+    "Column-aware hybrid cell detection",
+    "Side-by-side merge without conflicts between regions",
+    "Selective OCR application to only hybrid columns",
+    "Column detection with mixed column types"
+  ],
+  "expected_classification": {
+    "page_class": "Hybrid",
+    "hybrid_cells": "~24 cells",
+    "confidence_range": "0.65-0.80"
+  },
+  "file_size_bytes": 460,
+  "validation_status": "pending",
+  "notes": "Newsletter/magazine format with clear vertical separation between vector main content and scanned sidebar. Tests column detection accuracy and selective hybrid processing."
+}

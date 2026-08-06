@@ -1,0 +1,45 @@
+{
+  "fixture_name": "form-mixed",
+  "fixture_id": "hybrid-002-vector-form-over-scan",
+  "description": "Vector form fields and annotations overlaid on scanned form background",
+  "source": {
+    "type": "synthetic",
+    "generation_method": "Generated via tests/fixtures/hybrid/generate_hybrid_fixtures.py using reportlab with vector fillable fields over simulated scanned form layout background",
+    "generated_date": "2024-08-03"
+  },
+  "pages_with_hybrid_content": [
+    1
+  ],
+  "hybrid_behavior": {
+    "vector_regions": "Fillable text fields, checkboxes, dropdown indicators (scattered cells, ~15% of page)",
+    "scanned_regions": "Form labels, instructions, background design, field borders (most cells, ~85% of page)",
+    "overlap_type": "partial",
+    "overlap_description": "Vector form fields positioned over scanned form labels and background"
+  },
+  "grid_cell_coverage": {
+    "total_cells": 64,
+    "hybrid_cells_approx": 45,
+    "hybrid_percentage": 70.3,
+    "hybrid_cell_locations": "Majority of page with scattered vector overlay coverage"
+  },
+  "classification_challenges": [
+    "Scattered vector distribution makes boundary detection difficult - vector content is not concentrated in contiguous regions",
+    "Complex merge patterns: multiple small vector spans overlapping with larger scanned regions",
+    "Field-level extraction requires precise OCR targeting to avoid duplicating vector and scanned text",
+    "Tests cell-level OCR granularity when vector content is interspersed throughout predominantly scanned page"
+  ],
+  "test_focus": [
+    "Scattered vector extraction through cell-level OCR",
+    "Complex merge pattern handling with multiple small overlaps",
+    "Form field isolation from scanned background",
+    "Cell-level OCR precision on hybrid forms"
+  ],
+  "expected_classification": {
+    "page_class": "Hybrid",
+    "hybrid_cells": "~45 cells",
+    "confidence_range": "0.65-0.80"
+  },
+  "file_size_bytes": 460,
+  "validation_status": "pending",
+  "notes": "Simulates PDF forms where the layout is scanned but fillable fields are vector overlays. Tests scattered vector extraction patterns common in government and business forms."
+}
