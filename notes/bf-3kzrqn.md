@@ -1,50 +1,33 @@
-# Verification Note for bf-3kzrqn
+# Bead bf-3kzrqn: Add resolver context to Type3 rasterize function signature
 
-## Task
-Add resolver context to Type3 rasterize function signature
+## What was done
 
-## Implementation Status
-**COMPLETE** - All acceptance criteria satisfied.
+Verified that the document resolver context was already added to the Type3 rasterize function signature in bead bf-4zyfvd.
 
-## Verification Details
+## Files examined
 
-### 1. Function Signature ✓
-The `rasterize_type3_glyph` function in `crates/pdftract-core/src/font/type3_rasterizer.rs` (line 817) includes the `doc_context` parameter:
+### crates/pdftract-core/src/font/type3_rasterizer.rs
 
-```rust
-pub fn rasterize_type3_glyph<'a, R>(
-    font: &Type3Font,
-    glyph_name: &str,
-    doc_context: Option<&'a DocumentContext<'a>>,
-    resolve_stream: Option<&R>,
-) -> Option<[u8; 1024]>
-```
+- **DocumentContext struct** (lines 31-38): Defines the context structure with `source` field
+- **rasterize_type3_glyph function signature** (lines 817-822): Already includes `doc_context: Option<&'a DocumentContext<'a>>` parameter
+- The context is extracted on line 830: `let source = doc_context.and_then(|ctx| ctx.source);`
 
-### 2. Context Passing ✓
-Call sites in `crates/pdftract-core/src/font/resolver.rs` pass the context:
-- Line 704: `rasterize_type3_glyph(font, &glyph_name, Some(&doc_ctx), Some(&callback))`
-- Line 707: `rasterize_type3_glyph(font, &glyph_name, None::<&Type3DocumentContext>, None::<&StreamResolverFn>)`
+### crates/pdftract-core/src/font/resolver.rs
 
-### 3. Compilation ✓
-Verified with `cargo check --lib` - compiles successfully with no errors.
+- **resolve_type3_level4 function** (line 624-746): Creates and passes the document context
+  - Line 696: `let doc_ctx = Type3DocumentContext { source };`
+  - Line 704: `rasterize_type3_glyph(font, &glyph_name, Some(&doc_ctx), Some(&callback))`
+  - Line 707: Fallback with no context when unavailable
 
-### 4. Context Availability ✓
-The function extracts and uses the context (line 830):
-```rust
-let source = doc_context.and_then(|ctx| ctx.source);
-```
+## Acceptance criteria verification
 
-The source is then passed to `RasterizerContext::new()` for form XObject resolution during glyph rasterization.
+1. ✅ **Add resolver context parameter to type3_rasterize function signature**: Already present on line 820
+2. ✅ **Pass context from caller through to the function**: Context passed on lines 704 and 707 in resolver.rs
+3. ✅ **Function compiles successfully**: Verified with `cargo check --lib` - no errors
+4. ✅ **Context is available for use in next step**: Context is accessible in function signature and can be used for char_proc_ref resolution
 
-## Historical Note
-This resolver context parameter was originally added in bead `bf-4zyfvd` (commit `44df149`) on 2026-08-03. The current task verifies that the implementation is complete and ready for use in char_proc_ref resolution.
+## Notes
 
-## Acceptance Criteria Summary
-- [x] Add resolver context parameter to type3_rasterize function signature
-- [x] Pass context from caller through to the function
-- [x] Function compiles successfully
-- [x] Context is available for use in next step
+The context parameter was added in bead bf-4zyfvd. This bead verified that the context is properly integrated and available for use in the next step of implementing char_proc_ref resolution for Type3 fonts.
 
-## Files Verified
-- `crates/pdftract-core/src/font/type3_rasterizer.rs` - Function signature with context parameter
-- `crates/pdftract-core/src/font/resolver.rs` - Call sites passing context
+The context is currently used to provide the `source` field to the `RasterizerContext` for form XObject resolution, and is ready to be used for resolving char_proc_ref in a future bead.
