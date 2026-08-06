@@ -708,8 +708,8 @@ pub type StreamResolverFn = dyn Fn(ObjRef) -> Option<Vec<u8>> + Send + Sync;
 ///
 /// * `font` - The Type3 font containing the glyph
 /// * `glyph_name` - The name of the glyph to rasterize
-/// * `doc_context` - Document resolver context (may be None for placeholder)
-/// * `resolve_stream` - Callback to resolve ObjRef to stream bytes (may be None for placeholder)
+/// * `doc_context` - Document resolver context (may be None)
+/// * `resolve_stream` - Callback to resolve ObjRef to stream bytes (may be None)
 ///
 /// # Returns
 ///
@@ -745,12 +745,8 @@ where
             Some(*ctx.bitmap.as_bytes())
         }
         None => {
-            // No resolver provided or resolution failed - return placeholder
-            // This maintains backwards compatibility for test code
-            let mut bitmap = Bitmap32x32::white();
-            // Fill a 16x16 square in the center as placeholder
-            bitmap.fill_rect(8, 8, 24, 24, 0);
-            Some(*bitmap.as_bytes())
+            // No resolver provided or resolution failed - cannot rasterize
+            None
         }
     }
 }
@@ -889,7 +885,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rasterize_type3_glyph_placeholder() {
+    fn test_rasterize_type3_glyph_unknown_returns_none() {
         let font_dict = PdfDict::new();
         let font = Type3Font::load(&font_dict);
 
