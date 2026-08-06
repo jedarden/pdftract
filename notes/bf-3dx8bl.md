@@ -2,7 +2,7 @@
 
 **Bead:** bf-3dx8bl
 **Date:** 2026-08-06
-**Reference:** `crates/pdftract-core/src/font/type3_rasterizer.rs` lines 850-1051
+**Reference:** `crates/pdftract-core/src/font/type3_rasterizer.rs` lines 992-1052 (fill_polygon method)
 
 ## Overview
 
