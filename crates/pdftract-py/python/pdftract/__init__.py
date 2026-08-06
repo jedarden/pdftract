@@ -61,6 +61,9 @@ from pdftract.types import (
     Metadata,
 )
 
+# Import typing for return annotations
+from typing import Iterator
+
 # Import subprocess fallback
 from pdftract.fallback import SubprocessExtractor
 
@@ -135,7 +138,7 @@ def _get_extractor():
         return _fallback_extractor
 
 
-def extract(source, **options):
+def extract(source, **options) -> Document:
     """Extract text and structure from a PDF.
 
     Args:
@@ -168,7 +171,7 @@ def extract(source, **options):
     return result
 
 
-def extract_text(source, **options):
+def extract_text(source, **options) -> str:
     """Extract plain text from a PDF.
 
     Args:
@@ -185,7 +188,7 @@ def extract_text(source, **options):
     return extractor.extract_text(source, **options)
 
 
-def extract_markdown(source, **options):
+def extract_markdown(source, **options) -> str:
     """Extract Markdown from a PDF.
 
     Args:
@@ -203,7 +206,7 @@ def extract_markdown(source, **options):
     return extractor.extract_markdown(source, **options)
 
 
-def extract_stream(source, **options):
+def extract_stream(source, **options) -> Iterator[Page]:
     """Extract pages from a PDF as a streaming iterator.
 
     Args:
@@ -229,7 +232,7 @@ def extract_stream(source, **options):
             yield page
 
 
-def search(source, pattern, **options):
+def search(source, pattern, **options) -> Iterator[Match]:
     """Search for a regex pattern in a PDF.
 
     Args:
@@ -252,7 +255,7 @@ def search(source, pattern, **options):
             yield match
 
 
-def get_metadata(source, **options):
+def get_metadata(source, **options) -> Metadata:
     """Get metadata, outline, and fingerprint from a PDF (cheap, no full extraction).
 
     Args:
@@ -274,7 +277,7 @@ def get_metadata(source, **options):
     return result
 
 
-def hash(source, **options):
+def hash(source, **options) -> Fingerprint:
     """Compute the structural fingerprint of a PDF.
 
     Args:
@@ -298,7 +301,7 @@ def hash(source, **options):
     return result
 
 
-def classify(source):
+def classify(source) -> Classification:
     """Classify a PDF page type.
 
     Args:
@@ -318,7 +321,7 @@ def classify(source):
     return result
 
 
-def verify_receipt(path, receipt):
+def verify_receipt(path, receipt) -> bool:
     """Verify a cryptographic receipt against a PDF.
 
     Args:
