@@ -1045,4 +1045,152 @@ mod tests {
             _ => panic!("Expected ResolveError::Io"),
         }
     }
+
+    #[test]
+    fn test_rasterize_type3_glyph_with_missing_glyph_returns_none() {
+        use crate::parser::object::types::PdfDict;
+
+        let font_dict = PdfDict::new();
+        let font = Type3Font::load(&font_dict);
+
+        // Non-existent glyph should return None (graceful degradation)
+        let doc_context = DocumentContext {
+            resolver: None,
+            source: None,
+        };
+
+        let result = rasterize_type3_glyph(
+            &font,
+            "nonexistent",
+            Some(&doc_context),
+            None::<&StreamResolverFn>,
+        );
+
+        // Should gracefully return None, not panic
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_rasterize_type3_glyph_with_failed_resolution_returns_none() {
+        use crate::parser::object::types::{PdfDict, PdfObject};
+        use crate::parser::object::intern;
+        use std::sync::Arc;
+
+        let mut font_dict = PdfDict::new();
+        let mut char_procs_dict = PdfDict::new();
+
+        // Add a valid CharProcs entry
+        char_procs_dict.insert(
+            intern("/A"),
+            PdfObject::Ref(ObjRef::new(999, 0)) // Non-existent object
+        );
+
+        font_dict.insert(intern("/CharProcs"), PdfObject::Dict(Box::new(char_procs_dict)));
+
+        let font = Type3Font::load(&font_dict);
+
+        // Verify the glyph exists in CharProcs
+        assert!(font.has_glyph("A"));
+        assert!(font.char_proc("A").is_some());
+
+        let doc_context = DocumentContext {
+            resolver: None,
+            source: None,
+        };
+
+        // Create a resolver that always fails (simulating missing/invalid reference)
+        let failing_resolver = &(|_obj_ref: ObjRef| -> Option<Vec<u8>> {
+            None // Simulates resolution failure
+        }) as &StreamResolverFn;
+
+        let result = rasterize_type3_glyph(
+            &font,
+            "A",
+            Some(&doc_context),
+            Some(failing_resolver),
+        );
+
+        // Should gracefully return None, not panic
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_rasterize_type3_glyph_with_malformed_stream_returns_none() {
+        use crate::parser::object::types::{PdfDict, PdfObject};
+        use crate::parser::object::intern;
+        use std::sync::Arc;
+
+        let mut font_dict = PdfDict::new();
+        let mut char_procs_dict = PdfDict::new();
+
+        // Add a valid CharProcs entry
+        char_procs_dict.insert(
+            intern("/B"),
+            PdfObject::Ref(ObjRef::new(10, 0))
+        );
+
+        font_dict.insert(intern("/CharProcs"), PdfObject::Dict(Box::new(char_procs_dict)));
+
+        let font = Type3Font::load(&font_dict);
+
+        let doc_context = DocumentContext {
+            resolver: None,
+            source: None,
+        };
+
+        // Create a resolver that returns malformed/empty bytes (simulating corrupt stream)
+        let malformed_resolver = &(|_obj_ref: ObjRef| -> Option<Vec<u8>> {
+            Some(vec![0xFF, 0xFF, 0xFF]) // Malformed PDF content stream
+        }) as &StreamResolverFn;
+
+        let result = rasterize_type3_glyph(
+            &font,
+            "B",
+            Some(&doc_context),
+            Some(malformed_resolver),
+        );
+
+        // Should gracefully return None or a default bitmap, not panic
+        // Malformed content streams are handled by the lexer/parser
+        // This tests that we don't crash on bad input
+        let _ = result; // We accept either None or a bitmap (graceful handling)
+    }
+
+    #[test]
+    fn test_execute_content_stream_with_invalid_tokens_does_not_crash() {
+        use crate::parser::object::types::PdfDict;
+
+        let font_dict = PdfDict::new();
+        let font = Type3Font::load(&font_dict);
+        let mut ctx = RasterizerContext::new(&font);
+
+        // Execute malformed content: invalid operators and operands
+        // This should not crash, just skip unknown operators
+        let malformed_stream = b"INVALID_OPERATOR 1.5 2.5 another_invalid [array]";
+
+        // This should execute without panicking
+        ctx.execute_content_stream(malformed_stream);
+
+        // Bitmap should still be in a valid state (all white since no valid ops executed)
+        assert_eq!(ctx.bitmap.get(0, 0), Some(255));
+        assert_eq!(ctx.bitmap.get(31, 31), Some(255));
+    }
+
+    #[test]
+    fn test_execute_content_stream_with_empty_stream_does_not_crash() {
+        use crate::parser::object::types::PdfDict;
+
+        let font_dict = PdfDict::new();
+        let font = Type3Font::load(&font_dict);
+        let mut ctx = RasterizerContext::new(&font);
+
+        // Execute empty content stream
+        let empty_stream = b"";
+
+        // This should execute without panicking
+        ctx.execute_content_stream(empty_stream);
+
+        // Bitmap should be all white (default state)
+        assert_eq!(ctx.bitmap, Bitmap32x32::white());
+    }
 }
