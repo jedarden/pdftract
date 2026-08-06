@@ -164,7 +164,7 @@ class SubprocessExtractor:
 
         try:
             data = json.loads(result.stdout)
-            return Document.from_dict(data)
+            return Document.from_native(data)
         except json.JSONDecodeError as e:
             raise PdftractError(f"Failed to parse JSON output: {e}")
 
@@ -240,7 +240,7 @@ class SubprocessExtractor:
                 continue
             try:
                 data = json.loads(line)
-                yield Page.from_dict(data)
+                yield Page.from_native(data)
             except json.JSONDecodeError as e:
                 raise PdftractError(f"Failed to parse NDJSON line: {e}")
 
@@ -268,14 +268,7 @@ class SubprocessExtractor:
 
         data = json.loads(result.stdout)
         for match_data in data.get("matches", []):
-            yield Match(
-                text=match_data["text"],
-                page_index=match_data["page_index"],
-                span_index=match_data["span_index"],
-                bbox=match_data["bbox"],
-                match_start=match_data.get("match_start", 0),
-                match_end=match_data.get("match_end", len(match_data["text"])),
-            )
+            yield Match.from_native(match_data)
 
     def get_metadata(self, source: str, **options) -> Metadata:
         """Get metadata from a PDF.
@@ -300,19 +293,7 @@ class SubprocessExtractor:
 
         try:
             data = json.loads(result.stdout)
-            return Metadata(
-                page_count=data.get("page_count", 0),
-                title=data.get("title"),
-                author=data.get("author"),
-                subject=data.get("subject"),
-                keywords=data.get("keywords"),
-                creator=data.get("creator"),
-                producer=data.get("producer"),
-                creation_date=data.get("creation_date"),
-                mod_date=data.get("mod_date"),
-                fingerprint=data.get("fingerprint"),
-                outline=data.get("outline"),
-            )
+            return Metadata.from_native(data)
         except json.JSONDecodeError as e:
             raise PdftractError(f"Failed to parse JSON output: {e}")
 
@@ -364,12 +345,7 @@ class SubprocessExtractor:
 
         try:
             data = json.loads(result.stdout)
-            # Return a simple dict with class info
-            return {
-                "class_name": data.get("class", "Unknown"),
-                "confidence": data.get("confidence", 0.0),
-                "hybrid_cells": data.get("hybrid_cells"),
-            }
+            return Classification.from_native(data)
         except json.JSONDecodeError as e:
             raise PdftractError(f"Failed to parse JSON output: {e}")
 
