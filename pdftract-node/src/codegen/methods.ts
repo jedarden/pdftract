@@ -3,11 +3,13 @@
  */
 
 import { spawn } from 'child_process';
-import type {
-  Source,
+import {
   PathSource,
   URLSource,
   BytesSource,
+} from './types.js';
+import type {
+  Source,
   Document,
   Page,
   Match,
