@@ -562,6 +562,195 @@ impl<'a> RasterizerContext<'a> {
         // For now, stub this out - form XObjects require full resource resolution
     }
 
+    /// Evaluate a point on a cubic Bezier curve at parameter t using de Casteljau's algorithm.
+    ///
+    /// Given a cubic Bezier curve defined by control points p0, p1, p2, p3,
+    /// this computes the point on the curve at parameter t ∈ [0, 1].
+    ///
+    /// # Arguments
+    ///
+    /// * `p0` - Start point of the curve
+    /// * `p1` - First control point
+    /// * `p2` - Second control point
+    /// * `p3` - End point of the curve
+    /// * `t` - Parameter value [0, 1]
+    ///
+    /// # Returns
+    ///
+    /// The Point on the curve at parameter t
+    fn cubic_bezier_point(p0: Point, p1: Point, p2: Point, p3: Point, t: f64) -> Point {
+        let u = 1.0 - t;
+        let tt = t * t;
+        let uu = u * u;
+        let uuu = uu * u;
+        let ttt = tt * t;
+
+        // Bezier formula: B(t) = (1-t)³P₀ + 3(1-t)²tP₁ + 3(1-t)t²P₂ + t³P₃
+        Point {
+            x: uuu * p0.x + 3.0 * uu * t * p1.x + 3.0 * u * tt * p2.x + ttt * p3.x,
+            y: uuu * p0.y + 3.0 * uu * t * p1.y + 3.0 * u * tt * p2.y + ttt * p3.y,
+        }
+    }
+
+    /// Subdivide a cubic Bezier curve into two curves at parameter t.
+    ///
+    /// Uses de Casteljau's algorithm to split the curve into two segments:
+    /// - Left segment: from t=0 to t
+    /// - Right segment: from t to t=1
+    ///
+    /// # Arguments
+    ///
+    /// * `p0` - Start point of the curve
+    /// * `p1` - First control point
+    /// * `p2` - Second control point
+    /// * `p3` - End point of the curve
+    /// * `t` - Split parameter [0, 1]
+    ///
+    /// # Returns
+    ///
+    /// A tuple of two curves: (left_curve, right_curve), where each curve
+    /// is represented as (p0, p1, p2, p3)
+    fn subdivide_cubic_bezier(
+        p0: Point,
+        p1: Point,
+        p2: Point,
+        p3: Point,
+        t: f64,
+    ) -> ((Point, Point, Point, Point), (Point, Point, Point, Point)) {
+        // de Casteljau subdivision
+        let p01 = Point {
+            x: p0.x + (p1.x - p0.x) * t,
+            y: p0.y + (p1.y - p0.y) * t,
+        };
+        let p12 = Point {
+            x: p1.x + (p2.x - p1.x) * t,
+            y: p1.y + (p2.y - p1.y) * t,
+        };
+        let p23 = Point {
+            x: p2.x + (p3.x - p2.x) * t,
+            y: p2.y + (p3.y - p2.y) * t,
+        };
+
+        let p012 = Point {
+            x: p01.x + (p12.x - p01.x) * t,
+            y: p01.y + (p12.y - p01.y) * t,
+        };
+        let p123 = Point {
+            x: p12.x + (p23.x - p12.x) * t,
+            y: p12.y + (p23.y - p12.y) * t,
+        };
+
+        let p0123 = Point {
+            x: p012.x + (p123.x - p012.x) * t,
+            y: p012.y + (p123.y - p012.y) * t,
+        };
+
+        // Left curve: p0 -> p01 -> p012 -> p0123
+        let left = (p0, p01, p012, p0123);
+        // Right curve: p0123 -> p123 -> p23 -> p3
+        let right = (p0123, p123, p23, p3);
+
+        (left, right)
+    }
+
+    /// Calculate the flatness of a cubic Bezier curve.
+    ///
+    /// Flatness measures how close the curve is to a straight line.
+    /// We use the midpoint deviation method: compute the point on the curve
+    /// at t=0.5 and measure its distance from the line connecting p0 and p3.
+    ///
+    /// # Arguments
+    ///
+    /// * `p0` - Start point of the curve
+    /// * `p1` - First control point
+    /// * `p2` - Second control point
+    /// * `p3` - End point of the curve
+    ///
+    /// # Returns
+    ///
+    /// The flatness value (lower is flatter, 0 means perfectly straight)
+    fn curve_flatness(p0: Point, p1: Point, p2: Point, p3: Point) -> f64 {
+        // Compute midpoint of the curve at t=0.5
+        let midpoint = Self::cubic_bezier_point(p0, p1, p2, p3, 0.5);
+
+        // Compute the midpoint of the chord (line from p0 to p3)
+        let chord_mid = Point {
+            x: (p0.x + p3.x) * 0.5,
+            y: (p0.y + p3.y) * 0.5,
+        };
+
+        // Distance from curve midpoint to chord midpoint
+        let dx = midpoint.x - chord_mid.x;
+        let dy = midpoint.y - chord_mid.y;
+        (dx * dx + dy * dy).sqrt()
+    }
+
+    /// Recursively subdivide a cubic Bezier curve until it's flat enough.
+    ///
+    /// Converts a smooth Bezier curve into a series of line segments
+    /// using adaptive subdivision based on flatness checking.
+    ///
+    /// # Arguments
+    ///
+    /// * `segments` - Output vector to append line segments to
+    /// * `p0` - Start point of the curve
+    /// * `p1` - First control point
+    /// * `p2` - Second control point
+    /// * `p3` - End point of the curve
+    /// * `depth` - Current recursion depth
+    fn flatten_cubic_bezier_recursive(
+        segments: &mut Vec<(Point, Point)>,
+        p0: Point,
+        p1: Point,
+        p2: Point,
+        p3: Point,
+        depth: usize,
+    ) {
+        const FLATNESS_THRESHOLD: f64 = 0.5;
+        const MAX_DEPTH: usize = 8;
+
+        // Check if curve is flat enough or we've reached max depth
+        let flatness = Self::curve_flatness(p0, p1, p2, p3);
+        if flatness <= FLATNESS_THRESHOLD || depth >= MAX_DEPTH {
+            // Curve is flat enough - add as a single line segment
+            segments.push((p0, p3));
+            return;
+        }
+
+        // Split the curve at t=0.5 and recursively flatten both halves
+        let (left, right) = Self::subdivide_cubic_bezier(p0, p1, p2, p3, 0.5);
+
+        Self::flatten_cubic_bezier_recursive(segments, left.0, left.1, left.2, left.3, depth + 1);
+        Self::flatten_cubic_bezier_recursive(segments, right.0, right.1, right.2, right.3, depth + 1);
+    }
+
+    /// Flatten a cubic Bezier curve into line segments.
+    ///
+    /// Public interface for curve flattening. Converts a smooth Bezier curve
+    /// into a series of line segments suitable for scanline rasterization.
+    ///
+    /// # Arguments
+    ///
+    /// * `p0` - Start point of the curve
+    /// * `p1` - First control point
+    /// * `p2` - Second control point
+    /// * `p3` - End point of the curve
+    ///
+    /// # Returns
+    ///
+    /// A vector of line segments (start_point, end_point) that approximate
+    /// the Bezier curve
+    fn flatten_cubic_bezier(
+        p0: Point,
+        p1: Point,
+        p2: Point,
+        p3: Point,
+    ) -> Vec<(Point, Point)> {
+        let mut segments = Vec::new();
+        Self::flatten_cubic_bezier_recursive(&mut segments, p0, p1, p2, p3, 0);
+        segments
+    }
+
     /// Rasterize the current path to the bitmap.
     fn rasterize_path(&mut self, stroke: bool) {
         // Collect path segments from commands
@@ -611,9 +800,33 @@ impl<'a> RasterizerContext<'a> {
                     }
                     current_point = move_point;
                 }
-                _ => {
-                    // CubicTo and other curve commands are not yet implemented
-                    // They would require scan-converting Bezier curves
+                PathCommand::CubicTo(cp1, cp2, end) => {
+                    // Flatten cubic Bezier curve into line segments
+                    if let Some(start) = current_point {
+                        let curve_segments = Self::flatten_cubic_bezier(start, *cp1, *cp2, *end);
+                        segments.extend(curve_segments);
+                    }
+                    current_point = Some(*end);
+                }
+                PathCommand::ShorthandCubicTo(cp2, end) => {
+                    // v x2 y2 x3 y3 - first control point is reflection of previous
+                    if let Some(start) = current_point {
+                        // First control point is the current point (reflection from previous segment)
+                        let cp1 = start;
+                        let curve_segments = Self::flatten_cubic_bezier(start, cp1, *cp2, *end);
+                        segments.extend(curve_segments);
+                    }
+                    current_point = Some(*end);
+                }
+                PathCommand::ShorthandCubicToY(cp1, end) => {
+                    // y x1 y1 x3 y3 - second control point is the end point
+                    if let Some(start) = current_point {
+                        // Second control point is the end point (reflection)
+                        let cp2 = *end;
+                        let curve_segments = Self::flatten_cubic_bezier(start, *cp1, cp2, *end);
+                        segments.extend(curve_segments);
+                    }
+                    current_point = Some(*end);
                 }
             }
         }
