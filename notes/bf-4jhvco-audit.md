@@ -16,16 +16,16 @@
 
 ## Detailed Findings
 
-| Bead ID | SDK Language | Close Date | Close Reason Excerpt | Assessment | Current Status | Remediation Needed |
-|---------|--------------|------------|---------------------|------------|-----------------|-------------------|
-| **pdftract-45vo7** | Ruby | 2025-XX-XX | "Ruby SDK structure is complete with **all 9 contract methods**, 8 exception classes" | **Structural-only** | closed | **YES** - Reopen + functional verification required |
-| **pdftract-2m3gl** | PHP | 2025-XX-XX | "Implemented **9 contract methods**, 8 exception classes, PHPUnit conformance tests" | **Structural-only** | closed | **YES** - Reopen + run PHPUnit conformance suite |
-| **pdftract-1w22d** | .NET | 2025-XX-XX | "Implemented .NET SDK subprocess wrapper. **All 9 contract methods** with async/sync variants" | **Structural-only** | closed | **YES** - Reopen + run conformance tests |
-| **pdftract-5lvpu** | Swift | 2025-XX-XX | "Regenerated Swift SDK using code generator... **Generated complete Swift SDK package with 9 contract methods**" | **Structural-only** | closed | **YES** - Reopen + run swift test conformance |
-| **pdftract-2v2d0** | Node.js/TypeScript | 2025-XX-XX | "Implemented Node.js/TypeScript SDK... **All 9 contract methods implemented**" | **Structural-only** | closed | **YES** - Reopen + run npm test conformance |
-| **pdftract-2pyln** | Go | 2025-XX-XX | "Go SDK implementation complete. **All 9 contract methods exposed** with context.Context cancellation" | **Structural-only** | closed | **YES** - Reopen + run go test conformance |
-| **pdftract-2nu0s** | Python | 2025-XX-XX | "Implemented Python SDK with **all 9 contract methods**... **Some methods are stub implementations** (hash, classify, verify_receipt, search)" | **Partially functional** | closed | **YES** - Stub methods need real implementations |
-| **pdftract-32qkr** | Java/Kotlin | 2025-XX-XX | "All 9 contract methods exposed... **mvn test runs 27 tests (PASS)**" | **Verified functional** | closed | **NO** - Only bead with passing tests |
+| Bead ID | SDK Language | Close Date | Close Reason Excerpt | Assessment | Current Status | Remediation Needed | Remediated |
+|---------|--------------|------------|---------------------|------------|-----------------|-------------------|------------|
+| **pdftract-45vo7** | Ruby | 2025-XX-XX | "Ruby SDK structure is complete with **all 9 contract methods**, 8 exception classes" | **Structural-only** | open | **YES** - Reopen + functional verification required | **YES** - Reopened + Comment #16 |
+| **pdftract-2m3gl** | PHP | 2025-XX-XX | "Implemented **9 contract methods**, 8 exception classes, PHPUnit conformance tests" | **Structural-only** | open | **YES** - Reopen + run PHPUnit conformance suite | **YES** - Reopened + Comment #18 |
+| **pdftract-1w22d** | .NET | 2025-XX-XX | "Implemented .NET SDK subprocess wrapper. **All 9 contract methods** with async/sync variants" | **Structural-only** | blocked | **YES** - Reopen + run conformance tests | **YES** - Reopened + Comment #19 |
+| **pdftract-5lvpu** | Swift | 2025-XX-XX | "Regenerated Swift SDK using code generator... **Generated complete Swift SDK package with 9 contract methods**" | **Structural-only** | open | **YES** - Reopen + run swift test conformance | **YES** - Reopened + Comment #20 |
+| **pdftract-2v2d0** | Node.js/TypeScript | 2025-XX-XX | "Implemented Node.js/TypeScript SDK... **All 9 contract methods implemented**" | **Structural-only** | open | **YES** - Reopen + run npm test conformance | **YES** - Reopened + Comment #21 |
+| **pdftract-2pyln** | Go | 2025-XX-XX | "Go SDK implementation complete. **All 9 contract methods exposed** with context.Context cancellation" | **Structural-only** | open | **YES** - Reopen + run go test conformance | **YES** - Reopened + Comment #22 |
+| **pdftract-2nu0s** | Python | 2025-XX-XX | "Implemented Python SDK with **all 9 contract methods**... **Some methods are stub implementations** (hash, classify, verify_receipt, search)" | **Partially functional** | blocked | **YES** - Stub methods need real implementations | **YES** - Reopened + Comment #17 |
+| **pdftract-32qkr** | Java/Kotlin | 2025-XX-XX | "All 9 contract methods exposed... **mvn test runs 27 tests (PASS)**" | **Verified functional** | closed | **NO** - Only bead with passing tests | **N/A** - Verified functional |
 
 ## Pattern Analysis
 
