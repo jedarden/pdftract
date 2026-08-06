@@ -7,22 +7,15 @@ namespace Pdftract.Models;
 /// <summary>
 /// Represents a PDF document with pages and metadata.
 /// </summary>
-[MessagePackObject]
+[GenerateSerializer]
 public record Document
 {
-    [Key(0)]
     [JsonPropertyName("id")]
     public string Id { get; init; } = string.Empty;
 
-    [Key(1)]
-    [JsonPropertyName("schema_version")]
-    public string SchemaVersion { get; init; } = "1.0";
-
-    [Key(2)]
     [JsonPropertyName("pages")]
     public IList<Page> Pages { get; init; } = new List<Page>();
 
-    [Key(3)]
     [JsonPropertyName("metadata")]
     public required Metadata Metadata { get; init; }
 }
