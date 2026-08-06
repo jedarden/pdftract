@@ -4,7 +4,7 @@
 Verified the callback closure construction at `resolver.rs:697-702`. The closure correctly captures all required parameters for Type3 glyph stream resolution.
 
 ## Function Context
-The closure is defined within the `resolve_type3_level4` function (lines 624-632), which receives:
+The closure is defined within the `resolve_type3` function (lines 532-540), which receives:
 - `resolver: Option<&XrefResolver>` - reference to XrefResolver for dereferencing
 - `source: Option<&dyn ParserPdfSource>` - reference to PDF source for reading stream data
 - `doc_decompress_counter: Option<&mut u64>` - mutable reference to decompression counter
@@ -47,6 +47,20 @@ impl Fn(crate::parser::object::ObjRef) -> Option<Vec<u8>>
 ```
 
 The closure is a `Fn` (not `FnMut` or `FnOnce`) because it only passes references to the helper function and doesn't directly mutate its captures.
+
+### Compatibility with StreamResolverFn
+The closure is passed to `rasterize_type3_glyph` as `Option<&StreamResolverFn>`, where:
+```rust
+pub type StreamResolverFn = dyn Fn(ObjRef) -> Option<Vec<u8>> + Send + Sync;
+```
+
+**Compatibility verified:**
+- Signature matches: `Fn(ObjRef) -> Option<Vec<u8>>`
+- `Send + Sync` bounds satisfied:
+  - `&XrefResolver` is `Send + Sync`
+  - `&dyn ParserPdfSource` trait object requires `Send + Sync`
+  - `&mut u64` is `Send + Sync`
+- Lifetime elision works correctly: closure lifetimes are tied to the if-let block scope
 
 ## Helper Function (Lines 666-692)
 ```rust
@@ -91,8 +105,22 @@ This is a workaround pattern for lifetime issues with closures. Rather than havi
 
 This pattern avoids explicit lifetime annotations on the closure while maintaining correct borrowing semantics.
 
+## How the Closure is Used
+The closure is passed immediately to `rasterize_type3_glyph` at line 704:
+```rust
+rasterize_type3_glyph(font, &glyph_name, Some(&doc_ctx), Some(&callback))
+```
+
+The `rasterize_type3_glyph` function uses this callback to:
+1. Receive `ObjRef` instances from Type3 glyph content streams
+2. Resolve each reference to actual stream bytes
+3. Return decoded bytes for rasterization
+
+This allows Type3 glyphs to reference images or other content in the PDF document, which the rasterizer can dereference through the callback.
+
 ## References
-- `crates/pdftract-core/src/font/resolver.rs:624-632` - Function signature
-- `crates/pdftract-core/src/font/resolver.rs:666-692` - Helper function
-- `crates/pdftract-core/src/font/resolver.rs:694` - If-let destructuring
+- `crates/pdftract-core/src/font/resolver.rs:532-540` - `resolve_type3` function signature
+- `crates/pdftract-core/src/font/resolver.rs:666-692` - `resolve_stream_bytes` helper function
+- `crates/pdftract-core/src/font/resolver.rs:694-708` - If-let destructuring and closure construction
 - `crates/pdftract-core/src/font/resolver.rs:697-702` - Closure construction
+- `crates/pdftract-core/src/font/type3_rasterizer.rs:795` - `StreamResolverFn` type definition
