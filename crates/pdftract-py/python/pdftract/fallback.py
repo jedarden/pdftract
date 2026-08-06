@@ -19,7 +19,9 @@ from pdftract.exceptions import (
     EncryptionError,
     PdftractError,
     ReceiptVerifyError,
+    RemoteFetchInterruptedError,
     SourceUnreachableError,
+    TlsError,
     UnsupportedOperationError,
 )
 from pdftract.types import (
@@ -131,9 +133,9 @@ class SubprocessExtractor:
         elif exit_code == 4:
             return SourceUnreachableError(stderr or "Source (file or URL) is unreachable")
         elif exit_code == 5:
-            return PdftractError(stderr or "Network interrupted")
+            return RemoteFetchInterruptedError(stderr or "Network interrupted")
         elif exit_code == 6:
-            return PdftractError(stderr or "TLS or certificate failure")
+            return TlsError(stderr or "TLS or certificate failure")
         elif exit_code == 10:
             return ReceiptVerifyError(stderr or "Receipt verification failed")
         else:

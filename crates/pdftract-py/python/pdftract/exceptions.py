@@ -13,7 +13,14 @@ class PdftractError(Exception):
     by more specific exception types.
     """
 
-    pass
+    def __init__(self, message: str | None = None):
+        """Initialize the exception.
+
+        Args:
+            message: Optional error message
+        """
+        super().__init__(message)
+        self.message = message
 
 
 class CorruptPdfError(PdftractError):
@@ -23,7 +30,14 @@ class CorruptPdfError(PdftractError):
     is not a valid PDF document.
     """
 
-    pass
+    def __init__(self, message: str | None = None):
+        """Initialize the exception.
+
+        Args:
+            message: Optional error message
+        """
+        super().__init__(message)
+        self.message = message
 
 
 class EncryptionError(PdftractError):
@@ -34,7 +48,14 @@ class EncryptionError(PdftractError):
         pdftract.extract("encrypted.pdf", password="secret")
     """
 
-    pass
+    def __init__(self, message: str | None = None):
+        """Initialize the exception.
+
+        Args:
+            message: Optional error message
+        """
+        super().__init__(message)
+        self.message = message
 
 
 class SourceUnreachableError(PdftractError):
@@ -44,7 +65,14 @@ class SourceUnreachableError(PdftractError):
     For URLs: check network connectivity and URL validity.
     """
 
-    pass
+    def __init__(self, message: str | None = None):
+        """Initialize the exception.
+
+        Args:
+            message: Optional error message
+        """
+        super().__init__(message)
+        self.message = message
 
 
 class RemoteFetchInterruptedError(PdftractError):
@@ -54,7 +82,14 @@ class RemoteFetchInterruptedError(PdftractError):
     or server issues during URL fetching.
     """
 
-    pass
+    def __init__(self, message: str | None = None):
+        """Initialize the exception.
+
+        Args:
+            message: Optional error message
+        """
+        super().__init__(message)
+        self.message = message
 
 
 class TlsError(PdftractError):
@@ -64,7 +99,14 @@ class TlsError(PdftractError):
     such as an invalid certificate or TLS protocol mismatch.
     """
 
-    pass
+    def __init__(self, message: str | None = None):
+        """Initialize the exception.
+
+        Args:
+            message: Optional error message
+        """
+        super().__init__(message)
+        self.message = message
 
 
 class ReceiptVerifyError(PdftractError):
@@ -76,7 +118,14 @@ class ReceiptVerifyError(PdftractError):
     - The content hash doesn't match
     """
 
-    pass
+    def __init__(self, message: str | None = None):
+        """Initialize the exception.
+
+        Args:
+            message: Optional error message
+        """
+        super().__init__(message)
+        self.message = message
 
 
 class UnsupportedOperationError(PdftractError):
@@ -86,4 +135,11 @@ class UnsupportedOperationError(PdftractError):
     with an older binary.
     """
 
-    pass
+    def __init__(self, message: str | None = None):
+        """Initialize the exception.
+
+        Args:
+            message: Optional error message
+        """
+        super().__init__(message)
+        self.message = message
