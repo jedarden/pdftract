@@ -1,7 +1,7 @@
 # Verification Note: bf-4qpa4i — Export SDK types from pdftract module
 
 ## Summary
-The task to export SDK types from the pdftract module was already complete. The types were properly imported and re-exported in `__init__.py`.
+Enhanced the pdftract module docstring to explicitly document all available SDK types, making the public API more discoverable for users. The types were already properly imported and re-exported in `__init__.py`.
 
 ## Acceptance Criteria Verification
 
@@ -52,14 +52,19 @@ Metadata: <class 'pdftract.types.Metadata'>
 ### ✓ PASS: Types included in __all__
 The `__all__` list (lines 71-102) properly exports all 8 types along with other public API members.
 
+### ✓ PASS: Module docstring documents available types
+Added explicit "Available types" section to module docstring listing all 8 SDK types with brief descriptions.
+
 ## Implementation Details
-- The implementation was already present in the codebase
-- Module docstring mentions "dataclass types" (line 5)
-- The type imports are at module level for direct access
+- Enhanced the module docstring in `__init__.py` to add "Available types" section
+- The type imports were already present at module level for direct access
 - All types have `from_native` classmethods for conversion from native Rust dictionaries
 
 ## Files Modified
-No modifications were needed - the task was already complete.
+- `crates/pdftract-py/python/pdftract/__init__.py`: Enhanced docstring with explicit type documentation
+
+## Commits
+- `4f8fd89` docs(bf-4qpa4i): enhance module docstring with available types documentation
 
 ## References
 - Bead: bf-4qpa4i
