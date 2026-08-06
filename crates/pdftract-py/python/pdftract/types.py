@@ -6,7 +6,38 @@ All types are implemented as frozen dataclasses for immutability.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterator, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
+
+
+@dataclass(frozen=True, slots=True)
+class Metadata:
+    """Document metadata.
+
+    Attributes:
+        page_count: Total number of pages
+        title: Document title
+        author: Document author
+        subject: Document subject
+        keywords: Document keywords
+        creator: Application that created the PDF
+        producer: PDF generator
+        created: Creation date string (ISO 8601)
+        modified: Modification date string (ISO 8601)
+    """
+
+    page_count: int = 0
+    title: Optional[str] = None
+    author: Optional[str] = None
+    subject: Optional[str] = None
+    keywords: Optional[List[str]] = None
+    creator: Optional[str] = None
+    producer: Optional[str] = None
+    created: Optional[str] = None
+    modified: Optional[str] = None
+
+    def __repr__(self) -> str:
+        cls_name = self.__class__.__name__
+        return f"{cls_name}(page_count={self.page_count}, title={self.title!r})"
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,7 +53,7 @@ class Span:
     """
 
     text: str
-    bbox: List[float]
+    bbox: Tuple[float, float, float, float]
     font: str
     size: float
     confidence: Optional[float] = None
@@ -31,17 +62,6 @@ class Span:
         cls_name = self.__class__.__name__
         text_preview = self.text[:20] if self.text else ""
         return f"{cls_name}(text={text_preview!r}..., font={self.font!r}, size={self.size})"
-
-    @classmethod
-    def from_native(cls, native_dict: dict) -> "Span":
-        """Create a Span from a native layer dict representation."""
-        return cls(
-            text=native_dict.get("text", ""),
-            bbox=native_dict.get("bbox", []),
-            font=native_dict.get("font", ""),
-            size=native_dict.get("size", 0.0),
-            confidence=native_dict.get("confidence"),
-        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,30 +73,17 @@ class Block:
         text: The block's text content
         bbox: Bounding box [x0, y0, x1, y1] in PDF user-space points
         level: Heading level (1-6) for heading blocks
-        table_index: Index of the table for table-caption blocks
     """
 
     kind: str
     text: str
-    bbox: List[float]
+    bbox: Tuple[float, float, float, float]
     level: Optional[int] = None
-    table_index: Optional[int] = None
 
     def __repr__(self) -> str:
         cls_name = self.__class__.__name__
         text_preview = self.text[:20] if self.text else ""
         return f"{cls_name}(kind={self.kind!r}, text={text_preview!r}...)"
-
-    @classmethod
-    def from_native(cls, native_dict: dict) -> "Block":
-        """Create a Block from a native layer dict representation."""
-        return cls(
-            kind=native_dict.get("kind", ""),
-            text=native_dict.get("text", ""),
-            bbox=native_dict.get("bbox", []),
-            level=native_dict.get("level"),
-            table_index=native_dict.get("table_index"),
-        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,7 +101,7 @@ class Cell:
         is_header_row: Whether this cell is in a header row
     """
 
-    bbox: List[float]
+    bbox: Tuple[float, float, float, float]
     text: str
     spans: List[int]
     row: int
@@ -114,7 +121,7 @@ class Row:
         is_header: Whether this is a header row
     """
 
-    bbox: List[float]
+    bbox: Tuple[float, float, float, float]
     cells: List[Cell]
     is_header: bool
 
@@ -135,7 +142,7 @@ class Table:
     """
 
     id: str
-    bbox: List[float]
+    bbox: Tuple[float, float, float, float]
     rows: List[Row]
     header_rows: int
     detection_method: str
@@ -168,136 +175,6 @@ class Page:
         cls_name = self.__class__.__name__
         return f"{cls_name}(page={self.page}, width={self.width}, height={self.height}, spans={len(self.spans)}, blocks={len(self.blocks)})"
 
-    @classmethod
-    def from_native(cls, native_dict: dict) -> "Page":
-        """Create a Page from a native layer dict representation."""
-        return cls.from_dict(native_dict)
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "Page":
-        """Create a Page from a dict (e.g., from subprocess output)."""
-        from pdftract.types import Span, Block, Table, Row, Cell
-
-        spans = [
-            Span(
-                text=s["text"],
-                bbox=s["bbox"],
-                font=s["font"],
-                size=s["size"],
-                confidence=s.get("confidence"),
-            )
-            for s in data.get("spans", [])
-        ]
-
-        blocks = [
-            Block(
-                kind=b["kind"],
-                text=b["text"],
-                bbox=b["bbox"],
-                level=b.get("level"),
-                table_index=b.get("table_index"),
-            )
-            for b in data.get("blocks", [])
-        ]
-
-        tables = []
-        for t in data.get("tables", []):
-            rows = []
-            for r in t.get("rows", []):
-                cells = [
-                    Cell(
-                        bbox=c["bbox"],
-                        text=c["text"],
-                        spans=c["spans"],
-                        row=c["row"],
-                        col=c["col"],
-                        rowspan=c["rowspan"],
-                        colspan=c["colspan"],
-                        is_header_row=c["is_header_row"],
-                    )
-                    for c in r.get("cells", [])
-                ]
-                rows.append(
-                    Row(
-                        bbox=r["bbox"],
-                        cells=cells,
-                        is_header=r["is_header"],
-                    )
-                )
-
-            tables.append(
-                Table(
-                    id=t["id"],
-                    bbox=t["bbox"],
-                    rows=rows,
-                    header_rows=t["header_rows"],
-                    detection_method=t["detection_method"],
-                    continued=t["continued"],
-                    continued_from_prev=t["continued_from_prev"],
-                    page_index=t["page_index"],
-                )
-            )
-
-        return cls(
-            page_index=data["page_index"],
-            spans=spans,
-            blocks=blocks,
-            tables=tables,
-            error=data.get("error"),
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class Metadata:
-    """Document metadata.
-
-    Attributes:
-        page_count: Total number of pages
-        title: Document title
-        author: Document author
-        subject: Document subject
-        keywords: Document keywords
-        creator: Application that created the PDF
-        producer: PDF generator
-        creation_date: Creation date string
-        mod_date: Modification date string
-        fingerprint: Document fingerprint
-        outline: Outline/bookmarks structure
-    """
-
-    page_count: int
-    title: Optional[str] = None
-    author: Optional[str] = None
-    subject: Optional[str] = None
-    keywords: Optional[str] = None
-    creator: Optional[str] = None
-    producer: Optional[str] = None
-    creation_date: Optional[str] = None
-    mod_date: Optional[str] = None
-    fingerprint: Optional[str] = None
-    outline: Optional[dict] = None
-
-    def __repr__(self) -> str:
-        cls_name = self.__class__.__name__
-        return f"{cls_name}(page_count={self.page_count}, title={self.title!r})"
-
-    @classmethod
-    def from_native(cls, native_dict: dict) -> "Metadata":
-        """Create a Metadata from a native layer dict representation."""
-        return cls(
-            page_count=native_dict.get("page_count", 0),
-            title=native_dict.get("title"),
-            author=native_dict.get("author"),
-            subject=native_dict.get("subject"),
-            keywords=native_dict.get("keywords"),
-            creator=native_dict.get("creator"),
-            producer=native_dict.get("producer"),
-            creation_date=native_dict.get("creation_date"),
-            mod_date=native_dict.get("mod_date"),
-            fingerprint=native_dict.get("fingerprint"),
-            outline=native_dict.get("outline"),
-        )
-
 
 @dataclass(frozen=True, slots=True)
 class Document:
@@ -309,40 +186,13 @@ class Document:
         metadata: Document metadata
     """
 
-    schema_version: str = "1.0"
-    pages: List[Page] = ()
-    metadata: Optional[Metadata] = None
+    schema_version: str
+    pages: List[Page]
+    metadata: Metadata
 
     def __repr__(self) -> str:
         cls_name = self.__class__.__name__
         return f"{cls_name}(schema_version={self.schema_version!r}, pages={len(self.pages)}, metadata={self.metadata.title if self.metadata else None!r})"
-
-    @classmethod
-    def from_native(cls, native_dict: dict) -> "Document":
-        """Create a Document from a native layer dict representation."""
-        return cls.from_dict(native_dict)
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "Document":
-        """Create a Document from a dict (e.g., from subprocess output)."""
-        pages = [Page.from_dict(p) for p in data.get("pages", [])]
-
-        md = data.get("metadata", {})
-        metadata = Metadata(
-            page_count=md.get("page_count", len(pages)),
-            title=md.get("title"),
-            author=md.get("author"),
-            subject=md.get("subject"),
-            keywords=md.get("keywords"),
-            creator=md.get("creator"),
-            producer=md.get("producer"),
-            creation_date=md.get("creation_date"),
-            mod_date=md.get("mod_date"),
-            fingerprint=md.get("fingerprint"),
-            outline=md.get("outline"),
-        )
-
-        return cls(pages=pages, metadata=metadata)
 
 
 @dataclass(frozen=True, slots=True)
@@ -358,25 +208,13 @@ class Match:
 
     text: str
     page: int
-    bbox: Tuple[int, int, int, int]
-    context: Optional[dict] = None
+    bbox: Tuple[float, float, float, float]
+    context: Optional[Dict[str, str]] = None
 
     def __repr__(self) -> str:
         cls_name = self.__class__.__name__
         text_preview = self.text[:20] if self.text else ""
         return f"{cls_name}(text={text_preview!r}..., page={self.page})"
-
-    @classmethod
-    def from_native(cls, native_dict: dict) -> "Match":
-        """Create a Match from a native layer dict representation."""
-        return cls(
-            text=native_dict.get("text", ""),
-            page_index=native_dict.get("page_index", 0),
-            span_index=native_dict.get("span_index", 0),
-            bbox=native_dict.get("bbox", []),
-            match_start=native_dict.get("match_start", 0),
-            match_end=native_dict.get("match_end", 0),
-        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -400,27 +238,6 @@ class Fingerprint:
         hash_preview = self.hash[:12] if self.hash else ""
         return f"{cls_name}(hash={hash_preview!r}..., page_count={self.page_count})"
 
-    @classmethod
-    def from_native(cls, native_dict: dict) -> "Fingerprint":
-        """Create a Fingerprint from a native layer dict representation."""
-        if isinstance(native_dict, str):
-            return cls.from_string(native_dict)
-        return cls(
-            value=native_dict.get("value", ""),
-            version=native_dict.get("version", "v1"),
-            fast_hash=native_dict.get("fast_hash"),
-        )
-
-    @classmethod
-    def from_string(cls, value: str) -> "Fingerprint":
-        """Create a Fingerprint from a string."""
-        if value.startswith("pdftract-"):
-            parts = value.split(":", 1)
-            if len(parts) == 2:
-                version = parts[0].replace("pdftract-", "")
-                return cls(value=value, version=version)
-        return cls(value=value, version="v1")
-
 
 @dataclass(frozen=True, slots=True)
 class Classification:
@@ -436,7 +253,7 @@ class Classification:
     category: str
     confidence: float
     tags: List[str] = ()
-    heuristics: Optional[dict] = None
+    heuristics: Optional[Dict[str, bool]] = None
 
     @property
     def class_name(self) -> str:
@@ -446,14 +263,3 @@ class Classification:
     def __repr__(self) -> str:
         cls_name = self.__class__.__name__
         return f"{cls_name}(category={self.category!r}, confidence={self.confidence:.2f})"
-
-    @classmethod
-    def from_native(cls, native_dict: dict) -> "Classification":
-        """Create a Classification from a native layer dict representation."""
-        # Handle both category and class_name for backward compatibility
-        category = native_dict.get("category") or native_dict.get("class_name", "Unknown")
-        return cls(
-            category=category,
-            confidence=native_dict.get("confidence", 0.0),
-            hybrid_cells=native_dict.get("hybrid_cells"),
-        )
