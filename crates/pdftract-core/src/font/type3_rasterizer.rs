@@ -23,7 +23,8 @@ use crate::font::type3::Type3Font;
 use crate::graphics_state::{GraphicsState, GraphicsStateStack, Matrix3x3};
 use crate::parser::lexer::Lexer;
 use crate::parser::object::types::ObjRef;
-use crate::parser::stream::{PdfSource};
+use crate::parser::stream::PdfSource;
+use crate::parser::xref::XrefResolver;
 
 /// Maximum recursion depth for Type 3 glyph execution (form XObject + nested glyphs).
 const MAX_GLYPH_DEPTH: usize = 20;
@@ -33,6 +34,8 @@ const MAX_GLYPH_DEPTH: usize = 20;
 /// Provides access to the document's resolver and source for dereferencing
 /// content streams during glyph rasterization.
 pub struct DocumentContext<'a> {
+    /// PDF document resolver for looking up indirect references
+    pub resolver: Option<&'a XrefResolver>,
     /// PDF source for reading stream data
     pub source: Option<&'a dyn PdfSource>,
 }
@@ -702,6 +705,43 @@ impl<'a> RasterizerContext<'a> {
 /// Given an ObjRef to a content stream, returns the decoded stream bytes.
 pub type StreamResolverFn = dyn Fn(ObjRef) -> Option<Vec<u8>> + Send + Sync;
 
+/// Dereference a char_proc_ref to resolve the actual PDF object.
+///
+/// This function looks up the indirect reference using the document resolver
+/// and returns the resolved PdfObject (typically a stream object for Type3 glyphs).
+///
+/// # Arguments
+///
+/// * `char_proc_ref` - The ObjRef pointing to the glyph content stream
+/// * `doc_context` - Document resolver context containing the XrefResolver
+///
+/// # Returns
+///
+/// `Ok(PdfObject)` if the reference was successfully resolved,
+/// `Err` if resolution failed (not found, I/O error, or circular reference).
+pub fn deref_char_proc_ref(
+    char_proc_ref: ObjRef,
+    doc_context: Option<&DocumentContext>,
+) -> Result<crate::parser::object::types::PdfObject, crate::parser::xref::ResolveError> {
+    use crate::parser::xref::ResolveError;
+
+    let doc_context = doc_context.ok_or_else(|| {
+        ResolveError::Io("DocumentContext not provided - cannot dereference char_proc_ref".to_string())
+    })?;
+
+    let resolver = doc_context.resolver.ok_or_else(|| {
+        ResolveError::Io("XrefResolver not provided in DocumentContext".to_string())
+    })?;
+
+    let source = doc_context.source.ok_or_else(|| {
+        ResolveError::Io("PdfSource not provided in DocumentContext - cannot resolve stream".to_string())
+    })?;
+
+    // Use resolver.resolve_with_source to get the actual PDF object
+    // source is already &dyn PdfSource, which is what resolve_with_source expects
+    resolver.resolve_with_source(char_proc_ref, source)
+}
+
 /// Rasterize a Type 3 glyph to a 32x32 grayscale bitmap.
 ///
 /// # Arguments
@@ -890,8 +930,12 @@ mod tests {
         let font = Type3Font::load(&font_dict);
 
         // Unknown glyph returns None
+        let doc_context = DocumentContext {
+            resolver: None,
+            source: None,
+        };
         assert_eq!(
-            rasterize_type3_glyph(&font, "unknown", None::<&DocumentContext>, None::<&StreamResolverFn>),
+            rasterize_type3_glyph(&font, "unknown", Some(&doc_context), None::<&StreamResolverFn>),
             None
         );
     }
@@ -934,5 +978,71 @@ mod tests {
         // Verify exterior pixels are still white
         assert_eq!(ctx.bitmap.get(4, 10), Some(255)); // Outside left
         assert_eq!(ctx.bitmap.get(16, 10), Some(255)); // Outside right
+    }
+
+    #[test]
+    fn test_deref_char_proc_ref_without_context_returns_error() {
+        use crate::parser::xref::ResolveError;
+
+        let obj_ref = ObjRef::new(10, 0);
+
+        // No DocumentContext provided
+        let result = deref_char_proc_ref(obj_ref, None);
+
+        assert!(result.is_err());
+        match result {
+            Err(ResolveError::Io(msg)) => {
+                assert!(msg.contains("DocumentContext not provided"));
+            }
+            _ => panic!("Expected ResolveError::Io"),
+        }
+    }
+
+    #[test]
+    fn test_deref_char_proc_ref_without_resolver_returns_error() {
+        use crate::parser::xref::ResolveError;
+
+        let obj_ref = ObjRef::new(10, 0);
+
+        // DocumentContext without resolver
+        let doc_context = DocumentContext {
+            resolver: None,
+            source: None,
+        };
+
+        let result = deref_char_proc_ref(obj_ref, Some(&doc_context));
+
+        assert!(result.is_err());
+        match result {
+            Err(ResolveError::Io(msg)) => {
+                assert!(msg.contains("XrefResolver not provided"));
+            }
+            _ => panic!("Expected ResolveError::Io"),
+        }
+    }
+
+    #[test]
+    fn test_deref_char_proc_ref_without_source_returns_error() {
+        use crate::parser::xref::ResolveError;
+        use crate::parser::xref::XrefResolver;
+
+        let obj_ref = ObjRef::new(10, 0);
+        let resolver = XrefResolver::new();
+
+        // DocumentContext with resolver but no source
+        let doc_context = DocumentContext {
+            resolver: Some(&resolver),
+            source: None,
+        };
+
+        let result = deref_char_proc_ref(obj_ref, Some(&doc_context));
+
+        assert!(result.is_err());
+        match result {
+            Err(ResolveError::Io(msg)) => {
+                assert!(msg.contains("PdfSource not provided"));
+            }
+            _ => panic!("Expected ResolveError::Io"),
+        }
     }
 }
