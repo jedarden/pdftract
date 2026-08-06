@@ -675,16 +675,21 @@ impl<'a> RasterizerContext<'a> {
 
             // Find all intersections with this scanline
             for &(x0, y0, x1, y1) in edges {
-                // Check if edge spans this scanline
-                if (y0 <= y && y1 > y) || (y1 <= y && y0 > y) {
+                // Skip horizontal edges (they don't affect scanline fill)
+                if y0 == y1 {
+                    continue;
+                }
+
+                // Check if edge spans this scanline using half-open interval
+                // Include lower endpoint, exclude upper endpoint to avoid double-counting vertices
+                let (y_min, y_max) = if y0 < y1 { (y0, y1) } else { (y1, y0) };
+                if y_min <= y && y < y_max {
                     // Calculate x intersection
                     // x = x0 + (y - y0) * (x1 - x0) / (y1 - y0)
                     let dy = y1 - y0;
-                    if dy != 0 {
-                        let t = (y - y0) as f64 / dy as f64;
-                        let x = x0 as f64 + t * (x1 - x0) as f64;
-                        intersections.push(x);
-                    }
+                    let t = (y - y0) as f64 / dy as f64;
+                    let x = x0 as f64 + t * (x1 - x0) as f64;
+                    intersections.push(x);
                 }
             }
 
@@ -1027,6 +1032,37 @@ mod tests {
     }
 
     #[test]
+    fn test_rasterizer_context_applies_font_matrix() {
+        use crate::parser::object::types::intern;
+
+        // Create a Type3 font with custom FontMatrix [2 0 0 2 0 0]
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(
+            intern("/FontMatrix"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Real(2.0),
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+                PdfObject::Real(2.0),
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+            ])),
+        );
+
+        let font = Type3Font::load(&font_dict);
+        let ctx = RasterizerContext::new(&font);
+
+        // Verify that the CTM has the FontMatrix applied
+        // Initial CTM should be FontMatrix, not identity
+        assert_eq!(ctx.gstate.ctm.a, 2.0);
+        assert_eq!(ctx.gstate.ctm.d, 2.0);
+        assert_eq!(ctx.gstate.ctm.b, 0.0);
+        assert_eq!(ctx.gstate.ctm.c, 0.0);
+        assert_eq!(ctx.gstate.ctm.e, 0.0);
+        assert_eq!(ctx.gstate.ctm.f, 0.0);
+    }
+
+    #[test]
     fn test_execute_simple_path() {
         let font_dict = PdfDict::new();
         let font = Type3Font::load(&font_dict);
@@ -1042,7 +1078,22 @@ mod tests {
 
     #[test]
     fn test_execute_rect() {
-        let font_dict = PdfDict::new();
+        use crate::parser::object::types::intern;
+
+        // Create a font with identity FontMatrix for predictable coordinates
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(
+            intern("/FontMatrix"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(1),
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+                PdfObject::Integer(1),
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+            ])),
+        );
+
         let font = Type3Font::load(&font_dict);
         let mut ctx = RasterizerContext::new(&font);
 
@@ -1057,7 +1108,22 @@ mod tests {
 
     #[test]
     fn test_gstate_stack() {
-        let font_dict = PdfDict::new();
+        use crate::parser::object::types::intern;
+
+        // Create a font with identity FontMatrix
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(
+            intern("/FontMatrix"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(1),
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+                PdfObject::Integer(1),
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+            ])),
+        );
+
         let font = Type3Font::load(&font_dict);
         let mut ctx = RasterizerContext::new(&font);
 
@@ -1065,7 +1131,7 @@ mod tests {
         let stream = b"q 2 0 0 2 0 0 cm Q";
         ctx.execute_content_stream(stream);
 
-        // CTM should be restored to identity
+        // CTM should be restored to identity (FontMatrix)
         assert!(ctx.gstate.ctm.is_identity());
     }
 
@@ -1087,7 +1153,22 @@ mod tests {
 
     #[test]
     fn test_rasterize_line_segment() {
-        let font_dict = PdfDict::new();
+        use crate::parser::object::types::intern;
+
+        // Create a font with identity FontMatrix
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(
+            intern("/FontMatrix"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(1),
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+                PdfObject::Integer(1),
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+            ])),
+        );
+
         let font = Type3Font::load(&font_dict);
         let mut ctx = RasterizerContext::new(&font);
 
@@ -1104,7 +1185,22 @@ mod tests {
 
     #[test]
     fn test_rasterize_filled_triangle() {
-        let font_dict = PdfDict::new();
+        use crate::parser::object::types::intern;
+
+        // Create a font with identity FontMatrix
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(
+            intern("/FontMatrix"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(1),
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+                PdfObject::Integer(1),
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+            ])),
+        );
+
         let font = Type3Font::load(&font_dict);
         let mut ctx = RasterizerContext::new(&font);
 
@@ -1337,5 +1433,96 @@ mod tests {
 
         // Bitmap should be all white (default state)
         assert_eq!(ctx.bitmap, Bitmap32x32::white());
+    }
+
+    #[test]
+    fn test_execute_type3_glyph_with_font_matrix_transformation() {
+        use crate::parser::object::types::{intern, PdfDict};
+
+        // Create a Type3 font with FontMatrix that scales by 0.001 (standard Type3)
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(
+            intern("/FontMatrix"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Real(0.001),
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+                PdfObject::Real(0.001),
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+            ])),
+        );
+
+        let font = Type3Font::load(&font_dict);
+        let mut ctx = RasterizerContext::new(&font);
+
+        // Verify initial CTM has FontMatrix applied
+        assert_eq!(ctx.gstate.ctm.a, 0.001);
+        assert_eq!(ctx.gstate.ctm.d, 0.001);
+
+        // Execute a simple glyph content stream that draws a 1000x1000 square
+        // in glyph space (0,0 to 1000,1000)
+        // After FontMatrix transformation (0.001 scale), this becomes (0,0) to (1,1) in text space
+        let stream = b"0 0 1000 1000 re f";
+
+        ctx.execute_content_stream(stream);
+
+        // The rectangle should be drawn and rasterized to the bitmap
+        // After transformation, coordinates are scaled by 0.001
+        // (0,0,1000,1000) in glyph space -> (0,0,1,1) in text space
+        // This should fill a small area in the 32x32 bitmap
+
+        // Verify that some pixels were drawn (bitmap is no longer all white)
+        let mut has_black = false;
+        for y in 0..32 {
+            for x in 0..32 {
+                if ctx.bitmap.get(x, y) == Some(0) {
+                    has_black = true;
+                    break;
+                }
+            }
+            if has_black {
+                break;
+            }
+        }
+
+        // Due to the 0.001 scale, the 1000x1000 rectangle becomes 1x1 in text space
+        // which is very small in the 32x32 bitmap, but at least the origin pixel should be filled
+        assert!(has_black, "Expected some pixels to be drawn after executing glyph stream");
+    }
+
+    #[test]
+    fn test_execute_type3_glyph_with_identity_font_matrix() {
+        use crate::parser::object::types::{intern, PdfDict};
+
+        // Create a Type3 font with identity FontMatrix (no scaling)
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(
+            intern("/FontMatrix"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(1),
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+                PdfObject::Integer(1),
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+            ])),
+        );
+
+        let font = Type3Font::load(&font_dict);
+        let mut ctx = RasterizerContext::new(&font);
+
+        // Verify initial CTM is identity
+        assert!(ctx.gstate.ctm.is_identity());
+
+        // Execute a glyph content stream that draws a 10x10 square
+        // With identity matrix, coordinates are not scaled
+        let stream = b"10 10 10 10 re f";
+
+        ctx.execute_content_stream(stream);
+
+        // Verify the rectangle was drawn at (10,10) to (20,20)
+        // Center of the rectangle should be filled
+        assert_eq!(ctx.bitmap.get(15, 15), Some(0));
     }
 }
