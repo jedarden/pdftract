@@ -23,8 +23,9 @@ use crate::font::type3::Type3Font;
 use crate::graphics_state::{GraphicsState, GraphicsStateStack, Matrix3x3};
 use crate::parser::lexer::Lexer;
 use crate::parser::object::types::ObjRef;
-use crate::parser::stream::PdfSource;
-use crate::parser::xref::XrefResolver;
+use crate::parser::object::types::PdfObject;
+use crate::parser::stream::{decode_stream, ExtractionOptions, PdfSource};
+use crate::parser::xref::{ResolveError, XrefResolver};
 
 /// Maximum recursion depth for Type 3 glyph execution (form XObject + nested glyphs).
 const MAX_GLYPH_DEPTH: usize = 20;
@@ -764,6 +765,119 @@ pub fn deref_char_proc_ref(
             )),
         }
     })
+}
+
+/// Extract content stream bytes from a resolved PDF object.
+///
+/// This function takes a PdfObject (typically from `deref_char_proc_ref`) and
+/// extracts the raw content stream bytes, handling:
+///
+/// - Direct stream objects (decode if FlateDecode compressed)
+/// - Indirect references (recursively resolve and extract)
+/// - Error cases (null, wrong type, missing data)
+///
+/// # Arguments
+///
+/// * `resolved_obj` - The PdfObject resolved from `deref_char_proc_ref`
+/// * `doc_context` - Document resolver context for recursive resolution
+///
+/// # Returns
+///
+/// `Ok(Vec<u8>)` with the decoded content stream bytes,
+/// `Err` if extraction fails (wrong type, I/O error, or invalid reference).
+///
+/// # Error Context
+///
+/// Error messages include the object type/reference to aid debugging.
+/// For example: "Cannot extract stream from null object at char_proc_ref"
+pub fn extract_content_stream_bytes(
+    resolved_obj: PdfObject,
+    doc_context: &DocumentContext,
+) -> Result<Vec<u8>, ResolveError> {
+    let resolver = doc_context.resolver.ok_or_else(|| {
+        ResolveError::Io(
+            "XrefResolver not provided in DocumentContext - cannot extract stream".to_string()
+        )
+    })?;
+
+    let source = doc_context.source.ok_or_else(|| {
+        ResolveError::Io(
+            "PdfSource not provided in DocumentContext - cannot extract stream".to_string()
+        )
+    })?;
+
+    match resolved_obj {
+        PdfObject::Stream(stream) => {
+            // Direct stream object - decode it
+            let opts = ExtractionOptions::default();
+            let mut decompress_counter = 0u64;
+
+            // decode_stream handles decompression (FlateDecode, etc.)
+            let bytes = decode_stream(&stream, source, &opts, &mut decompress_counter);
+            Ok(bytes)
+        }
+        PdfObject::Ref(obj_ref) => {
+            // Indirect reference - recursively resolve and extract
+            let inner_obj = resolver.resolve_with_source(obj_ref, source).map_err(|e| {
+                match e {
+                    ResolveError::NotFound(_) => ResolveError::NotFound(obj_ref),
+                    ResolveError::CircularRef(_) => ResolveError::CircularRef(obj_ref),
+                    ResolveError::Io(msg) => ResolveError::Io(format!(
+                        "Failed to resolve indirect reference {}: {}",
+                        obj_ref, msg
+                    )),
+                }
+            })?;
+
+            // Recursively extract from the resolved object
+            extract_content_stream_bytes(inner_obj, doc_context)
+        }
+        PdfObject::Null => {
+            Err(ResolveError::Io(
+                "Cannot extract stream from null object at char_proc_ref".to_string()
+            ))
+        }
+        PdfObject::Bool(_) => {
+            Err(ResolveError::Io(
+                "Cannot extract stream from boolean at char_proc_ref - expected Stream or Ref".to_string()
+            ))
+        }
+        PdfObject::Integer(_) => {
+            Err(ResolveError::Io(
+                "Cannot extract stream from integer at char_proc_ref - expected Stream or Ref".to_string()
+            ))
+        }
+        PdfObject::Real(_) => {
+            Err(ResolveError::Io(
+                "Cannot extract stream from real number at char_proc_ref - expected Stream or Ref".to_string()
+            ))
+        }
+        PdfObject::String(_) => {
+            Err(ResolveError::Io(
+                "Cannot extract stream from string at char_proc_ref - expected Stream or Ref".to_string()
+            ))
+        }
+        PdfObject::Name(_) => {
+            Err(ResolveError::Io(
+                "Cannot extract stream from name at char_proc_ref - expected Stream or Ref".to_string()
+            ))
+        }
+        PdfObject::Array(_) => {
+            Err(ResolveError::Io(
+                "Cannot extract stream from array at char_proc_ref - expected Stream or Ref".to_string()
+            ))
+        }
+        PdfObject::Dict(_) => {
+            Err(ResolveError::Io(
+                "Cannot extract stream from dictionary at char_proc_ref - expected Stream or Ref".to_string()
+            ))
+        }
+        PdfObject::Indirect(_) => {
+            Err(ResolveError::Io(
+                "Cannot extract stream from indirect object at char_proc_ref - expected Stream or Ref".to_string()
+            ))
+        }
+    }
 }
 
 /// Rasterize a Type 3 glyph to a 32x32 grayscale bitmap.
