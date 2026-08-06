@@ -2,78 +2,82 @@
 
 ## Status: PASS
 
-All acceptance criteria have been met. The implementation is complete in the existing codebase.
+The bead's requirements are already implemented in the codebase. No code changes were needed.
 
-## Acceptance Criteria Verification
+## Implementation Location
 
-### 1. execute_content_stream() called with resolved bytes ✅ PASS
-**Location**: `crates/pdftract-core/src/font/type3_rasterizer.rs:721`
+**File:** `crates/pdftract-core/src/font/type3_rasterizer.rs`
 
+**Key Function:** `rasterize_type3_glyph()` (lines 688-733)
+
+## Acceptance Criteria Status
+
+### 1. ✅ execute_content_stream() called with resolved bytes
+**Location:** Line 721
 ```rust
-let mut ctx = RasterizerContext::new(font);
 ctx.execute_content_stream(&bytes);
 ```
+The resolved glyph content stream bytes are passed directly to the execution function.
 
-The `execute_content_stream()` method is called with the resolved content stream bytes from `DocumentContext::resolve_char_proc()` (implemented in dependent bead bf-3pap83).
+### 2. ✅ Proper error handling for execution failures
+**Implementation:**
+- Function returns `Option<[u8; 1024]>` - None indicates failure
+- Stream resolution failures return placeholder bitmap (lines 724-731)
+- Empty streams handled by `resolve_char_proc()` returning None
+- Lexer parsing errors are handled gracefully (malformed operators simply ignored)
 
-### 2. Proper error handling for execution failures ✅ PASS
-**Location**: `crates/pdftract-core/src/font/type3_rasterizer.rs:319-401, 544-561`
+### 3. ✅ Execution context configured for glyph rendering
+**Location:** Lines 720, 324-334
+```rust
+let mut ctx = RasterizerContext::new(font);
+```
+The context includes:
+- 32x32 bitmap initialized to white
+- Graphics state with CTM
+- Graphics state stack
+- Current path buffer
+- Font reference
+- Diagnostics collection
 
-The `RasterizerContext` implements graceful error handling:
-- Collects diagnostics in a Vec<Diagnostic> (line 321)
-- `execute_operator()` checks operand stack size before operations (lines 405-407)
-- Graphics state operations handle overflow/underflow with diagnostic emission (lines 544-561)
-- Matrix operations check for NaN and degenerate matrices (lines 580-598)
-- Recursion depth is enforced to prevent stack overflow (lines 611-620)
+### 4. ✅ Code compiles
+**Verification:** All 15 type3_rasterizer tests pass:
+- test_bitmap_black
+- test_bitmap_fill_rect
+- test_bitmap_set_get
+- test_bitmap_white
+- test_current_path_close
+- test_current_path_move_line
+- test_current_path_rect
+- test_document_context_new
+- test_document_context_resolve_char_proc_no_resolver
+- test_execute_rect
+- test_execute_simple_path
+- test_point_new
+- test_gstate_stack
+- test_rasterize_type3_glyph_placeholder
+- test_rasterizer_context_new
 
-### 3. Execution context configured for glyph rendering ✅ PASS
-**Location**: `crates/pdftract-core/src/font/type3_rasterizer.rs:720, 324-334`
+## Implementation Flow
 
-The `RasterizerContext::new(font)` constructor initializes:
-- 32x32 white bitmap for output
-- GraphicsState with default CTM
-- GraphicsStateStack for q/Q operators
-- CurrentPath for path construction
-- Reference to Type3Font for metadata
-- Depth counter for recursion protection
-- Diagnostics vector for error collection
-
-### 4. Code compiles ✅ PASS
-Verified with:
-```bash
-cargo check --manifest-path crates/pdftract-core/Cargo.toml
-# No errors or warnings
+```
+rasterize_type3_glyph()
+    ├─ Resolve glyph name from /CharProcs → ObjRef
+    ├─ Resolve ObjRef → stream_bytes (via DocumentContext or callback)
+    ├─ Create RasterizerContext with font reference
+    ├─ execute_content_stream(&bytes)
+    │   ├─ Parse tokens with Lexer
+    │   ├─ Execute operators (path construction, painting, gstate)
+    │   └─ Rasterize paths to bitmap
+    └─ Return bitmap.as_bytes() or placeholder
 ```
 
-All 15 unit tests pass:
-```bash
-cargo test --manifest-path crates/pdftract-core/Cargo.toml --lib 'type3_rasterizer::tests'
-# test result: ok. 15 passed; 0 failed
-```
+## Error Handling Strategy
 
-## Implementation Details
-
-The complete wire-up is in the `rasterize_type3_glyph()` function (lines 688-733):
-
-1. **Resolution** (lines 700-715): Bytes are resolved from char_proc_ref using `DocumentContext::resolve_char_proc()` (implemented in bf-3pap83)
-2. **Context creation** (line 720): `RasterizerContext::new(font)` sets up rendering state
-3. **Execution** (line 721): `execute_content_stream(&bytes)` processes the PDF graphics operators
-4. **Result** (line 722): Returns rasterized 32x32 bitmap
-
-## Integration
-
-This bead completes the execution phase of Type3 glyph rasterization:
-- **bf-3pap83** (closed): Provided resolution of char_proc_ref → content stream bytes
-- **bf-4k0s6l** (this bead): Executes those bytes through the PDF graphics operator interpreter
-- **Parent bf-4d8fdu**: Orchestrates the full rasterization pipeline
+- **Missing glyph:** Returns None from char_proc() lookup
+- **Resolution failure:** Returns 16x16 centered black square placeholder
+- **Parse errors:** Individual operators fail gracefully (stack underflow check)
+- **Recursion limit:** MAX_GLYPH_DEPTH prevents infinite loops (for Do operator)
 
 ## No Changes Required
 
-The implementation was already present in the codebase. This bead verified that the wire-up is correct and all acceptance criteria are satisfied.
-
-## Related Tests
-
-- `test_execute_simple_path`: Verifies basic path execution
-- `test_execute_rect`: Verifies rectangle operator and rasterization
-- `test_gstate_stack`: Verifies graphics state save/restore
-- `test_rasterize_type3_glyph_placeholder`: Verifies placeholder fallback for missing glyphs
+The implementation satisfies all acceptance criteria without modification. The bead describes functionality that was already implemented in the parent bead (bf-4d8fdu) or earlier work.
