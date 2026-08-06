@@ -21,19 +21,19 @@ type Page struct {
 
 // Span represents a text span with font and position information.
 type Span struct {
-	Text       string   `json:"text"`
+	Text       string     `json:"text"`
 	Bbox       [4]float64 `json:"bbox"`
-	Font       string   `json:"font"`
-	Size       float64  `json:"size"`
-	Confidence *float64 `json:"confidence"`
+	Font       string     `json:"font"`
+	Size       float64    `json:"size"`
+	Confidence *float64   `json:"confidence"`
 }
 
 // Block represents a structural block (paragraph, heading, table, etc.).
 type Block struct {
-	Kind   string `json:"kind"`
-	Text   string `json:"text"`
-	Bbox   [4]float64 `json:"bbox"`
-	Level  *int   `json:"level,omitempty"`
+	Kind  string     `json:"kind"`
+	Text  string     `json:"text"`
+	Bbox  [4]float64 `json:"bbox"`
+	Level *int       `json:"level,omitempty"`
 }
 
 // Match represents a search match result.
@@ -60,10 +60,10 @@ type Fingerprint struct {
 
 // Classification represents document classification results.
 type Classification struct {
-	Category    string              `json:"category"`
-	Confidence  float64             `json:"confidence"`
-	Tags        []string            `json:"tags"`
-	Heuristics  map[string]bool     `json:"heuristics"`
+	Category   string          `json:"category"`
+	Confidence float64         `json:"confidence"`
+	Tags       []string        `json:"tags"`
+	Heuristics map[string]bool `json:"heuristics"`
 }
 
 // Metadata represents document metadata.
@@ -159,4 +159,19 @@ func (o *HashOptions) toArgs() []string {
 		args = append(args, "--password", o.Password)
 	}
 	return args
+}
+
+// PageResult represents the result of a page extraction operation.
+type PageResult struct {
+	PageNum int    `json:"page_num"`
+	Content string `json:"content"`
+	Err     error  `json:"error,omitempty"`
+}
+
+// MatchResult represents a search match with position and scoring information.
+type MatchResult struct {
+	PageNum  int     `json:"page_num"`
+	Position []int   `json:"position"`
+	Snippet  string  `json:"snippet"`
+	Score    float64 `json:"score"`
 }
