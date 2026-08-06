@@ -43,6 +43,13 @@ pub enum Type3Error {
     },
     /// I/O error during glyph resolution.
     Io(String),
+    /// CharProc object has invalid type.
+    InvalidCharProcType {
+        /// The actual object type found
+        got: String,
+        /// The expected object type(s)
+        expected: String,
+    },
 }
 
 impl std::fmt::Display for Type3Error {
@@ -55,6 +62,9 @@ impl std::fmt::Display for Type3Error {
                 write!(f, "circular reference detected at: {}", ref_id)
             }
             Type3Error::Io(msg) => write!(f, "I/O error during glyph resolution: {}", msg),
+            Type3Error::InvalidCharProcType { got, expected } => {
+                write!(f, "invalid char_proc type: got {}, expected {}", got, expected)
+            }
         }
     }
 }
@@ -1754,6 +1764,20 @@ mod tests {
             }
             _ => panic!("Expected Io variant"),
         }
+    }
+
+    #[test]
+    fn test_type3_error_invalid_char_proc_type() {
+        let error = Type3Error::InvalidCharProcType {
+            got: "integer".to_string(),
+            expected: "stream or dict".to_string(),
+        };
+
+        // Test Display implementation
+        let display_str = format!("{}", error);
+        assert!(display_str.contains("invalid char_proc type"));
+        assert!(display_str.contains("got integer"));
+        assert!(display_str.contains("expected stream or dict"));
     }
 
     #[test]
