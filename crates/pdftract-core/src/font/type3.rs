@@ -18,6 +18,31 @@ use crate::font::encoding::FontEncoding;
 use crate::graphics_state::Matrix3x3;
 use crate::parser::object::types::{ObjRef, PdfDict, PdfObject};
 
+/// Result type for Type3 font operations.
+pub type Type3Result<T> = Result<T, Type3Error>;
+
+/// Errors that can occur during Type3 font operations.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Type3Error {
+    /// Character procedure reference not found in /CharProcs dictionary.
+    MissingCharProcRef {
+        /// The glyph name that was not found
+        glyph_name: String,
+    },
+}
+
+impl std::fmt::Display for Type3Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Type3Error::MissingCharProcRef { glyph_name } => {
+                write!(f, "character procedure reference not found for glyph '{}'", glyph_name)
+            }
+        }
+    }
+}
+
+impl std::error::Error for Type3Error {}
+
 /// Type 3 font data.
 ///
 /// Type 3 fonts are defined by content stream glyphs rather than font programs.
@@ -354,6 +379,18 @@ impl Type3Font {
     /// Returns None if the glyph name is not in /CharProcs.
     pub fn char_proc(&self, glyph_name: &str) -> Option<ObjRef> {
         self.char_procs.get(glyph_name).copied()
+    }
+
+    /// Get the glyph content stream reference for a glyph name, returning an error if not found.
+    ///
+    /// Returns `Ok(ObjRef)` if the glyph exists in /CharProcs.
+    /// Returns `Err(Type3Error::MissingCharProcRef)` if the glyph name is not in /CharProcs.
+    pub fn char_proc_required(&self, glyph_name: &str) -> Type3Result<ObjRef> {
+        self.char_proc(glyph_name).ok_or_else(|| {
+            Type3Error::MissingCharProcRef {
+                glyph_name: glyph_name.to_string(),
+            }
+        })
     }
 
     /// Get the number of glyphs in /CharProcs.
@@ -715,5 +752,56 @@ mod tests {
             font.encoding.base_encoding(),
             Some(crate::font::encoding::NamedEncoding::WinAnsi)
         );
+    }
+
+    #[test]
+    fn test_char_proc_required_missing_returns_error() {
+        // Test that char_proc_required returns an error for missing glyphs
+        let font_dict = PdfDict::new();
+        let font = Type3Font::load(&font_dict);
+
+        let result = font.char_proc_required("NonExistentGlyph");
+
+        assert!(result.is_err());
+        match result {
+            Err(Type3Error::MissingCharProcRef { glyph_name }) => {
+                assert_eq!(glyph_name, "NonExistentGlyph");
+            }
+            _ => panic!("Expected Type3Error::MissingCharProcRef"),
+        }
+    }
+
+    #[test]
+    fn test_char_proc_required_found_returns_ref() {
+        // Test that char_proc_required returns Ok for existing glyphs
+        let mut char_procs_dict = PdfDict::new();
+        char_procs_dict.insert(intern("/A"), PdfObject::Ref(ObjRef::new(10, 0)));
+
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(
+            intern("/CharProcs"),
+            PdfObject::Dict(Box::new(char_procs_dict)),
+        );
+
+        let font = Type3Font::load(&font_dict);
+
+        let result = font.char_proc_required("A");
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), ObjRef::new(10, 0));
+    }
+
+    #[test]
+    fn test_type3_error_display_includes_glyph_name() {
+        // Test that the error message includes the missing glyph name
+        let font_dict = PdfDict::new();
+        let font = Type3Font::load(&font_dict);
+
+        let result = font.char_proc_required("MissingGlyph");
+
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("MissingGlyph"));
+        assert!(error_msg.contains("character procedure reference not found"));
     }
 }
