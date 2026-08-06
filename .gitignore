@@ -9,6 +9,7 @@
 # Node.js and Python caches
 node_modules/
 __pycache__/
+.venv/
 
 # Documentation build outputs
 docs/user-docs/build/
