@@ -1,154 +1,173 @@
-# SDK Type Structure Exploration
+# SDK Type Exports and Structure Exploration
+
+**Bead:** bf-49vvzm  
+**Date:** 2026-08-06  
+**Status:** COMPLETE
 
 ## Overview
-The pdftract Python SDK is located at `/home/coding/pdftract/crates/pdftract-py/python/pdftract/` and provides a well-structured, type-safe API using frozen dataclasses.
 
-## Module Structure
+Explored the Python SDK type system to understand exported types, their definitions, and user import patterns. This ensures smoke tests target the correct types and imports.
 
-### Main Module (`__init__.py`)
-- **Location**: `/home/coding/pdftract/crates/pdftract-py/python/pdftract/__init__.py`
-- **Purpose**: Public API entry point, exports all types and functions
-- **Architecture**: Wraps native PyO3 bindings (`_native` module) with typed Python objects
+## SDK Module Structure
 
-### Supporting Modules
-1. **`types.py`**: All dataclass type definitions
-2. **`exceptions.py`**: Exception hierarchy (8 exception types)
-3. **`asyncio.py`**: Async wrappers using `asyncio.to_thread`
-4. **`fallback.py`**: Subprocess fallback when native module unavailable
-5. **`_native.abi3.so`**: Compiled PyO3 Rust bindings
+The SDK is located at `/home/coding/pdftract/crates/pdftract-py/python/pdftract/` with the following modules:
 
-## Exported Types (9 total)
+| Module | Purpose |
+|--------|---------|
+| `__init__.py` | Main API entry point with public exports |
+| `types.py` | All type definitions (frozen dataclasses) |
+| `exceptions.py` | Exception hierarchy |
+| `asyncio.py` | Async wrappers for long-running methods |
+| `fallback.py` | Subprocess fallback when native module unavailable |
+| `_native.abi3.so` | Compiled Rust native module (PyO3 bindings) |
 
-All types are **frozen dataclasses** with `@dataclass(frozen=True, slots=True)`:
+## Exported Types (Public API)
 
-### Core Document Types
-1. **`Document`**: Complete PDF extraction result
-   - Attributes: `pages: List[Page]`, `metadata: Optional[Metadata]`, `schema_version: Optional[str]`
-   - Factory method: `from_native(native_dict: dict) -> Self`
+The main `__init__.py` exports these types via `__all__`:
 
-2. **`Page`**: Single page with spans and blocks
-   - Attributes: `page: int`, `width: int`, `height: int`, `rotation: int`, `spans: List[Span]`, `blocks: List[Block]`
-   - Factory method: `from_native(native_dict: dict) -> Self`
+### Core Data Types (from `pdftract.types`)
+- **Document** - Complete PDF extraction result with pages, metadata
+- **Page** - Single page with spans, blocks, dimensions
+- **Span** - Text span with font, position, confidence
+- **Block** - Semantic block (text/heading/list/table/figure)
+- **Match** - Regex match result from search
+- **Fingerprint** - PDF structural fingerprint for identity
+- **Classification** - Page classification result
+- **Metadata** - Document metadata (title, author, page count, etc.)
 
-### Content Types
-3. **`Span`**: Text span with font and position
-   - Attributes: `text: str`, `bbox: Tuple[float, float, float, float]`, `font: str`, `size: float`, `confidence: Optional[float]`
+### Exception Types (from `pdftract.exceptions`)
+- **PdftractError** - Base exception
+- **CorruptPdfError** - Malformed PDF
+- **EncryptionError** - PDF encrypted with wrong/missing password
+- **SourceUnreachableError** - File or URL inaccessible
+- **RemoteFetchInterruptedError** - Network timeout/interruption
+- **TlsError** - TLS certificate validation failure
+- **ReceiptVerifyError** - Receipt verification failed
+- **UnsupportedOperationError** - Method not supported by binary version
 
-4. **`Block`**: Semantic block (text, heading, list, table, figure)
-   - Attributes: `kind: str`, `text: str`, `bbox: Tuple[float, float, float, float]`, `level: Optional[int]`
+### Functions
+- `extract()` - Full extraction returning Document
+- `extract_text()` - Plain text extraction
+- `extract_markdown()` - Markdown extraction
+- `extract_stream()` - Streaming page iterator
+- `search()` - Regex search returning Match iterator
+- `get_metadata()` - Metadata-only extraction (cheap)
+- `hash()` - Fingerprint computation
+- `classify()` - Page classification
+- `verify_receipt()` - Receipt verification
+- `asyncio` - Async wrappers module
 
-### Table Types (Internal, not in `__all__`)
-5. **`Cell`**: Table cell
-   - Attributes: `bbox`, `text`, `spans`, `row`, `col`, `rowspan`, `colspan`, `is_header_row`
+## Internal Types (NOT in `__all__`)
 
-6. **`Row`**: Table row
-   - Attributes: `bbox`, `cells: List[Cell]`, `is_header: bool`
+These types in `types.py` are **not exported** in the public API:
+- **Cell** - Table cell (used within Table/Row)
+- **Row** - Table row (used within Table)  
+- **Table** - Table extraction result (nested within Page/Block)
 
-7. **`Table`**: Complete table
-   - Attributes: `id`, `bbox`, `rows: List[Row]`, `header_rows`, `detection_method`, `continued`, `continued_from_prev`, `page_index`
+These are implementation details of the table structure and users access them through the Page.blocks hierarchy.
 
-### Utility Types
-8. **`Metadata`**: Document metadata
-   - Attributes: `page_count`, `title`, `author`, `subject`, `keywords`, `creator`, `producer`, `created`, `modified`
+## Type Implementation Details
 
-9. **`Match`**: Regex search result
-   - Attributes: `text: str`, `page: int`, `bbox`, `context: Optional[Dict[str, str]]`
+All types are implemented as **frozen dataclasses with slots**:
 
-10. **`Fingerprint`**: PDF structural fingerprint
-    - Attributes: `hash: str`, `fast_hash: str`, `page_count`, `metadata: Optional[Metadata]`
-    - Factory method: `from_string(hash_string: str) -> Self`
+```python
+@dataclass(frozen=True, slots=True)
+class Document:
+    pages: List[Page]
+    schema_version: Optional[str] = None
+    metadata: Optional[Metadata] = None
+    
+    @classmethod
+    def from_native(cls, native_dict: dict) -> Self:
+        # Convert Rust dict to typed object
+        
+    def __repr__(self) -> str:
+        # Custom repr for debugging
+```
 
-11. **`Classification`**: Page classification result
-    - Attributes: `category: str`, `confidence: float`, `tags: List[str]`, `heuristics: Optional[Dict[str, bool]]`
-    - Property: `class_name` (backward compatibility alias)
-
-## Exported Exceptions (9 total)
-
-All inherit from base `PdftractError`:
-1. `PdftractError` - Base exception
-2. `CorruptPdfError` - PDF file is corrupted
-3. `EncryptionError` - PDF encryption issues
-4. `SourceUnreachableError` - File/URL access issues
-5. `RemoteFetchInterruptedError` - Network interruptions
-6. `TlsError` - TLS/SSL certificate validation failures
-7. `ReceiptVerifyError` - Receipt verification failures
-8. `UnsupportedOperationError` - Binary version incompatibility
-
-## Exported Functions (9 total)
-
-Main extraction and utility functions:
-- `extract(source, **options) -> Document`
-- `extract_text(source, **options) -> str`
-- `extract_markdown(source, **options) -> str`
-- `extract_stream(source, **options) -> Iterator[Page]`
-- `search(source, pattern, **options) -> Iterator[Match]`
-- `get_metadata(source, **options) -> Metadata`
-- `hash(source, **options) -> Fingerprint`
-- `classify(source) -> Classification`
-- `verify_receipt(path, receipt) -> bool`
-
-## Async Module (`pdftract.asyncio`)
-
-Re-exports async versions of all main functions:
-- `AsyncExtractor` class (wraps sync extractor)
-- `AsyncPageIterator` (async iterator for streaming)
-- `AsyncMatchIterator` (async iterator for search)
-- All async functions matching sync API
+Key characteristics:
+- **Immutable** - `frozen=True` prevents modification after creation
+- **Memory efficient** - `slots=True` reduces memory overhead
+- **Type-safe** - Constructor enforces field types
+- **Native conversion** - `from_native()` converts raw dicts from Rust
+- **IDE friendly** - Custom `__repr__()` for debugging
 
 ## User Import Pattern
 
-Users should use **simple module import** (not sub-module imports):
+Users should **import from the main `pdftract` module**, NOT from submodules:
 
 ```python
+# ✅ CORRECT - import from main module
 import pdftract
+from pdftract import Document, Page, Span
 
-# Main extraction
-doc = pdftract.extract("file.pdf")
-
-# Access typed objects
-for page in doc.pages:
-    for span in page.spans:
-        print(span.text)
-
-# Access metadata
-metadata = pdftract.get_metadata("file.pdf")
-print(metadata.page_count)
-
-# Async operations
-async_doc = await pdftract.asyncio.extract("file.pdf")
+# ❌ INCORRECT - importing from submodules
+from pdftract.types import Document  # Works but not recommended
+from pdftract.exceptions import PdftractError  # Breaks if API changes
 ```
 
-**NOT**:
+The main `__init__.py` re-exports all public types and functions, providing a stable import path.
+
+## Native Module Integration
+
+The SDK wraps a Rust native module (`_native.abi3.so`) via PyO3 bindings:
+
+1. **Import fallback**: If native import fails, warns and uses subprocess fallback
+2. **Type wrapping**: Functions check if native returns dicts, wrap in typed objects
+3. **Streaming support**: Iterators yield typed objects by wrapping each item
+
+Example from `extract()`:
 ```python
-from pdftract.types import Document  # ❌ Not the public API pattern
-from pdftract.exceptions import CorruptPdfError  # ❌ Not the public API pattern
+def extract(source, **options) -> Document:
+    extractor = _get_extractor()
+    result = extractor.extract(source, **options)
+    # Wrap raw dict from native module in typed Document
+    if isinstance(result, dict):
+        return Document.from_native(result)
+    return result
 ```
 
-## Type Safety Characteristics
+## Verification: Existing Test Coverage
 
-1. **All types are frozen dataclasses**: Immutable, hashable, memory-efficient
-2. **Factory pattern**: Each type has `from_native(dict)` classmethod for conversion from Rust
-3. **Not dicts**: SDK returns typed objects, not raw dictionaries (verified by existing tests)
-4. **Proper annotations**: All attributes have type hints for IDE autocomplete
-5. **`__repr__` methods**: Custom string representations for debugging
+The file `crates/pdftract-py/tests/test_types.py` already contains a smoke test that validates the type contract:
 
-## Verification
+- `test_extract_returns_typed_document()` - Verifies Document/Page/Span hierarchy
+- `test_extract_returns_typed_document_with_valid_minimal()` - Redundant check with different fixture
 
-Existing test files confirm the structure:
-- `/home/coding/pdftract/test_sdk_types_smoke.py` - Comprehensive type verification
-- `/home/coding/pdftract/tests/test_types.py` - IDE autocomplete verification
+This confirms the SDK is correctly returning typed objects rather than raw dicts.
 
-Both confirm that:
-- Methods return typed objects (instances of dataclasses)
-- Attribute access works correctly
-- Types are properly exported from main module
-- IDE autocomplete suggests correct attributes
+## Recommendations for Smoke Test Enhancement
+
+Based on this exploration, the smoke test should:
+
+1. ✅ **Already covered** - Test `extract()` returns Document instance
+2. ✅ **Already covered** - Test Page/Span object hierarchy  
+3. **Consider adding** - Test other extraction methods (`extract_text()`, `search()`)
+4. **Consider adding** - Test exception types are raised correctly
+5. **Consider adding** - Test Metadata.from_native() conversion
 
 ## File Locations Summary
 
-- **SDK root**: `/home/coding/pdftract/crates/pdftract-py/python/pdftract/`
-- **Types**: `types.py` (9 exported types + Cell/Row/Table for internal use)
-- **Exceptions**: `exceptions.py` (8 exception types)
-- **Main API**: `__init__.py` (exports all types and functions)
-- **Async**: `asyncio.py` (async wrappers)
-- **Native bindings**: `_native.abi3.so` (compiled Rust)
+| Component | Location |
+|-----------|----------|
+| Main API | `/home/coding/pdftract/crates/pdftract-py/python/pdftract/__init__.py` |
+| Type definitions | `/home/coding/pdftract/crates/pdftract-py/python/pdftract/types.py` |
+| Exception hierarchy | `/home/coding/pdftract/crates/pdftract-py/python/pdftract/exceptions.py` |
+| Async wrappers | `/home/coding/pdftract/crates/pdftract-py/python/pdftract/asyncio.py` |
+| Native module | `/home/coding/pdftract/crates/pdftract-py/python/pdftract/_native.abi3.so` |
+| Existing tests | `/home/coding/pdftract/crates/pdftract-py/tests/test_types.py` |
+
+## Conclusion
+
+The SDK type system is well-structured with:
+- ✅ Clear public API via `__all__` exports
+- ✅ Immutable, memory-efficient dataclass types
+- ✅ Proper type conversion from native Rust layer
+- ✅ User-friendly import pattern from main module
+- ✅ Existing smoke test coverage for core types
+
+All acceptance criteria met:
+- ✅ List of all exported types documented above
+- ✅ File locations for each type identified
+- ✅ Import pattern documented (use `from pdftract import ...`)
+- ✅ Types are proper classes (frozen dataclasses), not dicts
