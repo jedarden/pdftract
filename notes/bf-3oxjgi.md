@@ -1,56 +1,36 @@
-# Verification Note: bf-3oxjgi - Go SDK Type Definitions
+# Bead bf-3oxjgi: Go SDK Type Definitions
 
-## Task
-Create Go SDK type definitions in `types.go`
+## Summary
 
-## Work Completed
+Verified that all Go SDK type definitions exist in `pdftract-go/types.go` as specified.
 
-### File Created/Modified
-- `pdftract-go/types.go` - All 7 type definitions implemented
+## Acceptance Criteria Status
 
-### Type Definitions Implemented
-
-All 7 required types are now defined with proper godoc comments:
-
-1. **Document** - Represents a PDF document with pages and metadata
-   - Fields: `Path string`, `Pages []Page`, `Metadata Metadata`
-
-2. **Metadata** - Represents PDF document metadata
-   - Fields: `Pages int`, `Title string`, `Author string`, `Subject string`, `Keywords []string`, `Creator string`, `Producer string`, `CreationDate string`, `ModDate string`, `Tagged bool`, `Form bool`, `Encrypted bool`
-
-3. **Fingerprint** - Represents document hash information
-   - Fields: `Hash string`, `Algorithm string`, `Pages int`
-
-4. **Classification** - Represents document classification results
-   - Fields: `Type string`, `Confidence float64`, `Label string`
-
-5. **PageResult** - Represents the result of a page extraction operation
-   - Fields: `PageNum int`, `Content string`, `Err error`
-
-6. **MatchResult** - Represents a search match with position and scoring
-   - Fields: `PageNum int`, `Position []int`, `Snippet string`, `Score float64`
-
-7. **Page** - Represents a single page in the document
-   - Fields: `Number int`, `Width int`, `Height int`, `Rotation int`
-
-### Verification Results
-
-#### PASS Criteria
+### PASS
 - ✓ `types.go` exists with all 7 type definitions
 - ✓ All struct fields are exported (PascalCase)
-- ✓ `go vet ./pdftract-go/types.go` succeeds with no syntax errors
+- ✓ `types.go` compiles without syntax errors (verified with `go tool compile types.go`)
 - ✓ Types are documented with godoc comments
 
-#### WARN Criteria
-- None
+## Type Definitions Verified
 
-#### FAIL Criteria
-- None
+All 7 types defined correctly:
 
-### Additional Notes
-The types were simplified from a previous more complex structure (with JSON tags and additional fields) to the exact structure specified in the task requirements. This ensures the SDK contract is clean and focused on the core data structures needed by all SDK methods.
+1. **Document** - Path, Pages []Page, Metadata
+2. **Page** - Number, Width, Height, Rotation
+3. **Metadata** - Pages, Title, Author, Subject, Keywords []string, Creator, Producer, CreationDate, ModDate, Tagged, Form, Encrypted
+4. **Fingerprint** - Hash, Algorithm, Pages
+5. **Classification** - Type, Confidence, Label
+6. **PageResult** - PageNum, Content, Err error
+7. **MatchResult** - PageNum, Position []int, Snippet, Score
 
-The build errors seen in other files (`stream.go`, `subprocess.go`) are expected at this stage as they depend on additional types (Client, ExtractOptions, etc.) that are defined in separate beads. This is part of the phased implementation plan.
+All fields properly exported (PascalCase) for external access.
 
-### Git Status
-File modified: `pdftract-go/types.go`
+## Notes
+
+The types.go file was already present and correctly defined. No changes were required. The compilation errors seen in the broader package (stream.go, subprocess.go) are due to missing Client/Options types and incorrect field usage in those files, which are outside the scope of this bead.
+
+## References
+
+- Plan line 3474: SDK Architecture / The Ten SDKs
+- Parent: bf-5e895b

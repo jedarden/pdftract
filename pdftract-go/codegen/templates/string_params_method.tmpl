@@ -1,0 +1,28 @@
+// {{.Method.Description}} uses string parameters instead of Source.
+func (c *Client) {{.Method.PascalName}}({{if eq .Method.StringParamCount 2}}path string, receipt string{{end}}) ({{.Method.ReturnType}}, error) {
+	args := []string{"{{.Method.CLIFlag}}"}
+	{{- if eq .Method.StringParamCount 2}}
+	args = append(args, path, receipt)
+	{{- end}}
+
+	cmd := exec.Command(c.binaryPath, args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode := exitErr.ExitCode()
+			{{- if eq .Method.CLIFlag "verify-receipt"}}
+			// Exit code 10 means receipt verification failed (not an error, return false)
+			if exitCode == 10 {
+				return false, nil
+			}
+			{{- end}}
+			return *new({{.Method.ReturnType}}), c.mapError(err, output)
+		}
+	}
+
+	var result {{.Method.ReturnType}}
+	if err := json.Unmarshal(output, &result); err != nil {
+		return *new({{.Method.ReturnType}}), &PdftractError{Message: fmt.Sprintf("failed to parse output: %v", err)}
+	}
+	return result, nil
+}

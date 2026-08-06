@@ -1,42 +1,34 @@
-using System.Text.Json.Serialization;
+using MessagePack;
 
 namespace Pdftract.Models;
 
 /// <summary>
 /// Represents document metadata.
 /// </summary>
+[MessagePackObject]
 public record Metadata
 {
-    [JsonPropertyName("title")]
+    [Key(0)]
     public string? Title { get; init; }
 
-    [JsonPropertyName("author")]
+    [Key(1)]
     public string? Author { get; init; }
 
-    [JsonPropertyName("subject")]
+    [Key(2)]
     public string? Subject { get; init; }
 
-    [JsonPropertyName("keywords")]
-    public List<string>? Keywords { get; init; }
+    [Key(3)]
+    public string? Keywords { get; init; }
 
-    [JsonPropertyName("creator")]
+    [Key(4)]
     public string? Creator { get; init; }
 
-    [JsonPropertyName("producer")]
+    [Key(5)]
     public string? Producer { get; init; }
 
-    [JsonPropertyName("created")]
-    public string? Created { get; init; }
+    [Key(6)]
+    public DateTime? CreatedDate { get; init; }
 
-    [JsonPropertyName("modified")]
-    public string? Modified { get; init; }
-
-    [JsonPropertyName("page_count")]
-    public required int PageCount { get; init; }
-
-    [JsonPropertyName("is_encrypted")]
-    public bool? IsEncrypted { get; init; }
-
-    [JsonPropertyName("is_signed")]
-    public bool? IsSigned { get; init; }
+    [Key(7)]
+    public DateTime? ModifiedDate { get; init; }
 }

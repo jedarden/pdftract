@@ -1,0 +1,51 @@
+// {{.Method.Description}} streams results via channel.
+func (c *Client) {{.Method.PascalName}}(
+	ctx context.Context,
+	{{- if .Method.NeedsSource}}source Source{{end}}
+	{{- if .Method.HasOptions}}, options *{{.Method.OptionsType}}{{end}}
+) (<-chan {{.Method.ChannelElementType}}, error) {
+	args := []string{"{{.Method.CLIFlag}}"}
+	{{- if .Method.NeedsSource}}
+	args = append(args, source.source()...)
+	{{- end}}
+	{{- if .Method.HasOptions}}
+	if options != nil {
+		args = append(args, options.toArgs()...)
+	}
+	{{- end}}
+	{{- range .Method.AdditionalCLIArgs}}
+	args = append(args, "{{.}}")
+	{{- end}}
+
+	rawChan, errChan := c.invokeStream(ctx, args)
+	resultChan := make(chan {{.Method.ChannelElementType}}, {{.Method.BufferedChannelSize}})
+
+	go func() {
+		defer close(resultChan)
+
+		for {
+			select {
+			case raw, ok := <-rawChan:
+				if !ok {
+					return
+				}
+				var result {{.Method.ChannelElementType}}
+				if err := json.Unmarshal(raw, &result); err != nil {
+					resultChan <- {{.Method.ChannelElementType}}{Err: err}
+					continue
+				}
+				resultChan <- result
+			case err := <-errChan:
+				if err != nil {
+					resultChan <- {{.Method.ChannelElementType}}{Err: err}
+				}
+				return
+			case <-ctx.Done():
+				resultChan <- {{.Method.ChannelElementType}}{Err: ctx.Err()}
+				return
+			}
+		}
+	}()
+
+	return resultChan, nil
+}

@@ -1,0 +1,24 @@
+// {{.Method.Description}}
+func (c *Client) {{.Method.PascalName}}(
+	{{- if .Method.NeedsSource}}source Source{{end}}
+	{{- if .Method.HasOptions}}, options *{{.Method.OptionsType}}{{end}}
+) ({{.Method.ReturnType}}, error) {
+	args := []string{"{{.Method.CLIFlag}}"}
+	{{- if .Method.NeedsSource}}
+	args = append(args, source.source()...)
+	{{- end}}
+	{{- if .Method.HasOptions}}
+	if options != nil {
+		args = append(args, options.toArgs()...)
+	}
+	{{- end}}
+	{{- range .Method.AdditionalCLIArgs}}
+	args = append(args, "{{.}}")
+	{{- end}}
+
+	{{- if .Method.ReturnsString}}
+	return c.invokeString(args)
+	{{- else}}
+	return c.invoke({{.Method.PascalName}}Result, args)
+	{{- end}}
+}

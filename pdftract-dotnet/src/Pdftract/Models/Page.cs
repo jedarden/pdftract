@@ -1,27 +1,26 @@
-using System.Text.Json.Serialization;
+using MessagePack;
+using System.Collections.Generic;
 
 namespace Pdftract.Models;
 
 /// <summary>
 /// Represents a single page in the document.
 /// </summary>
+[MessagePackObject]
 public record Page
 {
-    [JsonPropertyName("page")]
-    public required int PageIndex { get; init; }
+    [Key(0)]
+    public required int PageNumber { get; init; }
 
-    [JsonPropertyName("width")]
-    public required double Width { get; init; }
+    [Key(1)]
+    public double? Width { get; init; }
 
-    [JsonPropertyName("height")]
-    public required double Height { get; init; }
+    [Key(2)]
+    public double? Height { get; init; }
 
-    [JsonPropertyName("rotation")]
-    public required int Rotation { get; init; }
+    [Key(3)]
+    public IList<string> Lines { get; init; } = new List<string>();
 
-    [JsonPropertyName("spans")]
-    public required List<Span> Spans { get; init; }
-
-    [JsonPropertyName("blocks")]
-    public required List<Block> Blocks { get; init; }
+    [Key(4)]
+    public IList<string> Images { get; init; } = new List<string>();
 }
