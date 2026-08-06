@@ -26,18 +26,13 @@ npm run build
 ```
 
 ### ✅ PASS: package.json exports correctly configured for dual imports
-The `package.json` exports field is properly configured:
+The `package.json` exports field is properly configured with simplified structure:
 ```json
 "exports": {
   ".": {
-    "import": {
-      "types": "./dist/types/index.d.ts",
-      "default": "./dist/esm/index.js"
-    },
-    "require": {
-      "types": "./dist/types/index.d.cts",
-      "default": "./dist/cjs/index.cjs"
-    }
+    "types": "./dist/types/index.d.cts",
+    "import": "./dist/esm/index.js",
+    "require": "./dist/cjs/index.cjs"
   }
 }
 ```
@@ -45,6 +40,7 @@ The `package.json` exports field is properly configured:
 This allows:
 - ESM imports: `import { Client } from '@pdftract/sdk'`
 - CommonJS requires: `const { Client } = require('@pdftract/sdk')`
+- TypeScript types for both module systems
 
 ### ✅ PASS: TypeScript compiles without errors
 TypeScript compilation check:

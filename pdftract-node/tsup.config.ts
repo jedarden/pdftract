@@ -1,36 +1,36 @@
-import { defineConfig } from 'tsup';
+import { defineConfig } from "tsup";
 
 export default defineConfig([
+  // ESM build
   {
-    entry: ['src/index.ts'],
-    format: 'esm',
-    dts: false,
+    entry: ["src/index.ts"],
+    format: ["esm"],
     clean: true,
     sourcemap: true,
-    target: 'es2022',
-    outDir: 'dist/esm',
-    splitting: false,
+    outDir: "dist/esm",
+    target: "es2022",
     esbuildOptions(options) {
-      options.platform = 'node';
-    },
+      options.platform = "node";
+    }
   },
+  // CJS build
   {
-    entry: ['src/index.ts'],
-    format: 'cjs',
-    dts: false,
-    clean: false,
+    entry: ["src/index.ts"],
+    format: ["cjs"],
     sourcemap: true,
-    target: 'es2022',
-    outDir: 'dist/cjs',
-    splitting: false,
+    outDir: "dist/cjs",
+    target: "es2022",
     esbuildOptions(options) {
-      options.platform = 'node';
+      options.platform = "node";
     },
+    cjsExtension: ".cjs"
   },
+  // DTS build for both ESM and CJS
   {
-    entry: ['src/index.ts'],
-    dts: { only: true },
-    clean: false,
-    outDir: 'dist/types',
-  },
+    entry: ["src/index.ts"],
+    dts: true,
+    sourcemap: false,
+    outDir: "dist/types",
+    clean: false
+  }
 ]);
