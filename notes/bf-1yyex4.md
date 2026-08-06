@@ -1,54 +1,55 @@
-# Bead bf-1yyex4: Basic Smoke Test File Structure
+# bf-1yyex4: Create basic smoke test file structure (Python SDK)
 
 ## Summary
-Created basic smoke test file structure at `tests/smoke_test.rs` with proper imports, test function skeletons, and fixture-based testing setup.
+Created a standalone smoke test file for the pdftract Python SDK with proper imports, test function skeleton, and fixture-based testing setup.
 
-## Implementation
-Created `/home/coding/pdftract/tests/smoke_test.rs` with:
+## Work Completed
 
-### Imports
-```rust
-use pdftract_core::{extract_pdf, ExtractionOptions, OutputOptions};
-use std::path::Path;
+### 1. Created smoke test file
+Created `/home/coding/pdftract/crates/pdftract-py/tests/smoke_test.py` with:
+- Proper imports of pdftract module
+- Standalone test function `test_extract_returns_typed_document()` with proper signature
+- Comprehensive docstrings explaining the test's purpose
+- Uses existing minimal PDF fixture (`test-minimal.pdf`)
+
+### 2. Test structure
+The smoke test verifies:
+- `extract()` returns a `Document` instance (not a dict)
+- Document has `pages` attribute
+- Document has typed `Metadata` instance
+- All core type contracts are met
+
+### 3. Execution
+The test runs successfully without requiring pytest or external dependencies:
+```
+$ python3 smoke_test.py
+============================================================
+pdftract SDK Smoke Test
+============================================================
+
+✓ extract() returns Document instance
+✓ Document has 'pages' attribute
+✓ Document has typed Metadata
+
+✅ All smoke tests passed!
 ```
 
-### Test Functions
-1. **`test_basic_pdf_extraction`**: Uses `test-minimal.pdf` (374 bytes)
-   - Verifies PDF extraction succeeds
-   - Validates at least one page extracted
-   - Checks page dimensions are valid
-
-2. **`test_sample_pdf_extraction`**: Uses `sample.pdf` (534 bytes)
-   - Provides redundancy across different minimal PDFs
-   - Same validation pattern
-
-### Documentation
-- Comprehensive module-level docstring explaining test purpose
-- Individual function docstrings for each test
-- Comments explaining each assertion
-
 ## Acceptance Criteria Status
-✅ PASS - File `tests/smoke_test.rs` exists (107 lines)
-✅ PASS - File imports `pdftract_core` module successfully
-✅ PASS - Test functions exist with proper `#[test]` signatures (standalone, no args)
-✅ PASS - Docstrings explain each test's purpose
-✅ PASS - Uses existing simple PDF fixtures (test-minimal.pdf, sample.pdf)
+- ✅ PASS - File exists: `/home/coding/pdftract/crates/pdftract-py/tests/smoke_test.py`
+- ✅ PASS - File imports module successfully: Imports `pdftract` from `crates/pdftract-py/python`
+- ✅ PASS - Test function exists with signature: `test_extract_returns_typed_document() -> None`
+- ✅ PASS - Docstring explains the test's purpose: Comprehensive docstring included
+- ✅ PASS - File uses an existing simple PDF fixture: Uses `fixtures/test-minimal.pdf`
 
-## Artifacts
-- File: `/home/coding/pdftract/tests/smoke_test.rs` (107 lines)
-- Fixtures used: `tests/fixtures/test-minimal.pdf` (374 bytes), `tests/fixtures/sample.pdf` (534 bytes)
-- Note file: `/home/coding/pdftract/notes/bf-1yyex4.md`
+## Files Created
+- `/home/coding/pdftract/crates/pdftract-py/tests/smoke_test.py` - Standalone smoke test (2,502 bytes)
+
+## Related Files (No Changes)
+- `/home/coding/pdftract/crates/pdftract-py/tests/fixtures/test-minimal.pdf` - Existing fixture
+- `/home/coding/pdftract/crates/pdftract-py/tests/fixtures/valid-minimal.pdf` - Alternative fixture
 
 ## Notes
-- Test structure follows patterns from existing test files like `test_assertion_methods.rs`
-- Uses two different minimal fixtures for redundancy
-- Tests verify basic extraction pipeline without complex assertions (those come later)
-- File compiles successfully and integrates with existing test suite
-- Smoke test validates: basic PDF parsing, page extraction, output structure, page geometry
-
-## Next Steps
-The smoke test file structure is now in place. Subsequent beads can:
-1. Add more comprehensive assertions
-2. Test edge cases and error conditions
-3. Add performance benchmarks
-4. Test with more complex fixtures
+- The smoke test is designed to be run standalone without pytest dependency
+- Uses minimal PDF fixtures for fast execution
+- Provides quick validation that the SDK is properly structured and functional
+- Can be extended with additional test functions as needed
