@@ -26,6 +26,7 @@ use crate::parser::object::types::ObjRef;
 use crate::parser::object::types::PdfObject;
 use crate::parser::stream::{decode_stream, ExtractionOptions, PdfSource};
 use crate::parser::xref::{ResolveError, XrefResolver};
+use crate::render::path::{CurrentPath, PathCommand, Point};
 
 /// Errors that can occur during Type 3 glyph rasterization.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -230,105 +231,6 @@ impl Bitmap32x32 {
 impl Default for Bitmap32x32 {
     fn default() -> Self {
         Self::white()
-    }
-}
-
-/// 2D point for path construction.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Point {
-    /// X coordinate
-    pub x: f64,
-    /// Y coordinate
-    pub y: f64,
-}
-
-impl Point {
-    /// Create a new Point with the given coordinates.
-    ///
-    /// # Arguments
-    ///
-    /// * `x` - X coordinate
-    /// * `y` - Y coordinate
-    pub fn new(x: f64, y: f64) -> Self {
-        Self { x, y }
-    }
-}
-
-/// Path construction command.
-#[derive(Debug, Clone, PartialEq)]
-enum PathCommand {
-    /// Move to absolute position
-    MoveTo(Point),
-    /// Line to absolute position
-    LineTo(Point),
-    /// Cubic Bezier curve (c: control1, control2, end)
-    CubicTo(Point, Point, Point),
-    /// Cubic Bezier with first control point implied (v: control2, end)
-    ShorthandCubicTo(Point, Point),
-    /// Cubic Bezier with second control point implied (y: control1, end)
-    ShorthandCubicToY(Point, Point),
-    /// Rectangle (re: x, y, width, height)
-    Rect(f64, f64, f64, f64),
-    /// Close subpath
-    ClosePath,
-}
-
-/// Current path being constructed.
-#[derive(Debug, Clone, Default)]
-struct CurrentPath {
-    commands: Vec<PathCommand>,
-    current_point: Option<Point>,
-    move_point: Option<Point>, // Start point of current subpath
-}
-
-impl CurrentPath {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn move_to(&mut self, p: Point) {
-        self.commands.push(PathCommand::MoveTo(p));
-        self.current_point = Some(p);
-        self.move_point = Some(p);
-    }
-
-    pub fn line_to(&mut self, p: Point) {
-        self.commands.push(PathCommand::LineTo(p));
-        self.current_point = Some(p);
-    }
-
-    pub fn cubic_to(&mut self, c1: Point, c2: Point, end: Point) {
-        self.commands.push(PathCommand::CubicTo(c1, c2, end));
-        self.current_point = Some(end);
-    }
-
-    pub fn shorthand_cubic_to(&mut self, c2: Point, end: Point) {
-        self.commands.push(PathCommand::ShorthandCubicTo(c2, end));
-        self.current_point = Some(end);
-    }
-
-    pub fn shorthand_cubic_to_y(&mut self, c1: Point, end: Point) {
-        self.commands.push(PathCommand::ShorthandCubicToY(c1, end));
-        self.current_point = Some(end);
-    }
-
-    pub fn rect(&mut self, x: f64, y: f64, width: f64, height: f64) {
-        self.commands.push(PathCommand::Rect(x, y, width, height));
-        self.current_point = Some(Point::new(x, y));
-        self.move_point = Some(Point::new(x, y));
-    }
-
-    pub fn close_path(&mut self) {
-        self.commands.push(PathCommand::ClosePath);
-        if let Some(start) = self.move_point {
-            self.current_point = Some(start);
-        }
-    }
-
-    pub fn clear(&mut self) {
-        self.commands.clear();
-        self.current_point = None;
-        self.move_point = None;
     }
 }
 
@@ -1146,12 +1048,12 @@ mod tests {
     fn test_current_path_move_line() {
         let mut path = CurrentPath::new();
         path.move_to(Point::new(10.0, 20.0));
-        assert_eq!(path.current_point, Some(Point::new(10.0, 20.0)));
-        assert_eq!(path.move_point, Some(Point::new(10.0, 20.0)));
+        assert_eq!(path.current_point(), Some(Point::new(10.0, 20.0)));
+        assert_eq!(path.move_point(), Some(Point::new(10.0, 20.0)));
 
         path.line_to(Point::new(30.0, 40.0));
-        assert_eq!(path.current_point, Some(Point::new(30.0, 40.0)));
-        assert_eq!(path.move_point, Some(Point::new(10.0, 20.0)));
+        assert_eq!(path.current_point(), Some(Point::new(30.0, 40.0)));
+        assert_eq!(path.move_point(), Some(Point::new(10.0, 20.0)));
     }
 
     #[test]
@@ -1161,7 +1063,7 @@ mod tests {
         path.line_to(Point::new(30.0, 40.0));
         path.close_path();
 
-        assert_eq!(path.current_point, Some(Point::new(10.0, 20.0)));
+        assert_eq!(path.current_point(), Some(Point::new(10.0, 20.0)));
     }
 
     #[test]
@@ -1169,8 +1071,8 @@ mod tests {
         let mut path = CurrentPath::new();
         path.rect(5.0, 10.0, 20.0, 30.0);
 
-        assert_eq!(path.current_point, Some(Point::new(5.0, 10.0)));
-        assert_eq!(path.move_point, Some(Point::new(5.0, 10.0)));
+        assert_eq!(path.current_point(), Some(Point::new(5.0, 10.0)));
+        assert_eq!(path.move_point(), Some(Point::new(5.0, 10.0)));
     }
 
     #[test]

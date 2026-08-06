@@ -197,7 +197,6 @@ pub mod profiles;
 pub mod receipts;
 #[cfg(feature = "remote")]
 pub mod remote;
-#[cfg(feature = "ocr")]
 pub mod render;
 pub mod source;
 pub mod text;

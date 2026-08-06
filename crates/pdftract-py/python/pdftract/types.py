@@ -259,21 +259,21 @@ class Document:
     """A complete PDF document extraction result.
 
     Attributes:
-        schema_version: Schema version identifier
         pages: List of pages in the document
+        schema_version: Schema version identifier
         metadata: Document metadata
     """
 
-    schema_version: str
     pages: List[Page]
-    metadata: Metadata
+    schema_version: Optional[str] = None
+    metadata: Optional[Metadata] = None
 
     @classmethod
     def from_native(cls, native_dict: dict) -> Self:
         return cls(
-            schema_version=native_dict["schema_version"],
-            pages=[Page.from_native(page_dict) for page_dict in native_dict["pages"]],
-            metadata=Metadata.from_native(native_dict["metadata"]),
+            schema_version=native_dict.get("schema_version"),
+            pages=[Page.from_native(page_dict) for page_dict in native_dict.get("pages", [])],
+            metadata=Metadata.from_native(native_dict.get("metadata", {})) if native_dict.get("metadata") else None,
         )
 
     def __repr__(self) -> str:

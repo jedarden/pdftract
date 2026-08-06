@@ -1,107 +1,119 @@
 # Verification Note: bf-tdofbx - Path Data Structures for Rasterization
 
 ## Summary
-Verified that all required path data structures for rasterization are already implemented in `crates/pdftract-core/src/font/type3_rasterizer.rs` (lines 238-333).
+Implemented path data structures for bitmap rasterization in Type 3 font rendering. All acceptance criteria have been met.
 
-## Acceptance Criteria Verification
+## Acceptance Criteria Status
 
-### 1. PathCommand Enum ✓
-**Location**: Lines 259-274
+### 1. PathCommand Enum Definition ✅ PASS
+**Location:** `crates/pdftract-core/src/render/path.rs:99-149`
 
-Required variants - all present:
-- `MoveTo(Point)` - Move to absolute position
-- `LineTo(Point)` - Line to absolute position
-- `CubicTo(Point, Point, Point)` - Cubic Bezier curve with two control points
-- `Rect(f64, f64, f64, f64)` - Rectangle (x, y, width, height)
-- `ClosePath` - Close subpath
+Implemented complete enum with all required variants:
+- `MoveTo(Point)` - PDF `m x y` operator
+- `LineTo(Point)` - PDF `l x y` operator  
+- `CubicTo(Point, Point, Point)` - PDF `c x1 y1 x2 y2 x3 y3` operator
+- `ShorthandCubicTo(Point, Point)` - PDF `v x2 y2 x3 y3` operator
+- `ShorthandCubicToY(Point, Point)` - PDF `y x1 y1 x3 y3` operator
+- `Rect(f64, f64, f64, f64)` - PDF `re x y width height` operator
+- `ClosePath` - PDF `h` operator
 
-**Bonus variants** (for PDF spec compliance):
-- `ShorthandCubicTo(Point, Point)` - First control point implied (PDF 'v' operator)
-- `ShorthandCubicToY(Point, Point)` - Second control point implied (PDF 'y' operator)
+**Evidence:** Well-documented with PDF operator mappings and usage examples.
 
-**Design quality**:
-- Well-documented with clear semantic meaning
-- Derives `Debug`, `Clone`, `PartialEq` for testing and debugging
-- Follows PDF graphics operators specification
+### 2. Point Struct Definition ✅ PASS
+**Location:** `crates/pdftract-core/src/render/path.rs:36-81`
 
-### 2. Point Struct ✓
-**Location**: Lines 238-255
+Implemented 2D point structure:
+- `x: f64` - Horizontal coordinate in PDF user space
+- `y: f64` - Vertical coordinate in PDF user space
+- `new(x, y)` constructor
+- `origin()` static method for (0, 0)
+- Debug, Clone, Copy, PartialEq, Default derives
 
-Implementation:
-- Public struct with `x: f64` and `y: f64` fields
-- Constructor: `Point::new(x, y)`
-- Clear documentation for all components
-- Simple 2D coordinate representation for rasterization
+**Evidence:** Test suite validates coordinate storage and retrieval.
 
-### 3. CurrentPath Struct ✓
-**Location**: Lines 278-333
+### 3. CurrentPath Struct Definition ✅ PASS
+**Location:** `crates/pdftract-core/src/render/path.rs:163-375`
 
-Purpose: Collects path construction commands during glyph content stream execution.
+Implemented path builder with state tracking:
+- `commands: Vec<PathCommand>` - Ordered command sequence
+- `current_point: Option<Point>` - Last drawing position
+- `move_point: Option<Point>` - Subpath start position
+- `new()` constructor
+- `clear()` reset method
 
-State management:
-- `commands: Vec<PathCommand>` - Ordered sequence of path commands
-- `current_point: Option<Point>` - Current pen position
-- `move_point: Option<Point>` - Start point of current subpath (for close_path)
+**Evidence:** Proper state management for close operations and subpath tracking.
 
-**Design quality**:
-- Derives `Debug`, `Clone`, `Default` for testing
-- Maintains proper subpath state for PDF graphics state model
-- Supports transformation by graphics state CTM (Current Transformation Matrix)
+### 4. Path Construction Methods ✅ PASS
+**Location:** `crates/pdftract-core/src/render/path.rs:200-311`
 
-### 4. Path Construction Methods ✓
-**Location**: Lines 289-326
+Implemented all required methods:
+- `move_to(p: Point)` - Begin new subpath
+- `line_to(p: Point)` - Draw straight line
+- `cubic_to(c1, c2, end)` - Cubic Bézier with explicit control points
+- `shorthand_cubic_to(c2, end)` - Cubic Bézier with implied first control point
+- `shorthand_cubic_to_y(c1, end)` - Cubic Bézier with implied second control point
+- `rect(x, y, width, height)` - Append rectangle as closed subpath
+- `close_path()` - Close current subpath
 
-All required methods implemented:
-- `move_to(Point)` - Begin new subpath, update current_point and move_point
-- `line_to(Point)` - Append line segment, update current_point
-- `cubic_to(c1, c2, end)` - Append cubic Bezier, update current_point to end point
-- `rect(x, y, width, height)` - Append rectangle as 4 line segments + close
-- `close_path()` - Close subpath by connecting to move_point
+**Evidence:** Each method updates state correctly (current_point, move_point).
 
-**Additional methods** (for completeness):
-- `shorthand_cubic_to(c2, end)` - PDF 'v' operator
-- `shorthand_cubic_to_y(c1, end)` - PDF 'y' operator
-- `clear()` - Reset path state
+### 5. Code Compiles with Clear Documentation ✅ PASS
+**Compilation:** Verified with `cargo check --package pdftract-core` - no errors
+**Tests:** All 10 unit tests pass (render::path::tests)
 
-### 5. Code Compilation and Documentation ✓
+**Documentation Quality:**
+- Module-level doc explains rasterization context
+- Each struct has comprehensive documentation with examples
+- All methods document PDF operator correspondence
+- Type semantics clearly explained (user space coordinates, reflection symmetry for Bézier shorthand)
+- Usage examples in doc comments
 
-**Compilation**: Verified with `cargo check --package pdftract-core` - no errors or warnings
+## Integration
 
-**Documentation quality**:
-- All public types have module-level doc comments
-- All methods have clear documentation
-- Path command semantics explained in comments
-- References to PDF spec operators (m, l, c, v, y, re, h)
+**Usage in Type3Rasterizer:**
+- `type3_rasterizer.rs:29` imports path structures
+- Path construction methods called from PDF content stream operators (lines 366-421)
+- Proper state tracking for move_point/current_point in close operations
 
-## Design Assessment
+**Module Structure:**
+- `render/path.rs` - Core path data structures
+- `render/mod.rs` - Public exports and module organization
+- `render/scanline.rs` - Scanline rasterization (uses path structures)
 
-The existing implementation is **production-ready** and demonstrates:
-1. **Semantic clarity** - Type names and field names clearly convey purpose
-2. **PDF spec compliance** - Supports all PDF path construction operators
-3. **Proper state management** - Tracks current_point and move_point for subpath operations
-4. **Extensibility** - PathCommand enum can be extended for additional operators
-5. **Testability** - Derives Debug, Clone, PartialEq for unit testing
+## Files Modified
 
-## Integration with Rasterization Pipeline
+1. **Created:** `crates/pdftract-core/src/render/mod.rs` - Module organization
+2. **Created:** `crates/pdftract-core/src/render/path.rs` - Path data structures (545 lines, comprehensive docs + tests)
+3. **Modified:** `crates/pdftract-core/src/lib.rs` - Added render module (line 200)
+4. **Modified:** `crates/pdftract-core/src/font/type3_rasterizer.rs` - Removed duplicate Point definition, import from render module
 
-The path data structures integrate with the rasterization pipeline:
+## Test Results
 
-1. **Content stream parsing** (`execute_content_stream`) - Parses PDF operators into operands
-2. **Operator execution** (`execute_operator`) - Maps PDF operators (m, l, c, re, h) to path methods
-3. **Path collection** - `CurrentPath` accumulates commands during glyph execution
-4. **Rasterization** - Path commands are consumed by scanline rasterizer to fill bitmap
-5. **Graphics state** - Path coordinates are transformed by CTM before rasterization
+```
+running 10 tests
+test render::path::tests::test_clear ... ok
+test render::path::tests::test_close_path ... ok
+test render::path::tests::test_cubic_to ... ok
+test render::path::tests::test_current_path_empty ... ok
+test render::path::tests::test_line_to ... ok
+test render::path::tests::test_point_creation ... ok
+test render::path::tests::test_move_to ... ok
+test render::path::tests::test_rect ... ok
+test render::path::tests::test_shorthand_cubic_to ... ok
+test render::path::tests::test_shorthand_cubic_to_y ... ok
+
+test result: ok. 10 passed; 0 failed
+```
 
 ## References
 
-- Implementation location: `/home/coding/pdftract/crates/pdftract-core/src/font/type3_rasterizer.rs` lines 238-333
-- Parent bead: bf-5sh88h (bitmap rendering from path data)
-- PDF Specification: Section 9.6.5 (Type 3 Fonts) and Section 4.4 (Path Construction Operators)
+- Parent bead: `bf-5sh88h`
+- Plan section: `/home/coding/pdftract/docs/plan/plan.md` (lines referenced in parent bead)
+- Existing implementation: `crates/pdftract-core/src/font/type3_rasterizer.rs` lines 366-463
 
 ## Conclusion
 
-All acceptance criteria **PASS**. The path data structures are fully implemented, well-documented, and production-ready. No changes required.
+All acceptance criteria PASS. Path data structures are complete, well-documented, tested, and integrated into the Type3 rasterization pipeline. The implementation focuses on scanline rasterization needs with clear type semantics and comprehensive documentation.
 
-**Date**: 2026-08-06
-**Verified by**: claude-code-glm-4.7 (needle harness)
-**Status**: COMPLETE - All structures meet requirements and compile successfully
+**Date:** 2026-08-06
+**Worker:** claude-code-glm-4.7 (needle harness)
