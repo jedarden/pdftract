@@ -1620,6 +1620,103 @@ fn resolve_xobject_stream(
     ))
 }
 
+/// Extract content stream bytes from a resolved PDF object.
+///
+/// This function handles both stream dictionaries and direct byte arrays:
+/// - **Stream objects**: Extracts and decodes the stream data (requires PdfSource and extraction options)
+/// - **Direct byte arrays**: Returns string bytes or integer arrays as bytes
+///
+/// # Arguments
+///
+/// * `obj` - The resolved PdfObject to extract bytes from
+/// * `source` - Optional PdfSource for reading stream data (required for stream objects)
+/// * `opts` - Optional extraction options for stream decoding
+/// * `doc_decompress_counter` - Optional counter for tracking decompressed bytes
+///
+/// # Returns
+///
+/// * `Ok(Vec<u8>)` - The extracted and decoded bytes
+/// * `Err(Diagnostic)` - Error if extraction fails
+///
+/// # Examples
+///
+/// ```no_run
+/// use pdftract_core::content_stream::extract_content_stream_bytes;
+/// use pdftract_core::parser::object::PdfObject;
+///
+/// // Extract from direct byte array
+/// let obj = PdfObject::String(Box::new(b"Hello".to_vec()));
+/// let bytes = extract_content_stream_bytes(&obj, None, None, None).unwrap();
+/// assert_eq!(bytes, b"Hello");
+/// ```
+pub fn extract_content_stream_bytes(
+    obj: &PdfObject,
+    source: Option<&dyn crate::parser::stream::PdfSource>,
+    opts: Option<&crate::parser::stream::ExtractionOptions>,
+    doc_decompress_counter: Option<&mut u64>,
+) -> Result<Vec<u8>, Diagnostic> {
+    match obj {
+        // Case 1: Stream object - requires source and options for decoding
+        PdfObject::Stream(stream) => {
+            let (source, opts, counter) = match (source, opts, doc_decompress_counter) {
+                (Some(s), Some(o), Some(c)) => (s, o, c),
+                _ => {
+                    return Err(Diagnostic::with_dynamic_no_offset(
+                        DiagCode::StructMissingKey,
+                        "Stream object decoding requires PdfSource, ExtractionOptions, and decompress counter".to_string(),
+                    ));
+                }
+            };
+
+            // Decode the stream using the existing decode_stream function
+            let bytes = crate::parser::stream::decode_stream(stream, source, opts, counter);
+
+            if bytes.is_empty() {
+                Err(Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructInvalidType,
+                    "Stream decoding produced no bytes (likely corrupt stream)".to_string(),
+                ))
+            } else {
+                Ok(bytes)
+            }
+        }
+
+        // Case 2: Literal string (e.g., (Hello))
+        // Note: PDF hex strings (<48656C6C6F>) are already decoded during parsing
+        // and appear as regular String objects
+        PdfObject::String(data) => {
+            // Return the bytes directly (PDF strings are already byte arrays)
+            Ok(data.as_ref().clone())
+        }
+
+        // Case 3: Byte array (stored as a vector of integers 0-255)
+        PdfObject::Array(arr) => {
+            // Check if this looks like a byte array (all integers in 0-255 range)
+            let mut bytes = Vec::with_capacity(arr.len());
+            for (i, obj) in arr.iter().enumerate() {
+                match obj {
+                    PdfObject::Integer(n) if *n >= 0 && *n <= 255 => {
+                        bytes.push(*n as u8);
+                    }
+                    _ => {
+                        return Err(Diagnostic::with_dynamic_no_offset(
+                            DiagCode::StructInvalidType,
+                            format!("Array element {} is not a byte value (0-255): {:?}", i, obj),
+                        ));
+                    }
+                }
+            }
+            Ok(bytes)
+        }
+
+        // Error case: unsupported object type
+        _ => Err(Diagnostic::with_dynamic_no_offset(
+            DiagCode::StructInvalidType,
+            format!("Cannot extract bytes from object type: {:?}", obj),
+        )),
+    }
+}
+
 /// Get the /Matrix from a form XObject dictionary.
 ///
 /// Returns the matrix if found, or identity if not present.
