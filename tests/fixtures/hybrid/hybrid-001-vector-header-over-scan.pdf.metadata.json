@@ -1,0 +1,47 @@
+{
+  "fixture_name": "hybrid-001-vector-header-over-scan",
+  "fixture_id": "hybrid-001-vector-header-over-scan",
+  "description": "Minimal hybrid PDF with vector header text overlaid on scanned body content",
+  "source": {
+    "type": "synthetic",
+    "generation_method": "Generated via tests/fixtures/hybrid/hybrid-001-generator.py using raw PDF construction: vector text (Helvetica, 14pt, top ~120 pts) with 1-bit grayscale image XObject (scanned body, bottom 672 pts)",
+    "generated_date": "2026-08-06"
+  },
+  "pages_with_hybrid_content": [
+    1
+  ],
+  "hybrid_behavior": {
+    "vector_regions": "Page header (rows 0-1 of 8x8 grid, columns 0-7): Company name 'ACME Corp', report title 'Annual Report 2024'",
+    "scanned_regions": "Page body (rows 1-7 of 8x8 grid, columns 0-7): 1-bit grayscale image XObject with horizontal line pattern simulating scanned text",
+    "overlap_type": "vertical-stack",
+    "overlap_description": "Clean vertical separation with vector header in top ~15% and scanned image in bottom ~85%"
+  },
+  "grid_cell_coverage": {
+    "total_cells": 64,
+    "hybrid_cells_approx": 8,
+    "hybrid_percentage": 12.5,
+    "hybrid_cell_locations": "Row 1 (the boundary row between header and body) contains both vector text cells above and image content below"
+  },
+  "classification_challenges": [
+    "Minimal PDF size (1.2 KB) may be atypical compared to real-world hybrid PDFs",
+    "Clean regional separation may cause classifier to treat as separate Vector + Scanned regions rather than unified Hybrid page",
+    "Boundary detection: accurate identification of transition from vector to image content",
+    "Image is 1-bit grayscale only, lacking color complexity of typical scans",
+    "Tests non-overlapping merge rule behavior when regions are cleanly separated vertically"
+  ],
+  "test_focus": [
+    "Header extraction precision: ensuring vector header is not subjected to OCR",
+    "OCR on body only without interference from vector header",
+    "Non-overlapping merge rule validation",
+    "Boundary cell classification accuracy (row 1 boundary)",
+    "Minimal fixture performance: tests classification on very small files"
+  ],
+  "expected_classification": {
+    "page_class": "Hybrid",
+    "hybrid_cells": "~8 cells (boundary row)",
+    "confidence_range": "0.70-0.85"
+  },
+  "file_size_bytes": 1191,
+  "validation_status": "pending",
+  "notes": "Synthetic minimal fixture designed to test hybrid classification at the smallest viable scale. Vector header content is selectable text (Helvetica font), body content is 1-bit image XObject with horizontal line pattern simulating scanned text. This fixture tests the fundamental hybrid detection capability: identifying pages that contain both vector and image content types. The clean vertical separation makes this a baseline case before testing more complex overlapping scenarios."
+}
