@@ -18,6 +18,9 @@ pub mod type3;
 pub mod type3_rasterizer;
 pub mod unmapped;
 
+#[cfg(test)]
+mod type3_rasterizer_test;
+
 #[cfg(feature = "cjk")]
 pub mod cjk_encoding;
 

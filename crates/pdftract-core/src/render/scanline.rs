@@ -187,20 +187,26 @@ pub fn fill_polygon<B: Bitmap>(bitmap: &mut B, edges: &[Edge], fill_value: u8) {
     min_y = min_y.max(0);
     max_y = max_y.min(height - 1);
 
-    // For each scanline
+    // For each scanline (inclusive range to cover all scanlines)
     for y in min_y..=max_y {
         let mut intersections = Vec::new();
 
         // Find all intersections with this scanline
         for edge in edges {
-            // Skip horizontal edges (they don't affect scanline fill)
-            if edge.is_horizontal() {
-                continue;
-            }
-
             // Check if edge spans this scanline using half-open interval
             // Include lower endpoint, exclude upper endpoint to avoid double-counting vertices
             let (y_min, y_max) = edge.y_bounds();
+
+            // Skip horizontal edges unless this is their scanline
+            if edge.is_horizontal() {
+                // Horizontal edges contribute intersections on their own scanline
+                if y == y_min {
+                    intersections.push(edge.x0 as f64);
+                    intersections.push(edge.x1 as f64);
+                }
+                continue;
+            }
+
             if y_min <= y && y < y_max {
                 // Calculate x intersection
                 // x = x0 + (y - y0) * (x1 - x0) / (y1 - y0)
