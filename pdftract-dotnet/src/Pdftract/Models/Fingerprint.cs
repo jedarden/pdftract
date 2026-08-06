@@ -1,21 +1,28 @@
-using System.Text.Json.Serialization;
+using MessagePack;
 
 namespace Pdftract.Models;
 
 /// <summary>
-/// Represents document hash information.
+/// Represents a document fingerprint for identification.
 /// </summary>
+[MessagePackObject]
 public record Fingerprint
 {
-    [JsonPropertyName("hash")]
+    /// <summary>
+    /// Document hash value.
+    /// </summary>
+    [Key(0)]
     public required string Hash { get; init; }
 
-    [JsonPropertyName("page_count")]
+    /// <summary>
+    /// Document size in bytes.
+    /// </summary>
+    [Key(1)]
+    public required long Size { get; init; }
+
+    /// <summary>
+    /// Number of pages in the document.
+    /// </summary>
+    [Key(2)]
     public required int PageCount { get; init; }
-
-    [JsonPropertyName("fast_hash")]
-    public required string FastHash { get; init; }
-
-    [JsonPropertyName("metadata")]
-    public required Metadata Metadata { get; init; }
 }

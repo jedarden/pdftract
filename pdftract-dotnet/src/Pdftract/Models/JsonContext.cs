@@ -17,9 +17,9 @@ namespace Pdftract.Models;
 [JsonSerializable(typeof(Block))]
 [JsonSerializable(typeof(Metadata))]
 [JsonSerializable(typeof(Match))]
-[JsonSerializable(typeof(MatchContext))]
 [JsonSerializable(typeof(Fingerprint))]
 [JsonSerializable(typeof(Classification))]
 [JsonSerializable(typeof(Receipt))]
 [JsonSerializable(typeof(ReceiptInfo))]
+[JsonSerializable(typeof(ReceiptLineItem))]
 public partial class PdftractJsonContext : JsonSerializerContext;
