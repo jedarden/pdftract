@@ -32,7 +32,6 @@ from pdftract.types import (
     Metadata,
     Page,
     Span,
-    Table,
 )
 
 

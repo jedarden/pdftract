@@ -22,4 +22,8 @@ namespace Pdftract.Models;
 [JsonSerializable(typeof(Receipt))]
 [JsonSerializable(typeof(ReceiptInfo))]
 [JsonSerializable(typeof(ReceiptLineItem))]
+[JsonSerializable(typeof(Source))]
+[JsonSerializable(typeof(Source.FilePath))]
+[JsonSerializable(typeof(Source.Base64))]
+[JsonSerializable(typeof(Source.Url))]
 public partial class PdftractJsonContext : JsonSerializerContext;
