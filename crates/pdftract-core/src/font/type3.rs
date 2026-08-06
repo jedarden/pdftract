@@ -90,7 +90,7 @@ pub struct Type3Font {
     ///
     /// Cached to avoid re-rasterizing the same glyph multiple times
     /// during shape recognition.
-    raster_cache: Arc<DashMap<Arc<str>, Vec<u8>>>,
+    pub raster_cache: Arc<DashMap<Arc<str>, Vec<u8>>>,
 }
 
 impl Type3Font {

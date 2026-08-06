@@ -1,47 +1,59 @@
-# bf-39zru7: Add Type3Error::InvalidCharProcType variant
+# Verification Note: bf-39zru7 - Add Type3Error::InvalidCharProcType variant
 
 ## Summary
-Added new error variant to Type3Error enum for invalid char_proc object types.
+Added a new error variant `InvalidCharProcType` to the `Type3Error` enum to represent invalid char_proc object types.
 
 ## Changes Made
 
-### File: crates/pdftract-core/src/font/type3_rasterizer.rs
+### File: `crates/pdftract-core/src/font/type3_rasterizer.rs`
 
-1. Added `InvalidCharProcType` variant to Type3Error enum (lines 46-52):
-   - `got: String` - the actual object type found
-   - `expected: String` - description of expected types
+1. **Added variant to Type3Error enum** (line 47-52):
+   ```rust
+   InvalidCharProcType {
+       got: String,
+       expected: String,
+   }
+   ```
 
-2. Updated Display implementation (lines 65-67):
-   - Message format: "invalid char_proc type: got {got}, expected {expected}"
+2. **Updated Display implementation** (line 63):
+   ```rust
+   Type3Error::InvalidCharProcType { got, expected } => {
+       write!(f, "invalid char_proc type: got {}, expected {}", got, expected)
+   }
+   ```
 
-3. Added test coverage (lines 1773-1785):
-   - `test_type3_error_invalid_char_proc_type` - verifies Display output
+3. **Added test** (line 1760-1770):
+   - `test_type3_error_invalid_char_proc_type()` - verifies Display impl shows correct message
 
 ## Acceptance Criteria
 
-- ✅ Type3Error enum has InvalidCharProcType variant with got and expected fields
-- ✅ Variant is properly integrated into the error type
-- ✅ Display impl shows clear message about what was found vs expected
-- ✅ All tests compile and pass
+✅ **PASS**: Type3Error enum has InvalidCharProcType variant with got and expected fields
+✅ **PASS**: Variant is properly integrated into the error type
+✅ **PASS**: Display impl shows clear message about what was found vs expected
 
-## Example Usage
+## Test Results
 
-```rust
-let error = Type3Error::InvalidCharProcType {
-    got: "integer".to_string(),
-    expected: "stream or dict".to_string(),
-};
-
-// Display output: "invalid char_proc type: got integer, expected stream or dict"
+Ran all Type3 error tests:
+```bash
+$ cargo test --package pdftract-core --lib font::type3_rasterizer::tests::test_type3_error
+test result: ok. 7 passed; 0 failed; 0 ignored
 ```
+
+All 7 Type3 error tests pass, including the new test for InvalidCharProcType.
 
 ## Verification
 
-- Compiled successfully: `cargo check --lib -p pdftract-core`
-- Test passes: `test_type3_error_invalid_char_proc_type`
-- All Type3Error tests pass: 6 tests in the error test suite
+The new variant:
+- Is structurally identical to existing error variants in the enum
+- Follows the same naming and formatting conventions
+- Provides clear, actionable error messages through the Display impl
+- Can be used to distinguish type validation errors from other Type3 rasterization errors
 
-## References
-
+## Related Files
 - Plan: lines 3800-3850 (Type3 font error handling)
 - ADR-12: Error type design patterns
+
+## Git Diff Summary
+- Added 1 enum variant (6 lines)
+- Updated Display impl (4 lines)
+- Added 1 test (11 lines)
