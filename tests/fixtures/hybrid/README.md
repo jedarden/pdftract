@@ -34,6 +34,48 @@ This directory contains hybrid PDF fixtures with mixed vector text and scanned i
 - **Test focus**: Page-level hybrid detection for horizontally separated layouts, column boundary identification, side-by-side layout handling
 - **Generation**: `hybrid-003-generator.py`
 
+## Additional Fixtures (Fixtures 4-7)
+
+### hybrid-004: Watermark Over Scan
+**File**: `hybrid-004-watermark-over-scan.pdf` (1.4 KB)
+**Pattern**: Scanned document with vector diagonal watermark overlay
+- **Vector regions**: Full-page diagonal watermark overlay (28pt Helvetica, gray color, rotated 45° centered) plus small page header text (10pt Helvetica, top ~10%)
+- **Scanned regions**: Full-page scanned document background (1-bit grayscale image XObject with text line pattern throughout)
+- **Hybrid cells**: ~64 cells (100.0% - full-page overlap)
+- **Classification challenge**: Full-page overlap may trigger over-aggressive Hybrid classification; diagonal watermark creates complex cell-level hybrid patterns crossing grid boundaries at oblique angles
+- **Test focus**: Full-page hybrid cell detection, diagonal text extraction precision, merge rule priority for decorative vs substantive content
+- **Generation**: `hybrid-004-generator.py`
+
+### hybrid-005: Vector Footer Over Scan
+**File**: `hybrid-005-vector-footer-over-scan.pdf` (1.5 KB)
+**Pattern**: Scanned document body with vector footer containing page numbers
+- **Vector regions**: Page header (28pt Helvetica, top ~5%) and footer region (9pt Helvetica with page numbers and confidentiality notice, bottom ~10%) with horizontal divider line
+- **Scanned regions**: Document body (1-bit grayscale image XObject, top 90%) with text line pattern throughout
+- **Hybrid cells**: ~8 cells (12.5% - bottom boundary row)
+- **Classification challenge**: Tests classification symmetry with hybrid-001 (vertical stack but vector at bottom instead of top); small footer elements may be missed if scan covers too much
+- **Test focus**: Footer extraction precision, boundary detection accuracy, classification symmetry with top-header patterns, small vector region detection
+- **Generation**: `hybrid-005-generator.py`
+
+### hybrid-006: Stamp Annotation
+**File**: `hybrid-006-stamp-annotation.pdf` (1.5 KB)
+**Pattern**: Scanned contract with vector circular stamp/seal overlay
+- **Vector regions**: Page header text (12pt Helvetica, top ~10%) and circular stamp seal in bottom right corner (10pt Helvetica-Bold, red color, circular border, ~60pt radius)
+- **Scanned regions**: Full-page contract document background (1-bit grayscale image XObject with dense legal text pattern)
+- **Hybrid cells**: ~12 cells (18.75% - bottom right corner)
+- **Classification challenge**: Localized stamp in corner may be missed if classifier doesn't scan entire page; circular stamp crosses grid cell boundaries radially; tests color-aware classification (red on grayscale)
+- **Test focus**: Localized hybrid region detection, circular element handling, color awareness, stamp extraction precision
+- **Generation**: `hybrid-006-generator.py`
+
+### hybrid-007: Textbox Overlay
+**File**: `hybrid-007-textbox-overlay.pdf` (1.4 KB)
+**Pattern**: Scanned tax form with vector fillable textbox overlays
+- **Vector regions**: Form title (10pt Helvetica, top ~5%) and multiple fillable textbox overlays scattered throughout: rectangular borders with gray stroke (1pt) and placeholder labels (9pt Helvetica)
+- **Scanned regions**: Full-page tax form background (1-bit grayscale image XObject with horizontal/vertical dividers and form label patterns)
+- **Hybrid cells**: ~28 cells (43.75% - distributed across form)
+- **Classification challenge**: Scattered textbox distribution similar to hybrid-002 but with form-specific layout; multiple small hybrid regions require accumulation; tests duplicate text elimination when vector and scanned describe same field
+- **Test focus**: Scattered hybrid region detection with form-specific layout, form field extraction precision, rectangular border handling, duplicate text elimination
+- **Generation**: `hybrid-007-generator.py`
+
 ## Purpose
 
 These fixtures support:
@@ -69,6 +111,18 @@ hybrid/
 ├── hybrid-003-mixed-column-layout.pdf          # Primary fixture 3: column layout pattern
 ├── hybrid-003-mixed-column-layout.pdf.metadata.json
 ├── hybrid-003-generator.py                     # Fixture 3 generator script
+├── hybrid-004-watermark-over-scan.pdf          # Fixture 4: watermark overlay
+├── hybrid-004-watermark-over-scan.pdf.metadata.json
+├── hybrid-004-generator.py                     # Fixture 4 generator script
+├── hybrid-005-vector-footer-over-scan.pdf      # Fixture 5: vector footer
+├── hybrid-005-vector-footer-over-scan.pdf.metadata.json
+├── hybrid-005-generator.py                     # Fixture 5 generator script
+├── hybrid-006-stamp-annotation.pdf             # Fixture 6: stamp annotation
+├── hybrid-006-stamp-annotation.pdf.metadata.json
+├── hybrid-006-generator.py                     # Fixture 6 generator script
+├── hybrid-007-textbox-overlay.pdf             # Fixture 7: textbox overlay
+├── hybrid-007-textbox-overlay.pdf.metadata.json
+├── hybrid-007-generator.py                     # Fixture 7 generator script
 ├── receipt-overtext/                           # Receipt with scanned body + vector overlay text
 ├── letterhead-image/                           # Letterhead: vector header + scanned body
 ├── form-mixed/                                 # Form: vector fields + scanned background
@@ -257,6 +311,10 @@ Resolution strategy: Use these 10 fixtures to measure and tune:
 | **hybrid-001** (vector-header-over-scan) | ✅ | ✅ | ✅ | ~8 (12.5%) | Complete |
 | **hybrid-002** (vector-form-over-scan) | ✅ | ✅ | ✅ | ~48 (75.0%) | Complete |
 | **hybrid-003** (mixed-column-layout) | ✅ | ✅ | ✅ | 0 (0.0%) | Complete |
+| **hybrid-004** (watermark-over-scan) | ✅ | ✅ | ✅ | ~64 (100.0%) | Complete |
+| **hybrid-005** (vector-footer-over-scan) | ✅ | ✅ | ✅ | ~8 (12.5%) | Complete |
+| **hybrid-006** (stamp-annotation) | ✅ | ✅ | ✅ | ~12 (18.75%) | Complete |
+| **hybrid-007** (textbox-overlay) | ✅ | ✅ | ✅ | ~28 (43.75%) | Complete |
 | receipt-overtext | ❌ | ✅ | ✅ | ~24 | Pending |
 | letterhead-image | ❌ | ✅ | ✅ | ~40 | Pending |
 | form-mixed | ❌ | ✅ | ✅ | ~45 | Pending |

@@ -1,0 +1,47 @@
+{
+  "fixture_name": "hybrid-004-watermark-over-scan",
+  "fixture_id": "hybrid-004-watermark-over-scan",
+  "description": "Scanned document with vector diagonal watermark overlay",
+  "source": {
+    "type": "synthetic",
+    "generation_method": "Generated via tests/fixtures/hybrid/hybrid-004-generator.py using raw PDF construction: full-page scanned document (1-bit grayscale image XObject) with vector diagonal watermark text ('DRAFT - WATERMARK - CONFIDENTIAL', 28pt Helvetica, gray color) overlaid at 45-degree angle",
+    "generated_date": "2026-08-06"
+  },
+  "pages_with_hybrid_content": [
+    1
+  ],
+  "hybrid_behavior": {
+    "vector_regions": "Full-page diagonal watermark overlay (28pt Helvetica, gray color, rotated 45 degrees centered) plus small page header text (10pt Helvetica, top ~10%)",
+    "scanned_regions": "Full-page scanned document background (1-bit grayscale image XObject with text line pattern throughout)",
+    "overlap_type": "full-page-overlay",
+    "overlap_description": "Vector watermark overlaid on entire scanned document background with full-page coverage intersection"
+  },
+  "grid_cell_coverage": {
+    "total_cells": 64,
+    "hybrid_cells_approx": 64,
+    "hybrid_percentage": 100.0,
+    "hybrid_cell_locations": "All 64 cells contain both scanned background and vector watermark overlay (full-page overlap)"
+  },
+  "classification_challenges": [
+    "Full-page overlap (100% hybrid cells) may trigger over-aggressive Hybrid classification when content is actually vector-dominant",
+    "Diagonal watermark creates complex cell-level hybrid patterns (watermark crosses grid cell boundaries at oblique angles)",
+    "Semi-transparent watermark effect (gray color) may have lower OCR confidence than solid text",
+    "Distinguish between decorative watermarks vs. substantive content when applying merge rules",
+    "Tests OCR behavior on hybrid cells where one layer is clearly background (watermark) vs foreground (document content)"
+  ],
+  "test_focus": [
+    "Full-page hybrid cell detection accuracy",
+    "Diagonal text extraction precision (watermark at non-axis-aligned angle)",
+    "Merge rule priority determination when vector is clearly decorative vs substantive",
+    "Cell-level OCR quality on complex overlapping content",
+    "Classification accuracy for documents with page-wide hybrid coverage"
+  ],
+  "expected_classification": {
+    "page_class": "Hybrid",
+    "hybrid_cells": "~64 cells (full page)",
+    "confidence_range": "0.85-0.95"
+  },
+  "file_size_bytes": 1416,
+  "validation_status": "pending",
+  "notes": "Synthetic fixture designed to test full-page hybrid detection. Watermark is rotated 45 degrees, which creates unique challenges for grid cell evaluation since the watermark crosses cell boundaries diagonally. This tests the classifier's ability to handle page-wide hybrid coverage and distinguish between decorative overlays (watermarks) and substantive content. The gray color watermark may also affect OCR confidence levels during merge rule application."
+}

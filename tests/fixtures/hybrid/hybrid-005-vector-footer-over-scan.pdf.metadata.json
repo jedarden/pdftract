@@ -1,0 +1,47 @@
+{
+  "fixture_name": "hybrid-005-vector-footer-over-scan",
+  "fixture_id": "hybrid-005-vector-footer-over-scan",
+  "description": "Scanned document body with vector footer containing page numbers and metadata",
+  "source": {
+    "type": "synthetic",
+    "generation_method": "Generated via tests/fixtures/hybrid/hybrid-005-generator.py using raw PDF construction: scanned document body (1-bit grayscale image XObject, top 90%) with vector footer overlay (9pt Helvetica, bottom 10%) containing page numbers, confidentiality notice, and horizontal divider line",
+    "generated_date": "2026-08-06"
+  },
+  "pages_with_hybrid_content": [
+    1
+  ],
+  "hybrid_behavior": {
+    "vector_regions": "Page header (28pt Helvetica, top ~5%) and footer region (9pt Helvetica with page numbers and confidentiality notice, bottom ~10%) with horizontal divider line",
+    "scanned_regions": "Document body (1-bit grayscale image XObject, top 90%) with text line pattern throughout",
+    "overlap_type": "vertical-stack-with-footer",
+    "overlap_description": "Scanned body in top 90%, vector footer in bottom 10% with minimal boundary overlap at transition"
+  },
+  "grid_cell_coverage": {
+    "total_cells": 64,
+    "hybrid_cells_approx": 8,
+    "hybrid_percentage": 12.5,
+    "hybrid_cell_locations": "Bottom row (row 7) contains both scanned body content above and vector footer elements, creating boundary hybrid cells"
+  },
+  "classification_challenges": [
+    "Similar to hybrid-001 (vertical stack) but with vector content at bottom instead of top, testing symmetry of detection",
+    "Footer elements are small and may be missed by classifier if scan covers too much of page",
+    "Page numbers in footer may be mistaken for OCR artifacts rather than substantive vector content",
+    "Horizontal divider line between body and footer creates additional vector/scanned boundary complexity",
+    "Tests whether classifier detects hybrid content when vector region is at page bottom rather than top"
+  ],
+  "test_focus": [
+    "Footer extraction precision (vector page numbers and notices)",
+    "Boundary detection accuracy between scanned body and vector footer",
+    "Classification symmetry with top-header (hybrid-001) vs bottom-footer patterns",
+    "Small vector region detection when dominated by large scanned region",
+    "Horizontal line element handling in merge rules"
+  ],
+  "expected_classification": {
+    "page_class": "Hybrid",
+    "hybrid_cells": "~8 cells (bottom boundary row)",
+    "confidence_range": "0.70-0.85"
+  },
+  "file_size_bytes": 1460,
+  "validation_status": "pending",
+  "notes": "Synthetic fixture complementing hybrid-001 by testing vertical stack pattern with vector content at bottom instead of top. This tests classifier symmetry and footer extraction precision. The fixture includes a horizontal divider line between body and footer, which adds complexity to the boundary detection. Footer contains page numbers and confidentiality notices, testing whether small vector regions are correctly identified when dominated by large scanned content areas."
+}

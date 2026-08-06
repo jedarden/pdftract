@@ -1,0 +1,47 @@
+{
+  "fixture_name": "hybrid-007-textbox-overlay",
+  "fixture_id": "hybrid-007-textbox-overlay",
+  "description": "Scanned tax form with vector fillable textbox overlays",
+  "source": {
+    "type": "synthetic",
+    "generation_method": "Generated via tests/fixtures/hybrid/hybrid-007-generator.py using raw PDF construction: full-page scanned tax form (1-bit grayscale image XObject with horizontal/vertical dividers) with vector fillable textbox overlays (rectangular borders with placeholder labels: 'First name', 'Last name', 'SSN', 'Home address', 'Total income', 'Tax withheld')",
+    "generated_date": "2026-08-06"
+  },
+  "pages_with_hybrid_content": [
+    1
+  ],
+  "hybrid_behavior": {
+    "vector_regions": "Form title (10pt Helvetica, top ~5%) and multiple fillable textbox overlays scattered throughout: rectangular borders with gray stroke (1pt) and placeholder labels (9pt Helvetica) positioned over form fields at various locations (top center, middle, bottom left/right)",
+    "scanned_regions": "Full-page tax form background (1-bit grayscale image XObject with horizontal dividers every 60pts, vertical dividers, and form label patterns)",
+    "overlap_type": "scattered-overlay",
+    "overlap_description": "Multiple vector textbox overlays scattered at different positions across scanned form background, creating distributed hybrid regions"
+  },
+  "grid_cell_coverage": {
+    "total_cells": 64,
+    "hybrid_cells_approx": 28,
+    "hybrid_percentage": 43.75,
+    "hybrid_cell_locations": "Hybrid cells distributed across multiple rows and columns where vector textboxes overlap scanned form background: rows 0-2 (header fields), rows 3-4 (address fields), rows 5-6 (total/tax fields)"
+  },
+  "classification_challenges": [
+    "Scattered textbox distribution similar to hybrid-002 but with form-specific layout (tax form pattern)",
+    "Rectangular textbox borders create additional vector content beyond just text labels",
+    "Multiple small hybrid regions may be missed if classifier doesn't accumulate distributed hybrid cells",
+    "Form field labels in both vector (textboxes) and scanned (background) create potential duplicate text",
+    "Tests merge rule accuracy when vector and scanned content describe the same form field"
+  ],
+  "test_focus": [
+    "Scattered hybrid region detection with form-specific layout",
+    "Form field extraction precision (vector textbox labels vs scanned labels)",
+    "Rectangular border element handling in merge rules",
+    "Duplicate text elimination when vector and scanned describe same field",
+    "Tax form pattern recognition in hybrid cell distribution"
+  ],
+  "expected_classification": {
+    "page_class": "Hybrid",
+    "hybrid_cells": "~28 cells (distributed across form)",
+    "confidence_range": "0.80-0.92"
+  },
+  "file_size_bytes": 1407,
+  "validation_status": "pending",
+  "notes": "Synthetic fixture testing form-specific hybrid patterns with fillable textbox overlays. This complements hybrid-002 (form fields) by using a tax form layout with characteristic horizontal and vertical dividers. The vector textboxes include both rectangular borders (vector graphics) and placeholder labels (vector text), testing multiple vector content types. The scattered distribution of textboxes across the form tests whether the classifier can accumulate distributed hybrid cells to reach the 15% threshold. This fixture represents a common real-world scenario: fillable forms with vector field annotations overlaid on scanned form backgrounds."
+}

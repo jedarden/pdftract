@@ -1,0 +1,47 @@
+{
+  "fixture_name": "hybrid-006-stamp-annotation",
+  "fixture_id": "hybrid-006-stamp-annotation",
+  "description": "Scanned contract document with vector circular stamp/seal overlay",
+  "source": {
+    "type": "synthetic",
+    "generation_method": "Generated via tests/fixtures/hybrid/hybrid-006-generator.py using raw PDF construction: full-page scanned contract (1-bit grayscale image XObject) with vector circular stamp overlay in bottom right corner (10pt Helvetica-Bold, red color, circular border) containing 'APPROVED' and 'Official Seal' text",
+    "generated_date": "2026-08-06"
+  },
+  "pages_with_hybrid_content": [
+    1
+  ],
+  "hybrid_behavior": {
+    "vector_regions": "Page header text (12pt Helvetica, top ~10%) and circular stamp seal in bottom right corner (10pt Helvetica-Bold, red color, circular border, ~60pt radius centered at x=500, y=100)",
+    "scanned_regions": "Full-page contract document background (1-bit grayscale image XObject with dense legal text pattern throughout)",
+    "overlap_type": "localized-overlay",
+    "overlap_description": "Vector stamp seal overlaid on scanned contract in bottom right corner with localized circular overlap region"
+  },
+  "grid_cell_coverage": {
+    "total_cells": 64,
+    "hybrid_cells_approx": 12,
+    "hybrid_percentage": 18.75,
+    "hybrid_cell_locations": "Cells in bottom right corner (rows 5-7, columns 5-7) contain both scanned contract background and vector stamp seal elements"
+  },
+  "classification_challenges": [
+    "Localized stamp in corner may be missed if classifier doesn't scan entire page for hybrid content",
+    "Circular stamp crosses grid cell boundaries in complex radial pattern (not axis-aligned)",
+    "Red color stamp on grayscale background tests color-aware classification (if implemented)",
+    "Stamp text ('APPROVED', 'Official Seal') is validation metadata, not primary document content",
+    "Tests whether small localized hybrid regions trigger Hybrid classification on otherwise predominantly scanned pages"
+  ],
+  "test_focus": [
+    "Localized hybrid region detection (corner stamps/seals)",
+    "Circular element handling in rectangular grid cell evaluation",
+    "Color awareness in hybrid detection (red on grayscale)",
+    "Stamp extraction precision and merge rule application",
+    "Classification threshold sensitivity: how much localized hybrid triggers Hybrid classification"
+  ],
+  "expected_classification": {
+    "page_class": "Hybrid",
+    "hybrid_cells": "~12 cells (bottom right corner)",
+    "confidence_range": "0.75-0.90"
+  },
+  "file_size_bytes": 1461,
+  "validation_status": "pending",
+  "notes": "Synthetic fixture testing localized hybrid detection with a circular stamp seal in the bottom right corner. This tests whether the classifier can detect hybrid content when it's concentrated in a small region rather than distributed across the page. The circular stamp crosses grid cell boundaries radially, creating complex hybrid cell patterns that test the 8×8 grid evaluation approach. The red color on grayscale background also tests color-aware classification if implemented. This fixture represents a common real-world pattern: approval stamps, notary seals, and validation marks on otherwise scanned documents."
+}
