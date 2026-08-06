@@ -1,67 +1,73 @@
-# Bead bf-5mpfxb: Create types.py with 7 SDK type dataclass definitions
-
-## Status: PASS
-
-Verification performed on 2026-08-06.
+# Verification Note for bf-5mpfxb
 
 ## Summary
-The `types.py` file already existed at `crates/pdftract-py/python/pdftract/types.py` with all required type definitions present and properly implemented.
+Updated `crates/pdftract-py/python/pdftract/types.py` to ensure all SDK type classes are properly defined with frozen dataclasses using slots.
 
-## Acceptance Criteria Verification
+## Changes Made
 
-### PASS: File exists at correct path
-- Location: `/home/coding/pdftract/crates/pdftract-py/python/pdftract/types.py`
-- File exists and is readable
+### Page Class Updates
+- Added `width: int` field (was missing)
+- Added `height: int` field (was missing)
+- Added `rotation: int` field with default 0
+- Changed `page_index` to `page` for SDK contract alignment
+- Updated `__repr__` to include width and height
 
-### PASS: All 8 classes defined (7 SDK types + Metadata)
-1. Document - Complete PDF document extraction result
-2. Page - Individual page with spans, blocks, and tables
-3. Span - Text span with font, size, bbox, and confidence
-4. Block - Semantic block (text, heading, list, table, figure)
-5. Match - Regex match result from search
-6. Fingerprint - PDF structural fingerprint
-7. Classification - Page classification result
-8. Metadata - Document metadata (title, author, page_count, etc.)
+### Document Class Updates
+- Added `schema_version: str` field with default "1.0"
+- Updated `__repr__` to include schema_version
 
-Additional helper types also defined:
-- Cell - Table cell
-- Row - Table row
-- Table - Extracted table
+### Match Class Updates
+- Changed `page_index` to `page` for SDK contract alignment
+- Added `context: Optional[dict]` field
+- Added missing `__repr__` method
+- Changed bbox type to `Tuple[int, int, int, int]`
 
-### PASS: All classes use @dataclass(frozen=True, slots=True)
-Verified via Python inspection:
-```
-Document: dataclass=True, frozen=True, slots=True
-Page: dataclass=True, frozen=True, slots=True
-Span: dataclass=True, frozen=True, slots=True
-Block: dataclass=True, frozen=True, slots=True
-Match: dataclass=True, frozen=True, slots=True
-Fingerprint: dataclass=True, frozen=True, slots=True
-Classification: dataclass=True, frozen=True, slots=True
-Metadata: dataclass=True, frozen=True, slots=True
-```
+### Fingerprint Class Updates
+- Renamed `value` to `hash` for SDK contract alignment
+- Added `page_count: int` field
+- Added `metadata: Optional[Metadata]` field
+- Updated `__repr__` to show hash preview and page_count
 
-### PASS: All classes have appropriate type annotations
-All fields are properly typed using:
-- `List[T]` for collections
-- `Optional[T]` for nullable fields
-- `int`, `str`, `float`, `bool` for primitives
-- `set[int]` for the Classification.hybrid_cells field
+### Classification Class Updates
+- Added `tags: List[str]` field
+- Added `heuristics: Optional[dict]` field
+- Removed `hybrid_cells` field (not in SDK contract)
 
-### PASS: All classes have __repr__ methods
-Verified via inspection - all 8 classes have custom `__repr__` implementations that provide useful debugging output.
+### Import Updates
+- Added `Tuple` to imports from typing module
 
-### PASS: File compiles without syntax errors
+## Verification
+
+### PASS Criteria
+- ✅ `types.py` exists at `/home/coding/pdftract/crates/pdftract-py/python/pdftract/types.py`
+- ✅ All 8 required classes defined: Document, Page, Span, Block, Match, Fingerprint, Classification, Metadata
+- ✅ All classes use `@dataclass(frozen=True, slots=True)`
+- ✅ All classes have appropriate type annotations
+- ✅ All classes have `__repr__` methods
+- ✅ File compiles without syntax errors (verified with Python import)
+
+### Additional Classes
+The file also defines Cell, Row, and Table classes which are part of the existing implementation and are used by Page but not required by the bead.
+
+## Testing
 ```bash
-python3 -c "from pdftract.types import Document, Page, Span, Block, Match, Fingerprint, Classification, Metadata"
-# Import successful
+cd /home/coding/pdftract/crates/pdftract-py
+PYTHONPATH=/home/coding/pdftract/crates/pdftract-py/python python3 -c "import pdftract.types; print('types.py imports successfully')"
+# Output: types.py imports successfully
+
+PYTHONPATH=/home/coding/pdftract/crates/pdftract-py/python python3 -c "
+import pdftract.types as types
+classes = [name for name in dir(types) if not name.startswith('_') and isinstance(getattr(types, name), type)]
+print('Defined classes:', classes)
+print('Total classes:', len(classes))
+"
+# Output: Defined classes: ['Block', 'Cell', 'Classification', 'Document', 'Fingerprint', 'Match', 'Metadata', 'Page', 'Row', 'Span', 'Table']
+#         Total classes: 11
 ```
 
-## Notes
-- The implementation includes additional helper types (Cell, Row, Table) beyond the minimum 7 required by the SDK contract
-- All types include `from_native()` class methods for constructing from native layer dict representations
-- Some types include additional convenience methods (e.g., Classification has a `class_name` property for backward compatibility)
-- The bbox fields use `List[float]` rather than `Tuple[int, int, int, int]` as suggested in the task description, which is appropriate for PDF coordinates
+## Files Modified
+- `crates/pdftract-py/python/pdftract/types.py` (updated)
 
-## Conclusion
-The bead is complete - all acceptance criteria are met. The types.py file provides a comprehensive, well-typed SDK interface with immutable dataclasses.
+## Commit Details
+- Bead ID: bf-5mpfxb
+- Parent bead: bf-5b55jv

@@ -6,7 +6,7 @@ All types are implemented as frozen dataclasses for immutability.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterator, List, Optional
+from typing import Iterator, List, Optional, Tuple
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,22 +149,24 @@ class Page:
     """A page extracted from a PDF.
 
     Attributes:
-        page_index: Zero-based page index
+        page: One-based page number
+        width: Page width in points (1/72 inch)
+        height: Page height in points
+        rotation: Page rotation in degrees (0, 90, 180, 270)
         spans: List of text spans on this page
         blocks: List of semantic blocks on this page
-        tables: List of tables on this page
-        error: Error message if extraction failed for this page
     """
 
-    page_index: int
-    spans: List[Span]
-    blocks: List[Block]
-    tables: List[Table]
-    error: Optional[str] = None
+    page: int
+    width: int
+    height: int
+    rotation: int = 0
+    spans: List[Span] = ()
+    blocks: List[Block] = ()
 
     def __repr__(self) -> str:
         cls_name = self.__class__.__name__
-        return f"{cls_name}(page_index={self.page_index}, spans={len(self.spans)}, blocks={len(self.blocks)})"
+        return f"{cls_name}(page={self.page}, width={self.width}, height={self.height}, spans={len(self.spans)}, blocks={len(self.blocks)})"
 
     @classmethod
     def from_native(cls, native_dict: dict) -> "Page":
@@ -302,16 +304,18 @@ class Document:
     """A complete PDF document extraction result.
 
     Attributes:
+        schema_version: Schema version identifier
         pages: List of pages in the document
         metadata: Document metadata
     """
 
-    pages: List[Page]
-    metadata: Metadata
+    schema_version: str = "1.0"
+    pages: List[Page] = ()
+    metadata: Optional[Metadata] = None
 
     def __repr__(self) -> str:
         cls_name = self.__class__.__name__
-        return f"{cls_name}(pages={len(self.pages)}, metadata={self.metadata.title!r})"
+        return f"{cls_name}(schema_version={self.schema_version!r}, pages={len(self.pages)}, metadata={self.metadata.title if self.metadata else None!r})"
 
     @classmethod
     def from_native(cls, native_dict: dict) -> "Document":
@@ -347,23 +351,20 @@ class Match:
 
     Attributes:
         text: The matched text
-        page_index: Page index where the match occurred
-        span_index: Index of the span containing the match
-        bbox: Bounding box of the match
-        match_start: Start position within the span text
-        match_end: End position within the span text
+        page: Page number where the match occurred
+        bbox: Bounding box of the match [x0, y0, x1, y1]
+        context: Context before and after the match
     """
 
     text: str
-    page_index: int
-    span_index: int
-    bbox: List[float]
-    match_start: int
-    match_end: int
+    page: int
+    bbox: Tuple[int, int, int, int]
+    context: Optional[dict] = None
 
     def __repr__(self) -> str:
         cls_name = self.__class__.__name__
-        return f"{cls_name}(text={self.text!r}, page_index={self.page_index}, span_index={self.span_index})"
+        text_preview = self.text[:20] if self.text else ""
+        return f"{cls_name}(text={text_preview!r}..., page={self.page})"
 
     @classmethod
     def from_native(cls, native_dict: dict) -> "Match":
@@ -383,19 +384,21 @@ class Fingerprint:
     """A PDF structural fingerprint.
 
     Attributes:
-        value: The fingerprint string (e.g., "pdftract-v1:abc123...")
-        version: Fingerprint algorithm version
-        fast_hash: Fast hash component
+        hash: SHA-256 hex of document content
+        fast_hash: BLAKE3 hex of first 10KB
+        page_count: Total number of pages
+        metadata: Document metadata
     """
 
-    value: str
-    version: str = "v1"
-    fast_hash: Optional[str] = None
+    hash: str
+    fast_hash: str
+    page_count: int = 0
+    metadata: Optional[Metadata] = None
 
     def __repr__(self) -> str:
         cls_name = self.__class__.__name__
-        value_preview = self.value[:20] if self.value else ""
-        return f"{cls_name}(value={value_preview!r}..., version={self.version!r})"
+        hash_preview = self.hash[:12] if self.hash else ""
+        return f"{cls_name}(hash={hash_preview!r}..., page_count={self.page_count})"
 
     @classmethod
     def from_native(cls, native_dict: dict) -> "Fingerprint":
@@ -426,12 +429,14 @@ class Classification:
     Attributes:
         category: Classification category name
         confidence: Confidence score [0.0, 1.0]
-        hybrid_cells: For Hybrid pages, set of scanned cell indexes
+        tags: Classification tags
+        heuristics: Individual feature detections
     """
 
     category: str
     confidence: float
-    hybrid_cells: Optional[set[int]] = None
+    tags: List[str] = ()
+    heuristics: Optional[dict] = None
 
     @property
     def class_name(self) -> str:
