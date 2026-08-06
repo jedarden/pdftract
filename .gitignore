@@ -1,6 +1,10 @@
 /target
 **/target/
-.beads/
+# Bead store: SQLite and history stay local; the JSONL checkpoint is tracked.
+# Must be `.beads/*`, not `.beads/` — git cannot re-include a file whose
+# parent directory is excluded.
+.beads/*
+!.beads/issues.jsonl
 
 # Node.js and Python caches
 node_modules/
