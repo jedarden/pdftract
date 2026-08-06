@@ -1,72 +1,51 @@
-# Bead bf-1yyex4: Basic Smoke Test File Structure
+# Bead bf-1yyex4: Basic Smoke Test File Structure (Rust)
 
-## Status: PASS (Already Complete)
+## Status: PASS
 
-## What Was Found
+## Summary
 
-The basic smoke test file structure was already created in a previous bead (bf-49vvzm: SDK type exploration). The following files exist with proper structure:
-
-### 1. Root-level smoke test: `/home/coding/pdftract/test_sdk_types_smoke.py`
-- ✅ File exists
-- ✅ Imports pdftract module successfully (with path adjustment)
-- ✅ Contains multiple test functions with proper signatures:
-  - `test_extract_returns_typed_document()`
-  - `test_extract_stream_returns_typed_pages()`
-  - `test_search_returns_typed_matches()`
-  - `test_metadata_type()`
-  - `test_hash_returns_typed_fingerprint()`
-- ✅ Each function has descriptive docstrings
-- ✅ Uses existing PDF fixtures: `tests/fixtures/tagged-suspects-false.pdf`
-
-### 2. Test directory smoke test: `/home/coding/pdftract/crates/pdftract-py/tests/test_types.py`
-- ✅ File exists in proper test directory
-- ✅ Imports pdftract module and types (Document, Page, Span)
-- ✅ Contains pytest-compatible test functions:
-  - `test_extract_returns_typed_document()`
-  - `test_extract_returns_typed_document_with_valid_minimal()`
-- ✅ Comprehensive docstrings explain test purpose
-- ✅ Uses existing PDF fixtures: `tests/fixtures/test-minimal.pdf`, `tests/fixtures/valid-minimal.pdf`
-
-### 3. Available PDF Fixtures
-Multiple simple PDF fixtures exist in `tests/fixtures/`:
-- `test-minimal.pdf` (374 bytes)
-- `valid-minimal.pdf` (534 bytes)
-- `tagged-suspects-false.pdf` (1,444 bytes)
-- `sample.pdf` (534 bytes)
-
-### 4. Module Import Status
-```python
-import sys
-sys.path.insert(0, 'crates/pdftract-py/python')
-import pdftract
-from pdftract import Document, Page, Span
-```
-✅ Imports successfully
+Verified the Rust smoke test file structure at `tests/smoke_test.rs` meets all acceptance criteria.
 
 ## Acceptance Criteria Status
 
-| Criterion | Status | Evidence |
-|-----------|--------|----------|
-| File exists | ✅ PASS | `/home/coding/pdftract/test_sdk_types_smoke.py` exists |
-| File imports module successfully | ✅ PASS | Imports work with path adjustment |
-| Test function exists with signature | ✅ PASS | Multiple test functions with proper signatures |
-| Docstring explains test purpose | ✅ PASS | Each function has descriptive docstrings |
-| Uses existing simple PDF fixture | ✅ PASS | Uses `tagged-suspects-false.pdf` and other fixtures |
+All criteria PASS:
 
-## Notes
+1. **PASS** - File `tests/smoke_test.rs` exists
+2. **PASS** - File imports `pdftract_core` module successfully (line 12: `use pdftract_core::{extract_pdf, ExtractionOptions, OutputOptions};`)
+3. **PASS** - Test function `test_basic_pdf_extraction` exists with proper signature (line 15: `fn test_basic_pdf_extraction()`)
+4. **PASS** - Docstring explains the test's purpose:
+   - Module-level docstring (lines 1-11): explains the overall smoke test purpose
+   - Function-level docstring (lines 16-24): explains what the specific test verifies
+5. **PASS** - File uses existing simple PDF fixtures:
+   - Primary fixture: `tests/fixtures/test-minimal.pdf` (374 bytes)
+   - Secondary fixture: `tests/fixtures/sample.pdf` (534 bytes)
 
-- The smoke test file structure was created as part of the SDK type exploration work (bf-49vvzm)
-- Two smoke test files exist: one at repo root (standalone runner) and one in test directory (pytest-compatible)
-- Both use proper Python imports and type checking for IDE autocomplete verification
-- Fixtures are available and properly referenced
+## Test Structure
 
-## Verification Method
+The smoke test file includes:
 
-Verified by:
-1. Reading existing smoke test files
-2. Checking module imports work correctly
-3. Confirming test function signatures and docstrings
-4. Verifying PDF fixtures exist and are referenced
-5. Checking file structure matches pytest conventions
+1. **Module documentation** (lines 1-11): Explains the smoke test validates PDF extraction pipeline
+2. **Import statement** (line 12): Imports `extract_pdf`, `ExtractionOptions`, and `OutputOptions` from `pdftract_core`
+3. **Primary test function** `test_basic_pdf_extraction` (lines 15-67):
+   - Verifies fixture exists
+   - Runs extraction with default options
+   - Validates extraction succeeds
+   - Confirms at least one page is extracted
+   - Validates page dimensions are positive
+4. **Secondary test function** `test_sample_pdf_extraction` (lines 69-106):
+   - Provides redundancy using a different fixture
+   - Same validation structure as primary test
 
-No additional work was required - the acceptance criteria were already met by the existing implementation.
+## Integration
+
+The test file is ready to be run via:
+```bash
+cargo test test_basic_pdf_extraction
+cargo test test_sample_pdf_extraction
+cargo test --test smoke_test
+```
+
+## References
+
+- Parent bead: bf-3mon01
+- Depends on: bf-49vvzm (SDK type exploration complete)
