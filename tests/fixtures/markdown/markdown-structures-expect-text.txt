@@ -1,0 +1,29 @@
+Markdown Test Document
+Testing extract_markdown() vs extract_text()
+By Test Author
+This document tests the difference between extract_text() and extract_markdown().
+The extract_text() function should return plain text without Markdown formatting.
+The extract_markdown() function should return properly formatted Markdown with
+headings marked with #, links with [text](url) syntax, and lists with - or 1. syntax.
+Links Section
+Visit our website at https://example.com for more information.
+You can also email us at support@example.com or check our documentation at
+https://docs.example.com/guide.
+Key Features
+• Feature one: Text extraction from PDFs
+• Feature two: Markdown formatting support
+• Feature three: Link preservation
+• Feature four: List detection
+• Feature five: Table extraction
+Implementation Steps
+1. Parse the PDF content stream
+2. Extract text spans with metadata
+3. Detect block types (heading, paragraph, list)
+4. Format blocks as Markdown
+5. Return the complete Markdown output
+Sample Table
+Name               Type                Description
+extract_text       Function            Returns plain text from PDF
+extract_markdown   Function            Returns Markdown formatted text
+Markdown           Format              Lightweight markup language
+PDF                Format              Portable Document Format
