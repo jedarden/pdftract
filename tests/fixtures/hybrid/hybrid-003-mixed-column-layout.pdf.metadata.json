@@ -1,0 +1,51 @@
+{
+  "fixture_name": "hybrid-003-mixed-column-layout",
+  "fixture_id": "hybrid-003-mixed-column-layout",
+  "description": "Hybrid PDF with mixed column layout: vector text in left column, scanned content in right column",
+  "source": {
+    "type": "synthetic",
+    "generation_method": "Generated via tests/fixtures/hybrid/hybrid-003-generator.py using raw PDF construction: vector text (Helvetica, 9-10pt) in left column (45% width) with 1-bit grayscale image XObject in right column (55% width, simulating newspaper article)",
+    "generated_date": "2026-08-06"
+  },
+  "pages_with_hybrid_content": [
+    1
+  ],
+  "hybrid_behavior": {
+    "vector_regions": "Left column (approx 45% of page width, columns 0-3 of 8x8 grid): Article title, selectable text content about document processing and OCR technology with multiple paragraphs",
+    "scanned_regions": "Right column (approx 55% of page width, columns 4-7 of 8x8 grid): 1-bit grayscale image XObject with horizontal line pattern simulating scanned newspaper article content",
+    "overlap_type": "horizontal-side-by-side",
+    "overlap_description": "Clean horizontal separation with vector text in left 45% and scanned image in right 55% of page width. Columns do not overlap but coexist on same page."
+  },
+  "grid_cell_coverage": {
+    "total_cells": 64,
+    "hybrid_cells_approx": 0,
+    "hybrid_percentage": 0.0,
+    "hybrid_cell_locations": "No cells contain both vector and scanned content simultaneously due to clean horizontal separation. Each cell is either vector-only (left columns) or scanned-only (right columns)."
+  },
+  "classification_challenges": [
+    "No cell-level hybrid content: traditional grid-based detection may classify this as separate Vector + Scanned regions rather than a unified Hybrid page",
+    "Horizontal separation pattern: most hybrid fixtures have vertical separation, this tests side-by-side layout detection",
+    "Page-level classification: requires system to recognize that a page contains both content types even when cleanly separated by column",
+    "Boundary detection: accurate identification of transition from vector to scanned regions along vertical axis",
+    "Tests whether classification system treats side-by-side layouts as Hybrid or as separate Vector + Scanned regions",
+    "Real-world pattern: many newspapers, academic papers, and reports use this layout with vector navigation/text in one column and scanned content in another"
+  ],
+  "test_focus": [
+    "Page-level hybrid detection for horizontally separated layouts",
+    "Column boundary identification accuracy",
+    "Vector text extraction from left column without OCR interference",
+    "OCR on right column only without vector content interference",
+    "Classification system behavior: Hybrid vs separate Vector + Scanned regions",
+    "Side-by-side layout handling vs vertical stack handling",
+    "Newspaper/multi-column document format support"
+  ],
+  "expected_classification": {
+    "page_class": "Hybrid",
+    "hybrid_cells": "0 cells (no overlapping cells)",
+    "confidence_range": "0.60-0.80",
+    "classification_note": "Lower confidence due to clean separation. System may classify as separate Vector + Scanned regions rather than Hybrid page. Page-level hybrid detection required."
+  },
+  "file_size_bytes": 1647,
+  "validation_status": "pending",
+  "notes": "Synthetic fixture simulating a common real-world hybrid PDF pattern: multi-column documents with vector text in one column and scanned content in another. This is typical of newspapers, academic papers with scanned figures, reports with mixed content types, and invoices with line items (scanned) and summary text (vector). Key difference from hybrid-001: horizontal separation rather than vertical. Key difference from hybrid-002: no overlapping regions, only side-by-side coexistence. This fixture tests whether the classification system treats pages with both vector and scanned content as Hybrid even when the regions are cleanly separated by column. The challenge: grid-based cell detection may find zero cells containing both content types, potentially leading to classification as separate Vector + Scanned regions rather than a unified Hybrid page. Expected behavior: page-level analysis should recognize both content types exist and classify as Hybrid, even with no cell-level overlap."
+}
