@@ -27,6 +27,53 @@ use crate::parser::object::types::PdfObject;
 use crate::parser::stream::{decode_stream, ExtractionOptions, PdfSource};
 use crate::parser::xref::{ResolveError, XrefResolver};
 
+/// Errors that can occur during Type 3 glyph rasterization.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Type3Error {
+    /// CharProc reference not found in PDF.
+    MissingCharProcRef {
+        /// The object reference that could not be resolved
+        ref_id: String,
+    },
+    /// Circular reference detected during glyph resolution.
+    CircularRef {
+        /// The object reference that caused the circular dependency
+        ref_id: String,
+    },
+    /// I/O error during glyph resolution.
+    Io(String),
+}
+
+impl std::fmt::Display for Type3Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Type3Error::MissingCharProcRef { ref_id } => {
+                write!(f, "char_proc reference not found: {}", ref_id)
+            }
+            Type3Error::CircularRef { ref_id } => {
+                write!(f, "circular reference detected at: {}", ref_id)
+            }
+            Type3Error::Io(msg) => write!(f, "I/O error during glyph resolution: {}", msg),
+        }
+    }
+}
+
+impl std::error::Error for Type3Error {}
+
+impl From<ResolveError> for Type3Error {
+    fn from(err: ResolveError) -> Self {
+        match err {
+            ResolveError::NotFound(obj_ref) => Type3Error::MissingCharProcRef {
+                ref_id: obj_ref.to_string(),
+            },
+            ResolveError::CircularRef(obj_ref) => Type3Error::CircularRef {
+                ref_id: obj_ref.to_string(),
+            },
+            ResolveError::Io(msg) => Type3Error::Io(msg),
+        }
+    }
+}
+
 /// Maximum recursion depth for Type 3 glyph execution (form XObject + nested glyphs).
 const MAX_GLYPH_DEPTH: usize = 20;
 
@@ -807,34 +854,32 @@ pub type StreamResolverFn = dyn Fn(ObjRef) -> Option<Vec<u8>> + Send + Sync;
 /// # Returns
 ///
 /// `Ok(PdfObject)` if the reference was successfully resolved,
-/// `Err` if resolution failed (not found, I/O error, or circular reference).
+/// `Err(Type3Error)` if resolution failed (not found, I/O error, or circular reference).
 ///
 /// # Error Context
 ///
 /// Error messages include the object reference being dereferenced to aid debugging.
-/// For example: "Failed to resolve Type3 char_proc reference 10 0 R: object not found"
+/// For example: "char_proc reference not found: 10 0 R"
 pub fn deref_char_proc_ref(
     char_proc_ref: ObjRef,
     doc_context: Option<&DocumentContext>,
-) -> Result<crate::parser::object::types::PdfObject, crate::parser::xref::ResolveError> {
-    use crate::parser::xref::ResolveError;
-
+) -> Result<crate::parser::object::types::PdfObject, Type3Error> {
     let doc_context = doc_context.ok_or_else(|| {
-        ResolveError::Io(format!(
+        Type3Error::Io(format!(
             "DocumentContext not provided - cannot dereference char_proc_ref {}",
             char_proc_ref
         ))
     })?;
 
     let resolver = doc_context.resolver.ok_or_else(|| {
-        ResolveError::Io(format!(
+        Type3Error::Io(format!(
             "XrefResolver not provided in DocumentContext - cannot resolve char_proc_ref {}",
             char_proc_ref
         ))
     })?;
 
     let source = doc_context.source.ok_or_else(|| {
-        ResolveError::Io(format!(
+        Type3Error::Io(format!(
             "PdfSource not provided in DocumentContext - cannot resolve stream for char_proc_ref {}",
             char_proc_ref
         ))
@@ -842,17 +887,9 @@ pub fn deref_char_proc_ref(
 
     // Use resolver.resolve_with_source to get the actual PDF object
     // source is already &dyn PdfSource, which is what resolve_with_source expects
-    resolver.resolve_with_source(char_proc_ref, source).map_err(|e| {
-        // Add context about which reference failed
-        match e {
-            ResolveError::NotFound(_) => ResolveError::NotFound(char_proc_ref),
-            ResolveError::CircularRef(_) => ResolveError::CircularRef(char_proc_ref),
-            ResolveError::Io(msg) => ResolveError::Io(format!(
-                "Failed to resolve Type3 char_proc_ref {}: {}",
-                char_proc_ref, msg
-            )),
-        }
-    })
+    resolver
+        .resolve_with_source(char_proc_ref, source)
+        .map_err(Type3Error::from)
 }
 
 /// Extract content stream bytes from a resolved PDF object.
@@ -872,7 +909,7 @@ pub fn deref_char_proc_ref(
 /// # Returns
 ///
 /// `Ok(Vec<u8>)` with the decoded content stream bytes,
-/// `Err` if extraction fails (wrong type, I/O error, or invalid reference).
+/// `Err(Type3Error)` if extraction fails (wrong type, I/O error, or invalid reference).
 ///
 /// # Error Context
 ///
@@ -881,15 +918,15 @@ pub fn deref_char_proc_ref(
 pub fn extract_content_stream_bytes(
     resolved_obj: PdfObject,
     doc_context: &DocumentContext,
-) -> Result<Vec<u8>, ResolveError> {
+) -> Result<Vec<u8>, Type3Error> {
     let resolver = doc_context.resolver.ok_or_else(|| {
-        ResolveError::Io(
+        Type3Error::Io(
             "XrefResolver not provided in DocumentContext - cannot extract stream".to_string()
         )
     })?;
 
     let source = doc_context.source.ok_or_else(|| {
-        ResolveError::Io(
+        Type3Error::Io(
             "PdfSource not provided in DocumentContext - cannot extract stream".to_string()
         )
     })?;
@@ -906,62 +943,55 @@ pub fn extract_content_stream_bytes(
         }
         PdfObject::Ref(obj_ref) => {
             // Indirect reference - recursively resolve and extract
-            let inner_obj = resolver.resolve_with_source(obj_ref, source).map_err(|e| {
-                match e {
-                    ResolveError::NotFound(_) => ResolveError::NotFound(obj_ref),
-                    ResolveError::CircularRef(_) => ResolveError::CircularRef(obj_ref),
-                    ResolveError::Io(msg) => ResolveError::Io(format!(
-                        "Failed to resolve indirect reference {}: {}",
-                        obj_ref, msg
-                    )),
-                }
-            })?;
+            let inner_obj = resolver
+                .resolve_with_source(obj_ref, source)
+                .map_err(Type3Error::from)?;
 
             // Recursively extract from the resolved object
             extract_content_stream_bytes(inner_obj, doc_context)
         }
         PdfObject::Null => {
-            Err(ResolveError::Io(
+            Err(Type3Error::Io(
                 "Cannot extract stream from null object at char_proc_ref".to_string()
             ))
         }
         PdfObject::Bool(_) => {
-            Err(ResolveError::Io(
+            Err(Type3Error::Io(
                 "Cannot extract stream from boolean at char_proc_ref - expected Stream or Ref".to_string()
             ))
         }
         PdfObject::Integer(_) => {
-            Err(ResolveError::Io(
+            Err(Type3Error::Io(
                 "Cannot extract stream from integer at char_proc_ref - expected Stream or Ref".to_string()
             ))
         }
         PdfObject::Real(_) => {
-            Err(ResolveError::Io(
+            Err(Type3Error::Io(
                 "Cannot extract stream from real number at char_proc_ref - expected Stream or Ref".to_string()
             ))
         }
         PdfObject::String(_) => {
-            Err(ResolveError::Io(
+            Err(Type3Error::Io(
                 "Cannot extract stream from string at char_proc_ref - expected Stream or Ref".to_string()
             ))
         }
         PdfObject::Name(_) => {
-            Err(ResolveError::Io(
+            Err(Type3Error::Io(
                 "Cannot extract stream from name at char_proc_ref - expected Stream or Ref".to_string()
             ))
         }
         PdfObject::Array(_) => {
-            Err(ResolveError::Io(
+            Err(Type3Error::Io(
                 "Cannot extract stream from array at char_proc_ref - expected Stream or Ref".to_string()
             ))
         }
         PdfObject::Dict(_) => {
-            Err(ResolveError::Io(
+            Err(Type3Error::Io(
                 "Cannot extract stream from dictionary at char_proc_ref - expected Stream or Ref".to_string()
             ))
         }
         PdfObject::Indirect(_) => {
-            Err(ResolveError::Io(
+            Err(Type3Error::Io(
                 "Cannot extract stream from indirect object at char_proc_ref - expected Stream or Ref".to_string()
             ))
         }
@@ -1352,8 +1382,6 @@ mod tests {
 
     #[test]
     fn test_deref_char_proc_ref_without_context_returns_error() {
-        use crate::parser::xref::ResolveError;
-
         let obj_ref = ObjRef::new(10, 0);
 
         // No DocumentContext provided
@@ -1361,17 +1389,15 @@ mod tests {
 
         assert!(result.is_err());
         match result {
-            Err(ResolveError::Io(msg)) => {
+            Err(Type3Error::Io(msg)) => {
                 assert!(msg.contains("DocumentContext not provided"));
             }
-            _ => panic!("Expected ResolveError::Io"),
+            _ => panic!("Expected Type3Error::Io"),
         }
     }
 
     #[test]
     fn test_deref_char_proc_ref_without_resolver_returns_error() {
-        use crate::parser::xref::ResolveError;
-
         let obj_ref = ObjRef::new(10, 0);
 
         // DocumentContext without resolver
@@ -1384,16 +1410,15 @@ mod tests {
 
         assert!(result.is_err());
         match result {
-            Err(ResolveError::Io(msg)) => {
+            Err(Type3Error::Io(msg)) => {
                 assert!(msg.contains("XrefResolver not provided"));
             }
-            _ => panic!("Expected ResolveError::Io"),
+            _ => panic!("Expected Type3Error::Io"),
         }
     }
 
     #[test]
     fn test_deref_char_proc_ref_without_source_returns_error() {
-        use crate::parser::xref::ResolveError;
         use crate::parser::xref::XrefResolver;
 
         let obj_ref = ObjRef::new(10, 0);
@@ -1409,10 +1434,115 @@ mod tests {
 
         assert!(result.is_err());
         match result {
-            Err(ResolveError::Io(msg)) => {
+            Err(Type3Error::Io(msg)) => {
                 assert!(msg.contains("PdfSource not provided"));
             }
-            _ => panic!("Expected ResolveError::Io"),
+            _ => panic!("Expected Type3Error::Io"),
+        }
+    }
+
+    #[test]
+    fn test_type3_error_missing_char_proc_ref() {
+        let error = Type3Error::MissingCharProcRef {
+            ref_id: "10 0 R".to_string(),
+        };
+
+        // Test Display implementation
+        let display_str = format!("{}", error);
+        assert!(display_str.contains("char_proc reference not found"));
+        assert!(display_str.contains("10 0 R"));
+    }
+
+    #[test]
+    fn test_type3_error_circular_ref() {
+        let error = Type3Error::CircularRef {
+            ref_id: "15 0 R".to_string(),
+        };
+
+        // Test Display implementation
+        let display_str = format!("{}", error);
+        assert!(display_str.contains("circular reference detected"));
+        assert!(display_str.contains("15 0 R"));
+    }
+
+    #[test]
+    fn test_type3_error_io() {
+        let error = Type3Error::Io("Test I/O error message".to_string());
+
+        // Test Display implementation
+        let display_str = format!("{}", error);
+        assert!(display_str.contains("I/O error during glyph resolution"));
+        assert!(display_str.contains("Test I/O error message"));
+    }
+
+    #[test]
+    fn test_type3_error_from_resolve_error_not_found() {
+        use crate::parser::xref::ResolveError;
+
+        let obj_ref = ObjRef::new(20, 0);
+        let resolve_error = ResolveError::NotFound(obj_ref);
+
+        let type3_error: Type3Error = resolve_error.into();
+
+        match type3_error {
+            Type3Error::MissingCharProcRef { ref_id } => {
+                assert_eq!(ref_id, "20 0 R");
+            }
+            _ => panic!("Expected MissingCharProcRef variant"),
+        }
+    }
+
+    #[test]
+    fn test_type3_error_from_resolve_error_circular_ref() {
+        use crate::parser::xref::ResolveError;
+
+        let obj_ref = ObjRef::new(25, 0);
+        let resolve_error = ResolveError::CircularRef(obj_ref);
+
+        let type3_error: Type3Error = resolve_error.into();
+
+        match type3_error {
+            Type3Error::CircularRef { ref_id } => {
+                assert_eq!(ref_id, "25 0 R");
+            }
+            _ => panic!("Expected CircularRef variant"),
+        }
+    }
+
+    #[test]
+    fn test_type3_error_from_resolve_error_io() {
+        use crate::parser::xref::ResolveError;
+
+        let resolve_error = ResolveError::Io("Test I/O error".to_string());
+
+        let type3_error: Type3Error = resolve_error.into();
+
+        match type3_error {
+            Type3Error::Io(msg) => {
+                assert_eq!(msg, "Test I/O error");
+            }
+            _ => panic!("Expected Io variant"),
+        }
+    }
+
+    #[test]
+    fn test_extract_content_stream_bytes_without_resolver_returns_type3_error() {
+        use crate::parser::object::types::PdfDict;
+
+        let doc_context = DocumentContext {
+            resolver: None,
+            source: None,
+        };
+
+        let pdf_obj = PdfObject::Dict(Box::new(PdfDict::new()));
+        let result = extract_content_stream_bytes(pdf_obj, &doc_context);
+
+        assert!(result.is_err());
+        match result {
+            Err(Type3Error::Io(msg)) => {
+                assert!(msg.contains("XrefResolver not provided"));
+            }
+            _ => panic!("Expected Type3Error::Io"),
         }
     }
 
@@ -1946,6 +2076,114 @@ mod tests {
         assert!(
             result.is_some(),
             "Glyph should rasterize successfully when callback uses all context parameters"
+        );
+    }
+
+    #[test]
+    fn test_resolve_stream_callback_with_helper_function_pattern() {
+        use crate::parser::object::types::{PdfDict, PdfObject};
+        use crate::parser::object::intern;
+        use std::sync::{Arc, Mutex};
+        use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
+        // Create a Type3 font with identity FontMatrix
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(
+            intern("/FontMatrix"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(1),
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+                PdfObject::Integer(1),
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+            ])),
+        );
+
+        let mut char_procs_dict = PdfDict::new();
+        let glyph_ref = ObjRef::new(30, 0);
+        char_procs_dict.insert(
+            intern("/HelperGlyph"),
+            PdfObject::Ref(glyph_ref)
+        );
+
+        font_dict.insert(intern("/CharProcs"), PdfObject::Dict(Box::new(char_procs_dict)));
+
+        let font = Type3Font::load(&font_dict);
+
+        // Simulate the actual parameter types used in resolver.rs
+        // Use Atomic types for thread-safe state tracking (Send + Sync)
+        let resolver_called = Arc::new(AtomicBool::new(false));
+        let source_used = Arc::new(AtomicBool::new(false));
+        let counter = Arc::new(AtomicU64::new(0));
+
+        // Helper function that mirrors the resolve_stream_bytes pattern
+        // This simulates the actual function used in resolver.rs:697-699
+        fn resolve_stream_bytes_helper(
+            obj_ref: ObjRef,
+            resolver: &Arc<AtomicBool>,
+            source: &Arc<AtomicBool>,
+            counter: &Arc<AtomicU64>,
+        ) -> Option<Vec<u8>> {
+            // Mark resolver as used (simulates resolver.resolve_with_source call)
+            resolver.store(true, Ordering::SeqCst);
+
+            // Mark source as used (simulates source access)
+            source.store(true, Ordering::SeqCst);
+
+            // Increment counter (simulates decompression counter)
+            counter.fetch_add(1, Ordering::SeqCst);
+
+            // Verify we received the expected obj_ref
+            assert_eq!(obj_ref.object, 30, "Callback should receive correct glyph reference ID");
+            assert_eq!(obj_ref.generation, 0, "Callback should receive correct generation number");
+
+            // Return a valid content stream
+            Some(b"10 10 25 25 re f".to_vec())
+        }
+
+        // Construct callback using the helper function pattern
+        // This mirrors the actual construction in resolver.rs:700-702
+        let resolver_clone = resolver_called.clone();
+        let source_clone = source_used.clone();
+        let counter_clone = counter.clone();
+
+        let callback = move |obj_ref: ObjRef| -> Option<Vec<u8>> {
+            resolve_stream_bytes_helper(obj_ref, &resolver_clone, &source_clone, &counter_clone)
+        };
+
+        let doc_context = DocumentContext {
+            resolver: None,
+            source: None,
+        };
+
+        // Execute through rasterize_type3_glyph
+        let result = rasterize_type3_glyph(
+            &font,
+            "HelperGlyph",
+            Some(&doc_context),
+            Some(&callback as &StreamResolverFn),
+        );
+
+        // Verify the callback was invoked and used all parameters
+        assert!(
+            resolver_called.load(Ordering::SeqCst),
+            "Callback should invoke resolver parameter (resolver_called should be true)"
+        );
+        assert!(
+            source_used.load(Ordering::SeqCst),
+            "Callback should invoke source parameter (source_used should be true)"
+        );
+        assert_eq!(
+            counter.load(Ordering::SeqCst),
+            1,
+            "Callback should increment counter parameter exactly once"
+        );
+
+        // Verify successful rasterization
+        assert!(
+            result.is_some(),
+            "Glyph should rasterize successfully when callback is constructed via helper function"
         );
     }
 }

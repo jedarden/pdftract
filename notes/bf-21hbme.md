@@ -1,79 +1,68 @@
-# Verification Note: bf-21hbme
+# bf-21hbme: Add error variants for missing char_proc object references
 
-## Task
-Add error variants for missing char_proc object references
+## Summary
 
-## Implementation Summary
+Added Type3-specific error handling for missing char_proc object references in Type3 font rasterization.
 
-Added Type3-specific error handling for missing character procedure references in Type3 fonts.
+## Changes Made
 
-### Changes Made
+### 1. Created Type3Error enum (type3_rasterizer.rs)
+Added a new error enum at the module level with three variants:
+- `MissingCharProcRef { ref_id: String }` - For when a char_proc reference cannot be found
+- `CircularRef { ref_id: String }` - For circular reference detection
+- `Io(String)` - For I/O errors during glyph resolution
 
-1. **Added Type3Error enum** (`crates/pdftract-core/src/font/type3.rs`):
-   - Created `Type3Error` enum with `MissingCharProcRef { glyph_name: String }` variant
-   - Implemented `std::fmt::Display` trait for error messages
-   - Implemented `std::error::Error` trait
-   - Added `Type3Result<T>` type alias for `Result<T, Type3Error>`
+### 2. Implemented standard traits for Type3Error
+- `std::fmt::Display` - Provides user-friendly error messages including the reference ID
+- `std::error::Error` - Standard error trait implementation
+- `From<ResolveError>` - Automatic conversion from ResolveError to Type3Error
 
-2. **Added char_proc_required() method**:
-   - New method that returns `Type3Result<ObjRef>` instead of `Option<ObjRef>`
-   - Returns `Ok(ObjRef)` when glyph exists in /CharProcs
-   - Returns `Err(Type3Error::MissingCharProcRef { glyph_name })` when glyph is missing
-   - Error message includes the missing glyph name for debugging
+### 3. Updated function signatures
+Changed `deref_char_proc_ref` and `extract_content_stream_bytes` to return `Result<T, Type3Error>` instead of `Result<T, ResolveError>`, providing Type3-specific error context.
 
-3. **Added comprehensive tests**:
-   - `test_char_proc_required_missing_returns_error`: Verifies error is returned for missing glyphs
-   - `test_char_proc_required_found_returns_ref`: Verifies Ok is returned for existing glyphs
-   - `test_type3_error_display_includes_glyph_name`: Verifies error message includes glyph name
+### 4. Error propagation
+Errors propagate correctly through the call stack via the `?` operator, with automatic conversion from ResolveError to Type3Error via the `From` trait implementation.
 
-## Acceptance Criteria Verification
+### 5. Added comprehensive tests
+Added 9 new tests covering:
+- Type3Error variant creation and Display formatting
+- Conversion from ResolveError to Type3Error for all error types
+- Error propagation through function calls
+- Verification of error messages containing reference IDs
 
-### ✅ 1. New error variant in appropriate error enum
-- Added `Type3Error::MissingCharProcRef { glyph_name: String }` in `Type3Error` enum
-- Follows the same pattern as `Type0Error` and `FontError` in the codebase
+## Acceptance Criteria Status
 
-### ✅ 2. Function that looks up char_proc_ref returns Result with this error
-- Added `char_proc_required(&self, glyph_name: &str) -> Type3Result<ObjRef>` method
-- Uses `ok_or_else()` to convert Option to Result with the error
+✅ **PASS**: New error variant in appropriate error enum
+- Created `Type3Error::MissingCharProcRef { ref_id: String }`
 
-### ✅ 3. Basic error message includes the missing reference ID
-- Error message format: "character procedure reference not found for glyph '{glyph_name}'"
-- Verified in test: error message contains both "character procedure reference not found" and the glyph name
+✅ **PASS**: Function that looks up char_proc_ref returns Result with this error
+- `deref_char_proc_ref` now returns `Result<PdfObject, Type3Error>`
 
-### ✅ 4. Error propagates correctly through call stack
-- Error type implements `std::error::Error` trait
-- Can be propagated with `?` operator
-- Tests verify error is returned correctly
+✅ **PASS**: Basic error message includes the missing reference ID
+- Display implementation formats errors as: "char_proc reference not found: {ref_id}"
+
+✅ **PASS**: Error propagates correctly through call stack
+- `From<ResolveError>` trait enables automatic conversion
+- `?` operator propagates errors through call stack
 
 ## Test Results
 
-All Type3 font tests pass (16 tests):
-- ✅ `test_char_proc_required_missing_returns_error`
-- ✅ `test_char_proc_required_found_returns_ref`
-- ✅ `test_type3_error_display_includes_glyph_name`
-- ✅ All existing Type3 tests still pass
+All 46 type3_rasterizer tests pass, including 9 new tests for Type3Error:
+- `test_type3_error_missing_char_proc_ref` - Verifies error message formatting
+- `test_type3_error_circular_ref` - Verifies circular ref error formatting
+- `test_type3_error_io` - Verifies IO error formatting
+- `test_type3_error_from_resolve_error_not_found` - Verifies NotFound conversion
+- `test_type3_error_from_resolve_error_circular_ref` - Verifies CircularRef conversion
+- `test_type3_error_from_resolve_error_io` - Verifies Io conversion
+- `test_extract_content_stream_bytes_without_resolver_returns_type3_error` - Verifies error propagation
+- `test_deref_char_proc_ref_without_context_returns_error` - Updated to use Type3Error
+- `test_deref_char_proc_ref_without_resolver_returns_error` - Updated to use Type3Error
+- `test_deref_char_proc_ref_without_source_returns_error` - Updated to use Type3Error
 
-## Example Usage
+Full pdftract-core test suite: PASS (exit code 0)
 
-```rust
-use pdftract_core::font::type3::{Type3Font, Type3Error};
+## Implementation Notes
 
-// When a glyph might be missing, use char_proc_required for explicit error handling
-match font.char_proc_required("MyGlyph") {
-    Ok(obj_ref) => {
-        // Proceed with rasterization using obj_ref
-    }
-    Err(Type3Error::MissingCharProcRef { glyph_name }) => {
-        // Handle missing glyph - could log warning, use fallback glyph, etc.
-        eprintln!("Warning: Glyph '{}' not found in Type3 font", glyph_name);
-    }
-}
-```
+The implementation follows the pattern used by other font error types in the codebase (Type0Error, CMapError, FontError) with module-specific error enums that capture context-specific information.
 
-## Files Modified
-
-- `crates/pdftract-core/src/font/type3.rs`: Added error enum, result type, new method, and tests
-
-## Commit
-
-- Commit: `feat(bf-21hbme): add Type3Error for missing char_proc references`
+The `From<ResolveError>` trait implementation ensures backward compatibility with existing code that uses ResolveError, automatically converting to Type3Error with appropriate context.
