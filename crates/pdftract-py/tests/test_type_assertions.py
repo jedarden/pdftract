@@ -224,11 +224,11 @@ def test_document_type_from_fixture_data(fixture_data: dict[str, Any]) -> None:
         fixture_data: Loaded fixture data from the fixture.
     """
     # Call Document.from_native with fixture data
-    doc = pdftract.Document.from_native(fixture_data)
+    result = pdftract.Document.from_native(fixture_data)
 
-    # Verify Document type with specific error message format
-    assert isinstance(doc, pdftract.Document), \
-        f'Expected Document type, got {type(doc)}'
+    # Verify Document type
+    assert isinstance(result, pdftract.Document), \
+        f'Expected Document, got {type(result).__name__}'
 
 
 def test_type_assertions_from_fixture_data(fixture_data: dict[str, Any]) -> None:

@@ -47,7 +47,7 @@ def test_extract_returns_typed_document():
     doc = pdftract.extract("tests/fixtures/remote_100page.pdf")
 
     # Verify Document type
-    assert isinstance(doc, pdftract.Document), f"Expected Document, got {type(doc)}"
+    assert isinstance(doc, pdftract.Document), f"Expected Document, got {type(doc).__name__}"
     print("✓ extract() returns Document instance")
 
     # Verify we can access pages
@@ -227,7 +227,7 @@ def test_type_assertions_from_fixture_data():
     doc = pdftract.extract(pdf_path)
 
     # Add isinstance assertion for Document type with clear error message
-    assert isinstance(doc, pdftract.Document), f'Expected Document type, got {type(doc)}'
+    assert isinstance(doc, pdftract.Document), f'Expected Document, got {type(doc).__name__}'
 
     print("✓ Document type assertion passed")
     print("✅ Document type assertion test passed!")
@@ -248,7 +248,7 @@ def test_pdf_document_with_fixture_validation():
     doc = pdftract.extract(pdf_path)
 
     # Verify document type
-    assert isinstance(doc, pdftract.Document), f"Expected Document, got {type(doc)}"
+    assert isinstance(doc, pdftract.Document), f"Expected Document, got {type(doc).__name__}"
     print("✓ extract() returns Document instance")
 
     # Verify metadata is present
