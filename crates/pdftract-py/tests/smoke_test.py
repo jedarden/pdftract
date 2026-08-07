@@ -34,8 +34,8 @@ def test_extract_returns_typed_document() -> None:
     This test loads fixture data from EC-04-rc4-encrypted.expected.json
     which contains actual page content for type verification.
     """
-    # Load fixture data that has actual pages
-    fixture_path = Path(__file__).parent.parent.parent.parent / "tests" / "fixtures" / "encrypted" / "EC-04-rc4-encrypted.expected.json"
+    # Load fixture data that has actual pages and spans
+    fixture_path = Path(__file__).parent.parent.parent.parent / "tests" / "fixtures" / "test-minimal.expected.json"
 
     if not fixture_path.exists():
         print(f"❌ Fixture not found: {fixture_path}")
@@ -69,14 +69,42 @@ def test_extract_returns_typed_document() -> None:
         f"pages[0] should be Page instance, got {type(doc.pages[0]).__name__}"
     print("✓ Document has typed Page objects")
 
-    # Verify spans are properly typed (check first page's content)
-    assert hasattr(doc.pages[0], 'spans'), "Page should have 'spans' attribute"
-    if len(doc.pages[0].spans) > 0:
-        assert isinstance(doc.pages[0].spans[0], pdftract.Span), \
-            f"spans[0] should be Span instance, got {type(doc.pages[0].spans[0]).__name__}"
-        print("✓ Page has typed Span objects")
-    else:
-        print("⚠ Page has no spans (may be empty)")
+    # Verify spans are properly typed with comprehensive attribute checks
+    # Find a page with actual span content
+    page_with_spans = None
+    for page in doc.pages:
+        if hasattr(page, 'spans') and len(page.spans) > 0:
+            page_with_spans = page
+            break
+
+    assert page_with_spans is not None, \
+        "At least one page should have span content (fixture may be empty)"
+    print(f"✓ Found page with {len(page_with_spans.spans)} span(s)")
+
+    # Check each span is properly typed and has expected attributes
+    for i, span in enumerate(page_with_spans.spans):
+        assert isinstance(span, pdftract.Span), \
+            f"spans[{i}] should be Span instance, got {type(span).__name__}"
+
+        # Verify expected Span attributes exist
+        assert hasattr(span, 'text'), f"spans[{i}] should have 'text' attribute"
+        assert hasattr(span, 'bbox'), f"spans[{i}] should have 'bbox' attribute"
+        assert hasattr(span, 'font'), f"spans[{i}] should have 'font' attribute"
+        assert hasattr(span, 'size'), f"spans[{i}] should have 'size' attribute"
+
+        # Verify attribute types (text should be str, bbox should be tuple, font/size should be appropriate)
+        assert isinstance(span.text, str), \
+            f"spans[{i}].text should be str, got {type(span.text).__name__}"
+        assert isinstance(span.bbox, tuple), \
+            f"spans[{i}].bbox should be tuple, got {type(span.bbox).__name__}"
+        assert len(span.bbox) == 4, \
+            f"spans[{i}].bbox should have 4 elements, got {len(span.bbox)}"
+        assert isinstance(span.font, str), \
+            f"spans[{i}].font should be str, got {type(span.font).__name__}"
+        assert isinstance(span.size, (int, float)), \
+            f"spans[{i}].size should be numeric, got {type(span.size).__name__}"
+
+    print("✓ All spans are properly typed with expected attributes")
 
     print("\n✅ All smoke tests passed!")
 
