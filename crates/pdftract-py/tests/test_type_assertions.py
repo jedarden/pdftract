@@ -151,3 +151,63 @@ def test_fixture_data_structure(fixture_data: dict[str, Any]) -> None:
         for key in metadata_keys:
             assert key in fixture_data["metadata"], \
                 f"Fixture metadata should contain '{key}' key"
+
+
+def test_document_type_from_pdf_extraction() -> None:
+    """Test type assertions from a real PDF extraction.
+
+    This test loads a real PDF fixture, extracts it using the pdftract SDK,
+    and validates that all returned objects match their expected types.
+    """
+    fixture_pdf = Path(__file__).parent / "fixtures" / "test-minimal.pdf"
+
+    if not fixture_pdf.exists():
+        pytest.skip(f"PDF fixture not found: {fixture_pdf}")
+
+    # Extract document from PDF
+    doc = pdftract.extract(str(fixture_pdf))
+
+    # Verify Document type
+    assert isinstance(doc, pdftract.Document), \
+        f"extract() should return Document instance, got {type(doc).__name__}"
+
+    # Verify metadata is typed
+    assert isinstance(doc.metadata, pdftract.Metadata), \
+        f"doc.metadata should be Metadata instance, got {type(doc.metadata).__name__}"
+
+    # Verify pages is a list
+    assert isinstance(doc.pages, list), \
+        f"doc.pages should be a list, got {type(doc.pages).__name__}"
+
+    # Verify each page is a Page instance (if pages exist)
+    for i, page in enumerate(doc.pages):
+        assert isinstance(page, pdftract.Page), \
+            f"doc.pages[{i}] should be Page instance, got {type(page).__name__}"
+
+
+def test_metadata_field_types() -> None:
+    """Test that metadata fields have correct types.
+
+    Validates that the Metadata object returns values with the expected
+    Python types for each field.
+    """
+    fixture_pdf = Path(__file__).parent / "fixtures" / "test-minimal.pdf"
+
+    if not fixture_pdf.exists():
+        pytest.skip(f"PDF fixture not found: {fixture_pdf}")
+
+    doc = pdftract.extract(str(fixture_pdf))
+    metadata = doc.metadata
+
+    # Verify metadata fields are properly typed
+    assert isinstance(metadata.page_count, int), \
+        f"metadata.page_count should be int, got {type(metadata.page_count).__name__}"
+
+    # String fields may be None or str
+    if metadata.title is not None:
+        assert isinstance(metadata.title, str), \
+            f"metadata.title should be str or None, got {type(metadata.title).__name__}"
+
+    if metadata.author is not None:
+        assert isinstance(metadata.author, str), \
+            f"metadata.author should be str or None, got {type(metadata.author).__name__}"
