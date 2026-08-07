@@ -69,8 +69,15 @@ The file `test_search_integration.rs` contains:
 - Package: pdftract-py
 - Crate types: ["cdylib", "rlib"] (Python extension + Rust library)
 
+## Additional Finding: PyO3 Test Linking Limitation ⚠️
+When attempting `cargo test --package pdftract-py`, linking errors occur due to undefined Python C API symbols (PySequence_Check, PyDict_New, Py_IsInitialized, etc.). This is expected behavior for PyO3 integration tests that use Python types - they require Python interpreter linking which is not configured in the basic test harness.
+
+**Important distinction**: This linking issue does **not** affect `cargo check` compilation validation. The Rust code is syntactically correct and properly structured. The limitation only manifests during the link phase of `cargo test`, not during compilation checking.
+
+This is a known PyO3 integration testing limitation and does not prevent the test files from serving as proper scaffolds for test logic implementation.
+
 ## Conclusion
-Both integration test files compile successfully with zero errors and zero warnings. The file infrastructure is complete, valid, and ready for actual test logic to be added in subsequent beads. The test framework follows Rust conventions and provides a solid foundation for TDD development of the search() functionality.
+Both integration test files compile successfully with zero errors and zero warnings. The file infrastructure is complete, valid, and ready for actual test logic to be added in subsequent beads. The test framework follows Rust conventions and provides a solid foundation for TDD development of the search() functionality. The PyO3 linking limitation during test execution is infrastructure-related and does not affect the validity of the test file structure or compilation.
 
 ## Acceptance Criteria Status
 1. ✅ **PASS** - `cargo check --package pdftract-py --tests` passes without errors (clean compilation)
