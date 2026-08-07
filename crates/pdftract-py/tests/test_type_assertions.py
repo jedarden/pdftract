@@ -56,7 +56,7 @@ def test_extract_returns_document_type() -> None:
 
     # Verify Document type
     assert isinstance(doc, pdftract.Document), \
-        f"extract() should return Document instance, got {type(doc).__name__}"
+        f'Expected Document, got {type(doc).__name__}'
 
     # Verify it's not a raw dict
     assert not isinstance(doc, dict), "extract() should not return a raw dict"
@@ -169,7 +169,7 @@ def test_document_type_from_pdf_extraction() -> None:
 
     # Verify Document type
     assert isinstance(doc, pdftract.Document), \
-        f"extract() should return Document instance, got {type(doc).__name__}"
+        f'Expected Document, got {type(doc).__name__}'
 
     # Verify metadata is typed
     assert isinstance(doc.metadata, pdftract.Metadata), \

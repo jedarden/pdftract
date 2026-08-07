@@ -45,7 +45,7 @@ def test_extract_returns_typed_document() -> None:
 
     # Verify Document type
     assert isinstance(doc, pdftract.Document), \
-        f"extract() should return Document instance, got {type(doc).__name__}"
+        f'Expected Document, got {type(doc).__name__}'
     print("✓ extract() returns Document instance")
 
     # Verify document has pages attribute
