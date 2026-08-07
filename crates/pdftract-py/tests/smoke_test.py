@@ -213,7 +213,15 @@ def test_extract_returns_typed_document() -> None:
 
     print(f"✓ Count integrity verified: {total_pages} page(s), {total_spans} span(s), structure consistent")
 
-    print("\n✅ All smoke tests passed!")
+    # ===== TEST SUCCESS SUMMARY =====
+    print("\n" + "=" * 60)
+    print("✅ ALL SMOKE TESTS PASSED")
+    print("=" * 60)
+    print(f"Document structure: {total_pages} page(s), {total_spans} span(s)")
+    print(f"Content verification: {spans_with_text}/{total_spans} spans with text")
+    print("Type contract verification: COMPLETE")
+    print("All assertion types validated: isinstance, hasattr, length, type-specific")
+    print("=" * 60)
 
 
 def main() -> int:
