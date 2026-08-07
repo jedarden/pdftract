@@ -78,7 +78,14 @@ pub enum CharProcType {
 /// assert_eq!(detect_char_proc_type(&int_obj), CharProcType::Other("integer".to_string()));
 /// ```
 pub fn detect_char_proc_type(object: &PdfObject) -> CharProcType {
-    CharProcType::Other(object.type_name().to_string())
+    match object {
+        // Stream check happens before Dict check (per implementation guidance)
+        // Streams can also have dictionaries, so we need to check for Stream first
+        PdfObject::Stream(_) => CharProcType::Stream,
+        PdfObject::Dict(_) => CharProcType::Dict,
+        // All other types return Other with descriptive name
+        _ => CharProcType::Other(object.type_name().to_string()),
+    }
 }
 
 /// Detect the type of PDF object for Type 3 CharProc validation with reference handling.
