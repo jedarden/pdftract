@@ -86,6 +86,58 @@ pub const MIN_HYBRID_CELLS: usize = 10;
 /// Total number of cells in the 8×8 grid.
 pub const GRID_CELL_COUNT: usize = 64;
 
+/// Load raw PDF bytes from a hybrid fixture file.
+///
+/// This helper function reads a PDF file from the hybrid fixtures directory
+/// and returns its raw bytes. Use this when you need the PDF data without
+/// running the full extraction/classification pipeline.
+///
+/// # Arguments
+///
+/// * `fixture_name` - Name of the fixture file (e.g., "hybrid-001-vector-header-over-scan.pdf")
+///
+/// # Returns
+///
+/// A `Vec<u8>` containing the raw PDF file bytes.
+///
+/// # Errors
+///
+/// Returns `Err` if:
+/// - The fixture file does not exist in `tests/fixtures/hybrid/`
+/// - The file cannot be read due to permission or I/O errors
+///
+/// # Example
+///
+/// ```rust,no_run
+/// let pdf_bytes = load_fixture("hybrid-001-vector-header-over-scan.pdf")
+///     .expect("Failed to load fixture");
+/// assert!(!pdf_bytes.is_empty());
+/// assert!(pdf_bytes.starts_with(b"%PDF"));  // Valid PDF signature
+/// ```
+pub fn load_fixture(fixture_name: &str) -> anyhow::Result<Vec<u8>> {
+    let path = Path::new(FIXTURE_DIR).join(fixture_name);
+
+    if !path.exists() {
+        anyhow::bail!(
+            "Hybrid fixture not found: {}\n\
+             Expected location: {}\n\
+             Ensure the fixture file exists in the fixtures directory.",
+            fixture_name,
+            path.display()
+        );
+    }
+
+    std::fs::read(&path).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to read hybrid fixture {}: {}\n\
+             Path: {}",
+            fixture_name,
+            e,
+            path.display()
+        )
+    })
+}
+
 /// Fixture path for a given hybrid PDF.
 ///
 /// Returns the full path to a hybrid fixture PDF file.
