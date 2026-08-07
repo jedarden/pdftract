@@ -211,3 +211,50 @@ def test_metadata_field_types() -> None:
     if metadata.author is not None:
         assert isinstance(metadata.author, str), \
             f"metadata.author should be str or None, got {type(metadata.author).__name__}"
+
+
+def test_type_assertions_from_fixture_data(fixture_data: dict[str, Any]) -> None:
+    """Test type assertions using loaded fixture data.
+
+    This test validates that we can verify type contracts directly from
+    fixture data without needing to extract a PDF. It exercises the
+    fixture loading mechanism and validates type assertions against
+    real parsed data.
+
+    Args:
+        fixture_data: Loaded fixture data containing parsed PDF results.
+    """
+    # Verify fixture contains expected top-level structure
+    assert "schema_version" in fixture_data, "Fixture should contain schema_version"
+    assert "pages" in fixture_data, "Fixture should contain pages"
+    assert "metadata" in fixture_data, "Fixture should contain metadata"
+
+    # Verify metadata type assertions
+    metadata = fixture_data["metadata"]
+    assert isinstance(metadata, dict), "metadata should be a dict"
+    assert "page_count" in metadata, "metadata should contain page_count"
+    assert isinstance(metadata["page_count"], int), \
+        f"page_count should be int, got {type(metadata['page_count']).__name__}"
+
+    # Verify pages is a list
+    pages = fixture_data["pages"]
+    assert isinstance(pages, list), "pages should be a list"
+
+    # Verify each page has expected structure (if pages exist)
+    for i, page in enumerate(pages):
+        assert isinstance(page, dict), f"page {i} should be a dict"
+
+        # Check for expected page-level keys
+        expected_page_keys = ["width", "height", "blocks"]
+        for key in expected_page_keys:
+            if key in page:
+                # Verify blocks is a list if present
+                if key == "blocks":
+                    assert isinstance(page[key], list), \
+                        f"page {i} blocks should be a list"
+
+    # Verify other list fields are properly typed
+    for list_field in ["attachments", "form_fields", "links", "signatures"]:
+        if list_field in fixture_data:
+            assert isinstance(fixture_data[list_field], list), \
+                f"{list_field} should be a list"
