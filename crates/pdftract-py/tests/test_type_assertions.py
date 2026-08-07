@@ -230,6 +230,10 @@ def test_document_type_from_fixture_data(fixture_data: dict[str, Any]) -> None:
     assert isinstance(result, pdftract.Document), \
         f'Expected Document, got {type(result).__name__}'
 
+    # Verify first page is Page instance
+    assert isinstance(result.pages[0], pdftract.Page), \
+        f'Expected Page, got {type(result.pages[0]).__name__}'
+
 
 def test_type_assertions_from_fixture_data(fixture_data: dict[str, Any]) -> None:
     """Test type assertions using loaded fixture data.
