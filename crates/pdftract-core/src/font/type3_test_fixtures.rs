@@ -252,6 +252,45 @@ pub fn create_charproc_stream_with_curves() -> Vec<u8> {
     b"0 0 m 500 0 l 500 250 400 500 500 500 c 0 500 l 250 250 0 250 0 0 c h f".to_vec()
 }
 
+/// Create an empty main content stream with basic PDF text block structure.
+///
+/// This function creates the most minimal PDF content stream that contains
+/// just the basic BT/ET (Begin Text/End Text) structure with no actual content.
+/// This serves as the foundational structure for building more complex content
+/// streams that will hold PDF drawing commands.
+///
+/// The content uses these PDF text operators:
+/// - `BT` - Begin Text (start a text object)
+/// - `ET` - End Text (end the text object)
+///
+/// # Returns
+///
+/// A `Vec<u8>` containing the PDF page content stream bytes with the basic
+/// BT/ET structure. This empty stream can be used as a starting point for
+/// building more complex content streams.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use crate::font::type3_test_fixtures::create_empty_content_stream;
+///
+/// let stream = create_empty_content_stream();
+///
+/// // Stream contains basic BT/ET structure
+/// assert!(stream.contains(&b'B')); // BT
+/// assert!(stream.contains(&b'E')); // ET
+/// ```
+pub fn create_empty_content_stream() -> Vec<u8> {
+    // PDF empty content stream with minimal BT/ET structure:
+    // BT                - Begin Text (start a text object)
+    // ET                - End Text (end the text object)
+    //
+    // This provides the foundational structure for PDF content streams.
+    // Additional commands (Tf, Td, Tj, etc.) can be added between BT and ET
+    // to create more complex content streams.
+    b"BT ET".to_vec()
+}
+
 /// Create a main page content stream with Type3 font text drawing commands.
 ///
 /// This function creates a PDF page content stream that demonstrates the use of
@@ -693,6 +732,53 @@ mod tests {
 
         // Verify raster cache
         assert!(font.raster_cache.is_empty());
+    }
+
+    // --- Empty content stream tests ---
+
+    #[test]
+    fn test_create_empty_content_stream() {
+        let stream = create_empty_content_stream();
+
+        // Verify stream is not empty
+        assert!(!stream.is_empty(), "Empty content stream should not be empty");
+
+        // Verify it contains BT/ET structure
+        let stream_str = std::str::from_utf8(&stream).expect("Stream should be valid UTF-8");
+        assert!(stream_str.contains("BT"), "Stream should contain BT (Begin Text)");
+        assert!(stream_str.contains("ET"), "Stream should contain ET (End Text)");
+    }
+
+    #[test]
+    fn test_empty_content_stream_has_basic_pdf_structure() {
+        let stream = create_empty_content_stream();
+        let stream_str = std::str::from_utf8(&stream).expect("Stream should be valid UTF-8");
+
+        // Verify it has exactly BT and ET with minimal structure
+        let parts: Vec<&str> = stream_str.split_whitespace().collect();
+        assert_eq!(parts.len(), 2, "Empty stream should have exactly BT and ET");
+        assert_eq!(parts[0], "BT", "First part should be BT");
+        assert_eq!(parts[1], "ET", "Second part should be ET");
+    }
+
+    #[test]
+    fn test_empty_content_stream_compiles() {
+        // This test verifies that the function exists and compiles
+        // If this compiles, the stream creation is syntactically valid
+        let stream = create_empty_content_stream();
+        assert!(!stream.is_empty());
+    }
+
+    #[test]
+    fn test_empty_content_stream_accessible_from_test_module() {
+        // Verify the empty content stream function is public and accessible
+        let stream = create_empty_content_stream();
+
+        // Should be a valid byte vector
+        assert!(stream.is_empty() == false);
+
+        // Should be parseable as UTF-8 (valid PDF syntax)
+        let _stream_str = std::str::from_utf8(&stream).expect("Stream should be valid UTF-8");
     }
 
     // --- Charproc stream tests ---
