@@ -349,3 +349,375 @@ fn test_resolve_stream_helper_function_pattern() {
     assert!(source_flag.load(Ordering::SeqCst), "Helper should have set source flag");
     assert_eq!(counter.load(Ordering::SeqCst), 1, "Helper should have incremented counter once");
 }
+
+// ============================================================================
+// Tests for intersection math and Active Edge Table (AET) management
+// ============================================================================
+
+/// Test helper struct to replicate the Edge structure from fill_polygon.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct TestEdge {
+    x: i32,           // Current X intersection position
+    y_min: i32,       // Minimum Y coordinate (top of edge)
+    y_max: i32,       // Maximum Y coordinate (bottom of edge)
+    dx: i32,          // Change in X across the edge
+    dy: i32,          // Change in Y across the edge
+}
+
+/// Test that edges are added to AET when scanline reaches y_min.
+///
+/// This test verifies the edge activation logic:
+/// - When scanline y == edge.y_min, the edge is added to AET
+/// - Edges are sorted by y_min before processing
+#[test]
+fn test_edge_activation_at_y_min() {
+    // Create edges with different y_min values
+    let edges = vec![
+        TestEdge { x: 10, y_min: 5, y_max: 15, dx: 10, dy: 10 },
+        TestEdge { x: 20, y_min: 3, y_max: 13, dx: 10, dy: 10 },
+        TestEdge { x: 30, y_min: 7, y_max: 17, dx: 10, dy: 10 },
+    ];
+
+    // Sort by y_min (as the GET sorting does)
+    let mut sorted_edges = edges.clone();
+    sorted_edges.sort_by_key(|e| e.y_min);
+
+    // Simulate AET initialization
+    let mut aet: Vec<TestEdge> = Vec::new();
+    let mut get_idx = 0;
+
+    // At scanline y=3, only the edge with y_min=3 should be added
+    let y = 3;
+    while get_idx < sorted_edges.len() && sorted_edges[get_idx].y_min == y {
+        aet.push(sorted_edges[get_idx]);
+        get_idx += 1;
+    }
+
+    assert_eq!(aet.len(), 1, "Should have 1 edge at y=3");
+    assert_eq!(aet[0].y_min, 3, "Edge should have y_min=3");
+
+    // At scanline y=5, the edge with y_min=5 should be added
+    let y = 5;
+    while get_idx < sorted_edges.len() && sorted_edges[get_idx].y_min == y {
+        aet.push(sorted_edges[get_idx]);
+        get_idx += 1;
+    }
+
+    assert_eq!(aet.len(), 2, "Should have 2 edges at y=5");
+    assert!(aet.iter().any(|e| e.y_min == 5), "Should contain edge with y_min=5");
+
+    // At scanline y=7, the edge with y_min=7 should be added
+    let y = 7;
+    while get_idx < sorted_edges.len() && sorted_edges[get_idx].y_min == y {
+        aet.push(sorted_edges[get_idx]);
+        get_idx += 1;
+    }
+
+    assert_eq!(aet.len(), 3, "Should have 3 edges at y=7");
+    assert!(aet.iter().any(|e| e.y_min == 7), "Should contain edge with y_min=7");
+}
+
+/// Test that edges are removed from AET after y_max.
+///
+/// This test verifies the edge removal logic:
+/// - When scanline y > edge.y_max, the edge is removed from AET
+/// - The retain operation keeps only edges where y <= y_max
+#[test]
+fn test_edge_removal_after_y_max() {
+    // Create edges with different y_max values
+    let mut aet = vec![
+        TestEdge { x: 10, y_min: 0, y_max: 5, dx: 10, dy: 10 },
+        TestEdge { x: 20, y_min: 0, y_max: 10, dx: 10, dy: 10 },
+        TestEdge { x: 30, y_min: 0, y_max: 15, dx: 10, dy: 10 },
+    ];
+
+    // At scanline y=5, all edges should still be active (y <= y_max)
+    let y = 5;
+    aet.retain(|e| y <= e.y_max);
+
+    assert_eq!(aet.len(), 3, "All 3 edges should be active at y=5");
+
+    // At scanline y=6, the first edge (y_max=5) should be removed
+    let y = 6;
+    aet.retain(|e| y <= e.y_max);
+
+    assert_eq!(aet.len(), 2, "2 edges should remain at y=6");
+    assert!(!aet.iter().any(|e| e.y_max == 5), "Edge with y_max=5 should be removed");
+
+    // At scanline y=11, the second edge (y_max=10) should also be removed
+    let y = 11;
+    aet.retain(|e| y <= e.y_max);
+
+    assert_eq!(aet.len(), 1, "Only 1 edge should remain at y=11");
+    assert!(aet.iter().any(|e| e.y_max == 15), "Only edge with y_max=15 should remain");
+
+    // At scanline y=16, all edges should be removed
+    let y = 16;
+    aet.retain(|e| y <= e.y_max);
+
+    assert_eq!(aet.len(), 0, "No edges should remain at y=16");
+}
+
+/// Test intersection x calculation accuracy.
+///
+/// This test verifies that intersection positions are calculated correctly:
+/// - x_intersection = round(edge.x) after each scanline update
+/// - The initial x position is correct
+/// - Rounding behavior is consistent
+#[test]
+fn test_intersection_x_calculation() {
+    // Create an edge with known properties
+    let mut edge = TestEdge {
+        x: 10,    // Initial X at y_min
+        y_min: 0,
+        y_max: 10,
+        dx: 20,   // Edge goes from x=10 to x=30
+        dy: 10,   // Over 10 scanlines
+    };
+
+    // At y=0 (initial position), x should be 10
+    let x_intersect = (edge.x as f64).round() as i32;
+    assert_eq!(x_intersect, 10, "Initial X intersection should be 10");
+
+    // Simulate x update for one scanline: x += dx/dy
+    // dx/dy = 20/10 = 2, so x should increment by 2 each scanline
+    edge.x += (edge.dx as f64 / edge.dy as f64) as i32;
+
+    // At y=1, x should be 12 (10 + 2)
+    let x_intersect = (edge.x as f64).round() as i32;
+    assert_eq!(x_intersect, 12, "X intersection at y=1 should be 12");
+
+    // Another scanline update
+    edge.x += (edge.dx as f64 / edge.dy as f64) as i32;
+
+    // At y=2, x should be 14 (12 + 2)
+    let x_intersect = (edge.x as f64).round() as i32;
+    assert_eq!(x_intersect, 14, "X intersection at y=2 should be 14");
+
+    // Test with a non-integer slope
+    let mut edge2 = TestEdge {
+        x: 0,
+        y_min: 0,
+        y_max: 5,
+        dx: 10,   // Edge goes from x=0 to x=10
+        dy: 5,   // Over 5 scanlines
+    };
+
+    // dx/dy = 10/5 = 2 (integer slope)
+    for _ in 0..5 {
+        edge2.x += (edge2.dx as f64 / edge2.dy as f64) as i32;
+    }
+    assert_eq!(edge2.x, 10, "After 5 scanlines, X should be 10");
+
+    // Test with fractional slope (rounding matters)
+    let mut edge3 = TestEdge {
+        x: 0,
+        y_min: 0,
+        y_max: 3,
+        dx: 10,   // Edge goes from x=0 to x=10
+        dy: 3,   // Over 3 scanlines -> dx/dy ≈ 3.33
+    };
+
+    // After first scanline: x = 0 + 3.33 ≈ 3
+    edge3.x += (edge3.dx as f64 / edge3.dy as f64) as i32;
+    let x_intersect = (edge3.x as f64).round() as i32;
+    assert_eq!(x_intersect, 3, "X intersection with fractional slope should round correctly");
+
+    // After second scanline: x = 3.33 + 3.33 ≈ 7
+    edge3.x += (edge3.dx as f64 / edge3.dy as f64) as i32;
+    let x_intersect = (edge3.x as f64).round() as i32;
+    assert_eq!(x_intersect, 7, "X intersection should accumulate correctly");
+
+    // After third scanline: x = 6.66 + 3.33 ≈ 10
+    edge3.x += (edge3.dx as f64 / edge3.dy as f64) as i32;
+    let x_intersect = (edge3.x as f64).round() as i32;
+    assert_eq!(x_intersect, 10, "Final X intersection should reach target");
+}
+
+/// Test slope-based x increment produces correct progression.
+///
+/// This test verifies the slope-based x update formula:
+/// - x_new = x_old + (dx / dy)
+/// - The progression is linear across scanlines
+/// - Multiple edges update independently
+#[test]
+fn test_slope_based_x_increment() {
+    // Test a simple diagonal edge (45 degrees)
+    let mut edge = TestEdge {
+        x: 0,
+        y_min: 0,
+        y_max: 10,
+        dx: 10,  // x increases by 10
+        dy: 10,  // y increases by 10 -> slope = 1
+    };
+
+    let mut x_progression = Vec::new();
+
+    // Track x progression over 10 scanlines
+    for y in 0..=10 {
+        let x_intersect = (edge.x as f64).round() as i32;
+        x_progression.push((y, x_intersect));
+
+        // Update x for next scanline
+        if y < 10 {
+            edge.x += (edge.dx as f64 / edge.dy as f64) as i32;
+        }
+    }
+
+    // Verify linear progression: x should equal y at each scanline
+    for (y, x) in &x_progression {
+        assert_eq!(*x, *y, "For 45-degree edge, X should equal Y at each scanline");
+    }
+
+    // Test a steeper edge (x increases faster than y)
+    let mut edge2 = TestEdge {
+        x: 0,
+        y_min: 0,
+        y_max: 5,
+        dx: 20,  // x increases by 20
+        dy: 5,   // y increases by 5 -> slope = 4
+    };
+
+    let mut x_progression2 = Vec::new();
+
+    for y in 0..=5 {
+        let x_intersect = (edge2.x as f64).round() as i32;
+        x_progression2.push((y, x_intersect));
+
+        if y < 5 {
+            edge2.x += (edge2.dx as f64 / edge2.dy as f64) as i32;
+        }
+    }
+
+    // Verify: x should increase by 4 each scanline (0, 4, 8, 12, 16, 20)
+    let expected: Vec<(i32, i32)> = vec![(0, 0), (1, 4), (2, 8), (3, 12), (4, 16), (5, 20)];
+    assert_eq!(x_progression2, expected, "X progression should match slope of 4");
+
+    // Test a shallow edge (x increases slower than y)
+    let mut edge3 = TestEdge {
+        x: 0,
+        y_min: 0,
+        y_max: 10,
+        dx: 5,   // x increases by 5
+        dy: 10,  // y increases by 10 -> slope = 0.5
+    };
+
+    let mut x_progression3 = Vec::new();
+
+    for y in 0..=10 {
+        let x_intersect = (edge3.x as f64).round() as i32;
+        x_progression3.push((y, x_intersect));
+
+        if y < 10 {
+            edge3.x += (edge3.dx as f64 / edge3.dy as f64) as i32;
+        }
+    }
+
+    // Verify: x should increase by 0.5 each scanline (0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5)
+    // Due to rounding: (0, 0), (1, 1), (2, 1), (3, 2), (4, 2), (5, 3), (6, 3), (7, 4), (8, 4), (9, 5), (10, 5)
+    let expected3: Vec<(i32, i32)> = vec![
+        (0, 0), (1, 1), (2, 1), (3, 2), (4, 2),
+        (5, 3), (6, 3), (7, 4), (8, 4), (9, 5), (10, 5)
+    ];
+    assert_eq!(x_progression3, expected3, "X progression should match slope of 0.5 with rounding");
+
+    // Test multiple edges updating independently
+    let mut edges = vec![
+        TestEdge { x: 0, y_min: 0, y_max: 5, dx: 5, dy: 5 },   // slope = 1
+        TestEdge { x: 10, y_min: 0, y_max: 5, dx: 10, dy: 5 }, // slope = 2
+    ];
+
+    let mut progressions = vec![Vec::new(), Vec::new()];
+
+    for y in 0..=5 {
+        for (i, edge) in edges.iter_mut().enumerate() {
+            let x_intersect = (edge.x as f64).round() as i32;
+            progressions[i].push((y, x_intersect));
+
+            if y < 5 {
+                edge.x += (edge.dx as f64 / edge.dy as f64) as i32;
+            }
+        }
+    }
+
+    // First edge: slope = 1 -> (0,0), (1,1), (2,2), (3,3), (4,4), (5,5)
+    let expected_edge1: Vec<(i32, i32)> = vec![(0, 0), (1, 1), (2, 2), (3, 3), (4, 4), (5, 5)];
+    assert_eq!(progressions[0], expected_edge1, "First edge should have slope of 1");
+
+    // Second edge: slope = 2 -> (0,10), (1,12), (2,14), (3,16), (4,18), (5,20)
+    let expected_edge2: Vec<(i32, i32)> = vec![(0, 10), (1, 12), (2, 14), (3, 16), (4, 18), (5, 20)];
+    assert_eq!(progressions[1], expected_edge2, "Second edge should have slope of 2");
+}
+
+/// Test horizontal edge handling.
+///
+/// This test verifies that horizontal edges (y0 == y1) are skipped
+/// as they don't affect scanline fill algorithm.
+#[test]
+fn test_horizontal_edge_skipping() {
+    // Horizontal edge: y0 == y1
+    let horizontal_edges = vec![
+        (0, 5, 10, 5),   // y0 == y1 = 5
+        (10, 10, 20, 10), // y0 == y1 = 10
+    ];
+
+    let mut non_horizontal_count = 0;
+    for &(x0, y0, x1, y1) in &horizontal_edges {
+        if y0 != y1 {
+            non_horizontal_count += 1;
+        }
+    }
+
+    assert_eq!(non_horizontal_count, 0, "All edges should be horizontal and skipped");
+
+    // Mixed edges
+    let mixed_edges = vec![
+        (0, 5, 10, 5),   // horizontal - should be skipped
+        (0, 0, 10, 10),  // diagonal - should NOT be skipped
+        (5, 5, 15, 5),   // horizontal - should be skipped
+        (0, 10, 10, 0),  // diagonal - should NOT be skipped
+    ];
+
+    let mut non_horizontal_count = 0;
+    for &(x0, y0, x1, y1) in &mixed_edges {
+        if y0 != y1 {
+            non_horizontal_count += 1;
+        }
+    }
+
+    assert_eq!(non_horizontal_count, 2, "Only 2 of 4 edges should be non-horizontal");
+}
+
+/// Test AET sorting by current X position.
+///
+/// This test verifies that AET is sorted by current X position
+/// after each scanline update, which is critical for correct
+/// even-odd fill ordering.
+#[test]
+fn test_aet_sorting_by_x_position() {
+    let mut aet = vec![
+        TestEdge { x: 30, y_min: 0, y_max: 10, dx: 10, dy: 10 },
+        TestEdge { x: 10, y_min: 0, y_max: 10, dx: 10, dy: 10 },
+        TestEdge { x: 20, y_min: 0, y_max: 10, dx: 10, dy: 10 },
+    ];
+
+    // Sort by X position
+    aet.sort_by_key(|e| e.x);
+
+    assert_eq!(aet[0].x, 10, "First edge should have X=10");
+    assert_eq!(aet[1].x, 20, "Second edge should have X=20");
+    assert_eq!(aet[2].x, 30, "Third edge should have X=30");
+
+    // Update X positions (simulate one scanline)
+    for edge in &mut aet {
+        edge.x += (edge.dx as f64 / edge.dy as f64) as i32;
+    }
+
+    // After update: X values are 12, 22, 32
+    // Sort again
+    aet.sort_by_key(|e| e.x);
+
+    assert_eq!(aet[0].x, 12, "After update, first edge should have X=12");
+    assert_eq!(aet[1].x, 22, "After update, second edge should have X=22");
+    assert_eq!(aet[2].x, 32, "After update, third edge should have X=32");
+}

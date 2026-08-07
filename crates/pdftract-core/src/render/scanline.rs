@@ -876,7 +876,7 @@ mod tests {
     #[test]
     fn test_scanline_edge_from_endpoints() {
         let edge = Edge::from_endpoints(10, 5, 30, 25);
-        assert_eq!(edge.x, 10);
+        assert_eq!(edge.x, 10.0);
         assert_eq!(edge.y_min, 5);
         assert_eq!(edge.y_max, 25);
         assert_eq!(edge.dx, 20);
@@ -910,7 +910,7 @@ mod tests {
         let original_x = edge.x;
         edge.advance_scanline();
         // After advancing, x should increase by slope (1.0 in this case)
-        assert_eq!(edge.x, original_x + 1);
+        assert_eq!(edge.x, original_x + 1.0);
     }
 
     #[test]

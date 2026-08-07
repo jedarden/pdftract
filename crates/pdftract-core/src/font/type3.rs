@@ -460,6 +460,56 @@ impl Type3Font {
     pub fn raster_cache(&self) -> &DashMap<Arc<str>, Vec<u8>> {
         &self.raster_cache
     }
+
+    /// Create a minimal Type3Font mock for testing.
+    ///
+    /// This function creates a Type3Font instance with sensible default values
+    /// for testing the `rasterize_type3_glyph` function. It provides the minimum
+    /// required fields: FontBBox, FontMatrix, CharProcs, and Encoding.
+    ///
+    /// # Arguments
+    ///
+    /// * `char_procs` - Optional HashMap of glyph name -> ObjRef for glyph content streams
+    ///
+    /// # Returns
+    ///
+    /// A Type3Font with:
+    /// - Identity FontMatrix ([1 0 0 1 0 0]) for predictable coordinates
+    /// - FontBBox [0, 0, 1000, 1000] for a standard glyph space
+    /// - StandardEncoding for encoding
+    /// - Provided char_procs (or empty if None)
+    /// - Zero first_char, last_char, and widths
+    /// - No resources
+    /// - No diagnostics
+    /// - Empty raster cache
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use std::collections::HashMap;
+    /// use std::sync::Arc;
+    /// use crate::font::type3::Type3Font;
+    /// use crate::parser::object::types::ObjRef;
+    ///
+    /// // Create a mock font with a test glyph
+    /// let mut char_procs = HashMap::new();
+    /// char_procs.insert(Arc::from("A"), ObjRef::new(10, 0));
+    /// let font = Type3Font::mock(Some(char_procs));
+    /// ```
+    pub fn mock(char_procs: Option<HashMap<Arc<str>, ObjRef>>) -> Self {
+        Self {
+            char_procs: char_procs.unwrap_or_default(),
+            first_char: 0,
+            last_char: 0,
+            widths: vec![0.0],
+            font_matrix: Matrix3x3::identity(),
+            resources: None,
+            encoding: FontEncoding::new(Some(crate::font::encoding::NamedEncoding::Standard)),
+            font_bbox: [0.0, 0.0, 1000.0, 1000.0],
+            diagnostics: Vec::new(),
+            raster_cache: Arc::new(DashMap::new()),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -842,5 +892,77 @@ mod tests {
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("MissingGlyph"));
         assert!(error_msg.contains("character procedure reference not found"));
+    }
+
+    #[test]
+    fn test_type3_font_mock_creates_minimal_font() {
+        // Test that the mock function creates a Type3Font with sensible defaults
+        let font = Type3Font::mock(None);
+
+        // Verify identity FontMatrix (predictable coordinates for testing)
+        assert_eq!(font.font_matrix.a, 1.0, "FontMatrix should be identity");
+        assert_eq!(font.font_matrix.d, 1.0, "FontMatrix should be identity");
+        assert_eq!(font.font_matrix.b, 0.0, "FontMatrix should be identity");
+        assert_eq!(font.font_matrix.c, 0.0, "FontMatrix should be identity");
+
+        // Verify standard FontBBox [0, 0, 1000, 1000]
+        assert_eq!(font.font_bbox, [0.0, 0.0, 1000.0, 1000.0]);
+
+        // Verify StandardEncoding
+        assert_eq!(
+            font.encoding.base_encoding(),
+            Some(crate::font::encoding::NamedEncoding::Standard)
+        );
+
+        // Verify empty CharProcs when None provided
+        assert_eq!(font.glyph_count(), 0);
+
+        // Verify default widths and char range
+        assert_eq!(font.first_char, 0);
+        assert_eq!(font.last_char, 0);
+        assert_eq!(font.widths, vec![0.0]);
+
+        // Verify no resources and empty diagnostics
+        assert!(font.resources.is_none());
+        assert!(font.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_type3_font_mock_with_custom_char_procs() {
+        // Test that mock accepts custom CharProcs
+        let mut char_procs = HashMap::new();
+        char_procs.insert(Arc::from("A"), ObjRef::new(10, 0));
+        char_procs.insert(Arc::from("B"), ObjRef::new(11, 0));
+
+        let font = Type3Font::mock(Some(char_procs));
+
+        // Verify custom CharProcs are set
+        assert_eq!(font.glyph_count(), 2);
+        assert!(font.has_glyph("A"));
+        assert!(font.has_glyph("B"));
+        assert_eq!(font.char_proc("A"), Some(ObjRef::new(10, 0)));
+        assert_eq!(font.char_proc("B"), Some(ObjRef::new(11, 0)));
+    }
+
+    #[test]
+    fn test_type3_font_mock_works_with_rasterize_type3_glyph() {
+        // Test that mock font is compatible with rasterize_type3_glyph
+        let mut char_procs = HashMap::new();
+        char_procs.insert(Arc::from("test"), ObjRef::new(42, 0));
+
+        let font = Type3Font::mock(Some(char_procs));
+
+        // Create a resolver that returns minimal content stream
+        let resolver = |_: ObjRef| -> Option<Vec<u8>> { Some(vec![]) };
+
+        let result = crate::font::type3_rasterizer::rasterize_type3_glyph(
+            &font,
+            "test",
+            None,
+            Some(&resolver),
+        );
+
+        // Should successfully rasterize (empty stream produces default bitmap)
+        assert!(result.is_some(), "Mock font should work with rasterize_type3_glyph");
     }
 }

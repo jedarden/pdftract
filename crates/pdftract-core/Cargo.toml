@@ -95,6 +95,7 @@ libc = "0.2"
 wiremock = "0.6"
 rcgen = "0.13"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+visibility = "0.1"
 
 [[bench]]
 name = "table_detection"
