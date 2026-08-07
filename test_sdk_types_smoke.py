@@ -5,6 +5,7 @@ import sys
 sys.path.insert(0, 'crates/pdftract-py/python')
 
 import pdftract
+from pdftract import Document, Page, Span
 import json
 import os
 from pathlib import Path
