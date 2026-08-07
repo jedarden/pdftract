@@ -85,11 +85,6 @@ The module includes extensive functionality beyond `load_fixture`:
 - `hybrid_test!` macro: Reduces test boilerplate
 - 9 comprehensive unit tests
 
-## References
-
-- Plan: docs/plan/plan.md KU-2 (~line 671)
-- Module: tests/fixtures/hybrid/mod.rs (542 lines)
-
 ## Status: COMPLETE - READY TO CLOSE
 
 All acceptance criteria verified and passing. No changes required.
