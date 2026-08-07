@@ -28,6 +28,21 @@ use crate::parser::stream::{decode_stream, ExtractionOptions, PdfSource};
 use crate::parser::xref::{ResolveError, XrefResolver};
 use crate::render::path::{CurrentPath, PathCommand, Point};
 
+/// Classification of PDF objects for Type 3 CharProc detection.
+///
+/// Represents the type of a PDF object referenced by a Type 3 font's
+/// CharProcs dictionary. Used by detection functions to determine
+/// whether an object is a stream, dictionary, or other type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CharProcType {
+    /// PDF stream object (contains content stream bytes)
+    Stream,
+    /// PDF dictionary object (contains key-value pairs)
+    Dict,
+    /// Any other PDF object type with a descriptive name
+    Other(String),
+}
+
 /// Errors that can occur during Type 3 glyph rasterization.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type3Error {

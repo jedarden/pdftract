@@ -73,7 +73,7 @@ use pdftract_core::sdk;
 use std::path::{Path, PathBuf};
 
 /// Directory containing hybrid fixture PDFs.
-const FIXTURE_DIR: &str = "tests/fixtures/hybrid";
+pub const FIXTURE_DIR: &str = "tests/fixtures/hybrid";
 
 /// Minimum number of hybrid cells required (15% of 64 cells = 9.6, so ≥10 cells).
 ///
