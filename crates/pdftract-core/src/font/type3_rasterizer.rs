@@ -16,6 +16,7 @@
 //! - XObject: Do (form XObjects only)
 //! - No-op: n
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::diagnostics::{DiagCode, Diagnostic};
@@ -49,6 +50,9 @@ pub enum CharProcType {
 /// it is a stream (contains content stream bytes), a dictionary (contains
 /// key-value pairs), or another type.
 ///
+/// This is a convenience function that does not dereference indirect references.
+/// For full reference handling, use `detect_char_proc_type_with_context`.
+///
 /// # Arguments
 ///
 /// * `object` - The PdfObject to classify
@@ -74,9 +78,97 @@ pub enum CharProcType {
 /// assert_eq!(detect_char_proc_type(&int_obj), CharProcType::Other("integer".to_string()));
 /// ```
 pub fn detect_char_proc_type(object: &PdfObject) -> CharProcType {
+    detect_char_proc_type_with_context(object, None)
+}
+
+/// Detect the type of PDF object for Type 3 CharProc validation with reference handling.
+///
+/// This function classifies a PdfObject instance to determine whether
+/// it is a stream (contains content stream bytes), a dictionary (contains
+/// key-value pairs), or another type. It handles indirect references by
+/// dereferencing them using the provided document context.
+///
+/// # Arguments
+///
+/// * `object` - The PdfObject to classify
+/// * `doc_context` - Optional document resolver context for dereferencing
+///
+/// # Returns
+///
+/// `CharProcType::Stream` if the object is a stream,
+/// `CharProcType::Dict` if the object is a dictionary,
+/// `CharProcType::Other(name)` for any other type with its descriptive name.
+///
+/// # Reference Handling
+///
+/// When encountering a `PdfObject::Ref`:
+/// - If `doc_context` is provided, the reference is dereferenced and the
+///   underlying object is classified recursively
+/// - Reference cycles are detected and return `CharProcType::Other("circular-reference".to_string())`
+/// - Dereferencing errors (not found, I/O error) return `CharProcType::Other("error".to_string())`
+/// - If `doc_context` is None, references are classified as `CharProcType::Other("reference".to_string())`
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use pdftract_core::font::type3_rasterizer::{detect_char_proc_type_with_context, CharProcType, DocumentContext};
+/// use pdftract_core::parser::object::types::PdfObject;
+///
+/// let ref_obj = PdfObject::Ref(/* ... */);
+/// let doc_context = DocumentContext { /* ... */ };
+///
+/// // Dereferences and classifies the underlying object
+/// let char_proc_type = detect_char_proc_type_with_context(&ref_obj, Some(&doc_context));
+/// ```
+pub fn detect_char_proc_type_with_context<'a>(
+    object: &PdfObject,
+    doc_context: Option<&'a DocumentContext<'a>>,
+) -> CharProcType {
+    detect_char_proc_type_with_context_impl(object, doc_context, &mut std::collections::HashSet::new())
+}
+
+/// Internal implementation with cycle detection via visited set.
+fn detect_char_proc_type_with_context_impl<'a>(
+    object: &PdfObject,
+    doc_context: Option<&'a DocumentContext<'a>>,
+    visited: &mut std::collections::HashSet<ObjRef>,
+) -> CharProcType {
     match object {
         PdfObject::Stream(_) => CharProcType::Stream,
         PdfObject::Dict(_) => CharProcType::Dict,
+        PdfObject::Ref(obj_ref) => {
+            // Check for circular reference
+            if visited.contains(obj_ref) {
+                return CharProcType::Other("circular-reference".to_string());
+            }
+
+            // Mark this reference as visited
+            visited.insert(*obj_ref);
+
+            // Try to dereference if we have a context
+            match doc_context {
+                Some(ctx) => {
+                    match deref_char_proc_ref(*obj_ref, Some(ctx)) {
+                        Ok(dereferenced_obj) => {
+                            // Recursively classify the dereferenced object
+                            detect_char_proc_type_with_context_impl(
+                                &dereferenced_obj,
+                                doc_context,
+                                visited,
+                            )
+                        }
+                        Err(_) => {
+                            // Dereferencing failed - return error type
+                            CharProcType::Other("error".to_string())
+                        }
+                    }
+                }
+                None => {
+                    // No context provided - classify as plain reference
+                    CharProcType::Other("reference".to_string())
+                }
+            }
+        }
         other => CharProcType::Other(other.type_name().to_string()),
     }
 }
@@ -2611,6 +2703,339 @@ mod tests {
         assert_eq!(
             detect_char_proc_type(&indirect_obj),
             CharProcType::Other("indirect".to_string())
+        );
+    }
+
+    // Tests for detect_char_proc_type_with_context (bf-5vlv4i)
+
+    #[test]
+    fn test_detect_char_proc_type_with_context_direct_stream() {
+        use crate::parser::object::types::{PdfDict, PdfStream};
+
+        let dict = PdfDict::new();
+        let stream = PdfStream::new(dict, 0, None);
+        let stream_obj = PdfObject::Stream(Box::new(stream));
+
+        // Direct stream object should still be classified as Stream
+        assert_eq!(
+            detect_char_proc_type_with_context(&stream_obj, None),
+            CharProcType::Stream
+        );
+    }
+
+    #[test]
+    fn test_detect_char_proc_type_with_context_direct_dict() {
+        use crate::parser::object::types::PdfDict;
+
+        let dict_obj = PdfObject::Dict(Box::new(PdfDict::new()));
+
+        // Direct dict object should still be classified as Dict
+        assert_eq!(
+            detect_char_proc_type_with_context(&dict_obj, None),
+            CharProcType::Dict
+        );
+    }
+
+    #[test]
+    fn test_detect_char_proc_type_with_context_ref_without_context() {
+        use crate::parser::object::types::ObjRef;
+
+        let ref_obj = PdfObject::Ref(ObjRef::new(10, 0));
+
+        // Without context, references are classified as "reference"
+        assert_eq!(
+            detect_char_proc_type_with_context(&ref_obj, None),
+            CharProcType::Other("reference".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detect_char_proc_type_with_context_ref_with_valid_context() {
+        use crate::parser::object::types::{ObjRef, PdfDict, PdfObject, PdfStream};
+        use crate::parser::xref::XrefResolver;
+        use crate::parser::stream::PdfSource;
+        use std::sync::Arc;
+
+        // Create a mock PdfSource that returns a simple stream
+        struct MockSource;
+        impl PdfSource for MockSource {
+            fn bytes_at(&self, _offset: u64, _size: u64) -> Result<Vec<u8>, String> {
+                Ok(vec![0x00, 0x01, 0x02]) // Dummy stream data
+            }
+        }
+
+        // Create a resolver and add a stream object at ref 10 0 R
+        let mut resolver = XrefResolver::new();
+        let stream_dict = PdfDict::new();
+        let stream_obj = PdfObject::Stream(Box::new(PdfStream::new(stream_dict, 0, None)));
+        resolver.set(ObjRef::new(10, 0), stream_obj);
+
+        let source = MockSource;
+        let doc_context = DocumentContext {
+            resolver: Some(&resolver),
+            source: Some(&source as &dyn PdfSource),
+        };
+
+        let ref_obj = PdfObject::Ref(ObjRef::new(10, 0));
+
+        // With context, the reference should be dereferenced and classified as Stream
+        assert_eq!(
+            detect_char_proc_type_with_context(&ref_obj, Some(&doc_context)),
+            CharProcType::Stream
+        );
+    }
+
+    #[test]
+    fn test_detect_char_proc_type_with_context_ref_to_dict() {
+        use crate::parser::object::types::{ObjRef, PdfDict, PdfObject};
+        use crate::parser::xref::XrefResolver;
+        use crate::parser::stream::PdfSource;
+        use std::sync::Arc;
+
+        struct MockSource;
+        impl PdfSource for MockSource {
+            fn bytes_at(&self, _offset: u64, _size: u64) -> Result<Vec<u8>, String> {
+                Ok(vec![0x00, 0x01, 0x02])
+            }
+        }
+
+        // Create a resolver and add a dict object at ref 20 0 R
+        let mut resolver = XrefResolver::new();
+        let dict_obj = PdfObject::Dict(Box::new(PdfDict::new()));
+        resolver.set(ObjRef::new(20, 0), dict_obj);
+
+        let source = MockSource;
+        let doc_context = DocumentContext {
+            resolver: Some(&resolver),
+            source: Some(&source as &dyn PdfSource),
+        };
+
+        let ref_obj = PdfObject::Ref(ObjRef::new(20, 0));
+
+        // Reference to dict should be dereferenced and classified as Dict
+        assert_eq!(
+            detect_char_proc_type_with_context(&ref_obj, Some(&doc_context)),
+            CharProcType::Dict
+        );
+    }
+
+    #[test]
+    fn test_detect_char_proc_type_with_context_nested_ref() {
+        use crate::parser::object::types::{ObjRef, PdfDict, PdfObject, PdfStream};
+        use crate::parser::xref::XrefResolver;
+        use crate::parser::stream::PdfSource;
+        use std::sync::Arc;
+
+        struct MockSource;
+        impl PdfSource for MockSource {
+            fn bytes_at(&self, _offset: u64, _size: u64) -> Result<Vec<u8>, String> {
+                Ok(vec![0x00, 0x01, 0x02])
+            }
+        }
+
+        // Create a resolver with a chain: Ref A -> Ref B -> Stream
+        let mut resolver = XrefResolver::new();
+
+        let stream_dict = PdfDict::new();
+        let stream_obj = PdfObject::Stream(Box::new(PdfStream::new(stream_dict, 0, None)));
+
+        let ref_b = ObjRef::new(30, 0);
+        let ref_a = ObjRef::new(25, 0);
+
+        // Ref B points to Stream
+        resolver.set(ref_b, stream_obj);
+        // Ref A points to Ref B
+        resolver.set(ref_a, PdfObject::Ref(ref_b));
+
+        let source = MockSource;
+        let doc_context = DocumentContext {
+            resolver: Some(&resolver),
+            source: Some(&source as &dyn PdfSource),
+        };
+
+        let ref_obj = PdfObject::Ref(ref_a);
+
+        // Nested references should be resolved and classified as Stream
+        assert_eq!(
+            detect_char_proc_type_with_context(&ref_obj, Some(&doc_context)),
+            CharProcType::Stream
+        );
+    }
+
+    #[test]
+    fn test_detect_char_proc_type_with_context_circular_reference() {
+        use crate::parser::object::types::{ObjRef, PdfDict, PdfObject};
+        use crate::parser::xref::XrefResolver;
+        use crate::parser::stream::PdfSource;
+        use std::sync::Arc;
+
+        struct MockSource;
+        impl PdfSource for MockSource {
+            fn bytes_at(&self, _offset: u64, _size: u64) -> Result<Vec<u8>, String> {
+                Ok(vec![0x00, 0x01, 0x02])
+            }
+        }
+
+        // Create a resolver with a circular reference: Ref A -> Ref B -> Ref A
+        let mut resolver = XrefResolver::new();
+
+        let ref_a = ObjRef::new(40, 0);
+        let ref_b = ObjRef::new(41, 0);
+
+        // Create a circular reference
+        resolver.set(ref_a, PdfObject::Ref(ref_b));
+        resolver.set(ref_b, PdfObject::Ref(ref_a));
+
+        let source = MockSource;
+        let doc_context = DocumentContext {
+            resolver: Some(&resolver),
+            source: Some(&source as &dyn PdfSource),
+        };
+
+        let ref_obj = PdfObject::Ref(ref_a);
+
+        // Circular references should be detected and reported
+        assert_eq!(
+            detect_char_proc_type_with_context(&ref_obj, Some(&doc_context)),
+            CharProcType::Other("circular-reference".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detect_char_proc_type_with_context_invalid_reference() {
+        use crate::parser::object::types::ObjRef;
+        use crate::parser::xref::XrefResolver;
+        use crate::parser::stream::PdfSource;
+        use std::sync::Arc;
+
+        struct MockSource;
+        impl PdfSource for MockSource {
+            fn bytes_at(&self, _offset: u64, _size: u64) -> Result<Vec<u8>, String> {
+                Ok(vec![0x00, 0x01, 0x02])
+            }
+        }
+
+        // Create an empty resolver (no objects)
+        let resolver = XrefResolver::new();
+
+        let source = MockSource;
+        let doc_context = DocumentContext {
+            resolver: Some(&resolver),
+            source: Some(&source as &dyn PdfSource),
+        };
+
+        let ref_obj = PdfObject::Ref(ObjRef::new(999, 0));
+
+        // Invalid references (not found in resolver) should return "error"
+        assert_eq!(
+            detect_char_proc_type_with_context(&ref_obj, Some(&doc_context)),
+            CharProcType::Other("error".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detect_char_proc_type_with_context_ref_to_integer() {
+        use crate::parser::object::types::{ObjRef, PdfObject};
+        use crate::parser::xref::XrefResolver;
+        use crate::parser::stream::PdfSource;
+        use std::sync::Arc;
+
+        struct MockSource;
+        impl PdfSource for MockSource {
+            fn bytes_at(&self, _offset: u64, _size: u64) -> Result<Vec<u8>, String> {
+                Ok(vec![0x00, 0x01, 0x02])
+            }
+        }
+
+        // Create a resolver with an integer object at ref 50 0 R
+        let mut resolver = XrefResolver::new();
+        let int_obj = PdfObject::Integer(42);
+        resolver.set(ObjRef::new(50, 0), int_obj);
+
+        let source = MockSource;
+        let doc_context = DocumentContext {
+            resolver: Some(&resolver),
+            source: Some(&source as &dyn PdfSource),
+        };
+
+        let ref_obj = PdfObject::Ref(ObjRef::new(50, 0));
+
+        // Reference to integer should be dereferenced and classified as "integer"
+        assert_eq!(
+            detect_char_proc_type_with_context(&ref_obj, Some(&doc_context)),
+            CharProcType::Other("integer".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detect_char_proc_type_with_context_ref_without_resolver() {
+        use crate::parser::object::types::ObjRef;
+
+        let ref_obj = PdfObject::Ref(ObjRef::new(10, 0));
+
+        // DocumentContext without resolver should classify as "reference"
+        let doc_context = DocumentContext {
+            resolver: None,
+            source: None,
+        };
+
+        assert_eq!(
+            detect_char_proc_type_with_context(&ref_obj, Some(&doc_context)),
+            CharProcType::Other("reference".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detect_char_proc_type_with_context_ref_without_source() {
+        use crate::parser::object::types::ObjRef;
+        use crate::parser::xref::XrefResolver;
+        use crate::parser::stream::PdfSource;
+
+        let ref_obj = PdfObject::Ref(ObjRef::new(10, 0));
+
+        // DocumentContext with resolver but no source
+        let resolver = XrefResolver::new();
+        let doc_context = DocumentContext {
+            resolver: Some(&resolver),
+            source: None,
+        };
+
+        // Should classify as "reference" since source is required for dereferencing
+        assert_eq!(
+            detect_char_proc_type_with_context(&ref_obj, Some(&doc_context)),
+            CharProcType::Other("reference".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detect_char_proc_type_backwards_compatibility() {
+        use crate::parser::object::types::{PdfDict, PdfStream};
+
+        // Test that the original function still works for direct objects
+        let dict_obj = PdfObject::Dict(Box::new(PdfDict::new()));
+        let stream_obj = PdfObject::Stream(Box::new(PdfStream::new(PdfDict::new(), 0, None)));
+        let int_obj = PdfObject::Integer(42);
+
+        // The no-context version should work exactly as before
+        assert_eq!(detect_char_proc_type(&dict_obj), CharProcType::Dict);
+        assert_eq!(detect_char_proc_type(&stream_obj), CharProcType::Stream);
+        assert_eq!(
+            detect_char_proc_type(&int_obj),
+            CharProcType::Other("integer".to_string())
+        );
+
+        // The with_context version with None should match the no-context version
+        assert_eq!(
+            detect_char_proc_type_with_context(&dict_obj, None),
+            detect_char_proc_type(&dict_obj)
+        );
+        assert_eq!(
+            detect_char_proc_type_with_context(&stream_obj, None),
+            detect_char_proc_type(&stream_obj)
+        );
+        assert_eq!(
+            detect_char_proc_type_with_context(&int_obj, None),
+            detect_char_proc_type(&int_obj)
         );
     }
 }
