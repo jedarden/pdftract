@@ -1340,6 +1340,11 @@ pub type StreamResolverFn = dyn Fn(ObjRef) -> Option<Vec<u8>> + Send + Sync;
 /// This function looks up the indirect reference using the document resolver
 /// and returns the resolved PdfObject (typically a stream object for Type3 glyphs).
 ///
+/// This function integrates validation by checking the char_proc structure
+/// immediately after resolving the reference, before any attempt to parse
+/// the content stream. This provides early detection of invalid structures
+/// with clear error messages.
+///
 /// # Arguments
 ///
 /// * `char_proc_ref` - The ObjRef pointing to the glyph content stream
@@ -1347,13 +1352,14 @@ pub type StreamResolverFn = dyn Fn(ObjRef) -> Option<Vec<u8>> + Send + Sync;
 ///
 /// # Returns
 ///
-/// `Ok(PdfObject)` if the reference was successfully resolved,
-/// `Err(Type3Error)` if resolution failed (not found, I/O error, or circular reference).
+/// `Ok(PdfObject)` if the reference was successfully resolved and validated,
+/// `Err(Type3Error)` if resolution or validation failed.
 ///
 /// # Error Context
 ///
 /// Error messages include the object reference being dereferenced to aid debugging.
-/// For example: "char_proc reference not found: 10 0 R"
+/// For example: "char_proc reference not found: 10 0 R" or
+/// "invalid char_proc type for glyph 'A': got integer, expected stream or dictionary"
 pub fn deref_char_proc_ref(
     char_proc_ref: ObjRef,
     doc_context: Option<&DocumentContext>,
@@ -1381,9 +1387,33 @@ pub fn deref_char_proc_ref(
 
     // Use resolver.resolve_with_source to get the actual PDF object
     // source is already &dyn PdfSource, which is what resolve_with_source expects
-    resolver
+    let resolved_obj = resolver
         .resolve_with_source(char_proc_ref, source)
-        .map_err(Type3Error::from)
+        .map_err(Type3Error::from)?;
+
+    // Validate the char_proc structure before returning
+    // This ensures we catch invalid structures early, before attempting to parse
+    // the content stream (EC-42: Early validation in parsing pipelines)
+    validate_char_proc_structure(&resolved_obj).map_err(|e| {
+        // Enhance error context with the object reference for debugging
+        match e {
+            Type3Error::InvalidCharProcType { got, expected } => {
+                Type3Error::InvalidCharProcType {
+                    got: format!("{} (for ref {})", got, char_proc_ref),
+                    expected,
+                }
+            }
+            Type3Error::MissingRequiredKey { key, object_type } => {
+                Type3Error::MissingRequiredKey {
+                    key: format!("{} (for ref {})", key, char_proc_ref),
+                    object_type,
+                }
+            }
+            _ => e,
+        }
+    })?;
+
+    Ok(resolved_obj)
 }
 
 /// Extract content stream bytes from a resolved PDF object.
@@ -2056,6 +2086,102 @@ mod tests {
         assert!(display_str.contains("invalid char_proc type"));
         assert!(display_str.contains("got integer"));
         assert!(display_str.contains("expected stream or dict"));
+    }
+
+    #[test]
+    fn test_deref_char_proc_ref_validates_structure_before_returning() {
+        // Test that validation is integrated into char_proc parsing flow
+        // This verifies EC-42: Early validation in parsing pipelines
+        use crate::parser::object::types::{PdfDict, PdfObject, PdfStream};
+        use crate::parser::object::intern;
+        use crate::parser::xref::XrefResolver;
+
+        let obj_ref = ObjRef::new(10, 0);
+
+        // Create a resolver that returns a stream missing required keys
+        let mut resolver = XrefResolver::new();
+        let mut stream_dict = PdfDict::new();
+        // Missing /Type, /Subtype, /Width, /Height keys
+        let invalid_stream = PdfObject::Stream(Box::new(PdfStream::new(stream_dict)));
+        resolver.set(obj_ref, invalid_stream);
+
+        let doc_context = DocumentContext {
+            resolver: Some(&resolver),
+            source: &resolver, // XrefResolver implements PdfSource
+        };
+
+        // Should fail validation even though resolution succeeds
+        let result = deref_char_proc_ref(obj_ref, Some(&doc_context));
+
+        assert!(result.is_err(), "Validation should fail for invalid structure");
+        match result {
+            Err(Type3Error::MissingRequiredKey { key, .. }) => {
+                assert!(key.contains("/Type") || key.contains("/Width"),
+                       "Should report missing required key");
+            }
+            _ => panic!("Expected MissingRequiredKey error from validation"),
+        }
+    }
+
+    #[test]
+    fn test_deref_char_proc_ref_validation_includes_ref_context() {
+        // Test that validation errors include the object reference for debugging
+        use crate::parser::object::types::{PdfDict, PdfObject};
+        use crate::parser::xref::XrefResolver;
+
+        let obj_ref = ObjRef::new(42, 0);
+        let mut resolver = XrefResolver::new();
+
+        // Create an invalid object (integer instead of stream/dict)
+        let invalid_obj = PdfObject::Integer(123);
+        resolver.set(obj_ref, invalid_obj);
+
+        let doc_context = DocumentContext {
+            resolver: Some(&resolver),
+            source: &resolver,
+        };
+
+        let result = deref_char_proc_ref(obj_ref, Some(&doc_context));
+
+        assert!(result.is_err());
+        let error_msg = format!("{}", result.unwrap_err());
+        // Error should include the object reference for debugging
+        assert!(error_msg.contains("42 0 R") || error_msg.contains("42"),
+               "Error should include object reference context");
+    }
+
+    #[test]
+    fn test_deref_char_proc_ref_passes_valid_stream() {
+        // Test that valid structures pass validation successfully
+        use crate::parser::object::types::{PdfDict, PdfObject, PdfStream};
+        use crate::parser::object::intern;
+        use crate::parser::xref::XrefResolver;
+
+        let obj_ref = ObjRef::new(15, 0);
+        let mut resolver = XrefResolver::new();
+
+        // Create a valid stream with all required keys
+        let mut stream_dict = PdfDict::new();
+        stream_dict.insert(intern("/Type"), PdfObject::Name(intern("/XObject")));
+        stream_dict.insert(intern("/Subtype"), PdfObject::Name(intern("/Form")));
+        stream_dict.insert(intern("/Width"), PdfObject::Integer(100));
+        stream_dict.insert(intern("/Height"), PdfObject::Integer(100));
+        let valid_stream = PdfObject::Stream(Box::new(PdfStream::new(stream_dict)));
+        resolver.set(obj_ref, valid_stream);
+
+        let doc_context = DocumentContext {
+            resolver: Some(&resolver),
+            source: &resolver,
+        };
+
+        let result = deref_char_proc_ref(obj_ref, Some(&doc_context));
+
+        assert!(result.is_ok(), "Valid structure should pass validation");
+        // Verify we got back a stream object
+        match result.unwrap() {
+            PdfObject::Stream(_) => {},
+            _ => panic!("Should return the validated stream object"),
+        }
     }
 
     #[test]
