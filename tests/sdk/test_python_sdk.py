@@ -33,6 +33,10 @@ def test_python_sdk_types() -> None:
     - Page.spans contains Span instances
     - No raw dicts are returned to the caller
     """
-    # TODO: Implement type assertions using fixture data
-    # Next step: load fixture PDF and verify types
-    pass
+    # Load fixture PDF and extract with the SDK
+    fixture_path = Path(__file__).parent.parent.parent / "tests" / "fixtures" / "markdown_structure.pdf"
+    doc = pdftract.extract(str(fixture_path))
+
+    # First type assertion: verify extract() returns Document type
+    assert isinstance(doc, Document), \
+        f"Expected Document type, got {type(doc)}"
