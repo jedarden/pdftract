@@ -4405,5 +4405,4 @@ mod tests {
         let x_values: Vec<i32> = aet.iter().map(|edge| edge.x).collect();
         assert_eq!(x_values, vec![15, 25, -3], "All x values should be readable from AET");
     }
-
 }
