@@ -629,6 +629,37 @@ impl Default for Bitmap {
     }
 }
 
+/// Round a floating-point x-coordinate to an integer pixel position.
+///
+/// This helper function converts a floating-point x-coordinate to an integer
+/// pixel position using standard rounding rules (round half-away-from-zero).
+///
+/// # Arguments
+///
+/// * `x` - Floating-point x-coordinate in user space
+///
+/// # Returns
+///
+/// The nearest integer pixel position. Uses round half-away-from-zero:
+/// - 0.5 rounds to 1
+/// - -0.5 rounds to -1
+/// - 2.3 rounds to 2
+/// - -2.7 rounds to -3
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use pdftract_core::font::type3_rasterizer::round_x;
+///
+/// assert_eq!(round_x(0.5), 1);
+/// assert_eq!(round_x(-0.5), -1);
+/// assert_eq!(round_x(2.3), 2);
+/// assert_eq!(round_x(-2.7), -3);
+/// ```
+pub fn round_x(x: f64) -> i32 {
+    x.round() as i32
+}
+
 /// Edge structure for scanline polygon fill algorithm.
 ///
 /// Represents a single edge in the polygon being filled, with fields
@@ -653,7 +684,7 @@ impl Edge {
     /// This method rounds the current x position to the nearest integer
     /// using standard rounding rules. Used in scanline intersection calculation.
     pub(crate) fn intersection_x(&self) -> i32 {
-        (self.x as f64).round() as i32
+        round_x(self.x as f64)
     }
 }
 
@@ -4404,5 +4435,78 @@ mod tests {
         // Test that we can iterate over AET and read x from each edge
         let x_values: Vec<i32> = aet.iter().map(|edge| edge.x).collect();
         assert_eq!(x_values, vec![15, 25, -3], "All x values should be readable from AET");
+    }
+
+    #[test]
+    fn test_round_x_positive_values() {
+        // Test positive values round correctly
+        assert_eq!(round_x(0.0), 0, "Zero should round to 0");
+        assert_eq!(round_x(0.3), 0, "0.3 should round to 0");
+        assert_eq!(round_x(0.5), 1, "0.5 should round up to 1 (half-up)");
+        assert_eq!(round_x(0.7), 1, "0.7 should round to 1");
+        assert_eq!(round_x(1.0), 1, "1.0 should round to 1");
+        assert_eq!(round_x(1.2), 1, "1.2 should round to 1");
+        assert_eq!(round_x(1.5), 2, "1.5 should round up to 2 (half-up)");
+        assert_eq!(round_x(1.8), 2, "1.8 should round to 2");
+        assert_eq!(round_x(10.4), 10, "10.4 should round to 10");
+        assert_eq!(round_x(10.5), 11, "10.5 should round up to 11 (half-up)");
+        assert_eq!(round_x(10.6), 11, "10.6 should round to 11");
+    }
+
+    #[test]
+    fn test_round_x_negative_values() {
+        // Test negative values round correctly (half-away-from-zero)
+        assert_eq!(round_x(-0.3), 0, "-0.3 should round to 0");
+        assert_eq!(round_x(-0.5), -1, "-0.5 should round away from zero to -1");
+        assert_eq!(round_x(-0.7), -1, "-0.7 should round to -1");
+        assert_eq!(round_x(-1.0), -1, "-1.0 should round to -1");
+        assert_eq!(round_x(-1.2), -1, "-1.2 should round to -1");
+        assert_eq!(round_x(-1.5), -2, "-1.5 should round away from zero to -2");
+        assert_eq!(round_x(-1.8), -2, "-1.8 should round to -2");
+        assert_eq!(round_x(-10.4), -10, "-10.4 should round to -10");
+        assert_eq!(round_x(-10.5), -11, "-10.5 should round away from zero to -11");
+        assert_eq!(round_x(-10.6), -11, "-10.6 should round to -11");
+    }
+
+    #[test]
+    fn test_round_x_edge_cases() {
+        // Test edge cases and large values
+        assert_eq!(round_x(0.0), 0, "Zero should round to 0");
+        assert_eq!(round_x(-0.0), 0, "Negative zero should round to 0");
+
+        // Large positive values
+        assert_eq!(round_x(1000.3), 1000, "Large positive 1000.3 should round to 1000");
+        assert_eq!(round_x(1000.5), 1001, "Large positive 1000.5 should round up to 1001");
+
+        // Large negative values
+        assert_eq!(round_x(-1000.3), -1000, "Large negative -1000.3 should round to -1000");
+        assert_eq!(round_x(-1000.5), -1001, "Large negative -1000.5 should round away from zero to -1001");
+    }
+
+    #[test]
+    fn test_round_x_integration_with_edge_intersection_x() {
+        // Test that round_x is correctly used by Edge::intersection_x()
+        let edge = Edge {
+            x: 5,
+            y_min: 0,
+            y_max: 10,
+            dx: 3,
+            dy: 5,
+        };
+
+        // Edge::intersection_x() should use round_x internally
+        // Since edge.x is 5 (i32), intersection_x should return 5
+        assert_eq!(edge.intersection_x(), 5, "Edge with x=5 should return intersection_x=5");
+
+        // Test with edge that would have fractional x after transformation
+        let edge_float_x = Edge {
+            x: 7, // represents 7.0 in floating-point
+            y_min: 2,
+            y_max: 12,
+            dx: -3,
+            dy: 8,
+        };
+
+        assert_eq!(edge_float_x.intersection_x(), 7, "Edge with x=7 should return intersection_x=7");
     }
 }
