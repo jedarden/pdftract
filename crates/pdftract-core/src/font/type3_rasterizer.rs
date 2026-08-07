@@ -4572,4 +4572,58 @@ mod tests {
         let empty_intersections: Vec<i32> = empty_aet.iter().map(|edge| edge.intersection_x()).collect();
         assert_eq!(empty_intersections.len(), 0, "Empty AET should produce empty intersections");
     }
+
+    #[test]
+    fn test_scanline_to_intersections_to_fill_spans_integration() {
+        // End-to-end integration test verifying:
+        // 1. Scanline processing with AET update
+        // 2. Intersection x-coordinate collection
+        // 3. Fill span calculation from intersections
+        // This tests the complete scanline rasterization pipeline
+
+        let mut type3 = Type3Glyph::new(32, 32, false);
+
+        // Create a simple triangle with known intersection points
+        // Triangle vertices: (10, 5), (20, 25), (5, 25)
+        // Edges defined as (x0, y0, x1, y1)
+        let edges = vec![
+            (10, 5, 20, 25),   // Left edge: from (10,5) to (20,25)
+            (20, 25, 5, 25),   // Bottom edge (horizontal, will be skipped)
+            (5, 25, 10, 5),    // Right edge: from (5,25) to (10,5)
+        ];
+
+        // Process the polygon through the scanline pipeline
+        type3.fill_polygon(&edges);
+
+        // Verify fill spans are generated correctly
+        // At y=10: intersections should be at approximately x=11.25 and x=7.5
+        // After rounding: x=11 and x=8, sorted: x=8 and x=11
+        // Fill span should cover x=8 to x=11
+        let filled_at_10: Vec<i32> = (0..32).filter(|&x| type3.bitmap.get(x, 10) == Some(0)).collect();
+        assert!(!filled_at_10.is_empty(), "Should have filled pixels at y=10");
+
+        // Check specific filled positions at y=10
+        // The triangle's interior should be filled between the intersection points
+        assert_eq!(type3.bitmap.get(9, 10), Some(0), "x=9 at y=10 should be filled (interior)");
+        assert_eq!(type3.bitmap.get(10, 10), Some(0), "x=10 at y=10 should be filled (interior)");
+
+        // At y=20: triangle is wider, more pixels should be filled
+        let filled_at_20: Vec<i32> = (0..32).filter(|&x| type3.bitmap.get(x, 20) == Some(0)).collect();
+        assert!(filled_at_20.len() > filled_at_10.len(), "y=20 should have more filled pixels than y=10");
+
+        // Verify that pixels outside the intersection span are NOT filled
+        // At x=3 (left of triangle) should not be filled
+        assert_eq!(type3.bitmap.get(3, 10), Some(255), "x=3 at y=10 should not be filled (exterior)");
+
+        // At x=25 (right of triangle) should not be filled
+        assert_eq!(type3.bitmap.get(25, 10), Some(255), "x=25 at y=10 should not be filled (exterior)");
+
+        // Verify the even-odd fill rule is respected
+        // The triangle has a simple shape, so interior should be consistently filled
+        // Check multiple points in the interior
+        let interior_points = vec![(10, 15), (12, 18), (8, 20)];
+        for (x, y) in interior_points {
+            assert_eq!(type3.bitmap.get(x, y), Some(0), "Interior point ({}, {}) should be filled", x, y);
+        }
+    }
 }
