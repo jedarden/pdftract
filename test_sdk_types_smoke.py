@@ -200,6 +200,31 @@ def test_fixture_metadata_loading():
 
     print("✅ Fixture metadata loading test passed!")
 
+def test_type_assertions_from_fixture_data():
+    """Verify Document type assertion using fixture data.
+
+    This test establishes the foundation for nested type checks by validating
+    the top-level Document object type first.
+    """
+    print("\nTesting Document type assertion from fixture data...")
+
+    # Load fixture data
+    pdf_path = "tests/fixtures/remote_100page.pdf"
+
+    if not os.path.exists(pdf_path):
+        print(f"⚠ PDF fixture not found: {pdf_path}")
+        print("✅ Test skipped (fixture not available)")
+        return
+
+    # Call the function being tested with the loaded fixture
+    doc = pdftract.extract(pdf_path)
+
+    # Add isinstance assertion for Document type with clear error message
+    assert isinstance(doc, pdftract.Document), f'Expected Document type, got {type(doc)}'
+
+    print("✓ Document type assertion passed")
+    print("✅ Document type assertion test passed!")
+
 def test_pdf_document_with_fixture_validation():
     """Verify PDF document extraction using fixture data for validation."""
     print("\nTesting PDF document extraction with fixture validation...")
@@ -249,6 +274,7 @@ if __name__ == "__main__":
 
     try:
         # New fixture-based tests
+        test_type_assertions_from_fixture_data()
         test_fixture_metadata_loading()
         test_pdf_document_with_fixture_validation()
 
