@@ -502,9 +502,11 @@ impl Type3Font {
             first_char: 0,
             last_char: 0,
             widths: vec![0.0],
+            // Identity matrix for predictable coordinates in tests (no scaling/transform)
             font_matrix: Matrix3x3::identity(),
             resources: None,
             encoding: FontEncoding::new(Some(crate::font::encoding::NamedEncoding::Standard)),
+            // Standard glyph space bounding box [0,0,1000,1000] for consistent test expectations
             font_bbox: [0.0, 0.0, 1000.0, 1000.0],
             diagnostics: Vec::new(),
             raster_cache: Arc::new(DashMap::new()),
