@@ -9,6 +9,22 @@ use std::path::{Path, PathBuf};
 // PyO3 imports for Python integration testing
 use pyo3::{Python, PyResult, types::PyDict};
 
+// pdftract-py imports
+// Note: PyPdfProcessor will be implemented in a future task
+use pdftract_py::PyPdfProcessor;
+
+// Exception types for error handling tests
+use pdftract_py::{
+    PdftractError,
+    EncryptionError,
+    CorruptPdfError,
+    SourceUnreachableError,
+    RemoteFetchInterruptedError,
+    TlsError,
+    ReceiptVerifyError,
+    UnsupportedOperationError,
+};
+
 // ============================================================================
 // Test infrastructure
 // ============================================================================
