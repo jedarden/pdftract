@@ -241,7 +241,7 @@ class Page:
     @classmethod
     def from_native(cls, native_dict: dict) -> Self:
         return cls(
-            page=int(native_dict["page"]),
+            page=int(native_dict.get("page") or native_dict.get("page_number", 0)),
             width=int(native_dict["width"]),
             height=int(native_dict["height"]),
             rotation=int(native_dict.get("rotation", 0)),
