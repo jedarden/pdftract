@@ -325,23 +325,94 @@ pub fn classify_page(pdf_bytes: &[u8]) -> anyhow::Result<PageClass> {
     // Get the path to the temporary file
     let temp_path = temp_file.path();
 
-    // Extract the PDF with default options
-    let result = sdk::extract(temp_path, &Default::default())
-        .map_err(|e| anyhow::anyhow!("Failed to extract PDF: {}", e))?;
+    // Find the pdftract binary
+    // Try to find the binary in common locations
+    let binary_paths = vec![
+        // During development, use the debug build
+        "../../target/debug/pdftract",
+        // Fallback to release build
+        "../../target/release/pdftract",
+        // When installed, use the system binary (will be searched in PATH)
+        "pdftract",
+    ];
+
+    let mut pdftract_binary = None;
+    for path in binary_paths {
+        let path_obj = std::path::Path::new(path);
+        // Check if path exists directly (for relative paths)
+        if path_obj.exists() {
+            pdftract_binary = Some(path.to_string());
+            break;
+        }
+        // For system binary names, check if it's executable by trying to run it
+        if path.contains("/") {
+            // Already a path, checked above
+            continue;
+        }
+        // For bare command names, try to execute with --help to check availability
+        if std::process::Command::new(path)
+            .arg("--help")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+        {
+            pdftract_binary = Some(path.to_string());
+            break;
+        }
+    }
+
+    let pdftract_binary = pdftract_binary
+        .ok_or_else(|| anyhow::anyhow!("pdftract binary not found. Ensure pdftract is built and available in PATH."))?;
+
+    // Spawn pdftract binary with JSON output to stdout
+    let output = std::process::Command::new(&pdftract_binary)
+        .arg("extract")
+        .arg("--json")
+        .arg("-")
+        .arg(temp_path)
+        .output()
+        .map_err(|e| anyhow::anyhow!("Failed to spawn pdftract binary: {}", e))?;
+
+    // Check if the command succeeded
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!(
+            "pdftract extract failed with exit code {:?}\nstderr: {}",
+            output.status.code(),
+            stderr
+        );
+    }
+
+    // Parse JSON output from stdout
+    let json_str = String::from_utf8(output.stdout)
+        .map_err(|e| anyhow::anyhow!("Failed to convert pdftract output to UTF-8: {}", e))?;
+
+    let json_value: serde_json::Value = serde_json::from_str(&json_str)
+        .map_err(|e| anyhow::anyhow!("Failed to parse pdftract JSON output: {}", e))?;
+
+    // Extract pages array
+    let pages = json_value
+        .get("pages")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| anyhow::anyhow!("JSON output missing 'pages' array"))?;
 
     // We expect at least one page
-    if result.pages.is_empty() {
+    if pages.is_empty() {
         anyhow::bail!("PDF has no pages");
     }
 
     // Classify based on the first page (most test fixtures are single-page)
-    let page = &result.pages[0];
+    let first_page = pages
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("Failed to get first page from pages array"))?;
 
     // Extract classification from page_type
     // PageClass mapping: "mixed" -> Hybrid, "text" -> Vector, "scanned" -> Scanned, "broken_vector" -> BrokenVector
-    let page_type = page
-        .page_type
-        .as_deref()
+    let page_type = first_page
+        .get("page_type")
+        .and_then(|v| v.as_str())
         .unwrap_or("unknown");
 
     let class = match page_type {
