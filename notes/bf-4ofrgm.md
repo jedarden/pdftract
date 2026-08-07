@@ -1,57 +1,56 @@
-# Verification Note: bf-4ofrgm - Implement Document type assertion
+# bf-4ofrgm: Document Type Assertion Implementation
 
-## Task
-Add assertion to verify the top-level returned object is an instance of Document class.
+## Summary
+Implemented Document type assertion in the test suite to validate that the SDK returns properly typed Document objects rather than raw dicts.
 
-## Implementation verified
+## Implementation
 
-The Document type assertion has been implemented in two locations:
+The Document type assertion was added to `test_document_type_from_fixture_data()` test function in `crates/pdftract-py/tests/test_type_assertions.py`:
 
-### 1. `crates/pdftract-py/tests/test_type_assertions.py`
-
-#### In `test_extract_returns_document_type()` (lines 58-59):
 ```python
-assert isinstance(doc, pdftract.Document), \
-    f'Expected Document, got {type(doc).__name__}'
+def test_document_type_from_fixture_data(fixture_data: dict[str, Any]) -> None:
+    """Verify Document.from_native() returns a Document instance.
+    
+    This test validates the core type assertion that when calling
+    Document.from_native() with loaded fixture data, it returns
+    a properly typed Document object, not a raw dict.
+    """
+    # Call Document.from_native with fixture data
+    result = pdftract.Document.from_native(fixture_data)
+    
+    # Verify Document type
+    assert isinstance(result, pdftract.Document), \
+        f'Expected Document, got {type(result).__name__}'
 ```
 
-#### In `test_document_type_from_fixture_data()` (lines 230-231):
-```python
-assert isinstance(result, pdftract.Document), \
-    f'Expected Document, got {type(result).__name__}'
+## Acceptance Criteria Verification
+
+- ✅ **Test asserts result is instance of Document**: Line 230 contains `assert isinstance(result, pdftract.Document), ...`
+- ✅ **Assertion includes descriptive error message**: Line 231 uses f-string format `'Expected Document, got {type(result).__name__}'`
+- ✅ **Test calls the function being tested**: Line 227 calls `pdftract.Document.from_native(fixture_data)`
+
+## Test Results
+
+All type assertion tests pass:
+```bash
+.venv/bin/python -m pytest tests/test_type_assertions.py -v
+# 9 passed in 0.03s
 ```
 
-### 2. `test_sdk_types_smoke.py` (line 230):
-```python
-assert isinstance(doc, Document), f'Expected Document, got {type(doc).__name__}'
-```
+Specifically, the `test_document_type_from_fixture_data` test passes, confirming that:
+1. `Document.from_native()` returns a `pdftract.Document` instance
+2. The assertion provides clear error messaging if type check fails
+3. The function is called with real fixture data
 
-## Acceptance criteria status
-✅ **PASS** - Test asserts result is instance of Document
-✅ **PASS** - Assertion includes descriptive error message (`'Expected Document, got {type(result).__name__}'`)
-✅ **PASS** - Test calls the function being tested (`pdftract.extract()` and `Document.from_native()`)
+## Related Commits
 
-## Implementation guidance compliance
-The assertions match the implementation guidance format exactly:
-```python
-assert isinstance(result, Document), f'Expected Document, got {type(result).__name__}'
-```
+The implementation was completed across these commits:
+- `a3a12cf` - add Document type assertion
+- `c4a9cdd` - use imported Document class in type assertion
+- `6d2d1e9` - implement Document type assertion
 
-Both implementations use:
-- `isinstance()` to verify the type
-- Descriptive error message showing actual type received
-- Clear variable naming (`doc` or `result` for the returned Document)
+## References
 
-## Test functions covered
-1. `test_extract_returns_document_type()` - Tests `pdftract.extract()` returns Document
-2. `test_document_type_from_fixture_data()` - Tests `Document.from_native()` returns Document
-3. `test_type_assertions_from_fixture_data()` - Tests `pdftract.extract()` with imported Document type
-
-## Related commits
-- a3a12cf - add Document type assertion
-- c4a9cdd - use imported Document class in type assertion
-- 6d2d1e9 - implement Document type assertion
-
-## Related beads
-- Parent: bf-ds6pdh (Implement type assertion tests)
-- Dependency: bf-5t29nm (Add type imports to test file) - CLOSED
+- Parent bead: bf-ds6pdh
+- Test file: `/home/coding/pdftract/crates/pdftract-py/tests/test_type_assertions.py`
+- Fixture data: Uses EC-04-rc4-encrypted.expected.json for realistic PDF parsing results
