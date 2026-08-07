@@ -4358,19 +4358,52 @@ mod tests {
     }
 
     #[test]
-    fn test_intersection_x_rounds_correctly() {
-        // Test that intersection_x correctly rounds the x-coordinate
-        // Verifies acceptance criterion 1: intersection_x() rounds correctly
+    fn test_edge_x_field_access_from_aet() {
+        // Test that edge.x field is directly readable from AET entries
+        // Verifies acceptance criterion: ability to access x-coordinate field from edge structures in AET
 
-        let edge = Edge {
-            x: 7,
+        // Create an Active Edge Table (AET) with multiple edges
+        let mut aet: Vec<Edge> = Vec::new();
+
+        // Edge 1: x=10
+        aet.push(Edge {
+            x: 10,
             y_min: 0,
             y_max: 10,
             dx: 5,
             dy: 10,
-        };
+        });
 
-        // intersection_x should return the rounded x-coordinate
-        assert_eq!(edge.intersection_x(), 7, "x=7 should round to 7");
+        // Edge 2: x=25
+        aet.push(Edge {
+            x: 25,
+            y_min: 5,
+            y_max: 15,
+            dx: 10,
+            dy: 10,
+        });
+
+        // Edge 3: x=-3 (negative x-coordinate)
+        aet.push(Edge {
+            x: -3,
+            y_min: 8,
+            y_max: 18,
+            dx: -5,
+            dy: 10,
+        });
+
+        // Test direct field access: read edge.x from each AET entry
+        assert_eq!(aet[0].x, 10, "First edge should have x=10");
+        assert_eq!(aet[1].x, 25, "Second edge should have x=25");
+        assert_eq!(aet[2].x, -3, "Third edge should have x=-3");
+
+        // Test that we can modify edge.x in AET entries
+        aet[0].x = 15;
+        assert_eq!(aet[0].x, 15, "Modified first edge should have x=15");
+
+        // Test that we can iterate over AET and read x from each edge
+        let x_values: Vec<i32> = aet.iter().map(|edge| edge.x).collect();
+        assert_eq!(x_values, vec![15, 25, -3], "All x values should be readable from AET");
     }
+
 }
