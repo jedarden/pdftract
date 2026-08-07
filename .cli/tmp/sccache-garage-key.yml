@@ -1,0 +1,16 @@
+---
+# GarageKey for sccache S3 access
+# Grants read/write access to sccache bucket
+apiVersion: garage.rajsingh.info/v1beta1
+kind: GarageKey
+metadata:
+  name: sccache-s3-key
+  namespace: garage-operator
+  labels:
+    app: sccache
+    cluster: iad-ci
+spec:
+  clusterRef:
+    name: garage-rs-manager
+  permissions:
+    createBucket: false

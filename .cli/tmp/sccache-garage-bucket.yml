@@ -1,0 +1,20 @@
+---
+# GarageBucket for sccache cache on iad-ci
+# Stores rustc compilation artifacts across rust-verify runs
+apiVersion: garage.rajsingh.info/v1beta1
+kind: GarageBucket
+metadata:
+  name: sccache
+  namespace: garage-operator
+  labels:
+    app: sccache
+    cluster: iad-ci
+spec:
+  clusterRef:
+    name: garage-rs-manager
+  keyPermissions:
+  - keyRef: sccache-s3-key
+    read: true
+    write: true
+  quotas:
+    maxSize: 10Gi
