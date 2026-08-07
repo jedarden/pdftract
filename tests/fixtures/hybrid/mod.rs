@@ -374,6 +374,108 @@ pub fn assert_hybrid_classification(
     );
 }
 
+/// Classify a PDF page from raw bytes.
+///
+/// This helper function accepts raw PDF bytes, runs the full extraction pipeline,
+/// and returns the PageClass classification for the first page.
+///
+/// This is useful when you have PDF data in memory (e.g., from a download or
+/// generated content) and need to classify it without writing to disk first.
+///
+/// # Arguments
+///
+/// * `pdf_bytes` - Raw PDF file bytes (must start with "%PDF-" signature)
+///
+/// # Returns
+///
+/// A `PageClass` enum value indicating the detected page type:
+/// - `PageClass::Vector` - Clean vector PDF with readable text
+/// - `PageClass::Scanned` - Image-only page requiring OCR
+/// - `PageClass::Hybrid` - Mixed page with both vector and image regions
+/// - `PageClass::BrokenVector` - Text with encoding issues
+///
+/// # Errors
+///
+/// Returns `Err` if:
+/// - The PDF bytes are invalid or malformed
+/// - PDF parsing fails
+/// - Extraction or classification fails
+/// - The PDF has no pages
+/// - Temporary file creation fails
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use pdftract_core::page_class::PageClass;
+///
+/// let pdf_bytes = std::fs::read("document.pdf")?;
+/// let page_class = classify_page(&pdf_bytes)?;
+///
+/// match page_class {
+///     PageClass::Hybrid => println!("Mixed vector/image page"),
+///     PageClass::Vector => println!("Clean text PDF"),
+///     PageClass::Scanned => println("Image-only PDF, needs OCR"),
+///     PageClass::BrokenVector => println!("Text encoding issues detected"),
+/// }
+/// # Ok::<(), anyhow::Error>(())
+/// ```
+pub fn classify_page(pdf_bytes: &[u8]) -> anyhow::Result<PageClass> {
+    use std::io::Write;
+
+    // Validate PDF signature
+    if !pdf_bytes.starts_with(b"%PDF-") {
+        anyhow::bail!(
+            "Invalid PDF bytes: does not start with '%PDF-' signature\n\
+             First 12 bytes: {:?}",
+            &pdf_bytes[..pdf_bytes.len().min(12)]
+        );
+    }
+
+    // Create a temporary file with a unique name
+    let mut temp_file = tempfile::NamedTempFile::new()
+        .map_err(|e| anyhow::anyhow!("Failed to create temporary file: {}", e))?;
+
+    // Write the PDF bytes to the temp file
+    temp_file
+        .write_all(pdf_bytes)
+        .map_err(|e| anyhow::anyhow!("Failed to write PDF bytes to temporary file: {}", e))?;
+
+    // Ensure all bytes are flushed to disk before extraction
+    temp_file
+        .flush()
+        .map_err(|e| anyhow::anyhow!("Failed to flush temporary file: {}", e))?;
+
+    // Get the path to the temp file (kept alive by temp_file until it goes out of scope)
+    let temp_path = temp_file.path();
+
+    // Extract the PDF with default options
+    let result = sdk::extract(temp_path, &Default::default())
+        .map_err(|e| anyhow::anyhow!("Failed to extract PDF from bytes: {}", e))?;
+
+    // Verify the PDF has at least one page
+    if result.pages.is_empty() {
+        anyhow::bail!("PDF has no pages");
+    }
+
+    // Classify based on the first page's page_type
+    let page = &result.pages[0];
+    let page_type = page
+        .page_type
+        .as_deref()
+        .unwrap_or("unknown");
+
+    let class = match page_type {
+        "mixed" => PageClass::Hybrid,
+        "text" => PageClass::Vector,
+        "scanned" => PageClass::Scanned,
+        "broken_vector" => PageClass::BrokenVector,
+        other => anyhow::bail!("Unknown page_type: {}", other),
+    };
+
+    // temp_file is dropped here, automatically cleaning up the temporary file
+    Ok(class)
+}
+
 /// Macro to generate a test function for a single hybrid fixture.
 ///
 /// This macro reduces boilerplate when creating tests for multiple hybrid fixtures.
@@ -537,5 +639,90 @@ mod tests {
 
         println!("hybrid-001: class={:?}, cells={}, coverage={:.1}%",
                  classification.class, cell_count, coverage);
+    }
+
+    /// Test classify_page with hybrid fixture bytes.
+    #[test]
+    fn test_classify_page_with_hybrid_fixture() {
+        let pdf_bytes = load_fixture("hybrid-001-vector-header-over-scan.pdf")
+            .expect("Failed to load fixture bytes");
+
+        let page_class = classify_page(&pdf_bytes)
+            .expect("Failed to classify PDF bytes");
+
+        // The fixture should be classified as one of the valid page classes
+        assert!(matches!(
+            page_class,
+            PageClass::Vector | PageClass::Hybrid | PageClass::Scanned | PageClass::BrokenVector
+        ));
+
+        println!("classify_page result: {:?}", page_class);
+    }
+
+    /// Test classify_page with invalid bytes (no PDF signature).
+    #[test]
+    fn test_classify_page_invalid_pdf_signature() {
+        let invalid_bytes = b"This is not a PDF file";
+
+        let result = classify_page(invalid_bytes);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = err.to_string();
+        assert!(err_msg.contains("Invalid PDF bytes") || err_msg.contains("does not start with '%PDF-'"));
+    }
+
+    /// Test classify_page with empty bytes.
+    #[test]
+    fn test_classify_page_empty_bytes() {
+        let empty_bytes: &[u8] = &[];
+
+        let result = classify_page(empty_bytes);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = err.to_string();
+        assert!(err_msg.contains("Invalid PDF bytes") || err_msg.contains("does not start with"));
+    }
+
+    /// Test classify_page with valid minimal PDF header.
+    #[test]
+    fn test_classify_page_minimal_header() {
+        // This is a minimal valid PDF header (though not a complete PDF)
+        // The extraction will likely fail, but the signature check should pass
+        let minimal_pdf = b"%PDF-1.4\n%%EOF\n";
+
+        let result = classify_page(minimal_pdf);
+
+        // Should fail during extraction (not a valid PDF structure), but not on signature check
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = err.to_string();
+
+        // The error should be from parsing, not from signature validation
+        assert!(!err_msg.contains("does not start with '%PDF-'"));
+    }
+
+    /// Test classify_page consistency with load_and_classify_fixture.
+    #[test]
+    fn test_classify_page_consistency() {
+        // Load the same fixture via both methods and verify results match
+        let pdf_bytes = load_fixture("hybrid-001-vector-header-over-scan.pdf")
+            .expect("Failed to load fixture bytes");
+
+        // Classify via bytes
+        let class_from_bytes = classify_page(&pdf_bytes)
+            .expect("Failed to classify from bytes");
+
+        // Classify via file path
+        let classification_from_path = load_and_classify_fixture("hybrid-001-vector-header-over-scan.pdf")
+            .expect("Failed to classify from path");
+
+        // Both methods should produce the same PageClass
+        assert_eq!(
+            class_from_bytes,
+            classification_from_path.class,
+            "classify_page should produce the same result as load_and_classify_fixture"
+        );
     }
 }
