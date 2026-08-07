@@ -88,8 +88,11 @@ def test_extract_returns_typed_document() -> None:
 
     assert len(doc.pages) > 0, \
         f"Document should contain at least one page, found {len(doc.pages)} pages"
-    assert isinstance(doc.pages[0], pdftract.Page), \
-        f"doc.pages[0] should be Page instance, got {type(doc.pages[0]).__name__}"
+
+    # Verify each page is a Page instance
+    for page in doc.pages:
+        assert isinstance(page, pdftract.Page), \
+            f"Each page should be a Page instance, got {type(page)}"
     print("✓ Document has typed Page objects")
 
     # ===== Span-level type verification =====

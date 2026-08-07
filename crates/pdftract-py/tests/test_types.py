@@ -45,6 +45,11 @@ def test_extract_returns_typed_document():
     assert len(doc.pages) > 0, \
         "Document should have at least one page"
 
+    # Assert ALL pages are Page instances
+    for page in doc.pages:
+        assert isinstance(page, pdftract.Page), \
+            f"Each page should be a Page instance, got {type(page)}"
+
     # Assert first page is Page instance
     first_page = doc.pages[0]
     assert isinstance(first_page, Page), \
