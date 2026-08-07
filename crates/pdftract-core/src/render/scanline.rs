@@ -20,22 +20,13 @@
 
 use std::fmt;
 
-/// 2D edge defined by two endpoints.
+/// 2D edge defined by two endpoints (input format).
 ///
 /// Represents a line segment from (x0, y0) to (x1, y1) in bitmap coordinates.
-/// Edges are used as input to the scanline fill algorithm.
-///
-/// # Example
-///
-/// ```
-/// use pdftract_core::render::scanline::Edge;
-///
-/// let edge = Edge::new(10, 5, 30, 25);
-/// assert_eq!(edge.x0, 10);
-/// assert_eq!(edge.y0, 5);
-/// ```
+/// Used as input to the scanline fill algorithm; gets converted to Edge
+/// for processing in the edge tables.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Edge {
+pub struct InputEdge {
     /// Starting X coordinate
     pub x0: i32,
     /// Starting Y coordinate
@@ -46,8 +37,8 @@ pub struct Edge {
     pub y1: i32,
 }
 
-impl Edge {
-    /// Create a new edge from (x0, y0) to (x1, y1).
+impl InputEdge {
+    /// Create a new input edge from (x0, y0) to (x1, y1).
     ///
     /// # Arguments
     ///
@@ -60,7 +51,7 @@ impl Edge {
         Self { x0, y0, x1, y1 }
     }
 
-    /// Create an edge from a tuple of (x0, y0, x1, y1).
+    /// Create an input edge from a tuple of (x0, y0, x1, y1).
     #[must_use]
     pub const fn from_tuple(coords: (i32, i32, i32, i32)) -> Self {
         Self {
@@ -93,11 +84,159 @@ impl Edge {
     }
 }
 
-impl fmt::Display for Edge {
+impl fmt::Display for InputEdge {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Edge({}, {}, {}, {})", self.x0, self.y0, self.x1, self.y1)
+        write!(f, "InputEdge({}, {}, {}, {})", self.x0, self.y0, self.x1, self.y1)
     }
 }
+
+/// Edge representation for scanline fill algorithm edge tables.
+///
+/// This struct represents an edge in the form used by Active Edge Tables (AET)
+/// and Global Edge Tables (GET) in the traditional scanline fill algorithm.
+/// It stores the current X position along with the edge geometry and slope.
+///
+/// # Fields
+///
+/// - `x`: Current X position where this edge intersects the current scanline
+/// - `y_min`: Minimum Y coordinate (top of edge)
+/// - `y_max`: Maximum Y coordinate (bottom of edge)
+/// - `dx`: Change in X across the edge (x1 - x0), used for slope calculation
+/// - `dy`: Change in Y across the edge (y1 - y0), used for slope calculation
+///
+/// # Algorithm Context
+///
+/// In the edge-table version of scanline fill:
+/// - The GET stores all edges sorted by y_min
+/// - The AET stores only edges that intersect the current scanline
+/// - On each scanline, edges are moved from GET to AET when y == y_min
+/// - X positions are updated by dx/dy as we move to the next scanline
+/// - Edges are removed from AET when y > y_max
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Edge {
+    /// Current X intersection position with the current scanline
+    pub x: i32,
+    /// Minimum Y coordinate (top of edge, inclusive)
+    pub y_min: i32,
+    /// Maximum Y coordinate (bottom of edge, exclusive)
+    pub y_max: i32,
+    /// Change in X across the edge (x1 - x0)
+    pub dx: i32,
+    /// Change in Y across the edge (y1 - y0)
+    pub dy: i32,
+}
+
+impl Edge {
+    /// Create a new scanline edge from endpoint coordinates.
+    ///
+    /// Automatically calculates y_min, y_max (ordering them correctly),
+    /// and computes dx and dy.
+    ///
+    /// # Arguments
+    ///
+    /// * `x0` - Starting X coordinate
+    /// * `y0` - Starting Y coordinate
+    /// * `x1` - Ending X coordinate
+    /// * `y1` - Ending Y coordinate
+    #[must_use]
+    pub fn from_endpoints(x0: i32, y0: i32, x1: i32, y1: i32) -> Self {
+        let (y_min, y_max) = if y0 < y1 { (y0, y1) } else { (y1, y0) };
+        Self {
+            x: x0, // Initial X position at y_min
+            y_min,
+            y_max,
+            dx: x1 - x0,
+            dy: y1 - y0,
+        }
+    }
+
+    /// Calculate the slope (dx/dy) as a floating-point value.
+    ///
+    /// Returns how much X changes per unit Y. Used to update the
+    /// X position when moving to the next scanline.
+    ///
+    /// # Returns
+    ///
+    /// The slope as f64. Returns NaN if dy is zero (horizontal edge).
+    #[must_use]
+    pub fn slope(&self) -> f64 {
+        if self.dy == 0 {
+            f64::NAN
+        } else {
+            self.dx as f64 / self.dy as f64
+        }
+    }
+
+    /// Check if this edge is horizontal (dy == 0).
+    ///
+    /// Horizontal edges don't intersect scanlines and are typically
+    /// skipped in edge table construction.
+    #[must_use]
+    pub const fn is_horizontal(&self) -> bool {
+        self.dy == 0
+    }
+
+    /// Update the X position for the next scanline.
+    ///
+    /// Adds the slope (dx/dy) to X, advancing the intersection point
+    /// by one scanline.
+    pub fn advance_scanline(&mut self) {
+        self.x += (self.slope() as i32);
+    }
+}
+
+impl fmt::Display for Edge {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Edge(x={}, y_min={}, y_max={}, dx={}, dy={})",
+            self.x, self.y_min, self.y_max, self.dx, self.dy
+        )
+    }
+}
+
+/// Active Edge Table (AET) for scanline fill algorithm.
+///
+/// The AET contains all edges that intersect the current scanline.
+/// Edges are added to the AET when the scanline reaches their y_min,
+/// and removed when the scanline passes their y_max.
+///
+/// # Invariants
+///
+/// - Edges in the AET are sorted by X coordinate (left-to-right)
+/// - All edges have y_min <= current_y < y_max
+/// - X positions are updated as the algorithm advances scanlines
+///
+/// # Algorithm Use
+///
+/// In the traditional scanline algorithm:
+/// 1. Sort AET by X position
+/// 2. Fill between pairs of X positions (even-odd rule)
+/// 3. Update X positions: x += slope for each edge
+/// 4. Remove edges where current_y >= y_max
+/// 5. Add new edges from GET where current_y == y_min
+pub type ActiveEdgeTable = Vec<Edge>;
+
+/// Global Edge Table (GET) for scanline fill algorithm.
+///
+/// The GET contains all polygon edges, sorted by y_min (topmost first).
+/// This table is the source from which edges are moved into the AET
+/// as the scanline algorithm progresses.
+///
+/// # Invariants
+///
+/// - Edges are sorted by y_min (smallest first)
+/// - Horizontal edges (dy == 0) are typically excluded
+/// - Each edge represents one polygon boundary segment
+///
+/// # Algorithm Use
+///
+/// The GET is constructed once at the start of the algorithm:
+/// 1. Create Edge from each polygon edge using from_endpoints()
+/// 2. Filter out horizontal edges
+/// 3. Sort by y_min
+/// 4. Use as a queue: pop edges as current_y reaches their y_min
+pub type GlobalEdgeTable = Vec<Edge>;
 
 /// Bitmap trait for scanline fill output.
 ///
@@ -116,11 +255,12 @@ pub trait Bitmap {
     fn height(&self) -> i32;
 }
 
-/// Fill a polygon using the scanline algorithm.
+/// Fill a polygon using the scanline algorithm with Active Edge Table (AET).
 ///
 /// Given a list of edges defining a polygon boundary, this function fills
-/// the interior pixels using the even-odd rule. The algorithm processes
-/// each scanline, finds edge intersections, and fills between pairs.
+/// the interior pixels using the even-odd rule. The algorithm uses the classic
+/// edge table approach: a Global Edge Table (GET) stores all edges sorted by y_min,
+/// and an Active Edge Table (AET) stores edges that intersect the current scanline.
 ///
 /// # Arguments
 ///
@@ -130,21 +270,21 @@ pub trait Bitmap {
 ///
 /// # Algorithm Details
 ///
-/// 1. **Find Y bounds**: Determine the minimum and maximum Y coordinates
-///    across all edges, clamped to bitmap bounds.
+/// 1. **Build GET**: Create a Global Edge Table from all input edges, excluding
+///    horizontal edges. Sort by y_min (topmost first).
 ///
-/// 2. **For each scanline**: Process each horizontal line from min_y to max_y.
+/// 2. **Initialize AET**: Start with an empty Active Edge Table.
 ///
-/// 3. **Find intersections**: For each edge that spans this scanline (using
-///    half-open interval to avoid double-counting vertices), calculate the
-///    X coordinate where the edge intersects the scanline using linear interpolation.
-///
-/// 4. **Sort and fill**: Sort intersection X values left-to-right, then fill
-///    pixels between pairs of intersections (even-odd rule).
+/// 3. **For each scanline** from min_y to max_y:
+///    - **Add edges**: Move edges from GET to AET when `scanline == edge.y_min`
+///    - **Remove edges**: Remove edges from AET when `scanline >= edge.y_max`
+///    - **Sort by X**: Sort AET edges by their current X position
+///    - **Fill between pairs**: Fill pixels between pairs of X positions (even-odd rule)
+///    - **Update X positions**: Advance each edge's X by slope for next scanline
 ///
 /// # Edge Cases Handled
 ///
-/// - **Horizontal edges**: Skipped entirely since they don't cross scanlines
+/// - **Horizontal edges**: Excluded from GET (they don't cross scanlines)
 /// - **Vertex handling**: Uses half-open interval [y_min, y_max) to avoid
 ///   double-counting vertices where edges meet
 /// - **Boundary clipping**: All pixel writes are clipped to bitmap bounds
@@ -152,20 +292,20 @@ pub trait Bitmap {
 /// # Example
 ///
 /// ```rust,ignore
-/// use pdftract_core::render::scanline::{fill_polygon, Edge};
+/// use pdftract_core::render::scanline::{fill_polygon, InputEdge};
 ///
 /// let mut bitmap = Bitmap32x32::white();
 ///
 /// // Define a triangle with vertices (10,5), (30,25), (10,25)
 /// let edges = vec![
-///     Edge::new(10, 5, 30, 25),  // Diagonal edge
-///     Edge::new(30, 25, 10, 25), // Horizontal bottom edge (will be skipped)
-///     Edge::new(10, 25, 10, 5), // Vertical left edge
+///     InputEdge::new(10, 5, 30, 25),  // Diagonal edge
+///     InputEdge::new(30, 25, 10, 25), // Horizontal bottom edge (excluded from GET)
+///     InputEdge::new(10, 25, 10, 5), // Vertical left edge
 /// ];
 ///
 /// fill_polygon(&mut bitmap, &edges, 0);
 /// ```
-pub fn fill_polygon<B: Bitmap>(bitmap: &mut B, edges: &[Edge], fill_value: u8) {
+pub fn fill_polygon<B: Bitmap>(bitmap: &mut B, edges: &[InputEdge], fill_value: u8) {
     if edges.is_empty() {
         return;
     }
@@ -173,65 +313,57 @@ pub fn fill_polygon<B: Bitmap>(bitmap: &mut B, edges: &[Edge], fill_value: u8) {
     let width = bitmap.width();
     let height = bitmap.height();
 
-    // Find y-bounds
-    let mut min_y = height;
-    let mut max_y = 0i32;
+    // Build Global Edge Table (GET): convert InputEdges to Edges, exclude horizontal edges
+    let mut get: GlobalEdgeTable = edges
+        .iter()
+        .filter(|e| !e.is_horizontal())
+        .map(|e| Edge::from_endpoints(e.x0, e.y0, e.x1, e.y1))
+        .collect();
 
-    for edge in edges {
-        let (y_min, y_max) = edge.y_bounds();
-        min_y = min_y.min(y_min);
-        max_y = max_y.max(y_max);
+    if get.is_empty() {
+        return; // No non-horizontal edges to process
     }
 
-    // Clamp to bitmap bounds
-    min_y = min_y.max(0);
-    max_y = max_y.min(height - 1);
+    // Sort GET by y_min (topmost edges first)
+    get.sort_by_key(|e| e.y_min);
 
-    // For each scanline (inclusive range to cover all scanlines)
+    // Find y-bounds
+    let min_y = get.first().map(|e| e.y_min.max(0)).unwrap_or(0);
+    let max_y = get.last().map(|e| e.y_max.min(height - 1)).unwrap_or(0);
+
+    // Initialize Active Edge Table (AET)
+    let mut aet: ActiveEdgeTable = Vec::new();
+    let mut get_idx = 0;
+
+    // Process each scanline
     for y in min_y..=max_y {
-        let mut intersections = Vec::new();
+        // Step 1: Add edges from GET to AET when scanline reaches edge.y_min
+        while get_idx < get.len() && get[get_idx].y_min == y {
+            aet.push(get[get_idx]);
+            get_idx += 1;
+        }
 
-        // Find all intersections with this scanline
-        for edge in edges {
-            // Check if edge spans this scanline using half-open interval
-            // Include lower endpoint, exclude upper endpoint to avoid double-counting vertices
-            let (y_min, y_max) = edge.y_bounds();
+        // Step 2: Remove edges from AET where scanline >= y_max
+        aet.retain(|e| y < e.y_max);
 
-            // Skip horizontal edges unless this is their scanline
-            if edge.is_horizontal() {
-                // Horizontal edges contribute intersections on their own scanline
-                if y == y_min {
-                    intersections.push(edge.x0 as f64);
-                    intersections.push(edge.x1 as f64);
+        // Step 3: Sort AET by current X position
+        aet.sort_by_key(|e| e.x);
+
+        // Step 4: Fill between pairs of X positions (even-odd rule)
+        for i in (0..aet.len()).step_by(2) {
+            if i + 1 < aet.len() {
+                let x_start = aet[i].x.max(0);
+                let x_end = aet[i + 1].x.min(width - 1);
+
+                for x in x_start..=x_end {
+                    bitmap.set(x, y, fill_value);
                 }
-                continue;
-            }
-
-            if y_min <= y && y < y_max {
-                // Calculate x intersection
-                // x = x0 + (y - y0) * (x1 - x0) / (y1 - y0)
-                let dy = edge.y1 - edge.y0;
-                let t = (y - edge.y0) as f64 / dy as f64;
-                let x = edge.x0 as f64 + t * (edge.x1 - edge.x0) as f64;
-                intersections.push(x);
             }
         }
 
-        // Sort intersections
-        intersections.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
-        // Fill between pairs of intersections (even-odd rule)
-        for i in (0..intersections.len()).step_by(2) {
-            if i + 1 < intersections.len() {
-                let x_start = intersections[i].ceil() as i32;
-                let x_end = intersections[i + 1].floor() as i32;
-
-                for x in x_start..=x_end {
-                    if x >= 0 && x < width {
-                        bitmap.set(x, y, fill_value);
-                    }
-                }
-            }
+        // Step 5: Update X positions for next scanline
+        for edge in &mut aet {
+            edge.advance_scanline();
         }
     }
 }
@@ -266,8 +398,173 @@ pub fn fill_polygon_from_tuples<B: Bitmap>(
     edges: &[(i32, i32, i32, i32)],
     fill_value: u8,
 ) {
-    let edge_objs: Vec<Edge> = edges.iter().map(|&e| Edge::from_tuple(e)).collect();
+    let edge_objs: Vec<InputEdge> = edges.iter().map(|&e| InputEdge::from_tuple(e)).collect();
     fill_polygon(bitmap, &edge_objs, fill_value);
+}
+
+/// Add edges to the Active Edge Table when the scanline reaches their y_min.
+///
+/// This function implements the traditional scanline fill algorithm's edge activation
+/// step. It moves edges from the Global Edge Table (GET) to the Active Edge Table (AET)
+/// when the current scanline reaches an edge's minimum Y coordinate.
+///
+/// # Arguments
+///
+/// * `aet` - Mutable reference to the Active Edge Table (edges will be added here)
+/// * `get` - Immutable reference to the Global Edge Table (source of edges to activate)
+/// * `scanline_y` - Current Y coordinate of the scanline
+/// * `get_index` - Mutable index tracking position in GET (enables sequential processing)
+///
+/// # Algorithm
+///
+/// 1. Iterate through GET starting from `get_index`
+/// 2. For each edge where `edge.y_min == scanline_y`, add it to the AET
+/// 3. Update `get_index` to skip processed edges in future calls
+///
+/// # Invariants
+///
+/// - The GET must be sorted by `y_min` for this to work correctly
+/// - Once an edge is added to AET, it should not be added again
+/// - The `get_index` parameter maintains state across scanline iterations
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use pdftract_core::render::scanline::{add_edges_to_aet_at_ymin, Edge, ActiveEdgeTable, GlobalEdgeTable};
+///
+/// let mut aet: ActiveEdgeTable = Vec::new();
+/// let mut get: GlobalEdgeTable = vec![
+///     Edge::from_endpoints(10, 5, 30, 25),  // y_min = 5
+///     Edge::from_endpoints(30, 25, 10, 25), // y_min = 25 (horizontal)
+///     Edge::from_endpoints(10, 25, 10, 5), // y_min = 5
+/// ];
+/// get.sort_by_key(|e| e.y_min); // Must be sorted by y_min
+///
+/// let mut get_index = 0;
+///
+/// // At scanline y=5, edges with y_min=5 are activated
+/// add_edges_to_aet_at_ymin(&mut aet, &get, 5, &mut get_index);
+/// assert_eq!(aet.len(), 2); // Two edges have y_min=5
+///
+/// // At scanline y=25, edges with y_min=25 are activated
+/// add_edges_to_aet_at_ymin(&mut aet, &get, 25, &mut get_index);
+/// assert_eq!(get_index, 3); // All edges processed
+/// ```
+pub fn add_edges_to_aet_at_ymin(
+    aet: &mut ActiveEdgeTable,
+    get: &GlobalEdgeTable,
+    scanline_y: i32,
+    get_index: &mut usize,
+) {
+    // Iterate through GET starting from current index
+    while *get_index < get.len() {
+        let edge = get[*get_index];
+
+        // If this edge's y_min is greater than current scanline,
+        // we've reached edges that activate later - stop here
+        if edge.y_min > scanline_y {
+            break;
+        }
+
+        // If this edge's y_min equals current scanline, add it to AET
+        // Also handle edges with y_min < scanline_y (shouldn't happen with sorted GET,
+        // but defensive programming ensures we don't miss edges)
+        if edge.y_min == scanline_y {
+            aet.push(edge);
+        }
+
+        // Move to next edge in GET
+        *get_index += 1;
+    }
+}
+
+/// Fill a polygon using the Active Edge Table (AET) algorithm.
+///
+/// This is the classic scanline fill algorithm that uses edge tables:
+/// - Global Edge Table (GET): all edges sorted by y_min
+/// - Active Edge Table (AET): edges intersecting current scanline
+///
+/// # Arguments
+///
+/// * `bitmap` - Mutable bitmap to draw into
+/// * `edges` - Slice of edges defining the polygon boundary
+/// * `fill_value` - Pixel value to use for filled pixels (0-255)
+///
+/// # Algorithm
+///
+/// 1. Build GET from input edges, sorted by y_min
+/// 2. Process each scanline from min_y to max_y
+/// 3. On each scanline:
+///    - Add edges from GET where scanline == edge.y_min to AET
+///    - Remove edges from AET where scanline >= edge.y_max
+///    - Update X positions in AET: x += slope (dx/dy)
+///    - Sort AET by X coordinate
+///    - Fill between pairs of X positions (even-odd rule)
+pub fn fill_polygon_aet<B: Bitmap>(bitmap: &mut B, edges: &[InputEdge], fill_value: u8) {
+    if edges.is_empty() {
+        return;
+    }
+
+    let width = bitmap.width();
+    let height = bitmap.height();
+
+    // Build GET: convert InputEdges to Edges, filter horizontals, sort by y_min
+    let mut get: Vec<Edge> = edges
+        .iter()
+        .filter(|e| !e.is_horizontal())
+        .map(|e| Edge::from_endpoints(e.x0, e.y0, e.x1, e.y1))
+        .collect();
+
+    if get.is_empty() {
+        return;
+    }
+
+    // Sort GET by y_min (topmost edges first)
+    get.sort_by_key(|e| e.y_min);
+
+    // Find y-bounds
+    let min_y = get.iter().map(|e| e.y_min).min().unwrap_or(0).max(0);
+    let max_y = get.iter().map(|e| e.y_max).max().unwrap_or(0).min(height - 1);
+
+    // AET starts empty
+    let mut aet: ActiveEdgeTable = Vec::new();
+
+    // Process each scanline
+    for scanline in min_y..=max_y {
+        // STEP 1: Add edges from GET to AET when scanline reaches y_min
+        // Move edges from GET where scanline == edge.y_min
+        let mut i = 0;
+        while i < get.len() {
+            if get[i].y_min == scanline {
+                aet.push(get.remove(i));
+            } else {
+                i += 1;
+            }
+        }
+
+        // STEP 2: Remove edges from AET where scanline >= y_max (edge has ended)
+        aet.retain(|e| scanline < e.y_max);
+
+        // STEP 3: Update X positions in AET for next scanline
+        for edge in &mut aet {
+            edge.advance_scanline();
+        }
+
+        // STEP 4: Sort AET by X coordinate (left-to-right)
+        aet.sort_by_key(|e| e.x);
+
+        // STEP 5: Fill between pairs of X positions (even-odd rule)
+        for i in (0..aet.len()).step_by(2) {
+            if i + 1 < aet.len() {
+                let x_start = aet[i].x.max(0);
+                let x_end = aet[i + 1].x.min(width - 1);
+
+                for x in x_start..=x_end {
+                    bitmap.set(x, scanline, fill_value);
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -331,8 +628,8 @@ mod tests {
     }
 
     #[test]
-    fn test_edge_creation() {
-        let edge = Edge::new(10, 5, 30, 25);
+    fn test_input_edge_creation() {
+        let edge = InputEdge::new(10, 5, 30, 25);
         assert_eq!(edge.x0, 10);
         assert_eq!(edge.y0, 5);
         assert_eq!(edge.x1, 30);
@@ -340,8 +637,8 @@ mod tests {
     }
 
     #[test]
-    fn test_edge_from_tuple() {
-        let edge = Edge::from_tuple((10, 5, 30, 25));
+    fn test_input_edge_from_tuple() {
+        let edge = InputEdge::from_tuple((10, 5, 30, 25));
         assert_eq!(edge.x0, 10);
         assert_eq!(edge.y0, 5);
         assert_eq!(edge.x1, 30);
@@ -349,23 +646,23 @@ mod tests {
     }
 
     #[test]
-    fn test_edge_is_horizontal() {
-        let horizontal = Edge::new(10, 5, 30, 5);
+    fn test_input_edge_is_horizontal() {
+        let horizontal = InputEdge::new(10, 5, 30, 5);
         assert!(horizontal.is_horizontal());
 
-        let vertical = Edge::new(10, 5, 10, 25);
+        let vertical = InputEdge::new(10, 5, 10, 25);
         assert!(!vertical.is_horizontal());
 
-        let diagonal = Edge::new(10, 5, 30, 25);
+        let diagonal = InputEdge::new(10, 5, 30, 25);
         assert!(!diagonal.is_horizontal());
     }
 
     #[test]
-    fn test_edge_y_bounds() {
-        let edge1 = Edge::new(10, 5, 30, 25);
+    fn test_input_edge_y_bounds() {
+        let edge1 = InputEdge::new(10, 5, 30, 25);
         assert_eq!(edge1.y_bounds(), (5, 25));
 
-        let edge2 = Edge::new(10, 25, 30, 5);
+        let edge2 = InputEdge::new(10, 25, 30, 5);
         assert_eq!(edge2.y_bounds(), (5, 25));
     }
 
@@ -390,7 +687,7 @@ mod tests {
     #[test]
     fn test_fill_polygon_empty_edges() {
         let mut bitmap = TestBitmap::white(32, 32);
-        let edges: Vec<Edge> = vec![];
+        let edges: Vec<InputEdge> = vec![];
         fill_polygon(&mut bitmap, &edges, 0);
         // Should not crash and bitmap should remain unchanged
         assert_eq!(bitmap.count_filled(0), 0);
@@ -402,9 +699,9 @@ mod tests {
 
         // Triangle with vertices (10, 5), (30, 25), (10, 25)
         let edges = vec![
-            Edge::new(10, 5, 30, 25),  // Diagonal edge
-            Edge::new(30, 25, 10, 25), // Horizontal bottom edge
-            Edge::new(10, 25, 10, 5), // Vertical left edge
+            InputEdge::new(10, 5, 30, 25),  // Diagonal edge
+            InputEdge::new(30, 25, 10, 25), // Horizontal bottom edge
+            InputEdge::new(10, 25, 10, 5), // Vertical left edge
         ];
 
         fill_polygon(&mut bitmap, &edges, 0);
@@ -426,10 +723,10 @@ mod tests {
 
         // Rectangle from (10, 10) to (20, 20)
         let edges = vec![
-            Edge::new(10, 10, 20, 10), // Top edge
-            Edge::new(20, 10, 20, 20), // Right edge
-            Edge::new(20, 20, 10, 20), // Bottom edge
-            Edge::new(10, 20, 10, 10), // Left edge
+            InputEdge::new(10, 10, 20, 10), // Top edge
+            InputEdge::new(20, 10, 20, 20), // Right edge
+            InputEdge::new(20, 20, 10, 20), // Bottom edge
+            InputEdge::new(10, 20, 10, 10), // Left edge
         ];
 
         fill_polygon(&mut bitmap, &edges, 0);
@@ -469,10 +766,10 @@ mod tests {
 
         // Edges extending beyond bitmap bounds
         let edges = vec![
-            Edge::new(-10, -10, 50, -10), // Top edge (out of bounds)
-            Edge::new(50, -10, 50, 50),   // Right edge (out of bounds)
-            Edge::new(50, 50, -10, 50),   // Bottom edge (out of bounds)
-            Edge::new(-10, 50, -10, -10), // Left edge (out of bounds)
+            InputEdge::new(-10, -10, 50, -10), // Top edge (out of bounds)
+            InputEdge::new(50, -10, 50, 50),   // Right edge (out of bounds)
+            InputEdge::new(50, 50, -10, 50),   // Bottom edge (out of bounds)
+            InputEdge::new(-10, 50, -10, -10), // Left edge (out of bounds)
         ];
 
         fill_polygon(&mut bitmap, &edges, 0);
@@ -496,10 +793,10 @@ mod tests {
 
         // Diamond shape with horizontal edges at top and bottom
         let edges = vec![
-            Edge::new(16, 5, 26, 15),  // Top-right diagonal
-            Edge::new(26, 15, 16, 25), // Bottom-right diagonal
-            Edge::new(16, 25, 6, 15),  // Bottom-left diagonal
-            Edge::new(6, 15, 16, 5),   // Top-left diagonal
+            InputEdge::new(16, 5, 26, 15),  // Top-right diagonal
+            InputEdge::new(26, 15, 16, 25), // Bottom-right diagonal
+            InputEdge::new(16, 25, 6, 15),  // Bottom-left diagonal
+            InputEdge::new(6, 15, 16, 5),   // Top-left diagonal
         ];
 
         fill_polygon(&mut bitmap, &edges, 0);
@@ -509,8 +806,54 @@ mod tests {
     }
 
     #[test]
-    fn test_edge_display() {
-        let edge = Edge::new(10, 5, 30, 25);
-        assert_eq!(format!("{}", edge), "Edge(10, 5, 30, 25)");
+    fn test_input_edge_display() {
+        let edge = InputEdge::new(10, 5, 30, 25);
+        assert_eq!(format!("{}", edge), "InputEdge(10, 5, 30, 25)");
+    }
+
+    #[test]
+    fn test_scanline_edge_from_endpoints() {
+        let edge = Edge::from_endpoints(10, 5, 30, 25);
+        assert_eq!(edge.x, 10);
+        assert_eq!(edge.y_min, 5);
+        assert_eq!(edge.y_max, 25);
+        assert_eq!(edge.dx, 20);
+        assert_eq!(edge.dy, 20);
+    }
+
+    #[test]
+    fn test_scanline_edge_is_horizontal() {
+        let horizontal = Edge::from_endpoints(10, 5, 30, 5);
+        assert!(horizontal.is_horizontal());
+
+        let vertical = Edge::from_endpoints(10, 5, 10, 25);
+        assert!(!vertical.is_horizontal());
+
+        let diagonal = Edge::from_endpoints(10, 5, 30, 25);
+        assert!(!diagonal.is_horizontal());
+    }
+
+    #[test]
+    fn test_scanline_edge_slope() {
+        let edge = Edge::from_endpoints(10, 5, 30, 25);
+        assert_eq!(edge.slope(), 1.0);
+
+        let horizontal = Edge::from_endpoints(10, 5, 30, 5);
+        assert!(horizontal.slope().is_nan());
+    }
+
+    #[test]
+    fn test_scanline_edge_advance_scanline() {
+        let mut edge = Edge::from_endpoints(10, 5, 30, 25);
+        let original_x = edge.x;
+        edge.advance_scanline();
+        // After advancing, x should increase by slope (1.0 in this case)
+        assert_eq!(edge.x, original_x + 1);
+    }
+
+    #[test]
+    fn test_scanline_edge_display() {
+        let edge = Edge::from_endpoints(10, 5, 30, 25);
+        assert_eq!(format!("{}", edge), "Edge(x=10, y_min=5, y_max=25, dx=20, dy=20)");
     }
 }
