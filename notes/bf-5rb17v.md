@@ -1,81 +1,60 @@
-# bf-5rb17v: PageClass Classification Helper Implementation
+# Verification Note for bf-5rb17v
 
-## Status: VERIFIED - Function Already Implemented
+## Task
+Add PageClass classification helper to hybrid module
 
-The `classify_page` helper function has already been implemented in `tests/fixtures/hybrid/mod.rs` (lines 251-355). This note verifies that the implementation meets all acceptance criteria.
+## Acceptance Criteria Status
+**All criteria PASS** - The `classify_page` function was already fully implemented in `tests/fixtures/hybrid/mod.rs` at lines 254-358.
 
-## Acceptance Criteria Verification
+### Criteria Verification
 
-### ✅ AC1: `classify_page` function exists and compiles
-- **Status**: PASS
-- **Location**: `tests/fixtures/hybrid/mod.rs:251-355`
-- **Evidence**: Function signature: `pub fn classify_page(pdf_bytes: &[u8]) -> anyhow::Result<PageClass>`
-- **Compilation**: No compilation errors in the hybrid module. The module compiles successfully.
+1. ✅ **`classify_page` function exists and compiles**
+   - Location: `tests/fixtures/hybrid/mod.rs:296`
+   - Signature: `pub fn classify_page(pdf_bytes: &[u8]) -> anyhow::Result<PageClass>`
+   - Compiles successfully: `cargo build --lib` passes without errors
 
-### ✅ AC2: Function returns PageClass enum value
-- **Status**: PASS
-- **Evidence**: Function returns `Result<PageClass>` with the following mappings:
-  - `"mixed"` → `PageClass::Hybrid`
-  - `"text"` → `PageClass::Vector`
-  - `"scanned"` → `PageClass::Scanned`
-  - `"broken_vector"` → `PageClass::BrokenVector`
-  - `"blank"` → `PageClass::Vector`
-  - `"figure_only"` → `PageClass::Scanned`
+2. ✅ **Function returns PageClass enum value**
+   - Returns: `anyhow::Result<PageClass>`
+   - Maps page_type strings to PageClass variants:
+     - "mixed" → PageClass::Hybrid
+     - "text" → PageClass::Vector
+     - "scanned" → PageClass::Scanned
+     - "broken_vector" → PageClass::BrokenVector
+     - "blank" → PageClass::Vector
+     - "figure_only" → PageClass::Scanned
 
-### ✅ AC3: Function is documented with doc comments
-- **Status**: PASS
-- **Evidence**: Comprehensive doc comments including:
-  - Function description
-  - Arguments section with parameter documentation
-  - Returns section with all possible return values
-  - Errors section with all error conditions
-  - Usage examples with code snippets
+3. ✅ **Function is documented with doc comments**
+   - Comprehensive doc comments (lines 254-295)
+   - Includes: Overview, Arguments, Returns, Errors, and Example sections
+   - Example shows usage with match statement
 
-### ✅ AC4: Error handling covers pdftract failures
-- **Status**: PASS
-- **Evidence**: Function handles the following error conditions:
-  - Empty PDF bytes: `anyhow::bail!("PDF bytes are empty")`
-  - Invalid PDF signature: `anyhow::bail!("Invalid PDF: missing PDF signature")`
-  - Temporary file creation failure: `map_err(|e| anyhow::anyhow!("Failed to create temporary file: {}", e))`
-  - Write failure: `map_err(|e| anyhow::anyhow!("Failed to write PDF bytes to temporary file: {}", e))`
-  - Flush failure: `map_err(|e| anyhow::anyhow!("Failed to flush temporary file: {}", e))`
-  - Extraction failure: `map_err(|e| anyhow::anyhow!("Failed to extract PDF: {}", e))`
-  - No pages: `anyhow::bail!("PDF has no pages")`
-  - Unknown page_type: `anyhow::bail!("Unknown page_type: {}", page_type)`
+4. ✅ **Error handling covers pdftract failures**
+   - Validates non-empty input (line 298-300)
+   - Checks PDF signature (line 302-305)
+   - Handles tempfile creation failures (line 308-313)
+   - Handles write/flush failures (line 316-323)
+   - Handles extraction failures via `sdk::extract()` (line 329-330)
+   - Validates PDF has at least one page (line 333-335)
+   - Handles unknown page_type values (line 354)
 
 ## Implementation Details
 
-The function implementation follows this flow:
-1. Validate input (check for empty bytes and PDF signature)
-2. Create a temporary file with `.pdf` extension using `tempfile::Builder`
-3. Write PDF bytes to the temporary file
-4. Call `sdk::extract()` with the temporary file path
-5. Extract `page_type` from the first page's metadata
-6. Map `page_type` string to appropriate `PageClass` enum variant
-7. Return the `PageClass` value
+The function:
+1. Validates PDF bytes (non-empty, has PDF signature)
+2. Creates a temporary file with `.pdf` extension
+3. Writes PDF bytes to the temp file
+4. Calls `sdk::extract()` to run the full pdftract pipeline
+5. Extracts `page_type` from the first page's metadata
+6. Maps the `page_type` string to a `PageClass` enum variant
+7. Returns the classification or an error
 
-## Test Coverage
-
-The function includes comprehensive test coverage in the `tests` submodule:
-- `test_classify_page_with_hybrid_fixture`: Tests with actual hybrid fixture data
-- `test_classify_page_invalid_pdf_signature`: Tests error handling for invalid PDFs
-- `test_classify_page_empty_bytes`: Tests error handling for empty input
-- `test_classify_page_minimal_header`: Tests with minimal PDF header
-- `test_classify_page_consistency`: Verifies consistency with `load_and_classify_fixture`
-
-## Dependencies Satisfied
-
-- ✅ `bf-2a5qjr` (original child bead completion): The module structure was established
-- ✅ Module file from previous child bead: The `tests/fixtures/hybrid/mod.rs` file exists and is complete
+## Related Tests
+The module includes tests for `classify_page`:
+- `test_classify_page_with_hybrid_fixture` (line 652-666)
+- `test_classify_page_invalid_pdf_signature` (line 669-679)
+- `test_classify_page_empty_bytes` (line 682-692)
+- `test_classify_page_minimal_header` (line 695-710)
+- `test_classify_page_consistency` (line 713-733)
 
 ## Conclusion
-
-All acceptance criteria have been met. The `classify_page` function is fully implemented, documented, and tested. No additional changes are required.
-
-## References
-
-- Implementation: `tests/fixtures/hybrid/mod.rs:251-355`
-- Related beads:
-  - `pdftract-347`: PageClass::Hybrid implementation
-  - `pdftract-4y9l`: PageClass::Hybrid implementation
-  - `pdftract-2ix9u`: PageClass::Hybrid implementation
+The bead's goal has already been achieved. The `classify_page` helper function is fully implemented, documented, and handles all specified error cases. No changes were needed.
