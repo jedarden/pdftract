@@ -187,6 +187,12 @@ fn test_extract_returns_typed_document() {
     );
     println!("✓ Document-level: {} page(s) found", page_count);
 
+    // Verify pages vector is not empty
+    assert!(
+        !extraction_result.pages.is_empty(),
+        "Document should contain pages"
+    );
+
     // === Page-Level Checks ===
     // These checks verify that each page has valid physical dimensions
     // and properly counts its associated spans.
@@ -386,6 +392,12 @@ fn test_extract_returns_typed_document() {
         page_count
     );
     println!("✓ Document contains {} page(s)", page_count);
+
+    // Verify pages vector is not empty
+    assert!(
+        !extraction_result.pages.is_empty(),
+        "Document should contain pages"
+    );
 
     // ===== PAGE-LEVEL CHECKS =====
     // These checks verify that each page has valid physical dimensions
