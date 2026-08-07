@@ -44,7 +44,6 @@ def test_python_sdk_types() -> None:
     # Type assertion: verify first page is Page instance
     assert isinstance(doc.pages[0], Page), \
         f"Expected Page, got {type(doc.pages[0]).__name__}"
-
     # Iterate through pages and verify Page attributes
     for page in doc.pages:
         # Verify page has spans attribute
