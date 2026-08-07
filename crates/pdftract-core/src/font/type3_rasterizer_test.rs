@@ -21,7 +21,7 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use crate::font::encoding::NamedEncoding;
-use crate::font::type3_rasterizer::{rasterize_type3_glyph, DocumentContext, StreamResolverFn};
+use crate::font::type3_rasterizer::{detect_char_proc_type, rasterize_type3_glyph, CharProcType, DocumentContext, StreamResolverFn};
 use crate::font::type3::Type3Font;
 use crate::graphics_state::Matrix3x3;
 use crate::parser::object::types::{intern, ObjRef, PdfDict, PdfObject};
@@ -720,4 +720,252 @@ fn test_aet_sorting_by_x_position() {
     assert_eq!(aet[0].x, 12, "After update, first edge should have X=12");
     assert_eq!(aet[1].x, 22, "After update, second edge should have X=22");
     assert_eq!(aet[2].x, 32, "After update, third edge should have X=32");
+}
+
+/// Tests for CharProcType detection.
+///
+/// This test module verifies that the `detect_char_proc_type` function
+/// correctly classifies PDF objects as Stream, Dict, or Other types.
+///
+/// # Test Coverage
+///
+/// - Dictionary detection (CharProcType::Dict)
+/// - Stream detection (CharProcType::Stream) - regression check
+/// - Other type fallback (CharProcType::Other) - regression check
+/// - Reference detection (CharProcType::Other with dereference message)
+///
+/// # References
+///
+/// - crates/pdftract-core/src/font/type3_rasterizer.rs:38 - CharProcType enum
+/// - crates/pdftract-core/src/font/type3_rasterizer.rs:80 - detect_char_proc_type function
+
+/// Test that dictionary PdfObjects are correctly classified as Dict.
+///
+/// This test verifies that passing a dictionary PdfObject to
+/// detect_char_proc_type returns CharProcType::Dict, not CharProcType::Other.
+#[test]
+fn test_detect_char_proc_type_dict() {
+    // Create a dictionary PdfObject
+    let mut dict = PdfDict::new();
+    dict.insert(intern("/Type"), PdfObject::Name(intern("/Font")));
+    dict.insert(intern("/Subtype"), PdfObject::Name(intern("/Type3")));
+    let dict_obj = PdfObject::Dict(Box::new(dict));
+
+    // Classify the object
+    let result = detect_char_proc_type(&dict_obj);
+
+    // Verify Dict is returned (not Other)
+    assert_eq!(result, CharProcType::Dict, "Dictionary object should be classified as Dict");
+}
+
+/// Test that stream PdfObjects are still classified as Stream.
+///
+/// This test is a regression check to ensure that adding Dict detection
+/// did not break existing Stream detection.
+#[test]
+fn test_detect_char_proc_type_stream() {
+    // Create a stream PdfObject with a dictionary
+    let mut stream_dict = PdfDict::new();
+    stream_dict.insert(intern("/Length"), PdfObject::Integer(100));
+
+    // Create a PdfStream with offset 0 and length hint 100
+    let stream = crate::parser::object::types::PdfStream::new(stream_dict, 0, Some(100));
+    let stream_obj = PdfObject::Stream(Box::new(stream));
+
+    // Classify the object
+    let result = detect_char_proc_type(&stream_obj);
+
+    // Verify Stream is returned (regression check)
+    assert_eq!(result, CharProcType::Stream, "Stream object should still be classified as Stream");
+}
+
+/// Test that unrecognized types fall back to Other.
+///
+/// This test is a regression check to ensure that the Other fallback
+/// still works for types that are neither Stream nor Dict.
+#[test]
+fn test_detect_char_proc_type_other_integer() {
+    // Create an integer PdfObject (unrecognized type for CharProcs)
+    let int_obj = PdfObject::Integer(42);
+
+    // Classify the object
+    let result = detect_char_proc_type(&int_obj);
+
+    // Verify Other is returned with descriptive name
+    match result {
+        CharProcType::Other(name) => {
+            assert_eq!(name, "integer", "Integer should be classified as Other with name 'integer'");
+        }
+        _ => panic!("Integer should be classified as Other, got {:?}", result),
+    }
+}
+
+/// Test that string PdfObjects are classified as Other.
+///
+/// This test verifies the Other fallback works for string objects.
+#[test]
+fn test_detect_char_proc_type_other_string() {
+    // Create a string PdfObject
+    let string_obj = PdfObject::String(Box::new(b"test string".to_vec()));
+
+    // Classify the object
+    let result = detect_char_proc_type(&string_obj);
+
+    // Verify Other is returned with descriptive name
+    match result {
+        CharProcType::Other(name) => {
+            assert_eq!(name, "string", "String should be classified as Other with name 'string'");
+        }
+        _ => panic!("String should be classified as Other, got {:?}", result),
+    }
+}
+
+/// Test that name PdfObjects are classified as Other.
+///
+/// This test verifies the Other fallback works for name objects.
+#[test]
+fn test_detect_char_proc_type_other_name() {
+    // Create a name PdfObject
+    let name_obj = PdfObject::Name(intern("/TestName"));
+
+    // Classify the object
+    let result = detect_char_proc_type(&name_obj);
+
+    // Verify Other is returned with descriptive name
+    match result {
+        CharProcType::Other(name) => {
+            assert_eq!(name, "name", "Name should be classified as Other with name 'name'");
+        }
+        _ => panic!("Name should be classified as Other, got {:?}", result),
+    }
+}
+
+/// Test that array PdfObjects are classified as Other.
+///
+/// This test verifies the Other fallback works for array objects.
+#[test]
+fn test_detect_char_proc_type_other_array() {
+    // Create an array PdfObject
+    let array_obj = PdfObject::Array(Box::new(vec![
+        PdfObject::Integer(1),
+        PdfObject::Integer(2),
+        PdfObject::Integer(3),
+    ]));
+
+    // Classify the object
+    let result = detect_char_proc_type(&array_obj);
+
+    // Verify Other is returned with descriptive name
+    match result {
+        CharProcType::Other(name) => {
+            assert_eq!(name, "array", "Array should be classified as Other with name 'array'");
+        }
+        _ => panic!("Array should be classified as Other, got {:?}", result),
+    }
+}
+
+/// Test that boolean PdfObjects are classified as Other.
+///
+/// This test verifies the Other fallback works for boolean objects.
+#[test]
+fn test_detect_char_proc_type_other_boolean() {
+    // Create boolean PdfObjects
+    let true_obj = PdfObject::Bool(true);
+    let false_obj = PdfObject::Bool(false);
+
+    // Classify true
+    let result_true = detect_char_proc_type(&true_obj);
+    match result_true {
+        CharProcType::Other(name) => {
+            assert_eq!(name, "boolean", "Boolean true should be classified as Other with name 'boolean'");
+        }
+        _ => panic!("Boolean true should be classified as Other, got {:?}", result_true),
+    }
+
+    // Classify false
+    let result_false = detect_char_proc_type(&false_obj);
+    match result_false {
+        CharProcType::Other(name) => {
+            assert_eq!(name, "boolean", "Boolean false should be classified as Other with name 'boolean'");
+        }
+        _ => panic!("Boolean false should be classified as Other, got {:?}", result_false),
+    }
+}
+
+/// Test that null PdfObjects are classified as Other.
+///
+/// This test verifies the Other fallback works for null objects.
+#[test]
+fn test_detect_char_proc_type_other_null() {
+    // Create a null PdfObject
+    let null_obj = PdfObject::Null;
+
+    // Classify the object
+    let result = detect_char_proc_type(&null_obj);
+
+    // Verify Other is returned with descriptive name
+    match result {
+        CharProcType::Other(name) => {
+            assert_eq!(name, "null", "Null should be classified as Other with name 'null'");
+        }
+        _ => panic!("Null should be classified as Other, got {:?}", result),
+    }
+}
+
+/// Test that reference PdfObjects are classified as Other with type name.
+///
+/// This test verifies that references are detected and classified as "reference"
+/// (full dereferencing requires detect_char_proc_type_with_context).
+#[test]
+fn test_detect_char_proc_type_reference() {
+    // Create a reference PdfObject
+    let ref_obj = PdfObject::Ref(ObjRef::new(5, 0));
+
+    // Classify the object
+    let result = detect_char_proc_type(&ref_obj);
+
+    // Verify Other is returned with "reference" type name
+    match result {
+        CharProcType::Other(name) => {
+            assert_eq!(name, "reference",
+                "Reference should be classified as Other with type name 'reference'");
+        }
+        _ => panic!("Reference should be classified as Other, got {:?}", result),
+    }
+}
+
+/// Test that real PdfObjects are classified as Other.
+///
+/// This test verifies the Other fallback works for real number objects.
+#[test]
+fn test_detect_char_proc_type_other_real() {
+    // Create a real PdfObject
+    let real_obj = PdfObject::Real(3.14159);
+
+    // Classify the object
+    let result = detect_char_proc_type(&real_obj);
+
+    // Verify Other is returned with descriptive name
+    match result {
+        CharProcType::Other(name) => {
+            assert_eq!(name, "real", "Real should be classified as Other with name 'real'");
+        }
+        _ => panic!("Real should be classified as Other, got {:?}", result),
+    }
+}
+
+/// Test that empty dictionaries are correctly classified as Dict.
+///
+/// This test verifies that even empty dictionaries are recognized as Dict type.
+#[test]
+fn test_detect_char_proc_type_empty_dict() {
+    // Create an empty dictionary PdfObject
+    let empty_dict = PdfDict::new();
+    let dict_obj = PdfObject::Dict(Box::new(empty_dict));
+
+    // Classify the object
+    let result = detect_char_proc_type(&dict_obj);
+
+    // Verify Dict is returned
+    assert_eq!(result, CharProcType::Dict, "Empty dictionary should still be classified as Dict");
 }
