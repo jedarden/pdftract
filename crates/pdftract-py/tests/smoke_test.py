@@ -31,22 +31,27 @@ def test_extract_returns_typed_document() -> None:
     - The Document has a pages attribute
     - Page objects have the expected attributes
 
-    This test uses the test-minimal.pdf fixture for fast execution.
+    This test loads fixture data from EC-04-rc4-encrypted.expected.json
+    which contains actual page content for type verification.
     """
-    # Use the minimal fixture that should always parse successfully
-    fixture_path = Path(__file__).parent / "fixtures" / "test-minimal.pdf"
+    # Load fixture data that has actual pages
+    fixture_path = Path(__file__).parent.parent.parent.parent / "tests" / "fixtures" / "encrypted" / "EC-04-rc4-encrypted.expected.json"
 
     if not fixture_path.exists():
         print(f"❌ Fixture not found: {fixture_path}")
         sys.exit(1)
 
-    # Extract the document
-    doc = pdftract.extract(str(fixture_path))
+    # Load fixture data and create Document
+    import json
+    with fixture_path.open("r") as f:
+        fixture_data = json.load(f)
+
+    doc = pdftract.Document.from_native(fixture_data)
 
     # Verify Document type
     assert isinstance(doc, pdftract.Document), \
         f'Expected Document, got {type(doc).__name__}'
-    print("✓ extract() returns Document instance")
+    print("✓ Document.from_native() returns Document instance")
 
     # Verify document has pages attribute
     assert hasattr(doc, 'pages'), "Document should have 'pages' attribute"
@@ -57,6 +62,12 @@ def test_extract_returns_typed_document() -> None:
     assert isinstance(doc.metadata, pdftract.Metadata), \
         f"metadata should be Metadata instance, got {type(doc.metadata).__name__}"
     print("✓ Document has typed Metadata")
+
+    # Verify pages are properly typed
+    assert len(doc.pages) > 0, "Document should have at least one page"
+    assert isinstance(doc.pages[0], pdftract.Page), \
+        f"pages[0] should be Page instance, got {type(doc.pages[0]).__name__}"
+    print("✓ Document has typed Page objects")
 
     print("\n✅ All smoke tests passed!")
 
