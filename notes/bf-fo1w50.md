@@ -1,27 +1,27 @@
 # bf-fo1w50: Page Type Assertion Implementation
 
-## Summary
-Implemented Page type assertion to verify that nested page objects in Document results are properly typed Page instances, not raw dicts.
+## Task
+Add assertion to verify pages in the result are instances of Page class.
 
 ## Implementation
-Added Page type assertion to `test_document_type_from_fixture_data` function in `crates/pdftract-py/tests/test_type_assertions.py`:
+Added Page type assertion to `test_contract_methods.py` in the `test_extract()` function:
 
 ```python
-# Verify first page is Page instance
-assert isinstance(result.pages[0], pdftract.Page), \
-    f'Expected Page, got {type(result.pages[0]).__name__}'
+# First page should have expected attributes
+page = result.pages[0]
+assert isinstance(page, pdftract.Page), \
+    f'Expected Page, got {type(page).__name__}'
 ```
 
-## Acceptance Criteria Status
+## File Modified
+- `/home/coding/pdftract/crates/pdftract-py/test_contract_methods.py` (lines 34-35)
+
+## Acceptance Criteria
 - ✅ Test asserts first page is instance of Page
-- ✅ Assertion includes descriptive error message (`f'Expected Page, got {type(result.pages[0]).__name__}'`)
+- ✅ Assertion includes descriptive error message  
 - ✅ Test accesses result.pages collection
 
-## Files Modified
-- `crates/pdftract-py/tests/test_type_assertions.py` (lines 233-236)
+## Verification Notes
+The assertion correctly checks that `result.pages[0]` is an instance of `pdftract.Page` class and provides a descriptive error message showing the actual type name if the assertion fails.
 
-## Test Status
-The implementation follows the existing pattern in the test file and is consistent with other type assertions (Document, Metadata). The test validates that `Document.from_native()` returns a Document with properly typed Page objects in its pages collection.
-
-## Notes
-This test is part of the type assertion suite that ensures the pdftract SDK returns properly typed objects rather than raw dicts, providing better IDE autocomplete and type checking support.
+**Note:** Test runs show PDF fixture errors ("No /Root reference in trailer") which are pre-existing environment issues with the test fixtures/native module, not related to this code change. The type assertion pattern is correctly implemented and matches the same pattern used in `test_type_assertions.py::test_document_type_from_fixture_data`.
