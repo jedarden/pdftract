@@ -84,7 +84,7 @@ def test_extract_returns_typed_document():
     # Verify spans are typed
     if len(page.spans) > 0:
         span = page.spans[0]
-        assert isinstance(span, pdftract.Span), f"Expected Span, got {type(span)}"
+        assert isinstance(span, Span), f'Expected Span, got {type(span).__name__}'
         assert hasattr(span, 'text'), "Span should have 'text' attribute"
         assert hasattr(span, 'font'), "Span should have 'font' attribute"
         assert hasattr(span, 'size'), "Span should have 'size' attribute"
