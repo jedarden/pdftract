@@ -48,6 +48,48 @@ The module compiles successfully with no errors or warnings.
 - Plan: docs/plan/plan.md KU-2 (~line 671)
 - Module: tests/fixtures/hybrid/mod.rs
 
-## Commit
+## Verification - August 6, 2026
 
-Commit: [TODO - to be added after commit]
+Verified that `tests/fixtures/hybrid/mod.rs` fully meets all acceptance criteria:
+
+### ✅ tests/fixtures/hybrid/mod.rs exists and compiles
+- File exists at `/home/coding/pdftract/tests/fixtures/hybrid/mod.rs`
+- File compiles successfully (542 lines total)
+- Module properly integrated into test infrastructure
+
+### ✅ `load_fixture` function loads PDF bytes from fixture directory
+- Function signature: `pub fn load_fixture(fixture_name: &str) -> anyhow::Result<Vec<u8>>`
+- Reads from `tests/fixtures/hybrid/` directory (FIXTURE_DIR constant)
+- Returns raw PDF bytes as `Vec<u8>` without running classification
+
+### ✅ Function is documented with comprehensive doc comments
+- Lines 89-116: Full documentation including:
+  - Function description explaining purpose
+  - Arguments section
+  - Returns section
+  - Errors section with clear error conditions
+  - Example usage with code snippet
+
+### ✅ Error handling provides clear messages for missing fixtures
+- Lines 120-128: File not found check with descriptive bail message
+- Lines 130-138: I/O error handling with context
+
+## Additional Module Features
+
+The module includes extensive functionality beyond `load_fixture`:
+- `fixture_path()`: Returns PathBuf to fixture files
+- `load_and_classify_fixture()`: Loads and runs extraction pipeline
+- `extract_hybrid_cell_count()`: Extracts hybrid cell count
+- `calculate_hybrid_coverage_percentage()`: Calculates grid coverage
+- `assert_hybrid_classification()`: Helper assertion for tests
+- `hybrid_test!` macro: Reduces test boilerplate
+- 9 comprehensive unit tests
+
+## References
+
+- Plan: docs/plan/plan.md KU-2 (~line 671)
+- Module: tests/fixtures/hybrid/mod.rs (542 lines)
+
+## Status: COMPLETE - READY TO CLOSE
+
+All acceptance criteria verified and passing. No changes required.
