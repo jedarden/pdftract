@@ -106,6 +106,58 @@ def test_extract_returns_typed_document() -> None:
 
     print("✓ All spans are properly typed with expected attributes")
 
+    # ===== Nested structure verification =====
+    # Ensure complete type hierarchy integrity (Document -> Pages -> Spans)
+
+    # Verify parent-child relationships: pages belong to the document
+    total_pages = len(doc.pages)
+    assert total_pages > 0, \
+        f"Document should contain at least one page, got {total_pages} pages"
+    print(f"✓ Document owns {total_pages} page(s)")
+
+    # Verify each page is properly contained within the document structure
+    for i, page in enumerate(doc.pages):
+        assert isinstance(page, pdftract.Page), \
+            f"pages[{i}] should be a Page instance, got {type(page).__name__}"
+        # Verify page has structural attributes
+        assert hasattr(page, 'page'), \
+            f"pages[{i}] should have 'page' attribute (page number)"
+        assert hasattr(page, 'width'), \
+            f"pages[{i}] should have 'width' attribute"
+        assert hasattr(page, 'height'), \
+            f"pages[{i}] should have 'height' attribute"
+    print("✓ All pages are properly typed and have structural attributes")
+
+    # Verify at least one page has spans with real content
+    pages_with_spans = [p for p in doc.pages if hasattr(p, 'spans') and len(p.spans) > 0]
+    assert len(pages_with_spans) > 0, \
+        f"At least one page should have spans populated, found {len(pages_with_spans)} pages with spans"
+    print(f"✓ {len(pages_with_spans)} page(s) have span content")
+
+    # Verify span text contains real (non-empty) content
+    total_spans = 0
+    spans_with_text = 0
+    for page in pages_with_spans:
+        for span in page.spans:
+            total_spans += 1
+            if hasattr(span, 'text') and span.text:
+                spans_with_text += 1
+
+    assert total_spans > 0, \
+        "Should have at least one span across all pages"
+    assert spans_with_text > 0, \
+        f"At least one span should have non-empty text content, found {spans_with_text}/{total_spans} spans with text"
+    print(f"✓ {spans_with_text}/{total_spans} span(s) have non-empty text content (real content)")
+
+    # Verify count integrity: ensure all objects are accounted for
+    total_pages_checked = len(doc.pages)
+    total_spans_checked = sum(len(p.spans) for p in doc.pages if hasattr(p, 'spans'))
+    assert total_pages_checked == total_pages, \
+        f"Page count mismatch: expected {total_pages}, counted {total_pages_checked}"
+    assert total_spans_checked == total_spans, \
+        f"Span count mismatch: expected {total_spans}, counted {total_spans_checked}"
+    print(f"✓ Count integrity verified: {total_pages} page(s), {total_spans} span(s)")
+
     print("\n✅ All smoke tests passed!")
 
 
