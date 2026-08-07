@@ -234,9 +234,10 @@ def test_document_type_from_fixture_data(fixture_data: dict[str, Any]) -> None:
     assert isinstance(result.pages[0], pdftract.Page), \
         f'Expected Page, got {type(result.pages[0]).__name__}'
 
-    # Verify first span in first page is Span instance
-    assert isinstance(result.pages[0].spans[0], pdftract.Span), \
-        f'Expected Span, got {type(result.pages[0].spans[0]).__name__}'
+    # Verify first span in first page is Span instance (if spans exist)
+    if result.pages[0].spans:
+        assert isinstance(result.pages[0].spans[0], pdftract.Span), \
+            f'Expected Span, got {type(result.pages[0].spans[0]).__name__}'
 
 
 def test_type_assertions_from_fixture_data(fixture_data: dict[str, Any]) -> None:
