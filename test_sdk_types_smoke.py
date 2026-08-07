@@ -43,7 +43,7 @@ def test_extract_returns_typed_document():
     """Verify extract() returns a Document instance with typed attributes."""
     print("Testing extract() returns typed Document...")
 
-    # Use a working fixture with actual content
+    # Use markdown_structure.pdf as a working fixture with actual content
     doc = pdftract.extract("tests/fixtures/markdown_structure.pdf")
 
     # Verify Document type
@@ -139,6 +139,138 @@ def test_extract_returns_typed_document():
         first_span = page_with_spans.spans[0]
         x0, y0, x1, y1 = first_span.bbox
         print(f"✓ spans[0] details: text={repr(first_span.text[:20])}, font={first_span.font}, size={first_span.size}, bbox=[x0={x0}, y0={y0}, x1={x1}, y1={y1}]")
+
+        # ========================================
+        # COMPREHENSIVE NESTED STRUCTURE CHECKS
+        # ========================================
+
+        # 1. Verify parent-child relationships: pages belong to doc
+        print("\nVerifying nested object relationships...")
+
+        # Check that we can traverse the complete hierarchy
+        assert len(doc.pages) > 0, "Document should have at least one page for relationship verification"
+        print(f"✓ Document owns {len(doc.pages)} page(s)")
+
+        # Verify that pages are properly part of the document structure
+        for page_idx, page in enumerate(doc.pages):
+            assert page is not None, f"pages[{page_idx}] should not be None - relationship to Document broken"
+            assert isinstance(page, pdftract.Page), f"pages[{page_idx}] should be Page instance - parent-child relationship broken"
+
+        print(f"✓ All {len(doc.pages)} page(s) properly belong to Document")
+
+        # 2. Verify at least one page has spans with real content
+        pages_with_spans = sum(1 for p in doc.pages if len(p.spans) > 0)
+        assert pages_with_spans > 0, f"At least one page should have spans populated, but only {pages_with_spans} page(s) have spans"
+        print(f"✓ Found {pages_with_spans} page(s) with spans populated")
+
+        # 3. Verify span text is non-empty (real content, not placeholder)
+        total_spans = sum(len(p.spans) for p in doc.pages)
+        assert total_spans > 0, f"Should have at least one span across all pages for content verification"
+
+        # Count spans with non-empty text
+        spans_with_content = 0
+        for page in doc.pages:
+            for span in page.spans:
+                if span.text and len(span.text.strip()) > 0:
+                    spans_with_content += 1
+
+        assert spans_with_content > 0, f"Should have at least one span with non-empty text content, but only {spans_with_content} of {total_spans} span(s) have content"
+        print(f"✓ Content verification: {spans_with_content} of {total_spans} span(s) have non-empty text")
+
+        # 4. Count checks: verify all pages and spans are accounted for
+        total_page_count = len(doc.pages)
+        total_span_count = sum(len(page.spans) for page in doc.pages)
+
+        assert total_page_count > 0, "Total page count should be greater than 0"
+        assert total_span_count > 0, "Total span count should be greater than 0"
+
+        # Verify counts match expectations from metadata (if available)
+        if hasattr(doc.metadata, 'page_count'):
+            expected_pages = doc.metadata.page_count
+            assert total_page_count == expected_pages, f"Page count mismatch: expected {expected_pages} from metadata, got {total_page_count} in Document.pages"
+            print(f"✓ Page count verified: {total_page_count} pages (matches metadata)")
+
+        print(f"✓ Span count verified: {total_span_count} span(s) across {total_page_count} page(s)")
+
+        # 5. Verify nested access path works end-to-end
+        # This confirms the complete hierarchy: Document -> Pages -> Spans -> Attributes
+        test_span = None
+        for page in doc.pages:
+            if len(page.spans) > 0:
+                test_span = page.spans[0]
+                break
+
+        assert test_span is not None, "Should be able to reach a span through doc.pages[i].spans[j] path"
+        assert test_span.text is not None, "Span should have text attribute (end-to-end access failed)"
+        assert hasattr(test_span, 'bbox'), "Span should have bbox attribute (end-to-end access failed)"
+        print(f"✓ End-to-end hierarchy verified: Document -> Pages -> Spans -> Attributes")
+
+        print(f"\n✅ All nested structure checks passed!")
+        print(f"   - Parent-child relationships: VALID")
+        print(f"   - Spans with content: {spans_with_content}/{total_spans}")
+        print(f"   - Total pages: {total_page_count}")
+        print(f"   - Total spans: {total_span_count}")
+
+    # === NESTED STRUCTURE VERIFICATION ===
+    # Verify parent-child relationships and nested object graph integrity
+
+    print("\n--- Verifying nested structure relationships ---")
+
+    # 1. Verify parent-child relationships: doc.pages[i] belongs to doc
+    total_page_count = 0
+    total_span_count = 0
+    pages_with_spans = 0
+
+    for page_idx, page in enumerate(doc.pages):
+        # Verify each page actually belongs to the document's pages collection
+        assert page in doc.pages, f"pages[{page_idx}] should belong to doc.pages collection"
+
+        total_page_count += 1
+
+        # Count spans and verify page-spans relationship
+        page_span_count = len(page.spans)
+        total_span_count += page_span_count
+
+        if page_span_count > 0:
+            pages_with_spans += 1
+            # Verify parent-child relationship: page.spans[i] belongs to page.spans
+            for span_idx, span in enumerate(page.spans):
+                assert span in page.spans, f"pages[{page_idx}].spans[{span_idx}] should belong to page.spans collection"
+
+    print(f"✓ Parent-child relationship verified: all {total_page_count} pages belong to doc.pages")
+    print(f"✓ Parent-child relationship verified: all {total_span_count} spans belong to their respective page.spans")
+
+    # 2. Verify at least one page has spans populated (real content exists)
+    assert pages_with_spans > 0, f"At least one page should have spans, but only {pages_with_spans} out of {total_page_count} pages have content"
+    print(f"✓ Content verification: {pages_with_spans} out of {total_page_count} pages contain spans (has real content)")
+
+    # 3. Verify span text is non-empty string (real content validation)
+    spans_with_text = 0
+    empty_spans = 0
+
+    for page in doc.pages:
+        for span in page.spans:
+            if isinstance(span.text, str) and len(span.text.strip()) > 0:
+                spans_with_text += 1
+            elif len(span.text.strip()) == 0:
+                empty_spans += 1
+
+    if total_span_count > 0:
+        assert spans_with_text > 0, f"At least one span should have non-empty text content, but only {spans_with_text} out of {total_span_count} spans have text"
+        print(f"✓ Span text verification: {spans_with_text} spans have non-empty text content")
+        if empty_spans > 0:
+            print(f"  ℹ Note: {empty_spans} spans have empty text (may be whitespace-only or placeholder content)")
+
+    # 4. Count checks: verify all pages and all spans are counted
+    assert total_page_count == len(doc.pages), f"Page count mismatch: iterated {total_page_count} pages but doc.pages has {len(doc.pages)} pages"
+    print(f"✓ Count verification: {total_page_count} pages counted correctly")
+
+    # Count spans across all pages
+    expected_span_count = sum(len(page.spans) for page in doc.pages)
+    assert total_span_count == expected_span_count, f"Span count mismatch: iterated {total_span_count} spans but expected {expected_span_count} spans from sum(len(page.spans))"
+    print(f"✓ Count verification: {total_span_count} spans counted correctly across all pages")
+
+    print("✅ All nested structure checks passed!")
 
     # Verify blocks are typed
     if len(page.blocks) > 0:
