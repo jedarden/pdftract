@@ -227,7 +227,7 @@ def test_type_assertions_from_fixture_data():
     doc = pdftract.extract(pdf_path)
 
     # Add isinstance assertion for Document type with clear error message
-    assert isinstance(doc, pdftract.Document), f'Expected Document, got {type(doc).__name__}'
+    assert isinstance(doc, Document), f'Expected Document, got {type(doc).__name__}'
 
     print("✓ Document type assertion passed")
     print("✅ Document type assertion test passed!")
