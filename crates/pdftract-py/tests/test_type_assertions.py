@@ -31,7 +31,7 @@ def fixture_data() -> dict[str, Any]:
         Dictionary containing the fixture data with pages, metadata,
         and other parsed content.
     """
-    fixture_path = Path(__file__).parent.parent.parent / "tests" / "fixtures" / "encrypted" / "EC-04-rc4-encrypted.expected.json"
+    fixture_path = Path(__file__).parent.parent.parent.parent / "tests" / "fixtures" / "encrypted" / "EC-04-rc4-encrypted.expected.json"
 
     if not fixture_path.exists():
         pytest.skip(f"Fixture file not found: {fixture_path}")
