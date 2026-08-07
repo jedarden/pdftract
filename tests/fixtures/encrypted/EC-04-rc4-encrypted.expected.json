@@ -8,11 +8,19 @@
     "block_count": 0,
     "cache_age_seconds": null,
     "cache_status": "skipped",
-    "page_count": 0,
+    "page_count": 1,
     "reading_order_algorithm": "xy_cut",
     "span_count": 0
   },
-  "pages": [],
+  "pages": [
+    {
+      "width": 612,
+      "height": 792,
+      "blocks": [],
+      "page_number": 0,
+      "rotation": 0
+    }
+  ],
   "schema_version": "1.0",
   "signatures": [],
   "threads": []
