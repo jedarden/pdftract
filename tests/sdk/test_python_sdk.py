@@ -38,6 +38,9 @@ def test_python_sdk_types() -> None:
     # Verify document has pages
     assert hasattr(doc, "pages"), "Document should have pages attribute"
 
+    # Verify doc.pages is not empty
+    assert doc.pages, "Document should contain pages"
+
     # Iterate through pages and verify Page attributes
     for page in doc.pages:
         # Verify page has spans attribute
