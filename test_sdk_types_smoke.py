@@ -74,12 +74,12 @@ def test_extract_returns_typed_document():
     print(f"✓ Document has {len(doc.pages)} page(s)")
 
     # Verify first page is Page instance
-    assert isinstance(doc.pages[0], Page), f'Expected Page, got {type(doc.pages[0]).__name__}'
+    assert isinstance(doc.pages[0], Page), f'Expected Page type, got {type(doc.pages[0]).__name__}'
     print(f"✓ First page is Page instance")
 
     # Verify ALL pages are Page instances with expected attributes
     for page_idx, page in enumerate(doc.pages):
-        assert isinstance(page, pdftract.Page), f"pages[{page_idx}] Expected Page, got {type(page)}"
+        assert isinstance(page, pdftract.Page), f'Expected Page type, got {type(page).__name__}'
 
         # Verify Page has expected attributes: spans, width, height
         assert hasattr(page, 'spans'), f"pages[{page_idx}] should have 'spans' attribute"
@@ -165,7 +165,7 @@ def test_extract_returns_typed_document():
         # Verify that pages are properly part of the document structure
         for page_idx, page in enumerate(doc.pages):
             assert page is not None, f"pages[{page_idx}] should not be None - relationship to Document broken"
-            assert isinstance(page, pdftract.Page), f"pages[{page_idx}] should be Page instance - parent-child relationship broken"
+            assert isinstance(page, pdftract.Page), f'Expected Page type, got {type(page).__name__}'
 
         print(f"✓ All {len(doc.pages)} page(s) properly belong to Document")
 
@@ -305,7 +305,7 @@ def test_extract_stream_returns_typed_pages():
 
     try:
         for page in pdftract.extract_stream("tests/fixtures/remote_100page.pdf"):
-            assert isinstance(page, pdftract.Page), f"Expected Page, got {type(page)}"
+            assert isinstance(page, pdftract.Page), f'Expected Page type, got {type(page).__name__}'
             assert hasattr(page, 'page'), "Page should have 'page' attribute"
             assert hasattr(page, 'spans'), "Page should have 'spans' attribute"
             print("✓ extract_stream() yields Page instances")
@@ -455,7 +455,7 @@ def test_pdf_document_with_fixture_validation():
     # If we have pages, verify page types
     if len(doc.pages) > 0:
         page = doc.pages[0]
-        assert isinstance(page, pdftract.Page), f"Expected Page, got {type(page)}"
+        assert isinstance(page, pdftract.Page), f'Expected Page type, got {type(page).__name__}'
         print("✓ First page is Page instance")
 
         # Verify page attributes
