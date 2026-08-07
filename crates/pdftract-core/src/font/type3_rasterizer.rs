@@ -4509,4 +4509,67 @@ mod tests {
 
         assert_eq!(edge_float_x.intersection_x(), 7, "Edge with x=7 should return intersection_x=7");
     }
+
+    #[test]
+    fn test_aet_intersection_collection_loop() {
+        // Test that AET intersection collection loop works correctly
+        // Verifies acceptance criterion: iterate through AET, apply rounding, collect into Vec<i32>
+
+        // Create a mock Active Edge Table (AET) with multiple edges
+        let mut aet: Vec<Edge> = Vec::new();
+
+        // Edge 1: x=10 (integer coordinate)
+        aet.push(Edge {
+            x: 10,
+            y_min: 0,
+            y_max: 10,
+            dx: 5,
+            dy: 10,
+        });
+
+        // Edge 2: x=25 (integer coordinate)
+        aet.push(Edge {
+            x: 25,
+            y_min: 5,
+            y_max: 15,
+            dx: 10,
+            dy: 10,
+        });
+
+        // Edge 3: x=-3 (negative coordinate)
+        aet.push(Edge {
+            x: -3,
+            y_min: 8,
+            y_max: 18,
+            dx: -5,
+            dy: 10,
+        });
+
+        // Edge 4: x=100 (larger coordinate)
+        aet.push(Edge {
+            x: 100,
+            y_min: 0,
+            y_max: 20,
+            dx: 0,
+            dy: 20,
+        });
+
+        // Test the collection loop: iterate through AET, apply rounding, collect into Vec<i32>
+        let intersections: Vec<i32> = aet.iter().map(|edge| edge.intersection_x()).collect();
+
+        // Verify the output contains all rounded x-coordinates in AET order
+        assert_eq!(intersections.len(), 4, "Should collect 4 intersection points");
+        assert_eq!(intersections[0], 10, "First edge x=10 should round to 10");
+        assert_eq!(intersections[1], 25, "Second edge x=25 should round to 25");
+        assert_eq!(intersections[2], -3, "Third edge x=-3 should round to -3");
+        assert_eq!(intersections[3], 100, "Fourth edge x=100 should round to 100");
+
+        // Verify order is preserved (AET order matters for fill span calculation)
+        assert_eq!(intersections, vec![10, 25, -3, 100], "Order should match AET order");
+
+        // Test with empty AET
+        let empty_aet: Vec<Edge> = Vec::new();
+        let empty_intersections: Vec<i32> = empty_aet.iter().map(|edge| edge.intersection_x()).collect();
+        assert_eq!(empty_intersections.len(), 0, "Empty AET should produce empty intersections");
+    }
 }
