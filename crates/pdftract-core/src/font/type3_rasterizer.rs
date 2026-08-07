@@ -84,7 +84,10 @@ pub fn detect_char_proc_type(object: &PdfObject) -> CharProcType {
         PdfObject::Stream(_) => CharProcType::Stream,
         // Dict check happens after Stream but before Other
         PdfObject::Dict(_) => CharProcType::Dict,
-        // All other types (including Ref, Integer, Real, Bool, String, Name, Array, Null, Indirect)
+        // Reference check - stub implementation that returns a placeholder
+        // Full dereferencing is handled by detect_char_proc_type_with_context
+        PdfObject::Ref(_) => CharProcType::Other("reference".to_string()),
+        // All other types (including Integer, Real, Bool, String, Name, Array, Null, Indirect)
         // return Other with descriptive name
         _ => CharProcType::Other(object.type_name().to_string()),
     }
