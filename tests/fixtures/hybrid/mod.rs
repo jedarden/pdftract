@@ -548,6 +548,7 @@ pub fn assert_hybrid_classification(
 ///
 /// - If `grid_coverage` is present as a percentage (e.g., "15.6%"), the % suffix is stripped
 /// - If only `hybrid_cells` count is available, it's converted to a percentage: `(cells / 64) * 100`
+/// - If `hybrid_cells` is an array, counts the array elements and converts to percentage
 /// - Returns 0.0 if page_type indicates a non-hybrid classification (vector, scanned, etc.)
 pub fn extract_grid_coverage(analysis_output: &str) -> anyhow::Result<f64> {
     // Try parsing as JSON first
@@ -564,14 +565,27 @@ pub fn extract_grid_coverage(analysis_output: &str) -> anyhow::Result<f64> {
             return parse_coverage_value(coverage);
         }
 
-        // Fallback: calculate from hybrid_cells count
-        if let Some(cells) = json_value.get("hybrid_cells").and_then(|v| v.as_u64()) {
-            let coverage = (cells as f64 / GRID_CELL_COUNT as f64) * 100.0;
-            return Ok(coverage);
+        // Handle hybrid_cells - can be either a count (number) or an array of cell indices
+        if let Some(cells_value) = json_value.get("hybrid_cells") {
+            // If hybrid_cells is an array, count the elements
+            if let Some(cells_array) = cells_value.as_array() {
+                let cell_count = cells_array.len();
+                let coverage = (cell_count as f64 / GRID_CELL_COUNT as f64) * 100.0;
+                return Ok(coverage);
+            }
+            // If hybrid_cells is a number, use it directly
+            if let Some(cells) = cells_value.as_u64() {
+                let coverage = (cells as f64 / GRID_CELL_COUNT as f64) * 100.0;
+                return Ok(coverage);
+            }
+            // If hybrid_cells is null/missing, return 0.0
+            if cells_value.is_null() {
+                return Ok(0.0);
+            }
         }
 
         anyhow::bail!(
-            "JSON output missing both 'grid_coverage' and 'hybrid_cells' fields. \
+            "JSON output missing both 'grid_coverage' and valid 'hybrid_cells' field. \
              Available keys: {}",
             available_keys(&json_value)
         );
