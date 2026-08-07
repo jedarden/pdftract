@@ -129,7 +129,7 @@ def test_pages_is_list() -> None:
     if len(doc.pages) > 0:
         page = doc.pages[0]
         assert isinstance(page, pdftract.Page), \
-            f"doc.pages[0] should be Page instance, got {type(page).__name__}"
+            f"Expected Page type, got {type(page).__name__}"
         assert not isinstance(page, dict), "Page should not be a raw dict"
 
 
@@ -185,7 +185,7 @@ def test_document_type_from_pdf_extraction() -> None:
     # Verify each page is a Page instance (if pages exist)
     for i, page in enumerate(doc.pages):
         assert isinstance(page, pdftract.Page), \
-            f"doc.pages[{i}] should be Page instance, got {type(page).__name__}"
+            f"Expected Page type, got {type(page).__name__}"
 
 
 def test_metadata_field_types() -> None:
@@ -238,11 +238,11 @@ def test_document_type_from_fixture_data(fixture_data: dict[str, Any]) -> None:
 
     # Verify first page is a Page instance with descriptive error
     assert isinstance(result.pages[0], pdftract.Page), \
-        f'Expected Page, got {type(result.pages[0]).__name__}'
+        f'Expected Page type, got {type(result.pages[0]).__name__}'
 
     for page_idx, page in enumerate(result.pages):
         assert isinstance(page, pdftract.Page), \
-            f'doc.pages[{page_idx}] should be Page instance, got {type(page).__name__}'
+            f'Expected Page type, got {type(page).__name__}'
 
         # Verify ALL spans in this page are Span instances (handle multiple objects)
         for span_idx, span in enumerate(page.spans):
@@ -318,7 +318,7 @@ def test_span_type_assertion(fixture_data: dict[str, Any]) -> None:
 
     # Verify the page is a Page instance
     assert isinstance(page, pdftract.Page), \
-        f"Expected Page type, got {type(page)}"
+        f"Expected Page type, got {type(page).__name__}"
 
     # Access spans from the page
     spans = page.spans
