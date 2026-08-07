@@ -173,6 +173,129 @@ fn detect_char_proc_type_with_context_impl<'a>(
     }
 }
 
+/// Validate char_proc structure requirements.
+///
+/// This function checks if a char_proc object has the expected structure
+/// for its type, verifying required keys are present.
+///
+/// # Arguments
+///
+/// * `object` - The PdfObject to validate
+///
+/// # Returns
+///
+/// * `Ok(())` if the object has valid structure
+/// * `Err(Type3Error)` if validation fails, indicating what's wrong
+///
+/// # Validation Rules
+///
+/// - **Stream objects**: Must have /Type, /Subtype, /Width, /Height keys
+/// - **Dict objects**: Must have /Type, /Subtype keys (basic char_proc structure)
+/// - **Other types**: Returns `Err(InvalidCharProcType)`
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use pdftract_core::font::type3_rasterizer::validate_char_proc_structure;
+/// use pdftract_core::parser::object::types::PdfObject;
+///
+/// let stream_obj = PdfObject::Stream(Box::new(/* ... */));
+/// match validate_char_proc_structure(&stream_obj) {
+///     Ok(()) => println!("Valid char_proc structure"),
+///     Err(e) => println!("Validation failed: {}", e),
+/// }
+/// ```
+pub fn validate_char_proc_structure(object: &PdfObject) -> Result<(), Type3Error> {
+    // Detect the object type first
+    let char_proc_type = detect_char_proc_type(object);
+
+    match char_proc_type {
+        CharProcType::Stream => {
+            // For streams, verify required keys: /Type, /Subtype, /Width, /Height
+            let stream_dict = match object {
+                PdfObject::Stream(stream) => &stream.dict,
+                _ => {
+                    return Err(Type3Error::InvalidCharProcType {
+                        got: object.type_name().to_string(),
+                        expected: "stream".to_string(),
+                    })
+                }
+            };
+
+            // Check for /Type key
+            if stream_dict.get("/Type").is_none() {
+                return Err(Type3Error::MissingRequiredKey {
+                    key: "/Type".to_string(),
+                    object_type: "stream".to_string(),
+                });
+            }
+
+            // Check for /Subtype key
+            if stream_dict.get("/Subtype").is_none() {
+                return Err(Type3Error::MissingRequiredKey {
+                    key: "/Subtype".to_string(),
+                    object_type: "stream".to_string(),
+                });
+            }
+
+            // Check for /Width key
+            if stream_dict.get("/Width").is_none() {
+                return Err(Type3Error::MissingRequiredKey {
+                    key: "/Width".to_string(),
+                    object_type: "stream".to_string(),
+                });
+            }
+
+            // Check for /Height key
+            if stream_dict.get("/Height").is_none() {
+                return Err(Type3Error::MissingRequiredKey {
+                    key: "/Height".to_string(),
+                    object_type: "stream".to_string(),
+                });
+            }
+
+            Ok(())
+        }
+        CharProcType::Dict => {
+            // For dicts, verify basic structure: /Type, /Subtype
+            let dict = match object {
+                PdfObject::Dict(d) => d.as_ref(),
+                _ => {
+                    return Err(Type3Error::InvalidCharProcType {
+                        got: object.type_name().to_string(),
+                        expected: "dictionary".to_string(),
+                    })
+                }
+            };
+
+            // Check for /Type key
+            if dict.get("/Type").is_none() {
+                return Err(Type3Error::MissingRequiredKey {
+                    key: "/Type".to_string(),
+                    object_type: "dictionary".to_string(),
+                });
+            }
+
+            // Check for /Subtype key
+            if dict.get("/Subtype").is_none() {
+                return Err(Type3Error::MissingRequiredKey {
+                    key: "/Subtype".to_string(),
+                    object_type: "dictionary".to_string(),
+                });
+            }
+
+            Ok(())
+        }
+        CharProcType::Other(type_name) => {
+            // For any other type, return InvalidCharProcType error
+            Err(Type3Error::InvalidCharProcType {
+                got: type_name,
+                expected: "stream or dictionary".to_string(),
+            })
+        }
+    }
+}
+
 /// Errors that can occur during Type 3 glyph rasterization.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type3Error {
@@ -195,6 +318,13 @@ pub enum Type3Error {
         /// The expected object type(s)
         expected: String,
     },
+    /// Missing required key in char_proc structure.
+    MissingRequiredKey {
+        /// The key that is missing
+        key: String,
+        /// The object type being validated
+        object_type: String,
+    },
 }
 
 impl std::fmt::Display for Type3Error {
@@ -209,6 +339,9 @@ impl std::fmt::Display for Type3Error {
             Type3Error::Io(msg) => write!(f, "I/O error during glyph resolution: {}", msg),
             Type3Error::InvalidCharProcType { got, expected } => {
                 write!(f, "invalid char_proc type: got {}, expected {}", got, expected)
+            }
+            Type3Error::MissingRequiredKey { key, object_type } => {
+                write!(f, "missing required key '{}' in char_proc {}", key, object_type)
             }
         }
     }
@@ -3037,5 +3170,307 @@ mod tests {
             detect_char_proc_type_with_context(&int_obj, None),
             detect_char_proc_type(&int_obj)
         );
+    }
+
+    // Tests for validate_char_proc_structure (bf-3icotv)
+
+    #[test]
+    fn test_validate_char_proc_structure_valid_stream() {
+        use crate::parser::object::types::{intern, PdfDict, PdfStream};
+
+        let mut dict = PdfDict::new();
+        dict.insert(intern("/Type"), PdfObject::Name(intern("/XObject")));
+        dict.insert(intern("/Subtype"), PdfObject::Name(intern("/Form")));
+        dict.insert(intern("/Width"), PdfObject::Integer(100));
+        dict.insert(intern("/Height"), PdfObject::Integer(100));
+
+        let stream = PdfStream::new(dict, 0, None);
+        let stream_obj = PdfObject::Stream(Box::new(stream));
+
+        assert!(validate_char_proc_structure(&stream_obj).is_ok());
+    }
+
+    #[test]
+    fn test_validate_char_proc_structure_stream_missing_type() {
+        use crate::parser::object::types::{intern, PdfDict, PdfStream};
+
+        let mut dict = PdfDict::new();
+        // Missing /Type
+        dict.insert(intern("/Subtype"), PdfObject::Name(intern("/Form")));
+        dict.insert(intern("/Width"), PdfObject::Integer(100));
+        dict.insert(intern("/Height"), PdfObject::Integer(100));
+
+        let stream = PdfStream::new(dict, 0, None);
+        let stream_obj = PdfObject::Stream(Box::new(stream));
+
+        let result = validate_char_proc_structure(&stream_obj);
+        assert!(result.is_err());
+        match result {
+            Err(Type3Error::MissingRequiredKey { key, object_type }) => {
+                assert_eq!(key, "/Type");
+                assert_eq!(object_type, "stream");
+            }
+            _ => panic!("Expected MissingRequiredKey error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_char_proc_structure_stream_missing_subtype() {
+        use crate::parser::object::types::{intern, PdfDict, PdfStream};
+
+        let mut dict = PdfDict::new();
+        dict.insert(intern("/Type"), PdfObject::Name(intern("/XObject")));
+        // Missing /Subtype
+        dict.insert(intern("/Width"), PdfObject::Integer(100));
+        dict.insert(intern("/Height"), PdfObject::Integer(100));
+
+        let stream = PdfStream::new(dict, 0, None);
+        let stream_obj = PdfObject::Stream(Box::new(stream));
+
+        let result = validate_char_proc_structure(&stream_obj);
+        assert!(result.is_err());
+        match result {
+            Err(Type3Error::MissingRequiredKey { key, object_type }) => {
+                assert_eq!(key, "/Subtype");
+                assert_eq!(object_type, "stream");
+            }
+            _ => panic!("Expected MissingRequiredKey error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_char_proc_structure_stream_missing_width() {
+        use crate::parser::object::types::{intern, PdfDict, PdfStream};
+
+        let mut dict = PdfDict::new();
+        dict.insert(intern("/Type"), PdfObject::Name(intern("/XObject")));
+        dict.insert(intern("/Subtype"), PdfObject::Name(intern("/Form")));
+        // Missing /Width
+        dict.insert(intern("/Height"), PdfObject::Integer(100));
+
+        let stream = PdfStream::new(dict, 0, None);
+        let stream_obj = PdfObject::Stream(Box::new(stream));
+
+        let result = validate_char_proc_structure(&stream_obj);
+        assert!(result.is_err());
+        match result {
+            Err(Type3Error::MissingRequiredKey { key, object_type }) => {
+                assert_eq!(key, "/Width");
+                assert_eq!(object_type, "stream");
+            }
+            _ => panic!("Expected MissingRequiredKey error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_char_proc_structure_stream_missing_height() {
+        use crate::parser::object::types::{intern, PdfDict, PdfStream};
+
+        let mut dict = PdfDict::new();
+        dict.insert(intern("/Type"), PdfObject::Name(intern("/XObject")));
+        dict.insert(intern("/Subtype"), PdfObject::Name(intern("/Form")));
+        dict.insert(intern("/Width"), PdfObject::Integer(100));
+        // Missing /Height
+
+        let stream = PdfStream::new(dict, 0, None);
+        let stream_obj = PdfObject::Stream(Box::new(stream));
+
+        let result = validate_char_proc_structure(&stream_obj);
+        assert!(result.is_err());
+        match result {
+            Err(Type3Error::MissingRequiredKey { key, object_type }) => {
+                assert_eq!(key, "/Height");
+                assert_eq!(object_type, "stream");
+            }
+            _ => panic!("Expected MissingRequiredKey error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_char_proc_structure_stream_missing_all_keys() {
+        use crate::parser::object::types::{PdfDict, PdfStream};
+
+        let dict = PdfDict::new(); // Empty dict
+        let stream = PdfStream::new(dict, 0, None);
+        let stream_obj = PdfObject::Stream(Box::new(stream));
+
+        let result = validate_char_proc_structure(&stream_obj);
+        assert!(result.is_err());
+        // Should fail on /Type first
+        match result {
+            Err(Type3Error::MissingRequiredKey { key, object_type }) => {
+                assert_eq!(key, "/Type");
+                assert_eq!(object_type, "stream");
+            }
+            _ => panic!("Expected MissingRequiredKey error for /Type"),
+        }
+    }
+
+    #[test]
+    fn test_validate_char_proc_structure_valid_dict() {
+        use crate::parser::object::types::{intern, PdfDict};
+
+        let mut dict = PdfDict::new();
+        dict.insert(intern("/Type"), PdfObject::Name(intern("/XObject")));
+        dict.insert(intern("/Subtype"), PdfObject::Name(intern("/Form")));
+
+        let dict_obj = PdfObject::Dict(Box::new(dict));
+
+        assert!(validate_char_proc_structure(&dict_obj).is_ok());
+    }
+
+    #[test]
+    fn test_validate_char_proc_structure_dict_missing_type() {
+        use crate::parser::object::types::{intern, PdfDict};
+
+        let mut dict = PdfDict::new();
+        // Missing /Type
+        dict.insert(intern("/Subtype"), PdfObject::Name(intern("/Form")));
+
+        let dict_obj = PdfObject::Dict(Box::new(dict));
+
+        let result = validate_char_proc_structure(&dict_obj);
+        assert!(result.is_err());
+        match result {
+            Err(Type3Error::MissingRequiredKey { key, object_type }) => {
+                assert_eq!(key, "/Type");
+                assert_eq!(object_type, "dictionary");
+            }
+            _ => panic!("Expected MissingRequiredKey error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_char_proc_structure_dict_missing_subtype() {
+        use crate::parser::object::types::{intern, PdfDict};
+
+        let mut dict = PdfDict::new();
+        dict.insert(intern("/Type"), PdfObject::Name(intern("/XObject")));
+        // Missing /Subtype
+
+        let dict_obj = PdfObject::Dict(Box::new(dict));
+
+        let result = validate_char_proc_structure(&dict_obj);
+        assert!(result.is_err());
+        match result {
+            Err(Type3Error::MissingRequiredKey { key, object_type }) => {
+                assert_eq!(key, "/Subtype");
+                assert_eq!(object_type, "dictionary");
+            }
+            _ => panic!("Expected MissingRequiredKey error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_char_proc_structure_integer() {
+        let int_obj = PdfObject::Integer(42);
+
+        let result = validate_char_proc_structure(&int_obj);
+        assert!(result.is_err());
+        match result {
+            Err(Type3Error::InvalidCharProcType { got, expected }) => {
+                assert_eq!(got, "integer");
+                assert_eq!(expected, "stream or dictionary");
+            }
+            _ => panic!("Expected InvalidCharProcType error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_char_proc_structure_real() {
+        let real_obj = PdfObject::Real(3.14);
+
+        let result = validate_char_proc_structure(&real_obj);
+        assert!(result.is_err());
+        match result {
+            Err(Type3Error::InvalidCharProcType { got, expected }) => {
+                assert_eq!(got, "real");
+                assert_eq!(expected, "stream or dictionary");
+            }
+            _ => panic!("Expected InvalidCharProcType error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_char_proc_structure_string() {
+        let string_obj = PdfObject::String(Box::new(b"test".to_vec()));
+
+        let result = validate_char_proc_structure(&string_obj);
+        assert!(result.is_err());
+        match result {
+            Err(Type3Error::InvalidCharProcType { got, expected }) => {
+                assert_eq!(got, "string");
+                assert_eq!(expected, "stream or dictionary");
+            }
+            _ => panic!("Expected InvalidCharProcType error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_char_proc_structure_array() {
+        let array_obj = PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(1),
+            PdfObject::Integer(2),
+        ]));
+
+        let result = validate_char_proc_structure(&array_obj);
+        assert!(result.is_err());
+        match result {
+            Err(Type3Error::InvalidCharProcType { got, expected }) => {
+                assert_eq!(got, "array");
+                assert_eq!(expected, "stream or dictionary");
+            }
+            _ => panic!("Expected InvalidCharProcType error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_char_proc_structure_null() {
+        let null_obj = PdfObject::Null;
+
+        let result = validate_char_proc_structure(&null_obj);
+        assert!(result.is_err());
+        match result {
+            Err(Type3Error::InvalidCharProcType { got, expected }) => {
+                assert_eq!(got, "null");
+                assert_eq!(expected, "stream or dictionary");
+            }
+            _ => panic!("Expected InvalidCharProcType error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_char_proc_structure_reference() {
+        use crate::parser::object::types::ObjRef;
+
+        let ref_obj = PdfObject::Ref(ObjRef::new(10, 0));
+
+        let result = validate_char_proc_structure(&ref_obj);
+        assert!(result.is_err());
+        match result {
+            Err(Type3Error::InvalidCharProcType { got, expected }) => {
+                assert_eq!(got, "reference");
+                assert_eq!(expected, "stream or dictionary");
+            }
+            _ => panic!("Expected InvalidCharProcType error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_char_proc_structure_error_message_formatting() {
+        use crate::parser::object::types::{PdfDict, PdfStream};
+
+        // Test that error messages are clear and informative
+        let dict = PdfDict::new(); // Missing all keys
+        let stream = PdfStream::new(dict, 0, None);
+        let stream_obj = PdfObject::Stream(Box::new(stream));
+
+        let result = validate_char_proc_structure(&stream_obj);
+        assert!(result.is_err());
+
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("missing required key"));
+        assert!(error_msg.contains("/Type"));
+        assert!(error_msg.contains("stream"));
     }
 }
