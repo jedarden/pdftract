@@ -69,6 +69,15 @@ def test_extract_returns_typed_document() -> None:
         f"pages[0] should be Page instance, got {type(doc.pages[0]).__name__}"
     print("✓ Document has typed Page objects")
 
+    # Verify spans are properly typed (check first page's content)
+    assert hasattr(doc.pages[0], 'spans'), "Page should have 'spans' attribute"
+    if len(doc.pages[0].spans) > 0:
+        assert isinstance(doc.pages[0].spans[0], pdftract.Span), \
+            f"spans[0] should be Span instance, got {type(doc.pages[0].spans[0]).__name__}"
+        print("✓ Page has typed Span objects")
+    else:
+        print("⚠ Page has no spans (may be empty)")
+
     print("\n✅ All smoke tests passed!")
 
 
