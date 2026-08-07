@@ -213,6 +213,24 @@ def test_metadata_field_types() -> None:
             f"metadata.author should be str or None, got {type(metadata.author).__name__}"
 
 
+def test_document_type_from_fixture_data(fixture_data: dict[str, Any]) -> None:
+    """Verify Document.from_native() returns a Document instance.
+
+    This test validates the core type assertion that when calling
+    Document.from_native() with loaded fixture data, it returns
+    a properly typed Document object, not a raw dict.
+
+    Args:
+        fixture_data: Loaded fixture data from the fixture.
+    """
+    # Call Document.from_native with fixture data
+    doc = pdftract.Document.from_native(fixture_data)
+
+    # Verify Document type with specific error message format
+    assert isinstance(doc, pdftract.Document), \
+        f'Expected Document type, got {type(doc)}'
+
+
 def test_type_assertions_from_fixture_data(fixture_data: dict[str, Any]) -> None:
     """Test type assertions using loaded fixture data.
 
