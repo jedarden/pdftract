@@ -230,14 +230,17 @@ def test_document_type_from_fixture_data(fixture_data: dict[str, Any]) -> None:
     assert isinstance(result, pdftract.Document), \
         f'Expected Document, got {type(result).__name__}'
 
-    # Verify first page is Page instance
-    assert isinstance(result.pages[0], pdftract.Page), \
-        f'Expected Page, got {type(result.pages[0]).__name__}'
+    # Verify ALL pages are Page instances (handle multiple objects)
+    assert len(result.pages) > 0, "Document should have at least one page"
 
-    # Verify first span in first page is Span instance (if spans exist)
-    if result.pages[0].spans:
-        assert isinstance(result.pages[0].spans[0], pdftract.Span), \
-            f'Expected Span, got {type(result.pages[0].spans[0]).__name__}'
+    for page_idx, page in enumerate(result.pages):
+        assert isinstance(page, pdftract.Page), \
+            f'doc.pages[{page_idx}] should be Page instance, got {type(page).__name__}'
+
+        # Verify ALL spans in this page are Span instances (handle multiple objects)
+        for span_idx, span in enumerate(page.spans):
+            assert isinstance(span, pdftract.Span), \
+                f'page.pages[{page_idx}].spans[{span_idx}] should be Span instance, got {type(span).__name__}'
 
 
 def test_type_assertions_from_fixture_data(fixture_data: dict[str, Any]) -> None:
@@ -285,3 +288,40 @@ def test_type_assertions_from_fixture_data(fixture_data: dict[str, Any]) -> None
         if list_field in fixture_data:
             assert isinstance(fixture_data[list_field], list), \
                 f"{list_field} should be a list"
+
+
+def test_span_type_assertion(fixture_data: dict[str, Any]) -> None:
+    """Test that span objects within Pages are properly typed.
+
+    This test verifies that Span objects accessed from a Page are
+    properly typed Span instances, not raw dicts. It handles empty
+    spans gracefully and uses a clear error message format.
+
+    Args:
+        fixture_data: Loaded fixture data containing parsed PDF results.
+    """
+    # Create Document from fixture data
+    doc = pdftract.Document.from_native(fixture_data)
+
+    # Verify Document has pages
+    assert len(doc.pages) > 0, "Document should have at least one page"
+
+    # Access the first page
+    page = doc.pages[0]
+
+    # Verify the page is a Page instance
+    assert isinstance(page, pdftract.Page), \
+        f"Expected Page type, got {type(page)}"
+
+    # Access spans from the page
+    spans = page.spans
+
+    # Handle empty spans case gracefully
+    if len(spans) == 0:
+        # No spans to test - this is acceptable
+        return
+
+    # Check each span is properly typed
+    for span in spans:
+        assert isinstance(span, pdftract.Span), \
+            f"Expected Span type, got {type(span)}"
