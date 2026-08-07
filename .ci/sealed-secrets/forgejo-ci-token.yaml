@@ -1,0 +1,16 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  creationTimestamp: null
+  name: forgejo-ci-token
+  namespace: argo-workflows
+spec:
+  encryptedData:
+    token: AgCN7IZ/KlwfRioLuV7kAYHcZtNEGGMdr9zQRuw+B1aahFjAqamwBwf3WptOC7n3564PF6Ox2CBCB0Fyw0nETeH8UhX0S8v0XWhScIHuZ2EdwVcmiPM/JKRQuz0P7q2tJySTflR1ldf4dQW+2qP570+kpH6GW7w6IFrDEUXYrvLCE9mIubmfgeREZ5g0peHB8m3ecWJpM9bIveC0LHh2uLBObcegB7OYKqBSp79yFenp61kXV4XlVy2AYB/VdtpXUI7g3SX1dWWOTt7/EgEuilcuu8FNmaqg4UjwJXfvbMao6PeZcsmEUFaXhEVaQr7lHWch0vQHTuIwZAK2l4Y1wj77gGj13WJT573Z9TnTiAbEswrV6KTgLGuz5CWmOe/LsV5VfGpfkFdKY46q3WDebg76aOXiwM0ReTMnWQLJ/AZeChTbKNUOwDKVi9crUPSzxI+1o+WveZBejgIPyxTjc2Ov/JT5uDa9lDMHGINHPo86FS38kFKkJmMVO2ZWjfJ8LOyvGM213GNAsRzSCrksceMhnSl8QsaPTMoYHLG20yGfmGcs8wPtKtrWmXfT9H42yV+6cgxYLYiYVXNibIbwq7rpT0Ld6JlPFX0PASEWgEhFZRI4zzyMqGCL4eSfqmasA3IB6I6nhEnOt6wMfAgX4sXa6guGLo/yntIFM158jiv2Gcd8YvlWjQqbncd8G+Qf/fRHbW78zqihU4RKfkJpYNWsVZ9b4hZl4yYmnnGnalLAGQG59ezXDIJ/ # gitleaks:allow
+  template:
+    metadata:
+      creationTimestamp: null
+      name: forgejo-ci-token
+      namespace: argo-workflows
+    type: Opaque
