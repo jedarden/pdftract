@@ -9,9 +9,8 @@ use std::path::{Path, PathBuf};
 // Core pdftract imports for integration testing
 use pdftract_core::{ExtractionOptions, OutputOptions};
 
-// TODO: Add PyPdfProcessor import when struct is created in pdftract-py crate
-// The pdftract-py crate uses lib name "pdftract" in Cargo.toml
-// use pdftract::PyPdfProcessor;
+// PyPdfProcessor import from pdftract-py crate (lib name "pdftract" in Cargo.toml)
+use pdftract::PyPdfProcessor;
 
 // PyO3 imports for Python bindings testing
 // Uncomment when testing Python integration

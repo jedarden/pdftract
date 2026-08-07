@@ -24,6 +24,27 @@ use extract_markdown::extract_markdown_fn;
 use pdftract_core::{AttachmentJson, ExtractionOptions, PageResult, TableJson};
 use pdftract_core::sdk::{search as sdk_search, SearchMatch};
 
+// ============================================================================
+// PyPdfProcessor - Python-facing PDF processor
+// ============================================================================
+
+/// Main PDF processor for Python bindings.
+///
+/// This struct provides a high-level interface for processing PDFs
+/// through the Python bindings. More functionality will be added in
+/// subsequent tasks.
+pub struct PyPdfProcessor {
+    /// Internal path to the PDF file
+    _path: std::path::PathBuf,
+}
+
+impl PyPdfProcessor {
+    /// Create a new PyPdfProcessor for the given PDF path.
+    pub fn new(path: std::path::PathBuf) -> Self {
+        Self { _path: path }
+    }
+}
+
 // Import diagnostics for error code mapping
 use pdftract_core::diagnostics::DIAGNOSTIC_CATALOG;
 
