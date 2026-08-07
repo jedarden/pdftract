@@ -1338,7 +1338,8 @@ impl<'a> RasterizerContext<'a> {
             aet.sort_by_key(|e| e.x);
 
             // Calculate intersection x coordinates for this scanline
-            let intersections: Vec<i32> = aet.iter().map(|edge| edge.x.round() as i32).collect();
+            // Compute x = round(edge.x) for each active edge
+            let intersections: Vec<i32> = aet.iter().map(|edge| (edge.x as f64).round() as i32).collect();
 
             // Fill between pairs of X positions (even-odd rule)
             for i in (0..intersections.len()).step_by(2) {
