@@ -20,6 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
 import pdftract
+from pdftract import Document, Page, Span
 
 
 def test_extract_returns_typed_document() -> None:
