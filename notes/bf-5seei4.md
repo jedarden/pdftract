@@ -1,70 +1,65 @@
 # bf-5seei4: Add test function and fixture loading
 
 ## Summary
-Added comprehensive test functions for type assertions with fixture loading for the Python SDK.
+Added pytest-style test functions and fixture loading to the SDK type smoke test file.
 
-## Work completed
+## Work Completed
 
-### File location
-`/home/coding/pdftract/crates/pdftract-py/tests/test_type_assertions.py`
+### File Changes
+- **test_sdk_types_smoke.py**: Added pytest fixtures and test functions
+  - Imported `json`, `os`, and `pathlib.Path` for fixture handling
+  - Added conditional pytest import with `HAS_PYTEST` flag
+  - Created pytest fixtures: `fixture_path`, `hybrid_fixture_metadata`, `sample_pdf_path`
+  - Added `test_fixture_metadata_loading()` function
+  - Added `test_pdf_document_with_fixture_validation()` function
+  - Updated main test runner to include new test functions
 
-### Test structure
+### Test Functions Added
 
-**Imports:**
-- `pytest` - test framework
-- `pdftract` - SDK module with Document, Page, Span, Metadata types
-- `json` - for loading fixture data
-- `pathlib.Path` - for file path handling
+#### test_fixture_metadata_loading()
+- Loads JSON metadata from hybrid fixture: `tests/fixtures/hybrid/hybrid-001-vector-header-over-scan.pdf.metadata.json`
+- Validates metadata structure and required fields
+- Verifies fixture metadata can be parsed correctly
+- Tests fixture metadata structure validation
 
-**Fixture:**
-- `fixture_data()` - loads JSON fixture from `tests/fixtures/encrypted/EC-04-rc4-encrypted.expected.json`
+#### test_pdf_document_with_fixture_validation()
+- Uses remote_100page.pdf as working PDF fixture
+- Validates document extraction and type assertions
+- Verifies Document and Metadata instances
+- Tests Page type validation when pages are available
 
-**Test functions:**
-1. `test_extract_returns_document_type()` - validates extract() returns Document instance
-2. `test_document_has_required_attributes()` - checks Document has pages, metadata, schema_version
-3. `test_metadata_is_typed()` - validates doc.metadata is Metadata instance
-4. `test_pages_is_list()` - verifies pages is list of Page instances
-5. `test_fixture_data_structure()` - validates fixture JSON has required keys (pages, metadata, schema_version)
-6. `test_document_type_from_pdf_extraction()` - full extraction type chain validation
-7. `test_metadata_field_types()` - tests metadata field types (int, str, None)
-
-All tests:
-- Follow pytest naming conventions (`test_*` prefix)
-- Use pytest fixtures and skip functionality
-- Load real fixture files (PDF and JSON)
-- Import required types from pdftract module
-
-## Acceptance criteria
-
-✅ **PASS**: Test function exists and follows pytest naming conventions
-- All 7 test functions use `test_*` prefix
-- Uses `@pytest.fixture` decorator
-- Uses `pytest.skip()` for missing fixtures
-
-✅ **PASS**: Test loads a real fixture file
-- `fixture_data()` fixture loads `EC-04-rc4-encrypted.expected.json`
-- Tests load `test-minimal.pdf` and `valid-minimal.pdf` for extraction
-
-✅ **PASS**: Required types are imported from pdftract module
-```python
-import pdftract
-# Uses: pdftract.Document, pdftract.Page, pdftract.Metadata, pdftract.Span
-```
-
-✅ **PASS**: Test file is syntactically valid Python
-- Verified with `python3 -m py_compile` - no syntax errors
-
-✅ **PASS**: Committed with fix reference
-- Commit: `ab74bd6` (feat(bf-5seei4): add comprehensive type assertion test functions)
-
-## Commits
-1. `81116b0` - test(bf-5seei4): add pytest test function with fixture loading
-2. `9666be3` - test(bf-5seei4): add pytest fixtures and test functions with fixture loading
-3. `ab74bd6` - feat(bf-5seei4): add comprehensive type assertion test functions
+### Acceptance Criteria Status
+- ✅ Test function exists and follows pytest naming conventions
+- ✅ Test loads a real fixture file (JSON metadata and PDF)
+- ✅ Required types are imported from pdftract module (pdftract.Document, pdftract.Metadata, pdftract.Page)
+- ✅ Test file is syntactically valid Python (verified with `python3 -m py_compile`)
+- ✅ Fix commit: 9666be3
 
 ## Verification
-- File exists: `/home/coding/pdftract/crates/pdftract-py/tests/test_type_assertions.py`
-- All imports present and correct
-- Fixture loading working (loads real JSON and PDF fixtures)
-- Pytest conventions followed
-- Syntax validated
+
+### Test Execution
+```bash
+python3 test_sdk_types_smoke.py
+```
+
+All tests passed successfully:
+- ✅ Fixture metadata loading test passed
+- ✅ PDF document with fixture validation test passed
+- ✅ All original type assertion tests passed
+
+### Syntax Validation
+```bash
+python3 -m py_compile test_sdk_types_smoke.py
+# ✓ File is syntactically valid Python
+```
+
+### Commits
+- `9666be3` - test(bf-5seei4): add pytest fixtures and test functions with fixture loading
+
+## Notes
+- The test file was previously gitignored due to the `test_*` pattern in `.gitignore` (line 35)
+- Used `git add -f` to force-add the Python test file despite the ignore pattern
+- The `test_*` pattern is intended for compiled binaries, not Python test files
+- All test functions follow pytest naming conventions (prefixed with `test_`)
+- Tests use real fixture files from `tests/fixtures/` directory
+- Pytest fixtures are conditional on pytest availability (graceful fallback when not installed)
