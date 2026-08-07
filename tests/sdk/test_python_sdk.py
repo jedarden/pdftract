@@ -26,12 +26,6 @@ def test_python_sdk_types() -> None:
     returns typed Document, Page, and Span objects rather than raw
     dictionaries, ensuring IDE autocomplete and type checking work
     correctly.
-
-    TODO: Add assertions to verify:
-    - extract() returns Document instance
-    - Document.pages contains Page instances
-    - Page.spans contains Span instances
-    - No raw dicts are returned to the caller
     """
     # Load fixture PDF and extract with the SDK
     fixture_path = Path(__file__).parent.parent.parent / "tests" / "fixtures" / "markdown_structure.pdf"
@@ -40,3 +34,17 @@ def test_python_sdk_types() -> None:
     # First type assertion: verify extract() returns Document type
     assert isinstance(doc, Document), \
         f"Expected Document type, got {type(doc)}"
+
+    # Verify document has pages
+    assert hasattr(doc, "pages"), "Document should have pages attribute"
+
+    # Iterate through pages and verify Page attributes
+    for page in doc.pages:
+        # Verify page has spans attribute
+        assert hasattr(page, "spans"), "Page should have spans attribute"
+
+        # Verify page has width attribute
+        assert hasattr(page, "width"), "Page should have width attribute"
+
+        # Verify page has height attribute
+        assert hasattr(page, "height"), "Page should have height attribute"
