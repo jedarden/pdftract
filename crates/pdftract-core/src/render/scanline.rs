@@ -6,11 +6,23 @@
 //!
 //! # Algorithm Overview
 //!
-//! 1. Find y-bounds of the polygon
-//! 2. For each scanline from min_y to max_y:
-//!    - Find all edge intersections with this scanline
-//!    - Sort intersections left-to-right
-//!    - Fill between pairs of intersections (even-odd rule)
+//! The scanline algorithm uses two edge tables to efficiently fill polygons:
+//!
+//! 1. **Build Global Edge Table (GET)**: Convert input edges to [`Edge`] structs,
+//!    exclude horizontal edges, and sort by `y_min` (topmost first).
+//!
+//! 2. **Iterate scanlines**: For each Y from `min_y` to `max_y`:
+//!    - Move edges from GET to Active Edge Table (AET) when scanline reaches `y_min`
+//!    - Remove edges from AET when scanline passes `y_max`
+//!    - Sort AET by current X position
+//!    - Fill between pairs of X intersections (even-odd rule)
+//!    - Update X positions by adding slope (`dx/dy`) for next scanline
+//!
+//! # Structures
+//!
+//! - [`Edge`]: Represents a polygon edge with current X position, Y bounds, and slope
+//! - [`ActiveEdgeTable`] (AET): Edges intersecting the current scanline, sorted by X
+//! - [`GlobalEdgeTable`] (GET): All edges sorted by `y_min`, used as the edge source
 //!
 //! # Edge Cases
 //!
