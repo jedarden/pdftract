@@ -52,10 +52,10 @@ def test_extract():
 
     assert len(result.pages) > 0, "Should have at least one page"
 
-    # Check first page is Page instance (bf-2g9ayl: Page type assertion)
+    # Check first page is Page instance (bf-fo1w50: Page type assertion)
     assert isinstance(result.pages[0], pdftract.Page), \
-        f'Expected Page type, got {type(result.pages[0])}'
-    print(f"  ✓ First page is Page instance (bf-2g9ayl)")
+        f'Expected Page, got {type(result.pages[0]).__name__}'
+    print(f"  ✓ First page is Page instance (bf-fo1w50)")
 
     # First page should have expected attributes
     page = result.pages[0]
