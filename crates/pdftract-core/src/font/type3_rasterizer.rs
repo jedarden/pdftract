@@ -1308,6 +1308,13 @@ impl<'a> RasterizerContext<'a> {
             dy: i32,          // Change in Y across the edge
         }
 
+        impl Edge {
+            /// Compute the rounded x-coordinate intersection point.
+            fn intersection_x(&self) -> i32 {
+                (self.x as f64).round() as i32
+            }
+        }
+
         let mut get: Vec<Edge> = Vec::new();
 
         for &(x0, y0, x1, y1) in edges {
@@ -1364,7 +1371,7 @@ impl<'a> RasterizerContext<'a> {
 
             // Calculate intersection x coordinates for this scanline
             // Compute x = round(edge.x) for each active edge
-            let intersections: Vec<i32> = aet.iter().map(|edge| (edge.x as f64).round() as i32).collect();
+            let intersections: Vec<i32> = aet.iter().map(|edge| edge.intersection_x()).collect();
 
             // Fill between pairs of X positions (even-odd rule)
             for i in (0..intersections.len()).step_by(2) {
