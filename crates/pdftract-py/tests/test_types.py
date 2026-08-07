@@ -42,8 +42,7 @@ def test_extract_returns_typed_document():
         f"extract() should return Document instance, got {type(doc).__name__}"
 
     # Assert document has pages
-    assert len(doc.pages) > 0, \
-        "Document should have at least one page"
+    assert doc.pages, "Document should contain pages"
 
     # Assert ALL pages are Page instances
     for page in doc.pages:

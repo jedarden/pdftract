@@ -83,6 +83,9 @@ def test_extract_returns_typed_document() -> None:
         f"Document.metadata should be Metadata instance, got {type(doc.metadata).__name__}"
     print("✓ Document.metadata is typed Metadata instance")
 
+    assert doc.pages, "Document should contain pages"
+    print("✓ Document.pages is not empty")
+
     # ===== Page-level type verification =====
     # Verify Page objects exist and are properly typed
 
