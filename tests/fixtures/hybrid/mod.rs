@@ -70,11 +70,153 @@
 
 use pdftract_core::page_class::{PageClass, PageClassification};
 use pdftract_core::sdk;
+use std::error::Error as StdError;
+use std::fmt;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
 // Re-export serde_json for use in extract_grid_coverage
 pub use serde_json;
+
+/// Comprehensive error types for `classify_page` function.
+///
+/// These errors cover all failure modes in the page classification pipeline,
+/// from invalid input through binary invocation to output parsing.
+#[derive(Debug)]
+pub enum ClassifyError {
+    /// PDF input is empty.
+    EmptyPdfInput,
+
+    /// PDF input is missing the "%PDF" signature.
+    InvalidPdfSignature,
+
+    /// Failed to create temporary file.
+    TempFileCreationFailed(std::io::Error),
+
+    /// Failed to write PDF bytes to temporary file.
+    TempFileWriteFailed(std::io::Error),
+
+    /// Failed to flush temporary file.
+    TempFileFlushFailed(std::io::Error),
+
+    /// pdftract binary not found in any expected location.
+    BinaryNotFound(Vec<String>),
+
+    /// Failed to spawn pdftract binary.
+    BinarySpawnFailed(std::io::Error),
+
+    /// pdftract extraction failed with exit code and stderr message.
+    ExtractionFailed {
+        exit_code: Option<i32>,
+        stderr: String,
+    },
+
+    /// pdftract output is not valid UTF-8.
+    InvalidUtf8Output(std::string::FromUtf8Error),
+
+    /// Failed to parse pdftract JSON output.
+    JsonParseFailed(serde_json::Error),
+
+    /// JSON output is missing required 'pages' array.
+    MissingPagesArray,
+
+    /// PDF contains no pages.
+    NoPages,
+
+    /// Failed to get first page from pages array.
+    NoFirstPage,
+
+    /// JSON output is missing 'page_type' field.
+    MissingPageType,
+
+    /// Unknown/invalid page_type value in JSON output.
+    UnknownPageType(String),
+}
+
+impl fmt::Display for ClassifyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EmptyPdfInput => {
+                write!(f, "PDF input bytes are empty")
+            }
+            Self::InvalidPdfSignature => {
+                write!(f, "Invalid PDF: missing PDF signature (expected to start with '%PDF')")
+            }
+            Self::TempFileCreationFailed(e) => {
+                write!(f, "Failed to create temporary file for PDF: {}", e)
+            }
+            Self::TempFileWriteFailed(e) => {
+                write!(f, "Failed to write PDF bytes to temporary file: {}", e)
+            }
+            Self::TempFileFlushFailed(e) => {
+                write!(f, "Failed to flush temporary file: {}", e)
+            }
+            Self::BinaryNotFound(paths) => {
+                write!(
+                    f,
+                    "pdftract binary not found. Tried the following paths: {:?}. \
+                    Ensure pdftract is built (run 'cargo build --release') and available in PATH.",
+                    paths
+                )
+            }
+            Self::BinarySpawnFailed(e) => {
+                write!(f, "Failed to spawn pdftract binary: {}", e)
+            }
+            Self::ExtractionFailed { exit_code, stderr } => {
+                write!(
+                    f,
+                    "pdftract extraction failed with exit code {:?}. stderr: {}",
+                    exit_code, stderr
+                )
+            }
+            Self::InvalidUtf8Output(e) => {
+                write!(f, "Failed to convert pdftract output to UTF-8: {}", e)
+            }
+            Self::JsonParseFailed(e) => {
+                write!(f, "Failed to parse pdftract JSON output: {}", e)
+            }
+            Self::MissingPagesArray => {
+                write!(f, "JSON output missing required 'pages' array")
+            }
+            Self::NoPages => {
+                write!(f, "PDF contains no pages")
+            }
+            Self::NoFirstPage => {
+                write!(f, "Failed to get first page from pages array")
+            }
+            Self::MissingPageType => {
+                write!(f, "JSON output missing 'page_type' field")
+            }
+            Self::UnknownPageType(page_type) => {
+                write!(
+                    f,
+                    "Unknown page_type '{}'. Expected one of: mixed, text, scanned, broken_vector, blank, figure_only",
+                    page_type
+                )
+            }
+        }
+    }
+}
+
+impl StdError for ClassifyError {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        match self {
+            Self::TempFileCreationFailed(e) => Some(e),
+            Self::TempFileWriteFailed(e) => Some(e),
+            Self::TempFileFlushFailed(e) => Some(e),
+            Self::BinarySpawnFailed(e) => Some(e),
+            Self::InvalidUtf8Output(e) => Some(e),
+            Self::JsonParseFailed(e) => Some(e),
+            _ => None,
+        }
+    }
+}
+
+impl From<ClassifyError> for anyhow::Error {
+    fn from(err: ClassifyError) -> anyhow::Error {
+        anyhow::anyhow!("{}", err)
+    }
+}
 
 /// Directory containing hybrid fixture PDFs.
 pub const FIXTURE_DIR: &str = "tests/fixtures/hybrid";
@@ -294,14 +436,14 @@ pub fn load_and_classify_fixture(fixture_name: &str) -> anyhow::Result<PageClass
 /// }
 /// ```
 pub fn classify_page(pdf_bytes: &[u8]) -> anyhow::Result<PageClass> {
-    // Validate input
+    // Validate input - empty PDF
     if pdf_bytes.is_empty() {
-        anyhow::bail!("PDF bytes are empty");
+        return Err(ClassifyError::EmptyPdfInput.into());
     }
 
-    // Check for PDF signature
+    // Validate input - check PDF signature
     if !pdf_bytes.starts_with(b"%PDF") {
-        anyhow::bail!("Invalid PDF: missing PDF signature");
+        return Err(ClassifyError::InvalidPdfSignature.into());
     }
 
     // Create a temporary file with .pdf extension
@@ -310,17 +452,17 @@ pub fn classify_page(pdf_bytes: &[u8]) -> anyhow::Result<PageClass> {
         .suffix(".pdf")
         .rand_bytes(5)
         .tempfile()
-        .map_err(|e| anyhow::anyhow!("Failed to create temporary file: {}", e))?;
+        .map_err(ClassifyError::TempFileCreationFailed)?;
 
     // Write PDF bytes to temporary file
     temp_file
         .write_all(pdf_bytes)
-        .map_err(|e| anyhow::anyhow!("Failed to write PDF bytes to temporary file: {}", e))?;
+        .map_err(ClassifyError::TempFileWriteFailed)?;
 
     // Flush to ensure data is written
     temp_file
         .flush()
-        .map_err(|e| anyhow::anyhow!("Failed to flush temporary file: {}", e))?;
+        .map_err(ClassifyError::TempFileFlushFailed)?;
 
     // Get the path to the temporary file
     let temp_path = temp_file.path();
@@ -329,23 +471,23 @@ pub fn classify_page(pdf_bytes: &[u8]) -> anyhow::Result<PageClass> {
     // Try to find the binary in common locations
     let binary_paths = vec![
         // During development, use the debug build
-        "../../target/debug/pdftract",
+        "../../target/debug/pdftract".to_string(),
         // Fallback to release build
-        "../../target/release/pdftract",
+        "../../target/release/pdftract".to_string(),
         // When installed, use the system binary (will be searched in PATH)
-        "pdftract",
+        "pdftract".to_string(),
     ];
 
     let mut pdftract_binary = None;
-    for path in binary_paths {
+    for path in &binary_paths {
         let path_obj = std::path::Path::new(path);
         // Check if path exists directly (for relative paths)
         if path_obj.exists() {
-            pdftract_binary = Some(path.to_string());
+            pdftract_binary = Some(path.clone());
             break;
         }
         // For system binary names, check if it's executable by trying to run it
-        if path.contains("/") {
+        if path.contains('/') {
             // Already a path, checked above
             continue;
         }
@@ -358,13 +500,13 @@ pub fn classify_page(pdf_bytes: &[u8]) -> anyhow::Result<PageClass> {
             .map(|s| s.success())
             .unwrap_or(false)
         {
-            pdftract_binary = Some(path.to_string());
+            pdftract_binary = Some(path.clone());
             break;
         }
     }
 
     let pdftract_binary = pdftract_binary
-        .ok_or_else(|| anyhow::anyhow!("pdftract binary not found. Ensure pdftract is built and available in PATH."))?;
+        .ok_or_else(|| ClassifyError::BinaryNotFound(binary_paths))?;
 
     // Spawn pdftract binary with JSON output to stdout
     let output = std::process::Command::new(&pdftract_binary)
@@ -373,47 +515,47 @@ pub fn classify_page(pdf_bytes: &[u8]) -> anyhow::Result<PageClass> {
         .arg("-")
         .arg(temp_path)
         .output()
-        .map_err(|e| anyhow::anyhow!("Failed to spawn pdftract binary: {}", e))?;
+        .map_err(ClassifyError::BinarySpawnFailed)?;
 
     // Check if the command succeeded
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!(
-            "pdftract extract failed with exit code {:?}\nstderr: {}",
-            output.status.code(),
-            stderr
-        );
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        return Err(ClassifyError::ExtractionFailed {
+            exit_code: output.status.code(),
+            stderr,
+        }
+        .into());
     }
 
     // Parse JSON output from stdout
     let json_str = String::from_utf8(output.stdout)
-        .map_err(|e| anyhow::anyhow!("Failed to convert pdftract output to UTF-8: {}", e))?;
+        .map_err(ClassifyError::InvalidUtf8Output)?;
 
     let json_value: serde_json::Value = serde_json::from_str(&json_str)
-        .map_err(|e| anyhow::anyhow!("Failed to parse pdftract JSON output: {}", e))?;
+        .map_err(ClassifyError::JsonParseFailed)?;
 
     // Extract pages array
     let pages = json_value
         .get("pages")
         .and_then(|v| v.as_array())
-        .ok_or_else(|| anyhow::anyhow!("JSON output missing 'pages' array"))?;
+        .ok_or_else(|| ClassifyError::MissingPagesArray)?;
 
     // We expect at least one page
     if pages.is_empty() {
-        anyhow::bail!("PDF has no pages");
+        return Err(ClassifyError::NoPages.into());
     }
 
     // Classify based on the first page (most test fixtures are single-page)
     let first_page = pages
         .first()
-        .ok_or_else(|| anyhow::anyhow!("Failed to get first page from pages array"))?;
+        .ok_or_else(|| ClassifyError::NoFirstPage)?;
 
     // Extract classification from page_type
     // PageClass mapping: "mixed" -> Hybrid, "text" -> Vector, "scanned" -> Scanned, "broken_vector" -> BrokenVector
     let page_type = first_page
         .get("page_type")
         .and_then(|v| v.as_str())
-        .unwrap_or("unknown");
+        .ok_or_else(|| ClassifyError::MissingPageType)?;
 
     let class = match page_type {
         "mixed" => PageClass::Hybrid,
@@ -422,7 +564,7 @@ pub fn classify_page(pdf_bytes: &[u8]) -> anyhow::Result<PageClass> {
         "broken_vector" => PageClass::BrokenVector,
         "blank" => PageClass::Vector, // Blank pages are treated as vector (no content)
         "figure_only" => PageClass::Scanned, // Figure-only pages are treated as scanned
-        _ => anyhow::bail!("Unknown page_type: {}", page_type),
+        unknown => return Err(ClassifyError::UnknownPageType(unknown.to_string()).into()),
     };
 
     Ok(class)
