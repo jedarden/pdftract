@@ -70,6 +70,7 @@
 
 use pdftract_core::page_class::{PageClass, PageClassification};
 use pdftract_core::sdk;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// Directory containing hybrid fixture PDFs.
@@ -245,6 +246,112 @@ pub fn load_and_classify_fixture(fixture_name: &str) -> anyhow::Result<PageClass
     // If page_type is "mixed", we assume hybrid_cells were detected.
 
     Ok(PageClassification::new(class, 0.9, None))
+}
+
+/// Classify a PDF page from raw bytes.
+///
+/// This helper function takes raw PDF bytes, writes them to a temporary file,
+/// runs the full pdftract extraction pipeline, and returns the PageClass.
+/// This is useful when you have PDF data in memory rather than on disk.
+///
+/// # Arguments
+///
+/// * `pdf_bytes` - Raw PDF file bytes
+///
+/// # Returns
+///
+/// A `Result<PageClass>` containing the detected page class:
+/// - `PageClass::Vector` - Clean text PDF with readable text encoding
+/// - `PageClass::Scanned` - Image-only page requiring OCR
+/// - `PageClass::Hybrid` - Mixed page with both vector text and image regions
+/// - `PageClass::BrokenVector` - Text present but encoding is broken
+///
+/// # Errors
+///
+/// Returns `Err` if:
+/// - PDF bytes are empty or invalid
+/// - Temporary file creation fails
+/// - PDF parsing fails
+/// - Extraction or classification fails
+/// - Invalid page_type encountered
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use pdftract_core::page_class::PageClass;
+///
+/// let pdf_bytes = std::fs::read("document.pdf").expect("Failed to read PDF");
+/// let page_class = classify_page(&pdf_bytes).expect("Failed to classify");
+///
+/// match page_class {
+///     PageClass::Hybrid => println!("Hybrid PDF detected"),
+///     PageClass::Vector => println!("Clean vector PDF"),
+///     PageClass::Scanned => println!("Scanned PDF - OCR required"),
+///     PageClass::BrokenVector => println!("Broken vector PDF"),
+/// }
+/// ```
+pub fn classify_page(pdf_bytes: &[u8]) -> anyhow::Result<PageClass> {
+    // Validate input
+    if pdf_bytes.is_empty() {
+        anyhow::bail!("PDF bytes are empty");
+    }
+
+    // Check for PDF signature
+    if !pdf_bytes.starts_with(b"%PDF") {
+        anyhow::bail!("Invalid PDF: missing PDF signature");
+    }
+
+    // Create a temporary file with .pdf extension
+    let mut temp_file = tempfile::Builder::new()
+        .prefix("pdftract_classify_")
+        .suffix(".pdf")
+        .rand_bytes(5)
+        .tempfile()
+        .map_err(|e| anyhow::anyhow!("Failed to create temporary file: {}", e))?;
+
+    // Write PDF bytes to temporary file
+    temp_file
+        .write_all(pdf_bytes)
+        .map_err(|e| anyhow::anyhow!("Failed to write PDF bytes to temporary file: {}", e))?;
+
+    // Flush to ensure data is written
+    temp_file
+        .flush()
+        .map_err(|e| anyhow::anyhow!("Failed to flush temporary file: {}", e))?;
+
+    // Get the path to the temporary file
+    let temp_path = temp_file.path();
+
+    // Extract the PDF with default options
+    let result = sdk::extract(temp_path, &Default::default())
+        .map_err(|e| anyhow::anyhow!("Failed to extract PDF: {}", e))?;
+
+    // We expect at least one page
+    if result.pages.is_empty() {
+        anyhow::bail!("PDF has no pages");
+    }
+
+    // Classify based on the first page (most test fixtures are single-page)
+    let page = &result.pages[0];
+
+    // Extract classification from page_type
+    // PageClass mapping: "mixed" -> Hybrid, "text" -> Vector, "scanned" -> Scanned, "broken_vector" -> BrokenVector
+    let page_type = page
+        .page_type
+        .as_deref()
+        .unwrap_or("unknown");
+
+    let class = match page_type {
+        "mixed" => PageClass::Hybrid,
+        "text" => PageClass::Vector,
+        "scanned" => PageClass::Scanned,
+        "broken_vector" => PageClass::BrokenVector,
+        "blank" => PageClass::Vector, // Blank pages are treated as vector (no content)
+        "figure_only" => PageClass::Scanned, // Figure-only pages are treated as scanned
+        _ => anyhow::bail!("Unknown page_type: {}", page_type),
+    };
+
+    Ok(class)
 }
 
 /// Extract the hybrid cell count from a PageClassification.
