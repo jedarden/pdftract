@@ -43,8 +43,8 @@ def test_extract_returns_typed_document():
     """Verify extract() returns a Document instance with typed attributes."""
     print("Testing extract() returns typed Document...")
 
-    # Use a working fixture
-    doc = pdftract.extract("tests/fixtures/remote_100page.pdf")
+    # Use a working fixture with actual content
+    doc = pdftract.extract("tests/fixtures/markdown_structure.pdf")
 
     # Verify Document type
     assert isinstance(doc, pdftract.Document), f"Expected Document, got {type(doc).__name__}"
@@ -85,15 +85,60 @@ def test_extract_returns_typed_document():
     page = doc.pages[0]
     print(f"✓ Page 0 has attributes: page={page.page}, width={page.width}, height={page.height}")
 
-    # Verify spans are typed
-    if len(page.spans) > 0:
-        span = page.spans[0]
-        assert isinstance(span, Span), f'Expected Span, got {type(span).__name__}'
-        assert hasattr(span, 'text'), "Span should have 'text' attribute"
-        assert hasattr(span, 'font'), "Span should have 'font' attribute"
-        assert hasattr(span, 'size'), "Span should have 'size' attribute"
-        assert hasattr(span, 'bbox'), "Span should have 'bbox' attribute"
-        print(f"✓ spans[0] is Span with text={repr(span.text[:20])}, font={span.font}, size={span.size}")
+    # Find a page with spans to verify Span type assertions
+    page_with_spans = None
+    for test_page in doc.pages:
+        if len(test_page.spans) > 0:
+            page_with_spans = test_page
+            break
+
+    if page_with_spans is None:
+        print(f"⚠ Warning: No pages contain spans - cannot verify Span type assertions")
+    else:
+        print(f"✓ Found page with {len(page_with_spans.spans)} span(s) for detailed verification")
+
+        # Verify page has at least one span
+        assert len(page_with_spans.spans) > 0, f"Page {page_with_spans.page} should have at least one span"
+        print(f"✓ Page {page_with_spans.page} has {len(page_with_spans.spans)} span(s)")
+
+        # Verify each span is a Span instance with expected attributes
+        for span_idx, span in enumerate(page_with_spans.spans):
+            # Check span is a pdftract.Span instance
+            assert isinstance(span, pdftract.Span), f"spans[{span_idx}] on page {page_with_spans.page}: Expected pdftract.Span, got {type(span).__name__}"
+
+            # Verify expected Span attributes: text, bbox (contains x,y coordinates), font, size
+            assert hasattr(span, 'text'), f"spans[{span_idx}] on page {page_with_spans.page} should have 'text' attribute"
+            assert hasattr(span, 'bbox'), f"spans[{span_idx}] on page {page_with_spans.page} should have 'bbox' attribute (contains x, y coordinates)"
+            assert hasattr(span, 'font'), f"spans[{span_idx}] on page {page_with_spans.page} should have 'font' attribute"
+            assert hasattr(span, 'size'), f"spans[{span_idx}] on page {page_with_spans.page} should have 'size' attribute"
+
+            # Verify bbox is a tuple/list with 4 elements [x0, y0, x1, y1]
+            assert hasattr(span.bbox, '__len__'), f"spans[{span_idx}] bbox should have length"
+            assert len(span.bbox) == 4, f"spans[{span_idx}] bbox should have 4 elements [x0, y0, x1, y1], got {len(span.bbox)}"
+
+            # Verify x, y coordinates are present in bbox
+            x0, y0, x1, y1 = span.bbox
+            assert isinstance(x0, (int, float)), f"spans[{span_idx}] bbox x0 should be numeric, got {type(x0).__name__}"
+            assert isinstance(y0, (int, float)), f"spans[{span_idx}] bbox y0 should be numeric, got {type(y0).__name__}"
+            assert isinstance(x1, (int, float)), f"spans[{span_idx}] bbox x1 should be numeric, got {type(x1).__name__}"
+            assert isinstance(y1, (int, float)), f"spans[{span_idx}] bbox y1 should be numeric, got {type(y1).__name__}"
+
+            # Verify text is a string
+            assert isinstance(span.text, str), f"spans[{span_idx}] text should be str, got {type(span.text).__name__}"
+
+            # Verify font is a string
+            assert isinstance(span.font, str), f"spans[{span_idx}] font should be str, got {type(span.font).__name__}"
+
+            # Verify size is numeric
+            assert isinstance(span.size, (int, float)), f"spans[{span_idx}] size should be numeric, got {type(span.size).__name__}"
+
+        print(f"✓ All {len(page_with_spans.spans)} span(s) verified as pdftract.Span instances")
+        print(f"✓ Each span has expected attributes: text, bbox ([x0, y0, x1, y1]), font, size")
+
+        # Show details of first span for clarity
+        first_span = page_with_spans.spans[0]
+        x0, y0, x1, y1 = first_span.bbox
+        print(f"✓ spans[0] details: text={repr(first_span.text[:20])}, font={first_span.font}, size={first_span.size}, bbox=[x0={x0}, y0={y0}, x1={x1}, y1={y1}]")
 
     # Verify blocks are typed
     if len(page.blocks) > 0:
