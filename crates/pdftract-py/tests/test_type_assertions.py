@@ -61,6 +61,9 @@ def test_extract_returns_document_type() -> None:
     # Verify it's not a raw dict
     assert not isinstance(doc, dict), "extract() should not return a raw dict"
 
+    # Verify Document contains pages
+    assert doc.pages, "Document should contain pages"
+
 
 def test_document_has_required_attributes() -> None:
     """Verify Document has all required attributes.
@@ -232,6 +235,10 @@ def test_document_type_from_fixture_data(fixture_data: dict[str, Any]) -> None:
 
     # Verify ALL pages are Page instances (handle multiple objects)
     assert len(result.pages) > 0, "Document should have at least one page"
+
+    # Verify first page is a Page instance with descriptive error
+    assert isinstance(result.pages[0], pdftract.Page), \
+        f'Expected Page, got {type(result.pages[0]).__name__}'
 
     for page_idx, page in enumerate(result.pages):
         assert isinstance(page, pdftract.Page), \
