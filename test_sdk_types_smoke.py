@@ -62,18 +62,24 @@ def test_extract_returns_typed_document():
     assert len(doc.pages) > 0, "Document should have at least one page"
     print(f"✓ Document has {len(doc.pages)} page(s)")
 
-    # Verify Page type
-    page = doc.pages[0]
-    assert isinstance(page, pdftract.Page), f"Expected Page, got {type(page)}"
-    print("✓ pages[0] is Page instance")
+    # Verify ALL pages are Page instances with expected attributes
+    for page_idx, page in enumerate(doc.pages):
+        assert isinstance(page, pdftract.Page), f"pages[{page_idx}] Expected Page, got {type(page)}"
 
-    # Verify Page attributes
-    assert hasattr(page, 'page'), "Page should have 'page' attribute"
-    assert hasattr(page, 'width'), "Page should have 'width' attribute"
-    assert hasattr(page, 'height'), "Page should have 'height' attribute"
-    assert hasattr(page, 'spans'), "Page should have 'spans' attribute"
-    assert hasattr(page, 'blocks'), "Page should have 'blocks' attribute"
-    print(f"✓ Page has attributes: page={page.page}, width={page.width}, height={page.height}")
+        # Verify Page has expected attributes: spans, width, height
+        assert hasattr(page, 'spans'), f"pages[{page_idx}] should have 'spans' attribute"
+        assert hasattr(page, 'width'), f"pages[{page_idx}] should have 'width' attribute"
+        assert hasattr(page, 'height'), f"pages[{page_idx}] should have 'height' attribute"
+
+        # Verify other expected attributes
+        assert hasattr(page, 'page'), f"pages[{page_idx}] should have 'page' attribute"
+        assert hasattr(page, 'blocks'), f"pages[{page_idx}] should have 'blocks' attribute"
+
+    print(f"✓ All {len(doc.pages)} pages are Page instances with spans, width, height attributes")
+
+    # Also verify the first page for detailed output
+    page = doc.pages[0]
+    print(f"✓ Page 0 has attributes: page={page.page}, width={page.width}, height={page.height}")
 
     # Verify spans are typed
     if len(page.spans) > 0:
