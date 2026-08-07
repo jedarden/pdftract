@@ -114,8 +114,8 @@ impl fmt::Display for InputEdge {
 /// - Edges are removed from AET when y > y_max
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Edge {
-    /// Current X intersection position with the current scanline
-    pub x: i32,
+    /// Current X intersection position with the current scanline (floating-point for accuracy)
+    pub x: f64,
     /// Minimum Y coordinate (top of edge, inclusive)
     pub y_min: i32,
     /// Maximum Y coordinate (bottom of edge, exclusive)
@@ -141,8 +141,10 @@ impl Edge {
     #[must_use]
     pub fn from_endpoints(x0: i32, y0: i32, x1: i32, y1: i32) -> Self {
         let (y_min, y_max) = if y0 < y1 { (y0, y1) } else { (y1, y0) };
+        // Use the x-coordinate at y_min as initial X
+        let initial_x = if y0 < y1 { x0 } else { x1 };
         Self {
-            x: x0, // Initial X position at y_min
+            x: initial_x as f64, // Initial X position at y_min
             y_min,
             y_max,
             dx: x1 - x0,
@@ -181,7 +183,7 @@ impl Edge {
     /// Adds the slope (dx/dy) to X, advancing the intersection point
     /// by one scanline.
     pub fn advance_scanline(&mut self) {
-        self.x += (self.slope() as i32);
+        self.x += self.slope();
     }
 }
 
@@ -347,13 +349,19 @@ pub fn fill_polygon<B: Bitmap>(bitmap: &mut B, edges: &[InputEdge], fill_value: 
         aet.retain(|e| y < e.y_max);
 
         // Step 3: Sort AET by current X position
-        aet.sort_by_key(|e| e.x);
+        // Use partial_cmp for f64 comparison
+        aet.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap());
+
+        // Step 3.5: Calculate x-coordinate intersections for current scanline
+        // Compute intersection x = round(edge.x) for each active edge
+        // Store intersections in a Vec<i32> for the current scanline
+        let intersections: Vec<i32> = aet.iter().map(|edge| edge.x.round() as i32).collect();
 
         // Step 4: Fill between pairs of X positions (even-odd rule)
-        for i in (0..aet.len()).step_by(2) {
-            if i + 1 < aet.len() {
-                let x_start = aet[i].x.max(0);
-                let x_end = aet[i + 1].x.min(width - 1);
+        for i in (0..intersections.len()).step_by(2) {
+            if i + 1 < intersections.len() {
+                let x_start = intersections[i].max(0);
+                let x_end = intersections[i + 1].min(width - 1);
 
                 for x in x_start..=x_end {
                     bitmap.set(x, y, fill_value);
@@ -400,6 +408,54 @@ pub fn fill_polygon_from_tuples<B: Bitmap>(
 ) {
     let edge_objs: Vec<InputEdge> = edges.iter().map(|&e| InputEdge::from_tuple(e)).collect();
     fill_polygon(bitmap, &edge_objs, fill_value);
+}
+
+/// Calculate X-coordinate intersection points for the current scanline.
+///
+/// Extracts and rounds the X intersection coordinates from the Active Edge Table.
+/// For each edge in the AET, computes x = round(edge.x) and collects all
+/// intersection points into a sorted Vec<i32> for fill span calculation.
+///
+/// # Arguments
+///
+/// * `aet` - Reference to the Active Edge Table (must be sorted by X)
+///
+/// # Returns
+///
+/// A Vec<i32> containing the rounded X coordinates of all edge intersections
+/// with the current scanline, sorted left-to-right.
+///
+/// # Algorithm
+///
+/// For each edge in the AET:
+/// 1. Extract the current X position (edge.x)
+/// 2. Apply rounding: round(edge.x) to get integer pixel coordinate
+/// 3. Collect all rounded X coordinates into a vector
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use pdftract_core::render::scanline::{calculate_intersections, Edge, ActiveEdgeTable};
+///
+/// let mut aet: ActiveEdgeTable = vec![
+///     Edge { x: 10, y_min: 5, y_max: 25, dx: 10, dy: 20 },
+///     Edge { x: 25, y_min: 5, y_max: 25, dx: -10, dy: 20 },
+/// ];
+/// aet.sort_by_key(|e| e.x); // Must be sorted by X
+///
+/// let intersections = calculate_intersections(&aet);
+/// assert_eq!(intersections, vec![10, 25]);
+/// ```
+pub fn calculate_intersections(aet: &ActiveEdgeTable) -> Vec<i32> {
+    let mut intersections: Vec<i32> = aet
+        .iter()
+        .map(|edge| edge.x.round() as i32)
+        .collect();
+
+    // Sort intersections left-to-right for fill span calculation
+    intersections.sort();
+
+    intersections
 }
 
 /// Add edges to the Active Edge Table when the scanline reaches their y_min.
@@ -551,13 +607,19 @@ pub fn fill_polygon_aet<B: Bitmap>(bitmap: &mut B, edges: &[InputEdge], fill_val
         }
 
         // STEP 4: Sort AET by X coordinate (left-to-right)
-        aet.sort_by_key(|e| e.x);
+        // Use partial_cmp for f64 comparison
+        aet.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap());
+
+        // STEP 4.5: Calculate x-coordinate intersections for current scanline
+        // Compute intersection x = round(edge.x) for each active edge
+        // Store intersections in a Vec<i32> for the current scanline
+        let intersections: Vec<i32> = aet.iter().map(|edge| edge.x.round() as i32).collect();
 
         // STEP 5: Fill between pairs of X positions (even-odd rule)
-        for i in (0..aet.len()).step_by(2) {
-            if i + 1 < aet.len() {
-                let x_start = aet[i].x.max(0);
-                let x_end = aet[i + 1].x.min(width - 1);
+        for i in (0..intersections.len()).step_by(2) {
+            if i + 1 < intersections.len() {
+                let x_start = intersections[i].max(0);
+                let x_end = intersections[i + 1].min(width - 1);
 
                 for x in x_start..=x_end {
                     bitmap.set(x, scanline, fill_value);
