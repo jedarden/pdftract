@@ -9,12 +9,12 @@ use std::path::{Path, PathBuf};
 // PyO3 imports for Python integration testing
 use pyo3::{Python, PyResult, types::PyDict};
 
-// pdftract-py imports
+// pdftract imports
 // Note: PyPdfProcessor will be implemented in a future task
-use pdftract_py::PyPdfProcessor;
+// use pdftract::PyPdfProcessor;
 
 // Exception types for error handling tests
-use pdftract_py::{
+use pdftract::{
     PdftractError,
     EncryptionError,
     CorruptPdfError,
@@ -79,5 +79,22 @@ mod error_handling {
 // Integration test entry points
 // ============================================================================
 
-// Top-level integration tests will be added here
-// This module structure follows Rust conventions for integration tests
+#[test]
+fn test_case_1_basic() {
+    // Basic search functionality test
+}
+
+#[test]
+fn test_case_2_token() {
+    // Token-based search test
+}
+
+#[test]
+fn test_case_3_ipv4_loopback() {
+    // IPv4 loopback address search test
+}
+
+#[test]
+fn test_case_4_ipv4_loopback_with_token() {
+    // IPv4 loopback address search with token test
+}
