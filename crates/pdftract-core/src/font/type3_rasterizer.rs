@@ -3625,4 +3625,223 @@ mod tests {
         assert!(error_msg.contains("/Type"));
         assert!(error_msg.contains("stream"));
     }
+
+    #[test]
+    fn test_fill_polygon_edge_activation_at_y_min() {
+        // Test that edges are activated when scanline reaches y_min
+        let mut type3 = Type3Glyph::new(32, 32, false);
+
+        // Create a diagonal line from (5, 10) to (15, 20)
+        // Edge should be added to AET at y_min = 10
+        let edges = vec![(5, 10, 15, 20)];
+
+        type3.fill_polygon(&edges);
+
+        // Pixels should be filled starting at y = 10
+        // y = 10: x ≈ 5
+        assert_eq!(type3.bitmap.get(5, 10), Some(0), "Edge should be active at y_min");
+
+        // Pixels should NOT be filled before y = 10
+        assert_eq!(type3.bitmap.get(5, 9), Some(255), "Edge should not be active before y_min");
+    }
+
+    #[test]
+    fn test_fill_polygon_edge_removal_after_y_max() {
+        // Test that edges are removed after scanline passes y_max
+        let mut type3 = Type3Glyph::new(32, 32, false);
+
+        // Create a diagonal line from (5, 10) to (15, 20)
+        // Edge should be removed after y_max = 20
+        let edges = vec![(5, 10, 15, 20)];
+
+        type3.fill_polygon(&edges);
+
+        // Pixels should be filled up to and including y = 20
+        assert_eq!(type3.bitmap.get(15, 20), Some(0), "Edge should be active at y_max");
+
+        // Pixels should NOT be filled after y = 20
+        assert_eq!(type3.bitmap.get(15, 21), Some(255), "Edge should be removed after y_max");
+    }
+
+    #[test]
+    fn test_fill_polygon_intersection_x_accuracy() {
+        // Test that intersection x coordinates are calculated accurately
+        let mut type3 = Type3Glyph::new(32, 32, false);
+
+        // Create a triangle with known intersection points
+        // Triangle: (5, 5) -> (15, 15) -> (5, 15) -> (5, 5)
+        let edges = vec![
+            (5, 5, 15, 15),   // Diagonal up
+            (15, 15, 5, 15),  // Horizontal (should be skipped)
+            (5, 15, 5, 5),    // Vertical down
+        ];
+
+        type3.fill_polygon(&edges);
+
+        // At y = 10, intersection with diagonal should be at x = 10
+        // Line from (5,5) to (15,15): slope = 1, at y=10, x = 5 + (10-5) = 10
+        assert_eq!(type3.bitmap.get(10, 10), Some(0), "Intersection x at y=10 should be 10");
+    }
+
+    #[test]
+    fn test_fill_polygon_slope_x_increment_progression() {
+        // Test that x increments correctly based on slope across multiple scanlines
+        let mut type3 = Type3Glyph::new(32, 32, false);
+
+        // Create a line with slope 0.5: (5, 5) to (15, 25)
+        // dx = 10, dy = 20, slope = dx/dy = 0.5
+        // x should increment by 0.5 each scanline
+        let edges = vec![(5, 5, 15, 25)];
+
+        type3.fill_polygon(&edges);
+
+        // Expected x progression: 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, ...
+        // Rounded: 5, 6, 6, 7, 7, 8, 8, 9, ...
+        let expected_x_values: Vec<i32> = vec![
+            5,  // y = 5: x = 5.0
+            6,  // y = 6: x = 5.5 → 6
+            6,  // y = 7: x = 6.0 → 6
+            7,  // y = 8: x = 6.5 → 7
+            7,  // y = 9: x = 7.0 → 7
+            8,  // y = 10: x = 7.5 → 8
+            8,  // y = 11: x = 8.0 → 8
+            9,  // y = 12: x = 8.5 → 9
+        ];
+
+        for (i, y) in (5..=12).enumerate() {
+            let expected_x = expected_x_values[i];
+            assert_eq!(
+                type3.bitmap.get(expected_x, y),
+                Some(0),
+                "At y={}, intersection x should be {} (progression with slope 0.5)",
+                y, expected_x
+            );
+        }
+    }
+
+    #[test]
+    fn test_fill_polygon_multiple_edges_activation() {
+        // Test that multiple edges are activated at their respective y_min values
+        let mut type3 = Type3Glyph::new(32, 32, false);
+
+        // Create two edges with different y_min
+        // Edge 1: y_min = 5, y_max = 15
+        // Edge 2: y_min = 10, y_max = 20
+        let edges = vec![
+            (5, 5, 15, 15),
+            (25, 10, 15, 20),
+        ];
+
+        type3.fill_polygon(&edges);
+
+        // At y = 5, only first edge should be active
+        // With two edges, we get two intersections - fill between them
+        let filled_at_5: Vec<i32> = (0..32).filter(|&x| type3.bitmap.get(x, 5) == Some(0)).collect();
+        assert!(!filled_at_5.is_empty(), "First edge should be active at y=5");
+
+        // At y = 10, both edges should be active
+        let filled_at_10: Vec<i32> = (0..32).filter(|&x| type3.bitmap.get(x, 10) == Some(0)).collect();
+        assert!(!filled_at_10.is_empty(), "Both edges should be active at y=10");
+    }
+
+    #[test]
+    fn test_fill_polygon_horizontal_edges_skipped() {
+        // Test that horizontal edges are skipped and don't affect fill
+        let mut type3 = Type3Glyph::new(32, 32, false);
+
+        // Horizontal edge at y = 10 (should be skipped)
+        let edges = vec![(5, 10, 15, 10)];
+
+        type3.fill_polygon(&edges);
+
+        // No pixels should be filled
+        for x in 0..32 {
+            for y in 0..32 {
+                assert_eq!(
+                    type3.bitmap.get(x, y),
+                    Some(255),
+                    "Horizontal edge should not fill any pixels"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_fill_polygon_steep_slope() {
+        // Test edge with steep slope (dx > dy)
+        let mut type3 = Type3Glyph::new(32, 32, false);
+
+        // Steep line: (5, 5) to (25, 10)
+        // dx = 20, dy = 5, slope = dx/dy = 4.0
+        // x increments by 4.0 each scanline
+        let edges = vec![(5, 5, 25, 10)];
+
+        type3.fill_polygon(&edges);
+
+        // Expected x progression: 5.0, 9.0, 13.0, 17.0, 21.0, 25.0
+        let expected_x_values: Vec<i32> = vec![5, 9, 13, 17, 21, 25];
+
+        for (i, y) in (5..=10).enumerate() {
+            let expected_x = expected_x_values[i];
+            assert_eq!(
+                type3.bitmap.get(expected_x, y),
+                Some(0),
+                "At y={}, intersection x should be {} (steep slope)",
+                y, expected_x
+            );
+        }
+    }
+
+    #[test]
+    fn test_fill_polygon_negative_slope() {
+        // Test edge with negative slope (x decreases as y increases)
+        let mut type3 = Type3Glyph::new(32, 32, false);
+
+        // Line with negative slope: (20, 5) to (10, 15)
+        // dx = -10, dy = 10, slope = -1.0
+        // x decrements by 1.0 each scanline
+        let edges = vec![(20, 5, 10, 15)];
+
+        type3.fill_polygon(&edges);
+
+        // Expected x progression: 20.0, 19.0, 18.0, 17.0, 16.0, 15.0, 14.0, 13.0, 12.0, 11.0, 10.0
+        let expected_x_values: Vec<i32> = vec![20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10];
+
+        for (i, y) in (5..=15).enumerate() {
+            let expected_x = expected_x_values[i];
+            assert_eq!(
+                type3.bitmap.get(expected_x, y),
+                Some(0),
+                "At y={}, intersection x should be {} (negative slope)",
+                y, expected_x
+            );
+        }
+    }
+
+    #[test]
+    fn test_fill_polygon_rectangle() {
+        // Test filling a simple rectangle
+        let mut type3 = Type3Glyph::new(32, 32, false);
+
+        // Rectangle: (5, 5) -> (15, 5) -> (15, 15) -> (5, 15)
+        let edges = vec![
+            (5, 5, 15, 5),   // Top edge (horizontal, skipped)
+            (15, 5, 15, 15), // Right edge (vertical)
+            (15, 15, 5, 15), // Bottom edge (horizontal, skipped)
+            (5, 15, 5, 5),   // Left edge (vertical)
+        ];
+
+        type3.fill_polygon(&edges);
+
+        // Check that interior pixels are filled
+        assert_eq!(type3.bitmap.get(10, 10), Some(0), "Interior should be filled");
+
+        // Check that corners are included
+        assert_eq!(type3.bitmap.get(5, 5), Some(0), "Top-left corner should be filled");
+        assert_eq!(type3.bitmap.get(15, 15), Some(0), "Bottom-right corner should be filled");
+
+        // Check that exterior is not filled
+        assert_eq!(type3.bitmap.get(4, 10), Some(255), "Left exterior should not be filled");
+        assert_eq!(type3.bitmap.get(16, 10), Some(255), "Right exterior should not be filled");
+    }
 }
