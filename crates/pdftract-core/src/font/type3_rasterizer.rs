@@ -1267,62 +1267,84 @@ impl<'a> RasterizerContext<'a> {
         }
     }
 
-    /// Fill a polygon using scanline algorithm.
+    /// Fill a polygon using scanline algorithm with Active Edge Table (AET).
     /// `edges` is a list of (x0, y0, x1, y1) line segments in bitmap coordinates.
     fn fill_polygon(&mut self, edges: &[(i32, i32, i32, i32)]) {
         let width = self.bitmap.width as i32;
         let height = self.bitmap.height as i32;
 
-        // Find y-bounds
-        let mut min_y = height;
-        let mut max_y = 0i32;
-
-        for &(_, y0, _, y1) in edges {
-            min_y = min_y.min(y0.min(y1));
-            max_y = max_y.max(y0.max(y1));
+        // Build Global Edge Table (GET): structure edges with y_min and sort
+        #[derive(Debug, Clone, Copy)]
+        struct Edge {
+            x: i32,           // Current X intersection position
+            y_min: i32,       // Minimum Y coordinate (top of edge)
+            y_max: i32,       // Maximum Y coordinate (bottom of edge)
+            dx: i32,          // Change in X across the edge
+            dy: i32,          // Change in Y across the edge
         }
 
-        // Clamp to bitmap bounds
-        min_y = min_y.max(0);
-        max_y = max_y.min(height - 1);
+        let mut get: Vec<Edge> = Vec::new();
+
+        for &(x0, y0, x1, y1) in edges {
+            // Skip horizontal edges (they don't affect scanline fill)
+            if y0 == y1 {
+                continue;
+            }
+
+            let (y_min, y_max) = if y0 < y1 { (y0, y1) } else { (y1, y0) };
+
+            get.push(Edge {
+                x: x0,  // Initial X position at y_min
+                y_min,
+                y_max,
+                dx: x1 - x0,
+                dy: y1 - y0,
+            });
+        }
+
+        if get.is_empty() {
+            return; // No non-horizontal edges to process
+        }
+
+        // Sort GET by y_min (topmost edges first)
+        get.sort_by_key(|e| e.y_min);
+
+        // Find y-bounds
+        let min_y = get.first().map(|e| e.y_min.max(0)).unwrap_or(0);
+        let max_y = get.last().map(|e| e.y_max.min(height - 1)).unwrap_or(0);
+
+        // Initialize Active Edge Table (AET)
+        let mut aet: Vec<Edge> = Vec::new();
+        let mut get_idx = 0;
 
         // For each scanline
         for y in min_y..=max_y {
-            let mut intersections = Vec::new();
-
-            // Find all intersections with this scanline
-            for &(x0, y0, x1, y1) in edges {
-                // Skip horizontal edges (they don't affect scanline fill)
-                if y0 == y1 {
-                    continue;
-                }
-
-                // Check if edge spans this scanline using half-open interval
-                // Include lower endpoint, exclude upper endpoint to avoid double-counting vertices
-                let (y_min, y_max) = if y0 < y1 { (y0, y1) } else { (y1, y0) };
-                if y_min <= y && y < y_max {
-                    // Calculate x intersection
-                    // x = x0 + (y - y0) * (x1 - x0) / (y1 - y0)
-                    let dy = y1 - y0;
-                    let t = (y - y0) as f64 / dy as f64;
-                    let x = x0 as f64 + t * (x1 - x0) as f64;
-                    intersections.push(x);
-                }
+            // Add edges from GET to AET when scanline reaches edge.y_min
+            while get_idx < get.len() && get[get_idx].y_min == y {
+                aet.push(get[get_idx]);
+                get_idx += 1;
             }
 
-            // Sort intersections
-            intersections.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            // Remove edges from AET where scanline >= y_max (edge has ended)
+            aet.retain(|e| y < e.y_max);
 
-            // Fill between pairs of intersections
-            for i in (0..intersections.len()).step_by(2) {
-                if i + 1 < intersections.len() {
-                    let x_start = intersections[i].ceil() as i32;
-                    let x_end = intersections[i + 1].floor() as i32;
+            // Update X positions in AET for this scanline
+            for edge in &mut aet {
+                // Update X based on slope: x += dx/dy for each scanline
+                edge.x += (edge.dx as f64 / edge.dy as f64) as i32;
+            }
+
+            // Sort AET by current X position
+            aet.sort_by_key(|e| e.x);
+
+            // Fill between pairs of X positions (even-odd rule)
+            for i in (0..aet.len()).step_by(2) {
+                if i + 1 < aet.len() {
+                    let x_start = aet[i].x.max(0);
+                    let x_end = aet[i + 1].x.min(width - 1);
 
                     for x in x_start..=x_end {
-                        if x >= 0 && x < width {
-                            self.bitmap.set(x, y, 0);
-                        }
+                        self.bitmap.set(x, y, 0);
                     }
                 }
             }
