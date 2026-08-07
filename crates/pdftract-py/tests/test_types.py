@@ -45,15 +45,15 @@ def test_extract_returns_typed_document():
     assert doc.pages, "Document should contain pages"
 
     # Assert ALL pages are Page instances with expected attributes
-    for page in doc.pages:
+    for i, page in enumerate(doc.pages):
         assert isinstance(page, pdftract.Page), \
-            f"Each page should be a Page instance, got {type(page)}"
+            f"Page {i} should be a Page instance, got {type(page).__name__}"
         assert hasattr(page, "spans"), \
-            "Page should have spans attribute"
+            f"Page {i} should have spans attribute"
         assert hasattr(page, "width"), \
-            "Page should have width attribute"
+            f"Page {i} should have width attribute"
         assert hasattr(page, "height"), \
-            "Page should have height attribute"
+            f"Page {i} should have height attribute"
 
     # Assert first page is Page instance
     first_page = doc.pages[0]
