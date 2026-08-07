@@ -73,6 +73,9 @@ use pdftract_core::sdk;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+// Re-export serde_json for use in extract_grid_coverage
+pub use serde_json;
+
 /// Directory containing hybrid fixture PDFs.
 pub const FIXTURE_DIR: &str = "tests/fixtures/hybrid";
 
@@ -481,6 +484,394 @@ pub fn assert_hybrid_classification(
     );
 }
 
+/// Extract grid-cell coverage percentage from pdftract analysis output.
+///
+/// This function parses the textual or JSON output from pdftract analysis to extract
+/// the 8×8 grid-cell coverage percentage. The coverage indicates what proportion of
+/// the 64 grid cells are classified as hybrid (containing both vector and image content).
+///
+/// For hybrid classification, the coverage should be ≥ 15% (≥ 10 of 64 cells).
+///
+/// # Arguments
+///
+/// * `analysis_output` - The output text/JSON from pdftract analysis
+///
+/// # Returns
+///
+/// * `Ok(f64)` - Grid-cell coverage percentage (0.0 to 100.0)
+/// * `Err(anyhow::Error)` - If the output cannot be parsed or coverage data is missing
+///
+/// # Errors
+///
+/// Returns `Err` if:
+/// - The output is malformed or cannot be parsed as JSON
+/// - The coverage field is missing or not a valid number
+/// - The percentage is outside the valid range [0.0, 100.0]
+///
+/// # Supported Output Formats
+///
+/// This function handles several common output formats:
+///
+/// 1. **JSON with `grid_coverage` field:**
+/// ```json
+/// {
+///   "page_type": "mixed",
+///   "grid_coverage": 15.6,
+///   "hybrid_cells": 10
+/// }
+/// ```
+///
+/// 2. **JSON with `hybrid_cells` count (converted to percentage):**
+/// ```json
+/// {
+///   "page_type": "mixed",
+///   "hybrid_cells": 12
+/// }
+/// ```
+///
+/// 3. **Text format with key-value pairs:**
+/// ```text
+/// grid_coverage: 15.6%
+/// hybrid_cells: 10
+/// ```
+///
+/// # Example
+///
+/// ```rust,no_run
+/// let output = r#"{"page_type":"mixed","grid_coverage":15.6}"#;
+/// let coverage = extract_grid_coverage(output)
+///     .expect("Failed to extract coverage");
+/// assert!(coverage >= 15.0, "Coverage should meet 15% threshold");
+/// ```
+///
+/// # Implementation Notes
+///
+/// - If `grid_coverage` is present as a percentage (e.g., "15.6%"), the % suffix is stripped
+/// - If only `hybrid_cells` count is available, it's converted to a percentage: `(cells / 64) * 100`
+/// - Returns 0.0 if page_type indicates a non-hybrid classification (vector, scanned, etc.)
+pub fn extract_grid_coverage(analysis_output: &str) -> anyhow::Result<f64> {
+    // Try parsing as JSON first
+    if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(analysis_output) {
+        // Check if this is a non-hybrid page type (return 0.0 coverage)
+        if let Some(page_type) = json_value.get("page_type").and_then(|v| v.as_str()) {
+            if matches!(page_type, "text" | "scanned" | "broken_vector" | "blank") {
+                return Ok(0.0);
+            }
+        }
+
+        // Try to get grid_coverage directly
+        if let Some(coverage) = json_value.get("grid_coverage") {
+            return parse_coverage_value(coverage);
+        }
+
+        // Fallback: calculate from hybrid_cells count
+        if let Some(cells) = json_value.get("hybrid_cells").and_then(|v| v.as_u64()) {
+            let coverage = (cells as f64 / GRID_CELL_COUNT as f64) * 100.0;
+            return Ok(coverage);
+        }
+
+        anyhow::bail!(
+            "JSON output missing both 'grid_coverage' and 'hybrid_cells' fields. \
+             Available keys: {}",
+            available_keys(&json_value)
+        );
+    }
+
+    // Try parsing as key-value text format
+    parse_text_format(analysis_output)
+}
+
+/// Parse a coverage value from a JSON value.
+///
+/// Handles numeric values and string representations (e.g., "15.6%", "15.6").
+fn parse_coverage_value(value: &serde_json::Value) -> anyhow::Result<f64> {
+    let coverage = if let Some(num) = value.as_f64() {
+        num
+    } else if let Some(str_val) = value.as_str() {
+        // Remove % suffix if present and parse
+        let cleaned = str_val.trim().trim_end_matches('%');
+        cleaned.parse::<f64>().map_err(|_| {
+            anyhow::anyhow!(
+                "Coverage value '{}' is not a valid number (after removing '%')",
+                str_val
+            )
+        })?
+    } else {
+        anyhow::bail!(
+            "Coverage value must be a number or string, got {:?}",
+            value
+        );
+    };
+
+    // Validate range
+    if coverage < 0.0 || coverage > 100.0 {
+        anyhow::bail!(
+            "Coverage percentage {} is outside valid range [0.0, 100.0]",
+            coverage
+        );
+    }
+
+    Ok(coverage)
+}
+
+/// Parse coverage from text format (key: value pairs).
+///
+/// Handles formats like:
+/// - `grid_coverage: 15.6%`
+/// - `grid_coverage: 15.6`
+/// - `hybrid_cells: 10`
+fn parse_text_format(text: &str) -> anyhow::Result<f64> {
+    for line in text.lines() {
+        let line = line.trim();
+
+        // Skip empty lines and comments
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        // Parse "key: value" format
+        if let Some((key, value)) = line.split_once(':') {
+            let key = key.trim();
+            let value = value.trim();
+
+            match key {
+                "grid_coverage" | "coverage" => {
+                    let cleaned = value.trim_end_matches('%');
+                    let coverage: f64 = cleaned.parse().map_err(|_| {
+                        anyhow::anyhow!("Failed to parse coverage from '{}'", value)
+                    })?;
+
+                    if coverage < 0.0 || coverage > 100.0 {
+                        anyhow::bail!(
+                            "Coverage percentage {} is outside valid range [0.0, 100.0]",
+                            coverage
+                        );
+                    }
+
+                    return Ok(coverage);
+                }
+                "hybrid_cells" | "cells" => {
+                    let cells: usize = value.parse().map_err(|_| {
+                        anyhow::anyhow!("Failed to parse cell count from '{}'", value)
+                    })?;
+
+                    let coverage = (cells as f64 / GRID_CELL_COUNT as f64) * 100.0;
+                    return Ok(coverage);
+                }
+                "page_type" => {
+                    // Check if non-hybrid (will return 0.0 if no coverage found)
+                    if matches!(value, "text" | "scanned" | "broken_vector" | "blank") {
+                        return Ok(0.0);
+                    }
+                }
+                _ => continue,
+            }
+        }
+    }
+
+    anyhow::bail!(
+        "Text format does not contain grid_coverage or hybrid_cells. \
+         Expected format: 'grid_coverage: 15.6%' or 'hybrid_cells: 10'"
+    )
+}
+
+/// Get available keys from a JSON value for error messages.
+fn available_keys(value: &serde_json::Value) -> String {
+    if let Some(obj) = value.as_object() {
+        let keys: Vec<&str> = obj.keys().collect();
+        if keys.is_empty() {
+            "none".to_string()
+        } else {
+            keys.join(", ")
+        }
+    } else {
+        "not an object".to_string()
+    }
+}
+
+
+/// Extract grid-cell coverage from pdftract analysis output.
+///
+/// This helper function parses pdftract JSON output and extracts the 8×8 grid-cell
+/// coverage percentage for hybrid classification validation.
+///
+/// # Arguments
+///
+/// * `analysis_output` - JSON string output from pdftract analysis
+///
+/// # Returns
+///
+/// A `Result<f64>` containing the grid-cell coverage percentage (0.0-100.0).
+/// For valid Hybrid classifications, this returns the percentage of cells that
+/// are image-heavy (scanned cells). For non-Hybrid pages, returns 0.0.
+///
+/// # Errors
+///
+/// Returns `Err` if:
+/// - The JSON cannot be parsed
+/// - The output format is invalid or missing expected fields
+/// - The page data is malformed
+///
+/// # Output Format
+///
+/// Expects pdftract JSON output with the following structure:
+/// ```json
+/// {
+///   "pages": [
+///     {
+///       "page_type": "mixed",
+///       "classification": {
+///         "hybrid_cells": [16, 17, 18, ...]
+///       }
+///     }
+///   ]
+/// }
+/// ```
+///
+/// The hybrid_cells array contains flat indices (0-63) of scanned/image-heavy cells.
+/// Coverage is calculated as: `(hybrid_cells_count / 64) * 100.0`
+///
+/// # Example
+///
+/// ```rust,no_run
+/// let output = r#"{
+///   "pages": [
+///     {
+///       "page_type": "mixed",
+///       "classification": {
+///         "hybrid_cells": [16, 17, 18, 19, 20, 21, 22, 23]
+///       }
+///     }
+///   ]
+/// }"#;
+///
+/// let coverage = extract_grid_coverage(output)?;
+/// assert_eq!(coverage, 12.5); // 8 cells / 64 * 100 = 12.5%
+/// ```
+pub fn extract_grid_coverage(analysis_output: &str) -> anyhow::Result<f64> {
+    use serde_json::Value;
+
+    // Parse the JSON output
+    let json: Value = serde_json::from_str(analysis_output)
+        .map_err(|e| anyhow::anyhow!("Failed to parse JSON output: {}", e))?;
+
+    // Extract pages array
+    let pages = json.get("pages")
+        .and_then(|p| p.as_array())
+        .ok_or_else(|| anyhow::anyhow!("Missing or invalid 'pages' array in output"))?;
+
+    if pages.is_empty() {
+        anyhow::bail!("Output contains no pages");
+    }
+
+    // Get the first page (most fixtures are single-page)
+    let page = &pages[0];
+
+    // Check page_type to verify it's a hybrid page
+    let page_type = page.get("page_type")
+        .and_then(|t| t.as_str())
+        .unwrap_or("unknown");
+
+    // Only extract coverage for "mixed" (Hybrid) pages
+    if page_type != "mixed" {
+        // For non-hybrid pages, coverage is 0.0
+        return Ok(0.0);
+    }
+
+    // Extract hybrid_cells from classification metadata
+    let hybrid_cells = page
+        .get("classification")
+        .and_then(|c| c.get("hybrid_cells"))
+        .and_then(|cells| cells.as_array())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Missing 'classification.hybrid_cells' field for hybrid page (page_type='mixed')"
+            )
+        })?;
+
+    // Count the number of hybrid cells
+    let cell_count = hybrid_cells.len();
+
+    // Calculate coverage percentage: (cell_count / 64) * 100
+    let coverage = (cell_count as f64 / GRID_CELL_COUNT as f64) * 100.0;
+
+    Ok(coverage)
+}
+
+/// Extract 8×8 grid-cell coverage metrics from pdftract analysis output.
+///
+/// This function parses the JSON output from pdftract analysis and extracts
+/// the hybrid cell coverage percentage. The coverage represents the percentage
+/// of grid cells classified as hybrid (containing both vector and image content).
+///
+/// For a page to be classified as Hybrid, the coverage should be >= 15%
+/// (≥ 10 cells out of 64 total cells).
+///
+/// # Arguments
+///
+/// * `analysis_output` - JSON string output from pdftract analysis, expected to contain:
+///   - `class`: The page class (e.g., "Hybrid")
+///   - `hybrid_cells`: Optional array of cell indices (0-63) that are hybrid
+///
+/// # Returns
+///
+/// * `Ok(f64)` - Grid-cell coverage percentage (0.0 to 100.0)
+/// * `Err(anyhow::Error)` - If parsing fails or data is malformed
+///
+/// # Errors
+///
+/// Returns `Err` if:
+/// - The JSON is malformed or cannot be parsed
+/// - The `hybrid_cells` field is missing or invalid
+/// - Cell indices are out of range (not 0-63)
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use std::str::FromStr;
+///
+/// let json_output = r#"{
+///   "class": "Hybrid",
+///   "confidence_min": 0.15,
+///   "hybrid_cells": [16, 17, 18, 19, 20, 21, 22, 23, 24, 25]
+/// }"#;
+///
+/// let coverage = extract_grid_coverage(json_output)
+///     .expect("Failed to extract coverage");
+/// assert!(coverage >= 15.0, "Coverage should be at least 15%");
+/// ```
+pub fn extract_grid_coverage(analysis_output: &str) -> anyhow::Result<f64> {
+    /// Internal representation of the JSON structure we parse
+    #[derive(serde::Deserialize)]
+    struct AnalysisOutput {
+        class: Option<String>,
+        hybrid_cells: Option<Vec<usize>>,
+    }
+
+    // Parse the JSON output
+    let parsed: AnalysisOutput = serde_json::from_str(analysis_output)
+        .map_err(|e| anyhow::anyhow!("Failed to parse analysis output JSON: {}", e))?;
+
+    // Extract hybrid_cells array, default to empty if missing
+    let hybrid_cells = parsed.hybrid_cells.unwrap_or_default();
+
+    // Validate cell indices are in valid range [0, 63]
+    for (idx, &cell) in hybrid_cells.iter().enumerate() {
+        if cell >= GRID_CELL_COUNT {
+            anyhow::bail!(
+                "Invalid hybrid cell index at position {}: {} (must be 0-63)",
+                idx,
+                cell
+            );
+        }
+    }
+
+    // Calculate coverage percentage
+    let cell_count = hybrid_cells.len();
+    let coverage = (cell_count as f64 / GRID_CELL_COUNT as f64) * 100.0;
+
+    Ok(coverage)
+}
 
 /// Macro to generate a test function for a single hybrid fixture.
 ///
@@ -730,5 +1121,189 @@ mod tests {
             classification_from_path.class,
             "classify_page should produce the same result as load_and_classify_fixture"
         );
+    }
+
+    /// Test extract_grid_coverage with JSON output containing grid_coverage field.
+    #[test]
+    fn test_extract_grid_coverage_json_with_coverage() {
+        let output = r#"{"page_type":"mixed","grid_coverage":15.6}"#;
+        let coverage = extract_grid_coverage(output)
+            .expect("Failed to extract coverage");
+
+        assert!((coverage - 15.6).abs() < 0.01, "Expected 15.6%, got {}", coverage);
+    }
+
+    /// Test extract_grid_coverage with JSON output containing percentage string.
+    #[test]
+    fn test_extract_grid_coverage_json_with_percentage_string() {
+        let output = r#"{"page_type":"mixed","grid_coverage":"15.6%"}"#;
+        let coverage = extract_grid_coverage(output)
+            .expect("Failed to extract coverage");
+
+        assert!((coverage - 15.6).abs() < 0.01, "Expected 15.6%, got {}", coverage);
+    }
+
+    /// Test extract_grid_coverage with JSON output containing hybrid_cells count.
+    #[test]
+    fn test_extract_grid_coverage_json_with_cell_count() {
+        let output = r#"{"page_type":"mixed","hybrid_cells":10}"#;
+        let coverage = extract_grid_coverage(output)
+            .expect("Failed to extract coverage");
+
+        let expected = (10.0 / GRID_CELL_COUNT as f64) * 100.0; // 15.625%
+        assert!(
+            (coverage - expected).abs() < 0.01,
+            "Expected {:.3}%, got {}",
+            expected,
+            coverage
+        );
+    }
+
+    /// Test extract_grid_coverage returns 0.0 for non-hybrid page types.
+    #[test]
+    fn test_extract_grid_coverage_non_hybrid_page_type() {
+        let test_cases = [
+            r#"{"page_type":"text"}"#,
+            r#"{"page_type":"scanned"}"#,
+            r#"{"page_type":"broken_vector"}"#,
+            r#"{"page_type":"blank"}"#,
+        ];
+
+        for output in test_cases {
+            let coverage = extract_grid_coverage(output)
+                .expect("Failed to extract coverage");
+
+            assert_eq!(
+                coverage, 0.0,
+                "Non-hybrid page should return 0.0 coverage, got {}",
+                coverage
+            );
+        }
+    }
+
+    /// Test extract_grid_coverage with text format (key: value).
+    #[test]
+    fn test_extract_grid_coverage_text_format() {
+        let output = "grid_coverage: 15.6%";
+        let coverage = extract_grid_coverage(output)
+            .expect("Failed to extract coverage");
+
+        assert!((coverage - 15.6).abs() < 0.01, "Expected 15.6%, got {}", coverage);
+    }
+
+    /// Test extract_grid_coverage with text format using hybrid_cells.
+    #[test]
+    fn test_extract_grid_coverage_text_format_cells() {
+        let output = "hybrid_cells: 12";
+        let coverage = extract_grid_coverage(output)
+            .expect("Failed to extract coverage");
+
+        let expected = (12.0 / GRID_CELL_COUNT as f64) * 100.0; // 18.75%
+        assert!(
+            (coverage - expected).abs() < 0.01,
+            "Expected {:.3}%, got {}",
+            expected,
+            coverage
+        );
+    }
+
+    /// Test extract_grid_coverage handles mixed text output.
+    #[test]
+    fn test_extract_grid_coverage_text_mixed_output() {
+        let output = r#"
+# PDF Analysis Output
+page_type: mixed
+hybrid_cells: 16
+grid_coverage: 25.0%
+"#;
+        let coverage = extract_grid_coverage(output)
+            .expect("Failed to extract coverage");
+
+        assert!((coverage - 25.0).abs() < 0.01, "Expected 25.0%, got {}", coverage);
+    }
+
+    /// Test extract_grid_coverage errors on malformed JSON.
+    #[test]
+    fn test_extract_grid_coverage_malformed_json() {
+        let output = r#"{"page_type":"mixed","grid_coverage":}"#;
+
+        let result = extract_grid_coverage(output);
+        assert!(result.is_err(), "Should fail on malformed JSON");
+    }
+
+    /// Test extract_grid_coverage errors on missing coverage fields.
+    #[test]
+    fn test_extract_grid_coverage_missing_coverage_fields() {
+        let output = r#"{"page_type":"mixed","confidence":0.9}"#;
+
+        let result = extract_grid_coverage(output);
+        assert!(result.is_err(), "Should fail when coverage fields missing");
+
+        let err = result.unwrap_err();
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.contains("missing") || err_msg.contains("grid_coverage") || err_msg.contains("hybrid_cells"),
+            "Error message should mention missing fields: {}",
+            err_msg
+        );
+    }
+
+    /// Test extract_grid_coverage errors on invalid coverage number.
+    #[test]
+    fn test_extract_grid_coverage_invalid_coverage_number() {
+        let output = r#"{"page_type":"mixed","grid_coverage":"invalid"}"#;
+
+        let result = extract_grid_coverage(output);
+        assert!(result.is_err(), "Should fail on invalid coverage number");
+    }
+
+    /// Test extract_grid_coverage errors on out-of-range coverage.
+    #[test]
+    fn test_extract_grid_coverage_out_of_range() {
+        let test_cases = [
+            r#"{"page_type":"mixed","grid_coverage":150.0}"#, // Too high
+            r#"{"page_type":"mixed","grid_coverage":-5.0}"#,   // Negative
+        ];
+
+        for output in test_cases {
+            let result = extract_grid_coverage(output);
+            assert!(result.is_err(), "Should fail on out-of-range coverage");
+
+            let err = result.unwrap_err();
+            let err_msg = err.to_string();
+            assert!(
+                err_msg.contains("range") || err_msg.contains("100"),
+                "Error message should mention range issue: {}",
+                err_msg
+            );
+        }
+    }
+
+    /// Test extract_grid_coverage errors on unparseable text format.
+    #[test]
+    fn test_extract_grid_coverage_unparseable_text() {
+        let output = "this is not a valid format";
+
+        let result = extract_grid_coverage(output);
+        assert!(result.is_err(), "Should fail on unparseable text format");
+    }
+
+    /// Test extract_grid_coverage with edge case values.
+    #[test]
+    fn test_extract_grid_coverage_edge_cases() {
+        // 0% coverage (no hybrid cells)
+        let output = r#"{"page_type":"mixed","hybrid_cells":0}"#;
+        let coverage = extract_grid_coverage(output).expect("Failed to extract coverage");
+        assert_eq!(coverage, 0.0, "0 cells should give 0% coverage");
+
+        // 100% coverage (all 64 cells hybrid)
+        let output = r#"{"page_type":"mixed","hybrid_cells":64}"#;
+        let coverage = extract_grid_coverage(output).expect("Failed to extract coverage");
+        assert_eq!(coverage, 100.0, "64 cells should give 100% coverage");
+
+        // Exactly 15% threshold (9.6 cells, rounds up to 10)
+        let output = r#"{"page_type":"mixed","grid_coverage":15.0}"#;
+        let coverage = extract_grid_coverage(output).expect("Failed to extract coverage");
+        assert!((coverage - 15.0).abs() < 0.01, "15% threshold should parse correctly");
     }
 }
