@@ -9,6 +9,10 @@ This PDF contains structural elements that resemble markdown syntax:
 - Code blocks and inline code elements
 """
 
+import argparse
+import os
+import sys
+
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
@@ -172,11 +176,57 @@ def create_markdown_structure_pdf(output_path):
 
 def main():
     """Generate the markdown structure fixture."""
-    output_dir = "tests/fixtures"
-    output_path = f"{output_dir}/markdown_structure.pdf"
+    parser = argparse.ArgumentParser(
+        description='Generate a PDF fixture with Markdown-style structural elements for testing extract_text() vs extract_markdown().',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s                                    # Output to tests/fixtures/markdown_structure.pdf
+  %(prog)s -o /tmp/output.pdf                 # Output to custom path
+  %(prog)s --output custom/path/file.pdf      # Output to custom path (long form)
 
-    import os
-    os.makedirs(output_dir, exist_ok=True)
+The generated PDF contains:
+  - Headings with # markers (#, ##, ###)
+  - Links with [text](url) syntax
+  - Bullet lists (• items)
+  - Numbered lists (1. 2. 3.)
+  - Code blocks (```)
+  - Inline code (<code>)
+        """
+    )
+    parser.add_argument(
+        '-o', '--output',
+        dest='output_path',
+        metavar='PATH',
+        help='Output PDF file path (default: tests/fixtures/markdown_structure.pdf)'
+    )
+
+    args = parser.parse_args()
+
+    # Determine output path
+    if args.output_path:
+        output_path = args.output_path
+        output_dir = os.path.dirname(output_path)
+    else:
+        output_dir = "tests/fixtures"
+        output_path = os.path.join(output_dir, "markdown_structure.pdf")
+
+    # Create output directory if needed
+    if output_dir:
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+        except OSError as e:
+            print(f"Error: Failed to create output directory '{output_dir}': {e}", file=sys.stderr)
+            sys.exit(1)
+
+    # Validate output path is writable
+    try:
+        with open(output_path, 'wb') as test_file:
+            pass
+        os.remove(output_path)  # Remove the test file
+    except OSError as e:
+        print(f"Error: Cannot write to output path '{output_path}': {e}", file=sys.stderr)
+        sys.exit(1)
 
     create_markdown_structure_pdf(output_path)
 
