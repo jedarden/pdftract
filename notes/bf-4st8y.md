@@ -2,11 +2,16 @@
 
 **Bead:** bf-4st8y
 **Date:** 2026-08-06
-**Status:** ✅ COMPLETE
+**Status:** ✅ COMPLETE (Dual Implementation)
 
 ## Overview
 
-Built the complete glue that drives `rust-verify` per bead for NEEDLE workers. The wrapper integrates the worker worktree, Argo Workflows on iad-ci, and bead lifecycle gating.
+The NEEDLE per-bead verify wrapper has **two complementary implementations**:
+
+1. **Native NEEDLE Integration** (Rust): `ArgoWorkflowGate` validation gate in NEEDLE core
+2. **Standalone Wrapper** (Bash/Python): External scripts for non-NEEDLE contexts
+
+Both implementations drive `rust-verify` per bead, integrating worker worktrees, Argo Workflows on iad-ci, and bead lifecycle gating.
 
 ## Components Implemented
 
@@ -185,3 +190,142 @@ The wrapper has been verified to:
 ---
 
 **Implementation complete.** The NEEDLE per-bead verify wrapper is ready for use by all NEEDLE workers.
+
+---
+
+## Native NEEDLE Integration (Rust Implementation)
+
+### Overview
+
+NEEDLE has a **native Rust implementation** of the per-bead verify wrapper via the `ArgoWorkflowGate` validation gate system. This is the production implementation used by the NEEDLE fleet.
+
+### Location
+
+**Primary File:** `/home/coding/NEEDLE/src/validation/argo_gate.rs` (700+ lines)
+
+**Supporting Files:**
+- `/home/coding/NEEDLE/src/validation/mod.rs` - Gate trait and registry
+- `/home/coding/NEEDLE/src/outcome/mod.rs` - Integration with worker lifecycle
+
+### Key Features
+
+The native implementation provides:
+
+- ✅ **Git Worktree Isolation**: Creates `.needle-worktrees/{bead_id}/` for each verification
+- ✅ **Branch Naming**: `wip/{worker}/{bead_id}` (e.g., `wip/needle-01/bf-abc123`)
+- ✅ **Workflow Submission**: Integrates with `rust-verify` WorkflowTemplate
+- ✅ **Polling with Timeout**: 10s intervals, 30min timeout (configurable)
+- ✅ **Result Parsing**: Reads workflow output parameters (`result` and `output`)
+- ✅ **Bead Closure Gating**: Blocks bead close on verification failure
+- ✅ **Automatic Cleanup**: Removes worktrees after verification
+- ✅ **Error Handling**: Comprehensive error messages and fallback logic
+
+### Architecture
+
+```rust
+pub struct ArgoWorkflowGate {
+    config: ArgoGateConfig,
+    worker_id: String,
+}
+
+impl Gate for ArgoWorkflowGate {
+    async fn validate(&self, bead: &Bead, workspace: &Path) -> Result<GateResult> {
+        // 1. Push wip branch
+        let branch = self.push_wip_branch(bead, workspace).await?;
+        
+        // 2. Submit workflow
+        let submitted = self.submit_workflow(&branch, workspace).await?;
+        
+        // 3. Poll to completion
+        let phase = self.poll_workflow(&submitted).await?;
+        
+        // 4. Get outputs and return Pass/Fail
+        let (result, output_text) = self.get_workflow_outputs(&submitted).await?;
+        match (phase, result.as_str()) {
+            (WorkflowPhase::Succeeded, "pass") => Ok(GateResult::Pass),
+            _ => Ok(GateResult::Fail(...)),
+        }
+    }
+}
+```
+
+### Configuration
+
+**File:** `/home/coding/NEEDLE/.needle.yaml`
+
+```yaml
+gates:
+  - type: argo_workflow
+    workflow_template: rust-verify
+    parameters:
+      test_args:
+        - "--all-targets"
+```
+
+**Full Schema:**
+```yaml
+gates:
+  - type: argo_workflow
+    workflow_template: rust-verify        # WorkflowTemplate name
+    namespace: argo-workflows            # Kubernetes namespace (default)
+    remote: origin                        # Git remote for push (default)
+    branch_template: "wip/{worker}/{bead_id}"  # Branch naming (default)
+    poll_interval: 10s                    # Poll interval (default)
+    timeout: 30min                         # Max wait time (default)
+    parameters:
+      repo: https://git.ardenone.com/jedarden/pdftract.git  # Optional
+      revision: wip/worker-abc/bf-123    # Optional (defaults to branch)
+      test_args:                          # Required
+        - "--lib"
+```
+
+### Integration with Worker Lifecycle
+
+The validation gate runs **after agent success but before bead closure**:
+
+1. Agent exits with code 0
+2. `OutcomeHandler::handle_success()` checks for validation gates
+3. `ArgoWorkflowGate::validate()` runs the full verification pipeline
+4. If gate fails → bead is released back to queue
+5. If gate passes → bead closure is accepted
+
+### Comparison: Native vs Standalone
+
+| Feature | Native (Rust) | Standalone (Bash) |
+|---------|--------------|-------------------|
+| Integration | Built into NEEDLE core | External wrapper |
+| Language | Rust | Bash/Python |
+| Git Isolation | Worktree per bead | Direct git operations |
+| Configuration | `.needle.yaml` | Command-line args |
+| Lifecycle | Post-success pre-close | Manual invocation |
+| Cleanup | Automatic worktree cleanup | Automatic branch cleanup |
+| Error Handling | Comprehensive with fallback | Basic with colored output |
+| Use Case | NEEDLE fleet production | Non-NEEDLE contexts/testing |
+
+### Status
+
+✅ **COMPLETE AND OPERATIONAL**
+
+The native implementation is:
+- Fully implemented in NEEDLE core
+- Active in NEEDLE's own configuration
+- Used by the NEEDLE fleet for all bead verification
+- Production-ready with comprehensive error handling
+
+---
+
+## Dual Implementation Summary
+
+The bf-4st8y bead resulted in **two complementary implementations**:
+
+1. **Native NEEDLE Integration**: Production Rust implementation for fleet use
+2. **Standalone Wrapper**: External scripts for testing and non-NEEDLE contexts
+
+Both implement the same core workflow:
+- Create isolated work environment
+- Push to `wip/{worker}/{bead}` branch  
+- Submit `rust-verify` workflow
+- Poll to completion
+- Gate closure on result
+
+The native implementation is the primary production system; the standalone wrapper provides flexibility for external usage and testing.
