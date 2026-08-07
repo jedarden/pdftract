@@ -44,10 +44,16 @@ def test_extract_returns_typed_document():
     # Assert document has pages
     assert doc.pages, "Document should contain pages"
 
-    # Assert ALL pages are Page instances
+    # Assert ALL pages are Page instances with expected attributes
     for page in doc.pages:
         assert isinstance(page, pdftract.Page), \
             f"Each page should be a Page instance, got {type(page)}"
+        assert hasattr(page, "spans"), \
+            "Page should have spans attribute"
+        assert hasattr(page, "width"), \
+            "Page should have width attribute"
+        assert hasattr(page, "height"), \
+            "Page should have height attribute"
 
     # Assert first page is Page instance
     first_page = doc.pages[0]
@@ -66,12 +72,6 @@ def test_extract_returns_typed_document():
             "Span should have 'text' attribute for IDE autocomplete"
         assert isinstance(first_span.text, str), \
             "Span.text should return a string"
-
-    # Assert Page-level attribute access works
-    assert hasattr(first_page, 'width'), \
-        "Page should have 'width' attribute"
-    assert hasattr(first_page, 'height'), \
-        "Page should have 'height' attribute"
 
 
 def test_extract_returns_typed_document_with_valid_minimal():
