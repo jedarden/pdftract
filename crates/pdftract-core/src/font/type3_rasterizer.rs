@@ -43,6 +43,44 @@ pub enum CharProcType {
     Other(String),
 }
 
+/// Detect the type of PDF object for Type 3 CharProc validation.
+///
+/// This function classifies a PdfObject instance to determine whether
+/// it is a stream (contains content stream bytes), a dictionary (contains
+/// key-value pairs), or another type.
+///
+/// # Arguments
+///
+/// * `object` - The PdfObject to classify
+///
+/// # Returns
+///
+/// `CharProcType::Stream` if the object is a stream,
+/// `CharProcType::Dict` if the object is a dictionary,
+/// `CharProcType::Other(name)` for any other type with its descriptive name.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use pdftract_core::font::type3_rasterizer::{detect_char_proc_type, CharProcType};
+/// use pdftract_core::parser::object::types::PdfObject;
+///
+/// let stream_obj = PdfObject::Stream(Box::new(/* ... */));
+/// let dict_obj = PdfObject::Dict(Box::new(/* ... */));
+/// let int_obj = PdfObject::Integer(42);
+///
+/// assert_eq!(detect_char_proc_type(&stream_obj), CharProcType::Stream);
+/// assert_eq!(detect_char_proc_type(&dict_obj), CharProcType::Dict);
+/// assert_eq!(detect_char_proc_type(&int_obj), CharProcType::Other("integer".to_string()));
+/// ```
+pub fn detect_char_proc_type(object: &PdfObject) -> CharProcType {
+    match object {
+        PdfObject::Stream(_) => CharProcType::Stream,
+        PdfObject::Dict(_) => CharProcType::Dict,
+        other => CharProcType::Other(other.type_name().to_string()),
+    }
+}
+
 /// Errors that can occur during Type 3 glyph rasterization.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type3Error {
@@ -2459,6 +2497,120 @@ mod tests {
         assert!(
             result.is_some(),
             "Glyph should rasterize successfully when callback is constructed via helper function"
+        );
+    }
+
+    // Tests for detect_char_proc_type (bf-5d8b9v)
+
+    #[test]
+    fn test_detect_char_proc_type_dict() {
+        use crate::parser::object::types::PdfDict;
+
+        let dict_obj = PdfObject::Dict(Box::new(PdfDict::new()));
+        assert_eq!(detect_char_proc_type(&dict_obj), CharProcType::Dict);
+    }
+
+    #[test]
+    fn test_detect_char_proc_type_stream() {
+        use crate::parser::object::types::{PdfDict, PdfStream};
+
+        let dict = PdfDict::new();
+        let stream = PdfStream::new(dict, 0, None);
+        let stream_obj = PdfObject::Stream(Box::new(stream));
+        assert_eq!(detect_char_proc_type(&stream_obj), CharProcType::Stream);
+    }
+
+    #[test]
+    fn test_detect_char_proc_type_integer() {
+        let int_obj = PdfObject::Integer(42);
+        assert_eq!(
+            detect_char_proc_type(&int_obj),
+            CharProcType::Other("integer".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detect_char_proc_type_real() {
+        let real_obj = PdfObject::Real(3.14);
+        assert_eq!(
+            detect_char_proc_type(&real_obj),
+            CharProcType::Other("real".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detect_char_proc_type_boolean() {
+        let bool_obj = PdfObject::Bool(true);
+        assert_eq!(
+            detect_char_proc_type(&bool_obj),
+            CharProcType::Other("boolean".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detect_char_proc_type_string() {
+        let string_obj = PdfObject::String(Box::new(vec![b'A', b'B']));
+        assert_eq!(
+            detect_char_proc_type(&string_obj),
+            CharProcType::Other("string".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detect_char_proc_type_name() {
+        use crate::parser::object::types::intern;
+
+        let name_obj = PdfObject::Name(intern("/TestName"));
+        assert_eq!(
+            detect_char_proc_type(&name_obj),
+            CharProcType::Other("name".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detect_char_proc_type_array() {
+        let array_obj = PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(1),
+            PdfObject::Integer(2),
+        ]));
+        assert_eq!(
+            detect_char_proc_type(&array_obj),
+            CharProcType::Other("array".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detect_char_proc_type_null() {
+        let null_obj = PdfObject::Null;
+        assert_eq!(
+            detect_char_proc_type(&null_obj),
+            CharProcType::Other("null".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detect_char_proc_type_ref() {
+        use crate::parser::object::types::ObjRef;
+
+        let ref_obj = PdfObject::Ref(ObjRef::new(10, 0));
+        assert_eq!(
+            detect_char_proc_type(&ref_obj),
+            CharProcType::Other("reference".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detect_char_proc_type_indirect() {
+        use crate::parser::object::types::{PdfDict, PdfIndirect, ObjRef};
+
+        let indirect = PdfIndirect {
+            id: ObjRef::new(15, 0),
+            obj: PdfObject::Null,
+        };
+        let indirect_obj = PdfObject::Indirect(Box::new(indirect));
+        assert_eq!(
+            detect_char_proc_type(&indirect_obj),
+            CharProcType::Other("indirect".to_string())
         );
     }
 }
