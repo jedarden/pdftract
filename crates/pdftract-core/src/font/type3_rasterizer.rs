@@ -1325,8 +1325,8 @@ impl<'a> RasterizerContext<'a> {
                 get_idx += 1;
             }
 
-            // Remove edges from AET where scanline >= y_max (edge has ended)
-            aet.retain(|e| y < e.y_max);
+            // Remove edges from AET where scanline > y_max (edge has ended)
+            aet.retain(|e| y <= e.y_max);
 
             // Update X positions in AET for this scanline
             for edge in &mut aet {
@@ -1337,11 +1337,14 @@ impl<'a> RasterizerContext<'a> {
             // Sort AET by current X position
             aet.sort_by_key(|e| e.x);
 
+            // Calculate intersection x coordinates for this scanline
+            let intersections: Vec<i32> = aet.iter().map(|edge| edge.x.round() as i32).collect();
+
             // Fill between pairs of X positions (even-odd rule)
-            for i in (0..aet.len()).step_by(2) {
-                if i + 1 < aet.len() {
-                    let x_start = aet[i].x.max(0);
-                    let x_end = aet[i + 1].x.min(width - 1);
+            for i in (0..intersections.len()).step_by(2) {
+                if i + 1 < intersections.len() {
+                    let x_start = intersections[i].max(0);
+                    let x_end = intersections[i + 1].min(width - 1);
 
                     for x in x_start..=x_end {
                         self.bitmap.set(x, y, 0);
