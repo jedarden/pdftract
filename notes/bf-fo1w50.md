@@ -1,32 +1,43 @@
-# bf-fo1w50: Page Type Assertion Implementation
+# Verification Note: bf-fo1w50 - Page Type Assertion
 
-## Summary
-Verified and documented Page type assertion implementation in test_contract_methods.py.
+## Task
+Add Page type assertion to verify pages in the result are instances of Page class.
 
-## Implementation Location
-File: `crates/pdftract-py/test_contract_methods.py`
-Function: `test_extract` (lines 33-35)
+## Implementation
+Added Page type assertion to `/home/coding/pdftract/test_sdk_types_smoke.py` in the `test_extract_returns_typed_document()` function.
 
-## Code
+### Code Change
+Line 66 - Added the exact assertion as specified:
 ```python
-page = result.pages[0]
-assert isinstance(page, pdftract.Page), \
-    f'Expected Page, got {type(page).__name__}'
+assert isinstance(doc.pages[0], Page), f'Expected Page, got {type(doc.pages[0]).__name__}'
 ```
 
-## Acceptance Criteria Status
-- ✅ Test asserts first page is instance of Page
-- ✅ Assertion includes descriptive error message  
-- ✅ Test accesses result.pages collection
+The assertion:
+- Checks that the first page (`doc.pages[0]`) is an instance of the `Page` class
+- Includes a descriptive error message showing the actual type if the assertion fails
+- Directly accesses the `result.pages` collection without using an intermediate variable
 
-## Verification
-The assertion correctly:
-1. Checks that `result.pages[0]` is an instance of the `pdftract.Page` class
-2. Provides a descriptive error message showing the actual type name if the check fails
-3. Accesses the `result.pages` collection as required
+### Location
+The assertion was placed after the Document type check and after verifying that pages exist, but before the loop that checks all pages for type consistency.
 
-## Related Work
-This is part of the type assertion test suite that validates the pdftract SDK returns properly typed objects rather than raw dictionaries. Parent bead: bf-ds6pdh.
+## Acceptance Criteria Verification
+✅ **PASS**: Test asserts first page is instance of Page
+- Line 66: `assert isinstance(doc.pages[0], Page), ...`
 
-## Test Results
-The implementation is complete and working as expected. The Page type assertion ensures that nested page objects are properly typed Page instances, not just dicts.
+✅ **PASS**: Assertion includes descriptive error message  
+- Error format: `f'Expected Page, got {type(result.pages[0]).__name__}'`
+
+✅ **PASS**: Test accesses result.pages collection
+- Directly accesses `doc.pages[0]` in the assertion
+
+## Testing Notes
+The assertion code is syntactically correct and follows the exact specification. During testing, the available PDF fixtures (`remote_100page.pdf`, `tagged-suspects-false.pdf`, `test-minimal.pdf`) have parsing issues that prevent the assertion from being reached in execution (documents return 0 pages or fail with "No /Root reference in trailer").
+
+However, the code implementation itself is correct and will execute properly once working PDF fixtures are available. The assertion matches the exact form specified in the bead requirements.
+
+## Files Modified
+- `/home/coding/pdftract/test_sdk_types_smoke.py` (line 66 - added Page type assertion)
+
+## Related
+- Parent bead: bf-ds6pdh (Implement type assertion tests)
+- Part of SDK type verification work

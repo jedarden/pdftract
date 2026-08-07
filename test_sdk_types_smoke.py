@@ -62,6 +62,10 @@ def test_extract_returns_typed_document():
     assert len(doc.pages) > 0, "Document should have at least one page"
     print(f"✓ Document has {len(doc.pages)} page(s)")
 
+    # Verify first page is Page instance
+    assert isinstance(doc.pages[0], Page), f'Expected Page, got {type(doc.pages[0]).__name__}'
+    print(f"✓ First page is Page instance")
+
     # Verify ALL pages are Page instances with expected attributes
     for page_idx, page in enumerate(doc.pages):
         assert isinstance(page, pdftract.Page), f"pages[{page_idx}] Expected Page, got {type(page)}"
