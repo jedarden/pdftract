@@ -102,8 +102,9 @@ class NeedleVerifier:
         # Branch naming: wip/<worker>/<bead>
         self.branch_name = f"wip/{worker_name}/{bead_id}"
 
-        # Path to wrapper script
-        self.wrapper_script = Path(__file__).parent / "needle-verify-wrapper.sh"
+        # Path to wrapper script (resolve to absolute path)
+        script_dir = Path(__file__).parent.resolve()
+        self.wrapper_script = script_dir / "needle-verify-wrapper.sh"
 
         if not self.wrapper_script.exists():
             raise VerificationError(f"Wrapper script not found: {self.wrapper_script}")
