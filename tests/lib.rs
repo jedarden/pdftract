@@ -4,3 +4,4 @@
 //! for integration testing across the pdftract workspace.
 
 pub mod encryption_fixtures;
+pub mod fixtures;

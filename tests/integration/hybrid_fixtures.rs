@@ -15,8 +15,10 @@
 //! `tests/fixtures/hybrid/mod.rs`) which provide utilities for loading fixtures,
 //! running classification, and validating results.
 
+use std::path::Path;
+
 use crate::fixtures::hybrid::{
-    assert_hybrid_classification, load_and_classify_fixture, MIN_HYBRID_CELLS,
+    assert_hybrid_classification, load_and_classify_fixture, MIN_HYBRID_CELLS, FIXTURE_DIR,
 };
 
 /// List of all 10 hybrid fixtures that should classify as PageClass::Hybrid.
