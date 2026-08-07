@@ -1,17 +1,28 @@
 # bf-fo1w50: Page Type Assertion Implementation
 
 ## Summary
-Verified that the Page type assertion is already implemented in `test_document_type_from_fixture_data`.
+Page type assertion is implemented in both `test_type_assertions.py` and `test_contract_methods.py`.
 
-## Implementation Location
+## Implementation Locations
+
+### 1. test_type_assertions.py
 File: `crates/pdftract-py/tests/test_type_assertions.py`
 Function: `test_document_type_from_fixture_data` (lines 233-235)
 
-## Code
 ```python
 # Verify first page is Page instance
 assert isinstance(result.pages[0], pdftract.Page), \
     f'Expected Page, got {type(result.pages[0]).__name__}'
+```
+
+### 2. test_contract_methods.py
+File: `crates/pdftract-py/test_contract_methods.py`
+Function: `test_extract` (lines 33-35)
+
+```python
+page = result.pages[0]
+assert isinstance(page, pdftract.Page), \
+    f'Expected Page, got {type(page).__name__}'
 ```
 
 ## Acceptance Criteria Status
