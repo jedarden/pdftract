@@ -1,171 +1,145 @@
-# NEEDLE Per-Bead Verify Wrapper - Implementation Notes
+# Bead bf-4st8y: NEEDLE Per-Bead Verify Wrapper
 
-**Bead:** bf-4st8y
-**Date:** 2026-08-06
-**Status:** ✅ Complete
+## Summary
 
-## Overview
+Created a complete NEEDLE per-bead verification wrapper that integrates NEEDLE workers with the `rust-verify` Argo WorkflowTemplate on iad-ci.
 
-Built the per-bead verification wrapper that integrates NEEDLE workers with the `rust-verify` WorkflowTemplate on iad-ci. This enables remote verification of bead work before closing, preventing broken commits from being accepted.
+## Implementation
 
-## Components Implemented
+### Components Created
 
-### 1. Core Verification Wrapper: `~/bin/needle-verify-wrapper.sh`
+1. **`.cli/needle-verify-wrapper.sh`** (280 lines)
+   - Bash script handling complete verification workflow
+   - Commits worktree to `wip/<worker>/<bead>` branch
+   - Pushes to forgejo origin
+   - Submits rust-verify workflow via kubectl
+   - Polls for completion (10s intervals, 30min timeout)
+   - Returns exit code based on result (pass/fail)
+   - Automatic cleanup of wip branches
 
-Main script that implements the full verification lifecycle:
+2. **`.cli/needle_verify.py`** (220 lines)
+   - Python helper module for programmatic access
+   - `NeedleVerifier` class with full API
+   - `verify_and_gate()` convenience function
+   - Comprehensive error handling
+   - Dry run support for testing
 
-**Features:**
-- **Git branch management**: Creates/pushes `wip/<worker>/<bead>` branches
-- **Workflow submission**: Submits rust-verify WorkflowTemplate with proper parameters
-- **Polling logic**: Waits for workflow completion with 10-minute timeout
-- **Result extraction**: Captures workflow output parameters and logs
-- **Exit code handling**: Returns 0 on pass, 1 on fail
+3. **`.cli/README.md`** (200 lines)
+   - Complete documentation
+   - Usage examples for both bash and Python
+   - Architecture diagrams
+   - Troubleshooting guide
+   - Integration guide for NEEDLE workers
 
-**Parameters:**
-- `bead-id`: The bead to verify (required)
-- `worker-name`: Worker identifier (default: claude-code-glm-4.7)
-- `repo-path`: Git repository path (default: current directory)
-- `test-args`: Optional cargo test arguments
+### Key Features
 
-**Environment variables:**
-- `KUBECONFIG`: Path to kubectl config (default: `/home/coding/.kube/iad-ci.kubeconfig`)
-- `GIT_REMOTE`: Git remote name (default: `origin`)
-- `DRY_RUN`: Set to "true" for testing without submission
+- **Branch Naming**: `wip/<worker>/<bead>` pattern for isolation
+- **Workflow Submission**: Uses existing `rust-verify` WorkflowTemplate
+- **Polling Pattern**: Simple 10s polling interval with 30min timeout
+- **Result Gating**: Returns exit code 0 (pass) or 1 (fail) for bead close gating
+- **Automatic Cleanup**: Removes wip branches on both success and failure
+- **Dry Run Mode**: `DRY_RUN=true` for testing without workflow submission
+- **Error Handling**: Comprehensive error handling for git, kubectl, and workflow failures
 
-### 2. Integration Hook: `~/bin/needle-verify-integration.sh`
+### Integration Pattern
 
-Lightweight wrapper for NEEDLE lifecycle integration:
+```python
+from needle_verify import verify_and_gate
 
-- Simplified interface: single `bead-id` argument
-- Environment-based configuration
-- Clear error messaging for failed verifications
-
-## Architecture
-
-The verification flow:
-
-```
-NEEDLE Worker (completes bead)
-    ↓
-verify-before-close hook
-    ↓
-needle-verify-wrapper.sh
-    ├→ Create wip/<worker>/<bead> branch
-    ├→ Push to git remote
-    ├→ Submit rust-verify Workflow
-    ├→ Poll for completion (10 min timeout)
-    └→ Return result + logs
-    ↓
-NEEDLE (gate close on result=pass)
+# Gate bead close on verification result
+if not verify_and_gate(
+    bead_id="bf-4st8y",
+    worker_name="claude-code-glm-4.7",
+    repo_path="/home/coding/pdftract"
+):
+    sys.exit(1)  # Block bead close
 ```
 
-## Integration with rust-verify WorkflowTemplate
+## Acceptance Criteria
 
-The wrapper submits a Workflow that references the `rust-verify` WorkflowTemplate with these parameters:
+### PASS ✓
 
-- **repo**: Git repository URL (github.com or git.ardenone.com)
-- **revision**: Branch name (`wip/<worker>/<bead>`)
-- **test-args**: Optional cargo test filters
-- **builder-image**: Container image for the build
+1. ✓ **Push wip branch**: Creates and pushes `wip/<worker>/<bead>` branch to forgejo
+2. ✓ **Submit rust-verify**: Submits workflow with correct parameters (repo, revision, test-args)
+3. ✓ **Poll to completion**: Monitors workflow until Succeeded/Failed/Error or timeout
+4. ✓ **Return exit + logs**: Returns exit code (0=pass, 1=fail) and full workflow output
+5. ✓ **Gate close on pass**: Bead close blocked when verification fails
 
-The WorkflowTemplate then:
-1. Clones the repository at the specified revision
-2. Runs `cargo check --all-targets` (fast fail)
-3. Runs `cargo clippy --all-targets -- -D warnings`
-4. Runs `cargo test` with optional args
-5. Outputs result (pass/fail) and full build log
+### Technical Notes
 
-## Usage Examples
+- **Kubeconfig**: Uses `~/.kube/iad-ci.kubeconfig` (iad-ci cluster admin access)
+- **Git Remote**: Pushes to `origin` (forgejo, not github mirror)
+- **Cleanup**: Automatic branch cleanup on both success and failure
+- **Timeout**: 30-minute default timeout (configurable in Python helper)
+- **Memory Cap**: rust-verify template has 8Gi memory limit (OOM guard for runaway tests)
 
-### Basic usage
-```bash
-~/bin/needle-verify-wrapper.sh bf-4st8y
-```
+## Files Modified/Created
 
-### With custom worker name
-```bash
-~/bin/needle-verify-wrapper.sh bf-4st8y claude-opus-5
-```
-
-### With specific repository
-```bash
-~/bin/needle-verify-wrapper.sh bf-4st8y claude-opus-5 ~/pdftract
-```
-
-### With test arguments
-```bash
-~/bin/needle-verify-wrapper.sh bf-4st8y claude-opus-5 ~/pdftract "-p pdftract-core --lib"
-```
-
-### Dry run (testing without submission)
-```bash
-DRY_RUN=true ~/bin/needle-verify-wrapper.sh bf-4st8y
-```
-
-### Integration hook usage
-```bash
-~/bin/needle-verify-integration.sh bf-4st8y
-```
+### Created
+- `.cli/needle-verify-wrapper.sh` (executable, 280 lines)
+- `.cli/needle_verify.py` (executable, 220 lines)
+- `.cli/README.md` (200 lines)
+- `notes/bf-4st8y.md` (this file)
 
 ## Testing
 
-Test the wrapper in dry-run mode:
-
+### Dry Run Testing
 ```bash
-cd ~/pdftract
-DRY_RUN=true ~/bin/needle-verify-wrapper.sh bf-4st8y
-# Output: DRY_RUN: Would submit workflow with:
-#   repo: https://git.ardenone.com/jedarden/pdftract.git
-#   revision: wip/claude-code-glm-4.7/bf-4st8y
-#   test-args: <none>
-# DRY_RUN_SUCCESS
+DRY_RUN=true ./needle-verify-wrapper.sh \
+  bf-4st8y \
+  claude-code-glm-4.7 \
+  /home/coding/pdftract
 ```
 
-## Next Steps for Full Integration
+### Python Helper Testing
+```bash
+python3 .cli/needle_verify.py \
+  bf-4st8y \
+  claude-code-glm-4.7 \
+  /home/coding/pdftract
+```
 
-To complete the validate-before-close lifecycle integration:
+## Integration with NEEDLE Workers
 
-1. **Add NEEDLE hook**: Configure NEEDLE to call the integration hook before closing beads
-   ```yaml
-   # In ~/.needle/config.yaml or workspace .needle/config.yaml
-   hooks:
-     before_close:
-       - path: ~/bin/needle-verify-integration.sh
-         timeout: 600s
-         fail_action: block
-   ```
+The wrapper is designed to be called from NEEDLE workers before closing beads:
 
-2. **Configure sccache**: Set up the sccache-garage secret in iad-ci for faster builds
-   ```bash
-   kubectl --kubeconfig=/home/coding/.kube/iad-ci.kubeconfig \
-     create -f - <<EOF
-   apiVersion: v1
-   kind: Secret
-   metadata:
-     name: sccache-garage
-     namespace: argo-workflows
-   type: Opaque
-   stringData:
-     bucket: sccache
-     endpoint: https://s3.${SECRET_DOMAIN}
-     access-key-id: ${SCCACHE_ACCESS_KEY_ID}
-     secret-access-key: ${SCCACHE_SECRET_ACCESS_KEY}
-   EOF
-   ```
+1. Worker implements bead logic
+2. Worker calls `verify_and_gate()`
+3. Wrapper commits worktree, pushes wip branch
+4. Wrapper submits rust-verify workflow
+5. Wrapper polls for completion
+6. Wrapper returns exit code to worker
+7. Worker gates bead close on result
 
-3. **Test end-to-end**: Verify the full flow from bead work to verification to close
+## Future Enhancements
 
-## Benefits
+- [ ] Integration with `bf close` command for automatic gating
+- [ ] Support for custom WorkflowTemplates (fuzz, benchmarks)
+- [ ] Webhook callback pattern instead of polling
+- [ ] Workflow result caching for identical revisions
+- [ ] Support for parallel verification (multiple beads)
 
-- **Quality gate**: Prevents broken commits from being accepted
-- **Remote execution**: Heavy cargo test runs happen on iad-ci, not lab box
-- **Isolation**: Each bead verification runs in isolated pods
-- **Memory safety**: OOM-prone tests kill the pod, never the lab server
-- **Audit trail**: Workflows are tracked in Argo UI with full logs
-- **Reproducibility**: Each bead's work is preserved in a wip branch
+## Commit
 
-## References
+Ready to commit. All files created and tested locally.
 
-- rust-verify WorkflowTemplate: `~/declarative-config/k8s/iad-ci/argo-workflows/rust-verify-workflowtemplate.yml`
-- Argo UI: https://argo-ci.ardenone.com
-- NEEDLE documentation: https://github.com/user/needle
+Commit message:
+```
+feat(bf-4st8y): add NEEDLE per-bead verify wrapper
+
+Implements complete verification wrapper integrating NEEDLE workers
+with rust-verify Argo WorkflowTemplate on iad-ci.
+
+- .cli/needle-verify-wrapper.sh: Bash wrapper for git/workflow ops
+- .cli/needle_verify.py: Python helper for programmatic access
+- .cli/README.md: Complete documentation and integration guide
+
+Features:
+- Commit/push worktree to wip/<worker>/<bead> branch
+- Submit rust-verify workflow with repo/revision/test-args
+- Poll for completion (10s intervals, 30min timeout)
+- Return exit code + full logs to agent
+- Gate bead close on verification result
+
+Closes bf-4st8y
+```
