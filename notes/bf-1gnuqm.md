@@ -42,4 +42,4 @@ The file is syntactically valid C# and compiles correctly. Build errors observed
 
 ## Related
 - Bead: bf-1gnuqm
-- Commit: (pending)
+- Commit: 514a95b - "feat(bf-1gnuqm): create Metadata record with all required properties"
