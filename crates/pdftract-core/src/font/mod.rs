@@ -48,6 +48,7 @@ pub use resolver::{
 pub use shape::{hamming_distance, lookup_shape, phash_glyph, ShapeEntry, ShapeMatch};
 pub use type0::{CIDToGIDMap, DescendantCIDFont, Type0Font};
 pub use type3::Type3Font;
+pub use type3_rasterizer::RasterizerContext;
 pub use unmapped::{is_unmapped_glyph_name, UNMAPPED_GLYPH_NAMES};
 
 #[cfg(feature = "cjk")]
