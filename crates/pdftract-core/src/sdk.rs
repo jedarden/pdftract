@@ -3,7 +3,7 @@
 //! This module exposes the 9-method SDK contract that all language SDKs implement.
 //! Rust users import pdftract-core directly and use these functions to match the SDK contract.
 
-use crate::classify::{classify_page, PageClassification, PageContext};
+use crate::classify::{classify_page, PageClass, PageClassification, PageContext};
 use crate::extract::{
     extract_pdf, extract_text as extract_text_impl, ExtractionResult, PageResult,
 };
@@ -22,6 +22,7 @@ use regex::Regex;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::Path;
+use std::process::Command;
 
 /// Extract a PDF to the full structured JSON output.
 ///
@@ -254,9 +255,10 @@ pub fn hash(pdf_path: &Path) -> Result<String> {
     Ok(fingerprint)
 }
 
-/// Classify a PDF page.
+/// Classify a PDF page using the full pdftract binary invocation.
 ///
-/// Returns the page type (scientific paper, slide, form, etc.) with confidence.
+/// This function invokes the pdftract binary with JSON output to perform
+/// comprehensive page classification, including hybrid detection and grid analysis.
 ///
 /// # Arguments
 ///
@@ -266,24 +268,243 @@ pub fn hash(pdf_path: &Path) -> Result<String> {
 /// # Returns
 ///
 /// A `PageClassification` with the detected page type and confidence.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The pdftract binary cannot be found
+/// - The PDF file cannot be read
+/// - The pdftract binary fails to execute
+/// - The JSON output cannot be parsed
+/// - The page index is out of bounds
 pub fn classify(pdf_path: &Path, page_index: usize) -> Result<PageClassification> {
-    let options = ExtractionOptions::default();
-    let result = extract_pdf(pdf_path, &options)?;
+    use std::io::Write;
+    use std::process::Command;
 
-    let page = result
-        .pages
-        .get(page_index)
-        .ok_or_else(|| anyhow::anyhow!("Page index {} out of bounds", page_index))?;
+    // Read the PDF file
+    let pdf_bytes = std::fs::read(pdf_path)
+        .with_context(|| format!("Failed to read PDF file: {}", pdf_path.display()))?;
 
-    // Create a minimal page context for classification
-    // Note: PageContext requires metrics from content stream analysis
-    // For SDK simplicity, we create a default context and populate available fields
-    let mut ctx = PageContext::new();
-    ctx.width = page.width.unwrap_or(0.0) as f64;
-    ctx.height = page.height.unwrap_or(0.0) as f64;
-    ctx.rotation = page.rotation.unwrap_or(0) as i32;
+    // Validate PDF has minimal content
+    if pdf_bytes.is_empty() {
+        return Err(anyhow::anyhow!("PDF input is empty"));
+    }
 
-    Ok(classify_page(&ctx))
+    // Check for PDF signature
+    if !pdf_bytes.starts_with(b"%PDF") {
+        return Err(anyhow::anyhow!("Invalid PDF: missing PDF signature (expected to start with '%PDF')"));
+    }
+
+    // Create a temporary file for the PDF
+    let temp_dir = std::env::temp_dir();
+    let temp_file = temp_dir.join(format!(
+        "pdftract-classify-{}-{}.pdf",
+        std::process::id(),
+        page_index
+    ));
+
+    // Write PDF bytes to temp file
+    {
+        let mut file = std::fs::File::create(&temp_file)
+            .with_context(|| format!("Failed to create temporary file: {}", temp_file.display()))?;
+        file.write_all(&pdf_bytes)
+            .with_context(|| format!("Failed to write PDF to temporary file: {}", temp_file.display()))?;
+        file.flush()
+            .with_context(|| format!("Failed to flush temporary file: {}", temp_file.display()))?;
+    }
+
+    // Ensure temp file is cleaned up using a manual RAII guard
+    struct TempFileGuard(std::path::PathBuf);
+    impl Drop for TempFileGuard {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+    let _temp_guard = TempFileGuard(temp_file.clone());
+
+    // Find the pdftract binary
+    let pdftract_binary = find_pdftract_binary()?;
+
+    // Spawn pdftract binary with JSON output to stdout
+    let output = Command::new(&pdftract_binary)
+        .arg("extract")
+        .arg("--json")
+        .arg("-")
+        .arg(&temp_file)
+        .output()
+        .with_context(|| format!("Failed to spawn pdftract binary: {}", pdftract_binary))?;
+
+    // Check if the command succeeded
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        return Err(anyhow::anyhow!(
+            "pdftract extraction failed with exit code {:?}. stderr: {}",
+            output.status.code(),
+            stderr
+        ));
+    }
+
+    // Parse JSON output from stdout
+    let json_str = String::from_utf8(output.stdout)
+        .with_context(|| "Failed to convert pdftract output to UTF-8")?;
+
+    let json_value: serde_json::Value = serde_json::from_str(&json_str)
+        .with_context(|| "Failed to parse pdftract JSON output")?;
+
+    // Extract pages array
+    let pages = json_value
+        .get("pages")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| anyhow::anyhow!("JSON output missing required 'pages' array"))?;
+
+    // We expect at least one page
+    if pages.is_empty() {
+        return Err(anyhow::anyhow!("PDF contains no pages"));
+    }
+
+    // Validate page index is within bounds
+    if page_index >= pages.len() {
+        return Err(anyhow::anyhow!(
+            "Page index {} out of bounds (PDF has {} pages)",
+            page_index,
+            pages.len()
+        ));
+    }
+
+    // Get the requested page
+    let page = &pages[page_index];
+
+    // Extract classification from page_type
+    // PageClass mapping: "mixed" -> Hybrid, "text" -> Vector, "scanned" -> Scanned, "broken_vector" -> BrokenVector
+    let page_type = page
+        .get("page_type")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("JSON output missing 'page_type' field"))?;
+
+    // Extract confidence if present, otherwise default to 0.5
+    let confidence = page
+        .get("confidence")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.5) as f32;
+
+    let class = match page_type {
+        "mixed" => PageClass::Hybrid,
+        "text" => PageClass::Vector,
+        "scanned" => PageClass::Scanned,
+        "broken_vector" => PageClass::BrokenVector,
+        "blank" => PageClass::Vector, // Blank pages are treated as vector (no content)
+        "figure_only" => PageClass::Scanned, // Figure-only pages are treated as scanned
+        unknown => {
+            return Err(anyhow::anyhow!(
+                "Unknown page_type '{}'. Expected one of: mixed, text, scanned, broken_vector, blank, figure_only",
+                unknown
+            ))
+        }
+    };
+
+    // For Hybrid pages, extract hybrid_cells if present
+    let hybrid_cells = if class == PageClass::Hybrid {
+        // Try to extract hybrid_cells from the JSON output
+        if let Some(cells) = page.get("hybrid_cells").and_then(|v| v.as_array()) {
+            use std::collections::BTreeSet;
+            let cell_set: BTreeSet<usize> = cells
+                .iter()
+                .filter_map(|v| v.as_u64())
+                .map(|v| v as usize)
+                .collect();
+            Some(cell_set)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    Ok(PageClassification {
+        class,
+        confidence,
+        hybrid_cells,
+    })
+}
+
+/// Find the pdftract binary in standard locations.
+///
+/// Searches for the pdftract binary in:
+/// 1. The current executable's directory (for testing)
+/// 2. The build target/release directory
+/// 3. System PATH
+///
+/// # Returns
+///
+/// The path to the pdftract binary if found.
+///
+/// # Errors
+///
+/// Returns an error if the binary cannot be found in any location.
+fn find_pdftract_binary() -> Result<String> {
+    use std::env;
+    use std::path::PathBuf;
+
+    let binary_name = if cfg!(windows) { "pdftract.exe" } else { "pdftract" };
+
+    // List of paths to search for the pdftract binary
+    let mut search_paths: Vec<PathBuf> = Vec::new();
+
+    // 1. Check the current executable's directory (for testing)
+    if let Some(exe_path) = env::current_exe().ok() {
+        if let Some(exe_dir) = exe_path.parent() {
+            search_paths.push(exe_dir.join(binary_name));
+        }
+    }
+
+    // 2. Check the build target/release directory
+    if let Ok(mut cwd) = env::current_dir() {
+        cwd.push("target");
+        cwd.push("release");
+        cwd.push(binary_name);
+        search_paths.push(cwd);
+
+        // Also check debug directory
+        if let Some(release_idx) = search_paths.last().and_then(|p| Some(p.to_string_lossy().contains("release"))) {
+            let mut debug_path = search_paths.last().unwrap().clone();
+            debug_path.set_file_name("debug");
+            debug_path.push(binary_name);
+            search_paths.push(debug_path);
+        }
+    }
+
+    // 3. Check PATH
+    if let Ok(path_var) = env::var("PATH") {
+        for dir in env::split_paths(&path_var) {
+            search_paths.push(dir.join(binary_name));
+        }
+    }
+
+    // Try each path to see if the binary exists and is executable
+    let binary_paths: Vec<String> = search_paths
+        .iter()
+        .filter_map(|p| p.to_str().map(|s| s.to_string()))
+        .collect();
+
+    for path in &binary_paths {
+        if std::path::Path::new(path).exists() {
+            // Test if we can execute it
+            if Command::new(path)
+                .arg("--version")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+            {
+                return Ok(path.clone());
+            }
+        }
+    }
+
+    Err(anyhow::anyhow!(
+        "pdftract binary not found. Tried the following paths: {:?}. \
+         Ensure pdftract is built (run 'cargo build --release') and available in PATH.",
+        binary_paths
+    ))
 }
 
 /// Verify a cryptographic receipt against a PDF.

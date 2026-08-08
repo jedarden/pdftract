@@ -2739,6 +2739,308 @@ impl ExtractionResult {
     }
 }
 
+/// Page object access helpers for Document results.
+///
+/// This module provides centralized functions for accessing Page objects
+/// from extraction results with consistent error handling and support
+/// for both single-page and multi-page documents.
+///
+/// # Examples
+///
+/// ```ignore
+/// use pdftract_core::extract_pdf;
+/// use pdftract_core::extract::page_helpers;
+///
+/// let result = extract_pdf(path, &options, &output_options)?;
+///
+/// // Get all pages
+/// let pages = page_helpers::get_pages(&result)?;
+///
+/// // Get first page
+/// let first_page = page_helpers::first_page(&result)?;
+///
+/// // Get page by index
+/// let page = page_helpers::get_page(&result, 0)?;
+/// ```
+pub mod page_helpers {
+
+    use crate::extract::{ExtractionResult, PageResult};
+    use anyhow::{anyhow, Result};
+
+    /// Extract all Page objects from an ExtractionResult.
+    ///
+    /// This function provides consistent access to the pages vector with
+    /// proper error handling for empty results.
+    ///
+    /// # Arguments
+    ///
+    /// * `result` - Reference to the ExtractionResult containing pages
+    ///
+    /// # Returns
+    ///
+    /// A slice of PageResult objects, or an error if no pages are present.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the ExtractionResult contains no pages.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let pages = page_helpers::get_pages(&result)?;
+    /// for page in pages {
+    ///     println!("Page {}: {}x{}", page.index, page.width.unwrap_or(0), page.height.unwrap_or(0));
+    /// }
+    /// ```
+    pub fn get_pages(result: &ExtractionResult) -> Result<&[PageResult]> {
+        if result.pages.is_empty() {
+            return Err(anyhow!(
+                "ExtractionResult contains no pages. Document may be empty or extraction failed."
+            ));
+        }
+        Ok(&result.pages)
+    }
+
+    /// Get a single Page by index from an ExtractionResult.
+    ///
+    /// This function provides safe access to individual pages with bounds
+    /// checking and helpful error messages.
+    ///
+    /// # Arguments
+    ///
+    /// * `result` - Reference to the ExtractionResult containing pages
+    /// * `index` - Zero-based page index to retrieve
+    ///
+    /// # Returns
+    ///
+    /// A reference to the requested PageResult, or an error if out of bounds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The page index is out of bounds
+    /// - The ExtractionResult contains no pages
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// // Get first page (index 0)
+    /// let first_page = page_helpers::get_page(&result, 0)?;
+    ///
+    /// // Get last page
+    /// let page_count = page_helpers::page_count(&result)?;
+    /// let last_page = page_helpers::get_page(&result, page_count - 1)?;
+    /// ```
+    pub fn get_page(result: &ExtractionResult, index: usize) -> Result<&PageResult> {
+        let pages = get_pages(result)?;
+
+        if index >= pages.len() {
+            return Err(anyhow!(
+                "Page index {} out of bounds. Document has {} pages (valid indices: 0-{})",
+                index,
+                pages.len(),
+                pages.len() - 1
+            ));
+        }
+
+        Ok(&pages[index])
+    }
+
+    /// Get the first page from an ExtractionResult.
+    ///
+    /// Convenience function for accessing the first page with proper error
+    /// handling for empty documents.
+    ///
+    /// # Arguments
+    ///
+    /// * `result` - Reference to the ExtractionResult containing pages
+    ///
+    /// # Returns
+    ///
+    /// A reference to the first PageResult, or an error if no pages exist.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the ExtractionResult contains no pages.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let first_page = page_helpers::first_page(&result)?;
+    /// println!("First page dimensions: {}x{}",
+    ///     first_page.width.unwrap_or(0),
+    ///     first_page.height.unwrap_or(0)
+    /// );
+    /// ```
+    pub fn first_page(result: &ExtractionResult) -> Result<&PageResult> {
+        get_page(result, 0)
+    }
+
+    /// Get the last page from an ExtractionResult.
+    ///
+    /// Convenience function for accessing the last page with proper error
+    /// handling for empty documents.
+    ///
+    /// # Arguments
+    ///
+    /// * `result` - Reference to the ExtractionResult containing pages
+    ///
+    /// # Returns
+    ///
+    /// A reference to the last PageResult, or an error if no pages exist.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the ExtractionResult contains no pages.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let last_page = page_helpers::last_page(&result)?;
+    /// println!("Last page index: {}", last_page.index);
+    /// ```
+    pub fn last_page(result: &ExtractionResult) -> Result<&PageResult> {
+        let pages = get_pages(result)?;
+        get_page(result, pages.len() - 1)
+    }
+
+    /// Get the total number of pages in an ExtractionResult.
+    ///
+    /// This function provides the page count with proper handling for empty
+    /// documents (returns 0, not an error).
+    ///
+    /// # Arguments
+    ///
+    /// * `result` - Reference to the ExtractionResult containing pages
+    ///
+    /// # Returns
+    ///
+    /// The total number of pages in the document (0 if empty).
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let page_count = page_helpers::page_count(&result)?;
+    /// println!("Document has {} pages", page_count);
+    /// ```
+    pub fn page_count(result: &ExtractionResult) -> usize {
+        result.pages.len()
+    }
+
+    /// Check if a page has valid dimensional data (width and height).
+    ///
+    /// This helper validates that a page contains the expected dimensional
+    /// information, which is useful for filtering out corrupted or
+    /// incomplete page data.
+    ///
+    /// # Arguments
+    ///
+    /// * `page` - Reference to the PageResult to validate
+    ///
+    /// # Returns
+    ///
+    /// `true` if the page has both width and height data, `false` otherwise.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let page = page_helpers::get_page(&result, 0)?;
+    /// if page_helpers::has_valid_dimensions(page) {
+    ///     println!("Page dimensions: {}x{}",
+    ///         page.width.unwrap_or(0),
+    ///         page.height.unwrap_or(0)
+    ///     );
+    /// } else {
+    ///     println!("Page has invalid dimensions");
+    /// }
+    /// ```
+    pub fn has_valid_dimensions(page: &PageResult) -> bool {
+        page.width.is_some() &&
+        page.height.is_some() &&
+        page.width.unwrap_or(0.0) > 0.0 &&
+        page.height.unwrap_or(0.0) > 0.0
+    }
+
+    /// Get pages with valid dimensional data only.
+    ///
+    /// Filters the pages to return only those that have valid width and height
+    /// information, excluding corrupted or incomplete pages.
+    ///
+    /// # Arguments
+    ///
+    /// * `result` - Reference to the ExtractionResult containing pages
+    ///
+    /// # Returns
+    ///
+    /// A vector of references to pages with valid dimensions.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let valid_pages = page_helpers::get_pages_with_valid_dimensions(&result)?;
+    /// println!("Found {} pages with valid dimensions", valid_pages.len());
+    /// ```
+    pub fn get_pages_with_valid_dimensions(result: &ExtractionResult) -> Vec<&PageResult> {
+        result.pages
+            .iter()
+            .filter(|page| has_valid_dimensions(page))
+            .collect()
+    }
+
+    /// Check if an ExtractionResult represents a single-page document.
+    ///
+    /// This helper is useful for conditional handling of single vs multi-page
+    /// documents in extraction pipelines.
+    ///
+    /// # Arguments
+    ///
+    /// * `result` - Reference to the ExtractionResult to check
+    ///
+    /// # Returns
+    ///
+    /// `true` if the document contains exactly one page, `false` otherwise.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// if page_helpers::is_single_page(&result) {
+    ///     let page = page_helpers::first_page(&result)?;
+    ///     // Handle single-page case
+    /// } else {
+    ///     // Handle multi-page case
+    /// }
+    /// ```
+    pub fn is_single_page(result: &ExtractionResult) -> bool {
+        result.pages.len() == 1
+    }
+
+    /// Check if an ExtractionResult represents a multi-page document.
+    ///
+    /// This helper is the complement of `is_single_page` and is useful for
+    /// conditional handling in extraction pipelines.
+    ///
+    /// # Arguments
+    ///
+    /// * `result` - Reference to the ExtractionResult to check
+    ///
+    /// # Returns
+    ///
+    /// `true` if the document contains more than one page, `false` otherwise.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// if page_helpers::is_multi_page(&result) {
+    ///     println!("Multi-page document with {} pages", page_helpers::page_count(&result));
+    /// } else {
+    ///     println!("Single-page document");
+    /// }
+    /// ```
+    pub fn is_multi_page(result: &ExtractionResult) -> bool {
+        result.pages.len() > 1
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3224,5 +3526,290 @@ startxref
             error_message.contains("got 1"),
             "Error message should contain actual value"
         );
+    }
+
+    // Page helpers tests
+    mod test_page_helpers {
+        use super::*;
+
+        fn create_test_page(index: usize, width: Option<f32>, height: Option<f32>) -> PageResult {
+            PageResult {
+                index,
+                page_number: (index + 1) as u32,
+                page_label: None,
+                width,
+                height,
+                rotation: Some(0),
+                page_type: Some("text".to_string()),
+                spans: vec![],
+                blocks: vec![],
+                tables: vec![],
+                annotations: vec![],
+                error: None,
+            }
+        }
+
+        fn create_test_result(pages: Vec<PageResult>) -> ExtractionResult {
+            ExtractionResult {
+                fingerprint: "test-fingerprint".to_string(),
+                pages,
+                metadata: ExtractionMetadata {
+                    receipts_mode: crate::options::ReceiptsMode::Off,
+                    page_count: 0,
+                    span_count: 0,
+                    block_count: 0,
+                    cache_status: None,
+                    cache_age_seconds: None,
+                    error_count: 0,
+                    reading_order_algorithm: None,
+                    diagnostics: vec![],
+                    profile_name: None,
+                    profile_version: None,
+                    profile_fields: None,
+                },
+                signatures: vec![],
+                form_fields: vec![],
+                links: vec![],
+                attachments: vec![],
+                threads: vec![],
+                javascript_actions: vec![],
+            }
+        }
+
+        #[test]
+        fn test_get_pages_with_valid_pages() {
+            let pages = vec![
+                create_test_page(0, Some(612.0), Some(792.0)),
+                create_test_page(1, Some(612.0), Some(792.0)),
+            ];
+            let result = create_test_result(pages);
+
+            let retrieved_pages = page_helpers::get_pages(&result).unwrap();
+            assert_eq!(retrieved_pages.len(), 2);
+        }
+
+        #[test]
+        fn test_get_pages_with_empty_result() {
+            let result = create_test_result(vec![]);
+
+            let error = page_helpers::get_pages(&result).unwrap_err();
+            assert!(error.to_string().contains("no pages"));
+        }
+
+        #[test]
+        fn test_get_page_valid_index() {
+            let pages = vec![
+                create_test_page(0, Some(612.0), Some(792.0)),
+                create_test_page(1, Some(612.0), Some(792.0)),
+            ];
+            let result = create_test_result(pages);
+
+            let page = page_helpers::get_page(&result, 0).unwrap();
+            assert_eq!(page.index, 0);
+
+            let page = page_helpers::get_page(&result, 1).unwrap();
+            assert_eq!(page.index, 1);
+        }
+
+        #[test]
+        fn test_get_page_out_of_bounds() {
+            let pages = vec![create_test_page(0, Some(612.0), Some(792.0))];
+            let result = create_test_result(pages);
+
+            let error = page_helpers::get_page(&result, 5).unwrap_err();
+            assert!(error.to_string().contains("out of bounds"));
+            assert!(error.to_string().contains("5"));
+        }
+
+        #[test]
+        fn test_first_page() {
+            let pages = vec![
+                create_test_page(0, Some(612.0), Some(792.0)),
+                create_test_page(1, Some(612.0), Some(792.0)),
+            ];
+            let result = create_test_result(pages);
+
+            let first = page_helpers::first_page(&result).unwrap();
+            assert_eq!(first.index, 0);
+        }
+
+        #[test]
+        fn test_first_page_empty() {
+            let result = create_test_result(vec![]);
+
+            let error = page_helpers::first_page(&result).unwrap_err();
+            assert!(error.to_string().contains("no pages"));
+        }
+
+        #[test]
+        fn test_last_page() {
+            let pages = vec![
+                create_test_page(0, Some(612.0), Some(792.0)),
+                create_test_page(1, Some(612.0), Some(792.0)),
+                create_test_page(2, Some(612.0), Some(792.0)),
+            ];
+            let result = create_test_result(pages);
+
+            let last = page_helpers::last_page(&result).unwrap();
+            assert_eq!(last.index, 2);
+        }
+
+        #[test]
+        fn test_last_page_single() {
+            let pages = vec![create_test_page(0, Some(612.0), Some(792.0))];
+            let result = create_test_result(pages);
+
+            let last = page_helpers::last_page(&result).unwrap();
+            assert_eq!(last.index, 0);
+        }
+
+        #[test]
+        fn test_page_count() {
+            let pages = vec![
+                create_test_page(0, Some(612.0), Some(792.0)),
+                create_test_page(1, Some(612.0), Some(792.0)),
+                create_test_page(2, Some(612.0), Some(792.0)),
+            ];
+            let result = create_test_result(pages);
+
+            assert_eq!(page_helpers::page_count(&result), 3);
+        }
+
+        #[test]
+        fn test_page_count_empty() {
+            let result = create_test_result(vec![]);
+            assert_eq!(page_helpers::page_count(&result), 0);
+        }
+
+        #[test]
+        fn test_has_valid_dimensions_true() {
+            let page = create_test_page(0, Some(612.0), Some(792.0));
+            assert!(page_helpers::has_valid_dimensions(&page));
+        }
+
+        #[test]
+        fn test_has_valid_dimensions_false_no_width() {
+            let page = create_test_page(0, None, Some(792.0));
+            assert!(!page_helpers::has_valid_dimensions(&page));
+        }
+
+        #[test]
+        fn test_has_valid_dimensions_false_no_height() {
+            let page = create_test_page(0, Some(612.0), None);
+            assert!(!page_helpers::has_valid_dimensions(&page));
+        }
+
+        #[test]
+        fn test_has_valid_dimensions_false_zero_dimensions() {
+            let page = create_test_page(0, Some(0.0), Some(0.0));
+            assert!(!page_helpers::has_valid_dimensions(&page));
+        }
+
+        #[test]
+        fn test_get_pages_with_valid_dimensions() {
+            let pages = vec![
+                create_test_page(0, Some(612.0), Some(792.0)),  // valid
+                create_test_page(1, None, Some(792.0)),          // invalid - no width
+                create_test_page(2, Some(612.0), Some(792.0)),  // valid
+                create_test_page(3, Some(612.0), None),          // invalid - no height
+            ];
+            let result = create_test_result(pages);
+
+            let valid_pages = page_helpers::get_pages_with_valid_dimensions(&result);
+            assert_eq!(valid_pages.len(), 2);
+            assert_eq!(valid_pages[0].index, 0);
+            assert_eq!(valid_pages[1].index, 2);
+        }
+
+        #[test]
+        fn test_is_single_page_true() {
+            let pages = vec![create_test_page(0, Some(612.0), Some(792.0))];
+            let result = create_test_result(pages);
+
+            assert!(page_helpers::is_single_page(&result));
+        }
+
+        #[test]
+        fn test_is_single_page_false_multiple() {
+            let pages = vec![
+                create_test_page(0, Some(612.0), Some(792.0)),
+                create_test_page(1, Some(612.0), Some(792.0)),
+            ];
+            let result = create_test_result(pages);
+
+            assert!(!page_helpers::is_single_page(&result));
+        }
+
+        #[test]
+        fn test_is_single_page_false_empty() {
+            let result = create_test_result(vec![]);
+            assert!(!page_helpers::is_single_page(&result));
+        }
+
+        #[test]
+        fn test_is_multi_page_true() {
+            let pages = vec![
+                create_test_page(0, Some(612.0), Some(792.0)),
+                create_test_page(1, Some(612.0), Some(792.0)),
+            ];
+            let result = create_test_result(pages);
+
+            assert!(page_helpers::is_multi_page(&result));
+        }
+
+        #[test]
+        fn test_is_multi_page_false_single() {
+            let pages = vec![create_test_page(0, Some(612.0), Some(792.0))];
+            let result = create_test_result(pages);
+
+            assert!(!page_helpers::is_multi_page(&result));
+        }
+
+        #[test]
+        fn test_is_multi_page_false_empty() {
+            let result = create_test_result(vec![]);
+            assert!(!page_helpers::is_multi_page(&result));
+        }
+
+        #[test]
+        fn test_page_helpers_integration_with_real_result() {
+            // Test with actual extraction result
+            let pdf_path = ensure_test_pdf();
+            let options = ExtractionOptions::default();
+            let result = extract_pdf(&pdf_path, &options).unwrap();
+
+            // Test basic helpers
+            let page_count = page_helpers::page_count(&result);
+            assert!(page_count > 0, "Should have at least one page");
+
+            // Test single/multi page detection
+            if page_count == 1 {
+                assert!(page_helpers::is_single_page(&result));
+                assert!(!page_helpers::is_multi_page(&result));
+            } else {
+                assert!(!page_helpers::is_single_page(&result));
+                assert!(page_helpers::is_multi_page(&result));
+            }
+
+            // Test get_pages
+            let pages = page_helpers::get_pages(&result).unwrap();
+            assert_eq!(pages.len(), page_count);
+
+            // Test first_page
+            let first = page_helpers::first_page(&result).unwrap();
+            assert_eq!(first.index, 0);
+
+            // Test last_page
+            let last = page_helpers::last_page(&result).unwrap();
+            assert_eq!(last.index, page_count - 1);
+
+            // Test get_page with valid index
+            let page = page_helpers::get_page(&result, 0).unwrap();
+            assert_eq!(page.index, 0);
+
+            // Test dimension validation
+            let valid_pages = page_helpers::get_pages_with_valid_dimensions(&result);
+            assert!(!valid_pages.is_empty(), "Should have at least one valid page");
+        }
     }
 }

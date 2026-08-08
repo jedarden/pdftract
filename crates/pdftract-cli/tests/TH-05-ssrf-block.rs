@@ -42,11 +42,6 @@ impl McpServerGuard {
     fn child_mut(&mut self) -> &mut std::process::Child {
         self.child.as_mut().expect("Child process already taken")
     }
-
-    /// Get a reference to the child process.
-    fn child(&self) -> &std::process::Child {
-        self.child.as_ref().expect("Child process already taken")
-    }
 }
 
 impl Drop for McpServerGuard {
@@ -186,23 +181,6 @@ fn make_extract_call_request(id: i64, url: &str) -> String {
         }
     })
     .to_string()
-}
-
-/// Extract the error message from a JSON-RPC error response.
-fn extract_error_message(response: &str) -> Option<String> {
-    let parsed: serde_json::Value = serde_json::from_str(response).ok()?;
-    let error = parsed.get("error")?;
-    let message = error.get("message")?.as_str()?;
-    let data = error.get("data");
-
-    // If there's a data.code field, include it
-    if let Some(data_obj) = data {
-        if let Some(code) = data_obj.get("code").and_then(|c| c.as_str()) {
-            return Some(format!("{} (code: {})", message, code));
-        }
-    }
-
-    Some(message.to_string())
 }
 
 /// Test case 1: IPv4 loopback (127.0.0.1) is blocked.
@@ -395,84 +373,6 @@ fn test_ipv6_loopback_blocked() {
 // ============================================================================
 // SSRF_BLOCKED Error Assertion Helper
 // ============================================================================
-
-/// Assertion helper that checks a JSON-RPC response for SSRF_BLOCKED error.
-///
-/// This function verifies that:
-/// 1. When Phase 1.8 (remote source adapter) is implemented: returns a
-///    JSON-RPC error containing SSRF_BLOCKED
-/// 2. When Phase 1.8 is not yet implemented: returns a stub response with
-///    _note field (acceptable interim behavior)
-///
-/// # Arguments
-///
-/// * `response_json` - The JSON-RPC response string to check
-/// * `test_description` - Description of the test case (for error messages)
-///
-/// # Behavior
-///
-/// - If response is an error: checks for SSRF_BLOCKED in data.code or message
-/// - If response is a result: checks for stub response (_note field)
-/// - Panics if neither condition is met
-fn assert_ssrf_blocked_or_stub(response_json: &str, test_description: &str) {
-    let parsed: serde_json::Value =
-        serde_json::from_str(response_json).expect("Response is not valid JSON");
-
-    // Check if we got an error response (SSRF blocking implemented)
-    if let Some(error) = parsed.get("error") {
-        // SSRF blocking is implemented - verify the error structure
-        let error_code = error
-            .get("code")
-            .and_then(|c| c.as_i64())
-            .expect("Error should have a numeric code");
-
-        // Error code should be in the server error range or the specific SSRF blocked code
-        assert!(
-            error_code == SSRF_BLOCKED_CODE || (-32099..=-32000).contains(&error_code),
-            "Error code {} for {} should be SSRF_BLOCKED_CODE or in server error range",
-            error_code, test_description
-        );
-
-        // Check for SSRF_BLOCKED in data.code or message
-        let has_ssrf_blocked_code = error
-            .get("data")
-            .and_then(|data| data.get("code"))
-            .and_then(|code| code.as_str())
-            .map(|code| code == "SSRF_BLOCKED")
-            .unwrap_or(false);
-
-        let error_message = error
-            .get("message")
-            .and_then(|m| m.as_str())
-            .unwrap_or("");
-        let has_ssrf_in_message = error_message.contains("SSRF_BLOCKED");
-
-        // At least one of these should be true for SSRF blocking
-        assert!(
-            has_ssrf_blocked_code || has_ssrf_in_message,
-            "Error response for {} should contain SSRF_BLOCKED in data.code or message. \
-             Response: {}",
-            test_description, response_json
-        );
-    } else if let Some(result) = parsed.get("result") {
-        // Phase 1.8 not yet implemented - verify stub response
-        let note = result.get("_note").and_then(|n| n.as_str());
-        assert!(
-            note.is_some() && note.unwrap().contains("Phase"),
-            "Expected stub response with _note field for {}, got: {}",
-            test_description, response_json
-        );
-        eprintln!(
-            "WARNING: Phase 1.8 remote source adapter not yet implemented - {} received stub response",
-            test_description
-        );
-    } else {
-        panic!(
-            "Response for {} should contain either an error (SSRF blocked) or a result (stub response), got: {}",
-            test_description, response_json
-        );
-    }
-}
 
 /// Simplified assertion that strictly requires SSRF_BLOCKED error.
 ///

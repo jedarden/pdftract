@@ -11,7 +11,7 @@
 //! # Usage
 //!
 //! ```rust
-//! use pdftract_tests::encryption_fixtures::*;
+//! use crate::encryption_fixtures::*;
 //!
 //! let bin = pdftract_bin();
 //! let fixture = encrypted_fixture("livecycle.pdf");

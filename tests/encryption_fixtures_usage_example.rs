@@ -3,7 +3,7 @@
 //! This file demonstrates how to use the common encryption test fixtures
 //! and helpers. It's kept as a reference for other test files.
 
-use pdftract_tests::encryption_fixtures::*;
+use crate::encryption_fixtures::*;
 
 #[test]
 #[ignore = "Example test - demonstrates fixture usage"]

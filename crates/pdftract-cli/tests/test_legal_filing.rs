@@ -37,9 +37,11 @@ fn profile_path() -> PathBuf {
 }
 
 /// Minimum per-field accuracy threshold
+#[allow(dead_code)]
 const MIN_FIELD_ACCURACY: f64 = 0.90;
 
 /// Relaxed accuracy threshold for complex fields (parties, docket_entries)
+#[allow(dead_code)]
 const MIN_RELAXED_ACCURACY: f64 = 0.80;
 
 /// Legal filing fixture names

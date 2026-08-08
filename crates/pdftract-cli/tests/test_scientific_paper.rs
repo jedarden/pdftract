@@ -39,6 +39,7 @@ fn profile_path() -> PathBuf {
 }
 
 /// Minimum per-field accuracy threshold
+#[allow(dead_code)]
 const MIN_FIELD_ACCURACY: f64 = 0.90;
 
 /// Scientific paper fixture names

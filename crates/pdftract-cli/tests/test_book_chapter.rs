@@ -36,7 +36,9 @@ fn profile_path() -> PathBuf {
 }
 
 /// Minimum per-field accuracy threshold (sections relaxed to 80%)
+#[allow(dead_code)]
 const MIN_FIELD_ACCURACY: f64 = 0.90;
+#[allow(dead_code)]
 const MIN_SECTIONS_ACCURACY: f64 = 0.80;
 
 /// Book chapter fixture names

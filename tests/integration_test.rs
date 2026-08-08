@@ -7,26 +7,15 @@
 use std::path::PathBuf;
 
 // PyPdfProcessor import from pdftract-py crate
-// Note: lib name is "pdftract" (defined in crates/pdftract-py/Cargo.toml)
-// Using the correct lib name as specified in crates/pdftract-py/Cargo.toml [lib]
+// Note: import path uses the [lib] name from Cargo.toml (pdftract), not the package name
 use pdftract::PyPdfProcessor;
 
-// Additional commonly used imports for testing
+// Additional commonly used imports from pdftract-py crate for testing
 // These will be used when actual test cases are implemented
-// use pdftract::extract; // Re-exported when needed
-// use pdftract::{ExtractionOptions, PageResult, TableJson}; // Re-exported types when needed
-
-// Exception types from pdftract-py crate
-use pdftract::{
-    PdftractError,
-    EncryptionError,
-    CorruptPdfError,
-    SourceUnreachableError,
-    RemoteFetchInterruptedError,
-    TlsError,
-    ReceiptVerifyError,
-    UnsupportedOperationError,
-};
+// Uncomment as needed:
+// use pdftract::extract; // Extract function (Python-facing)
+// use pdftract_core::{ExtractionOptions, PageResult, TableJson}; // Core types from pdftract-core
+// Note: Exception types are Python-specific and not exposed in Rust API
 
 // PyO3 imports for Python bindings testing
 // Uncomment when testing Python integration

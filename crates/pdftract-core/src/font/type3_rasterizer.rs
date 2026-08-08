@@ -40,6 +40,8 @@ pub enum CharProcType {
     Stream,
     /// PDF dictionary object (contains key-value pairs)
     Dict,
+    /// Unknown type - returned when reference dereferencing fails
+    Unknown,
     /// Any other PDF object type with a descriptive name
     Other(String),
 }
@@ -50,12 +52,13 @@ pub enum CharProcType {
 /// it is a stream (contains content stream bytes), a dictionary (contains
 /// key-value pairs), or another type.
 ///
-/// This is a convenience function that does not dereference indirect references.
-/// For full reference handling, use `detect_char_proc_type_with_context`.
+/// When a document context is provided, this function will dereference
+/// indirect references and classify the underlying object.
 ///
 /// # Arguments
 ///
 /// * `object` - The PdfObject to classify
+/// * `doc_context` - Optional document resolver context for dereferencing
 ///
 /// # Returns
 ///
@@ -73,20 +76,39 @@ pub enum CharProcType {
 /// let dict_obj = PdfObject::Dict(Box::new(/* ... */));
 /// let int_obj = PdfObject::Integer(42);
 ///
-/// assert_eq!(detect_char_proc_type(&stream_obj), CharProcType::Stream);
-/// assert_eq!(detect_char_proc_type(&dict_obj), CharProcType::Dict);
-/// assert_eq!(detect_char_proc_type(&int_obj), CharProcType::Other("integer".to_string()));
+/// assert_eq!(detect_char_proc_type(&stream_obj, None, None), CharProcType::Stream);
+/// assert_eq!(detect_char_proc_type(&dict_obj, None, None), CharProcType::Dict);
+/// assert_eq!(detect_char_proc_type(&int_obj, None, None), CharProcType::Other("integer".to_string()));
 /// ```
-pub fn detect_char_proc_type(object: &PdfObject) -> CharProcType {
+pub fn detect_char_proc_type(object: &PdfObject, doc_context: Option<&DocumentContext>) -> CharProcType {
     match object {
         // Stream check happens before Dict check (per implementation guidance)
         // Streams can also have dictionaries, so we need to check for Stream first
         PdfObject::Stream(_) => CharProcType::Stream,
         // Dict check happens after Stream but before Other
         PdfObject::Dict(_) => CharProcType::Dict,
-        // Reference check - stub implementation that returns a placeholder
-        // Full dereferencing is handled by detect_char_proc_type_with_context
-        PdfObject::Ref(_) => CharProcType::Other("reference".to_string()),
+        // Reference check - dereference using document context if available
+        PdfObject::Ref(obj_ref) => {
+            match doc_context {
+                Some(ctx) => {
+                    // Attempt to dereference the reference
+                    match deref_char_proc_ref(*obj_ref, Some(ctx)) {
+                        Ok(dereferenced_obj) => {
+                            // Recursively classify the dereferenced object
+                            detect_char_proc_type(&dereferenced_obj, doc_context)
+                        }
+                        Err(_) => {
+                            // Dereferencing failed - return Unknown
+                            CharProcType::Unknown
+                        }
+                    }
+                }
+                None => {
+                    // No document context available - return Unknown
+                    CharProcType::Unknown
+                }
+            }
+        }
         // All other types (including Integer, Real, Bool, String, Name, Array, Null, Indirect)
         // return Other with descriptive name
         _ => CharProcType::Other(object.type_name().to_string()),
@@ -117,8 +139,8 @@ pub fn detect_char_proc_type(object: &PdfObject) -> CharProcType {
 /// - If `doc_context` is provided, the reference is dereferenced and the
 ///   underlying object is classified recursively
 /// - Reference cycles are detected and return `CharProcType::Other("circular-reference".to_string())`
-/// - Dereferencing errors (not found, I/O error) return `CharProcType::Other("error".to_string())`
-/// - If `doc_context` is None, references are classified as `CharProcType::Other("reference".to_string())`
+/// - Dereferencing errors (not found, I/O error) return `CharProcType::Unknown`
+/// - If `doc_context` is None, references are classified as `CharProcType::Unknown`
 ///
 /// # Example
 ///
@@ -170,14 +192,14 @@ fn detect_char_proc_type_with_context_impl<'a>(
                             )
                         }
                         Err(_) => {
-                            // Dereferencing failed - return error type
-                            CharProcType::Other("error".to_string())
+                            // Dereferencing failed - return Unknown
+                            CharProcType::Unknown
                         }
                     }
                 }
                 None => {
-                    // No context provided - classify as plain reference
-                    CharProcType::Other("reference".to_string())
+                    // No context provided - cannot dereference, return Unknown
+                    CharProcType::Unknown
                 }
             }
         }
@@ -218,8 +240,8 @@ fn detect_char_proc_type_with_context_impl<'a>(
 /// }
 /// ```
 pub fn validate_char_proc_structure(object: &PdfObject) -> Result<(), Type3Error> {
-    // Detect the object type first
-    let char_proc_type = detect_char_proc_type(object);
+    // Detect the object type first (without document context for basic structure check)
+    let char_proc_type = detect_char_proc_type(object, None);
 
     match char_proc_type {
         CharProcType::Stream => {
@@ -297,6 +319,13 @@ pub fn validate_char_proc_structure(object: &PdfObject) -> Result<(), Type3Error
             }
 
             Ok(())
+        }
+        CharProcType::Unknown => {
+            // Unknown type (from failed reference dereferencing)
+            Err(Type3Error::InvalidCharProcType {
+                got: "unknown".to_string(),
+                expected: "stream or dictionary".to_string(),
+            })
         }
         CharProcType::Other(type_name) => {
             // For any other type, return InvalidCharProcType error
@@ -676,7 +705,7 @@ impl Edge {
 }
 
 /// Rasterization context for Type 3 glyph execution.
-struct RasterizerContext<'a> {
+pub struct RasterizerContext<'a> {
     /// Output bitmap (dynamic sizing based on font bbox)
     bitmap: Bitmap,
     /// Current graphics state
@@ -694,7 +723,11 @@ struct RasterizerContext<'a> {
 }
 
 impl<'a> RasterizerContext<'a> {
-    fn new(font: &'a Type3Font) -> Self {
+    /// Create a new rasterizer context for the given Type3 font.
+    ///
+    /// This initializes the graphics state with the font's FontMatrix transform
+    /// and creates a bitmap sized to the font's FontBBox.
+    pub fn new(font: &'a Type3Font) -> Self {
         let mut gstate = GraphicsState::new();
 
         // Apply FontMatrix to transform from glyph space to text space
@@ -717,7 +750,7 @@ impl<'a> RasterizerContext<'a> {
     }
 
     /// Execute a content stream and rasterize the result.
-    fn execute_content_stream(&mut self, stream_bytes: &[u8]) {
+    pub fn execute_content_stream(&mut self, stream_bytes: &[u8]) {
         let mut lexer = Lexer::new(stream_bytes);
         let mut operand_stack: Vec<f64> = Vec::new();
         let mut name_stack: Vec<Arc<str>> = Vec::new();
@@ -2211,7 +2244,7 @@ mod tests {
         let invalid_obj = PdfObject::Integer(123);
 
         // Test direct type detection
-        let char_proc_type = detect_char_proc_type(&invalid_obj);
+        let char_proc_type = detect_char_proc_type(&invalid_obj, None);
         assert_eq!(char_proc_type, CharProcType::Other("integer".to_string()));
 
         // Test validation failure
@@ -2244,8 +2277,31 @@ mod tests {
         assert!(result.is_ok(), "Valid structure should pass validation");
 
         // Test type detection
-        let char_proc_type = detect_char_proc_type(&valid_stream);
+        let char_proc_type = detect_char_proc_type(&valid_stream, None);
         assert_eq!(char_proc_type, CharProcType::Stream);
+    }
+
+    #[test]
+    fn test_detect_char_proc_type_returns_unknown_for_failed_deref() {
+        // Test that failed reference dereferencing returns CharProcType::Unknown
+        use crate::parser::object::types::ObjRef;
+
+        // Create a reference object
+        let ref_obj = PdfObject::Ref(ObjRef::new(10, 0));
+
+        // Test without document context (should return Unknown)
+        let char_proc_type = detect_char_proc_type(&ref_obj, None);
+        assert_eq!(char_proc_type, CharProcType::Unknown,
+                   "Should return Unknown when no document context is provided");
+
+        // Test with empty document context (no resolver/source - should return Unknown)
+        let doc_context = DocumentContext {
+            resolver: None,
+            source: None,
+        };
+        let char_proc_type = detect_char_proc_type(&ref_obj, Some(&doc_context));
+        assert_eq!(char_proc_type, CharProcType::Unknown,
+                   "Should return Unknown when document context has no resolver");
     }
 
     #[test]
@@ -2922,7 +2978,7 @@ mod tests {
         use crate::parser::object::types::PdfDict;
 
         let dict_obj = PdfObject::Dict(Box::new(PdfDict::new()));
-        assert_eq!(detect_char_proc_type(&dict_obj), CharProcType::Dict);
+        assert_eq!(detect_char_proc_type(&dict_obj, None), CharProcType::Dict);
     }
 
     #[test]
@@ -2932,14 +2988,14 @@ mod tests {
         let dict = PdfDict::new();
         let stream = PdfStream::new(dict, 0, None);
         let stream_obj = PdfObject::Stream(Box::new(stream));
-        assert_eq!(detect_char_proc_type(&stream_obj), CharProcType::Stream);
+        assert_eq!(detect_char_proc_type(&stream_obj, None), CharProcType::Stream);
     }
 
     #[test]
     fn test_detect_char_proc_type_integer() {
         let int_obj = PdfObject::Integer(42);
         assert_eq!(
-            detect_char_proc_type(&int_obj),
+            detect_char_proc_type(&int_obj, None),
             CharProcType::Other("integer".to_string())
         );
     }
@@ -2948,7 +3004,7 @@ mod tests {
     fn test_detect_char_proc_type_real() {
         let real_obj = PdfObject::Real(3.14);
         assert_eq!(
-            detect_char_proc_type(&real_obj),
+            detect_char_proc_type(&real_obj, None),
             CharProcType::Other("real".to_string())
         );
     }
@@ -2957,7 +3013,7 @@ mod tests {
     fn test_detect_char_proc_type_boolean() {
         let bool_obj = PdfObject::Bool(true);
         assert_eq!(
-            detect_char_proc_type(&bool_obj),
+            detect_char_proc_type(&bool_obj, None),
             CharProcType::Other("boolean".to_string())
         );
     }
@@ -2966,7 +3022,7 @@ mod tests {
     fn test_detect_char_proc_type_string() {
         let string_obj = PdfObject::String(Box::new(vec![b'A', b'B']));
         assert_eq!(
-            detect_char_proc_type(&string_obj),
+            detect_char_proc_type(&string_obj, None),
             CharProcType::Other("string".to_string())
         );
     }
@@ -2977,7 +3033,7 @@ mod tests {
 
         let name_obj = PdfObject::Name(intern("/TestName"));
         assert_eq!(
-            detect_char_proc_type(&name_obj),
+            detect_char_proc_type(&name_obj, None),
             CharProcType::Other("name".to_string())
         );
     }
@@ -2989,7 +3045,7 @@ mod tests {
             PdfObject::Integer(2),
         ]));
         assert_eq!(
-            detect_char_proc_type(&array_obj),
+            detect_char_proc_type(&array_obj, None),
             CharProcType::Other("array".to_string())
         );
     }
@@ -2998,7 +3054,7 @@ mod tests {
     fn test_detect_char_proc_type_null() {
         let null_obj = PdfObject::Null;
         assert_eq!(
-            detect_char_proc_type(&null_obj),
+            detect_char_proc_type(&null_obj, None),
             CharProcType::Other("null".to_string())
         );
     }
@@ -3009,8 +3065,8 @@ mod tests {
 
         let ref_obj = PdfObject::Ref(ObjRef::new(10, 0));
         assert_eq!(
-            detect_char_proc_type(&ref_obj),
-            CharProcType::Other("reference".to_string())
+            detect_char_proc_type(&ref_obj, None),
+            CharProcType::Other("unknown".to_string())
         );
     }
 
@@ -3024,7 +3080,7 @@ mod tests {
         };
         let indirect_obj = PdfObject::Indirect(Box::new(indirect));
         assert_eq!(
-            detect_char_proc_type(&indirect_obj),
+            detect_char_proc_type(&indirect_obj, None),
             CharProcType::Other("indirect".to_string())
         );
     }
@@ -3249,25 +3305,25 @@ mod tests {
         let int_obj = PdfObject::Integer(42);
 
         // The no-context version should work exactly as before
-        assert_eq!(detect_char_proc_type(&dict_obj), CharProcType::Dict);
-        assert_eq!(detect_char_proc_type(&stream_obj), CharProcType::Stream);
+        assert_eq!(detect_char_proc_type(&dict_obj, None), CharProcType::Dict);
+        assert_eq!(detect_char_proc_type(&stream_obj, None), CharProcType::Stream);
         assert_eq!(
-            detect_char_proc_type(&int_obj),
+            detect_char_proc_type(&int_obj, None),
             CharProcType::Other("integer".to_string())
         );
 
         // The with_context version with None should match the no-context version
         assert_eq!(
             detect_char_proc_type_with_context(&dict_obj, None),
-            detect_char_proc_type(&dict_obj)
+            detect_char_proc_type(&dict_obj, None)
         );
         assert_eq!(
             detect_char_proc_type_with_context(&stream_obj, None),
-            detect_char_proc_type(&stream_obj)
+            detect_char_proc_type(&stream_obj, None)
         );
         assert_eq!(
             detect_char_proc_type_with_context(&int_obj, None),
-            detect_char_proc_type(&int_obj)
+            detect_char_proc_type(&int_obj, None)
         );
     }
 
@@ -4521,6 +4577,87 @@ mod tests {
     }
 
     #[test]
+    fn test_round_x_fractional_rounds_up() {
+        // Test round_x helper with fractional values that should round up
+        // Verifies acceptance criterion: test case with fractional x value that should round up
+        // Uses round_x directly since Edge stores x as i32
+
+        // Test fractional values that round up (>= 0.5 rounds to next integer away from zero)
+        assert_eq!(round_x(5.7), 6, "5.7 should round up to 6");
+        assert_eq!(round_x(5.5), 6, "5.5 should round up to 6");
+        assert_eq!(round_x(0.5), 1, "0.5 should round up to 1");
+        assert_eq!(round_x(10.1), 10, "10.1 should round to 10 (not enough to round up)");
+        assert_eq!(round_x(2.6), 3, "2.6 should round up to 3");
+
+        // Test negative fractional values that round toward zero (away from negative infinity)
+        assert_eq!(round_x(-2.3), -2, "-2.3 should round to -2");
+        assert_eq!(round_x(-0.5), -1, "-0.5 should round to -1");
+        assert_eq!(round_x(-5.7), -6, "-5.7 should round to -6");
+    }
+
+    #[test]
+    fn test_round_x_fractional_rounds_down() {
+        // Test round_x helper with fractional values that should round down
+        // Verifies acceptance criterion: test case with fractional x value that should round down
+        // Uses round_x directly since Edge stores x as i32
+
+        // Test fractional values that round down (< 0.5 rounds toward zero)
+        assert_eq!(round_x(5.3), 5, "5.3 should round down to 5");
+        assert_eq!(round_x(5.4), 5, "5.4 should round down to 5");
+        assert_eq!(round_x(0.4), 0, "0.4 should round down to 0");
+        assert_eq!(round_x(10.2), 10, "10.2 should round down to 10");
+        assert_eq!(round_x(2.49), 2, "2.49 should round down to 2");
+
+        // Test negative fractional values that round away from zero
+        assert_eq!(round_x(-2.7), -3, "-2.7 should round to -3");
+        assert_eq!(round_x(-0.6), -1, "-0.6 should round to -1");
+        assert_eq!(round_x(-5.8), -6, "-5.8 should round to -6");
+    }
+
+    #[test]
+    fn test_round_x_whole_numbers() {
+        // Test round_x helper with whole numbers
+        // Verifies acceptance criterion: test case with whole number x value that should remain unchanged
+        // Uses round_x directly since Edge stores x as i32
+
+        assert_eq!(round_x(0.0), 0, "0.0 should round to 0");
+        assert_eq!(round_x(1.0), 1, "1.0 should round to 1");
+        assert_eq!(round_x(3.0), 3, "3.0 should round to 3");
+        assert_eq!(round_x(10.0), 10, "10.0 should round to 10");
+        assert_eq!(round_x(100.0), 100, "100.0 should round to 100");
+
+        // Test negative whole numbers
+        assert_eq!(round_x(-1.0), -1, "-1.0 should round to -1");
+        assert_eq!(round_x(-5.0), -5, "-5.0 should round to -5");
+        assert_eq!(round_x(-10.0), -10, "-10.0 should round to -10");
+    }
+
+    #[test]
+    fn test_intersection_x_round_x_edge_cases() {
+        // Test round_x helper with edge cases
+        // Tests boundary conditions and special cases
+        // Uses round_x directly since Edge stores x as i32
+
+        // Test exact halves (round half away from zero)
+        assert_eq!(round_x(0.5), 1, "0.5 should round to 1");
+        assert_eq!(round_x(-0.5), -1, "-0.5 should round to -1");
+        assert_eq!(round_x(1.5), 2, "1.5 should round to 2");
+        assert_eq!(round_x(-1.5), -2, "-1.5 should round to -2");
+
+        // Test values very close to integer boundaries
+        assert_eq!(round_x(0.4999999), 0, "0.4999999 should round to 0");
+        assert_eq!(round_x(0.5000001), 1, "0.5000001 should round to 1");
+        assert_eq!(round_x(-0.4999999), 0, "-0.4999999 should round to 0");
+        assert_eq!(round_x(-0.5000001), -1, "-0.5000001 should round to -1");
+
+        // Test very small fractional values
+        assert_eq!(round_x(0.1), 0, "0.1 should round to 0");
+        assert_eq!(round_x(-0.1), 0, "-0.1 should round to 0");
+        assert_eq!(round_x(0.01), 0, "0.01 should round to 0");
+        assert_eq!(round_x(-0.01), 0, "-0.01 should round to 0");
+    }
+
+    #[test]
     fn test_scanline_to_intersections_to_fill_spans_integration() {
         // End-to-end integration test verifying:
         // 1. Scanline processing with AET update
@@ -4577,5 +4714,102 @@ mod tests {
         for (x, y) in interior_points {
             assert_eq!(ctx.bitmap.get(x, y), Some(0), "Interior point ({}, {}) should be filled", x, y);
         }
+    }
+
+    #[test]
+    fn test_mock_works_with_rasterize_type3_glyph() {
+        use crate::font::type3::Type3Font;
+        use std::sync::Arc;
+
+        // Create a char_procs HashMap with a test glyph
+        let mut char_procs = std::collections::HashMap::new();
+        char_procs.insert(Arc::from("TestGlyph"), ObjRef::new(10, 0));
+
+        // Create Type3Font using mock()
+        let font = Type3Font::mock(Some(char_procs));
+
+        // Verify the mock font has the expected glyph
+        assert!(font.has_glyph("TestGlyph"), "Mock font should have TestGlyph");
+        assert_eq!(font.char_proc("TestGlyph"), Some(ObjRef::new(10, 0)));
+
+        // Create a stream resolver that returns valid PDF content
+        // This draws a simple 100x100 filled rectangle at origin
+        let resolver = &(|_obj_ref: ObjRef| -> Option<Vec<u8>> {
+            // Simple PDF content stream: draw a 100x100 filled rectangle
+            Some(b"0 0 100 100 re f".to_vec())
+        }) as &StreamResolverFn;
+
+        // Minimal DocumentContext (only used for potential future features)
+        let doc_context = DocumentContext {
+            resolver: None,
+            source: None,
+        };
+
+        // Call rasterize_type3_glyph with the mocked font
+        // This should execute without panics
+        let result = rasterize_type3_glyph(
+            &font,
+            "TestGlyph",
+            Some(&doc_context),
+            Some(resolver),
+        );
+
+        // Verify the function executes successfully and returns a bitmap
+        assert!(
+            result.is_some(),
+            "rasterize_type3_glyph should return Some(bitmap) when given a valid mock font and resolver"
+        );
+
+        // Verify the bitmap contains data (not all-white)
+        let bitmap = result.unwrap();
+        assert!(!bitmap.is_empty(), "Bitmap should not be empty");
+        assert!(
+            bitmap.iter().any(|&pixel| pixel == 0),
+            "Bitmap should contain some black (0) pixels from the filled rectangle"
+        );
+        assert!(
+            bitmap.iter().any(|&pixel| pixel == 255),
+            "Bitmap should contain some white (255) pixels from the background"
+        );
+
+        // Test with an unknown glyph (should return None gracefully)
+        let unknown_result = rasterize_type3_glyph(
+            &font,
+            "UnknownGlyph",
+            Some(&doc_context),
+            Some(resolver),
+        );
+        assert!(
+            unknown_result.is_none(),
+            "rasterize_type3_glyph should return None for unknown glyph"
+        );
+
+        // Test with a slightly more complex glyph (multiple drawing operations)
+        let mut char_procs_complex = std::collections::HashMap::new();
+        char_procs_complex.insert(Arc::from("ComplexGlyph"), ObjRef::new(20, 0));
+        let font_complex = Type3Font::mock(Some(char_procs_complex));
+
+        let resolver_complex = &(|_obj_ref: ObjRef| -> Option<Vec<u8>> {
+            // More complex content: two rectangles and a line
+            Some(b"10 10 50 50 re f 60 60 90 90 re f 0 100 m 100 0 l s".to_vec())
+        }) as &StreamResolverFn;
+
+        let result_complex = rasterize_type3_glyph(
+            &font_complex,
+            "ComplexGlyph",
+            Some(&doc_context),
+            Some(resolver_complex),
+        );
+
+        assert!(
+            result_complex.is_some(),
+            "rasterize_type3_glyph should handle complex content streams"
+        );
+
+        let bitmap_complex = result_complex.unwrap();
+        assert!(
+            bitmap_complex.iter().any(|&pixel| pixel == 0),
+            "Complex glyph bitmap should contain black pixels from multiple operations"
+        );
     }
 }

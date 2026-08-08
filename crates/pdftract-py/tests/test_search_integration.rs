@@ -26,31 +26,6 @@ use pdftract::{
 };
 
 // ============================================================================
-// Test infrastructure
-// ============================================================================
-
-/// Get the path to the test fixtures directory.
-fn fixtures_dir() -> PathBuf {
-    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.push("../../tests/fixtures");
-    path
-}
-
-/// Verify a path exists and is a file.
-fn fixture_exists(relative_path: &str) -> bool {
-    let mut full_path = fixtures_dir();
-    full_path.push(relative_path);
-    full_path.is_file()
-}
-
-/// Get the full path to a fixture file.
-fn fixture_path(relative_path: &str) -> PathBuf {
-    let mut path = fixtures_dir();
-    path.push(relative_path);
-    path
-}
-
-// ============================================================================
 // Test modules
 // ============================================================================
 

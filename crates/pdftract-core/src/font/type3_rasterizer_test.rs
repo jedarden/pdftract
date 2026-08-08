@@ -752,7 +752,7 @@ fn test_detect_char_proc_type_dict() {
     let dict_obj = PdfObject::Dict(Box::new(dict));
 
     // Classify the object
-    let result = detect_char_proc_type(&dict_obj);
+    let result = detect_char_proc_type(&dict_obj, None);
 
     // Verify Dict is returned (not Other)
     assert_eq!(result, CharProcType::Dict, "Dictionary object should be classified as Dict");
@@ -773,7 +773,7 @@ fn test_detect_char_proc_type_stream() {
     let stream_obj = PdfObject::Stream(Box::new(stream));
 
     // Classify the object
-    let result = detect_char_proc_type(&stream_obj);
+    let result = detect_char_proc_type(&stream_obj, None);
 
     // Verify Stream is returned (regression check)
     assert_eq!(result, CharProcType::Stream, "Stream object should still be classified as Stream");
@@ -789,7 +789,7 @@ fn test_detect_char_proc_type_other_integer() {
     let int_obj = PdfObject::Integer(42);
 
     // Classify the object
-    let result = detect_char_proc_type(&int_obj);
+    let result = detect_char_proc_type(&int_obj, None);
 
     // Verify Other is returned with descriptive name
     match result {
@@ -809,7 +809,7 @@ fn test_detect_char_proc_type_other_string() {
     let string_obj = PdfObject::String(Box::new(b"test string".to_vec()));
 
     // Classify the object
-    let result = detect_char_proc_type(&string_obj);
+    let result = detect_char_proc_type(&string_obj, None);
 
     // Verify Other is returned with descriptive name
     match result {
@@ -829,7 +829,7 @@ fn test_detect_char_proc_type_other_name() {
     let name_obj = PdfObject::Name(intern("/TestName"));
 
     // Classify the object
-    let result = detect_char_proc_type(&name_obj);
+    let result = detect_char_proc_type(&name_obj, None);
 
     // Verify Other is returned with descriptive name
     match result {
@@ -853,7 +853,7 @@ fn test_detect_char_proc_type_other_array() {
     ]));
 
     // Classify the object
-    let result = detect_char_proc_type(&array_obj);
+    let result = detect_char_proc_type(&array_obj, None);
 
     // Verify Other is returned with descriptive name
     match result {
@@ -874,7 +874,7 @@ fn test_detect_char_proc_type_other_boolean() {
     let false_obj = PdfObject::Bool(false);
 
     // Classify true
-    let result_true = detect_char_proc_type(&true_obj);
+    let result_true = detect_char_proc_type(&true_obj, None);
     match result_true {
         CharProcType::Other(name) => {
             assert_eq!(name, "boolean", "Boolean true should be classified as Other with name 'boolean'");
@@ -883,7 +883,7 @@ fn test_detect_char_proc_type_other_boolean() {
     }
 
     // Classify false
-    let result_false = detect_char_proc_type(&false_obj);
+    let result_false = detect_char_proc_type(&false_obj, None);
     match result_false {
         CharProcType::Other(name) => {
             assert_eq!(name, "boolean", "Boolean false should be classified as Other with name 'boolean'");
@@ -901,7 +901,7 @@ fn test_detect_char_proc_type_other_null() {
     let null_obj = PdfObject::Null;
 
     // Classify the object
-    let result = detect_char_proc_type(&null_obj);
+    let result = detect_char_proc_type(&null_obj, None);
 
     // Verify Other is returned with descriptive name
     match result {
@@ -921,14 +921,14 @@ fn test_detect_char_proc_type_reference() {
     // Create a reference PdfObject
     let ref_obj = PdfObject::Ref(ObjRef::new(5, 0));
 
-    // Classify the object
-    let result = detect_char_proc_type(&ref_obj);
+    // Classify the object without document context
+    let result = detect_char_proc_type(&ref_obj, None);
 
-    // Verify Other is returned with "reference" type name
+    // Verify Other is returned with "unknown" type name (cannot dereference without context)
     match result {
         CharProcType::Other(name) => {
-            assert_eq!(name, "reference",
-                "Reference should be classified as Other with type name 'reference'");
+            assert_eq!(name, "unknown",
+                "Reference without document context should be classified as Other with type name 'unknown'");
         }
         _ => panic!("Reference should be classified as Other, got {:?}", result),
     }
@@ -943,7 +943,7 @@ fn test_detect_char_proc_type_other_real() {
     let real_obj = PdfObject::Real(3.14159);
 
     // Classify the object
-    let result = detect_char_proc_type(&real_obj);
+    let result = detect_char_proc_type(&real_obj, None);
 
     // Verify Other is returned with descriptive name
     match result {
@@ -964,7 +964,7 @@ fn test_detect_char_proc_type_empty_dict() {
     let dict_obj = PdfObject::Dict(Box::new(empty_dict));
 
     // Classify the object
-    let result = detect_char_proc_type(&dict_obj);
+    let result = detect_char_proc_type(&dict_obj, None);
 
     // Verify Dict is returned
     assert_eq!(result, CharProcType::Dict, "Empty dictionary should still be classified as Dict");

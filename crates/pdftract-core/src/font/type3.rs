@@ -1085,4 +1085,105 @@ mod tests {
         assert_eq!(font.raster_cache.get(&Arc::from("test")).map(|v| v.value().clone()), Some(vec![1, 2, 3]),
             "raster_cache should be functional");
     }
+
+    #[test]
+    fn test_mock_works_with_rasterize_type3_glyph_complex() {
+        // Test mock font with a more complex drawing case (rectangle fill)
+        let mut char_procs = HashMap::new();
+        char_procs.insert(Arc::from("rect"), ObjRef::new(42, 0));
+
+        let font = Type3Font::mock(Some(char_procs));
+
+        // Create a resolver that returns a content stream that draws a rectangle
+        // Content stream: "5 5 10 10 re f" (draw and fill a 10x10 rectangle)
+        let resolver = |_: ObjRef| -> Option<Vec<u8>> {
+            Some(b"5 5 10 10 re f".to_vec())
+        };
+
+        let result = crate::font::type3_rasterizer::rasterize_type3_glyph(
+            &font,
+            "rect",
+            None,
+            Some(&resolver),
+        );
+
+        // Should successfully rasterize
+        assert!(result.is_some(), "Mock font should rasterize rectangle glyph");
+
+        // Verify we get a bitmap back (even if small)
+        let bitmap_bytes = result.unwrap();
+        assert!(!bitmap_bytes.is_empty(), "Bitmap should not be empty");
+    }
+
+    #[test]
+    fn test_mock_works_with_rasterize_type3_glyph_stroke() {
+        // Test mock font with stroke operations
+        let mut char_procs = HashMap::new();
+        char_procs.insert(Arc::from("line"), ObjRef::new(43, 0));
+
+        let font = Type3Font::mock(Some(char_procs));
+
+        // Create a resolver that returns a content stream with a line
+        // Content stream: "10 10 m 20 20 l S" (move and draw a line, then stroke)
+        let resolver = |_: ObjRef| -> Option<Vec<u8>> {
+            Some(b"10 10 m 20 20 l S".to_vec())
+        };
+
+        let result = crate::font::type3_rasterizer::rasterize_type3_glyph(
+            &font,
+            "line",
+            None,
+            Some(&resolver),
+        );
+
+        // Should successfully rasterize
+        assert!(result.is_some(), "Mock font should rasterize stroke glyph");
+
+        // Verify we get a bitmap back
+        let bitmap_bytes = result.unwrap();
+        assert!(!bitmap_bytes.is_empty(), "Bitmap should not be empty");
+    }
+
+    #[test]
+    fn test_mock_works_with_rasterize_type3_glyph_unknown_glyph() {
+        // Test that unknown glyph names gracefully return None
+        let mut char_procs = HashMap::new();
+        char_procs.insert(Arc::from("known"), ObjRef::new(42, 0));
+
+        let font = Type3Font::mock(Some(char_procs));
+
+        let resolver = |_: ObjRef| -> Option<Vec<u8>> {
+            Some(b"5 5 10 10 re f".to_vec())
+        };
+
+        let result = crate::font::type3_rasterizer::rasterize_type3_glyph(
+            &font,
+            "unknown_glyph",  // This glyph doesn't exist in char_procs
+            None,
+            Some(&resolver),
+        );
+
+        // Should gracefully return None for unknown glyphs
+        assert!(result.is_none(), "Unknown glyph should return None");
+    }
+
+    #[test]
+    fn test_mock_works_with_rasterize_type3_glyph_no_resolver() {
+        // Test that the function works when no resolver is provided
+        let mut char_procs = HashMap::new();
+        char_procs.insert(Arc::from("test"), ObjRef::new(42, 0));
+
+        let font = Type3Font::mock(Some(char_procs));
+
+        // Call without a resolver
+        let result = crate::font::type3_rasterizer::rasterize_type3_glyph(
+            &font,
+            "test",
+            None,
+            None::<&crate::font::type3_rasterizer::StreamResolverFn>,  // No resolver provided
+        );
+
+        // Should return None (can't resolve the stream)
+        assert!(result.is_none(), "Should return None when no resolver provided");
+    }
 }

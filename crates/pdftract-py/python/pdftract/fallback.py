@@ -26,6 +26,7 @@ from pdftract.exceptions import (
 )
 from pdftract.types import (
     Block,
+    Classification,
     Document,
     Fingerprint,
     Match,
