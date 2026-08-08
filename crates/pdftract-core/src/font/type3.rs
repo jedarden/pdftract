@@ -999,4 +999,90 @@ mod tests {
             Some(crate::font::encoding::NamedEncoding::Standard)
         );
     }
+
+    #[test]
+    fn test_mock_with_no_char_procs() {
+        // Test mock with None (no char_procs provided)
+        let font = Type3Font::mock(None);
+
+        // Verify char_procs is empty (default HashMap)
+        assert!(font.char_procs.is_empty(), "char_procs should be empty when None is provided");
+        assert_eq!(font.glyph_count(), 0, "glyph_count should be 0 with no char_procs");
+        assert!(!font.has_glyph("A"), "has_glyph should return false for any glyph name");
+        assert_eq!(font.char_proc("A"), None, "char_proc should return None for any glyph name");
+    }
+
+    #[test]
+    fn test_mock_with_custom_char_procs() {
+        // Test mock with custom char_procs
+        let mut char_procs = HashMap::new();
+        char_procs.insert(Arc::from("A"), ObjRef::new(10, 0));
+        char_procs.insert(Arc::from("B"), ObjRef::new(11, 0));
+        char_procs.insert(Arc::from("C"), ObjRef::new(12, 0));
+
+        let font = Type3Font::mock(Some(char_procs));
+
+        // Verify custom CharProcs are set correctly
+        assert_eq!(font.glyph_count(), 3, "glyph_count should match number of custom char_procs");
+        assert!(font.has_glyph("A"), "has_glyph should return true for 'A'");
+        assert!(font.has_glyph("B"), "has_glyph should return true for 'B'");
+        assert!(font.has_glyph("C"), "has_glyph should return true for 'C'");
+        assert!(!font.has_glyph("D"), "has_glyph should return false for non-existent 'D'");
+
+        assert_eq!(font.char_proc("A"), Some(ObjRef::new(10, 0)), "char_proc('A') should return correct ref");
+        assert_eq!(font.char_proc("B"), Some(ObjRef::new(11, 0)), "char_proc('B') should return correct ref");
+        assert_eq!(font.char_proc("C"), Some(ObjRef::new(12, 0)), "char_proc('C') should return correct ref");
+        assert_eq!(font.char_proc("D"), None, "char_proc('D') should return None");
+    }
+
+    #[test]
+    fn test_mock_initializes_all_required_fields() {
+        // Test that mock initializes all Type3Font fields properly
+        let mut custom_char_procs = HashMap::new();
+        custom_char_procs.insert(Arc::from("X"), ObjRef::new(42, 0));
+
+        let font = Type3Font::mock(Some(custom_char_procs.clone()));
+
+        // Verify char_procs field
+        assert_eq!(font.char_procs, custom_char_procs, "char_procs should match input");
+
+        // Verify first_char and last_char (range for widths array)
+        assert_eq!(font.first_char, 0, "first_char should be 0");
+        assert_eq!(font.last_char, 0, "last_char should be 0");
+
+        // Verify widths array
+        assert_eq!(font.widths, vec![0.0], "widths should be [0.0] (single zero width)");
+
+        // Verify font_matrix (identity matrix)
+        assert_eq!(font.font_matrix.a, 1.0, "font_matrix.a should be 1.0");
+        assert_eq!(font.font_matrix.b, 0.0, "font_matrix.b should be 0.0");
+        assert_eq!(font.font_matrix.c, 0.0, "font_matrix.c should be 0.0");
+        assert_eq!(font.font_matrix.d, 1.0, "font_matrix.d should be 1.0");
+        assert_eq!(font.font_matrix.e, 0.0, "font_matrix.e should be 0.0");
+        assert_eq!(font.font_matrix.f, 0.0, "font_matrix.f should be 0.0");
+
+        // Verify resources
+        assert!(font.resources.is_none(), "resources should be None");
+
+        // Verify encoding
+        assert_eq!(
+            font.encoding.base_encoding(),
+            Some(crate::font::encoding::NamedEncoding::Standard),
+            "encoding should use StandardEncoding"
+        );
+
+        // Verify font_bbox
+        assert_eq!(font.font_bbox, [0.0, 0.0, 1000.0, 1000.0], "font_bbox should be [0, 0, 1000, 1000]");
+
+        // Verify diagnostics
+        assert!(font.diagnostics.is_empty(), "diagnostics should be empty");
+
+        // Verify raster_cache
+        assert!(!font.raster_cache.is_empty() || font.raster_cache.len() == 0,
+            "raster_cache should be a valid DashMap (may be empty)");
+        // Verify we can insert and retrieve from the cache
+        font.raster_cache.insert(Arc::from("test"), vec![1, 2, 3]);
+        assert_eq!(font.raster_cache.get(&Arc::from("test")).map(|v| v.value().clone()), Some(vec![1, 2, 3]),
+            "raster_cache should be functional");
+    }
 }
