@@ -221,7 +221,7 @@ pub use confidence::{map_confidence_source, ConfidenceSource};
 pub use document::{Document, PageExtraction, PageIter, PdfExtractor};
 pub use extract::{
     extract_pdf, extract_pdf_ndjson, extract_pdf_streaming, extract_text, ExtractionMetadata,
-    ExtractionResult, PageResult,
+    ExtractionResult, PageResult, page_helpers,
 };
 pub use font::std14::{get_std14_metrics, NamedEncoding, Std14Metrics};
 pub use forms::{
