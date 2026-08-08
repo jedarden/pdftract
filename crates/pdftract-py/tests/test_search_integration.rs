@@ -10,18 +10,17 @@ use std::path::{Path, PathBuf};
 use pyo3::{Python, PyResult, types::PyDict};
 
 // pdftract imports
-// Note: PyPdfProcessor will be implemented in a future task
-// use pdftract::PyPdfProcessor;
+use pdftract::PyPdfProcessor;
 
 // Exception types for error handling tests
 use pdftract::{
-    PdftractError,
     EncryptionError,
     CorruptPdfError,
-    SourceUnreachableError,
-    RemoteFetchInterruptedError,
-    TlsError,
+    PdftractError,
     ReceiptVerifyError,
+    RemoteFetchInterruptedError,
+    SourceUnreachableError,
+    TlsError,
     UnsupportedOperationError,
 };
 
