@@ -538,57 +538,7 @@ fn _native(py: Python, m: &PyModule) -> PyResult<()> {
 // ============================================================================
 // Tests
 // ============================================================================
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_exception_hierarchy() {
-        // Test that EncryptionError inherits from PdftractError
-        Python::with_gil(|py| {
-            let pdftract_err = PdftractError::new_err("test error");
-            let encryption_err = EncryptionError::new_err("encrypted");
-
-            // Both should be instances of PdftractError
-            let pdftract_err_type = py.get_type::<PdftractError>();
-            assert!(pdftract_err
-                .value(py)
-                .is_instance(&pdftract_err_type)
-                .unwrap());
-            assert!(encryption_err
-                .value(py)
-                .is_instance(&pdftract_err_type)
-                .unwrap());
-        });
-    }
-
-    #[test]
-    fn test_exception_attributes() {
-        // Test that exception attributes are set correctly
-        Python::with_gil(|py| {
-            let err = EncryptionError::new_err("PDF is encrypted");
-            let instance = err.value(py);
-
-            // Set attributes
-            instance.setattr("code", "ENCRYPTION_UNSUPPORTED").unwrap();
-            instance.setattr("page_index", None::<u32>).unwrap();
-            instance
-                .setattr("hint", "Supply the password keyword argument")
-                .unwrap();
-
-            // Verify attributes
-            let code: Option<String> = instance.getattr("code").unwrap().extract().unwrap();
-            let page_index: Option<u32> =
-                instance.getattr("page_index").unwrap().extract().unwrap();
-            let hint: Option<String> = instance.getattr("hint").unwrap().extract().unwrap();
-
-            assert_eq!(code, Some("ENCRYPTION_UNSUPPORTED".to_string()));
-            assert_eq!(page_index, None);
-            assert_eq!(
-                hint,
-                Some("Supply the password keyword argument".to_string())
-            );
-        });
-    }
-}
+// Note: Python-level tests (exception hierarchy, kwargs parsing, etc.) are in the
+// Python test suite (tests/ directory). Rust unit tests that require Python::with_gil()
+// are not included here to avoid linking issues with the Python interpreter.
+// ============================================================================

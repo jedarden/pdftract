@@ -6,28 +6,12 @@
 // Standard library imports
 use std::path::PathBuf;
 
-// PyPdfProcessor import from pdftract-py crate
-// Note: import path uses the [lib] name from Cargo.toml (pdftract), not the package name
-use pdftract::PyPdfProcessor;
-
-// Core types from pdftract-core
+// Core types from pdftract-core (safe for test binaries)
 use pdftract_core::{AttachmentJson, ExtractionOptions, PageResult, TableJson};
 
-// Exception types from pdftract crate (PyO3 exceptions)
-use pdftract::{
-    CorruptPdfError,
-    EncryptionError,
-    PdftractError,
-    ReceiptVerifyError,
-    RemoteFetchInterruptedError,
-    SourceUnreachableError,
-    TlsError,
-    UnsupportedOperationError,
-};
-
-// PyO3 imports for Python bindings testing
-// Uncomment when testing Python integration
-// use pyo3::{Python, PyResult, types::PyDict};
+// Note: Python binding types (PyPdfProcessor, PyO3 exceptions) cannot be imported
+// directly in test binaries due to linker constraints. They should only be used
+// within a Python context or tested via Python-based test harnesses.
 
 // Test helper utilities and fixtures
 mod test_helpers;
