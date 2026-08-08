@@ -23,6 +23,11 @@ mod type3_rasterizer_test;
 
 pub mod type3_test_fixtures;
 
+pub use type3_test_fixtures::{
+    create_charproc_stream_with_curves, create_empty_content_stream, create_main_content_stream,
+    create_main_content_stream_multi, create_simple_charproc_stream,
+};
+
 #[cfg(feature = "cjk")]
 pub mod cjk_encoding;
 
