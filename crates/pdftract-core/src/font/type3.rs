@@ -967,4 +967,36 @@ mod tests {
         // Should successfully rasterize (empty stream produces default bitmap)
         assert!(result.is_some(), "Mock font should work with rasterize_type3_glyph");
     }
+
+    #[test]
+    fn test_mock_creates_identity_font_matrix() {
+        // Verify font_matrix is identity [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+        let font = Type3Font::mock(None);
+
+        assert_eq!(font.font_matrix.a, 1.0, "FontMatrix[0] should be 1.0");
+        assert_eq!(font.font_matrix.b, 0.0, "FontMatrix[1] should be 0.0");
+        assert_eq!(font.font_matrix.c, 0.0, "FontMatrix[2] should be 0.0");
+        assert_eq!(font.font_matrix.d, 1.0, "FontMatrix[3] should be 1.0");
+        assert_eq!(font.font_matrix.e, 0.0, "FontMatrix[4] should be 0.0");
+        assert_eq!(font.font_matrix.f, 0.0, "FontMatrix[5] should be 0.0");
+    }
+
+    #[test]
+    fn test_mock_creates_default_font_bbox() {
+        // Verify font_bbox is [0.0, 0.0, 1000.0, 1000.0]
+        let font = Type3Font::mock(None);
+
+        assert_eq!(font.font_bbox, [0.0, 0.0, 1000.0, 1000.0]);
+    }
+
+    #[test]
+    fn test_mock_creates_standard_encoding() {
+        // Verify encoding.name == "StandardEncoding"
+        let font = Type3Font::mock(None);
+
+        assert_eq!(
+            font.encoding.base_encoding(),
+            Some(crate::font::encoding::NamedEncoding::Standard)
+        );
+    }
 }
