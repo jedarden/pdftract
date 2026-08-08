@@ -329,7 +329,6 @@ pub fn classify(pdf_path: &Path, page_index: usize) -> Result<PageClassification
     let output = Command::new(&pdftract_binary)
         .arg("extract")
         .arg("--json")
-        .arg("-")
         .arg(&temp_file)
         .output()
         .with_context(|| format!("Failed to spawn pdftract binary: {}", pdftract_binary))?;
