@@ -4,6 +4,7 @@
 //! structure tree extraction, and per-page hybrid routing.
 
 pub mod graphics_state;
+pub mod page_helper;
 
 pub use graphics_state::{
     Color,
