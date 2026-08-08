@@ -3,49 +3,22 @@
 //! This module contains integration tests for the search() functionality
 //! that bridges the Rust core with the Python interface via PyO3.
 
-// Standard library imports
-use std::path::{Path, PathBuf};
-
-// PyO3 imports for Python integration testing
-use pyo3::{Python, PyResult, types::PyDict};
-
-// pdftract imports
-use pdftract::PyPdfProcessor;
-
-// Exception types for error handling tests
-use pdftract::{
-    EncryptionError,
-    CorruptPdfError,
-    PdftractError,
-    ReceiptVerifyError,
-    RemoteFetchInterruptedError,
-    SourceUnreachableError,
-    TlsError,
-    UnsupportedOperationError,
-};
-
 // ============================================================================
 // Test modules
 // ============================================================================
 
 // Basic search functionality tests
 mod basic_search {
-    use super::*;
-
     // Test cases for basic search will be added here
 }
 
 // Advanced search options tests
 mod advanced_search {
-    use super::*;
-
     // Test cases for regex, case-insensitive, whole-word options will be added here
 }
 
 // Error handling tests
 mod error_handling {
-    use super::*;
-
     // Test cases for error conditions will be added here
 }
 
