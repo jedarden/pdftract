@@ -509,7 +509,7 @@ fn test_case_7_localhost_without_token() {
 
     // Try to connect to each resolved address with the bound port
     let mut connected = false;
-    for attempt in 0..10 {
+    for _attempt in 0..10 {
         for addr in &addrs {
             // Create address with the bound port
             let addr_with_port = SocketAddr::new(addr.ip(), bound_port);

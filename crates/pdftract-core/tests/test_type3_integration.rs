@@ -262,7 +262,7 @@ fn test_charproc_stream_valid_for_glyph_dict() {
     assert!(glyph_dict.contains_key("A"), "Should have 'A' glyph");
 
     // Verify each glyph entry has a valid charproc reference
-    for (name, entry) in &glyph_dict {
+    for (_name, entry) in &glyph_dict {
         assert!(!entry.name.is_empty(), "Glyph name should not be empty");
         assert!(entry.width > 0.0, "Glyph width should be positive");
         assert!(entry.bbox.len() == 4, "Glyph bbox should have 4 elements");

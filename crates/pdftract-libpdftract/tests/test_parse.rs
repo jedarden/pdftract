@@ -4,7 +4,7 @@ use std::path::Path;
 fn main() {
     let pdf_path = Path::new("/home/coding/pdftract/tests/fixtures/valid-minimal.pdf");
     match parse_pdf_file(pdf_path) {
-        Ok((fingerprint, catalog, pages, resolver)) => {
+        Ok((fingerprint, _catalog, pages, resolver)) => {
             println!("Successfully parsed PDF");
             println!("Fingerprint: {}", fingerprint);
             println!("Pages: {}", pages.len());

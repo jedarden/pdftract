@@ -425,7 +425,7 @@ impl pdftract_core::source::PdfSource for MockPrefetchSource {
         10000
     }
 
-    fn read_range(&self, offset: u64, length: usize) -> std::io::Result<bytes::Bytes> {
+    fn read_range(&self, _offset: u64, length: usize) -> std::io::Result<bytes::Bytes> {
         // Return empty bytes for simplicity
         Ok(bytes::Bytes::new())
     }

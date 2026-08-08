@@ -8,7 +8,7 @@ fn main() {
     let v2_path = Path::new("tests/fingerprint/fixtures/content_edit_one_glyph/v2.pdf");
 
     println!("=== Parsing v1 ===");
-    let (fp1, cat1, pages1, _resolver1) = parse_pdf_file(v1_path).unwrap();
+    let (fp1, _cat1, pages1, _resolver1) = parse_pdf_file(v1_path).unwrap();
     println!("Fingerprint: {}", fp1);
     println!("Pages: {}", pages1.len());
     if let Some(page) = pages1.first() {
