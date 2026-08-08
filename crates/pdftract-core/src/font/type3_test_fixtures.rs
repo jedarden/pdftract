@@ -875,12 +875,19 @@ mod tests {
 
         // Verify PDF syntax pattern: number number command (repeated)
         // Commands should be single letters (m, l, h, f, c, etc.)
+        // Numbers can be single or multi-character
         let valid_commands = ['m', 'l', 'c', 'h', 'f', 'S', 's', 'B', 'b', 'n', 'v', 'y'];
         let parts: Vec<&str> = stream_str.split_whitespace().collect();
 
         for part in &parts {
-            // If it's a single character, it should be a valid PDF command
-            if part.len() == 1 {
+            // Try to parse as a number first (single or multi-digit numbers are valid)
+            let is_number = part.parse::<f64>().is_ok() || part.parse::<i64>().is_ok();
+
+            if is_number {
+                // It's a number - valid token
+                continue;
+            } else if part.len() == 1 {
+                // Single character that's not a number should be a valid PDF command
                 let ch = part.chars().next().unwrap();
                 assert!(
                     valid_commands.contains(&ch),
@@ -888,10 +895,9 @@ mod tests {
                     ch
                 );
             } else {
-                // Multi-part tokens should be parseable as numbers
-                assert!(
-                    part.parse::<f64>().is_ok() || part.parse::<i64>().is_ok(),
-                    "Non-command token should be a number: {}",
+                // Multi-character non-number tokens are invalid
+                panic!(
+                    "Invalid token: {} (should be a number or single-letter command)",
                     part
                 );
             }
