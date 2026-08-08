@@ -3066,7 +3066,7 @@ mod tests {
         let ref_obj = PdfObject::Ref(ObjRef::new(10, 0));
         assert_eq!(
             detect_char_proc_type(&ref_obj, None),
-            CharProcType::Other("unknown".to_string())
+            CharProcType::Unknown
         );
     }
 
@@ -3121,10 +3121,10 @@ mod tests {
 
         let ref_obj = PdfObject::Ref(ObjRef::new(10, 0));
 
-        // Without context, references are classified as "reference"
+        // Without context, references are classified as Unknown (bf-5on6og)
         assert_eq!(
             detect_char_proc_type_with_context(&ref_obj, None),
-            CharProcType::Other("reference".to_string())
+            CharProcType::Unknown
         );
     }
 
@@ -3151,10 +3151,10 @@ mod tests {
         // Full integration testing requires complete document parsing infrastructure
         let ref_obj = PdfObject::Ref(ObjRef::new(10, 0));
 
-        // Without context, references are classified as Other("reference")
+        // Without context, references are classified as Unknown (bf-5on6og)
         assert_eq!(
             detect_char_proc_type_with_context(&ref_obj, None),
-            CharProcType::Other("reference".to_string())
+            CharProcType::Unknown
         );
     }
 
@@ -3604,7 +3604,8 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(Type3Error::InvalidCharProcType { got, expected }) => {
-                assert_eq!(got, "reference");
+                // References without context are classified as Unknown (bf-5on6og)
+                assert_eq!(got, "unknown");
                 assert_eq!(expected, "stream or dictionary");
             }
             _ => panic!("Expected InvalidCharProcType error"),

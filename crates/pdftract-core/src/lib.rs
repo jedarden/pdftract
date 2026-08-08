@@ -214,6 +214,7 @@ pub mod signature;
 pub mod span;
 pub mod span_flags;
 pub mod table;
+pub mod temp_file;
 pub mod threads;
 
 // Re-export key types for convenience
@@ -239,6 +240,7 @@ pub use schema::{
     TableJson, ThreadJson,
 };
 pub use table::{GridCandidate, PageContext as TablePageContext, TableDetector};
+pub use temp_file::PdfTempFile;
 pub use text::{serialize_document_text, serialize_page_text, TextOptions};
 pub use word_boundary::{TextState, WordBoundaryDetector, WordBoundaryManager};
 
