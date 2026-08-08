@@ -97,7 +97,7 @@ fn validate_json(
     let result = schema.validate(value);
     match result {
         Ok(_) => Ok(()),
-        Err(error) => {
+        Err(_error) => {
             // If there's at least one error, collect all errors using iter_errors
             let error_details: Vec<String> = schema
                 .iter_errors(value)

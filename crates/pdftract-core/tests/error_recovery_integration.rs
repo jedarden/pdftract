@@ -47,7 +47,7 @@ fn assert_diagnostic_count_at_least(diagnostics: &[String], code: &str, min_coun
 }
 
 /// Helper: run closure under catch_unwind to verify no panic
-fn assert_no_panic<F>(test_name: &str, f: F) -> Result<(), Box<dyn std::any::Any + Send>>
+fn assert_no_panic<F>(_test_name: &str, f: F) -> Result<(), Box<dyn std::any::Any + Send>>
 where
     F: std::panic::UnwindSafe + FnOnce(),
 {

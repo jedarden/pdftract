@@ -347,7 +347,7 @@ fn test_boundary_conditions() {
 
     // Read zero bytes at various offsets
     for offset in [0, 1, BLOCK_SIZE - 1, BLOCK_SIZE, BLOCK_SIZE + 1] {
-        let length = 0usize;
+        let _length = 0usize;
         let _start_block = offset / BLOCK_SIZE;
         // Zero-length reads are handled specially
     }
