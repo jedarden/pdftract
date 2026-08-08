@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use pdftract::PyPdfProcessor;
 
 // Core types from pdftract-core
-use pdftract_core::{ExtractionOptions, PageResult, TableJson};
+use pdftract_core::{AttachmentJson, ExtractionOptions, PageResult, TableJson};
 
 // Exception types from pdftract crate (PyO3 exceptions)
 use pdftract::{
