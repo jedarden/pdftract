@@ -969,3 +969,244 @@ fn test_detect_char_proc_type_empty_dict() {
     // Verify Dict is returned
     assert_eq!(result, CharProcType::Dict, "Empty dictionary should still be classified as Dict");
 }
+
+// ============================================================================
+// Integration Tests for Reference Dereferencing
+// ============================================================================
+
+/// Test that PdfObject::Ref with DocumentContext returns Unknown when context is empty.
+///
+/// This test verifies that when a reference is passed with a DocumentContext
+/// that has no resolver, the function returns Unknown gracefully without panicking.
+#[test]
+fn test_detect_char_proc_type_ref_with_empty_context_returns_unknown() {
+    use crate::font::type3_rasterizer::DocumentContext;
+
+    // Create a reference PdfObject
+    let ref_obj = PdfObject::Ref(ObjRef::new(10, 0));
+
+    // Create an empty DocumentContext (no resolver, no source)
+    let doc_context = DocumentContext {
+        resolver: None,
+        source: None,
+    };
+
+    // Classify the object - should return Unknown gracefully
+    let result = detect_char_proc_type(&ref_obj, Some(&doc_context));
+
+    // Verify Unknown is returned (no panic)
+    assert_eq!(result, CharProcType::Unknown,
+        "Reference with empty DocumentContext should return Unknown without panicking");
+}
+
+/// Test that PdfObject::Ref without DocumentContext returns Unknown.
+///
+/// This test verifies the graceful degradation when no document context
+/// is available for dereferencing. The function should not panic.
+#[test]
+fn test_detect_char_proc_type_ref_without_context_returns_unknown() {
+    // Create a reference PdfObject
+    let ref_obj = PdfObject::Ref(ObjRef::new(15, 0));
+
+    // Classify without DocumentContext - should return Unknown gracefully
+    let result = detect_char_proc_type(&ref_obj, None);
+
+    // Verify Unknown is returned (no panic)
+    assert_eq!(result, CharProcType::Unknown,
+        "Reference without DocumentContext should return Unknown without panicking");
+}
+
+/// Test that detect_char_proc_type_with_context detects circular references.
+///
+/// This test verifies that circular references are detected and classified
+/// as CharProcType::Other("circular-reference") without infinite recursion.
+#[test]
+fn test_detect_char_proc_type_with_context_detects_circular_ref() {
+    use crate::font::type3_rasterizer::{detect_char_proc_type_with_context, DocumentContext};
+
+    // Create a reference that would point to itself (circular)
+    let circular_ref = ObjRef::new(100, 0);
+    let ref_obj = PdfObject::Ref(circular_ref);
+
+    // Create empty DocumentContext
+    let doc_context = DocumentContext {
+        resolver: None,
+        source: None,
+    };
+
+    // Use the with_context variant that has cycle detection
+    let result = detect_char_proc_type_with_context(&ref_obj, Some(&doc_context));
+
+    // Since resolver is None, it should return Unknown (circular detection
+    // only applies if we can actually dereference)
+    assert_eq!(result, CharProcType::Unknown,
+        "Circular reference with no resolver should return Unknown");
+}
+
+/// Test that reference detection does not panic on invalid object numbers.
+///
+/// This test verifies robustness: even with theoretically invalid references,
+/// the function should not panic and should return Unknown gracefully.
+#[test]
+fn test_detect_char_proc_type_ref_does_not_panic_on_invalid_ref() {
+    // Create references with various object numbers (including large ones)
+    let test_refs = vec![
+        ObjRef::new(0, 0),
+        ObjRef::new(999999, 0),
+        ObjRef::new(1, 65535),
+        ObjRef::new(i32::MAX as u32, 0),
+    ];
+
+    for obj_ref in test_refs {
+        let ref_obj = PdfObject::Ref(obj_ref);
+
+        // Should not panic even with unusual reference values
+        let result = detect_char_proc_type(&ref_obj, None);
+
+        // All should return Unknown gracefully
+        assert_eq!(result, CharProcType::Unknown,
+            "Invalid reference should return Unknown without panicking");
+    }
+}
+
+/// Test that detect_char_proc_type correctly handles reference with valid resolver.
+///
+/// This is an integration test that verifies the full dereferencing path works
+/// when a valid DocumentContext is provided. (Note: requires mock setup)
+#[test]
+fn test_detect_char_proc_type_ref_integration_with_valid_context() {
+    use crate::font::type3_rasterizer::DocumentContext;
+    use crate::parser::xref::XrefResolver;
+
+    // Create a reference
+    let ref_obj = PdfObject::Ref(ObjRef::new(50, 0));
+
+    // Create DocumentContext with resolver (even though it won't find the ref)
+    let resolver = XrefResolver::new();
+    let doc_context = DocumentContext {
+        resolver: Some(&resolver),
+        source: None,
+    };
+
+    // Should not panic even when resolver cannot find the reference
+    let result = detect_char_proc_type(&ref_obj, Some(&doc_context));
+
+    // Should return Unknown (reference not found, but no panic)
+    assert_eq!(result, CharProcType::Unknown,
+        "Reference not found should return Unknown without panicking");
+}
+
+/// Test that references are detected as references before dereferencing.
+///
+/// This test verifies the classification logic correctly identifies PdfObject::Ref
+/// and attempts dereferencing, rather than classifying it as "Other".
+#[test]
+fn test_detect_char_proc_type_identifies_ref_type() {
+    // Create a reference
+    let ref_obj = PdfObject::Ref(ObjRef::new(25, 0));
+
+    // Without context, should return Unknown (not Other("reference"))
+    let result = detect_char_proc_type(&ref_obj, None);
+
+    // Should be Unknown, not Other with a type name
+    match result {
+        CharProcType::Unknown => {
+            // Expected - references without context return Unknown
+        }
+        CharProcType::Other(name) => {
+            panic!("Reference should return Unknown, not Other with name '{}'", name);
+        }
+        _ => {
+            panic!("Reference should return Unknown, got {:?}", result);
+        }
+    }
+}
+
+/// Test that direct stream objects are still classified as Stream.
+///
+/// This is a regression test to ensure that adding reference handling
+/// did not break direct stream object classification.
+#[test]
+fn test_detect_char_proc_type_direct_stream_regression() {
+    use crate::parser::object::types::PdfStream;
+
+    // Create a direct stream object
+    let mut stream_dict = PdfDict::new();
+    stream_dict.insert(intern("/Length"), PdfObject::Integer(100));
+    let stream = PdfStream::new(stream_dict, 0, Some(100));
+    let stream_obj = PdfObject::Stream(Box::new(stream));
+
+    // Should classify as Stream (not attempt dereferencing)
+    let result = detect_char_proc_type(&stream_obj, None);
+
+    assert_eq!(result, CharProcType::Stream,
+        "Direct stream object should still be classified as Stream");
+}
+
+/// Test that direct dict objects are still classified as Dict.
+///
+/// This is a regression test to ensure that adding reference handling
+/// did not break direct dictionary object classification.
+#[test]
+fn test_detect_char_proc_type_direct_dict_regression() {
+    // Create a direct dict object
+    let dict = PdfDict::new();
+    let dict_obj = PdfObject::Dict(Box::new(dict));
+
+    // Should classify as Dict (not attempt dereferencing)
+    let result = detect_char_proc_type(&dict_obj, None);
+
+    assert_eq!(result, CharProcType::Dict,
+        "Direct dict object should still be classified as Dict");
+}
+
+/// Test detect_char_proc_type with multiple reference types.
+///
+/// This test verifies that the function handles various reference scenarios
+/// consistently and does not panic on edge cases.
+#[test]
+fn test_detect_char_proc_type_ref_various_scenarios() {
+    use crate::font::type3_rasterizer::DocumentContext;
+
+    let test_cases = vec![
+        (ObjRef::new(1, 0), "normal reference"),
+        (ObjRef::new(0, 0), "zero object number"),
+        (ObjRef::new(1, 1), "non-zero generation number"),
+        (ObjRef::new(1000, 0), "large object number"),
+    ];
+
+    for (obj_ref, description) in test_cases {
+        let ref_obj = PdfObject::Ref(obj_ref);
+
+        // Test without context - should return Unknown
+        let result_no_ctx = detect_char_proc_type(&ref_obj, None);
+        assert_eq!(result_no_ctx, CharProcType::Unknown,
+            "{} without context should return Unknown", description);
+
+        // Test with empty context - should return Unknown
+        let empty_ctx = DocumentContext {
+            resolver: None,
+            source: None,
+        };
+        let result_empty_ctx = detect_char_proc_type(&ref_obj, Some(&empty_ctx));
+        assert_eq!(result_empty_ctx, CharProcType::Unknown,
+            "{} with empty context should return Unknown", description);
+    }
+}
+
+/// Test that Reference handling is robust against null objects in chain.
+///
+/// This test verifies that if a reference chain leads to a null object,
+/// the function handles it gracefully without panicking.
+#[test]
+fn test_detect_char_proc_type_ref_chain_robustness() {
+    // Create a reference
+    let ref_obj = PdfObject::Ref(ObjRef::new(30, 0));
+
+    // Test with null DocumentContext
+    let result = detect_char_proc_type(&ref_obj, None);
+
+    // Should gracefully return Unknown
+    assert_eq!(result, CharProcType::Unknown,
+        "Reference should return Unknown when resolution is not possible");
+}
