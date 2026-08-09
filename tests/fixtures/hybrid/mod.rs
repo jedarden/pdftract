@@ -137,61 +137,110 @@ impl fmt::Display for ClassifyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::EmptyPdfInput => {
-                write!(f, "PDF input bytes are empty")
+                write!(f, "PDF input bytes are empty. \
+                    Action: Provide a non-empty PDF file. Check that the file was read correctly and is not truncated.")
             }
             Self::InvalidPdfSignature => {
-                write!(f, "Invalid PDF: missing PDF signature (expected to start with '%PDF')")
+                write!(f, "Invalid PDF file: missing PDF signature. \
+                    Expected file to start with '%PDF-' or '%PDF'. \
+                    Action: Verify the file is a valid PDF. Check if the file was corrupted during download or transfer. \
+                    Try opening the file in a PDF viewer to confirm validity.")
             }
             Self::TempFileCreationFailed(e) => {
-                write!(f, "Failed to create temporary file for PDF: {}", e)
+                write!(f, "Failed to create temporary file for PDF processing: {}. \
+                    Action: Check available disk space and write permissions in the temp directory (usually /tmp or $TMPDIR). \
+                    Ensure the system temp directory is accessible and not full. \
+                    Error details: {}", e, e)
             }
             Self::TempFileWriteFailed(e) => {
-                write!(f, "Failed to write PDF bytes to temporary file: {}", e)
+                write!(f, "Failed to write PDF bytes to temporary file: {}. \
+                    Action: Check available disk space and ensure the temp file has not been deleted or locked. \
+                    Verify the PDF bytes are valid and not corrupted. \
+                    Error details: {}", e, e)
             }
             Self::TempFileFlushFailed(e) => {
-                write!(f, "Failed to flush temporary file: {}", e)
+                write!(f, "Failed to flush temporary file data to disk: {}. \
+                    Action: Check disk space and I/O errors. The file may be on a full or read-only filesystem. \
+                    Error details: {}", e, e)
             }
             Self::BinaryNotFound(paths) => {
                 write!(
                     f,
-                    "pdftract binary not found. Tried the following paths: {:?}. \
-                    Ensure pdftract is built (run 'cargo build --release') and available in PATH.",
-                    paths
+                    "pdftract binary not found. \
+                    Tried the following paths in order: {:?}. \
+                    \n\nAction: Build pdftract with 'cargo build --release' or install it. \
+                    \n  For development: Ensure target/debug/pdftract or target/release/pdftract exists. \
+                    \n  For installation: Run 'cargo install pdftract' or add the build directory to PATH. \
+                    \n  Current working directory: {:?}",
+                    paths,
+                    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("<unknown>"))
                 )
             }
             Self::BinarySpawnFailed(e) => {
-                write!(f, "Failed to spawn pdftract binary: {}", e)
+                write!(f, "Failed to spawn pdftract binary process: {}. \
+                    Action: Check that the binary exists and is executable. \
+                    Verify file permissions (run 'chmod +x pdftract' if needed). \
+                    Check system resource limits (ulimit -u) and available memory. \
+                    Error details: {}", e, e)
             }
             Self::ExtractionFailed { exit_code, stderr } => {
                 write!(
                     f,
-                    "pdftract extraction failed with exit code {:?}. stderr: {}",
+                    "pdftract extraction failed with exit code {:?}. \
+                    \n\nAction: Check the PDF file for corruption or unsupported features. \
+                    \n  Verify the PDF is not encrypted or password-protected. \
+                    \n  Try opening the file in a PDF viewer to confirm it's valid. \
+                    \n  Check disk space and system resources. \
+                    \n\nstderr output:\n{}",
                     exit_code, stderr
                 )
             }
             Self::InvalidUtf8Output(e) => {
-                write!(f, "Failed to convert pdftract output to UTF-8: {}", e)
+                write!(f, "Failed to convert pdftract output to UTF-8: {}. \
+                    Action: The pdftract binary produced invalid UTF-8 output. \
+                    This may indicate a corrupted binary or output encoding issue. \
+                    Try reinstalling or rebuilding pdftract. \
+                    Error details: {}", e, e)
             }
             Self::JsonParseFailed(e) => {
-                write!(f, "Failed to parse pdftract JSON output: {}", e)
+                write!(f, "Failed to parse pdftract JSON output: {}. \
+                    Action: The output from pdftract is not valid JSON. \
+                    This may indicate a bug in pdftract or an incomplete extraction. \
+                    Check that pdftract is working correctly by running it manually. \
+                    Error details: {}", e, e)
             }
             Self::MissingPagesArray => {
-                write!(f, "JSON output missing required 'pages' array")
+                write!(f, "JSON output missing required 'pages' array. \
+                    Action: The pdftract output format may have changed or is incomplete. \
+                    Verify that pdftract is producing valid JSON output with a 'pages' field. \
+                    Try running pdftract manually to inspect the output format.")
             }
             Self::NoPages => {
-                write!(f, "PDF contains no pages")
+                write!(f, "PDF contains no pages. \
+                    Action: Verify the PDF file is not empty and contains at least one page. \
+                    The file may be corrupted or not a valid PDF document.")
             }
             Self::NoFirstPage => {
-                write!(f, "Failed to get first page from pages array")
+                write!(f, "Failed to get first page from pages array. \
+                    Action: The pages array exists but is empty. This should not happen if NoPages check passed. \
+                    This may indicate a race condition or corrupted PDF structure.")
             }
             Self::MissingPageType => {
-                write!(f, "JSON output missing 'page_type' field")
+                write!(f, "JSON output missing 'page_type' field. \
+                    Action: The pdftract output format may have changed. \
+                    Verify the expected output format includes 'page_type' for each page. \
+                    Run pdftract manually to inspect the actual output structure.")
             }
             Self::UnknownPageType(page_type) => {
                 write!(
                     f,
-                    "Unknown page_type '{}'. Expected one of: mixed, text, scanned, broken_vector, blank, figure_only",
-                    page_type
+                    "Unknown page_type '{}'. \
+                    \n\nExpected one of: mixed, text, scanned, broken_vector, blank, figure_only. \
+                    \n\nAction: The pdftract output contains an unrecognized page type. \
+                    \n  This may indicate a version mismatch or corrupted output. \
+                    \n  Verify pdftract is producing valid page_type values. \
+                    \n  Received value: '{}'",
+                    page_type, page_type
                 )
             }
         }
@@ -208,6 +257,177 @@ impl StdError for ClassifyError {
             Self::InvalidUtf8Output(e) => Some(e),
             Self::JsonParseFailed(e) => Some(e),
             _ => None,
+        }
+    }
+}
+
+impl ClassifyError {
+    /// Get detailed diagnostic context for this error.
+    ///
+    /// Returns structured information about what went wrong and how to fix it.
+    /// This is more detailed than the Display impl and provides machine-readable context.
+    ///
+    /// # Returns
+    ///
+    /// A string containing detailed diagnostic information including:
+    /// - Error category (input, binary, process, output, etc.)
+    /// - What failed
+    /// - Why it likely failed
+    /// - How to fix it
+    pub fn diagnostic_context(&self) -> String {
+        match self {
+            Self::EmptyPdfInput => {
+                format!("Error Category: Input Validation\n\
+                        What: PDF input bytes are empty (zero length)\n\
+                        Why: The PDF data provided has no content\n\
+                        How to fix: Provide a non-empty PDF file. Check file read operations \
+                        and verify the file was not truncated during download or transfer.")
+            }
+            Self::InvalidPdfSignature => {
+                format!("Error Category: Input Validation\n\
+                        What: PDF file missing signature header\n\
+                        Why: Valid PDFs must start with '%PDF-' or '%PDF'. This file does not.\n\
+                        How to fix: Verify the file is a valid PDF. Check for corruption during \
+                        download/transfer. Try opening in a PDF viewer. If the file is a different \
+                        format (e.g., PostScript), convert it to PDF first.")
+            }
+            Self::TempFileCreationFailed(e) => {
+                format!("Error Category: Filesystem I/O\n\
+                        What: Cannot create temporary file for PDF processing\n\
+                        Why: {}\n\
+                        How to fix: 1) Check disk space (df -h)\n\
+                        2) Verify write permissions in temp directory\n\
+                        3) Check $TMPDIR environment variable\n\
+                        4) Ensure temp directory exists and is accessible\n\
+                        5) Try setting TMPDIR to a writable location",
+                        e)
+            }
+            Self::TempFileWriteFailed(e) => {
+                format!("Error Category: Filesystem I/O\n\
+                        What: Cannot write PDF bytes to temporary file\n\
+                        Why: {}\n\
+                        How to fix: 1) Check available disk space\n\
+                        2) Verify temp file was not deleted or locked\n\
+                        3) Check for I/O errors on the filesystem\n\
+                        4) Verify PDF bytes are valid and not corrupted",
+                        e)
+            }
+            Self::TempFileFlushFailed(e) => {
+                format!("Error Category: Filesystem I/O\n\
+                        What: Cannot flush temporary file data to disk\n\
+                        Why: {}\n\
+                        How to fix: 1) Check disk space (filesystem may be full)\n\
+                        2) Verify filesystem is not read-only\n\
+                        3) Check for hardware I/O errors\n\
+                        4) Ensure data can be written to the temp directory",
+                        e)
+            }
+            Self::BinaryNotFound(paths) => {
+                format!("Error Category: Binary Not Found\n\
+                        What: pdftract binary not found in any expected location\n\
+                        Why: The executable does not exist or is not in PATH\n\
+                        Tried: {:?}\n\
+                        Current directory: {:?}\n\
+                        How to fix: 1) Build pdftract: 'cargo build --release'\n\
+                        2) Install pdftract: 'cargo install pdftract'\n\
+                        3) Add build directory to PATH\n\
+                        4) Verify binary exists at one of the tried paths",
+                        paths,
+                        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("<unknown>")))
+            }
+            Self::BinarySpawnFailed(e) => {
+                format!("Error Category: Process Execution\n\
+                        What: Cannot spawn pdftract binary process\n\
+                        Why: {}\n\
+                        How to fix: 1) Verify binary exists and is executable\n\
+                        2) Check permissions: 'chmod +x pdftract'\n\
+                        3) Check system resource limits (ulimit -u)\n\
+                        4) Verify sufficient memory available\n\
+                        5) Check for anti-virus or security software blocking execution",
+                        e)
+            }
+            Self::ExtractionFailed { exit_code, stderr } => {
+                format!("Error Category: Extraction Failed\n\
+                        What: pdftract process exited with error\n\
+                        Exit code: {:?}\n\
+                        Why: Extraction failed - see stderr output below\n\
+                        How to fix: 1) Check PDF is not corrupted (open in viewer)\n\
+                        2) Verify PDF is not encrypted/password-protected\n\
+                        3) Check available disk space and memory\n\
+                        4) Try a simpler PDF to verify pdftract works\n\
+                        5) Run pdftract manually for more details\n\
+                        \nstderr:\n{}",
+                        exit_code, stderr)
+            }
+            Self::InvalidUtf8Output(e) => {
+                format!("Error Category: Output Encoding\n\
+                        What: pdftract produced invalid UTF-8 output\n\
+                        Why: {}\n\
+                        How to fix: 1) The binary may be corrupted - reinstall/rebuild\n\
+                        2) Check binary version compatibility\n\
+                        3) Try running pdftract manually to inspect output\n\
+                        4) Verify locale and encoding settings (LC_ALL, LANG)",
+                        e)
+            }
+            Self::JsonParseFailed(e) => {
+                format!("Error Category: Output Parsing\n\
+                        What: Cannot parse pdftract output as JSON\n\
+                        Why: {}\n\
+                        How to fix: 1) Run pdftract manually to see actual output\n\
+                        2) Verify --json flag is supported\n\
+                        3) Check for incomplete or truncated output\n\
+                        4) Look for error messages mixed with JSON\n\
+                        5) Verify pdftract is producing valid JSON",
+                        e)
+            }
+            Self::MissingPagesArray => {
+                format!("Error Category: Output Format\n\
+                        What: JSON output missing 'pages' array\n\
+                        Why: The expected output format was not found\n\
+                        How to fix: 1) Verify pdftract output format has not changed\n\
+                        2) Run pdftract manually to inspect output structure\n\
+                        3) Check for version mismatch between test and binary\n\
+                        4) Verify --json flag produces pages array")
+            }
+            Self::NoPages => {
+                format!("Error Category: PDF Content\n\
+                        What: PDF contains no pages\n\
+                        Why: The PDF file is empty or corrupted\n\
+                        How to fix: 1) Verify the PDF is not empty\n\
+                        2) Check if the file was truncated during download\n\
+                        3) Try opening in a PDF viewer to verify page count\n\
+                        4) Ensure the file is a valid PDF document")
+            }
+            Self::NoFirstPage => {
+                format!("Error Category: Internal Logic\n\
+                        What: Cannot access first page from pages array\n\
+                        Why: The pages array exists but is empty (unexpected)\n\
+                        How to fix: 1) This may indicate a race condition or bug\n\
+                        2) Verify PDF has at least one page\n\
+                        3) Run pdftract manually to inspect output\n\
+                        4) Report this as a bug if it persists")
+            }
+            Self::MissingPageType => {
+                format!("Error Category: Output Format\n\
+                        What: JSON output missing 'page_type' field\n\
+                        Why: The expected output format was not found\n\
+                        How to fix: 1) Verify pdftract output format includes page_type\n\
+                        2) Run pdftract manually: 'pdftract extract --json file.pdf'\n\
+                        3) Check for version mismatch or format change\n\
+                        4) Verify the binary is producing expected JSON structure")
+            }
+            Self::UnknownPageType(page_type) => {
+                format!("Error Category: Output Format\n\
+                        What: Unrecognized page_type value in JSON output\n\
+                        Received: '{}'\n\
+                        Expected: mixed, text, scanned, broken_vector, blank, figure_only\n\
+                        Why: The page_type value is not one of the known types\n\
+                        How to fix: 1) Verify pdftract is producing valid page_type values\n\
+                        2) Check for version mismatch or format change\n\
+                        3) Run pdftract manually to inspect output\n\
+                        4) Ensure binary and test expectations are aligned",
+                        page_type)
+            }
         }
     }
 }
