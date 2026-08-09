@@ -4958,4 +4958,422 @@ mod tests {
             "Complex glyph bitmap should contain black pixels from multiple operations"
         );
     }
+
+    #[test]
+    fn test_round_x_negative_fraction_rounds_down() {
+        // Test case for negative fraction: x = -2.3 → -2
+        // Verifies that round_x correctly rounds negative fractions toward zero (truncation)
+        let result = round_x(-2.3);
+        assert_eq!(result, -2, "x = -2.3 should round to -2 (truncates toward zero)");
+    }
+
+    #[test]
+    fn test_round_x_small_negative_fraction_rounds_down() {
+        // Test case for small negative fraction: x = -0.5 → -1
+        // Verifies that round_x correctly rounds -0.5 away from zero (toward -1)
+        // Rust's round() uses "round half away from zero" for .5 cases
+        let result = round_x(-0.5);
+        assert_eq!(result, -1, "x = -0.5 should round to -1 (away from zero)");
+    }
+
+    #[test]
+    fn test_round_x_very_small_negative_fraction_rounds_down() {
+        // Test case for very small negative fraction: x = -0.1 → 0
+        // Verifies that round_x correctly rounds small negative fractions toward zero
+        let result = round_x(-0.1);
+        assert_eq!(result, 0, "x = -0.1 should round to 0 (truncates toward zero)");
+    }
+
+    /// Test glyph helper functions for Type3 font rasterization tests.
+    ///
+    /// This module provides helper functions to create minimal valid glyph data
+    /// for testing Type3Font::mock and rasterize_type3_glyph.
+    ///
+    /// # Overview
+    ///
+    /// These helpers simplify test setup by providing:
+    /// - Predefined content stream patterns (rectangles, lines, etc.)
+    /// - Easy glyph-to-reference mapping
+    /// - Stream resolvers that return glyph content
+    ///
+    /// # Usage Example
+    ///
+    /// ```rust,no_run
+    /// use pdftract_core::font::type3_rasterizer::tests::glyph_helpers::*;
+    /// use pdftract_core::font::type3::Type3Font;
+    /// use std::sync::Arc;
+    ///
+    /// // Create a simple rectangle glyph
+    /// let char_procs = create_char_procs(&[("rect", 10)]);
+    /// let font = Type3Font::mock(Some(char_procs));
+    ///
+    /// // Create a resolver that returns rectangle content
+    /// let resolver = create_simple_resolver(&[(10, rectangle_glyph(0, 0, 100, 100))]);
+    ///
+    /// // Rasterize the glyph
+    /// let bitmap = rasterize_type3_glyph(&font, "rect", None, Some(&resolver));
+    /// ```
+    pub mod glyph_helpers {
+        use super::*;
+        use std::collections::HashMap;
+        use std::sync::Arc;
+
+        /// Create a minimal char_procs HashMap for testing.
+        ///
+        /// This function creates a HashMap mapping glyph names to object references,
+        /// which can be passed to Type3Font::mock().
+        ///
+        /// # Arguments
+        ///
+        /// * `glyphs` - Slice of (glyph_name, obj_ref_number) tuples
+        ///
+        /// # Returns
+        ///
+        /// HashMap<Arc<str>, ObjRef> suitable for Type3Font::mock()
+        ///
+        /// # Example
+        ///
+        /// ```rust,no_run
+        /// # use pdftract_core::font::type3_rasterizer::tests::glyph_helpers::*;
+        /// # use pdftract_core::font::type3::Type3Font;
+        /// // Create char_procs with two glyphs
+        /// let char_procs = create_char_procs(&[("A", 10), ("B", 11)]);
+        /// let font = Type3Font::mock(Some(char_procs));
+        /// ```
+        pub fn create_char_procs(glyphs: &[(&str, u32)]) -> HashMap<Arc<str>, ObjRef> {
+            glyphs
+                .iter()
+                .map(|(name, ref_num)| (Arc::from(*name), ObjRef::new(*ref_num, 0)))
+                .collect()
+        }
+
+        /// Generate PDF content stream bytes for a filled rectangle glyph.
+        ///
+        /// Creates a minimal valid content stream that draws a filled rectangle
+        /// using the "re" (rectangle) and "f" (fill) operators.
+        ///
+        /// # Arguments
+        ///
+        /// * `x` - X coordinate of rectangle origin
+        /// * `y` - Y coordinate of rectangle origin
+        /// * `width` - Rectangle width
+        /// * `height` - Rectangle height
+        ///
+        /// # Returns
+        ///
+        /// Vec<u8> containing the PDF content stream bytes
+        ///
+        /// # Example
+        ///
+        /// ```rust,no_run
+        /// # use pdftract_core::font::type3_rasterizer::tests::glyph_helpers::rectangle_glyph;
+        /// // Create a 100x100 filled rectangle at origin
+        /// let stream = rectangle_glyph(0, 0, 100, 100);
+        /// assert_eq!(stream, b"0 0 100 100 re f");
+        /// ```
+        pub fn rectangle_glyph(x: i32, y: i32, width: i32, height: i32) -> Vec<u8> {
+            format!("{} {} {} {} re f", x, y, width, height).into_bytes()
+        }
+
+        /// Generate PDF content stream bytes for a stroked line glyph.
+        ///
+        /// Creates a minimal valid content stream that draws a line segment
+        /// using the "m" (move-to) and "l" (line-to) operators.
+        ///
+        /// # Arguments
+        ///
+        /// * `x0` - X coordinate of line start point
+        /// * `y0` - Y coordinate of line start point
+        /// * `x1` - X coordinate of line end point
+        /// * `y1` - Y coordinate of line end point
+        ///
+        /// # Returns
+        ///
+        /// Vec<u8> containing the PDF content stream bytes
+        ///
+        /// # Example
+        ///
+        /// ```rust,no_run
+        /// # use pdftract_core::font::type3_rasterizer::tests::glyph_helpers::line_glyph;
+        /// // Create a line from (10,10) to (50,50)
+        /// let stream = line_glyph(10, 10, 50, 50);
+        /// assert_eq!(stream, b"10 10 m 50 50 l s");
+        /// ```
+        pub fn line_glyph(x0: i32, y0: i32, x1: i32, y1: i32) -> Vec<u8> {
+            format!("{} {} m {} {} l s", x0, y0, x1, y1).into_bytes()
+        }
+
+        /// Generate PDF content stream bytes for a filled triangle glyph.
+        ///
+        /// Creates a content stream that draws a triangle using path commands.
+        ///
+        /// # Arguments
+        ///
+        /// * `x0` - X coordinate of first vertex
+        /// * `y0` - Y coordinate of first vertex
+        /// * `x1` - X coordinate of second vertex
+        /// * `y1` - Y coordinate of second vertex
+        /// * `x2` - X coordinate of third vertex
+        /// * `y2` - Y coordinate of third vertex
+        ///
+        /// # Returns
+        ///
+        /// Vec<u8> containing the PDF content stream bytes
+        ///
+        /// # Example
+        ///
+        /// ```rust,no_run
+        /// # use pdftract_core::font::type3_rasterizer::tests::glyph_helpers::triangle_glyph;
+        /// // Create a triangle with vertices at (10,5), (15,15), (5,15)
+        /// let stream = triangle_glyph(10, 5, 15, 15, 5, 15);
+        /// ```
+        pub fn triangle_glyph(x0: i32, y0: i32, x1: i32, y1: i32, x2: i32, y2: i32) -> Vec<u8> {
+            format!(
+                "{} {} m {} {} l {} {} l h f",
+                x0, y0, x1, y1, x2, y2
+            )
+            .into_bytes()
+        }
+
+        /// Create a simple stream resolver for testing.
+        ///
+        /// This function creates a resolver callback that maps object references
+        /// to content stream bytes. It's used with rasterize_type3_glyph().
+        ///
+        /// # Arguments
+        ///
+        /// * `streams` - Slice of (obj_ref_number, content_bytes) tuples
+        ///
+        /// # Returns
+        ///
+        /// A boxed StreamResolverFn callback suitable for rasterize_type3_glyph
+        ///
+        /// # Example
+        ///
+        /// ```rust,no_run
+        /// # use pdftract_core::font::type3_rasterizer::tests::glyph_helpers::*;
+        /// # use pdftract_core::font::type3::Type3Font;
+        /// # use pdftract_core::font::type3_rasterizer::rasterize_type3_glyph;
+        /// // Create a font with a rectangle glyph
+        /// let char_procs = create_char_procs(&[("myrect", 10)]);
+        /// let font = Type3Font::mock(Some(char_procs));
+        ///
+        /// // Create resolver that returns rectangle content for ref 10
+        /// let resolver = create_simple_resolver(&[(10, rectangle_glyph(0, 0, 100, 100))]);
+        ///
+        /// // Rasterize
+        /// let bitmap = rasterize_type3_glyph(&font, "myrect", None, Some(&resolver));
+        /// ```
+        pub fn create_simple_resolver(streams: &[(u32, Vec<u8>)]) -> Box<StreamResolverFn> {
+            let stream_map: HashMap<u32, Vec<u8>> = streams
+                .iter()
+                .map(|(ref_num, bytes)| (*ref_num, bytes.clone()))
+                .collect();
+
+            Box::new(move |obj_ref: ObjRef| -> Option<Vec<u8>> {
+                stream_map.get(&obj_ref.object).cloned()
+            })
+        }
+
+        /// Create a minimal DocumentContext for testing.
+        ///
+        /// Returns a DocumentContext with None fields, suitable for tests
+        /// that don't require full document resolution.
+        ///
+        /// # Example
+        ///
+        /// ```rust,no_run
+        /// # use pdftract_core::font::type3_rasterizer::tests::glyph_helpers::create_minimal_doc_context;
+        /// let doc_context = create_minimal_doc_context();
+        /// ```
+        pub fn create_minimal_doc_context() -> DocumentContext<'static> {
+            DocumentContext {
+                resolver: None,
+                source: None,
+            }
+        }
+
+        /// Create a complete test glyph setup (font + resolver + context).
+        ///
+        /// This is a convenience function that creates all the components needed
+        /// for a Type3 glyph rasterization test.
+        ///
+        /// # Arguments
+        ///
+        /// * `glyph_data` - Slice of (glyph_name, obj_ref_number, content_bytes) tuples
+        ///
+        /// # Returns
+        ///
+        /// (Type3Font, Box<StreamResolverFn>, DocumentContext) tuple ready for testing
+        ///
+        /// # Example
+        ///
+        /// ```rust,no_run
+        /// # use pdftract_core::font::type3_rasterizer::tests::glyph_helpers::*;
+        /// # use pdftract_core::font::type3_rasterizer::rasterize_type3_glyph;
+        /// // Create a complete test setup with two glyphs
+        /// let (font, resolver, doc_context) = create_test_setup(&[
+        ///     ("rect1", 10, rectangle_glyph(0, 0, 50, 50)),
+        ///     ("rect2", 11, rectangle_glyph(10, 10, 60, 60)),
+        /// ]);
+        ///
+        /// // Rasterize both glyphs
+        /// let bitmap1 = rasterize_type3_glyph(&font, "rect1", Some(&doc_context), Some(&resolver));
+        /// let bitmap2 = rasterize_type3_glyph(&font, "rect2", Some(&doc_context), Some(&resolver));
+        /// ```
+        pub fn create_test_setup(
+            glyph_data: &[(&str, u32, Vec<u8>)],
+        ) -> (Type3Font, Box<StreamResolverFn>, DocumentContext<'static>) {
+            let char_procs: HashMap<Arc<str>, ObjRef> = glyph_data
+                .iter()
+                .map(|(name, ref_num, _bytes)| (Arc::from(*name), ObjRef::new(*ref_num, 0)))
+                .collect();
+
+            let font = Type3Font::mock(Some(char_procs));
+
+            let streams: Vec<(u32, Vec<u8>)> = glyph_data
+                .iter()
+                .map(|(_name, ref_num, bytes)| (*ref_num, bytes.clone()))
+                .collect();
+
+            let resolver = create_simple_resolver(&streams);
+            let doc_context = create_minimal_doc_context();
+
+            (font, resolver, doc_context)
+        }
+    }
+
+    #[test]
+    fn test_glyph_helpers_create_char_procs() {
+        use glyph_helpers::*;
+
+        // Test creating char_procs HashMap
+        let char_procs = create_char_procs(&[("A", 10), ("B", 11), ("C", 12)]);
+
+        assert_eq!(char_procs.len(), 3);
+        assert_eq!(char_procs.get("A"), Some(&ObjRef::new(10, 0)));
+        assert_eq!(char_procs.get("B"), Some(&ObjRef::new(11, 0)));
+        assert_eq!(char_procs.get("C"), Some(&ObjRef::new(12, 0)));
+        assert_eq!(char_procs.get("D"), None);
+    }
+
+    #[test]
+    fn test_glyph_helpers_rectangle_glyph() {
+        use glyph_helpers::*;
+
+        // Test rectangle glyph generation
+        let stream = rectangle_glyph(5, 10, 100, 200);
+        assert_eq!(stream, b"5 10 100 200 re f");
+
+        // Test with origin
+        let stream_origin = rectangle_glyph(0, 0, 50, 50);
+        assert_eq!(stream_origin, b"0 0 50 50 re f");
+    }
+
+    #[test]
+    fn test_glyph_helpers_line_glyph() {
+        use glyph_helpers::*;
+
+        // Test line glyph generation
+        let stream = line_glyph(10, 20, 30, 40);
+        assert_eq!(stream, b"10 20 m 30 40 l s");
+
+        // Test diagonal line
+        let stream_diag = line_glyph(0, 0, 100, 100);
+        assert_eq!(stream_diag, b"0 0 m 100 100 l s");
+    }
+
+    #[test]
+    fn test_glyph_helpers_triangle_glyph() {
+        use glyph_helpers::*;
+
+        // Test triangle glyph generation
+        let stream = triangle_glyph(10, 5, 15, 15, 5, 15);
+        assert_eq!(stream, b"10 5 m 15 15 l 5 15 l h f");
+    }
+
+    #[test]
+    fn test_glyph_helpers_simple_resolver() {
+        use glyph_helpers::*;
+
+        // Create resolver with multiple streams
+        let resolver = create_simple_resolver(&[
+            (10, rectangle_glyph(0, 0, 100, 100)),
+            (11, line_glyph(0, 0, 50, 50)),
+        ]);
+
+        // Test resolver returns correct streams
+        assert_eq!(
+            resolver(ObjRef::new(10, 0)),
+            Some(b"0 0 100 100 re f".to_vec())
+        );
+        assert_eq!(
+            resolver(ObjRef::new(11, 0)),
+            Some(b"0 0 m 50 50 l s".to_vec())
+        );
+        assert_eq!(resolver(ObjRef::new(99, 0)), None);
+    }
+
+    #[test]
+    fn test_glyph_helpers_complete_setup() {
+        use glyph_helpers::*;
+
+        // Create complete test setup
+        let (font, resolver, doc_context) = create_test_setup(&[
+            ("rect1", 10, rectangle_glyph(0, 0, 50, 50)),
+            ("line1", 11, line_glyph(10, 10, 40, 40)),
+        ]);
+
+        // Verify font has both glyphs
+        assert!(font.has_glyph("rect1"));
+        assert!(font.has_glyph("line1"));
+        assert!(!font.has_glyph("nonexistent"));
+
+        // Verify resolver works
+        assert_eq!(
+            resolver(ObjRef::new(10, 0)),
+            Some(b"0 0 50 50 re f".to_vec())
+        );
+        assert_eq!(
+            resolver(ObjRef::new(11, 0)),
+            Some(b"10 10 m 40 40 l s".to_vec())
+        );
+
+        // Verify doc_context is minimal
+        assert!(doc_context.resolver.is_none());
+        assert!(doc_context.source.is_none());
+    }
+
+    #[test]
+    fn test_glyph_helpers_integration_with_rasterize_type3_glyph() {
+        use glyph_helpers::*;
+
+        // Create test setup with a rectangle glyph
+        let (font, resolver, doc_context) = create_test_setup(&[(
+            "test_rect",
+            10,
+            rectangle_glyph(0, 0, 100, 100),
+        )]);
+
+        // Rasterize the glyph
+        let result = rasterize_type3_glyph(
+            &font,
+            "test_rect",
+            Some(&doc_context),
+            Some(&resolver),
+        );
+
+        // Verify successful rasterization
+        assert!(
+            result.is_some(),
+            "rasterize_type3_glyph should return Some(bitmap) for valid glyph"
+        );
+
+        let bitmap = result.unwrap();
+        assert!(!bitmap.is_empty(), "Bitmap should not be empty");
+        assert!(
+            bitmap.iter().any(|&p| p == 0),
+            "Bitmap should contain black pixels from filled rectangle"
+        );
+    }
 }
