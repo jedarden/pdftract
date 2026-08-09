@@ -13,7 +13,6 @@
 //! from the X-Forwarded-For header. This should only be enabled when behind
 //! a trusted reverse proxy that sets this header correctly.
 
-use anyhow::Result;
 use axum::{
     extract::{ConnectInfo, Request, State},
     http::HeaderMap,
