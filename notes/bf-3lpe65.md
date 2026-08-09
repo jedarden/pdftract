@@ -1,70 +1,102 @@
-# sccache Bucket Creation in Garage
+# sccache Bucket Creation - INFRASTRUCTURE BLOCKER
 
 **Bead:** bf-3lpe65  
 **Date:** 2026-08-09  
-**Cluster:** apexalgo-iad (Rackspace Spot us-east-iad-1)
+**Status:** BLOCKED - Garage Infrastructure Broken
 
 ## Summary
 
-Attempted to create the `sccache` S3 bucket in Garage on apexalgo-iad cluster. **Blocked on admin access.**
+Cannot create sccache S3 bucket in Garage cluster due to infrastructure failure. Garage deployment on apexalgo-iad is non-functional.
 
-## Current State
+## Current Infrastructure State
 
-### Prerequisites Completed
-- ✅ **Bucket name determined**: `sccache` (from bf-6coted)
-- ✅ **Garage deployment verified**: Running on apexalgo-iad (from bf-3ucuqi)
-- ✅ **GarageBucket manifest prepared**: `.cli/tmp/sccache-garage-bucket.yml`
+### apexalgo-iad Cluster (Target Cluster)
 
-### Blocker Identified
-- ❌ **Admin access to apexalgo-iad not available**
-  - Read-only proxy exists: `kubectl --server=http://traefik-apexalgo-iad:8001`
-  - Admin kubeconfig missing: `/home/coding/.kube/apexalgo-iad.kubeconfig` (does not exist)
-  - Admin kubeconfig requires cloudspace-admin OIDC token (regenerate from Rackspace Spot UI)
+**Garage Pod Status:**
+- Pod: `garage-cnpg-0` - Status: `Terminating` (0/1)
+- Operator: `garage-operator-567bc7676f-4tnf7` - Status: `CrashLoopBackOff` (21 restarts, 133m old)
+- Namespace: `garage-operator` - Status: Active (but resources broken)
 
-## What Needs to Be Done
+**Admin Access:**
+- ❌ `/home/coding/.kube/apexalgo-iad.kubeconfig` - DOES NOT EXIST
+- ❌ Read-only proxy (`traefik-apexalgo-iad:8001`) - Cannot create resources/exec into pods (Forbidden)
 
-### Step 1: Obtain Admin Access to apexalgo-iad
+### rs-manager Cluster (Legacy Garage)
+
+- Namespace: `garage-operator` - Status: `Terminating` (115 days - likely abandoned)
+- No functional Garage deployment
+
+### iad-ci Cluster (Consuming Cluster)
+
+- Kubeconfig exists but has auth issues
+- Target cluster for sccache usage, but Garage is not deployed here
+
+## Bucket Name (Verified)
+
+✅ **Bucket name: `sccache`** (determined in bf-6coted)
+- Simple, clear, follows S3 naming conventions
+- Verified unique against existing buckets (only `openbao` on rs-manager)
+- Ready for use once Garage is functional
+
+## What I Attempted
+
+### 1. Admin Kubeconfig Check
 ```bash
-# From Rackspace Spot UI:
-# 1. Navigate to apexalgo-iad cloudspace
-# 2. Get cloudspace-admin OIDC token (expires ~3 days)
-# 3. Save to /home/coding/.kube/apexalgo-iad.kubeconfig
+$ test -f /home/coding/.kube/apexalgo-iad.kubeconfig
+DOES NOT EXIST
 ```
 
-### Step 2: Create the Bucket
-Once admin access is available, apply the GarageBucket manifest:
+### 2. Garage Pod CLI Access
 ```bash
-kubectl --kubeconfig=/home/coding/.kube/apexalgo-iad.kubeconfig \
-  apply -f .cli/tmp/sccache-garage-bucket.yml
+$ kubectl --server=http://traefik-apexalgo-iad:8001 exec -n garage-operator garage-cnpg-0 -c garage -- garage --help
+error: unable to upgrade connection: Forbidden
 ```
+- Read-only proxy forbids exec access
+- Pod is in "Terminating" state anyway
 
-This will create the `sccache` bucket with:
-- Name: `sccache`
-- Namespace: `garage-operator`
-- Cluster: `garage-cnpg`
-- Quota: 10Gi max size
-- Permissions: Read+Write via `sccache-s3-key`
+### 3. YAML Manifest Application
+Prepared YAML files exist in `.cli/tmp/`:
+- `sccache-garage-bucket.yml` - GarageBucket definition for `sccache`
+- `sccache-garage-key.yml` - GarageKey definition for `sccache-s3-key`
 
-### Step 3: Verify Creation
+❌ Cannot apply due to:
+- No admin access to apexalgo-iad
+- Garage operator non-functional (CrashLoopBackOff)
+- No active Garage cluster to accept resources
+
+### 4. Alternative Cluster Check
 ```bash
-# List buckets to confirm creation
-kubectl --kubeconfig=/home/coding/.kube/apexalgo-iad.kubeconfig \
-  get garagebuckets -n garage-operator
-
-# Should show: sccache
+$ kubectl --server=http://traefik-rs-manager:8001 get namespaces | grep garage
+garage-operator             Terminating   115d
 ```
+- rs-manager Garage is also in long-term termination
 
-## Acceptance Criteria Status
+## Root Cause Analysis
 
-- ❌ **FAIL**: S3 bucket created successfully in Garage
-- ❌ **FAIL**: Bucket creation confirmed via Garage CLI/API
-- ⏸️ **BLOCKED**: Waiting for admin access to apexalgo-iad
+### Why Garage is Broken on apexalgo-iad
 
-## Technical Details
+**Garage Operator Status:**
+- 21 restarts in 133 minutes (≈6.3 minutes per crash cycle)
+- This indicates a persistent configuration or dependency issue
 
-### GarageBucket Manifest Location
-`.cli/tmp/sccache-garage-bucket.yml`
+**Possible Causes:**
+1. Storage backend unavailable (CNPG database issue)
+2. Configuration mismatch in GarageCluster CRD
+3. Resource constraints or missing dependencies
+4. Certificate/TLS issues
+5. Database connection problems
 
+**Impact:**
+- Cannot create S3 buckets
+- Cannot manage Garage keys
+- Existing buckets may be inaccessible
+- sccache deployment completely blocked
+
+## Prepared Artifacts
+
+### YAML Manifests (Ready for Use)
+
+**File:** `/home/coding/pdftract/.cli/tmp/sccache-garage-bucket.yml`
 ```yaml
 apiVersion: garage.rajsingh.info/v1beta1
 kind: GarageBucket
@@ -78,37 +110,67 @@ spec:
   - keyRef: sccache-s3-key
     read: true
     write: true
-  quotas:
-    maxSize: 10Gi
 ```
 
-### Alternative Creation Methods
-If GarageBucket CRD doesn't work, alternatives include:
-1. **Garage CLI**: `garage bucket create sccache` (requires Garage CLI installation)
-2. **Direct S3 API**: Using s3cmd or AWS CLI with Garage admin credentials
-3. **kubectl exec**: Run commands inside Garage pod directly
+**File:** `/home/coding/pdftract/.cli/tmp/sccache-garage-key.yml`
+```yaml
+apiVersion: garage.rajsingh.info/v1beta1
+kind: GarageKey
+metadata:
+  name: sccache-s3-key
+  namespace: garage-operator
+spec:
+  clusterRef:
+    name: garage-cnpg
+```
 
-## Next Steps
+### Environment Configuration
 
-This bead (bf-3lpe65) is **blocked on admin access**. Options:
-1. **Manual intervention**: Obtain admin kubeconfig from Rackspace Spot UI
-2. **Alternative cluster**: Check if Garage is available on a cluster with admin access
-3. **Automation**: Set up automated token refresh for admin kubeconfig
+When bucket is created, sccache will use:
+```bash
+export SCCACHE_BUCKET=sccache
+export SCCACHE_ENDPOINT=http://100.84.193.103:3900
+export SCCACHE_REGION=us-east-iad-1
+export SCCACHE_S3_USE_CREDENTIALS_PROVIDER=true
+```
 
-## Issues Found
+## Acceptance Criteria Status
 
-- **BLOCKER**: No admin access to apexalgo-iad cluster
-- **WARN**: Garage operator on apexalgo-iad in CrashLoopBackOff (pods still serving)
-- **WARN**: Admin kubeconfig requires periodic renewal (3-day expiry)
+- ❌ **FAIL:** S3 bucket created successfully in Garage (BLOCKED - infrastructure broken)
+- ✅ **PASS:** Bucket name matches chosen name from child 1 (`sccache`)
+- ❌ **FAIL:** Bucket creation confirmed via Garage CLI/API (BLOCKED - no access)
+
+## Required Actions to Unblock
+
+### Immediate (Must happen first)
+
+1. **Repair Garage deployment on apexalgo-iad:**
+   - Investigate garage-operator CrashLoopBackOff cause
+   - Fix underlying CNPG database or configuration issue
+   - Restore Garage to functional state
+
+2. **OR obtain admin kubeconfig for apexalgo-iad:**
+   - Regenerate from Rackspace Spot UI (expires ~3 days)
+   - Save to `/home/coding/.kube/apexalgo-iad.kubeconfig`
+   - Use for direct Garage CLI access
+
+### Once Garage is Functional
+
+3. **Apply prepared YAML manifests**
+4. **Create SealedSecret for iad-ci**
+5. **Verify bucket creation**
+
+## Alternative Approach
+
+Consider deploying Garage on iad-ci cluster itself (where we have admin access).
 
 ## References
 
-- Parent bead: bf-123uxh (Create sccache S3 bucket in Garage)
-- Depends on: bf-6coted (bucket name determination)
-- Access verification: notes/bf-3ucuqi.md
-- Bucket name decision: notes/bf-6coted.md
-- GarageBucket manifest: .cli/tmp/sccache-garage-bucket.yml
-- CLAUDE.md: apexalgo-iad access instructions
+- Parent bead: bf-123uxh
+- Depends on: bf-6coted (bucket name: `sccache`)
+- Infrastructure verification: `notes/bf-3ucuqi.md`
+- Bucket name determination: `notes/bf-6coted.md`
 
 ---
-**Status**: BLOCKED - Requires admin kubeconfig for apexalgo-iad to proceed with bucket creation.
+
+**BLOCKER VERIFIED:** sccache bucket creation is blocked on non-functional Garage infrastructure.
