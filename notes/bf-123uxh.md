@@ -289,4 +289,20 @@ spec:
 2. AND functional Garage deployment (currently broken - requires repair)
 3. OR alternative Garage deployment on iad-ci cluster
 
-**DO NOT CLOSE THIS BEAD** - Admin access AND infrastructure repair must be completed before bucket creation can proceed. The infrastructure is significantly worse than when this bead was initially attempted.
+**CRD Version Conflicts Also Identified:**
+
+From garage-operator logs (discovered in sibling beads bf-3lpe65 and bf-3vxias):
+```
+error: "no matches for kind \"GarageCluster\" in version \"garage.rajsingh.info/v1beta2\""
+error: "failed to list *v1beta1.GarageBucket: json: cannot unmarshal string into Go struct field KeyPermission.items.spec.keyPermissions.keyRef of type v1beta1.KeyRef"
+error: "no matches for kind \"GarageKey\" in version \"garage.rajsingh.info/v1alpha1\""
+```
+
+**Additional Root Causes:**
+- Missing `GarageCluster` v1beta2 CRD
+- Schema mismatch in existing `GarageBucket` resources
+- v1alpha1/v1beta1/v1beta2 version conflicts
+
+This means even if the pod issues were fixed, the operator cannot function until the CRD schema conflicts are resolved.
+
+**DO NOT CLOSE THIS BEAD** - Admin access AND infrastructure repair must be completed before bucket creation can proceed. The infrastructure is significantly worse than when this bead was initially attempted, with both pod/network issues AND CRD schema conflicts blocking operations.
