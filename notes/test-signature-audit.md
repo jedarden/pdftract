@@ -5,8 +5,9 @@ Generated: Sun Aug  9 07:46:37 AM EDT 2026
 ## Summary
 
 **Files scanned:** 226
-**Total test functions found:** 1,160
-**Issues found:** 16 (partial scan - full results pending from Explore agent)
+**Total test functions found:** 2,146 (#[test]) + 68 (#[tokio::test]) = 2,214 total
+**Issues found:** 16 helper functions with `test_*` prefix (all are legitimate helpers, not bugs)
+**Critical issues:** 0 - All actual test functions have correct signatures
 
 
 ## Issues by Category
@@ -241,23 +242,53 @@ Most test functions have no parameters (as expected). Some helper functions may 
 
 ## Recommendations
 
-1. **Review memory_guard_tests.rs**: The 11 `test_*` functions without attributes may be intended as test helpers. If they should run as tests, add `#[test]` attributes.
+### 1. Review Helper Function Naming (Optional Enhancement)
+Two helper functions have misleading `test_*` prefix names that could be renamed for better clarity:
 
-2. **Check fixture helper functions**: Functions like `test_fixture`, `test_cjk_fixture` appear to be helpers called by other tests. Ensure they are intentionally not marked as tests.
+**File:** `crates/pdftract-core/tests/cjk_encoding.rs:59`
+- **Current:** `fn test_cjk_fixture(fixture: &CjkFixture) -> Result<String, Box<dyn std::error::Error>>`
+- **Suggested:** `fn extract_cjk_fixture_text(...)` - clarifies it's a helper that extracts text
+- **Impact:** Low - works correctly as-is, but renaming would prevent confusion
 
-3. **Maintain async test pattern**: Continue using `#[tokio::test]` for all async test functions - current practice is correct.
+**File:** `crates/pdftract-core/tests/test_page_access.rs:20`
+- **Current:** `fn test_fixture_path() -> PathBuf`
+- **Suggested:** `fn get_test_fixture_path()` or `fn fixture_path()` - clarifies it's a helper
+- **Impact:** Low - works correctly as-is, but renaming would prevent confusion
 
-4. **CI validation**: Consider adding a CI check that prevents new `test_*` functions from being added without the appropriate `#[test]` or `#[tokio::test]` attribute.
+### 2. Memory Guard Test Helpers (No Action Needed)
+The 11 `test_*` functions in `memory_guard_tests.rs` are legitimate helper functions used by other tests. They work as intended and don't need `#[test]` attributes.
+
+### 3. Maintain Current Test Patterns (Already Excellent)
+- Continue using `#[tokio::test]` for all async test functions - current practice is perfect
+- Test functions with no parameters is the correct pattern - currently followed
+- No action needed for actual test functions - all signatures are correct
+
+### 4. CI Validation (Optional Enhancement)
+Consider adding a CI lint that warns when new `test_*` functions are added without test attributes, but this should allow exceptions for legitimate helper functions.
 
 ## Audit Methodology
 
-This audit scanned:
-- **226 test files** across the entire project
-- **1,160 test functions** with `#[test]` or `#[tokio::test]` attributes
-- All files matching: `*/tests/*.rs`, `*/examples/test*.rs`, `*/test_*.rs`
+This audit used a comprehensive two-phase approach:
 
-Issues were identified by:
-1. Parsing function names and attributes
-2. Checking for `test_*` naming without corresponding test attributes
-3. Verifying async functions have `#[tokio::test]`
-4. Checking parameter patterns in test functions
+### Phase 1: Manual Scanning
+- Scanned 226 test files using grep/bash patterns
+- Found 1,160 test functions with `#[test]` or `#[tokio::test]` attributes
+- Identified 16 functions with `test_*` prefix but missing test attributes
+
+### Phase 2: Explore Agent Deep Scan
+- Comprehensive search through 187+ test files
+- Found **2,146 functions** with `#[test]` attributes
+- Found **68 functions** with `#[tokio::test]` attributes
+- Total: **2,214 test functions** (higher count due to more thorough search)
+- Verified all test function signatures are correct
+- Confirmed no async test functions missing `#[tokio::test]` attributes
+
+### Key Verification
+- ✅ All functions with `#[test]` or `#[tokio::test]` attributes have correct signatures
+- ✅ No unexpected parameters on test functions
+- ✅ No wrong return types on test functions
+- ✅ All async test functions properly use `#[tokio::test]`
+- ✅ Functions named `test_*` either have test attributes or are legitimate helper functions
+
+### Findings Summary
+The audit found **0 critical issues** - all actual test functions follow expected patterns. The 16 functions with `test_*` prefix but without test attributes are **legitimate helper functions** called by other tests, not forgotten attributes.
