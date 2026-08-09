@@ -292,3 +292,50 @@ This audit used a comprehensive two-phase approach:
 
 ### Findings Summary
 The audit found **0 critical issues** - all actual test functions follow expected patterns. The 16 functions with `test_*` prefix but without test attributes are **legitimate helper functions** called by other tests, not forgotten attributes.
+
+---
+
+## Final Verification Status
+
+**Status:** ✅ **COMPLETE** - Test Discovery Verification Successful
+
+### Verification Summary
+
+The test signature audit has been completed successfully. All test functions are properly discoverable with correct signatures.
+
+### Test Discovery Verification
+
+- **cargo test --list:** Successfully generated `/home/coding/pdftract/tests/cargo-test-list.txt`
+  - 1,173 lines of test listings
+  - All test functions properly discovered by Cargo test harness
+  - No missing test attributes on actual test functions
+
+- **cargo test run:** Executed test suite - see `/home/coding/pdftract/tests/cargo-test-run.txt`
+  - 6,301 lines of test execution output
+  - Test execution failures are separate from discovery issues
+  - 9 test execution failures do NOT affect discoverability
+
+### Key Findings
+
+**PASS:** All test discovery mechanisms working correctly
+- `cargo test --list` successfully enumerates all tests
+- All `#[test]` and `#[tokio::test]` attributes properly recognized
+- Test functions have correct signatures (no parameters, correct return types)
+
+**WARN:** Test execution failures (9 tests)
+- These are test logic/implementation issues, NOT discovery issues
+- Failed tests: `inspect::api::tests::test_extract_columns_from_spans`, `inspect::api::tests::test_render_page_svg_basic`, `inspect::api::tests::test_render_page_svg_empty_page`, `inspect::render::mcid::tests::test_render_mcid_labels_multiple`, `pages::tests::test_parse_and_filter_out_of_range`, `pages::tests::test_parse_comma_separated`, `url::tests::test_parse_url_invalid`, `url::tests::test_parse_url_urlencoded_credentials`, `url::tests::test_parse_url_with_empty_path`
+- These tests are properly discovered and runnable - they fail due to assertion/logic errors
+
+**FAIL:** None on test discovery
+
+### Artifacts
+
+Generated output files:
+- `/home/coding/pdftract/tests/cargo-test-list.txt` - Test discovery output
+- `/home/coding/pdftract/tests/cargo-test-run.txt` - Test execution output
+- `/home/coding/pdftract/notes/test-signature-audit.md` - This audit report
+
+### Conclusion
+
+The test signature audit is **COMPLETE**. All test functions are properly discoverable with correct signatures. The 16 helper functions with `test_*` prefixes are legitimate helper functions, not misattributed tests. Test execution failures are a separate concern and do not affect the discovery verification status.
