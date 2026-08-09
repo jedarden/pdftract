@@ -25,10 +25,48 @@ use crate::receipts::verifier::SpanData;
 use crate::source::{FileSource, PdfSource};
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::path::Path;
 
 #[cfg(feature = "remote")]
 use crate::source::RemoteOpts;
+
+/// Minimal error type for Document operations.
+///
+/// This enum provides basic error handling for Document-level operations.
+/// As error handling matures, this will be expanded with more specific variants.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DocumentError {
+    /// Page extraction failed with a detailed message.
+    ExtractionFailed {
+        /// Page index that failed to extract
+        page_index: usize,
+        /// Detailed error message describing what went wrong
+        message: String,
+    },
+}
+
+impl fmt::Display for DocumentError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ExtractionFailed { page_index, message } => {
+                write!(f, "Failed to extract page {}: {}", page_index, message)
+            }
+        }
+    }
+}
+
+impl std::error::Error for DocumentError {}
+
+/// Convert DocumentError to anyhow::Error for compatibility with existing code.
+impl From<DocumentError> for anyhow::Error {
+    fn from(err: DocumentError) -> Self {
+        anyhow::anyhow!("{}", err)
+    }
+}
+
+/// Result type for Document operations that use DocumentError.
+pub type DocumentResult<T> = std::result::Result<T, DocumentError>;
 
 /// Parse a PDF file and return the document components needed for verification.
 ///
@@ -539,7 +577,12 @@ impl PdfExtractor {
                 .map_err(|e| anyhow!("Failed to flatten page tree: {:?}", e))?;
             self.pages = Some(pages);
         }
-        Ok(self.pages.as_ref().unwrap())
+        // Safe: we just set self.pages = Some(...) above if it was None
+        // Use match to avoid unwrap/expect while maintaining the invariant
+        match &self.pages {
+            Some(pages) => Ok(pages),
+            None => Err(anyhow!("materialize_pages invariant violated: pages should be Some")),
+        }
     }
 
     /// Get a lazy iterator over pages.
@@ -918,11 +961,11 @@ impl Document {
     ///
     /// # Returns
     ///
-    /// A `Result<Page, Error>` containing the extracted page data.
+    /// A `DocumentResult<Page>` containing the extracted page data.
     ///
     /// # Errors
     ///
-    /// Returns an error if:
+    /// Returns `DocumentError::ExtractionFailed` if:
     /// - The page index is out of bounds
     /// - Page iteration fails
     /// - Page data extraction fails
@@ -936,18 +979,28 @@ impl Document {
     /// let page = doc.extract_page(0)?;
     /// println!("Extracted page {} with dimensions {}x{}", page.page_number, page.width, page.height);
     /// ```
-    pub fn extract_page(&self, page_index: usize) -> Result<crate::output::sink::Page> {
+    pub fn extract_page(&self, page_index: usize) -> DocumentResult<crate::output::sink::Page> {
         use crate::output::sink::Page;
 
         // Validate page index is within bounds
-        let page_count = self.page_count()
-            .context("Failed to get page count for validation")?;
+        let page_count = match self.page_count() {
+            Ok(count) => count,
+            Err(e) => {
+                return Err(DocumentError::ExtractionFailed {
+                    page_index,
+                    message: format!("Failed to get page count for validation: {:?}", e),
+                });
+            }
+        };
 
         if page_index >= page_count {
-            return Err(anyhow!(
-                "Page index {} out of bounds (document has {} pages)",
-                page_index, page_count
-            ));
+            return Err(DocumentError::ExtractionFailed {
+                page_index,
+                message: format!(
+                    "Page index {} out of bounds (document has {} pages)",
+                    page_index, page_count
+                ),
+            });
         }
 
         // Navigate to the specific page using the iterator
@@ -957,7 +1010,15 @@ impl Document {
         for current_index in 0..=page_index {
             if let Some(result) = pages_iter.next() {
                 if current_index == page_index {
-                    let page_extraction = result?;
+                    let page_extraction = match result {
+                        Ok(page) => page,
+                        Err(e) => {
+                            return Err(DocumentError::ExtractionFailed {
+                                page_index,
+                                message: format!("Page iteration failed: {:?}", e),
+                            });
+                        }
+                    };
 
                     // Convert PageExtraction to output::sink::Page
                     let page = Page {
@@ -976,14 +1037,20 @@ impl Document {
                     return Ok(page);
                 }
             } else {
-                return Err(anyhow!(
-                    "Page extraction failed: iterator ended before reaching page index {}",
-                    page_index
-                ));
+                return Err(DocumentError::ExtractionFailed {
+                    page_index,
+                    message: format!(
+                        "Page extraction failed: iterator ended before reaching page index {}",
+                        page_index
+                    ),
+                });
             }
         }
 
-        Err(anyhow!("Failed to extract page at index {}", page_index))
+        Err(DocumentError::ExtractionFailed {
+            page_index,
+            message: "Failed to extract page: unknown error".to_string(),
+        })
     }
 }
 
