@@ -5,16 +5,12 @@
 
 use std::path::{Path, PathBuf};
 
-#[cfg(test)]
-mod integration {
-    use super::*;
-    use crate::test_helpers::Fixtures;
+use crate::test_helpers::Fixtures;
 
-    #[test]
-    fn test_fixture_discovery() {
-        let fixtures = Fixtures::new();
-        // Verify fixtures directory structure
-        assert!(fixtures.base_dir.exists() || !fixtures.base_dir.exists(),
-                "Fixtures directory check");
-    }
+#[test]
+fn test_fixture_discovery() {
+    let fixtures = Fixtures::new();
+    // Verify fixtures directory structure
+    assert!(fixtures.base_dir.exists() || !fixtures.base_dir.exists(),
+            "Fixtures directory check");
 }

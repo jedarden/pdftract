@@ -39,13 +39,8 @@ pub fn temp_dir() -> PathBuf {
     std::env::temp_dir().join("pdftract-tests")
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_fixtures_path() {
-        let fixtures = Fixtures::new();
-        assert!(fixtures.base_dir.ends_with("tests/fixtures"));
-    }
+#[test]
+fn test_fixtures_path() {
+    let fixtures = Fixtures::new();
+    assert!(fixtures.base_dir.ends_with("tests/fixtures"));
 }

@@ -1,0 +1,56 @@
+Current Unused Imports from Clippy
+====================================
+Format: import_name | file_path:line:col
+
+1. AtomicBool | crates/pdftract-core/src/font/type3_rasterizer_test.rs:21:25
+2. AtomicU64 | crates/pdftract-core/src/font/type3_rasterizer_test.rs:21:25
+3. crate::diagnostics::DiagCode | crates/pdftract-core/src/extract.rs:3299:13
+4. crate::font::encoding::NamedEncoding | crates/pdftract-core/src/font/type3_rasterizer_test.rs:23:5
+5. crate::font::UnicodeSource | crates/pdftract-core/src/span/mod.rs:1279:13
+6. crate::graphics_state::Matrix3x3 | crates/pdftract-core/src/font/type3_rasterizer_test.rs:26:5
+7. crate::parser::object::intern | crates/pdftract-core/src/font/type3_rasterizer.rs:2214:13
+8. crate::parser::object::intern | crates/pdftract-core/src/parser/xref.rs:3670:13
+9. crate::parser::stream::PdfSource | crates/pdftract-core/src/font/type3_rasterizer.rs:3278:13
+10. crate::parser::xref::XrefResolver | crates/pdftract-core/src/font/type3_rasterizer.rs:3132:13
+11. crate::table::Segment | crates/pdftract-core/src/table/output.rs:273:9
+12. DiagCode | crates/pdftract-core/src/encryption/detection.rs:13:31
+13. DocumentContext | crates/pdftract-core/src/font/type3_rasterizer_test.rs:24:97
+14. entry_path | crates/pdftract-core/src/cache/lru.rs:8:5
+15. Hasher | crates/pdftract-core/src/parser/stream.rs:1914:31
+16. indexmap::indexmap | crates/pdftract-core/src/decoder/jbig2.rs:154:9
+17. intern | crates/pdftract-core/src/parser/pages.rs:14:29
+18. Jbig2GlobalsRef | crates/pdftract-core/src/parser/stream.rs:6125:51
+19. MemorySource | crates/pdftract-core/src/parser/xref.rs:11:29
+20. Mutex | crates/pdftract-core/src/font/type3_rasterizer.rs:2868:30
+21. ObjRef | crates/pdftract-core/src/detection.rs:11:29
+22. PdfDict | crates/pdftract-core/src/attachment/filespec.rs:583:41
+23. PdfDict | crates/pdftract-core/src/attachment/name_tree.rs:420:41
+24. PdfDict | crates/pdftract-core/src/font/type3_rasterizer.rs:2239:44
+25. PdfDict | crates/pdftract-core/src/font/type3_rasterizer.rs:3073:44
+26. PdfDict | crates/pdftract-core/src/font/type3_rasterizer.rs:3131:52
+27. PdfDict | crates/pdftract-core/src/font/type3_rasterizer.rs:3161:52
+28. PdfDict | crates/pdftract-core/src/font/type3_rasterizer.rs:3190:52
+29. PdfDict | crates/pdftract-core/src/parser/resources.rs:10:45
+30. PdfStream | crates/pdftract-core/src/font/type3_rasterizer.rs:3131:52
+31. secrecy::ExposeSecret | crates/pdftract-core/src/parser/stream.rs:3983:9
+32. secrecy::SecretString | crates/pdftract-core/src/parser/stream.rs:5104:13
+33. std::fs | crates/pdftract-core/src/source/mmap.rs:178:9
+34. std::hash::Hasher | crates/pdftract-core/src/page_class.rs:248:13
+35. std::io::Cursor | crates/pdftract-core/src/audit.rs:183:9
+36. std::io::Cursor | crates/pdftract-core/src/output/ndjson/frames.rs:286:9
+37. std::sync::Arc | crates/pdftract-core/src/font/type3_rasterizer.rs:2354:13
+38. std::sync::Arc | crates/pdftract-core/src/font/type3_rasterizer.rs:2398:13
+39. std::sync::Arc | crates/pdftract-core/src/font/type3_rasterizer.rs:3134:13
+40. std::sync::Arc | crates/pdftract-core/src/font/type3_rasterizer.rs:3209:13
+41. std::sync::Arc | crates/pdftract-core/src/font/type3_rasterizer.rs:3634:13
+42. std::sync::Arc | crates/pdftract-core/src/font/type3_rasterizer.rs:3669:13
+43. std::sync::Arc | crates/pdftract-core/src/font/type3_rasterizer.rs:3702:13
+44. std::sync::Arc | crates/pdftract-core/src/forms/mod.rs:834:9
+45. std::sync::Arc | crates/pdftract-core/src/parser/ocg.rs:428:9
+46. StreamResolverFn | crates/pdftract-core/src/font/type3_rasterizer_test.rs:24:97
+47. super::* | crates/pdftract-core/src/layout/correction.rs:1207:9
+48. super::* | crates/pdftract-core/src/output/ndjson/pipeline.rs:140:9
+49. super::* | crates/pdftract-core/src/sdk.rs:552:9
+50. TableSpan | crates/pdftract-core/src/table/output.rs:7:41
+
+Total: 50 unused imports (some lines have multiple imports)
