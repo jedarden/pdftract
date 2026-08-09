@@ -16,7 +16,6 @@
 //! - XObject: Do (form XObjects only)
 //! - No-op: n
 
-use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::diagnostics::{DiagCode, Diagnostic};
@@ -2088,7 +2087,6 @@ mod tests {
 
     #[test]
     fn test_deref_char_proc_ref_without_source_returns_error() {
-        use crate::parser::xref::XrefResolver;
 
         let obj_ref = ObjRef::new(10, 0);
         let resolver = XrefResolver::new();
@@ -2213,7 +2211,6 @@ mod tests {
         // Test that validation is integrated into char_proc parsing flow
         // This verifies EC-42: Early validation in parsing pipelines
         use crate::parser::object::types::{PdfDict, PdfObject, PdfStream};
-        use crate::parser::object::intern;
 
         let obj_ref = ObjRef::new(10, 0);
 
@@ -2238,7 +2235,7 @@ mod tests {
     #[test]
     fn test_deref_char_proc_ref_validation_includes_ref_context() {
         // Test that validation errors include the object reference for debugging
-        use crate::parser::object::types::{PdfDict, PdfObject};
+        use crate::parser::object::types::PdfObject;
 
         // Create an invalid object (integer instead of stream/dict)
         let invalid_obj = PdfObject::Integer(123);
@@ -2353,7 +2350,6 @@ mod tests {
     fn test_rasterize_type3_glyph_with_failed_resolution_returns_none() {
         use crate::parser::object::types::{PdfDict, PdfObject};
         use crate::parser::object::intern;
-        use std::sync::Arc;
 
         let mut font_dict = PdfDict::new();
         let mut char_procs_dict = PdfDict::new();
@@ -2397,7 +2393,6 @@ mod tests {
     fn test_rasterize_type3_glyph_with_malformed_stream_returns_none() {
         use crate::parser::object::types::{PdfDict, PdfObject};
         use crate::parser::object::intern;
-        use std::sync::Arc;
 
         let mut font_dict = PdfDict::new();
         let mut char_procs_dict = PdfDict::new();
@@ -2867,7 +2862,6 @@ mod tests {
     fn test_resolve_stream_callback_with_helper_function_pattern() {
         use crate::parser::object::types::{PdfDict, PdfObject};
         use crate::parser::object::intern;
-        use std::sync::{Arc, Mutex};
         use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
         // Create a Type3 font with identity FontMatrix
@@ -3072,7 +3066,7 @@ mod tests {
 
     #[test]
     fn test_detect_char_proc_type_indirect() {
-        use crate::parser::object::types::{PdfDict, PdfIndirect, ObjRef};
+        use crate::parser::object::types::{PdfIndirect, ObjRef};
 
         let indirect = PdfIndirect {
             id: ObjRef::new(15, 0),
@@ -3130,10 +3124,7 @@ mod tests {
 
     #[test]
     fn test_detect_char_proc_type_with_context_ref_with_valid_context() {
-        use crate::parser::object::types::{ObjRef, PdfDict, PdfObject, PdfStream};
-        use crate::parser::xref::XrefResolver;
-        use crate::parser::stream::PdfSource;
-        use std::sync::Arc;
+        use crate::parser::object::types::{ObjRef, PdfObject};
 
         // Create a mock PdfSource that returns a simple stream
         struct MockSource;
@@ -3160,7 +3151,7 @@ mod tests {
 
     #[test]
     fn test_detect_char_proc_type_with_context_ref_to_dict() {
-        use crate::parser::object::types::{ObjRef, PdfDict, PdfObject};
+        use crate::parser::object::types::{ObjRef, PdfObject};
 
         // Test that references are classified as Other("reference") when no context is provided
         let ref_obj = PdfObject::Ref(ObjRef::new(20, 0));
@@ -3189,7 +3180,7 @@ mod tests {
 
     #[test]
     fn test_detect_char_proc_type_with_context_circular_reference() {
-        use crate::parser::object::types::{ObjRef, PdfDict, PdfObject};
+        use crate::parser::object::types::{ObjRef, PdfObject};
 
         // Note: Testing circular references requires a full document context with
         // properly configured XrefResolver. For now, we test that the function
@@ -3207,8 +3198,6 @@ mod tests {
     fn test_detect_char_proc_type_with_context_invalid_reference() {
         use crate::parser::object::types::ObjRef;
         use crate::parser::xref::XrefResolver;
-        use crate::parser::stream::PdfSource;
-        use std::sync::Arc;
 
         struct MockSource;
         impl PdfSource for MockSource {
@@ -3277,7 +3266,6 @@ mod tests {
     fn test_detect_char_proc_type_with_context_ref_without_source() {
         use crate::parser::object::types::ObjRef;
         use crate::parser::xref::XrefResolver;
-        use crate::parser::stream::PdfSource;
 
         let ref_obj = PdfObject::Ref(ObjRef::new(10, 0));
 
@@ -3633,7 +3621,6 @@ mod tests {
     #[test]
     fn test_fill_polygon_edge_activation_at_y_min() {
         // Test that edges are activated when scanline reaches y_min
-        use std::sync::Arc;
         use crate::parser::object::types::{intern, PdfDict};
 
         // Create a minimal Type3Font with a 32x32 bbox
@@ -3668,7 +3655,6 @@ mod tests {
     #[test]
     fn test_fill_polygon_edge_removal_after_y_max() {
         // Test that edges are removed after scanline passes y_max
-        use std::sync::Arc;
         use crate::parser::object::types::{intern, PdfDict};
 
         let mut font_dict = PdfDict::new();
@@ -3701,7 +3687,6 @@ mod tests {
     #[test]
     fn test_fill_polygon_intersection_x_accuracy() {
         // Test that intersection x coordinates are calculated accurately
-        use std::sync::Arc;
         use crate::parser::object::types::{intern, PdfDict};
 
         let mut font_dict = PdfDict::new();
@@ -4984,7 +4969,6 @@ mod tests {
     #[test]
     fn test_mock_works_with_rasterize_type3_glyph() {
         use crate::font::type3::Type3Font;
-        use std::sync::Arc;
 
         // Create a char_procs HashMap with a test glyph
         let mut char_procs = std::collections::HashMap::new();
@@ -5135,7 +5119,6 @@ mod tests {
     pub mod glyph_helpers {
         use super::*;
         use std::collections::HashMap;
-        use std::sync::Arc;
 
         /// Create a minimal char_procs HashMap for testing.
         ///
