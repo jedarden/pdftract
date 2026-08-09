@@ -4534,6 +4534,32 @@ mod tests {
     }
 
     #[test]
+    fn test_intersection_x_small_negative() {
+        // Test case for small negative fraction: x = -0.1 → -1
+        // Verifies acceptance criteria for bead bf-54ed2f:
+        // - Small negative fraction should round to -1 (away from zero, toward larger magnitude)
+        // - Tests boundary behavior for negative values near zero
+
+        // Test that -0.1 rounds to -1 (away from zero, toward larger magnitude)
+        let result = round_x(-0.1);
+        assert_eq!(result, -1, "x = -0.1 should round to -1 (away from zero)");
+
+        // Verify this is consistent with intersection_x behavior
+        // When scanline algorithm produces x = -0.1,
+        // intersection_x() should return -1 via round_x()
+        let edge = Edge {
+            x: -1, // Represents -0.1 rounded to -1
+            y_min: 0,
+            y_max: 10,
+            dx: -1,
+            dy: 10,
+        };
+
+        let edge_result = edge.intersection_x();
+        assert_eq!(edge_result, -1, "edge.x = -1 should round to -1");
+    }
+
+    #[test]
     fn test_edge_x_field_access_from_aet() {
         // Test that edge.x field is directly readable from AET entries
         // Verifies acceptance criterion: ability to access x-coordinate field from edge structures in AET
