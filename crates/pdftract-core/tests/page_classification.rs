@@ -493,3 +493,71 @@ fn test_reproducibility_gate_with_perturbation() {
         );
     }
 }
+
+/// Basic smoke test for classify_page function.
+///
+/// This test verifies that classify_page works with a simple vector page context
+/// matching the characteristics of classify_page_simple.pdf fixture:
+/// - Simple text "Test Page" in Helvetica font
+/// - US Letter page size (612 x 792 pts)
+/// - Expected to classify as Vector with high confidence
+///
+/// This is a basic sanity check that the classification function can be called
+/// successfully and returns structured output without panicking.
+#[test]
+fn test_classify_page_smoke() {
+    use pdftract_core::classify::{classify_page, PageClass, PageContext};
+
+    // Create a PageContext matching the classify_page_simple.pdf fixture characteristics
+    let mut ctx = PageContext::new();
+
+    // Simple text "Test Page" - minimal text content
+    ctx.text_op_count = 5; // Few text operators for simple text
+    ctx.raw_char_count = 10; // "Test Page" is about 10 characters
+    ctx.valid_char_count = 10; // All characters should decode successfully
+    ctx.replacement_char_count = 0; // No replacement characters
+    ctx.invisible_text_count = 0; // No invisible text
+    ctx.tr3_op_count = 0; // No Tr=3 text operators
+
+    // No images in the fixture
+    ctx.image_coverage = 0.0;
+    ctx.has_full_page_image = false;
+    ctx.image_xobject_areas = vec![];
+
+    // Text is visible
+    ctx.has_visible_text = true;
+
+    // Reasonable density ratio for short text on US Letter page
+    ctx.density_ratio = 0.8;
+
+    // US Letter page dimensions
+    ctx.width = 612.0;
+    ctx.height = 792.0;
+    ctx.rotation = 0;
+
+    // No grid cell data for simple vector page
+    ctx.grid_cells = None;
+
+    // Call classify_page - this should not panic
+    let result = classify_page(&ctx);
+
+    // Basic assertions: the function returned structured output
+    // For a simple vector page, we expect Vector classification
+    assert_eq!(result.class, PageClass::Vector,
+        "Simple text page should classify as Vector, got {:?}", result.class);
+
+    // Confidence should be reasonable (> 0.5 for a clear vector page)
+    assert!(result.confidence > 0.5,
+        "Simple vector page should have confidence > 0.5, got {}", result.confidence);
+
+    // Confidence should be in valid range [0.0, 1.0]
+    assert!(result.confidence >= 0.0 && result.confidence <= 1.0,
+        "Confidence must be in [0.0, 1.0], got {}", result.confidence);
+
+    // Simple vector pages should not have hybrid cells
+    assert!(result.hybrid_cells.is_none(),
+        "Simple vector page should not have hybrid cells, got {:?}", result.hybrid_cells);
+
+    println!("test_classify_page_smoke passed: class={:?}, confidence={}",
+        result.class, result.confidence);
+}
