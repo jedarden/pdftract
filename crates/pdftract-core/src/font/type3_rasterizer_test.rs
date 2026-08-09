@@ -279,6 +279,138 @@ pub fn setup_test_context_with_source(data: Vec<u8>) -> DocumentContext<'static>
     }
 }
 
+/// Create a DocumentContext with a resolver that has valid entries and a source with PDF data.
+///
+/// This helper creates a complete test setup for successful reference dereferencing.
+/// It creates a source with properly formatted PDF indirect objects at known offsets
+/// and a resolver with entries pointing to those offsets.
+///
+/// # Arguments
+///
+/// * `object_configs` - Vector of (object_number, offset, generation, pdf_bytes) tuples
+///
+/// # Returns
+///
+/// A DocumentContext with a populated resolver and source.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use crate::font::type3_rasterizer_test::create_valid_dereference_context;
+/// use crate::parser::xref::XrefEntry;
+///
+/// // Create a source with a dictionary at offset 100
+/// let pdf_dict = b"10 0 obj\n<< /Type /Font /Subtype /Type3 >>\nendobj\n".to_vec();
+/// let ctx = create_valid_dereference_context(vec![(10, 100, 0, pdf_dict)]);
+/// ```
+pub fn create_valid_dereference_context(
+    object_configs: Vec<(u32, u64, u16, Vec<u8>)>,
+) -> DocumentContext<'static> {
+    use crate::parser::xref::XrefEntry;
+
+    // Calculate total size needed
+    let total_size = object_configs.iter().map(|(_, offset, _, data)| {
+        offset + data.len() as u64
+    }).max().unwrap_or(4096);
+
+    // Create source with enough space
+    let mut source_data = vec![0u8; total_size as usize];
+    let mut resolver = XrefResolver::new();
+
+    for (obj_nr, offset, gen_nr, mut obj_bytes) in object_configs {
+        // Add the object data to the source at the specified offset
+        let start = offset as usize;
+        let end = start + obj_bytes.len();
+        if end <= source_data.len() {
+            source_data[start..end].copy_from_slice(&obj_bytes);
+        }
+
+        // Add resolver entry
+        resolver.add_entry(obj_nr, XrefEntry::InUse {
+            offset,
+            gen_nr,
+        });
+    }
+
+    let source = MemorySource::new(source_data);
+    DocumentContext {
+        resolver: Some(Box::leak(Box::new(resolver))),
+        source: Some(Box::leak(Box::new(source))),
+    }
+}
+
+/// Create a properly formatted PDF dictionary indirect object.
+///
+/// This helper creates the byte representation of a PDF indirect object
+/// that contains a dictionary with specified keys and values.
+///
+/// # Arguments
+///
+/// * `obj_number` - The object number
+/// * `generation` - The generation number
+/// * `dict_content` - The dictionary content (e.g., "/Type /Font /Subtype /Type3")
+///
+/// # Returns
+///
+/// Bytes representing a complete PDF indirect object.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use crate::font::type3_rasterizer_test::create_pdf_dict_object;
+///
+/// let dict_bytes = create_pdf_dict_object(10, 0, "/Type /Font /Subtype /Type3");
+/// // Returns: b"10 0 obj\n<< /Type /Font /Subtype /Type3 >>\nendobj\n"
+/// ```
+pub fn create_pdf_dict_object(obj_number: u32, generation: u16, dict_content: &str) -> Vec<u8> {
+    format!(
+        "{} {} obj\n<< {} >>\nendobj\n",
+        obj_number, generation, dict_content
+    ).into_bytes()
+}
+
+/// Create a properly formatted PDF stream indirect object.
+///
+/// This helper creates the byte representation of a PDF indirect object
+/// that contains a stream with specified dictionary and content.
+///
+/// # Arguments
+///
+/// * `obj_number` - The object number
+/// * `generation` - The generation number
+/// * `dict_content` - The stream dictionary content
+/// * `stream_content` - The stream content bytes
+///
+/// # Returns
+///
+/// Bytes representing a complete PDF stream object.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use crate::font::type3_rasterizer_test::create_pdf_stream_object;
+///
+/// let stream_bytes = create_pdf_stream_object(
+///     20,
+///     0,
+///     "/Type /XObject /Subtype /Form /Width 100 /Height 100",
+///     b"0 0 100 100 re f"
+/// );
+/// ```
+pub fn create_pdf_stream_object(
+    obj_number: u32,
+    generation: u16,
+    dict_content: &str,
+    stream_content: &[u8],
+) -> Vec<u8> {
+    let length = stream_content.len();
+    let full_dict = format!("{}/Length {}", dict_content, length);
+    format!(
+        "{} {} obj\n<< {} >>\nstream\n{}\nendstream\nendobj\n",
+        obj_number, generation, full_dict, String::from_utf8_lossy(stream_content)
+    ).into_bytes()
+}
+
 // ============================================================================
 // Type3 Font Test Fixtures
 // ============================================================================
@@ -1466,4 +1598,70 @@ fn test_detect_char_proc_type_ref_chain_robustness() {
     // Should gracefully return Unknown
     assert_eq!(result, CharProcType::Unknown,
         "Reference should return Unknown when resolution is not possible");
+}
+
+// ============================================================================
+// Valid Reference Dereferencing Tests
+// ============================================================================
+
+/// Test that PdfObject::Ref with valid DocumentContext successfully dereferences to Dict.
+///
+/// This test verifies that when a PdfObject::Ref pointing to a dictionary is provided
+/// with a DocumentContext containing a properly formatted PDF dict object, the function
+/// correctly dereferences and returns CharProcType::Dict.
+///
+/// This uses the helper functions to create a complete test setup with actual PDF data.
+#[test]
+fn test_detect_char_proc_type_ref_with_valid_context_and_dict() {
+    // Create a properly formatted PDF dictionary at offset 100
+    let dict_bytes = create_pdf_dict_object(10, 0, "/Type /Font /Subtype /Type3");
+
+    // Create a valid dereference context with the dict object
+    let doc_context = create_valid_dereference_context(vec![
+        (10, 100, 0, dict_bytes)
+    ]);
+
+    // Create a reference to object 10
+    let ref_obj = create_test_ref(10);
+
+    // Dereference and classify - should successfully detect Dict
+    let result = detect_char_proc_type(&ref_obj, Some(&doc_context));
+
+    // Verify successful dereferencing to Dict
+    assert_eq!(result, CharProcType::Dict,
+        "PdfObject::Ref pointing to a dictionary should return CharProcType::Dict");
+}
+
+/// Test that PdfObject::Ref with valid DocumentContext successfully dereferences to Stream.
+///
+/// This test verifies that when a PdfObject::Ref pointing to a stream is provided
+/// with a DocumentContext containing a properly formatted PDF stream object, the function
+/// correctly dereferences and returns CharProcType::Stream.
+///
+/// This uses the helper functions to create a complete test setup with actual PDF data.
+#[test]
+fn test_detect_char_proc_type_ref_with_valid_context_and_stream() {
+    // Create a properly formatted PDF stream at offset 200
+    // Stream with simple drawing commands
+    let stream_bytes = create_pdf_stream_object(
+        20,
+        0,
+        "/Type /XObject /Subtype /Form /Width 100 /Height 100",
+        b"0 0 100 100 re f"
+    );
+
+    // Create a valid dereference context with the stream object
+    let doc_context = create_valid_dereference_context(vec![
+        (20, 200, 0, stream_bytes)
+    ]);
+
+    // Create a reference to object 20
+    let ref_obj = create_test_ref(20);
+
+    // Dereference and classify - should successfully detect Stream
+    let result = detect_char_proc_type(&ref_obj, Some(&doc_context));
+
+    // Verify successful dereferencing to Stream
+    assert_eq!(result, CharProcType::Stream,
+        "PdfObject::Ref pointing to a stream should return CharProcType::Stream");
 }

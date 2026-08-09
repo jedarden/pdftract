@@ -127,6 +127,76 @@ impl Page {
             links,
         }
     }
+
+    /// Validate that this Page has all required fields populated with valid values.
+    ///
+    /// This ensures that incomplete or invalid Page objects are not returned to callers.
+    ///
+    /// # Required Fields
+    ///
+    /// - `page_index`: Must be a valid usize (no specific range validation)
+    /// - `page_number`: Must be >= 1 (one-based page number)
+    /// - `width`: Must be > 0.0 (positive width in points)
+    /// - `height`: Must be > 0.0 (positive height in points)
+    /// - `rotation`: Must be one of 0, 90, 180, 270 (standard PDF rotations)
+    /// - `page_type`: Must not be empty (classification must be present)
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` if all required fields are valid
+    /// - `Err(String)` describing which field is missing or invalid
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use pdftract_core::output::sink::Page;
+    ///
+    /// let page = create_test_page();
+    /// match page.validate() {
+    ///     Ok(()) => println!("Page is valid"),
+    ///     Err(e) => eprintln!("Validation failed: {}", e),
+    /// }
+    /// ```
+    pub fn validate(&self) -> Result<(), String> {
+        // Validate page_number >= 1 (one-based)
+        if self.page_number < 1 {
+            return Err(format!(
+                "Invalid page_number: {} (must be >= 1, page numbers are one-based)",
+                self.page_number
+            ));
+        }
+
+        // Validate width > 0 (must have positive width)
+        if self.width <= 0.0 {
+            return Err(format!(
+                "Invalid width: {} (must be > 0.0 points)",
+                self.width
+            ));
+        }
+
+        // Validate height > 0 (must have positive height)
+        if self.height <= 0.0 {
+            return Err(format!(
+                "Invalid height: {} (must be > 0.0 points)",
+                self.height
+            ));
+        }
+
+        // Validate rotation is one of the standard PDF rotations
+        if ![0, 90, 180, 270].contains(&self.rotation) {
+            return Err(format!(
+                "Invalid rotation: {} degrees (must be one of 0, 90, 180, 270)",
+                self.rotation
+            ));
+        }
+
+        // Validate page_type is not empty
+        if self.page_type.is_empty() {
+            return Err("Invalid page_type: empty string (must have a classification)".to_string());
+        }
+
+        Ok(())
+    }
 }
 
 /// Trait for output sinks that receive extraction results.
@@ -771,5 +841,89 @@ mod tests {
 
         let txt_output = std::fs::read_to_string(txt_path).unwrap();
         assert!(txt_output.contains("Test paragraph"));
+    }
+
+    #[test]
+    fn test_page_validate_success() {
+        let page = make_test_page(0);
+        assert!(page.validate().is_ok(), "Valid page should pass validation");
+    }
+
+    #[test]
+    fn test_page_validate_invalid_page_number() {
+        let mut page = make_test_page(0);
+        page.page_number = 0; // Invalid: must be >= 1
+
+        let result = page.validate();
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.contains("page_number"));
+        assert!(error.contains(">= 1"));
+    }
+
+    #[test]
+    fn test_page_validate_invalid_width() {
+        let mut page = make_test_page(0);
+        page.width = 0.0; // Invalid: must be > 0
+
+        let result = page.validate();
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.contains("width"));
+        assert!(error.contains("> 0.0"));
+    }
+
+    #[test]
+    fn test_page_validate_invalid_height() {
+        let mut page = make_test_page(0);
+        page.height = -10.0; // Invalid: must be > 0
+
+        let result = page.validate();
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.contains("height"));
+        assert!(error.contains("> 0.0"));
+    }
+
+    #[test]
+    fn test_page_validate_invalid_rotation() {
+        let mut page = make_test_page(0);
+        page.rotation = 45; // Invalid: not one of 0, 90, 180, 270
+
+        let result = page.validate();
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.contains("rotation"));
+        assert!(error.contains("0, 90, 180, 270"));
+    }
+
+    #[test]
+    fn test_page_validate_empty_page_type() {
+        let mut page = make_test_page(0);
+        page.page_type = String::new(); // Invalid: must not be empty
+
+        let result = page.validate();
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.contains("page_type"));
+        assert!(error.contains("empty"));
+    }
+
+    #[test]
+    fn test_page_validate_all_invalid_fields_reports_first() {
+        let mut page = make_test_page(0);
+        page.page_number = 0;
+        page.width = 0.0;
+        page.height = 0.0;
+        page.rotation = 45;
+        page.page_type = String::new();
+
+        let result = page.validate();
+        assert!(result.is_err());
+        // Should report the first invalid field encountered
+        let error = result.unwrap_err();
+        assert!(error.contains("page_number") || error.contains("width") ||
+                error.contains("height") || error.contains("rotation") ||
+                error.contains("page_type"));
     }
 }

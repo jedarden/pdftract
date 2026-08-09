@@ -11,6 +11,6 @@ metadata:
     cluster: iad-ci
 spec:
   clusterRef:
-    name: garage-rs-manager
+    name: garage-cnpg
   permissions:
     createBucket: false

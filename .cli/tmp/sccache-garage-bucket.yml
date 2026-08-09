@@ -11,7 +11,7 @@ metadata:
     cluster: iad-ci
 spec:
   clusterRef:
-    name: garage-rs-manager
+    name: garage-cnpg
   keyPermissions:
   - keyRef: sccache-s3-key
     read: true
