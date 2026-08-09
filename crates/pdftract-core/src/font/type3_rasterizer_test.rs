@@ -411,6 +411,84 @@ pub fn create_pdf_stream_object(
     ).into_bytes()
 }
 
+/// Create a mock DocumentContext with reference support.
+///
+/// This helper creates a DocumentContext that includes both a resolver and source,
+/// suitable for testing reference dereferencing scenarios. It provides a minimal
+/// valid setup that can be populated with test objects.
+///
+/// # Returns
+///
+/// A DocumentContext with empty resolver and source (ready to be populated).
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use crate::font::type3_rasterizer_test::create_mock_context_with_refs;
+/// use crate::parser::xref::XrefEntry;
+///
+/// let mut ctx = create_mock_context_with_refs();
+/// // Add entries to ctx.resolver as needed
+/// ```
+pub fn create_mock_context_with_refs() -> DocumentContext<'static> {
+    let resolver = XrefResolver::new();
+    let source_data = vec![0u8; 4096]; // 4KB buffer for test data
+    let source = MemorySource::new(source_data);
+
+    DocumentContext {
+        resolver: Some(Box::leak(Box::new(resolver))),
+        source: Some(Box::leak(Box::new(source))),
+    }
+}
+
+/// Create a reference to a dictionary object.
+///
+/// This helper creates a PdfObject::Ref that points to a dictionary object
+/// at a specified object number. It's a convenience wrapper around create_test_ref.
+///
+/// # Arguments
+///
+/// * `object_number` - The object number the reference points to
+///
+/// # Returns
+///
+/// PdfObject::Ref pointing to the specified object number.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use crate::font::type3_rasterizer_test::create_ref_to_dict;
+///
+/// let dict_ref = create_ref_to_dict(10);
+/// ```
+pub fn create_ref_to_dict(object_number: u32) -> PdfObject {
+    create_test_ref(object_number)
+}
+
+/// Create a reference to a stream object.
+///
+/// This helper creates a PdfObject::Ref that points to a stream object
+/// at a specified object number. It's a convenience wrapper around create_test_ref.
+///
+/// # Arguments
+///
+/// * `object_number` - The object number the reference points to
+///
+/// # Returns
+///
+/// PdfObject::Ref pointing to the specified object number.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use crate::font::type3_rasterizer_test::create_ref_to_stream;
+///
+/// let stream_ref = create_ref_to_stream(20);
+/// ```
+pub fn create_ref_to_stream(object_number: u32) -> PdfObject {
+    create_test_ref(object_number)
+}
+
 // ============================================================================
 // Type3 Font Test Fixtures
 // ============================================================================
