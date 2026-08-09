@@ -3,6 +3,8 @@
 //! This test verifies that the common encryption test fixtures and helpers
 //! compile correctly and function as expected.
 
+use std::path::PathBuf;
+
 #[cfg(test)]
 mod verification_tests {
     use crate::encryption_fixtures::*;
@@ -130,7 +132,7 @@ mod verification_tests {
         let fixture = encrypted_fixture("test.pdf");
 
         // These should compile with correct types
-        let _bin: std::path::PathBuf = bin;
-        let _fixture: std::path::PathBuf = fixture;
+        let _bin: PathBuf = bin;
+        let _fixture: PathBuf = fixture;
     }
 }

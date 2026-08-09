@@ -1,10 +1,11 @@
 //! Debug test to understand why content_edit fixtures produce same fingerprint
 
 use pdftract_core::document::parse_pdf_file;
+use std::path::PathBuf;
 
 #[test]
 fn debug_content_edit_fingerprints() {
-    let fixtures_dir = std::path::PathBuf::from("tests/fingerprint/fixtures");
+    let fixtures_dir = PathBuf::from("tests/fingerprint/fixtures");
 
     // Test content_edit_one_glyph
     let dir = fixtures_dir.join("content_edit_one_glyph");

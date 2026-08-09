@@ -3,11 +3,12 @@
 use pdftract_core::document::parse_pdf_file;
 use pdftract_core::parser::lexer::Lexer;
 use pdftract_core::fingerprint::serialize_token;
+use std::path::PathBuf;
 
 #[test]
 fn test_debug_content_streams() {
-    let v1_path = std::path::PathBuf::from("tests/fingerprint/fixtures/content_edit_one_glyph/v1.pdf");
-    let v2_path = std::path::PathBuf::from("tests/fingerprint/fixtures/content_edit_one_glyph/v2.pdf");
+    let v1_path = PathBuf::from("tests/fingerprint/fixtures/content_edit_one_glyph/v1.pdf");
+    let v2_path = PathBuf::from("tests/fingerprint/fixtures/content_edit_one_glyph/v2.pdf");
 
     let (_fp1, _catalog1, pages1, _resolver1) = parse_pdf_file(&v1_path).unwrap();
     let (_fp2, _catalog2, pages2, _resolver2) = parse_pdf_file(&v2_path).unwrap();
