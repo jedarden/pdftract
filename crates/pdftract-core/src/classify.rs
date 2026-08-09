@@ -2320,6 +2320,59 @@ mod tests {
     }
 
     #[test]
+    fn test_smoke_classify_basic_vector_page() {
+        // Basic smoke test: verify classify_page works with a simple vector PDF page
+        // This test verifies the basic functionality:
+        // 1. Function returns Ok() for valid input
+        // 2. Output structure is correct (classification, confidence)
+        // 3. Reasonable classification and confidence values
+
+        let mut ctx = PageContext::new();
+        // Simple vector page: text-only, born-digital PDF
+        ctx.text_op_count = 100;
+        ctx.raw_char_count = 500;
+        ctx.valid_char_count = 490; // 98% validity
+        ctx.replacement_char_count = 10;
+        ctx.image_coverage = 0.0; // No images
+        ctx.has_full_page_image = false;
+        ctx.has_visible_text = true;
+        ctx.density_ratio = 0.90; // High character density
+        ctx.width = 612.0; // US Letter
+        ctx.height = 792.0;
+        ctx.rotation = 0;
+
+        // Call classify_page - returns PageClassification directly
+        let result = classify_page(&ctx);
+
+        // Verify basic output structure
+        // Check that classification exists and is reasonable
+        assert!(!matches!(result.class, PageClass::Hybrid)); // Not hybrid for simple page
+        assert!(!matches!(result.class, PageClass::BrokenVector)); // Not broken vector
+
+        // Check that confidence is in valid range [0.0, 1.0]
+        assert!(result.confidence >= 0.0 && result.confidence <= 1.0,
+            "Confidence should be in [0.0, 1.0], got {}", result.confidence);
+
+        // For a simple vector page, should have reasonable confidence
+        assert!(result.confidence > 0.5,
+            "Simple vector page should have confidence > 0.5, got {}", result.confidence);
+
+        // Verify hybrid_cells is None for non-hybrid page
+        assert!(result.hybrid_cells.is_none(),
+            "hybrid_cells should be None for non-hybrid classification");
+
+        // Verify JSON serialization works (basic output format check)
+        let json_output = serde_json::to_string(&result);
+        assert!(json_output.is_ok(), "PageClassification should serialize to JSON");
+
+        let json_str = json_output.unwrap();
+        assert!(json_str.contains("\"class\":"), "JSON should contain 'class' field");
+        assert!(json_str.contains("\"confidence\":"), "JSON should contain 'confidence' field");
+
+        println!("Smoke test passed: classify_page returned {:?}", result);
+    }
+
+    #[test]
     fn test_microbenchmark_classify_page_performance() {
         // Micro-benchmark: verify classify_page p99 < 5 ms
         // This test simulates a 50-fixture suite to verify performance

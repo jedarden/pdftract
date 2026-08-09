@@ -905,6 +905,86 @@ impl Document {
     pub fn source(&self) -> Option<&dyn ParserPdfSource> {
         self.source.as_ref().map(|s| s.as_ref())
     }
+
+    /// Extract a single page by index.
+    ///
+    /// This function extracts page data from the Document structure and returns
+    /// a Page instance suitable for output sinks. This is a basic implementation
+    /// that extracts the essential fields without performing validation.
+    ///
+    /// # Arguments
+    ///
+    /// * `page_index` - Zero-based page index to extract
+    ///
+    /// # Returns
+    ///
+    /// A `Result<Page, Error>` containing the extracted page data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The page index is out of bounds
+    /// - Page iteration fails
+    /// - Page data extraction fails
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use pdftract_core::document::Document;
+    ///
+    /// let doc = Document::open("document.pdf")?;
+    /// let page = doc.extract_page(0)?;
+    /// println!("Extracted page {} with dimensions {}x{}", page.page_number, page.width, page.height);
+    /// ```
+    pub fn extract_page(&self, page_index: usize) -> Result<crate::output::sink::Page> {
+        use crate::output::sink::Page;
+
+        // Validate page index is within bounds
+        let page_count = self.page_count()
+            .context("Failed to get page count for validation")?;
+
+        if page_index >= page_count {
+            return Err(anyhow!(
+                "Page index {} out of bounds (document has {} pages)",
+                page_index, page_count
+            ));
+        }
+
+        // Navigate to the specific page using the iterator
+        let mut pages_iter = self.pages();
+
+        // Advance iterator to the target page
+        for current_index in 0..=page_index {
+            if let Some(result) = pages_iter.next() {
+                if current_index == page_index {
+                    let page_extraction = result?;
+
+                    // Convert PageExtraction to output::sink::Page
+                    let page = Page {
+                        page_index: page_extraction.index,
+                        page_number: (page_extraction.index + 1) as u32,
+                        page_label: None, // Not yet implemented
+                        width: page_extraction.width as f32,
+                        height: page_extraction.height as f32,
+                        rotation: page_extraction.rotation,
+                        page_type: "unknown".to_string(), // Basic extraction - no classification yet
+                        spans: vec![], // Basic extraction - no text spans yet
+                        blocks: vec![], // Basic extraction - no blocks yet
+                        links: vec![], // Basic extraction - no links yet
+                    };
+
+                    return Ok(page);
+                }
+            } else {
+                return Err(anyhow!(
+                    "Page extraction failed: iterator ended before reaching page index {}",
+                    page_index
+                ));
+            }
+        }
+
+        Err(anyhow!("Failed to extract page at index {}", page_index))
+    }
 }
 
 /// Lazy iterator over PDF pages.
@@ -1232,5 +1312,55 @@ startxref
 
         let result = extract_spans_from_page(&pdf_path, 10);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_page_basic() {
+        // Use an existing test PDF that we know works
+        let pdf_path = std::path::Path::new("tests/fixtures/sample.pdf");
+
+        // Skip test if file doesn't exist
+        if !pdf_path.exists() {
+            println!("Skipping test - sample.pdf not found");
+            return;
+        }
+
+        let doc = Document::open(pdf_path).unwrap();
+
+        // Extract the first page
+        let page = doc.extract_page(0).unwrap();
+
+        // Verify basic page structure
+        assert_eq!(page.page_index, 0);
+        assert_eq!(page.page_number, 1);
+
+        // Verify dimensions are extracted (actual values depend on PDF)
+        assert!(page.width > 0.0);
+        assert!(page.height > 0.0);
+
+        // Verify fields are present but empty for basic extraction
+        assert!(page.page_label.is_none());
+        assert!(page.spans.is_empty());
+        assert!(page.blocks.is_empty());
+        assert!(page.links.is_empty());
+        assert_eq!(page.page_type, "unknown");
+    }
+
+    #[test]
+    fn test_extract_page_out_of_bounds() {
+        let pdf_path = std::path::Path::new("tests/fixtures/sample.pdf");
+
+        // Skip test if file doesn't exist
+        if !pdf_path.exists() {
+            println!("Skipping test - sample.pdf not found");
+            return;
+        }
+
+        let doc = Document::open(pdf_path).unwrap();
+
+        // Try to extract a page that doesn't exist
+        let result = doc.extract_page(10);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("out of bounds"));
     }
 }
