@@ -8,6 +8,8 @@
 
 use std::path::PathBuf;
 
+use pdftract::PyPdfProcessor;
+
 /// Get the path to the test fixtures directory.
 fn fixtures_dir() -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
