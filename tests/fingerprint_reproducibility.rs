@@ -147,46 +147,46 @@ fn test_inv13_fingerprint_format() {
 /// are easier to diagnose.
 #[test]
 fn test_acrobat_resave_fixture() {
-    test_fixture_pair("acrobat_resave", true);
+    run_fixture_pair_test("acrobat_resave", true);
 }
 
 #[test]
 fn test_qpdf_resave_fixture() {
-    test_fixture_pair("qpdf_resave", true);
+    run_fixture_pair_test("qpdf_resave", true);
 }
 
 #[test]
 fn test_pdftk_resave_fixture() {
-    test_fixture_pair("pdftk_resave", true);
+    run_fixture_pair_test("pdftk_resave", true);
 }
 
 #[test]
 fn test_linearization_toggle_fixture() {
-    test_fixture_pair("linearization_toggle", true);
+    run_fixture_pair_test("linearization_toggle", true);
 }
 
 #[test]
 fn test_metadata_only_fixture() {
-    test_fixture_pair("metadata_only", true);
+    run_fixture_pair_test("metadata_only", true);
 }
 
 #[test]
 fn test_content_edit_one_glyph_fixture() {
-    test_fixture_pair("content_edit_one_glyph", false);
+    run_fixture_pair_test("content_edit_one_glyph", false);
 }
 
 #[test]
 fn test_content_edit_one_paragraph_fixture() {
-    test_fixture_pair("content_edit_one_paragraph", false);
+    run_fixture_pair_test("content_edit_one_paragraph", false);
 }
 
 #[test]
 fn test_byte_identical_fixture() {
-    test_fixture_pair("byte_identical", true);
+    run_fixture_pair_test("byte_identical", true);
 }
 
 /// Helper to test a single fixture pair.
-fn test_fixture_pair(name: &str, expected_match: bool) {
+fn run_fixture_pair_test(name: &str, expected_match: bool) {
     let dir = fixtures_dir().join(name);
     let v1 = dir.join("v1.pdf");
     let v2 = dir.join("v2.pdf");

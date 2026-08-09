@@ -98,7 +98,7 @@ fn validate_json(schema: &jsonschema::JSONSchema, value: &serde_json::Value) -> 
 }
 
 /// Test a single fixture for schema compliance.
-fn test_fixture(fixture: &Fixture) {
+fn run_fixture_test(fixture: &Fixture) {
     println!("Testing fixture: {}", fixture.name);
 
     // Load the schema
@@ -165,7 +165,7 @@ fn test_all_fixtures_schema_compliance() {
     assert!(!fixtures.is_empty(), "No fixtures found in '{}'", FIXTURES_DIR);
 
     for fixture in &fixtures {
-        test_fixture(fixture);
+        run_fixture_test(fixture);
     }
 }
 

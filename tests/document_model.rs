@@ -126,15 +126,15 @@ fn extract_outlines_with_pages(
 
     // Convert the first outline to our test structure
     // For now, just return the first outline at the root level
-    Some(convert_outline_to_test_node(&outlines[0]))
+    Some(convert_outline_to_node(&outlines[0]))
 }
 
 /// Convert an Outline to our test's OutlineNode structure.
-fn convert_outline_to_test_node(outline: &pdftract_core::parser::outline::Outline) -> OutlineNode {
+fn convert_outline_to_node(outline: &pdftract_core::parser::outline::Outline) -> OutlineNode {
     OutlineNode {
         title: outline.title.clone(),
         dest_page: outline.dest_page.map(|p| p as usize),
-        children: outline.children.iter().map(convert_outline_to_test_node).collect(),
+        children: outline.children.iter().map(convert_outline_to_node).collect(),
         is_expanded: outline.count > 0,
     }
 }
