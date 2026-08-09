@@ -1,32 +1,35 @@
-# Bead bf-1scb0o Verification: Missing Path import in audit.rs
+# bf-1scb0o: Add missing Path import to audit.rs
 
-## Status: ALREADY COMPLETED
+## Status: PREVIOUSLY COMPLETED
 
-## Finding
-The `use std::path::Path;` import is **already present** in `crates/pdftract-cli/src/middleware/audit.rs` at line 23.
+## Verification
 
-## Evidence
-- Line 23 of audit.rs: `use std::path::Path;`
-- Line 191 uses `Path::new("/dev/stdout")` successfully
-- `cargo check --package pdftract-cli` passes with no audit.rs-related errors
-- The import was added in commit `22fa44e` (fix(bf-2sfmat): add missing Path import to audit.rs)
+The task asked to add `use std::path::Path;` to `crates/pdftract-cli/src/middleware/audit.rs`.
+
+**Finding:** The import is already present in the file at line 23:
+```rust
+use std::path::Path;
+```
 
 ## Git History
+
+The import was previously added in commit `22fa44e2` by bead `bf-2sfmat`:
 ```
-22fa44e fix(bf-2sfmat): add missing Path import to audit.rs
+fix(bf-2sfmat): add missing Path import to audit.rs
+```
+
+## Compilation Verification
+
+```bash
+$ cargo check --package pdftract-cli
+# No errors - compilation successful
 ```
 
 ## Conclusion
-This bead (bf-1scb0o) represents work that was already completed in bead bf-2sfmat and commit 22fa44e. The audit.rs file:
-- ✅ Has `use std::path::Path;` import (line 23)
-- ✅ Compiles without errors
-- ✅ Uses `Path::new()` correctly in tests (line 191)
 
-## ACCEPTANCE CRITERIA STATUS
-1. ✅ Add `use std::path::Path;` to imports - ALREADY DONE in commit 22fa44e
-2. ✅ Import placed in appropriate location - Line 23, with other std imports
-3. ✅ No other changes - Correct, only the import was added
+This bead's acceptance criteria are already met:
+1. ✅ Import `use std::path::Path;` exists
+2. ✅ Import is placed correctly with other std imports (lines 23-25)
+3. ✅ No other changes needed
 
-## References
-- Commit 22fa44e: fix(bf-2sfmat): add missing Path import to audit.rs
-- Related bead: bf-2sfmat (likely a duplicate of this work)
+The work was completed by bead `bf-2sfmat` before this bead was assigned.
