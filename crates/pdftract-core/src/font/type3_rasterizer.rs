@@ -5334,6 +5334,33 @@ mod tests {
 
             (font, resolver, doc_context)
         }
+
+        /// Create minimal glyph data structure for testing.
+        ///
+        /// This is the simplest possible helper that creates a valid glyph data
+        /// structure with a single 100x100 filled rectangle at the origin.
+        /// No parameters required - returns the most basic valid glyph.
+        ///
+        /// # Returns
+        ///
+        /// (glyph_name, obj_ref_number, content_bytes) tuple suitable for
+        /// passing to create_test_setup() or for manual glyph construction
+        ///
+        /// # Example
+        ///
+        /// ```rust,no_run
+        /// # use pdftract_core::font::type3_rasterizer::tests::glyph_helpers::*;
+        /// # use pdftract_core::font::type3_rasterizer::rasterize_type3_glyph;
+        /// // Create a minimal test setup with one glyph
+        /// let (font, resolver, doc_context) = create_test_setup(&[make_minimal_glyph()]);
+        ///
+        /// // Rasterize the glyph
+        /// let bitmap = rasterize_type3_glyph(&font, "glyph", Some(&doc_context), Some(&resolver));
+        /// assert!(bitmap.is_some());
+        /// ```
+        pub fn make_minimal_glyph() -> (&'static str, u32, Vec<u8>) {
+            ("glyph", 1, rectangle_glyph(0, 0, 100, 100))
+        }
     }
 
     #[test]
@@ -5468,5 +5495,44 @@ mod tests {
             bitmap.iter().any(|&p| p == 0),
             "Bitmap should contain black pixels from filled rectangle"
         );
+    }
+
+    #[test]
+    fn test_glyph_helpers_make_minimal_glyph() {
+        use glyph_helpers::*;
+
+        // Test make_minimal_glyph returns valid data
+        let (name, ref_num, bytes) = make_minimal_glyph();
+
+        // Verify name is "glyph"
+        assert_eq!(name, "glyph");
+
+        // Verify ref_num is 1
+        assert_eq!(ref_num, 1);
+
+        // Verify bytes create a valid rectangle
+        assert_eq!(bytes, b"0 0 100 100 re f");
+
+        // Test it can be used with create_test_setup
+        let (font, resolver, doc_context) = create_test_setup(&[make_minimal_glyph()]);
+
+        // Verify font has the glyph
+        assert!(font.has_glyph("glyph"));
+
+        // Verify it can be rasterized
+        let result = rasterize_type3_glyph(
+            &font,
+            "glyph",
+            Some(&doc_context),
+            Some(&resolver),
+        );
+
+        assert!(
+            result.is_some(),
+            "make_minimal_glyph should produce rasterizable glyph data"
+        );
+
+        let bitmap = result.unwrap();
+        assert!(!bitmap.is_empty(), "Minimal glyph bitmap should not be empty");
     }
 }

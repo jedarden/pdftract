@@ -29,6 +29,11 @@ pub use type3_test_fixtures::{
     create_main_content_stream_multi, create_simple_charproc_stream,
 };
 
+pub use test_glyph_helper::{
+    make_custom_char_procs, make_empty_glyph, make_line_glyph, make_rect_glyph,
+    make_test_char_procs, make_test_resolver,
+};
+
 #[cfg(feature = "cjk")]
 pub mod cjk_encoding;
 
