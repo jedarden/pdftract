@@ -1186,4 +1186,213 @@ mod tests {
         // Should return None (can't resolve the stream)
         assert!(result.is_none(), "Should return None when no resolver provided");
     }
+
+    #[test]
+    fn test_helper_functions_compatible_with_mock() {
+        // Test that helper functions from test_glyph_helper work with Type3Font::mock
+        use crate::font::test_glyph_helper::{
+            make_rect_glyph, make_test_char_procs, make_test_resolver,
+        };
+        use std::collections::HashMap;
+
+        // Create char_procs using helper
+        let char_procs = make_test_char_procs();
+
+        // Create mock font with helper output
+        let font = Type3Font::mock(Some(char_procs));
+
+        // Verify the font was created successfully
+        assert_eq!(font.glyph_count(), 5, "Should have 5 glyphs from make_test_char_procs");
+        assert!(font.has_glyph("A"), "Should have 'A' glyph");
+        assert!(font.has_glyph("B"), "Should have 'B' glyph");
+        assert!(font.has_glyph("rect"), "Should have 'rect' glyph");
+        assert!(font.has_glyph("line"), "Should have 'line' glyph");
+        assert!(font.has_glyph("empty"), "Should have 'empty' glyph");
+    }
+
+    #[test]
+    fn test_helper_rect_glyph_compatible_with_rasterizer() {
+        // Test that make_rect_glyph output works with rasterize_type3_glyph
+        use crate::font::test_glyph_helper::{
+            make_rect_glyph, make_test_char_procs, make_test_resolver,
+        };
+        use std::collections::HashMap;
+
+        // Create char_procs and font using helpers
+        let char_procs = make_test_char_procs();
+        let font = Type3Font::mock(Some(char_procs));
+
+        // Create glyph data using helper
+        let rect_glyph = make_rect_glyph(0.0, 0.0, 100.0, 100.0);
+
+        // Create resolver mapping
+        let mut glyph_map = HashMap::new();
+        glyph_map.insert(10, rect_glyph);  // ObjRef for "rect" is 12, but let's use 10 for "A"
+
+        let resolver = make_test_resolver(&glyph_map);
+
+        // Test rasterization
+        let result = crate::font::type3_rasterizer::rasterize_type3_glyph(
+            &font,
+            "A",  // ObjRef(10, 0)
+            None,
+            Some(&resolver),
+        );
+
+        // Should successfully rasterize
+        assert!(result.is_some(), "make_rect_glyph should be compatible with rasterize_type3_glyph");
+        let bitmap = result.unwrap();
+        assert!(!bitmap.is_empty(), "Bitmap should not be empty");
+        assert_eq!(bitmap.len(), 32 * 32, "Bitmap should be 32x32 = 1024 bytes");
+    }
+
+    #[test]
+    fn test_helper_line_glyph_compatible_with_rasterizer() {
+        // Test that make_line_glyph output works with rasterize_type3_glyph
+        use crate::font::test_glyph_helper::{
+            make_line_glyph, make_test_char_procs, make_test_resolver,
+        };
+        use std::collections::HashMap;
+
+        // Create char_procs and font using helpers
+        let char_procs = make_test_char_procs();
+        let font = Type3Font::mock(Some(char_procs));
+
+        // Create glyph data using helper
+        let line_glyph = make_line_glyph(0.0, 0.0, 50.0, 50.0);
+
+        // Create resolver mapping
+        let mut glyph_map = HashMap::new();
+        glyph_map.insert(10, line_glyph);  // ObjRef for "line" is 13, but let's use 10 for "A"
+
+        let resolver = make_test_resolver(&glyph_map);
+
+        // Test rasterization
+        let result = crate::font::type3_rasterizer::rasterize_type3_glyph(
+            &font,
+            "A",  // ObjRef(10, 0)
+            None,
+            Some(&resolver),
+        );
+
+        // Should successfully rasterize
+        assert!(result.is_some(), "make_line_glyph should be compatible with rasterize_type3_glyph");
+        let bitmap = result.unwrap();
+        assert!(!bitmap.is_empty(), "Bitmap should not be empty");
+    }
+
+    #[test]
+    fn test_helper_empty_glyph_compatible_with_rasterizer() {
+        // Test that make_empty_glyph output works with rasterize_type3_glyph
+        use crate::font::test_glyph_helper::{
+            make_empty_glyph, make_test_char_procs, make_test_resolver,
+        };
+        use std::collections::HashMap;
+
+        // Create char_procs and font using helpers
+        let char_procs = make_test_char_procs();
+        let font = Type3Font::mock(Some(char_procs));
+
+        // Create glyph data using helper
+        let empty_glyph = make_empty_glyph();
+
+        // Create resolver mapping
+        let mut glyph_map = HashMap::new();
+        glyph_map.insert(10, empty_glyph);  // ObjRef for "empty" is 14, but let's use 10 for "A"
+
+        let resolver = make_test_resolver(&glyph_map);
+
+        // Test rasterization
+        let result = crate::font::type3_rasterizer::rasterize_type3_glyph(
+            &font,
+            "A",  // ObjRef(10, 0)
+            None,
+            Some(&resolver),
+        );
+
+        // Should successfully rasterize (empty glyph produces all-white bitmap)
+        assert!(result.is_some(), "make_empty_glyph should be compatible with rasterize_type3_glyph");
+        let bitmap = result.unwrap();
+        assert!(!bitmap.is_empty(), "Bitmap should not be empty");
+        assert_eq!(bitmap.len(), 32 * 32, "Bitmap should be 32x32 = 1024 bytes");
+    }
+
+    #[test]
+    fn test_helper_custom_char_procs_compatible() {
+        // Test that make_custom_char_procs works with Type3Font::mock
+        use crate::font::test_glyph_helper::{make_custom_char_procs, make_test_resolver};
+        use std::collections::HashMap;
+
+        // Create custom char_procs
+        let char_procs = make_custom_char_procs(&["g1", "g2", "g3"], 100);
+
+        // Create mock font
+        let font = Type3Font::mock(Some(char_procs));
+
+        // Verify the font has the custom glyphs
+        assert_eq!(font.glyph_count(), 3, "Should have 3 custom glyphs");
+        assert!(font.has_glyph("g1"), "Should have 'g1' glyph");
+        assert!(font.has_glyph("g2"), "Should have 'g2' glyph");
+        assert!(font.has_glyph("g3"), "Should have 'g3' glyph");
+
+        // Create glyph data
+        let glyph_data = vec![b"10 10 50 50 re f".to_vec()];
+
+        // Create resolver mapping - g1 is ObjRef(100, 0)
+        let mut glyph_map = HashMap::new();
+        glyph_map.insert(100, glyph_data[0].clone());
+
+        let resolver = make_test_resolver(&glyph_map);
+
+        // Test rasterization
+        let result = crate::font::type3_rasterizer::rasterize_type3_glyph(
+            &font,
+            "g1",  // ObjRef(100, 0)
+            None,
+            Some(&resolver),
+        );
+
+        // Should successfully rasterize
+        assert!(result.is_some(), "Custom char_procs should be compatible with rasterize_type3_glyph");
+    }
+
+    #[test]
+    fn test_helper_no_panics_or_errors() {
+        // Comprehensive test that helpers work without panics or errors
+        use crate::font::test_glyph_helper::{
+            make_custom_char_procs, make_empty_glyph, make_line_glyph, make_rect_glyph,
+            make_test_char_procs, make_test_resolver,
+        };
+        use std::collections::HashMap;
+
+        // Test all helper functions don't panic
+        let rect_glyph = make_rect_glyph(10.0, 20.0, 100.0, 200.0);
+        let line_glyph = make_line_glyph(0.0, 0.0, 50.0, 50.0);
+        let empty_glyph = make_empty_glyph();
+        let char_procs = make_test_char_procs();
+        let custom_char_procs = make_custom_char_procs(&["x", "y"], 200);
+
+        // Verify helper output is valid
+        assert!(!rect_glyph.is_empty(), "make_rect_glyph should produce output");
+        assert!(!line_glyph.is_empty(), "make_line_glyph should produce output");
+        assert!(empty_glyph.is_empty(), "make_empty_glyph should produce empty output");
+        assert_eq!(char_procs.len(), 5, "make_test_char_procs should produce 5 entries");
+        assert_eq!(custom_char_procs.len(), 2, "make_custom_char_procs should produce 2 entries");
+
+        // Create font with helpers
+        let font = Type3Font::mock(Some(char_procs));
+
+        // Create resolver with helpers
+        let mut glyph_map = HashMap::new();
+        glyph_map.insert(10, rect_glyph.clone());
+        let resolver = make_test_resolver(&glyph_map);
+
+        // Test that calling rasterize_type3_glyph works correctly
+        // (If this panics, the test will fail - no need for catch_unwind)
+        let result = crate::font::type3_rasterizer::rasterize_type3_glyph(&font, "A", None, Some(&resolver));
+
+        assert!(result.is_some(), "rasterize_type3_glyph should succeed with helper output");
+        let bitmap = result.unwrap();
+        assert!(!bitmap.is_empty(), "Bitmap should not be empty");
+    }
 }
