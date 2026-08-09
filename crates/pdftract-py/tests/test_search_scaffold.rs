@@ -6,9 +6,20 @@
 //! This is the first test in the TDD cycle - it establishes that the test
 //! infrastructure works before adding substantive tests.
 
+// Standard library imports
 use std::path::PathBuf;
 
+// pdftract-py imports
 use pdftract::PyPdfProcessor;
+
+// Exception types for error testing
+use pdftract::{
+    CorruptPdfError, EncryptionError, PdftractError, ReceiptVerifyError,
+    RemoteFetchInterruptedError, SourceUnreachableError, TlsError, UnsupportedOperationError,
+};
+
+// PyO3 imports for Python integration testing
+use pyo3::{PyAny, PyResult, Python};
 
 /// Get the path to the test fixtures directory.
 fn fixtures_dir() -> PathBuf {
@@ -41,7 +52,10 @@ fn test_search_scaffold() {
     // This test compiles successfully and verifies basic structure
     // Full Python integration tests will be added separately
     if !fixture_path.exists() {
-        eprintln!("Skipping scaffold test - fixture not found: {:?}", fixture_path);
+        eprintln!(
+            "Skipping scaffold test - fixture not found: {:?}",
+            fixture_path
+        );
         return;
     }
 
