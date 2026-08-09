@@ -10,6 +10,12 @@ use std::path::PathBuf;
 // Note: The import path uses the [lib] name from Cargo.toml (pdftract), not the package name (pdftract-py)
 use pdftract::PyPdfProcessor;
 
+// Exception types from pdftract crate (PyO3 exceptions)
+use pdftract::{
+    CorruptPdfError, EncryptionError, PdftractError, ReceiptVerifyError,
+    RemoteFetchInterruptedError, SourceUnreachableError, TlsError, UnsupportedOperationError,
+};
+
 // Core types from pdftract-core (safe for test binaries)
 use pdftract_core::{AttachmentJson, ExtractionOptions, PageResult, TableJson};
 
