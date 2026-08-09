@@ -1,15 +1,18 @@
 # pdftract Test File Inventory
 
-**Generated:** 2026-08-09  
+**Generated:** 2026-08-09
 **Purpose:** Complete listing of all test files in the pdftract project for bead bf-5kjp4b
+**Last Updated:** 2026-08-09 (Added .NET and PHP SDK tests, corrected CLI test count)
 
 ## Summary Statistics
 
 - **Total .rs files with test functions:** 184 files
-- **Total .rs files with 'test' in filename:** 729 files  
+- **Total .rs files with 'test' in filename:** 729 files
 - **Main tests/ directory:** 91 .rs files
 - **Source files with inline tests:** 4 files
 - **Fuzz targets:** 7 files
+- **CLI tests:** 30 .rs files (including subdirectories)
+- **Additional SDK tests:** 4 .cs files (.NET), 2 .php files (PHP)
 
 ---
 
@@ -187,9 +190,9 @@
 
 ## 3. CLI Tests (`/crates/pdftract-cli/tests/`)
 
-**Location:** `/home/coding/pdftract/crates/pdftract-cli/tests/`  
-**Type:** CLI integration tests  
-**Count:** 24 .rs files
+**Location:** `/home/coding/pdftract/crates/pdftract-cli/tests/`
+**Type:** CLI integration tests
+**Count:** 30 .rs files (including subdirectories)
 
 | File | Purpose |
 |------|---------|
@@ -219,6 +222,13 @@
 | `test_encryption_errors.rs` | Encryption error tests |
 | `test_encryption_unsupported.rs` | Unsupported encryption tests |
 | `multi_output_validation.rs` | Multi-output validation tests |
+| `cli_invocation_fixtures.rs` | CLI invocation fixtures |
+
+### CLI Test Subdirectories
+
+| Subdirectory | Purpose |
+|--------------|---------|
+| `fixtures/` | Test fixture files for CLI tests |
 
 ---
 
@@ -381,10 +391,36 @@
 
 ---
 
-## 6. libpdftract Tests (`/crates/pdftract-libpdftract/tests/`)
+## 6. .NET SDK Tests (`/pdftract-dotnet/tests/`)
 
-**Location:** `/home/coding/pdftract/crates/pdftract-libpdftract/tests/`  
-**Type:** FFI library tests  
+**Location:** `/home/coding/pdftract/pdftract-dotnet/tests/`  
+**Type:** .NET SDK integration and conformance tests  
+**Count:** 2 .cs files
+
+| File | Purpose |
+|------|---------|
+| `Pdftract.Tests/SourceTests.cs` | Source extraction tests |
+| `Pdftract.Tests/ConformanceTests.cs` | Conformance validation tests |
+
+---
+
+## 7. PHP SDK Tests (`/sdk/php/tests/`)
+
+**Location:** `/home/coding/pdftract/sdk/php/tests/`  
+**Type:** PHP SDK integration and conformance tests  
+**Count:** 2 .php files
+
+| File | Purpose |
+|------|---------|
+| `ConformanceTest.php` | Conformance validation tests |
+| `verify_psr3_logger.php` | PSR-3 logger verification tests |
+
+---
+
+## 8. libpdftract Tests (`/crates/pdftract-libpdftract/tests/`)
+
+**Location:** `/home/coding/pdftract/crates/pdftract-libpdftract/tests/`
+**Type:** FFI library tests
 **Count:** 1 .rs file
 
 | File | Purpose |
@@ -393,10 +429,10 @@
 
 ---
 
-## 7. Fuzz Tests (`/fuzz/`)
+## 9. Fuzz Tests (`/fuzz/`)
 
-**Location:** `/home/coding/pdftract/fuzz/fuzz_targets/`  
-**Type:** Fuzzing targets for AFL++ / libFuzzer  
+**Location:** `/home/coding/pdftract/fuzz/fuzz_targets/`
+**Type:** Fuzzing targets for AFL++ / libFuzzer
 **Count:** 7 .rs files
 
 | File | Target |
@@ -411,10 +447,10 @@
 
 ---
 
-## 8. Source Files with Test Modules
+## 10. Source Files with Test Modules
 
-**Location:** `/home/coding/pdftract/crates/pdftract-core/src/`  
-**Type:** Inline unit tests within source files  
+**Location:** `/home/coding/pdftract/crates/pdftract-core/src/`
+**Type:** Inline unit tests within source files
 **Count:** Multiple files
 
 ### Font Test Files
@@ -428,9 +464,9 @@
 
 ---
 
-## 9. Example Test Programs
+## 11. Example Test Programs
 
-**Location:** Various `examples/` directories  
+**Location:** Various `examples/` directories
 **Type:** Standalone test/example programs
 
 ### Core Examples
@@ -470,9 +506,9 @@
 
 ---
 
-## 10. Generator & Fixture Scripts
+## 12. Generator & Fixture Scripts
 
-**Location:** Root directory and `tools/`  
+**Location:** Root directory and `tools/`
 **Type:** Test fixture generators
 
 | File | Purpose |
@@ -486,7 +522,7 @@
 
 ---
 
-## 11. Conformance & SDK Tests
+## 13. Conformance & SDK Tests
 
 ### C Client Conformance
 
@@ -521,9 +557,9 @@
 
 ---
 
-## 12. Python Test Scripts
+## 14. Python Test Scripts
 
-**Location:** Root directory  
+**Location:** Root directory
 **Type:** Python test utilities
 
 | File | Purpose |
@@ -552,13 +588,17 @@
 ├── src/                           # Source with inline tests (4 files)
 │   └── graphics_state/           # Graphics state tests
 ├── crates/
-│   ├── pdftract-cli/tests/       # CLI tests (24 files)
+│   ├── pdftract-cli/tests/       # CLI tests (30 files including subdirectories)
 │   ├── pdftract-core/tests/      # Core library tests (70+ files)
 │   ├── pdftract-py/tests/        # Python SDK tests (2 files)
 │   ├── pdftract-libpdftract/tests/ # FFI library tests (1 file)
 │   └── pdftract-core/src/font/   # Font test helpers (4 files)
 ├── fuzz/
 │   └── fuzz_targets/             # Fuzz targets (7 files)
+├── pdftract-dotnet/
+│   └── tests/                    # .NET SDK tests (2 .cs files)
+├── sdk/
+│   └── php/tests/                # PHP SDK tests (2 .php files)
 ├── examples/                     # Example test programs
 └── tools/                        # Test utilities
 
@@ -574,9 +614,12 @@
 |----------|-------|-----------|
 | Integration Tests | 91+ | `/tests/` |
 | Unit Tests | 4 | `/src/` (inline) |
-| CLI Tests | 24 | `/crates/pdftract-cli/tests/` |
+| CLI Tests | 30 | `/crates/pdftract-cli/tests/` |
 | Core Library Tests | 70+ | `/crates/pdftract-core/tests/` |
-| SDK Tests | 3 | `/crates/pdftract-py/tests/`, `/crates/pdftract-libpdftract/tests/` |
+| Python SDK Tests | 2 | `/crates/pdftract-py/tests/` |
+| .NET SDK Tests | 2 | `/pdftract-dotnet/tests/` |
+| PHP SDK Tests | 2 | `/sdk/php/tests/` |
+| FFI Library Tests | 1 | `/crates/pdftract-libpdftract/tests/` |
 | Fuzz Tests | 7 | `/fuzz/fuzz_targets/` |
 | Conformance Tests | 15+ | `/tests/` (C binaries) |
 | Property-Based Tests | 8 | `/tests/proptest/`, core tests |
