@@ -1743,3 +1743,159 @@ fn test_detect_char_proc_type_ref_with_valid_context_and_stream() {
     assert_eq!(result, CharProcType::Stream,
         "PdfObject::Ref pointing to a stream should return CharProcType::Stream");
 }
+
+// ============================================================================
+// Tests for Invalid and Edge-Case Reference Scenarios
+// ============================================================================
+
+/// Test that detect_char_proc_type handles invalid references gracefully.
+///
+/// This test verifies that when a PdfObject::Ref contains an object reference
+/// ID that does not exist in the document, the function returns CharProcType::Unknown
+/// without panicking. This covers scenarios where:
+/// - Reference IDs are not present in the xref table
+/// - References have been deleted or corrupted
+/// - References point to non-existent objects
+#[test]
+fn test_detect_char_proc_type_ref_with_invalid_reference() {
+    use crate::font::type3_rasterizer::DocumentContext;
+    use crate::parser::xref::XrefResolver;
+
+    // Create a DocumentContext with an empty resolver (no objects registered)
+    let resolver = XrefResolver::new();
+    let doc_context = DocumentContext {
+        resolver: Some(&resolver),
+        source: None,
+    };
+
+    // Create references with various object IDs that don't exist in the document
+    let nonexistent_refs = vec![
+        ObjRef::new(1, 0),      // Low object number
+        ObjRef::new(999, 0),    // High object number
+        ObjRef::new(50, 5),     // Non-zero generation number
+        ObjRef::new(1000, 0),   // Very high object number
+    ];
+
+    for obj_ref in nonexistent_refs {
+        let ref_obj = PdfObject::Ref(obj_ref);
+
+        // Should not panic - should return Unknown gracefully
+        let result = detect_char_proc_type(&ref_obj, Some(&doc_context));
+
+        // Verify Unknown is returned for all invalid references
+        assert_eq!(result, CharProcType::Unknown,
+            "Reference to non-existent object {} {} should return Unknown without panicking",
+            obj_ref.object, obj_ref.generation);
+    }
+}
+
+/// Test that detect_char_proc_type handles references to out-of-bounds objects.
+///
+/// This test verifies that when a PdfObject::Ref contains an object reference
+/// that points beyond the valid range of object numbers in the document, the
+/// function returns CharProcType::Unknown without panicking. This covers edge cases:
+/// - Object number 0 (invalid in PDF spec)
+/// - Extremely large object numbers
+/// - Object numbers beyond u32::MAX / 2 (theoretical bounds)
+#[test]
+fn test_detect_char_proc_type_ref_with_nonexistent_object() {
+    use crate::font::type3_rasterizer::DocumentContext;
+    use crate::parser::xref::XrefResolver;
+
+    // Create a DocumentContext with an empty resolver
+    let resolver = XrefResolver::new();
+    let doc_context = DocumentContext {
+        resolver: Some(&resolver),
+        source: None,
+    };
+
+    // Create references with out-of-bounds or theoretically invalid object numbers
+    let out_of_bounds_refs = vec![
+        ObjRef::new(0, 0),           // Object 0 is invalid in PDF spec
+        ObjRef::new(0, 1),           // Object 0 with generation number
+        ObjRef::new(u32::MAX, 0),    // Maximum possible object number
+        ObjRef::new(u32::MAX - 1, 0), // Near-maximum object number
+        ObjRef::new(1, u16::MAX),     // Maximum generation number
+    ];
+
+    for obj_ref in out_of_bounds_refs {
+        let ref_obj = PdfObject::Ref(obj_ref);
+
+        // Should not panic even with out-of-bounds references
+        let result = detect_char_proc_type(&ref_obj, Some(&doc_context));
+
+        // Verify Unknown is returned for all out-of-bounds references
+        assert_eq!(result, CharProcType::Unknown,
+            "Out-of-bounds reference {} {} should return Unknown without panicking",
+            obj_ref.object, obj_ref.generation);
+    }
+}
+
+/// Test that detect_char_proc_type handles references with mismatched generation numbers.
+///
+/// This test verifies that when a reference points to an object that exists
+/// but has a different generation number (indicating a deleted/updated object),
+/// the function handles it gracefully.
+#[test]
+fn test_detect_char_proc_type_ref_with_mismatched_generation() {
+    use crate::font::type3_rasterizer::DocumentContext;
+    use crate::parser::xref::XrefEntry;
+    use crate::parser::xref::XrefResolver;
+
+    // Create a resolver with object 10 at generation 0
+    let mut resolver = XrefResolver::new();
+    resolver.add_entry(10, XrefEntry::InUse {
+        offset: 100,
+        gen_nr: 0,
+    });
+
+    let doc_context = DocumentContext {
+        resolver: Some(&resolver),
+        source: None,
+    };
+
+    // Reference to object 10 with generation 1 (mismatched - object was deleted)
+    let mismatched_ref = ObjRef::new(10, 1);
+    let ref_obj = PdfObject::Ref(mismatched_ref);
+
+    // Should not panic - should return Unknown
+    let result = detect_char_proc_type(&ref_obj, Some(&doc_context));
+
+    // Verify Unknown is returned for generation-mismatched references
+    assert_eq!(result, CharProcType::Unknown,
+        "Reference with mismatched generation number should return Unknown");
+}
+
+/// Test that detect_char_proc_type handles references to free objects.
+///
+/// This test verifies that when a reference points to an object that has
+/// been marked as free in the xref table, the function returns Unknown gracefully.
+#[test]
+fn test_detect_char_proc_type_ref_with_free_object() {
+    use crate::font::type3_rasterizer::DocumentContext;
+    use crate::parser::xref::XrefEntry;
+    use crate::parser::xref::XrefResolver;
+
+    // Create a resolver with a free entry
+    let mut resolver = XrefResolver::new();
+    resolver.add_entry(20, XrefEntry::Free {
+        next_free: 21,
+        gen_nr: 1,
+    });
+
+    let doc_context = DocumentContext {
+        resolver: Some(&resolver),
+        source: None,
+    };
+
+    // Reference to object 20 (which is marked as free)
+    let free_ref = ObjRef::new(20, 0);
+    let ref_obj = PdfObject::Ref(free_ref);
+
+    // Should not panic - should return Unknown
+    let result = detect_char_proc_type(&ref_obj, Some(&doc_context));
+
+    // Verify Unknown is returned for references to free objects
+    assert_eq!(result, CharProcType::Unknown,
+        "Reference to free object should return Unknown");
+}
