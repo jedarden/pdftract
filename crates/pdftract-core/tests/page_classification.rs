@@ -494,7 +494,7 @@ fn test_reproducibility_gate_with_perturbation() {
     }
 }
 
-/// Basic smoke test for classify_page function.
+/// Basic smoke test for classify_page function with comprehensive field-level verification.
 ///
 /// This test verifies that classify_page works with a simple vector page context
 /// matching the characteristics of classify_page_simple.pdf fixture:
@@ -502,8 +502,24 @@ fn test_reproducibility_gate_with_perturbation() {
 /// - US Letter page size (612 x 792 pts)
 /// - Expected to classify as Vector with high confidence
 ///
+/// ## Field-Level Verification
+///
+/// This test performs comprehensive validation of all output fields:
+///
+/// ### Expected Output Structure (PageClassification):
+/// ```text
+/// class: PageClass enum (Vector, Scanned, Hybrid, or BrokenVector)
+/// confidence: f32 in range [0.0, 1.0]
+/// hybrid_cells: Option<BTreeSet<usize>> (None for non-Hybrid, Some(set) for Hybrid)
+/// ```
+///
+/// ### Field Validation Rules:
+/// - **class field**: Must be a valid PageClass enum value (Vector/Scanned/Hybrid/BrokenVector)
+/// - **confidence field**: Must be in valid range [0.0, 1.0] and reasonable for the classification
+/// - **hybrid_cells field**: Must be None for Vector/Scanned/BrokenVector, Some(set) for Hybrid
+///
 /// This is a basic sanity check that the classification function can be called
-/// successfully and returns structured output without panicking.
+/// successfully and returns well-formed output with all expected fields populated correctly.
 #[test]
 fn test_classify_page_smoke() {
     use pdftract_core::classify::{classify_page, PageClass, PageContext};
@@ -538,26 +554,130 @@ fn test_classify_page_smoke() {
     // No grid cell data for simple vector page
     ctx.grid_cells = None;
 
-    // Call classify_page - this should not panic
+    // Call classify_page - this should not panic and return valid output
     let result = classify_page(&ctx);
 
-    // Basic assertions: the function returned structured output
+    // ============================================================
+    // FIELD-LEVEL VERIFICATION: classification field
+    // ============================================================
+
+    // Verify classification field exists and is a valid PageClass value
+    // Valid PageClass values: Vector, Scanned, Hybrid, BrokenVector
+    let valid_classes = [
+        PageClass::Vector,
+        PageClass::Scanned,
+        PageClass::Hybrid,
+        PageClass::BrokenVector,
+    ];
+
+    assert!(
+        valid_classes.contains(&result.class),
+        "Classification field must be a valid PageClass value \
+         (Vector, Scanned, Hybrid, or BrokenVector), got {:?}",
+        result.class
+    );
+
     // For a simple vector page, we expect Vector classification
-    assert_eq!(result.class, PageClass::Vector,
-        "Simple text page should classify as Vector, got {:?}", result.class);
+    assert_eq!(
+        result.class,
+        PageClass::Vector,
+        "Simple text page should classify as Vector, got {:?}. \
+         This indicates the classification logic may not be correctly identifying text-only pages.",
+        result.class
+    );
 
-    // Confidence should be reasonable (> 0.5 for a clear vector page)
-    assert!(result.confidence > 0.5,
-        "Simple vector page should have confidence > 0.5, got {}", result.confidence);
+    // ============================================================
+    // FIELD-LEVEL VERIFICATION: confidence field
+    // ============================================================
 
-    // Confidence should be in valid range [0.0, 1.0]
-    assert!(result.confidence >= 0.0 && result.confidence <= 1.0,
-        "Confidence must be in [0.0, 1.0], got {}", result.confidence);
+    // Verify confidence field exists and is in valid range [0.0, 1.0]
+    assert!(
+        result.confidence >= 0.0 && result.confidence <= 1.0,
+        "Confidence field must be in valid range [0.0, 1.0], got {}. \
+         This is a fundamental contract violation - all confidence scores must be normalized.",
+        result.confidence
+    );
 
-    // Simple vector pages should not have hybrid cells
-    assert!(result.hybrid_cells.is_none(),
-        "Simple vector page should not have hybrid cells, got {:?}", result.hybrid_cells);
+    // For a clear vector page with high-quality text, confidence should be reasonably high
+    // This is a sanity check that the classification engine is confident in its decision
+    assert!(
+        result.confidence > 0.5,
+        "Simple vector page should have confidence > 0.5, got {}. \
+         Low confidence on clear text pages may indicate classification threshold issues.",
+        result.confidence
+    );
 
-    println!("test_classify_page_smoke passed: class={:?}, confidence={}",
-        result.class, result.confidence);
+    // For very clear cases, confidence should be quite high (> 0.7)
+    assert!(
+        result.confidence > 0.7,
+        "Simple vector page with clear text should have confidence > 0.7, got {}. \
+         This suggests the classification signal strength may be too weak for obvious cases.",
+        result.confidence
+    );
+
+    // Confidence should not be exactly 1.0 for real classifications (reserves for perfect matches)
+    assert!(
+        result.confidence < 1.0,
+        "Confidence should be < 1.0 for real classifications (got {}). \
+         Perfect confidence (1.0) should be reserved for synthetic/test cases only.",
+        result.confidence
+    );
+
+    // ============================================================
+    // FIELD-LEVEL VERIFICATION: hybrid_cells field
+    // ============================================================
+
+    // Verify hybrid_cells field exists and is of correct type (Option<BTreeSet<usize>>)
+    // For non-Hybrid classifications (Vector, Scanned, BrokenVector), hybrid_cells must be None
+    match result.class {
+        PageClass::Vector | PageClass::Scanned | PageClass::BrokenVector => {
+            assert!(
+                result.hybrid_cells.is_none(),
+                "Non-Hybrid classification (class={:?}) must have hybrid_cells=None, \
+                 got {:?}. This indicates a bug in the classification logic - \
+                 hybrid_cells should only be Some for Hybrid pages.",
+                result.class,
+                result.hybrid_cells
+            );
+        }
+        PageClass::Hybrid => {
+            assert!(
+                result.hybrid_cells.is_some(),
+                "Hybrid classification must have hybrid_cells=Some(set), got None. \
+                 This indicates a bug - Hybrid pages require cell indices for downstream processing.",
+            );
+        }
+    }
+
+    // Verify the result can be serialized to JSON (integration test requirement)
+    let json_result = serde_json::to_string(&result);
+    assert!(
+        json_result.is_ok(),
+        "PageClassification result must be JSON-serializable, got error: {:?}",
+        json_result.err()
+    );
+
+    // Verify JSON contains expected field names
+    let json_string = json_result.unwrap();
+    assert!(
+        json_string.contains("\"class\""),
+        "JSON output must contain 'class' field. Got: {}",
+        json_string
+    );
+    assert!(
+        json_string.contains("\"confidence\""),
+        "JSON output must contain 'confidence' field. Got: {}",
+        json_string
+    );
+    assert!(
+        json_string.contains("\"hybrid_cells\""),
+        "JSON output must contain 'hybrid_cells' field. Got: {}",
+        json_string
+    );
+
+    println!(
+        "test_classify_page_smoke passed with field-level verification: \
+         class={:?}, confidence={:.3}, hybrid_cells={:?}",
+        result.class, result.confidence, result.hybrid_cells
+    );
 }
