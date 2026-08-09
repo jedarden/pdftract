@@ -32,7 +32,7 @@ memory-report.json
 
 # Compiled binaries in repo root
 debug_*
-test_*
+/test_*
 gen_fixtures
 gen_ocr_fixtures
 
