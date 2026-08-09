@@ -57,9 +57,12 @@ fn test_classify_page_smoke_with_pdf_fixture() {
     let first_page = &extraction_result.pages[0];
 
     // Verify basic output structure: page_type field exists
+    let page_type = first_page.page_type.as_ref()
+        .expect("page_type field should exist (Some), got None. Classification may not have run.");
+
     assert!(
-        !first_page.page_type.is_empty(),
-        "page_type field should exist and not be empty. Got empty string, which suggests \
+        !page_type.is_empty(),
+        "page_type field should not be empty. Got empty string, which suggests \
          classification was not run or failed. Expected a valid page type like 'text', 'scanned', \
          'mixed', or 'broken_vector'."
     );
@@ -75,7 +78,6 @@ fn test_classify_page_smoke_with_pdf_fixture() {
         "figure_only",   // Image-only page
     ];
 
-    let page_type = &first_page.page_type;
     assert!(
         valid_page_types.contains(&page_type.as_str()),
         "page_type should be one of the expected values. Got: '{}'. Expected one of: {:?}. \
@@ -118,7 +120,7 @@ fn test_classify_page_smoke_with_pdf_fixture() {
     println!(
         "test_classify_page_smoke_with_pdf_fixture PASSED: \
          page_type={}, pages={}",
-        page_type,
+        first_page.page_type.as_ref().map(|s| s.as_str()).unwrap_or("None"),
         extraction_result.pages.len()
     );
 }
@@ -160,9 +162,11 @@ fn test_classify_page_smoke_scanned_fixture() {
     let first_page = &extraction_result.pages[0];
 
     // Verify page_type exists and is "scanned"
-    assert!(!first_page.page_type.is_empty());
+    let page_type = first_page.page_type.as_ref()
+        .expect("page_type field should exist (Some), got None");
 
-    let page_type = &first_page.page_type;
+    assert!(!page_type.is_empty());
+
     assert_eq!(
         page_type, "scanned",
         "scanned_single/source.pdf should classify as 'scanned' (image-only PDF). Got: '{}'",

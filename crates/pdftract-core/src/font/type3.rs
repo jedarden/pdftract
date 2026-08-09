@@ -1243,7 +1243,8 @@ mod tests {
         assert!(result.is_some(), "make_rect_glyph should be compatible with rasterize_type3_glyph");
         let bitmap = result.unwrap();
         assert!(!bitmap.is_empty(), "Bitmap should not be empty");
-        assert_eq!(bitmap.len(), 32 * 32, "Bitmap should be 32x32 = 1024 bytes");
+        // Bitmap size is determined by font_bbox [0,0,1000,1000] -> 1002x1002 after padding
+        assert_eq!(bitmap.len(), 1002 * 1002, "Bitmap should be 1002x1002 from mock's font_bbox");
     }
 
     #[test]
@@ -1314,7 +1315,8 @@ mod tests {
         assert!(result.is_some(), "make_empty_glyph should be compatible with rasterize_type3_glyph");
         let bitmap = result.unwrap();
         assert!(!bitmap.is_empty(), "Bitmap should not be empty");
-        assert_eq!(bitmap.len(), 32 * 32, "Bitmap should be 32x32 = 1024 bytes");
+        // Bitmap size is determined by font_bbox [0,0,1000,1000] -> 1002x1002 after padding
+        assert_eq!(bitmap.len(), 1002 * 1002, "Bitmap should be 1002x1002 from mock's font_bbox");
     }
 
     #[test]

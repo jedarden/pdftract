@@ -198,14 +198,7 @@ fn process_content_stream_to_glyphs(
     // For now, use the existing content_stream processor and convert results
     // This is a bridge implementation - a full Phase 3 processor would use glyph::emit_glyph directly
     // The PageDict already has resources merged during page tree traversal
-
-    // Validate resources exist
-    if page.resources.is_none() {
-        return Err(PageExtractionError::InvalidResources {
-            page_index,
-            message: "Page dictionary has no resources".to_string(),
-        });
-    }
+    // Resources are always present as Arc<ResourceDict> (no need for is_none check)
 
     let content_glyphs = process_with_mode(
         decoded_streams,
@@ -840,10 +833,11 @@ pub fn extract_pdf(
                 &resolver_arc,
                 &source,
                 options.max_decompress_bytes,
+                page_index,
             );
 
             let mut tracker = McidTracker::new();
-            track_mcids_from_content_stream(&decoded_streams, &mut tracker);
+            track_mcids_from_content_stream(&decoded_streams?, &mut tracker);
 
             // Get the struct_parents value for this page
             let struct_parents = page_dict.struct_parents();
@@ -852,9 +846,7 @@ pub fn extract_pdf(
             let mcid_set = tracker.mcid_set().clone();
             pages_with_mcids.push((page_index, struct_parents, mcid_set));
 
-            // Drop decoded_streams and tracker to free memory
-            drop(decoded_streams);
-            // tracker dropped implicitly
+            // decoded_streams and tracker dropped implicitly
         }
 
         // Get the annotations for this page (already sorted)
@@ -1870,10 +1862,11 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
                 &resolver_arc,
                 &source,
                 options.max_decompress_bytes,
+                page_index,
             );
 
             let mut tracker = McidTracker::new();
-            track_mcids_from_content_stream(&decoded_streams, &mut tracker);
+            track_mcids_from_content_stream(&decoded_streams?, &mut tracker);
 
             // Get the struct_parents value for this page
             let struct_parents = page_dict.struct_parents();
@@ -1882,9 +1875,7 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
             let mcid_set = tracker.mcid_set().clone();
             pages_with_mcids.push((page_index, struct_parents, mcid_set));
 
-            // Drop decoded_streams and tracker to free memory
-            drop(decoded_streams);
-            // tracker dropped implicitly
+            // decoded_streams and tracker dropped implicitly
         }
 
         // Extract this page with lazy stream decoding.
@@ -2193,16 +2184,18 @@ where
                 &resolver_arc,
                 &source,
                 DEFAULT_MAX_DECOMPRESS_BYTES,
+                page_count,
             );
 
-            let mut tracker = McidTracker::new();
-            track_mcids_from_content_stream(&decoded_streams, &mut tracker);
-
             let struct_parents = page_dict.struct_parents();
-            let mcid_set = tracker.mcid_set().clone();
+            let mcid_set = if let Ok(streams) = decoded_streams {
+                let mut tracker = McidTracker::new();
+                track_mcids_from_content_stream(&streams, &mut tracker);
+                tracker.mcid_set().clone()
+            } else {
+                std::collections::HashSet::new()
+            };
             pages_with_mcids.push((page_count, struct_parents, mcid_set));
-
-            drop(decoded_streams);
         }
 
         // Extract this page

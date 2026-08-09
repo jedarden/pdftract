@@ -263,12 +263,8 @@ impl fmt::Display for PageExtractionError {
 
 impl std::error::Error for PageExtractionError {}
 
-/// Convert PageExtractionError to anyhow::Error for use in extraction functions.
-impl From<PageExtractionError> for anyhow::Error {
-    fn from(err: PageExtractionError) -> Self {
-        anyhow::anyhow!("{}", err)
-    }
-}
+// Note: From<PageExtractionError> for anyhow::Error is provided by anyhow's blanket implementation
+// since PageExtractionError implements std::error::Error. We don't need a custom implementation.
 
 /// Result type alias for Page extraction operations.
 pub type PageResult<T> = std::result::Result<T, PageExtractionError>;
