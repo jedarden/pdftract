@@ -188,6 +188,7 @@ pub mod ocr;
 pub mod options;
 pub mod output;
 pub mod page_class;
+pub mod page_extraction_error;
 pub mod page_helper;
 pub mod pages;
 pub mod parser;

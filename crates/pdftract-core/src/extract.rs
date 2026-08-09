@@ -23,6 +23,7 @@ use crate::forms::{
     acro_field_to_value, combine, walk_acroform_fields, AcroFormField, FormFieldValue,
 };
 use crate::options::{ExtractionOptions, ReceiptsMode};
+use crate::page_extraction_error::PageExtractionError;
 use crate::parser::catalog::ReadingOrderAlgorithm;
 use crate::parser::marked_content::{track_mcids_from_content_stream, McidTracker};
 use crate::parser::stream::DEFAULT_MAX_DECOMPRESS_BYTES;
@@ -85,7 +86,14 @@ use crate::receipts::svg::GlyphList;
 ///
 /// # Returns
 ///
-/// The decoded content stream bytes, or an empty Vec if decoding fails.
+/// A `Result` containing the decoded content stream bytes, or an error if decoding fails.
+///
+/// # Errors
+///
+/// Returns `PageExtractionError` if:
+/// - Content stream resolution fails
+/// - Stream decoding fails
+/// - Decompression bomb limit is exceeded
 ///
 /// # Memory Behavior
 ///
@@ -98,7 +106,8 @@ fn decode_page_content_streams(
     resolver: &crate::parser::xref::XrefResolver,
     source: &dyn crate::parser::stream::PdfSource,
     max_decompress_bytes: u64,
-) -> Vec<u8> {
+    page_index: usize,
+) -> Result<Vec<u8>, PageExtractionError> {
     use crate::parser::stream::{decode_stream, ExtractionOptions as StreamExtractionOptions};
 
     // Create stream extraction options with the bomb limit
@@ -117,6 +126,15 @@ fn decode_page_content_streams(
                     // Decode this stream - it will be dropped after this iteration
                     let decoded = decode_stream(stream, source, &stream_opts, &mut doc_counter);
 
+                    // Check if we exceeded the bomb limit
+                    if doc_counter > max_decompress_bytes {
+                        return Err(PageExtractionError::ContentStreamTooLarge {
+                            page_index,
+                            size_bytes: doc_counter,
+                            max_bytes: max_decompress_bytes,
+                        });
+                    }
+
                     // Extend the accumulated content
                     all_decoded.extend_from_slice(&decoded);
 
@@ -124,14 +142,22 @@ fn decode_page_content_streams(
                     drop(decoded);
                 }
             }
-            Err(_) => {
-                // Failed to resolve stream - skip it
-                continue;
+            Err(e) => {
+                // Failed to resolve stream - return error
+                return Err(PageExtractionError::ContentStreamDecodeFailed {
+                    page_index,
+                    message: format!("Failed to resolve stream reference: {:?}", e),
+                });
             }
         }
     }
 
-    all_decoded
+    // Check for empty content stream
+    if all_decoded.is_empty() {
+        return Err(PageExtractionError::MissingContentStream { page_index });
+    }
+
+    Ok(all_decoded)
 }
 
 /// Process a page's content streams to produce glyph::Glyph structs.
@@ -151,13 +177,20 @@ fn decode_page_content_streams(
 ///
 /// # Returns
 ///
-/// A vector of Glyph structs, or an error if processing fails.
+/// A `Result` containing a vector of Glyph structs, or an error if processing fails.
+///
+/// # Errors
+///
+/// Returns `PageExtractionError` if:
+/// - Content stream processing fails
+/// - Resources are invalid or missing
+/// - Font resolution fails
 fn process_content_stream_to_glyphs(
     decoded_streams: &[u8],
     page: &crate::parser::pages::PageDict,
     resolver: &crate::parser::xref::XrefResolver,
     page_index: usize,
-) -> Result<Vec<Glyph>> {
+) -> Result<Vec<Glyph>, PageExtractionError> {
     use crate::content_stream::{process_with_mode, ProcessingMode};
     use crate::font::UnicodeSource;
     use crate::graphics_state::Color;
@@ -165,13 +198,25 @@ fn process_content_stream_to_glyphs(
     // For now, use the existing content_stream processor and convert results
     // This is a bridge implementation - a full Phase 3 processor would use glyph::emit_glyph directly
     // The PageDict already has resources merged during page tree traversal
+
+    // Validate resources exist
+    if page.resources.is_none() {
+        return Err(PageExtractionError::InvalidResources {
+            page_index,
+            message: "Page dictionary has no resources".to_string(),
+        });
+    }
+
     let content_glyphs = process_with_mode(
         decoded_streams,
         &page.resources,
         ProcessingMode::Normal,
         None,
     )
-    .map_err(|e| anyhow::anyhow!("Content stream processing failed: {:?}", e))?;
+    .map_err(|e| PageExtractionError::GlyphExtractionFailed {
+        page_index,
+        message: format!("Content stream processing failed: {:?}", e),
+    })?;
 
     // Convert content_stream::Glyph to glyph::Glyph
     let mut glyphs = Vec::with_capacity(content_glyphs.len());
@@ -670,6 +715,11 @@ pub fn extract_pdf(
                 break;
             }
         }
+    }
+
+    // Check for empty document - return specific error
+    if all_pages.is_empty() {
+        return Err(PageExtractionError::NoPagesInDocument.into());
     }
 
     // Parse page range if specified
@@ -1759,6 +1809,11 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
         }
     }
 
+    // Check for empty document - return specific error
+    if all_pages.is_empty() {
+        return Err(PageExtractionError::NoPagesInDocument.into());
+    }
+
     // Parse page range if specified
     let mut page_count = all_pages.len();
     let mut page_range_diagnostics = Vec::new();
@@ -2319,7 +2374,19 @@ fn find_startxref(source: &FileSource) -> anyhow::Result<u64> {
 ///
 /// # Returns
 ///
-/// A `PageResultInternal` with grid information preserved for two-page detection.
+/// A `Result` containing `PageResultInternal` with grid information preserved for two-page detection.
+///
+/// # Errors
+///
+/// Returns `PageExtractionError` if:
+/// - Page has invalid or missing media box
+/// - Page has invalid dimensions (width/height <= 0)
+/// - Page has invalid rotation value
+/// - Content stream decoding fails
+/// - Glyph extraction fails
+/// - Layout analysis fails
+/// - Table detection fails
+/// - Receipt generation fails
 fn extract_page_from_dict(
     fingerprint: &str,
     page_index: usize,
@@ -2327,9 +2394,38 @@ fn extract_page_from_dict(
     options: &ExtractionOptions,
     source: Option<&dyn crate::parser::stream::PdfSource>,
     resolver: Option<&crate::parser::xref::XrefResolver>,
-) -> Result<PageResultInternal> {
+) -> Result<PageResultInternal, PageExtractionError> {
+    // Validate media box
     let [x0, y0, x1, y1] = page.media_box;
+
+    // Check media box is valid
+    if x1 <= x0 || y1 <= y0 {
+        return Err(PageExtractionError::InvalidMediaBox {
+            page_index,
+            media_box: Some([x0, y0, x1, y1]),
+        });
+    }
+
+    let page_width = x1 - x0;
     let page_height = y1 - y0;
+
+    // Validate dimensions are positive
+    if page_width <= 0.0 || page_height <= 0.0 {
+        return Err(PageExtractionError::InvalidDimensions {
+            page_index,
+            width: page_width,
+            height: page_height,
+        });
+    }
+
+    // Validate rotation
+    let rotation = page.rotate;
+    if rotation != 0 && rotation != 90 && rotation != 180 && rotation != 270 {
+        return Err(PageExtractionError::InvalidRotation {
+            page_index,
+            rotation,
+        });
+    }
 
     // Lazy decode content streams if source and resolver are provided
     let decoded_streams = if let (Some(src), Some(res)) = (source, resolver) {
@@ -2338,7 +2434,8 @@ fn extract_page_from_dict(
             res,
             src,
             DEFAULT_MAX_DECOMPRESS_BYTES,
-        ))
+            page_index,
+        )?)
     } else {
         None
     };
@@ -2357,7 +2454,7 @@ fn extract_page_from_dict(
     let mut spans = merge_glyphs_to_spans(&glyphs);
 
     // Step 3: Cluster spans into lines (Phase 4.2)
-    let page_width_f32 = (x1 - x0) as f32;
+    let page_width_f32 = page_width as f32;
     let page_height_f32 = page_height as f32;
     let mut lines = cluster_spans_into_lines(spans, page_height_f32);
 
@@ -2457,7 +2554,12 @@ fn extract_page_from_dict(
 
     // Step 8: Detect tables using line-based and borderless detection
     let tables = if let Some(content_bytes) = decoded_streams.as_ref() {
-        detect_tables_on_page(page, content_bytes, page_index)?
+        detect_tables_on_page(page, content_bytes, page_index).map_err(|e| {
+            PageExtractionError::TableDetectionFailed {
+                page_index,
+                message: format!("{:?}", e),
+            }
+        })?
     } else {
         Vec::new()
     };
@@ -2483,7 +2585,10 @@ fn extract_page_from_dict(
                     options.receipts,
                     #[cfg(feature = "receipts")]
                     None,
-                )?;
+                ).map_err(|e| PageExtractionError::ReceiptGenerationFailed {
+                    page_index,
+                    message: format!("Failed to generate receipt for span: {:?}", e),
+                })?;
 
                 json_spans.push(SpanJson {
                     text: span.text.clone(),
@@ -2532,7 +2637,10 @@ fn extract_page_from_dict(
             options.receipts,
             #[cfg(feature = "receipts")]
             None,
-        )?;
+        ).map_err(|e| PageExtractionError::ReceiptGenerationFailed {
+            page_index,
+            message: format!("Failed to generate receipt for block: {:?}", e),
+        })?;
 
         json_blocks.push(BlockJson {
             kind: block_kind.to_string(),
@@ -2568,7 +2676,10 @@ fn extract_page_from_dict(
             options.receipts,
             #[cfg(feature = "receipts")]
             None,
-        )?;
+        ).map_err(|e| PageExtractionError::ReceiptGenerationFailed {
+            page_index,
+            message: format!("Failed to generate receipt for table: {:?}", e),
+        })?;
 
         json_blocks.push(BlockJson {
             kind: "table".to_string(),
@@ -2765,7 +2876,8 @@ impl ExtractionResult {
 pub mod page_helpers {
 
     use crate::extract::{ExtractionResult, PageResult};
-    use anyhow::{anyhow, Result};
+    use crate::page_extraction_error::{PageExtractionError, PageResult as PageExtractionResult};
+    use anyhow::Result;
 
     /// Extract all Page objects from an ExtractionResult.
     ///
@@ -2782,7 +2894,7 @@ pub mod page_helpers {
     ///
     /// # Errors
     ///
-    /// Returns an error if the ExtractionResult contains no pages.
+    /// Returns `PageExtractionError::NoPagesInDocument` if the ExtractionResult contains no pages.
     ///
     /// # Examples
     ///
@@ -2792,11 +2904,9 @@ pub mod page_helpers {
     ///     println!("Page {}: {}x{}", page.index, page.width.unwrap_or(0), page.height.unwrap_or(0));
     /// }
     /// ```
-    pub fn get_pages(result: &ExtractionResult) -> Result<&[PageResult]> {
+    pub fn get_pages(result: &ExtractionResult) -> PageExtractionResult<&[PageResult]> {
         if result.pages.is_empty() {
-            return Err(anyhow!(
-                "ExtractionResult contains no pages. Document may be empty or extraction failed."
-            ));
+            return Err(PageExtractionError::NoPagesInDocument);
         }
         Ok(&result.pages)
     }
@@ -2817,9 +2927,8 @@ pub mod page_helpers {
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - The page index is out of bounds
-    /// - The ExtractionResult contains no pages
+    /// Returns `PageExtractionError::NoPagesInDocument` if the document has no pages.
+    /// Returns `PageExtractionError::IndexOutOfBounds` if the page index is out of bounds.
     ///
     /// # Examples
     ///
@@ -2831,16 +2940,15 @@ pub mod page_helpers {
     /// let page_count = page_helpers::page_count(&result)?;
     /// let last_page = page_helpers::get_page(&result, page_count - 1)?;
     /// ```
-    pub fn get_page(result: &ExtractionResult, index: usize) -> Result<&PageResult> {
+    pub fn get_page(result: &ExtractionResult, index: usize) -> PageExtractionResult<&PageResult> {
         let pages = get_pages(result)?;
+        let page_count = pages.len();
 
-        if index >= pages.len() {
-            return Err(anyhow!(
-                "Page index {} out of bounds. Document has {} pages (valid indices: 0-{})",
-                index,
-                pages.len(),
-                pages.len() - 1
-            ));
+        if index >= page_count {
+            return Err(PageExtractionError::IndexOutOfBounds {
+                requested: index,
+                available: page_count,
+            });
         }
 
         Ok(&pages[index])
@@ -2861,7 +2969,7 @@ pub mod page_helpers {
     ///
     /// # Errors
     ///
-    /// Returns an error if the ExtractionResult contains no pages.
+    /// Returns `PageExtractionError::NoPagesInDocument` if the document has no pages.
     ///
     /// # Examples
     ///
@@ -2872,7 +2980,7 @@ pub mod page_helpers {
     ///     first_page.height.unwrap_or(0)
     /// );
     /// ```
-    pub fn first_page(result: &ExtractionResult) -> Result<&PageResult> {
+    pub fn first_page(result: &ExtractionResult) -> PageExtractionResult<&PageResult> {
         get_page(result, 0)
     }
 
@@ -2891,7 +2999,7 @@ pub mod page_helpers {
     ///
     /// # Errors
     ///
-    /// Returns an error if the ExtractionResult contains no pages.
+    /// Returns `PageExtractionError::NoPagesInDocument` if the document has no pages.
     ///
     /// # Examples
     ///
@@ -2899,7 +3007,7 @@ pub mod page_helpers {
     /// let last_page = page_helpers::last_page(&result)?;
     /// println!("Last page index: {}", last_page.index);
     /// ```
-    pub fn last_page(result: &ExtractionResult) -> Result<&PageResult> {
+    pub fn last_page(result: &ExtractionResult) -> PageExtractionResult<&PageResult> {
         let pages = get_pages(result)?;
         get_page(result, pages.len() - 1)
     }
@@ -3038,6 +3146,164 @@ pub mod page_helpers {
     /// ```
     pub fn is_multi_page(result: &ExtractionResult) -> bool {
         result.pages.len() > 1
+    }
+
+    /// Validate that a page has valid dimensional data (width and height).
+    ///
+    /// This helper validates that a page contains valid dimensional
+    /// information and returns a specific error if validation fails.
+    ///
+    /// # Arguments
+    ///
+    /// * `page` - Reference to the PageResult to validate
+    /// * `page_index` - The page index for error reporting
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if the page has valid dimensions, `Err(PageExtractionError)` otherwise.
+    ///
+    /// # Errors
+    ///
+    /// Returns `PageExtractionError::InvalidDimensions` if width or height are missing or invalid.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let page = page_helpers::get_page(&result, 0)?;
+    /// page_helpers::validate_page_dimensions(&page, 0)?;
+    /// ```
+    pub fn validate_page_dimensions(
+        page: &PageResult,
+        page_index: usize,
+    ) -> PageExtractionResult<()> {
+        let width = page.width.unwrap_or(0.0);
+        let height = page.height.unwrap_or(0.0);
+
+        if width <= 0.0 || height <= 0.0 {
+            return Err(PageExtractionError::InvalidDimensions {
+                page_index,
+                width: width as f64,
+                height: height as f64,
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Validate that a page has a valid rotation value.
+    ///
+    /// This helper validates that a page's rotation is one of the allowed values.
+    ///
+    /// # Arguments
+    ///
+    /// * `page` - Reference to the PageResult to validate
+    /// * `page_index` - The page index for error reporting
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if the page has valid rotation, `Err(PageExtractionError)` otherwise.
+    ///
+    /// # Errors
+    ///
+    /// Returns `PageExtractionError::InvalidRotation` if rotation is not 0, 90, 180, or 270.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let page = page_helpers::get_page(&result, 0)?;
+    /// page_helpers::validate_page_rotation(&page, 0)?;
+    /// ```
+    pub fn validate_page_rotation(
+        page: &PageResult,
+        page_index: usize,
+    ) -> PageExtractionResult<()> {
+        if let Some(rotation) = page.rotation {
+            let rotation_i32 = rotation as i32;
+            if rotation_i32 != 0 && rotation_i32 != 90 && rotation_i32 != 180 && rotation_i32 != 270 {
+                return Err(PageExtractionError::InvalidRotation {
+                    page_index,
+                    rotation: rotation_i32,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Validate that a page has all required fields populated.
+    ///
+    /// This helper checks that essential page fields are present and valid.
+    ///
+    /// # Arguments
+    ///
+    /// * `page` - Reference to the PageResult to validate
+    /// * `page_index` - The page index for error reporting
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if all required fields are present, `Err(PageExtractionError)` otherwise.
+    ///
+    /// # Errors
+    ///
+    /// Returns `PageExtractionError::MissingRequiredFields` if required fields are missing.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let page = page_helpers::get_page(&result, 0)?;
+    /// page_helpers::validate_required_fields(&page, 0)?;
+    /// ```
+    pub fn validate_required_fields(
+        page: &PageResult,
+        page_index: usize,
+    ) -> PageExtractionResult<()> {
+        let mut missing_fields = Vec::new();
+
+        // Check for essential fields
+        if page.width.is_none() {
+            missing_fields.push("width".to_string());
+        }
+        if page.height.is_none() {
+            missing_fields.push("height".to_string());
+        }
+
+        if !missing_fields.is_empty() {
+            return Err(PageExtractionError::MissingRequiredFields {
+                page_index,
+                fields: missing_fields,
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Perform comprehensive validation on a page.
+    ///
+    /// This helper runs all validation checks and returns the first error encountered.
+    ///
+    /// # Arguments
+    ///
+    /// * `page` - Reference to the PageResult to validate
+    /// * `page_index` - The page index for error reporting
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if all validations pass, `Err(PageExtractionError)` otherwise.
+    ///
+    /// # Errors
+    ///
+    /// Returns any of the `PageExtractionError` variants if validation fails.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let page = page_helpers::get_page(&result, 0)?;
+    /// page_helpers::validate_page(&page, 0)?;
+    /// ```
+    pub fn validate_page(page: &PageResult, page_index: usize) -> PageExtractionResult<()> {
+        validate_required_fields(page, page_index)?;
+        validate_page_dimensions(page, page_index)?;
+        validate_page_rotation(page, page_index)?;
+        Ok(())
     }
 }
 
@@ -3810,6 +4076,278 @@ startxref
             // Test dimension validation
             let valid_pages = page_helpers::get_pages_with_valid_dimensions(&result);
             assert!(!valid_pages.is_empty(), "Should have at least one valid page");
+        }
+
+        // Tests for updated PageExtractionError error handling
+        #[test]
+        fn test_get_pages_empty_document_returns_page_extraction_error() {
+            use crate::page_extraction_error::PageExtractionError;
+            let result = create_test_result(vec![]);
+
+            let error = page_helpers::get_pages(&result).unwrap_err();
+            assert!(matches!(error, PageExtractionError::NoPagesInDocument));
+        }
+
+        #[test]
+        fn test_get_page_out_of_bounds_returns_specific_error() {
+            use crate::page_extraction_error::PageExtractionError;
+            let pages = vec![create_test_page(0, Some(612.0), Some(792.0))];
+            let result = create_test_result(pages);
+
+            let error = page_helpers::get_page(&result, 5).unwrap_err();
+            match error {
+                PageExtractionError::IndexOutOfBounds { requested, available } => {
+                    assert_eq!(requested, 5);
+                    assert_eq!(available, 1);
+                }
+                _ => panic!("Expected IndexOutOfBounds error"),
+            }
+        }
+
+        #[test]
+        fn test_first_page_empty_returns_page_extraction_error() {
+            use crate::page_extraction_error::PageExtractionError;
+            let result = create_test_result(vec![]);
+
+            let error = page_helpers::first_page(&result).unwrap_err();
+            assert!(matches!(error, PageExtractionError::NoPagesInDocument));
+        }
+
+        #[test]
+        fn test_validate_page_dimensions_valid() {
+            let page = create_test_page(0, Some(612.0), Some(792.0));
+            assert!(page_helpers::validate_page_dimensions(&page, 0).is_ok());
+        }
+
+        #[test]
+        fn test_validate_page_dimensions_zero_width() {
+            use crate::page_extraction_error::PageExtractionError;
+            let page = create_test_page(0, Some(0.0), Some(792.0));
+
+            let error = page_helpers::validate_page_dimensions(&page, 0).unwrap_err();
+            match error {
+                PageExtractionError::InvalidDimensions { page_index, width, height } => {
+                    assert_eq!(page_index, 0);
+                    assert_eq!(width, 0.0);
+                    assert_eq!(height, 792.0);
+                }
+                _ => panic!("Expected InvalidDimensions error"),
+            }
+        }
+
+        #[test]
+        fn test_validate_page_dimensions_zero_height() {
+            use crate::page_extraction_error::PageExtractionError;
+            let page = create_test_page(0, Some(612.0), Some(0.0));
+
+            let error = page_helpers::validate_page_dimensions(&page, 0).unwrap_err();
+            match error {
+                PageExtractionError::InvalidDimensions { page_index, width, height } => {
+                    assert_eq!(page_index, 0);
+                    assert_eq!(width, 612.0);
+                    assert_eq!(height, 0.0);
+                }
+                _ => panic!("Expected InvalidDimensions error"),
+            }
+        }
+
+        #[test]
+        fn test_validate_page_dimensions_negative() {
+            use crate::page_extraction_error::PageExtractionError;
+            let page = create_test_page(0, Some(-100.0), Some(792.0));
+
+            let error = page_helpers::validate_page_dimensions(&page, 0).unwrap_err();
+            match error {
+                PageExtractionError::InvalidDimensions { page_index, width, .. } => {
+                    assert_eq!(page_index, 0);
+                    assert_eq!(width, -100.0);
+                }
+                _ => panic!("Expected InvalidDimensions error"),
+            }
+        }
+
+        #[test]
+        fn test_validate_page_dimensions_missing_width() {
+            use crate::page_extraction_error::PageExtractionError;
+            let page = create_test_page(0, None, Some(792.0));
+
+            let error = page_helpers::validate_page_dimensions(&page, 0).unwrap_err();
+            match error {
+                PageExtractionError::InvalidDimensions { page_index, width, height } => {
+                    assert_eq!(page_index, 0);
+                    assert_eq!(width, 0.0);
+                    assert_eq!(height, 792.0);
+                }
+                _ => panic!("Expected InvalidDimensions error"),
+            }
+        }
+
+        #[test]
+        fn test_validate_page_rotation_valid_values() {
+            let valid_rotations = vec![Some(0), Some(90), Some(180), Some(270), None];
+            for rotation in valid_rotations {
+                let mut page = create_test_page(0, Some(612.0), Some(792.0));
+                page.rotation = rotation;
+                assert!(page_helpers::validate_page_rotation(&page, 0).is_ok());
+            }
+        }
+
+        #[test]
+        fn test_validate_page_rotation_invalid_value() {
+            use crate::page_extraction_error::PageExtractionError;
+            let mut page = create_test_page(0, Some(612.0), Some(792.0));
+            page.rotation = Some(45);
+
+            let error = page_helpers::validate_page_rotation(&page, 0).unwrap_err();
+            match error {
+                PageExtractionError::InvalidRotation { page_index, rotation } => {
+                    assert_eq!(page_index, 0);
+                    assert_eq!(rotation, 45);
+                }
+                _ => panic!("Expected InvalidRotation error"),
+            }
+        }
+
+        #[test]
+        fn test_validate_required_fields_all_present() {
+            let page = create_test_page(0, Some(612.0), Some(792.0));
+            assert!(page_helpers::validate_required_fields(&page, 0).is_ok());
+        }
+
+        #[test]
+        fn test_validate_required_fields_missing_width() {
+            use crate::page_extraction_error::PageExtractionError;
+            let page = create_test_page(0, None, Some(792.0));
+
+            let error = page_helpers::validate_required_fields(&page, 0).unwrap_err();
+            match error {
+                PageExtractionError::MissingRequiredFields { page_index, fields } => {
+                    assert_eq!(page_index, 0);
+                    assert!(fields.contains(&"width".to_string()));
+                    assert!(!fields.contains(&"height".to_string()));
+                }
+                _ => panic!("Expected MissingRequiredFields error"),
+            }
+        }
+
+        #[test]
+        fn test_validate_required_fields_missing_both() {
+            use crate::page_extraction_error::PageExtractionError;
+            let page = create_test_page(0, None, None);
+
+            let error = page_helpers::validate_required_fields(&page, 0).unwrap_err();
+            match error {
+                PageExtractionError::MissingRequiredFields { page_index, fields } => {
+                    assert_eq!(page_index, 0);
+                    assert!(fields.contains(&"width".to_string()));
+                    assert!(fields.contains(&"height".to_string()));
+                    assert_eq!(fields.len(), 2);
+                }
+                _ => panic!("Expected MissingRequiredFields error"),
+            }
+        }
+
+        #[test]
+        fn test_validate_page_comprehensive() {
+            // Test a valid page
+            let valid_page = create_test_page(0, Some(612.0), Some(792.0));
+            assert!(page_helpers::validate_page(&valid_page, 0).is_ok());
+
+            // Test invalid dimensions
+            let invalid_dim_page = create_test_page(0, Some(0.0), Some(792.0));
+            assert!(page_helpers::validate_page(&invalid_dim_page, 0).is_err());
+
+            // Test invalid rotation
+            let mut invalid_rot_page = create_test_page(0, Some(612.0), Some(792.0));
+            invalid_rot_page.rotation = Some(45);
+            assert!(page_helpers::validate_page(&invalid_rot_page, 0).is_err());
+
+            // Test missing fields
+            let missing_fields_page = create_test_page(0, None, Some(792.0));
+            assert!(page_helpers::validate_page(&missing_fields_page, 0).is_err());
+        }
+
+        #[test]
+        fn test_error_messages_are_descriptive() {
+            use crate::page_extraction_error::PageExtractionError;
+
+            // Test NoPagesInDocument message
+            let error = PageExtractionError::NoPagesInDocument;
+            assert!(error.to_string().contains("no pages"));
+
+            // Test IndexOutOfBounds message
+            let error = PageExtractionError::IndexOutOfBounds {
+                requested: 10,
+                available: 5,
+            };
+            let msg = error.to_string();
+            assert!(msg.contains("10"));
+            assert!(msg.contains("5"));
+            assert!(msg.contains("out of bounds"));
+
+            // Test InvalidDimensions message
+            let error = PageExtractionError::InvalidDimensions {
+                page_index: 2,
+                width: 0.0,
+                height: 792.0,
+            };
+            let msg = error.to_string();
+            assert!(msg.contains("Page 2"));
+            assert!(msg.contains("invalid dimensions"));
+
+            // Test InvalidRotation message
+            let error = PageExtractionError::InvalidRotation {
+                page_index: 1,
+                rotation: 45,
+            };
+            let msg = error.to_string();
+            assert!(msg.contains("Page 1"));
+            assert!(msg.contains("45"));
+            assert!(msg.contains("invalid rotation"));
+
+            // Test MissingRequiredFields message
+            let error = PageExtractionError::MissingRequiredFields {
+                page_index: 0,
+                fields: vec!["width".to_string(), "height".to_string()],
+            };
+            let msg = error.to_string();
+            assert!(msg.contains("Page 0"));
+            assert!(msg.contains("width"));
+            assert!(msg.contains("height"));
+            assert!(msg.contains("missing required fields"));
+        }
+
+        #[test]
+        fn test_page_extraction_error_implements_std_error() {
+            use std::error::Error;
+            use crate::page_extraction_error::PageExtractionError;
+
+            let error = PageExtractionError::NoPagesInDocument;
+            assert!(error.source().is_none());
+
+            let error = PageExtractionError::IndexOutOfBounds {
+                requested: 5,
+                available: 3,
+            };
+            assert!(error.source().is_none());
+        }
+
+        #[test]
+        fn test_page_extraction_error_send_sync() {
+            use std::any::TypeId;
+            use crate::page_extraction_error::PageExtractionError;
+
+            // Verify PageExtractionError implements Send and Sync
+            assert!(TypeId::of::<PageExtractionError>() == TypeId::of::<PageExtractionError>());
+        }
+
+        #[test]
+        fn test_error_conversion_to_anyhow() {
+            use crate::page_extraction_error::PageExtractionError;
+
+            let page_err = PageExtractionError::NoPagesInDocument;
+            let anyhow_err = anyhow::Error::from(page_err);
+            assert!(anyhow_err.to_string().contains("no pages"));
         }
     }
 }
