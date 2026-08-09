@@ -2321,11 +2321,22 @@ mod tests {
 
     #[test]
     fn test_smoke_classify_basic_vector_page() {
-        // Basic smoke test: verify classify_page works with a simple vector PDF page
-        // This test verifies the basic functionality:
-        // 1. Function returns Ok() for valid input
-        // 2. Output structure is correct (classification, confidence)
-        // 3. Reasonable classification and confidence values
+        // Smoke test: verify classify_page output format for a simple vector PDF page.
+        //
+        // OUTPUT FORMAT DOCUMENTATION:
+        // classify_page returns PageClassification struct with:
+        // - class: PageClass enum (Vector, Scanned, Hybrid, or BrokenVector)
+        // - confidence: f32 in range [0.0, 1.0]
+        // - hybrid_cells: Option<BTreeSet<usize>> (None for non-Hybrid pages)
+        //
+        // The struct serializes to JSON with top-level fields:
+        // {"class":"Vector|Scanned|Hybrid|BrokenVector","confidence":0.0-1.0,"hybrid_cells":null|[...]}
+        //
+        // This test verifies:
+        // 1. classify_page executes successfully for valid input (no Result/Ok, direct return)
+        // 2. Output structure contains all required fields with correct types
+        // 3. Output can be serialized to valid JSON with expected top-level fields
+        // 4. Clear error messages identify specific format violations
 
         let mut ctx = PageContext::new();
         // Simple vector page: text-only, born-digital PDF
@@ -2341,35 +2352,92 @@ mod tests {
         ctx.height = 792.0;
         ctx.rotation = 0;
 
-        // Call classify_page - returns PageClassification directly
+        // Call classify_page - returns PageClassification directly (no Result type)
+        // Function is infallible for valid PageContext input
         let result = classify_page(&ctx);
 
-        // Verify basic output structure
-        // Check that classification exists and is reasonable
-        assert!(!matches!(result.class, PageClass::Hybrid)); // Not hybrid for simple page
-        assert!(!matches!(result.class, PageClass::BrokenVector)); // Not broken vector
+        // OUTPUT FORMAT VERIFICATION
+        // All assertions include descriptive messages for format mismatch diagnosis
 
-        // Check that confidence is in valid range [0.0, 1.0]
+        // Verify required field: class (PageClass enum)
+        // Must be one of: Vector, Scanned, Hybrid, BrokenVector
+        let valid_classes = vec![PageClass::Vector, PageClass::Scanned, PageClass::Hybrid, PageClass::BrokenVector];
+        assert!(valid_classes.contains(&result.class),
+            "OUTPUT FORMAT ERROR: class field must be valid PageClass enum, got {:?}. Expected one of: {:?}",
+            result.class, valid_classes);
+
+        // For simple vector page, should specifically be Vector (not Hybrid or BrokenVector)
+        assert_eq!(result.class, PageClass::Vector,
+            "OUTPUT FORMAT ERROR: Expected PageClass::Vector for simple vector page, got {:?}. \
+             This suggests classification logic failed or PageContext was misconfigured.",
+            result.class);
+
+        // Verify required field: confidence (f32 in valid range)
         assert!(result.confidence >= 0.0 && result.confidence <= 1.0,
-            "Confidence should be in [0.0, 1.0], got {}", result.confidence);
+            "OUTPUT FORMAT ERROR: confidence must be in range [0.0, 1.0], got {}. \
+             Value out of valid range indicates scoring logic failure.",
+            result.confidence);
 
-        // For a simple vector page, should have reasonable confidence
+        // For simple vector page with high validity, should have reasonable confidence
         assert!(result.confidence > 0.5,
-            "Simple vector page should have confidence > 0.5, got {}", result.confidence);
+            "OUTPUT FORMAT ERROR: Expected confidence > 0.5 for clear vector page, got {}. \
+             Low confidence on simple vector page suggests signal evaluator failure.",
+            result.confidence);
 
-        // Verify hybrid_cells is None for non-hybrid page
+        // Verify optional field: hybrid_cells (Option<BTreeSet<usize>>)
+        // Must be None for non-Hybrid classifications
         assert!(result.hybrid_cells.is_none(),
-            "hybrid_cells should be None for non-hybrid classification");
+            "OUTPUT FORMAT ERROR: hybrid_cells must be None for non-Hybrid classification (got {:?}). \
+             Non-Hybrid pages should not have scanned cell indexes.",
+            result.hybrid_cells);
 
-        // Verify JSON serialization works (basic output format check)
+        // Verify output is not empty/zeroed (format completeness check)
+        assert!(!(result.class == PageClass::Vector && result.confidence == 0.0),
+            "OUTPUT FORMAT ERROR: Classification appears uninitialized (Vector with 0.0 confidence). \
+             This suggests PageClassification::new() was called with default values.");
+
+        // JSON SERIALIZATION VERIFICATION
+        // Verify output can be serialized to JSON with expected structure
         let json_output = serde_json::to_string(&result);
-        assert!(json_output.is_ok(), "PageClassification should serialize to JSON");
+        assert!(json_output.is_ok(),
+            "OUTPUT FORMAT ERROR: PageClassification failed to serialize to JSON: {:?}. \
+             Struct fields may be incompatible with Serialize trait.",
+            json_output.err());
 
         let json_str = json_output.unwrap();
-        assert!(json_str.contains("\"class\":"), "JSON should contain 'class' field");
-        assert!(json_str.contains("\"confidence\":"), "JSON should contain 'confidence' field");
 
-        println!("Smoke test passed: classify_page returned {:?}", result);
+        // Verify JSON contains all expected top-level fields
+        let required_fields = vec!["\"class\"", "\"confidence\"", "\"hybrid_cells\""];
+        for field in required_fields {
+            assert!(json_str.contains(field),
+                "OUTPUT FORMAT ERROR: JSON output missing required field '{}'. \
+                 Got JSON: {}. Expected field present in serialized output.",
+                field, json_str);
+        }
+
+        // Verify JSON is well-formed (can deserialize back to PageClassification)
+        let deserialized: Result<PageClassification, _> = serde_json::from_str(&json_str);
+        assert!(deserialized.is_ok(),
+            "OUTPUT FORMAT ERROR: JSON output is malformed or missing required fields: '{}'. \
+             Deserialization failed: {:?}",
+            json_str, deserialized.err());
+
+        let result_deserialized = deserialized.unwrap();
+        assert_eq!(result.class, result_deserialized.class,
+            "OUTPUT FORMAT ERROR: Round-trip serialization failed: class field mismatch. \
+             Original: {:?}, Deserialized: {:?}",
+            result.class, result_deserialized.class);
+        assert_eq!(result.confidence, result_deserialized.confidence,
+            "OUTPUT FORMAT ERROR: Round-trip serialization failed: confidence mismatch. \
+             Original: {}, Deserialized: {}",
+            result.confidence, result_deserialized.confidence);
+        assert_eq!(result.hybrid_cells, result_deserialized.hybrid_cells,
+            "OUTPUT FORMAT ERROR: Round-trip serialization failed: hybrid_cells mismatch. \
+             Original: {:?}, Deserialized: {:?}",
+            result.hybrid_cells, result_deserialized.hybrid_cells);
+
+        println!("Smoke test passed: classify_page returned valid PageClassification: {:?}", result);
+        println!("JSON output: {}", json_str);
     }
 
     #[test]
