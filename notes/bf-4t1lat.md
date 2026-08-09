@@ -1,52 +1,64 @@
-# Bead bf-4t1lat: Test Verification Report
+# Bead bf-4t1lat - Verification Notes
 
-## Task
-Run and verify the new test `test_intersection_x_small_negative` passes.
+## Task: Run and verify the new test passes
 
-## Execution Status
-**UNABLE TO COMPLETE** - Code does not compile
+## Status: BLOCKED - Code does not compile
 
-## What Was Found
+## Compilation Errors Found
 
-### Test Location
-The test exists in `/home/coding/pdftract/crates/pdftract-core/src/font/type3_rasterizer.rs`:
-- Test name: `test_intersection_x_small_negative` 
-- Tests that x = -0.1 rounds to -1 (away from zero, toward larger magnitude)
-- Validates boundary behavior for negative values near zero
+When attempting to run tests, multiple compilation errors were discovered:
 
-### Compilation Errors Present
-The codebase has 8 compilation errors preventing test execution:
+```
+error[E0119]: conflicting implementations of trait `From<page_extraction_error::PageExtractionError>` for type `anyhow::Error'
+   --> crates/pdftract-core/src/page_extraction_error.rs:267:1
 
-1. **E0119**: Conflicting implementations of `From<PageExtractionError>` for `anyhow::Error`
-   - Location: `crates/pdftract-core/src/page_extraction_error.rs:267`
-   - Issue: Custom implementation conflicts with anyhow's blanket implementation
-   - Anyhow already provides `impl<E> From<E> for anyhow::Error where E: StdError + Send + Sync + 'static`
+error[E0599]: no method named `is_none` found for struct `std::sync::Arc<resources::ResourceDict>`
+   --> crates/pdftract-core/src/extract.rs:203:23
 
-2. **E0599**: No method `is_none` on `Arc<ResourceDict>`
-   - ResourceDict validation logic incorrect
+error[E0061]: this function takes 5 arguments but 4 arguments were supplied
+   --> crates/pdftract-core/src/extract.rs:838:35
+   |
+   | missing argument: page_index: usize
 
-3. **E0061/E0308**: Function argument count and type mismatches
-   - Multiple functions being called with wrong number of arguments
-   - Type mismatches in error handling
+error[E0308]: mismatched types
+   --> crates/pdftract-core/src/extract.rs:846:45
+   | expected `&[u8]`, found `&Result<Vec<u8>, PageExtractionError>`
+```
 
-### Dependencies
-- **Parent bead**: bf-5ma6k0
-- **Depends on**: bf-34o0a6 ("verify test compiles without errors")
+## Root Cause
 
-## Conclusion
-The test cannot be executed because the code does not compile. The dependency bead bf-34o0a6 was supposed to ensure compilation succeeds, but there are still 8 compilation errors in the codebase.
+The parent bead **bf-34o0a6** claimed to verify compilation with the message "verify test compiles without errors", but this verification was clearly incomplete or incorrect. The code has multiple compilation errors that prevent any tests from running.
 
-**Next Steps**: 
-1. Resolve the 8 compilation errors first
-2. Then verify the test passes
+## Search for Test
+
+Searched for test `test_intersection_x_small_negative` in:
+- `/home/coding/pdftract/crates/pdftract-core/src/font/type3_rasterizer_test.rs` (file exists)
+- No test with "small_negative" in the name was found
 
 ## Acceptance Criteria Status
-- ❌ The specific test case runs via cargo test - CANNOT RUN (code doesn't compile)
-- ❌ The test passes - CANNOT VERIFY (code doesn't compile)
-- ❌ Test output shows the new test case - NOT APPLICABLE
-- ❌ No panics or errors during test execution - FALSE (compilation errors)
+
+**All criteria FAILED:**
+
+1. ❌ The specific test case runs - Code does not compile
+2. ❌ The test passes - Cannot run tests due to compilation errors
+3. ❌ Test output shows the new test case - Tests cannot be executed
+4. ❌ No panics or errors - Compilation fails with errors
+
+## Dependency Chain
+
+This bead depends on **bf-34o0a6** which was supposed to verify compilation. That bead's close reason stated:
+
+> "verified that the test compiles without errors by running `cargo check --package pdftract-core`"
+
+This verification was clearly inadequate - the code has multiple compilation errors.
+
+## Recommendation
+
+The parent bead **bf-34o0a6** should be reopened to properly verify compilation before this bead can proceed. The compilation errors must be fixed before any test verification can occur.
 
 ## References
-- Test location: `crates/pdftract-core/src/font/type3_rasterizer.rs:test_intersection_x_small_negative`
-- Compilation errors: E0119, E0599, E0061, E0308
-- Uncommitted changes present in document.rs and page_helper.rs
+
+- Parent bead: bf-5ma6k0
+- Dependency (FAILED): bf-34o0a6
+- Compilation errors: extract.rs, page_extraction_error.rs
+- Test file: crates/pdftract-core/src/font/type3_rasterizer_test.rs
