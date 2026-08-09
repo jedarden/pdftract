@@ -4393,6 +4393,54 @@ mod tests {
     }
 
     #[test]
+    fn test_intersection_x_positive_whole() {
+        // Test case for positive whole number: x = 5.0 → 5
+        // Verifies that intersection_x correctly rounds positive whole numbers
+        let edge = Edge {
+            x: 5,
+            y_min: 0,
+            y_max: 10,
+            dx: 10,
+            dy: 10,
+        };
+
+        let result = edge.intersection_x();
+        assert_eq!(result, 5, "x = 5.0 should round to 5");
+    }
+
+    #[test]
+    fn test_intersection_x_negative_whole() {
+        // Test case for negative whole number: x = -3.0 → -3
+        // Verifies that intersection_x correctly rounds negative whole numbers
+        let edge = Edge {
+            x: -3,
+            y_min: 0,
+            y_max: 10,
+            dx: -10,
+            dy: 10,
+        };
+
+        let result = edge.intersection_x();
+        assert_eq!(result, -3, "x = -3.0 should round to -3");
+    }
+
+    #[test]
+    fn test_intersection_x_zero() {
+        // Test case for zero: x = 0.0 → 0
+        // Verifies that intersection_x correctly handles zero
+        let edge = Edge {
+            x: 0,
+            y_min: 0,
+            y_max: 10,
+            dx: 10,
+            dy: 10,
+        };
+
+        let result = edge.intersection_x();
+        assert_eq!(result, 0, "x = 0.0 should round to 0");
+    }
+
+    #[test]
     fn test_edge_x_field_access_from_aet() {
         // Test that edge.x field is directly readable from AET entries
         // Verifies acceptance criterion: ability to access x-coordinate field from edge structures in AET
@@ -4597,15 +4645,55 @@ mod tests {
     }
 
     #[test]
+    fn test_round_x_small_fractions_round_up() {
+        // Test round_x with small positive fractions that round up to 1
+        // Verifies acceptance criteria for bead bf-4r4p21:
+        // - Small positive fraction: x = 0.5 → 1
+        // - Additional small fractions >= 0.5 all round to 1
+        // Uses round_x directly since Edge stores x as i32
+
+        // Test the exact 0.5 boundary (rounds away from zero)
+        assert_eq!(round_x(0.5), 1, "0.5 should round up to 1 (half-up)");
+
+        // Test small fractions greater than 0.5 (all round to 1)
+        assert_eq!(round_x(0.6), 1, "0.6 should round up to 1");
+        assert_eq!(round_x(0.7), 1, "0.7 should round up to 1");
+        assert_eq!(round_x(0.8), 1, "0.8 should round up to 1");
+        assert_eq!(round_x(0.9), 1, "0.9 should round up to 1");
+        assert_eq!(round_x(0.99), 1, "0.99 should round up to 1");
+
+        // Test larger positive fractions that round up
+        assert_eq!(round_x(5.7), 6, "5.7 should round up to 6");
+        assert_eq!(round_x(1.5), 2, "1.5 should round up to 2");
+        assert_eq!(round_x(2.5), 3, "2.5 should round up to 3");
+    }
+
+    #[test]
+    fn test_round_x_small_fractions_round_down() {
+        // Test round_x with small positive fractions that round down to 0
+        // Shows the boundary: fractions < 0.5 round toward zero
+        // Uses round_x directly since Edge stores x as i32
+
+        // Test small fractions less than 0.5 (all round to 0)
+        assert_eq!(round_x(0.1), 0, "0.1 should round down to 0");
+        assert_eq!(round_x(0.2), 0, "0.2 should round down to 0");
+        assert_eq!(round_x(0.3), 0, "0.3 should round down to 0");
+        assert_eq!(round_x(0.4), 0, "0.4 should round down to 0");
+        assert_eq!(round_x(0.49), 0, "0.49 should round down to 0");
+        assert_eq!(round_x(0.499), 0, "0.499 should round down to 0");
+
+        // Test larger fractions that round down
+        assert_eq!(round_x(5.3), 5, "5.3 should round down to 5");
+        assert_eq!(round_x(5.4), 5, "5.4 should round down to 5");
+    }
+
+    #[test]
     fn test_round_x_fractional_rounds_down() {
         // Test round_x helper with fractional values that should round down
         // Verifies acceptance criterion: test case with fractional x value that should round down
         // Uses round_x directly since Edge stores x as i32
 
         // Test fractional values that round down (< 0.5 rounds toward zero)
-        assert_eq!(round_x(5.3), 5, "5.3 should round down to 5");
-        assert_eq!(round_x(5.4), 5, "5.4 should round down to 5");
-        assert_eq!(round_x(0.4), 0, "0.4 should round down to 0");
         assert_eq!(round_x(10.2), 10, "10.2 should round down to 10");
         assert_eq!(round_x(2.49), 2, "2.49 should round down to 2");
 
