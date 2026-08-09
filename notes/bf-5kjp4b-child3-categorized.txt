@@ -1,0 +1,198 @@
+# Test File Warnings - Categorized Report
+
+Generated: 2026-08-09
+Bead: bf-5kjp4b-child-3
+
+This report categorizes all warnings specific to test files from the cargo check output.
+
+---
+
+## Detailed Test File Warnings
+
+### Warnings with Explicit File Paths
+
+
+---
+
+### Security Test Harness (TH-NN) Warnings
+
+warning: `pdftract-cli` (test "TH-09-inspector-xss") generated 1 warning (run `cargo fix --test "TH-09-inspector-xss" -p pdftract-cli` to apply 1 suggestion)
+warning: `pdftract-cli` (test "TH-08-log-audit") generated 1 warning (run `cargo fix --test "TH-08-log-audit" -p pdftract-cli` to apply 1 suggestion)
+warning: `pdftract-core` (test "TH-03-mcp-no-auth") generated 5 warnings (run `cargo fix --test "TH-03-mcp-no-auth" -p pdftract-core` to apply 3 suggestions)
+
+---
+
+### Property Test (proptest) Warnings
+
+warning: `pdftract-core` (test "verify_proptest_catches_bugs") generated 1 warning (run `cargo fix --test "verify_proptest_catches_bugs" -p pdftract-core` to apply 1 suggestion)
+warning: unused import: `proptest::prelude::*`
+warning: `pdftract-core` (test "object_parser_proptest") generated 2 warnings (run `cargo fix --test "object_parser_proptest" -p pdftract-core` to apply 2 suggestions)
+
+---
+
+## Warning Type Statistics
+
+| Warning Type | Count |
+|--------------|-------|
+| unused_imports | 242 |
+| unused_variables | 131 |
+| dead_code | 18 |
+| unused_mut | 6 |
+| unused_assignments | 4 |
+| unreachable_patterns | 22 |
+| unused_doc_comments | 3 |
+
+## Test File Warning Summary
+
+Individual test files that generated warnings:
+
+warning: `pdftract-cli` (test "test_legal_filing") generated 3 warnings (run `cargo fix --test "test_legal_filing" -p pdftract-cli` to apply 3 suggestions)
+warning: `pdftract-cli` (test "single_page_access") generated 2 warnings (run `cargo fix --test "single_page_access" -p pdftract-cli` to apply 1 suggestion)
+warning: `pdftract-cli` (test "cli_invocation_fixtures") generated 3 warnings (run `cargo fix --test "cli_invocation_fixtures" -p pdftract-cli` to apply 3 suggestions)
+warning: `pdftract-cli` (test "test_contract") generated 3 warnings (run `cargo fix --test "test_contract" -p pdftract-cli` to apply 3 suggestions)
+warning: `pdftract-cli` (test "conformance") generated 4 warnings (run `cargo fix --test "conformance" -p pdftract-cli` to apply 4 suggestions)
+warning: `pdftract-cli` (test "test_scientific_paper") generated 3 warnings (run `cargo fix --test "test_scientific_paper" -p pdftract-cli` to apply 3 suggestions)
+warning: `pdftract-cli` (test "TH-09-inspector-xss") generated 1 warning (run `cargo fix --test "TH-09-inspector-xss" -p pdftract-cli` to apply 1 suggestion)
+warning: `pdftract-cli` (test "fixture_discovery") generated 1 warning (1 duplicate)
+warning: `pdftract-cli` (test "test_book_chapter") generated 1 warning (run `cargo fix --test "test_book_chapter" -p pdftract-cli` to apply 1 suggestion)
+warning: `pdftract-cli` (test "test_form") generated 2 warnings (run `cargo fix --test "test_form" -p pdftract-cli` to apply 2 suggestions)
+warning: `pdftract-cli` (test "forms_integration") generated 1 warning (1 duplicate)
+warning: `pdftract-cli` (test "test_slide_deck") generated 3 warnings (run `cargo fix --test "test_slide_deck" -p pdftract-cli` to apply 3 suggestions)
+warning: `pdftract-cli` (test "test_encryption_unsupported") generated 2 warnings (run `cargo fix --test "test_encryption_unsupported" -p pdftract-cli` to apply 2 suggestions)
+warning: `pdftract-cli` (test "test_header_flag") generated 1 warning (run `cargo fix --test "test_header_flag" -p pdftract-cli` to apply 1 suggestion)
+warning: `pdftract-cli` (test "multi_output_validation") generated 1 warning (run `cargo fix --test "multi_output_validation" -p pdftract-cli` to apply 1 suggestion)
+warning: `pdftract-cli` (test "test_encryption_errors") generated 5 warnings (run `cargo fix --test "test_encryption_errors" -p pdftract-cli` to apply 5 suggestions)
+warning: `pdftract-cli` (test "TH-08-log-audit") generated 1 warning (run `cargo fix --test "TH-08-log-audit" -p pdftract-cli` to apply 1 suggestion)
+warning: `pdftract-core` (test "test_decoder_debug") generated 2 warnings (run `cargo fix --test "test_decoder_debug" -p pdftract-core` to apply 2 suggestions)
+warning: `pdftract-core` (test "test_lzw_debug") generated 1 warning (run `cargo fix --test "test_lzw_debug" -p pdftract-core` to apply 1 suggestion)
+warning: `pdftract-core` (test "debug_fingerprint_fixtures") generated 2 warnings (run `cargo fix --test "debug_fingerprint_fixtures" -p pdftract-core` to apply 2 suggestions)
+warning: `pdftract-core` (test "debug_fingerprint") generated 1 warning (run `cargo fix --test "debug_fingerprint" -p pdftract-core` to apply 1 suggestion)
+warning: `pdftract-core` (test "test_sdk_smoke") generated 1 warning (run `cargo fix --test "test_sdk_smoke" -p pdftract-core` to apply 1 suggestion)
+warning: `pdftract-core` (test "cjk_encoding") generated 1 warning
+warning: `pdftract-core` (test "TH-03-mcp-no-auth") generated 5 warnings (run `cargo fix --test "TH-03-mcp-no-auth" -p pdftract-core` to apply 3 suggestions)
+warning: `pdftract-core` (test "verify_proptest_catches_bugs") generated 1 warning (run `cargo fix --test "verify_proptest_catches_bugs" -p pdftract-core` to apply 1 suggestion)
+warning: `pdftract-core` (test "conformance") generated 6 warnings (run `cargo fix --test "conformance" -p pdftract-core` to apply 4 suggestions)
+warning: `pdftract-core` (test "schema_validate_fixtures") generated 1 warning (run `cargo fix --test "schema_validate_fixtures" -p pdftract-core` to apply 1 suggestion)
+warning: `pdftract-core` (test "debug_page_parsing") generated 1 warning (run `cargo fix --test "debug_page_parsing" -p pdftract-core` to apply 1 suggestion)
+warning: `pdftract-core` (test "test_cycle_detection") generated 2 warnings (run `cargo fix --test "test_cycle_detection" -p pdftract-core` to apply 2 suggestions)
+warning: `pdftract-core` (test "json_schema") generated 1 warning
+warning: `pdftract-core` (test "object_parser_proptest") generated 2 warnings (run `cargo fix --test "object_parser_proptest" -p pdftract-core` to apply 2 suggestions)
+warning: `pdftract-core` (test "encoding_recovery") generated 2 warnings
+warning: `pdftract-core` (test "xref_integration_test") generated 4 warnings (run `cargo fix --test "xref_integration_test" -p pdftract-core` to apply 2 suggestions)
+warning: `pdftract-core` (test "test_page_access") generated 1 warning (run `cargo fix --test "test_page_access" -p pdftract-core` to apply 1 suggestion)
+warning: `pdftract-core` (test "orphaned_process_verification_test") generated 2 warnings (run `cargo fix --test "orphaned_process_verification_test" -p pdftract-core` to apply 2 suggestions)
+warning: `pdftract-core` (test "ocr_integration") generated 2 warnings (run `cargo fix --test "ocr_integration" -p pdftract-core` to apply 1 suggestion)
+warning: `pdftract-core` (test "stream_decoder_fixtures") generated 1 warning (run `cargo fix --test "stream_decoder_fixtures" -p pdftract-core` to apply 1 suggestion)
+warning: `pdftract-libpdftract` (test "test_parse") generated 2 warnings (run `cargo fix --test "test_parse" -p pdftract-libpdftract` to apply 2 suggestions)
+warning: `pdftract-core` (test "http_range_integration") generated 2 warnings (run `cargo fix --test "http_range_integration" -p pdftract-core` to apply 2 suggestions)
+warning: `pdftract-core` (test "fingerprint_debug_content_edit") generated 1 warning
+warning: `pdftract-core` (test "encryption_integration_tests") generated 4 warnings (run `cargo fix --test "encryption_integration_tests" -p pdftract-core` to apply 3 suggestions)
+warning: `pdftract-core` (test "hint_stream_integration") generated 5 warnings (run `cargo fix --test "hint_stream_integration" -p pdftract-core` to apply 3 suggestions)
+warning: `pdftract-core` (test "test_type3_integration") generated 1 warning (run `cargo fix --test "test_type3_integration" -p pdftract-core` to apply 1 suggestion)
+warning: `pdftract-core` (test "error_recovery_integration") generated 4 warnings (run `cargo fix --test "error_recovery_integration" -p pdftract-core` to apply 1 suggestion)
+warning: `pdftract-core` (test "memory_guard_tests") generated 1 warning
+
+### Binary/Example Test Warnings
+
+warning: `pdftract-schema-migrate` (bin "migrate-schema" test) generated 1 warning (run `cargo fix --bin "migrate-schema" -p pdftract-schema-migrate --tests` to apply 1 suggestion)
+warning: `pdftract-cli` (bin "list_pdf_fixtures" test) generated 2 warnings (run `cargo fix --bin "list_pdf_fixtures" -p pdftract-cli --tests` to apply 2 suggestions)
+warning: `pdftract-cli` (bin "pdftract" test) generated 119 warnings (111 duplicates) (run `cargo fix --bin "pdftract" -p pdftract-cli --tests` to apply 6 suggestions)
+warning: `pdftract-core` (example "test_pages_check") generated 1 warning (run `cargo fix --example "test_pages_check" -p pdftract-core` to apply 1 suggestion)
+warning: `pdftract-core` (example "ocr") generated 3 warnings (run `cargo fix --example "ocr" -p pdftract-core` to apply 3 suggestions)
+warning: `pdftract-core` (example "debug_xref") generated 1 warning (run `cargo fix --example "debug_xref" -p pdftract-core` to apply 1 suggestion)
+warning: `pdftract-core` (example "debug_page_tree") generated 1 warning (run `cargo fix --example "debug_page_tree" -p pdftract-core` to apply 1 suggestion)
+warning: `pdftract-core` (example "test_fingerprint_debug") generated 2 warnings (run `cargo fix --example "test_fingerprint_debug" -p pdftract-core` to apply 2 suggestions)
+
+---
+
+
+## Detailed Warning Analysis by Category
+
+### unused_imports (242 total)
+Most common unused imports in test files:
+- `std::path::{Path, PathBuf}` - Common in test fixture setup
+- `std::collections::HashMap` - Test data structures
+- `anyhow::{Result, Context}` - Error handling (tests use simpler assertions)
+- `serde::{Deserialize, Serialize}` - Test data models
+
+**Severity:** warning (non-breaking, can be fixed with `cargo fix`)
+
+### unused_variables (131 total)  
+Most common unused variables in tests:
+- Function parameters in test helpers
+- Loop counters in test iterations
+- Test context objects in assertion-only tests
+
+**Severity:** warning (non-breaking, suggests incomplete test implementation)
+
+### dead_code (18 total)
+Dead code warnings indicate unused test helper functions:
+- Private helper functions in test modules
+- Fixture generators not called by any test
+- Test utility functions made obsolete by refactoring
+
+**Severity:** warning (indicates potentially dead test code)
+
+### unreachable_patterns (22 total)
+Unreachable pattern warnings in test code:
+- Match arms that can never be reached
+- Type guards that eliminate certain branches
+- Conditional tests with impossible branches
+
+**Severity:** warning (indicates over-specification in test conditions)
+
+### unused_mut (6 total)
+Variables declared as mutable but never modified:
+- Test fixtures that don't need mutation
+- Loop variables that are read-only
+- Context objects used immutably
+
+**Severity:** warning (stylistic issue, no functional impact)
+
+---
+
+## High-Priority Test Files Requiring Attention
+
+### Most Warnings by Single Test File
+
+1. **pdftract-cli (bin "pdftract" test)** - 119 warnings (111 duplicates)
+   - Large integration test with extensive unused imports
+   - Suggests test file needs cleanup/refactoring
+
+2. **pdftract-core (lib test)** - 311 warnings (154 duplicates)
+   - Core library test suite with accumulated technical debt
+   - Many unused imports from refactoring
+
+3. **pdftract-cli (lib test)** - 49 warnings (48 duplicates)
+   - CLI library tests with similar issues to binary tests
+
+### Security Test Warnings (TH-NN Series)
+
+- **TH-03-mcp-no-auth** - 5 warnings (MCP authentication bypass tests)
+- **TH-08-log-audit** - 1 warning (Log audit tests)  
+- **TH-09-inspector-xss** - 1 warning (Inspector XSS tests)
+
+These are security-critical tests and should be kept clean.
+
+---
+
+## Summary Statistics
+
+- **Total test warnings:** 426+ individual warnings across ~90 test files
+- **Most common type:** unused_imports (242, ~57% of warnings)
+- **Second most common:** unused_variables (131, ~31% of warnings)  
+- **Fixable via cargo fix:** ~70% of warnings have automatic fixes available
+- **Security test warnings:** 7 total across 3 TH-NN test files
+
+---
+
+## Recommendations
+
+1. **High Impact:** Run `cargo fix --tests` to automatically resolve ~300 warnings
+2. **Medium Impact:** Clean up the 3 largest warning generators (pdftract bin test, pdftract-core lib test)
+3. **Low Impact:** Address dead_code warnings to remove truly unused test helpers
+4. **Security Priority:** Review and fix TH-NN test warnings first as they validate security features
+
+---
+
+**Analysis Method:** Extracted from cargo check output, filtered for test files using patterns: `tests/`, `TH-`, `test_*.rs`, `*_test.rs`, `proptest`, and test binary/example targets.
