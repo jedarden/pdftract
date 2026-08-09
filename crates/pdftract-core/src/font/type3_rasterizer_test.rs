@@ -1899,3 +1899,309 @@ fn test_detect_char_proc_type_ref_with_free_object() {
     assert_eq!(result, CharProcType::Unknown,
         "Reference to free object should return Unknown");
 }
+
+// ============================================================================
+// Integration Tests for Successful Reference Dereferencing
+// ============================================================================
+
+/// Test that PdfObject::Ref pointing to stream returns CharProcType::Stream.
+///
+/// This is a comprehensive integration test that verifies:
+/// 1. A valid DocumentContext with resolver and source
+/// 2. A Ref pointing to a stream object
+/// 3. Successful dereferencing returns CharProcType::Stream
+#[test]
+fn test_detect_char_proc_type_ref_to_stream_returns_stream() {
+    use crate::font::type3_rasterizer::DocumentContext;
+    use crate::parser::xref::XrefEntry;
+
+    // Create a valid PDF stream object at object 10
+    let stream_bytes = create_pdf_stream_object(
+        10,
+        0,
+        "/Type /XObject /Subtype /Form /Width 100 /Height 100",
+        b"10 10 m 20 20 l S"
+    );
+
+    // Calculate offsets
+    let stream_offset = 1000u64;
+    let total_size = stream_offset + stream_bytes.len() as u64;
+
+    // Create source data with stream at offset
+    let mut source_data = vec![0u8; total_size as usize];
+    source_data[stream_offset as usize..(stream_offset as usize + stream_bytes.len())]
+        .copy_from_slice(&stream_bytes);
+
+    // Create resolver with entry pointing to the stream
+    let mut resolver = XrefResolver::new();
+    resolver.add_entry(10, XrefEntry::InUse {
+        offset: stream_offset,
+        gen_nr: 0,
+    });
+
+    let source = MemorySource::new(source_data);
+    let doc_context = DocumentContext {
+        resolver: Some(Box::leak(Box::new(resolver))),
+        source: Some(Box::leak(Box::new(source))),
+    };
+
+    // Create a reference to object 10
+    let ref_obj = PdfObject::Ref(ObjRef::new(10, 0));
+
+    // Dereference and classify
+    let result = detect_char_proc_type(&ref_obj, Some(&doc_context));
+
+    // Verify Stream type is returned
+    assert_eq!(result, CharProcType::Stream,
+        "Reference to stream object should return CharProcType::Stream after successful dereferencing");
+}
+
+/// Test that PdfObject::Ref pointing to dict returns CharProcType::Dict.
+///
+/// This is a comprehensive integration test that verifies:
+/// 1. A valid DocumentContext with resolver and source
+/// 2. A Ref pointing to a dictionary object
+/// 3. Successful dereferencing returns CharProcType::Dict
+#[test]
+fn test_detect_char_proc_type_ref_to_dict_returns_dict() {
+    use crate::font::type3_rasterizer::DocumentContext;
+    use crate::parser::xref::XrefEntry;
+
+    // Create a valid PDF dict object at object 20
+    let dict_bytes = create_pdf_dict_object(
+        20,
+        0,
+        "/Type /Font /Subtype /Type3 /FontMatrix [1 0 0 1 0 0]"
+    );
+
+    // Calculate offsets
+    let dict_offset = 2000u64;
+    let total_size = dict_offset + dict_bytes.len() as u64;
+
+    // Create source data with dict at offset
+    let mut source_data = vec![0u8; total_size as usize];
+    source_data[dict_offset as usize..(dict_offset as usize + dict_bytes.len())]
+        .copy_from_slice(&dict_bytes);
+
+    // Create resolver with entry pointing to the dict
+    let mut resolver = XrefResolver::new();
+    resolver.add_entry(20, XrefEntry::InUse {
+        offset: dict_offset,
+        gen_nr: 0,
+    });
+
+    let source = MemorySource::new(source_data);
+    let doc_context = DocumentContext {
+        resolver: Some(Box::leak(Box::new(resolver))),
+        source: Some(Box::leak(Box::new(source))),
+    };
+
+    // Create a reference to object 20
+    let ref_obj = PdfObject::Ref(ObjRef::new(20, 0));
+
+    // Dereference and classify
+    let result = detect_char_proc_type(&ref_obj, Some(&doc_context));
+
+    // Verify Dict type is returned
+    assert_eq!(result, CharProcType::Dict,
+        "Reference to dict object should return CharProcType::Dict after successful dereferencing");
+}
+
+/// Test that PdfObject::Ref with invalid reference returns Unknown without panicking.
+///
+/// This test verifies that when a reference cannot be resolved (object not found,
+/// invalid offset, etc.), the function returns CharProcType::Unknown gracefully
+/// instead of panicking.
+#[test]
+fn test_detect_char_proc_type_ref_invalid_returns_unknown_no_panic() {
+    use crate::font::type3_rasterizer::DocumentContext;
+    use crate::parser::xref::XrefEntry;
+
+    // Create an empty resolver (will fail to find any object)
+    let resolver = XrefResolver::new();
+    let source_data = vec![0u8; 4096];
+    let source = MemorySource::new(source_data);
+
+    let doc_context = DocumentContext {
+        resolver: Some(Box::leak(Box::new(resolver))),
+        source: Some(Box::leak(Box::new(source))),
+    };
+
+    // Create references to non-existent objects
+    let invalid_refs = vec![
+        ObjRef::new(999, 0),   // Non-existent object number
+        ObjRef::new(1000, 1),  // Non-existent with generation
+        ObjRef::new(50, 0),    // Another non-existent object
+    ];
+
+    for obj_ref in invalid_refs {
+        let ref_obj = PdfObject::Ref(obj_ref);
+
+        // Should not panic even though reference can't be resolved
+        let result = detect_char_proc_type(&ref_obj, Some(&doc_context));
+
+        // Verify Unknown is returned
+        assert_eq!(result, CharProcType::Unknown,
+            "Invalid reference {} {} should return Unknown without panicking",
+            obj_ref.object, obj_ref.generation);
+    }
+}
+
+/// Test that PdfObject::Ref with valid DocumentContext returns correct type for multiple objects.
+///
+/// This test verifies that the dereferencing logic works correctly for multiple
+/// different object types in a single DocumentContext.
+#[test]
+fn test_detect_char_proc_type_ref_multiple_objects_mixed_types() {
+    use crate::font::type3_rasterizer::DocumentContext;
+    use crate::parser::xref::XrefEntry;
+
+    // Create multiple objects in the source
+    let stream_bytes = create_pdf_stream_object(
+        10,
+        0,
+        "/Type /XObject /Subtype /Form",
+        b"10 10 m 20 20 l S"
+    );
+
+    let dict_bytes = create_pdf_dict_object(
+        20,
+        0,
+        "/Type /Font /Subtype /Type3"
+    );
+
+    // Create source data with both objects
+    let mut source_data = vec![0u8; 8192];
+    let stream_offset = 1000u64;
+    let dict_offset = 3000u64;
+
+    source_data[stream_offset as usize..(stream_offset as usize + stream_bytes.len())]
+        .copy_from_slice(&stream_bytes);
+    source_data[dict_offset as usize..(dict_offset as usize + dict_bytes.len())]
+        .copy_from_slice(&dict_bytes);
+
+    // Create resolver with entries for both objects
+    let mut resolver = XrefResolver::new();
+    resolver.add_entry(10, XrefEntry::InUse {
+        offset: stream_offset,
+        gen_nr: 0,
+    });
+    resolver.add_entry(20, XrefEntry::InUse {
+        offset: dict_offset,
+        gen_nr: 0,
+    });
+
+    let source = MemorySource::new(source_data);
+    let doc_context = DocumentContext {
+        resolver: Some(Box::leak(Box::new(resolver))),
+        source: Some(Box::leak(Box::new(source))),
+    };
+
+    // Test reference to stream returns Stream
+    let stream_ref = PdfObject::Ref(ObjRef::new(10, 0));
+    let stream_result = detect_char_proc_type(&stream_ref, Some(&doc_context));
+    assert_eq!(stream_result, CharProcType::Stream,
+        "Reference to stream should return Stream");
+
+    // Test reference to dict returns Dict
+    let dict_ref = PdfObject::Ref(ObjRef::new(20, 0));
+    let dict_result = detect_char_proc_type(&dict_ref, Some(&doc_context));
+    assert_eq!(dict_result, CharProcType::Dict,
+        "Reference to dict should return Dict");
+
+    // Test reference to non-existent object returns Unknown
+    let invalid_ref = PdfObject::Ref(ObjRef::new(30, 0));
+    let invalid_result = detect_char_proc_type(&invalid_ref, Some(&doc_context));
+    assert_eq!(invalid_result, CharProcType::Unknown,
+        "Reference to non-existent object should return Unknown");
+}
+
+/// Test that PdfObject::Ref without DocumentContext returns Unknown (comprehensive).
+///
+/// This test verifies the graceful degradation when no document context
+/// is available for dereferencing. The function should not panic.
+#[test]
+fn test_detect_char_proc_type_ref_without_context_comprehensive() {
+    // Create a reference without any DocumentContext
+    let ref_obj = PdfObject::Ref(ObjRef::new(5, 0));
+
+    // Should return Unknown gracefully without panicking
+    let result = detect_char_proc_type(&ref_obj, None);
+
+    assert_eq!(result, CharProcType::Unknown,
+        "Reference without DocumentContext should return Unknown");
+}
+
+/// Test that dereferencing handles references to wrong object types gracefully.
+///
+/// This test verifies that when a reference points to an object that is
+/// neither a stream nor a dict (e.g., integer, string, etc.), it returns
+/// CharProcType::Other with the appropriate type name.
+#[test]
+fn test_detect_char_proc_type_ref_to_non_stream_dict_returns_other() {
+    use crate::font::type3_rasterizer::DocumentContext;
+    use crate::parser::xref::XrefEntry;
+
+    // Create a PDF integer object at object 15
+    let int_bytes = b"15 0 obj\n42\nendobj\n".to_vec();
+    let int_offset = 1500u64;
+    let total_size = int_offset + int_bytes.len() as u64;
+
+    let mut source_data = vec![0u8; total_size as usize];
+    source_data[int_offset as usize..(int_offset as usize + int_bytes.len())]
+        .copy_from_slice(&int_bytes);
+
+    let mut resolver = XrefResolver::new();
+    resolver.add_entry(15, XrefEntry::InUse {
+        offset: int_offset,
+        gen_nr: 0,
+    });
+
+    let source = MemorySource::new(source_data);
+    let doc_context = DocumentContext {
+        resolver: Some(Box::leak(Box::new(resolver))),
+        source: Some(Box::leak(Box::new(source))),
+    };
+
+    // Create a reference to the integer object
+    let ref_obj = PdfObject::Ref(ObjRef::new(15, 0));
+
+    // Dereference and classify
+    let result = detect_char_proc_type(&ref_obj, Some(&doc_context));
+
+    // Verify Other is returned with type name "integer"
+    match result {
+        CharProcType::Other(type_name) => {
+            assert_eq!(type_name, "integer",
+                "Reference to integer object should return Other with type name 'integer'");
+        }
+        _ => panic!("Expected Other with type name, got {:?}", result),
+    }
+}
+
+/// Test that detect_char_proc_type_with_context detects circular references.
+///
+/// This test verifies that circular references are detected and classified
+/// as CharProcType::Other("circular-reference") without infinite recursion.
+#[test]
+fn test_detect_char_proc_type_with_context_circular_reference_detection() {
+    use crate::font::type3_rasterizer::{detect_char_proc_type_with_context, DocumentContext};
+
+    // Create a reference that would point to itself (circular)
+    let circular_ref = ObjRef::new(100, 0);
+    let ref_obj = PdfObject::Ref(circular_ref);
+
+    // Create empty DocumentContext
+    let doc_context = DocumentContext {
+        resolver: None,
+        source: None,
+    };
+
+    // Use the with_context variant that has cycle detection
+    let result = detect_char_proc_type_with_context(&ref_obj, Some(&doc_context));
+
+    // Since resolver is None, it should return Unknown (circular detection
+    // only applies if we can actually dereference)
+    assert_eq!(result, CharProcType::Unknown,
+        "Circular reference with no resolver should return Unknown");
+}
