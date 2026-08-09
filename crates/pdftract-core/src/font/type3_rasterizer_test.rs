@@ -24,7 +24,264 @@ use crate::font::encoding::NamedEncoding;
 use crate::font::type3_rasterizer::{detect_char_proc_type, rasterize_type3_glyph, CharProcType, DocumentContext, StreamResolverFn};
 use crate::font::type3::Type3Font;
 use crate::graphics_state::Matrix3x3;
-use crate::parser::object::types::{intern, ObjRef, PdfDict, PdfObject};
+use crate::parser::object::types::{intern, ObjRef, PdfDict, PdfObject, PdfStream};
+use crate::parser::xref::XrefResolver;
+use crate::parser::stream::MemorySource;
+
+// ============================================================================
+// Test Infrastructure Helper Functions
+// ============================================================================
+
+/// Create a test DocumentContext with minimal valid configuration.
+///
+/// This helper creates a DocumentContext suitable for testing detect_char_proc_type
+/// with PdfObject::Ref scenarios. It provides an empty XrefResolver (which will
+/// return NotFound for any reference) and no source (stream reading not tested).
+///
+/// # Returns
+///
+/// A DocumentContext with an empty resolver and no source.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use crate::font::type3_rasterizer_test::create_test_document_context;
+/// use crate::font::type3_rasterizer::detect_char_proc_type;
+/// use crate::parser::object::types::{ObjRef, PdfObject};
+///
+/// let doc_context = create_test_document_context();
+/// let ref_obj = PdfObject::Ref(ObjRef::new(10, 0));
+/// let result = detect_char_proc_type(&ref_obj, Some(&doc_context));
+/// // Result will be CharProcType::Unknown (resolver can't find the ref)
+/// ```
+pub fn create_test_document_context() -> DocumentContext<'static> {
+    let resolver = XrefResolver::new();
+    DocumentContext {
+        resolver: Some(Box::leak(Box::new(resolver))),
+        source: None,
+    }
+}
+
+/// Create a test DocumentContext with a populated resolver.
+///
+/// This helper creates a DocumentContext with a resolver that has specific
+/// entries pre-configured. This is useful for testing reference dereferencing
+/// with known valid references.
+///
+/// # Arguments
+///
+/// * `entries` - Vector of (object_number, XrefEntry) tuples to populate the resolver
+///
+/// # Returns
+///
+/// A DocumentContext with a resolver containing the specified entries.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use crate::font::type3_rasterizer_test::create_test_document_context_with_entries;
+/// use crate::parser::xref::XrefEntry;
+/// use crate::font::type3_rasterizer::detect_char_proc_type;
+/// use crate::parser::object::types::{ObjRef, PdfObject};
+///
+/// let entries = vec![(10, XrefEntry::InUse { offset: 100, gen_nr: 0 })];
+/// let doc_context = create_test_document_context_with_entries(entries);
+/// ```
+pub fn create_test_document_context_with_entries(entries: Vec<(u32, crate::parser::xref::XrefEntry)>) -> DocumentContext<'static> {
+    let mut resolver = XrefResolver::new();
+    for (obj_nr, entry) in entries {
+        resolver.add_entry(obj_nr, entry);
+    }
+    DocumentContext {
+        resolver: Some(Box::leak(Box::new(resolver))),
+        source: None,
+    }
+}
+
+/// Create a PdfObject::Ref with a given object ID.
+///
+/// This helper creates a reference PdfObject for testing. References created
+/// with this function will need a DocumentContext to be dereferenced.
+///
+/// # Arguments
+///
+/// * `object_number` - The object number (ID)
+/// * `generation_number` - The generation number (defaults to 0)
+///
+/// # Returns
+///
+/// PdfObject::Ref with the specified object and generation numbers.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use crate::font::type3_rasterizer_test::create_test_ref;
+/// use crate::parser::object::types::PdfObject;
+///
+/// let ref_obj = create_test_ref(42);
+/// let ref_obj_with_gen = create_test_ref_with_gen(42, 1);
+/// ```
+pub fn create_test_ref(object_number: u32) -> PdfObject {
+    create_test_ref_with_gen(object_number, 0)
+}
+
+/// Create a PdfObject::Ref with a given object ID and generation number.
+///
+/// This helper creates a reference PdfObject for testing with a specific
+/// generation number. Use this when testing reference handling with
+/// non-zero generation numbers.
+///
+/// # Arguments
+///
+/// * `object_number` - The object number (ID)
+/// * `generation_number` - The generation number
+///
+/// # Returns
+///
+/// PdfObject::Ref with the specified object and generation numbers.
+pub fn create_test_ref_with_gen(object_number: u32, generation_number: u16) -> PdfObject {
+    PdfObject::Ref(ObjRef::new(object_number, generation_number))
+}
+
+/// Create a test dictionary with optional entries.
+///
+/// This helper creates a PdfDict for testing. It can optionally populate
+/// the dictionary with predefined entries.
+///
+/// # Arguments
+///
+/// * `entries` - Optional vector of (key, value) tuples to populate the dictionary
+///
+/// # Returns
+///
+/// PdfObject::Dict containing the specified entries.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use crate::font::type3_rasterizer_test::create_test_dict;
+/// use crate::parser::object::types::{PdfObject, intern};
+///
+/// let empty_dict = create_test_dict(None);
+/// let dict_with_type = create_test_dict(Some(vec![
+///     (intern("/Type"), PdfObject::Name(intern("/Font")))
+/// ]));
+/// ```
+pub fn create_test_dict(entries: Option<Vec<(Arc<str>, PdfObject)>>) -> PdfObject {
+    let mut dict = PdfDict::new();
+    if let Some(entries) = entries {
+        for (key, value) in entries {
+            dict.insert(key, value);
+        }
+    }
+    PdfObject::Dict(Box::new(dict))
+}
+
+/// Create a test stream with a dictionary and optional data.
+///
+/// This helper creates a PdfStream for testing. The stream dictionary can
+/// be customized, and an optional byte offset can be specified.
+///
+/// # Arguments
+///
+/// * `dict_entries` - Optional vector of (key, value) tuples for the stream dictionary
+/// * `offset` - Byte offset in the PDF file (defaults to 0)
+/// * `length_hint` - Optional length hint for the stream data
+///
+/// # Returns
+///
+/// PdfObject::Stream with the specified dictionary and metadata.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use crate::font::type3_rasterizer_test::create_test_stream;
+/// use crate::parser::object::types::{PdfObject, intern};
+///
+/// let stream = create_test_stream(
+///     Some(vec![
+///         (intern("/Length"), PdfObject::Integer(100)),
+///         (intern("/Filter"), PdfObject::Name(intern("/FlateDecode")))
+///     ]),
+///     1000,
+///     Some(100)
+/// );
+/// ```
+pub fn create_test_stream(
+    dict_entries: Option<Vec<(Arc<str>, PdfObject)>>,
+    offset: u64,
+    length_hint: Option<u64>,
+) -> PdfObject {
+    let mut stream_dict = PdfDict::new();
+    if let Some(entries) = dict_entries {
+        for (key, value) in entries {
+            stream_dict.insert(key, value);
+        }
+    }
+    let stream = PdfStream::new(stream_dict, offset, length_hint);
+    PdfObject::Stream(Box::new(stream))
+}
+
+/// Setup a minimal test context for detect_char_proc_type testing.
+///
+/// This helper creates the minimal valid DocumentContext needed for testing
+/// detect_char_proc_type with PdfObject::Ref scenarios. It returns an empty
+/// resolver (which will cause dereferencing to return NotFound/Unknown).
+///
+/// This is a convenience wrapper around create_test_document_context().
+///
+/// # Returns
+///
+/// A DocumentContext with empty resolver and no source.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use crate::font::type3_rasterizer_test::setup_test_context;
+/// use crate::font::type3_rasterizer::detect_char_proc_type;
+/// use crate::parser::object::types::PdfObject;
+///
+/// let ctx = setup_test_context();
+/// let result = detect_char_proc_type(&PdfObject::Ref(ObjRef::new(1, 0)), Some(&ctx));
+/// ```
+pub fn setup_test_context() -> DocumentContext<'static> {
+    create_test_document_context()
+}
+
+/// Setup a test context with a memory source for stream testing.
+///
+/// This helper creates a DocumentContext with both a resolver and a MemorySource,
+/// suitable for testing scenarios that require reading stream data.
+///
+/// # Arguments
+///
+/// * `data` - The byte data to use as the PDF source
+///
+/// # Returns
+///
+/// A DocumentContext with empty resolver and a MemorySource.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use crate::font::type3_rasterizer_test::setup_test_context_with_source;
+/// use crate::parser::stream::MemorySource;
+///
+/// let pdf_data = b"%PDF-1.4...".to_vec();
+/// let ctx = setup_test_context_with_source(pdf_data);
+/// ```
+pub fn setup_test_context_with_source(data: Vec<u8>) -> DocumentContext<'static> {
+    let resolver = XrefResolver::new();
+    let source: MemorySource = MemorySource::new(data);
+    DocumentContext {
+        resolver: Some(Box::leak(Box::new(resolver))),
+        source: Some(Box::leak(Box::new(source))),
+    }
+}
+
+// ============================================================================
+// Type3 Font Test Fixtures
+// ============================================================================
 
 /// Test fixture builder for creating Type3Font instances with custom CharProcs.
 ///
