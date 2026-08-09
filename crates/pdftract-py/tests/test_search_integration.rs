@@ -4,6 +4,12 @@
 //! that bridges the Rust core with the Python interface via PyO3.
 
 // ============================================================================
+// Core types from pdftract-core
+// ============================================================================
+
+use pdftract_core::{AttachmentJson, ExtractionOptions, PageResult, TableJson};
+
+// ============================================================================
 // Test modules
 // ============================================================================
 
