@@ -4722,6 +4722,31 @@ mod tests {
     }
 
     #[test]
+    fn test_round_x_fractional_rounds_down_negative() {
+        // Test round_x helper with negative fractional values
+        // Verifies acceptance criteria for bead bf-hh2ek5:
+        // - Negative fraction: x = -2.3 → -2 (rounds toward zero, nearest integer)
+        // - Small negative fraction: x = -0.5 → -1 (half case rounds away from zero)
+        // - Small negative fraction: x = -0.1 → 0 (rounds toward zero, nearest integer)
+        // Uses round_x directly since Edge stores x as i32
+
+        // Test negative fraction that rounds toward zero (nearest integer)
+        assert_eq!(round_x(-2.3), -2, "x = -2.3 should round to -2");
+
+        // Test small negative fraction at the -0.5 boundary (half case rounds away from zero)
+        assert_eq!(round_x(-0.5), -1, "x = -0.5 should round to -1");
+
+        // Test small negative fraction close to zero (rounds toward zero, nearest integer)
+        assert_eq!(round_x(-0.1), 0, "x = -0.1 should round to 0");
+
+        // Additional test cases for negative fractions
+        assert_eq!(round_x(-0.4), 0, "x = -0.4 should round to 0 (nearest is 0)");
+        assert_eq!(round_x(-0.6), -1, "x = -0.6 should round to -1 (nearest is -1)");
+        assert_eq!(round_x(-1.1), -1, "x = -1.1 should round to -1 (nearest is -1)");
+        assert_eq!(round_x(-1.5), -2, "x = -1.5 should round to -2 (half case away from zero)");
+    }
+
+    #[test]
     fn test_intersection_x_round_x_edge_cases() {
         // Test round_x helper with edge cases
         // Tests boundary conditions and special cases
@@ -4744,6 +4769,38 @@ mod tests {
         assert_eq!(round_x(-0.1), 0, "-0.1 should round to 0");
         assert_eq!(round_x(0.01), 0, "0.01 should round to 0");
         assert_eq!(round_x(-0.01), 0, "-0.01 should round to 0");
+    }
+
+    #[test]
+    fn test_round_x_negative_fractions_round_down() {
+        // Test round_x with negative fractions that round away from zero (toward larger magnitude)
+        // Verifies acceptance criteria for bead bf-hh2ek5:
+        // - Negative fractions round AWAY from zero (toward -1, not toward 0)
+        // - -0.5 → -1, not 0
+        // - Include edge case at the -0.5 boundary
+        // Uses round_x directly since Edge stores x as i32
+
+        // Test the exact -0.5 boundary (rounds away from zero)
+        assert_eq!(round_x(-0.5), -1, "-0.5 should round away from zero to -1");
+
+        // Test small negative fractions greater than 0.5 magnitude (all round away from zero to -1)
+        assert_eq!(round_x(-0.6), -1, "-0.6 should round away from zero to -1");
+        assert_eq!(round_x(-0.7), -1, "-0.7 should round away from zero to -1");
+        assert_eq!(round_x(-0.8), -1, "-0.8 should round away from zero to -1");
+        assert_eq!(round_x(-0.9), -1, "-0.9 should round away from zero to -1");
+        assert_eq!(round_x(-0.99), -1, "-0.99 should round away from zero to -1");
+
+        // Test negative fractions that round toward larger magnitude (away from zero)
+        assert_eq!(round_x(-1.6), -2, "-1.6 should round away from zero to -2");
+        assert_eq!(round_x(-2.7), -3, "-2.7 should round away from zero to -3");
+        assert_eq!(round_x(-3.8), -4, "-3.8 should round away from zero to -4");
+        assert_eq!(round_x(-5.9), -6, "-5.9 should round away from zero to -6");
+
+        // Verify that small negative fractions (< 0.5) round toward zero
+        assert_eq!(round_x(-0.1), 0, "-0.1 should round toward zero to 0");
+        assert_eq!(round_x(-0.2), 0, "-0.2 should round toward zero to 0");
+        assert_eq!(round_x(-0.3), 0, "-0.3 should round toward zero to 0");
+        assert_eq!(round_x(-0.4), 0, "-0.4 should round toward zero to 0");
     }
 
     #[test]
