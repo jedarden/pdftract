@@ -5535,4 +5535,131 @@ mod tests {
         let bitmap = result.unwrap();
         assert!(!bitmap.is_empty(), "Minimal glyph bitmap should not be empty");
     }
+
+    #[test]
+    fn test_test_glyph_helper_compatibility_with_type3font() {
+        use crate::font::test_glyph_helper::{
+            make_rect_glyph, make_line_glyph, make_empty_glyph,
+            make_test_char_procs, make_test_resolver,
+        };
+        use std::collections::HashMap;
+
+        // Test 1: Type3Font::mock accepts make_test_char_procs output
+        let char_procs = make_test_char_procs();
+        let font = Type3Font::mock(Some(char_procs));
+
+        // Verify standard glyphs from make_test_char_procs
+        assert!(font.has_glyph("A"), "Font should have glyph 'A'");
+        assert!(font.has_glyph("B"), "Font should have glyph 'B'");
+        assert!(font.has_glyph("rect"), "Font should have glyph 'rect'");
+        assert!(font.has_glyph("line"), "Font should have glyph 'line'");
+        assert!(font.has_glyph("empty"), "Font should have glyph 'empty'");
+
+        // Test 2: Helper functions generate valid content stream bytes
+        let rect_bytes = make_rect_glyph(0.0, 0.0, 100.0, 100.0);
+        assert_eq!(rect_bytes, b"0 0 100 100 re f");
+
+        let line_bytes = make_line_glyph(0.0, 0.0, 50.0, 50.0);
+        assert_eq!(line_bytes, b"0 0 m 50 50 l h S");
+
+        let empty_bytes = make_empty_glyph();
+        assert!(empty_bytes.is_empty());
+
+        // Test 3: make_test_resolver creates a working resolver
+        let mut glyph_map = HashMap::new();
+        glyph_map.insert(10, rect_bytes.clone());
+        glyph_map.insert(11, line_bytes.clone());
+        glyph_map.insert(12, empty_bytes.clone());
+
+        let resolver = make_test_resolver(&glyph_map);
+
+        // Verify resolver returns correct bytes for each object reference
+        use crate::parser::object::types::ObjRef;
+        assert_eq!(resolver(ObjRef::new(10, 0)), Some(rect_bytes));
+        assert_eq!(resolver(ObjRef::new(11, 0)), Some(line_bytes));
+        assert_eq!(resolver(ObjRef::new(12, 0)), Some(empty_bytes));
+        assert!(resolver(ObjRef::new(99, 0)).is_none(), "Unknown ref should return None");
+
+        // Test 4: rasterize_type3_glyph works with the complete setup
+        // Create custom char_procs matching our glyph_map
+        use crate::font::test_glyph_helper::make_custom_char_procs;
+        let custom_char_procs = make_custom_char_procs(&["rect", "line", "empty"], 10);
+        let test_font = Type3Font::mock(Some(custom_char_procs));
+
+        // Test rasterizing each glyph type
+        let rect_result = rasterize_type3_glyph(
+            &test_font,
+            "rect",
+            None,
+            Some(&resolver),
+        );
+        assert!(rect_result.is_some(), "Rectangle glyph should rasterize successfully");
+        let rect_bitmap = rect_result.unwrap();
+        assert!(!rect_bitmap.is_empty(), "Rectangle bitmap should not be empty");
+        // Rectangle should have black pixels (filled)
+        assert!(rect_bitmap.iter().any(|&p| p == 0), "Filled rect should have black pixels");
+
+        let line_result = rasterize_type3_glyph(
+            &test_font,
+            "line",
+            None,
+            Some(&resolver),
+        );
+        assert!(line_result.is_some(), "Line glyph should rasterize successfully");
+        let line_bitmap = line_result.unwrap();
+        assert!(!line_bitmap.is_empty(), "Line bitmap should not be empty");
+
+        let empty_result = rasterize_type3_glyph(
+            &test_font,
+            "empty",
+            None,
+            Some(&resolver),
+        );
+        assert!(empty_result.is_some(), "Empty glyph should rasterize successfully");
+        let empty_bitmap = empty_result.unwrap();
+        // Empty glyph should produce all-white bitmap (all 255)
+        assert!(empty_bitmap.iter().all(|&p| p == 255), "Empty glyph should be all white");
+
+        // Test 5: Non-existent glyph returns None
+        let nonexistent_result = rasterize_type3_glyph(
+            &test_font,
+            "nonexistent",
+            None,
+            Some(&resolver),
+        );
+        assert!(nonexistent_result.is_none(), "Non-existent glyph should return None");
+    }
+
+    #[test]
+    fn test_test_glyph_helper_multiple_glyphs_single_resolver() {
+        use crate::font::test_glyph_helper::{
+            make_rect_glyph, make_test_char_procs, make_test_resolver,
+        };
+        use std::collections::HashMap;
+
+        // Create multiple glyphs with different sizes
+        let mut glyph_map = HashMap::new();
+        glyph_map.insert(10, make_rect_glyph(0.0, 0.0, 50.0, 50.0));
+        glyph_map.insert(11, make_rect_glyph(100.0, 100.0, 200.0, 200.0));
+        glyph_map.insert(12, make_rect_glyph(10.0, 10.0, 20.0, 20.0));
+
+        let resolver = make_test_resolver(&glyph_map);
+
+        // Create char_procs matching the resolver
+        use crate::font::test_glyph_helper::make_custom_char_procs;
+        let char_procs = make_custom_char_procs(&["small", "large", "tiny"], 10);
+        let font = Type3Font::mock(Some(char_procs));
+
+        // All three glyphs should rasterize successfully
+        for glyph_name in &["small", "large", "tiny"] {
+            let result = rasterize_type3_glyph(&font, glyph_name, None, Some(&resolver));
+            assert!(
+                result.is_some(),
+                "Glyph '{}' should rasterize successfully",
+                glyph_name
+            );
+            let bitmap = result.unwrap();
+            assert!(!bitmap.is_empty(), "Glyph '{}' bitmap should not be empty", glyph_name);
+        }
+    }
 }
