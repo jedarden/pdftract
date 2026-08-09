@@ -4468,6 +4468,39 @@ mod tests {
     }
 
     #[test]
+    fn test_intersection_x_negative_half_case() {
+        // Test case for negative half: x = -0.5 → -1
+        // Verifies acceptance criteria for bead bf-3z3m72:
+        // - Critical boundary case: -0.5 rounds to -1 (NOT 0)
+        // - Negative halves round AWAY from zero (toward larger magnitude)
+        // - Uses round_x directly since Edge stores x as i32
+
+        // Test that -0.5 rounds to -1 (away from zero, toward larger magnitude)
+        let result = round_x(-0.5);
+        assert_eq!(result, -1, "x = -0.5 should round to -1 (away from zero)");
+
+        // Document why this rounds away from zero:
+        // - Per round_x implementation using f64::round(), -0.5 rounds to -1.0
+        // - This is "round half away from zero" behavior (also called "round half up" for negatives)
+        // - Contrast: positive 0.5 rounds up to 1, negative 0.5 rounds "down" to -1 (both away from zero)
+        // - This ensures symmetric rounding behavior around zero
+
+        // Verify this is consistent with intersection_x behavior
+        // When scanline algorithm produces x = -0.5 (stored in edge.x as -1 after casting),
+        // intersection_x() will return -1 via round_x()
+        let edge = Edge {
+            x: -1, // Represents the rounded value from -0.5
+            y_min: 0,
+            y_max: 10,
+            dx: -5,
+            dy: 10,
+        };
+
+        let edge_result = edge.intersection_x();
+        assert_eq!(edge_result, -1, "edge.x = -1 should round to -1");
+    }
+
+    #[test]
     fn test_edge_x_field_access_from_aet() {
         // Test that edge.x field is directly readable from AET entries
         // Verifies acceptance criterion: ability to access x-coordinate field from edge structures in AET
