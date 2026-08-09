@@ -4501,6 +4501,39 @@ mod tests {
     }
 
     #[test]
+    fn test_intersection_x_negative_small_fraction() {
+        // Test case for negative small fraction: x = -0.1 → 0
+        // Verifies acceptance criteria for bead bf-5ma6k0:
+        // - Small negative fraction rounds to 0 (toward zero, nearest integer)
+        // - This is consistent with standard rounding behavior
+        // - Uses round_x directly since Edge stores x as i32
+
+        // Test that -0.1 rounds to 0 (toward zero, nearest integer)
+        let result = round_x(-0.1);
+        assert_eq!(result, 0, "x = -0.1 should round to 0 (toward zero)");
+
+        // Document why this rounds toward zero:
+        // - Per round_x implementation using f64::round(), -0.1 rounds to 0.0
+        // - Standard rounding: -0.1 is closer to 0 than to -1
+        // - Only half cases (-0.5) round away from zero to -1
+        // - This ensures consistent behavior with other non-half fractions like -2.3 → -2
+
+        // Verify this is consistent with intersection_x behavior
+        // When scanline algorithm produces x = -0.1 (stored in edge.x as 0 after casting and rounding),
+        // intersection_x() will return 0 via round_x()
+        let edge = Edge {
+            x: 0, // Represents the rounded value from -0.1
+            y_min: 0,
+            y_max: 10,
+            dx: -1,
+            dy: 10,
+        };
+
+        let edge_result = edge.intersection_x();
+        assert_eq!(edge_result, 0, "edge.x = 0 should round to 0");
+    }
+
+    #[test]
     fn test_edge_x_field_access_from_aet() {
         // Test that edge.x field is directly readable from AET entries
         // Verifies acceptance criterion: ability to access x-coordinate field from edge structures in AET
