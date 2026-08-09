@@ -1,7 +1,7 @@
 # sccache Bucket Documentation and Accessibility Verification - INFRASTRUCTURE BLOCKER
 
 **Bead:** bf-66s9do
-**Date:** 2026-08-09
+**Date:** 2026-08-09 (Updated 13:19)
 **Status:** BLOCKED - Cannot Complete (Parent bead bf-123uxh closed with infrastructure failure)
 
 ## Summary
@@ -56,8 +56,8 @@ Based on the workflow template and parent bead planning, the bucket SHOULD be co
 
 | Component | Status | Duration |
 |-----------|--------|----------|
-| Garage Pod (`garage-cnpg-0`) | Stuck Terminating (0/1) | 5h 41m |
-| Garage Operator | CrashLoopBackOff (23 restarts) | 149m |
+| Garage Pod (`garage-cnpg-0`) | Stuck Terminating (0/1) | 5h 43m |
+| Garage Operator | CrashLoopBackOff (23 restarts, last 2m55s ago) | 151m |
 | S3 Endpoint (`http://100.84.193.103:3900`) | CONNECTION REFUSED | Since 2026-08-09 |
 | Calico Network Plugin | Failing (delete errors) | Recurring |
 | CRD Schema | v1alpha1/v1beta1/v1beta2 conflicts | Chronic |
@@ -71,12 +71,15 @@ Based on the workflow template and parent bead planning, the bucket SHOULD be co
 
 ### Accessibility Test Results
 
-**S3 Endpoint Test:**
+**S3 Endpoint Test (2026-08-09 13:19):**
 ```bash
-$ curl -s --connect-timeout 5 http://100.84.193.103:3900
-curl: (7) Failed to connect to 100.84.193.103:3900 port 3900 after 2060 ms: Couldn't connect to server
+$ curl -v --connect-timeout 5 http://100.84.193.103:3900
+*   Trying 100.84.193.103:3900...
+* connect to 100.84.193.103 port 3900 from 100.81.129.38 port 59084 failed: Connection refused
+* Failed to connect to 100.84.193.103 port 3900 after 11 ms: Could not connect to server
+curl: (7) Failed to connect to 100.84.193.103 port 3900 after 11 ms: Could not connect to server
 ```
-**Result:** FAIL - Endpoint completely unreachable
+**Result:** FAIL - Endpoint completely unreachable (connection refused)
 
 **kubectl Access Test:**
 ```bash
@@ -206,4 +209,6 @@ The planned configuration is documented above for reference, but the bucket does
 
 ---
 
-**INFRASTRUCTURE BLOCKER:** This bead is blocked by complete Garage deployment failure on apexalgo-iad. The bucket does not exist, the endpoint is unreachable, and no admin access is available to fix the infrastructure. DO NOT CLOSE this bead as a success - the acceptance criteria cannot be met without infrastructure repair.
+**INFRASTRUCTURE BLOCKER:** This bead is blocked by complete Garage deployment failure on apexalgo-iad. The bucket does not exist, the endpoint is unreachable, and no admin access is available to fix the infrastructure.
+
+**Verification Time:** 2026-08-09 13:19:14 - Infrastructure state unchanged from initial documentation. The Garage deployment remains completely non-functional with no path to resolution without admin intervention.
