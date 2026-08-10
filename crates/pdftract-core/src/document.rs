@@ -13,7 +13,7 @@ use crate::detection::{detect_javascript, detect_xfa};
 use crate::fingerprint::{
     compute_fingerprint, CatalogFlags, ContentStreamData, FingerprintInput, PageFingerprintData,
 };
-use crate::parser::catalog::{parse_catalog, Catalog};
+use crate::parser::catalog::{catalog_dict_missing_essential_keys, is_catalog_dict_empty, is_catalog_dict_none, parse_catalog, Catalog};
 use crate::parser::object::PdfDict;
 use crate::parser::pages::{flatten_page_tree, LazyPageIter, PageDict};
 use crate::parser::stream::{FileSource as ParserFileSource, PdfSource as ParserPdfSource};
@@ -736,7 +736,6 @@ pub fn validate_pages_structure(
     resolver: &XrefResolver,
     source_identifier: &str,
 ) -> DocumentResult<()> {
-    use crate::diagnostics::DiagCode;
     use crate::parser::pages::count_pages_tree;
 
     // Check 0: Catalog dictionary emptiness detection
@@ -746,13 +745,25 @@ pub fn validate_pages_structure(
     // - catalog.dictionary is None/null (root object not a dictionary)
     // - catalog.dictionary missing essential keys (like /Type, /Pages)
     //
-    // We check for STRUCT_MISSING_KEY diagnostics emitted during catalog parsing.
-    // Any missing key diagnostic indicates the catalog dictionary is malformed.
-    let has_missing_key_diagnostics = catalog.diagnostics.iter().any(|d| {
-        matches!(d.code, DiagCode::StructMissingKey)
-    });
+    // We check in order: empty dict → None dict → missing essential keys.
+    // Any of these conditions indicates the catalog dictionary is malformed.
 
-    if has_missing_key_diagnostics {
+    // Check 0.1: Empty dictionary (no keys at all)
+    if is_catalog_dict_empty(&catalog.raw_dict) {
+        return Err(DocumentError::EmptyDocument {
+            source: source_identifier.to_string(),
+        });
+    }
+
+    // Check 0.2: None dictionary (not a dictionary at all)
+    if is_catalog_dict_none(&catalog.raw_dict) {
+        return Err(DocumentError::EmptyDocument {
+            source: source_identifier.to_string(),
+        });
+    }
+
+    // Check 0.3: Missing essential keys (/Type or /Pages)
+    if catalog_dict_missing_essential_keys(&catalog.raw_dict) {
         return Err(DocumentError::EmptyDocument {
             source: source_identifier.to_string(),
         });

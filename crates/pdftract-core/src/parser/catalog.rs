@@ -530,11 +530,13 @@ pub struct Catalog {
     pub threads_ref: Option<ObjRef>,
     /// Diagnostics emitted during parsing
     pub diagnostics: Vec<Diagnostic>,
+    /// Raw catalog dictionary (for emptiness validation)
+    pub raw_dict: PdfObject,
 }
 
 impl Catalog {
     /// Create a new catalog with only the required /Pages reference.
-    pub fn new(pages_ref: ObjRef) -> Self {
+    pub fn new(pages_ref: ObjRef, raw_dict: PdfObject) -> Self {
         Catalog {
             pages_ref,
             outlines_ref: None,
@@ -550,6 +552,7 @@ impl Catalog {
             version: None,
             threads_ref: None,
             diagnostics: Vec::new(),
+            raw_dict,
         }
     }
 
@@ -579,6 +582,7 @@ impl Default for Catalog {
             version: None,
             threads_ref: None,
             diagnostics: Vec::new(),
+            raw_dict: PdfObject::Dict(Default::default()),
         }
     }
 }
