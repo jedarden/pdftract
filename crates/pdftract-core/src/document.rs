@@ -736,9 +736,29 @@ pub fn validate_pages_structure(
     resolver: &XrefResolver,
     source_identifier: &str,
 ) -> DocumentResult<()> {
+    use crate::diagnostics::DiagCode;
     use crate::parser::pages::count_pages_tree;
 
-    // Check 0: Empty catalog structure detection - no /Pages entry
+    // Check 0: Catalog dictionary emptiness detection
+    // Detects when the catalog dictionary itself is empty or missing essential keys.
+    // This catches cases where:
+    // - catalog.dictionary is completely empty (no keys at all)
+    // - catalog.dictionary is None/null (root object not a dictionary)
+    // - catalog.dictionary missing essential keys (like /Type, /Pages)
+    //
+    // We check for STRUCT_MISSING_KEY diagnostics emitted during catalog parsing.
+    // Any missing key diagnostic indicates the catalog dictionary is malformed.
+    let has_missing_key_diagnostics = catalog.diagnostics.iter().any(|d| {
+        matches!(d.code, DiagCode::StructMissingKey)
+    });
+
+    if has_missing_key_diagnostics {
+        return Err(DocumentError::EmptyDocument {
+            source: source_identifier.to_string(),
+        });
+    }
+
+    // Check 1: Empty catalog structure detection - no /Pages entry
     // A catalog with no /Pages entry is considered empty, regardless of other content
     // This catches PDFs where the catalog dictionary lacks the essential /Pages key
     if catalog.pages_ref.object == 0 {
@@ -2632,6 +2652,90 @@ startxref
                 assert_eq!(source, "truly-empty.pdf");
             }
             _ => panic!("Expected EmptyDocument for truly empty catalog, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_validate_pages_structure_catalog_dictionary_empty_detection() {
+        use crate::diagnostics::{Diagnostic, DiagCode};
+        use crate::parser::catalog::Catalog;
+        use crate::parser::object::ObjRef;
+        use crate::parser::xref::XrefResolver;
+
+        // Create a resolver
+        let resolver = XrefResolver::new();
+
+        // Test case 1: Catalog with STRUCT_MISSING_KEY diagnostic for /Pages
+        let catalog_with_missing_pages_diagnostic = Catalog {
+            pages_ref: ObjRef::new(0, 0),
+            diagnostics: vec![Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructMissingKey,
+                "STRUCT_MISSING_KEY: /Pages key missing from catalog".to_string(),
+            )],
+            ..Default::default()
+        };
+
+        let result = validate_pages_structure(&catalog_with_missing_pages_diagnostic, &resolver, "empty-catalog.pdf");
+        assert!(result.is_err());
+        match result {
+            Err(DocumentError::EmptyDocument { source }) => {
+                assert_eq!(source, "empty-catalog.pdf");
+            }
+            _ => panic!("Expected EmptyDocument for catalog with /Pages missing diagnostic, got {:?}", result),
+        }
+
+        // Test case 2: Catalog with STRUCT_MISSING_KEY diagnostic for catalog
+        let catalog_with_catalog_diagnostic = Catalog {
+            pages_ref: ObjRef::new(0, 0),
+            diagnostics: vec![Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructMissingKey,
+                "STRUCT_MISSING_KEY: catalog dictionary is empty".to_string(),
+            )],
+            ..Default::default()
+        };
+
+        let result = validate_pages_structure(&catalog_with_catalog_diagnostic, &resolver, "missing-keys.pdf");
+        assert!(result.is_err());
+        match result {
+            Err(DocumentError::EmptyDocument { source }) => {
+                assert_eq!(source, "missing-keys.pdf");
+            }
+            _ => panic!("Expected EmptyDocument for catalog with catalog empty diagnostic, got {:?}", result),
+        }
+
+        // Test case 3: Catalog with non-matching diagnostic (should fall through to pages_ref check)
+        let catalog_with_other_diagnostic = Catalog {
+            pages_ref: ObjRef::new(0, 0),
+            diagnostics: vec![Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructUnexpectedByte,
+                "Some other error".to_string(),
+            )],
+            ..Default::default()
+        };
+
+        let result = validate_pages_structure(&catalog_with_other_diagnostic, &resolver, "other-error.pdf");
+        assert!(result.is_err());
+        match result {
+            Err(DocumentError::EmptyDocument { source }) => {
+                assert_eq!(source, "other-error.pdf");
+            }
+            _ => panic!("Expected EmptyDocument for catalog with pages_ref == 0, got {:?}", result),
+        }
+
+        // Test case 4: Catalog with empty diagnostics (should fall through to pages_ref check)
+        let catalog_no_diagnostics = Catalog {
+            pages_ref: ObjRef::new(0, 0),
+            diagnostics: vec![],
+            ..Default::default()
+        };
+
+        let result = validate_pages_structure(&catalog_no_diagnostics, &resolver, "no-diagnostics.pdf");
+        assert!(result.is_err());
+        match result {
+            Err(DocumentError::EmptyDocument { source }) => {
+                assert_eq!(source, "no-diagnostics.pdf");
+            }
+            _ => panic!("Expected EmptyDocument for catalog with pages_ref == 0, got {:?}", result),
         }
     }
 }
