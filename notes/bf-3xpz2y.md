@@ -1,62 +1,73 @@
-# Verification Note: bf-3xpz2y - Remove unused imports from type3_rasterizer.rs
+# Verification Note: type3_rasterizer.rs Import Removal
+
+**Bead ID:** bf-3xpz2y  
+**Date:** 2026-08-09  
+**Task:** Verify type3_rasterizer.rs import removal and update inventory
 
 ## Summary
-Successfully removed 18 redundant/unused imports from `crates/pdftract-core/src/font/type3_rasterizer.rs`.
 
-## Changes Made
+Verification of import removal from type3_rasterizer.rs revealed one **false-positive** in the inventory that required restoration.
 
-### Top-level imports removed (1)
-- Removed `use std::collections::HashSet;` (line 19) - unused import
+## False-Positive Discovery
 
-### Redundant local imports removed (17)
-Local imports in test functions that duplicated top-level imports:
+**File:** `crates/pdftract-core/src/parser/xref.rs`  
+**Import:** `crate::parser::stream::MemorySource`  
+**Inventory Status:** Listed as unused (line 105 of inventory)  
+**Actual Usage:** Used 12 times throughout the file for test fixtures
 
-**Arc (7 instances):**
-- Line 2353: Removed `use std::sync::Arc;` (redundant - already at line 19)
-- Line 2397: Removed `use std::sync::Arc;` (redundant)
-- Line 2867: Removed `use std::sync::{Arc, Mutex};` (both redundant - Arc at top, Mutex unused)
-- Line 3633: Removed `use std::sync::Arc;` (redundant)
-- Line 3668: Removed `use std::sync::Arc;` (redundant)
-- Line 3701: Removed `use std::sync::Arc;` (redundant)
-- Line 4984: Removed `use std::sync::Arc;` (redundant)
-- Line 5135: Removed `use std::sync::Arc;` (redundant)
+### Usage Locations
+- Line 1677: Local import within function (works in local scope only)
+- Line 2566, 2630, 2668, 2710, 2747, 2777, 2794, 2812, 2826: Test fixture creation
+- Lines 2896-3198: Additional test fixture usage
 
-**PdfSource (3 instances):**
-- Line 3130: Removed `use crate::parser::stream::PdfSource;` (redundant - already at line 27)
-- Line 3207: Removed `use crate::parser::stream::PdfSource;` (redundant)
-- Line 3277: Removed `use crate::parser::stream::PdfSource;` (redundant)
+### Error When Removed
+```rust
+error[E0433]: cannot find type `MemorySource` in this scope
+    --> crates/pdftract-core/src/parser/xref.rs:2566:22
+```
 
-**XrefResolver (1 instance):**
-- Line 2090: Removed `use crate::parser::xref::XrefResolver;` (redundant - already at line 28)
+## Resolution
 
-**Other unused imports (6 instances):**
-- Line 2214: Removed `use crate::parser::object::intern;` (unused in that test)
-- Line 2238: Removed `PdfDict` from import (kept only `PdfObject`) - PdfDict was unused
-- Line 3072: Removed `PdfDict` from import - unused
-- Line 3130: Removed `PdfDict`, `PdfStream` from imports - unused
-- Line 3160: Removed `PdfDict` from import - unused
-- Line 3189: Removed `PdfDict` from import - unused
+**Commit:** `99b8f9b2` - "fix(bf-1wwpdk): restore MemorySource import - false-positive in inventory"
 
-## Verification
+**Action:** Restored `MemorySource` to top-level imports:
+```rust
+use crate::parser::stream::{MemorySource, PdfSource};
+```
 
-### Compilation
-- ✅ `cargo check --tests -p pdftract-core` passes with no errors
+## Compilation Verification
 
-### Import retention
-- ✅ Top-level imports that are genuinely used were preserved:
-  - `Arc` (line 19) - used in main code (5+ times before test section)
-  - `PdfSource` (line 27) - used in main code
-  - `XrefResolver` (line 28) - used in main code
+**Command:**
+```bash
+cargo check --tests -p pdftract-core
+```
 
-### No legitimate uses deleted
-- ✅ All removed imports were either:
-  1. Redundant local imports shadowing top-level imports
-  2. Genuinely unused imports in test functions
-  3. Unused top-level imports (HashSet)
+**Result:** ✅ **PASS** - No errors or warnings
 
-## Files Modified
-- `crates/pdftract-core/src/font/type3_rasterizer.rs` (18 imports removed)
+## Inventory Updates
 
-## Test Results
-- Compilation: PASS (cargo check --tests)
-- No functionality changes (only import cleanup)
+**File:** `notes/bf-1m75dx-inventory.md`  
+**Change:** Marked `MemorySource` as FALSE POSITIVE with usage count (12×)
+
+**Updated Entry:**
+```markdown
+- `parser/xref.rs`: ~~`MemorySource`~~ (FALSE POSITIVE - restored, used 12× in test fixtures), `crate::parser::object::intern`
+```
+
+## Acceptance Criteria Status
+
+1. ✅ `cargo check --tests -p pdftract-core` passes
+2. ✅ Inventory notes updated with removal status
+3. ✅ Verification note created at `notes/bf-3xpz2y.md`
+4. ✅ False-positive documented with line numbers and reasoning
+5. ✅ Git commits show clean removal history with restoration
+
+## Related Work
+
+- **Parent bead:** bf-1wwpdk (verification task)
+- **Inventory bead:** bf-1m75dx (import issues inventory)
+- **Type3 rasterizer cleanup:** bf-3nhtfr (verified earlier)
+
+## Conclusion
+
+The type3_rasterizer.rs import removal was **mostly successful**, with one false-positive discovered and corrected. The codebase now compiles cleanly with all imports properly resolved.

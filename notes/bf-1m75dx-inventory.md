@@ -102,7 +102,7 @@ use std::path::Path;
 - `encryption/detection.rs`: `DiagCode`
 - `parser/pages.rs`: `intern`
 - `parser/resources.rs`: `PdfDict`
-- `parser/xref.rs`: `MemorySource`, `crate::parser::object::intern`
+- `parser/xref.rs`: ~~`MemorySource`~~ (FALSE POSITIVE - restored, used 12× in test fixtures), `crate::parser::object::intern`
 - `table/output.rs`: `TableSpan`, `crate::table::Segment`
 - `attachment/filespec.rs`: `PdfDict`
 - `attachment/name_tree.rs`: `PdfDict`
