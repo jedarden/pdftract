@@ -738,9 +738,11 @@ pub fn validate_pages_structure(
 ) -> DocumentResult<()> {
     use crate::parser::pages::count_pages_tree;
 
-    // Check 1: Null pages reference (missing or invalid /Pages field)
+    // Check 0: Empty catalog structure detection - no /Pages entry
+    // A catalog with no /Pages entry is considered empty, regardless of other content
+    // This catches PDFs where the catalog dictionary lacks the essential /Pages key
     if catalog.pages_ref.object == 0 {
-        return Err(DocumentError::MissingPagesArray {
+        return Err(DocumentError::EmptyDocument {
             source: source_identifier.to_string(),
         });
     }
@@ -2305,11 +2307,12 @@ startxref
 
         let result = validate_pages_structure(&catalog, &resolver, "test.pdf");
         assert!(result.is_err());
+        // A catalog with no /Pages entry is an empty catalog structure
         match result {
-            Err(DocumentError::MissingPagesArray { source }) => {
+            Err(DocumentError::EmptyDocument { source }) => {
                 assert_eq!(source, "test.pdf");
             }
-            _ => panic!("Expected MissingPagesArray error, got {:?}", result),
+            _ => panic!("Expected EmptyDocument error for catalog with no /Pages entry, got {:?}", result),
         }
     }
 
@@ -2380,7 +2383,7 @@ startxref
             diagnostics: vec![],
         };
 
-        // Test with null pages reference - should fail with MissingPagesArray
+        // Test with null pages reference - should fail with EmptyDocument
         let null_catalog = Catalog {
             pages_ref: crate::parser::object::ObjRef::new(0, 0),
             ..catalog.clone()
@@ -2388,8 +2391,8 @@ startxref
         let result = validate_pages_structure(&null_catalog, &resolver, "test.pdf");
         assert!(result.is_err());
         match result {
-            Err(DocumentError::MissingPagesArray { .. }) => {}
-            _ => panic!("Expected MissingPagesArray for null pages_ref, got {:?}", result),
+            Err(DocumentError::EmptyDocument { .. }) => {}
+            _ => panic!("Expected EmptyDocument for catalog with no /Pages entry, got {:?}", result),
         }
     }
 
@@ -2457,12 +2460,12 @@ startxref
 
         let resolver = XrefResolver::new();
 
-        // Should fail on pages_ref == 0 before checking catalog content
+        // Should fail on pages_ref == 0 - catalog with no /Pages entry is empty
         let result = validate_pages_structure(&catalog, &resolver, "tagged.pdf");
         assert!(result.is_err());
         match result {
-            Err(DocumentError::MissingPagesArray { .. }) => {}
-            _ => panic!("Expected MissingPagesArray, got {:?}", result),
+            Err(DocumentError::EmptyDocument { .. }) => {}
+            _ => panic!("Expected EmptyDocument for catalog with no /Pages entry, got {:?}", result),
         }
     }
 
@@ -2542,6 +2545,93 @@ startxref
                 // Expected - reference doesn't resolve
             }
             _ => panic!("Expected MissingPagesArray for unresolvable reference, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_validate_pages_structure_empty_catalog_returns_empty_document() {
+        use crate::parser::catalog::Catalog;
+        use crate::parser::xref::XrefResolver;
+
+        // Create a resolver
+        let resolver = XrefResolver::new();
+
+        // Create a completely empty catalog (no /Pages, no other content)
+        let empty_catalog = Catalog::default();
+
+        let result = validate_pages_structure(&empty_catalog, &resolver, "empty.pdf");
+        assert!(result.is_err());
+        match result {
+            Err(DocumentError::EmptyDocument { source }) => {
+                assert_eq!(source, "empty.pdf");
+            }
+            _ => panic!("Expected EmptyDocument for empty catalog, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_validate_pages_structure_catalog_with_content_but_no_pages_returns_empty_document() {
+        use crate::parser::catalog::Catalog;
+        use crate::parser::object::ObjRef;
+        use crate::parser::xref::XrefResolver;
+
+        // Create a resolver
+        let resolver = XrefResolver::new();
+
+        // Create a catalog with metadata but no /Pages entry
+        let catalog_with_content = Catalog {
+            pages_ref: ObjRef::new(0, 0),
+            outlines_ref: Some(ObjRef::new(5, 0)),
+            metadata_ref: Some(ObjRef::new(6, 0)),
+            ..Default::default()
+        };
+
+        let result = validate_pages_structure(&catalog_with_content, &resolver, "with-metadata.pdf");
+        assert!(result.is_err());
+        // Should return EmptyDocument (catalog has content but no pages structure)
+        match result {
+            Err(DocumentError::EmptyDocument { source }) => {
+                assert_eq!(source, "with-metadata.pdf");
+            }
+            _ => panic!("Expected EmptyDocument for catalog with content but no pages, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_validate_pages_structure_truly_empty_catalog_no_panic() {
+        use crate::parser::catalog::Catalog;
+        use crate::parser::object::ObjRef;
+        use crate::parser::xref::XrefResolver;
+
+        // Create a resolver
+        let resolver = XrefResolver::new();
+
+        // Create a catalog that is completely empty (all fields None/default)
+        let truly_empty_catalog = Catalog {
+            pages_ref: ObjRef::new(0, 0),
+            outlines_ref: None,
+            mark_info: Default::default(),
+            struct_tree_root_ref: None,
+            acroform_ref: None,
+            names_ref: None,
+            metadata_ref: None,
+            page_labels: None,
+            oc_properties: None,
+            open_action: None,
+            aa: None,
+            version: None,
+            threads_ref: None,
+            diagnostics: vec![],
+        };
+
+        // This should not panic and should return EmptyDocument
+        let result = validate_pages_structure(&truly_empty_catalog, &resolver, "truly-empty.pdf");
+        assert!(result.is_err());
+        match result {
+            Err(DocumentError::EmptyDocument { source }) => {
+                assert_eq!(source, "truly-empty.pdf");
+            }
+            _ => panic!("Expected EmptyDocument for truly empty catalog, got {:?}", result),
         }
     }
 }
