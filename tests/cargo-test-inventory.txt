@@ -1,0 +1,64 @@
+# Cargo Test Inventory - Generated on Mon Aug 10 12:42:43 AM EDT 2026
+
+## COMPILATION STATUS: FAILED
+
+The codebase has 232 compilation errors that prevent test listing.
+
+## ERROR SUMMARY
+    149 error[E0425]: cannot find function `intern` in this scope
+     56 error[E0433]: cannot find type `MemorySource` in this scope
+     20 error[E0433]: cannot find type `PdfDict` in this scope
+      4 error[E0433]: cannot find type `TableSpan` in this scope
+      1 error[E0433]: cannot find type `ObjRef` in this scope
+      1 error[E0433]: cannot find type `FitType` in this scope
+      1 error[E0433]: cannot find type `Arc` in this scope
+
+## SAMPLE ERRORS (first 20)
+error[E0433]: cannot find type `ObjRef` in this scope
+   --> crates/pdftract-core/src/javascript.rs:252:36
+    |
+--
+error[E0433]: cannot find type `Arc` in this scope
+   --> crates/pdftract-core/src/layout/figure.rs:274:19
+    |
+--
+error[E0433]: cannot find type `FitType` in this scope
+   --> crates/pdftract-core/src/output/markdown/links.rs:487:22
+    |
+--
+error[E0425]: cannot find function `intern` in this scope
+   --> crates/pdftract-core/src/parser/catalog.rs:606:21
+    |
+--
+error[E0425]: cannot find function `intern` in this scope
+   --> crates/pdftract-core/src/parser/catalog.rs:607:21
+    |
+--
+error[E0425]: cannot find function `intern` in this scope
+   --> crates/pdftract-core/src/parser/catalog.rs:608:21
+    |
+--
+error[E0425]: cannot find function `intern` in this scope
+   --> crates/pdftract-core/src/parser/catalog.rs:610:30
+    |
+--
+error[E0425]: cannot find function `intern` in this scope
+   --> crates/pdftract-core/src/parser/catalog.rs:611:30
+    |
+--
+error[E0425]: cannot find function `intern` in this scope
+   --> crates/pdftract-core/src/parser/catalog.rs:614:21
+    |
+--
+error[E0425]: cannot find function `intern` in this scope
+   --> crates/pdftract-core/src/parser/catalog.rs:619:30
+    |
+--
+
+## COMPLETE ERROR OUTPUT
+Full compilation output saved to /tmp/cargo-test-list-raw.txt (4468 lines)
+
+## NEXT STEPS
+1. Fix the 232 compilation errors in the codebase
+2. Run `cargo test --list` again to generate actual test inventory
+3. This inventory file will be updated with the actual test list once compilation succeeds
