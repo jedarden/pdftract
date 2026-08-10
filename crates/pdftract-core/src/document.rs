@@ -769,6 +769,44 @@ pub fn validate_pages_structure(
         });
     }
 
+    // Check 0.4: Specific /Pages entry validation
+    // After confirming the dictionary is non-empty and has essential keys,
+    // validate the /Pages entry specifically to catch:
+    // - Catalog with /Pages key but null/invalid value
+    // - Catalog with /Pages key of wrong type
+    // This provides a more specific error message and targets the /Pages entry directly.
+    // Note: We only check this if the raw_dict is a non-empty dictionary (not caught by 0.1-0.3).
+    if let Some(dict) = catalog.raw_dict.as_dict() {
+        if !dict.is_empty() {
+            // Dictionary is non-empty, check the /Pages entry specifically
+            match dict.get("Pages") {
+                None => {
+                    // No /Pages key in dictionary - this is critical
+                    // This should have been caught by Check 0.3, but we validate again for safety
+                    return Err(DocumentError::EmptyDocument {
+                        source: source_identifier.to_string(),
+                    });
+                }
+                Some(crate::parser::object::PdfObject::Null) => {
+                    // /Pages key exists but is null - catalog is invalid
+                    return Err(DocumentError::EmptyDocument {
+                        source: source_identifier.to_string(),
+                    });
+                }
+                Some(crate::parser::object::PdfObject::Ref(_)) => {
+                    // /Pages is a valid reference - continue processing
+                }
+                Some(_) => {
+                    // /Pages exists but is not a reference (wrong type)
+                    // This is a structural error - catalog is malformed
+                    return Err(DocumentError::EmptyDocument {
+                        source: source_identifier.to_string(),
+                    });
+                }
+            }
+        }
+    }
+
     // Check 1: Empty catalog structure detection - no /Pages entry
     // A catalog with no /Pages entry is considered empty, regardless of other content
     // This catches PDFs where the catalog dictionary lacks the essential /Pages key

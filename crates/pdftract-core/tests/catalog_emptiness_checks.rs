@@ -339,3 +339,198 @@ fn test_no_panic_or_hang_on_empty_catalog() {
         _ => panic!("Expected EmptyDocument error"),
     }
 }
+
+/// Test 10: Catalog with /Pages key but null value triggers EmptyDocument
+#[test]
+fn test_catalog_with_pages_null_value_triggers_empty_document() {
+    // This test covers Check 0.4: Catalog has /Pages key but value is Null
+    // This scenario passes earlier checks (dictionary is non-empty, has essential keys)
+    // but Check 0.4 catches the null /Pages value
+
+    let mut dict = indexmap::IndexMap::new();
+    dict.insert("Type".into(), PdfObject::Name("Catalog".into()));
+    dict.insert("Pages".into(), PdfObject::Null); // /Pages key exists but is null
+    let catalog_dict = PdfObject::Dict(Box::new(dict));
+
+    let catalog = Catalog::new(ObjRef::new(1, 0), catalog_dict);
+    let resolver = XrefResolver::new();
+
+    let result = validate_pages_structure(&catalog, &resolver, "test_pages_null.pdf");
+
+    match result {
+        Err(DocumentError::EmptyDocument { source }) => {
+            assert_eq!(source, "test_pages_null.pdf",
+                "Error should include source identifier for null /Pages value");
+        }
+        Ok(_) => {
+            panic!("Expected EmptyDocument error for catalog with null /Pages value, but got Ok");
+        }
+        Err(other_error) => {
+            panic!("Expected EmptyDocument error for catalog with null /Pages value, but got {:?}", other_error);
+        }
+    }
+}
+
+/// Test 11: Catalog with /Pages key but wrong type (String) triggers EmptyDocument
+#[test]
+fn test_catalog_with_pages_wrong_type_string_triggers_empty_document() {
+    // This test covers Check 0.4: Catalog has /Pages key but value is wrong type (String)
+    // This passes earlier checks but Check 0.4 catches the type mismatch
+
+    let mut dict = indexmap::IndexMap::new();
+    dict.insert("Type".into(), PdfObject::Name("Catalog".into()));
+    dict.insert("Pages".into(), PdfObject::String(Box::new(b"invalid".to_vec()))); // /Pages is String, not Ref
+    let catalog_dict = PdfObject::Dict(Box::new(dict));
+
+    let catalog = Catalog::new(ObjRef::new(1, 0), catalog_dict);
+    let resolver = XrefResolver::new();
+
+    let result = validate_pages_structure(&catalog, &resolver, "test_pages_string.pdf");
+
+    match result {
+        Err(DocumentError::EmptyDocument { source }) => {
+            assert_eq!(source, "test_pages_string.pdf",
+                "Error should include source identifier for wrong-type /Pages value");
+        }
+        Ok(_) => {
+            panic!("Expected EmptyDocument error for catalog with String /Pages value, but got Ok");
+        }
+        Err(other_error) => {
+            panic!("Expected EmptyDocument error for catalog with String /Pages value, but got {:?}", other_error);
+        }
+    }
+}
+
+/// Test 12: Catalog with /Pages key but wrong type (Integer) triggers EmptyDocument
+#[test]
+fn test_catalog_with_pages_wrong_type_integer_triggers_empty_document() {
+    // This test covers Check 0.4: Catalog has /Pages key but value is Integer
+
+    let mut dict = indexmap::IndexMap::new();
+    dict.insert("Type".into(), PdfObject::Name("Catalog".into()));
+    dict.insert("Pages".into(), PdfObject::Integer(42)); // /Pages is Integer, not Ref
+    let catalog_dict = PdfObject::Dict(Box::new(dict));
+
+    let catalog = Catalog::new(ObjRef::new(1, 0), catalog_dict);
+    let resolver = XrefResolver::new();
+
+    let result = validate_pages_structure(&catalog, &resolver, "test_pages_integer.pdf");
+
+    match result {
+        Err(DocumentError::EmptyDocument { source }) => {
+            assert_eq!(source, "test_pages_integer.pdf",
+                "Error should include source identifier for Integer /Pages value");
+        }
+        Ok(_) => {
+            panic!("Expected EmptyDocument error for catalog with Integer /Pages value, but got Ok");
+        }
+        Err(other_error) => {
+            panic!("Expected EmptyDocument error for catalog with Integer /Pages value, but got {:?}", other_error);
+        }
+    }
+}
+
+/// Test 13: Catalog with /Pages key but wrong type (Array) triggers EmptyDocument
+#[test]
+fn test_catalog_with_pages_wrong_type_array_triggers_empty_document() {
+    // This test covers Check 0.4: Catalog has /Pages key but value is Array
+
+    let mut dict = indexmap::IndexMap::new();
+    dict.insert("Type".into(), PdfObject::Name("Catalog".into()));
+    dict.insert("Pages".into(), PdfObject::Array(Box::new(vec![
+        PdfObject::Integer(1),
+        PdfObject::Integer(2),
+    ]))); // /Pages is Array, not Ref
+    let catalog_dict = PdfObject::Dict(Box::new(dict));
+
+    let catalog = Catalog::new(ObjRef::new(1, 0), catalog_dict);
+    let resolver = XrefResolver::new();
+
+    let result = validate_pages_structure(&catalog, &resolver, "test_pages_array.pdf");
+
+    match result {
+        Err(DocumentError::EmptyDocument { source }) => {
+            assert_eq!(source, "test_pages_array.pdf",
+                "Error should include source identifier for Array /Pages value");
+        }
+        Ok(_) => {
+            panic!("Expected EmptyDocument error for catalog with Array /Pages value, but got Ok");
+        }
+        Err(other_error) => {
+            panic!("Expected EmptyDocument error for catalog with Array /Pages value, but got {:?}", other_error);
+        }
+    }
+}
+
+/// Test 14: Catalog with /Pages key but wrong type (Dictionary) triggers EmptyDocument
+#[test]
+fn test_catalog_with_pages_wrong_type_dictionary_triggers_empty_document() {
+    // This test covers Check 0.4: Catalog has /Pages key but value is Dictionary
+
+    let mut pages_dict = indexmap::IndexMap::new();
+    pages_dict.insert("Kids".into(), PdfObject::Array(Box::new(vec![])));
+    let mut dict = indexmap::IndexMap::new();
+    dict.insert("Type".into(), PdfObject::Name("Catalog".into()));
+    dict.insert("Pages".into(), PdfObject::Dict(Box::new(pages_dict))); // /Pages is Dict, not Ref
+    let catalog_dict = PdfObject::Dict(Box::new(dict));
+
+    let catalog = Catalog::new(ObjRef::new(1, 0), catalog_dict);
+    let resolver = XrefResolver::new();
+
+    let result = validate_pages_structure(&catalog, &resolver, "test_pages_dict.pdf");
+
+    match result {
+        Err(DocumentError::EmptyDocument { source }) => {
+            assert_eq!(source, "test_pages_dict.pdf",
+                "Error should include source identifier for Dictionary /Pages value");
+        }
+        Ok(_) => {
+            panic!("Expected EmptyDocument error for catalog with Dictionary /Pages value, but got Ok");
+        }
+        Err(other_error) => {
+            panic!("Expected EmptyDocument error for catalog with Dictionary /Pages value, but got {:?}", other_error);
+        }
+    }
+}
+
+/// Test 15: Verify no panic when /Pages is absent or invalid
+#[test]
+fn test_no_panic_when_pages_absent_or_invalid() {
+    // This test ensures Check 0.4 doesn't panic when /Pages is in various invalid states
+    use std::time::Instant;
+
+    let invalid_pages_scenarios = vec![
+        (PdfObject::Null, "null"),
+        (PdfObject::String(Box::new(b"invalid".to_vec())), "string"),
+        (PdfObject::Integer(42), "integer"),
+        (PdfObject::Real(3.14), "real"),
+        (PdfObject::Bool(true), "bool"),
+        (PdfObject::Name("Pages".into()), "name"),
+    ];
+
+    for (invalid_value, type_name) in invalid_pages_scenarios {
+        let mut dict = indexmap::IndexMap::new();
+        dict.insert("Type".into(), PdfObject::Name("Catalog".into()));
+        dict.insert("Pages".into(), invalid_value.clone());
+        let catalog_dict = PdfObject::Dict(Box::new(dict));
+
+        let catalog = Catalog::new(ObjRef::new(1, 0), catalog_dict);
+        let resolver = XrefResolver::new();
+
+        let start = Instant::now();
+        let result = validate_pages_structure(&catalog, &resolver, &format!("test_no_panic_{}.pdf", type_name));
+        let elapsed = start.elapsed();
+
+        // Should complete quickly (well under 1 second)
+        assert!(elapsed.as_secs() < 1,
+            "Validation for {} should complete quickly, took {:?}", type_name, elapsed);
+
+        // Should return error, not panic
+        match result {
+            Err(DocumentError::EmptyDocument { .. }) => {
+                // Success - completed without panic
+            }
+            _ => panic!("Expected EmptyDocument error for {} /Pages value, got {:?}", type_name, result),
+        }
+    }
+}
