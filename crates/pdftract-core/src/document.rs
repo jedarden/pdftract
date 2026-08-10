@@ -2412,6 +2412,7 @@ startxref
             version: None,
             threads_ref: None,
             diagnostics: vec![],
+            raw_dict: crate::parser::object::PdfObject::Dict(Default::default()),
         };
 
         // Test with null pages reference - should fail with EmptyDocument
@@ -2458,6 +2459,7 @@ startxref
             version: None,
             threads_ref: None,
             diagnostics: vec![],
+            raw_dict: crate::parser::object::PdfObject::Dict(Default::default()),
         };
 
         // Test assertion disabled - needs proper implementation
@@ -2487,6 +2489,7 @@ startxref
             version: None,
             threads_ref: None,
             diagnostics: vec![],
+            raw_dict: crate::parser::object::PdfObject::Dict(Default::default()),
         };
 
         let resolver = XrefResolver::new();
@@ -2534,6 +2537,7 @@ startxref
             version: None,
             threads_ref: None,
             diagnostics: vec![],
+            raw_dict: crate::parser::object::PdfObject::Dict(Default::default()),
         };
 
         // Test assertion disabled - needs proper implementation
@@ -2567,6 +2571,7 @@ startxref
             version: None,
             threads_ref: None,
             diagnostics: vec![],
+            raw_dict: crate::parser::object::PdfObject::Dict(Default::default()),
         };
 
         let result = validate_pages_structure(&catalog, &resolver, "test.pdf");
@@ -2653,6 +2658,7 @@ startxref
             version: None,
             threads_ref: None,
             diagnostics: vec![],
+            raw_dict: crate::parser::object::PdfObject::Dict(Default::default()),
         };
 
         // This should not panic and should return EmptyDocument

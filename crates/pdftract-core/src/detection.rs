@@ -363,7 +363,7 @@ mod tests {
 
     #[test]
     fn test_detect_javascript_empty() {
-        let catalog = Catalog::new(ObjRef::new(1, 0));
+        let catalog = Catalog::new(ObjRef::new(1, 0), PdfObject::Dict(Box::new(PdfDict::new())));
         let pages = Vec::new();
         let acroform = None;
         let resolver = XrefResolver::new();
@@ -374,7 +374,7 @@ mod tests {
     #[test]
     fn test_detect_javascript_with_catalog_openaction_js() {
         let resolver = XrefResolver::new();
-        let mut catalog = Catalog::new(ObjRef::new(1, 0));
+        let mut catalog = Catalog::new(ObjRef::new(1, 0), PdfObject::Dict(Box::new(PdfDict::new())));
 
         // Create a JavaScript action dict
         let mut js_dict = PdfDict::new();
@@ -396,7 +396,7 @@ mod tests {
     #[test]
     fn test_detect_javascript_with_catalog_aa_js() {
         let resolver = XrefResolver::new();
-        let mut catalog = Catalog::new(ObjRef::new(1, 0));
+        let mut catalog = Catalog::new(ObjRef::new(1, 0), PdfObject::Dict(Box::new(PdfDict::new())));
 
         // Create an /AA dict with JavaScript
         let mut aa_dict = PdfDict::new();
@@ -420,7 +420,7 @@ mod tests {
     #[test]
     fn test_detect_javascript_no_javascript() {
         let resolver = XrefResolver::new();
-        let catalog = Catalog::new(ObjRef::new(1, 0));
+        let catalog = Catalog::new(ObjRef::new(1, 0), PdfObject::Dict(Box::new(PdfDict::new())));
 
         let mut page = PageDict::default();
         page.obj_ref = ObjRef::new(2, 0);
@@ -433,7 +433,7 @@ mod tests {
     #[test]
     fn test_detect_javascript_with_annotation_js() {
         let resolver = XrefResolver::new();
-        let catalog = Catalog::new(ObjRef::new(1, 0));
+        let catalog = Catalog::new(ObjRef::new(1, 0), PdfObject::Dict(Box::new(PdfDict::new())));
 
         // Create a page with an annotation that has JavaScript in /A
         let mut page = PageDict::default();
@@ -462,7 +462,7 @@ mod tests {
     #[test]
     fn test_detect_javascript_with_page_aa_js() {
         let resolver = XrefResolver::new();
-        let catalog = Catalog::new(ObjRef::new(1, 0));
+        let catalog = Catalog::new(ObjRef::new(1, 0), PdfObject::Dict(Box::new(PdfDict::new())));
 
         // Create a page with /AA containing JavaScript
         let mut page = PageDict::default();
@@ -487,7 +487,7 @@ mod tests {
     #[test]
     fn test_detect_javascript_with_acroform_field_js() {
         let resolver = XrefResolver::new();
-        let catalog = Catalog::new(ObjRef::new(1, 0));
+        let catalog = Catalog::new(ObjRef::new(1, 0), PdfObject::Dict(Box::new(PdfDict::new())));
 
         let page = PageDict::default();
         let pages = vec![page];

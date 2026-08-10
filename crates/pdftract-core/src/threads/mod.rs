@@ -709,7 +709,7 @@ mod tests {
         let resolver = XrefResolver::new();
 
         // Create a catalog with /Threads reference
-        let mut catalog = Catalog::new(ObjRef::new(1, 0));
+        let mut catalog = Catalog::new(ObjRef::new(1, 0), PdfObject::Dict(Box::new(PdfDict::new())));
         catalog.threads_ref = Some(ObjRef::new(10, 0));
 
         // Cache the /Threads array with one thread (has /F but no /I)
@@ -748,7 +748,7 @@ mod tests {
         let resolver = XrefResolver::new();
 
         // Create a catalog with /Threads reference
-        let mut catalog = Catalog::new(ObjRef::new(1, 0));
+        let mut catalog = Catalog::new(ObjRef::new(1, 0), PdfObject::Dict(Box::new(PdfDict::new())));
         catalog.threads_ref = Some(ObjRef::new(10, 0));
 
         // Thread 1: full info dict
@@ -837,7 +837,7 @@ mod tests {
         let resolver = XrefResolver::new();
 
         // Create a catalog with /Threads reference
-        let mut catalog = Catalog::new(ObjRef::new(1, 0));
+        let mut catalog = Catalog::new(ObjRef::new(1, 0), PdfObject::Dict(Box::new(PdfDict::new())));
         catalog.threads_ref = Some(ObjRef::new(10, 0));
 
         // Thread with no /F
@@ -883,7 +883,7 @@ mod tests {
         let resolver = XrefResolver::new();
 
         // Create a catalog with /Threads reference
-        let mut catalog = Catalog::new(ObjRef::new(1, 0));
+        let mut catalog = Catalog::new(ObjRef::new(1, 0), PdfObject::Dict(Box::new(PdfDict::new())));
         catalog.threads_ref = Some(ObjRef::new(10, 0));
 
         // Thread with UTF-16BE title
@@ -929,7 +929,7 @@ mod tests {
         let resolver = XrefResolver::new();
 
         // Create a catalog with /Threads reference to empty array
-        let mut catalog = Catalog::new(ObjRef::new(1, 0));
+        let mut catalog = Catalog::new(ObjRef::new(1, 0), PdfObject::Dict(Box::new(PdfDict::new())));
         catalog.threads_ref = Some(ObjRef::new(10, 0));
 
         let empty_array = PdfObject::Array(Box::new(Vec::new()));
@@ -946,7 +946,7 @@ mod tests {
         let resolver = XrefResolver::new();
 
         // Create a catalog without /Threads
-        let catalog = Catalog::new(ObjRef::new(1, 0));
+        let catalog = Catalog::new(ObjRef::new(1, 0), PdfObject::Dict(Box::new(PdfDict::new())));
         // threads_ref is None
 
         let result = discover(&catalog, &resolver);
@@ -960,7 +960,7 @@ mod tests {
         let resolver = XrefResolver::new();
 
         // Create a catalog with /Threads reference
-        let mut catalog = Catalog::new(ObjRef::new(1, 0));
+        let mut catalog = Catalog::new(ObjRef::new(1, 0), PdfObject::Dict(Box::new(PdfDict::new())));
         catalog.threads_ref = Some(ObjRef::new(10, 0));
 
         // Thread with empty title

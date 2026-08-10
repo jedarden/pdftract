@@ -3092,6 +3092,21 @@ help: if you meant to clone `PyDict`, implement `Clone` for it
     |
 
 warning: `pdftract-py` (lib) generated 21 warnings (run `cargo fix --lib -p pdftract-py` to apply 16 suggestions)
+warning: unused imports: `AttachmentJson`, `ExtractionOptions`, `PageResult`, and `TableJson`
+  --> crates/pdftract-py/tests/test_search_integration.rs:10:21
+   |
+10 | use pdftract_core::{AttachmentJson, ExtractionOptions, PageResult, TableJson};
+   |                     ^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `PyResult`, `Python`, and `types::PyDict`
+  --> crates/pdftract-py/tests/test_search_integration.rs:16:12
+   |
+16 | use pyo3::{Python, PyResult, types::PyDict};
+   |            ^^^^^^  ^^^^^^^^  ^^^^^^^^^^^^^
+
+warning: `pdftract-py` (test "test_search_integration") generated 2 warnings (run `cargo fix --test "test_search_integration" -p pdftract-py` to apply 2 suggestions)
 warning: unused import: `pdftract::PyPdfProcessor`
   --> crates/pdftract-py/tests/test_search_scaffold.rs:13:5
    |
@@ -3115,49 +3130,94 @@ warning: unused imports: `PyAny`, `PyResult`, and `Python`
    |            ^^^^^  ^^^^^^^^  ^^^^^^
 
 warning: `pdftract-py` (test "test_search_scaffold") generated 3 warnings (run `cargo fix --test "test_search_scaffold" -p pdftract-py` to apply 3 suggestions)
-warning: unused imports: `AttachmentJson`, `ExtractionOptions`, `PageResult`, and `TableJson`
-  --> crates/pdftract-py/tests/test_search_integration.rs:10:21
+warning: unused import: `Path`
+  --> crates/pdftract-cli/tests/test_legal_filing.rs:19:17
    |
-10 | use pdftract_core::{AttachmentJson, ExtractionOptions, PageResult, TableJson};
-   |                     ^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^
+19 | use std::path::{Path, PathBuf};
+   |                 ^^^^
    |
    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
 
-warning: unused imports: `PyResult`, `Python`, and `types::PyDict`
-  --> crates/pdftract-py/tests/test_search_integration.rs:16:12
+warning: unused import: `super::*`
+   --> crates/pdftract-cli/tests/test_legal_filing.rs:584:9
+    |
+584 |     use super::*;
+    |         ^^^^^^^^
+
+warning: unused variable: `fixture_dir`
+   --> crates/pdftract-cli/tests/test_legal_filing.rs:352:9
+    |
+352 |     let fixture_dir = fixture_dir();
+    |         ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_fixture_dir`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `pdftract-cli` (test "test_legal_filing") generated 3 warnings (run `cargo fix --test "test_legal_filing" -p pdftract-cli` to apply 3 suggestions)
+warning: unused import: `std::error::Error`
+  --> crates/pdftract-cli/tests/test_encryption_errors.rs:22:5
    |
-16 | use pyo3::{Python, PyResult, types::PyDict};
-   |            ^^^^^^  ^^^^^^^^  ^^^^^^^^^^^^^
-
-warning: `pdftract-py` (test "test_search_integration") generated 2 warnings (run `cargo fix --test "test_search_integration" -p pdftract-py` to apply 2 suggestions)
-warning: unused import: `std::path::Path`
- --> crates/pdftract-cli/../../tests/list_pdf_fixtures.rs:4:5
-  |
-4 | use std::path::Path;
-  |     ^^^^^^^^^^^^^^^
-  |
-  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: variable does not need to be mutable
-  --> crates/pdftract-cli/../../tests/list_pdf_fixtures.rs:14:13
+22 | use std::error::Error;
+   |     ^^^^^^^^^^^^^^^^^
    |
-14 |         let mut entries = walkdir::WalkDir::new(fixtures_path)
-   |             ----^^^^^^^
-   |             |
-   |             help: remove this `mut`
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `Write` and `self`
+  --> crates/pdftract-cli/tests/test_encryption_errors.rs:25:15
    |
-   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+25 | use std::io::{self, Write};
+   |               ^^^^  ^^^^^
 
-warning: `pdftract-cli` (bin "list_pdf_fixtures") generated 2 warnings (run `cargo fix --bin "list_pdf_fixtures" -p pdftract-cli` to apply 2 suggestions)
-warning: unused import: `Command`
- --> crates/pdftract-cli/tests/TH-09-inspector-xss.rs:7:20
-  |
-7 | use std::process::{Command, Stdio};
-  |                    ^^^^^^^
-  |
-  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+warning: unused import: `Path`
+  --> crates/pdftract-cli/tests/test_encryption_errors.rs:26:17
+   |
+26 | use std::path::{Path, PathBuf};
+   |                 ^^^^
 
-warning: `pdftract-cli` (test "TH-09-inspector-xss") generated 1 warning (run `cargo fix --test "TH-09-inspector-xss" -p pdftract-cli` to apply 1 suggestion)
+warning: unused import: `std::time::Duration`
+  --> crates/pdftract-cli/tests/test_encryption_errors.rs:28:5
+   |
+28 | use std::time::Duration;
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::*`
+   --> crates/pdftract-cli/tests/test_encryption_errors.rs:325:9
+    |
+325 |     use super::*;
+    |         ^^^^^^^^
+
+warning: `pdftract-cli` (test "test_encryption_errors") generated 5 warnings (run `cargo fix --test "test_encryption_errors" -p pdftract-cli` to apply 5 suggestions)
+warning: unused import: `Path`
+  --> crates/pdftract-cli/tests/test_scientific_paper.rs:21:17
+   |
+21 | use std::path::{Path, PathBuf};
+   |                 ^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `super::*`
+   --> crates/pdftract-cli/tests/test_scientific_paper.rs:507:9
+    |
+507 |     use super::*;
+    |         ^^^^^^^^
+
+warning: unused variable: `fixture_dir`
+   --> crates/pdftract-cli/tests/test_scientific_paper.rs:359:9
+    |
+359 |     let fixture_dir = fixture_dir();
+    |         ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_fixture_dir`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `pdftract-cli` (test "test_scientific_paper") generated 3 warnings (run `cargo fix --test "test_scientific_paper" -p pdftract-cli` to apply 3 suggestions)
+warning: unused variable: `pdf_str`
+   --> crates/pdftract-cli/tests/TH-08-log-audit.rs:246:9
+    |
+246 |     let pdf_str = String::from_utf8_lossy(&pdf_bytes);
+    |         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_pdf_str`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `pdftract-cli` (test "TH-08-log-audit") generated 1 warning (run `cargo fix --test "TH-08-log-audit" -p pdftract-cli` to apply 1 suggestion)
 warning: unused import: `std::collections::HashMap`
  --> crates/pdftract-cli/src/main.rs:3:5
   |
@@ -3165,6 +3225,12 @@ warning: unused import: `std::collections::HashMap`
   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
   |
   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `CacheIndex`
+  --> crates/pdftract-cli/src/cache_cmd.rs:10:42
+   |
+10 | use pdftract_core::cache::layout::{self, CacheIndex};
+   |                                          ^^^^^^^^^^
 
 warning: unused import: `std::sync::Arc`
  --> crates/pdftract-cli/src/grep/mod.rs:5:5
@@ -3285,12 +3351,6 @@ warning: unused imports: `BLACK_ANCHOR`, `BLUE_HEADING`, `BLUE_READING_ORDER`, `
 46 |     YELLOW_MEDIUM,
    |     ^^^^^^^^^^^^^
 
-warning: unused import: `std::io::Write`
-   --> crates/pdftract-cli/src/mcp/root.rs:120:9
-    |
-120 |     use std::io::Write;
-    |         ^^^^^^^^^^^^^^
-
 warning: unused imports: `ToolResult` and `Tool`
   --> crates/pdftract-cli/src/mcp/tools/mod.rs:11:31
    |
@@ -3337,14 +3397,6 @@ warning: unused import: `std::thread`
   |
 8 | use std::thread;
   |     ^^^^^^^^^^^
-
-warning: unused imports: `HeaderMap`, `HeaderValue`, `Method`, and `body::Body`
-    --> crates/pdftract-cli/src/serve.rs:1263:13
-     |
-1263 |             body::Body,
-     |             ^^^^^^^^^^
-1264 |             http::{HeaderMap, HeaderValue, Method, StatusCode},
-     |                    ^^^^^^^^^  ^^^^^^^^^^^  ^^^^^^
 
 warning: unused import: `extract_pdf`
   --> crates/pdftract-cli/src/main.rs:32:30
@@ -3406,25 +3458,13 @@ warning: unused import: `std::io::Write`
 5 | use std::io::Write;
   |     ^^^^^^^^^^^^^^
 
-warning: unused variable: `mem`
-   --> crates/pdftract-cli/src/doctor/checks/memory.rs:174:13
-    |
-174 |         let mem = MemoryCheck::get_available_memory();
-    |             ^^^ help: if this is intentional, prefix it with an underscore: `_mem`
-    |
-    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused variable: `limit`
-  --> crates/pdftract-cli/src/doctor/checks/ulimit.rs:96:13
-   |
-96 |         let limit = UlimitCheck::get_rlimit_nofile();
-   |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_limit`
-
 warning: unused variable: `xref_section`
    --> crates/pdftract-cli/src/grep/worker.rs:315:5
     |
 315 |     xref_section: &XrefSection,
     |     ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_xref_section`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
 
 warning: variable `last_font_size` is assigned to, but never used
    --> crates/pdftract-cli/src/grep/worker.rs:428:9
@@ -3454,12 +3494,6 @@ warning: unused variable: `y0`
      |
 1076 |         let [x0, y0, x1, y1] = span.bbox;
      |                  ^^ help: if this is intentional, prefix it with an underscore: `_y0`
-
-warning: unused variable: `args`
-   --> crates/pdftract-cli/src/inspect/args.rs:138:13
-    |
-138 |         let args = InspectArgs {
-    |             ^^^^ help: if this is intentional, prefix it with an underscore: `_args`
 
 warning: value assigned to `pdf_bytes` is never read
    --> crates/pdftract-cli/src/serve.rs:844:13
@@ -3588,252 +3622,6 @@ warning: field `exit_on_fail` is never read
 139 |     pub exit_on_fail: bool,
     |         ^^^^^^^^^^^^
 
-warning: fields `highlight_dir`, `headers`, and `pages` are never read
-   --> crates/pdftract-cli/src/grep/mod.rs:243:9
-    |
-230 | pub struct GrepConfig {
-    |            ---------- fields in this struct
-...
-243 |     pub highlight_dir: Option<PathBuf>,
-    |         ^^^^^^^^^^^^^
-...
-249 |     pub headers: HashMap<String, String>,
-    |         ^^^^^^^
-250 |     /// Page range to extract (1-based, comma-separated)
-251 |     pub pages: Option<String>,
-    |         ^^^^^
-    |
-    = note: `GrepConfig` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
-
-warning: constant `REMOTE_ENABLED` is never used
-   --> crates/pdftract-cli/src/grep/mod.rs:255:7
-    |
-255 | const REMOTE_ENABLED: bool = cfg!(feature = "remote");
-    |       ^^^^^^^^^^^^^^
-
-warning: function `produce_work_items` is never used
-   --> crates/pdftract-cli/src/grep/mod.rs:270:8
-    |
-270 | pub fn produce_work_items(config: &GrepConfig) -> Result<(Vec<FileWorkItem>, u64)> {
-    |        ^^^^^^^^^^^^^^^^^^
-
-warning: function `emit_progress_json` is never used
-   --> crates/pdftract-cli/src/grep/mod.rs:456:4
-    |
-456 | fn emit_progress_json(event: &ProgressEvent) -> Result<()> {
-    |    ^^^^^^^^^^^^^^^^^^
-
-warning: method `is_match` is never used
-   --> crates/pdftract-cli/src/grep/matcher.rs:208:12
-    |
- 63 | impl Matcher {
-    | ------------ method in this implementation
-...
-208 |     pub fn is_match(&self, text: &str) -> bool {
-    |            ^^^^^^^^
-
-warning: enum `ProgressEvent` is never used
-   --> crates/pdftract-cli/src/grep/event.rs:158:10
-    |
-158 | pub enum ProgressEvent {
-    |          ^^^^^^^^^^^^^
-
-warning: struct `JsonSink` is never constructed
-   --> crates/pdftract-cli/src/grep/event.rs:187:12
-    |
-187 | pub struct JsonSink {
-    |            ^^^^^^^^
-
-warning: associated items `new`, `write_match`, `write_file_only`, and `write_count` are never used
-   --> crates/pdftract-cli/src/grep/event.rs:197:12
-    |
-192 | impl JsonSink {
-    | ------------- associated items in this implementation
-...
-197 |     pub fn new() -> Self {
-    |            ^^^
-...
-220 |     pub fn write_match(&mut self, event: &MatchEvent) -> std::io::Result<()> {
-    |            ^^^^^^^^^^^
-...
-234 |     pub fn write_file_only(&mut self, event: &FileOnlyEvent) -> std::io::Result<()> {
-    |            ^^^^^^^^^^^^^^^
-...
-248 |     pub fn write_count(&mut self, event: &CountEvent) -> std::io::Result<()> {
-    |            ^^^^^^^^^^^
-
-warning: type alias `StdoutLock` is never used
-   --> crates/pdftract-cli/src/grep/event.rs:265:6
-    |
-265 | type StdoutLock<'a> = std::io::StdoutLock<'a>;
-    |      ^^^^^^^^^^
-
-warning: struct `WorkerResult` is never constructed
-  --> crates/pdftract-cli/src/grep/worker.rs:45:12
-   |
-45 | pub struct WorkerResult {
-   |            ^^^^^^^^^^^^
-
-warning: function `worker_run` is never used
-  --> crates/pdftract-cli/src/grep/worker.rs:76:8
-   |
-76 | pub fn worker_run(
-   |        ^^^^^^^^^^
-
-warning: function `compute_fingerprint_for_grep` is never used
-   --> crates/pdftract-cli/src/grep/worker.rs:312:4
-    |
-312 | fn compute_fingerprint_for_grep(
-    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-warning: struct `Span` is never constructed
-   --> crates/pdftract-cli/src/grep/worker.rs:363:8
-    |
-363 | struct Span {
-    |        ^^^^
-
-warning: function `extract_spans_from_page` is never used
-   --> crates/pdftract-cli/src/grep/worker.rs:382:4
-    |
-382 | fn extract_spans_from_page(
-    |    ^^^^^^^^^^^^^^^^^^^^^^^
-
-warning: function `group_glyphs_into_spans` is never used
-   --> crates/pdftract-cli/src/grep/worker.rs:418:4
-    |
-418 | fn group_glyphs_into_spans(glyphs: Vec<Glyph>) -> Vec<Span> {
-    |    ^^^^^^^^^^^^^^^^^^^^^^^
-
-warning: function `create_span_from_glyphs` is never used
-   --> crates/pdftract-cli/src/grep/worker.rs:479:4
-    |
-479 | fn create_span_from_glyphs(glyphs: &[Glyph]) -> Span {
-    |    ^^^^^^^^^^^^^^^^^^^^^^^
-
-warning: function `decode_page_streams` is never used
-   --> crates/pdftract-cli/src/grep/worker.rs:528:4
-    |
-528 | fn decode_page_streams(
-    |    ^^^^^^^^^^^^^^^^^^^
-
-warning: function `process_span` is never used
-   --> crates/pdftract-cli/src/grep/worker.rs:564:4
-    |
-564 | fn process_span(
-    |    ^^^^^^^^^^^^
-
-warning: function `parse_catalog_with_resolver` is never used
-   --> crates/pdftract-cli/src/grep/worker.rs:662:4
-    |
-662 | fn parse_catalog_with_resolver(
-    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-warning: function `write_highlighted_pdfs` is never used
-  --> crates/pdftract-cli/src/grep/highlight.rs:51:8
-   |
-51 | pub fn write_highlighted_pdfs(
-   |        ^^^^^^^^^^^^^^^^^^^^^^
-
-warning: function `write_single_highlighted_pdf` is never used
-   --> crates/pdftract-cli/src/grep/highlight.rs:107:4
-    |
-107 | fn write_single_highlighted_pdf(
-    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-warning: field `headers` is never read
-  --> crates/pdftract-cli/src/hash.rs:31:9
-   |
-25 | pub struct HashArgs {
-   |            -------- field in this struct
-...
-31 |     pub headers: Vec<(String, String)>,
-   |         ^^^^^^^
-
-warning: methods `is_batch`, `len`, and `is_empty` are never used
-   --> crates/pdftract-cli/src/mcp/framing/mod.rs:461:12
-    |
-459 | impl BatchMessage {
-    | ----------------- methods in this implementation
-460 |     /// Returns true if this is a batch message.
-461 |     pub fn is_batch(&self) -> bool {
-    |            ^^^^^^^^
-...
-466 |     pub fn len(&self) -> usize {
-    |            ^^^
-...
-474 |     pub fn is_empty(&self) -> bool {
-    |            ^^^^^^^^
-
-warning: constant `CODE_ROOT_INVALID` is never used
-  --> crates/pdftract-cli/src/mcp/root.rs:17:11
-   |
-17 | pub const CODE_ROOT_INVALID: &str = "ROOT_INVALID";
-   |           ^^^^^^^^^^^^^^^^^
-
-warning: `pdftract-core` (lib test) generated 305 warnings (153 duplicates) (run `cargo fix --lib -p pdftract-core --tests` to apply 131 suggestions)
-warning: unused import: `Path`
-  --> crates/pdftract-cli/tests/test_form.rs:17:17
-   |
-17 | use std::path::{Path, PathBuf};
-   |                 ^^^^
-   |
-   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused variable: `content`
-   --> crates/pdftract-cli/tests/test_form.rs:271:9
-    |
-271 |     let content = fs::read_to_string(profile_path).expect("Failed to read form profile");
-    |         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_content`
-    |
-    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
-
-warning: `pdftract-cli` (test "test_form") generated 2 warnings (run `cargo fix --test "test_form" -p pdftract-cli` to apply 2 suggestions)
-warning: `pdftract-cli` (bin "pdftract" test) generated 118 warnings (41 duplicates) (run `cargo fix --bin "pdftract" -p pdftract-cli --tests` to apply 35 suggestions)
-warning: unused import: `CacheIndex`
-  --> crates/pdftract-cli/src/cache_cmd.rs:10:42
-   |
-10 | use pdftract_core::cache::layout::{self, CacheIndex};
-   |                                          ^^^^^^^^^^
-
-warning: unused import: `Path`
-  --> crates/pdftract-cli/tests/test_legal_filing.rs:19:17
-   |
-19 | use std::path::{Path, PathBuf};
-   |                 ^^^^
-   |
-   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused import: `super::*`
-   --> crates/pdftract-cli/tests/test_legal_filing.rs:584:9
-    |
-584 |     use super::*;
-    |         ^^^^^^^^
-
-warning: unused variable: `xref_section`
-   --> crates/pdftract-cli/src/grep/worker.rs:315:5
-    |
-315 |     xref_section: &XrefSection,
-    |     ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_xref_section`
-    |
-    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused variable: `fixture_dir`
-   --> crates/pdftract-cli/tests/test_legal_filing.rs:352:9
-    |
-352 |     let fixture_dir = fixture_dir();
-    |         ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_fixture_dir`
-    |
-    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
-
-warning: `pdftract-cli` (test "test_legal_filing") generated 3 warnings (run `cargo fix --test "test_legal_filing" -p pdftract-cli` to apply 3 suggestions)
-warning: unused import: `std::path::PathBuf`
- --> crates/pdftract-cli/tests/multi_output_validation.rs:6:5
-  |
-6 | use std::path::PathBuf;
-  |     ^^^^^^^^^^^^^^^^^^
-  |
-  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
 warning: enum `ProgressMode` is never used
   --> crates/pdftract-cli/src/grep/mod.rs:38:10
    |
@@ -3857,6 +3645,24 @@ warning: struct `GrepConfig` is never constructed
     |
 230 | pub struct GrepConfig {
     |            ^^^^^^^^^^
+
+warning: constant `REMOTE_ENABLED` is never used
+   --> crates/pdftract-cli/src/grep/mod.rs:255:7
+    |
+255 | const REMOTE_ENABLED: bool = cfg!(feature = "remote");
+    |       ^^^^^^^^^^^^^^
+
+warning: function `produce_work_items` is never used
+   --> crates/pdftract-cli/src/grep/mod.rs:270:8
+    |
+270 | pub fn produce_work_items(config: &GrepConfig) -> Result<(Vec<FileWorkItem>, u64)> {
+    |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `emit_progress_json` is never used
+   --> crates/pdftract-cli/src/grep/mod.rs:456:4
+    |
+456 | fn emit_progress_json(event: &ProgressEvent) -> Result<()> {
+    |    ^^^^^^^^^^^^^^^^^^
 
 warning: struct `MatchRange` is never constructed
   --> crates/pdftract-cli/src/grep/matcher.rs:17:12
@@ -3986,6 +3792,42 @@ warning: function `is_false` is never used
 149 | fn is_false(value: &bool) -> bool {
     |    ^^^^^^^^
 
+warning: enum `ProgressEvent` is never used
+   --> crates/pdftract-cli/src/grep/event.rs:158:10
+    |
+158 | pub enum ProgressEvent {
+    |          ^^^^^^^^^^^^^
+
+warning: struct `JsonSink` is never constructed
+   --> crates/pdftract-cli/src/grep/event.rs:187:12
+    |
+187 | pub struct JsonSink {
+    |            ^^^^^^^^
+
+warning: associated items `new`, `write_match`, `write_file_only`, and `write_count` are never used
+   --> crates/pdftract-cli/src/grep/event.rs:197:12
+    |
+192 | impl JsonSink {
+    | ------------- associated items in this implementation
+...
+197 |     pub fn new() -> Self {
+    |            ^^^
+...
+220 |     pub fn write_match(&mut self, event: &MatchEvent) -> std::io::Result<()> {
+    |            ^^^^^^^^^^^
+...
+234 |     pub fn write_file_only(&mut self, event: &FileOnlyEvent) -> std::io::Result<()> {
+    |            ^^^^^^^^^^^^^^^
+...
+248 |     pub fn write_count(&mut self, event: &CountEvent) -> std::io::Result<()> {
+    |            ^^^^^^^^^^^
+
+warning: type alias `StdoutLock` is never used
+   --> crates/pdftract-cli/src/grep/event.rs:265:6
+    |
+265 | type StdoutLock<'a> = std::io::StdoutLock<'a>;
+    |      ^^^^^^^^^^
+
 warning: struct `FileWorkItem` is never constructed
   --> crates/pdftract-cli/src/grep/expand.rs:14:12
    |
@@ -4034,17 +3876,89 @@ warning: function `get_file_size` is never used
 203 | fn get_file_size(path: &Path) -> Result<u64> {
     |    ^^^^^^^^^^^^^
 
+warning: struct `WorkerResult` is never constructed
+  --> crates/pdftract-cli/src/grep/worker.rs:45:12
+   |
+45 | pub struct WorkerResult {
+   |            ^^^^^^^^^^^^
+
+warning: function `worker_run` is never used
+  --> crates/pdftract-cli/src/grep/worker.rs:76:8
+   |
+76 | pub fn worker_run(
+   |        ^^^^^^^^^^
+
+warning: function `compute_fingerprint_for_grep` is never used
+   --> crates/pdftract-cli/src/grep/worker.rs:312:4
+    |
+312 | fn compute_fingerprint_for_grep(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `Span` is never constructed
+   --> crates/pdftract-cli/src/grep/worker.rs:363:8
+    |
+363 | struct Span {
+    |        ^^^^
+
+warning: function `extract_spans_from_page` is never used
+   --> crates/pdftract-cli/src/grep/worker.rs:382:4
+    |
+382 | fn extract_spans_from_page(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `group_glyphs_into_spans` is never used
+   --> crates/pdftract-cli/src/grep/worker.rs:418:4
+    |
+418 | fn group_glyphs_into_spans(glyphs: Vec<Glyph>) -> Vec<Span> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `create_span_from_glyphs` is never used
+   --> crates/pdftract-cli/src/grep/worker.rs:479:4
+    |
+479 | fn create_span_from_glyphs(glyphs: &[Glyph]) -> Span {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `decode_page_streams` is never used
+   --> crates/pdftract-cli/src/grep/worker.rs:528:4
+    |
+528 | fn decode_page_streams(
+    |    ^^^^^^^^^^^^^^^^^^^
+
+warning: function `process_span` is never used
+   --> crates/pdftract-cli/src/grep/worker.rs:564:4
+    |
+564 | fn process_span(
+    |    ^^^^^^^^^^^^
+
 warning: function `find_startxref` is never used
    --> crates/pdftract-cli/src/grep/worker.rs:618:4
     |
 618 | fn find_startxref(source: &dyn SourcePdfSource) -> Result<u64> {
     |    ^^^^^^^^^^^^^^
 
+warning: function `parse_catalog_with_resolver` is never used
+   --> crates/pdftract-cli/src/grep/worker.rs:662:4
+    |
+662 | fn parse_catalog_with_resolver(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
 warning: function `group_matches_by_file_and_page` is never used
   --> crates/pdftract-cli/src/grep/highlight.rs:21:8
    |
 21 | pub fn group_matches_by_file_and_page(
    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `write_highlighted_pdfs` is never used
+  --> crates/pdftract-cli/src/grep/highlight.rs:51:8
+   |
+51 | pub fn write_highlighted_pdfs(
+   |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `write_single_highlighted_pdf` is never used
+   --> crates/pdftract-cli/src/grep/highlight.rs:107:4
+    |
+107 | fn write_single_highlighted_pdf(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 warning: function `create_highlight_annotation` is never used
    --> crates/pdftract-cli/src/grep/highlight.rs:147:4
@@ -4057,6 +3971,15 @@ warning: constant `EXIT_SUCCESS` is never used
    |
 17 | pub const EXIT_SUCCESS: i32 = 0;
    |           ^^^^^^^^^^^^
+
+warning: field `headers` is never read
+  --> crates/pdftract-cli/src/hash.rs:31:9
+   |
+25 | pub struct HashArgs {
+   |            -------- field in this struct
+...
+31 |     pub headers: Vec<(String, String)>,
+   |         ^^^^^^^
 
 warning: struct `LayerGroup` is never constructed
   --> crates/pdftract-cli/src/inspect/render/mod.rs:57:12
@@ -4370,6 +4293,21 @@ warning: methods `is_error` and `get_result` are never used
 375 |     pub fn get_result(&self) -> Option<&Value> {
     |            ^^^^^^^^^^
 
+warning: methods `is_batch`, `len`, and `is_empty` are never used
+   --> crates/pdftract-cli/src/mcp/framing/mod.rs:461:12
+    |
+459 | impl BatchMessage {
+    | ----------------- methods in this implementation
+460 |     /// Returns true if this is a batch message.
+461 |     pub fn is_batch(&self) -> bool {
+    |            ^^^^^^^^
+...
+466 |     pub fn len(&self) -> usize {
+    |            ^^^
+...
+474 |     pub fn is_empty(&self) -> bool {
+    |            ^^^^^^^^
+
 warning: methods `broadcast_notification` and `client_count` are never used
    --> crates/pdftract-cli/src/mcp/http.rs:108:12
     |
@@ -4381,6 +4319,12 @@ warning: methods `broadcast_notification` and `client_count` are never used
 ...
 117 |     pub fn client_count(&self) -> usize {
     |            ^^^^^^^^^^^^
+
+warning: constant `CODE_ROOT_INVALID` is never used
+  --> crates/pdftract-cli/src/mcp/root.rs:17:11
+   |
+17 | pub const CODE_ROOT_INVALID: &str = "ROOT_INVALID";
+   |           ^^^^^^^^^^^^^^^^^
 
 warning: method `flag_name` is never used
   --> crates/pdftract-cli/src/output.rs:50:12
@@ -4476,16 +4420,8 @@ warning: function `combine_headers_with_credentials` is never used
 297 | pub fn combine_headers_with_credentials(
     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-warning: `pdftract-cli` (test "multi_output_validation") generated 1 warning (run `cargo fix --test "multi_output_validation" -p pdftract-cli` to apply 1 suggestion)
-warning: unused import: `super::*`
-   --> crates/pdftract-cli/tests/test_book_chapter.rs:542:9
-    |
-542 |     use super::*;
-    |         ^^^^^^^^
-    |
-    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: `pdftract-cli` (test "test_book_chapter") generated 1 warning (run `cargo fix --test "test_book_chapter" -p pdftract-cli` to apply 1 suggestion)
+warning: `pdftract-core` (lib test) generated 305 warnings (153 duplicates) (run `cargo fix --lib -p pdftract-core --tests` to apply 131 suggestions)
+warning: `pdftract-cli` (bin "pdftract") generated 204 warnings (46 duplicates) (run `cargo fix --bin "pdftract" -p pdftract-cli` to apply 31 suggestions)
 warning: unused import: `std::collections::HashMap`
   --> crates/pdftract-cli/tests/conformance.rs:11:5
    |
@@ -4515,122 +4451,6 @@ warning: unused variable: `fixture`
     |                                 ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_fixture`
 
 warning: `pdftract-cli` (test "conformance") generated 4 warnings (run `cargo fix --test "conformance" -p pdftract-cli` to apply 4 suggestions)
-warning: unused variable: `pdf_str`
-   --> crates/pdftract-cli/tests/TH-08-log-audit.rs:246:9
-    |
-246 |     let pdf_str = String::from_utf8_lossy(&pdf_bytes);
-    |         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_pdf_str`
-    |
-    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
-
-warning: `pdftract-cli` (test "TH-08-log-audit") generated 1 warning (run `cargo fix --test "TH-08-log-audit" -p pdftract-cli` to apply 1 suggestion)
-warning: unused import: `Path`
-  --> crates/pdftract-cli/tests/single_page_access.rs:13:17
-   |
-13 | use std::path::{Path, PathBuf};
-   |                 ^^^^
-   |
-   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: comparison is useless due to type limits
-   --> crates/pdftract-cli/tests/single_page_access.rs:132:9
-    |
-132 |         span_count >= 0,
-    |         ^^^^^^^^^^^^^^^
-    |
-    = note: `#[warn(unused_comparisons)]` on by default
-
-warning: `pdftract-cli` (test "single_page_access") generated 2 warnings (run `cargo fix --test "single_page_access" -p pdftract-cli` to apply 1 suggestion)
-warning: unused import: `Path`
-  --> crates/pdftract-cli/tests/test_contract.rs:19:17
-   |
-19 | use std::path::{Path, PathBuf};
-   |                 ^^^^
-   |
-   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused import: `super::*`
-   --> crates/pdftract-cli/tests/test_contract.rs:404:9
-    |
-404 |     use super::*;
-    |         ^^^^^^^^
-
-warning: unused variable: `fixture_dir`
-   --> crates/pdftract-cli/tests/test_contract.rs:336:9
-    |
-336 |     let fixture_dir = fixture_dir();
-    |         ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_fixture_dir`
-    |
-    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
-
-warning: `pdftract-cli` (test "test_contract") generated 3 warnings (run `cargo fix --test "test_contract" -p pdftract-cli` to apply 3 suggestions)
-warning: unused import: `std::error::Error`
-  --> crates/pdftract-cli/tests/test_encryption_errors.rs:22:5
-   |
-22 | use std::error::Error;
-   |     ^^^^^^^^^^^^^^^^^
-   |
-   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused imports: `Write` and `self`
-  --> crates/pdftract-cli/tests/test_encryption_errors.rs:25:15
-   |
-25 | use std::io::{self, Write};
-   |               ^^^^  ^^^^^
-
-warning: unused import: `Path`
-  --> crates/pdftract-cli/tests/test_encryption_errors.rs:26:17
-   |
-26 | use std::path::{Path, PathBuf};
-   |                 ^^^^
-
-warning: unused import: `std::time::Duration`
-  --> crates/pdftract-cli/tests/test_encryption_errors.rs:28:5
-   |
-28 | use std::time::Duration;
-   |     ^^^^^^^^^^^^^^^^^^^
-
-warning: unused import: `super::*`
-   --> crates/pdftract-cli/tests/test_encryption_errors.rs:325:9
-    |
-325 |     use super::*;
-    |         ^^^^^^^^
-
-warning: `pdftract-cli` (test "test_encryption_errors") generated 5 warnings (run `cargo fix --test "test_encryption_errors" -p pdftract-cli` to apply 5 suggestions)
-warning: unused import: `Path`
-  --> crates/pdftract-cli/tests/test_scientific_paper.rs:21:17
-   |
-21 | use std::path::{Path, PathBuf};
-   |                 ^^^^
-   |
-   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused import: `super::*`
-   --> crates/pdftract-cli/tests/test_scientific_paper.rs:507:9
-    |
-507 |     use super::*;
-    |         ^^^^^^^^
-
-warning: unused variable: `fixture_dir`
-   --> crates/pdftract-cli/tests/test_scientific_paper.rs:359:9
-    |
-359 |     let fixture_dir = fixture_dir();
-    |         ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_fixture_dir`
-    |
-    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
-
-warning: `pdftract-cli` (test "test_scientific_paper") generated 3 warnings (run `cargo fix --test "test_scientific_paper" -p pdftract-cli` to apply 3 suggestions)
-warning: variable does not need to be mutable
-   --> crates/pdftract-cli/tests/fixture_discovery.rs:900:13
-    |
-900 |         let mut discovered = discover_all_fixtures();
-    |             ----^^^^^^^^^^
-    |             |
-    |             help: remove this `mut`
-    |
-    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
-
-warning: `pdftract-cli` (test "fixture_discovery") generated 1 warning (run `cargo fix --test "fixture_discovery" -p pdftract-cli` to apply 1 suggestion)
 warning: unused import: `Path`
   --> crates/pdftract-cli/tests/test_slide_deck.rs:19:17
    |
@@ -4654,6 +4474,179 @@ warning: unused variable: `fixture_dir`
     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
 
 warning: `pdftract-cli` (test "test_slide_deck") generated 3 warnings (run `cargo fix --test "test_slide_deck" -p pdftract-cli` to apply 3 suggestions)
+warning: unused import: `std::io::Write`
+   --> crates/pdftract-cli/src/mcp/root.rs:120:9
+    |
+120 |     use std::io::Write;
+    |         ^^^^^^^^^^^^^^
+
+warning: unused imports: `HeaderMap`, `HeaderValue`, `Method`, and `body::Body`
+    --> crates/pdftract-cli/src/serve.rs:1263:13
+     |
+1263 |             body::Body,
+     |             ^^^^^^^^^^
+1264 |             http::{HeaderMap, HeaderValue, Method, StatusCode},
+     |                    ^^^^^^^^^  ^^^^^^^^^^^  ^^^^^^
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-cli/tests/fixture_discovery.rs:900:13
+    |
+900 |         let mut discovered = discover_all_fixtures();
+    |             ----^^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `pdftract-cli` (test "fixture_discovery") generated 1 warning (run `cargo fix --test "fixture_discovery" -p pdftract-cli` to apply 1 suggestion)
+warning: `pdftract-cli` (test "forms_integration") generated 1 warning (1 duplicate)
+warning: unused import: `pdftract_cli::password`
+  --> crates/pdftract-cli/tests/test_encryption_unsupported.rs:10:5
+   |
+10 | use pdftract_cli::password;
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `DIAGNOSTIC_CATALOG`, `DiagCode`, `DiagInfo`, `Diagnostic`, `DiagnosticsCollector`, `ObjRef`, and `Severity`
+  --> crates/pdftract-cli/tests/test_encryption_unsupported.rs:12:5
+   |
+12 |     DiagCode, DiagInfo, Diagnostic, DiagnosticsCollector, ObjRef, Severity, DIAGNOSTIC_CATALOG,
+   |     ^^^^^^^^  ^^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^  ^^^^^^  ^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `mem`
+   --> crates/pdftract-cli/src/doctor/checks/memory.rs:174:13
+    |
+174 |         let mem = MemoryCheck::get_available_memory();
+    |             ^^^ help: if this is intentional, prefix it with an underscore: `_mem`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `limit`
+  --> crates/pdftract-cli/src/doctor/checks/ulimit.rs:96:13
+   |
+96 |         let limit = UlimitCheck::get_rlimit_nofile();
+   |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_limit`
+
+warning: unused variable: `xref_section`
+   --> crates/pdftract-cli/src/grep/worker.rs:315:5
+    |
+315 |     xref_section: &XrefSection,
+    |     ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_xref_section`
+
+warning: `pdftract-cli` (test "test_encryption_unsupported") generated 2 warnings (run `cargo fix --test "test_encryption_unsupported" -p pdftract-cli` to apply 2 suggestions)
+warning: unused variable: `args`
+   --> crates/pdftract-cli/src/inspect/args.rs:138:13
+    |
+138 |         let args = InspectArgs {
+    |             ^^^^ help: if this is intentional, prefix it with an underscore: `_args`
+
+warning: unused import: `std::path::PathBuf`
+ --> crates/pdftract-cli/tests/multi_output_validation.rs:6:5
+  |
+6 | use std::path::PathBuf;
+  |     ^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: fields `highlight_dir`, `headers`, and `pages` are never read
+   --> crates/pdftract-cli/src/grep/mod.rs:243:9
+    |
+230 | pub struct GrepConfig {
+    |            ---------- fields in this struct
+...
+243 |     pub highlight_dir: Option<PathBuf>,
+    |         ^^^^^^^^^^^^^
+...
+249 |     pub headers: HashMap<String, String>,
+    |         ^^^^^^^
+250 |     /// Page range to extract (1-based, comma-separated)
+251 |     pub pages: Option<String>,
+    |         ^^^^^
+    |
+    = note: `GrepConfig` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: method `is_match` is never used
+   --> crates/pdftract-cli/src/grep/matcher.rs:208:12
+    |
+ 63 | impl Matcher {
+    | ------------ method in this implementation
+...
+208 |     pub fn is_match(&self, text: &str) -> bool {
+    |            ^^^^^^^^
+
+warning: `pdftract-cli` (test "multi_output_validation") generated 1 warning (run `cargo fix --test "multi_output_validation" -p pdftract-cli` to apply 1 suggestion)
+warning: unused import: `Path`
+  --> crates/pdftract-cli/tests/test_form.rs:17:17
+   |
+17 | use std::path::{Path, PathBuf};
+   |                 ^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `content`
+   --> crates/pdftract-cli/tests/test_form.rs:271:9
+    |
+271 |     let content = fs::read_to_string(profile_path).expect("Failed to read form profile");
+    |         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_content`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `pdftract-cli` (test "test_form") generated 2 warnings (run `cargo fix --test "test_form" -p pdftract-cli` to apply 2 suggestions)
+warning: unused import: `std::path::Path`
+ --> crates/pdftract-cli/../../tests/list_pdf_fixtures.rs:4:5
+  |
+4 | use std::path::Path;
+  |     ^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+  --> crates/pdftract-cli/../../tests/list_pdf_fixtures.rs:14:13
+   |
+14 |         let mut entries = walkdir::WalkDir::new(fixtures_path)
+   |             ----^^^^^^^
+   |             |
+   |             help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `pdftract-cli` (bin "list_pdf_fixtures" test) generated 2 warnings (run `cargo fix --bin "list_pdf_fixtures" -p pdftract-cli --tests` to apply 2 suggestions)
+warning: unused import: `Command`
+ --> crates/pdftract-cli/tests/TH-09-inspector-xss.rs:7:20
+  |
+7 | use std::process::{Command, Stdio};
+  |                    ^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `pdftract-cli` (test "TH-09-inspector-xss") generated 1 warning (run `cargo fix --test "TH-09-inspector-xss" -p pdftract-cli` to apply 1 suggestion)
+warning: unused import: `super::*`
+   --> crates/pdftract-cli/tests/test_book_chapter.rs:542:9
+    |
+542 |     use super::*;
+    |         ^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `pdftract-cli` (test "test_book_chapter") generated 1 warning (run `cargo fix --test "test_book_chapter" -p pdftract-cli` to apply 1 suggestion)
+warning: unused import: `Path`
+  --> crates/pdftract-cli/tests/single_page_access.rs:13:17
+   |
+13 | use std::path::{Path, PathBuf};
+   |                 ^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: comparison is useless due to type limits
+   --> crates/pdftract-cli/tests/single_page_access.rs:132:9
+    |
+132 |         span_count >= 0,
+    |         ^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_comparisons)]` on by default
+
+warning: `pdftract-cli` (test "single_page_access") generated 2 warnings (run `cargo fix --test "single_page_access" -p pdftract-cli` to apply 1 suggestion)
 warning: unused variable: `stderr`
    --> crates/pdftract-cli/tests/test_header_flag.rs:356:9
     |
@@ -4677,25 +4670,359 @@ warning: unused import: `discover_fixtures_in_dir`
 23 | use fixture_discovery::{fixtures_root, discover_all_fixtures, discover_fixtures_by_category, discover_fixtures_in_dir, fixture_categ...
    |                                                                                              ^^^^^^^^^^^^^^^^^^^^^^^^
 
-warning: `pdftract-cli` (bin "pdftract") generated 204 warnings (115 duplicates) (run `cargo fix --bin "pdftract" -p pdftract-cli` to apply 2 suggestions)
 warning: `pdftract-cli` (test "cli_invocation_fixtures") generated 3 warnings (1 duplicate) (run `cargo fix --test "cli_invocation_fixtures" -p pdftract-cli` to apply 2 suggestions)
-warning: `pdftract-cli` (test "forms_integration") generated 1 warning (1 duplicate)
-warning: unused import: `pdftract_cli::password`
-  --> crates/pdftract-cli/tests/test_encryption_unsupported.rs:10:5
+warning: unused import: `Path`
+  --> crates/pdftract-cli/tests/test_contract.rs:19:17
    |
-10 | use pdftract_cli::password;
-   |     ^^^^^^^^^^^^^^^^^^^^^^
+19 | use std::path::{Path, PathBuf};
+   |                 ^^^^
    |
    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
 
-warning: unused imports: `DIAGNOSTIC_CATALOG`, `DiagCode`, `DiagInfo`, `Diagnostic`, `DiagnosticsCollector`, `ObjRef`, and `Severity`
-  --> crates/pdftract-cli/tests/test_encryption_unsupported.rs:12:5
-   |
-12 |     DiagCode, DiagInfo, Diagnostic, DiagnosticsCollector, ObjRef, Severity, DIAGNOSTIC_CATALOG,
-   |     ^^^^^^^^  ^^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^  ^^^^^^  ^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+warning: unused import: `super::*`
+   --> crates/pdftract-cli/tests/test_contract.rs:404:9
+    |
+404 |     use super::*;
+    |         ^^^^^^^^
 
-warning: `pdftract-cli` (test "test_encryption_unsupported") generated 2 warnings (run `cargo fix --test "test_encryption_unsupported" -p pdftract-cli` to apply 2 suggestions)
-warning: `pdftract-cli` (bin "list_pdf_fixtures" test) generated 2 warnings (2 duplicates)
+warning: unused variable: `fixture_dir`
+   --> crates/pdftract-cli/tests/test_contract.rs:336:9
+    |
+336 |     let fixture_dir = fixture_dir();
+    |         ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_fixture_dir`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `pdftract-cli` (test "test_contract") generated 3 warnings (run `cargo fix --test "test_contract" -p pdftract-cli` to apply 3 suggestions)
+warning: `pdftract-cli` (bin "list_pdf_fixtures") generated 2 warnings (2 duplicates)
+warning: unused import: `Instant`
+  --> crates/pdftract-cli/benches/grep_1000.rs:31:17
+   |
+31 | use std::time::{Instant, Duration};
+   |                 ^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `super::*`
+    --> crates/pdftract-cli/benches/grep_1000.rs:1001:9
+     |
+1001 |     use super::*;
+     |         ^^^^^^^^
+
+warning: unused import: `Read`
+   --> crates/pdftract-cli/benches/grep_1000.rs:252:25
+    |
+252 |     use std::io::{self, Read};
+    |                         ^^^^
+
+warning: unused import: `std::io::BufRead`
+   --> crates/pdftract-cli/benches/grep_1000.rs:742:9
+    |
+742 |     use std::io::BufRead;
+    |         ^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::io::BufRead`
+   --> crates/pdftract-cli/benches/grep_1000.rs:780:9
+    |
+780 |     use std::io::BufRead;
+    |         ^^^^^^^^^^^^^^^^
+
+warning: constant `EXPECTED_MATCH_COUNT` is never used
+   --> crates/pdftract-cli/benches/grep_1000.rs:327:7
+    |
+327 | const EXPECTED_MATCH_COUNT: usize = 0; // TODO: compute from corpus
+    |       ^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `count_corpus_files` is never used
+   --> crates/pdftract-cli/benches/grep_1000.rs:458:4
+    |
+458 | fn count_corpus_files() -> usize {
+    |    ^^^^^^^^^^^^^^^^^^
+
+warning: associated function `from_json` is never used
+   --> crates/pdftract-cli/benches/grep_1000.rs:691:12
+    |
+605 | impl RawTimingMetrics {
+    | --------------------- associated function in this implementation
+...
+691 |     pub fn from_json(json_str: &str) -> Result<Self, String> {
+    |            ^^^^^^^^^
+
+warning: `pdftract-cli` (bench "grep_1000") generated 8 warnings (run `cargo fix --bench "grep_1000" -p pdftract-cli` to apply 2 suggestions)
+warning: unused variable: `cat2`
+  --> crates/pdftract-core/tests/debug_fingerprint_fixtures.rs:20:15
+   |
+20 |     let (fp2, cat2, pages2, _resolver2) = parse_pdf_file(v2_path).unwrap();
+   |               ^^^^ help: if this is intentional, prefix it with an underscore: `_cat2`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `pdftract-core` (test "debug_fingerprint_fixtures") generated 1 warning (run `cargo fix --test "debug_fingerprint_fixtures" -p pdftract-core` to apply 1 suggestion)
+warning: unused import: `Path`
+  --> crates/pdftract-core/tests/conformance.rs:19:17
+   |
+19 | use std::path::{Path, PathBuf};
+   |                 ^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `regex::Regex`
+  --> crates/pdftract-core/tests/conformance.rs:22:5
+   |
+22 | use regex::Regex;
+   |     ^^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/tests/conformance.rs:416:9
+    |
+416 |     let mut result = serde_json::json!({
+    |         ----^^^^^^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/tests/conformance.rs:454:9
+    |
+454 |     let mut result = serde_json::json!({
+    |         ----^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: field `min_schema_version` is never read
+  --> crates/pdftract-core/tests/conformance.rs:43:5
+   |
+33 | struct TestCase {
+   |        -------- field in this struct
+...
+43 |     min_schema_version: Option<String>,
+   |     ^^^^^^^^^^^^^^^^^^
+   |
+   = note: `TestCase` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: fields `version` and `schema_version` are never read
+  --> crates/pdftract-core/tests/conformance.rs:51:5
+   |
+50 | struct ConformanceSuite {
+   |        ---------------- fields in this struct
+51 |     version: String,
+   |     ^^^^^^^
+52 |     schema_version: String,
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `ConformanceSuite` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: `pdftract-core` (test "conformance") generated 6 warnings (run `cargo fix --test "conformance" -p pdftract-core` to apply 4 suggestions)
+warning: unused import: `Path`
+  --> crates/pdftract-core/tests/verify_proptest_catches_bugs.rs:67:21
+   |
+67 |     use std::path::{Path, PathBuf};
+   |                     ^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `pdftract-core` (test "verify_proptest_catches_bugs") generated 1 warning (run `cargo fix --test "verify_proptest_catches_bugs" -p pdftract-core` to apply 1 suggestion)
+warning: unused import: `anyhow::Result`
+  --> crates/pdftract-core/tests/test_page_access.rs:14:5
+   |
+14 | use anyhow::Result;
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `pdftract-core` (test "test_page_access") generated 1 warning (run `cargo fix --test "test_page_access" -p pdftract-core` to apply 1 suggestion)
+warning: unused variable: `v1_cat`
+ --> crates/pdftract-core/examples/test_fingerprint_debug.rs:8:17
+  |
+8 |     let (v1_fp, v1_cat, v1_pages, _) = parse_pdf_file(v1_path).unwrap();
+  |                 ^^^^^^ help: if this is intentional, prefix it with an underscore: `_v1_cat`
+  |
+  = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `v2_cat`
+ --> crates/pdftract-core/examples/test_fingerprint_debug.rs:9:17
+  |
+9 |     let (v2_fp, v2_cat, v2_pages, _) = parse_pdf_file(v2_path).unwrap();
+  |                 ^^^^^^ help: if this is intentional, prefix it with an underscore: `_v2_cat`
+
+warning: `pdftract-core` (example "test_fingerprint_debug" test) generated 2 warnings (run `cargo fix --example "test_fingerprint_debug" -p pdftract-core --tests` to apply 2 suggestions)
+warning: `pdftract-cli` (bin "pdftract" test) generated 118 warnings (110 duplicates) (run `cargo fix --bin "pdftract" -p pdftract-cli --tests` to apply 6 suggestions)
+warning: function `format_validation_error` is never used
+  --> crates/pdftract-core/tests/json_schema.rs:47:4
+   |
+47 | fn format_validation_error(error: &jsonschema::ValidationError) -> String {
+   |    ^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `pdftract-core` (test "json_schema") generated 1 warning
+warning: variant `UnsupportedPlatform` is never constructed
+  --> crates/pdftract-core/tests/memory_guard.rs:61:5
+   |
+59 | pub enum MemoryGuardError {
+   |          ---------------- variant in this enum
+60 |     /// Platform does not support memory limits (e.g., Windows).
+61 |     UnsupportedPlatform,
+   |     ^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `MemoryGuardError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `ExtractionOptions` and `extract_pdf`
+  --> crates/pdftract-core/examples/ocr.rs:12:21
+   |
+12 | use pdftract_core::{extract_pdf, ExtractionOptions};
+   |                     ^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `std::env`
+  --> crates/pdftract-core/examples/ocr.rs:13:5
+   |
+13 | use std::env;
+   |     ^^^^^^^^
+
+warning: unused import: `std::path::Path`
+  --> crates/pdftract-core/examples/ocr.rs:14:5
+   |
+14 | use std::path::Path;
+   |     ^^^^^^^^^^^^^^^
+
+warning: `pdftract-core` (example "ocr" test) generated 3 warnings (run `cargo fix --example "ocr" -p pdftract-core --tests` to apply 3 suggestions)
+warning: unused import: `pdftract_core::parser::xref::XrefResolver`
+ --> crates/pdftract-core/examples/debug_page_tree.rs:5:5
+  |
+5 | use pdftract_core::parser::xref::XrefResolver;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `pdftract-core` (test "memory_guard_tests") generated 1 warning
+warning: `pdftract-core` (example "debug_page_tree" test) generated 1 warning (run `cargo fix --example "debug_page_tree" -p pdftract-core --tests` to apply 1 suggestion)
+warning: unused import: `Diagnostic`
+  --> crates/pdftract-core/tests/encryption_integration_tests.rs:12:44
+   |
+12 | use pdftract_core::diagnostics::{DiagCode, Diagnostic};
+   |                                            ^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `CryptFilterMethod`, `DecryptionError`, `EncryptionInfo`, `FileKeyResult as Aes256FileKeyResult`, `FileKeyResult as Rc4FileKeyResult`, `PasswordValidation`, `aes_256_decrypt`, `decrypt_object`, `decrypt_with_password`, and `validate_user_password`
+  --> crates/pdftract-core/tests/encryption_integration_tests.rs:16:15
+   |
+16 |     aes_256::{aes_256_decrypt, Aes256Decryptor, FileKeyResult as Aes256FileKeyResult},
+   |               ^^^^^^^^^^^^^^^                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+17 |     decryptor::{decrypt_with_password, DecryptionError, PasswordValidation},
+   |                 ^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+18 |     detection::{
+19 |         detect_encryption, CryptFilterMethod, EncryptionInfo,
+   |                            ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^
+...
+23 |         decrypt_object, derive_file_key, derive_object_key, pad_password, rc4_decrypt,
+   |         ^^^^^^^^^^^^^^
+24 |         validate_user_password, FileKeyResult as Rc4FileKeyResult,
+   |         ^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `XrefEntry` and `XrefResolver`
+  --> crates/pdftract-core/tests/encryption_integration_tests.rs:30:35
+   |
+30 | use pdftract_core::parser::xref::{XrefEntry, XrefResolver};
+   |                                   ^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: method `with_encrypt_dict` is never used
+  --> crates/pdftract-core/tests/encryption_integration_tests.rs:44:8
+   |
+39 | impl MockResolver {
+   | ----------------- method in this implementation
+...
+44 |     fn with_encrypt_dict(mut self, dict: PdfDict) -> Self {
+   |        ^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `pdftract-core` (test "encryption_integration_tests") generated 4 warnings (run `cargo fix --test "encryption_integration_tests" -p pdftract-core` to apply 3 suggestions)
+warning: unused import: `std::io::ErrorKind`
+   --> crates/pdftract-core/tests/test_helpers/process_guard.rs:219:21
+    |
+219 |                 use std::io::ErrorKind;
+    |                     ^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `DEFAULT_PROCESS_PATTERNS`, `OrphanedProcessError`, `OrphanedProcessGuard`, `kill_orphaned_processes`, `kill_processes_matching_patterns`, `verify_no_orphaned_processes`, and `verify_no_processes_matching_patterns`
+  --> crates/pdftract-core/tests/test_helpers/mod.rs:6:5
+   |
+ 6 |     verify_no_orphaned_processes,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 7 |     verify_no_processes_matching_patterns,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 8 |     kill_orphaned_processes,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+ 9 |     kill_processes_matching_patterns,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+10 |     OrphanedProcessGuard,
+   |     ^^^^^^^^^^^^^^^^^^^^
+11 |     OrphanedProcessError,
+   |     ^^^^^^^^^^^^^^^^^^^^
+12 |     DEFAULT_PROCESS_PATTERNS,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: fields `expected_pages`, `expected_objects`, and `expected_behavior` are never read
+  --> crates/pdftract-core/tests/error_recovery_integration.rs:21:5
+   |
+17 | struct ExpectedDiagnostics {
+   |        ------------------- fields in this struct
+...
+21 |     expected_pages: Option<String>,
+   |     ^^^^^^^^^^^^^^
+22 |     #[serde(default)]
+23 |     expected_objects: Option<String>,
+   |     ^^^^^^^^^^^^^^^^
+24 |     #[serde(default)]
+25 |     expected_behavior: Option<String>,
+   |     ^^^^^^^^^^^^^^^^^
+   |
+   = note: `ExpectedDiagnostics` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `description` is never read
+  --> crates/pdftract-core/tests/error_recovery_integration.rs:32:5
+   |
+29 | struct ExpectedDiagnostic {
+   |        ------------------ field in this struct
+...
+32 |     description: String,
+   |     ^^^^^^^^^^^
+   |
+   = note: `ExpectedDiagnostic` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: function `assert_diagnostic_count_at_least` is never used
+  --> crates/pdftract-core/tests/error_recovery_integration.rs:36:4
+   |
+36 | fn assert_diagnostic_count_at_least(diagnostics: &[String], code: &str, min_count: usize) {
+   |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `pdftract-core` (test "orphaned_process_verification_test") generated 2 warnings (run `cargo fix --test "orphaned_process_verification_test" -p pdftract-core` to apply 2 suggestions)
+warning: `pdftract-core` (test "error_recovery_integration") generated 3 warnings
+warning: unused import: `std::collections::hash_map::DefaultHasher`
+   --> crates/pdftract-core/tests/test_cycle_detection.rs:131:9
+    |
+131 |     use std::collections::hash_map::DefaultHasher;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `Hash` and `Hasher`
+   --> crates/pdftract-core/tests/test_cycle_detection.rs:132:21
+    |
+132 |     use std::hash::{Hash, Hasher};
+    |                     ^^^^  ^^^^^^
+
+warning: `pdftract-core` (test "test_cycle_detection") generated 2 warnings (run `cargo fix --test "test_cycle_detection" -p pdftract-core` to apply 2 suggestions)
 warning: unused import: `PdfDict`
  --> crates/pdftract-core/tests/test_decoder_debug.rs:4:37
   |
@@ -4711,6 +5038,81 @@ warning: unused import: `normalize_filter_name`
   |     ^^^^^^^^^^^^^^^^^^^^^
 
 warning: `pdftract-core` (test "test_decoder_debug") generated 2 warnings (run `cargo fix --test "test_decoder_debug" -p pdftract-core` to apply 2 suggestions)
+warning: fields `name` and `description` are never read
+  --> crates/pdftract-core/tests/cjk_encoding.rs:18:5
+   |
+17 | struct CjkFixture {
+   |        ---------- fields in this struct
+18 |     name: &'static str,
+   |     ^^^^
+...
+21 |     description: &'static str,
+   |     ^^^^^^^^^^^
+   |
+   = note: `CjkFixture` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `PathBuf`
+  --> crates/pdftract-cli/src/cache_cmd.rs:13:23
+   |
+13 | use std::path::{Path, PathBuf};
+   |                       ^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `pdftract-core` (test "cjk_encoding") generated 1 warning
+warning: unused import: `Catalog`
+ --> crates/pdftract-core/tests/debug_page_parsing.rs:4:53
+  |
+4 | use pdftract_core::parser::catalog::{parse_catalog, Catalog};
+  |                                                     ^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `pdftract-core` (test "debug_page_parsing") generated 1 warning (run `cargo fix --test "debug_page_parsing" -p pdftract-core` to apply 1 suggestion)
+warning: `pdftract-py` (lib test) generated 21 warnings (21 duplicates)
+warning: unused import: `PdfDict`
+ --> crates/pdftract-core/tests/test_lzw_debug.rs:2:37
+  |
+2 | use pdftract_core::parser::object::{PdfDict, PdfObject};
+  |                                     ^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `pdftract-core` (test "test_lzw_debug") generated 1 warning (run `cargo fix --test "test_lzw_debug" -p pdftract-core` to apply 1 suggestion)
+warning: unused import: `PdfSource`
+ --> crates/pdftract-core/tests/fingerprint_debug_content_edit.rs:4:49
+  |
+4 | use pdftract_core::parser::stream::{FileSource, PdfSource as ParserPdfSource};
+  |                                                 ^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `pdftract-core` (test "fingerprint_debug_content_edit") generated 1 warning
+warning: unused imports: `ObjectParser`, `PdfDict`, `PdfObject`, and `intern`
+ --> crates/pdftract-core/tests/object_parser_proptest.rs:6:37
+  |
+6 | use pdftract_core::parser::object::{intern, ObjectParser, PdfDict, PdfObject};
+  |                                     ^^^^^^  ^^^^^^^^^^^^  ^^^^^^^  ^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `proptest::prelude::*`
+ --> crates/pdftract-core/tests/object_parser_proptest.rs:7:5
+  |
+7 | use proptest::prelude::*;
+  |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: `pdftract-core` (test "object_parser_proptest") generated 2 warnings (run `cargo fix --test "object_parser_proptest" -p pdftract-core` to apply 2 suggestions)
+warning: unused variable: `resolver`
+ --> crates/pdftract-core/examples/test_pages_check.rs:7:29
+  |
+7 |         Ok((fp, cat, pages, resolver)) => {
+  |                             ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_resolver`
+  |
+  = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `pdftract-core` (example "test_pages_check" test) generated 1 warning (run `cargo fix --example "test_pages_check" -p pdftract-core --tests` to apply 1 suggestion)
    Compiling pdftract-libpdftract v0.1.0 (/home/coding/pdftract/crates/pdftract-libpdftract)
 warning: unused doc comment
    --> crates/pdftract-libpdftract/src/api.rs:888:1
@@ -4771,40 +5173,144 @@ warning: function `create_minimal_pdf` is never used
      |        ^^^^^^^^^^^^^^^^^^
 
 warning: `pdftract-libpdftract` (lib test) generated 7 warnings (run `cargo fix --lib -p pdftract-libpdftract --tests` to apply 2 suggestions)
-warning: fields `expected_pages`, `expected_objects`, and `expected_behavior` are never read
-  --> crates/pdftract-core/tests/error_recovery_integration.rs:21:5
+warning: unused import: `std::sync::Arc`
+  --> crates/pdftract-core/tests/debug_fingerprint.rs:87:9
    |
-17 | struct ExpectedDiagnostics {
-   |        ------------------- fields in this struct
-...
-21 |     expected_pages: Option<String>,
-   |     ^^^^^^^^^^^^^^
-22 |     #[serde(default)]
-23 |     expected_objects: Option<String>,
-   |     ^^^^^^^^^^^^^^^^
-24 |     #[serde(default)]
-25 |     expected_behavior: Option<String>,
-   |     ^^^^^^^^^^^^^^^^^
+87 |     use std::sync::Arc;
+   |         ^^^^^^^^^^^^^^
    |
-   = note: `ExpectedDiagnostics` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `pdftract-core` (test "debug_fingerprint") generated 1 warning (run `cargo fix --test "debug_fingerprint" -p pdftract-core` to apply 1 suggestion)
+warning: unused variable: `length`
+   --> crates/pdftract-core/tests/hint_stream_integration.rs:428:40
+    |
+428 |     fn read_range(&self, _offset: u64, length: usize) -> std::io::Result<bytes::Bytes> {
+    |                                        ^^^^^^ help: if this is intentional, prefix it with an underscore: `_length`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `expected_ranges`
+   --> crates/pdftract-core/tests/hint_stream_integration.rs:445:21
+    |
+445 |     let (hint_data, expected_ranges) = create_test_hint_stream(5);
+    |                     ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_expected_ranges`
+
+warning: struct `MockPrefetchSource` is never constructed
+   --> crates/pdftract-core/tests/hint_stream_integration.rs:394:8
+    |
+394 | struct MockPrefetchSource {
+    |        ^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: associated function `new` is never used
+   --> crates/pdftract-core/tests/hint_stream_integration.rs:403:8
+    |
+401 | impl MockPrefetchSource {
+    | ----------------------- associated function in this implementation
+402 |     /// Create a new mock source with the given hint stream data.
+403 |     fn new(hint_stream_data: Vec<u8>) -> Self {
+    |        ^^^
+
+warning: `pdftract-core` (test "hint_stream_integration") generated 4 warnings (run `cargo fix --test "hint_stream_integration" -p pdftract-core` to apply 2 suggestions)
+warning: unused import: `PathBuf`
+  --> crates/pdftract-core/tests/xref_integration_test.rs:10:23
+   |
+10 | use std::path::{Path, PathBuf};
+   |                       ^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `merge_hybrid`, `parse_traditional_xref`, and `parse_xref_stream`
+  --> crates/pdftract-core/tests/xref_integration_test.rs:16:5
+   |
+16 |     merge_hybrid, parse_traditional_xref, parse_xref_stream, XrefEntry, XrefSection,
+   |     ^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^
+
+warning: function `assert_no_diagnostic_with_severity` is never used
+   --> crates/pdftract-core/tests/xref_helpers.rs:105:8
+    |
+105 | pub fn assert_no_diagnostic_with_severity(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `count_diagnostics` is never used
+   --> crates/pdftract-core/tests/xref_helpers.rs:131:8
+    |
+131 | pub fn count_diagnostics(diagnostics: &[Diagnostic], code: DiagCode) -> usize {
+    |        ^^^^^^^^^^^^^^^^^
+
+warning: `pdftract-core` (test "xref_integration_test") generated 4 warnings (run `cargo fix --test "xref_integration_test" -p pdftract-core` to apply 2 suggestions)
+warning: unused import: `pdftract_core::parser::xref::XrefSection`
+ --> crates/pdftract-core/examples/debug_xref.rs:4:5
+  |
+4 | use pdftract_core::parser::xref::XrefSection;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `pdftract-core` (example "debug_xref" test) generated 1 warning (run `cargo fix --example "debug_xref" -p pdftract-core --tests` to apply 1 suggestion)
+warning: `pdftract-cli` (lib test) generated 48 warnings (47 duplicates) (run `cargo fix --lib -p pdftract-cli --tests` to apply 1 suggestion)
+warning: unused import: `std::path::Path`
+  --> crates/pdftract-core/tests/ocr_integration.rs:12:5
+   |
+12 | use std::path::Path;
+   |     ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `tesseract_available` is never used
+  --> crates/pdftract-core/tests/ocr_integration.rs:15:4
+   |
+15 | fn tesseract_available() -> bool {
+   |    ^^^^^^^^^^^^^^^^^^^
+   |
    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
 
-warning: field `description` is never read
-  --> crates/pdftract-core/tests/error_recovery_integration.rs:32:5
-   |
-29 | struct ExpectedDiagnostic {
-   |        ------------------ field in this struct
-...
-32 |     description: String,
-   |     ^^^^^^^^^^^
-   |
-   = note: `ExpectedDiagnostic` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+warning: `pdftract-core` (test "ocr_integration") generated 2 warnings (run `cargo fix --test "ocr_integration" -p pdftract-core` to apply 1 suggestion)
+warning: unused variable: `page_count`
+   --> crates/pdftract-core/tests/test_page_helper_error_handling.rs:134:9
+    |
+134 |     let page_count = match doc.page_count() {
+    |         ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_page_count`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
 
-warning: function `assert_diagnostic_count_at_least` is never used
-  --> crates/pdftract-core/tests/error_recovery_integration.rs:36:4
+warning: unused import: `TcpListener`
+  --> crates/pdftract-core/tests/TH-03-mcp-no-auth.rs:15:28
    |
-36 | fn assert_diagnostic_count_at_least(diagnostics: &[String], code: &str, min_count: usize) {
-   |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+15 | use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
+   |                            ^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `ChildStderr` and `ChildStdout`
+  --> crates/pdftract-core/tests/TH-03-mcp-no-auth.rs:16:27
+   |
+16 | use std::process::{Child, ChildStderr, ChildStdout, Command, Stdio};
+   |                           ^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: `pdftract-core` (test "test_page_helper_error_handling") generated 1 warning (run `cargo fix --test "test_page_helper_error_handling" -p pdftract-core` to apply 1 suggestion)
+warning: struct `TestResult` is never constructed
+  --> crates/pdftract-core/tests/TH-03-mcp-no-auth.rs:69:8
+   |
+69 | struct TestResult {
+   |        ^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: variant `Null` is never constructed
+  --> crates/pdftract-core/tests/TH-03-mcp-no-auth.rs:83:5
+   |
+79 | enum StdioConfig {
+   |      ----------- variant in this enum
+...
+83 |     Null,
+   |     ^^^^
+   |
+   = note: `StdioConfig` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
 
 warning: unused doc comment
    --> crates/pdftract-core/tests/encoding_recovery.rs:229:5
@@ -4820,7 +5326,6 @@ warning: unused doc comment
     = help: use `//` for a plain comment
     = note: `#[warn(unused_doc_comments)]` (part of `#[warn(unused)]`) on by default
 
-warning: `pdftract-core` (test "error_recovery_integration") generated 3 warnings
 warning: field `description` is never read
   --> crates/pdftract-core/tests/encoding_recovery.rs:21:5
    |
@@ -4833,52 +5338,26 @@ warning: field `description` is never read
    = note: `EncodingFixture` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
 
+warning: `pdftract-core` (test "TH-03-mcp-no-auth") generated 4 warnings (run `cargo fix --test "TH-03-mcp-no-auth" -p pdftract-core` to apply 2 suggestions)
+warning: unused import: `pdftract_core::source::PdfSource`
+ --> crates/pdftract-core/tests/http_range_integration.rs:6:5
+  |
+6 | use pdftract_core::source::PdfSource;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
 warning: `pdftract-core` (test "encoding_recovery") generated 2 warnings
-warning: unused import: `PdfSource`
- --> crates/pdftract-core/tests/fingerprint_debug_content_edit.rs:4:49
-  |
-4 | use pdftract_core::parser::stream::{FileSource, PdfSource as ParserPdfSource};
-  |                                                 ^^^^^^^^^
-  |
-  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused import: `PdfDict`
- --> crates/pdftract-core/tests/test_lzw_debug.rs:2:37
-  |
-2 | use pdftract_core::parser::object::{PdfDict, PdfObject};
-  |                                     ^^^^^^^
-  |
-  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: `pdftract-core` (test "fingerprint_debug_content_edit") generated 1 warning
-warning: `pdftract-core` (test "test_lzw_debug") generated 1 warning (run `cargo fix --test "test_lzw_debug" -p pdftract-core` to apply 1 suggestion)
-warning: unused import: `PdfDict`
- --> crates/pdftract-core/tests/stream_decoder_fixtures.rs:8:37
-  |
-8 | use pdftract_core::parser::object::{PdfDict, PdfObject};
-  |                                     ^^^^^^^
-  |
-  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused import: `anyhow::Result`
-  --> crates/pdftract-core/tests/test_page_access.rs:14:5
-   |
-14 | use anyhow::Result;
-   |     ^^^^^^^^^^^^^^
-   |
-   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: `pdftract-core` (test "test_page_access") generated 1 warning (run `cargo fix --test "test_page_access" -p pdftract-core` to apply 1 suggestion)
-warning: `pdftract-core` (test "stream_decoder_fixtures") generated 1 warning (run `cargo fix --test "stream_decoder_fixtures" -p pdftract-core` to apply 1 suggestion)
+warning: `pdftract-core` (test "http_range_integration") generated 1 warning (run `cargo fix --test "http_range_integration" -p pdftract-core` to apply 1 suggestion)
 warning: unused variable: `resolver`
- --> crates/pdftract-core/examples/test_pages_check.rs:7:29
+ --> crates/pdftract-libpdftract/tests/test_parse.rs:7:43
   |
-7 |         Ok((fp, cat, pages, resolver)) => {
-  |                             ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_resolver`
+7 |         Ok((fingerprint, _catalog, pages, resolver)) => {
+  |                                           ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_resolver`
   |
   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
 
-warning: `pdftract-core` (example "test_pages_check") generated 1 warning (run `cargo fix --example "test_pages_check" -p pdftract-core` to apply 1 suggestion)
+warning: `pdftract-libpdftract` (test "test_parse") generated 1 warning (run `cargo fix --test "test_parse" -p pdftract-libpdftract` to apply 1 suggestion)
 warning: unexpected `cfg` condition value: `error-path-tests`
    --> crates/pdftract-core/tests/classify_page_error_paths.rs:211:16
     |
@@ -4912,465 +5391,14 @@ warning: function `create_empty_pdf_temp` is never used
 28 | fn create_empty_pdf_temp(path: &Path) -> std::io::Result<()> {
    |    ^^^^^^^^^^^^^^^^^^^^^
 
-warning: `pdftract-py` (lib test) generated 21 warnings (21 duplicates)
+warning: unused import: `PdfDict`
+ --> crates/pdftract-core/tests/stream_decoder_fixtures.rs:8:37
+  |
+8 | use pdftract_core::parser::object::{PdfDict, PdfObject};
+  |                                     ^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
 warning: `pdftract-core` (test "classify_page_error_paths") generated 4 warnings (run `cargo fix --test "classify_page_error_paths" -p pdftract-core` to apply 1 suggestion)
-warning: function `format_validation_error` is never used
-  --> crates/pdftract-core/tests/json_schema.rs:47:4
-   |
-47 | fn format_validation_error(error: &jsonschema::ValidationError) -> String {
-   |    ^^^^^^^^^^^^^^^^^^^^^^^
-   |
-   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused variable: `cat2`
-  --> crates/pdftract-core/tests/debug_fingerprint_fixtures.rs:20:15
-   |
-20 |     let (fp2, cat2, pages2, _resolver2) = parse_pdf_file(v2_path).unwrap();
-   |               ^^^^ help: if this is intentional, prefix it with an underscore: `_cat2`
-   |
-   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
-
-warning: `pdftract-core` (test "debug_fingerprint_fixtures") generated 1 warning (run `cargo fix --test "debug_fingerprint_fixtures" -p pdftract-core` to apply 1 suggestion)
-warning: `pdftract-core` (test "json_schema") generated 1 warning
-warning: unused import: `pdftract_core::source::PdfSource`
- --> crates/pdftract-core/tests/http_range_integration.rs:6:5
-  |
-6 | use pdftract_core::source::PdfSource;
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  |
-  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: `pdftract-core` (test "http_range_integration") generated 1 warning (run `cargo fix --test "http_range_integration" -p pdftract-core` to apply 1 suggestion)
-warning: fields `name` and `description` are never read
-  --> crates/pdftract-core/tests/cjk_encoding.rs:18:5
-   |
-17 | struct CjkFixture {
-   |        ---------- fields in this struct
-18 |     name: &'static str,
-   |     ^^^^
-...
-21 |     description: &'static str,
-   |     ^^^^^^^^^^^
-   |
-   = note: `CjkFixture` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
-   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
-
-warning: `pdftract-core` (test "cjk_encoding") generated 1 warning
-warning: unused variable: `v1_cat`
- --> crates/pdftract-core/examples/test_fingerprint_debug.rs:8:17
-  |
-8 |     let (v1_fp, v1_cat, v1_pages, _) = parse_pdf_file(v1_path).unwrap();
-  |                 ^^^^^^ help: if this is intentional, prefix it with an underscore: `_v1_cat`
-  |
-  = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused variable: `v2_cat`
- --> crates/pdftract-core/examples/test_fingerprint_debug.rs:9:17
-  |
-9 |     let (v2_fp, v2_cat, v2_pages, _) = parse_pdf_file(v2_path).unwrap();
-  |                 ^^^^^^ help: if this is intentional, prefix it with an underscore: `_v2_cat`
-
-warning: `pdftract-core` (example "test_fingerprint_debug") generated 2 warnings (run `cargo fix --example "test_fingerprint_debug" -p pdftract-core` to apply 2 suggestions)
-warning: unused import: `std::io::ErrorKind`
-   --> crates/pdftract-core/tests/test_helpers/process_guard.rs:219:21
-    |
-219 |                 use std::io::ErrorKind;
-    |                     ^^^^^^^^^^^^^^^^^^
-    |
-    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused imports: `DEFAULT_PROCESS_PATTERNS`, `OrphanedProcessError`, `OrphanedProcessGuard`, `kill_orphaned_processes`, `kill_processes_matching_patterns`, `verify_no_orphaned_processes`, and `verify_no_processes_matching_patterns`
-  --> crates/pdftract-core/tests/test_helpers/mod.rs:6:5
-   |
- 6 |     verify_no_orphaned_processes,
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
- 7 |     verify_no_processes_matching_patterns,
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
- 8 |     kill_orphaned_processes,
-   |     ^^^^^^^^^^^^^^^^^^^^^^^
- 9 |     kill_processes_matching_patterns,
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-10 |     OrphanedProcessGuard,
-   |     ^^^^^^^^^^^^^^^^^^^^
-11 |     OrphanedProcessError,
-   |     ^^^^^^^^^^^^^^^^^^^^
-12 |     DEFAULT_PROCESS_PATTERNS,
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^
-
-warning: `pdftract-core` (test "orphaned_process_verification_test") generated 2 warnings (run `cargo fix --test "orphaned_process_verification_test" -p pdftract-core` to apply 2 suggestions)
-warning: variant `UnsupportedPlatform` is never constructed
-  --> crates/pdftract-core/tests/memory_guard.rs:61:5
-   |
-59 | pub enum MemoryGuardError {
-   |          ---------------- variant in this enum
-60 |     /// Platform does not support memory limits (e.g., Windows).
-61 |     UnsupportedPlatform,
-   |     ^^^^^^^^^^^^^^^^^^^
-   |
-   = note: `MemoryGuardError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
-   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
-
-warning: `pdftract-core` (test "memory_guard_tests") generated 1 warning
-warning: unused import: `std::sync::Arc`
-  --> crates/pdftract-core/tests/debug_fingerprint.rs:87:9
-   |
-87 |     use std::sync::Arc;
-   |         ^^^^^^^^^^^^^^
-   |
-   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: `pdftract-core` (test "debug_fingerprint") generated 1 warning (run `cargo fix --test "debug_fingerprint" -p pdftract-core` to apply 1 suggestion)
-warning: unused imports: `ObjectParser`, `PdfDict`, `PdfObject`, and `intern`
- --> crates/pdftract-core/tests/object_parser_proptest.rs:6:37
-  |
-6 | use pdftract_core::parser::object::{intern, ObjectParser, PdfDict, PdfObject};
-  |                                     ^^^^^^  ^^^^^^^^^^^^  ^^^^^^^  ^^^^^^^^^
-  |
-  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused import: `proptest::prelude::*`
- --> crates/pdftract-core/tests/object_parser_proptest.rs:7:5
-  |
-7 | use proptest::prelude::*;
-  |     ^^^^^^^^^^^^^^^^^^^^
-
-warning: `pdftract-core` (test "object_parser_proptest") generated 2 warnings (run `cargo fix --test "object_parser_proptest" -p pdftract-core` to apply 2 suggestions)
-warning: unused import: `pdftract_core::parser::xref::XrefResolver`
- --> crates/pdftract-core/examples/debug_page_tree.rs:5:5
-  |
-5 | use pdftract_core::parser::xref::XrefResolver;
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  |
-  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused import: `Catalog`
- --> crates/pdftract-core/tests/debug_page_parsing.rs:4:53
-  |
-4 | use pdftract_core::parser::catalog::{parse_catalog, Catalog};
-  |                                                     ^^^^^^^
-  |
-  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: `pdftract-core` (example "debug_page_tree") generated 1 warning (run `cargo fix --example "debug_page_tree" -p pdftract-core` to apply 1 suggestion)
-warning: `pdftract-core` (test "debug_page_parsing") generated 1 warning (run `cargo fix --test "debug_page_parsing" -p pdftract-core` to apply 1 suggestion)
-warning: unused import: `Path`
-  --> crates/pdftract-core/tests/verify_proptest_catches_bugs.rs:67:21
-   |
-67 |     use std::path::{Path, PathBuf};
-   |                     ^^^^
-   |
-   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: `pdftract-core` (test "verify_proptest_catches_bugs") generated 1 warning (run `cargo fix --test "verify_proptest_catches_bugs" -p pdftract-core` to apply 1 suggestion)
-warning: unused imports: `ExtractionOptions` and `extract_pdf`
-  --> crates/pdftract-core/examples/ocr.rs:12:21
-   |
-12 | use pdftract_core::{extract_pdf, ExtractionOptions};
-   |                     ^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^
-   |
-   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused import: `std::env`
-  --> crates/pdftract-core/examples/ocr.rs:13:5
-   |
-13 | use std::env;
-   |     ^^^^^^^^
-
-warning: unused import: `std::path::Path`
-  --> crates/pdftract-core/examples/ocr.rs:14:5
-   |
-14 | use std::path::Path;
-   |     ^^^^^^^^^^^^^^^
-
-warning: `pdftract-core` (example "ocr") generated 3 warnings (run `cargo fix --example "ocr" -p pdftract-core` to apply 3 suggestions)
-warning: unused variable: `resolver`
- --> crates/pdftract-libpdftract/tests/test_parse.rs:7:43
-  |
-7 |         Ok((fingerprint, _catalog, pages, resolver)) => {
-  |                                           ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_resolver`
-  |
-  = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
-
-warning: `pdftract-libpdftract` (test "test_parse") generated 1 warning (run `cargo fix --test "test_parse" -p pdftract-libpdftract` to apply 1 suggestion)
-warning: unused import: `PathBuf`
-  --> crates/pdftract-cli/src/cache_cmd.rs:13:23
-   |
-13 | use std::path::{Path, PathBuf};
-   |                       ^^^^^^^
-   |
-   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused import: `TcpListener`
-  --> crates/pdftract-core/tests/TH-03-mcp-no-auth.rs:15:28
-   |
-15 | use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
-   |                            ^^^^^^^^^^^
-   |
-   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused imports: `ChildStderr` and `ChildStdout`
-  --> crates/pdftract-core/tests/TH-03-mcp-no-auth.rs:16:27
-   |
-16 | use std::process::{Child, ChildStderr, ChildStdout, Command, Stdio};
-   |                           ^^^^^^^^^^^  ^^^^^^^^^^^
-
-warning: struct `TestResult` is never constructed
-  --> crates/pdftract-core/tests/TH-03-mcp-no-auth.rs:69:8
-   |
-69 | struct TestResult {
-   |        ^^^^^^^^^^
-   |
-   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
-
-warning: variant `Null` is never constructed
-  --> crates/pdftract-core/tests/TH-03-mcp-no-auth.rs:83:5
-   |
-79 | enum StdioConfig {
-   |      ----------- variant in this enum
-...
-83 |     Null,
-   |     ^^^^
-   |
-   = note: `StdioConfig` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
-
-warning: `pdftract-core` (test "TH-03-mcp-no-auth") generated 4 warnings (run `cargo fix --test "TH-03-mcp-no-auth" -p pdftract-core` to apply 2 suggestions)
-warning: unused import: `std::collections::hash_map::DefaultHasher`
-   --> crates/pdftract-core/tests/test_cycle_detection.rs:131:9
-    |
-131 |     use std::collections::hash_map::DefaultHasher;
-    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    |
-    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused imports: `Hash` and `Hasher`
-   --> crates/pdftract-core/tests/test_cycle_detection.rs:132:21
-    |
-132 |     use std::hash::{Hash, Hasher};
-    |                     ^^^^  ^^^^^^
-
-warning: `pdftract-core` (test "test_cycle_detection") generated 2 warnings (run `cargo fix --test "test_cycle_detection" -p pdftract-core` to apply 2 suggestions)
-warning: unused import: `pdftract_core::parser::xref::XrefSection`
- --> crates/pdftract-core/examples/debug_xref.rs:4:5
-  |
-4 | use pdftract_core::parser::xref::XrefSection;
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  |
-  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: `pdftract-core` (example "debug_xref") generated 1 warning (run `cargo fix --example "debug_xref" -p pdftract-core` to apply 1 suggestion)
-warning: unused import: `std::path::Path`
-  --> crates/pdftract-core/tests/ocr_integration.rs:12:5
-   |
-12 | use std::path::Path;
-   |     ^^^^^^^^^^^^^^^
-   |
-   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: function `tesseract_available` is never used
-  --> crates/pdftract-core/tests/ocr_integration.rs:15:4
-   |
-15 | fn tesseract_available() -> bool {
-   |    ^^^^^^^^^^^^^^^^^^^
-   |
-   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
-
-warning: `pdftract-core` (test "ocr_integration") generated 2 warnings (run `cargo fix --test "ocr_integration" -p pdftract-core` to apply 1 suggestion)
-warning: unused variable: `length`
-   --> crates/pdftract-core/tests/hint_stream_integration.rs:428:40
-    |
-428 |     fn read_range(&self, _offset: u64, length: usize) -> std::io::Result<bytes::Bytes> {
-    |                                        ^^^^^^ help: if this is intentional, prefix it with an underscore: `_length`
-    |
-    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused variable: `expected_ranges`
-   --> crates/pdftract-core/tests/hint_stream_integration.rs:445:21
-    |
-445 |     let (hint_data, expected_ranges) = create_test_hint_stream(5);
-    |                     ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_expected_ranges`
-
-warning: struct `MockPrefetchSource` is never constructed
-   --> crates/pdftract-core/tests/hint_stream_integration.rs:394:8
-    |
-394 | struct MockPrefetchSource {
-    |        ^^^^^^^^^^^^^^^^^^
-    |
-    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
-
-warning: associated function `new` is never used
-   --> crates/pdftract-core/tests/hint_stream_integration.rs:403:8
-    |
-401 | impl MockPrefetchSource {
-    | ----------------------- associated function in this implementation
-402 |     /// Create a new mock source with the given hint stream data.
-403 |     fn new(hint_stream_data: Vec<u8>) -> Self {
-    |        ^^^
-
-warning: `pdftract-core` (test "hint_stream_integration") generated 4 warnings (run `cargo fix --test "hint_stream_integration" -p pdftract-core` to apply 2 suggestions)
-warning: unused import: `Path`
-  --> crates/pdftract-core/tests/conformance.rs:19:17
-   |
-19 | use std::path::{Path, PathBuf};
-   |                 ^^^^
-   |
-   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused import: `regex::Regex`
-  --> crates/pdftract-core/tests/conformance.rs:22:5
-   |
-22 | use regex::Regex;
-   |     ^^^^^^^^^^^^
-
-warning: variable does not need to be mutable
-   --> crates/pdftract-core/tests/conformance.rs:416:9
-    |
-416 |     let mut result = serde_json::json!({
-    |         ----^^^^^^
-    |         |
-    |         help: remove this `mut`
-    |
-    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
-
-warning: variable does not need to be mutable
-   --> crates/pdftract-core/tests/conformance.rs:454:9
-    |
-454 |     let mut result = serde_json::json!({
-    |         ----^^^^^^
-    |         |
-    |         help: remove this `mut`
-
-warning: field `min_schema_version` is never read
-  --> crates/pdftract-core/tests/conformance.rs:43:5
-   |
-33 | struct TestCase {
-   |        -------- field in this struct
-...
-43 |     min_schema_version: Option<String>,
-   |     ^^^^^^^^^^^^^^^^^^
-   |
-   = note: `TestCase` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
-   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
-
-warning: fields `version` and `schema_version` are never read
-  --> crates/pdftract-core/tests/conformance.rs:51:5
-   |
-50 | struct ConformanceSuite {
-   |        ---------------- fields in this struct
-51 |     version: String,
-   |     ^^^^^^^
-52 |     schema_version: String,
-   |     ^^^^^^^^^^^^^^
-   |
-   = note: `ConformanceSuite` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
-
-warning: `pdftract-core` (test "conformance") generated 6 warnings (run `cargo fix --test "conformance" -p pdftract-core` to apply 4 suggestions)
-warning: unused import: `Diagnostic`
-  --> crates/pdftract-core/tests/encryption_integration_tests.rs:12:44
-   |
-12 | use pdftract_core::diagnostics::{DiagCode, Diagnostic};
-   |                                            ^^^^^^^^^^
-   |
-   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused imports: `CryptFilterMethod`, `DecryptionError`, `EncryptionInfo`, `FileKeyResult as Aes256FileKeyResult`, `FileKeyResult as Rc4FileKeyResult`, `PasswordValidation`, `aes_256_decrypt`, `decrypt_object`, `decrypt_with_password`, and `validate_user_password`
-  --> crates/pdftract-core/tests/encryption_integration_tests.rs:16:15
-   |
-16 |     aes_256::{aes_256_decrypt, Aes256Decryptor, FileKeyResult as Aes256FileKeyResult},
-   |               ^^^^^^^^^^^^^^^                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-17 |     decryptor::{decrypt_with_password, DecryptionError, PasswordValidation},
-   |                 ^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
-18 |     detection::{
-19 |         detect_encryption, CryptFilterMethod, EncryptionInfo,
-   |                            ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^
-...
-23 |         decrypt_object, derive_file_key, derive_object_key, pad_password, rc4_decrypt,
-   |         ^^^^^^^^^^^^^^
-24 |         validate_user_password, FileKeyResult as Rc4FileKeyResult,
-   |         ^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-warning: unused imports: `XrefEntry` and `XrefResolver`
-  --> crates/pdftract-core/tests/encryption_integration_tests.rs:30:35
-   |
-30 | use pdftract_core::parser::xref::{XrefEntry, XrefResolver};
-   |                                   ^^^^^^^^^  ^^^^^^^^^^^^
-
-warning: method `with_encrypt_dict` is never used
-  --> crates/pdftract-core/tests/encryption_integration_tests.rs:44:8
-   |
-39 | impl MockResolver {
-   | ----------------- method in this implementation
-...
-44 |     fn with_encrypt_dict(mut self, dict: PdfDict) -> Self {
-   |        ^^^^^^^^^^^^^^^^^
-   |
-   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
-
-warning: `pdftract-core` (test "encryption_integration_tests") generated 4 warnings (run `cargo fix --test "encryption_integration_tests" -p pdftract-core` to apply 3 suggestions)
-warning: unused import: `PathBuf`
-  --> crates/pdftract-core/tests/xref_integration_test.rs:10:23
-   |
-10 | use std::path::{Path, PathBuf};
-   |                       ^^^^^^^
-   |
-   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused imports: `merge_hybrid`, `parse_traditional_xref`, and `parse_xref_stream`
-  --> crates/pdftract-core/tests/xref_integration_test.rs:16:5
-   |
-16 |     merge_hybrid, parse_traditional_xref, parse_xref_stream, XrefEntry, XrefSection,
-   |     ^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^
-
-warning: function `assert_no_diagnostic_with_severity` is never used
-   --> crates/pdftract-core/tests/xref_helpers.rs:105:8
-    |
-105 | pub fn assert_no_diagnostic_with_severity(
-    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    |
-    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
-
-warning: function `count_diagnostics` is never used
-   --> crates/pdftract-core/tests/xref_helpers.rs:131:8
-    |
-131 | pub fn count_diagnostics(diagnostics: &[Diagnostic], code: DiagCode) -> usize {
-    |        ^^^^^^^^^^^^^^^^^
-
-warning: `pdftract-core` (test "xref_integration_test") generated 4 warnings (run `cargo fix --test "xref_integration_test" -p pdftract-core` to apply 2 suggestions)
-warning: unused variable: `page_count`
-   --> crates/pdftract-core/tests/test_page_helper_error_handling.rs:134:9
-    |
-134 |     let page_count = match doc.page_count() {
-    |         ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_page_count`
-    |
-    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
-
-warning: `pdftract-core` (test "test_page_helper_error_handling") generated 1 warning (run `cargo fix --test "test_page_helper_error_handling" -p pdftract-core` to apply 1 suggestion)
-warning: `pdftract-cli` (lib test) generated 48 warnings (47 duplicates) (run `cargo fix --lib -p pdftract-cli --tests` to apply 1 suggestion)
+warning: `pdftract-core` (test "stream_decoder_fixtures") generated 1 warning (run `cargo fix --test "stream_decoder_fixtures" -p pdftract-core` to apply 1 suggestion)
     Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 15s
-────────────
- Nextest run ID 9b50d474-3b97-4d1a-9874-2b9b7aa8b651 with nextest profile: default
-    Starting 1 test across 117 binaries (4888 tests skipped)
-        FAIL [   0.005s] (1/1) pdftract-core::test_sdk_extraction_simple test_simple_extract
-  stdout ───
-
-    running 1 test
-    Testing extraction with: "../../../tests/sdk-conformance/fixtures/scientific_paper/01.pdf"
-    ERROR: Fixture file does not exist at "../../../tests/sdk-conformance/fixtures/scientific_paper/01.pdf"
-    test test_simple_extract ... FAILED
-
-    failures:
-
-    failures:
-        test_simple_extract
-
-    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-
-  stderr ───
-
-    thread 'test_simple_extract' (2003065) panicked at crates/pdftract-core/tests/test_sdk_extraction_simple.rs:16:9:
-    Fixture not found
-    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
-
-────────────
-     Summary [   0.011s] 1 test run: 0 passed, 1 failed, 4888 skipped
-        FAIL [   0.005s] (1/1) pdftract-core::test_sdk_extraction_simple test_simple_extract
-error: test run failed

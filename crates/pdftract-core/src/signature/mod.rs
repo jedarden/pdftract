@@ -845,7 +845,7 @@ mod tests {
         resolver.cache_object(acroform_ref, PdfObject::Dict(Box::new(acroform_dict)));
 
         // Create a minimal catalog
-        let mut catalog = Catalog::new(ObjRef::new(1, 0));
+        let mut catalog = Catalog::new(ObjRef::new(1, 0), PdfObject::Dict(Box::new(PdfDict::new())));
         catalog.acroform_ref = Some(acroform_ref);
 
         (catalog, resolver)
@@ -896,7 +896,7 @@ mod tests {
 
     #[test]
     fn test_discover_no_acroform() {
-        let catalog = Catalog::new(ObjRef::new(1, 0));
+        let catalog = Catalog::new(ObjRef::new(1, 0), PdfObject::Dict(Box::new(PdfDict::new())));
         let resolver = XrefResolver::new();
 
         let sig_fields = discover(&resolver, &catalog);
@@ -912,7 +912,7 @@ mod tests {
         let acroform_dict = indexmap::IndexMap::new();
         resolver.cache_object(acroform_ref, PdfObject::Dict(Box::new(acroform_dict)));
 
-        let mut catalog = Catalog::new(ObjRef::new(1, 0));
+        let mut catalog = Catalog::new(ObjRef::new(1, 0), PdfObject::Dict(Box::new(PdfDict::new())));
         catalog.acroform_ref = Some(acroform_ref);
 
         let sig_fields = discover(&resolver, &catalog);

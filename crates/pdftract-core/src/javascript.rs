@@ -6,7 +6,7 @@
 
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::parser::catalog::Catalog;
-use crate::parser::object::{ObjRef, PdfObject};
+use crate::parser::object::{ObjRef, PdfDict, PdfObject};
 use crate::parser::xref::XrefResolver;
 use std::sync::Arc;
 use tracing::warn;
@@ -249,7 +249,7 @@ mod tests {
     #[test]
     fn test_detect_javascript_empty() {
         let resolver = Arc::new(XrefResolver::new());
-        let catalog = Catalog::new(ObjRef::new(1, 0));
+        let catalog = Catalog::new(ObjRef::new(1, 0), PdfObject::Dict(Box::new(PdfDict::new())));
         let pages = Vec::new();
 
         let (actions, diagnostics) = detect_javascript(&catalog, &pages, &resolver);
