@@ -108,7 +108,7 @@ pub fn is_catalog_dict_none(catalog_dict: &PdfObject) -> bool {
 ///
 /// # Examples
 /// ```
-/// use pdftract_core::parser::catalog::catalog_dict_missing_essential_keys;
+/// use pdftract_core::parser::catalog::is_catalog_dict_missing_essential_keys;
 /// use pdftract_core::parser::object::PdfObject;
 ///
 /// // Dictionary with both keys returns false
@@ -116,25 +116,25 @@ pub fn is_catalog_dict_none(catalog_dict: &PdfObject) -> bool {
 /// dict.insert("Type".into(), PdfObject::Name("Catalog".into()));
 /// dict.insert("Pages".into(), PdfObject::Ref(ObjRef::new(1, 0)));
 /// let complete_dict = PdfObject::Dict(Box::new(dict));
-/// assert!(!catalog_dict_missing_essential_keys(&complete_dict));
+/// assert!(!is_catalog_dict_missing_essential_keys(&complete_dict));
 ///
 /// // Dictionary missing /Type returns true
 /// let mut dict = indexmap::IndexMap::new();
 /// dict.insert("Pages".into(), PdfObject::Ref(ObjRef::new(1, 0)));
 /// let no_type = PdfObject::Dict(Box::new(dict));
-/// assert!(catalog_dict_missing_essential_keys(&no_type));
+/// assert!(is_catalog_dict_missing_essential_keys(&no_type));
 ///
 /// // Dictionary missing /Pages returns true
 /// let mut dict = indexmap::IndexMap::new();
 /// dict.insert("Type".into(), PdfObject::Name("Catalog".into()));
 /// let no_pages = PdfObject::Dict(Box::new(dict));
-/// assert!(catalog_dict_missing_essential_keys(&no_pages));
+/// assert!(is_catalog_dict_missing_essential_keys(&no_pages));
 ///
 /// // Non-dictionary types return false
-/// assert!(!catalog_dict_missing_essential_keys(&PdfObject::Null));
-/// assert!(!catalog_dict_missing_essential_keys(&PdfObject::Integer(42)));
+/// assert!(!is_catalog_dict_missing_essential_keys(&PdfObject::Null));
+/// assert!(!is_catalog_dict_missing_essential_keys(&PdfObject::Integer(42)));
 /// ```
-pub fn catalog_dict_missing_essential_keys(catalog_dict: &PdfObject) -> bool {
+pub fn is_catalog_dict_missing_essential_keys(catalog_dict: &PdfObject) -> bool {
     // If not a dictionary, can't have missing keys
     let Some(dict) = catalog_dict.as_dict() else {
         return false;
@@ -220,6 +220,54 @@ pub fn catalog_dict_empty(catalog: &Catalog) -> bool {
 /// ```
 pub fn catalog_dict_none(catalog: &Catalog) -> bool {
     is_catalog_dict_none(&catalog.raw_dict)
+}
+
+/// Check if a catalog's dictionary is missing essential keys.
+///
+/// This is a convenience wrapper around `is_catalog_dict_missing_essential_keys`
+/// that operates directly on a Catalog struct, checking if its raw_dict field
+/// is missing essential keys (/Type or /Pages).
+///
+/// # Arguments
+/// * `catalog` - A reference to the Catalog struct
+///
+/// # Returns
+/// * `true` if catalog.raw_dict is a dictionary missing /Type or /Pages
+/// * `false` if catalog.raw_dict has both /Type and /Pages, or is not a dictionary
+///
+/// # Examples
+/// ```
+/// use pdftract_core::parser::catalog::{catalog_dict_missing_essential_keys, Catalog};
+/// use pdftract_core::parser::object::{ObjRef, PdfObject};
+///
+/// // Catalog with both essential keys present
+/// let mut dict = indexmap::IndexMap::new();
+/// dict.insert("Type".into(), PdfObject::Name("Catalog".into()));
+/// dict.insert("Pages".into(), PdfObject::Ref(ObjRef::new(1, 0)));
+/// let catalog = Catalog::new(
+///     ObjRef::new(1, 0),
+///     PdfObject::Dict(Box::new(dict))
+/// );
+/// assert!(!catalog_dict_missing_essential_keys(&catalog));
+///
+/// // Catalog missing /Type
+/// let mut dict = indexmap::IndexMap::new();
+/// dict.insert("Pages".into(), PdfObject::Ref(ObjRef::new(1, 0)));
+/// let catalog = Catalog::new(
+///     ObjRef::new(1, 0),
+///     PdfObject::Dict(Box::new(dict))
+/// );
+/// assert!(catalog_dict_missing_essential_keys(&catalog));
+///
+/// // Catalog with non-dictionary raw_dict (returns false)
+/// let catalog = Catalog::new(
+///     ObjRef::new(0, 0),
+///     PdfObject::Null
+/// );
+/// assert!(!catalog_dict_missing_essential_keys(&catalog));
+/// ```
+pub fn catalog_dict_missing_essential_keys(catalog: &Catalog) -> bool {
+    is_catalog_dict_missing_essential_keys(&catalog.raw_dict)
 }
 
 /// MarkInfo dictionary from /MarkInfo entry.
@@ -1553,105 +1601,105 @@ mod tests {
     }
 
     #[test]
-    fn test_catalog_dict_missing_essential_keys_complete_dict() {
+    fn test_is_catalog_dict_missing_essential_keys_complete_dict() {
         // Dictionary with both essential keys present should return false
         let mut dict = indexmap::IndexMap::new();
         dict.insert(intern("Type"), PdfObject::Name(intern("Catalog")));
         dict.insert(intern("Pages"), PdfObject::Ref(ObjRef::new(1, 0)));
         let complete_dict = PdfObject::Dict(Box::new(dict));
-        assert!(!catalog_dict_missing_essential_keys(&complete_dict));
+        assert!(!is_catalog_dict_missing_essential_keys(&complete_dict));
     }
 
     #[test]
-    fn test_catalog_dict_missing_essential_keys_missing_type() {
+    fn test_is_catalog_dict_missing_essential_keys_missing_type() {
         // Dictionary missing /Type should return true
         let mut dict = indexmap::IndexMap::new();
         dict.insert(intern("Pages"), PdfObject::Ref(ObjRef::new(1, 0)));
         let no_type = PdfObject::Dict(Box::new(dict));
-        assert!(catalog_dict_missing_essential_keys(&no_type));
+        assert!(is_catalog_dict_missing_essential_keys(&no_type));
     }
 
     #[test]
-    fn test_catalog_dict_missing_essential_keys_missing_pages() {
+    fn test_is_catalog_dict_missing_essential_keys_missing_pages() {
         // Dictionary missing /Pages should return true
         let mut dict = indexmap::IndexMap::new();
         dict.insert(intern("Type"), PdfObject::Name(intern("Catalog")));
         let no_pages = PdfObject::Dict(Box::new(dict));
-        assert!(catalog_dict_missing_essential_keys(&no_pages));
+        assert!(is_catalog_dict_missing_essential_keys(&no_pages));
     }
 
     #[test]
-    fn test_catalog_dict_missing_essential_keys_missing_both() {
+    fn test_is_catalog_dict_missing_essential_keys_missing_both() {
         // Dictionary missing both keys should return true
         let mut dict = indexmap::IndexMap::new();
         dict.insert(intern("Outlines"), PdfObject::Ref(ObjRef::new(2, 0)));
         let missing_both = PdfObject::Dict(Box::new(dict));
-        assert!(catalog_dict_missing_essential_keys(&missing_both));
+        assert!(is_catalog_dict_missing_essential_keys(&missing_both));
     }
 
     #[test]
-    fn test_catalog_dict_missing_essential_keys_empty_dict() {
+    fn test_is_catalog_dict_missing_essential_keys_empty_dict() {
         // Empty dictionary (missing both keys) should return true
         let empty_dict = PdfObject::Dict(Box::new(indexmap::IndexMap::new()));
-        assert!(catalog_dict_missing_essential_keys(&empty_dict));
+        assert!(is_catalog_dict_missing_essential_keys(&empty_dict));
     }
 
     #[test]
-    fn test_catalog_dict_missing_essential_keys_null() {
+    fn test_is_catalog_dict_missing_essential_keys_null() {
         // Null object should return false (not a dictionary)
-        assert!(!catalog_dict_missing_essential_keys(&PdfObject::Null));
+        assert!(!is_catalog_dict_missing_essential_keys(&PdfObject::Null));
     }
 
     #[test]
-    fn test_catalog_dict_missing_essential_keys_boolean() {
+    fn test_is_catalog_dict_missing_essential_keys_boolean() {
         // Boolean should return false (not a dictionary)
-        assert!(!catalog_dict_missing_essential_keys(&PdfObject::Bool(true)));
-        assert!(!catalog_dict_missing_essential_keys(&PdfObject::Bool(false)));
+        assert!(!is_catalog_dict_missing_essential_keys(&PdfObject::Bool(true)));
+        assert!(!is_catalog_dict_missing_essential_keys(&PdfObject::Bool(false)));
     }
 
     #[test]
-    fn test_catalog_dict_missing_essential_keys_integer() {
+    fn test_is_catalog_dict_missing_essential_keys_integer() {
         // Integer should return false (not a dictionary)
-        assert!(!catalog_dict_missing_essential_keys(&PdfObject::Integer(42)));
+        assert!(!is_catalog_dict_missing_essential_keys(&PdfObject::Integer(42)));
     }
 
     #[test]
-    fn test_catalog_dict_missing_essential_keys_real() {
+    fn test_is_catalog_dict_missing_essential_keys_real() {
         // Real should return false (not a dictionary)
-        assert!(!catalog_dict_missing_essential_keys(&PdfObject::Real(3.14)));
+        assert!(!is_catalog_dict_missing_essential_keys(&PdfObject::Real(3.14)));
     }
 
     #[test]
-    fn test_catalog_dict_missing_essential_keys_string() {
+    fn test_is_catalog_dict_missing_essential_keys_string() {
         // String should return false (not a dictionary)
         let s = PdfObject::String(Box::new(b"test".to_vec()));
-        assert!(!catalog_dict_missing_essential_keys(&s));
+        assert!(!is_catalog_dict_missing_essential_keys(&s));
     }
 
     #[test]
-    fn test_catalog_dict_missing_essential_keys_name() {
+    fn test_is_catalog_dict_missing_essential_keys_name() {
         // Name should return false (not a dictionary)
-        assert!(!catalog_dict_missing_essential_keys(&PdfObject::Name(intern("Pages"))));
+        assert!(!is_catalog_dict_missing_essential_keys(&PdfObject::Name(intern("Pages"))));
     }
 
     #[test]
-    fn test_catalog_dict_missing_essential_keys_array() {
+    fn test_is_catalog_dict_missing_essential_keys_array() {
         // Array should return false (not a dictionary)
         let arr = PdfObject::Array(Box::new(vec![
             PdfObject::Integer(1),
             PdfObject::Integer(2),
         ]));
-        assert!(!catalog_dict_missing_essential_keys(&arr));
+        assert!(!is_catalog_dict_missing_essential_keys(&arr));
     }
 
     #[test]
-    fn test_catalog_dict_missing_essential_keys_reference() {
+    fn test_is_catalog_dict_missing_essential_keys_reference() {
         // Reference should return false (not a dictionary)
-        assert!(!catalog_dict_missing_essential_keys(&PdfObject::Ref(ObjRef::new(1, 0))));
+        assert!(!is_catalog_dict_missing_essential_keys(&PdfObject::Ref(ObjRef::new(1, 0))));
     }
 
     #[test]
-    fn test_catalog_dict_missing_essential_keys_with_other_optional_keys() {
+    fn test_is_catalog_dict_missing_essential_keys_with_other_optional_keys() {
         // Dictionary with /Type and /Pages but also other optional keys should return false
         let mut dict = indexmap::IndexMap::new();
         dict.insert(intern("Type"), PdfObject::Name(intern("Catalog")));
@@ -1659,11 +1707,11 @@ mod tests {
         dict.insert(intern("Outlines"), PdfObject::Ref(ObjRef::new(2, 0)));
         dict.insert(intern("MarkInfo"), PdfObject::Dict(Box::new(indexmap::IndexMap::new())));
         let with_optional = PdfObject::Dict(Box::new(dict));
-        assert!(!catalog_dict_missing_essential_keys(&with_optional));
+        assert!(!is_catalog_dict_missing_essential_keys(&with_optional));
     }
 
     #[test]
-    fn test_catalog_dict_missing_essential_keys_no_panic_on_non_dict() {
+    fn test_is_catalog_dict_missing_essential_keys_no_panic_on_non_dict() {
         // Ensure no panic on non-dictionary types (acceptance criteria)
         let non_dict_values = vec![
             PdfObject::Null,
@@ -1675,7 +1723,7 @@ mod tests {
 
         for value in non_dict_values {
             let result = std::panic::catch_unwind(|| {
-                catalog_dict_missing_essential_keys(&value)
+                is_catalog_dict_missing_essential_keys(&value)
             });
             assert!(result.is_ok(), "Should not panic on {:?}", value);
             assert!(!result.unwrap(), "Should return false for non-dict {:?}", value);
@@ -1683,18 +1731,18 @@ mod tests {
     }
 
     #[test]
-    fn test_catalog_dict_missing_essential_keys_no_panic_on_empty_dict() {
+    fn test_is_catalog_dict_missing_essential_keys_no_panic_on_empty_dict() {
         // Ensure no panic on empty dictionary (acceptance criteria)
         let empty_dict = PdfObject::Dict(Box::new(indexmap::IndexMap::new()));
         let result = std::panic::catch_unwind(|| {
-            catalog_dict_missing_essential_keys(&empty_dict)
+            is_catalog_dict_missing_essential_keys(&empty_dict)
         });
         assert!(result.is_ok());
         assert!(result.unwrap(), "Empty dict should be missing essential keys");
     }
 
     #[test]
-    fn test_catalog_dict_missing_essential_keys_case_sensitive() {
+    fn test_is_catalog_dict_missing_essential_keys_case_sensitive() {
         // Keys are case-sensitive - /Type vs /type matters
         let mut dict = indexmap::IndexMap::new();
         // Use lowercase "type" instead of "Type"
@@ -1702,7 +1750,7 @@ mod tests {
         dict.insert(intern("Pages"), PdfObject::Ref(ObjRef::new(1, 0)));
         let wrong_case = PdfObject::Dict(Box::new(dict));
         // Should return true because /Type (capital T) is missing
-        assert!(catalog_dict_missing_essential_keys(&wrong_case));
+        assert!(is_catalog_dict_missing_essential_keys(&wrong_case));
     }
 
     // Tests for catalog_dict_empty
@@ -1988,6 +2036,147 @@ mod tests {
         // Default catalog has a dict, not None
         let catalog = Catalog::default();
         assert!(!catalog_dict_none(&catalog));
+    }
+
+    // Tests for catalog_dict_missing_essential_keys
+
+    #[test]
+    fn test_catalog_dict_missing_essential_keys_with_complete_catalog() {
+        // Catalog with both essential keys present should return false
+        let mut dict = indexmap::IndexMap::new();
+        dict.insert(intern("Type"), PdfObject::Name(intern("Catalog")));
+        dict.insert(intern("Pages"), PdfObject::Ref(ObjRef::new(1, 0)));
+        let catalog = Catalog::new(
+            ObjRef::new(1, 0),
+            PdfObject::Dict(Box::new(dict))
+        );
+        assert!(!catalog_dict_missing_essential_keys(&catalog));
+    }
+
+    #[test]
+    fn test_catalog_dict_missing_essential_keys_with_missing_type() {
+        // Catalog missing /Type should return true
+        let mut dict = indexmap::IndexMap::new();
+        dict.insert(intern("Pages"), PdfObject::Ref(ObjRef::new(1, 0)));
+        let catalog = Catalog::new(
+            ObjRef::new(1, 0),
+            PdfObject::Dict(Box::new(dict))
+        );
+        assert!(catalog_dict_missing_essential_keys(&catalog));
+    }
+
+    #[test]
+    fn test_catalog_dict_missing_essential_keys_with_missing_pages() {
+        // Catalog missing /Pages should return true
+        let mut dict = indexmap::IndexMap::new();
+        dict.insert(intern("Type"), PdfObject::Name(intern("Catalog")));
+        let catalog = Catalog::new(
+            ObjRef::new(1, 0),
+            PdfObject::Dict(Box::new(dict))
+        );
+        assert!(catalog_dict_missing_essential_keys(&catalog));
+    }
+
+    #[test]
+    fn test_catalog_dict_missing_essential_keys_with_empty_catalog() {
+        // Empty catalog (missing both keys) should return true
+        let catalog = Catalog::new(
+            ObjRef::new(0, 0),
+            PdfObject::Dict(Box::new(indexmap::IndexMap::new()))
+        );
+        assert!(catalog_dict_missing_essential_keys(&catalog));
+    }
+
+    #[test]
+    fn test_catalog_dict_missing_essential_keys_with_non_dictionary() {
+        // Catalog with non-dictionary raw_dict should return false
+        let catalog = Catalog::new(
+            ObjRef::new(0, 0),
+            PdfObject::Null
+        );
+        assert!(!catalog_dict_missing_essential_keys(&catalog));
+    }
+
+    #[test]
+    fn test_catalog_dict_missing_essential_keys_with_integer_raw_dict() {
+        // Catalog with integer raw_dict should return false
+        let catalog = Catalog::new(
+            ObjRef::new(0, 0),
+            PdfObject::Integer(42)
+        );
+        assert!(!catalog_dict_missing_essential_keys(&catalog));
+    }
+
+    #[test]
+    fn test_catalog_dict_missing_essential_keys_with_string_raw_dict() {
+        // Catalog with string raw_dict should return false
+        let catalog = Catalog::new(
+            ObjRef::new(0, 0),
+            PdfObject::String(Box::new(b"test".to_vec()))
+        );
+        assert!(!catalog_dict_missing_essential_keys(&catalog));
+    }
+
+    #[test]
+    fn test_catalog_dict_missing_essential_keys_no_panic() {
+        // Ensure no panic on various catalog types (acceptance criteria)
+        let catalog_variants = vec![
+            Catalog::new(ObjRef::new(0, 0), PdfObject::Null),
+            Catalog::new(ObjRef::new(0, 0), PdfObject::Bool(true)),
+            Catalog::new(ObjRef::new(0, 0), PdfObject::Integer(42)),
+            Catalog::new(ObjRef::new(0, 0), PdfObject::Real(3.14)),
+            Catalog::new(ObjRef::new(0, 0), PdfObject::Name(intern("Test"))),
+        ];
+
+        for catalog in catalog_variants {
+            let result = std::panic::catch_unwind(|| {
+                catalog_dict_missing_essential_keys(&catalog)
+            });
+            assert!(result.is_ok(), "Should not panic on catalog with {:?}", catalog.raw_dict);
+        }
+    }
+
+    #[test]
+    fn test_catalog_dict_missing_essential_keys_standalone_and_testable() {
+        // Function should be standalone and testable (acceptance criteria)
+        // This test verifies that the function has no side effects
+        let mut dict = indexmap::IndexMap::new();
+        dict.insert(intern("Pages"), PdfObject::Ref(ObjRef::new(1, 0)));
+        let catalog = Catalog::new(
+            ObjRef::new(1, 0),
+            PdfObject::Dict(Box::new(dict))
+        );
+
+        // Call function multiple times - should return same result (no side effects)
+        let result1 = catalog_dict_missing_essential_keys(&catalog);
+        let result2 = catalog_dict_missing_essential_keys(&catalog);
+        let result3 = catalog_dict_missing_essential_keys(&catalog);
+
+        assert_eq!(result1, result2);
+        assert_eq!(result2, result3);
+        assert!(result1, "Catalog missing /Type should return true");
+    }
+
+    #[test]
+    fn test_catalog_dict_missing_essential_keys_default_catalog() {
+        // Default catalog has empty dict (missing both keys)
+        let catalog = Catalog::default();
+        assert!(catalog_dict_missing_essential_keys(&catalog));
+    }
+
+    #[test]
+    fn test_catalog_dict_missing_essential_keys_with_optional_keys() {
+        // Catalog with /Type and /Pages but also other optional keys should return false
+        let mut dict = indexmap::IndexMap::new();
+        dict.insert(intern("Type"), PdfObject::Name(intern("Catalog")));
+        dict.insert(intern("Pages"), PdfObject::Ref(ObjRef::new(1, 0)));
+        dict.insert(intern("Outlines"), PdfObject::Ref(ObjRef::new(2, 0)));
+        dict.insert(intern("MarkInfo"), PdfObject::Dict(Box::new(indexmap::IndexMap::new())));
+        let catalog = Catalog::new(
+            ObjRef::new(1, 0),
+            PdfObject::Dict(Box::new(dict))
+        );
+        assert!(!catalog_dict_missing_essential_keys(&catalog));
     }
 }
 
