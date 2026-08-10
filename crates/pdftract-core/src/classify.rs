@@ -2441,6 +2441,66 @@ mod tests {
     }
 
     #[test]
+    fn test_smoke_classify_simple_pdf() {
+        // Basic smoke test for classify_page using simple PDF-like context.
+        //
+        // This test provides a simple, focused verification that classify_page:
+        // 1. Executes without panicking for a simple vector PDF context
+        // 2. Returns a valid PageClassification with expected structure
+        // 3. Produces reasonable output (Vector class, reasonable confidence)
+        // 4. Serializes correctly to JSON
+        //
+        // Uses a minimal PageContext representing a simple text-only PDF page.
+
+        let mut ctx = PageContext::new();
+        // Minimal valid page context for a simple PDF
+        ctx.text_op_count = 50;           // Some text operators present
+        ctx.raw_char_count = 200;         // Total characters extracted
+        ctx.valid_char_count = 195;        // Most characters valid (97.5%)
+        ctx.replacement_char_count = 5;    // Few replacement chars
+        ctx.image_coverage = 0.0;          // No images
+        ctx.has_full_page_image = false;  // No full-page image
+        ctx.has_visible_text = true;       // Has visible text
+        ctx.density_ratio = 0.85;          // Good character density
+        ctx.width = 612.0;                // US Letter width
+        ctx.height = 792.0;               // US Letter height
+        ctx.rotation = 0;                 // No rotation
+
+        // Call classify_page - should succeed without errors
+        let result = classify_page(&ctx);
+
+        // Basic output format verification
+        assert!(result.confidence >= 0.0 && result.confidence <= 1.0,
+            "Confidence must be in valid range [0.0, 1.0], got {}", result.confidence);
+
+        // For simple vector page, expect Vector classification
+        assert_eq!(result.class, PageClass::Vector,
+            "Expected Vector classification for simple text-only PDF, got {:?}", result.class);
+
+        // Verify hybrid_cells is None for non-Hybrid page
+        assert!(result.hybrid_cells.is_none(),
+            "hybrid_cells should be None for non-Hybrid classification");
+
+        // Verify JSON serialization works
+        let json_result = serde_json::to_string(&result);
+        assert!(json_result.is_ok(), "Should serialize to JSON successfully");
+
+        let json_str = json_result.unwrap();
+        assert!(json_str.contains("\"class\""), "JSON should contain 'class' field");
+        assert!(json_str.contains("\"confidence\""), "JSON should contain 'confidence' field");
+        assert!(json_str.contains("\"hybrid_cells\""), "JSON should contain 'hybrid_cells' field");
+
+        // Verify round-trip deserialization
+        let deserialized: Result<PageClassification, _> = serde_json::from_str(&json_str);
+        assert!(deserialized.is_ok(), "Should deserialize JSON back to PageClassification");
+
+        let result_deser = deserialized.unwrap();
+        assert_eq!(result.class, result_deser.class, "Class should match after round-trip");
+        assert_eq!(result.confidence, result_deser.confidence, "Confidence should match after round-trip");
+        assert_eq!(result.hybrid_cells, result_deser.hybrid_cells, "hybrid_cells should match after round-trip");
+    }
+
+    #[test]
     fn test_microbenchmark_classify_page_performance() {
         // Micro-benchmark: verify classify_page p99 < 5 ms
         // This test simulates a 50-fixture suite to verify performance
