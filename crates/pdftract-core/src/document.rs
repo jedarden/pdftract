@@ -763,7 +763,7 @@ pub fn validate_pages_structure(
     }
 
     // Check 0.3: Missing essential keys (/Type or /Pages)
-    if catalog_dict_missing_essential_keys(&catalog.raw_dict) {
+    if catalog_dict_missing_essential_keys(&catalog) {
         return Err(DocumentError::EmptyDocument {
             source: source_identifier.to_string(),
         });
