@@ -752,82 +752,6 @@ warning: unused import: `crate::table::Segment`
 275 |     use crate::table::Segment;
     |         ^^^^^^^^^^^^^^^^^^^^^
 
-warning: unused import: `Write`
-   --> crates/pdftract-core/src/atomic_file_writer.rs:191:33
-    |
-191 |             use std::io::{self, Write};
-    |                                 ^^^^^
-
-warning: unused import: `crate::parser::stream::PdfSource`
-  --> crates/pdftract-core/src/sdk.rs:15:5
-   |
-15 | use crate::parser::stream::PdfSource as ParserPdfSource;
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-warning: unused import: `PdfSource`
-  --> crates/pdftract-core/src/document.rs:26:33
-   |
-26 | use crate::source::{FileSource, PdfSource};
-   |                                 ^^^^^^^^^
-
-warning: unused import: `rayon::prelude`
-  --> crates/pdftract-core/src/extract.rs:63:5
-   |
-63 | use rayon::prelude::*;
-   |     ^^^^^^^^^^^^^^
-
-warning: unused import: `std::io::Write`
-    --> crates/pdftract-core/src/extract.rs:1698:9
-     |
-1698 |     use std::io::Write;
-     |         ^^^^^^^^^^^^^^
-
-warning: unused import: `std::io::Read`
-  --> crates/pdftract-core/src/parser/stream.rs:12:5
-   |
-12 | use std::io::Read;
-   |     ^^^^^^^^^^^^^
-
-warning: unused import: `LineMetadata`
-  --> crates/pdftract-core/src/layout/correction.rs:20:40
-   |
-20 | use crate::layout::line::{Block, Line, LineMetadata};
-   |                                        ^^^^^^^^^^^^
-
-warning: unused variable: `page_ref_to_index`
-  --> crates/pdftract-core/src/annotation/json.rs:29:5
-   |
-29 |     page_ref_to_index: &Option<HashMap<u64, usize>>,
-   |     ^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_page_ref_to_index`
-   |
-   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
-
-warning: variable does not need to be mutable
-   --> crates/pdftract-core/src/attachment/filespec.rs:156:9
-    |
-156 |     let mut diagnostics = Vec::new();
-    |         ----^^^^^^^^^^^
-    |         |
-    |         help: remove this `mut`
-    |
-    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
-
-warning: variable does not need to be mutable
-   --> crates/pdftract-core/src/cache/compression.rs:131:13
-    |
-131 |         let mut decoder = zstd::Decoder::new(data)?;
-    |             ----^^^^^^^
-    |             |
-    |             help: remove this `mut`
-
-warning: variable does not need to be mutable
-   --> crates/pdftract-core/src/cache/compression.rs:255:9
-    |
-255 |     let mut decoder = zstd::Decoder::new(data)?;
-    |         ----^^^^^^^
-    |         |
-    |         help: remove this `mut`
-
 error[E0560]: struct `catalog::Catalog` has no field named `uri`
     --> crates/pdftract-core/src/document.rs:4794:13
      |
@@ -964,6 +888,82 @@ note: tuple variant defined here
      |
  244 |     Dict(Box<PdfDict>),
      |     ^^^^
+
+warning: unused import: `Write`
+   --> crates/pdftract-core/src/atomic_file_writer.rs:191:33
+    |
+191 |             use std::io::{self, Write};
+    |                                 ^^^^^
+
+warning: unused import: `crate::parser::stream::PdfSource`
+  --> crates/pdftract-core/src/sdk.rs:15:5
+   |
+15 | use crate::parser::stream::PdfSource as ParserPdfSource;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `PdfSource`
+  --> crates/pdftract-core/src/document.rs:26:33
+   |
+26 | use crate::source::{FileSource, PdfSource};
+   |                                 ^^^^^^^^^
+
+warning: unused import: `rayon::prelude`
+  --> crates/pdftract-core/src/extract.rs:63:5
+   |
+63 | use rayon::prelude::*;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `std::io::Write`
+    --> crates/pdftract-core/src/extract.rs:1698:9
+     |
+1698 |     use std::io::Write;
+     |         ^^^^^^^^^^^^^^
+
+warning: unused import: `std::io::Read`
+  --> crates/pdftract-core/src/parser/stream.rs:12:5
+   |
+12 | use std::io::Read;
+   |     ^^^^^^^^^^^^^
+
+warning: unused import: `LineMetadata`
+  --> crates/pdftract-core/src/layout/correction.rs:20:40
+   |
+20 | use crate::layout::line::{Block, Line, LineMetadata};
+   |                                        ^^^^^^^^^^^^
+
+warning: unused variable: `page_ref_to_index`
+  --> crates/pdftract-core/src/annotation/json.rs:29:5
+   |
+29 |     page_ref_to_index: &Option<HashMap<u64, usize>>,
+   |     ^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_page_ref_to_index`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/attachment/filespec.rs:156:9
+    |
+156 |     let mut diagnostics = Vec::new();
+    |         ----^^^^^^^^^^^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/cache/compression.rs:131:13
+    |
+131 |         let mut decoder = zstd::Decoder::new(data)?;
+    |             ----^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/cache/compression.rs:255:9
+    |
+255 |     let mut decoder = zstd::Decoder::new(data)?;
+    |         ----^^^^^^^
+    |         |
+    |         help: remove this `mut`
 
 warning: unused variable: `ctx`
    --> crates/pdftract-core/src/classify.rs:690:31
@@ -2545,4 +2545,3 @@ warning: `pdftract-core` (lib test) generated 286 warnings (137 duplicates)
 error: could not compile `pdftract-core` (lib test) due to 14 previous errors; 286 warnings emitted
 warning: build failed, waiting for other jobs to finish...
 warning: `pdftract-core` (lib) generated 187 warnings (run `cargo fix --lib -p pdftract-core` to apply 136 suggestions)
-error: command `/home/coding/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin/cargo test --no-run --message-format json-render-diagnostics --all-targets` exited with code 101
