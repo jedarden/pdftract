@@ -12,7 +12,15 @@
 
 use pdftract_core::options::ExtractionOptions;
 use pdftract_core::sdk;
-use std::path::Path;
+use std::path::PathBuf;
+
+fn get_fixture_path(fixture_name: &str) -> PathBuf {
+    // Get the workspace root by going up from the crate's manifest dir
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    PathBuf::from(manifest_dir)
+        .join("../../tests/fixtures/page_class")
+        .join(fixture_name)
+}
 
 #[test]
 fn test_classify_page_smoke_with_pdf_fixture() {
@@ -26,7 +34,7 @@ fn test_classify_page_smoke_with_pdf_fixture() {
     //!
     //! Uses vector_pure/source.pdf as a simple text-only PDF fixture.
 
-    let fixture_path = Path::new("tests/fixtures/page_class/vector_pure/source.pdf");
+    let fixture_path = get_fixture_path("vector_pure/source.pdf");
 
     // Verify fixture exists
     assert!(
@@ -36,7 +44,7 @@ fn test_classify_page_smoke_with_pdf_fixture() {
     );
 
     // Run SDK extraction (this calls classify_page internally)
-    let result = sdk::extract(fixture_path, &ExtractionOptions::default());
+    let result = sdk::extract(&fixture_path, &ExtractionOptions::default());
 
     // Verify extraction succeeded (Ok() for valid PDF)
     assert!(
@@ -131,7 +139,7 @@ fn test_classify_page_smoke_scanned_fixture() {
     //!
     //! Verifies that scanned PDF (image-only) is correctly classified.
 
-    let fixture_path = Path::new("tests/fixtures/page_class/scanned_single/source.pdf");
+    let fixture_path = get_fixture_path("scanned_single/source.pdf");
 
     // Verify fixture exists
     assert!(
@@ -141,7 +149,7 @@ fn test_classify_page_smoke_scanned_fixture() {
     );
 
     // Run SDK extraction
-    let result = sdk::extract(fixture_path, &ExtractionOptions::default());
+    let result = sdk::extract(&fixture_path, &ExtractionOptions::default());
 
     // Verify extraction succeeded
     assert!(
@@ -186,9 +194,9 @@ fn test_classify_page_output_format_verification() {
     //!
     //! This test ensures the JSON output format matches the schema expectations.
 
-    let fixture_path = Path::new("tests/fixtures/page_class/vector_pure/source.pdf");
+    let fixture_path = get_fixture_path("vector_pure/source.pdf");
 
-    let result = sdk::extract(fixture_path, &ExtractionOptions::default());
+    let result = sdk::extract(&fixture_path, &ExtractionOptions::default());
     assert!(result.is_ok(), "Extraction should succeed");
 
     let extraction_result = result.unwrap();
