@@ -13,6 +13,44 @@ use crate::parser::xref::XrefResolver;
 /// Result type for catalog parsing.
 pub type Result<T> = std::result::Result<T, Vec<Diagnostic>>;
 
+/// Check if a catalog dictionary is empty.
+///
+/// This function detects when the catalog.dictionary exists but has no keys.
+/// It handles all PdfObject variants safely without panicking.
+///
+/// # Arguments
+/// * `catalog_dict` - A reference to a PdfObject that should be the catalog dictionary
+///
+/// # Returns
+/// * `true` if the object is a dictionary with zero keys
+/// * `false` if the object is a non-empty dictionary or not a dictionary at all
+///
+/// # Examples
+/// ```
+/// use pdftract_core::parser::catalog::is_catalog_dict_empty;
+/// use pdftract_core::parser::object::PdfObject;
+///
+/// // Empty dictionary returns true
+/// let empty_dict = PdfObject::Dict(Box::new(indexmap::IndexMap::new()));
+/// assert!(is_catalog_dict_empty(&empty_dict));
+///
+/// // Non-empty dictionary returns false
+/// let mut dict = indexmap::IndexMap::new();
+/// dict.insert("Pages".into(), PdfObject::Ref(ObjRef::new(1, 0)));
+/// let non_empty_dict = PdfObject::Dict(Box::new(dict));
+/// assert!(!is_catalog_dict_empty(&non_empty_dict));
+///
+/// // Non-dictionary types return false
+/// assert!(!is_catalog_dict_empty(&PdfObject::Null));
+/// assert!(!is_catalog_dict_empty(&PdfObject::Integer(42)));
+/// ```
+pub fn is_catalog_dict_empty(catalog_dict: &PdfObject) -> bool {
+    catalog_dict
+        .as_dict()
+        .map(|dict| dict.is_empty())
+        .unwrap_or(false)
+}
+
 /// MarkInfo dictionary from /MarkInfo entry.
 ///
 /// Indicates whether the document is tagged PDF.
@@ -1123,6 +1161,118 @@ mod tests {
         assert!(mark_info.is_tagged);
         assert!(mark_info.suspects);
         assert!(mark_info.requires_coverage_check());
+    }
+
+    #[test]
+    fn test_is_catalog_dict_empty_empty_dict() {
+        // Empty dictionary should return true
+        let empty_dict = PdfObject::Dict(Box::new(indexmap::IndexMap::new()));
+        assert!(is_catalog_dict_empty(&empty_dict));
+    }
+
+    #[test]
+    fn test_is_catalog_dict_empty_non_empty_dict() {
+        // Non-empty dictionary should return false
+        let mut dict = indexmap::IndexMap::new();
+        dict.insert(intern("Pages"), PdfObject::Ref(ObjRef::new(1, 0)));
+        let non_empty_dict = PdfObject::Dict(Box::new(dict));
+        assert!(!is_catalog_dict_empty(&non_empty_dict));
+    }
+
+    #[test]
+    fn test_is_catalog_dict_empty_with_multiple_keys() {
+        // Dictionary with multiple keys should return false
+        let mut dict = indexmap::IndexMap::new();
+        dict.insert(intern("Pages"), PdfObject::Ref(ObjRef::new(1, 0)));
+        dict.insert(intern("Type"), PdfObject::Name(intern("Catalog")));
+        dict.insert(intern("Outlines"), PdfObject::Ref(ObjRef::new(2, 0)));
+        let multi_key_dict = PdfObject::Dict(Box::new(dict));
+        assert!(!is_catalog_dict_empty(&multi_key_dict));
+    }
+
+    #[test]
+    fn test_is_catalog_dict_empty_null() {
+        // Null object should return false (not a dictionary)
+        assert!(!is_catalog_dict_empty(&PdfObject::Null));
+    }
+
+    #[test]
+    fn test_is_catalog_dict_empty_boolean() {
+        // Boolean should return false (not a dictionary)
+        assert!(!is_catalog_dict_empty(&PdfObject::Bool(true)));
+        assert!(!is_catalog_dict_empty(&PdfObject::Bool(false)));
+    }
+
+    #[test]
+    fn test_is_catalog_dict_empty_integer() {
+        // Integer should return false (not a dictionary)
+        assert!(!is_catalog_dict_empty(&PdfObject::Integer(42)));
+    }
+
+    #[test]
+    fn test_is_catalog_dict_empty_real() {
+        // Real should return false (not a dictionary)
+        assert!(!is_catalog_dict_empty(&PdfObject::Real(3.14)));
+    }
+
+    #[test]
+    fn test_is_catalog_dict_empty_string() {
+        // String should return false (not a dictionary)
+        let s = PdfObject::String(Box::new(b"test".to_vec()));
+        assert!(!is_catalog_dict_empty(&s));
+    }
+
+    #[test]
+    fn test_is_catalog_dict_empty_name() {
+        // Name should return false (not a dictionary)
+        assert!(!is_catalog_dict_empty(&PdfObject::Name(intern("Pages"))));
+    }
+
+    #[test]
+    fn test_is_catalog_dict_empty_array() {
+        // Array should return false (not a dictionary)
+        let arr = PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(1),
+            PdfObject::Integer(2),
+        ]));
+        assert!(!is_catalog_dict_empty(&arr));
+    }
+
+    #[test]
+    fn test_is_catalog_dict_empty_reference() {
+        // Reference should return false (not a dictionary)
+        assert!(!is_catalog_dict_empty(&PdfObject::Ref(ObjRef::new(1, 0))));
+    }
+
+    #[test]
+    fn test_is_catalog_dict_empty_no_panic_on_empty_dict() {
+        // Ensure no panic on empty dictionary (acceptance criteria)
+        let empty_dict = PdfObject::Dict(Box::new(indexmap::IndexMap::new()));
+        let result = std::panic::catch_unwind(|| {
+            is_catalog_dict_empty(&empty_dict)
+        });
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+    }
+
+    #[test]
+    fn test_is_catalog_dict_empty_no_panic_on_non_dict() {
+        // Ensure no panic on non-dictionary types (acceptance criteria)
+        let non_dict_values = vec![
+            PdfObject::Null,
+            PdfObject::Bool(true),
+            PdfObject::Integer(42),
+            PdfObject::Real(3.14),
+            PdfObject::Name(intern("Test")),
+        ];
+
+        for value in non_dict_values {
+            let result = std::panic::catch_unwind(|| {
+                is_catalog_dict_empty(&value)
+            });
+            assert!(result.is_ok(), "Should not panic on {:?}", value);
+            assert!(!result.unwrap(), "Should return false for non-dict {:?}", value);
+        }
     }
 }
 
