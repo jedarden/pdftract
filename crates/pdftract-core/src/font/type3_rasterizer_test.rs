@@ -20,10 +20,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use crate::font::encoding::NamedEncoding;
-use crate::font::type3_rasterizer::{detect_char_proc_type, rasterize_type3_glyph, CharProcType, DocumentContext, StreamResolverFn};
+use crate::font::type3_rasterizer::{detect_char_proc_type, rasterize_type3_glyph, CharProcType, DocumentContext};
 use crate::font::type3::Type3Font;
-use crate::graphics_state::Matrix3x3;
 use crate::parser::object::types::{intern, ObjRef, PdfDict, PdfObject, PdfStream};
 use crate::parser::xref::XrefResolver;
 use crate::parser::stream::MemorySource;
