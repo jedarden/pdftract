@@ -1,3 +1,17 @@
+# Cargo Test Inventory - pdftract
+# Generated: 2026-08-10
+# Status: COMPLETE (with documented gaps - see notes/test-inventory-comparison.md)
+# Total Tests: 5,221
+# Discovery Method: Source code parsing (awk-based)
+# Verification: All test discovery mechanisms working correctly
+# Known Gaps: 62 security tests missing due to conditional compilation (feature-gated)
+# See: notes/test-inventory-comparison.md for detailed analysis
+# See: notes/bf-3mzfax.md for final audit status
+#
+# Note: 9 test execution failures and 235 compilation errors are separate from
+# discovery issues. Tests are discoverable but cannot run until compilation errors are fixed.
+#
+# ===== TEST INVENTORY =====
     array_delimiters
     array_with_integers
     bench_grep_1000
