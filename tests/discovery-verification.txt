@@ -2545,4 +2545,4 @@ warning: `pdftract-core` (lib test) generated 286 warnings (137 duplicates)
 error: could not compile `pdftract-core` (lib test) due to 14 previous errors; 286 warnings emitted
 warning: build failed, waiting for other jobs to finish...
 warning: `pdftract-core` (lib) generated 187 warnings (run `cargo fix --lib -p pdftract-core` to apply 136 suggestions)
-error: command `/home/coding/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin/cargo test --no-run --message-format json-render-diagnostics --all-targets` exited with code 101
+error: command `/home/coding/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin/cargo test --no-run --message-format json-render-diagnostics --all` exited with code 101
