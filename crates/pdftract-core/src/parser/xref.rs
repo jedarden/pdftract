@@ -8,7 +8,7 @@
 use crate::diagnostics::{DiagCode, Diagnostic as Diag};
 use crate::parser::object::cache::ObjectCache;
 use crate::parser::object::{ObjRef, ObjectParser, PdfDict, PdfObject};
-use crate::parser::stream::PdfSource;
+use crate::parser::stream::{MemorySource, PdfSource};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
