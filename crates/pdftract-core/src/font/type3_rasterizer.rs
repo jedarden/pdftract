@@ -2681,7 +2681,7 @@ mod tests {
     fn test_resolve_stream_callback_receives_parameters() {
         use crate::parser::object::types::{PdfDict, PdfObject};
         use crate::parser::object::intern;
-        use std::sync::{Arc, Mutex};
+        use std::sync::Mutex;
 
         // Create a Type3 font with identity FontMatrix for predictable coordinates
         let mut font_dict = PdfDict::new();
