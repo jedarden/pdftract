@@ -236,6 +236,7 @@ pub use markdown::{
 };
 pub use options::{ExtractionOptions, OutputOptions, ReceiptsMode};
 pub use page_class::{page_type_string, PageClass, PageClassification};
+pub use page_extraction_error::{PageExtractionError, PageResult as PageExtractionResult};
 pub use parser::pages::{count_pages_tree, LazyPageIter, PageDict, DEFAULT_MEDIABOX};
 pub use schema::{
     AttachmentJson, BeadJson, BlockJson, CellJson, ExtractionQuality, RowJson, SpanJson, SpanRef,

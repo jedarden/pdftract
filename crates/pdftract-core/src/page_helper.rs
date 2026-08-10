@@ -272,9 +272,105 @@ pub fn extract_all_pages(document: &Document) -> Result<Vec<PageExtraction>> {
         pages.push(page);
     }
 
-    // Handle empty document case
-    if pages.is_empty() {
-        return Err(anyhow::Error::from(PageError::NoPages));
+    // Return empty collection gracefully when no pages present
+    // (not an error - handles documents with 0 pages)
+    Ok(pages)
+}
+
+/// Extract a range of pages from a Document.
+///
+/// This helper function extracts a contiguous range of pages from a Document.
+/// The range is inclusive of both start and end indices (0-based).
+///
+/// # Arguments
+///
+/// * `document` - A reference to a parsed Document
+/// * `start` - Start page index (0-based, inclusive)
+/// * `end` - End page index (0-based, inclusive)
+///
+/// # Returns
+///
+/// A `Result` containing a `Vec<PageExtraction>` with pages in the specified range,
+/// or an error if the range is invalid or extraction fails.
+///
+/// # Errors
+///
+/// Returns `PageError` if:
+/// - The document has no pages
+/// - The range bounds are out of bounds
+/// - The start index is greater than the end index
+/// - Any page has invalid dimensions or rotation
+/// - Page extraction fails for any page in the range
+///
+/// # Example
+///
+/// ```ignore
+/// use pdftract_core::{page_helper, Document};
+///
+/// let doc = Document::open("document.pdf")?;
+/// // Extract pages 5 through 10 (inclusive)
+/// let pages = page_helper::extract_page_range(&doc, 5, 10)?;
+/// for page in pages {
+///     println!("Page {}: {}x{}", page.index, page.width, page.height);
+/// }
+/// ```
+pub fn extract_page_range(document: &Document, start: usize, end: usize) -> Result<Vec<PageExtraction>> {
+    // Get total page count to validate bounds
+    let page_count = document.page_count().map_err(|e| {
+        anyhow::Error::from(PageError::PageCountFailed(format!("{:?}", e)))
+    })?;
+
+    // Check for empty document
+    if page_count == 0 {
+        return Ok(Vec::new()); // Return empty collection gracefully
+    }
+
+    // Validate range
+    if start > end {
+        return Err(anyhow::Error::from(PageError::IndexOutOfBounds {
+            requested: start,
+            available: page_count,
+        }));
+    }
+
+    if start >= page_count {
+        return Err(anyhow::Error::from(PageError::IndexOutOfBounds {
+            requested: start,
+            available: page_count,
+        }));
+    }
+
+    if end >= page_count {
+        return Err(anyhow::Error::from(PageError::IndexOutOfBounds {
+            requested: end,
+            available: page_count,
+        }));
+    }
+
+    let mut pages = Vec::new();
+
+    // Iterate to the start index
+    let mut page_iter = document.pages();
+    for (idx, page_result) in page_iter.enumerate() {
+        if idx < start {
+            continue; // Skip pages before start
+        }
+
+        if idx > end {
+            break; // Stop after end
+        }
+
+        let page = page_result.map_err(|e| {
+            anyhow::Error::from(PageError::ExtractionFailed {
+                index: idx,
+                message: format!("{:?}", e),
+            })
+        })?;
+
+        // Validate the extracted page data
+        validate_page_extraction(&page)?;
+
+        pages.push(page);
     }
 
     Ok(pages)

@@ -13,6 +13,7 @@ use crate::detection::{detect_javascript, detect_xfa};
 use crate::fingerprint::{
     compute_fingerprint, CatalogFlags, ContentStreamData, FingerprintInput, PageFingerprintData,
 };
+use crate::page_extraction_error::{PageExtractionError, PageResult};
 use crate::parser::catalog::{catalog_dict_missing_essential_keys, is_catalog_dict_empty, is_catalog_dict_none, parse_catalog, Catalog};
 use crate::parser::object::PdfDict;
 use crate::parser::pages::{flatten_page_tree, LazyPageIter, PageDict};
@@ -1204,31 +1205,128 @@ impl PdfExtractor {
     ///
     /// This method extracts one page without materializing the entire document.
     /// Content streams are decoded and the result is returned.
-    pub fn extract_page(&self, page_index: usize) -> Result<PageExtraction> {
+    ///
+    /// # Arguments
+    ///
+    /// * `page_index` - 0-based page index to extract
+    ///
+    /// # Returns
+    ///
+    /// A `DocumentResult<PageExtraction>` containing the extracted page data.
+    ///
+    /// # Errors
+    ///
+    /// Returns `DocumentError` if:
+    /// - Pages are not materialized (required for this method)
+    /// - Page index is out of bounds
+    /// - Page has invalid media box
+    /// - Page has invalid dimensions
+    /// - Page has invalid rotation
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use pdftract_core::document::PdfExtractor;
+    ///
+    /// let mut extractor = PdfExtractor::open("document.pdf")?;
+    /// extractor.materialize_pages()?;
+    ///
+    /// let page = extractor.extract_page(0)?;
+    /// println!("Extracted page {} with dimensions {}x{}", page.index, page.width, page.height);
+    /// ```
+    pub fn extract_page(&self, page_index: usize) -> DocumentResult<PageExtraction> {
+        // Check if pages are materialized
         let pages = self
             .pages
             .as_ref()
-            .ok_or_else(|| anyhow!("Pages not materialized. Call materialize_pages() first."))?;
-
-        if page_index >= pages.len() {
-            return Err(anyhow!(
-                "Page index {} out of bounds (document has {} pages)",
+            .ok_or_else(|| DocumentError::ExtractionFailed {
                 page_index,
-                pages.len()
-            ));
+                message: "Pages not materialized. Call materialize_pages() first.".to_string(),
+            })?;
+
+        // Check for empty pages array
+        if pages.is_empty() {
+            return Err(DocumentError::EmptyDocument {
+                source: "PdfExtractor".to_string(),
+            });
+        }
+
+        // Check page index bounds
+        if page_index >= pages.len() {
+            return Err(DocumentError::PageOutOfBounds {
+                source: "PdfExtractor".to_string(),
+                requested: page_index,
+                available: pages.len(),
+            });
         }
 
         let page = &pages[page_index];
 
-        // For now, return a placeholder extraction
-        // The full implementation would decode content streams here
+        // Validate media box coordinates for NaN/Infinity
         let [x0, y0, x1, y1] = page.media_box;
 
+        // Check for NaN or Infinity in media box coordinates
+        if !x0.is_finite() || !y0.is_finite() || !x1.is_finite() || !y1.is_finite() {
+            return Err(DocumentError::InvalidMediaBox {
+                page_index,
+                media_box: Some(page.media_box),
+            });
+        }
+
+        // Check for invalid media box (x1 must be > x0, y1 must be > y0)
+        if x1 <= x0 || y1 <= y0 {
+            return Err(DocumentError::InvalidMediaBox {
+                page_index,
+                media_box: Some(page.media_box),
+            });
+        }
+
+        let width = x1 - x0;
+        let height = y1 - y0;
+
+        // Check for NaN or Infinity in computed dimensions
+        if !width.is_finite() || !height.is_finite() {
+            return Err(DocumentError::InvalidDimensions {
+                page_index,
+                width,
+                height,
+            });
+        }
+
+        // Check for zero or negative dimensions
+        if width <= 0.0 || height <= 0.0 {
+            return Err(DocumentError::InvalidDimensions {
+                page_index,
+                width,
+                height,
+            });
+        }
+
+        // Check for unreasonably large dimensions (> 10,000 points = ~3.8 meters)
+        const MAX_REASONABLE_DIMENSION: f64 = 10_000.0;
+        if width > MAX_REASONABLE_DIMENSION || height > MAX_REASONABLE_DIMENSION {
+            return Err(DocumentError::InvalidDimensions {
+                page_index,
+                width,
+                height,
+            });
+        }
+
+        // Validate rotation
+        let rotation = page.rotate;
+        if rotation != 0 && rotation != 90 && rotation != 180 && rotation != 270 {
+            return Err(DocumentError::InvalidRotation {
+                page_index,
+                rotation,
+            });
+        }
+
+        // Return page extraction with validated data
         Ok(PageExtraction {
             index: page_index,
-            width: x1 - x0,
-            height: y1 - y0,
-            rotation: page.rotate,
+            width,
+            height,
+            rotation,
             spans: vec![],
             blocks: vec![],
         })
@@ -1690,7 +1788,7 @@ pub struct PageIter<'a> {
 }
 
 impl<'a> Iterator for PageIter<'a> {
-    type Item = Result<PageExtraction>;
+    type Item = PageResult<PageExtraction>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // Initialize lazy iterator on first use
@@ -1702,7 +1800,9 @@ impl<'a> Iterator for PageIter<'a> {
                         .first()
                         .map(|d| d.message.as_ref())
                         .unwrap_or("unknown error");
-                    return Some(Err(anyhow!("Failed to create lazy page iterator: {}", msg)));
+                    return Some(Err(PageExtractionError::MalformedDocumentStructure(
+                        format!("Failed to create lazy page iterator: {}", msg)
+                    )));
                 }
             }
         }
@@ -1711,12 +1811,83 @@ impl<'a> Iterator for PageIter<'a> {
 
         match iter.next() {
             Some(Ok(page_dict)) => {
+                // Validate media box coordinates for NaN/Infinity
                 let [x0, y0, x1, y1] = page_dict.media_box;
+
+                // Check for NaN or Infinity in media box coordinates
+                if !x0.is_finite() || !y0.is_finite() || !x1.is_finite() || !y1.is_finite() {
+                    let error = PageExtractionError::InvalidMediaBox {
+                        page_index: self.index,
+                        media_box: Some(page_dict.media_box),
+                    };
+                    self.index += 1;
+                    return Some(Err(error));
+                }
+
+                // Check for invalid dimensions (x1 must be > x0, y1 must be > y0)
+                if x1 <= x0 || y1 <= y0 {
+                    let error = PageExtractionError::InvalidMediaBox {
+                        page_index: self.index,
+                        media_box: Some(page_dict.media_box),
+                    };
+                    self.index += 1;
+                    return Some(Err(error));
+                }
+
+                let width = x1 - x0;
+                let height = y1 - y0;
+
+                // Check for NaN or Infinity in computed dimensions
+                if !width.is_finite() || !height.is_finite() {
+                    let error = PageExtractionError::InvalidDimensions {
+                        page_index: self.index,
+                        width,
+                        height,
+                    };
+                    self.index += 1;
+                    return Some(Err(error));
+                }
+
+                // Check for zero or negative dimensions
+                if width <= 0.0 || height <= 0.0 {
+                    let error = PageExtractionError::InvalidDimensions {
+                        page_index: self.index,
+                        width,
+                        height,
+                    };
+                    self.index += 1;
+                    return Some(Err(error));
+                }
+
+                // Check for unreasonably large dimensions (> 10,000 points = ~3.8 meters)
+                // This catches malformed PDFs with garbage dimension values
+                const MAX_REASONABLE_DIMENSION: f64 = 10_000.0;
+                if width > MAX_REASONABLE_DIMENSION || height > MAX_REASONABLE_DIMENSION {
+                    let error = PageExtractionError::InvalidDimensions {
+                        page_index: self.index,
+                        width,
+                        height,
+                    };
+                    self.index += 1;
+                    return Some(Err(error));
+                }
+
+                // Validate rotation
+                let rotation = page_dict.rotate;
+                if rotation != 0 && rotation != 90 && rotation != 180 && rotation != 270 {
+                    let error = PageExtractionError::InvalidRotation {
+                        page_index: self.index,
+                        rotation,
+                    };
+                    self.index += 1;
+                    return Some(Err(error));
+                }
+
                 let result = Ok(PageExtraction {
                     index: self.index,
-                    width: x1 - x0,
-                    height: y1 - y0,
-                    rotation: page_dict.rotate,
+                    width,
+                    height,
+                    rotation,
                     spans: vec![],
                     blocks: vec![],
                 });
@@ -1732,12 +1903,12 @@ impl<'a> Iterator for PageIter<'a> {
                     .first()
                     .map(|d| d.message.as_ref())
                     .unwrap_or("unknown error");
+                let page_index = self.index;
                 self.index += 1;
-                Some(Err(anyhow!(
-                    "Error extracting page {}: {}",
-                    self.index - 1,
-                    msg
-                )))
+                Some(Err(PageExtractionError::MalformedPageData {
+                    page_index,
+                    message: msg.to_string(),
+                }))
             }
             None => None,
         }
@@ -2601,7 +2772,7 @@ startxref
 
         // Create a catalog with multiple content indicators
         let _catalog = Catalog {
-            pages_ref: ObjRef::new(0, 0), // Will fail here first
+            pages_ref: crate::parser::object::ObjRef::new(0, 0), // Will fail here first
             outlines_ref: None, // Some(obj_ref1),
             mark_info: MarkInfo::default(),
             struct_tree_root_ref: None, // Some(obj_ref2),
@@ -2698,7 +2869,7 @@ startxref
 
         // Create a catalog with metadata but no /Pages entry
         let catalog_with_content = Catalog {
-            pages_ref: ObjRef::new(0, 0),
+            pages_ref: crate::parser::object::ObjRef::new(0, 0),
             outlines_ref: Some(ObjRef::new(5, 0)),
             metadata_ref: Some(ObjRef::new(6, 0)),
             ..Default::default()
@@ -2726,7 +2897,7 @@ startxref
 
         // Create a catalog that is completely empty (all fields None/default)
         let truly_empty_catalog = Catalog {
-            pages_ref: ObjRef::new(0, 0),
+            pages_ref: crate::parser::object::ObjRef::new(0, 0),
             outlines_ref: None,
             mark_info: Default::default(),
             struct_tree_root_ref: None,
@@ -2766,7 +2937,7 @@ startxref
 
         // Test case 1: Catalog with STRUCT_MISSING_KEY diagnostic for /Pages
         let catalog_with_missing_pages_diagnostic = Catalog {
-            pages_ref: ObjRef::new(0, 0),
+            pages_ref: crate::parser::object::ObjRef::new(0, 0),
             diagnostics: vec![Diagnostic::with_dynamic_no_offset(
                 DiagCode::StructMissingKey,
                 "STRUCT_MISSING_KEY: /Pages key missing from catalog".to_string(),
@@ -2785,7 +2956,7 @@ startxref
 
         // Test case 2: Catalog with STRUCT_MISSING_KEY diagnostic for catalog
         let catalog_with_catalog_diagnostic = Catalog {
-            pages_ref: ObjRef::new(0, 0),
+            pages_ref: crate::parser::object::ObjRef::new(0, 0),
             diagnostics: vec![Diagnostic::with_dynamic_no_offset(
                 DiagCode::StructMissingKey,
                 "STRUCT_MISSING_KEY: catalog dictionary is empty".to_string(),
@@ -2804,7 +2975,7 @@ startxref
 
         // Test case 3: Catalog with non-matching diagnostic (should fall through to pages_ref check)
         let catalog_with_other_diagnostic = Catalog {
-            pages_ref: ObjRef::new(0, 0),
+            pages_ref: crate::parser::object::ObjRef::new(0, 0),
             diagnostics: vec![Diagnostic::with_dynamic_no_offset(
                 DiagCode::StructUnexpectedByte,
                 "Some other error".to_string(),
@@ -2823,7 +2994,7 @@ startxref
 
         // Test case 4: Catalog with empty diagnostics (should fall through to pages_ref check)
         let catalog_no_diagnostics = Catalog {
-            pages_ref: ObjRef::new(0, 0),
+            pages_ref: crate::parser::object::ObjRef::new(0, 0),
             diagnostics: vec![],
             ..Default::default()
         };
@@ -2851,7 +3022,7 @@ startxref
         let empty_dict = PdfObject::Dict(Box::new(indexmap::IndexMap::new()));
 
         let catalog = Catalog {
-            pages_ref: ObjRef::new(1, 0), // Valid pages_ref, but empty raw_dict
+            pages_ref: crate::parser::object::ObjRef::new(1, 0), // Valid pages_ref, but empty raw_dict
             raw_dict: empty_dict,
             ..Default::default()
         };
@@ -2878,7 +3049,7 @@ startxref
 
         // Test with null raw_dict
         let null_catalog = Catalog {
-            pages_ref: ObjRef::new(1, 0),
+            pages_ref: crate::parser::object::ObjRef::new(1, 0),
             raw_dict: PdfObject::Null,
             ..Default::default()
         };
@@ -2895,7 +3066,7 @@ startxref
 
         // Test with integer raw_dict (non-dictionary type)
         let integer_catalog = Catalog {
-            pages_ref: ObjRef::new(1, 0),
+            pages_ref: crate::parser::object::ObjRef::new(1, 0),
             raw_dict: PdfObject::Integer(42),
             ..Default::default()
         };
@@ -2923,7 +3094,7 @@ startxref
         let mut dict_missing_type = indexmap::IndexMap::new();
         dict_missing_type.insert(intern("Pages"), PdfObject::Ref(ObjRef::new(2, 0)));
         let catalog_missing_type = Catalog {
-            pages_ref: ObjRef::new(2, 0),
+            pages_ref: crate::parser::object::ObjRef::new(2, 0),
             raw_dict: PdfObject::Dict(Box::new(dict_missing_type)),
             ..Default::default()
         };
@@ -2942,7 +3113,7 @@ startxref
         let mut dict_missing_pages = indexmap::IndexMap::new();
         dict_missing_pages.insert(intern("Type"), PdfObject::Name(intern("Catalog")));
         let catalog_missing_pages = Catalog {
-            pages_ref: ObjRef::new(1, 0),
+            pages_ref: crate::parser::object::ObjRef::new(1, 0),
             raw_dict: PdfObject::Dict(Box::new(dict_missing_pages)),
             ..Default::default()
         };
@@ -2961,7 +3132,7 @@ startxref
         let mut dict_missing_both = indexmap::IndexMap::new();
         dict_missing_both.insert(intern("Outlines"), PdfObject::Ref(ObjRef::new(3, 0)));
         let catalog_missing_both = Catalog {
-            pages_ref: ObjRef::new(1, 0),
+            pages_ref: crate::parser::object::ObjRef::new(1, 0),
             raw_dict: PdfObject::Dict(Box::new(dict_missing_both)),
             ..Default::default()
         };
@@ -2988,7 +3159,7 @@ startxref
 
         // Test empty dictionary scenario
         let empty_dict_catalog = Catalog {
-            pages_ref: ObjRef::new(1, 0),
+            pages_ref: crate::parser::object::ObjRef::new(1, 0),
             raw_dict: PdfObject::Dict(Box::new(indexmap::IndexMap::new())),
             ..Default::default()
         };
@@ -3005,7 +3176,7 @@ startxref
 
         // Test None dictionary scenario
         let none_dict_catalog = Catalog {
-            pages_ref: ObjRef::new(1, 0),
+            pages_ref: crate::parser::object::ObjRef::new(1, 0),
             raw_dict: PdfObject::Null,
             ..Default::default()
         };
@@ -3024,7 +3195,7 @@ startxref
         let mut dict_missing_type = indexmap::IndexMap::new();
         dict_missing_type.insert(intern("Pages"), PdfObject::Ref(ObjRef::new(2, 0)));
         let missing_keys_catalog = Catalog {
-            pages_ref: ObjRef::new(2, 0),
+            pages_ref: crate::parser::object::ObjRef::new(2, 0),
             raw_dict: PdfObject::Dict(Box::new(dict_missing_type)),
             ..Default::default()
         };
@@ -3076,7 +3247,7 @@ startxref
         resolver.cache_object(ObjRef::new(3, 0), PdfObject::Dict(Box::new(page_dict)));
 
         let valid_catalog = Catalog {
-            pages_ref: ObjRef::new(2, 0),
+            pages_ref: crate::parser::object::ObjRef::new(2, 0),
             raw_dict: PdfObject::Dict(Box::new(valid_dict)),
             ..Default::default()
         };
@@ -3106,7 +3277,7 @@ startxref
         // Verify no panic occurs on empty dictionary (acceptance criteria)
         let resolver = XrefResolver::new();
         let empty_dict_catalog = Catalog {
-            pages_ref: ObjRef::new(1, 0),
+            pages_ref: crate::parser::object::ObjRef::new(1, 0),
             raw_dict: PdfObject::Dict(Box::new(indexmap::IndexMap::new())),
             ..Default::default()
         };
@@ -3140,7 +3311,7 @@ startxref
 
         for (i, raw_dict) in non_dict_types.iter().enumerate() {
             let catalog = Catalog {
-                pages_ref: ObjRef::new(1, 0),
+                pages_ref: crate::parser::object::ObjRef::new(1, 0),
                 raw_dict: raw_dict.clone(),
                 ..Default::default()
             };
@@ -3168,7 +3339,7 @@ startxref
         let mut dict_no_type = indexmap::IndexMap::new();
         dict_no_type.insert(intern("Pages"), PdfObject::Ref(ObjRef::new(2, 0)));
         let catalog_no_type = Catalog {
-            pages_ref: ObjRef::new(2, 0),
+            pages_ref: crate::parser::object::ObjRef::new(2, 0),
             raw_dict: PdfObject::Dict(Box::new(dict_no_type)),
             ..Default::default()
         };
@@ -3184,7 +3355,7 @@ startxref
         let mut dict_no_pages = indexmap::IndexMap::new();
         dict_no_pages.insert(intern("Type"), PdfObject::Name(intern("Catalog")));
         let catalog_no_pages = Catalog {
-            pages_ref: ObjRef::new(1, 0),
+            pages_ref: crate::parser::object::ObjRef::new(1, 0),
             raw_dict: PdfObject::Dict(Box::new(dict_no_pages)),
             ..Default::default()
         };
@@ -3208,7 +3379,7 @@ startxref
 
         // Scenario 1: Empty dictionary (dict with no keys)
         let empty_dict_catalog = Catalog {
-            pages_ref: ObjRef::new(1, 0),
+            pages_ref: crate::parser::object::ObjRef::new(1, 0),
             raw_dict: PdfObject::Dict(Box::new(indexmap::IndexMap::new())),
             ..Default::default()
         };
@@ -3222,7 +3393,7 @@ startxref
 
         // Scenario 2: None dictionary (not a dict at all)
         let none_dict_catalog = Catalog {
-            pages_ref: ObjRef::new(1, 0),
+            pages_ref: crate::parser::object::ObjRef::new(1, 0),
             raw_dict: PdfObject::Null,
             ..Default::default()
         };
@@ -3238,7 +3409,7 @@ startxref
         let mut dict_missing_keys = indexmap::IndexMap::new();
         dict_missing_keys.insert(intern("Outlines"), PdfObject::Ref(ObjRef::new(3, 0)));
         let missing_keys_catalog = Catalog {
-            pages_ref: ObjRef::new(1, 0),
+            pages_ref: crate::parser::object::ObjRef::new(1, 0),
             raw_dict: PdfObject::Dict(Box::new(dict_missing_keys)),
             ..Default::default()
         };
@@ -3263,7 +3434,7 @@ startxref
         // Test that empty dictionary error includes source identifier (acceptance criteria)
         let resolver = XrefResolver::new();
         let empty_dict_catalog = Catalog {
-            pages_ref: ObjRef::new(1, 0),
+            pages_ref: crate::parser::object::ObjRef::new(1, 0),
             raw_dict: PdfObject::Dict(Box::new(indexmap::IndexMap::new())),
             ..Default::default()
         };
@@ -3289,7 +3460,7 @@ startxref
         // Test that None dictionary error includes source identifier (acceptance criteria)
         let resolver = XrefResolver::new();
         let none_dict_catalog = Catalog {
-            pages_ref: ObjRef::new(1, 0),
+            pages_ref: crate::parser::object::ObjRef::new(1, 0),
             raw_dict: PdfObject::Null,
             ..Default::default()
         };
@@ -3319,7 +3490,7 @@ startxref
         let mut dict_missing_keys = indexmap::IndexMap::new();
         dict_missing_keys.insert(intern("Outlines"), PdfObject::Ref(ObjRef::new(3, 0)));
         let missing_keys_catalog = Catalog {
-            pages_ref: ObjRef::new(1, 0),
+            pages_ref: crate::parser::object::ObjRef::new(1, 0),
             raw_dict: PdfObject::Dict(Box::new(dict_missing_keys)),
             ..Default::default()
         };
@@ -3345,7 +3516,7 @@ startxref
         // Test that error display message includes source identifier (acceptance criteria)
         let resolver = XrefResolver::new();
         let empty_dict_catalog = Catalog {
-            pages_ref: ObjRef::new(1, 0),
+            pages_ref: crate::parser::object::ObjRef::new(1, 0),
             raw_dict: PdfObject::Dict(Box::new(indexmap::IndexMap::new())),
             ..Default::default()
         };
@@ -3367,7 +3538,7 @@ startxref
         // Test that different source identifiers are properly distinguished (acceptance criteria)
         let resolver = XrefResolver::new();
         let empty_dict_catalog = Catalog {
-            pages_ref: ObjRef::new(1, 0),
+            pages_ref: crate::parser::object::ObjRef::new(1, 0),
             raw_dict: PdfObject::Dict(Box::new(indexmap::IndexMap::new())),
             ..Default::default()
         };
@@ -3401,7 +3572,7 @@ startxref
 
         // Scenario 1: Empty dictionary (catalog dict with no keys)
         let empty_dict_catalog = Catalog {
-            pages_ref: ObjRef::new(1, 0),
+            pages_ref: crate::parser::object::ObjRef::new(1, 0),
             raw_dict: PdfObject::Dict(Box::new(indexmap::IndexMap::new())),
             ..Default::default()
         };
@@ -3416,7 +3587,7 @@ startxref
 
         // Scenario 2: None dictionary (catalog is not a dictionary at all)
         let none_dict_catalog = Catalog {
-            pages_ref: ObjRef::new(1, 0),
+            pages_ref: crate::parser::object::ObjRef::new(1, 0),
             raw_dict: PdfObject::Integer(42),
             ..Default::default()
         };
@@ -3433,7 +3604,7 @@ startxref
         let mut missing_type_dict = indexmap::IndexMap::new();
         missing_type_dict.insert(intern("Pages"), PdfObject::Ref(ObjRef::new(2, 0)));
         let missing_type_catalog = Catalog {
-            pages_ref: ObjRef::new(2, 0),
+            pages_ref: crate::parser::object::ObjRef::new(2, 0),
             raw_dict: PdfObject::Dict(Box::new(missing_type_dict)),
             ..Default::default()
         };
@@ -3860,5 +4031,1197 @@ startxref
         }
 
         // All fail-fast phases verified with comprehensive coverage
+    }
+
+    // ============================================================================
+    // Comprehensive Page Extraction Error Handling Tests
+    // ============================================================================
+
+    #[test]
+    fn test_pdf_extractor_extract_page_not_materialized() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("test.pdf");
+        create_minimal_pdf(&pdf_path).unwrap();
+
+        let extractor = PdfExtractor::open(&pdf_path).unwrap();
+
+        // Try to extract page without materializing first
+        let result = extractor.extract_page(0);
+
+        match result {
+            Err(DocumentError::ExtractionFailed { page_index, message }) => {
+                assert_eq!(page_index, 0);
+                assert!(message.contains("Pages not materialized"));
+                assert!(message.contains("Call materialize_pages() first"));
+            }
+            Ok(_) => {
+                panic!("Expected ExtractionFailed error when pages not materialized");
+            }
+            Err(other) => {
+                panic!("Expected ExtractionFailed error, got {:?}", other);
+            }
+        }
+    }
+
+    #[test]
+    fn test_pdf_extractor_extract_page_empty_document() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("empty.pdf");
+
+        // Create an empty PDF file
+        File::create(&pdf_path).unwrap().write_all(b"%PDF-1.4\n").unwrap();
+
+        let mut extractor = PdfExtractor::open(&pdf_path).unwrap();
+        extractor.materialize_pages().unwrap();
+
+        // Try to extract page from empty document
+        let result = extractor.extract_page(0);
+
+        match result {
+            Err(DocumentError::EmptyDocument { source }) => {
+                assert!(source.contains("empty.pdf") || source.contains("empty"));
+            }
+            Ok(_) => {
+                panic!("Expected EmptyDocument error for empty document");
+            }
+            Err(other) => {
+                panic!("Expected EmptyDocument error, got {:?}", other);
+            }
+        }
+    }
+
+    #[test]
+    fn test_pdf_extractor_extract_page_index_out_of_bounds() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("test.pdf");
+        create_minimal_pdf(&pdf_path).unwrap();
+
+        let mut extractor = PdfExtractor::open(&pdf_path).unwrap();
+        extractor.materialize_pages().unwrap();
+
+        // Try to extract page beyond available pages
+        let result = extractor.extract_page(10);
+
+        match result {
+            Err(DocumentError::PageOutOfBounds { source, requested, available }) => {
+                assert_eq!(requested, 10);
+                assert_eq!(available, 1);
+                assert!(source.contains("test.pdf") || source.contains("test"));
+            }
+            Ok(_) => {
+                panic!("Expected PageOutOfBounds error");
+            }
+            Err(other) => {
+                panic!("Expected PageOutOfBounds error, got {:?}", other);
+            }
+        }
+    }
+
+    #[test]
+    fn test_pdf_extractor_extract_page_invalid_media_box() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("test.pdf");
+        create_minimal_pdf(&pdf_path).unwrap();
+
+        let mut extractor = PdfExtractor::open(&pdf_path).unwrap();
+
+        // Manually create a page with invalid media box
+        use crate::parser::pages::PageDict;
+        use crate::parser::object::ObjRef;
+        use crate::parser::resources::ResourceDict;
+        use std::sync::Arc;
+
+        let page_with_invalid_mediabox = PageDict {
+            obj_ref: crate::parser::object::ObjRef::new(3, 0),
+            media_box: [0.0, 0.0, -1.0, 792.0], // x1 < x0 (invalid)
+            crop_box: Some([0.0, 0.0, -1.0, 792.0]),
+            bleed_box: None,
+            trim_box: None,
+            art_box: None,
+            rotate: 0,
+            resources: Arc::new(ResourceDict::new()),
+            contents: vec![],
+            annots: vec![],
+            actual_text: None,
+            lang: None,
+            aa: None,
+            struct_parents: None,
+        };
+
+        extractor.pages = Some(vec![page_with_invalid_mediabox]);
+
+        let result = extractor.extract_page(0);
+
+        match result {
+            Err(DocumentError::InvalidMediaBox { page_index, media_box }) => {
+                assert_eq!(page_index, 0);
+                assert_eq!(media_box, Some([0.0, 0.0, -1.0, 792.0]));
+            }
+            Ok(_) => {
+                panic!("Expected InvalidMediaBox error");
+            }
+            Err(other) => {
+                panic!("Expected InvalidMediaBox error, got {:?}", other);
+            }
+        }
+    }
+
+    #[test]
+    fn test_pdf_extractor_extract_page_invalid_dimensions() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("test.pdf");
+        create_minimal_pdf(&pdf_path).unwrap();
+
+        let mut extractor = PdfExtractor::open(&pdf_path).unwrap();
+
+        // Manually create a page with zero width
+        use crate::parser::pages::PageDict;
+        use crate::parser::object::ObjRef;
+        use crate::parser::resources::ResourceDict;
+        use std::sync::Arc;
+
+        let page_with_zero_width = PageDict {
+            obj_ref: crate::parser::object::ObjRef::new(3, 0),
+            media_box: [0.0, 0.0, 0.0, 792.0], // x1 == x0 (zero width)
+            crop_box: Some([0.0, 0.0, 0.0, 792.0]),
+            bleed_box: None,
+            trim_box: None,
+            art_box: None,
+            rotate: 0,
+            resources: Arc::new(ResourceDict::new()),
+            contents: vec![],
+            annots: vec![],
+            actual_text: None,
+            lang: None,
+            aa: None,
+            struct_parents: None,
+        };
+
+        extractor.pages = Some(vec![page_with_zero_width]);
+
+        let result = extractor.extract_page(0);
+
+        match result {
+            Err(DocumentError::InvalidDimensions { page_index, width, height }) => {
+                assert_eq!(page_index, 0);
+                assert_eq!(width, 0.0);
+                assert_eq!(height, 792.0);
+            }
+            Ok(_) => {
+                panic!("Expected InvalidDimensions error");
+            }
+            Err(other) => {
+                panic!("Expected InvalidDimensions error, got {:?}", other);
+            }
+        }
+    }
+
+    #[test]
+    fn test_pdf_extractor_extract_page_invalid_rotation() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("test.pdf");
+        create_minimal_pdf(&pdf_path).unwrap();
+
+        let mut extractor = PdfExtractor::open(&pdf_path).unwrap();
+
+        // Manually create a page with invalid rotation
+        use crate::parser::pages::PageDict;
+        use crate::parser::resources::ResourceDict;
+        use std::sync::Arc;
+
+        let page_with_invalid_rotation = PageDict {
+            obj_ref: crate::parser::object::ObjRef::new(3, 0),
+            media_box: [0.0, 0.0, 612.0, 792.0],
+            crop_box: Some([0.0, 0.0, 612.0, 792.0]),
+            bleed_box: None,
+            trim_box: None,
+            art_box: None,
+            rotate: 45, // Invalid: not 0, 90, 180, or 270
+            resources: Arc::new(ResourceDict::new()),
+            contents: vec![],
+            annots: vec![],
+            actual_text: None,
+            lang: None,
+            aa: None,
+            struct_parents: None,
+        };
+
+        extractor.pages = Some(vec![page_with_invalid_rotation]);
+
+        let result = extractor.extract_page(0);
+
+        match result {
+            Err(DocumentError::InvalidRotation { page_index, rotation }) => {
+                assert_eq!(page_index, 0);
+                assert_eq!(rotation, 45);
+            }
+            Ok(_) => {
+                panic!("Expected InvalidRotation error");
+            }
+            Err(other) => {
+                panic!("Expected InvalidRotation error, got {:?}", other);
+            }
+        }
+    }
+
+    #[test]
+    fn test_pdf_extractor_extract_page_success() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("test.pdf");
+        create_minimal_pdf(&pdf_path).unwrap();
+
+        let mut extractor = PdfExtractor::open(&pdf_path).unwrap();
+        extractor.materialize_pages().unwrap();
+
+        let result = extractor.extract_page(0);
+
+        match result {
+            Ok(page) => {
+                assert_eq!(page.index, 0);
+                assert_eq!(page.width, 612.0);
+                assert_eq!(page.height, 792.0);
+                assert_eq!(page.rotation, 0);
+                assert!(page.spans.is_empty());
+                assert!(page.blocks.is_empty());
+            }
+            Err(e) => {
+                panic!("Expected successful extraction, got error: {}", e);
+            }
+        }
+    }
+
+    #[test]
+    fn test_pdf_extractor_extract_page_multiple_pages() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("test.pdf");
+        create_minimal_pdf(&pdf_path).unwrap();
+
+        let mut extractor = PdfExtractor::open(&pdf_path).unwrap();
+
+        // Manually create multiple pages
+        use crate::parser::object::ObjRef;
+        use crate::parser::pages::PageDict;
+        use crate::parser::resources::ResourceDict;
+        use std::sync::Arc;
+
+        let page1 = PageDict {
+            obj_ref: ObjRef::new(3, 0),
+            media_box: [0.0, 0.0, 612.0, 792.0],
+            crop_box: Some([0.0, 0.0, 612.0, 792.0]),
+            bleed_box: None,
+            trim_box: None,
+            art_box: None,
+            rotate: 0,
+            resources: Arc::new(ResourceDict::new()),
+            contents: vec![],
+            annots: vec![],
+            actual_text: None,
+            lang: None,
+            aa: None,
+            struct_parents: None,
+        };
+
+        let page2 = PageDict {
+            obj_ref: ObjRef::new(4, 0),
+            media_box: [0.0, 0.0, 792.0, 612.0], // Landscape
+            crop_box: Some([0.0, 0.0, 792.0, 612.0]),
+            bleed_box: None,
+            trim_box: None,
+            art_box: None,
+            rotate: 90,
+            resources: Arc::new(ResourceDict::new()),
+            contents: vec![],
+            annots: vec![],
+            actual_text: None,
+            lang: None,
+            aa: None,
+            struct_parents: None,
+        };
+
+        extractor.pages = Some(vec![page1, page2]);
+
+        // Extract first page
+        let result1 = extractor.extract_page(0);
+        match result1 {
+            Ok(page) => {
+                assert_eq!(page.index, 0);
+                assert_eq!(page.width, 612.0);
+                assert_eq!(page.height, 792.0);
+                assert_eq!(page.rotation, 0);
+            }
+            Err(e) => {
+                panic!("Expected successful extraction of page 0, got error: {}", e);
+            }
+        }
+
+        // Extract second page
+        let result2 = extractor.extract_page(1);
+        match result2 {
+            Ok(page) => {
+                assert_eq!(page.index, 1);
+                assert_eq!(page.width, 792.0);
+                assert_eq!(page.height, 612.0);
+                assert_eq!(page.rotation, 90);
+            }
+            Err(e) => {
+                panic!("Expected successful extraction of page 1, got error: {}", e);
+            }
+        }
+
+        // Try to extract third page (out of bounds)
+        let result3 = extractor.extract_page(2);
+        match result3 {
+            Err(DocumentError::PageOutOfBounds { requested, available, .. }) => {
+                assert_eq!(requested, 2);
+                assert_eq!(available, 2);
+            }
+            Ok(_) => {
+                panic!("Expected PageOutOfBounds error for page 2");
+            }
+            Err(other) => {
+                panic!("Expected PageOutOfBounds error, got {:?}", other);
+            }
+        }
+    }
+
+    #[test]
+    fn test_pdf_extractor_extract_page_negative_coordinates() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("test.pdf");
+        create_minimal_pdf(&pdf_path).unwrap();
+
+        let mut extractor = PdfExtractor::open(&pdf_path).unwrap();
+
+        // Manually create a page with negative coordinates (invalid media box)
+        use crate::parser::pages::PageDict;
+        use crate::parser::resources::ResourceDict;
+        use std::sync::Arc;
+
+        let page_with_negative_coords = PageDict {
+            obj_ref: crate::parser::object::ObjRef::new(3, 0),
+            media_box: [-100.0, -100.0, 0.0, 0.0], // Both x1 < x0 and y1 < y0
+            crop_box: Some([-100.0, -100.0, 0.0, 0.0]),
+            bleed_box: None,
+            trim_box: None,
+            art_box: None,
+            rotate: 0,
+            resources: Arc::new(ResourceDict::new()),
+            contents: vec![],
+            annots: vec![],
+            actual_text: None,
+            lang: None,
+            aa: None,
+            struct_parents: None,
+        };
+
+        extractor.pages = Some(vec![page_with_negative_coords]);
+
+        let result = extractor.extract_page(0);
+
+        match result {
+            Err(DocumentError::InvalidMediaBox { page_index, media_box }) => {
+                assert_eq!(page_index, 0);
+                assert_eq!(media_box, Some([-100.0, -100.0, 0.0, 0.0]));
+            }
+            Ok(_) => {
+                panic!("Expected InvalidMediaBox error for negative coordinates");
+            }
+            Err(other) => {
+                panic!("Expected InvalidMediaBox error, got {:?}", other);
+            }
+        }
+    }
+
+    #[test]
+    fn test_pdf_extractor_extract_page_inverted_box() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("test.pdf");
+        create_minimal_pdf(&pdf_path).unwrap();
+
+        let mut extractor = PdfExtractor::open(&pdf_path).unwrap();
+
+        // Manually create a page with inverted media box (y1 < y0)
+        use crate::parser::pages::PageDict;
+        use crate::parser::resources::ResourceDict;
+        use std::sync::Arc;
+
+        let page_inverted = PageDict {
+            obj_ref: crate::parser::object::ObjRef::new(3, 0),
+            media_box: [0.0, 792.0, 612.0, 0.0], // y1 < y0 (inverted)
+            crop_box: Some([0.0, 792.0, 612.0, 0.0]),
+            bleed_box: None,
+            trim_box: None,
+            art_box: None,
+            rotate: 0,
+            resources: Arc::new(ResourceDict::new()),
+            contents: vec![],
+            annots: vec![],
+            actual_text: None,
+            lang: None,
+            aa: None,
+            struct_parents: None,
+        };
+
+        extractor.pages = Some(vec![page_inverted]);
+
+        let result = extractor.extract_page(0);
+
+        match result {
+            Err(DocumentError::InvalidMediaBox { page_index, media_box }) => {
+                assert_eq!(page_index, 0);
+                assert_eq!(media_box, Some([0.0, 792.0, 612.0, 0.0]));
+            }
+            Ok(_) => {
+                panic!("Expected InvalidMediaBox error for inverted box");
+            }
+            Err(other) => {
+                panic!("Expected InvalidMediaBox error, got {:?}", other);
+            }
+        }
+    }
+
+    #[test]
+    fn test_pdf_extractor_extract_page_nan_media_box() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("test.pdf");
+        create_minimal_pdf(&pdf_path).unwrap();
+
+        let mut extractor = PdfExtractor::open(&pdf_path).unwrap();
+
+        // Manually create a page with NaN in media box
+        use crate::parser::pages::PageDict;
+        use crate::parser::resources::ResourceDict;
+        use std::sync::Arc;
+
+        let page_with_nan = PageDict {
+            obj_ref: crate::parser::object::ObjRef::new(3, 0),
+            media_box: [0.0, 0.0, f64::NAN, 792.0], // NaN in x1
+            crop_box: Some([0.0, 0.0, f64::NAN, 792.0]),
+            bleed_box: None,
+            trim_box: None,
+            art_box: None,
+            rotate: 0,
+            resources: Arc::new(ResourceDict::new()),
+            contents: vec![],
+            annots: vec![],
+            actual_text: None,
+            lang: None,
+            aa: None,
+            struct_parents: None,
+        };
+
+        extractor.pages = Some(vec![page_with_nan]);
+
+        let result = extractor.extract_page(0);
+
+        match result {
+            Err(DocumentError::InvalidMediaBox { page_index, .. }) => {
+                assert_eq!(page_index, 0);
+            }
+            Ok(_) => {
+                panic!("Expected InvalidMediaBox error for NaN in coordinates");
+            }
+            Err(other) => {
+                panic!("Expected InvalidMediaBox error, got {:?}", other);
+            }
+        }
+    }
+
+    #[test]
+    fn test_pdf_extractor_extract_page_infinity_media_box() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("test.pdf");
+        create_minimal_pdf(&pdf_path).unwrap();
+
+        let mut extractor = PdfExtractor::open(&pdf_path).unwrap();
+
+        // Manually create a page with Infinity in media box
+        use crate::parser::pages::PageDict;
+        use crate::parser::resources::ResourceDict;
+        use std::sync::Arc;
+
+        let page_with_inf = PageDict {
+            obj_ref: crate::parser::object::ObjRef::new(3, 0),
+            media_box: [0.0, 0.0, f64::INFINITY, 792.0], // Infinity in x1
+            crop_box: Some([0.0, 0.0, f64::INFINITY, 792.0]),
+            bleed_box: None,
+            trim_box: None,
+            art_box: None,
+            rotate: 0,
+            resources: Arc::new(ResourceDict::new()),
+            contents: vec![],
+            annots: vec![],
+            actual_text: None,
+            lang: None,
+            aa: None,
+            struct_parents: None,
+        };
+
+        extractor.pages = Some(vec![page_with_inf]);
+
+        let result = extractor.extract_page(0);
+
+        match result {
+            Err(DocumentError::InvalidMediaBox { page_index, .. }) => {
+                assert_eq!(page_index, 0);
+            }
+            Ok(_) => {
+                panic!("Expected InvalidMediaBox error for Infinity in coordinates");
+            }
+            Err(other) => {
+                panic!("Expected InvalidMediaBox error, got {:?}", other);
+            }
+        }
+    }
+
+    #[test]
+    fn test_pdf_extractor_extract_page_unreasonably_large_dimensions() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("test.pdf");
+        create_minimal_pdf(&pdf_path).unwrap();
+
+        let mut extractor = PdfExtractor::open(&pdf_path).unwrap();
+
+        // Manually create a page with unreasonably large dimensions
+        use crate::parser::pages::PageDict;
+        use crate::parser::resources::ResourceDict;
+        use std::sync::Arc;
+
+        let page_huge = PageDict {
+            obj_ref: crate::parser::object::ObjRef::new(3, 0),
+            media_box: [0.0, 0.0, 50_000.0, 50_000.0], // Way too large
+            crop_box: Some([0.0, 0.0, 50_000.0, 50_000.0]),
+            bleed_box: None,
+            trim_box: None,
+            art_box: None,
+            rotate: 0,
+            resources: Arc::new(ResourceDict::new()),
+            contents: vec![],
+            annots: vec![],
+            actual_text: None,
+            lang: None,
+            aa: None,
+            struct_parents: None,
+        };
+
+        extractor.pages = Some(vec![page_huge]);
+
+        let result = extractor.extract_page(0);
+
+        match result {
+            Err(DocumentError::InvalidDimensions { page_index, width, height }) => {
+                assert_eq!(page_index, 0);
+                assert_eq!(width, 50_000.0);
+                assert_eq!(height, 50_000.0);
+            }
+            Ok(_) => {
+                panic!("Expected InvalidDimensions error for unreasonably large dimensions");
+            }
+            Err(other) => {
+                panic!("Expected InvalidDimensions error, got {:?}", other);
+            }
+        }
+    }
+
+    #[test]
+    fn test_pdf_extractor_extract_page_negative_infinity_media_box() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("test.pdf");
+        create_minimal_pdf(&pdf_path).unwrap();
+
+        let mut extractor = PdfExtractor::open(&pdf_path).unwrap();
+
+        // Manually create a page with negative Infinity in media box
+        use crate::parser::pages::PageDict;
+        use crate::parser::resources::ResourceDict;
+        use std::sync::Arc;
+
+        let page_with_neg_inf = PageDict {
+            obj_ref: crate::parser::object::ObjRef::new(3, 0),
+            media_box: [f64::NEG_INFINITY, 0.0, 612.0, 792.0], // Negative Infinity in x0
+            crop_box: Some([f64::NEG_INFINITY, 0.0, 612.0, 792.0]),
+            bleed_box: None,
+            trim_box: None,
+            art_box: None,
+            rotate: 0,
+            resources: Arc::new(ResourceDict::new()),
+            contents: vec![],
+            annots: vec![],
+            actual_text: None,
+            lang: None,
+            aa: None,
+            struct_parents: None,
+        };
+
+        extractor.pages = Some(vec![page_with_neg_inf]);
+
+        let result = extractor.extract_page(0);
+
+        match result {
+            Err(DocumentError::InvalidMediaBox { page_index, .. }) => {
+                assert_eq!(page_index, 0);
+            }
+            Ok(_) => {
+                panic!("Expected InvalidMediaBox error for negative Infinity in coordinates");
+            }
+            Err(other) => {
+                panic!("Expected InvalidMediaBox error, got {:?}", other);
+            }
+        }
+    }
+
+    #[test]
+    fn test_empty_pages_array_in_extractor() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("test.pdf");
+        create_minimal_pdf(&pdf_path).unwrap();
+
+        let mut extractor = PdfExtractor::open(&pdf_path).unwrap();
+
+        // Set pages to empty vector
+        extractor.pages = Some(vec![]);
+
+        let result = extractor.extract_page(0);
+
+        match result {
+            Err(DocumentError::EmptyDocument { source }) => {
+                assert_eq!(source, "PdfExtractor");
+            }
+            Ok(_) => {
+                panic!("Expected EmptyDocument error for empty pages array");
+            }
+            Err(other) => {
+                panic!("Expected EmptyDocument error, got {:?}", other);
+            }
+        }
+    }
+
+    #[test]
+    fn test_pages_not_materialized_error() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("test.pdf");
+        create_minimal_pdf(&pdf_path).unwrap();
+
+        let extractor = PdfExtractor::open(&pdf_path).unwrap();
+
+        // Don't call materialize_pages(), so pages should be None
+        let result = extractor.extract_page(0);
+
+        match result {
+            Err(DocumentError::ExtractionFailed { page_index, message }) => {
+                assert_eq!(page_index, 0);
+                assert!(message.contains("Pages not materialized"));
+                assert!(message.contains("materialize_pages()"));
+            }
+            Ok(_) => {
+                panic!("Expected ExtractionFailed error when pages not materialized");
+            }
+            Err(other) => {
+                panic!("Expected ExtractionFailed error, got {:?}", other);
+            }
+        }
+    }
+
+    #[test]
+    fn test_pdf_extractor_extract_page_all_nan_coordinates() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("test.pdf");
+        create_minimal_pdf(&pdf_path).unwrap();
+
+        let mut extractor = PdfExtractor::open(&pdf_path).unwrap();
+
+        // Manually create a page with all NaN coordinates
+        use crate::parser::pages::PageDict;
+        use crate::parser::resources::ResourceDict;
+        use std::sync::Arc;
+
+        let page_all_nan = PageDict {
+            obj_ref: crate::parser::object::ObjRef::new(3, 0),
+            media_box: [f64::NAN, f64::NAN, f64::NAN, f64::NAN], // All NaN
+            crop_box: Some([f64::NAN, f64::NAN, f64::NAN, f64::NAN]),
+            bleed_box: None,
+            trim_box: None,
+            art_box: None,
+            rotate: 0,
+            resources: Arc::new(ResourceDict::new()),
+            contents: vec![],
+            annots: vec![],
+            actual_text: None,
+            lang: None,
+            aa: None,
+            struct_parents: None,
+        };
+
+        extractor.pages = Some(vec![page_all_nan]);
+
+        let result = extractor.extract_page(0);
+
+        match result {
+            Err(DocumentError::InvalidMediaBox { page_index, .. }) => {
+                assert_eq!(page_index, 0);
+            }
+            Ok(_) => {
+                panic!("Expected InvalidMediaBox error for all NaN coordinates");
+            }
+            Err(other) => {
+                panic!("Expected InvalidMediaBox error, got {:?}", other);
+            }
+        }
+    }
+
+    #[test]
+    fn test_validate_pages_structure_catches_missing_pages_array() {
+        use crate::parser::catalog::{Catalog, MarkInfo};
+        use crate::parser::xref::XrefResolver;
+
+        let resolver = XrefResolver::new();
+
+        // Create a catalog with a valid pages_ref that points to nothing
+        let catalog = Catalog {
+            pages_ref: crate::parser::object::ObjRef::new(99, 0), // Non-existent object
+            outlines_ref: None,
+            mark_info: MarkInfo::default(),
+            struct_tree_root_ref: None,
+            acroform_ref: None,
+            names_ref: None,
+            metadata_ref: None,
+            page_labels: None,
+            oc_properties: None,
+            open_action: None,
+            aa: None,
+            threads_ref: None,
+            version: None,
+            uri: None,
+            direction: None,
+            lang: None,
+            view_prefs: None,
+            perms: None,
+            legal: None,
+            requirements: vec![],
+            collection: None,
+            needs_rendering: None,
+            raw_dict: Some(crate::parser::object::PdfObject::Dict(
+                crate::parser::object::PdfDict::new(),
+            )),
+            diagnostics: vec![],
+        };
+
+        let result = validate_pages_structure(&catalog, &resolver, "test.pdf");
+        assert!(result.is_err());
+
+        match result {
+            Err(DocumentError::MissingPagesArray { source }) => {
+                assert_eq!(source, "test.pdf");
+            }
+            Err(other) => {
+                panic!("Expected MissingPagesArray, got {:?}", other);
+            }
+            Ok(_) => {
+                panic!("Expected error for non-existent pages reference");
+            }
+        }
+    }
+
+    // ========================================================================
+    // COMPREHENSIVE EDGE CASE TESTS
+    // ========================================================================
+    // These tests verify comprehensive error handling and edge case coverage
+    // for Page extraction, ensuring functions fail gracefully with descriptive
+    // error messages. (Bead: bf-171rdo)
+
+    #[test]
+    fn test_edge_case_empty_document_returns_descriptive_error() {
+        use crate::parser::catalog::{Catalog, MarkInfo};
+        use crate::parser::xref::XrefResolver;
+
+        let resolver = XrefResolver::new();
+
+        // Create a catalog with zero object reference (invalid pages reference)
+        let catalog = Catalog {
+            pages_ref: crate::parser::object::ObjRef::new(0, 0), // Zero ref = invalid
+            outlines_ref: None,
+            mark_info: MarkInfo::default(),
+            struct_tree_root_ref: None,
+            acroform_ref: None,
+            names_ref: None,
+            metadata_ref: None,
+            page_labels: None,
+            oc_properties: None,
+            open_action: None,
+            aa: None,
+            threads_ref: None,
+            version: None,
+            raw_dict: crate::parser::object::PdfObject::Dict(
+                std::sync::Arc::new(indexmap::IndexMap::new()),
+            ),
+            diagnostics: vec![],
+        };
+
+        let result = validate_pages_structure(&catalog, &resolver, "empty.pdf");
+
+        match result {
+            Err(DocumentError::EmptyDocument { source }) => {
+                assert_eq!(source, "empty.pdf");
+                // Verify error message is descriptive
+                let msg = format!("{}", result.unwrap_err());
+                assert!(msg.contains("empty") || msg.contains("no content"),
+                    "Empty document error should mention 'empty' or 'no content', got: {}", msg);
+            }
+            Err(other) => {
+                panic!("Expected EmptyDocument, got {:?}", other);
+            }
+            Ok(_) => {
+                panic!("Expected error for empty document");
+            }
+        }
+    }
+
+    #[test]
+    fn test_edge_case_missing_pages_array_returns_descriptive_error() {
+        use crate::parser::catalog::{Catalog, MarkInfo};
+        use crate::parser::xref::XrefResolver;
+
+        let resolver = XrefResolver::new();
+
+        // Create a catalog with pages_ref that doesn't resolve
+        let catalog = Catalog {
+            pages_ref: crate::parser::object::ObjRef::new(999, 0), // Non-existent
+            outlines_ref: None,
+            mark_info: MarkInfo::default(),
+            struct_tree_root_ref: None,
+            acroform_ref: None,
+            names_ref: None,
+            metadata_ref: None,
+            page_labels: None,
+            oc_properties: None,
+            open_action: None,
+            aa: None,
+            threads_ref: None,
+            version: None,
+            raw_dict: crate::parser::object::PdfObject::Dict(
+                std::sync::Arc::new(indexmap::IndexMap::new()),
+            ),
+            diagnostics: vec![],
+        };
+
+        let result = validate_pages_structure(&catalog, &resolver, "missing_pages.pdf");
+
+        match result {
+            Err(DocumentError::MissingPagesArray { source }) => {
+                assert_eq!(source, "missing_pages.pdf");
+                // Verify error message mentions missing /Pages field
+                let msg = format!("{}", result.unwrap_err());
+                assert!(msg.contains("Pages") || msg.contains("pages"),
+                    "Missing pages error should mention 'Pages', got: {}", msg);
+            }
+            Err(other) => {
+                panic!("Expected MissingPagesArray, got {:?}", other);
+            }
+            Ok(_) => {
+                panic!("Expected error for missing pages array");
+            }
+        }
+    }
+
+    #[test]
+    fn test_edge_case_page_out_of_bounds_returns_descriptive_error() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("test.pdf");
+        create_minimal_pdf(&pdf_path).unwrap();
+
+        let mut extractor = PdfExtractor::open(&pdf_path).unwrap();
+        extractor.materialize_pages().unwrap();
+
+        // Try to access page 99 in a single-page document
+        let result = extractor.extract_page(99);
+
+        match result {
+            Err(DocumentError::PageOutOfBounds { source, requested, available }) => {
+                assert_eq!(requested, 99);
+                assert_eq!(available, 1);
+                assert!(source.contains("PdfExtractor") || source.contains("test.pdf"));
+                // Verify error message is descriptive
+                let msg = format!("{}", result.unwrap_err());
+                assert!(msg.contains("out of bounds"),
+                    "Out of bounds error should mention 'out of bounds', got: {}", msg);
+                assert!(msg.contains("99"),
+                    "Error should mention requested index 99, got: {}", msg);
+                assert!(msg.contains("1"),
+                    "Error should mention available page count 1, got: {}", msg);
+            }
+            Err(other) => {
+                panic!("Expected PageOutOfBounds, got {:?}", other);
+            }
+            Ok(_) => {
+                panic!("Expected error for out of bounds page access");
+            }
+        }
+    }
+
+    #[test]
+    fn test_edge_case_malformed_media_box_returns_descriptive_error() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("test.pdf");
+        create_minimal_pdf(&pdf_path).unwrap();
+
+        let mut extractor = PdfExtractor::open(&pdf_path).unwrap();
+
+        // Create a page with inverted media box (x1 < x0)
+        use crate::parser::pages::PageDict;
+        use crate::parser::resources::ResourceDict;
+        use std::sync::Arc;
+
+        let page_malformed = PageDict {
+            obj_ref: crate::parser::object::ObjRef::new(3, 0),
+            media_box: [612.0, 0.0, 0.0, 792.0], // Inverted: x1 < x0
+            crop_box: Some([0.0, 0.0, 612.0, 792.0]),
+            bleed_box: None,
+            trim_box: None,
+            art_box: None,
+            rotate: 0,
+            resources: Arc::new(ResourceDict::new()),
+            contents: vec![],
+            annots: vec![],
+            actual_text: None,
+            lang: None,
+            aa: None,
+            struct_parents: None,
+        };
+
+        extractor.pages = Some(vec![page_malformed]);
+
+        let result = extractor.extract_page(0);
+
+        match result {
+            Err(DocumentError::InvalidMediaBox { page_index, media_box }) => {
+                assert_eq!(page_index, 0);
+                assert!(media_box.is_some());
+                // Verify error message is descriptive
+                let msg = format!("{}", result.unwrap_err());
+                assert!(msg.contains("invalid media box"),
+                    "Invalid media box error should mention 'invalid media box', got: {}", msg);
+                assert!(msg.contains("x1 > x0") || msg.contains("y1 > y0"),
+                    "Error should explain what's wrong with coordinates, got: {}", msg);
+            }
+            Err(other) => {
+                panic!("Expected InvalidMediaBox, got {:?}", other);
+            }
+            Ok(_) => {
+                panic!("Expected error for malformed media box");
+            }
+        }
+    }
+
+    #[test]
+    fn test_edge_case_zero_width_page_returns_descriptive_error() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("test.pdf");
+        create_minimal_pdf(&pdf_path).unwrap();
+
+        let mut extractor = PdfExtractor::open(&pdf_path).unwrap();
+
+        // Create a page with zero width
+        use crate::parser::pages::PageDict;
+        use crate::parser::resources::ResourceDict;
+        use std::sync::Arc;
+
+        let page_zero_width = PageDict {
+            obj_ref: crate::parser::object::ObjRef::new(3, 0),
+            media_box: [0.0, 0.0, 0.0, 792.0], // Zero width: x1 == x0
+            crop_box: Some([0.0, 0.0, 0.0, 792.0]),
+            bleed_box: None,
+            trim_box: None,
+            art_box: None,
+            rotate: 0,
+            resources: Arc::new(ResourceDict::new()),
+            contents: vec![],
+            annots: vec![],
+            actual_text: None,
+            lang: None,
+            aa: None,
+            struct_parents: None,
+        };
+
+        extractor.pages = Some(vec![page_zero_width]);
+
+        let result = extractor.extract_page(0);
+
+        match result {
+            Err(DocumentError::InvalidDimensions { page_index, width, height }) => {
+                assert_eq!(page_index, 0);
+                assert_eq!(width, 0.0);
+                assert_eq!(height, 792.0);
+                // Verify error message is descriptive
+                let msg = format!("{}", result.unwrap_err());
+                assert!(msg.contains("invalid dimensions"),
+                    "Invalid dimensions error should mention 'invalid dimensions', got: {}", msg);
+                assert!(msg.contains("positive") || msg.contains("must be positive"),
+                    "Error should explain dimensions must be positive, got: {}", msg);
+            }
+            Err(other) => {
+                panic!("Expected InvalidDimensions, got {:?}", other);
+            }
+            Ok(_) => {
+                panic!("Expected error for zero width page");
+            }
+        }
+    }
+
+    #[test]
+    fn test_edge_case_invalid_rotation_returns_descriptive_error() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("test.pdf");
+        create_minimal_pdf(&pdf_path).unwrap();
+
+        let mut extractor = PdfExtractor::open(&pdf_path).unwrap();
+
+        // Create a page with invalid rotation (not 0, 90, 180, or 270)
+        use crate::parser::pages::PageDict;
+        use crate::parser::resources::ResourceDict;
+        use std::sync::Arc;
+
+        let page_invalid_rotation = PageDict {
+            obj_ref: crate::parser::object::ObjRef::new(3, 0),
+            media_box: [0.0, 0.0, 612.0, 792.0],
+            crop_box: Some([0.0, 0.0, 612.0, 792.0]),
+            bleed_box: None,
+            trim_box: None,
+            art_box: None,
+            rotate: 45, // Invalid rotation
+            resources: Arc::new(ResourceDict::new()),
+            contents: vec![],
+            annots: vec![],
+            actual_text: None,
+            lang: None,
+            aa: None,
+            struct_parents: None,
+        };
+
+        extractor.pages = Some(vec![page_invalid_rotation]);
+
+        let result = extractor.extract_page(0);
+
+        match result {
+            Err(DocumentError::InvalidRotation { page_index, rotation }) => {
+                assert_eq!(page_index, 0);
+                assert_eq!(rotation, 45);
+                // Verify error message is descriptive
+                let msg = result.unwrap_err().to_string();
+                assert!(msg.contains("invalid rotation"),
+                    "Invalid rotation error should mention 'invalid rotation', got: {}", msg);
+                assert!(msg.contains("0") && msg.contains("90") && msg.contains("180") && msg.contains("270"),
+                    "Error should list valid rotation values (0, 90, 180, 270), got: {}", msg);
+            }
+            Err(other) => {
+                panic!("Expected InvalidRotation, got {:?}", other);
+            }
+            Ok(_) => {
+                panic!("Expected error for invalid rotation");
+            }
+        }
+    }
+
+    #[test]
+    fn test_edge_case_negative_height_page_returns_descriptive_error() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("test.pdf");
+        create_minimal_pdf(&pdf_path).unwrap();
+
+        let mut extractor = PdfExtractor::open(&pdf_path).unwrap();
+
+        // Create a page with negative height (inverted Y axis)
+        use crate::parser::pages::PageDict;
+        use crate::parser::resources::ResourceDict;
+        use std::sync::Arc;
+
+        let page_negative_height = PageDict {
+            obj_ref: crate::parser::object::ObjRef::new(3, 0),
+            media_box: [0.0, 792.0, 612.0, 0.0], // Negative height: y1 < y0
+            crop_box: Some([0.0, 792.0, 612.0, 0.0]),
+            bleed_box: None,
+            trim_box: None,
+            art_box: None,
+            rotate: 0,
+            resources: Arc::new(ResourceDict::new()),
+            contents: vec![],
+            annots: vec![],
+            actual_text: None,
+            lang: None,
+            aa: None,
+            struct_parents: None,
+        };
+
+        extractor.pages = Some(vec![page_negative_height]);
+
+        let result = extractor.extract_page(0);
+
+        match result {
+            Err(DocumentError::InvalidMediaBox { page_index, .. }) => {
+                assert_eq!(page_index, 0);
+                // Verify error message explains the problem
+                let msg = result.unwrap_err().to_string();
+                assert!(msg.contains("invalid media box"),
+                    "Inverted coordinates should produce InvalidMediaBox, got: {}", msg);
+            }
+            Err(other) => {
+                panic!("Expected InvalidMediaBox for negative height, got {:?}", other);
+            }
+            Ok(_) => {
+                panic!("Expected error for negative height page");
+            }
+        }
+    }
+
+    #[test]
+    fn test_edge_case_all_result_types_return_descriptive_errors() {
+        // This test verifies that all error paths use Result type with descriptive errors
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("test.pdf");
+        create_minimal_pdf(&pdf_path).unwrap();
+
+        // Test 1: extract_page returns DocumentResult (Result with DocumentError)
+        let mut extractor = PdfExtractor::open(&pdf_path).unwrap();
+        extractor.materialize_pages().unwrap();
+
+        // This should return a DocumentResult, not panic or return a bare error
+        let result: DocumentResult<PageExtraction> = extractor.extract_page(0);
+        assert!(result.is_ok(), "Valid page access should return Ok variant");
+
+        // Test 2: Out of bounds returns Err with descriptive DocumentError
+        let error_result: DocumentResult<PageExtraction> = extractor.extract_page(999);
+        assert!(error_result.is_err(), "Out of bounds should return Err variant");
+
+        let error = error_result.unwrap_err();
+        let error_msg = error.to_string();
+        assert!(!error_msg.is_empty(), "Error message should not be empty");
+        assert!(error_msg.len() > 20, "Error message should be descriptive (not just a few chars)");
+
+        // Test 3: validate_pages_structure returns DocumentResult
+        let (fingerprint, catalog, _pages, resolver) = parse_pdf_file(&pdf_path).unwrap();
+        let validate_result: DocumentResult<()> = validate_pages_structure(&catalog, &resolver, &pdf_path.display().to_string());
+        assert!(validate_result.is_ok(), "Valid document structure should return Ok");
+    }
+
+    #[test]
+    fn test_edge_case_document_error_messages_are_human_readable() {
+        // Verify that Document error messages are clear and actionable
+        let errors = vec![
+            DocumentError::EmptyDocument { source: "test.pdf".to_string() },
+            DocumentError::MissingPagesArray { source: "test.pdf".to_string() },
+            DocumentError::PageOutOfBounds { source: "test.pdf".to_string(), requested: 10, available: 5 },
+            DocumentError::InvalidMediaBox { page_index: 0, media_box: Some([0.0, 0.0, -1.0, 792.0]) },
+            DocumentError::InvalidDimensions { page_index: 1, width: 0.0, height: 792.0 },
+            DocumentError::InvalidRotation { page_index: 2, rotation: 45 },
+            DocumentError::MalformedPageData { page_index: 3, message: "Corrupt data".to_string() },
+        ];
+
+        for error in errors {
+            let msg = error.to_string();
+            // All error messages should be descriptive
+            assert!(msg.len() > 15, "Error message should be descriptive: '{}'", msg);
+            // Messages should contain actual problem description, not just error code
+            assert!(msg.contains("document") || msg.contains("page") || msg.contains("invalid") || msg.contains("failed"),
+                "Error message should describe the problem: '{}'", msg);
+        }
     }
 }
