@@ -187,6 +187,41 @@ pub fn catalog_dict_empty(catalog: &Catalog) -> bool {
     is_catalog_dict_empty(&catalog.raw_dict)
 }
 
+/// Check if a catalog's dictionary is None (missing/not a dictionary).
+///
+/// This is a convenience wrapper around `is_catalog_dict_none` that operates
+/// directly on a Catalog struct, checking if its raw_dict field is None or not a dictionary.
+///
+/// # Arguments
+/// * `catalog` - A reference to the Catalog struct
+///
+/// # Returns
+/// * `true` if catalog.raw_dict is not a dictionary (null, number, string, etc.)
+/// * `false` if catalog.raw_dict is a dictionary (empty or non-empty)
+///
+/// # Examples
+/// ```
+/// use pdftract_core::parser::catalog::{catalog_dict_none, Catalog};
+/// use pdftract_core::parser::object::{ObjRef, PdfObject};
+///
+/// // Catalog with non-dictionary raw_dict (None/null)
+/// let none_catalog = Catalog::new(
+///     ObjRef::new(0, 0),
+///     PdfObject::Null
+/// );
+/// assert!(catalog_dict_none(&none_catalog));
+///
+/// // Catalog with dictionary raw_dict (even if empty)
+/// let dict_catalog = Catalog::new(
+///     ObjRef::new(0, 0),
+///     PdfObject::Dict(Box::new(indexmap::IndexMap::new()))
+/// );
+/// assert!(!catalog_dict_none(&dict_catalog));
+/// ```
+pub fn catalog_dict_none(catalog: &Catalog) -> bool {
+    is_catalog_dict_none(&catalog.raw_dict)
+}
+
 /// MarkInfo dictionary from /MarkInfo entry.
 ///
 /// Indicates whether the document is tagged PDF.
@@ -1781,6 +1816,178 @@ mod tests {
         // Default catalog has empty dict
         let catalog = Catalog::default();
         assert!(catalog_dict_empty(&catalog));
+    }
+
+    // Tests for catalog_dict_none
+
+    #[test]
+    fn test_catalog_dict_none_with_null_catalog() {
+        // Catalog with null raw_dict should return true
+        let catalog = Catalog::new(
+            ObjRef::new(0, 0),
+            PdfObject::Null
+        );
+        assert!(catalog_dict_none(&catalog));
+    }
+
+    #[test]
+    fn test_catalog_dict_none_with_integer_catalog() {
+        // Catalog with integer raw_dict should return true
+        let catalog = Catalog::new(
+            ObjRef::new(0, 0),
+            PdfObject::Integer(42)
+        );
+        assert!(catalog_dict_none(&catalog));
+    }
+
+    #[test]
+    fn test_catalog_dict_none_with_real_catalog() {
+        // Catalog with real raw_dict should return true
+        let catalog = Catalog::new(
+            ObjRef::new(0, 0),
+            PdfObject::Real(3.14)
+        );
+        assert!(catalog_dict_none(&catalog));
+    }
+
+    #[test]
+    fn test_catalog_dict_none_with_bool_catalog() {
+        // Catalog with bool raw_dict should return true
+        let catalog = Catalog::new(
+            ObjRef::new(0, 0),
+            PdfObject::Bool(true)
+        );
+        assert!(catalog_dict_none(&catalog));
+
+        let catalog = Catalog::new(
+            ObjRef::new(0, 0),
+            PdfObject::Bool(false)
+        );
+        assert!(catalog_dict_none(&catalog));
+    }
+
+    #[test]
+    fn test_catalog_dict_none_with_string_catalog() {
+        // Catalog with string raw_dict should return true
+        let catalog = Catalog::new(
+            ObjRef::new(0, 0),
+            PdfObject::String(Box::new(b"test".to_vec()))
+        );
+        assert!(catalog_dict_none(&catalog));
+    }
+
+    #[test]
+    fn test_catalog_dict_none_with_name_catalog() {
+        // Catalog with name raw_dict should return true
+        let catalog = Catalog::new(
+            ObjRef::new(0, 0),
+            PdfObject::Name(intern("Test"))
+        );
+        assert!(catalog_dict_none(&catalog));
+    }
+
+    #[test]
+    fn test_catalog_dict_none_with_array_catalog() {
+        // Catalog with array raw_dict should return true
+        let catalog = Catalog::new(
+            ObjRef::new(0, 0),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(1),
+                PdfObject::Integer(2),
+            ]))
+        );
+        assert!(catalog_dict_none(&catalog));
+    }
+
+    #[test]
+    fn test_catalog_dict_none_with_reference_catalog() {
+        // Catalog with reference raw_dict should return true
+        let catalog = Catalog::new(
+            ObjRef::new(0, 0),
+            PdfObject::Ref(ObjRef::new(1, 0))
+        );
+        assert!(catalog_dict_none(&catalog));
+    }
+
+    #[test]
+    fn test_catalog_dict_none_with_empty_dict_catalog() {
+        // Catalog with empty dictionary should return false (it IS a dictionary)
+        let catalog = Catalog::new(
+            ObjRef::new(0, 0),
+            PdfObject::Dict(Box::new(indexmap::IndexMap::new()))
+        );
+        assert!(!catalog_dict_none(&catalog));
+    }
+
+    #[test]
+    fn test_catalog_dict_none_with_non_empty_dict_catalog() {
+        // Catalog with non-empty dictionary should return false (it IS a dictionary)
+        let mut dict = indexmap::IndexMap::new();
+        dict.insert(intern("Pages"), PdfObject::Ref(ObjRef::new(1, 0)));
+        let catalog = Catalog::new(
+            ObjRef::new(1, 0),
+            PdfObject::Dict(Box::new(dict))
+        );
+        assert!(!catalog_dict_none(&catalog));
+    }
+
+    #[test]
+    fn test_catalog_dict_none_with_multiple_keys() {
+        // Catalog with multiple keys in dict should return false (it IS a dictionary)
+        let mut dict = indexmap::IndexMap::new();
+        dict.insert(intern("Type"), PdfObject::Name(intern("Catalog")));
+        dict.insert(intern("Pages"), PdfObject::Ref(ObjRef::new(1, 0)));
+        dict.insert(intern("Outlines"), PdfObject::Ref(ObjRef::new(2, 0)));
+        let catalog = Catalog::new(
+            ObjRef::new(1, 0),
+            PdfObject::Dict(Box::new(dict))
+        );
+        assert!(!catalog_dict_none(&catalog));
+    }
+
+    #[test]
+    fn test_catalog_dict_none_no_panic() {
+        // Ensure no panic on various catalog types (acceptance criteria)
+        let catalog_variants = vec![
+            Catalog::new(ObjRef::new(0, 0), PdfObject::Null),
+            Catalog::new(ObjRef::new(0, 0), PdfObject::Bool(true)),
+            Catalog::new(ObjRef::new(0, 0), PdfObject::Integer(42)),
+            Catalog::new(ObjRef::new(0, 0), PdfObject::Real(3.14)),
+            Catalog::new(ObjRef::new(0, 0), PdfObject::Name(intern("Test"))),
+        ];
+
+        for catalog in catalog_variants {
+            let result = std::panic::catch_unwind(|| {
+                catalog_dict_none(&catalog)
+            });
+            assert!(result.is_ok(), "Should not panic on catalog with {:?}", catalog.raw_dict);
+        }
+    }
+
+    #[test]
+    fn test_catalog_dict_none_standalone_and_testable() {
+        // Function should be standalone and testable (acceptance criteria)
+        // This test verifies that the function has no side effects
+        let catalog = Catalog::new(
+            ObjRef::new(0, 0),
+            PdfObject::Null
+        );
+
+        // Call function multiple times - should return same result (no side effects)
+        let result1 = catalog_dict_none(&catalog);
+        let result2 = catalog_dict_none(&catalog);
+        let result3 = catalog_dict_none(&catalog);
+
+        assert_eq!(result1, result2);
+        assert_eq!(result2, result3);
+        assert!(result1, "Null dict should return true");
+    }
+
+    #[test]
+    fn test_catalog_dict_none_default_catalog() {
+        // Default catalog has a dict, not None
+        let catalog = Catalog::default();
+        assert!(!catalog_dict_none(&catalog));
     }
 }
 
