@@ -3197,7 +3197,6 @@ mod tests {
     #[test]
     fn test_detect_char_proc_type_with_context_invalid_reference() {
         use crate::parser::object::types::ObjRef;
-        use crate::parser::xref::XrefResolver;
 
         struct MockSource;
         impl PdfSource for MockSource {
@@ -3265,7 +3264,6 @@ mod tests {
     #[test]
     fn test_detect_char_proc_type_with_context_ref_without_source() {
         use crate::parser::object::types::ObjRef;
-        use crate::parser::xref::XrefResolver;
 
         let ref_obj = PdfObject::Ref(ObjRef::new(10, 0));
 
