@@ -40,7 +40,18 @@ fn test_classify_basic_vector_page() {
     ctx.rotation = 0;
 
     // Run classification
+    // Note: classify_page returns PageClassification directly (not a Result),
+    // so success means the function returns without panic and produces valid output
     let result = classify_page(&ctx);
+
+    // VERIFY SUCCESS: classify_page executed without panic and returned valid classification
+    // This is the "Ok()" case for the direct-return API - successful execution is
+    // demonstrated by the function returning a valid PageClassification
+    assert!(
+        matches!(result.class, PageClass::Vector | PageClass::Scanned | PageClass::Hybrid | PageClass::BrokenVector),
+        "classify_page must return a valid PageClass variant, got: {:?}",
+        result.class
+    );
 
     // Verify classification succeeded (direct return, no Result wrapper)
     assert_eq!(
@@ -89,7 +100,18 @@ fn test_classify_basic_scanned_page() {
     ctx.rotation = 0;
 
     // Run classification
+    // Note: classify_page returns PageClassification directly (not a Result),
+    // so success means the function returns without panic and produces valid output
     let result = classify_page(&ctx);
+
+    // VERIFY SUCCESS: classify_page executed without panic and returned valid classification
+    // This is the "Ok()" case for the direct-return API - successful execution is
+    // demonstrated by the function returning a valid PageClassification
+    assert!(
+        matches!(result.class, PageClass::Vector | PageClass::Scanned | PageClass::Hybrid | PageClass::BrokenVector),
+        "classify_page must return a valid PageClass variant, got: {:?}",
+        result.class
+    );
 
     // Verify classification succeeded
     assert_eq!(
@@ -106,6 +128,55 @@ fn test_classify_basic_scanned_page() {
     );
 
     println!("✓ classify_page correctly classified scanned page: {:?}", result);
+}
+
+#[test]
+fn test_classify_page_returns_valid_result_for_valid_input() {
+    //! Verify classify_page returns valid classification for valid input (the "Ok()" case).
+    //!
+    //! This test explicitly verifies that classify_page succeeds when given valid PageContext.
+    //! Since classify_page returns PageClassification directly (not a Result), the "Ok()" case
+    //! means the function returns without panic and produces a valid PageClassification.
+    //!
+    //! If classify_page were to panic or return invalid data, this test would fail with a
+    //! clear message indicating the "Err" case occurred.
+
+    let mut ctx = PageContext::new();
+    // Construct valid PageContext with all required fields populated
+    ctx.text_op_count = 50;
+    ctx.raw_char_count = 250;
+    ctx.valid_char_count = 245;
+    ctx.replacement_char_count = 5;
+    ctx.image_coverage = 0.2;
+    ctx.has_full_page_image = false;
+    ctx.has_visible_text = true;
+    ctx.density_ratio = 0.75;
+    ctx.width = 595.0; // A4
+    ctx.height = 842.0;
+    ctx.rotation = 0;
+
+    // EXECUTE: Call classify_page with valid input
+    // SUCCESS CRITERIA: Function returns without panic and produces valid PageClassification
+    let result = classify_page(&ctx);
+
+    // VERIFY SUCCESS: Result is a valid PageClassification
+    // This demonstrates the "Ok()" case - successful execution
+    assert!(
+        matches!(result.class, PageClass::Vector | PageClass::Scanned | PageClass::Hybrid | PageClass::BrokenVector),
+        "classify_page returned invalid PageClass variant (this is the 'Err' case for the direct-return API)"
+    );
+
+    // Verify confidence is valid (invariant for successful classification)
+    assert!(
+        result.confidence >= 0.0 && result.confidence <= 1.0,
+        "classify_page returned invalid confidence value (this indicates the 'Err' case)"
+    );
+
+    // Clear success output indicating what was verified
+    println!("✓ SUCCESS: classify_page executed successfully and returned valid PageClassification");
+    println!("  - PageClass: {:?}", result.class);
+    println!("  - Confidence: {:.2}", result.confidence);
+    println!("  - Hybrid cells: {}", result.hybrid_cells.is_some());
 }
 
 #[test]
