@@ -1674,7 +1674,6 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
     // Decompress the stream body
     // The stream's offset is relative to obj_bytes, so we create a MemorySource
     // from those bytes to decode the stream data correctly.
-    use crate::parser::stream::MemorySource;
     let local_source = MemorySource::new(obj_bytes);
 
     let decoded = decode_stream(
