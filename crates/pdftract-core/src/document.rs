@@ -2755,4 +2755,615 @@ startxref
             _ => panic!("Expected EmptyDocument for catalog with pages_ref == 0, got {:?}", result),
         }
     }
+
+    // Comprehensive integration tests for catalog emptiness checks (bf-26jh2o)
+
+    #[test]
+    fn test_catalog_emptiness_empty_dictionary_triggers_empty_document() {
+        use crate::parser::catalog::Catalog;
+        use crate::parser::object::{intern, ObjRef, PdfObject};
+        use crate::parser::xref::XrefResolver;
+
+        // Test: Empty catalog.dictionary (no keys at all) triggers DocumentError::EmptyDocument
+        let resolver = XrefResolver::new();
+        let empty_dict = PdfObject::Dict(Box::new(indexmap::IndexMap::new()));
+
+        let catalog = Catalog {
+            pages_ref: ObjRef::new(1, 0), // Valid pages_ref, but empty raw_dict
+            raw_dict: empty_dict,
+            ..Default::default()
+        };
+
+        let result = validate_pages_structure(&catalog, &resolver, "empty-catalog.pdf");
+        assert!(result.is_err());
+
+        match result {
+            Err(DocumentError::EmptyDocument { source }) => {
+                assert_eq!(source, "empty-catalog.pdf");
+            }
+            _ => panic!("Expected EmptyDocument for empty catalog dictionary, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_catalog_emptiness_none_dictionary_triggers_empty_document() {
+        use crate::parser::catalog::Catalog;
+        use crate::parser::object::{intern, ObjRef, PdfObject};
+        use crate::parser::xref::XrefResolver;
+
+        // Test: None catalog.dictionary (not a dictionary) triggers DocumentError::EmptyDocument
+        let resolver = XrefResolver::new();
+
+        // Test with null raw_dict
+        let null_catalog = Catalog {
+            pages_ref: ObjRef::new(1, 0),
+            raw_dict: PdfObject::Null,
+            ..Default::default()
+        };
+
+        let result = validate_pages_structure(&null_catalog, &resolver, "null-catalog.pdf");
+        assert!(result.is_err());
+
+        match result {
+            Err(DocumentError::EmptyDocument { source }) => {
+                assert_eq!(source, "null-catalog.pdf");
+            }
+            _ => panic!("Expected EmptyDocument for null catalog dictionary, got {:?}", result),
+        }
+
+        // Test with integer raw_dict (non-dictionary type)
+        let integer_catalog = Catalog {
+            pages_ref: ObjRef::new(1, 0),
+            raw_dict: PdfObject::Integer(42),
+            ..Default::default()
+        };
+
+        let result = validate_pages_structure(&integer_catalog, &resolver, "integer-catalog.pdf");
+        assert!(result.is_err());
+
+        match result {
+            Err(DocumentError::EmptyDocument { source }) => {
+                assert_eq!(source, "integer-catalog.pdf");
+            }
+            _ => panic!("Expected EmptyDocument for integer catalog dictionary, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_catalog_emptiness_missing_essential_keys_triggers_empty_document() {
+        use crate::parser::catalog::Catalog;
+        use crate::parser::object::{intern, ObjRef, PdfObject};
+        use crate::parser::xref::XrefResolver;
+
+        let resolver = XrefResolver::new();
+
+        // Test case 1: Missing /Type key (but has /Pages)
+        let mut dict_missing_type = indexmap::IndexMap::new();
+        dict_missing_type.insert(intern("Pages"), PdfObject::Ref(ObjRef::new(2, 0)));
+        let catalog_missing_type = Catalog {
+            pages_ref: ObjRef::new(2, 0),
+            raw_dict: PdfObject::Dict(Box::new(dict_missing_type)),
+            ..Default::default()
+        };
+
+        let result = validate_pages_structure(&catalog_missing_type, &resolver, "missing-type.pdf");
+        assert!(result.is_err());
+
+        match result {
+            Err(DocumentError::EmptyDocument { source }) => {
+                assert_eq!(source, "missing-type.pdf");
+            }
+            _ => panic!("Expected EmptyDocument for catalog missing /Type, got {:?}", result),
+        }
+
+        // Test case 2: Missing /Pages key (but has /Type)
+        let mut dict_missing_pages = indexmap::IndexMap::new();
+        dict_missing_pages.insert(intern("Type"), PdfObject::Name(intern("Catalog")));
+        let catalog_missing_pages = Catalog {
+            pages_ref: ObjRef::new(1, 0),
+            raw_dict: PdfObject::Dict(Box::new(dict_missing_pages)),
+            ..Default::default()
+        };
+
+        let result = validate_pages_structure(&catalog_missing_pages, &resolver, "missing-pages.pdf");
+        assert!(result.is_err());
+
+        match result {
+            Err(DocumentError::EmptyDocument { source }) => {
+                assert_eq!(source, "missing-pages.pdf");
+            }
+            _ => panic!("Expected EmptyDocument for catalog missing /Pages, got {:?}", result),
+        }
+
+        // Test case 3: Missing both essential keys
+        let mut dict_missing_both = indexmap::IndexMap::new();
+        dict_missing_both.insert(intern("Outlines"), PdfObject::Ref(ObjRef::new(3, 0)));
+        let catalog_missing_both = Catalog {
+            pages_ref: ObjRef::new(1, 0),
+            raw_dict: PdfObject::Dict(Box::new(dict_missing_both)),
+            ..Default::default()
+        };
+
+        let result = validate_pages_structure(&catalog_missing_both, &resolver, "missing-both.pdf");
+        assert!(result.is_err());
+
+        match result {
+            Err(DocumentError::EmptyDocument { source }) => {
+                assert_eq!(source, "missing-both.pdf");
+            }
+            _ => panic!("Expected EmptyDocument for catalog missing both keys, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_catalog_emptiness_error_message_includes_source_identifier() {
+        use crate::parser::catalog::Catalog;
+        use crate::parser::object::{intern, ObjRef, PdfObject};
+        use crate::parser::xref::XrefResolver;
+
+        let resolver = XrefResolver::new();
+        let source_id = "test-document-with-empty-catalog.pdf";
+
+        // Test empty dictionary scenario
+        let empty_dict_catalog = Catalog {
+            pages_ref: ObjRef::new(1, 0),
+            raw_dict: PdfObject::Dict(Box::new(indexmap::IndexMap::new())),
+            ..Default::default()
+        };
+
+        let result = validate_pages_structure(&empty_dict_catalog, &resolver, source_id);
+        assert!(result.is_err());
+
+        match result {
+            Err(DocumentError::EmptyDocument { source }) => {
+                assert_eq!(source, source_id);
+            }
+            _ => panic!("Expected EmptyDocument with source identifier, got {:?}", result),
+        }
+
+        // Test None dictionary scenario
+        let none_dict_catalog = Catalog {
+            pages_ref: ObjRef::new(1, 0),
+            raw_dict: PdfObject::Null,
+            ..Default::default()
+        };
+
+        let result = validate_pages_structure(&none_dict_catalog, &resolver, source_id);
+        assert!(result.is_err());
+
+        match result {
+            Err(DocumentError::EmptyDocument { source }) => {
+                assert_eq!(source, source_id);
+            }
+            _ => panic!("Expected EmptyDocument with source identifier, got {:?}", result),
+        }
+
+        // Test missing essential keys scenario
+        let mut dict_missing_type = indexmap::IndexMap::new();
+        dict_missing_type.insert(intern("Pages"), PdfObject::Ref(ObjRef::new(2, 0)));
+        let missing_keys_catalog = Catalog {
+            pages_ref: ObjRef::new(2, 0),
+            raw_dict: PdfObject::Dict(Box::new(dict_missing_type)),
+            ..Default::default()
+        };
+
+        let result = validate_pages_structure(&missing_keys_catalog, &resolver, source_id);
+        assert!(result.is_err());
+
+        match result {
+            Err(DocumentError::EmptyDocument { source }) => {
+                assert_eq!(source, source_id);
+            }
+            _ => panic!("Expected EmptyDocument with source identifier, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_catalog_emptiness_valid_catalog_passes_through() {
+        use crate::parser::catalog::Catalog;
+        use crate::parser::object::{intern, ObjRef, PdfObject};
+        use crate::parser::xref::XrefResolver;
+
+        let mut resolver = XrefResolver::new();
+
+        // Create a valid catalog with both essential keys present
+        let mut valid_dict = indexmap::IndexMap::new();
+        valid_dict.insert(intern("Type"), PdfObject::Name(intern("Catalog")));
+        valid_dict.insert(intern("Pages"), PdfObject::Ref(ObjRef::new(2, 0)));
+
+        // Create a minimal but valid Pages dictionary
+        let mut pages_dict = indexmap::IndexMap::new();
+        pages_dict.insert(intern("Type"), PdfObject::Name(intern("Pages")));
+        pages_dict.insert(intern("Kids"), PdfObject::Array(Box::new(vec![
+            PdfObject::Ref(ObjRef::new(3, 0)),
+        ])));
+        pages_dict.insert(intern("Count"), PdfObject::Integer(1));
+
+        // Create a minimal page dictionary
+        let mut page_dict = indexmap::IndexMap::new();
+        page_dict.insert(intern("Type"), PdfObject::Name(intern("Page")));
+        page_dict.insert(intern("MediaBox"), PdfObject::Array(Box::new(vec![
+            PdfObject::Real(0.0),
+            PdfObject::Real(0.0),
+            PdfObject::Real(612.0),
+            PdfObject::Real(792.0),
+        ])));
+
+        // Cache the objects in the resolver
+        resolver.cache_object(ObjRef::new(2, 0), PdfObject::Dict(Box::new(pages_dict)));
+        resolver.cache_object(ObjRef::new(3, 0), PdfObject::Dict(Box::new(page_dict)));
+
+        let valid_catalog = Catalog {
+            pages_ref: ObjRef::new(2, 0),
+            raw_dict: PdfObject::Dict(Box::new(valid_dict)),
+            ..Default::default()
+        };
+
+        let result = validate_pages_structure(&valid_catalog, &resolver, "valid-catalog.pdf");
+
+        // A valid catalog should pass through without triggering EmptyDocument
+        // Note: This test may still fail due to other validation checks beyond catalog emptiness
+        // The important thing is it doesn't fail due to catalog emptiness checks
+        match result {
+            Err(DocumentError::EmptyDocument { .. }) => {
+                panic!("Valid catalog should not trigger EmptyDocument error");
+            }
+            _ => {
+                // Any other result (Ok or different error) is acceptable for this test
+                // The key assertion is that we didn't get EmptyDocument from catalog emptiness
+            }
+        }
+    }
+
+    #[test]
+    fn test_catalog_emptiness_no_panic_on_empty_dictionary() {
+        use crate::parser::catalog::Catalog;
+        use crate::parser::object::{intern, ObjRef, PdfObject};
+        use crate::parser::xref::XrefResolver;
+
+        // Verify no panic occurs on empty dictionary (acceptance criteria)
+        let resolver = XrefResolver::new();
+        let empty_dict_catalog = Catalog {
+            pages_ref: ObjRef::new(1, 0),
+            raw_dict: PdfObject::Dict(Box::new(indexmap::IndexMap::new())),
+            ..Default::default()
+        };
+
+        let result = std::panic::catch_unwind(|| {
+            validate_pages_structure(&empty_dict_catalog, &resolver, "empty.pdf")
+        });
+
+        assert!(result.is_ok(), "Should not panic on empty catalog dictionary");
+        assert!(result.unwrap().is_err(), "Should return error for empty catalog dictionary");
+    }
+
+    #[test]
+    fn test_catalog_emptiness_no_panic_on_none_dictionary() {
+        use crate::parser::catalog::Catalog;
+        use crate::parser::object::{intern, ObjRef, PdfObject};
+        use crate::parser::xref::XrefResolver;
+
+        // Verify no panic occurs on None dictionary (acceptance criteria)
+        let resolver = XrefResolver::new();
+
+        // Test with various non-dictionary types
+        let non_dict_types = vec![
+            PdfObject::Null,
+            PdfObject::Bool(true),
+            PdfObject::Integer(42),
+            PdfObject::Real(3.14),
+            PdfObject::String(Box::new(b"test".to_vec())),
+            PdfObject::Name(intern("Test")),
+        ];
+
+        for (i, raw_dict) in non_dict_types.iter().enumerate() {
+            let catalog = Catalog {
+                pages_ref: ObjRef::new(1, 0),
+                raw_dict: raw_dict.clone(),
+                ..Default::default()
+            };
+
+            let source = format!("non-dict-type-{}.pdf", i);
+            let result = std::panic::catch_unwind(|| {
+                validate_pages_structure(&catalog, &resolver, &source)
+            });
+
+            assert!(result.is_ok(), "Should not panic on non-dictionary type: {:?}", raw_dict);
+            assert!(result.unwrap().is_err(), "Should return error for non-dictionary type: {:?}", raw_dict);
+        }
+    }
+
+    #[test]
+    fn test_catalog_emptiness_no_panic_on_missing_keys() {
+        use crate::parser::catalog::Catalog;
+        use crate::parser::object::{intern, ObjRef, PdfObject};
+        use crate::parser::xref::XrefResolver;
+
+        // Verify no panic occurs on missing essential keys (acceptance criteria)
+        let resolver = XrefResolver::new();
+
+        // Test catalog with only /Pages (missing /Type)
+        let mut dict_no_type = indexmap::IndexMap::new();
+        dict_no_type.insert(intern("Pages"), PdfObject::Ref(ObjRef::new(2, 0)));
+        let catalog_no_type = Catalog {
+            pages_ref: ObjRef::new(2, 0),
+            raw_dict: PdfObject::Dict(Box::new(dict_no_type)),
+            ..Default::default()
+        };
+
+        let result = std::panic::catch_unwind(|| {
+            validate_pages_structure(&catalog_no_type, &resolver, "no-type.pdf")
+        });
+
+        assert!(result.is_ok(), "Should not panic on catalog missing /Type");
+        assert!(result.unwrap().is_err(), "Should return error for catalog missing /Type");
+
+        // Test catalog with only /Type (missing /Pages)
+        let mut dict_no_pages = indexmap::IndexMap::new();
+        dict_no_pages.insert(intern("Type"), PdfObject::Name(intern("Catalog")));
+        let catalog_no_pages = Catalog {
+            pages_ref: ObjRef::new(1, 0),
+            raw_dict: PdfObject::Dict(Box::new(dict_no_pages)),
+            ..Default::default()
+        };
+
+        let result = std::panic::catch_unwind(|| {
+            validate_pages_structure(&catalog_no_pages, &resolver, "no-pages.pdf")
+        });
+
+        assert!(result.is_ok(), "Should not panic on catalog missing /Pages");
+        assert!(result.unwrap().is_err(), "Should return error for catalog missing /Pages");
+    }
+
+    #[test]
+    fn test_catalog_emptiness_empty_vs_none_vs_missing_keys_distinction() {
+        use crate::parser::catalog::Catalog;
+        use crate::parser::object::{intern, ObjRef, PdfObject};
+        use crate::parser::xref::XrefResolver;
+
+        // Test that all three emptiness scenarios are properly distinguished
+        let resolver = XrefResolver::new();
+
+        // Scenario 1: Empty dictionary (dict with no keys)
+        let empty_dict_catalog = Catalog {
+            pages_ref: ObjRef::new(1, 0),
+            raw_dict: PdfObject::Dict(Box::new(indexmap::IndexMap::new())),
+            ..Default::default()
+        };
+
+        let result_empty = validate_pages_structure(&empty_dict_catalog, &resolver, "empty.pdf");
+        assert!(result_empty.is_err());
+        match result_empty {
+            Err(DocumentError::EmptyDocument { .. }) => {}
+            _ => panic!("Empty dict should trigger EmptyDocument"),
+        }
+
+        // Scenario 2: None dictionary (not a dict at all)
+        let none_dict_catalog = Catalog {
+            pages_ref: ObjRef::new(1, 0),
+            raw_dict: PdfObject::Null,
+            ..Default::default()
+        };
+
+        let result_none = validate_pages_structure(&none_dict_catalog, &resolver, "none.pdf");
+        assert!(result_none.is_err());
+        match result_none {
+            Err(DocumentError::EmptyDocument { .. }) => {}
+            _ => panic!("None dict should trigger EmptyDocument"),
+        }
+
+        // Scenario 3: Missing essential keys (dict exists but lacks /Type or /Pages)
+        let mut dict_missing_keys = indexmap::IndexMap::new();
+        dict_missing_keys.insert(intern("Outlines"), PdfObject::Ref(ObjRef::new(3, 0)));
+        let missing_keys_catalog = Catalog {
+            pages_ref: ObjRef::new(1, 0),
+            raw_dict: PdfObject::Dict(Box::new(dict_missing_keys)),
+            ..Default::default()
+        };
+
+        let result_missing = validate_pages_structure(&missing_keys_catalog, &resolver, "missing.pdf");
+        assert!(result_missing.is_err());
+        match result_missing {
+            Err(DocumentError::EmptyDocument { .. }) => {}
+            _ => panic!("Missing keys should trigger EmptyDocument"),
+        }
+
+        // All three scenarios should produce EmptyDocument errors
+        // This confirms they're all properly detected
+    }
+
+    #[test]
+    fn test_catalog_emptiness_empty_dict_includes_source_identifier() {
+        use crate::parser::catalog::Catalog;
+        use crate::parser::object::{intern, ObjRef, PdfObject};
+        use crate::parser::xref::XrefResolver;
+
+        // Test that empty dictionary error includes source identifier (acceptance criteria)
+        let resolver = XrefResolver::new();
+        let empty_dict_catalog = Catalog {
+            pages_ref: ObjRef::new(1, 0),
+            raw_dict: PdfObject::Dict(Box::new(indexmap::IndexMap::new())),
+            ..Default::default()
+        };
+
+        let test_source = "test-empty-catalog.pdf";
+        let result = validate_pages_structure(&empty_dict_catalog, &resolver, test_source);
+
+        assert!(result.is_err(), "Empty catalog dictionary should trigger error");
+        match result {
+            Err(DocumentError::EmptyDocument { source }) => {
+                assert_eq!(source, test_source, "Error should include source identifier");
+            }
+            _ => panic!("Expected EmptyDocument error with source identifier"),
+        }
+    }
+
+    #[test]
+    fn test_catalog_emptiness_none_dict_includes_source_identifier() {
+        use crate::parser::catalog::Catalog;
+        use crate::parser::object::{intern, ObjRef, PdfObject};
+        use crate::parser::xref::XrefResolver;
+
+        // Test that None dictionary error includes source identifier (acceptance criteria)
+        let resolver = XrefResolver::new();
+        let none_dict_catalog = Catalog {
+            pages_ref: ObjRef::new(1, 0),
+            raw_dict: PdfObject::Null,
+            ..Default::default()
+        };
+
+        let test_source = "test-none-catalog.pdf";
+        let result = validate_pages_structure(&none_dict_catalog, &resolver, test_source);
+
+        assert!(result.is_err(), "None catalog dictionary should trigger error");
+        match result {
+            Err(DocumentError::EmptyDocument { source }) => {
+                assert_eq!(source, test_source, "Error should include source identifier");
+            }
+            _ => panic!("Expected EmptyDocument error with source identifier"),
+        }
+    }
+
+    #[test]
+    fn test_catalog_emptiness_missing_keys_includes_source_identifier() {
+        use crate::parser::catalog::Catalog;
+        use crate::parser::object::{intern, ObjRef, PdfObject};
+        use crate::parser::xref::XrefResolver;
+
+        // Test that missing essential keys error includes source identifier (acceptance criteria)
+        let resolver = XrefResolver::new();
+
+        // Catalog missing both /Type and /Pages
+        let mut dict_missing_keys = indexmap::IndexMap::new();
+        dict_missing_keys.insert(intern("Outlines"), PdfObject::Ref(ObjRef::new(3, 0)));
+        let missing_keys_catalog = Catalog {
+            pages_ref: ObjRef::new(1, 0),
+            raw_dict: PdfObject::Dict(Box::new(dict_missing_keys)),
+            ..Default::default()
+        };
+
+        let test_source = "test-missing-keys-catalog.pdf";
+        let result = validate_pages_structure(&missing_keys_catalog, &resolver, test_source);
+
+        assert!(result.is_err(), "Missing essential keys should trigger error");
+        match result {
+            Err(DocumentError::EmptyDocument { source }) => {
+                assert_eq!(source, test_source, "Error should include source identifier");
+            }
+            _ => panic!("Expected EmptyDocument error with source identifier"),
+        }
+    }
+
+    #[test]
+    fn test_catalog_emptiness_error_display_includes_source() {
+        use crate::parser::catalog::Catalog;
+        use crate::parser::object::{intern, ObjRef, PdfObject};
+        use crate::parser::xref::XrefResolver;
+
+        // Test that error display message includes source identifier (acceptance criteria)
+        let resolver = XrefResolver::new();
+        let empty_dict_catalog = Catalog {
+            pages_ref: ObjRef::new(1, 0),
+            raw_dict: PdfObject::Dict(Box::new(indexmap::IndexMap::new())),
+            ..Default::default()
+        };
+
+        let test_source = "my-document.pdf";
+        let result = validate_pages_structure(&empty_dict_catalog, &resolver, test_source);
+
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains(test_source), "Error message should include source identifier: {}", error_msg);
+    }
+
+    #[test]
+    fn test_catalog_emptiness_multiple_sources_distinguished() {
+        use crate::parser::catalog::Catalog;
+        use crate::parser::object::{intern, ObjRef, PdfObject};
+        use crate::parser::xref::XrefResolver;
+
+        // Test that different source identifiers are properly distinguished (acceptance criteria)
+        let resolver = XrefResolver::new();
+        let empty_dict_catalog = Catalog {
+            pages_ref: ObjRef::new(1, 0),
+            raw_dict: PdfObject::Dict(Box::new(indexmap::IndexMap::new())),
+            ..Default::default()
+        };
+
+        let sources = vec![
+            "document-one.pdf",
+            "path/to/document-two.pdf",
+            "https://example.com/document-three.pdf",
+        ];
+
+        for source in sources {
+            let result = validate_pages_structure(&empty_dict_catalog, &resolver, source);
+            assert!(result.is_err());
+            match result {
+                Err(DocumentError::EmptyDocument { source: err_source }) => {
+                    assert_eq!(err_source, source, "Each source should be preserved uniquely");
+                }
+                _ => panic!("Expected EmptyDocument error for source: {}", source),
+            }
+        }
+    }
+
+    #[test]
+    fn test_catalog_emptiness_integration_all_scenarios_comprehensive() {
+        use crate::parser::catalog::Catalog;
+        use crate::parser::object::{intern, ObjRef, PdfObject};
+        use crate::parser::xref::XrefResolver;
+
+        // Comprehensive integration test covering all three scenarios (acceptance criteria)
+        let resolver = XrefResolver::new();
+
+        // Scenario 1: Empty dictionary (catalog dict with no keys)
+        let empty_dict_catalog = Catalog {
+            pages_ref: ObjRef::new(1, 0),
+            raw_dict: PdfObject::Dict(Box::new(indexmap::IndexMap::new())),
+            ..Default::default()
+        };
+
+        let result1 = validate_pages_structure(&empty_dict_catalog, &resolver, "scenario1-empty.pdf");
+        match result1 {
+            Err(DocumentError::EmptyDocument { source }) => {
+                assert_eq!(source, "scenario1-empty.pdf");
+            }
+            _ => panic!("Scenario 1 (empty dict) should trigger EmptyDocument"),
+        }
+
+        // Scenario 2: None dictionary (catalog is not a dictionary at all)
+        let none_dict_catalog = Catalog {
+            pages_ref: ObjRef::new(1, 0),
+            raw_dict: PdfObject::Integer(42),
+            ..Default::default()
+        };
+
+        let result2 = validate_pages_structure(&none_dict_catalog, &resolver, "scenario2-none.pdf");
+        match result2 {
+            Err(DocumentError::EmptyDocument { source }) => {
+                assert_eq!(source, "scenario2-none.pdf");
+            }
+            _ => panic!("Scenario 2 (none dict) should trigger EmptyDocument"),
+        }
+
+        // Scenario 3: Missing essential keys (/Type or /Pages)
+        let mut missing_type_dict = indexmap::IndexMap::new();
+        missing_type_dict.insert(intern("Pages"), PdfObject::Ref(ObjRef::new(2, 0)));
+        let missing_type_catalog = Catalog {
+            pages_ref: ObjRef::new(2, 0),
+            raw_dict: PdfObject::Dict(Box::new(missing_type_dict)),
+            ..Default::default()
+        };
+
+        let result3 = validate_pages_structure(&missing_type_catalog, &resolver, "scenario3-missing-type.pdf");
+        match result3 {
+            Err(DocumentError::EmptyDocument { source }) => {
+                assert_eq!(source, "scenario3-missing-type.pdf");
+            }
+            _ => panic!("Scenario 3 (missing /Type) should trigger EmptyDocument"),
+        }
+
+        // All three scenarios verified with source identifiers
+    }
 }
