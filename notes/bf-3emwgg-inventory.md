@@ -1,79 +1,50 @@
-# Unused Imports Inventory for bf-3emwgg
+# Unused Imports Inventory - bf-3emwgg
+
+## Task: Identify unused imports in xref.rs and ocg.rs
 
 **Date:** 2026-08-10  
-**Files analyzed:** `crates/pdftract-core/src/parser/xref.rs` and `crates/pdftract-core/src/parser/ocg.rs`  
-**Tool:** `cargo clippy --all-targets --message-format=short`
+**Method:** `cargo clippy --all-targets`  
+**Files analyzed:**
+- `crates/pdftract-core/src/parser/xref.rs`
+- `crates/pdftract-core/src/parser/ocg.rs`
+
+## xref.rs Unused Imports
+
+### 1. MemorySource (line 11)
+- **Import statement:** `use crate::parser::stream::{MemorySource, PdfSource};`
+- **Location:** Line 11
+- **Warning:** `warning: unused import: MemorySource`
+- **Status:** Unused - can be safely removed
+- **Evidence:** Clippy reports this as unused, and scanning the file shows no direct usage of `MemorySource` type
+
+## ocg.rs Unused Imports
+
+### Analysis: No unused imports found
+- **All imports are used:**
+  - `std::collections::HashMap` - Used extensively throughout (lines 196, 198, etc.)
+  - `crate::parser::object::{ObjRef, PdfDict, PdfObject}` - All three types used extensively
+  - `crate::parser::xref::XrefResolver` - Used on line 282 and other places
+  - `crate::parser::{DiagCode, Diagnostic}` - Both used throughout
+
+### Other warnings found (not imports):
+- **Unused variable:** `diagnostics` parameter in `OcGroup::parse` (line 144)
+- **Unused variable:** `obj_ref` parameter in `make_test_ocg` (line 433)
+- These are unused variables, not unused imports
 
 ## Summary
 
-| File | Unused Imports Found | Expected (per task description) | Status |
-|------|---------------------|----------------------------------|---------|
-| `xref.rs` | 1 | ~5 | **Much lower than expected** |
-| `ocg.rs` | 0 | ~4 | **Much lower than expected** |
+- **xref.rs:** 1 unused import found (`MemorySource`)
+- **ocg.rs:** 0 unused imports found
 
-## Details
+## Notes
 
-### xref.rs (`crates/pdftract-core/src/parser/xref.rs`)
+The clippy analysis also revealed several other code quality issues (unused variables, unnecessary closures, etc.) but these are outside the scope of this task which focused specifically on unused imports.
 
-**Unused imports found: 1**
+## Verification
 
-1. **Line 11, column 29:** `MemorySource`
-   - Imported as: `use crate::parser::stream::{MemorySource, PdfSource};`
-   - Status: **Unused** - The top-level import is not used
-   - Note: `MemorySource` is imported locally within function `parse_xref_stream` at line 1677, so the top-level import is redundant
-
-**Other unused items (non-imports):**
-- Line 874: `diagnostics` parameter (unused variable)
-- Line 907: `depth` variable (assigned but never read)
-- Line 1227: `source_len` variable (unused)
-- Line 4716: `rev_base` variable (unused)
-- Line 4836: `rev1_offset` variable (unused)
-- Line 4966: `has_prev` variable (unused)
-
-### ocg.rs (`crates/pdftract-core/src/parser/ocg.rs`)
-
-**Unused imports found: 0**
-
-All imports in `ocg.rs` are actively used:
-- `std::collections::HashMap` - Used extensively
-- `crate::parser::object::{ObjRef, PdfDict, PdfObject}` - All used
-- `crate::parser::xref::XrefResolver` - Used in `parse_oc_properties`
-- `crate::parser::{DiagCode, Diagnostic}` - Used in diagnostics
-
-**Other unused items (non-imports):**
-- Various unused variables in test code (e.g., `diagnostics`, `obj_ref`, `resolver`)
-- Unused associated functions: `OcmdPolicy::from_name`, `Ocmd::parse`
-
-## Analysis
-
-**Why the count is lower than expected:**
-
-The task description expected approximately 5 unused imports in `xref.rs` and 4 in `ocg.rs`, but actual analysis found only 1 and 0 respectively. This discrepancy may be due to:
-
-1. **Recent code cleanup** - Unused imports may have been removed in previous commits
-2. **Task description outdated** - The expected counts may have been estimated from an older codebase state
-3. **Different compiler behavior** - Different rustc versions or clippy lints may detect different unused items
-
-**Key finding:**
-- The only unused import across both files is `MemorySource` in `xref.rs` (line 11), which is shadowed by a local import within the `parse_xref_stream` function.
-
-## Recommendations
-
-1. **Remove the unused `MemorySource` import from `xref.rs` line 11** - It's redundant since there's a local import within the function that uses it.
-
-2. **Update the task description expectations** - The actual counts (1 and 0) should be documented as the baseline for future cleanup work.
-
-3. **Consider cleaning up unused variables** - While not imports, there are several unused variables that could be removed or prefixed with underscores to indicate intentional non-use.
-
-## Verification Command
-
-To reproduce these findings:
-
+Command used for analysis:
 ```bash
-cargo clippy --all-targets --message-format=short 2>&1 | grep "unused.*import" | grep -E "(xref\.rs|ocg\.rs)"
+cargo clippy --all-targets 2>&1 | grep -E "(xref\.rs|ocg\.rs)" -A 2 -B 2
 ```
 
-Output:
-```
-crates/pdftract-core/src/parser/xref.rs:11:29: warning: unused import: `MemorySource`
-```
+The analysis confirms that only `MemorySource` in xref.rs is an unused import that can be safely removed.
