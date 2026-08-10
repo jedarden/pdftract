@@ -3239,7 +3239,6 @@ impl<'de> serde::Deserialize<'de> for ExtractionOptions {
     where
         D: serde::Deserializer<'de>,
     {
-        use secrecy::SecretString;
         use serde::de::{self, MapAccess, SeqAccess, Visitor};
         use serde::Deserialize;
 
@@ -3994,7 +3993,6 @@ fn decode_stream_impl(
 mod integration_tests {
     use super::*;
     use indexmap::IndexMap;
-    use secrecy::ExposeSecret;
 
     #[test]
     fn test_extraction_options_default() {
@@ -5115,7 +5113,6 @@ mod predictor_tests {
     #[cfg(feature = "serde")]
     #[test]
     fn test_extraction_options_deserialize_password() {
-        use secrecy::SecretString;
         use serde_json;
 
         // Test deserialization with password
@@ -5149,7 +5146,6 @@ mod predictor_tests {
     #[cfg(feature = "serde")]
     #[test]
     fn test_extraction_options_serialize_password_redacted() {
-        use secrecy::SecretString;
         use serde_json;
 
         let mut opts = ExtractionOptions::default();
@@ -6136,7 +6132,7 @@ endobj
     /// from the stream dictionary when present.
     #[test]
     fn test_jbig2_extract_globals_ref() {
-        use crate::decoder::jbig2::{Jbig2Decoder, Jbig2GlobalsRef};
+        use crate::decoder::jbig2::Jbig2Decoder;
         use crate::parser::object::PdfDict;
 
         let mut dict = PdfDict::new();
