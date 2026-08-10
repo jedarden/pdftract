@@ -534,3 +534,136 @@ fn test_no_panic_when_pages_absent_or_invalid() {
         }
     }
 }
+
+/// Test 16: Verify catalog checks prevent pages access on empty catalog
+#[test]
+fn test_catalog_checks_before_pages_access() {
+    // This test verifies the critical ordering requirement:
+    // All catalog-level checks MUST execute BEFORE any pages access.
+    // This prevents panic when catalog.pages_ref is invalid.
+    use std::time::Instant;
+
+    // Test Case 1: Empty catalog dictionary (no keys at all)
+    // This should fail at Check 0.1, before any pages access attempt
+    {
+        let empty_dict = PdfObject::Dict(Box::new(indexmap::IndexMap::new()));
+        let catalog = Catalog::new(ObjRef::new(1, 0), empty_dict);
+        let resolver = XrefResolver::new();
+
+        let start = Instant::now();
+        let result = validate_pages_structure(&catalog, &resolver, "test_empty_no_pages_access.pdf");
+        let elapsed = start.elapsed();
+
+        // Should complete instantly (no page tree traversal)
+        assert!(elapsed.as_millis() < 100,
+            "Empty catalog check should complete instantly, took {:?}", elapsed);
+
+        match result {
+            Err(DocumentError::EmptyDocument { .. }) => {
+                // Success - caught at catalog level, no pages access
+            }
+            _ => panic!("Expected EmptyDocument error for empty catalog, got {:?}", result),
+        }
+    }
+
+    // Test Case 2: Catalog with /Pages=null (Check 0.4 catches this)
+    // This prevents resolver.resolve() from being called with invalid reference
+    {
+        let mut dict = indexmap::IndexMap::new();
+        dict.insert("Type".into(), PdfObject::Name("Catalog".into()));
+        dict.insert("Pages".into(), PdfObject::Null);
+        let catalog_dict = PdfObject::Dict(Box::new(dict));
+        let catalog = Catalog::new(ObjRef::new(1, 0), catalog_dict);
+        let resolver = XrefResolver::new();
+
+        let start = Instant::now();
+        let result = validate_pages_structure(&catalog, &resolver, "test_pages_null_no_access.pdf");
+        let elapsed = start.elapsed();
+
+        // Should complete instantly (no attempt to resolve null reference)
+        assert!(elapsed.as_millis() < 100,
+            "Null /Pages check should complete instantly, took {:?}", elapsed);
+
+        match result {
+            Err(DocumentError::EmptyDocument { .. }) => {
+                // Success - caught before resolver.resolve() call
+            }
+            _ => panic!("Expected EmptyDocument error for null /Pages, got {:?}", result),
+        }
+    }
+
+    // Test Case 3: Catalog with pages_ref pointing to non-existent object
+    // This should fail at Check 1 (object == 0) or Check 2 (resolve fails)
+    // NOT from a panic during pages array access
+    {
+        // Create a catalog with valid /Pages entry in dict but invalid pages_ref
+        let mut dict = indexmap::IndexMap::new();
+        dict.insert("Type".into(), PdfObject::Name("Catalog".into()));
+        dict.insert("Pages".into(), PdfObject::Ref(ObjRef::new(999, 0)));
+        let catalog_dict = PdfObject::Dict(Box::new(dict));
+
+        // pages_ref points to non-existent object (999,0)
+        let catalog = Catalog::new(ObjRef::new(999, 0), catalog_dict);
+        let resolver = XrefResolver::new();
+
+        let start = Instant::now();
+        let result = validate_pages_structure(&catalog, &resolver, "test_invalid_pages_ref.pdf");
+        let elapsed = start.elapsed();
+
+        // Should fail cleanly, not panic
+        assert!(elapsed.as_secs() < 1,
+            "Invalid pages_ref should fail cleanly, took {:?}", elapsed);
+
+        // The error should be MissingPagesArray (from Check 2 resolve failure)
+        // or EmptyDocument (from Check 5 count failure)
+        // NOT a panic from accessing pages array
+        match result {
+            Err(DocumentError::MissingPagesArray { .. }) |
+            Err(DocumentError::EmptyDocument { .. }) => {
+                // Success - clean failure, no panic
+            }
+            Ok(_) => {
+                panic!("Expected error for invalid pages_ref, but got Ok");
+            }
+            Err(other) => {
+                panic!("Expected MissingPagesArray or EmptyDocument, got {:?}", other);
+            }
+        }
+    }
+
+    // Test Case 4: Verify catalog checks execute before any page tree traversal
+    // by checking that a valid catalog with empty /Kids is caught early
+    {
+        let resolver = XrefResolver::new();
+
+        // Create a Pages node with empty /Kids array
+        let mut pages_dict = indexmap::IndexMap::new();
+        pages_dict.insert("Type".into(), PdfObject::Name("Pages".into()));
+        pages_dict.insert("Kids".into(), PdfObject::Array(Box::new(vec![])));
+        pages_dict.insert("Count".into(), PdfObject::Integer(0));
+        resolver.cache_object(ObjRef::new(2, 0), PdfObject::Dict(Box::new(pages_dict)));
+
+        // Create a catalog pointing to this Pages node
+        let mut dict = indexmap::IndexMap::new();
+        dict.insert("Type".into(), PdfObject::Name("Catalog".into()));
+        dict.insert("Pages".into(), PdfObject::Ref(ObjRef::new(2, 0)));
+        let catalog_dict = PdfObject::Dict(Box::new(dict));
+        let catalog = Catalog::new(ObjRef::new(2, 0), catalog_dict);
+
+        let start = Instant::now();
+        let result = validate_pages_structure(&catalog, &resolver, "test_empty_kids.pdf");
+        let elapsed = start.elapsed();
+
+        // Should fail quickly when detecting empty /Kids (Check at line 886)
+        // NOT panic from accessing pages array
+        assert!(elapsed.as_secs() < 1,
+            "Empty /Kids should be detected quickly, took {:?}", elapsed);
+
+        match result {
+            Err(DocumentError::EmptyDocument { .. }) => {
+                // Success - empty /Kids detected cleanly
+            }
+            _ => panic!("Expected EmptyDocument error for empty /Kids, got {:?}", result),
+        }
+    }
+}

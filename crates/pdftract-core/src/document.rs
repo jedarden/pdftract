@@ -704,6 +704,24 @@ pub fn compute_pdf_fingerprint(pdf_path: &std::path::Path) -> Result<String> {
 /// and missing page arrays before any attempt to access page content. It checks
 /// for multiple variants of empty or malformed document structures.
 ///
+/// # Critical Ordering Requirement
+///
+/// **All catalog-level checks MUST be positioned BEFORE any pages access.**
+/// This ordering is critical because:
+///
+/// 1. **Prevents panic on invalid references**: If catalog.pages_ref is invalid (e.g., null/zero),
+///    attempting to resolve it or access the pages tree can cause panics or undefined behavior.
+/// 2. **Ensures early failure**: Catalog issues are caught before expensive page tree traversal.
+/// 3. **Protects against malformed structures**: Empty catalogs are detected before dereferencing
+///    potentially invalid object references.
+///
+/// The function follows this strict ordering:
+/// - Check 0: Catalog dictionary validation (emptiness, None, missing keys, /Pages entry)
+/// - Check 1: Validate catalog.pages_ref is non-zero
+/// - Check 2+: Only then access pages structure (resolve, /Kids array, traversal)
+///
+/// Any modification to this function MUST preserve this ordering to prevent panics.
+///
 /// # Arguments
 ///
 /// * `catalog` - The parsed document catalog
