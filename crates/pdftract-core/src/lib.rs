@@ -222,6 +222,7 @@ pub mod threads;
 // Re-export key types for convenience
 pub use confidence::{map_confidence_source, ConfidenceSource};
 pub use document::{Document, PageExtraction, PageIter, PdfExtractor};
+pub use page_helper::{extract_all_pages, extract_page, extract_page_range, page_count, PageError};
 pub use extract::{
     extract_pdf, extract_pdf_ndjson, extract_pdf_streaming, extract_text, ExtractionMetadata,
     ExtractionResult, PageResult, page_helpers,

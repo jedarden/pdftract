@@ -3,6 +3,49 @@
 //! This module provides high-level helper functions for extracting
 //! Page data from PDF documents. It serves as a convenient API surface
 //! for common page extraction operations.
+//!
+//! # Overview
+//!
+//! The `page_helper` module provides functions for:
+//!
+//! - Extracting single pages by index: [`extract_page()`]
+//! - Extracting all pages from a document: [`extract_all_pages()`]
+//! - Extracting a range of pages: [`extract_page_range()`]
+//! - Getting page counts with error handling: [`page_count()`]
+//!
+//! # Error Handling
+//!
+//! All functions return `Result<T>` and use the [`PageError`] enum for
+//! specific error types. Common errors include:
+//!
+//! - [`PageError::NoPages`] - Document contains no pages
+//! - [`PageError::IndexOutOfBounds`] - Requested page index exceeds available pages
+//! - [`PageError::InvalidDimensions`] - Page has invalid width or height
+//! - [`PageError::InvalidRotation`] - Page rotation is not 0, 90, 180, or 270
+//!
+//! # Examples
+//!
+//! Extracting a single page:
+//!
+//! ```ignore
+//! use pdftract_core::{page_helper, Document};
+//!
+//! let doc = Document::open("document.pdf")?;
+//! let page = page_helper::extract_page(&doc, 0)?;
+//! println!("First page: {}x{}", page.width, page.height);
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+//!
+//! Extracting all pages from a document:
+//!
+//! ```ignore
+//! use pdftract_core::{page_helper, Document};
+//!
+//! let doc = Document::open("document.pdf")?;
+//! let pages = page_helper::extract_all_pages(&doc)?;
+//! println!("Document has {} pages", pages.len());
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
 
 use crate::document::{Document, PageExtraction};
 use anyhow::{anyhow, Result};
@@ -164,7 +207,9 @@ fn validate_page_extraction(page: &PageExtraction) -> Result<(), PageError> {
 /// - The page has an invalid rotation value (not 0, 90, 180, or 270)
 /// - The page extraction fails for any other reason
 ///
-/// # Example
+/// # Examples
+///
+/// Extracting the first page:
 ///
 /// ```ignore
 /// use pdftract_core::{page_helper, Document};
@@ -172,6 +217,20 @@ fn validate_page_extraction(page: &PageExtraction) -> Result<(), PageError> {
 /// let doc = Document::open("document.pdf")?;
 /// let page = page_helper::extract_page(&doc, 0)?;
 /// println!("Page dimensions: {}x{}", page.width, page.height);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+///
+/// Extracting the last page with bounds checking:
+///
+/// ```ignore
+/// use pdftract_core::{page_helper, Document};
+///
+/// let doc = Document::open("document.pdf")?;
+/// let page_count = page_helper::page_count(&doc)?;
+/// let last_index = page_count.saturating_sub(1);
+/// let page = page_helper::extract_page(&doc, last_index)?;
+/// println!("Last page ({}): {}x{}", page.index, page.width, page.height);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub fn extract_page(document: &Document, page_index: usize) -> Result<PageExtraction> {
     // Get total page count to validate bounds
@@ -238,7 +297,9 @@ pub fn extract_page(document: &Document, page_index: usize) -> Result<PageExtrac
 /// - Any page has invalid dimensions or rotation
 /// - Page extraction fails for any page
 ///
-/// # Example
+/// # Examples
+///
+/// Basic iteration over all pages:
 ///
 /// ```ignore
 /// use pdftract_core::{page_helper, Document};
@@ -248,6 +309,23 @@ pub fn extract_page(document: &Document, page_index: usize) -> Result<PageExtrac
 /// for page in pages {
 ///     println!("Page {}: {}x{}", page.index, page.width, page.height);
 /// }
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+///
+/// Collecting statistics across all pages:
+///
+/// ```ignore
+/// use pdftract_core::{page_helper, Document};
+///
+/// let doc = Document::open("document.pdf")?;
+/// let pages = page_helper::extract_all_pages(&doc)?;
+///
+/// let total_width: f64 = pages.iter().map(|p| p.width).sum();
+/// let avg_height = pages.iter().map(|p| p.height).sum::<f64>() / pages.len() as f64;
+///
+/// println!("Total width across {} pages: {:.2}", pages.len(), total_width);
+/// println!("Average page height: {:.2}", avg_height);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 ///
 /// # Memory Warning
@@ -302,7 +380,9 @@ pub fn extract_all_pages(document: &Document) -> Result<Vec<PageExtraction>> {
 /// - Any page has invalid dimensions or rotation
 /// - Page extraction fails for any page in the range
 ///
-/// # Example
+/// # Examples
+///
+/// Extracting a middle section of a document:
 ///
 /// ```ignore
 /// use pdftract_core::{page_helper, Document};
@@ -313,6 +393,27 @@ pub fn extract_all_pages(document: &Document) -> Result<Vec<PageExtraction>> {
 /// for page in pages {
 ///     println!("Page {}: {}x{}", page.index, page.width, page.height);
 /// }
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+///
+/// Processing a document in chunks to manage memory:
+///
+/// ```ignore
+/// use pdftract_core::{page_helper, Document};
+///
+/// let doc = Document::open("large-document.pdf")?;
+/// let page_count = page_helper::page_count(&doc)?;
+/// let chunk_size = 10;
+///
+/// for chunk_start in (0..page_count).step_by(chunk_size) {
+///     let chunk_end = (chunk_start + chunk_size - 1).min(page_count - 1);
+///     let pages = page_helper::extract_page_range(&doc, chunk_start, chunk_end)?;
+///
+///     println!("Processing pages {} to {} ({} pages)",
+///              chunk_start, chunk_end, pages.len());
+///     // Process chunk...
+/// }
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub fn extract_page_range(document: &Document, start: usize, end: usize) -> Result<Vec<PageExtraction>> {
     // Get total page count to validate bounds
@@ -393,7 +494,9 @@ pub fn extract_page_range(document: &Document, start: usize, end: usize) -> Resu
 ///
 /// Returns `PageError::PageCountFailed` if the page count cannot be determined.
 ///
-/// # Example
+/// # Examples
+///
+/// Getting the page count:
 ///
 /// ```ignore
 /// use pdftract_core::{page_helper, Document};
@@ -401,6 +504,25 @@ pub fn extract_page_range(document: &Document, start: usize, end: usize) -> Resu
 /// let doc = Document::open("document.pdf")?;
 /// let count = page_helper::page_count(&doc)?;
 /// println!("Document has {} pages", count);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+///
+/// Checking bounds before extracting a page:
+///
+/// ```ignore
+/// use pdftract_core::{page_helper, Document};
+///
+/// let doc = Document::open("document.pdf")?;
+/// let target_page = 42;
+///
+/// let page_count = page_helper::page_count(&doc)?;
+/// if target_page < page_count {
+///     let page = page_helper::extract_page(&doc, target_page)?;
+///     println!("Extracted page {}: {}x{}", page.index, page.width, page.height);
+/// } else {
+///     println!("Page {} does not exist (document has {} pages)", target_page, page_count);
+/// }
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub fn page_count(document: &Document) -> Result<usize> {
     document
