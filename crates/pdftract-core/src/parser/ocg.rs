@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 
-use crate::parser::object::{intern, ObjRef, PdfDict, PdfObject};
+use crate::parser::object::{ObjRef, PdfDict, PdfObject};
 use crate::parser::xref::XrefResolver;
 use crate::parser::{DiagCode, Diagnostic};
 
@@ -424,7 +424,7 @@ pub fn parse_oc_properties(resolver: &XrefResolver, oc_props_ref: Option<ObjRef>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
+    use crate::parser::object::intern;
 
     fn make_test_resolver() -> XrefResolver {
         XrefResolver::new()

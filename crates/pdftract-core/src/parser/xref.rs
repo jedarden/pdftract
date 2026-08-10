@@ -7,13 +7,13 @@
 
 use crate::diagnostics::{DiagCode, Diagnostic as Diag};
 use crate::parser::object::cache::ObjectCache;
-use crate::parser::object::{ObjRef, ObjectParser, PdfDict, PdfObject, PdfStream};
-use crate::parser::stream::{MemorySource, PdfSource};
+use crate::parser::object::{ObjRef, ObjectParser, PdfDict, PdfObject};
+use crate::parser::stream::PdfSource;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 // Use memchr for SIMD-accelerated byte searching in forward_scan_xref
-use memchr::{memchr, memchr_iter};
+use memchr::memchr_iter;
 
 /// Error type for xref resolution.
 #[derive(Debug, Clone)]
@@ -270,8 +270,6 @@ impl XrefResolver {
     /// - Handle object streams
     /// - Cache resolved objects (via ObjectCache LRU)
     pub fn resolve(&self, obj_ref: ObjRef) -> ResolveResult<PdfObject> {
-        use std::sync::Arc;
-
         // Check cache first (includes cycle detection via begin_resolution)
         if let Some(obj) = self.cache.get(obj_ref) {
             return Ok(obj.as_ref().clone());
@@ -3669,8 +3667,6 @@ trailer\n<< /Size 3 >>\n";
         entries: &[&[u8]],
         padding: usize,
     ) -> Vec<u8> {
-        use crate::parser::object::intern;
-
         // Compress entries with FlateDecode
         use flate2::write::ZlibEncoder;
         use flate2::Compression;
