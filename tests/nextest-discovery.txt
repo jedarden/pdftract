@@ -1,0 +1,201 @@
+warning: fields `description` and `version` are never read
+  --> crates/pdftract-core/build.rs:37:5
+   |
+21 | struct UnmappedGlyphNamesConfig {
+   |        ------------------------ fields in this struct
+...
+37 |     description: Option<String>,
+   |     ^^^^^^^^^^^
+...
+43 |     version: Option<String>,
+   |     ^^^^^^^
+   |
+   = note: `UnmappedGlyphNamesConfig` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `pdftract-core` (build script) generated 1 warning
+   Compiling pdftract-core v0.1.0 (/home/coding/pdftract/crates/pdftract-core)
+warning: pdftract-inspector-ui@0.1.0: Inspector frontend bundle size:
+warning: pdftract-inspector-ui@0.1.0:   Raw: 1.95 KB
+warning: pdftract-inspector-ui@0.1.0:   Gzipped: 0.87 KB / 80 KB limit
+warning: unused imports: `read_json` and `write_json`
+ --> crates/pdftract-schema-migrate/src/bin/migrate-schema.rs:9:31
+  |
+9 | use pdftract_schema_migrate::{read_json, run_migration, write_json};
+  |                               ^^^^^^^^^                 ^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `pdftract-schema-migrate` (bin "migrate-schema" test) generated 1 warning (run `cargo fix --bin "migrate-schema" -p pdftract-schema-migrate --tests` to apply 1 suggestion)
+warning: unused import: `DestArray`
+ --> crates/pdftract-core/src/annotation/json.rs:6:32
+  |
+6 | use crate::annotation::links::{DestArray, FitType, LinkAnnotation};
+  |                                ^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `Map`
+  --> crates/pdftract-core/src/cache/key.rs:10:24
+   |
+10 | use serde_json::{json, Map, Value};
+   |                        ^^^
+
+warning: unused import: `entry_path`
+ --> crates/pdftract-core/src/cache/lru.rs:8:5
+  |
+8 |     entry_path, parse_opts_hash_from_filename, parse_size_from_filename, sentinel_path,
+  |     ^^^^^^^^^^
+
+warning: unused import: `crate::parser::object::PdfObject`
+  --> crates/pdftract-core/src/conformance.rs:17:5
+   |
+17 | use crate::parser::object::PdfObject;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `anyhow::Result`
+  --> crates/pdftract-core/src/conformance.rs:20:5
+   |
+20 | use anyhow::Result;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `intern`
+  --> crates/pdftract-core/src/content_stream.rs:34:29
+   |
+34 | use crate::parser::object::{intern, ObjRef, PdfDict, PdfObject};
+   |                             ^^^^^^
+
+warning: unused import: `PdfDict`
+    --> crates/pdftract-core/src/content_stream.rs:2016:41
+     |
+2016 |     use crate::parser::object::{intern, PdfDict};
+     |                                         ^^^^^^^
+
+warning: unused import: `ObjRef`
+  --> crates/pdftract-core/src/detection.rs:11:29
+   |
+11 | use crate::parser::object::{ObjRef, PdfDict, PdfObject};
+   |                             ^^^^^^
+
+warning: unused imports: `LinearizationInfo` and `XrefSection`
+  --> crates/pdftract-core/src/document.rs:22:76
+   |
+22 |     detect_linearization, load_xref_linearized, load_xref_with_prev_chain, LinearizationInfo,
+   |                                                                            ^^^^^^^^^^^^^^^^^
+23 |     XrefResolver, XrefSection,
+   |                   ^^^^^^^^^^^
+
+warning: unused import: `DiagCode`
+  --> crates/pdftract-core/src/encryption/detection.rs:13:19
+   |
+13 |     diagnostics::{DiagCode, Diagnostic},
+   |                   ^^^^^^^^
+
+warning: unused import: `derive_aes_128_object_key`
+  --> crates/pdftract-core/src/encryption/decryptor.rs:12:32
+   |
+12 |     aes_128::{aes_128_decrypt, derive_aes_128_object_key},
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `secrecy::SecretString`
+  --> crates/pdftract-core/src/encryption/decryptor.rs:22:5
+   |
+22 | use secrecy::SecretString;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `AcroFormField`
+  --> crates/pdftract-core/src/extract.rs:23:57
+   |
+23 |     acro_field_to_value, combine, walk_acroform_fields, AcroFormField, FormFieldValue,
+   |                                                         ^^^^^^^^^^^^^
+
+warning: unused import: `parse_struct_tree`
+  --> crates/pdftract-core/src/extract.rs:34:60
+   |
+34 | use crate::parser::struct_tree::{check_coverage_for_pages, parse_struct_tree};
+   |                                                            ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `PageContext`
+  --> crates/pdftract-core/src/extract.rs:45:64
+   |
+45 |     detect_two_page_tables, grid_to_table_json, GridCandidate, PageContext, TableDetector,
+   |                                                                ^^^^^^^^^^^
+
+warning: unused import: `TableSpan`
+  --> crates/pdftract-core/src/extract.rs:47:39
+   |
+47 | use crate::table::{TableCell as Cell, TableSpan};
+   |                                       ^^^^^^^^^
+
+warning: unused imports: `emit_glyph` and `new_raw_glyph_list`
+  --> crates/pdftract-core/src/extract.rs:50:20
+   |
+50 | use crate::glyph::{emit_glyph, new_raw_glyph_list, Glyph};
+   |                    ^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::graphics_state::GraphicsState`
+  --> crates/pdftract-core/src/extract.rs:51:5
+   |
+51 | use crate::graphics_state::GraphicsState;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `BlockInput`, `Block`, `Column`, `Line`, `PageContext as LayoutPageContext`, `assign_columns_to_lines`, `classify_caption`, `classify_code`, `classify_figure`, `classify_formula`, `classify_list`, `classify_watermark`, `compute_baseline`, and `detect_headers_and_footers`
+  --> crates/pdftract-core/src/extract.rs:54:5
+   |
+54 |     assign_columns_to_lines, build_x0_histogram, classify_caption, classify_code, classify_figure,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^                      ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^
+55 |     classify_formula, classify_list, classify_watermark, cluster_spans_into_lines,
+   |     ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+56 |     compute_baseline, detect_headers_and_footers, group_lines_into_blocks, xy_cut, Block,
+   |     ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^                                   ^^^^^
+57 |     BlockInput, Column, Line, PageContext as LayoutPageContext,
+   |     ^^^^^^^^^^  ^^^^^^  ^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Span`
+  --> crates/pdftract-core/src/extract.rs:60:32
+   |
+60 | use crate::span::{CssHexColor, Span};
+   |                                ^^^^
+
+warning: unused import: `std::cmp::Ordering`
+  --> crates/pdftract-core/src/extract.rs:68:5
+   |
+68 | use std::cmp::Ordering;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::parser::xref::XrefResolver`
+   --> crates/pdftract-core/src/extract.rs:972:13
+    |
+972 |         use crate::parser::xref::XrefResolver;
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `anyhow::Result`
+    --> crates/pdftract-core/src/extract.rs:2873:9
+     |
+2873 |     use anyhow::Result;
+     |         ^^^^^^^^^^^^^^
+
+warning: unused import: `crate::diagnostics::DiagCode`
+  --> crates/pdftract-core/src/font/agl.rs:14:5
+   |
+14 | use crate::diagnostics::DiagCode;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+  --> crates/pdftract-core/src/font/fingerprint.rs:26:5
+   |
+26 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused imports: `lookup_shape` and `phash_glyph`
+  --> crates/pdftract-core/src/font/resolver.rs:24:26
+   |
+24 | use crate::font::shape::{lookup_shape, phash_glyph};
+   |                          ^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused imports: `DocumentContext as Type3DocumentContext`, `StreamResolverFn`, and `rasterize_type3_glyph`
+  --> crates/pdftract-core/src/font/resolver.rs:26:37
+   |
+26 | use crate::font::type3_rasterizer::{rasterize_type3_glyph, DocumentContext as Type3DocumentContext, StreamResolverFn};
+   |                                     ^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+
