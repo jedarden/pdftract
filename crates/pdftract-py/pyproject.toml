@@ -7,7 +7,7 @@ name = "pdftract"
 dynamic = ["version"]
 description = "PDF text extraction library with robust encoding detection"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = {text = "MIT OR Apache-2.0"}
 keywords = ["pdf", "text-extraction", "encoding-detection"]
 classifiers = [
