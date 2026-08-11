@@ -2456,7 +2456,7 @@ mod tests {
     fn test_rasterize_filled_triangle() {
         use crate::parser::object::types::intern;
 
-        // Create a font with identity FontMatrix
+        // Create a font with identity FontMatrix and appropriate FontBBox
         let mut font_dict = PdfDict::new();
         font_dict.insert(
             intern("/FontMatrix"),
@@ -2467,6 +2467,15 @@ mod tests {
                 PdfObject::Integer(1),
                 PdfObject::Integer(0),
                 PdfObject::Integer(0),
+            ])),
+        );
+        font_dict.insert(
+            intern("/FontBBox"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+                PdfObject::Integer(20),
+                PdfObject::Integer(20),
             ])),
         );
 
