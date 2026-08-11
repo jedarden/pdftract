@@ -140,14 +140,49 @@ __all__.extend(["asyncio"])
 _fallback_extractor = None
 
 
+class _NativeExtractorWrapper:
+    """Wrapper for native module to normalize API surface."""
+
+    def __init__(self, native_module):
+        self._native = native_module
+
+    def extract(self, source, **options):
+        return self._native.extract(source, **options)
+
+    def extract_text(self, source, **options):
+        return self._native.extract_text(source, **options)
+
+    def extract_markdown(self, source, **options):
+        return self._native.extract_markdown(source, **options)
+
+    def extract_stream(self, source, **options):
+        # Native module uses extract_stream_fn
+        return self._native.extract_stream_fn(source, **options)
+
+    def search(self, source, pattern, **options):
+        return self._native.search(source, pattern, **options)
+
+    def get_metadata(self, source, **options):
+        return self._native.get_metadata(source, **options)
+
+    def hash(self, source, **options):
+        return self._native.hash(source, **options)
+
+    def classify(self, source):
+        return self._native.classify(source)
+
+    def verify_receipt(self, path, receipt):
+        return self._native.verify_receipt(path, receipt)
+
+
 def _get_extractor():
     """Get the native extractor or subprocess fallback."""
     global _fallback_extractor
 
     if _native_available:
-        # Return native module
+        # Return wrapped native module with normalized API
         import pdftract._native as native
-        return native
+        return _NativeExtractorWrapper(native)
     else:
         # Initialize subprocess fallback on first use
         if _fallback_extractor is None:

@@ -338,6 +338,18 @@ class Fingerprint:
             metadata=Metadata.from_native(metadata_dict) if metadata_dict else None,
         )
 
+    @classmethod
+    def from_string(cls, hash_string: str) -> Self:
+        """Create a Fingerprint from a hash string.
+
+        Args:
+            hash_string: SHA-256 hash string (64 hex characters)
+
+        Returns:
+            Fingerprint with only the hash field populated
+        """
+        return cls(hash=hash_string, fast_hash="")
+
     def __repr__(self) -> str:
         cls_name = self.__class__.__name__
         hash_preview = self.hash[:12] if self.hash else ""
