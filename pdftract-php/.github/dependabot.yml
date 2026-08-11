@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: "composer"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "php"
+    ignore:
+      # Ignore major version updates for stability
+      - dependency-name: "psr/log"
+        update-types: ["version-update:semver-major"]
