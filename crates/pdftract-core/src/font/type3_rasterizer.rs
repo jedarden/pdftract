@@ -1908,6 +1908,154 @@ pub type StreamResolverFn = dyn Fn(ObjRef) -> Option<Vec<u8>> + Send + Sync;
 ///
 /// # Arguments
 ///
+/// Path edge representation before CTM transformation.
+///
+/// Path edges are line segments from path commands that will be transformed
+/// through the CTM and then converted to scanline edges for rasterization.
+///
+/// This is an intermediate representation between vector path commands and
+/// the integer-coordinate edges used by the scanline algorithm.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PathEdge {
+    /// X coordinate of the edge's start point (in bitmap space after CTM)
+    pub x_start: f64,
+    /// Y coordinate of the edge's start point (in bitmap space after CTM)
+    pub y_start: f64,
+    /// X coordinate of the edge's end point (in bitmap space after CTM)
+    pub x_end: f64,
+    /// Y coordinate of the edge's end point (in bitmap space after CTM)
+    pub y_end: f64,
+}
+
+impl PathEdge {
+    /// Create a new edge from start to end points.
+    #[must_use]
+    pub const fn new(x_start: f64, y_start: f64, x_end: f64, y_end: f64) -> Self {
+        Self {
+            x_start,
+            y_start,
+            x_end,
+            y_end,
+        }
+    }
+}
+
+/// Path command to edge converter.
+///
+/// Processes PDF path commands and transforms them into edges for rasterization.
+/// This is the bridge between vector path commands and pixel-based rendering.
+///
+/// ## Processing Pipeline
+///
+/// ```text
+/// PathCommand sequence → CTM transform → Edge collection → Scanline fill
+/// ```
+///
+/// ## Coordinate Transformation
+///
+/// Path commands are in user space. They must be transformed through the CTM
+/// (Current Transformation Matrix) to bitmap space before edge collection:
+///
+/// ```text
+/// User space (1000, 1000) --CTM--> Bitmap space (1.0, 1.0)
+/// ```
+pub struct PathToEdges;
+
+impl PathToEdges {
+    /// Convert a sequence of path commands to edges using the given CTM.
+    ///
+    /// This processes each path command, transforms coordinates through the CTM,
+    /// and collects edges for the scanline rasterizer.
+    ///
+    /// # Arguments
+    ///
+    /// * `commands` - Slice of path commands from the content stream
+    /// * `ctm` - Current Transformation Matrix (user space → device space)
+    ///
+    /// # Returns
+    ///
+    /// A vector of edges in bitmap space. Initially returns empty edges
+    /// (transformation and rasterization logic to be added in follow-up tasks).
+    ///
+    /// # Path Command Processing
+    ///
+    /// Each command type is handled separately:
+    /// - `MoveTo` - Updates current point without creating an edge
+    /// - `LineTo` - Creates a straight edge from current point to new point
+    /// - `CubicTo` - Creates curved edges (will be implemented in follow-up)
+    /// - `ShorthandCubicTo` - Shorthand cubic curves
+    /// - `ShorthandCubicToY` - Shorthand cubic curves (variant)
+    /// - `Rect` - Creates four edges forming a rectangle
+    /// - `ClosePath` - Creates edge from current point back to move point
+    #[must_use]
+    pub fn process_commands(commands: &[crate::render::path::PathCommand], ctm: &Matrix3x3) -> Vec<PathEdge> {
+        let mut edges = Vec::new();
+        let mut current_point: Option<(f64, f64)> = None;
+        let mut move_point: Option<(f64, f64)> = None;
+
+        for command in commands {
+            match command {
+                // MoveTo: Update current point and move point (start of subpath)
+                // No edge is created for MoveTo
+                crate::render::path::PathCommand::MoveTo(point) => {
+                    let transformed = ctm.transform_point(point.x, point.y);
+                    current_point = Some(transformed);
+                    move_point = Some(transformed);
+                }
+
+                // LineTo: Create a straight edge from current point to new point
+                crate::render::path::PathCommand::LineTo(point) => {
+                    if let Some(start) = current_point {
+                        let end = ctm.transform_point(point.x, point.y);
+                        // Edge collection stub - actual transformation to be added
+                        let _ = PathEdge::new(start.0, start.1, end.0, end.1);
+                        current_point = Some(end);
+                    }
+                }
+
+                // CubicTo: Cubic Bézier curve with explicit control points
+                // Edge collection stub - actual curve subdivision to be added
+                crate::render::path::PathCommand::CubicTo(c1, c2, end) => {
+                    let _ = (c1, c2, end); // Stub - control points will be used for curve subdivision
+                    let transformed_end = ctm.transform_point(end.x, end.y);
+                    let _ = transformed_end; // Stub - will create edges along curve
+                }
+
+                // ShorthandCubicTo: Cubic Bézier with first control point implied
+                // Edge collection stub - actual processing to be added
+                crate::render::path::PathCommand::ShorthandCubicTo(c2, end) => {
+                    let _ = (c2, end); // Stub - will use current point as first control point
+                }
+
+                // ShorthandCubicToY: Cubic Bézier with second control point implied
+                // Edge collection stub - actual processing to be added
+                crate::render::path::PathCommand::ShorthandCubicToY(c1, end) => {
+                    let _ = (c1, end); // Stub - will use end point as second control point
+                }
+
+                // Rect: Rectangle as four edges
+                // Edge collection stub - actual rectangle edge creation to be added
+                crate::render::path::PathCommand::Rect(x, y, width, height) => {
+                    let _ = (x, y, width, height); // Stub - will create four edges: bottom, right, top, left
+                }
+
+                // ClosePath: Edge from current point back to move point
+                // Edge collection stub - actual close edge creation to be added
+                crate::render::path::PathCommand::ClosePath => {
+                    if let (Some(start), Some(end)) = (current_point, move_point) {
+                        let _ = (start, end); // Stub - will create edge from current to move point
+                        current_point = move_point; // Reset current point to move point
+                    }
+                }
+            }
+        }
+
+        // Initially return empty edge list
+        // Actual edge collection will be added in follow-up tasks
+        edges
+    }
+}
+
 /// * `char_proc_ref` - The ObjRef pointing to the glyph content stream
 /// * `doc_context` - Document resolver context containing the XrefResolver
 ///
