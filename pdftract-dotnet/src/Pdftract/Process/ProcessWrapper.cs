@@ -1,6 +1,7 @@
 namespace Pdftract.Internal;
 
 using System.Reflection;
+using System.Diagnostics;
 
 /// <summary>
 /// Process wrapper for spawning the pdftract binary with proper binary path resolution.
@@ -108,10 +109,62 @@ public class ProcessWrapper
     /// </summary>
     /// <param name="args">Command-line arguments to pass to the pdftract binary.</param>
     /// <returns>A <see cref="ProcessResult"/> containing the process output.</returns>
-    /// <exception cref="NotImplementedException">Thrown until implemented in a future bead.</exception>
-    public Task<ProcessResult> StartAsync(string[] args)
+    /// <exception cref="InvalidOperationException">Thrown when process spawning fails.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when the cancellation token is canceled.</exception>
+    public async Task<ProcessResult> StartAsync(string[] args)
     {
-        throw new NotImplementedException("StartAsync will be implemented in a future bead.");
+        var binaryPath = ResolveBinaryPath();
+
+        var process = new Process();
+        process.StartInfo.FileName = binaryPath;
+        process.StartInfo.Arguments = EscapeArguments(args);
+        process.StartInfo.UseShellExecute = false;
+        process.StartInfo.RedirectStandardOutput = true;
+        process.StartInfo.RedirectStandardError = true;
+        process.StartInfo.CreateNoWindow = true;
+
+        try
+        {
+            process.Start();
+
+            // Read stdout asynchronously to avoid deadlocks
+            var stdoutTask = process.StandardOutput.ReadToEndAsync(_cancellationToken);
+
+            // Read stderr synchronously (no async API available in .NET for stderr)
+            var stderr = process.StandardError.ReadToEnd();
+
+            // Await stdout completion
+            var stdout = await stdoutTask.ConfigureAwait(false);
+
+            // Wait for process exit with cancellation support
+            await process.WaitForExitAsync(_cancellationToken).ConfigureAwait(false);
+
+            return new ProcessResult(
+                stdout,
+                stderr,
+                process.ExitCode
+            );
+        }
+        catch (OperationCanceledException)
+        {
+            // Kill the entire process tree on cancellation
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+            }
+            catch
+            {
+                // Ignore cleanup errors during cancellation
+            }
+            throw;
+        }
+        finally
+        {
+            process.Dispose();
+        }
     }
 
     /// <summary>
@@ -119,10 +172,131 @@ public class ProcessWrapper
     /// </summary>
     /// <param name="args">Command-line arguments to pass to the pdftract binary.</param>
     /// <returns>A <see cref="ProcessResult"/> containing the process output.</returns>
-    /// <exception cref="NotImplementedException">Thrown until implemented in a future bead.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when process spawning fails.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when the cancellation token is canceled.</exception>
     public ProcessResult Start(string[] args)
     {
-        throw new NotImplementedException("Start will be implemented in a future bead.");
+        var binaryPath = ResolveBinaryPath();
+
+        var process = new Process();
+        process.StartInfo.FileName = binaryPath;
+        process.StartInfo.Arguments = EscapeArguments(args);
+        process.StartInfo.UseShellExecute = false;
+        process.StartInfo.RedirectStandardOutput = true;
+        process.StartInfo.RedirectStandardError = true;
+        process.StartInfo.CreateNoWindow = true;
+
+        try
+        {
+            process.Start();
+
+            // Read stdout first to avoid deadlocks
+            var stdout = process.StandardOutput.ReadToEnd();
+
+            // Then read stderr
+            var stderr = process.StandardError.ReadToEnd();
+
+            // Wait for process to exit
+            process.WaitForExit();
+
+            return new ProcessResult(
+                stdout,
+                stderr,
+                process.ExitCode
+            );
+        }
+        catch (OperationCanceledException)
+        {
+            // Kill the entire process tree on cancellation
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+            }
+            catch
+            {
+                // Ignore cleanup errors during cancellation
+            }
+            throw;
+        }
+        finally
+        {
+            process.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Escapes command-line arguments for safe use in ProcessStartInfo.Arguments.
+    /// </summary>
+    /// <param name="args">Array of command-line arguments.</param>
+    /// <returns>A properly escaped argument string.</returns>
+    private static string EscapeArguments(string[] args)
+    {
+        if (args == null || args.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var escapedArgs = new System.Text.StringBuilder();
+
+        foreach (var arg in args)
+        {
+            if (escapedArgs.Length > 0)
+            {
+                escapedArgs.Append(' ');
+            }
+
+            // Escape arguments containing spaces, quotes, or special characters
+            if (arg.Contains(' ') || arg.Contains('\t') || arg.Contains('"') || arg.Contains('\\'))
+            {
+                escapedArgs.Append('"');
+
+                // Escape backslashes and quotes
+                for (int i = 0; i < arg.Length; i++)
+                {
+                    char c = arg[i];
+                    if (c == '\\')
+                    {
+                        // Count consecutive backslashes
+                        int backslashCount = 1;
+                        while (i + backslashCount < arg.Length && arg[i + backslashCount] == '\\')
+                        {
+                            backslashCount++;
+                        }
+
+                        // If before a quote or at end, double the backslashes
+                        if (i + backslashCount < arg.Length && arg[i + backslashCount] == '"')
+                        {
+                            escapedArgs.Append('\\', backslashCount * 2);
+                            i += backslashCount - 1; // Move to last backslash
+                        }
+                        else
+                        {
+                            escapedArgs.Append('\\', backslashCount);
+                            i += backslashCount - 1; // Move to last backslash
+                        }
+                    }
+                    else if (c == '"')
+                    {
+                        escapedArgs.Append("\\\"");
+                    }
+                    else
+                    {
+                        escapedArgs.Append(c);
+                    }
+                }
+
+                escapedArgs.Append('"');
+            }
+            else
+            {
+                escapedArgs.Append(arg);
+            }
+        }
+
+        return escapedArgs.ToString();
     }
 }
 
