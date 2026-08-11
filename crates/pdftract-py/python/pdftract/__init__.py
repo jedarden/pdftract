@@ -30,12 +30,29 @@ Example usage:
 """
 
 # Import native module (PyO3 bindings)
+import shutil
+
+_using_fallback = False
+_native_available = False
+
 try:
     from pdftract._native import *
     _native_available = True
 except ImportError as e:
     _native_available = False
     _import_error = str(e)
+
+    # Detect CLI binary for subprocess fallback
+    _cli_path = shutil.which("pdftract")
+    if _cli_path:
+        _using_fallback = True
+    else:
+        # Both native module and CLI binary are unavailable
+        raise ImportError(
+            f"pdftract native module failed to import: {_import_error}. "
+            "Subprocess fallback also unavailable: pdftract CLI binary not found in PATH. "
+            "Install pdftract from https://github.com/jedarden/pdftract or ensure the CLI binary is in PATH."
+        ) from e
 
 # Import exception hierarchy
 from pdftract.exceptions import (
