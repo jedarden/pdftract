@@ -5,7 +5,7 @@
  * Set the CONFORMANCE_SUITE environment variable to point to the cases.json file.
  */
 
-import { describe, it, before, expect } from 'vitest';
+import { describe, it, beforeAll, expect } from 'vitest';
 import { Client, path } from '../src/index.js';
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -19,7 +19,7 @@ describe('SDK Conformance', () => {
 
   let suite: any;
 
-  before(() => {
+  beforeAll(() => {
     try {
       const content = readFileSync(suitePath, 'utf-8');
       suite = JSON.parse(content);

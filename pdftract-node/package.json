@@ -18,7 +18,8 @@
     "dev": "tsup --watch",
     "test": "vitest",
     "test:conformance": "vitest run test/conformance.test.ts",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "codegen": "node scripts/codegen.js"
   },
   "keywords": [
     "pdf",

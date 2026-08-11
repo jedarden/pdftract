@@ -3,6 +3,8 @@
  */
 
 import { spawnPdftract, spawnPdftractStream } from '../subprocess.js';
+import { NdjsonReadable, createExtractStream, createSearchStream } from '../stream.js';
+import type { NdjsonReadableOptions } from '../stream.js';
 import {
   PathSource,
   URLSource,
@@ -30,6 +32,7 @@ import {
   ReceiptVerifyError,
   ValidationError
 } from './errors.js';
+import { normalizeOptions, validateOptions } from '../ergonomics.js';
 
 /**
  * Maps exit codes to error classes.
@@ -123,6 +126,29 @@ export class Client {
   }
 
   /**
+   * Extract pages from a PDF as a Node.js Readable stream.
+   *
+   * Returns a Readable stream that emits Page objects. This is useful for
+   * integrating with other Node.js streaming APIs.
+   *
+   * @example
+   * ```ts
+   * const stream = await client.extractStreamReadable(source, options);
+   * stream.on('data', (page) => console.log(page));
+   * stream.on('end', () => console.log('Done'));
+   * stream.on('error', (err) => console.error(err));
+   * ```
+   */
+  async extractStreamReadable(source: Source, options?: ExtractOptions & NdjsonReadableOptions): Promise<NdjsonReadable<Page>> {
+    const args = ['extract', '--ndjson', ...(await this.sourceArgs(source)), ...this.optionsArgs(options)];
+    return createExtractStream(args, {
+      timeout: options?.timeout,
+      env: options?.env,
+      highWaterMark: options?.highWaterMark,
+    });
+  }
+
+  /**
    * Search for text in a PDF.
    */
   async *search(source: Source, pattern: string, options?: SearchOptions): AsyncIterable<Match> {
@@ -137,6 +163,29 @@ export class Client {
       }
       throw error;
     }
+  }
+
+  /**
+   * Search for text in a PDF as a Node.js Readable stream.
+   *
+   * Returns a Readable stream that emits Match objects. This is useful for
+   * integrating with other Node.js streaming APIs.
+   *
+   * @example
+   * ```ts
+   * const stream = client.searchReadable(source, 'pattern', options);
+   * stream.on('data', (match) => console.log(match));
+   * stream.on('end', () => console.log('Done'));
+   * stream.on('error', (err) => console.error(err));
+   * ```
+   */
+  async searchReadable(source: Source, pattern: string, options?: SearchOptions & NdjsonReadableOptions): Promise<NdjsonReadable<Match>> {
+    const args = ['grep', ...(await this.sourceArgs(source)), pattern, ...this.optionsArgs(options)];
+    return createSearchStream(args, {
+      timeout: options?.timeout,
+      env: options?.env,
+      highWaterMark: options?.highWaterMark,
+    });
   }
 
   /**
@@ -179,47 +228,15 @@ export class Client {
   }
 
   private optionsArgs(options?: ExtractOptions | SearchOptions | BaseOptions): string[] {
-    const args: string[] = [];
-    if (!options) return args;
-
-    if ('ocrLanguage' in options && options.ocrLanguage) {
-      args.push('--ocr-language', options.ocrLanguage);
-    }
-    if ('ocrThreshold' in options && options.ocrThreshold !== undefined) {
-      args.push('--ocr-threshold', String(options.ocrThreshold));
-    }
-    if ('preserveLayout' in options && options.preserveLayout) {
-      args.push('--preserve-layout');
-    }
-    if ('extractImages' in options && options.extractImages) {
-      args.push('--extract-images');
-    }
-    if ('imageFormat' in options && options.imageFormat) {
-      args.push('--image-format', options.imageFormat);
-    }
-    if ('minImageSize' in options && options.minImageSize !== undefined) {
-      args.push('--min-image-size', String(options.minImageSize));
-    }
-    if ('password' in options && options.password) {
-      args.push('--password', options.password);
-    }
-    if ('caseInsensitive' in options && options.caseInsensitive) {
-      args.push('--case-insensitive');
-    }
-    if ('regex' in options && options.regex) {
-      args.push('--regex');
-    }
-    if ('wholeWord' in options && options.wholeWord) {
-      args.push('--whole-word');
-    }
-    if ('maxResults' in options && options.maxResults !== undefined) {
-      args.push('--max-results', String(options.maxResults));
-    }
-    if ('timeout' in options && options.timeout !== undefined) {
-      args.push('--timeout', String(options.timeout));
+    if (!options) {
+      return [];
     }
 
-    return args;
+    // Validate options before normalizing
+    validateOptions(options);
+
+    // Use the ergonomics layer for normalization
+    return normalizeOptions(options);
   }
 }
 

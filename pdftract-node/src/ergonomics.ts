@@ -103,7 +103,7 @@ export function coerceSource(source: string | URL | Buffer | any): any {
 
   // Handle URL objects
   if (source instanceof URL) {
-    return source.toString();
+    return source;
   }
 
   // Handle Buffers
