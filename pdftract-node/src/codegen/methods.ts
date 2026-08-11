@@ -85,7 +85,7 @@ export class Client {
    * Extract structured data from a PDF.
    */
   async extract(source: Source, options?: ExtractOptions): Promise<Document> {
-    const args = ['extract', ...(await this.sourceArgs(source)), ...this.optionsArgs(options)];
+    const args = ['extract', ...(await this.sourceArgs(source)), ...this.optionsArgs(options), '--json', '-'];
     const output = await this.exec(args);
     return JSON.parse(output) as Document;
   }
@@ -94,7 +94,7 @@ export class Client {
    * Extract plain text from a PDF.
    */
   async extractText(source: Source, options?: ExtractOptions): Promise<string> {
-    const args = ['extract', ...(await this.sourceArgs(source)), ...this.optionsArgs(options), '--text'];
+    const args = ['extract', ...(await this.sourceArgs(source)), ...this.optionsArgs(options), '--text', '-'];
     const output = await this.exec(args);
     return output;
   }
@@ -103,7 +103,7 @@ export class Client {
    * Extract Markdown-formatted text from a PDF.
    */
   async extractMarkdown(source: Source, options?: ExtractOptions): Promise<string> {
-    const args = ['extract', ...(await this.sourceArgs(source)), ...this.optionsArgs(options), '--md'];
+    const args = ['extract', ...(await this.sourceArgs(source)), ...this.optionsArgs(options), '--md', '-'];
     const output = await this.exec(args);
     return output;
   }
@@ -150,19 +150,17 @@ export class Client {
 
   /**
    * Search for text in a PDF.
+   *
+   * Note: This feature requires the 'grep' subcommand which is not yet available
+   * in the current CLI version (planned for Phase 7.8). This method will throw
+   * a descriptive error if called.
    */
   async *search(source: Source, pattern: string, options?: SearchOptions): AsyncIterable<Match> {
-    const args = ['grep', ...(await this.sourceArgs(source)), pattern, ...this.optionsArgs(options)];
-    try {
-      for await (const item of spawnPdftractStream<Match>(args)) {
-        yield item;
-      }
-    } catch (error: any) {
-      if (error.exitCode !== undefined) {
-        throw this.mapError(error.stderr || error.message, error.exitCode);
-      }
-      throw error;
-    }
+    throw new PdftractError(
+      'Search functionality is not yet available in this version. The \'grep\' subcommand is planned for Phase 7.8.',
+      0,
+      'Search functionality requires the grep CLI subcommand which is not yet implemented.'
+    );
   }
 
   /**
@@ -192,9 +190,10 @@ export class Client {
    * Get metadata from a PDF.
    */
   async getMetadata(source: Source, options?: BaseOptions): Promise<Metadata> {
-    const args = ['extract', ...(await this.sourceArgs(source)), ...this.optionsArgs(options), '--metadata-only'];
-    const output = await this.exec(args);
-    return JSON.parse(output) as Metadata;
+    // Extract full document and return metadata
+    // Note: --metadata-only flag doesn't exist in current CLI
+    const doc = await this.extract(source, options as ExtractOptions);
+    return doc.metadata;
   }
 
   /**

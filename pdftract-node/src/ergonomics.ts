@@ -60,10 +60,11 @@ export function normalizeOptions(
     args.push('--max-results', String(options.maxResults));
   }
 
-  // BaseOptions
-  if ('timeout' in options && options.timeout !== undefined) {
-    args.push('--timeout', String(options.timeout));
-  }
+  // Note: timeout option exists in SDK types but not in current CLI
+  // It will be added in a future CLI version
+  // if ('timeout' in options && options.timeout !== undefined) {
+  //   args.push('--timeout', String(options.timeout));
+  // }
 
   return args;
 }

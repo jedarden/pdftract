@@ -3,16 +3,14 @@
 <<
 /Type /Catalog
 /Pages 2 0 R
-/Title (51)
-
+/Title (Paper 12)
 >>
 endobj
 2 0 obj
 <<
 /Type /Pages
 /Kids [3 0 R]
-/Count 1
->>
+/Count 1>>
 endobj
 3 0 obj
 <<
@@ -29,15 +27,14 @@ endobj
 endobj
 4 0 obj
 <<
-/Length BT
+/Length 51>>
+stream
+BT
 /F1 12 Tf
 50 700 Td
 (Scientific Paper 12) Tj
 ET
 
->>
-stream
-Paper 12
 endstream
 endobj
 5 0 obj
@@ -49,17 +46,17 @@ endobj
 endobj
 xref
 0 6
-0000000000 65535 f
-0000000009 00000 n
-0000000068 00000 n
-0000000125 00000 n
-0000000293 00000 n
-0000000414 00000 n
+0000000000 65535 f 
+0000000009 00000 n 
+0000000076 00000 n 
+0000000132 00000 n 
+0000000258 00000 n 
+0000000358 00000 n 
 trailer
 <<
 /Size 6
 /Root 1 0 R
 >>
 startxref
-501
+428
 %%EOF

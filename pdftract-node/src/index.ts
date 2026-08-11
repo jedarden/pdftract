@@ -5,6 +5,21 @@
 
 export { Client, path, url, bytes } from './codegen/methods.js';
 
+// Export standalone convenience functions
+export {
+  extract,
+  extractText,
+  extractMarkdown,
+  extractStream,
+  extractReadable,
+  search,
+  searchReadable,
+  getMetadata,
+  hash,
+  classify,
+  verifyReceipt,
+} from './functions.js';
+
 // Export subprocess module for advanced use cases
 export {
   spawnPdftract,

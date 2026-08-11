@@ -2,12 +2,12 @@
  * subprocess.ts - Core subprocess spawning and JSON parsing for pdftract SDK
  */
 
-import { spawn } from 'child_process';
+import { spawn, exec } from 'child_process';
 import { promisify } from 'util';
 import { access, constants } from 'fs/promises';
 import { resolve } from 'path';
 
-const execPromise = promisify(require('child_process').exec);
+const execPromise = promisify(exec);
 
 /**
  * Options for spawning the pdftract binary

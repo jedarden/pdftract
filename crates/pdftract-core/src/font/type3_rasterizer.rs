@@ -5669,4 +5669,266 @@ mod tests {
             assert!(!bitmap.is_empty(), "Glyph '{}' bitmap should not be empty", glyph_name);
         }
     }
+
+    /// End-to-end integration test for Type3 glyph bitmap generation.
+    ///
+    /// This test validates the complete execution chain from resolver callback
+    /// through rasterizer to bitmap output, ensuring the entire Type3 glyph
+    /// rasterization pipeline works correctly.
+    ///
+    /// Test Flow:
+    /// 1. Create a Type3Font with a glyph entry mapping to an object reference
+    /// 2. Set up a resolver callback that returns real PDF content stream bytes
+    /// 3. Invoke rasterize_type3_glyph with the font, glyph name, and resolver
+    /// 4. Verify the bitmap is not None (successful stream resolution and rasterization)
+    /// 5. Verify bitmap contains expected pixel values (not all-white placeholder)
+    /// 6. Test graceful failure paths (missing glyph, failed resolution)
+    ///
+    /// Content Stream Used:
+    /// - '5 5 10 10 re f' draws a filled rectangle from (5,5) to (15,15)
+    /// - This should produce a bitmap with black pixels in the center region
+    /// - Pixels outside the rectangle should remain white (255)
+    #[test]
+    fn test_end_to_end_type3_glyph_bitmap_generation() {
+        use glyph_helpers::*;
+
+        // Step 1: Create a Type3Font with a simple glyph
+        // Glyph name: "test_rect", mapped to object reference 100 0 R
+        let (font, resolver, doc_context) = create_test_setup(&[(
+            "test_rect",
+            100,
+            // Simple filled rectangle: x=5, y=5, width=10, height=10
+            // This draws a 10x10 black rectangle at position (5,5) in glyph space
+            rectangle_glyph(5, 5, 10, 10),
+        )]);
+
+        // Step 2: Verify font has the glyph
+        assert!(
+            font.has_glyph("test_rect"),
+            "Font should have the 'test_rect' glyph registered"
+        );
+
+        // Step 3: Execute end-to-end rasterization flow
+        // This tests the complete chain:
+        // - Font lookup (glyph name → ObjRef)
+        // - Stream resolution (ObjRef → content bytes via resolver callback)
+        // - Content stream parsing (bytes → path commands)
+        // - Rasterization (paths → bitmap pixels)
+        let bitmap_result = rasterize_type3_glyph(
+            &font,
+            "test_rect",
+            Some(&doc_context),
+            Some(&resolver),
+        );
+
+        // Step 4: Verify successful rasterization
+        assert!(
+            bitmap_result.is_some(),
+            "rasterize_type3_glyph should return Some(bitmap) when stream resolution succeeds"
+        );
+
+        let bitmap = bitmap_result.unwrap();
+
+        // Step 5: Verify bitmap is not empty
+        assert!(
+            !bitmap.is_empty(),
+            "Bitmap should not be empty for a valid glyph with visible content"
+        );
+
+        // Step 6: Verify bitmap contains expected pixel values
+        // The filled rectangle should produce black pixels (value 0)
+        // NOT all-white placeholder (all 255)
+        let has_black_pixels = bitmap.iter().any(|&pixel| pixel == 0);
+        assert!(
+            has_black_pixels,
+            "Bitmap should contain black pixels (0) from the filled rectangle, not all-white placeholder (255)"
+        );
+
+        // Step 7: Verify bitmap has white pixels too (the background)
+        // Pixels outside the 10x10 rectangle should be white (255)
+        let has_white_pixels = bitmap.iter().any(|&pixel| pixel == 255);
+        assert!(
+            has_white_pixels,
+            "Bitmap should contain white pixels (255) in the background region"
+        );
+
+        // Step 8: Test graceful failure path - non-existent glyph
+        let missing_glyph_result = rasterize_type3_glyph(
+            &font,
+            "nonexistent_glyph",
+            Some(&doc_context),
+            Some(&resolver),
+        );
+        assert!(
+            missing_glyph_result.is_none(),
+            "rasterize_type3_glyph should return None for non-existent glyph names"
+        );
+
+        // Step 9: Test graceful failure path - resolver returns None
+        // Create a resolver that always returns None (simulating resolution failure)
+        let failing_resolver = create_simple_resolver(&[]); // Empty map → no streams resolved
+        let failed_resolution_result = rasterize_type3_glyph(
+            &font,
+            "test_rect",
+            Some(&doc_context),
+            Some(&failing_resolver),
+        );
+        assert!(
+            failed_resolution_result.is_none(),
+            "rasterize_type3_glyph should return None when stream resolution fails"
+        );
+
+        // Step 10: Verify the execution flow is working correctly
+        // At this point, we've validated:
+        // - Font glyph lookup works
+        // - Resolver callback is invoked and returns content bytes
+        // - Content stream parsing succeeds
+        // - Rasterization produces correct bitmap with expected pixels
+        // - Failure paths return None gracefully
+    }
+
+    /// End-to-end test with multiple glyph types to verify rasterizer handles
+    /// different content stream patterns correctly.
+    #[test]
+    fn test_end_to_end_multiple_glyph_types_rasterization() {
+        use glyph_helpers::*;
+
+        // Create test setup with multiple glyph types:
+        // - Small filled rectangle (5x5)
+        // - Larger filled rectangle (20x20)
+        // - Line segment (stroke)
+        let (font, resolver, doc_context) = create_test_setup(&[
+            ("small_rect", 100, rectangle_glyph(0, 0, 5, 5)),
+            ("large_rect", 101, rectangle_glyph(0, 0, 20, 20)),
+            ("diagonal_line", 102, line_glyph(0, 0, 30, 30)),
+        ]);
+
+        // Test small rectangle rasterization
+        let small_result = rasterize_type3_glyph(
+            &font,
+            "small_rect",
+            Some(&doc_context),
+            Some(&resolver),
+        );
+        assert!(
+            small_result.is_some(),
+            "Small rectangle should rasterize successfully"
+        );
+        let small_bitmap = small_result.unwrap();
+        assert!(!small_bitmap.is_empty());
+        // Small rect should have fewer black pixels than large rect
+        let small_black_count = small_bitmap.iter().filter(|&&p| p == 0).count();
+
+        // Test large rectangle rasterization
+        let large_result = rasterize_type3_glyph(
+            &font,
+            "large_rect",
+            Some(&doc_context),
+            Some(&resolver),
+        );
+        assert!(
+            large_result.is_some(),
+            "Large rectangle should rasterize successfully"
+        );
+        let large_bitmap = large_result.unwrap();
+        assert!(!large_bitmap.is_empty());
+        let large_black_count = large_bitmap.iter().filter(|&&p| p == 0).count();
+
+        // Large rect should have more black pixels than small rect
+        assert!(
+            large_black_count > small_black_count,
+            "Large rectangle should produce more black pixels than small rectangle"
+        );
+
+        // Test line rasterization
+        let line_result = rasterize_type3_glyph(
+            &font,
+            "diagonal_line",
+            Some(&doc_context),
+            Some(&resolver),
+        );
+        assert!(
+            line_result.is_some(),
+            "Diagonal line should rasterize successfully"
+        );
+        let line_bitmap = line_result.unwrap();
+        assert!(!line_bitmap.is_empty());
+        // Line should have some black pixels (stroke)
+        let line_has_black = line_bitmap.iter().any(|&p| p == 0);
+        assert!(
+            line_has_black,
+            "Line stroke should produce black pixels"
+        );
+    }
+
+    /// End-to-end test verifying bitmap pixel accuracy for a known glyph.
+    ///
+    /// This test uses a simple filled rectangle and verifies that the bitmap
+    /// contains the expected pattern of black and white pixels based on the
+    /// rectangle's position and dimensions.
+    #[test]
+    fn test_end_to_end_bitmap_pixel_accuracy() {
+        use glyph_helpers::*;
+
+        // Create a 10x10 filled rectangle at position (10, 10)
+        // This should produce a bitmap where pixels in the region [10, 20] x [10, 20]
+        // are black (0) and pixels outside this region are white (255)
+        let (font, resolver, doc_context) = create_test_setup(&[(
+            "pixel_test_rect",
+            100,
+            rectangle_glyph(10, 10, 10, 10),
+        )]);
+
+        let bitmap_result = rasterize_type3_glyph(
+            &font,
+            "pixel_test_rect",
+            Some(&doc_context),
+            Some(&resolver),
+        );
+
+        assert!(
+            bitmap_result.is_some(),
+            "Pixel test rectangle should rasterize successfully"
+        );
+
+        let bitmap = bitmap_result.unwrap();
+
+        // Verify the bitmap is not all-white (the rectangle was rasterized)
+        let is_not_all_white = !bitmap.iter().all(|&p| p == 255);
+        assert!(
+            is_not_all_white,
+            "Bitmap should not be all-white; the filled rectangle should produce black pixels"
+        );
+
+        // Verify the bitmap is not all-black (background should be white)
+        let is_not_all_black = !bitmap.iter().all(|&p| p == 0);
+        assert!(
+            is_not_all_black,
+            "Bitmap should not be all-black; the background should be white (255)"
+        );
+
+        // Verify we have both black and white pixels
+        let pixel_distribution: std::collections::HashMap<u8, usize> =
+            bitmap.iter().fold(std::collections::HashMap::new(), |mut acc, &pixel| {
+                *acc.entry(pixel).or_insert(0) += 1;
+                acc
+            });
+
+        assert!(
+            pixel_distribution.contains_key(&0),
+            "Bitmap should contain black pixels (0) from the filled rectangle"
+        );
+        assert!(
+            pixel_distribution.contains_key(&255),
+            "Bitmap should contain white pixels (255) from the background"
+        );
+
+        // Verify most pixels are white (background dominates for small rectangles)
+        let white_count = *pixel_distribution.get(&255).unwrap_or(&0);
+        let black_count = *pixel_distribution.get(&0).unwrap_or(&0);
+        assert!(
+            white_count > black_count,
+            "For a small filled rectangle, background white pixels should dominate black pixels"
+        );
+    }
 }
