@@ -4791,18 +4791,9 @@ startxref
             aa: None,
             threads_ref: None,
             version: None,
-            uri: None,
-            direction: None,
-            lang: None,
-            view_prefs: None,
-            perms: None,
-            legal: None,
-            requirements: vec![],
-            collection: None,
-            needs_rendering: None,
-            raw_dict: Some(crate::parser::object::PdfObject::Dict(
-                crate::parser::object::PdfDict::new(),
-            )),
+            raw_dict: crate::parser::object::PdfObject::Dict(
+                Box::new(crate::parser::object::PdfDict::new()),
+            ),
             diagnostics: vec![],
         };
 
@@ -4852,7 +4843,7 @@ startxref
             threads_ref: None,
             version: None,
             raw_dict: crate::parser::object::PdfObject::Dict(
-                std::sync::Arc::new(indexmap::IndexMap::new()),
+                Box::new(indexmap::IndexMap::new()),
             ),
             diagnostics: vec![],
         };
@@ -4860,7 +4851,7 @@ startxref
         let result = validate_pages_structure(&catalog, &resolver, "empty.pdf");
 
         match result {
-            Err(DocumentError::EmptyDocument { source }) => {
+            Err(DocumentError::EmptyDocument { ref source }) => {
                 assert_eq!(source, "empty.pdf");
                 // Verify error message is descriptive
                 let msg = format!("{}", result.unwrap_err());
@@ -4899,7 +4890,7 @@ startxref
             threads_ref: None,
             version: None,
             raw_dict: crate::parser::object::PdfObject::Dict(
-                std::sync::Arc::new(indexmap::IndexMap::new()),
+                Box::new(indexmap::IndexMap::new()),
             ),
             diagnostics: vec![],
         };
@@ -4907,7 +4898,7 @@ startxref
         let result = validate_pages_structure(&catalog, &resolver, "missing_pages.pdf");
 
         match result {
-            Err(DocumentError::MissingPagesArray { source }) => {
+            Err(DocumentError::MissingPagesArray { ref source }) => {
                 assert_eq!(source, "missing_pages.pdf");
                 // Verify error message mentions missing /Pages field
                 let msg = format!("{}", result.unwrap_err());
@@ -4941,7 +4932,11 @@ startxref
                 assert_eq!(available, 1);
                 assert!(source.contains("PdfExtractor") || source.contains("test.pdf"));
                 // Verify error message is descriptive
-                let msg = format!("{}", result.unwrap_err());
+                let msg = format!("{}", DocumentError::PageOutOfBounds {
+                    source: source.clone(),
+                    requested,
+                    available,
+                });
                 assert!(msg.contains("out of bounds"),
                     "Out of bounds error should mention 'out of bounds', got: {}", msg);
                 assert!(msg.contains("99"),

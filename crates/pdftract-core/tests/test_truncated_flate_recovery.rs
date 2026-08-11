@@ -276,11 +276,10 @@ fn test_truncated_flate_extract_page_returns_result() {
         .len();
     println!("  Materialized {} page(s)", page_count);
 
-    // Call extract_page() unconditionally and capture the result with an
-    // explicit type so the ExtractionResult/PageExtraction structure is visible
-    // to the compiler. This must complete without panicking regardless of
-    // whether the fixture yielded any materialized pages.
-    let result: Result<PageExtraction> = extractor.extract_page(0);
+    // Call extract_page() unconditionally and capture the result. This must
+    // complete without panicking regardless of whether the fixture yielded any
+    // materialized pages.
+    let result = extractor.extract_page(0);
 
     match result {
         Ok(extraction) => {
