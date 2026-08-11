@@ -2,7 +2,7 @@
  * This file is auto-generated. Do not edit manually.
  */
 
-import { spawn } from 'child_process';
+import { spawnPdftract, spawnPdftractStream } from '../subprocess.js';
 import {
   PathSource,
   URLSource,
@@ -27,13 +27,15 @@ import {
   SourceUnreachableError,
   RemoteFetchInterruptedError,
   TlsError,
-  ReceiptVerifyError
+  ReceiptVerifyError,
+  ValidationError
 } from './errors.js';
 
 /**
  * Maps exit codes to error classes.
  */
 const ERROR_MAP: Record<number, typeof PdftractError> = {
+  1: ValidationError,
   2: CorruptPdfError,
   3: EncryptionError,
   4: SourceUnreachableError,
@@ -62,49 +64,25 @@ export class Client {
     return new PdftractError(stderr, exitCode, stderr);
   }
 
-  private async exec(args: string[]): Promise<string> {
-    const { spawn } = await import('child_process');
-
-    return new Promise((resolve, reject) => {
-      const child = spawn(this.binaryPath, args);
-      let stdout = '';
-      let stderr = '';
-
-      child.stdout?.on('data', (chunk) => {
-        stdout += chunk.toString();
-      });
-
-      child.stderr?.on('data', (chunk) => {
-        stderr += chunk.toString();
-      });
-
-      child.on('close', (code) => {
-        if (code === 0) {
-          resolve(stdout);
-        } else {
-          reject(this.mapError(stderr, code || 1));
-        }
-      });
-
-      child.on('error', (err) => {
-        reject(new PdftractError(err.message, 1, stderr));
-      });
-    });
+  private async exec(args: string[], timeout?: number): Promise<string> {
+    try {
+      const result = await spawnPdftract<string>(args, undefined, { timeout });
+      return typeof result === 'string' ? result : JSON.stringify(result);
+    } catch (error: any) {
+      // Map subprocess errors to PdftractError hierarchy
+      if (error.exitCode !== undefined) {
+        throw this.mapError(error.stderr || error.message, error.exitCode);
+      }
+      throw error;
+    }
   }
+
 
   /**
    * Extract structured data from a PDF.
    */
-  async extract(
-    source: Source,
-    options?: ExtractOptions
-  ): Promise<Document> {
-    const args = ['extract', ...(await this.sourceArgs(source))];
-
-    if (options) {
-      args.push(...this.optionsArgs(options));
-    }
-
+  async extract(source: Source, options?: ExtractOptions): Promise<Document> {
+    const args = ['extract', ...(await this.sourceArgs(source)), ...this.optionsArgs(options)];
     const output = await this.exec(args);
     return JSON.parse(output) as Document;
   }
@@ -112,18 +90,8 @@ export class Client {
   /**
    * Extract plain text from a PDF.
    */
-  async extractText(
-    source: Source,
-    options?: ExtractOptions
-  ): Promise<string> {
-    const args = ['extract', ...(await this.sourceArgs(source))];
-
-    if (options) {
-      args.push(...this.optionsArgs(options));
-    }
-
-    args.push('--text');
-
+  async extractText(source: Source, options?: ExtractOptions): Promise<string> {
+    const args = ['extract', ...(await this.sourceArgs(source)), ...this.optionsArgs(options), '--text'];
     const output = await this.exec(args);
     return output;
   }
@@ -131,18 +99,8 @@ export class Client {
   /**
    * Extract Markdown-formatted text from a PDF.
    */
-  async extractMarkdown(
-    source: Source,
-    options?: ExtractOptions
-  ): Promise<string> {
-    const args = ['extract', ...(await this.sourceArgs(source))];
-
-    if (options) {
-      args.push(...this.optionsArgs(options));
-    }
-
-    args.push('--md');
-
+  async extractMarkdown(source: Source, options?: ExtractOptions): Promise<string> {
+    const args = ['extract', ...(await this.sourceArgs(source)), ...this.optionsArgs(options), '--md'];
     const output = await this.exec(args);
     return output;
   }
@@ -150,48 +108,16 @@ export class Client {
   /**
    * Extract pages from a PDF as a stream.
    */
-  async *extractStream(
-    source: Source,
-    options?: ExtractOptions
-  ): AsyncIterable<Page> {
-    const args = ['extract', '--ndjson', ...(await this.sourceArgs(source))];
-    if (options) {
-      args.push(...this.optionsArgs(options));
-    }
-
-    const child = spawn(this.binaryPath, args);
-    const errorChunks: Buffer[] = [];
-
-    child.stderr?.on('data', (chunk) => errorChunks.push(chunk));
-
+  async *extractStream(source: Source, options?: ExtractOptions): AsyncIterable<Page> {
+    const args = ['extract', '--ndjson', ...(await this.sourceArgs(source)), ...this.optionsArgs(options)];
     try {
-      let buffer = '';
-      for await (const chunk of child.stdout!) {
-        buffer += chunk.toString();
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.trim()) {
-            yield JSON.parse(line) as Page;
-          }
-        }
+      for await (const item of spawnPdftractStream<Page>(args)) {
+        yield item;
       }
-
-      if (buffer.trim()) {
-        yield JSON.parse(buffer) as Page;
+    } catch (error: any) {
+      if (error.exitCode !== undefined) {
+        throw this.mapError(error.stderr || error.message, error.exitCode);
       }
-
-      const exitCode = await new Promise<number>((resolve) => {
-        child.on('close', resolve);
-      });
-
-      if (exitCode !== 0) {
-        const stderr = Buffer.concat(errorChunks).toString();
-        throw this.mapError(stderr, exitCode);
-      }
-    } catch (error) {
-      child.kill();
       throw error;
     }
   }
@@ -199,49 +125,16 @@ export class Client {
   /**
    * Search for text in a PDF.
    */
-  async *search(
-    source: Source,
-    pattern: string,
-    options?: SearchOptions
-  ): AsyncIterable<Match> {
-    const args = ['grep', pattern, ...(await this.sourceArgs(source))];
-    if (options) {
-      args.push(...this.optionsArgs(options));
-    }
-
-    const child = spawn(this.binaryPath, args);
-    const errorChunks: Buffer[] = [];
-
-    child.stderr?.on('data', (chunk) => errorChunks.push(chunk));
-
+  async *search(source: Source, pattern: string, options?: SearchOptions): AsyncIterable<Match> {
+    const args = ['grep', ...(await this.sourceArgs(source)), pattern, ...this.optionsArgs(options)];
     try {
-      let buffer = '';
-      for await (const chunk of child.stdout!) {
-        buffer += chunk.toString();
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.trim()) {
-            yield JSON.parse(line) as Match;
-          }
-        }
+      for await (const item of spawnPdftractStream<Match>(args)) {
+        yield item;
       }
-
-      if (buffer.trim()) {
-        yield JSON.parse(buffer) as Match;
+    } catch (error: any) {
+      if (error.exitCode !== undefined) {
+        throw this.mapError(error.stderr || error.message, error.exitCode);
       }
-
-      const exitCode = await new Promise<number>((resolve) => {
-        child.on('close', resolve);
-      });
-
-      if (exitCode !== 0) {
-        const stderr = Buffer.concat(errorChunks).toString();
-        throw this.mapError(stderr, exitCode);
-      }
-    } catch (error) {
-      child.kill();
       throw error;
     }
   }
@@ -249,16 +142,8 @@ export class Client {
   /**
    * Get metadata from a PDF.
    */
-  async getMetadata(
-    source: Source,
-    options?: BaseOptions
-  ): Promise<Metadata> {
-    const args = ['extract', '--metadata-only', ...(await this.sourceArgs(source))];
-
-    if (options) {
-      args.push(...this.optionsArgs(options));
-    }
-
+  async getMetadata(source: Source, options?: BaseOptions): Promise<Metadata> {
+    const args = ['extract', ...(await this.sourceArgs(source)), ...this.optionsArgs(options), '--metadata-only'];
     const output = await this.exec(args);
     return JSON.parse(output) as Metadata;
   }
@@ -266,16 +151,8 @@ export class Client {
   /**
    * Compute hash fingerprint of a PDF.
    */
-  async hash(
-    source: Source,
-    options?: BaseOptions
-  ): Promise<Fingerprint> {
-    const args = ['hash', ...(await this.sourceArgs(source))];
-
-    if (options) {
-      args.push(...this.optionsArgs(options));
-    }
-
+  async hash(source: Source, options?: BaseOptions): Promise<Fingerprint> {
+    const args = ['hash', ...(await this.sourceArgs(source)), ...this.optionsArgs(options)];
     const output = await this.exec(args);
     return JSON.parse(output) as Fingerprint;
   }
@@ -283,11 +160,8 @@ export class Client {
   /**
    * Classify a PDF document.
    */
-  async classify(
-    source: Source
-  ): Promise<Classification> {
+  async classify(source: Source): Promise<Classification> {
     const args = ['classify', ...(await this.sourceArgs(source))];
-
     const output = await this.exec(args);
     return JSON.parse(output) as Classification;
   }
@@ -304,8 +178,9 @@ export class Client {
     return source.toArgs();
   }
 
-  private optionsArgs(options: ExtractOptions | SearchOptions | BaseOptions): string[] {
+  private optionsArgs(options?: ExtractOptions | SearchOptions | BaseOptions): string[] {
     const args: string[] = [];
+    if (!options) return args;
 
     if ('ocrLanguage' in options && options.ocrLanguage) {
       args.push('--ocr-language', options.ocrLanguage);

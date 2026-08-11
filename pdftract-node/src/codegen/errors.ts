@@ -2,6 +2,10 @@
  * This file is auto-generated. Do not edit manually.
  */
 
+
+/**
+ * Base error for all pdftract errors
+ */
 export class PdftractError extends Error {
   constructor(
     message: string,
@@ -13,8 +17,6 @@ export class PdftractError extends Error {
   }
 }
 
-
-
 /**
  * Corrupt PDF
  */
@@ -24,8 +26,6 @@ export class CorruptPdfError extends PdftractError {
     this.name = 'CorruptPdfError';
   }
 }
-
-
 
 /**
  * Encrypted / password missing/wrong
@@ -37,8 +37,6 @@ export class EncryptionError extends PdftractError {
   }
 }
 
-
-
 /**
  * Source unreadable
  */
@@ -48,8 +46,6 @@ export class SourceUnreachableError extends PdftractError {
     this.name = 'SourceUnreachableError';
   }
 }
-
-
 
 /**
  * Network interrupted
@@ -61,8 +57,6 @@ export class RemoteFetchInterruptedError extends PdftractError {
   }
 }
 
-
-
 /**
  * TLS / cert failure
  */
@@ -72,22 +66,6 @@ export class TlsError extends PdftractError {
     this.name = 'TlsError';
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 /**
  * Receipt verify failed
@@ -99,4 +77,12 @@ export class ReceiptVerifyError extends PdftractError {
   }
 }
 
-
+/**
+ * Input validation failed
+ */
+export class ValidationError extends PdftractError {
+  constructor(message: string, exitCode: number, stderr: string) {
+    super(message, exitCode, stderr);
+    this.name = 'ValidationError';
+  }
+}
