@@ -90,3 +90,61 @@ May process the structural elements differently. The exact behavior depends on i
 - **Size**: ~2.2 KB
 - **Created**: 2026-08-06
 - **Last updated**: 2026-08-06
+
+---
+
+## no-mapping.pdf
+
+### Purpose
+Tests the **GLYPH_UNMAPPED diagnostic** and Level 4 Unicode recovery — the worst-case scenario for PDF text extraction. This fixture validates pdftract's behavior when encountering custom glyph names that cannot be mapped to Unicode characters through any standard method.
+
+### What it contains
+A minimal hand-written PDF (660 bytes) with three custom glyphs (`/g001`, `/g002`, `/g003`) that:
+- Use a custom Type1 font (`CustomNoMap`) with non-standard encoding
+- Have no ToUnicode CMap (Level 1 recovery fails)
+- Are not in the Adobe Glyph List (Level 2 recovery fails)
+- Have no embedded font for fingerprinting (Level 3 recovery fails)
+- Have no embedded glyph outlines (Level 4 recovery fails)
+
+### Expected behavior
+When pdftract extracts text from this fixture, it should emit **three U+FFFD (REPLACEMENT CHARACTER)** codepoints (`���`), representing the three unmapped glyphs. This validates:
+- Proper handling of completely unmappable content
+- Correct GLYPH_UNMAPPED diagnostic emission
+- Graceful fallback when all Unicode recovery levels fail
+
+### Ground truth
+The expected output is documented in `tests/fixtures/encoding/no-mapping.txt`:
+```
+���
+```
+
+### Related diagnostics
+- **GLYPH_UNMAPPED**: Emitted when a glyph cannot be mapped to any Unicode character
+- **ENCODING_RECOVERY_LEVEL_4**: Indicates Level 4 (glyph shape) recovery was attempted
+- **UNICODE_REPLACEMENT_CHARACTER**: Confirms U+FFFD emission for unmapped content
+
+### Comprehensive documentation
+See **[`tests/fixtures/encoding/no-mapping.md`](encoding/no-mapping.md)** for complete details including:
+- Raw PDF structure analysis
+- Font encoding details
+- Regeneration instructions
+- Test coverage scenarios
+- Troubleshooting guide
+
+### Related tests
+- `tests/encoding_recovery.rs` — Unicode recovery level tests
+- `tests/test_glyph_unmapped_diagnostic.rs` — GLYPH_UNMAPPED diagnostic validation
+- `tests/encoding_recovery_integration.rs` — Full extraction pipeline tests
+
+### Related fixtures
+- `agl-only.pdf` — Level 2 recovery (Adobe Glyph List mapping)
+- `fingerprint-match.pdf` — Level 3 recovery (font fingerprinting)
+- `shape-match.pdf` — Level 4 recovery (glyph shape database)
+- `unmapped-glyphs.pdf` — Additional unmapped glyph test case
+
+### File info
+- **Location**: `tests/fixtures/encoding/no-mapping.pdf`
+- **Size**: 660 bytes
+- **Created**: 2026-06-09
+- **Last updated**: 2026-07-03
+- **SHA256**: `b24f88d3add958bfec1d6b134f2cd030cd41bb1932bedbe99405599bd01fa8f0`
