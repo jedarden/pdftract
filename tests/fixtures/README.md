@@ -140,7 +140,8 @@ See **[`tests/fixtures/encoding/no-mapping.md`](encoding/no-mapping.md)** for co
 - `agl-only.pdf` — Level 2 recovery (Adobe Glyph List mapping)
 - `fingerprint-match.pdf` — Level 3 recovery (font fingerprinting)
 - `shape-match.pdf` — Level 4 recovery (glyph shape database)
-- `unmapped-glyphs.pdf` — Additional unmapped glyph test case
+- `unmapped-glyphs.pdf` — Additional unmapped glyph test case (10 glyphs, all unmapped)
+- `unmapped-comprehensive.pdf` — Comprehensive unmapped glyph test (7 unmapped + 3 mapped)
 
 ### File info
 - **Location**: `tests/fixtures/encoding/no-mapping.pdf`
@@ -148,3 +149,112 @@ See **[`tests/fixtures/encoding/no-mapping.md`](encoding/no-mapping.md)** for co
 - **Created**: 2026-06-09
 - **Last updated**: 2026-07-03
 - **SHA256**: `b24f88d3add958bfec1d6b134f2cd030cd41bb1932bedbe99405599bd01fa8f0`
+
+---
+
+## unmapped-glyphs.pdf
+
+### Purpose
+Tests the GLYPH_UNMAPPED diagnostic with 10 unmapped glyphs covering various failure modes. This fixture provides comprehensive coverage of Unicode recovery failures with custom glyph names.
+
+### What it contains
+A minimal PDF (723 bytes) with **10 unmapped glyphs** across multiple categories:
+- **3 PUA glyphs**: `/g001`, `/g002`, `/g003` — Private Use Area patterns
+- **4 custom glyphs**: `/CustomA`, `/CustomB`, `/NotAGlyph`, `/glyph_0041` — Custom encoding and orphaned
+- **3 mapped glyphs**: `/A`, `/B`, `/space` — Standard AGL names for comparison
+
+### Expected behavior
+When pdftract extracts text from this fixture, it should emit **7 GLYPH_UNMAPPED diagnostics** (one per unique unmapped glyph) and produce:
+```
+���
+����
+AB 
+```
+
+### Ground truth
+The expected output is documented in `tests/fixtures/encoding/unmapped-glyphs.txt`:
+```
+���
+����
+AB 
+```
+
+### Comprehensive documentation
+See **[`tests/fixtures/encoding/unmapped-glyphs.md`](encoding/unmapped-glyphs.md)** for complete details including:
+- Character code to glyph name mappings
+- Content stream breakdown
+- Expected diagnostic emission
+- Regeneration instructions
+- Test coverage scenarios
+
+### Related tests
+- `tests/encoding_recovery.rs` — Unicode recovery level tests
+- `tests/test_glyph_unmapped_diagnostic.rs` — GLYPH_UNMAPPED diagnostic validation
+
+### Related fixtures
+- `no-mapping.pdf` — Simpler 3-glyph fixture
+- `unmapped-comprehensive.pdf` — Comprehensive 7-unmapped + 3-mapped fixture
+
+### File info
+- **Location**: `tests/fixtures/encoding/unmapped-glyphs.pdf`
+- **Size**: 723 bytes
+- **Created**: 2026-07-05
+- **Documented**: 2026-08-12
+- **SHA256**: `82810a488a0e680e1568cfcc8edcaaba1a02e8254e60aa77339309bb621a659c`
+
+---
+
+## unmapped-comprehensive.pdf
+
+### Purpose
+Comprehensive GLYPH_UNMAPPED diagnostic test fixture covering **all 4 mapping failure modes** of the Unicode recovery pipeline, plus verification of the AGL success path. This is the most complete unmapped glyph test fixture.
+
+### What it contains
+A minimal PDF (651 bytes) with **10 character codes** testing comprehensive coverage:
+- **7 unmapped glyphs**: `/g001`, `/g002`, `/g003`, `/CustomA`, `/CustomB`, `/NotAGlyph`, `/glyph_0041`
+- **3 mapped glyphs**: `/A`, `/B`, `/space` — for success path verification
+
+### Expected behavior
+When pdftract extracts text from this fixture, it should:
+1. Emit **7 distinct GLYPH_UNMAPPED diagnostics** (one per unique unmapped glyph)
+2. Extract text correctly for the 3 mapped glyphs via AGL Level 2 fallback
+3. Produce output: `���\n����\nAB ` (7×U+FFFD + "AB ")
+
+### Ground truth
+The expected output is documented in `tests/fixtures/encoding/unmapped-comprehensive.txt`:
+```
+���
+����
+AB 
+```
+
+### Comprehensive documentation
+See **[`tests/fixtures/encoding/unmapped-comprehensive.md`](encoding/unmapped-comprehensive.md)** for complete details including:
+- All 4 mapping failure modes explained
+- Character code to glyph name mappings table
+- Content stream layout with positioning
+- Expected diagnostic emission patterns
+- Test coverage matrix
+- Regeneration instructions
+
+### Design documentation
+See **[`notes/bf-68f9i-design.md`](notes/bf-68f9i-design.md)** for the complete PDF structure specification and implementation strategy.
+
+### Related tests
+- `tests/encoding_recovery.rs` — Unicode recovery integration tests
+- `tests/test_glyph_unmapped_diagnostic.rs` — GLYPH_UNMAPPED diagnostic validation
+- `tests/test_glyph_unmapped_diagnostic_content.rs` — Diagnostic content verification
+
+### Related fixtures
+- `no-mapping.pdf` — Simpler 3-glyph fixture (PUA only)
+- `unmapped-glyphs.pdf` — 10 unmapped glyph fixture (no mapped glyphs)
+- `agl-only.pdf` — AGL-only success case (Level 2)
+- `fingerprint-match.pdf` — Font fingerprinting (Level 3)
+- `shape-match.pdf` — Glyph shape recognition (Level 4)
+
+### File info
+- **Location**: `tests/fixtures/encoding/unmapped-comprehensive.pdf`
+- **Size**: 651 bytes
+- **Created**: 2026-07-03 (bf-5taa6)
+- **Documented**: 2026-08-12 (bf-16ztr)
+- **SHA256**: `a7effe0945c9120e5ab33ac84557755206dd10049d64a5dbd7ba5db4597ed3d3`
