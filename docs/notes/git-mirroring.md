@@ -1,7 +1,19 @@
 # Git Mirroring Setup and Troubleshooting
 
-**Date:** 2026-07-05  
+**Date:** 2026-08-12 (updated)  
 **Purpose:** Comprehensive documentation of git mirroring setup, workspace conventions, and resolution processes for the pdftract repository.
+
+## Current Status (2026-08-12)
+
+✅ **Mirror is operational and in sync**
+
+- **Forgejo main:** `e0122612d0324b870762addea63cfd3482a9baaa`
+- **GitHub main:** `e0122612d0324b870762addea63cfd3482a9baaa`
+- **Commits behind:** 0
+- **Last sync:** 2026-08-12T14:32:13Z
+- **Mirror status:** No errors
+
+The previous 84-160 commit divergence has been fully resolved. The Forgejo push mirror is working correctly with `sync_on_commit: true`.
 
 ## Table of Contents
 
@@ -273,6 +285,36 @@ curl -H "Authorization: token <TOKEN>" \
 | 2026-07-05 | Mirror config verified | Push mirror exists but blocked by large files |
 | 2026-07-05 | Remotes fixed | Branch tracking corrected to `origin/main` |
 | 2026-07-05 | Documentation created | This comprehensive guide |
+| 2026-08-12 | **Divergence resolved** | GitHub synced to Forgejo via push mirror (both at `e0122612`) |
+
+### Resolution (2026-08-12)
+
+The 84-160 commit divergence was automatically resolved by the Forgejo push mirror. Investigation showed:
+
+1. **Push mirror operational**: Mirror `remote_mirror_nfF0JdlNzC` is configured correctly with `sync_on_commit: true`
+2. **No current errors**: Mirror `last_error` field is empty
+3. **Automatic sync**: After fetching GitHub main, both repositories are at the same commit (`e0122612`)
+
+The large file issue (`--1.ppm`, `test_parse_simple`) that previously blocked sync was resolved in commit `007439e7` ("remove tracked debug/scratch artifacts"), which removed these files from the tree. Once the blocking objects were removed from the recent history, the mirror successfully synced all pending commits.
+
+**Current remote configuration (correct):**
+```bash
+origin  https://git.ardenone.com/jedarden/pdftract.git (fetch/push)  # Primary
+github  https://github.com/jedarden/pdftract.git (fetch/push)         # Mirror
+```
+
+**Verification commands:**
+```bash
+# Check mirror status via API
+FORGEJO_TOKEN="$(git credential fill <<< 'protocol=https
+host=git.ardenone.com
+' | grep password | cut -d= -f2)"
+curl -s -X GET "https://git.ardenone.com/api/v1/repos/jedarden/pdftract/push_mirrors" \
+  -H "Authorization: token $FORGEJO_TOKEN"
+
+# Verify sync locally
+git fetch github && git rev-parse origin/main github/main
+```
 
 ### Root Cause Analysis
 
@@ -322,12 +364,19 @@ remote: error: GH001: Large files detected.
 4. **Verify mirror sync** succeeds on next push
 5. **Confirm GitHub** matches Forgejo
 
-### Final Commit Range
+### Final Commit Range (Pre-Resolution)
 
 - **Forgejo/main**: `02bfffef` docs(bf-1o0la): document Forgejo push mirror configuration and status
 - **GitHub/main**: `88b4f0da` fix(pdftract-2rc4): fix CI schema gate script and add verification note
 - **Commits behind**: 160 (updated from initial 84 estimate during investigation)
 - **Merge-base**: `88b4f0da276c7257ade02d3cecfaeb09f7881acc`
+
+### Final Commit Range (Post-Resolution 2026-08-12)
+
+- **Forgejo/main**: `e0122612d0324b870762addea63cfd3482a9baaa` feat(bf-59i1z7): create glyph dict mock with basic properties
+- **GitHub/main**: `e0122612d0324b870762addea63cfd3482a9baaa` (same commit)
+- **Commits behind**: 0
+- **Status**: ✅ Synced
 
 ---
 
@@ -406,6 +455,6 @@ git branch --set-upstream-to=origin/main main
 ---
 
 **Document Status:** ✅ Complete  
-**Last Updated:** 2026-07-05  
+**Last Updated:** 2026-08-12 (mirror verified operational)  
 **Maintainer:** jedarden  
-**Version:** 1.0
+**Version:** 1.1
