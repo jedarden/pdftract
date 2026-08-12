@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # NEEDLE per-bead verify wrapper
 # Pushes worker worktree to wip/<worker>/<bead> branch, submits rust-verify workflow,
 # polls to completion, and returns exit code + logs to the agent.
