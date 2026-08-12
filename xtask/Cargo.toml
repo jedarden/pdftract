@@ -39,10 +39,6 @@ path = "src/bin/gen_encoding_fixtures.rs"
 name = "gen_unmapped_fixtures"
 path = "src/bin/gen_unmapped_fixtures.rs"
 
-[[bin]]
-name = "debug_pdf"
-path = "src/bin/debug_pdf.rs"
-
 [lib]
 name = "pdftract_schema_migrate"
 path = "src/lib.rs"

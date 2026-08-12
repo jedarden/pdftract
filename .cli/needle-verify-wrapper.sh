@@ -122,10 +122,10 @@ else
     git checkout -b "$BRANCH_NAME"
 fi
 
-# Push to forgejo origin (not github mirror)
-log "Pushing branch to forgejo origin"
-if git push origin "$BRANCH_NAME" 2>&1; then
-    log "Branch pushed successfully"
+# Force-push to forgejo origin (not github mirror) to update branch on each run
+log "Force-pushing branch to forgejo origin"
+if git push --force origin "$BRANCH_NAME" 2>&1; then
+    log "Branch force-pushed successfully"
 else
     error "Failed to push branch to origin"
     # Clean up on failure

@@ -1,7 +1,7 @@
 # pdftract-nightly-fuzz CronWorkflow
 #
 # Nightly fuzzing job for pdftract using cargo-fuzz with libFuzzer.
-# Runs for 24 CPU-hours across 5 fuzz targets, seeded from malformed fixtures.
+# Runs for 24 CPU-hours across 7 fuzz targets, seeded from malformed fixtures.
 # New crashes are filed as STRUCT_* diagnostic regressions via issue-reporter.
 #
 # === Schedule ===
@@ -13,10 +13,13 @@
 # - xref: Cross-reference table parsing (EC-07 corrupt xref, EC-08 circular refs)
 # - stream_decoder: Decompression filters (EC-10 decompression bomb)
 # - cmap_parser: CMap name and string handling
+# - content: Phase 3 content stream interpreter (INV-8 no panic)
+# - profile_yaml: Phase 7.10 profile YAML loader (INV-8 no panic, regex DoS prevention)
 #
 # === Resource Budget ===
-# 24 CPU-hours total split across 5 targets = ~4.8 hours each
+# 24 CPU-hours total split across 7 targets = ~3.4 hours each
 # Time limit per target: 6 hours (allows some overlap)
+# ActiveDeadlineSeconds: 8 hours hard limit on the fuzz matrix DAG (7 targets × ~4.8h in parallel = ~4.8h, plus overhead)
 #
 # === Crash Handling ===
 # - Crash artifacts uploaded as workflow artifacts (crashes-<target>.tar.gz)
@@ -197,7 +200,7 @@ spec:
 
               # Seed each fuzz target corpus with relevant fixtures
               # All targets get basic malformed PDFs for general robustness
-              for target in lexer object_parser xref stream_decoder cmap_parser; do
+              for target in lexer object_parser xref stream_decoder cmap_parser content profile_yaml; do
                 TARGET_CORPUS="$CORPUS_BASE/$target"
                 mkdir -p "$TARGET_CORPUS"
 
@@ -224,9 +227,9 @@ spec:
               memory: 512Mi
 
       # === Fuzz Matrix ===
-      # Run all 5 fuzz targets in parallel, 4.8 CPU-hours each
+      # Run all 7 fuzz targets in parallel, 4.8 CPU-hours each
       - name: fuzz-matrix
-        activeDeadlineSeconds: 28800  # 8 hours hard limit (5 targets × 4.8h in parallel = ~4.8h, plus overhead)
+        activeDeadlineSeconds: 28800  # 8 hours hard limit (7 targets × 4.8h in parallel = ~4.8h, plus overhead)
         dag:
           onExit: fuzz-matrix-exit
           tasks:
@@ -276,6 +279,26 @@ spec:
                 parameters:
                   - name: target
                     value: "cmap_parser"
+                  - name: timeout
+                    value: "17400"
+              continueOn:
+                failed: true
+            - name: fuzz-content
+              template: fuzz-target
+              arguments:
+                parameters:
+                  - name: target
+                    value: "content"
+                  - name: timeout
+                    value: "17400"
+              continueOn:
+                failed: true
+            - name: fuzz-profile-yaml
+              template: fuzz-target
+              arguments:
+                parameters:
+                  - name: target
+                    value: "profile_yaml"
                   - name: timeout
                     value: "17400"
               continueOn:
@@ -526,7 +549,7 @@ spec:
 
             TOTAL_CRASHES=0
 
-            for target in lexer object_parser xref stream_decoder cmap_parser; do
+            for target in lexer object_parser xref stream_decoder cmap_parser content profile_yaml; do
               CRASH_FILE="/workspace/crashes-$target.tar.gz"
               if [ -f "$CRASH_FILE" ]; then
                 echo "Found crash artifacts: $target"
@@ -571,7 +594,7 @@ spec:
               # The sidecar pattern would be implemented in a follow-up bead
               # For now, we just collect and list the crash artifacts
 
-              for target in lexer object_parser xref stream_decoder cmap_parser; do
+              for target in lexer object_parser xref stream_decoder cmap_parser content profile_yaml; do
                 CRASH_FILE="/workspace/crashes-$target.tar.gz"
                 if [ -f "$CRASH_FILE" ]; then
                   echo "=== $target crashes ==="

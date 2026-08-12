@@ -1,0 +1,18 @@
+{
+  "form_fields": [
+    {
+      "name": "xfa_field1",
+      "field_type": "Tx",
+      "value": "XFA Value",
+      "default_value": null,
+      "flags": {
+        "read_only": false,
+        "required": false,
+        "multiline": false,
+        "password": false
+      },
+      "max_length": null
+    }
+  ],
+  "note": "XFA XML parsing not yet implemented - this fixture tests XFA detection"
+}

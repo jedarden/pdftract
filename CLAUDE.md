@@ -95,6 +95,42 @@ For each bead:
 
 If acceptance criteria contain WARN items due to environmental issues (missing CLI tools, transient infra, etc.), document them clearly in the close reason and the verification note. The bead may still close if the WARNs are infra-related and out of scope. PASS the substantive criteria; WARN the infra ones; FAIL only true blockers.
 
+## Local/Remote Cargo Split — Reduce Lab Build Pressure
+
+Workers are configured to split cargo operations between local and remote execution to minimize lab server build pressure and allow multiple workers per Rust repo.
+
+**LOCAL operations (cheap, fast, run in adapter's systemd-run scope):**
+- `cargo check` — Fast type-checking, runs locally with cgroup limits (MemoryMax=12G)
+- `cargo clippy` — Lint checks, runs locally with cgroup limits
+- `cargo build` — Debug builds, runs locally with cgroup limits
+- Targeted unit tests — Use `cargo test <module>::<test_name>` for quick validation
+
+**REMOTE operations (heavy, automatically routed to rust-verify on iad-ci):**
+- `cargo test --release` — Full release test suite (auto-routed by `~/.local/bin/cargo` wrapper)
+- `cargo test --all-targets` — Complete test suite (auto-routed)
+- `cargo test` without specific targets — All tests (auto-routed)
+- Fuzz testing — Submit via rust-verify with appropriate proptest/fuzz args
+- Proptest suites — Submit via rust-verify with proptest-specific args
+
+**How the routing works:**
+The cargo wrapper at `~/.local/bin/cargo` automatically routes `cargo test` to rust-verify when:
+- You're in a git repository with a remote
+- There are no uncommitted changes (otherwise falls back to local)
+
+This means:
+- `cargo test` → routed to rust-verify (runs on iad-ci cluster)
+- `cargo check` → runs locally (CPUQuota=200%, MemoryMax=6G via systemd-run)
+- `cargo clippy` → runs locally (same limits)
+- All other cargo commands → run locally with cgroup limits
+
+**Worker guidelines:**
+1. **Use `cargo test` for test suites** — It automatically routes to rust-verify, leveraging the CI cluster's resources
+2. **Use `cargo check` and `cargo clippy` for fast feedback** — These run locally and provide quick validation
+3. **Avoid `cargo nextest run` for heavy operations** — It bypasses the cargo wrapper and runs locally, which can overwhelm the lab server
+4. **For targeted tests during development** — Use `cargo test <specific_test>` which routes to rust-verify but finishes quickly
+
+This split reduces lab build pressure to near zero and removes the one-worker-per-Rust-repo limitation.
+
 ## Test hygiene — never let a hung test stall the loop
 
 On 2026-05-24 one test froze the entire marathon for ~5.5 hours. The TH-03 test
@@ -105,17 +141,23 @@ which hung `cargo test`, which kept the marathon's stdout pipe open — so `laun
 never advanced to the next bead. The worker made it worse by spawning four overlapping
 `cargo test` retries and orphaning all of them. Prevent recurrence:
 
-1. **Run tests through `cargo nextest run`, NEVER bare `cargo test`.** nextest isolates each
-   test in its own process and enforces the per-test `slow-timeout` in `.config/nextest.toml`
-   (`terminate-after` is set, so an overrunning test is *killed*, turning a freeze into a
-   normal failure). If nextest is genuinely unavailable, wrap the fallback in a hard
+1. **Run test suites through `cargo test` (routed to rust-verify on iad-ci).** The cargo
+   wrapper at `~/.local/bin/cargo` automatically routes `cargo test` to rust-verify,
+   which runs in a controlled environment with proper timeouts and resource limits.
+   For quick local validation during development, use `cargo check` and `cargo clippy`.
+
+   For targeted testing of specific tests, `cargo nextest run` is available for local runs
+   with per-test timeouts, but prefer `cargo test <specific_test>` which routes to
+   rust-verify while still finishing quickly.
+
+   If you must run tests locally and nextest is unavailable, wrap the command in a hard
    wall-clock timeout so a hang can never wedge the loop:
    ```bash
    timeout --kill-after=30s 600s cargo test --all-targets 2>&1 | tail -80
    ```
-   `timeout` exit code 124 — or a nextest `TIMEOUT`/`TERMINATED` line — means a test hung.
-   Find and fix it. **Never close a bead claiming "tests pass" when the run was killed by a
-   timeout, and never claim success on a tree that does not compile.**
+   `timeout` exit code 124 means a test hung. Find and fix it. **Never close a bead
+   claiming "tests pass" when the run was killed by a timeout, and never claim success
+   on a tree that does not compile.**
 
 2. **A test that spawns a process or binds a socket MUST clean up deterministically:**
    - Kill the child from an RAII guard whose `Drop` runs `kill()` + a *bounded* wait, so

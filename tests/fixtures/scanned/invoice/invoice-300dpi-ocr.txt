@@ -1,0 +1,58 @@
+INVOICE
+Invoice Number: INV-2026-0542
+Date Issued: May 28, 2026
+Due Date: June 27, 2026
+FROM:
+Tech Solutions Inc.
+456 Innovation Drive
+Silicon Valley, CA 94025
+Email: billing@techsolutions.example.com
+Phone: (555) 987-6543
+TO:
+Global Enterprises Ltd.
+789 Business Park Avenue
+Metropolis, NY 10001
+Attention: Accounts Payable Department
+Bill To:
+Global Enterprises Ltd.
+789 Business Park Avenue
+Metropolis, NY 10001
+Service Period: May 1, 2026 - May 31, 2026
+Purchase Order: PO-2026-7854
+Description
+Hours Rate
+Amount
+-----------------------------------------------------------------------Cloud Infrastructure Services
+160 $85.00 $13,600.00
+Software Development
+120 $125.00 $15,000.00
+System Maintenance & Support
+40 $95.00 $3,800.00
+Database Optimization
+25 $110.00 $2,750.00
+Security Audit & Compliance
+15 $150.00 $2,250.00
+Technical Consulting
+20 $135.00 $2,700.00
+Project Management
+30 $120.00 $3,600.00
+-----------------------------------------------------------------------Subtotal
+$43,700.00
+Discount (Early Payment 2%)
+($874.00)
+Tax (Sales Tax 8.25%)
+$3,534.45
+-----------------------------------------------------------------------TOTAL
+$46,360.45
+
+Payment Terms: Net 30, 2% discount if paid within 10 days
+Payment Methods: Bank Transfer, Credit Card, Check
+Bank Transfer Details:
+Bank: First National Bank
+Account: Tech Solutions Inc.
+Account Number: **** 4567
+Routing Number: 123456789
+Please include invoice number on payment.
+Thank you for your business!
+
+

@@ -214,32 +214,84 @@ generate_synthetic_pdf() {
 
         log_info "Generating synthetic PDF: ${filename}"
 
-        python3 - <<PYTHON
+        # Create temporary Python script
+        local python_script="${TEMP_DIR}/generate_pdf_${i}.py"
+        cat > "${python_script}" <<'PYTHON_SCRIPT'
 import sys
 import random
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 
-# Generate random page count (1-20 pages)
-page_count = random.randint(1, 20)
-filename = "${filepath}"
+# Get parameters from environment
+import os
+filepath = os.environ['PDF_FILE_PATH']
+pdf_id = os.environ['PDF_ID']
 
-c = canvas.Canvas(filename, pagesize=letter)
+# Generate random page count (1-50 pages, weighted toward larger counts)
+# Weight distribution: 10% chance of 1-5 pages, 60% chance of 6-30 pages, 30% chance of 31-50 pages
+weight = random.random()
+if weight < 0.1:
+    page_count = random.randint(1, 5)
+elif weight < 0.7:
+    page_count = random.randint(6, 30)
+else:
+    page_count = random.randint(31, 50)
+
+c = canvas.Canvas(filepath, pagesize=letter)
 width, height = letter
 
-for page in range(page_count):
-    # Add some random text
-    c.drawString(100, height - 100, f"Synthetic PDF Page {page + 1}")
-    c.drawString(100, height - 150, f"Lorem ipsum dolor sit amet")
-    c.drawString(100, height - 200, f"Generated for pdftract grep-corpus benchmark")
+# Lorem ipsum text chunks for variety
+lorem_chunks = [
+    "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+    "Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
+    "Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip.",
+    "Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore.",
+    "Excepteur sint occaecat cupidatat non proident sunt in culpa qui officia.",
+    "Nihil anim keffiyeh helvetica, craft beer labore wes anderson cred nesciunt.",
+    "Eiusmod tempor incididunt ut labore et dolore magna aliqua ut enim ad minim.",
+    "Consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore."
+]
 
-    # Add random number
-    c.drawString(100, height - 250, f"Random value: {random.randint(1000, 9999)}")
+for page in range(page_count):
+    y_position = height - 80
+    line_spacing = 18
+
+    # Page header
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(80, y_position, f"Synthetic PDF Page {page + 1} of {page_count}")
+    y_position -= 30
+
+    # Add multiple lines of content to increase file size
+    c.setFont("Helvetica", 9)
+    for line_num in range(60):  # Increased to 60 lines per page for more content
+        if y_position < 50:
+            break
+        # Mix of lorem ipsum and random text with more variety
+        if line_num % 4 == 0:
+            text = f"Line {line_num}: {lorem_chunks[random.randint(0, len(lorem_chunks)-1)]}"
+        elif line_num % 4 == 1:
+            # Add longer data lines with more text
+            text = f"Data Entry {line_num}: ID={random.randint(10000, 99999)} | {lorem_chunks[random.randint(0, len(lorem_chunks)-1)]} | {lorem_chunks[random.randint(0, len(lorem_chunks)-1)]}"
+        elif line_num % 4 == 2:
+            # Add structured text that mimics real documents
+            section_num = random.randint(1, 10)
+            text = f"Section {section_num}.{line_num} - {lorem_chunks[random.randint(0, len(lorem_chunks)-1)]} continued over multiple lines for testing grep performance on realistic content."
+        else:
+            # Add benchmark-specific content
+            text = f"Benchmark test line {line_num} - document {pdf_id} page {page+1} - random value: {random.randint(100000, 999999)} - lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
+        c.drawString(60, y_position, text)  # Wider left margin for more content
+        y_position -= line_spacing
 
     c.showPage()
 
 c.save()
-PYTHON
+print(f"Generated {page_count} pages")
+PYTHON_SCRIPT
+
+        # Set environment variables and run via nix-shell
+        export PDF_FILE_PATH="${filepath}"
+        export PDF_ID="${filename}"
+        nix-shell -p python3Packages.reportlab --run "python3 ${python_script}"
 
         # Validate the generated PDF
         if [[ ! -f "${filepath}" ]]; then

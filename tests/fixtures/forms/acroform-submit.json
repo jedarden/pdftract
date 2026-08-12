@@ -1,0 +1,50 @@
+{
+  "form_fields": [
+    {
+      "name": "username",
+      "field_type": "Tx",
+      "value": "",
+      "default_value": null,
+      "flags": {
+        "read_only": false,
+        "required": true,
+        "multiline": false,
+        "password": false
+      },
+      "max_length": null
+    },
+    {
+      "name": "submit",
+      "field_type": "Btn",
+      "value": null,
+      "default_value": null,
+      "flags": {
+        "read_only": false,
+        "required": false,
+        "radio": false,
+        "pushbutton": true
+      },
+      "button_kind": "pushbutton",
+      "action": {
+        "type": "SubmitForm",
+        "url": "https://example.com/submit"
+      }
+    },
+    {
+      "name": "reset",
+      "field_type": "Btn",
+      "value": null,
+      "default_value": null,
+      "flags": {
+        "read_only": false,
+        "required": false,
+        "radio": false,
+        "pushbutton": true
+      },
+      "button_kind": "pushbutton",
+      "action": {
+        "type": "ResetForm"
+      }
+    }
+  ]
+}

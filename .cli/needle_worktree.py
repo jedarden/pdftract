@@ -314,15 +314,16 @@ class WorktreeManager:
         # Get remote URL
         remote_url = self._get_remote_url()
 
-        # Push to remote
+        # Force-push to remote to update the branch on each run
         try:
-            print(f"Pushing branch {self.branch_name} to {self.remote_name}")
+            print(f"Force-pushing branch {self.branch_name} to {self.remote_name}")
             push_result = self._run_git([
                 "push",
+                "--force",
                 self.remote_name,
                 self.branch_name
             ])
-            print(f"Branch pushed successfully")
+            print(f"Branch force-pushed successfully")
 
         except subprocess.CalledProcessError as e:
             # Clean up worktree on push failure

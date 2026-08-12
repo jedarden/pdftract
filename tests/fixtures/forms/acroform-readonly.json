@@ -1,0 +1,44 @@
+{
+  "form_fields": [
+    {
+      "name": "company_name",
+      "field_type": "Tx",
+      "value": "Acme Corporation",
+      "default_value": null,
+      "flags": {
+        "read_only": true,
+        "required": false,
+        "multiline": false,
+        "password": false
+      },
+      "max_length": null
+    },
+    {
+      "name": "contact_email",
+      "field_type": "Tx",
+      "value": "contact@example.com",
+      "default_value": null,
+      "flags": {
+        "read_only": false,
+        "required": false,
+        "multiline": false,
+        "password": false
+      },
+      "max_length": null
+    },
+    {
+      "name": "verified",
+      "field_type": "Btn",
+      "value": "Yes",
+      "default_value": null,
+      "flags": {
+        "read_only": true,
+        "required": false,
+        "radio": false,
+        "pushbutton": false
+      },
+      "button_kind": "checkbox",
+      "checked": true
+    }
+  ]
+}

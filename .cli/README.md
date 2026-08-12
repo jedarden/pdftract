@@ -6,7 +6,7 @@ This directory contains the NEEDLE per-bead verification wrapper that integrates
 
 The wrapper provides a complete workflow for verifying bead work:
 
-1. **Commit & Push**: Commits the worker's worktree changes to a `wip/<worker>/<bead>` branch
+1. **Commit & Force-Push**: Commits the worker's worktree changes to a `wip/<worker>/<bead>` branch and force-pushes to update the branch on each run
 2. **Submit Workflow**: Submits the `rust-verify` WorkflowTemplate with repo/revision/test-args
 3. **Poll to Completion**: Monitors the workflow until it completes (or times out)
 4. **Return Results**: Returns exit code and full logs to the agent
@@ -266,7 +266,8 @@ kubectl --kubeconfig=~/.kube/iad-ci.kubeconfig get nodes
 **Solution**:
 1. Check forgejo authentication: `git config remote.origin.url`
 2. Ensure forgejo token is configured in git credentials
-3. Delete existing wip branch: `git push origin --delete wip/<worker>/<bead>`
+3. The wrapper uses force-push (`git push --force`) to update the branch on each run, so conflicts should be rare
+4. If persistent issues occur, manually delete the wip branch: `git push origin --delete wip/<worker>/<bead>`
 
 ### Workflow Timeout
 
@@ -284,9 +285,10 @@ kubectl --kubeconfig=~/.kube/iad-ci.kubeconfig get nodes
 1. **Bash Wrapper**: Handles all kubectl/git operations (more portable than Python)
 2. **Python Helper**: Provides programmatic interface for NEEDLE workers
 3. **Branch per Bead**: Isolates each bead's changes for independent verification
-4. **Forgejo Origin**: Pushes to forgejo (source of truth), not github mirror
-5. **Polling Pattern**: Simple polling instead of complex callback mechanism
-6. **Automatic Cleanup**: Removes wip branches after verification
+4. **Forgejo Origin**: Force-pushes to forgejo (source of truth), not github mirror
+5. **Force-Push Pattern**: Uses `git push --force` to update wip branches on each run
+6. **Polling Pattern**: Simple polling instead of complex callback mechanism
+7. **Automatic Cleanup**: Removes wip branches after verification
 
 ### Future Enhancements
 

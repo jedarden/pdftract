@@ -1,0 +1,6 @@
+# grep-corpus manifest
+# Format: filename,source_url,page_count,file_size,checksum,license
+#
+synthetic_1.pdf,synthetic-generation,25,29981,0534023092d8a74aaee83869351fd7eefabb7a1169740d632774b38cc638d394,public-domain
+synthetic_2.pdf,synthetic-generation,29,34367,e707a3759ef1901eaa5b57df1620937b9b376b3da15af6a14adc26150e4e702e,public-domain
+synthetic_3.pdf,synthetic-generation,46,53840,7508f2fc5adc5e6846bf08b43951c0dc441f131938679d4ca16277dd9f5e70c4,public-domain
