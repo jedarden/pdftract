@@ -1,0 +1,6 @@
+# Ground truth for shape-match.pdf (Level 4 glyph shape recognition)
+# Type3 font with custom glyph shapes - forces Level 4 recovery
+# No ToUnicode, glyph names defined in CharProcs as drawing commands
+#
+# Expected extraction output:
+Test

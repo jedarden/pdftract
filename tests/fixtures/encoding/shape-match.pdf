@@ -1,87 +1,107 @@
 %PDF-1.4
 1 0 obj
-<<
-/Type /Catalog
-/Pages 2 0 R
->>
+<</Type/Catalog/Pages 2 0 R>>
 endobj
 2 0 obj
-<<
-/Type /Pages
-/Kids [3 0 R]
-/Count 1
->>
+<</Type/Pages/Kids[3 0 R]/Count 1>>
 endobj
 3 0 obj
-<<
-/Type /Page
-/Parent 2 0 R
-/MediaBox [0 0 612 792]
-/Resources <<
-/Font <<
-/F1 4 0 R
->>
->>
-/Contents 5 0 R
->>
+<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Resources<</Font<</F1 4 0 R>>>>/Contents 8 0 R>>
 endobj
 4 0 obj
-<<
-/Type /Font
-/Subtype /TrueType
-/BaseFont /ABCDEF+Helvetica
-/FontDescriptor 6 0 R
->>
+<</Type/Font/Subtype/Type3/FontBBox[0 0 1000 1000]/FontMatrix[0.001 0 0 0.001 0 0]/CharProcs 5 0 R/Encoding 6 0 R>>
 endobj
 5 0 obj
-<<
-/Length 42
->>
-stream
+<</T 7 0 R/e 9 0 R/s 10 0 R/t 11 0 R>>
+endobj
+6 0 obj
+<</Type/Encoding/BaseEncoding/StandardEncoding/Differences[84/T 101/e 115/s 116/t]>>
+endobj
+7 0 obj
+<</Length 147>>stream
+q 500 0 0 700 100 200 cm
+0 0 m
+500 0 l
+500 700 l
+250 700 l
+250 525 l
+0 525 l
+0 700 l
+250 350 l
+500 350 l
+500 175 l
+0 175 l
+h
+f
+Q
+endstream
+endobj
+8 0 obj
+<</Length 44>>stream
 BT
-/F1 12 Tf
-100 700 Td
-(Shape) Tj
+/F1 48 Tf
+100 600 Td
+(Test) Tj
 ET
 endstream
 endobj
-6 0 obj
-<<
-/Type /FontDescriptor
-/FontName /ABCDEF+Helvetica
-/Flags 4
-/FontBBox [0 0 100 100]
-/ItalicAngle 0
-/Ascent 100
-/Descent 0
-/CapHeight 100
-/StemV 80
-/FontFile2 7 0 R
->>
+9 0 obj
+<</Length 91>>stream
+q 500 0 0 700 100 200 cm
+0 525 m
+500 525 l
+500 700 l
+250 700 l
+250 525 l
+h
+f
+Q
+endstream
 endobj
-7 0 obj
-<<
-/Length 60
->>
-stream
-Minimal TrueType font program for shape testing
+10 0 obj
+<</Length 62>>stream
+q 500 0 0 700 100 200 cm
+0 175 m
+250 175 l
+250 350 l
+500 350 l
+500 525 l
+0 525 l
+h
+f
+Q
+endstream
+endobj
+11 0 obj
+<</Length 65>>stream
+q 500 0 0 700 100 200 cm
+0 175 m
+500 175 l
+500 350 l
+250 350 l
+250 525 l
+0 525 l
+h
+f
+Q
 endstream
 endobj
 xref
-0 8
+0 12
 0000000000 65535 f
 0000000009 00000 n
 0000000058 00000 n
 0000000115 00000 n
-0000000329 00000 n
-0000000477 00000 n
-0000000536 00000 n
+0000000222 00000 n
+0000000347 00000 n
+0000000398 00000 n
+0000000479 00000 n
 0000000664 00000 n
+0000000744 00000 n
+0000000871 00000 n
+0000000973 00000 n
 trailer
-<<
-/Size 8
-/Root 1 0 R
->>
+<</Size 12/Root 1 0 R>>
 startxref
-768
+1074
 %%EOF
