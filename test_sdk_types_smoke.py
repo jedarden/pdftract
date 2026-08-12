@@ -134,11 +134,19 @@ def test_extract_returns_typed_document():
             assert isinstance(x1, (int, float)), f"spans[{span_idx}] bbox x1 should be numeric, got {type(x1).__name__}"
             assert isinstance(y1, (int, float)), f"spans[{span_idx}] bbox y1 should be numeric, got {type(y1).__name__}"
 
-            # Verify text is a string
-            assert isinstance(span.text, str), f"spans[{span_idx}] text should be str, got {type(span.text).__name__}"
+            # SPAN ATTRIBUTE VALIDATION - explicit checks with clear error messages
+            # Verify text attribute is a string
+            assert isinstance(span.text, str), f"spans[{span_idx}] text attribute should be string type, got {type(span.text).__name__}"
 
-            # Verify font is a string
-            assert isinstance(span.font, str), f"spans[{span_idx}] font should be str, got {type(span.font).__name__}"
+            # Verify x coordinates (x0, x1 from bbox) are numeric
+            assert isinstance(x0, (int, float)) and isinstance(x1, (int, float)), f"spans[{span_idx}] x coordinates should be numeric (x0={x0}, x1={x1})"
+
+            # Verify y coordinates (y0, y1 from bbox) are numeric
+            assert isinstance(y0, (int, float)) and isinstance(y1, (int, float)), f"spans[{span_idx}] y coordinates should be numeric (y0={y0}, y1={y1})"
+
+            # Verify font attribute exists and is a string
+            assert hasattr(span, 'font'), f"spans[{span_idx}] should have 'font' attribute"
+            assert isinstance(span.font, str), f"spans[{span_idx}] font attribute should be string type, got {type(span.font).__name__}"
 
             # Verify size is numeric
             assert isinstance(span.size, (int, float)), f"spans[{span_idx}] size should be numeric, got {type(span.size).__name__}"
