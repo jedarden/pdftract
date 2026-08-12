@@ -1,0 +1,633 @@
+{
+  "sdk": "pdftract-py",
+  "sdk_version": "0.1.0",
+  "suite_version": "1.0.0",
+  "schema_version": "1.0",
+  "timestamp": "2026-08-11T16:45:07.122354+00:00",
+  "results": [
+    {
+      "id": "extract-vector-scientific-paper",
+      "status": "fail",
+      "actual": {
+        "pages": [],
+        "schema_version": null,
+        "metadata": {
+          "page_count": 0,
+          "title": null,
+          "author": null,
+          "subject": null,
+          "keywords": null,
+          "creator": null,
+          "producer": null,
+          "created": null,
+          "modified": null
+        }
+      },
+      "expected": {
+        "schema_version": "1.0",
+        "metadata.page_count": 1,
+        "pages.length": 1,
+        "pages[0].page_index": 0,
+        "pages[0].width": {
+          "min": 500,
+          "max": 700
+        },
+        "pages[0].height": {
+          "min": 700,
+          "max": 900
+        },
+        "pages[0].rotation": 0,
+        "pages[0].spans.length": {
+          "min": 1
+        },
+        "pages[0].blocks.length": {
+          "min": 1
+        },
+        "pages[0].blocks[0].kind": "heading",
+        "errors.length": 0
+      },
+      "error": null,
+      "reason": "schema_version: expected 1.0, got None",
+      "duration_ms": 2
+    },
+    {
+      "id": "extract-scanned-receipt",
+      "status": "fail",
+      "actual": {
+        "pages": [],
+        "schema_version": null,
+        "metadata": {
+          "page_count": 0,
+          "title": null,
+          "author": null,
+          "subject": null,
+          "keywords": null,
+          "creator": null,
+          "producer": null,
+          "created": null,
+          "modified": null
+        }
+      },
+      "expected": {
+        "schema_version": "1.0",
+        "metadata.page_count": 1,
+        "pages.length": 1,
+        "pages[0].page_index": 0,
+        "pages[0].page_type": "scanned",
+        "pages[0].spans.length": {
+          "min": 1
+        },
+        "pages[0].blocks.length": {
+          "min": 1
+        },
+        "pages[0].blocks[0].kind": "paragraph",
+        "errors.length": 0
+      },
+      "error": null,
+      "reason": "schema_version: expected 1.0, got None",
+      "duration_ms": 0
+    },
+    {
+      "id": "extract-encrypted-pdf",
+      "status": "error",
+      "actual": null,
+      "expected": {
+        "schema_version": "1.0",
+        "metadata.is_encrypted": true,
+        "pages.length": {
+          "min": 1
+        },
+        "errors.length": 0
+      },
+      "error": "No /Root reference in trailer",
+      "reason": "Execution error: PdftractError",
+      "duration_ms": 0
+    },
+    {
+      "id": "extract-fillable-form",
+      "status": "error",
+      "actual": null,
+      "expected": {
+        "schema_version": "1.0",
+        "metadata.page_count": 1,
+        "form_fields.length": {
+          "min": 1
+        },
+        "pages.length": 1,
+        "errors.length": 0
+      },
+      "error": "No /Root reference in trailer",
+      "reason": "Execution error: PdftractError",
+      "duration_ms": 0
+    },
+    {
+      "id": "extract-mixed-vector-scanned",
+      "status": "error",
+      "actual": null,
+      "expected": {
+        "schema_version": "1.0",
+        "metadata.page_count": {
+          "min": 2
+        },
+        "pages.length": {
+          "min": 2
+        },
+        "pages[0].page_type": "mixed",
+        "errors.length": 0
+      },
+      "error": "No /Root reference in trailer",
+      "reason": "Execution error: PdftractError",
+      "duration_ms": 0
+    },
+    {
+      "id": "extract-large-document",
+      "status": "error",
+      "actual": null,
+      "expected": {
+        "schema_version": "1.0",
+        "metadata.page_count": 100,
+        "pages.length": 100,
+        "errors.length": 0
+      },
+      "error": "No /Root reference in trailer",
+      "reason": "Execution error: PdftractError",
+      "duration_ms": 0
+    },
+    {
+      "id": "extract-text-unicode-heavy",
+      "status": "pass",
+      "actual": {
+        "output_type": "string",
+        "value": ""
+      },
+      "expected": {
+        "output_type": "string",
+        "min_length": 50,
+        "contains": [
+          "Abstract",
+          "Introduction"
+        ]
+      },
+      "error": null,
+      "reason": null,
+      "duration_ms": 0
+    },
+    {
+      "id": "extract-text-vertical-writing",
+      "status": "error",
+      "actual": null,
+      "expected": {
+        "output_type": "string",
+        "min_length": 10
+      },
+      "error": "No /Root reference in trailer",
+      "reason": "Execution error: PdftractError",
+      "duration_ms": 0
+    },
+    {
+      "id": "extract-text-math-content",
+      "status": "pass",
+      "actual": {
+        "output_type": "string",
+        "value": ""
+      },
+      "expected": {
+        "output_type": "string",
+        "min_length": 100,
+        "contains": [
+          "equation",
+          "formula"
+        ]
+      },
+      "error": null,
+      "reason": null,
+      "duration_ms": 0
+    },
+    {
+      "id": "extract-markdown-table-heavy",
+      "status": "pass",
+      "actual": {
+        "output_type": "string",
+        "value": ""
+      },
+      "expected": {
+        "output_type": "string",
+        "min_length": 100,
+        "contains": [
+          "|",
+          "AGREEMENT"
+        ]
+      },
+      "error": null,
+      "reason": null,
+      "duration_ms": 0
+    },
+    {
+      "id": "extract-markdown-code-block",
+      "status": "error",
+      "actual": null,
+      "expected": {
+        "output_type": "string",
+        "min_length": 50,
+        "contains": [
+          "```",
+          "function",
+          "return"
+        ]
+      },
+      "error": "No /Root reference in trailer",
+      "reason": "Execution error: PdftractError",
+      "duration_ms": 0
+    },
+    {
+      "id": "extract-markdown-nested-heading",
+      "status": "pass",
+      "actual": {
+        "output_type": "string",
+        "value": ""
+      },
+      "expected": {
+        "output_type": "string",
+        "min_length": 100,
+        "contains": [
+          "#",
+          "##",
+          "###"
+        ]
+      },
+      "error": null,
+      "reason": null,
+      "duration_ms": 0
+    },
+    {
+      "id": "extract-stream-page-at-a-time",
+      "status": "error",
+      "actual": null,
+      "expected": {
+        "output_type": "iterator",
+        "frame_count": {
+          "min": 3
+        },
+        "first_frame_type": "header",
+        "last_frame_type": "footer",
+        "page_frames": {
+          "min": 1
+        }
+      },
+      "error": "extract_stream_fn() got an unexpected keyword argument 'ocr_language'",
+      "reason": "Execution error: TypeError",
+      "duration_ms": 0
+    },
+    {
+      "id": "extract-stream-cancellation",
+      "status": "error",
+      "actual": null,
+      "expected": {
+        "output_type": "iterator",
+        "page_frames": {
+          "max": 6
+        }
+      },
+      "error": "extract_stream_fn() got an unexpected keyword argument 'ocr_language'",
+      "reason": "Execution error: TypeError",
+      "duration_ms": 0
+    },
+    {
+      "id": "extract-stream-ndjson-format",
+      "status": "error",
+      "actual": null,
+      "expected": {
+        "output_type": "iterator",
+        "frame_count": {
+          "min": 3
+        },
+        "header_frame_has_schema_version": true,
+        "header_frame_has_total_pages": true
+      },
+      "error": "extract_stream_fn() got an unexpected keyword argument 'ocr_language'",
+      "reason": "Execution error: TypeError",
+      "duration_ms": 0
+    },
+    {
+      "id": "search-literal-pattern",
+      "status": "fail",
+      "actual": {
+        "output_type": "iterator",
+        "min_matches": 2,
+        "matches": [
+          "pattern",
+          "matches"
+        ]
+      },
+      "expected": {
+        "output_type": "iterator",
+        "min_matches": 1,
+        "first_match_page": 0,
+        "first_match_text": "Abstract"
+      },
+      "error": null,
+      "reason": "min_matches: expected 1, got 2",
+      "duration_ms": 1
+    },
+    {
+      "id": "search-regex-pattern",
+      "status": "fail",
+      "actual": {
+        "output_type": "iterator",
+        "min_matches": 2,
+        "matches": [
+          "pattern",
+          "matches"
+        ]
+      },
+      "expected": {
+        "output_type": "iterator",
+        "min_matches": 1
+      },
+      "error": null,
+      "reason": "min_matches: expected 1, got 2",
+      "duration_ms": 1
+    },
+    {
+      "id": "search-case-insensitive",
+      "status": "fail",
+      "actual": {
+        "output_type": "iterator",
+        "min_matches": 2,
+        "matches": [
+          "pattern",
+          "matches"
+        ]
+      },
+      "expected": {
+        "output_type": "iterator",
+        "min_matches": 1
+      },
+      "error": null,
+      "reason": "min_matches: expected 1, got 2",
+      "duration_ms": 0
+    },
+    {
+      "id": "search-no-match",
+      "status": "fail",
+      "actual": {
+        "output_type": "iterator",
+        "min_matches": 2,
+        "matches": [
+          "pattern",
+          "matches"
+        ]
+      },
+      "expected": {
+        "output_type": "iterator",
+        "match_count": 0
+      },
+      "error": null,
+      "reason": "match_count: missing key 'match_count'",
+      "duration_ms": 0
+    },
+    {
+      "id": "get-metadata-complete",
+      "status": "fail",
+      "actual": {
+        "metadata": {
+          "page_count": 0,
+          "title": null,
+          "author": null,
+          "subject": null,
+          "keywords": null,
+          "creator": null,
+          "producer": null,
+          "created": null,
+          "modified": null
+        }
+      },
+      "expected": {
+        "metadata.page_count": 1,
+        "metadata.has_title": true,
+        "metadata.has_author": true,
+        "metadata.has_creator": true
+      },
+      "error": null,
+      "reason": "metadata.page_count: missing key 'metadata.page_count'",
+      "duration_ms": 0
+    },
+    {
+      "id": "get-metadata-minimal",
+      "status": "fail",
+      "actual": {
+        "metadata": {
+          "page_count": 0,
+          "title": null,
+          "author": null,
+          "subject": null,
+          "keywords": null,
+          "creator": null,
+          "producer": null,
+          "created": null,
+          "modified": null
+        }
+      },
+      "expected": {
+        "metadata.page_count": 1,
+        "metadata.title": null,
+        "metadata.author": null
+      },
+      "error": null,
+      "reason": "metadata.page_count: missing key 'metadata.page_count'",
+      "duration_ms": 0
+    },
+    {
+      "id": "get-metadata-xmp-only",
+      "status": "error",
+      "actual": null,
+      "expected": {
+        "metadata.page_count": 1,
+        "metadata.has_xmp": true
+      },
+      "error": "No /Root reference in trailer",
+      "reason": "Execution error: PdftractError",
+      "duration_ms": 0
+    },
+    {
+      "id": "hash-same-file-same-hash",
+      "status": "fail",
+      "actual": {
+        "hash": "pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8",
+        "fast_hash": "",
+        "page_count": 0,
+        "metadata": null
+      },
+      "expected": {
+        "hash_type": "sha256",
+        "hash.length": 64,
+        "page_count": 1,
+        "fast_hash.length": 64,
+        "fast_hash_different_from_hash": true
+      },
+      "error": null,
+      "reason": "hash_type: missing key 'hash_type'",
+      "duration_ms": 0
+    },
+    {
+      "id": "hash-content-stability",
+      "status": "fail",
+      "actual": {
+        "hash": "pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8",
+        "fast_hash": "",
+        "page_count": 0,
+        "metadata": null
+      },
+      "expected": {
+        "hash_type": "sha256",
+        "hash.length": 64,
+        "content_hash_stable": true
+      },
+      "error": null,
+      "reason": "hash_type: missing key 'hash_type'",
+      "duration_ms": 0
+    },
+    {
+      "id": "classify-academic-paper",
+      "status": "error",
+      "actual": null,
+      "expected": {
+        "category": "scientific_paper",
+        "confidence": {
+          "min": 0.7
+        },
+        "tags.length": {
+          "min": 1
+        },
+        "heuristics.has_abstract": true,
+        "heuristics.has_references": true
+      },
+      "error": "Page index 0 out of bounds",
+      "reason": "Execution error: PdftractError",
+      "duration_ms": 0
+    },
+    {
+      "id": "classify-scientific-paper",
+      "status": "error",
+      "actual": null,
+      "expected": {
+        "category": "scientific_paper",
+        "confidence": {
+          "min": 0.7
+        },
+        "tags.length": {
+          "min": 1
+        },
+        "heuristics.has_methods": true,
+        "heuristics.has_results": true
+      },
+      "error": "Page index 0 out of bounds",
+      "reason": "Execution error: PdftractError",
+      "duration_ms": 0
+    },
+    {
+      "id": "classify-scanned-receipt",
+      "status": "error",
+      "actual": null,
+      "expected": {
+        "category": "receipt",
+        "confidence": {
+          "min": 0.7
+        },
+        "tags.length": {
+          "min": 1
+        },
+        "heuristics.is_scanned": true
+      },
+      "error": "Page index 0 out of bounds",
+      "reason": "Execution error: PdftractError",
+      "duration_ms": 0
+    },
+    {
+      "id": "classify-fillable-form",
+      "status": "error",
+      "actual": null,
+      "expected": {
+        "category": "form",
+        "confidence": {
+          "min": 0.7
+        },
+        "tags.length": {
+          "min": 1
+        },
+        "heuristics.has_form_fields": true
+      },
+      "error": "No /Root reference in trailer",
+      "reason": "Execution error: PdftractError",
+      "duration_ms": 0
+    },
+    {
+      "id": "verify-receipt-valid",
+      "status": "error",
+      "actual": null,
+      "expected": {
+        "valid": true
+      },
+      "error": "[Errno 2] No such file or directory: 'receipts/valid-receipt.receipt.json'",
+      "reason": "Execution error: FileNotFoundError",
+      "duration_ms": 0
+    },
+    {
+      "id": "verify-receipt-tampered",
+      "status": "error",
+      "actual": null,
+      "expected": {
+        "valid": false
+      },
+      "error": "[Errno 2] No such file or directory: 'receipts/tampered-receipt.receipt.json'",
+      "reason": "Execution error: FileNotFoundError",
+      "duration_ms": 0
+    },
+    {
+      "id": "extract-broken-pdf",
+      "status": "error",
+      "actual": null,
+      "expected": {
+        "errors.length": {
+          "min": 1
+        },
+        "errors[0].severity": "error"
+      },
+      "error": "No /Root reference in trailer",
+      "reason": "Execution error: PdftractError",
+      "duration_ms": 0
+    },
+    {
+      "id": "extract-remote-pdf",
+      "status": "error",
+      "actual": null,
+      "expected": {
+        "schema_version": "1.0",
+        "metadata.page_count": {
+          "min": 1
+        },
+        "pages.length": {
+          "min": 1
+        },
+        "errors.length": 0
+      },
+      "error": "Failed to open PDF file",
+      "reason": "Execution error: PdftractError",
+      "duration_ms": 0
+    }
+  ],
+  "summary": {
+    "total": 32,
+    "passed": 4,
+    "failed": 10,
+    "skipped": 0,
+    "errors": 18,
+    "duration_ms": 11
+  },
+  "environment": {
+    "os": "Linux",
+    "arch": "x86_64",
+    "python_version": "Python 3.12.12 (main, Oct  9 2025, 11:07:00) [GCC 14.3.0]",
+    "native_available": true
+  }
+}
