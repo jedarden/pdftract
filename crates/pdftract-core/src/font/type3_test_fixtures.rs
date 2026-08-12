@@ -139,6 +139,55 @@ pub fn create_minimal_glyph_dict(notdef_ref: ObjRef) -> GlyphDict {
     dict
 }
 
+/// Create a glyph dictionary with basic properties for Type3 rasterization tests.
+///
+/// This function creates a glyph dictionary with a single test glyph that has
+/// simple, well-defined properties suitable for testing the Type3 glyph
+/// rasterization pipeline.
+///
+/// The test glyph uses the basic properties specified in the test requirements:
+/// - Bounding box: [0, 0, 100, 100] (100x100 unit square at origin)
+/// - Width: 100.0 (advance width matches bbox width)
+///
+/// # Arguments
+///
+/// * `test_ref` - ObjRef for the test glyph's content stream
+///
+/// # Returns
+///
+/// A GlyphDict with a single test glyph entry having the specified properties.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use crate::font::type3_test_fixtures::{create_glyph_dict_with_basic_properties, GlyphDict};
+/// use crate::parser::object::types::ObjRef;
+///
+/// let test_ref = ObjRef::new(11, 0);
+/// let glyph_dict = create_glyph_dict_with_basic_properties(test_ref);
+///
+/// assert_eq!(glyph_dict.len(), 1);
+/// let entry = glyph_dict.get("test_glyph").unwrap();
+/// assert_eq!(entry.bbox, [0.0, 0.0, 100.0, 100.0]);
+/// assert_eq!(entry.width, 100.0);
+/// ```
+pub fn create_glyph_dict_with_basic_properties(test_ref: ObjRef) -> GlyphDict {
+    let mut dict = GlyphDict::new();
+
+    // Add test glyph with basic properties:
+    // - Bounding box: [0, 0, 100, 100]
+    // - Width: 100.0
+    let test_entry = GlyphEntry::new(
+        "test_glyph",
+        100.0,                    // width
+        [0.0, 0.0, 100.0, 100.0], // bbox
+        test_ref
+    );
+    dict.insert(Arc::clone(&test_entry.name), test_entry);
+
+    dict
+}
+
 /// Convert a GlyphDict to the CharProcs HashMap format used by Type3Font.
 ///
 /// Extracts just the glyph name -> ObjRef mapping from a full glyph dictionary,
@@ -667,6 +716,49 @@ mod tests {
         let notdef = dict.get(".notdef").unwrap();
         assert_eq!(notdef.width, 500.0);
         assert_eq!(notdef.charproc_ref, notdef_ref);
+    }
+
+    #[test]
+    fn test_glyph_dict_with_basic_properties() {
+        let test_ref = ObjRef::new(11, 0);
+        let dict = create_glyph_dict_with_basic_properties(test_ref);
+
+        // Verify dict has exactly one entry
+        assert_eq!(dict.len(), 1);
+
+        // Verify the test glyph exists
+        assert!(dict.contains_key("test_glyph"));
+
+        // Verify the glyph entry has the expected properties
+        let entry = dict.get("test_glyph").unwrap();
+        assert_eq!(entry.name.as_ref(), "test_glyph");
+        assert_eq!(entry.width, 100.0);
+        assert_eq!(entry.bbox, [0.0, 0.0, 100.0, 100.0]);
+        assert_eq!(entry.charproc_ref, test_ref);
+    }
+
+    #[test]
+    fn test_glyph_dict_basic_properties_for_rasterization() {
+        // Test that the basic properties glyph dict is suitable for
+        // Type3 glyph rasterization tests
+        let test_ref = ObjRef::new(100, 0);
+        let dict = create_glyph_dict_with_basic_properties(test_ref);
+
+        // Verify bounding box is square 100x100 at origin
+        let entry = dict.get("test_glyph").unwrap();
+        assert_eq!(entry.bbox[0], 0.0, "bbox should start at x=0");
+        assert_eq!(entry.bbox[1], 0.0, "bbox should start at y=0");
+        assert_eq!(entry.bbox[2], 100.0, "bbox should end at x=100");
+        assert_eq!(entry.bbox[3], 100.0, "bbox should end at y=100");
+
+        // Verify width matches bbox width
+        assert_eq!(entry.width, 100.0, "width should be 100.0");
+
+        // Verify dimensions are suitable for rasterization
+        let bbox_width = entry.bbox[2] - entry.bbox[0];
+        let bbox_height = entry.bbox[3] - entry.bbox[1];
+        assert_eq!(bbox_width, 100.0, "bbox width should be 100");
+        assert_eq!(bbox_height, 100.0, "bbox height should be 100");
     }
 
     #[test]
