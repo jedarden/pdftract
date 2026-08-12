@@ -1,19 +1,6 @@
-# Ground truth for AGL-only glyph fixture
-# 10 character codes, all mapped via Adobe Glyph List
-# Level 2 Unicode recovery path (AGL lookup)
-
-# Code 0 → /A
-# Code 1 → /B
-# Code 2 → /C
-# Code 3 → /a
-# Code 4 → /b
-# Code 5 → /c
-# Code 6 → /zero
-# Code 7 → /one
-# Code 8 → /space
-# Code 9 → /comma
+# Ground truth for AGL-only glyph name fixture
+# This PDF contains a font with ONLY glyph names (no ToUnicode CMap)
+# Unicode recovery must use the Adobe Glyph List (AGL) mapping
 
 # Expected extraction output:
-ABCabc01, 
-
-# All glyphs successfully mapped via AGL lookup
+ABCabc01 ,
