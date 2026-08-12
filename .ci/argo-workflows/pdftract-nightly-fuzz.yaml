@@ -197,7 +197,7 @@ spec:
 
               # Seed each fuzz target corpus with relevant fixtures
               # All targets get basic malformed PDFs for general robustness
-              for target in lexer object_parser xref stream_decoder cmap_parser; do
+              for target in lexer object_parser xref stream_decoder cmap_parser content profile_yaml; do
                 TARGET_CORPUS="$CORPUS_BASE/$target"
                 mkdir -p "$TARGET_CORPUS"
 
@@ -276,6 +276,26 @@ spec:
                 parameters:
                   - name: target
                     value: "cmap_parser"
+                  - name: timeout
+                    value: "17400"
+              continueOn:
+                failed: true
+            - name: fuzz-content
+              template: fuzz-target
+              arguments:
+                parameters:
+                  - name: target
+                    value: "content"
+                  - name: timeout
+                    value: "17400"
+              continueOn:
+                failed: true
+            - name: fuzz-profile-yaml
+              template: fuzz-target
+              arguments:
+                parameters:
+                  - name: target
+                    value: "profile_yaml"
                   - name: timeout
                     value: "17400"
               continueOn:
@@ -526,7 +546,7 @@ spec:
 
             TOTAL_CRASHES=0
 
-            for target in lexer object_parser xref stream_decoder cmap_parser; do
+            for target in lexer object_parser xref stream_decoder cmap_parser content profile_yaml; do
               CRASH_FILE="/workspace/crashes-$target.tar.gz"
               if [ -f "$CRASH_FILE" ]; then
                 echo "Found crash artifacts: $target"
@@ -571,7 +591,7 @@ spec:
               # The sidecar pattern would be implemented in a follow-up bead
               # For now, we just collect and list the crash artifacts
 
-              for target in lexer object_parser xref stream_decoder cmap_parser; do
+              for target in lexer object_parser xref stream_decoder cmap_parser content profile_yaml; do
                 CRASH_FILE="/workspace/crashes-$target.tar.gz"
                 if [ -f "$CRASH_FILE" ]; then
                   echo "=== $target crashes ==="
