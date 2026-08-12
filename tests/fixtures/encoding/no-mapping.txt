@@ -1,7 +1,1 @@
-# Ground truth for no-mapping encoding fixture
-# This PDF contains a font with custom glyph names that are NOT in the Adobe Glyph List (AGL)
-# and has NO ToUnicode CMap - representing the worst-case ENCODING_NO_MAPPING failure mode.
-# Level 4 Unicode recovery: no mapping available → should emit U+FFFD replacement characters.
-
-# Expected extraction output:
 ���
