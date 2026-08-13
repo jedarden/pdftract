@@ -24,6 +24,77 @@ const PDFTRACT: &str = env!("CARGO_BIN_EXE_pdftract");
 /// This should match the code returned by the MCP server when a URL is blocked.
 const SSRF_BLOCKED_CODE: i64 = -32001;
 
+// ============================================================================
+// JSON-RPC Response Parsing Types
+// ============================================================================
+
+/// A JSON-RPC 2.0 error object structure.
+///
+/// Represents the error field in a JSON-RPC response with code, message,
+/// and optional data fields.
+#[derive(Debug, Clone, serde::Deserialize)]
+struct JsonRpcError {
+    /// The error code (negative for server errors in the -32099..-32000 range)
+    code: i64,
+    /// Human-readable error message
+    message: String,
+    /// Optional additional error data
+    data: Option<serde_json::Value>,
+}
+
+impl JsonRpcError {
+    /// Check if this error is an SSRF_BLOCKED error.
+    ///
+    /// Returns true if the error data contains a "code" field with value "SSRF_BLOCKED"
+    /// or if the error message contains the substring "SSRF_BLOCKED".
+    fn is_ssrf_blocked(&self) -> bool {
+        // Check if error data contains "code": "SSRF_BLOCKED"
+        if let Some(data) = &self.data {
+            if let Some(code) = data.get("code").and_then(|c| c.as_str()) {
+                if code == "SSRF_BLOCKED" {
+                    return true;
+                }
+            }
+        }
+
+        // Check if the error message itself contains SSRF_BLOCKED
+        self.message.contains("SSRF_BLOCKED")
+    }
+}
+
+/// A generic JSON-RPC 2.0 response structure.
+///
+/// A response has either a result field (success) or an error field (failure),
+/// never both. The id field must match the request id.
+#[derive(Debug, Clone, serde::Deserialize)]
+struct JsonRpcResponse<T> {
+    /// Must be exactly "2.0"
+    jsonrpc: String,
+    /// The successful result value (present only on success)
+    result: Option<T>,
+    /// The error object (present only on failure)
+    error: Option<JsonRpcError>,
+    /// Request identifier
+    id: serde_json::Value,
+}
+
+impl<T> JsonRpcResponse<T> {
+    /// Check if this is a successful response (has result field).
+    fn is_success(&self) -> bool {
+        self.result.is_some()
+    }
+
+    /// Check if this is an error response (has error field).
+    fn is_error(&self) -> bool {
+        self.error.is_some()
+    }
+
+    /// Get the error object if present.
+    fn get_error(&self) -> Option<&JsonRpcError> {
+        self.error.as_ref()
+    }
+}
+
 /// Helper: RAII guard for MCP server process.
 ///
 /// Ensures the child process is killed and cleaned up when the guard drops,
@@ -385,44 +456,28 @@ fn test_ipv6_loopback_blocked() {
 /// * `response_json` - The JSON-RPC response string to check
 /// * `test_description` - Description of the test case (for error messages)
 fn assert_ssrf_blocked_error(response_json: &str, test_description: &str) {
-    let parsed: serde_json::Value =
+    // Parse the JSON-RPC response using the structured type
+    let parsed: JsonRpcResponse<serde_json::Value> =
         serde_json::from_str(response_json).expect("Response is not valid JSON");
 
     // Must have an error field
     let error = parsed
-        .get("error")
+        .get_error()
         .expect(&format!(
             "Response should be an error for {}, got: {}",
             test_description, response_json
         ));
 
-    // Check if error data contains "code": "SSRF_BLOCKED"
-    let has_ssrf_blocked_code = error
-        .get("data")
-        .and_then(|data| data.get("code"))
-        .and_then(|code| code.as_str())
-        .map(|code| code == "SSRF_BLOCKED")
-        .unwrap_or(false);
-
-    // Check if error message contains SSRF_BLOCKED
-    let error_message = error
-        .get("message")
-        .and_then(|m| m.as_str())
-        .unwrap_or("");
-    let has_ssrf_in_message = error_message.contains("SSRF_BLOCKED");
-
+    // Verify this is an SSRF_BLOCKED error using the helper method
     assert!(
-        has_ssrf_blocked_code || has_ssrf_in_message,
+        error.is_ssrf_blocked(),
         "Error response for {} should contain SSRF_BLOCKED in data.code or message. \
          Response: {}",
         test_description, response_json
     );
 
     // Additional verification: ensure we're dealing with a proper error structure
-    let error_code = error
-        .get("code")
-        .and_then(|c| c.as_i64())
-        .expect("Error should have a numeric code");
+    let error_code = error.code;
 
     // Error code should be in the server error range or the specific SSRF blocked code
     assert!(
@@ -517,13 +572,13 @@ fn test_no_network_connection_attempted() {
         elapsed.as_millis()
     );
 
-    // Parse response to verify it's not a success result
-    let parsed: serde_json::Value =
+    // Parse response using the structured JSON-RPC type
+    let parsed: JsonRpcResponse<serde_json::Value> =
         serde_json::from_str(&response).expect("Response is not valid JSON");
 
     // Verify the response is an error (SSRF blocking implemented)
     assert!(
-        parsed.get("error").is_some(),
+        parsed.is_error(),
         "Response should be an error (URL should be rejected)"
     );
 
