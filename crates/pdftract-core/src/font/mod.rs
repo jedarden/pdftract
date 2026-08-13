@@ -28,12 +28,13 @@ pub mod type3_test_fixtures;
 pub use path_commands::{closepath, curveto, lineto, moveto, rectangle};
 pub use type3_test_fixtures::{
     create_charproc_stream_with_curves, create_empty_content_stream, create_glyph_dict_with_basic_properties,
-    create_main_content_stream, create_main_content_stream_multi, create_simple_charproc_stream,
+    create_main_content_stream, create_main_content_stream_multi, create_rectangle_charproc_stream,
+    create_simple_charproc_stream,
 };
 
 pub use test_glyph_helper::{
     make_custom_char_procs, make_empty_glyph, make_line_glyph, make_rect_glyph,
-    make_test_char_procs, make_test_resolver,
+    make_rect_glyph_with_path_commands, make_test_char_procs, make_test_resolver,
 };
 
 #[cfg(feature = "cjk")]
