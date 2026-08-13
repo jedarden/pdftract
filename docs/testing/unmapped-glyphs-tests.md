@@ -840,6 +840,214 @@ cargo nextest run test_memory_guard_alloc_failure -- --ignored
 cargo test --release -- --ignored
 ```
 
+## Proptest Regression Management
+
+### Overview
+
+Proptest regression files in `proptest-regressions/` contain minimal counterexamples discovered during property-based testing. These files ensure reproducible failures across different machines and prevent regression on previously-fixed bugs.
+
+### File Naming Convention
+
+Files are named `<test_name>.txt` where test path slashes are replaced with underscores:
+- `proptest_lexer_prop_never_panics_on_random_bytes.txt`
+- `proptest_object_parser_prop_parse_indirect_object_valid.txt`
+
+### Critical Removal Policy
+
+**Only remove a regression file if BOTH conditions are met:**
+1. The underlying bug has been fixed
+2. The test passes with the regression file present
+
+**Risk:** Removing a regression file without fixing the bug causes proptest to re-discover the same failure on the next CI run, wasting computation time and obscuring whether the fix actually addressed the issue.
+
+### Reproduction Workflow
+
+When proptest finds a failing case, it automatically writes the minimal counterexample to this directory. On subsequent runs, proptest tests these known failures before generating new random inputs.
+
+```bash
+# Reproduce a specific failure
+cargo test --features proptest -- proptest <test_name>
+
+# Verify a fix by running the test with the regression file present
+cargo test --features proptest -- proptest <test_name>
+# Only remove the file if this passes
+```
+
+### Edge Cases and Limitations
+
+1. **Cross-Platform Reproducibility**: Regression files are plain text and should reproduce across platforms, but be aware of potential end-of-line differences
+2. **Minimal vs. Original Input**: Regression files contain the minimal counterexample after shrinking, not the original failing input
+3. **Test Interaction**: Regression files from one test cannot reproduce failures in another test
+4. **Version Sensitivity**: If the test logic changes, regression files may no longer be relevant and should be regenerated
+
+## Glyph Shape Database Generation
+
+### Overview
+
+The shape database (`build/glyph-shapes.json`) supports Level 4 glyph recognition by mapping perceptual hashes (pHash) to Unicode characters. Generated via `cargo xtask gen-shape-db <fonts-dir> [output-path]`.
+
+### Font License Requirements
+
+**Fonts MUST be open-licensed:**
+- Google Fonts (Apache 2.0 / OFL)
+- SIL Open Font License fonts
+- Other permissive licenses compatible with PDF extraction
+
+**Non-compliance:** Using proprietary fonts in shape database generation may violate license terms and cannot be distributed with the project.
+
+### Algorithm Edge Cases
+
+1. **Cross-Character Collisions**: Multiple characters may produce similar pHash values
+   - **Resolution**: Keep higher-frequency character based on `build/frequency.json`
+   - **Fallback**: If frequency data missing, all characters assigned rank 0 (no preference)
+
+2. **Bitmap Centering**: Glyphs rasterized at 32×32 pixels and centered on canvas
+   - **Issue**: Asymmetric glyphs may not center perfectly
+   - **Impact**: Slightly different pHash for same character across fonts
+
+3. **Coverage Gaps**: Not all fonts support all Unicode codepoints
+   - **Behavior**: Skips missing codepoints without error
+   - **Result**: Database may have gaps in coverage
+
+4. **Frequency Ranking**: Higher rank = more common character
+   - **Source**: `build/frequency.json` with format `{"A": 30, "B": 47, ...}`
+   - **Default**: Rank 0 for all characters if file missing
+
+### Determinism and Reproducibility
+
+The output is byte-identical when re-run on the same input fonts and frequency data. However:
+- Different fontdue versions may produce different rasterization
+- Different frequency data changes collision resolution
+- Font file modifications change pHash values
+
+### Suggested Fonts for Coverage
+
+For comprehensive glyph coverage:
+- **Liberation Sans**: Core Latin glyphs
+- **DejaVu Sans**: Extended Latin, symbols
+- **Source Code Pro**: Monospace variants
+- **Noto Sans**: Latin, Greek, Cyrillic
+- **Roboto**: Wide Latin coverage
+
+**Expected:** ~5000 glyphs from comprehensive font set
+
+### Limitations
+
+1. **32×32 Resolution**: Low resolution limits discrimination of similar glyphs
+2. **pHash Collisions**: Different glyphs may hash to similar values (handled by frequency ranking)
+3. **Font Dependency**: Coverage limited by fonts in input directory
+4. **No Font Variation**: Database doesn't account for bold/italic variants (treated as separate glyphs)
+5. **License Attribution**: Font license texts must be stored in `build/font-licenses/` with documentation
+
+## Forms Integration Test Patterns
+
+### XFA Form Handling
+
+**Current Status**: XFA (XML Forms Architecture) forms are not yet implemented and are explicitly skipped with TODO documentation.
+
+### Skip Pattern
+
+```rust
+// From tests/forms_integration.rs
+if fixture_name.contains("xfa") {
+    println!("⚠ SKIP: XFA fixture '{}' - not yet implemented (TODO)", fixture_name);
+    return;
+}
+```
+
+### Fixture-Dependent Behavior
+
+Forms integration tests have multiple skip conditions:
+
+1. **No Fixtures Available**: Skips when no PDF files found in fixtures directory
+2. **Missing Ground Truth**: Skips when `ground_truth.txt` doesn't exist for a fixture
+3. **XFA Detection**: Filename-based detection for explicit skip with documentation
+4. **Malformed Forms**: Continues past forms that cannot be parsed (documented in output)
+
+### Test Structure
+
+Forms tests follow this pattern:
+```rust
+for fixture in fixtures {
+    if fixture.contains("xfa") {
+        // Explicit skip with TODO
+        continue;
+    }
+    if !ground_truth_exists(fixture) {
+        // Graceful skip
+        continue;
+    }
+    // Run test
+}
+```
+
+This ensures the test suite provides meaningful coverage while documenting future work (XFA) and handling missing fixtures gracefully.
+
+## Conformance Test Feature-Based Skipping
+
+### SDK Conformance Test Structure
+
+Tests in `tests/sdk-conformance/cases.json` use feature-based conditional execution:
+
+```json
+{
+  "test_name": "example_test",
+  "required_features": ["vector", "ocr"],
+  "skip_reason": "OCR feature not enabled",
+  "min_schema_version": 1
+}
+```
+
+### Feature Requirements
+
+Tests specify required features:
+- `vector`: Vector graphics rendering
+- `ocr`: OCR/text recognition
+- `decrypt`: Decryption support
+- `forms`: Form field extraction
+- `mixed`: Mixed-content pages
+- `large`: Large file handling
+- `unicode`: Unicode text extraction
+- `vertical`: Vertical text modes
+- `math`: Mathematical notation
+- `tables`: Table extraction
+
+### Skip Behavior
+
+Tests skip when:
+1. Required feature not enabled via `--features <feature>`
+2. Schema version below `min_schema_version`
+3. Fixture file missing
+4. Ground truth file missing
+
+### Version Compatibility
+
+The `min_schema_version` field ensures tests only run on compatible schema versions:
+- Prevents tests from running on outdated schemas
+- Allows graceful evolution of test fixtures
+- Documents breaking changes in schema
+
+### Examples
+
+```json
+// OCR test with feature gate
+{
+  "test_name": "ocr_basic_extraction",
+  "required_features": ["ocr"],
+  "skip_reason": "OCR feature not compiled"
+}
+
+// Large file test with multiple requirements
+{
+  "test_name": "large_document_performance",
+  "required_features": ["large", "decrypt"],
+  "min_schema_version": 2,
+  "skip_reason": "Requires large file support and schema v2+"
+}
+```
+
+This structure allows the conformance test suite to adapt to different build configurations while documenting why tests are skipped.
+
 ## Summary
 
 The pdftract test suite has comprehensive edge case coverage for:
@@ -850,5 +1058,9 @@ The pdftract test suite has comprehensive edge case coverage for:
 - Platform-specific considerations
 - Test skip conditions and when to use them
 - Debugging and troubleshooting procedures
+- Proptest regression management and removal policies
+- Glyph shape database generation and font licensing
+- Forms integration test patterns and XFA handling
+- Conformance test feature-based skipping
 
 All tests use enhanced assertion messages with diagnostic context to make failures easier to understand and fix. The test infrastructure prioritizes preventing test hangs and resource leaks through timeout enforcement and process cleanup verification.
