@@ -353,10 +353,12 @@ fn test_differences_overlay_filters_unmapped_glyphs() {
         // Code 2 → /g003 (unmapped - should be filtered out)
         PdfObject::Integer(2),
         PdfObject::Name(intern("/g003")),
-        // Code 3 → /CustomA (normal - should be present)
+        // Code 3 → /CustomA (unmapped - should be filtered out)
+        // NOTE: CustomA is configured as unmapped in build/unmapped-glyph-names.json
         PdfObject::Integer(3),
         PdfObject::Name(intern("/CustomA")),
-        // Code 4 → /CustomB (normal - should be present)
+        // Code 4 → /CustomB (unmapped - should be filtered out)
+        // NOTE: CustomB is configured as unmapped in build/unmapped-glyph-names.json
         PdfObject::Integer(4),
         PdfObject::Name(intern("/CustomB")),
         // Code 5 → /.notdef (unmapped - should be filtered out)
@@ -365,8 +367,11 @@ fn test_differences_overlay_filters_unmapped_glyphs() {
         // Code 6 → /A (normal - should be present)
         PdfObject::Integer(6),
         PdfObject::Name(intern("/A")),
-        // Code 7 → /space (normal - should be present)
+        // Code 7 → /B (normal - should be present)
         PdfObject::Integer(7),
+        PdfObject::Name(intern("/B")),
+        // Code 8 → /space (normal - should be present)
+        PdfObject::Integer(8),
         PdfObject::Name(intern("/space")),
     ]));
 
@@ -405,6 +410,26 @@ fn test_differences_overlay_filters_unmapped_glyphs() {
         overlay.get(2)
     );
     assert_eq!(
+        overlay.get(3),
+        None,
+        "Code 3 (CustomA) should be absent from DifferencesOverlay. \
+         Expected: None (unmapped glyph should be filtered out). \
+         Found: {:?}. \
+         Why this matters: CustomA is configured as unmapped in build/unmapped-glyph-names.json \
+         and should be skipped during parsing.",
+        overlay.get(3)
+    );
+    assert_eq!(
+        overlay.get(4),
+        None,
+        "Code 4 (CustomB) should be absent from DifferencesOverlay. \
+         Expected: None (unmapped glyph should be filtered out). \
+         Found: {:?}. \
+         Why this matters: CustomB is configured as unmapped in build/unmapped-glyph-names.json \
+         and should be skipped during parsing.",
+        overlay.get(4)
+    );
+    assert_eq!(
         overlay.get(5),
         None,
         "Code 5 (.notdef) should be absent from DifferencesOverlay. \
@@ -418,24 +443,6 @@ fn test_differences_overlay_filters_unmapped_glyphs() {
     // This ensures we don't over-filter: normal glyphs that ARE NOT in the unmapped set
     // must appear in the parsed overlay.
     assert_eq!(
-        overlay.get(3),
-        Some(Arc::from("/CustomA")),
-        "Code 3 (CustomA) should be present in DifferencesOverlay. \
-         Expected: Some(\"/CustomA\"). \
-         Found: {:?}. \
-         Why this matters: CustomA is not configured as unmapped, so it should be preserved.",
-        overlay.get(3)
-    );
-    assert_eq!(
-        overlay.get(4),
-        Some(Arc::from("/CustomB")),
-        "Code 4 (CustomB) should be present in DifferencesOverlay. \
-         Expected: Some(\"/CustomB\"). \
-         Found: {:?}. \
-         Why this matters: CustomB is not configured as unmapped, so it should be preserved.",
-        overlay.get(4)
-    );
-    assert_eq!(
         overlay.get(6),
         Some(Arc::from("/A")),
         "Code 6 (A) should be present in DifferencesOverlay. \
@@ -446,22 +453,32 @@ fn test_differences_overlay_filters_unmapped_glyphs() {
     );
     assert_eq!(
         overlay.get(7),
+        Some(Arc::from("/B")),
+        "Code 7 (B) should be present in DifferencesOverlay. \
+         Expected: Some(\"/B\"). \
+         Found: {:?}. \
+         Why this matters: B is a normal Latin letter and should never be filtered.",
+        overlay.get(7)
+    );
+    assert_eq!(
+        overlay.get(8),
         Some(Arc::from("/space")),
-        "Code 7 (space) should be present in DifferencesOverlay. \
+        "Code 8 (space) should be present in DifferencesOverlay. \
          Expected: Some(\"/space\"). \
          Found: {:?}. \
          Why this matters: space is a standard whitespace character and should never be filtered.",
-        overlay.get(7)
+        overlay.get(8)
     );
 
-    // Verify total count: only 4 entries should remain (CustomA, CustomB, A, space)
+    // Verify total count: only 3 entries should remain (A, B, space)
     assert_eq!(
         overlay.len(),
-        4,
-        "Overlay should have exactly 4 entries after filtering out unmapped glyphs. \
-         Expected: 4 entries (CustomA, CustomB, A, space). \
+        3,
+        "Overlay should have exactly 3 entries after filtering out unmapped glyphs. \
+         Expected: 3 entries (A, B, space). \
          Found: {} entries. \
-         Why this matters: 5 unmapped glyphs (g001, g002, g003, .notdef, null) were filtered from build/unmapped-glyph-names.json.",
+         Why this matters: 6 unmapped glyphs (g001, g002, g003, CustomA, CustomB, .notdef) \
+         were filtered from build/unmapped-glyph-names.json, leaving only 3 normal glyphs.",
         overlay.len()
     );
 
