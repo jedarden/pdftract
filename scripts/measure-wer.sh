@@ -65,7 +65,7 @@ if [[ ! -f "$GROUND_TRUTH" ]]; then
 fi
 
 # Find WER calculation script
-WER_SCRIPT="$PROJECT_ROOT/tests/fixtures/scanned/calculate_wer.py"
+WER_SCRIPT="$PROJECT_ROOT/tools/calculate_wer.py"
 
 if [[ ! -f "$WER_SCRIPT" ]]; then
     echo "Error: WER calculation script not found: $WER_SCRIPT" >&2
