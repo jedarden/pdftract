@@ -9,7 +9,7 @@ use crate::parser::catalog::Catalog;
 use crate::parser::object::{ObjRef, PdfDict, PdfObject};
 use crate::parser::xref::XrefResolver;
 use std::sync::Arc;
-use tracing::warn;
+use tracing::{debug, error, info, warn};
 
 /// A detected JavaScript action.
 #[derive(Debug, Clone)]
@@ -44,7 +44,8 @@ pub fn detect_javascript(
     pages: &[crate::parser::pages::PageDict],
     resolver: &Arc<XrefResolver>,
 ) -> (Vec<JavascriptAction>, Vec<Diagnostic>) {
-    warn!("JavaScript detection initiated - execution is NOT supported (per TH-04 threat model)");
+    info!("JavaScript DETECTION STARTED - Scanning PDF for JavaScript actions (NEVER executing per TH-04)");
+    debug!("JavaScript detection initiated - pdftract NEVER executes embedded JavaScript (per TH-04 threat model)");
     let mut actions = Vec::new();
     let mut diagnostics = Vec::new();
 
@@ -84,6 +85,36 @@ pub fn detect_javascript(
 
     // Emit diagnostic if any JavaScript was found
     if !actions.is_empty() {
+        info!(
+            "JavaScript DETECTION COMPLETE: Found {} JavaScript action(s) - NO EXECUTION ATTEMPTED",
+            actions.len()
+        );
+        debug!(
+            "JavaScript detection complete: found {} JavaScript action(s) - NO execution attempted (per TH-04 threat model)",
+            actions.len()
+        );
+        for (idx, action) in actions.iter().enumerate() {
+            info!(
+                "  [{}] JavaScript FOUND at '{}': {}",
+                idx + 1,
+                action.location,
+                if action.code_excerpt.len() > 50 {
+                    format!("{}...", &action.code_excerpt[..50])
+                } else {
+                    action.code_excerpt.clone()
+                }
+            );
+            debug!(
+                "  [{}] JavaScript detected at '{}': {}",
+                idx + 1,
+                action.location,
+                if action.code_excerpt.len() > 50 {
+                    format!("{}...", &action.code_excerpt[..50])
+                } else {
+                    action.code_excerpt.clone()
+                }
+            );
+        }
         diagnostics.push(Diagnostic::with_dynamic_no_offset(
             DiagCode::SecurityJavascriptPresent,
             format!(
@@ -91,6 +122,9 @@ pub fn detect_javascript(
                 actions.len()
             ),
         ));
+    } else {
+        info!("JavaScript DETECTION COMPLETE: No JavaScript actions found in PDF document");
+        debug!("JavaScript detection complete: no JavaScript actions found in PDF document");
     }
 
     (actions, diagnostics)
@@ -240,6 +274,22 @@ fn extract_js_code(
         location: location.to_string(),
         code_excerpt: excerpt,
     });
+
+    info!("JavaScript action FOUND at '{}' - code extracted but NOT EXECUTED", location);
+    debug!("JavaScript action detected at location '{}': code found but NOT executed (per TH-04)", location);
+
+    // This log message would ONLY appear if JavaScript execution were ever attempted
+    // This serves as a defensive marker to distinguish detection from execution
+    // Per TH-04 threat model, execution is NEVER attempted
+    if cfg!(false) {
+        // This branch is intentionally unreachable - JavaScript execution is NEVER attempted
+        warn!(
+            "SECURITY: JavaScript execution would be attempted at '{}' - BLOCKED by TH-04 threat model.
+            This log should NEVER appear in production - if it does, the code has been modified to attempt execution.",
+            location
+        );
+        error!("CRITICAL: JavaScript execution attempted at '{}' - VIOLATES TH-04 threat model", location);
+    }
 }
 
 #[cfg(test)]
