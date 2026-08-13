@@ -3,14 +3,14 @@
 **Date:** 2026-08-12 (updated)  
 **Purpose:** Comprehensive documentation of git mirroring setup, workspace conventions, and resolution processes for the pdftract repository.
 
-## Current Status (2026-08-12)
+## Current Status (2026-08-13)
 
 ✅ **Mirror is operational and in sync**
 
-- **Forgejo main:** `e0122612d0324b870762addea63cfd3482a9baaa`
-- **GitHub main:** `e0122612d0324b870762addea63cfd3482a9baaa`
+- **Forgejo main:** `098217975847bcdfe76e1613b6f418075c45633e`
+- **GitHub main:** `098217975847bcdfe76e1613b6f418075c45633e`
 - **Commits behind:** 0
-- **Last sync:** 2026-08-12T14:32:13Z
+- **Last sync:** 2026-08-13T09:12:13Z
 - **Mirror status:** No errors
 
 The previous 84-160 commit divergence has been fully resolved. The Forgejo push mirror is working correctly with `sync_on_commit: true`.
@@ -165,6 +165,212 @@ git merge-base origin/main github/main
 
 # Show when divergence started
 git log --oneline --date-order origin/main ^github/main | head -1
+```
+
+---
+
+## Manual Sync Triggering
+
+The Forgejo push mirror normally syncs automatically every 10 minutes and on every commit (`sync_on_commit: true`). However, you may need to trigger a manual sync in certain situations:
+
+### When to Manually Sync
+
+- After resolving large file blockers that prevented automatic sync
+- After fixing authentication issues
+- After recovering from a mirror configuration issue
+- When you need to urgently propagate changes to GitHub
+
+### Method 1: Via Forgejo Web UI (Recommended)
+
+1. Navigate to: `https://git.ardenone.com/jedarden/pdftract/settings/mirrors`
+2. Find the push mirror entry for GitHub
+3. Click the "Sync Now" button next to the mirror
+4. Monitor the "Last Sync" timestamp to confirm completion
+
+### Method 2: Via Forgejo API
+
+```bash
+# Trigger a manual sync via API push mirror endpoint
+FORGEJO_TOKEN="$(git credential fill <<< 'protocol=https
+host=git.ardenone.com
+' | grep password | cut -d= -f2)"
+
+# Get the mirror ID first
+MIRROR_ID="$(curl -s -H "Authorization: token $FORGEJO_TOKEN" \
+  https://git.ardenone.com/api/v1/repos/jedarden/pdftract/push_mirrors | \
+  python3 -c "import sys, json; print(json.load(sys.stdin)[0]['remote_name'])")"
+
+# Trigger sync (note: API may not have explicit sync endpoint - use Web UI)
+echo "Mirror ID: $MIRROR_ID"
+echo "Please use Web UI to sync: https://git.ardenone.com/jedarden/pdftract/settings/mirrors"
+```
+
+⚠️ **Note:** The Forgejo API may not expose an explicit "sync now" endpoint. The Web UI method is the most reliable way to trigger manual syncs.
+
+### Method 3: Direct Push (Recovery Only)
+
+If the mirror is completely broken and you need to urgently sync to GitHub:
+
+```bash
+# Fetch both remotes first
+git fetch origin
+git fetch github
+
+# Push to GitHub manually (use only for recovery)
+git push github origin/main:main --force-with-lease
+```
+
+⚠️ **Warning:** Only use this method when the mirror is genuinely broken. Normal operation should rely on the Forgejo push mirror.
+
+### Verifying Manual Sync Success
+
+After triggering a manual sync, verify it succeeded:
+
+```bash
+# Wait 10-20 seconds for sync to complete
+sleep 20
+
+# Check if GitHub is now in sync
+git fetch github
+git rev-parse origin/main github/main
+
+# Both SHAs should match
+FORGEJO_SHA=$(git rev-parse origin/main)
+GITHUB_SHA=$(git rev-parse github/main)
+
+if [ "$FORGEJO_SHA" = "$GITHUB_SHA" ]; then
+    echo "✓ Manual sync successful"
+else
+    echo "✗ Manual sync failed - check mirror logs"
+fi
+```
+
+---
+
+## API Reference
+
+### Forgejo Push Mirrors API
+
+#### Get All Push Mirrors
+
+```bash
+GET /api/v1/repos/{owner}/{repo}/push_mirrors
+```
+
+**Example:**
+```bash
+FORGEJO_TOKEN="$(git credential fill <<< 'protocol=https
+host=git.ardenone.com
+' | grep password | cut -d= -f2)"
+
+curl -s -X GET "https://git.ardenone.com/api/v1/repos/jedarden/pdftract/push_mirrors" \
+  -H "Authorization: token $FORGEJO_TOKEN" \
+  -H "Content-Type: application/json"
+```
+
+**Response:**
+```json
+[
+  {
+    "repo_name": "pdftract",
+    "remote_name": "remote_mirror_nfF0JdlNzC",
+    "remote_address": "https://github.com/jedarden/pdftract.git",
+    "created": "2026-05-16T19:51:17Z",
+    "last_update": "2026-08-13T09:12:13Z",
+    "last_error": "",
+    "interval": "10m0s",
+    "sync_on_commit": true
+  }
+]
+```
+
+#### Get Specific Push Mirror
+
+```bash
+GET /api/v1/repos/{owner}/{repo}/push_mirrors/{mirror}
+```
+
+**Example:**
+```bash
+curl -s -X GET "https://git.ardenone.com/api/v1/repos/jedarden/pdftract/push_mirrors/remote_mirror_nfF0JdlNzC" \
+  -H "Authorization: token $FORGEJO_TOKEN"
+```
+
+#### Create Push Mirror
+
+```bash
+POST /api/v1/repos/{owner}/{repo}/push_mirrors
+```
+
+**Example:**
+```bash
+curl -s -X POST "https://git.ardenone.com/api/v1/repos/jedarden/pdftract/push_mirrors" \
+  -H "Authorization: token $FORGEJO_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "remote_address": "https://github.com/jedarden/pdftract.git",
+    "interval": "10m0s",
+    "sync_on_commit": true
+  }'
+```
+
+#### Update Push Mirror
+
+```bash
+PATCH /api/v1/repos/{owner}/{repo}/push_mirrors/{mirror}
+```
+
+**Example:**
+```bash
+curl -s -X PATCH "https://git.ardenone.com/api/v1/repos/jedarden/pdftract/push_mirrors/remote_mirror_nfF0JdlNzC" \
+  -H "Authorization: token $FORGEJO_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "interval": "5m0s",
+    "sync_on_commit": true
+  }'
+```
+
+#### Delete Push Mirror
+
+```bash
+DELETE /api/v1/repos/{owner}/{repo}/push_mirrors/{mirror}
+```
+
+**Example:**
+```bash
+curl -s -X DELETE "https://git.ardenone.com/api/v1/repos/jedarden/pdftract/push_mirrors/remote_mirror_nfF0JdlNzC" \
+  -H "Authorization: token $FORGEJO_TOKEN"
+```
+
+### GitHub Repository API
+
+#### Get Repository Information
+
+```bash
+GET /api/v3/repos/{owner}/{repo}
+```
+
+**Example:**
+```bash
+GH_TOKEN="$(gh auth token)"
+curl -s -X GET "https://api.github.com/repos/jedarden/pdftract" \
+  -H "Authorization: token $GH_TOKEN" \
+  -H "Accept: application/vnd.github.v3+json"
+```
+
+### Git Credential Helper
+
+The workspace uses git credential helpers for authentication:
+
+```bash
+# Get Forgejo token
+git credential fill <<< 'protocol=https
+host=git.ardenone.com
+' | grep password | cut -d= -f2
+
+# Get GitHub token  
+gh auth token
 ```
 
 ---
