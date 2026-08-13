@@ -166,8 +166,25 @@ fn test_no_mapping_fixture() {
     // no-mapping.pdf has custom glyph names that don't map to AGL
     // Current implementation may emit U+FFFD or recover via shape recognition
     // For now, we just verify it doesn't crash
-    assert!(result.cer >= 0.0, "CER should be non-negative");
-    assert!(result.recovery_rate <= 1.0, "Recovery rate should be ≤ 1.0");
+    assert!(
+        result.cer >= 0.0,
+        "CER should be non-negative for no-mapping.pdf. \
+         Expected: cer >= 0.0. \
+         Found: {}. \
+         Why this matters: Character error rate is a ratio of errors to total length; \
+         negative values indicate a calculation bug in the edit distance algorithm.",
+        result.cer
+    );
+    assert!(
+        result.recovery_rate <= 1.0,
+        "Recovery rate should be ≤ 1.0 (100%) for no-mapping.pdf. \
+         Expected: recovery_rate <= 1.0. \
+         Found: {}. \
+         Why this matters: Recovery rate represents the fraction of characters successfully \
+         recovered; values > 1.0 indicate the recovery count exceeds the total character count, \
+         which is impossible.",
+        result.recovery_rate
+    );
 }
 
 #[test]
@@ -179,12 +196,32 @@ fn test_agl_only_fixture() {
     assert_eq!(
         result.extracted.trim(),
         result.ground_truth.trim(),
-        "AGL-only fixture should recover text correctly via glyph name mapping"
+        "AGL-only fixture should recover text correctly via glyph name mapping. \
+         Expected: \"Hello\\nWorld\". \
+         Found: \"{}\". \
+         Why this matters: AGL (Adobe Glyph List) mapping is the Level 2 fallback for fonts \
+         without ToUnicode; it should correctly resolve standard glyph names to their Unicode values.",
+        result.extracted.trim()
     );
-    assert_eq!(result.cer, 0.0, "CER should be 0 for perfect match");
     assert_eq!(
-        result.recovery_rate, 1.0,
-        "Recovery rate should be 1.0 for perfect match"
+        result.cer,
+        0.0,
+        "CER should be 0 for perfect match in AGL-only fixture. \
+         Expected: 0.0 (no character errors). \
+         Found: {}. \
+         Why this matters: A perfect match means all glyphs were correctly recovered via \
+         AGL mapping; any error indicates the AGL lookup or glyph name resolution failed.",
+        result.cer
+    );
+    assert_eq!(
+        result.recovery_rate,
+        1.0,
+        "Recovery rate should be 1.0 (100%) for perfect AGL match. \
+         Expected: 1.0. \
+         Found: {}. \
+         Why this matters: 100% recovery rate confirms that all glyphs in the fixture were \
+         successfully resolved through the AGL fallback path.",
+        result.recovery_rate
     );
 }
 
@@ -195,7 +232,15 @@ fn test_fingerprint_match_fixture() {
 
     // Fingerprint matching should recover "Test" if the font is in the DB
     // This is currently a placeholder - the actual fingerprint DB is populated in Phase 2.2
-    assert!(result.cer >= 0.0, "CER should be non-negative");
+    assert!(
+        result.cer >= 0.0,
+        "CER should be non-negative for fingerprint-match fixture. \
+         Expected: cer >= 0.0. \
+         Found: {}. \
+         Why this matters: CER is calculated as (errors / total_length); negative values indicate \
+         a bug in the edit distance algorithm regardless of whether fingerprint matching succeeds.",
+        result.cer
+    );
 }
 
 #[test]
@@ -205,7 +250,15 @@ fn test_shape_match_fixture() {
 
     // Shape matching should recover "Shape" if glyphs are in the shape DB
     // This is currently a placeholder - the shape DB is populated in Phase 2.5
-    assert!(result.cer >= 0.0, "CER should be non-negative");
+    assert!(
+        result.cer >= 0.0,
+        "CER should be non-negative for shape-match fixture. \
+         Expected: cer >= 0.0. \
+         Found: {}. \
+         Why this matters: Even when shape matching is incomplete, the CER calculation \
+         should never produce negative values; this validates the edit distance math.",
+        result.cer
+    );
 }
 
 #[test]
@@ -213,12 +266,20 @@ fn test_all_encoding_fixtures_exist() {
     for fixture in get_fixtures() {
         assert!(
             Path::new(&fixture.pdf_path).exists(),
-            "Encoding fixture PDF should exist: {}",
+            "Encoding fixture PDF should exist: {}. \
+             Expected: file exists. \
+             Found: file does not exist. \
+             Why this matters: Fixtures are the ground truth for testing Unicode recovery; \
+             missing PDFs indicate a build setup or fixture generation failure.",
             fixture.pdf_path
         );
         assert!(
             Path::new(&fixture.truth_path).exists(),
-            "Encoding fixture ground truth should exist: {}",
+            "Encoding fixture ground truth should exist: {}. \
+             Expected: file exists. \
+             Found: file does not exist. \
+             Why this matters: Ground truth files contain the correct Unicode output that \
+             extraction should produce; missing files prevent validation of recovery accuracy.",
             fixture.truth_path
         );
     }

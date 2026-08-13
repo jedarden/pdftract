@@ -782,29 +782,135 @@ mod tests {
 
     #[test]
     fn test_unicode_source_confidence() {
-        assert_eq!(UnicodeSource::ToUnicode.confidence(), 1.0);
-        assert_eq!(UnicodeSource::Agl.confidence(), 0.9);
-        assert_eq!(UnicodeSource::Fingerprint.confidence(), 0.85);
-        assert_eq!(UnicodeSource::ShapeMatch.confidence(), 0.7);
-        assert_eq!(UnicodeSource::Unknown.confidence(), 0.0);
+        assert_eq!(
+            UnicodeSource::ToUnicode.confidence(),
+            1.0,
+            "ToUnicode confidence should be 1.0 (highest). \
+             Expected: 1.0. \
+             Found: {}. \
+             Why this matters: ToUnicode CMap is the Level 1 (highest-confidence) source for \
+             glyph-to-codepoint resolution; it should always have maximum confidence.",
+            UnicodeSource::ToUnicode.confidence()
+        );
+        assert_eq!(
+            UnicodeSource::Agl.confidence(),
+            0.9,
+            "AGL confidence should be 0.9 (high fallback). \
+             Expected: 0.9. \
+             Found: {}. \
+             Why this matters: AGL (Adobe Glyph List) is the Level 2 fallback; slightly lower \
+             confidence reflects it's less reliable than ToUnicode but still authoritative.",
+            UnicodeSource::Agl.confidence()
+        );
+        assert_eq!(
+            UnicodeSource::Fingerprint.confidence(),
+            0.85,
+            "Fingerprint confidence should be 0.85 (moderate-high fallback). \
+             Expected: 0.85. \
+             Found: {}. \
+             Why this matters: Font fingerprint matching is Level 3; confidence is lower than \
+             direct mappings because it relies on font program SHA-256 database lookups.",
+            UnicodeSource::Fingerprint.confidence()
+        );
+        assert_eq!(
+            UnicodeSource::ShapeMatch.confidence(),
+            0.7,
+            "ShapeMatch confidence should be 0.7 (moderate fallback). \
+             Expected: 0.7. \
+             Found: {}. \
+             Why this matters: Glyph shape recognition is Level 4; lower confidence reflects \
+             it's a heuristic based on visual similarity rather than exact mapping data.",
+            UnicodeSource::ShapeMatch.confidence()
+        );
+        assert_eq!(
+            UnicodeSource::Unknown.confidence(),
+            0.0,
+            "Unknown confidence should be 0.0 (no confidence). \
+             Expected: 0.0. \
+             Found: {}. \
+             Why this matters: When all resolution levels fail, we produce U+FFFD with zero \
+             confidence to signal complete uncertainty about the correct Unicode value.",
+            UnicodeSource::Unknown.confidence()
+        );
     }
 
     #[test]
     fn test_resolved_glyph_failure() {
         let glyph = ResolvedGlyph::failure();
-        assert!(glyph.is_failure());
-        assert_eq!(glyph.chars.as_slice(), ['\u{FFFD}']);
-        assert_eq!(glyph.source, UnicodeSource::Unknown);
-        assert_eq!(glyph.confidence, 0.0);
+        assert!(
+            glyph.is_failure(),
+            "ResolvedGlyph::failure() should produce a failure state. \
+             Expected: is_failure() == true. \
+             Found: {}. \
+             Why this matters: Failure state indicates no valid Unicode mapping was found; \
+             this is used when all 4 resolution levels (ToUnicode, AGL, fingerprint, shape) fail.",
+            glyph.is_failure()
+        );
+        assert_eq!(
+            glyph.chars.as_slice(),
+            ['\u{FFFD}'],
+            "Failed glyph should contain U+FFFD replacement character. \
+             Expected: ['\\u{FFFD}']. \
+             Found: {:?}. \
+             Why this matters: U+FFFD is the standard Unicode replacement character; it signals \
+             the glyph could not be resolved to any valid Unicode value.",
+            glyph.chars.as_slice()
+        );
+        assert_eq!(
+            glyph.source,
+            UnicodeSource::Unknown,
+            "Failed glyph should have Unknown source. \
+             Expected: UnicodeSource::Unknown. \
+             Found: {:?}. \
+             Why this matters: Unknown source indicates none of the 4 resolution levels succeeded.",
+            glyph.source
+        );
+        assert_eq!(
+            glyph.confidence,
+            0.0,
+            "Failed glyph should have zero confidence. \
+             Expected: 0.0. \
+             Found: {}. \
+             Why this matters: Zero confidence reflects complete uncertainty; this glyph should \
+             not be trusted for any critical text processing.",
+            glyph.confidence
+        );
     }
 
     #[test]
     fn test_resolved_glyph_new() {
         let chars = SmallVec::from_slice(&['A', 'B']);
         let glyph = ResolvedGlyph::new(chars.clone(), UnicodeSource::ToUnicode);
-        assert_eq!(glyph.chars, chars);
-        assert_eq!(glyph.source, UnicodeSource::ToUnicode);
-        assert_eq!(glyph.confidence, 1.0);
+        assert_eq!(
+            glyph.chars,
+            chars,
+            "ResolvedGlyph::new() should preserve the provided characters. \
+             Expected: ['A', 'B']. \
+             Found: {:?}. \
+             Why this matters: The constructor must store exactly the characters resolved from \
+             the font; any deviation would corrupt the extraction output.",
+            glyph.chars
+        );
+        assert_eq!(
+            glyph.source,
+            UnicodeSource::ToUnicode,
+            "ResolvedGlyph::new() should store the provided UnicodeSource. \
+             Expected: UnicodeSource::ToUnicode. \
+             Found: {:?}. \
+             Why this matters: The source must be preserved so consumers can judge reliability \
+             and implement filtering based on confidence source.",
+            glyph.source
+        );
+        assert_eq!(
+            glyph.confidence,
+            1.0,
+            "ResolvedGlyph::new() with ToUnicode should have maximum confidence. \
+             Expected: 1.0. \
+             Found: {}. \
+             Why this matters: ToUnicode is the highest-confidence source; the constructor \
+             should automatically use the confidence value associated with that source.",
+            glyph.confidence
+        );
     }
 
     #[test]
@@ -812,11 +918,26 @@ mod tests {
         let arc = Arc::new(42);
         let id1 = FontId::from_arc(&arc);
         let id2 = FontId::from_arc(&arc);
-        assert_eq!(id1, id2);
+        assert_eq!(
+            id1, id2,
+            "FontId::from_arc should return the same ID for the same Arc. \
+             Expected: id1 == id2. \
+             Found: id1 != id2. \
+             Why this matters: Font IDs are cached per Arc pointer; calling from_arc twice on \
+             the same Arc must return identical IDs to avoid duplicate entries in the resolver cache.",
+        );
 
         let arc2 = Arc::new(42);
         let id3 = FontId::from_arc(&arc2);
-        assert_ne!(id1, id3); // Different Arc, different ID
+        assert_ne!(
+            id1, id3,
+            "FontId::from_arc should return different IDs for different Arc instances. \
+             Expected: id1 != id3. \
+             Found: id1 == id3. \
+             Why this matters: Even though both Arcs contain the same value (42), they are \
+             different heap allocations; different Arcs must have different IDs to maintain cache \
+             isolation between distinct font instances."
+        );
     }
 
     #[test]
@@ -826,14 +947,34 @@ mod tests {
         let char_code = vec![0x41];
         let result = ResolvedGlyph::new(SmallVec::from_slice(&['A']), UnicodeSource::ToUnicode);
 
-        assert!(cache.get(font_id, &char_code).is_none());
+        assert!(
+            cache.get(font_id, &char_code).is_none(),
+            "Cache should return None for non-existent key. \
+             Expected: None. \
+             Found: Some entry. \
+             Why this matters: A fresh cache must not contain any entries; getting a key before \
+             insertion should always return None.",
+        );
 
         cache.insert(font_id, &char_code, &result);
         let cached = cache.get(font_id, &char_code);
-        assert!(cached.is_some());
+        assert!(
+            cached.is_some(),
+            "Cache should return Some after insertion. \
+             Expected: Some(entry). \
+             Found: None. \
+             Why this matters: The insert operation must store the entry; subsequent get must \
+             retrieve it successfully.",
+        );
         assert_eq!(
             cached.unwrap().chars,
-            SmallVec::<[char; 4]>::from_slice(&['A'])
+            SmallVec::<[char; 4]>::from_slice(&['A']),
+            "Cached entry should contain the correct characters. \
+             Expected: ['A']. \
+             Found: {:?}. \
+             Why this matters: The cache must preserve the exact ResolvedGlyph data that was \
+             inserted; any corruption would produce incorrect text extraction.",
+            cached.unwrap().chars
         );
     }
 

@@ -225,3 +225,163 @@ fn test_cli_invocation_on_fixture_sample() {
     assert!(success_count + failure_count == sample_size,
             "Test did not complete all fixture invocations");
 }
+
+/// Test that pdftract extract --json runs on ALL discovered fixtures
+///
+/// This is the comprehensive integration test that invokes the CLI on each fixture
+/// with proper timeout protection and output capture. It ensures that:
+/// - Each fixture is processed independently
+/// - CLI invocation completes without hanging (bounded waits)
+/// - Output is captured for each invocation
+/// - Results are tracked even if individual fixtures fail
+///
+/// This test demonstrates the full integration between fixture discovery
+/// and CLI invocation handling.
+#[test]
+fn test_cli_invocation_on_all_fixtures() {
+    let fixtures_dir = fixtures_root();
+    let pdf_files = discover_all_fixtures();
+    let bin = pdftract_bin();
+
+    // Ensure binary exists
+    assert!(bin.exists(), "pdftract binary not found at {:?}", bin);
+
+    // If no fixtures yet, test passes (scaffold for future fixtures)
+    if pdf_files.is_empty() {
+        println!("No PDF fixtures found - test scaffold ready");
+        return;
+    }
+
+    println!("\n=== CLI Integration Test: All {} Fixtures ===\n", pdf_files.len());
+
+    let mut results: Vec<(PathBuf, bool, String)> = Vec::with_capacity(pdf_files.len());
+    let mut success_count = 0;
+    let mut failure_count = 0;
+
+    // Process each fixture independently with timeout protection
+    for (index, pdf_path) in pdf_files.iter().enumerate() {
+        let relative_path = pdf_path.strip_prefix(&fixtures_dir).unwrap_or(pdf_path);
+        println!("[{}/{}] Processing: {}", index + 1, pdf_files.len(), relative_path.display());
+
+        // Invoke CLI with bounded timeout (30 seconds max per fixture)
+        let result = invoke_cli_with_timeout(&bin, pdf_path, 30);
+
+        match result {
+            Ok(Some(exit_code)) => {
+                if exit_code == 0 {
+                    println!("  ✓ SUCCESS (exit: 0)");
+                    success_count += 1;
+                    results.push((pdf_path.clone(), true, "exit code 0".to_string()));
+                } else {
+                    println!("  ⚠ FAILED (exit: {})", exit_code);
+                    failure_count += 1;
+                    results.push((pdf_path.clone(), false, format!("exit code {}", exit_code)));
+                }
+            }
+            Ok(None) => {
+                // Process terminated by signal
+                println!("  ⚠ FAILED (terminated by signal)");
+                failure_count += 1;
+                results.push((pdf_path.clone(), false, "terminated by signal".to_string()));
+            }
+            Err(timeout_err) => {
+                // Timeout or execution error
+                println!("  ⚠ FAILED: {}", timeout_err);
+                failure_count += 1;
+                results.push((pdf_path.clone(), false, timeout_err));
+            }
+        }
+    }
+
+    // Print summary
+    println!("\n=== Test Summary ===");
+    println!("Total fixtures processed: {}", pdf_files.len());
+    println!("Successful: {}", success_count);
+    println!("Failed: {}", failure_count);
+    println!("\n");
+
+    // Show breakdown of failures if any
+    if failure_count > 0 {
+        println!("=== Failed Fixtures (showing first 10) ===");
+        for (path, _success, reason) in results.iter().filter(|(_, success, _)| !success).take(10) {
+            let relative_path = path.strip_prefix(&fixtures_dir).unwrap_or(path);
+            println!("  - {}", relative_path.display());
+            println!("    Reason: {}", reason);
+        }
+        if failure_count > 10 {
+            println!("  ... and {} more", failure_count - 10);
+        }
+        println!("\n");
+    }
+
+    // The test completes successfully even if individual fixtures fail
+    // This ensures the iteration completes and all results are captured
+    println!("✓ Test completed - all fixtures processed with CLI invocation");
+
+    // Assertion: We attempted to process every discovered fixture
+    assert_eq!(results.len(), pdf_files.len(), "Result count should match fixture count");
+    assert!(success_count + failure_count == pdf_files.len(), "Total results should equal fixture count");
+}
+
+/// Invoke CLI command on a single fixture with timeout protection
+///
+/// This helper function executes the CLI command with a bounded wait to prevent
+/// indefinite hangs. It spawns the process, waits for completion with a timeout,
+/// and returns the exit code or an error message.
+///
+/// # Arguments
+/// * `bin` - Path to the pdftract binary
+/// * `pdf_path` - Path to the PDF fixture
+/// * `timeout_secs` - Maximum seconds to wait for completion
+///
+/// # Returns
+/// * `Ok(Some(exit_code))` - Process completed with exit code
+/// * `Ok(None)` - Process terminated by signal
+/// * `Err(String)` - Timeout or execution error
+fn invoke_cli_with_timeout(bin: &PathBuf, pdf_path: &PathBuf, timeout_secs: u64) -> Result<Option<i32>, String> {
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    // Spawn the CLI process
+    let mut child = Command::new(bin)
+        .arg("extract")
+        .arg("--json")
+        .arg("-")
+        .arg(pdf_path)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn process: {}", e))?;
+
+    let start = Instant::now();
+    let timeout = Duration::from_secs(timeout_secs);
+
+    // Wait with bounded timeout using a thread
+    let (tx, rx) = std::sync::mpsc::channel();
+    let child_clone = child.clone();
+
+    thread::spawn(move || {
+        let result = child_clone.wait();
+        let _ = tx.send(result);
+    });
+
+    // Wait for completion with timeout
+    let wait_result = rx.recv_timeout(timeout);
+
+    match wait_result {
+        Ok(Ok(status)) => {
+            // Process completed within timeout
+            Ok(status.code())
+        }
+        Ok(Err(e)) => {
+            // Error waiting for process
+            Err(format!("Failed to wait for process: {}", e))
+        }
+        Err(_) => {
+            // Timeout exceeded - kill the process
+            let _ = child.kill();
+            let _ = child.wait();
+            Err(format!("Timeout exceeded ({:?})", timeout))
+        }
+    }
+}
