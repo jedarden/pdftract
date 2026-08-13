@@ -509,8 +509,8 @@ use std::collections::HashMap;
 let glyph_names = &["g000", "g001", "CustomA"];
 let char_procs = make_custom_char_procs_from_names(glyph_names, 1);
 
-// Create glyph data
-let mut glyph_map = HashMap::new();
+// Create glyph data with STRING keys (not integer IDs!)
+let mut glyph_map: HashMap<String, Vec<u8>> = HashMap::new();
 glyph_map.insert("/g000".to_string(), make_rect_glyph(0.0, 0.0, 50.0, 50.0));
 glyph_map.insert("/g001".to_string(), make_line_glyph(0.0, 0.0, 100.0, 100.0));
 glyph_map.insert("/CustomA".to_string(), make_empty_glyph());
@@ -530,6 +530,90 @@ let font = Type3Font::mock(Some(char_procs));
 
 // Test rasterization of unmapped glyph
 // (This will escalate to Level 4 shape recognition)
+```
+
+### Critical Edge Case: Test Helper Key Format
+
+**Problem**: Early test code used integer IDs as HashMap keys instead of the expected string format.
+
+**Wrong Pattern:**
+```rust
+// DON'T DO THIS - this pattern was found to be incorrect
+let mut glyph_map = HashMap::new();
+glyph_map.insert(10, glyph_data);  // Integer key - WRONG!
+let resolver = make_test_resolver(&glyph_map);
+```
+
+**Why This Fails:**
+The `make_test_resolver()` function maps ObjRef IDs to character names using the formula:
+```rust
+(ref_id.object as u8 + b'A' - 1) as char
+```
+
+For ObjRef ID 1, this maps to character name "/A". For ID 2, "/B", etc.
+But the resolver expects the glyph_map to use these string names as keys, not integer IDs.
+
+**Correct Pattern:**
+```rust
+// DO THIS - use string keys matching the expected character name format
+let mut glyph_map: HashMap<String, Vec<u8>> = HashMap::new();
+glyph_map.insert("/A".to_string(), glyph_data);  // String key - CORRECT!
+let resolver = make_test_resolver(&glyph_map);
+```
+
+### Critical Edge Case: High ObjRef ID Mapping
+
+**Problem**: The default resolver's character name generation formula produces invalid results for high ObjRef IDs.
+
+**The Formula Issue:**
+```rust
+(ref_id.object as u8 + b'A' - 1) as char
+```
+
+- For ID 1: `(1 + 65 - 1) = 65` → 'A' ✓
+- For ID 10: `(10 + 65 - 1) = 74` → 'J' ✓
+- For ID 26: `(26 + 65 - 1) = 90` → 'Z' ✓
+- For ID 27: `(27 + 65 - 1) = 91` → '[' ✗ (not a letter)
+- For ID 100: `(100 + 65 - 1) = 164` → '¤' (currency symbol) ✗
+
+**Solution**: For high ObjRef IDs or custom glyph names, create a custom resolver instead of using `make_test_resolver()`:
+
+```rust
+// For custom glyph names, use make_custom_char_procs_from_names
+let char_procs = make_custom_char_procs_from_names(&["g1", "g2", "g3"], 1);
+
+// And create a custom resolver that maps by name instead of ID formula
+let resolver = |ref_id: ObjRef| -> Option<Vec<u8>> {
+    // Map based on the actual glyph names in your char_procs
+    match ref_id.id() {
+        1 => Some(glyph_data_1),
+        2 => Some(glyph_data_2),
+        3 => Some(glyph_data_3),
+        _ => None,
+    }
+};
+```
+
+### API Migration Notes (v0.x → v1.x)
+
+The test helper APIs underwent significant improvements to fix edge cases:
+
+**Changed Functions:**
+1. **`make_test_char_procs()`**: Now returns `HashMap<Arc<str>, ObjRef>` instead of `HashMap<String, ObjRef>` for better performance and thread-safety
+2. **`make_custom_char_procs()`**: Now accepts `&[(&str, ObjRef)]` instead of `&[(String, ObjRef)]` for more ergonomic usage
+3. **New Function**: `make_custom_char_procs_from_names()` - Auto-generates sequential IDs from a list of glyph names
+
+**Migration Example:**
+```rust
+// OLD (no longer compiles)
+let mappings = vec![
+    ("/A".to_string(), ObjRef::new(1, 0)),
+    ("/B".to_string(), ObjRef::new(2, 0)),
+];
+let char_procs = make_custom_char_procs(&mappings);
+
+// NEW (recommended approach)
+let char_procs = make_custom_char_procs_from_names(&["A", "B"], 1);
 ```
 
 ## Test Configuration References
