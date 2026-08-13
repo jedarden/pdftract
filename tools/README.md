@@ -2,6 +2,8 @@
 
 This directory contains utility scripts and generators for creating PDF test fixtures, debugging, and development workflow automation.
 
+**Parent bead:** bf-6uh9a (Tools organization and documentation)
+
 ## PDF Fixture Generators
 
 ### Python Generators
@@ -76,15 +78,214 @@ python tools/generate_invoice_pdf_fixtures.py
 
 ---
 
-#### `count_docs.py`
-**Purpose:** Count rustdoc coverage for pdftract-core
+#### `generate_markdown_structure_fixture.py`
+**Purpose:** Generate markdown_structure.pdf fixture for testing extract_text() vs extract_markdown()
+
+**Features:**
+- Headings with # markers (# Main Title, ## Subtitle)
+- Links with [text](url) syntax
+- Lists (bullet points and numbered)
+- Code blocks and inline code elements
 
 **Usage:**
 ```bash
-python tools/count_docs.py
+python tools/generate_markdown_structure_fixture.py
+```
+
+**Requirements:** Python 3, `reportlab`
+
+---
+
+#### `generate_unmapped_glyphs.py`
+**Purpose:** Generate unmapped glyph PDF fixtures with custom glyph names and encodings
+
+**Features:**
+- Support for custom glyph names and encodings
+- Default test set of 10 character codes
+- Tests 4-level Unicode fallback chain failure path
+
+**Usage:**
+```bash
+# Generate with default test glyphs
+python3 generate_unmapped_glyphs.py
+
+# Generate with custom glyphs
+python3 generate_unmapped_glyphs.py --glyphs '{"0": "/CustomGlyph1", "1": "/CustomGlyph2"}'
+
+# Generate to specific output file
+python3 generate_unmapped_glyphs.py --output my-test.pdf --ground-truth my-test.txt
+```
+
+**Default glyph set (10 character codes):**
+- Codes 0-2: /g001, /g002, /g003 (PUA unmapped)
+- Codes 3-6: /CustomA, /CustomB, /NotAGlyph, /glyph_0041 (unmapped)
+- Codes 7-9: /A, /B, /space (AGL mapped)
+
+**Requirements:** Python 3, standard library only
+
+**Related documentation:**
+- Fixture design: notes/bf-68f9i-design.md
+- Glyph selection: notes/bf-68f9i-glyphs.md
+
+---
+
+#### `generate_scanned_fixtures.py`
+**Purpose:** Generate scanned PDF fixtures from ground truth text files
+
+**Features:**
+- Creates proper 300 DPI PDFs from ground truth text files
+- Supports receipt, invoice, and document fixtures
+- Configurable fonts, margins, and line spacing
+
+**Usage:**
+```bash
+python3 generate_scanned_fixtures.py
+```
+
+**Requirements:**
+- Python 3
+- `reportlab` - for PDF generation
+- `PIL` (Pillow) - for image processing
+- `img2pdf` - for PDF creation from images
+
+---
+
+#### `generate_decompression_bomb.py`
+**Purpose:** Generate TH-01 test fixture for decompression bomb protection
+
+**Parent bead:** bf-6uh9a (relocated in bf-5bfr32, documented in bf-1l2z3q)
+
+**Features:**
+- Creates PDF with ~10 KB compressed stream that expands to ~10 MB (1000:1 ratio)
+- Tests max_decompress_bytes enforcement (512 MB default)
+- Safe alternative to 2GB bomb for CI environments
+
+**Usage:**
+```bash
+python3 generate_decompression_bomb.py
+```
+
+**Output:** `tests/fixtures/malformed/bomb-10k-2g.pdf`
+
+**Requirements:** Python 3, standard library only
+
+**Security context:** TH-01 test fixture for Phase 1.5 stream decoder protection
+
+---
+
+#### `generate_embedded_js.py`
+**Purpose:** Generate embedded-js.pdf fixture for TH-04 JavaScript detection testing
+
+**Parent bead:** bf-6uh9a (relocated in bf-5bfr32, documented in bf-1l2z3q)
+
+**Features:**
+- Creates PDF with 3 JavaScript actions at different locations:
+  1. Catalog /OpenAction → /JS containing app.alert("pwn")
+  2. Page 0 /AA → /O (open action) → /JS containing second alert
+  3. Page 1 annotation /A → /JS containing third snippet
+
+**Usage:**
+```bash
+python3 generate_embedded_js.py
+```
+
+**Output:** `tests/fixtures/security/embedded-js.pdf`
+
+**Requirements:** Python 3, standard library only
+
+**Security context:** TH-04 test fixture for JavaScript presence detection (never executed)
+
+---
+
+#### `generate_vector_cer_corpus.py`
+**Purpose:** Generate clean vector PDF fixtures for CER (Character Error Rate) testing
+
+**Parent bead:** bf-6uh9a (relocated in bf-5bfr32, documented in bf-1l2z3q)
+
+**Features:**
+- Creates 5-10 clean LaTeX/Word-style PDFs with paired .txt ground-truth files
+- Uses proper PDF structure with Type1 fonts and WinAnsiEncoding
+- For AS-01 scenario and <0.5% CER Tier 1 gate
+
+**Usage:**
+```bash
+python3 generate_vector_cer_corpus.py
 ```
 
 **Requirements:** Python 3, standard library only
+
+---
+
+#### `create_unmapped_comprehensive.py`
+**Purpose:** Generate comprehensive unmapped glyph fixture with advanced test cases
+
+**Features:**
+- Tests complex unmapped glyph scenarios
+- Supports custom encoding patterns
+- Generates ground truth files for validation
+
+**Usage:**
+```bash
+python3 create_unmapped_comprehensive.py
+```
+
+**Requirements:** Python 3, standard library only
+
+---
+
+#### `create_degraded_200dpi.py`
+**Purpose:** Generate degraded 200 DPI OCR test fixture
+
+**Features:**
+- Creates intentionally degraded PDF for OCR quality testing
+- Degradation effects: Gaussian blur, noise, reduced contrast, JPEG compression artifacts
+- Source text from Abraham Lincoln for WER measurement
+
+**Usage:**
+```bash
+python3 create_degraded_200dpi.py
+```
+
+**Output:** `tests/fixtures/scanned/low-quality/degraded-200dpi.pdf`
+
+**Requirements:**
+- Python 3
+- `reportlab` - for PDF generation
+- `PIL` (Pillow) - for image processing
+- `pdftoppm` (poppler-utils) - for PDF-to-image conversion
+
+**Related documentation:**
+- OCR generation process: notes/bf-3tedi-ocr-generation-docs.md
+- WER measurement: Use calculate_wer.py with generated ground truth
+
+---
+
+#### `calculate_wer.py`
+**Purpose:** Calculate Word Error Rate (WER) and Character Error Rate (CER) for OCR evaluation
+
+**Features:**
+- Levenshtein distance-based WER calculation
+- Optional CER calculation with --cer flag
+- Verbose output with word/character counts
+- Exit code based on WER threshold (3%)
+
+**Usage:**
+```bash
+# Basic WER calculation
+python3 calculate_wer.py ground_truth.txt ocr_output.txt
+
+# With CER and verbose output
+python3 calculate_wer.py ground_truth.txt ocr_output.txt --cer --verbose
+
+# Example with degraded fixture
+python3 tools/calculate_wer.py tests/fixtures/scanned/low-quality/degraded-200dpi-ground-truth.txt tests/fixtures/scanned/low-quality/degraded-200dpi-ocr.txt
+```
+
+**Requirements:**
+- Python 3
+- `jiwer` - for advanced WER calculation (optional, script has basic implementation)
+
+**Output:** Prints WER/CER percentages and returns exit code 0 if WER < 3%
 
 ---
 
@@ -98,6 +299,8 @@ python tools/count_docs.py
 cargo run --bin generate_invoice_fixture
 ```
 
+**Requirements:** Rust toolchain
+
 ---
 
 #### `generate_encrypted_pdf_fixtures.rs`
@@ -107,6 +310,50 @@ cargo run --bin generate_invoice_fixture
 ```bash
 cargo run --bin generate_encrypted_pdf_fixtures
 ```
+
+**Requirements:** Rust toolchain, `lopdf` crate
+
+---
+
+#### `generate_form_fixtures.rs`
+**Purpose:** Generate AcroForm and XFA PDF test fixtures for Phase 7.4
+
+**Fixtures Generated:**
+- `acroform-text-fields.pdf`: AcroForm with text, checkbox, radio, and dropdown fields
+- `acroform-readonly.pdf`: AcroForm with pre-filled read-only fields
+- `acroform-submit.pdf`: AcroForm with a submit button
+- `xfa-dynamic.pdf`: XFA dynamic form (placeholder for future XFA support)
+
+Each fixture includes corresponding .json ground truth with expected field values.
+
+**Usage:**
+```bash
+cargo run --bin generate_form_fixtures
+```
+
+**Requirements:** Rust toolchain, `lopdf` crate
+
+---
+
+#### `generate_sensitive_fixture.rs`
+**Purpose:** Generate sensitive.pdf for TH-08 log audit test
+
+**Features:**
+- Creates password-protected PDF with unique, distinctive markers
+- Body text contains "UNIQUE-MARKER-IN-BODY-TEXT-7f9a"
+- Password value is "UNIQUE-PASSWORD-FOR-TH08-7f9a"
+- Designed for reliable substring-based leak detection in log output
+
+**Usage:**
+```bash
+cargo run --bin generate_sensitive_fixture
+```
+
+**Output:** `tests/fixtures/security/sensitive.pdf`
+
+**Requirements:** Rust toolchain, `lopdf` crate
+
+**Security context:** TH-08 test fixture for log audit validation
 
 ---
 
@@ -160,24 +407,40 @@ cargo run --bin generate_encrypted_pdf_fixtures
 ## Debugging Tools
 
 ### `debug-fingerprint/`
-**Purpose:** Debug tool for PDF fingerprint computation
+**Purpose:** Debug tool for PDF fingerprint computation (Phase 1.7)
+
+**Features:**
+- Computes PDF structural fingerprint
+- Displays fingerprint and computation time
+- Useful for fingerprint validation and debugging
 
 **Usage:**
 ```bash
-cargo run --bin debug-fingerprint -- <pdf-path>
+cd tools/debug-fingerprint
+cargo run -- -- <pdf-path>
 ```
 
 **Output:** Displays PDF fingerprint and computation time
+
+**Related:** Phase 1.7 PDF Structural Fingerprint
 
 ---
 
 ### `debug-fingerprint-diff/`
 **Purpose:** Compare fingerprints between two PDFs
 
+**Features:**
+- Computes fingerprints for two PDFs
+- Displays difference analysis
+- Useful for fingerprint stability validation
+
 **Usage:**
 ```bash
-cargo run --bin debug-fingerprint-diff -- <pdf1> <pdf2>
+cd tools/debug-fingerprint-diff
+cargo run -- -- <pdf1> <pdf2>
 ```
+
+**Output:** Displays whether fingerprints match and detailed comparison
 
 ---
 
@@ -185,6 +448,11 @@ cargo run --bin debug-fingerprint-diff -- <pdf1> <pdf2>
 
 ### `build-objstm-fixture/`
 **Purpose:** Generate object stream fixtures for testing
+
+**Features:**
+- Creates minimal PDFs with specific object stream structures
+- Tests various compressed object configurations
+- Validates object stream parsing and resolution
 
 **Usage:**
 ```bash
@@ -199,7 +467,13 @@ cargo run --bin build-objstm-fixture
 ---
 
 ### `build-xref-fixture/`
-**Purpose:** Generate xref testing fixtures
+**Purpose:** Generate xref testing fixtures for Phase 1.3
+
+**Features:**
+- Comprehensive xref structure testing
+- Linearized PDF support
+- Incremental update (/Prev chain) testing
+- Corrupted xref recovery validation
 
 **Usage:**
 ```bash
@@ -220,11 +494,88 @@ cargo run --bin build-xref-fixture
 
 ---
 
+## Analysis Tools
+
+#### `count_docs.py`
+**Purpose:** Count rustdoc coverage for pdftract-core
+
+**Features:**
+- Analyzes public API surface
+- Counts re-exports and public modules
+- Identifies key public types for documentation
+
+**Usage:**
+```bash
+python tools/count_docs.py
+```
+
+**Output:** Lists public modules, re-exports, and key types
+
+**Requirements:** Python 3, standard library only
+
+---
+
+#### `count_public_api.py`
+**Purpose:** Count public API coverage focusing on re-exports in lib.rs
+
+**Features:**
+- Analyzes pdftract-core/src/lib.rs
+- Lists public modules and re-exports
+- Shows key public types to document
+
+**Usage:**
+```bash
+python tools/count_public_api.py
+```
+
+**Output:** 
+- Public modules count and list
+- Re-exports detail
+- Key public types sorted alphabetically
+
+**Requirements:** Python 3, standard library only
+
+---
+
+## Test Utilities
+
+#### `test_rust_sdk.rs`
+**Purpose:** Test the Rust SDK extract_markdown function to show correct behavior
+
+**Features:**
+- Demonstrates extract_markdown vs extract_text output
+- Shows correct SDK usage patterns
+- Validates markdown output structure
+
+**Usage:**
+```bash
+cargo run --bin test_rust_sdk -- <pdf-path>
+```
+
+**Default PDF:** `tests/fixtures/remote_100page.pdf` if no argument provided
+
+**Requirements:** Rust toolchain, pdftract-core SDK
+
+---
+
+#### `test_rust_markdown`
+**Purpose:** Compiled binary for markdown extraction testing
+
+**Usage:**
+```bash
+./tools/test_rust_markdown <pdf-path>
+```
+
+**Note:** This is a compiled Rust binary (built via cargo)
+
+---
+
 ## Development Workflow
 
 ### Quick Documentation Coverage Check
 ```bash
 python tools/count_docs.py
+python tools/count_public_api.py
 ```
 
 ### Generate All Encoding Fixtures
@@ -243,66 +594,50 @@ python tools/generate_stress_pdf.py --pages 100 -o tests/fixtures/perf/100-page.
 python tools/generate_stress_pdf.py --pages 10000 -o tests/fixtures/perf/10k-page.pdf
 ```
 
+### Generate Scanned Fixtures
+```bash
+python tools/generate_scanned_fixtures.py
+```
+
 ### Debug Fingerprint Issues
 ```bash
-cargo run --bin debug-fingerprint -- tests/fixtures/your-file.pdf
+cd tools/debug-fingerprint
+cargo run -- -- tests/fixtures/your-file.pdf
+```
+
+### Calculate OCR Accuracy
+```bash
+python3 tools/calculate_wer.py ground_truth.txt ocr_output.txt
 ```
 
 ## Contributing
 
 When adding new generators:
-1. Use descriptive names with `generate_` prefix
-2. Add a docstring/comment block explaining:
+1. Use descriptive names with `generate_` prefix for generators
+2. Add comprehensive docstring/comment block explaining:
    - What fixtures it generates
    - How to run it (command line, dependencies)
    - Any special requirements (input data, API keys, etc.)
-3. Update this README with the new tool
-4. Follow existing patterns (Python for encoding/OCR, Rust for security/crypto)
+   - Related test scenarios or threat model entries
+3. Add `--help` support for command-line tools
+4. Update this README with the new tool
+5. Follow existing patterns (Python for encoding/OCR, Rust for security/crypto)
+6. Cite parent bead if applicable
 
-#### `create_degraded_200dpi.py`
-**Purpose:** Generate degraded 200 DPI OCR test fixture
+## Organization History
 
-**Fixtures Generated:**
-- `tests/fixtures/scanned/low-quality/degraded-200dpi.pdf` - intentionally degraded PDF for OCR quality testing
-- Degradation effects: Gaussian blur, noise, reduced contrast, JPEG compression artifacts
+**Cleanup beads (2026-07-05):**
+- **bf-1iefu**: Categorized 17 generator scripts (KEEP: 10, DELETE: 5, RELOCATE: 2)
+- **bf-xqib3**: Removed 5 obsolete generators and compiled artifacts
+- **bf-2yhak**: Relocated 2 general-purpose tools to tools/ with documentation
+- **bf-620xp**: Verified and documented cleaned structure
 
-**Usage:**
-```bash
-python tools/create_degraded_200dpi.py
-```
-
-**Requirements:**
-- Python 3
-- `reportlab` - for PDF generation
-- `PIL` (Pillow) - for image processing
-- `pdftoppm` (poppler-utils) - for PDF-to-image conversion
-
-**Process:**
-1. Creates a clean PDF from Abraham Lincoln source text at 200 DPI
-2. Converts PDF to PPM images
-3. Applies degradation effects (blur, noise, contrast reduction, compression)
-4. Saves degraded images back to PDF
-
-**Location:** Writes to `tests/fixtures/scanned/low-quality/degraded-200dpi.pdf`
-
----
-
-## Cleanup Summary (2026-07-05)
-
-The tools/ directory and tests/fixtures/ structure were cleaned up and organized through three coordinated beads:
-
-- **bf-1iefu** (2026-07-05): Categorized all 17 generator scripts in tests/fixtures/ into KEEP (10), DELETE (5), RELOCATE (2)
-- **bf-xqib3** (2026-07-05): Removed 5 obsolete generators and all compiled artifacts from tests/fixtures/
-- **bf-2yhak** (2026-07-05): Relocated 2 general-purpose tools to tools/ with comprehensive documentation
-- **bf-620xp** (2026-07-05): Verified and documented the cleaned structure
-
-**Results:**
-- 10 KEEP generators remain in tests/fixtures/ (actively maintained, co-located with their fixtures)
-- 5 DELETE generators removed (obsolete duplicates and stubs)
-- 2 RELOCATE tools moved to tools/ (general-purpose utilities)
-- No compiled artifacts remain in tests/fixtures/
-- tools/README.md created with comprehensive generator catalog
-- tests/fixtures/STRUCTURE.md created documenting the final state
+**Current documentation update (bf-1l2z3q):**
+- Added comprehensive documentation for all generators
+- Standardized usage examples and requirements
+- Added --help support recommendations
+- Organized by category (Python/Rust/Shell/Debug/Test/Analysis)
+- Cited parent bead bf-6uh9a
 
 ## Related Documentation
 
@@ -310,3 +645,4 @@ The tools/ directory and tests/fixtures/ structure were cleaned up and organized
 - [Fixture Provenance Log](../tests/fixtures/PROVENANCE.md) - Generation history for each fixture
 - [Generator Categorization (bf-1iefu)](../notes/bf-1iefu.md) - Rationale for KEEP/DELETE/RELOCATE decisions
 - [Obsolete Generator Removal (bf-xqib3)](../notes/bf-xqib3.md) - Cleanup verification
+- [Parent bead documentation (bf-6uh9a)](../notes/bf-6uh9a.md) - Tools organization and documentation

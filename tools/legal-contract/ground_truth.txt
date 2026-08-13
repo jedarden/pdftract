@@ -1,0 +1,15 @@
+SERVICE AGREEMENT
+This Service Agreement is entered into as of January 1, 2024.
+1. Services
+The Service Provider shall provide software development services to the Client.
+2. Term
+This agreement shall commence on the effective date and continue for twelve months.
+3. Compensation
+The Client shall pay the Service Provider $150 per hour for services rendered.
+Invoices shall be submitted monthly and are due within 30 days.
+4. Confidentiality
+Both parties agree to keep confidential information secure and not disclose it.
+5. Termination
+Either party may terminate this agreement with 30 days written notice.
+6. Governing Law
+This agreement shall be governed by the laws of the State of California.

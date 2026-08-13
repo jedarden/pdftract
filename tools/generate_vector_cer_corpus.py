@@ -5,9 +5,20 @@ Generate clean vector PDF fixtures for CER (Character Error Rate) testing.
 Creates 5-10 clean LaTeX/Word-style PDFs with paired .txt ground-truth files
 for the AS-01 scenario and <0.5% CER Tier 1 gate.
 
-Usage: python3 generate_vector_cer_corpus.py
+Usage:
+    python3 generate_vector_cer_corpus.py [--count N] [--output-dir DIR]
+
+Options:
+    --count N          Number of fixtures to generate (default: 5)
+    --output-dir DIR    Output directory for fixtures (default: tests/fixtures/vector/cer-corpus/)
+    --help             Show this help message
+
+Examples:
+    python3 generate_vector_cer_corpus.py
+    python3 generate_vector_cer_corpus.py --count 10 --output-dir custom_fixtures/
 """
 
+import argparse
 import os
 import struct
 import zlib
@@ -477,10 +488,39 @@ MIT License - see LICENSE file for details.""",
 
 def main():
     """Generate all vector CER corpus fixtures."""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Generate clean vector PDF fixtures for CER testing",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__
+    )
+
+    parser.add_argument(
+        '--count',
+        type=int,
+        default=len(FIXTURES),
+        help=f'Number of fixtures to generate (default: {len(FIXTURES)})'
+    )
+    parser.add_argument(
+        '--output-dir',
+        default='tests/fixtures/vector/cer-corpus/',
+        help='Output directory for fixtures (default: tests/fixtures/vector/cer-corpus/)'
+    )
+
+    args = parser.parse_args()
+
+    # Override FIXTURE_DIR with provided output directory
+    global FIXTURE_DIR
+    FIXTURE_DIR = args.output_dir
+
     print("Generating vector CER corpus fixtures...")
     print(f"Target directory: {FIXTURE_DIR}")
 
-    for fixture in FIXTURES:
+    # Limit to requested count
+    fixtures_to_generate = FIXTURES[:args.count]
+
+    for fixture in fixtures_to_generate:
         name = fixture['name']
         title = fixture['title']
         metadata = fixture.get('metadata', {})
@@ -536,7 +576,7 @@ Target: < 0.5% character error rate when extracted by pdftract.
 
         print(f"  Created {name}/")
 
-    print(f"\nGenerated {len(FIXTURES)} fixtures successfully!")
+    print(f"\nGenerated {len(fixtures_to_generate)} fixtures successfully!")
     print("\nTo verify CER with pdftract:")
     print("  for f in tests/fixtures/vector/*/source.pdf; do")
     print("    pdftract extract \"$f\" --json /dev/null")

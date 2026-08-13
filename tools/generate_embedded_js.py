@@ -8,12 +8,24 @@ This creates a minimal PDF with 3 JavaScript actions at different locations:
 
 Generated PDF is valid and can be parsed by pdftract, but the JavaScript
 is NEVER executed - only detected and reported.
+
+Usage:
+    python3 generate_embedded_js.py [--output PATH]
+
+Options:
+    --output PATH    Output PDF path (default: tests/fixtures/security/embedded-js.pdf)
+    --help           Show this help message
 """
 
+import argparse
 import struct
 
-def write_pdf():
-    """Generate a minimal PDF with embedded JavaScript actions."""
+def write_pdf(output_path):
+    """Generate a minimal PDF with embedded JavaScript actions.
+
+    Args:
+        output_path: Where to write the PDF file
+    """
 
     # PDF version 1.4
     pdf_header = b"%PDF-1.4\n\n"
@@ -157,14 +169,33 @@ startxref
     # Write complete PDF
     complete_pdf = pdf_header + pdf_content.encode('latin1') + xref.encode('latin1') + trailer.encode('latin1')
 
-    with open("tests/fixtures/security/embedded-js.pdf", "wb") as f:
+    with open(output_path, "wb") as f:
         f.write(complete_pdf)
 
-    print("Generated tests/fixtures/security/embedded-js.pdf")
+    print(f"Generated {output_path}")
     print("JavaScript actions:")
     print("  1. Catalog /OpenAction: app.alert(\"pwn\")")
     print("  2. Page 0 /AA /O: app.alert('page_open')")
     print("  3. Page 1 annotation /A: app.alert('annot_action')")
 
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Generate PDF fixture with embedded JavaScript for TH-04 testing",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__
+    )
+
+    parser.add_argument(
+        '--output',
+        default='tests/fixtures/security/embedded-js.pdf',
+        help='Output PDF path (default: tests/fixtures/security/embedded-js.pdf)'
+    )
+
+    args = parser.parse_args()
+
+    write_pdf(args.output)
+
+
 if __name__ == "__main__":
-    write_pdf()
+    main()
