@@ -25,31 +25,37 @@ include!(concat!(env!("OUT_DIR"), "/unmapped_glyph_names.rs"));
 ///
 /// assert!(
 ///     is_unmapped_glyph_name(".notdef"),
-///     ".notdef should be recognized as an unmapped glyph name. \
-///      Expected: is_unmapped_glyph_name(\".notdef\") == true. \
-///      Found: false. \
-///      Why this matters: .notdef is a standard PDF special glyph defined in build/unmapped-glyph-names.json that should never appear in text extraction output.",
+///     ".notdef should be identified as unmapped. \
+///      Expected: true. \
+///      Found: {}. \
+///      Why this matters: .notdef is the standard PDF fallback glyph configured in \
+///      build/unmapped-glyph-names.json and must never appear in text extraction.",
+///     is_unmapped_glyph_name(".notdef")
 /// );
 /// assert!(
 ///     is_unmapped_glyph_name("/.notdef"),
-///     "/.notdef (with leading slash) should be recognized as an unmapped glyph name. \
-///      Expected: is_unmapped_glyph_name(\"/.notdef\") == true. \
-///      Found: false. \
-///      Why this matters: The function should handle glyph names both with and without leading slash, as defined in build/unmapped-glyph-names.json.",
+///     "/.notdef (with leading slash) should be identified as unmapped. \
+///      Expected: true. \
+///      Found: {}. \
+///      Why this matters: The function should handle glyph names both with and without leading slash, \
+///      as configured in build/unmapped-glyph-names.json.",
+///     is_unmapped_glyph_name("/.notdef")
 /// );
 /// assert!(
 ///     !is_unmapped_glyph_name("A"),
-///     "Normal glyph 'A' should not be recognized as unmapped. \
-///      Expected: is_unmapped_glyph_name(\"A\") == false. \
-///      Found: true. \
-///      Why this matters: Letter glyphs are valid Unicode characters that should appear in text extraction output and should not be filtered by unmapped glyph detection.",
+///     "Normal glyph 'A' should NOT be identified as unmapped. \
+///      Expected: false. \
+///      Found: {}. \
+///      Why this matters: A is a normal Latin letter that should always be preserved in text.",
+///     is_unmapped_glyph_name("A")
 /// );
 /// assert!(
 ///     !is_unmapped_glyph_name("space"),
-///     "Normal glyph 'space' should not be recognized as unmapped. \
-///      Expected: is_unmapped_glyph_name(\"space\") == false. \
-///      Found: true. \
-///      Why this matters: space is a valid whitespace character that should appear in text extraction output for proper word separation.",
+///     "Normal glyph 'space' should NOT be identified as unmapped. \
+///      Expected: false. \
+///      Found: {}. \
+///      Why this matters: space is a standard whitespace character that should be preserved.",
+///     is_unmapped_glyph_name("space")
 /// );
 /// ```
 pub fn is_unmapped_glyph_name(name: &str) -> bool {
@@ -70,17 +76,21 @@ mod tests {
     fn test_notdef_is_unmapped() {
         assert!(
             is_unmapped_glyph_name(".notdef"),
-            ".notdef should be recognized as an unmapped glyph name. \
-             Expected: is_unmapped_glyph_name(\".notdef\") == true. \
-             Found: false. \
-             Why this matters: .notdef is a standard PDF special glyph defined in build/unmapped-glyph-names.json that should never appear in text extraction output.",
+            ".notdef should be identified as unmapped. \
+             Expected: true. \
+             Found: {}. \
+             Why this matters: .notdef is the standard PDF fallback glyph configured in \
+             build/unmapped-glyph-names.json and must never appear in text extraction.",
+            is_unmapped_glyph_name(".notdef")
         );
         assert!(
             is_unmapped_glyph_name("/.notdef"),
-            "/.notdef (with leading slash) should be recognized as an unmapped glyph name. \
-             Expected: is_unmapped_glyph_name(\"/.notdef\") == true. \
-             Found: false. \
-             Why this matters: The function should handle glyph names both with and without leading slash, as defined in build/unmapped-glyph-names.json.",
+            "/.notdef (with leading slash) should be identified as unmapped. \
+             Expected: true. \
+             Found: {}. \
+             Why this matters: The function should handle glyph names both with and without leading slash, \
+             as configured in build/unmapped-glyph-names.json.",
+            is_unmapped_glyph_name("/.notdef")
         );
     }
 
@@ -88,45 +98,53 @@ mod tests {
     fn test_normal_glyphs_not_unmapped() {
         assert!(
             !is_unmapped_glyph_name("A"),
-            "Normal glyph 'A' should not be recognized as unmapped. \
-             Expected: is_unmapped_glyph_name(\"A\") == false. \
-             Found: true. \
-             Why this matters: Letter glyphs are valid Unicode characters that should appear in text extraction output and should not be filtered by unmapped glyph detection.",
+            "Normal glyph 'A' should NOT be identified as unmapped. \
+             Expected: false. \
+             Found: {}. \
+             Why this matters: A is a normal Latin letter that should always be preserved in text.",
+            is_unmapped_glyph_name("A")
         );
         assert!(
             !is_unmapped_glyph_name("/A"),
-            "Normal glyph '/A' (with leading slash) should not be recognized as unmapped. \
-             Expected: is_unmapped_glyph_name(\"/A\") == false. \
-             Found: true. \
-             Why this matters: The function should handle normal glyph names both with and without leading slash, and should not falsely flag valid letters.",
+            "Normal glyph '/A' (with leading slash) should NOT be identified as unmapped. \
+             Expected: false. \
+             Found: {}. \
+             Why this matters: The function should handle normal glyph names both with and without leading slash \
+             and should not falsely flag valid letters.",
+            is_unmapped_glyph_name("/A")
         );
         assert!(
             !is_unmapped_glyph_name("space"),
-            "Normal glyph 'space' should not be recognized as unmapped. \
-             Expected: is_unmapped_glyph_name(\"space\") == false. \
-             Found: true. \
-             Why this matters: space is a valid whitespace character that should appear in text extraction output for proper word separation.",
+            "Normal glyph 'space' should NOT be identified as unmapped. \
+             Expected: false. \
+             Found: {}. \
+             Why this matters: space is a standard whitespace character that should be preserved.",
+            is_unmapped_glyph_name("space")
         );
         assert!(
             !is_unmapped_glyph_name("/space"),
-            "Normal glyph '/space' (with leading slash) should not be recognized as unmapped. \
-             Expected: is_unmapped_glyph_name(\"/space\") == false. \
-             Found: true. \
+            "Normal glyph '/space' (with leading slash) should NOT be identified as unmapped. \
+             Expected: false. \
+             Found: {}. \
              Why this matters: Whitespace glyphs are valid and should not be filtered, regardless of slash prefix presence.",
+            is_unmapped_glyph_name("/space")
         );
         assert!(
             !is_unmapped_glyph_name("uni0041"),
-            "Normal glyph 'uni0041' should not be recognized as unmapped. \
-             Expected: is_unmapped_glyph_name(\"uni0041\") == false. \
-             Found: true. \
-             Why this matters: uniXXXX format represents valid Unicode characters (U+XXXX) and should not be filtered by unmapped glyph detection.",
+            "Normal glyph 'uni0041' should NOT be identified as unmapped. \
+             Expected: false. \
+             Found: {}. \
+             Why this matters: uniXXXX format represents valid Unicode characters (U+XXXX) and should not be filtered.",
+            is_unmapped_glyph_name("uni0041")
         );
         assert!(
             !is_unmapped_glyph_name("/uni0041"),
-            "Normal glyph '/uni0041' (with leading slash) should not be recognized as unmapped. \
-             Expected: is_unmapped_glyph_name(\"/uni0041\") == false. \
-             Found: true. \
-             Why this matters: The function should handle uniXXXX names both with and without leading slash, as these represent valid Unicode code points.",
+            "Normal glyph '/uni0041' (with leading slash) should NOT be identified as unmapped. \
+             Expected: false. \
+             Found: {}. \
+             Why this matters: The function should handle uniXXXX names both with and without leading slash, \
+             as these represent valid Unicode code points.",
+            is_unmapped_glyph_name("/uni0041")
         );
     }
 
@@ -135,9 +153,11 @@ mod tests {
         assert!(
             UNMAPPED_GLYPH_NAMES.contains(".notdef"),
             "UNMAPPED_GLYPH_NAMES set should contain '.notdef'. \
-             Expected: UNMAPPED_GLYPH_NAMES.contains(\".notdef\") == true. \
-             Found: false. \
-             Why this matters: .notdef is a core unmapped glyph defined in build/unmapped-glyph-names.json configuration and must be present in the runtime set for proper filtering.",
+             Expected: true. \
+             Found: {}. \
+             Why this matters: .notdef is a core unmapped glyph defined in build/unmapped-glyph-names.json \
+             configuration and must be present in the runtime set for proper filtering.",
+            UNMAPPED_GLYPH_NAMES.contains(".notdef")
         );
     }
 }
