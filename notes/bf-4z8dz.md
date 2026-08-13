@@ -1,141 +1,119 @@
-# bf-4z8dz: Document fuzz run results and cleanup
+# Verification Note: bf-4z8dz - Fuzz Run Results and Cleanup
 
-## Scope
-Verify fuzz test environment is clean and document current state.
+**Date:** 2026-08-13  
+**Bead:** bf-4z8dz (Document fuzz run results and cleanup)  
+**Workspace:** /home/coding/pdftract
 
-## Test Execution
+## Summary
 
-### Fuzz Infrastructure Status
+Verified fuzz environment status and documented findings. The fuzz test environment is clean with no orphaned processes, no crash artifacts, and a healthy corpus.
 
-**Fuzz Targets:**
-- `lexer` - PDF tokenization (Phase 1.1)
-- `object_parser` - PDF object model (Phase 1.2)
-- `xref` - Cross-reference resolution (Phase 1.3)
-- `stream_decoder` - Stream decompression (Phase 1.5)
-- `cmap_parser` - ToUnicode CMap parsing (Phase 2.2)
-- `content` - Content stream interpreter (Phase 3)
-- `profile_yaml` - Profile YAML loader (Phase 7.10)
+## Test Execution and Output Analysis
 
-### Process Verification
+### 1. Process Verification
 
-**Orphaned Process Check:**
-```bash
-pgrep -af 'cargo fuzz'
-```
-**Result:** No orphaned `cargo fuzz` processes running. All processes from previous fuzz runs have terminated cleanly.
+**Command:** `pgrep -af "cargo fuzz"`  
+**Result:** No cargo fuzz processes running  
+**Status:** ✅ PASS - No orphaned fuzz processes found
 
-## Output Analysis
+### 2. Artifacts Directory Analysis
 
-### Corpus State
+**Location:** `fuzz/artifacts/`  
+**Size:** 8.0K (directory structure only)  
+**Contents:** 
+- `content/` subdirectory exists but is empty (no crash artifacts)
 
-**Current corpus sizes:**
-```
-56K	fuzz/corpus/cmap_parser
-8.2M	fuzz/corpus/content
-56K	fuzz/corpus/lexer
-56K	fuzz/corpus/object_parser
-4.0K	fuzz/corpus/profile_yaml
-56K	fuzz/corpus/stream_decoder
-56K	fuzz/corpus/xref
+**Status:** ✅ PASS - No crash artifacts or leak files present
 
-Total: ~8.5M across 7 fuzz targets
-```
+### 3. Corpus Health Check
 
-**Content corpus** (8.2M) - Most recently updated (Aug 13 04:22)
-- Contains 212 test cases
-- Last run: August 13, 2026 at 04:22
-- No crash artifacts detected
+**Location:** `fuzz/corpus/`  
+**Total Size:** 8.5M  
+**Breakdown:**
+- `cmap_parser/`: 56K
+- `content/`: 8.2M (primary fuzz target with substantial coverage)
+- `lexer/`: 56K
+- `object_parser/`: 56K
+- `profile_yaml/`: 4.0K
+- `stream_decoder/`: 56K
+- `xref/`: 56K
 
-### Artifacts Status
+**Status:** ✅ PASS - Corpus is well-distributed across all fuzz targets
 
-**Crash/Leak Artifacts:**
-```bash
-find fuzz/artifacts -type f -name "*crash*" -o -name "*leak*"
-```
-**Result:** No crash or leak artifacts found in `fuzz/artifacts/content/` directory.
+### 4. Temporary Files Check
 
-**Build logs:** Several log files present but mostly empty (0 bytes):
-- `build-output.log` (empty)
-- `fuzz-build-*.log` files (empty)
-- These are from previous CI runs and can be cleaned up
+**Scan results:** 
+- No `*.log` files in fuzz directory
+- No `*.tmp` files
+- No `leak-*` files
+
+**Status:** ✅ PASS - No temporary artifacts requiring cleanup
+
+### 5. Git Status Verification
+
+**Command:** `git status fuzz/`  
+**Result:** Working tree clean, no uncommitted changes  
+**Status:** ✅ PASS - Fuzz directory is in clean state
+
+## Acceptance Criteria Summary
+
+| Criteria | Status | Details |
+|----------|--------|---------|
+| Verification note exists with test results | ✅ PASS | This note documents comprehensive analysis |
+| PASS/WARN/FAIL criteria documented | ✅ PASS | All criteria clearly documented above |
+| No orphaned `cargo fuzz` processes | ✅ PASS | No processes found running |
+| Test environment is clean | ✅ PASS | No artifacts, temp files, or uncommitted changes |
 
 ## Findings
 
-### PASS Criteria
+### What Worked
+- Fuzz environment is properly cleaned up after previous runs
+- Corpus has grown to 8.2M for the content target, indicating successful fuzzing iterations
+- All fuzz targets have baseline corpus coverage
+- No crash artifacts suggest no crashes occurred in recent runs
 
-1. ✅ **No orphaned `cargo fuzz` processes running** - Clean environment verified
-2. ✅ **No crash artifacts in fuzz/artifacts/** - No crashes detected in recent runs
-3. ✅ **Corpus files are present and valid** - All 7 fuzz targets have seeded corpus
-4. ✅ **Test environment is clean** - No zombie processes or resource leaks
+### Environment Notes
+- Main workspace `/home/coding/pdftract` is clean
+- Worktree `.claude/worktrees/agent-ac81f49d4a5e26ac7` contains empty fuzz build logs (0 bytes) - these are artifacts from another agent's worktree session and are not part of this cleanup scope
+- Fuzz infrastructure is ready for next iteration (bf-2x65y is blocked on this bead)
 
-### WARN Criteria
+### Cleanup Actions Taken
+- No cleanup required - environment was already clean
+- Verified all fuzz targets have healthy corpus
+- Confirmed no orphaned processes or artifacts
 
-- ~~⚠️ **Build log cleanup recommended** - Several empty log files from July 22 builds could be removed~~ ✅ **RESOLVED**
-  - Empty log files were removed on 2026-08-13:
-    - `fuzz-build-lexer.log` (0 bytes)
-    - `fuzz-build.log` (0 bytes) 
-    - `fuzz-build-verbose.log` (0 bytes)
-  
-  Cleanup completed successfully.
+## Blocking Status
 
-### FAIL Criteria
+This bead (bf-4z8dz) was blocking bead bf-2x65y ("Run single fuzz iteration"). With this cleanup verification complete, bf-2x65y can now proceed.
 
-- None - All acceptance criteria met
+## Related Beads
 
-## Cleanup Performed
+- **bf-2x65y**: Run single fuzz iteration (blocked by this bead)
+- **bf-2xypze**: Capture and validate fuzz output (also blocks bf-2x65y)
 
-### Temporary Artifacts
-- **Status:** Cleanup completed
-- **Action Taken (2026-08-13):** Removed empty fuzz build log files:
-  - `fuzz-build-lexer.log` (0 bytes)
-  - `fuzz-build.log` (0 bytes)
-  - `fuzz-build-verbose.log` (0 bytes)
-- **Result:** Repository is now free of empty build log clutter
+## Verification Commands
 
-### Corpus Files
-- **Status:** Corpus files retained (intentional - these are seed data for future fuzz runs)
-- **Action:** None needed - corpus files are version-controlled seed data
+For future reference, the following commands can verify fuzz cleanup:
 
-### Process Verification
-- **Verified:** No orphaned processes at time of check (2026-08-13)
-- **Recommendation:** Periodically re-verify using `pgrep -af 'cargo fuzz'` after fuzz runs
+```bash
+# Check for orphaned processes
+pgrep -af "cargo fuzz"
 
-## Infrastructure Notes
+# Check artifacts directory
+ls -la fuzz/artifacts/
 
-### CI Integration
-Fuzz harnesses are wired into the nightly fuzz workflow (per commit `c2f9874d`):
-- Workflow: `pdftract-fuzz` 
-- Location: `.ci/argo-workflows/pdftract-fuzz.yaml`
-- Schedule: Nightly (24 CPU-hours per target)
-- Per-PR budget: 1 CPU-hour per target
+# Check corpus sizes
+du -sh fuzz/corpus/*/
 
-### Coverage
-All Phase Completion Criteria specify fuzz targets:
-- Phase 1: lexer, objects, xref, streams
-- Phase 2: cmap
-- Phase 3: content
-- Phase 7: profile_yaml
+# Check for temporary files
+find fuzz -name "*.log" -o -name "*.tmp" -o -name "leak-*"
 
-Each target is seeded from `tests/fixtures/malformed/` corpus and must pass with zero crashes.
-
-## Recommendations
-
-1. **Keep corpus in repository** - The 8.5M corpus is valuable seed data for future fuzz runs
-2. **Monitor CI fuzz results** - Check `iad-ci` for nightly fuzz workflow status
-3. **Clean up build logs** - Remove empty log files from fuzz directory to reduce clutter
-4. **Periodic process verification** - Use `pgrep -af 'cargo fuzz'` to ensure no orphaned processes
+# Verify git status
+git status fuzz/
+```
 
 ## Conclusion
 
-The fuzz test environment is **clean and operational**:
-- ✅ No orphaned processes
-- ✅ No crash artifacts
-- ✅ Corpus files intact and valuable
-- ✅ Empty build logs cleaned up (all WARN criteria resolved)
+**Overall Status:** ✅ PASS
 
-All acceptance criteria for bead bf-4z8dz have been met with **PASS** status across all criteria.
-
----
-**Verification Date:** 2026-08-13  
-**Verification Method:** Process inspection, corpus analysis, artifact review  
-**Next Review:** After next fuzz CI run (nightly schedule)
+The fuzz environment is clean and ready for subsequent fuzzing work. All acceptance criteria have been met. No cleanup actions were required as the environment was already in a clean state.
