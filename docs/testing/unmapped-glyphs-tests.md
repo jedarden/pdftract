@@ -288,12 +288,18 @@ The unmapped glyph names are compiled into the binary at build time:
 
 4. **Empty vs. Missing Fields**: An explicit empty array `[]` is treated the same as a missing `unmapped_glyph_names` field (both produce an empty `Vec`)
 
-### Checksum Verification
+### Checksum Verification and Supply-Chain Protection
 
-Build-time data files are verified via checksums in `build/CHECKSUMS.sha256`. If verification fails:
+Build-time data files are verified via checksums in `build/CHECKSUMS.sha256` as part of **TH-06 (supply-chain gate)**. If verification fails:
 - A warning is emitted
 - The build panics with "Checksum verification failed - aborting build"
 - This prevents tampering with or accidental modification of build-time data
+- Part of the supply-chain security gating strategy (TH-06 bead)
+
+This checksum verification ensures that:
+1. Build-time configuration files haven't been modified after commit
+2. No malicious changes to unmapped glyph definitions
+3. Reproducible builds across different environments
 
 ## Platform-Specific Behavior
 
@@ -388,6 +394,11 @@ All assertions now include diagnostic context with:
 - **Expected**: What the test expects
 - **Found**: What was actually found
 - **Why this matters**: Explanation of why this assertion matters
+
+**Recent Improvements (2026-08):**
+- Fixed Unicode escape sequences in assertion messages (changed from `'\\u{FFFD}'` to `'\u{FFFD}'` for correct display)
+- Changed `.unwrap().chars` to `.as_ref().unwrap().chars` to avoid moving values (allowing use in assertion messages)
+- Enhanced API ergonomics in test helpers (`HashMap<Arc<str>, ObjRef>` instead of `HashMap<String, ObjRef>`)
 
 **Example:**
 ```rust
@@ -661,6 +672,16 @@ Certain tests are marked with `#[ignore]` and require explicit invocation:
    - Examples: Multiple tests in `memory_guard.rs` and `memory_guard_tests.rs`
    - Must be run individually: `cargo test test_memory_guard_alloc_failure -- --ignored`
    - Reason: Setting process-wide memory limits affects all tests in the same process
+
+4. **OCR Tests (Feature-Gated)**: Tests marked with `#[ignore] // Ignored by default; run with: cargo nextest run --features otp -- --ignored <test_name>`
+   - Examples: `sauvola.rs`, `otsu.rs`, `ocr_integration.rs`
+   - Must be run with: `cargo nextest run --features ocr -- --ignored sauvola`
+   - Reason: OCR tests require manual fixture generation and are expensive to run
+   - Feature flags: `ocr`, `otp` control compilation of OCR-related tests
+
+5. **System-Specific Tests**: Tests marked with `#[ignore] // Requires /etc/hosts control to synthesize a mixed-resolution hostname`
+   - Example: `TH-03-mcp-no-auth.rs`
+   - Reason: Requires specific system configuration to synthesize test conditions
 
 ### Platform-Specific Skips
 
