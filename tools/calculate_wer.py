@@ -7,6 +7,12 @@ Usage:
 
 Requirements:
     pip3 install jiwer
+
+For the degraded 200 DPI fixture, OCR output generation is documented at:
+    notes/bf-3tedi.md
+
+Example usage with degraded fixture:
+    python3 tools/calculate_wer.py tests/fixtures/scanned/low-quality/degraded-200dpi-ground-truth.txt tests/fixtures/scanned/low-quality/degraded-200dpi-ocr.txt
 """
 
 import sys
