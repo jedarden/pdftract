@@ -9,6 +9,7 @@ pub mod codespace;
 pub mod embedded;
 pub mod encoding;
 pub mod fingerprint;
+pub mod path_commands;
 pub mod predefined_cmap;
 pub mod resolver;
 pub mod shape;
@@ -24,6 +25,7 @@ mod type3_rasterizer_test;
 pub mod test_glyph_helper;
 pub mod type3_test_fixtures;
 
+pub use path_commands::{closepath, curveto, lineto, moveto, rectangle};
 pub use type3_test_fixtures::{
     create_charproc_stream_with_curves, create_empty_content_stream, create_glyph_dict_with_basic_properties,
     create_main_content_stream, create_main_content_stream_multi, create_simple_charproc_stream,
