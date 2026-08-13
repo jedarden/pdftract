@@ -200,3 +200,143 @@ This forces the extractor to either:
 - Fail gracefully
 
 The fixture validates that pdftract handles unmapped glyphs correctly rather than producing garbage text or crashing.
+
+## Expected Diagnostics
+
+This fixture is designed to produce **3 GLYPH_UNMAPPED diagnostics** (one per unique unmapped glyph per font).
+
+### Diagnostic Structure
+
+GLYPH_UNMAPPED diagnostics are emitted with the following structure:
+
+**Text Format:**
+```
+FONT_GLYPH_UNMAPPED: Glyph '<glyph_name>' in font '<font_name>' could not be mapped to Unicode
+```
+
+**JSON Format:**
+```json
+{
+  "code": "FONT_GLYPH_UNMAPPED",
+  "message": "Glyph '<glyph_name>' in font '<font_name>' could not be mapped to Unicode",
+  "severity": "warning",
+  "context": {
+    "font_name": "<font_name>",
+    "glyph_name": "<glyph_name>",
+    "char_code": <integer_code>,
+    "replacement_char": "�"
+  }
+}
+```
+
+### Expected Diagnostics for no-mapping.pdf
+
+| Code | Glyph Name | Expected Diagnostic |
+|------|------------|---------------------|
+| 0    | /g001      | FONT_GLYPH_UNMAPPED: Glyph 'g001' in font 'CustomNoMap' could not be mapped to Unicode |
+| 1    | /g002      | FONT_GLYPH_UNMAPPED: Glyph 'g002' in font 'CustomNoMap' could not be mapped to Unicode |
+| 2    | /g003      | FONT_GLYPH_UNMAPPED: Glyph 'g003' in font 'CustomNoMap' could not be mapped to Unicode |
+
+### Structured JSON Representation
+
+```json
+{
+  "font_id": "CustomNoMap",
+  "unmapped_glyphs": [
+    {
+      "char_code": 0,
+      "glyph_name": "g001",
+      "reason": "Custom name, not in AGL",
+      "expected_output": "U+FFFD (�)"
+    },
+    {
+      "char_code": 1,
+      "glyph_name": "g002",
+      "reason": "Custom name, not in AGL",
+      "expected_output": "U+FFFD (�)"
+    },
+    {
+      "char_code": 2,
+      "glyph_name": "g003",
+      "reason": "Custom name, not in AGL",
+      "expected_output": "U+FFFD (�)"
+    }
+  ],
+  "total_unmapped_count": 3,
+  "diagnostic_code": "FONT_GLYPH_UNMAPPED",
+  "severity": "warning"
+}
+```
+
+## Diagnostic Verification
+
+### Verify diagnostics output:
+
+```bash
+# Build pdftract first if needed
+cargo build --release
+
+# Extract with diagnostics to JSON output
+./target/release/pdftract extract tests/fixtures/encoding/no-mapping.pdf \
+  --format json -o /tmp/no-mapping-diagnostics.json
+
+# Check for GLYPH_UNMAPPED diagnostics
+jq '.diagnostics[] | select(.code == "FONT_GLYPH_UNMAPPED")' \
+  /tmp/no-mapping-diagnostics.json
+```
+
+**Expected Output:**
+```json
+{
+  "code": "FONT_GLYPH_UNMAPPED",
+  "message": "Glyph 'g001' in font 'CustomNoMap' could not be mapped to Unicode",
+  "severity": "warning",
+  "context": {
+    "font_name": "CustomNoMap",
+    "glyph_name": "g001",
+    "char_code": 0,
+    "replacement_char": "�"
+  }
+}
+{
+  "code": "FONT_GLYPH_UNMAPPED",
+  "message": "Glyph 'g002' in font 'CustomNoMap' could not be mapped to Unicode",
+  "severity": "warning",
+  "context": {
+    "font_name": "CustomNoMap",
+    "glyph_name": "g002",
+    "char_code": 1,
+    "replacement_char": "�"
+  }
+}
+{
+  "code": "FONT_GLYPH_UNMAPPED",
+  "message": "Glyph 'g003' in font 'CustomNoMap' could not be mapped to Unicode",
+  "severity": "warning",
+  "context": {
+    "font_name": "CustomNoMap",
+    "glyph_name": "g003",
+    "char_code": 2,
+    "replacement_char": "�"
+  }
+}
+```
+
+### Verify diagnostic count:
+
+```bash
+# Count GLYPH_UNMAPPED diagnostics (should be exactly 3)
+jq '[.diagnostics[] | select(.code == "FONT_GLYPH_UNMAPPED")] | length' \
+  /tmp/no-mapping-diagnostics.json
+```
+
+**Expected Output:** `3`
+
+### Verification from Previous Analysis
+
+The diagnostic output format was verified through comprehensive analysis documented in:
+- `.cli/tmp/glyph_unmapped_analysis.md` - General GLYPH_UNMAPPED diagnostic structure and behavior
+- `.cli/tmp/validate_diagnostics_structure.py` - Diagnostic schema validation
+- `.cli/tmp/verify_glyph_unmapped_diagnostic.sh` - Fixture-specific diagnostic verification
+
+This fixture represents the **worst-case scenario** for Unicode recovery where all glyphs in a font are unmapped, ensuring diagnostics are emitted correctly for every unique glyph name rather than per-occurrence in the content stream.
