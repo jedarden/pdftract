@@ -2,8 +2,8 @@
   "throughput_mb_per_sec": 80.9,
   "files_per_sec": 12345,
   "total_runtime_sec": 0.081,
-  "timestamp": "2026-08-13T05:45:32.609Z",
-  "commit_hash": "9b709bc7906390d1dc67f1ca1fada5046d9fcf63",
+  "timestamp": "2026-08-13T05:47:32.215Z",
+  "commit_hash": "5fdfae4caeab98c624df87e8fb9451f3a815c953",
   "corpus_size": 1000,
   "bytes_total": 6870672,
   "notes": "Baseline captured with grep feature enabled. All 1000 synthetic PDF files processed (skipped due to malformed corpus - 'no /Root in trailer' errors). Timing reflects pure grep traversal overhead. Metrics: throughput based on total corpus size (6.87MB), runtime measured via system time(1)."
