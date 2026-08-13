@@ -142,6 +142,8 @@ fn test_mcp_server_cleanup() {
 
 ## Unmapped Glyph Testing Edge Cases
 
+This section details specific edge cases discovered during unmapped glyph testing and assertion improvement work. These are the patterns that were found to be critical for maintaining test reliability and debuggability.
+
 ### Configuration
 
 Unmapped glyph names are configured in `build/unmapped-glyph-names.json`:
@@ -185,6 +187,116 @@ Unmapped glyph names are configured in `build/unmapped-glyph-names.json`:
 4. **Consecutive Sequence Tests**: Verify filtering works with consecutive name assignments
 5. **Range Mapping Tests**: Test `beginbfrange...endbfrange` constructs
 6. **Configuration Tests**: Verify JSON config parsing with various edge cases
+
+## Assertion Pattern Improvements Discovered
+
+During the testing and assertion improvement work, several critical patterns emerged that significantly improved test debuggability:
+
+### Three-Part Assertion Format
+
+All tests now use a consistent three-part assertion message format discovered through testing:
+
+```rust
+assert_eq!(
+    actual_value,
+    expected_value,
+    "Description of what's being tested. \
+     Expected: {expected}. \
+     Found: {actual}. \
+     Why this matters: Explanation of the impact and rationale."
+);
+```
+
+**Discovery**: Early tests used simple assertion messages like "Expected X but got Y". This made it difficult to understand:
+- What was being tested
+- Why the failure matters
+- What the expected behavior should be
+
+**Solution**: The three-part format provides immediate clarity on test failure, reducing debugging time significantly.
+
+### Unicode Display Issues in Assertions
+
+**Problem Discovered**: Assertion messages using `'\\u{FFFD}'` displayed as literal `\u{FFFD}` instead of the replacement character `�`.
+
+**Pattern Found**: Early assertions used:
+```rust
+assert_eq!(result, Some(&['\u{FFFD}'][..]), "Should return U+FFFD");
+```
+
+**Fix Applied**: Changed to use actual Unicode character:
+```rust
+assert_eq!(result, Some(&['\u{FFFD}'][..]), 
+    "Should return U+FFFD (replacement character). \
+     Expected: Some(\"￼\"). \
+     Found: {:?}. \
+     Why this matters: U+FFFD is the Unicode replacement character for unmapped glyphs.",
+    result
+);
+```
+
+**Discovery Method**: This was found when test assertions showed escape sequences instead of actual Unicode characters in failure output, making diagnosis confusing.
+
+### Borrow Checker Issues with Assertion Messages
+
+**Problem Discovered**: Using `.unwrap().chars()` on values moved into assertion messages caused borrow checker errors.
+
+**Pattern Found**:
+```rust
+// This caused compile errors
+assert_eq!(
+    some_string.unwrap().chars().count(),
+    expected_count,
+    "Character count mismatch"
+);
+```
+
+**Fix Applied**: Changed to use `.as_ref().unwrap().chars()`:
+```rust
+assert_eq!(
+    some_string.as_ref().unwrap().chars().count(),
+    expected_count,
+    "Character count mismatch. \
+     Expected: {} characters. \
+     Found: {} characters. \
+     Why this matters: .as_ref() avoids moving the value, allowing use in assertion messages.",
+    expected_count,
+    some_string.as_ref().unwrap().chars().count()
+);
+```
+
+**Discovery Method**: During assertion improvement work, tests failed to compile when attempting to display diagnostic values in assertion messages.
+
+### API Ergonomics Improvements in Test Helpers
+
+**Problem Discovered**: Test helpers used inefficient string types and made tests verbose.
+
+**Changes Made**:
+1. **HashMap<Arc<str>, ObjRef> instead of HashMap<String, ObjRef>**: Reduced cloning overhead
+2. **&[(&str, ObjRef)] instead of &[(String, ObjRef)]**: More ergonomic slice acceptance
+3. **New make_custom_char_procs_from_names()**: Simplified common test patterns
+
+**Impact**: Tests became more readable and less error-prone.
+
+### Structural vs Behavioral Testing Balance
+
+**Discovery**: Early tests focused too much on implementation details rather than behavior.
+
+**Pattern Shift**: Tests now follow this hierarchy:
+1. **Behavioral Tests**: "Does the glyph get filtered correctly?" (primary concern)
+2. **Structural Tests**: "Can the parser handle the input?" (supporting concern)
+3. **Implementation Tests**: "Does the helper use the right format?" (optimization concern)
+
+**Example**:
+```rust
+// PRIMARY - Behavioral
+assert_eq!(overlay.get(0), None, "Unmapped glyph should be filtered");
+
+// SUPPORTING - Structural
+assert!(!map.is_empty(), "Parser should produce non-empty output");
+
+// OPTIMIZATION - Implementation
+assert_eq!(char_procs.len(), 4, "Should create exactly 4 char procs");
+```
 
 ### Known Limitations
 
