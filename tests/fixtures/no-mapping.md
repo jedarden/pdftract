@@ -430,11 +430,133 @@ ls -l tests/fixtures/encoding/no-mapping.pdf
 - Current expected output is three U+FFFD characters
 - Tests should verify replacement character emission, not glyph shape recovery
 
+## GLYPH_UNMAPPED Diagnostic Output Format
+
+### Expected Diagnostic Structure
+
+When pdftract processes `no-mapping.pdf`, it emits `GLYPH_UNMAPPED` diagnostics for each glyph that cannot be resolved to Unicode. The diagnostic format follows the standard JSON schema defined in `docs/schema/v1.0/pdftract.schema.json`.
+
+#### Diagnostic Entry Schema
+
+Each `GLYPH_UNMAPPED` diagnostic entry contains:
+
+```json
+{
+  "code": "FONT_GLYPH_UNMAPPED",
+  "message": "Glyph could not be resolved by any of the four levels; output contains U+FFFD",
+  "severity": "warning",
+  "page_index": 0,
+  "location": {
+    "object_number": 5,
+    "generation_number": 0
+  },
+  "hint": null
+}
+```
+
+#### Field Descriptions
+
+- **`code`**: Stable string identifier (`"FONT_GLYPH_UNMAPPED"`) - part of the public API surface
+- **`message`**: Human-readable description explaining why the diagnostic was emitted
+- **`severity`**: Impact level - `"warning"` indicates output is usable but degraded
+- **`page_index`**: Zero-based page index where the unmapped glyph occurred (0 for single-page PDF)
+- **`location`**: PDF object reference where the glyph originated (font dictionary object 5 0 R)
+- **`hint`**: Optional resolution hint (null for GLYPH_UNMAPPED since no automatic recovery is available)
+
+### Expected Diagnostics for no-mapping.pdf
+
+When extracting this fixture, pdftract should emit **three GLYPH_UNMAPPED diagnostics** (one per unmapped glyph):
+
+```json
+{
+  "errors": [
+    {
+      "code": "FONT_GLYPH_UNMAPPED",
+      "message": "Glyph could not be resolved by any of the four levels; output contains U+FFFD",
+      "severity": "warning",
+      "page_index": 0,
+      "location": {
+        "object_number": 5,
+        "generation_number": 0
+      },
+      "hint": null
+    },
+    {
+      "code": "FONT_GLYPH_UNMAPPED",
+      "message": "Glyph could not be resolved by any of the four levels; output contains U+FFFD",
+      "severity": "warning",
+      "page_index": 0,
+      "location": {
+        "object_number": 5,
+        "generation_number": 0
+      },
+      "hint": null
+    },
+    {
+      "code": "FONT_GLYPH_UNMAPPED",
+      "message": "Glyph could not be resolved by any of the four levels; output contains U+FFFD",
+      "severity": "warning",
+      "page_index": 0,
+      "location": {
+        "object_number": 5,
+        "generation_number": 0
+      },
+      "hint": null
+    }
+  ]
+}
+```
+
+**Note:** All three diagnostics reference the same font object (5 0 R) because all three glyphs originate from the same CustomNoMap font.
+
+### Unmapped Glyph Details
+
+| Glyph Name | Character Code | Recovery Attempts | Result |
+|------------|----------------|-------------------|---------|
+| `/g001` | 0 | Level 1 (No ToUnicode) ❌<br>Level 2 (Not in AGL) ❌<br>Level 3 (No embedded font) ❌<br>Level 4 (No glyph outlines) ❌ | U+FFFD emitted |
+| `/g002` | 1 | Same failure path | U+FFFD emitted |
+| `/g003` | 2 | Same failure path | U+FFFD emitted |
+
+### Diagnostic Code Catalog Reference
+
+According to the plan's Diagnostic Code Catalog:
+
+| Property | Value |
+|----------|-------|
+| **Code** | `GLYPH_UNMAPPED` |
+| **Category** | Font |
+| **Severity** | `warning` |
+| **Recoverable** | Yes |
+| **Suggested User Action** | The glyph could not be resolved by any of the four levels; output contains U+FFFD |
+| **Phase Origin** | Phase 2.2 |
+
+### Verification
+
+The diagnostic output can be verified by running:
+
+```bash
+cargo run --release --bin pdftract-cli -- \
+  extract tests/fixtures/encoding/no-mapping.pdf --json -o - \
+  | jq '.errors[] | select(.code == "FONT_GLYPH_UNMAPPED")'
+```
+
+Expected output: Three diagnostic entries with the structure shown above.
+
+### Integration with Test Verification
+
+Per bead bf-1dsb9, the GLYPH_UNMAPPED diagnostic format was verified through:
+
+1. **Schema validation**: Confirmed diagnostic structure matches `DiagnosticJson` in `crates/pdftract-core/src/schema/mod.rs`
+2. **Code verification**: Verified `FONT_GLYPH_UNMAPPED` is the canonical code emitted (see `crates/pdftract-core/src/diagnostics.rs`)
+3. **Format consistency**: All three unmapped glyphs produce diagnostics with identical structure (same page_index, location, hint fields)
+4. **Severity validation**: Confirmed `"warning"` severity allows extraction to continue while signaling degraded output
+
 ## References
 
 ### Plan Documentation
 
 - **Phase 2.3:** Encoding recovery and Unicode mapping (lines 1420-1650)
+- **Diagnostic Code Catalog:** Section documenting all diagnostic codes and their properties
 - **TH-03:** Text extraction and encoding recovery tests  
 - **INV-14:** Unicode recovery levels and fallback strategies
 
@@ -449,3 +571,5 @@ ls -l tests/fixtures/encoding/no-mapping.pdf
 - `tests/fixtures/PROVENANCE.md` — Fixture generation history
 - `tests/fixtures/generate_encoding_fixtures.rs` — Generation source code
 - `crates/pdftract-core/src/font/` — Font resolution and encoding implementation
+- `crates/pdftract-core/src/diagnostics.rs` — Diagnostic system implementation
+- `crates/pdftract-core/src/schema/mod.rs` — JSON schema definitions
