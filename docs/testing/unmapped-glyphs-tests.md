@@ -194,6 +194,80 @@ Unmapped glyph names are configured in `build/unmapped-glyph-names.json`:
 
 3. **No Unicode Validation**: The system checks if a glyph name is in the unmapped set but does not validate if a name has a valid Unicode mapping beyond that check
 
+### Type 3 Font-Specific Limitations
+
+#### Content Stream Resolution
+- **Missing CharProcs**: Type 3 fonts without `/CharProcs` dictionary are treated as zero-glyph fonts
+- **Indirect References**: CharProcs as indirect references are not supported (treated as zero-glyph font)
+- **Direct Streams**: CharProcs entries that are direct streams (not references) are skipped with diagnostic
+- **Missing Glyphs**: Glyphs named in encoding but not in `/CharProcs` emit diagnostic and fail to rasterize
+
+#### Widths Array Validation
+- **Length Mismatch**: When `/Widths` array length doesn't match `LastChar - FirstChar + 1`, the array is:
+  - Truncated if too long
+  - Padded with zeros if too short
+  - A diagnostic `FontType3WidthsLengthMismatch` is emitted
+- **Missing Widths**: When `/Widths` is missing, defaults to all-zero array
+- **Indirect Widths**: Indirect references for `/Widths` are not supported (defaults to all-zero)
+
+#### Encoding Limitations
+- **Single-Byte Only**: Type 3 fonts only support single-byte character codes (0-255)
+- **Multi-Byte Codes**: Multi-byte codes immediately fall through to failure at Level 2
+- **Arbitrary Glyph Names**: Custom glyph names not in AGL escalate to Level 4 (shape recognition)
+
+#### Rasterization Limitations
+- **Document Context Required**: Rasterization requires document context (source, resolver, decompress counter)
+- **No Resolver**: Without a stream resolver, glyph content cannot be fetched
+- **Empty Glyphs**: Empty content streams produce all-white bitmaps
+- **Font Bbox**: Default font bbox is [0, 0, 0, 0] if not specified; affects rasterization size
+
+### Font Resolver Cache Limitations
+
+#### Thread-Safety Concurrency
+- **DashMap Usage**: Resolver cache uses DashMap for thread-safe concurrent access
+- **Cache Key**: Combines font ID (Arc pointer cast) and character code bytes
+- **Emission Tracking**: Separate DashMap tracks which (font, code) pairs have already emitted diagnostics
+- **One-Time Emission**: GLYPH_UNMAPPED diagnostic emitted exactly once per (font, code) pair
+
+#### Cache Behavior
+- **Cache Hit Returns Cached Result**: Same (font, code) pair returns cached resolution
+- **Cache Miss Computes Resolution**: Cache miss computes resolution through 4-level fallback chain
+- **Standard 14 Fonts**: Fonts without embedded programs skip Level 3 (fingerprinting)
+- **Shape DB Feature**: Level 4 shape recognition only works when `shape-db` feature is enabled
+
+### Encoding Resolution Chain Edge Cases
+
+#### Level 1: ToUnicode CMap
+- **Empty Mapping Falls Through**: Empty CMap results or U+FFFD-only results fall through to Level 2
+- **Multi-Codepoint Support**: Ligature expansion returns multiple characters (e.g., "fi" → ['f', 'i'])
+- **CMap Required**: No CMap means immediate fall-through to Level 2
+
+#### Level 2: AGL + Encoding
+- **Single-Byte Only**: Level 2 only supports single-byte character codes
+- **Glyph Name Required**: Must successfully map code → glyph name → AGL
+- **Multi-Codepoint AGL**: Tries multi-codepoint AGL lookup first (for ligatures), falls back to single-codepoint
+- **Not In AGL**: Glyph name not in Adobe Glyph List falls through to Level 3
+
+#### Level 3: Font Fingerprint
+- **Glyph ID Required**: Level 3 requires glyph ID (not character code) for lookup
+- **Embedded Program Required**: Fonts without embedded programs skip Level 3 entirely
+- **Cached Fingerprint**: Requires pre-populated fingerprint database entry
+- **Fallback**: No glyph ID or no fingerprint database entry falls through to Level 4
+
+#### Level 4: Shape Recognition
+- **Feature-Gated**: Only available when `shape-db` feature is enabled
+- **Rasterization Required**: Must rasterize glyph to 32×32 bitmap
+- **pHash Computation**: Computes perceptual hash of bitmap for database lookup
+- **Hamming Distance Threshold**: Match accepted only if distance ≤ 8; otherwise falls through
+- **Confidence 0.7**: Successful match returns with confidence 0.7
+
+#### Failure Mode
+- **All Levels Failed**: When all four levels fail, returns U+FFFD with:
+  - `chars: ['\u{FFFD}']`
+  - `source: UnicodeSource::Unknown`
+  - `confidence: 0.0`
+- **Diagnostic Emitted**: `FontGlyphUnmapped` diagnostic emitted (once per (font, code) pair)
+
 ## Configuration File Handling
 
 ### Build-Time Code Generation
@@ -329,6 +403,134 @@ assert!(
 ```
 
 This makes test failures much easier to debug by providing context about what went wrong and why it matters.
+
+## Test Helper Functions and Edge Cases
+
+### Overview
+
+The `crates/pdftract-core/src/font/test_glyph_helper.rs` module provides utilities for generating Type3 font glyph data in tests. Understanding these helpers is critical for writing unmapped glyph tests.
+
+### Glyph Generation Functions
+
+#### Rectangle Glyphs
+
+**`make_rect_glyph(x, y, width, height)`**
+- Generates: `"{x} {y} {width} {height} re f"` (rectangle + fill operators)
+- Simplest valid glyph that produces visible output
+- Tests the rasterizer's handling of the `re` operator shorthand
+- Example: `make_rect_glyph(0.0, 0.0, 100.0, 100.0)` → `"0 0 100 100 re f"`
+
+**`make_rect_glyph_with_path_commands(x, y, width, height)`**
+- Generates: `"{x} {y} m {x+w} {y} l {x+w} {y+h} l {x} {y+h} l h f"` (explicit path)
+- Produces identical output to `make_rect_glyph()` but uses individual path operators
+- Tests that the rasterizer handles both `re` shorthand and explicit `m l l l h f` sequences
+- Important for code coverage: ensures both code paths are tested
+
+#### Line Glyphs
+
+**`make_line_glyph(x1, y1, x2, y2)`**
+- Generates: `"{x1} {y1} m {x2} {y2} l h S"` (moveto, lineto, closepath, stroke)
+- Tests stroked path rendering vs filled paths (`f` vs `S`)
+- Example: `make_line_glyph(0.0, 0.0, 50.0, 50.0)` → `"0 0 m 50 50 l h S"`
+
+#### Empty Glyphs
+
+**`make_empty_glyph()`**
+- Returns: Empty `Vec<u8>` (no drawing operations)
+- Tests handling of glyphs with no visible content (spaces, zero-width joiners)
+- Rasterizes to all-white bitmap (no pixels set)
+- Important for testing that the system doesn't crash on missing glyph data
+
+### CharProc Mapping Functions
+
+#### `make_test_char_procs()`
+Returns `HashMap<Arc<str>, ObjRef>` with standard mapping:
+- `/A` → ObjRef(1, 0)
+- `/B` → ObjRef(2, 0)
+- `/C` → ObjRef(3, 0)
+- `/D` → ObjRef(4, 0)
+
+#### `make_custom_char_procs(mappings)`
+Accepts slice of `(name, ObjRef)` tuples for custom mappings.
+
+#### `make_custom_char_procs_from_names(glyph_names, base_id)`
+Auto-generates sequential IDs starting from `base_id`.
+
+### Resolver Function
+
+#### `make_test_resolver(glyph_map)`
+Creates a closure that maps `ObjRef` IDs to glyph content bytes:
+- **ID Mapping**: ID 1 → "/A", ID 2 → "/B", etc. (ASCII-based: `(ID + 'A' - 1) as char`)
+- **Returns**: `Option<Vec<u8>>` (None for non-existent IDs)
+- **Usage**: Provides test fonts with glyph content without needing PDF file parsing
+
+**Important Edge Case**: The resolver assumes ASCII character names (A-Z). For custom glyph names like "g000" or "CustomA", you must create a custom resolver function.
+
+### Test Helper Limitations and Edge Cases
+
+#### 1. ASCII-Only Character Name Assumption
+The default `make_test_resolver()` assumes character names follow ASCII A-Z pattern:
+```rust
+// This will FAIL for custom names
+let resolver = make_test_resolver(&glyph_map);
+resolver(ObjRef::new(1, 0)); // Returns "/A"
+resolver(ObjRef::new(27, 0)); // Returns NULL character, not a valid glyph name
+```
+
+**Solution**: Create custom resolver functions for non-standard glyph names.
+
+#### 2. Sequential ID Assumption
+Test helpers assume ObjRef IDs map sequentially to character names starting from ID 1. If your test uses non-sequential IDs (e.g., ObjRef(100, 0)), the default resolver won't work.
+
+#### 3. No Compression Support
+Helper functions generate uncompressed content streams. They don't support `/Filter` entries for compressed streams. For testing compressed glyphs, you must manually add compression or use actual fixture files.
+
+#### 4. No Resource Dictionaries
+The helpers don't create resource dictionaries (fonts, color spaces, etc.). Tests requiring resources (e.g., colored glyphs, pattern fills) need custom fixtures.
+
+#### 5. No FontMatrix Transformations
+Helpers use default glyph space with identity FontMatrix [1 0 0 1 0 0]. For testing custom font matrices, you need to create Type3Font instances with FontMatrix set explicitly.
+
+#### 6. Empty Streams vs Missing Glyphs
+**Important distinction**:
+- **Empty glyph** (`make_empty_glyph()`): Valid glyph with no drawing operations → all-white bitmap
+- **Missing glyph** (not in CharProcs): `FontType3MissingGlyph` diagnostic → failure to rasterize
+
+This distinction is critical for unmapped glyph tests: an empty glyph should succeed but produce no visible pixels, while a missing glyph should fail with a diagnostic.
+
+### Example: Writing a Custom Glyph Test
+
+```rust
+use pdftract_core::font::test_glyph_helper::*;
+use pdftract_core::font::type3::Type3Font;
+use std::collections::HashMap;
+
+// Create custom glyph names (unmapped in AGL)
+let glyph_names = &["g000", "g001", "CustomA"];
+let char_procs = make_custom_char_procs_from_names(glyph_names, 1);
+
+// Create glyph data
+let mut glyph_map = HashMap::new();
+glyph_map.insert("/g000".to_string(), make_rect_glyph(0.0, 0.0, 50.0, 50.0));
+glyph_map.insert("/g001".to_string(), make_line_glyph(0.0, 0.0, 100.0, 100.0));
+glyph_map.insert("/CustomA".to_string(), make_empty_glyph());
+
+// Create custom resolver (manual mapping for non-ASCII names)
+let resolver = |ref_id: ObjRef| -> Option<Vec<u8>> {
+    match ref_id.id() {
+        1 => glyph_map.get("/g000").cloned(),
+        2 => glyph_map.get("/g001").cloned(),
+        3 => glyph_map.get("/CustomA").cloned(),
+        _ => None,
+    }
+};
+
+// Create font with custom CharProcs
+let font = Type3Font::mock(Some(char_procs));
+
+// Test rasterization of unmapped glyph
+// (This will escalate to Level 4 shape recognition)
+```
 
 ## Test Configuration References
 
