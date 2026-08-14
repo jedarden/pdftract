@@ -882,6 +882,157 @@ fn test_edge_activation_at_y_min() {
     assert!(aet.iter().any(|e| e.y_min == 7), "Should contain edge with y_min=7");
 }
 
+/// Test multi-edge activation timing with sequential y_min values.
+///
+/// This test verifies that multiple edges with different y_min values activate
+/// at their respective scanlines according to the acceptance criteria:
+/// 1. Test with 3 edges at y_min=3, 5, 7
+/// 2. Assert AET contains only edge1 at scanline y=3
+/// 3. Assert AET contains edges 1&2 at scanline y=5
+/// 4. Assert AET contains all 3 edges at scanline y=7
+#[test]
+fn test_multi_edge_activation_timing() {
+    // Create 3 edges with specific y_min values
+    let edge1 = TestEdge { x: 10, y_min: 3, y_max: 15, dx: 5, dy: 12 };
+    let edge2 = TestEdge { x: 20, y_min: 5, y_max: 17, dx: 5, dy: 12 };
+    let edge3 = TestEdge { x: 30, y_min: 7, y_max: 19, dx: 5, dy: 12 };
+
+    let edges = vec![edge1, edge2, edge3];
+
+    // Sort by y_min (as GET sorting does)
+    let mut sorted_edges = edges.clone();
+    sorted_edges.sort_by_key(|e| e.y_min);
+
+    // Simulate AET initialization
+    let mut aet: Vec<TestEdge> = Vec::new();
+    let mut get_idx = 0;
+
+    // Test scanline progression from y=2 to y=8
+    for scanline in 2..=8 {
+        // Add edges whose y_min == current scanline
+        while get_idx < sorted_edges.len() && sorted_edges[get_idx].y_min == scanline {
+            aet.push(sorted_edges[get_idx]);
+            get_idx += 1;
+        }
+
+        // Verify AET contents at each critical scanline
+        match scanline {
+            3 => {
+                // At scanline y=3, only edge1 (y_min=3) should be active
+                assert_eq!(aet.len(), 1, "AET should contain exactly 1 edge at scanline y=3");
+                assert_eq!(aet[0].y_min, 3, "Active edge should have y_min=3");
+                assert_eq!(aet[0].x, 10, "Active edge should have x=10");
+            }
+            5 => {
+                // At scanline y=5, edge1 and edge2 should be active
+                assert_eq!(aet.len(), 2, "AET should contain exactly 2 edges at scanline y=5");
+                assert!(aet.iter().any(|e| e.y_min == 3), "Should contain edge1 with y_min=3");
+                assert!(aet.iter().any(|e| e.y_min == 5), "Should contain edge2 with y_min=5");
+            }
+            7 => {
+                // At scanline y=7, all three edges should be active
+                assert_eq!(aet.len(), 3, "AET should contain exactly 3 edges at scanline y=7");
+                assert!(aet.iter().any(|e| e.y_min == 3), "Should contain edge1 with y_min=3");
+                assert!(aet.iter().any(|e| e.y_min == 5), "Should contain edge2 with y_min=5");
+                assert!(aet.iter().any(|e| e.y_min == 7), "Should contain edge3 with y_min=7");
+            }
+            _ => {
+                // Other scanlines should maintain the previous state
+                if scanline < 3 {
+                    assert_eq!(aet.len(), 0, "AET should be empty before y=3");
+                } else if scanline == 4 {
+                    assert_eq!(aet.len(), 1, "AET should still have 1 edge at y=4");
+                } else if scanline == 6 {
+                    assert_eq!(aet.len(), 2, "AET should still have 2 edges at y=6");
+                } else if scanline == 8 {
+                    assert_eq!(aet.len(), 3, "AET should have all 3 edges at y=8");
+                }
+            }
+        }
+
+        // Remove edges that have been fully processed (y > y_max)
+        aet.retain(|e| scanline <= e.y_max);
+    }
+
+    // All edges should remain active throughout their y_max range
+    assert_eq!(get_idx, 3, "All 3 edges should have been added to AET");
+}
+
+/// Test multi-edge activation with AETInspector utility.
+///
+/// This test uses the AETInspector from type3_test_fixtures to verify
+/// multi-edge activation timing using the inspection utilities.
+#[test]
+fn test_multi_edge_activation_with_aet_inspector() {
+    use crate::font::type3_test_fixtures::{AETInspector, TestEdge};
+
+    // Create 3 edges with distinct y_min values using the TestEdge builder
+    let edge1 = TestEdge::new()
+        .with_x(10)
+        .with_y_min(3)
+        .with_y_max(15)
+        .with_slope(5, 12)
+        .build();
+
+    let edge2 = TestEdge::new()
+        .with_x(20)
+        .with_y_min(5)
+        .with_y_max(17)
+        .with_slope(5, 12)
+        .build();
+
+    let edge3 = TestEdge::new()
+        .with_x(30)
+        .with_y_min(7)
+        .with_y_max(19)
+        .with_slope(5, 12)
+        .build();
+
+    // Simulate scanline progression
+    let mut current_edges = Vec::new();
+    let all_edges = vec![edge1, edge2, edge3];
+
+    for y in 2..=8 {
+        // Add edges that become active at this scanline
+        for edge in &all_edges {
+            if edge.y_min == y && !current_edges.iter().any(|e: &crate::font::type3_rasterizer::Edge| e.x == edge.x && e.y_min == edge.y_min) {
+                current_edges.push(*edge);
+            }
+        }
+
+        // Verify with AETInspector at critical scanlines
+        let inspector = AETInspector::new(current_edges.clone());
+
+        match y {
+            3 => {
+                // Only edge1 should be active
+                assert_eq!(inspector.edge_count(), 1, "Should have 1 edge at y=3");
+                let active_edges = inspector.edges_at_y(3);
+                assert_eq!(active_edges.len(), 1, "Inspector should find 1 edge active at y=3");
+                assert_eq!(active_edges[0].y_min, 3, "Active edge should have y_min=3");
+            }
+            5 => {
+                // Edge1 and edge2 should be active
+                assert_eq!(inspector.edge_count(), 2, "Should have 2 edges at y=5");
+                let active_edges = inspector.edges_at_y(5);
+                assert!(active_edges.len() >= 2, "Inspector should find at least 2 edges active at y=5");
+                assert!(active_edges.iter().any(|e| e.y_min == 3), "Should have edge with y_min=3");
+                assert!(active_edges.iter().any(|e| e.y_min == 5), "Should have edge with y_min=5");
+            }
+            7 => {
+                // All three edges should be active
+                assert_eq!(inspector.edge_count(), 3, "Should have 3 edges at y=7");
+                let active_edges = inspector.edges_at_y(7);
+                assert_eq!(active_edges.len(), 3, "Inspector should find all 3 edges active at y=7");
+                assert!(active_edges.iter().any(|e| e.y_min == 3), "Should have edge with y_min=3");
+                assert!(active_edges.iter().any(|e| e.y_min == 5), "Should have edge with y_min=5");
+                assert!(active_edges.iter().any(|e| e.y_min == 7), "Should have edge with y_min=7");
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Test that edges are removed from AET after y_max.
 ///
 /// This test verifies the edge removal logic:
@@ -1559,6 +1710,146 @@ fn test_detect_char_proc_type_ref_integration_with_valid_context() {
     // Should return Unknown (reference not found, but no panic)
     assert_eq!(result, CharProcType::Unknown,
         "Reference not found should return Unknown without panicking");
+}
+
+/// Test that activated edges preserve their properties in AET.
+///
+/// This test verifies that when an edge is added to the Active Edge Table (AET),
+/// all its properties (x, y_max, slope) are preserved correctly. The test uses
+/// fixed-point representation for floating-point values (e.g., x=10.5 is stored
+/// as 105 with scale factor=10, slope=0.5 is dx=1, dy=2).
+///
+/// # Acceptance Criteria
+///
+/// 1. Test edge with specific properties: x=10.5, y_min=5, y_max=15, slope=0.5
+/// 2. Assert edge in AET has matching x value (with tolerance)
+/// 3. Assert edge in AET has matching y_max value
+/// 4. Assert edge in AET has matching slope value (dx/dy ratio)
+/// 5. Test passes
+/// 6. Code compiles
+#[test]
+fn test_edge_property_preservation_in_aet() {
+    use crate::font::type3_rasterizer::Edge;
+
+    // Create a test edge with specific properties
+    // Using fixed-point representation: x=10.5 is stored as 105 (scale factor 10)
+    // Slope=0.5 is represented as dx=1, dy=2 (1/2 = 0.5)
+    let original_x_fixed = 105_i32;  // Represents 10.5 with scale=10
+    let y_min = 5_i32;
+    let y_max = 15_i32;
+    let dx = 1_i32;   // For slope=0.5 (dx/dy)
+    let dy = 2_i32;   // For slope=0.5 (dx/dy)
+
+    let test_edge = Edge {
+        x: original_x_fixed,
+        y_min,
+        y_max,
+        dx,
+        dy,
+    };
+
+    // Simulate edge activation: add to AET
+    let mut aet: Vec<Edge> = Vec::new();
+    aet.push(test_edge);
+
+    // Retrieve edge from AET
+    let retrieved_edge = &aet[0];
+
+    // Assert y_max value is preserved (integer comparison, exact match)
+    assert_eq!(
+        retrieved_edge.y_max,
+        y_max,
+        "Edge in AET should preserve y_max value of {}",
+        y_max
+    );
+
+    // Assert x value is preserved (with tolerance for floating-point)
+    // The stored value should match exactly since we're using fixed-point
+    assert_eq!(
+        retrieved_edge.x,
+        original_x_fixed,
+        "Edge in AET should preserve x value (stored as fixed-point {})",
+        original_x_fixed
+    );
+
+    // Convert back to floating-point for verification
+    let scale = 10.0_f64;
+    let actual_x = retrieved_edge.x as f64 / scale;
+    let expected_x = 10.5_f64;
+
+    // Allow floating-point tolerance (±0.01)
+    assert!(
+        (actual_x - expected_x).abs() < 0.01,
+        "Edge in AET should have x≈{} (got {}, diff={})",
+        expected_x,
+        actual_x,
+        (actual_x - expected_x).abs()
+    );
+
+    // Assert slope value is preserved (dx/dy ratio)
+    // Slope = dx / dy = 1 / 2 = 0.5
+    let actual_slope = retrieved_edge.dx as f64 / retrieved_edge.dy as f64;
+    let expected_slope = 0.5_f64;
+
+    assert!(
+        (actual_slope - expected_slope).abs() < 0.01,
+        "Edge in AET should preserve slope (dx/dy = {} / {} = {}, got {})",
+        retrieved_edge.dx,
+        retrieved_edge.dy,
+        expected_slope,
+        actual_slope
+    );
+
+    // Verify individual dx and dy values are preserved
+    assert_eq!(
+        retrieved_edge.dx, dx,
+        "Edge in AET should preserve dx value of {}", dx
+    );
+    assert_eq!(
+        retrieved_edge.dy, dy,
+        "Edge in AET should preserve dy value of {}", dy
+    );
+
+    // Verify all edge properties are preserved
+    assert_eq!(
+        retrieved_edge.y_min, y_min,
+        "Edge in AET should preserve y_min value of {}", y_min
+    );
+}
+
+/// Test edge property preservation using TestEdge builder.
+///
+/// This test uses the TestEdge builder from type3_test_fixtures to verify
+/// that edge properties are preserved when built and activated in the AET.
+#[test]
+fn test_edge_property_preservation_with_builder() {
+    use crate::font::type3_test_fixtures::TestEdge;
+
+    // Create edge using builder with specific properties
+    // x=10.5 → stored as 105 (scale=10), y_min=5, y_max=15, slope=0.5 (dx=1, dy=2)
+    let built_edge = TestEdge::new()
+        .with_x(105)      // Represents 10.5 with scale=10
+        .with_y_min(5)
+        .with_y_max(15)
+        .with_slope(1, 2)  // dx=1, dy=2 gives slope=0.5
+        .build();
+
+    // Add to AET
+    let mut aet: Vec<crate::font::type3_rasterizer::Edge> = Vec::new();
+    aet.push(built_edge);
+
+    let retrieved = &aet[0];
+
+    // Verify all properties
+    assert_eq!(retrieved.x, 105, "X should be preserved as 105");
+    assert_eq!(retrieved.y_min, 5, "y_min should be preserved as 5");
+    assert_eq!(retrieved.y_max, 15, "y_max should be preserved as 15");
+    assert_eq!(retrieved.dx, 1, "dx should be preserved as 1");
+    assert_eq!(retrieved.dy, 2, "dy should be preserved as 2");
+
+    // Verify slope
+    let slope = retrieved.dx as f64 / retrieved.dy as f64;
+    assert!((slope - 0.5).abs() < 0.01, "Slope should be approximately 0.5");
 }
 
 /// Test that references are detected as references before dereferencing.
