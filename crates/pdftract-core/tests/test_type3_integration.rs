@@ -7,15 +7,19 @@ use pdftract_core::font::type3_test_fixtures::{
     create_basic_glyph_dict,
     create_charproc_stream_with_curves,
     create_empty_content_stream,
+    create_glyph_dict_with_basic_properties,
     create_main_content_stream,
     create_main_content_stream_multi,
     create_minimal_glyph_dict,
     create_minimal_type3_font,
+    create_rectangle_charproc_stream,
     create_simple_charproc_stream,
     mock_counter,
     mock_resolver,
     mock_source,
     to_charprocs_map,
+    Content,
+    GlyphDict,
     GlyphEntry,
 };
 use pdftract_core::font::Type3Font;
@@ -294,4 +298,111 @@ fn test_content_stream_edge_cases() {
 
     // Different streams should produce different outputs
     assert_ne!(simple_stream, curved_stream, "Different streams should differ");
+}
+
+#[test]
+fn test_content_fixture_accessible() {
+    // Test that the Content fixture is accessible and works correctly
+
+    // Create a Content struct with specific parameters
+    let content = Content::new(
+        [0.5, 0.5, 0.5],  // RGB stroke color (gray)
+        2.0,              // Line width
+        150.0,            // Glyph width
+        b"10 10 m 90 10 l 90 90 l 10 90 l h f".to_vec(), // Drawing commands
+    );
+
+    // Verify all properties are set correctly
+    assert_eq!(content.stroke_color, [0.5, 0.5, 0.5]);
+    assert_eq!(content.line_width, 2.0);
+    assert_eq!(content.glyph_width, 150.0);
+    assert!(!content.drawing_commands.is_empty());
+
+    // Test Content::with_defaults
+    let default_content = Content::with_defaults(b"test commands".to_vec());
+    assert_eq!(default_content.stroke_color, [0.0, 0.0, 0.0]);
+    assert_eq!(default_content.line_width, 1.0);
+    assert_eq!(default_content.glyph_width, 100.0);
+}
+
+#[test]
+fn test_glyph_dict_type_accessible() {
+    // Test that the GlyphDict type is accessible
+
+    // Create a GlyphDict directly
+    let mut dict: GlyphDict = GlyphDict::new();
+
+    // Add some entries
+    let ref1 = ObjRef::new(1, 0);
+    let entry1 = GlyphEntry::new("glyph1", 500.0, [0.0, 0.0, 500.0, 500.0], ref1);
+    dict.insert(std::sync::Arc::from("glyph1"), entry1);
+
+    // Verify it works
+    assert_eq!(dict.len(), 1);
+    assert!(dict.contains_key("glyph1"));
+}
+
+#[test]
+fn test_rectangle_charproc_stream_accessible() {
+    // Test that create_rectangle_charproc_stream is accessible
+
+    let rectangle_stream = create_rectangle_charproc_stream();
+    let stream_str = std::str::from_utf8(&rectangle_stream).unwrap();
+
+    // Verify it creates a proper rectangle
+    assert!(stream_str.contains("0 0 m"), "Should start at origin");
+    assert!(stream_str.contains("10 0 l"), "Should have top edge");
+    assert!(stream_str.contains("10 10 l"), "Should have right edge");
+    assert!(stream_str.contains("0 10 l"), "Should have bottom edge");
+    assert!(stream_str.contains("h"), "Should have closepath");
+    assert!(stream_str.ends_with("f"), "Should end with fill");
+}
+
+#[test]
+fn test_glyph_dict_with_basic_properties_accessible() {
+    // Test that create_glyph_dict_with_basic_properties is accessible
+
+    let test_ref = ObjRef::new(42, 0);
+    let dict = create_glyph_dict_with_basic_properties(test_ref);
+
+    // Verify the dictionary has the expected properties
+    assert_eq!(dict.len(), 1);
+    assert!(dict.contains_key("test_glyph"));
+
+    let entry = dict.get("test_glyph").unwrap();
+    assert_eq!(entry.bbox, [0.0, 0.0, 100.0, 100.0]);
+    assert_eq!(entry.width, 100.0);
+    assert_eq!(entry.charproc_ref, test_ref);
+}
+
+#[test]
+fn test_all_four_fixture_types_accessible() {
+    // This test verifies that all 4 fixture types are accessible:
+    // 1. Type3Font (via create_minimal_type3_font)
+    // 2. Glyph dict (via GlyphDict and create_*_glyph_dict functions)
+    // 3. Charproc (via Content struct and create_*_charproc_stream functions)
+    // 4. Content (via create_*_content_stream functions)
+
+    // Type3Font fixture
+    let notdef_ref = ObjRef::new(10, 0);
+    let font = create_minimal_type3_font(notdef_ref);
+    assert!(font.has_glyph(".notdef"));
+
+    // Glyph dict fixture
+    let dict: GlyphDict = create_basic_glyph_dict(notdef_ref, ObjRef::new(11, 0));
+    assert_eq!(dict.len(), 2);
+
+    // Charproc fixture (Content struct and charproc stream functions)
+    let content = Content::with_defaults(b"test".to_vec());
+    assert_eq!(content.glyph_width, 100.0);
+
+    let charproc_stream = create_simple_charproc_stream();
+    assert!(!charproc_stream.is_empty());
+
+    // Content stream fixture
+    let main_stream = create_main_content_stream();
+    assert!(!main_stream.is_empty());
+
+    let empty_stream = create_empty_content_stream();
+    assert!(!empty_stream.is_empty());
 }
