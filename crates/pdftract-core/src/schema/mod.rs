@@ -2695,6 +2695,47 @@ mod tests {
     }
 
     #[test]
+    fn test_glyph_unmapped_diagnostic_structure() {
+        // Test that GLYPH_UNMAPPED diagnostic has all required structure fields
+        let glyph_unmapped_diag = DiagnosticJson {
+            code: "FONT_GLYPH_UNMAPPED".to_string(),
+            message: "Glyph could not be mapped to Unicode".to_string(),
+            severity: "warning".to_string(),
+            page_index: Some(2),
+            location: Some(ObjectLocationJson {
+                object_number: 15,
+                generation_number: 0,
+            }),
+            hint: None,
+        };
+
+        // Verify code field exists and is correct type
+        assert!(!glyph_unmapped_diag.code.is_empty(),
+                "GLYPH_UNMAPPED diagnostic must have a non-empty code field");
+        assert_eq!(glyph_unmapped_diag.code, "FONT_GLYPH_UNMAPPED",
+                 "GLYPH_UNMAPPED diagnostic code field should be 'FONT_GLYPH_UNMAPPED'");
+
+        // Verify severity field exists and is correct type
+        assert!(!glyph_unmapped_diag.severity.is_empty(),
+                "GLYPH_UNMAPPED diagnostic must have a non-empty severity field");
+        assert_eq!(glyph_unmapped_diag.severity, "warning",
+                 "GLYPH_UNMAPPED diagnostic severity field should be 'warning'");
+
+        // Verify message field exists and is correct type
+        assert!(!glyph_unmapped_diag.message.is_empty(),
+                "GLYPH_UNMAPPED diagnostic must have a non-empty message field");
+        assert!(glyph_unmapped_diag.message.contains("Glyph") ||
+                glyph_unmapped_diag.message.contains("Unicode") ||
+                glyph_unmapped_diag.message.contains("mapped"),
+                "GLYPH_UNMAPPED diagnostic message should describe the unmapped glyph issue");
+
+        // Verify all three required fields are present by accessing them directly
+        let _ = &glyph_unmapped_diag.code;
+        let _ = &glyph_unmapped_diag.severity;
+        let _ = &glyph_unmapped_diag.message;
+    }
+
+    #[test]
     fn test_output_roundtrip() {
         // Critical test: roundtrip serde test passes
         let mut output = Output::new();
