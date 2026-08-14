@@ -612,6 +612,291 @@ impl Type3Font {
             raster_cache: Arc::new(DashMap::new()),
         }
     }
+
+    /// Create a Type3Font with a pre-populated rasterization cache and sensible defaults for other fields.
+    ///
+    /// This function creates a Type3Font instance with the provided rasterization cache,
+    /// using sensible defaults for all other fields. This is useful for testing cache behavior
+    /// and verifying that cached glyph bitmaps are reused correctly.
+    ///
+    /// # Arguments
+    ///
+    /// * `cache` - Arc wrapping the DashMap containing pre-populated glyph name -> bitmap mappings
+    ///
+    /// # Returns
+    ///
+    /// A Type3Font with:
+    /// - Identity FontMatrix ([1 0 0 1 0 0]) for predictable coordinates
+    /// - FontBBox [0, 0, 1000, 1000] for a standard glyph space
+    /// - StandardEncoding for encoding
+    /// - Empty char_procs
+    /// - Zero first_char, last_char, and widths
+    /// - No resources
+    /// - No diagnostics
+    /// - Provided raster cache
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use std::collections::HashMap;
+    /// use std::sync::Arc;
+    /// use dashmap::DashMap;
+    /// use pdftract_core::font::type3::Type3Font;
+    ///
+    /// // Create a pre-populated cache
+    /// let mut cache = DashMap::new();
+    /// cache.insert(Arc::from("A"), vec![0xFF, 0xFF, 0xFF]); // Example bitmap
+    /// cache.insert(Arc::from("B"), vec![0x00, 0x00, 0x00]); // Example bitmap
+    /// let font = Type3Font::type3_font_with_cache(Arc::new(cache));
+    ///
+    /// // Retrieve cached bitmaps
+    /// assert!(font.get_cached_bitmap("A").is_some());
+    /// ```
+    pub fn type3_font_with_cache(cache: Arc<DashMap<Arc<str>, Vec<u8>>>) -> Self {
+        Self {
+            char_procs: HashMap::new(),
+            first_char: 0,
+            last_char: 0,
+            widths: vec![0.0],
+            font_matrix: Matrix3x3::identity(),
+            resources: None,
+            encoding: FontEncoding::new(Some(crate::font::encoding::NamedEncoding::Standard)),
+            font_bbox: [0.0, 0.0, 1000.0, 1000.0],
+            diagnostics: Vec::new(),
+            raster_cache: cache,
+        }
+    }
+
+    /// Create a Type3Font with custom diagnostics and sensible defaults for other fields.
+    ///
+    /// This function creates a Type3Font instance with the provided diagnostics vector,
+    /// using sensible defaults for all other fields. This is useful for testing diagnostic
+    /// reporting and verifying that warnings and errors are properly emitted during font loading.
+    ///
+    /// # Arguments
+    ///
+    /// * `diagnostics` - Vector of Diagnostic objects representing warnings/errors during font loading
+    ///
+    /// # Returns
+    ///
+    /// A Type3Font with:
+    /// - Identity FontMatrix ([1 0 0 1 0 0]) for predictable coordinates
+    /// - FontBBox [0, 0, 1000, 1000] for a standard glyph space
+    /// - StandardEncoding for encoding
+    /// - Empty char_procs
+    /// - Zero first_char, last_char, and widths
+    /// - No resources
+    /// - Provided diagnostics
+    /// - Empty raster cache
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use std::sync::Arc;
+    /// use pdftract_core::diagnostics::{DiagCode, Diagnostic};
+    /// use pdftract_core::font::type3::Type3Font;
+    ///
+    /// // Create a font with custom diagnostics
+    /// let diagnostics = vec![
+    ///     Diagnostic::with_static_no_offset(DiagCode::FontParseFailed, "Missing /CharProcs"),
+    ///     Diagnostic::with_static_no_offset(DiagCode::FontType3WidthsLengthMismatch, "Widths mismatch"),
+    /// ];
+    /// let font = Type3Font::type3_font_with_diagnostics(diagnostics);
+    ///
+    /// // Verify diagnostics are preserved
+    /// assert_eq!(font.diagnostics.len(), 2);
+    /// ```
+    pub fn type3_font_with_diagnostics(diagnostics: Vec<Diagnostic>) -> Self {
+        Self {
+            char_procs: HashMap::new(),
+            first_char: 0,
+            last_char: 0,
+            widths: vec![0.0],
+            font_matrix: Matrix3x3::identity(),
+            resources: None,
+            encoding: FontEncoding::new(Some(crate::font::encoding::NamedEncoding::Standard)),
+            font_bbox: [0.0, 0.0, 1000.0, 1000.0],
+            diagnostics,
+            raster_cache: Arc::new(DashMap::new()),
+        }
+    }
+
+    /// Create a fully customizable Type3Font with all fields explicitly specified.
+    ///
+    /// This function creates a Type3Font instance with complete control over all fields.
+    /// This is the most flexible builder function, allowing tests to specify any combination
+    /// of Type3Font properties.
+    ///
+    /// # Arguments
+    ///
+    /// All Type3Font fields are available as optional parameters via the builder pattern.
+    /// Any field not specified will use a sensible default.
+    ///
+    /// # Returns
+    ///
+    /// A Type3FontBuilder that allows chaining field specifications before building.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use std::collections::HashMap;
+    /// use std::sync::Arc;
+    /// use dashmap::DashMap;
+    /// use pdftract_core::font::type3::Type3Font;
+    /// use pdftract_core::graphics_state::Matrix3x3;
+    /// use pdftract_core::parser::object::types::ObjRef;
+    ///
+    /// // Create a fully customized Type3Font
+    /// let font = Type3Font::type3_font_full()
+    ///     .with_char_procs({
+    ///         let mut map = HashMap::new();
+    ///         map.insert(Arc::from("A"), ObjRef::new(10, 0));
+    ///         map
+    ///     })
+    ///     .with_font_matrix(Matrix3x3::from_pdf_array([0.001, 0.0, 0.0, 0.001, 0.0, 0.0]))
+    ///     .with_first_char(32)
+    ///     .with_last_char(126)
+    ///     .with_widths(vec![500.0; 95])
+    ///     .build();
+    /// ```
+    pub fn type3_font_full() -> Type3FontBuilder {
+        Type3FontBuilder::new()
+    }
+}
+
+/// Builder for creating fully customized Type3Font instances.
+///
+/// This builder provides fine-grained control over all Type3Font fields,
+/// allowing tests to specify any combination of properties. Fields not
+/// explicitly set will use sensible defaults.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use std::collections::HashMap;
+/// use std::sync::Arc;
+/// use pdftract_core::font::type3::Type3Font;
+/// use pdftract_core::parser::object::types::ObjRef;
+///
+/// let font = Type3Font::type3_font_full()
+///     .with_char_procs({
+///         let mut map = HashMap::new();
+///         map.insert(Arc::from("A"), ObjRef::new(10, 0));
+///         map
+///     })
+///     .with_first_char(65)
+///     .with_last_char(90)
+///     .build();
+/// ```
+pub struct Type3FontBuilder {
+    char_procs: Option<HashMap<Arc<str>, ObjRef>>,
+    first_char: Option<u8>,
+    last_char: Option<u8>,
+    widths: Option<Vec<f64>>,
+    font_matrix: Option<Matrix3x3>,
+    resources: Option<Arc<PdfDict>>,
+    encoding: Option<FontEncoding>,
+    font_bbox: Option<[f32; 4]>,
+    diagnostics: Option<Vec<Diagnostic>>,
+    raster_cache: Option<Arc<DashMap<Arc<str>, Vec<u8>>>>,
+}
+
+impl Type3FontBuilder {
+    /// Create a new builder with all fields set to defaults.
+    fn new() -> Self {
+        Self {
+            char_procs: None,
+            first_char: None,
+            last_char: None,
+            widths: None,
+            font_matrix: None,
+            resources: None,
+            encoding: None,
+            font_bbox: None,
+            diagnostics: None,
+            raster_cache: None,
+        }
+    }
+
+    /// Set the char_procs dictionary.
+    pub fn with_char_procs(mut self, char_procs: HashMap<Arc<str>, ObjRef>) -> Self {
+        self.char_procs = Some(char_procs);
+        self
+    }
+
+    /// Set the first_char value.
+    pub fn with_first_char(mut self, first_char: u8) -> Self {
+        self.first_char = Some(first_char);
+        self
+    }
+
+    /// Set the last_char value.
+    pub fn with_last_char(mut self, last_char: u8) -> Self {
+        self.last_char = Some(last_char);
+        self
+    }
+
+    /// Set the widths array.
+    pub fn with_widths(mut self, widths: Vec<f64>) -> Self {
+        self.widths = Some(widths);
+        self
+    }
+
+    /// Set the font_matrix.
+    pub fn with_font_matrix(mut self, font_matrix: Matrix3x3) -> Self {
+        self.font_matrix = Some(font_matrix);
+        self
+    }
+
+    /// Set the resources dictionary.
+    pub fn with_resources(mut self, resources: Arc<PdfDict>) -> Self {
+        self.resources = Some(resources);
+        self
+    }
+
+    /// Set the encoding.
+    pub fn with_encoding(mut self, encoding: FontEncoding) -> Self {
+        self.encoding = Some(encoding);
+        self
+    }
+
+    /// Set the font_bbox.
+    pub fn with_font_bbox(mut self, font_bbox: [f32; 4]) -> Self {
+        self.font_bbox = Some(font_bbox);
+        self
+    }
+
+    /// Set the diagnostics vector.
+    pub fn with_diagnostics(mut self, diagnostics: Vec<Diagnostic>) -> Self {
+        self.diagnostics = Some(diagnostics);
+        self
+    }
+
+    /// Set the rasterization cache.
+    pub fn with_raster_cache(mut self, raster_cache: Arc<DashMap<Arc<str>, Vec<u8>>>) -> Self {
+        self.raster_cache = Some(raster_cache);
+        self
+    }
+
+    /// Build the Type3Font with defaults for any unspecified fields.
+    pub fn build(self) -> Type3Font {
+        Type3Font {
+            char_procs: self.char_procs.unwrap_or_default(),
+            first_char: self.first_char.unwrap_or(0),
+            last_char: self.last_char.unwrap_or(0),
+            widths: self.widths.unwrap_or_else(|| vec![0.0]),
+            font_matrix: self.font_matrix.unwrap_or_else(Matrix3x3::identity),
+            resources: self.resources,
+            encoding: self.encoding.unwrap_or_else(|| {
+                FontEncoding::new(Some(crate::font::encoding::NamedEncoding::Standard))
+            }),
+            font_bbox: self.font_bbox.unwrap_or([0.0, 0.0, 1000.0, 1000.0]),
+            diagnostics: self.diagnostics.unwrap_or_default(),
+            raster_cache: self
+                .raster_cache
+                .unwrap_or_else(|| Arc::new(DashMap::new())),
+        }
+    }
 }
 
 #[cfg(test)]
