@@ -27,9 +27,12 @@ pub mod type3_test_fixtures;
 
 pub use path_commands::{closepath, curveto, lineto, moveto, rectangle};
 pub use type3_test_fixtures::{
-    create_charproc_stream_with_curves, create_empty_content_stream, create_glyph_dict_with_basic_properties,
-    create_main_content_stream, create_main_content_stream_multi, create_rectangle_charproc_stream,
-    create_simple_charproc_stream,
+    create_basic_char_to_glyph_map, create_basic_glyph_dict, create_charproc_stream_with_curves,
+    create_char_to_glyph_from_dict, create_empty_content_stream, create_glyph_dict_with_basic_properties,
+    create_main_content_stream, create_main_content_stream_multi, create_minimal_char_to_glyph_map,
+    create_minimal_glyph_dict, create_minimal_type3_font, create_rectangle_charproc_stream,
+    create_simple_charproc_stream, mock_counter, mock_resolver, mock_source, to_charprocs_map,
+    CharToGlyphMap, Content, GlyphDict, GlyphEntry,
 };
 
 pub use test_glyph_helper::{
