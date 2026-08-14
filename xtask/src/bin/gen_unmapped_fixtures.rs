@@ -70,7 +70,7 @@ fn create_unmapped_comprehensive_pdf() -> Result<()> {
                 // Mapped glyphs (3 total) - standard AGL entries
                 Object::Name(b"A".to_vec()),           // code 7  -> standard AGL
                 Object::Name(b"B".to_vec()),           // code 8  -> standard AGL
-                Object::Name(b"space".to_vec(),       // code 9  -> standard AGL
+                Object::Name(b"space".to_vec()),       // code 9  -> standard AGL
             ])
         }
     };
