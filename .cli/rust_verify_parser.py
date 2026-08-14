@@ -279,11 +279,15 @@ def parse_test_failure_string(line: str) -> Optional[TestFailure]:
     # Example from JSON: "test test_foo ... FAILED"
     line = line.strip()
 
+    # Skip test result summary lines to avoid false positives
+    if "test result:" in line.lower():
+        return None
+
     # Try various patterns
     patterns = [
         r'^test\s+(\S+)\s+\.{3,}\s*(\w+)',  # test foo ... FAILED
         r'^test\s+(\S+)\s+-\s+.*?\.{3,}.*?(\w+)',  # test foo - should panic ... ok
-        r'^\s*test\s+(\S+):\s+(FAILED|FAIL)',  # test foo: FAILED
+        r'^\s*test\s+([^:]+):\s+(FAILED|FAIL)',  # test foo: FAILED (but not "test result:")
         r'^(\S+)\s+\.{3,}.*?FAILED',  # foo ... FAILED (implicit test)
     ]
 
@@ -292,6 +296,9 @@ def parse_test_failure_string(line: str) -> Optional[TestFailure]:
         if match:
             test_name = match.group(1)
             status = match.group(2) if len(match.groups()) > 1 else "FAILED"
+            # Validate that we got a real test name, not a common word
+            if test_name.lower() in ('result', 'ok', 'failed', 'passed'):
+                continue
             if status.upper() in ("FAILED", "FAIL", "ERROR"):
                 return TestFailure(
                     test_name=test_name,
@@ -331,6 +338,11 @@ def parse_text_output(log_text: str) -> RustVerifyResult:
     current_phase = None
     seen_test_result = False
 
+    # Variables for multi-line clippy warning parsing
+    pending_warning_file = None
+    pending_warning_line = None
+    pending_warning_col = None
+
     for i, line in enumerate(lines):
         # Detect phase changes
         lower_line = line.lower()
@@ -343,17 +355,57 @@ def parse_text_output(log_text: str) -> RustVerifyResult:
         elif "running build" in lower_line or "cargo build" in lower_line:
             current_phase = CheckPhase.BUILD
 
-        # Parse clippy warnings
-        warning = parse_clippy_warning_string(line)
-        if warning:
-            clippy_warnings.append(warning)
-            clippy_passed = False
+        # Multi-line clippy warning parsing
+        # Pattern: "  --> src/main.rs:15:5" followed by "   |" then "15 | ... " then "   | ^"
+        if current_phase == CheckPhase.CLIPPY:
+            # Look for file location line
+            loc_match = re.match(r'^\s*-->\s*(.+?):(\d+):(\d+)', line)
+            if loc_match:
+                pending_warning_file = loc_match.group(1)
+                pending_warning_line = int(loc_match.group(2))
+                pending_warning_col = int(loc_match.group(3))
+                continue
 
-        # Parse test failures
-        failure = parse_test_failure_string(line)
-        if failure:
-            test_failures.append(failure)
-            test_passed = False
+            # If we have a pending file location, look for the message
+            if pending_warning_file:
+                # Look for warning/error/note line with message
+                level_match = re.match(r'^\s*(warning|error|note):\s+(.+)$', line)
+                if level_match:
+                    level = level_match.group(1)
+                    message = level_match.group(2)
+                    clippy_warnings.append(ClippyWarning(
+                        file=pending_warning_file,
+                        line=pending_warning_line,
+                        column=pending_warning_col,
+                        level=level,
+                        message=message.strip()
+                    ))
+                    pending_warning_file = None
+                    pending_warning_line = None
+                    pending_warning_col = None
+                    continue
+
+                # If we hit another section, clear the pending state
+                if line.strip().startswith('-->') or (line.strip().startswith('|') and r'\s*|' not in line):
+                    pending_warning_file = None
+                    pending_warning_line = None
+                    pending_warning_col = None
+
+        # Parse clippy warnings (single-line format) - only during clippy phase
+        if current_phase == CheckPhase.CLIPPY:
+            warning = parse_clippy_warning_string(line)
+            if warning:
+                clippy_warnings.append(warning)
+                clippy_passed = False
+
+        # Parse test failures (but avoid picking up "test result:" lines) - only during test phase
+        if current_phase == CheckPhase.TEST and "test result:" not in lower_line:
+            failure = parse_test_failure_string(line)
+            if failure:
+                # Avoid duplicates and false positives
+                if not failure.test_name.startswith('test result'):
+                    test_failures.append(failure)
+                    test_passed = False
 
         # Look for test result summary lines
         if "test result:" in lower_line:
@@ -372,8 +424,14 @@ def parse_text_output(log_text: str) -> RustVerifyResult:
         # Parse phase results from summary lines
         if "fmt" in lower_line and ("failed" in lower_line or "error" in lower_line):
             fmt_passed = False
-        if "clippy" in lower_line and ("failed" in lower_line or "error" in lower_line):
-            clippy_passed = False
+        if "clippy" in lower_line:
+            # Check for explicit failure mentions
+            if ("failed" in lower_line or "error" in lower_line):
+                clippy_passed = False
+            # Check for warning counts (e.g., "3 warnings")
+            warning_count_match = re.search(r'(\d+)\s+warnings?', lower_line)
+            if warning_count_match:
+                clippy_passed = False
         if "build" in lower_line and ("failed" in lower_line or "error" in lower_line or "could not compile" in lower_line):
             build_passed = False
 
