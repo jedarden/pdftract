@@ -139,6 +139,23 @@ public class ProcessWrapper
             // Wait for process exit with cancellation support
             await process.WaitForExitAsync(_cancellationToken).ConfigureAwait(false);
 
+            // Check exit code and throw appropriate exceptions on error
+            if (process.ExitCode != 0)
+            {
+                // Try to parse stderr as JSON error, fall back to generic exception
+                try
+                {
+                    var exception = global::Pdftract.Process.ErrorParser.ParseError(stderr, process.ExitCode);
+                    throw new PdftractProcessException("pdftract process failed", exception);
+                }
+                catch (ArgumentException)
+                {
+                    // If stderr isn't valid JSON, throw a generic exception with the stderr content
+                    throw new PdftractProcessException(
+                        $"pdftract process failed with exit code {process.ExitCode}: {stderr}");
+                }
+            }
+
             return new ProcessResult(
                 stdout,
                 stderr,
@@ -198,6 +215,23 @@ public class ProcessWrapper
 
             // Wait for process to exit
             process.WaitForExit();
+
+            // Check exit code and throw appropriate exceptions on error
+            if (process.ExitCode != 0)
+            {
+                // Try to parse stderr as JSON error, fall back to generic exception
+                try
+                {
+                    var exception = global::Pdftract.Process.ErrorParser.ParseError(stderr, process.ExitCode);
+                    throw new PdftractProcessException("pdftract process failed", exception);
+                }
+                catch (ArgumentException)
+                {
+                    // If stderr isn't valid JSON, throw a generic exception with the stderr content
+                    throw new PdftractProcessException(
+                        $"pdftract process failed with exit code {process.ExitCode}: {stderr}");
+                }
+            }
 
             return new ProcessResult(
                 stdout,
@@ -307,3 +341,38 @@ public class ProcessWrapper
 /// <param name="Stderr">Standard error output from the process.</param>
 /// <param name="ExitCode">Process exit code.</param>
 public record struct ProcessResult(string Stdout, string Stderr, int ExitCode);
+
+/// <summary>
+/// Exception thrown when the pdftract process fails.
+/// Wraps either a typed PdftractException or a generic process failure.
+/// </summary>
+public class PdftractProcessException : Exception
+{
+    /// <summary>
+    /// The underlying PdftractException, if stderr was valid JSON.
+    /// </summary>
+    public global::Pdftract.Exceptions.PdftractException? UnderlyingException { get; }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PdftractProcessException"/> class
+    /// with a wrapped PdftractException.
+    /// </summary>
+    /// <param name="message">The error message.</param>
+    /// <param name="innerException">The underlying PdftractException.</param>
+    public PdftractProcessException(string message, global::Pdftract.Exceptions.PdftractException innerException)
+        : base(message, innerException)
+    {
+        UnderlyingException = innerException;
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PdftractProcessException"/> class
+    /// with a generic error message (when stderr isn't valid JSON).
+    /// </summary>
+    /// <param name="message">The error message.</param>
+    public PdftractProcessException(string message)
+        : base(message)
+    {
+        UnderlyingException = null;
+    }
+}

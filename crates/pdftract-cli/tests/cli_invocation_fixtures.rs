@@ -353,35 +353,30 @@ fn invoke_cli_with_timeout(bin: &PathBuf, pdf_path: &PathBuf, timeout_secs: u64)
         .spawn()
         .map_err(|e| format!("Failed to spawn process: {}", e))?;
 
-    let start = Instant::now();
     let timeout = Duration::from_secs(timeout_secs);
 
-    // Wait with bounded timeout using a thread
-    let (tx, rx) = std::sync::mpsc::channel();
-    let child_clone = child.clone();
-
-    thread::spawn(move || {
-        let result = child_clone.wait();
-        let _ = tx.send(result);
-    });
-
-    // Wait for completion with timeout
-    let wait_result = rx.recv_timeout(timeout);
-
-    match wait_result {
-        Ok(Ok(status)) => {
-            // Process completed within timeout
-            Ok(status.code())
-        }
-        Ok(Err(e)) => {
-            // Error waiting for process
-            Err(format!("Failed to wait for process: {}", e))
-        }
-        Err(_) => {
-            // Timeout exceeded - kill the process
-            let _ = child.kill();
-            let _ = child.wait();
-            Err(format!("Timeout exceeded ({:?})", timeout))
+    // Poll for completion with timeout
+    let start = Instant::now();
+    loop {
+        // Check if process has exited
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                // Process completed
+                return Ok(status.code());
+            }
+            Ok(None) => {
+                // Still running, check timeout
+                if start.elapsed() >= timeout {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(format!("Timeout exceeded ({:?})", timeout));
+                }
+                // Sleep a bit before polling again
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(e) => {
+                return Err(format!("Failed to wait for process: {}", e));
+            }
         }
     }
 }

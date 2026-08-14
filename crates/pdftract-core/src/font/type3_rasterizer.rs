@@ -97,6 +97,7 @@
 //! high values are light.
 
 use std::sync::Arc;
+use tracing::{debug, warn};
 
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::font::type3::Type3Font;
@@ -160,38 +161,9 @@ pub enum CharProcType {
 /// assert_eq!(detect_char_proc_type(&int_obj, None, None), CharProcType::Other("integer".to_string()));
 /// ```
 pub fn detect_char_proc_type(object: &PdfObject, doc_context: Option<&DocumentContext>) -> CharProcType {
-    match object {
-        // Stream check happens before Dict check (per implementation guidance)
-        // Streams can also have dictionaries, so we need to check for Stream first
-        PdfObject::Stream(_) => CharProcType::Stream,
-        // Dict check happens after Stream but before Other
-        PdfObject::Dict(_) => CharProcType::Dict,
-        // Reference check - dereference using document context if available
-        PdfObject::Ref(obj_ref) => {
-            match doc_context {
-                Some(ctx) => {
-                    // Attempt to dereference the reference
-                    match deref_char_proc_ref(*obj_ref, Some(ctx)) {
-                        Ok(dereferenced_obj) => {
-                            // Recursively classify the dereferenced object
-                            detect_char_proc_type(&dereferenced_obj, doc_context)
-                        }
-                        Err(_) => {
-                            // Dereferencing failed - return Unknown
-                            CharProcType::Unknown
-                        }
-                    }
-                }
-                None => {
-                    // No document context available - return Unknown
-                    CharProcType::Unknown
-                }
-            }
-        }
-        // All other types (including Integer, Real, Bool, String, Name, Array, Null, Indirect)
-        // return Other with descriptive name
-        _ => CharProcType::Other(object.type_name().to_string()),
-    }
+    // Delegate to the _with_context version which has proper circular reference protection
+    // This ensures graceful error handling for all broken references, including circular refs
+    detect_char_proc_type_with_context(object, doc_context)
 }
 
 /// Detect the type of PDF object for Type 3 CharProc validation with reference handling.
@@ -270,9 +242,31 @@ fn detect_char_proc_type_with_context_impl<'a>(
                                 visited,
                             )
                         }
-                        Err(_) => {
-                            // Dereferencing failed - return Unknown
-                            CharProcType::Unknown
+                        Err(err) => {
+                            // Dereferencing failed - categorize error type for debugging
+                            // Return "error" for missing references (matches test expectations)
+                            // Return "unknown" for I/O errors or truly unresolved cases
+                            match err {
+                                Type3Error::MissingCharProcRef { ref_id } => {
+                                    debug!("Missing char_proc reference during detection: {}", ref_id);
+                                    CharProcType::Other("error".to_string())
+                                }
+                                Type3Error::Io(msg) => {
+                                    debug!("I/O error during char_proc reference dereferencing: {}", msg);
+                                    CharProcType::Unknown
+                                }
+                                Type3Error::CircularRef { ref_id } => {
+                                    warn!("Circular reference detected at: {}", ref_id);
+                                    CharProcType::Unknown
+                                }
+                                // These errors shouldn't occur during dereferencing
+                                // (they're validation errors from successful derefs)
+                                Type3Error::InvalidCharProcType { .. } |
+                                Type3Error::MissingRequiredKey { .. } => {
+                                    debug!("Validation error during char_proc dereferencing: {}", err);
+                                    CharProcType::Unknown
+                                }
+                            }
                         }
                     }
                 }
@@ -2339,6 +2333,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::font::type3_test_fixtures::create_glyph_dict_with_basic_properties;
     use crate::parser::object::types::PdfDict;
 
     #[test]
@@ -6172,30 +6167,30 @@ mod tests {
         assert!(empty_bytes.is_empty());
 
         // Test 3: make_test_resolver creates a working resolver
-        let mut glyph_map = HashMap::new();
-        glyph_map.insert(10, rect_bytes.clone());
-        glyph_map.insert(11, line_bytes.clone());
-        glyph_map.insert(12, empty_bytes.clone());
+        let mut glyph_map: HashMap<String, Vec<u8>> = HashMap::new();
+        glyph_map.insert("/A".to_string(), rect_bytes.clone());
+        glyph_map.insert("/B".to_string(), line_bytes.clone());
+        glyph_map.insert("/C".to_string(), empty_bytes.clone());
 
         let resolver = make_test_resolver(&glyph_map);
 
         // Verify resolver returns correct bytes for each object reference
         use crate::parser::object::types::ObjRef;
-        assert_eq!(resolver(ObjRef::new(10, 0)), Some(rect_bytes));
-        assert_eq!(resolver(ObjRef::new(11, 0)), Some(line_bytes));
-        assert_eq!(resolver(ObjRef::new(12, 0)), Some(empty_bytes));
+        assert_eq!(resolver(ObjRef::new(1, 0)), Some(rect_bytes));
+        assert_eq!(resolver(ObjRef::new(2, 0)), Some(line_bytes));
+        assert_eq!(resolver(ObjRef::new(3, 0)), Some(empty_bytes));
         assert!(resolver(ObjRef::new(99, 0)).is_none(), "Unknown ref should return None");
 
         // Test 4: rasterize_type3_glyph works with the complete setup
         // Create custom char_procs matching our glyph_map
-        use crate::font::test_glyph_helper::make_custom_char_procs;
-        let custom_char_procs = make_custom_char_procs(&["rect", "line", "empty"], 10);
+        use crate::font::test_glyph_helper::make_custom_char_procs_from_names;
+        let custom_char_procs = make_custom_char_procs_from_names(&["A", "B", "C"], 1);
         let test_font = Type3Font::mock(Some(custom_char_procs));
 
         // Test rasterizing each glyph type
         let rect_result = rasterize_type3_glyph(
             &test_font,
-            "rect",
+            "A",
             None,
             Some(&resolver),
         );
@@ -6207,7 +6202,7 @@ mod tests {
 
         let line_result = rasterize_type3_glyph(
             &test_font,
-            "line",
+            "B",
             None,
             Some(&resolver),
         );
@@ -6217,7 +6212,7 @@ mod tests {
 
         let empty_result = rasterize_type3_glyph(
             &test_font,
-            "empty",
+            "C",
             None,
             Some(&resolver),
         );
@@ -6244,20 +6239,20 @@ mod tests {
         use std::collections::HashMap;
 
         // Create multiple glyphs with different sizes
-        let mut glyph_map = HashMap::new();
-        glyph_map.insert(10, make_rect_glyph(0.0, 0.0, 50.0, 50.0));
-        glyph_map.insert(11, make_rect_glyph(100.0, 100.0, 200.0, 200.0));
-        glyph_map.insert(12, make_rect_glyph(10.0, 10.0, 20.0, 20.0));
+        let mut glyph_map: HashMap<String, Vec<u8>> = HashMap::new();
+        glyph_map.insert("/A".to_string(), make_rect_glyph(0.0, 0.0, 50.0, 50.0));
+        glyph_map.insert("/B".to_string(), make_rect_glyph(100.0, 100.0, 200.0, 200.0));
+        glyph_map.insert("/C".to_string(), make_rect_glyph(10.0, 10.0, 20.0, 20.0));
 
         let resolver = make_test_resolver(&glyph_map);
 
         // Create char_procs matching the resolver
-        use crate::font::test_glyph_helper::make_custom_char_procs;
-        let char_procs = make_custom_char_procs(&["small", "large", "tiny"], 10);
+        use crate::font::test_glyph_helper::make_custom_char_procs_from_names;
+        let char_procs = make_custom_char_procs_from_names(&["A", "B", "C"], 1);
         let font = Type3Font::mock(Some(char_procs));
 
         // All three glyphs should rasterize successfully
-        for glyph_name in &["small", "large", "tiny"] {
+        for glyph_name in &["A", "B", "C"] {
             let result = rasterize_type3_glyph(&font, glyph_name, None, Some(&resolver));
             assert!(
                 result.is_some(),

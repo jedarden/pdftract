@@ -23,6 +23,7 @@ use crate::font::encoding::FontEncoding;
 use crate::font::fingerprint::CachedFingerprint;
 use crate::font::shape::{lookup_shape, phash_glyph};
 use crate::font::type3::Type3Font;
+#[cfg(feature = "shape-db")]
 use crate::font::type3_rasterizer::{rasterize_type3_glyph, DocumentContext as Type3DocumentContext, StreamResolverFn};
 use crate::parser::stream::{decode_stream, ExtractionOptions, PdfSource as ParserPdfSource};
 use crate::parser::xref::XrefResolver;
@@ -850,7 +851,7 @@ mod tests {
             glyph.chars.as_slice(),
             ['\u{FFFD}'],
             "Failed glyph should contain U+FFFD replacement character. \
-             Expected: ['\\u{FFFD}']. \
+             Expected: ['\u{FFFD}']. \
              Found: {:?}. \
              Why this matters: U+FFFD is the standard Unicode replacement character; it signals \
              the glyph could not be resolved to any valid Unicode value.",
@@ -967,14 +968,14 @@ mod tests {
              retrieve it successfully.",
         );
         assert_eq!(
-            cached.unwrap().chars,
+            cached.as_ref().unwrap().chars,
             SmallVec::<[char; 4]>::from_slice(&['A']),
             "Cached entry should contain the correct characters. \
              Expected: ['A']. \
              Found: {:?}. \
              Why this matters: The cache must preserve the exact ResolvedGlyph data that was \
              inserted; any corruption would produce incorrect text extraction.",
-            cached.unwrap().chars
+            cached.as_ref().unwrap().chars
         );
     }
 

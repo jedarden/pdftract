@@ -235,7 +235,7 @@ public sealed partial class Pdftract : IAsyncDisposable, IDisposable
         List<string> args,
         CancellationToken cancellationToken)
     {
-        using var process = new Process();
+        using var process = new System.Diagnostics.Process();
         process.StartInfo = new ProcessStartInfo
         {
             FileName = _binaryPath,
@@ -321,7 +321,7 @@ public sealed partial class Pdftract : IAsyncDisposable, IDisposable
         List<string> args,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        using var process = new Process();
+        using var process = new System.Diagnostics.Process();
         process.StartInfo = new ProcessStartInfo
         {
             FileName = _binaryPath,

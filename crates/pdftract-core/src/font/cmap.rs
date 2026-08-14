@@ -522,7 +522,15 @@ mod tests {
         let input = b"";
         let parser = CMapParser::new(input);
         let (map, _) = parser.parse();
-        assert!(map.is_empty());
+        assert!(
+            map.is_empty(),
+            "Empty CMAP input should produce an empty mapping table. \
+             Expected: empty map. \
+             Found: map with {} entries. \
+             Why this matters: CMAP parser with no beginbfchar/beginbfrange directives \
+             should not create any character-to-glyph mappings.",
+            map.len()
+        );
     }
 
     #[test]
@@ -532,9 +540,25 @@ mod tests {
         let parser = CMapParser::new(input);
         let (map, _) = parser.parse();
 
-        assert_eq!(map.len(), 1);
+        assert_eq!(
+            map.len(),
+            1,
+            "CMAP with single beginbfchar entry should have exactly 1 mapping. \
+             Expected: 1 mapping. \
+             Found: {} mappings. \
+             Why this matters: beginbfchar directive defines exactly one character-to-glyph mapping.",
+            map.len()
+        );
         let result = map.lookup(&[0x00]);
-        assert_eq!(result, Some(&['A'][..]));
+        assert_eq!(
+            result,
+            Some(&['A'][..]),
+            "Byte 0x00 should map to 'A' (U+0041). \
+             Expected: Some(\"A\"). \
+             Found: {:?}. \
+             Why this matters: Verifies beginbfchar parses hex source <00> and destination <0041> correctly.",
+            result
+        );
     }
 
     #[test]
@@ -545,9 +569,26 @@ mod tests {
         let parser = CMapParser::new(input);
         let (map, _) = parser.parse();
 
-        assert_eq!(map.len(), 1);
+        assert_eq!(
+            map.len(),
+            1,
+            "CMAP with multi-codepoint destination should have exactly 1 mapping. \
+             Expected: 1 mapping. \
+             Found: {} mappings. \
+             Why this matters: beginbfchar with hex destination <00660069> creates one mapping \
+             that expands to two Unicode codepoints (f, i).",
+            map.len()
+        );
         let result = map.lookup(&[0x00]);
-        assert_eq!(result, Some(&['f', 'i'][..]));
+        assert_eq!(
+            result,
+            Some(&['f', 'i'][..]),
+            "Byte 0x00 should map to 'fi' ligature (two codepoints). \
+             Expected: Some([\"f\", \"i\"]). \
+             Found: {:?}. \
+             Why this matters: Verifies UTF-16BE destination <00660069> decodes to U+0066 U+0069 (f, i).",
+            result
+        );
     }
 
     #[test]
@@ -558,9 +599,27 @@ mod tests {
         let parser = CMapParser::new(input);
         let (map, _) = parser.parse();
 
-        assert_eq!(map.len(), 1);
+        assert_eq!(
+            map.len(),
+            1,
+            "CMAP with single-codepoint ligature should have exactly 1 mapping. \
+             Expected: 1 mapping. \
+             Found: {} mappings. \
+             Why this matters: beginbfchar with <FB01> creates one mapping to the fi ligature \
+             character U+FB01 (a single Unicode codepoint).",
+            map.len()
+        );
         let result = map.lookup(&[0x00]);
-        assert_eq!(result, Some(&['\u{FB01}'][..])); // fi ligature
+        assert_eq!(
+            result,
+            Some(&['\u{FB01}'][..]),
+            "Byte 0x00 should map to fi ligature U+FB01 (single codepoint). \
+             Expected: Some([\"\u{FB01}\"]). \
+             Found: {:?}. \
+             Why this matters: Verifies that <FB01> is parsed as the fi ligature single codepoint, \
+             not expanded to multiple characters.",
+            result
+        );
     }
 
     #[test]
@@ -570,9 +629,27 @@ mod tests {
         let parser = CMapParser::new(input);
         let (map, _) = parser.parse();
 
-        assert_eq!(map.len(), 1);
+        assert_eq!(
+            map.len(),
+            1,
+            "CMAP with multi-codepoint expansion should have exactly 1 mapping. \
+             Expected: 1 mapping. \
+             Found: {} mappings. \
+             Why this matters: Verifies that hex destination <00660069> is correctly decoded \
+             as two UTF-16BE codepoints (U+0066 U+0069) and stored as one mapping.",
+            map.len()
+        );
         let result = map.lookup(&[0x01]);
-        assert_eq!(result, Some(&['f', 'i'][..]));
+        assert_eq!(
+            result,
+            Some(&['f', 'i'][..]),
+            "Byte 0x01 should map to 'fi' (multi-codepoint expansion). \
+             Expected: Some([\"f\", \"i\"]). \
+             Found: {:?}. \
+             Why this matters: Confirms UTF-16BE big-endian decoding splits <00660069> into \
+             U+0066 (f) and U+0069 (i) correctly.",
+            result
+        );
     }
 
     #[test]
@@ -584,11 +661,36 @@ mod tests {
         let (map, _) = parser.parse();
 
         // Should have 26 mappings (A-Z)
-        assert_eq!(map.len(), 26);
+        assert_eq!(
+            map.len(),
+            26,
+            "Contiguous bfrange from <0041> to <005A> should expand to 26 mappings. \
+             Expected: 26 mappings (A-Z alphabet). \
+             Found: {} mappings. \
+             Why this matters: beginbfrange directive expands a range to individual mappings: \
+             <0041>→A through <005A>→Z, totaling 26 entries.",
+            map.len()
+        );
 
         // Check first and last
-        assert_eq!(map.lookup(&[0x00, 0x41]), Some(&['A'][..]));
-        assert_eq!(map.lookup(&[0x00, 0x5A]), Some(&['Z'][..]));
+        assert_eq!(
+            map.lookup(&[0x00, 0x41]),
+            Some(&['A'][..]),
+            "First mapping in range should be 'A' (U+0041). \
+             Expected: Some(\"A\"). \
+             Found: {:?}. \
+             Why this matters: Verifies the bfrange starts at the correct character (A = U+0041).",
+            map.lookup(&[0x00, 0x41])
+        );
+        assert_eq!(
+            map.lookup(&[0x00, 0x5A]),
+            Some(&['Z'][..]),
+            "Last mapping in range should be 'Z' (U+005A). \
+             Expected: Some(\"Z\"). \
+             Found: {:?}. \
+             Why this matters: Verifies the bfrange ends at the correct character (Z = U+005A).",
+            map.lookup(&[0x00, 0x5A])
+        );
     }
 
     #[test]
@@ -599,10 +701,43 @@ mod tests {
         let parser = CMapParser::new(input);
         let (map, _) = parser.parse();
 
-        assert_eq!(map.len(), 3);
-        assert_eq!(map.lookup(&[0x00, 0x01]), Some(&['\u{FB01}'][..])); // fi
-        assert_eq!(map.lookup(&[0x00, 0x02]), Some(&['\u{FB02}'][..])); // fl
-        assert_eq!(map.lookup(&[0x00, 0x03]), Some(&['\u{FB03}'][..])); // ffi
+        assert_eq!(
+            map.len(),
+            3,
+            "bfrange with explicit array should have exactly 3 mappings. \
+             Expected: 3 mappings (fi, fl, ffi ligatures). \
+             Found: {} mappings. \
+             Why this matters: beginbfrange with explicit destination array creates one-to-one \
+             mappings: <0001>→<FB01>, <0002>→<FB02>, <0003>→<FB03>.",
+            map.len()
+        );
+        assert_eq!(
+            map.lookup(&[0x00, 0x01]),
+            Some(&['\u{FB01}'][..]),
+            "Code <0001> should map to fi ligature U+FB01. \
+             Expected: Some(\"\u{FB01}\"). \
+             Found: {:?}. \
+             Why this matters: First element in explicit array maps fi ligature correctly.",
+            map.lookup(&[0x00, 0x01])
+        );
+        assert_eq!(
+            map.lookup(&[0x00, 0x02]),
+            Some(&['\u{FB02}'][..]),
+            "Code <0002> should map to fl ligature U+FB02. \
+             Expected: Some(\"\u{FB02}\"). \
+             Found: {:?}. \
+             Why this matters: Second element in explicit array maps fl ligature correctly.",
+            map.lookup(&[0x00, 0x02])
+        );
+        assert_eq!(
+            map.lookup(&[0x00, 0x03]),
+            Some(&['\u{FB03}'][..]),
+            "Code <0003> should map to ffi ligature U+FB03. \
+             Expected: Some(\"\u{FB03}\"). \
+             Found: {:?}. \
+             Why this matters: Third element in explicit array maps ffi ligature correctly.",
+            map.lookup(&[0x00, 0x03])
+        );
     }
 
     #[test]
@@ -612,10 +747,35 @@ mod tests {
         let parser = CMapParser::new(input);
         let (map, diags) = parser.parse();
 
-        assert_eq!(map.len(), 1);
-        assert_eq!(map.lookup(&[0x00]), Some(&['A'][..]));
+        assert_eq!(
+            map.len(),
+            1,
+            "CMAP with comments should still parse the mapping correctly. \
+             Expected: 1 mapping (A). \
+             Found: {} mappings. \
+             Why this matters: Comment lines starting with % should be ignored without \
+             affecting the parsing of beginbfchar directives.",
+            map.len()
+        );
+        assert_eq!(
+            map.lookup(&[0x00]),
+            Some(&['A'][..]),
+            "Byte 0x00 should map to 'A' when surrounded by comments. \
+             Expected: Some(\"A\"). \
+             Found: {:?}. \
+             Why this matters: Comments should not interfere with normal CMAP parsing.",
+            map.lookup(&[0x00])
+        );
         // Comments should not produce diagnostics
-        assert!(diags.is_empty());
+        assert!(
+            diags.is_empty(),
+            "Comment lines should not produce diagnostics. \
+             Expected: empty diagnostics vector. \
+             Found: {} diagnostics. \
+             Why this matters: CMAP comments (lines starting with %) are structural noise \
+             and should be silently ignored, not treated as errors.",
+            diags.len()
+        );
     }
 
     #[test]
@@ -624,10 +784,43 @@ mod tests {
         let parser = CMapParser::new(input);
         let (map, _) = parser.parse();
 
-        assert_eq!(map.len(), 3);
-        assert_eq!(map.lookup(&[0x00]), Some(&['A'][..]));
-        assert_eq!(map.lookup(&[0x01]), Some(&['B'][..]));
-        assert_eq!(map.lookup(&[0x02]), Some(&['C'][..]));
+        assert_eq!(
+            map.len(),
+            3,
+            "beginbfchar with 3 entries should have exactly 3 mappings. \
+             Expected: 3 mappings (A, B, C). \
+             Found: {} mappings. \
+             Why this matters: beginbfchar directive declares 3 mappings; the count must match \
+             the number of source-destination pairs.",
+            map.len()
+        );
+        assert_eq!(
+            map.lookup(&[0x00]),
+            Some(&['A'][..]),
+            "First mapping: byte 0x00 should map to 'A'. \
+             Expected: Some(\"A\"). \
+             Found: {:?}. \
+             Why this matters: Verifies the first source-destination pair <00> <0041> is correct.",
+            map.lookup(&[0x00])
+        );
+        assert_eq!(
+            map.lookup(&[0x01]),
+            Some(&['B'][..]),
+            "Second mapping: byte 0x01 should map to 'B'. \
+             Expected: Some(\"B\"). \
+             Found: {:?}. \
+             Why this matters: Verifies the second source-destination pair <01> <0042> is correct.",
+            map.lookup(&[0x01])
+        );
+        assert_eq!(
+            map.lookup(&[0x02]),
+            Some(&['C'][..]),
+            "Third mapping: byte 0x02 should map to 'C'. \
+             Expected: Some(\"C\"). \
+             Found: {:?}. \
+             Why this matters: Verifies the third source-destination pair <02> <0043> is correct.",
+            map.lookup(&[0x02])
+        );
     }
 
     #[test]
@@ -637,8 +830,26 @@ mod tests {
         let parser = CMapParser::new(input);
         let (map, _) = parser.parse();
 
-        assert_eq!(map.len(), 1);
-        assert_eq!(map.lookup(&[0x00]), Some(&[][..]));
+        assert_eq!(
+            map.len(),
+            1,
+            "CMAP with empty destination should have exactly 1 mapping. \
+             Expected: 1 mapping. \
+             Found: {} mappings. \
+             Why this matters: beginbfchar with empty destination <> creates a valid mapping \
+             entry that maps to no character.",
+            map.len()
+        );
+        assert_eq!(
+            map.lookup(&[0x00]),
+            Some(&[][..]),
+            "Byte 0x00 with empty destination should map to empty character slice. \
+             Expected: Some([]). \
+             Found: {:?}. \
+             Why this matters: Empty destination <> means this character code has no \
+             corresponding text content, which is valid in CMAP format.",
+            map.lookup(&[0x00])
+        );
     }
 
     #[test]
@@ -648,10 +859,43 @@ mod tests {
         let parser = CMapParser::new(input);
         let (map, _) = parser.parse();
 
-        assert_eq!(map.len(), 3);
-        assert_eq!(map.lookup(&[0x00]), Some(&['A'][..]));
-        assert_eq!(map.lookup(&[0x00, 0x01]), Some(&['B'][..]));
-        assert_eq!(map.lookup(&[0x00, 0x00, 0x01]), Some(&['C'][..]));
+        assert_eq!(
+            map.len(),
+            3,
+            "CMAP with variable-width source codes should have exactly 3 mappings. \
+             Expected: 3 mappings. \
+             Found: {} mappings. \
+             Why this matters: Source codes can be 1, 2, or 3 bytes; the parser must handle \
+             all widths correctly.",
+            map.len()
+        );
+        assert_eq!(
+            map.lookup(&[0x00]),
+            Some(&['A'][..]),
+            "1-byte source <00> should map to 'A'. \
+             Expected: Some(\"A\"). \
+             Found: {:?}. \
+             Why this matters: Verifies single-byte source codes work correctly.",
+            map.lookup(&[0x00])
+        );
+        assert_eq!(
+            map.lookup(&[0x00, 0x01]),
+            Some(&['B'][..]),
+            "2-byte source <0001> should map to 'B'. \
+             Expected: Some(\"B\"). \
+             Found: {:?}. \
+             Why this matters: Verifies two-byte source codes work correctly.",
+            map.lookup(&[0x00, 0x01])
+        );
+        assert_eq!(
+            map.lookup(&[0x00, 0x00, 0x01]),
+            Some(&['C'][..]),
+            "3-byte source <000001> should map to 'C'. \
+             Expected: Some(\"C\"). \
+             Found: {:?}. \
+             Why this matters: Verifies three-byte source codes work correctly.",
+            map.lookup(&[0x00, 0x00, 0x01])
+        );
     }
 
     #[test]
@@ -660,9 +904,31 @@ mod tests {
         let parser = CMapParser::new(input);
         let (map, diags) = parser.parse();
 
-        assert!(map.is_empty());
-        assert!(!diags.is_empty());
-        assert!(diags.iter().any(|d| d.message.as_ref().contains("usecmap")));
+        assert!(
+            map.is_empty(),
+            "usecmap directive should produce an empty mapping table. \
+             Expected: empty map. \
+             Found: map with {} entries. \
+             Why this matters: usecmap references a predefined CMAP resource; the parser \
+             does not follow the reference, so no mappings are created.",
+            map.len()
+        );
+        assert!(
+            !diags.is_empty(),
+            "usecmap directive should emit a diagnostic message. \
+             Expected: non-empty diagnostics. \
+             Found: empty diagnostics (0 messages). \
+             Why this matters: usecmap is not fully implemented; the parser must emit a \
+             diagnostic to warn that the reference is not being followed."
+        );
+        assert!(
+            diags.iter().any(|d| d.message.as_ref().contains("usecmap")),
+            "usecmap diagnostic should mention 'usecmap'. \
+             Expected: diagnostic message containing 'usecmap'. \
+             Found: diagnostics without 'usecmap' reference. \
+             Why this matters: The diagnostic message must clearly indicate that usecmap \
+             is the unsupported feature."
+        );
     }
 
     #[test]
@@ -673,10 +939,37 @@ mod tests {
         let parser = CMapParser::new(input);
         let (map, _) = parser.parse();
 
-        assert_eq!(map.len(), 2);
-        assert_eq!(map.lookup(&[0x00, 0x01]), Some(&['f', 'i'][..]));
+        assert_eq!(
+            map.len(),
+            2,
+            "bfrange with multi-codepoint destination should expand to 2 mappings. \
+             Expected: 2 mappings. \
+             Found: {} mappings. \
+             Why this matters: Range <0001>-<0002> has 2 entries; with multi-codepoint \
+             destination <00660069>, only the last codepoint increments per spec.",
+            map.len()
+        );
+        assert_eq!(
+            map.lookup(&[0x00, 0x01]),
+            Some(&['f', 'i'][..]),
+            "First mapping: <0001> should map to 'fi' (U+0066 U+0069). \
+             Expected: Some([\"f\", \"i\"]). \
+             Found: {:?}. \
+             Why this matters: Verifies the base multi-codepoint destination <00660069> \
+             decodes to 'fi' correctly.",
+            map.lookup(&[0x00, 0x01])
+        );
         // Second entry: last codepoint incremented
-        assert_eq!(map.lookup(&[0x00, 0x02]), Some(&['f', 'j'][..]));
+        assert_eq!(
+            map.lookup(&[0x00, 0x02]),
+            Some(&['f', 'j'][..]),
+            "Second mapping: <0002> should map to 'fj' (last codepoint incremented). \
+             Expected: Some([\"f\", \"j\"]). \
+             Found: {:?}. \
+             Why this matters: Per PDF spec, when destination is multi-codepoint, only the \
+             last codepoint (U+0069→U+006A) increments across the range.",
+            map.lookup(&[0x00, 0x02])
+        );
     }
 
     #[test]
@@ -686,10 +979,28 @@ mod tests {
         let parser = CMapParser::new(input);
         let (map, _) = parser.parse();
 
-        assert_eq!(map.len(), 1);
+        assert_eq!(
+            map.len(),
+            1,
+            "Invalid UTF-16 destination should still create a mapping entry. \
+             Expected: 1 mapping. \
+             Found: {} mappings. \
+             Why this matters: Even with malformed UTF-16, the parser creates an entry \
+             to preserve the character code, but with replacement character.",
+            map.len()
+        );
         // Should have replacement character
         let result = map.lookup(&[0x00]);
-        assert_eq!(result.unwrap().len(), 1);
+        assert_eq!(
+            result.unwrap().len(),
+            1,
+            "Invalid UTF-16 lone surrogate should map to replacement character. \
+             Expected: 1 codepoint (U+FFFD replacement character). \
+             Found: {} codepoints. \
+             Why this matters: D800 is a lone high surrogate (unpaired); UTF-16 decoding \
+             substitutes the Unicode replacement character U+FFFD instead of failing.",
+            result.unwrap().len()
+        );
     }
 
     #[test]
@@ -699,11 +1010,34 @@ mod tests {
         let parser = CMapParser::new(input);
         let (map, diags) = parser.parse();
 
-        assert_eq!(map.len(), 1);
-        assert!(!diags.is_empty());
-        assert!(diags
-            .iter()
-            .any(|d| d.message.as_ref().contains("odd number of bytes")));
+        assert_eq!(
+            map.len(),
+            1,
+            "Odd-length UTF-16 destination should still create a mapping. \
+             Expected: 1 mapping. \
+             Found: {} mappings. \
+             Why this matters: The parser creates an entry despite malformed UTF-16, but \
+             emits a diagnostic to warn about the issue.",
+            map.len()
+        );
+        assert!(
+            !diags.is_empty(),
+            "Odd-length UTF-16 should emit a diagnostic. \
+             Expected: non-empty diagnostics. \
+             Found: empty diagnostics (0 messages). \
+             Why this matters: 5 hex digits (00412) decode to 3 bytes, which is odd; \
+             UTF-16BE requires an even number of bytes (2 bytes per codeunit)."
+        );
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.message.as_ref().contains("odd number of bytes")),
+            "Diagnostic should mention 'odd number of bytes'. \
+             Expected: diagnostic containing 'odd number of bytes'. \
+             Found: diagnostics without this phrase. \
+             Why this matters: The error message must clearly indicate that UTF-16BE \
+             byte alignment is the problem."
+        );
     }
 
     #[test]
@@ -711,8 +1045,26 @@ mod tests {
         let input = b"beginbfchar 1 <00> <0041> endbfchar";
         let map = parse_to_unicode(input);
 
-        assert_eq!(map.len(), 1);
-        assert_eq!(map.lookup(&[0x00]), Some(&['A'][..]));
+        assert_eq!(
+            map.len(),
+            1,
+            "parse_to_unicode convenience function should return correct mapping count. \
+             Expected: 1 mapping. \
+             Found: {} mappings. \
+             Why this matters: parse_to_unicode is a convenience wrapper that discards \
+             diagnostics; it must still return the correct parsed mappings.",
+            map.len()
+        );
+        assert_eq!(
+            map.lookup(&[0x00]),
+            Some(&['A'][..]),
+            "Convenience function should map 0x00 to 'A'. \
+             Expected: Some(\"A\"). \
+             Found: {:?}. \
+             Why this matters: Verifies parse_to_unicode produces identical results to \
+             the full parser with diagnostics.",
+            map.lookup(&[0x00])
+        );
     }
 
     #[test]
@@ -723,8 +1075,23 @@ mod tests {
         let (map, diags) = parser.parse();
 
         // Should fail and emit diagnostic
-        assert!(map.is_empty() || map.len() < 3);
-        assert!(!diags.is_empty());
+        assert!(
+            map.is_empty() || map.len() < 3,
+            "bfrange with array length mismatch should produce fewer than 3 mappings. \
+             Expected: 0-2 mappings (partial parse). \
+             Found: {} mappings. \
+             Why this matters: Range <0001>-<0003> requires 3 array elements, but only 2 \
+             are provided; the parser should reject or partially complete the operation.",
+            map.len()
+        );
+        assert!(
+            !diags.is_empty(),
+            "bfrange array length mismatch should emit a diagnostic. \
+             Expected: non-empty diagnostics. \
+             Found: empty diagnostics (0 messages). \
+             Why this matters: The parser must detect the mismatch between range size (3) \
+             and array length (2) and report it as an error."
+        );
     }
 
     #[test]
@@ -735,7 +1102,22 @@ mod tests {
         let (map, diags) = parser.parse();
 
         // Should fail and emit diagnostic
-        assert!(map.is_empty());
-        assert!(!diags.is_empty());
+        assert!(
+            map.is_empty(),
+            "Invalid bfrange (lo > hi) should produce an empty mapping table. \
+             Expected: empty map (0 mappings). \
+             Found: map with {} entries. \
+             Why this matters: Range <0005>-<0001> is invalid (lo > hi); the parser must \
+             reject this entirely and create no mappings.",
+            map.len()
+        );
+        assert!(
+            !diags.is_empty(),
+            "Invalid bfrange should emit a diagnostic. \
+             Expected: non-empty diagnostics. \
+             Found: empty diagnostics (0 messages). \
+             Why this matters: The parser must detect that lo > hi and report it as a \
+             parsing error, not silently accept an invalid range."
+        );
     }
 }
