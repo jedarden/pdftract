@@ -75,7 +75,8 @@ class TestWorkflowPoller(unittest.TestCase):
         try:
             poller = WorkflowPoller(kubeconfig=temp_kubeconfig)
             # Verify default values
-            self.assertEqual(poller.poll_interval, 10)
+            self.assertEqual(poller.initial_poll_interval, 5)
+            self.assertEqual(poller.max_poll_interval, 60)
             self.assertEqual(poller.timeout, 1800)
             self.assertTrue(poller.kubeconfig.exists())
         finally:
@@ -90,7 +91,8 @@ class TestWorkflowPoller(unittest.TestCase):
         try:
             poller = WorkflowPoller(kubeconfig=temp_kubeconfig)
             self.assertEqual(str(poller.kubeconfig), temp_kubeconfig)
-            self.assertEqual(poller.poll_interval, 10)
+            self.assertEqual(poller.initial_poll_interval, 5)
+            self.assertEqual(poller.max_poll_interval, 60)
             self.assertEqual(poller.timeout, 1800)
         finally:
             os.unlink(temp_kubeconfig)
@@ -183,6 +185,146 @@ class TestWorkflowPoller(unittest.TestCase):
                 with self.assertRaises(WorkflowPollingError) as cm:
                     poller.get_workflow_status("test-workflow")
                 self.assertIn("Empty workflow phase", str(cm.exception))
+        finally:
+            os.unlink(temp_kubeconfig)
+
+
+class TestBackoffAndJitter(unittest.TestCase):
+    """Tests for exponential backoff and jitter functionality."""
+
+    def test_calculate_poll_interval_initial(self):
+        """Test that first poll uses initial interval."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            poller = WorkflowPoller(kubeconfig=temp_kubeconfig, initial_poll_interval=5)
+            interval = poller._calculate_poll_interval(1)
+            # Should be approximately 5 seconds with jitter
+            self.assertGreater(interval, 3.0)  # 5 - 20% = 4.0 minimum
+            self.assertLess(interval, 7.0)     # 5 + 20% = 6.0 maximum
+        finally:
+            os.unlink(temp_kubeconfig)
+
+    def test_calculate_poll_interval_exponential_growth(self):
+        """Test that intervals grow exponentially with attempts."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            poller = WorkflowPoller(kubeconfig=temp_kubeconfig, initial_poll_interval=5)
+
+            # Collect multiple intervals to account for randomness
+            intervals_1 = [poller._calculate_poll_interval(1) for _ in range(10)]
+            intervals_2 = [poller._calculate_poll_interval(2) for _ in range(10)]
+            intervals_3 = [poller._calculate_poll_interval(3) for _ in range(10)]
+
+            # Average of attempt 2 should be approximately double attempt 1
+            avg_1 = sum(intervals_1) / len(intervals_1)
+            avg_2 = sum(intervals_2) / len(intervals_2)
+
+            # With 5s initial, attempt 1 should average ~5s, attempt 2 should average ~10s
+            self.assertGreater(avg_2, avg_1 * 1.5)  # At least 1.5x growth
+            self.assertLess(avg_2, avg_1 * 2.5)    # Less than 2.5x (due to jitter)
+
+            # Attempt 3 should average ~20s (5 * 2^2)
+            avg_3 = sum(intervals_3) / len(intervals_3)
+            self.assertGreater(avg_3, avg_1 * 3.0)  # At least 3x initial
+            self.assertLess(avg_3, avg_1 * 5.0)     # Less than 5x initial
+        finally:
+            os.unlink(temp_kubeconfig)
+
+    def test_calculate_poll_interval_max_cap(self):
+        """Test that intervals are capped at max_poll_interval."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            poller = WorkflowPoller(kubeconfig=temp_kubeconfig,
+                                   initial_poll_interval=5,
+                                   max_poll_interval=60)
+
+            # Even with high attempt numbers, should not exceed max
+            for attempt in [10, 20, 50, 100]:
+                interval = poller._calculate_poll_interval(attempt)
+                # Should be approximately 60 seconds (within jitter range)
+                self.assertGreater(interval, 48.0)  # 60 - 20% = 48
+                self.assertLess(interval, 72.0)     # 60 + 20% = 72
+        finally:
+            os.unlink(temp_kubeconfig)
+
+    def test_calculate_poll_interval_jitter_variability(self):
+        """Test that jitter introduces variability."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            poller = WorkflowPoller(kubeconfig=temp_kubeconfig, jitter_percent=0.2)
+
+            # Get multiple intervals for the same attempt
+            intervals = [poller._calculate_poll_interval(5) for _ in range(20)]
+
+            # With 20% jitter on 5s * 2^4 = 80s (capped to 60s max),
+            # we should see variability
+            # At attempt 5, base = 5 * 2^4 = 80, capped to 60
+            # Jitter range: 60 ± 12 = [48, 72]
+
+            # Check that we got different values (variability)
+            unique_values = set(intervals)
+            self.assertGreater(len(unique_values), 1, "Jitter should produce different values")
+
+            # All values should be within expected range
+            for interval in intervals:
+                self.assertGreaterEqual(interval, 48.0)
+                self.assertLessEqual(interval, 72.0)
+        finally:
+            os.unlink(temp_kubeconfig)
+
+    def test_poll_interval_grows_during_long_polling(self):
+        """Test that actual polling uses increasing intervals."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            poller = WorkflowPoller(kubeconfig=temp_kubeconfig,
+                                   initial_poll_interval=1,  # Faster for testing
+                                   max_poll_interval=10,     # Lower cap for testing
+                                   jitter_percent=0.2)
+
+            call_times = []
+
+            def mock_kubectl(*args, **kwargs):
+                call_times.append(time.time())
+                mock_result = MagicMock()
+                mock_result.stdout = "'Running'"
+                mock_result.returncode = 0
+                return mock_result
+
+            # Mock timeout by having workflow never complete
+            with patch('subprocess.run', side_effect=mock_kubectl):
+                try:
+                    poller.poll_until_completion("test-workflow", timeout=6)
+                except WorkflowTimeoutError:
+                    pass  # Expected
+
+            # Should have multiple calls with increasing gaps
+            if len(call_times) >= 3:
+                # Calculate gaps between calls
+                gaps = [call_times[i+1] - call_times[i] for i in range(len(call_times)-1)]
+
+                # First gap should be ~1s (with jitter)
+                # Second gap should be ~2s (with jitter)
+                # Third gap should be ~4s (with jitter)
+
+                # Verify growth pattern (allowing for jitter and timeout)
+                self.assertGreater(gaps[0], 0.5)  # At least 0.5s
+                if len(gaps) > 1:
+                    self.assertGreater(gaps[1], gaps[0] * 1.3)  # At least 30% growth
         finally:
             os.unlink(temp_kubeconfig)
 

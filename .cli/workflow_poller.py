@@ -26,6 +26,7 @@ import subprocess
 import time
 import os
 import json
+import random
 from pathlib import Path
 from typing import Optional, List
 from dataclasses import dataclass
@@ -61,12 +62,14 @@ class WorkflowPoller:
     Polls Argo Workflow status until completion.
 
     This class handles polling workflow status on iad-ci cluster,
-    with configurable polling intervals and timeout.
+    with exponential backoff and jitter for intelligent polling.
 
     Attributes:
         kubeconfig: Path to kubectl config (default: ~/.kube/iad-ci.kubeconfig)
-        poll_interval: Seconds between status checks (default: 10)
+        initial_poll_interval: Initial seconds between status checks (default: 5)
+        max_poll_interval: Maximum seconds between status checks (default: 60)
         timeout: Maximum time to wait for completion (default: 1800)
+        jitter_percent: Percentage of jitter to apply (default: 0.2 for ±20%)
     """
 
     TERMINAL_PHASES = ("Succeeded", "Failed", "Errored")
@@ -75,22 +78,54 @@ class WorkflowPoller:
         self,
         kubeconfig: Optional[str] = None,
         poll_interval: int = 10,
-        timeout: int = 1800
+        timeout: int = 1800,
+        initial_poll_interval: int = 5,
+        max_poll_interval: int = 60,
+        jitter_percent: float = 0.2
     ):
         """
         Initialize workflow poller.
 
         Args:
             kubeconfig: Path to kubectl config (default: ~/.kube/iad-ci.kubeconfig)
-            poll_interval: Seconds between status checks (default: 10)
+            poll_interval: DEPRECATED - Seconds between status checks (default: 10)
             timeout: Maximum time to wait for completion in seconds (default: 1800)
+            initial_poll_interval: Initial seconds between status checks (default: 5)
+            max_poll_interval: Maximum seconds between status checks (default: 60)
+            jitter_percent: Percentage of jitter to apply, 0.2 = ±20% (default: 0.2)
         """
         self.kubeconfig = Path(kubeconfig or os.path.expanduser("~/.kube/iad-ci.kubeconfig"))
-        self.poll_interval = poll_interval
+        # Support legacy poll_interval parameter
+        if poll_interval != 10:
+            self.initial_poll_interval = poll_interval
+            self.max_poll_interval = min(poll_interval * 12, 60)  # Cap at 60s
+        else:
+            self.initial_poll_interval = initial_poll_interval
+            self.max_poll_interval = max_poll_interval
         self.timeout = timeout
+        self.jitter_percent = jitter_percent
 
         if not self.kubeconfig.exists():
             raise WorkflowPollingError(f"kubeconfig not found: {self.kubeconfig}")
+
+    def _calculate_poll_interval(self, attempt: int) -> float:
+        """
+        Calculate poll interval with exponential backoff and jitter.
+
+        Args:
+            attempt: Current poll attempt number (1-indexed)
+
+        Returns:
+            Sleep time in seconds with jitter applied
+        """
+        # Exponential backoff: start at initial_interval, double each attempt, max max_interval
+        base_interval = min(self.initial_poll_interval * (2 ** (attempt - 1)), self.max_poll_interval)
+
+        # Add jitter (± jitter_percent)
+        jitter = base_interval * self.jitter_percent
+        interval = base_interval + random.uniform(-jitter, jitter)
+
+        return max(0, interval)  # Ensure non-negative
 
     def get_workflow_status(self, workflow_name: str, namespace: str = "argo-workflows") -> WorkflowStatus:
         """
@@ -147,10 +182,13 @@ class WorkflowPoller:
         timeout: Optional[int] = None
     ) -> str:
         """
-        Poll workflow status until completion.
+        Poll workflow status until completion with exponential backoff and jitter.
 
         Continuously checks workflow status until it reaches a terminal phase
         (Succeeded, Failed, or Errored) or the timeout is exceeded.
+
+        Uses exponential backoff starting at 5s doubling each attempt up to 60s max,
+        with ±20% jitter applied to each interval to avoid thundering herd.
 
         Args:
             workflow_name: Name of the workflow to poll
@@ -166,14 +204,16 @@ class WorkflowPoller:
         """
         timeout = timeout or self.timeout
         start_time = time.time()
+        attempt = 0
 
         while True:
+            attempt += 1
             elapsed = time.time() - start_time
 
             if elapsed > timeout:
                 raise WorkflowTimeoutError(
                     f"Workflow '{workflow_name}' did not complete within {timeout}s. "
-                    f"Last check at {elapsed:.1f}s."
+                    f"Last check at {elapsed:.1f}s after {attempt} attempts."
                 )
 
             try:
@@ -182,6 +222,9 @@ class WorkflowPoller:
                 if status.is_terminal():
                     return status.phase
 
+                # Calculate next poll interval with backoff and jitter
+                poll_interval = self._calculate_poll_interval(attempt)
+
                 # Check timeout before sleeping
                 remaining = timeout - elapsed
                 if remaining <= 0:
@@ -189,8 +232,8 @@ class WorkflowPoller:
                         f"Workflow '{workflow_name}' did not complete within {timeout}s."
                     )
 
-                # Sleep for the poll interval, but don't exceed remaining time
-                sleep_time = min(self.poll_interval, remaining)
+                # Sleep for the calculated interval, but don't exceed remaining time
+                sleep_time = min(poll_interval, remaining)
                 time.sleep(sleep_time)
 
             except WorkflowTimeoutError:
@@ -199,11 +242,15 @@ class WorkflowPoller:
                 # If we can't get status, wait a bit and retry
                 # (unless we're very close to timeout)
                 remaining = timeout - (time.time() - start_time)
-                if remaining < self.poll_interval:
+                if remaining < self.initial_poll_interval:
                     raise WorkflowPollingError(
                         f"Polling failed with {remaining:.1f}s remaining: {e}"
                     )
-                time.sleep(self.poll_interval)
+
+                # Use current backoff interval for retry
+                poll_interval = self._calculate_poll_interval(attempt)
+                sleep_time = min(poll_interval, remaining)
+                time.sleep(sleep_time)
 
     def discover_workflow_pods(
         self,
@@ -367,7 +414,10 @@ def poll_workflow(
     workflow_name: str,
     kubeconfig: Optional[str] = None,
     timeout: int = 1800,
-    poll_interval: int = 10
+    poll_interval: int = 10,
+    initial_poll_interval: int = 5,
+    max_poll_interval: int = 60,
+    jitter_percent: float = 0.2
 ) -> str:
     """
     Convenience function to poll workflow until completion.
@@ -376,7 +426,10 @@ def poll_workflow(
         workflow_name: Name of the workflow to poll
         kubeconfig: Path to kubectl config
         timeout: Maximum time to wait in seconds (default: 1800)
-        poll_interval: Seconds between status checks (default: 10)
+        poll_interval: DEPRECATED - Seconds between status checks (default: 10)
+        initial_poll_interval: Initial seconds between status checks (default: 5)
+        max_poll_interval: Maximum seconds between status checks (default: 60)
+        jitter_percent: Percentage of jitter to apply (default: 0.2 for ±20%)
 
     Returns:
         Final workflow phase (Succeeded, Failed, or Errored)
@@ -388,7 +441,10 @@ def poll_workflow(
     poller = WorkflowPoller(
         kubeconfig=kubeconfig,
         poll_interval=poll_interval,
-        timeout=timeout
+        timeout=timeout,
+        initial_poll_interval=initial_poll_interval,
+        max_poll_interval=max_poll_interval,
+        jitter_percent=jitter_percent
     )
     return poller.poll_until_completion(workflow_name)
 
