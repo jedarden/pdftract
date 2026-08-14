@@ -512,6 +512,106 @@ impl Type3Font {
             raster_cache: Arc::new(DashMap::new()),
         }
     }
+
+    /// Create a Type3Font with custom CharProcs and sensible defaults for other fields.
+    ///
+    /// This function creates a Type3Font instance with the provided CharProcs dictionary,
+    /// using sensible defaults for all other fields. This is useful for testing Type3 font
+    /// functionality with custom glyph content streams.
+    ///
+    /// # Arguments
+    ///
+    /// * `char_procs` - HashMap of glyph name -> ObjRef for glyph content streams
+    ///
+    /// # Returns
+    ///
+    /// A Type3Font with:
+    /// - Identity FontMatrix ([1 0 0 1 0 0]) for predictable coordinates
+    /// - FontBBox [0, 0, 1000, 1000] for a standard glyph space
+    /// - StandardEncoding for encoding
+    /// - Provided char_procs
+    /// - Zero first_char, last_char, and widths
+    /// - No resources
+    /// - No diagnostics
+    /// - Empty raster cache
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use std::collections::HashMap;
+    /// use std::sync::Arc;
+    /// use pdftract_core::font::type3::Type3Font;
+    /// use pdftract_core::parser::object::types::ObjRef;
+    ///
+    /// // Create a font with custom CharProcs
+    /// let mut char_procs = HashMap::new();
+    /// char_procs.insert(Arc::from("A"), ObjRef::new(10, 0));
+    /// char_procs.insert(Arc::from("B"), ObjRef::new(11, 0));
+    /// let font = Type3Font::type3_font_with_char_procs(char_procs);
+    /// ```
+    pub fn type3_font_with_char_procs(char_procs: HashMap<Arc<str>, ObjRef>) -> Self {
+        Self {
+            char_procs,
+            first_char: 0,
+            last_char: 0,
+            widths: vec![0.0],
+            font_matrix: Matrix3x3::identity(),
+            resources: None,
+            encoding: FontEncoding::new(Some(crate::font::encoding::NamedEncoding::Standard)),
+            font_bbox: [0.0, 0.0, 1000.0, 1000.0],
+            diagnostics: Vec::new(),
+            raster_cache: Arc::new(DashMap::new()),
+        }
+    }
+
+    /// Create a Type3Font with custom Resources and sensible defaults for other fields.
+    ///
+    /// This function creates a Type3Font instance with the provided Resources dictionary,
+    /// using sensible defaults for all other fields. This is useful for testing Type3 font
+    /// functionality with resource dictionaries (e.g., fonts, XObjects referenced by glyphs).
+    ///
+    /// # Arguments
+    ///
+    /// * `resources` - Arc wrapping the PdfDict containing resources for glyph content streams
+    ///
+    /// # Returns
+    ///
+    /// A Type3Font with:
+    /// - Identity FontMatrix ([1 0 0 1 0 0]) for predictable coordinates
+    /// - FontBBox [0, 0, 1000, 1000] for a standard glyph space
+    /// - StandardEncoding for encoding
+    /// - Empty char_procs
+    /// - Zero first_char, last_char, and widths
+    /// - Provided resources
+    /// - No diagnostics
+    /// - Empty raster cache
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use std::sync::Arc;
+    /// use pdftract_core::font::type3::Type3Font;
+    /// use pdftract_core::parser::object::PdfDict;
+    ///
+    /// // Create a font with custom Resources
+    /// let mut resources = PdfDict::new();
+    /// // Add resources like fonts, XObjects, etc.
+    /// let font = Type3Font::type3_font_with_resources(Arc::new(resources));
+    /// ```
+    pub fn type3_font_with_resources(resources: Arc<PdfDict>) -> Self {
+        Self {
+            char_procs: HashMap::new(),
+            first_char: 0,
+            last_char: 0,
+            widths: vec![0.0],
+            font_matrix: Matrix3x3::identity(),
+            resources: Some(resources),
+            encoding: FontEncoding::new(Some(crate::font::encoding::NamedEncoding::Standard)),
+            font_bbox: [0.0, 0.0, 1000.0, 1000.0],
+            diagnostics: Vec::new(),
+            raster_cache: Arc::new(DashMap::new()),
+        }
+    }
 }
 
 #[cfg(test)]
