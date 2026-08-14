@@ -150,12 +150,12 @@ pub fn make_rect_glyph_with_path_commands(x: f64, y: f64, width: f64, height: f6
 /// # Returns
 ///
 /// HashMap of character names to ObjRefs for testing.
-pub fn make_test_char_procs() -> HashMap<String, ObjRef> {
+pub fn make_test_char_procs() -> HashMap<Arc<str>, ObjRef> {
     let mut char_procs = HashMap::new();
-    char_procs.insert("/A".to_string(), ObjRef::new(1, 0));
-    char_procs.insert("/B".to_string(), ObjRef::new(2, 0));
-    char_procs.insert("/C".to_string(), ObjRef::new(3, 0));
-    char_procs.insert("/D".to_string(), ObjRef::new(4, 0));
+    char_procs.insert("/A".into(), ObjRef::new(1, 0));
+    char_procs.insert("/B".into(), ObjRef::new(2, 0));
+    char_procs.insert("/C".into(), ObjRef::new(3, 0));
+    char_procs.insert("/D".into(), ObjRef::new(4, 0));
     char_procs
 }
 
@@ -216,15 +216,36 @@ pub fn make_test_resolver(glyph_map: &HashMap<String, Vec<u8>>) -> impl Fn(ObjRe
 /// use pdftract_core::parser::object::types::ObjRef;
 ///
 /// let char_procs = make_custom_char_procs(&[
-///     ("/space".to_string(), ObjRef::new(1, 0)),
-///     ("/A".to_string(), ObjRef::new(2, 0)),
-///     ("/Z".to_string(), ObjRef::new(26, 0)),
+///     ("/space", ObjRef::new(1, 0)),
+///     ("/A", ObjRef::new(2, 0)),
+///     ("/Z", ObjRef::new(26, 0)),
 /// ]);
 /// ```
-pub fn make_custom_char_procs(mappings: &[(String, ObjRef)]) -> HashMap<String, ObjRef> {
+pub fn make_custom_char_procs(mappings: &[(&str, ObjRef)]) -> HashMap<Arc<str>, ObjRef> {
     mappings
         .iter()
-        .map(|(name, ref_id)| (name.clone(), *ref_id))
+        .map(|(name, ref_id)| ((*name).into(), *ref_id))
+        .collect()
+}
+
+/// Create char_procs from glyph names and base ID.
+///
+/// Convenience function that creates a HashMap mapping glyph names to ObjRefs,
+/// automatically generating sequential IDs starting from a base value.
+///
+/// # Arguments
+///
+/// * `glyph_names` - Slice of glyph names (e.g., &["g1", "g2", "g3"])
+/// * `base_id` - Starting ObjRef ID (will use base_id, base_id+1, base_id+2, ...)
+///
+/// # Returns
+///
+/// HashMap of glyph names to ObjRefs for testing.
+pub fn make_custom_char_procs_from_names(glyph_names: &[&str], base_id: u32) -> HashMap<Arc<str>, ObjRef> {
+    glyph_names
+        .iter()
+        .enumerate()
+        .map(|(i, name)| ((*name).into(), ObjRef::new(base_id + i as u32, 0)))
         .collect()
 }
 
@@ -271,8 +292,8 @@ mod tests {
     #[test]
     fn test_make_custom_char_procs() {
         let char_procs = make_custom_char_procs(&[
-            ("/space".to_string(), ObjRef::new(1, 0)),
-            ("/A".to_string(), ObjRef::new(2, 0)),
+            ("/space", ObjRef::new(1, 0)),
+            ("/A", ObjRef::new(2, 0)),
         ]);
 
         assert_eq!(char_procs.get("/space"), Some(&ObjRef::new(1, 0)));

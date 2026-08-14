@@ -11,14 +11,18 @@ namespace Pdftract.Models;
 public record Document
 {
     [Key(0)]
-    [JsonPropertyName("id")]
-    public string Id { get; init; } = string.Empty;
+    [JsonPropertyName("schema_version")]
+    public required string SchemaVersion { get; init; }
 
     [Key(1)]
+    [JsonPropertyName("metadata")]
+    public required Metadata Metadata { get; init; }
+
+    [Key(2)]
     [JsonPropertyName("pages")]
     public IList<Page> Pages { get; init; } = new List<Page>();
 
-    [Key(2)]
-    [JsonPropertyName("metadata")]
-    public required Metadata Metadata { get; init; }
+    [Key(3)]
+    [JsonPropertyName("errors")]
+    public IList<Error> Errors { get; init; } = new List<Error>();
 }
