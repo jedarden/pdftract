@@ -823,6 +823,140 @@ pub fn to_charprocs_map(glyph_dict: &GlyphDict) -> std::collections::HashMap<Arc
         .collect()
 }
 
+/// Character code to glyph name mapping type for Type3 font testing.
+///
+/// This type maps character codes (u8, 0-255) to glyph names (Arc<str>).
+/// In Type3 fonts, content streams use character codes like `(ABC) Tj`,
+/// which are mapped to glyph names via the font's encoding dictionary.
+///
+/// This is the mapping used during text extraction and rasterization when
+/// character codes in content streams need to be resolved to actual glyphs.
+pub type CharToGlyphMap = std::collections::HashMap<u8, Arc<str>>;
+
+/// Create a character code to glyph name mapping for basic ASCII testing.
+///
+/// This function creates a simple encoding mapping for ASCII characters
+/// commonly used in tests: space (32), A-Z (65-90), and a-z (97-122).
+/// This provides a predictable character code → glyph name mapping for
+/// Type3 font content stream fixtures.
+///
+/// # Returns
+///
+/// A `CharToGlyphMap` with standard ASCII character-to-glyph mappings.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use crate::font::type3_test_fixtures::create_basic_char_to_glyph_map;
+///
+/// let encoding = create_basic_char_to_glyph_map();
+///
+/// // Character codes map to glyph names
+/// assert_eq!(encoding.get(&65), Some(&"A".into()));
+/// assert_eq!(encoding.get(&97), Some(&"a".into()));
+/// assert_eq!(encoding.get(&32), Some(&"space".into()));
+/// ```
+pub fn create_basic_char_to_glyph_map() -> CharToGlyphMap {
+    let mut map = CharToGlyphMap::new();
+
+    // Space character
+    map.insert(32, Arc::from("space"));
+
+    // Uppercase A-Z
+    for (i, ch) in ('A'..='Z').enumerate() {
+        map.insert(65 + i as u8, Arc::from(ch.to_string().as_str()));
+    }
+
+    // Lowercase a-z
+    for (i, ch) in ('a'..='z').enumerate() {
+        map.insert(97 + i as u8, Arc::from(ch.to_string().as_str()));
+    }
+
+    map
+}
+
+/// Create a minimal character code to glyph name mapping with common test glyphs.
+///
+/// This function creates a minimal mapping with only a few essential glyphs
+/// needed for basic Type3 font testing: space, 'A', and 'B'.
+///
+/// # Returns
+///
+/// A `CharToGlyphMap` with minimal character-to-glyph mappings.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use crate::font::type3_test_fixtures::create_minimal_char_to_glyph_map;
+///
+/// let encoding = create_minimal_char_to_glyph_map();
+///
+/// assert_eq!(encoding.get(&32), Some(&"space".into()));
+/// assert_eq!(encoding.get(&65), Some(&"A".into()));
+/// assert_eq!(encoding.get(&66), Some(&"B".into()));
+/// ```
+pub fn create_minimal_char_to_glyph_map() -> CharToGlyphMap {
+    let mut map = CharToGlyphMap::new();
+    map.insert(32, Arc::from("space"));
+    map.insert(65, Arc::from("A"));
+    map.insert(66, Arc::from("B"));
+    map
+}
+
+/// Create a character code to glyph name mapping from a glyph dictionary.
+///
+/// This function creates a character code mapping based on the glyphs present
+/// in a glyph dictionary. It maps sequential character codes starting at 65
+/// ('A') to the glyph names in the dictionary (excluding .notdef).
+///
+/// This is useful when you have a glyph dictionary and need a corresponding
+/// encoding mapping for Type3 font testing.
+///
+/// # Arguments
+///
+/// * `glyph_dict` - The glyph dictionary to create mappings from
+///
+/// # Returns
+///
+/// A `CharToGlyphMap` with character codes mapped to glyph names from the dictionary.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use crate::font::type3_test_fixtures::{create_basic_glyph_dict, create_char_to_glyph_from_dict};
+/// use crate::parser::object::types::ObjRef;
+///
+/// let notdef_ref = ObjRef::new(10, 0);
+/// let test_ref = ObjRef::new(11, 0);
+/// let glyph_dict = create_basic_glyph_dict(notdef_ref, test_ref);
+///
+/// let char_map = create_char_to_glyph_from_dict(&glyph_dict);
+///
+/// // The "A" glyph from the dict should be mapped
+/// assert!(char_map.values().any(|name| name.as_ref() == "A"));
+/// ```
+pub fn create_char_to_glyph_from_dict(glyph_dict: &GlyphDict) -> CharToGlyphMap {
+    let mut map = CharToGlyphMap::new();
+    let mut char_code = 65u8; // Start at 'A'
+
+    for (glyph_name, _entry) in glyph_dict.iter() {
+        // Skip .notdef
+        if glyph_name.as_ref() == ".notdef" {
+            continue;
+        }
+
+        map.insert(char_code, Arc::clone(glyph_name));
+        char_code = char_code.saturating_add(1);
+
+        // Don't go beyond reasonable ASCII range
+        if char_code > 90 {
+            break;
+        }
+    }
+
+    map
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
