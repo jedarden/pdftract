@@ -23,7 +23,8 @@ from workflow_poller import (
     WorkflowPollingError,
     WorkflowTimeoutError,
     WorkflowStatus,
-    poll_workflow
+    poll_workflow,
+    collect_workflow_logs
 )
 
 
@@ -430,6 +431,340 @@ class TestErrorRecovery(unittest.TestCase):
                 phase = poller.poll_until_completion("test-workflow")
                 self.assertEqual(phase, "Succeeded")
                 self.assertEqual(call_count[0], 2)  # Should have called twice (fail + success)
+        finally:
+            os.unlink(temp_kubeconfig)
+
+
+class TestPodLogCollection(unittest.TestCase):
+    """Tests for pod log collection functionality."""
+
+    def test_discover_workflow_pods_success(self):
+        """Test discovering pods created by workflow."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            poller = WorkflowPoller(kubeconfig=temp_kubeconfig)
+
+            # Mock kubectl get pods response
+            mock_result = MagicMock()
+            mock_result.stdout = "'pod-1 pod-2 pod-3'"
+            mock_result.returncode = 0
+
+            with patch('subprocess.run', return_value=mock_result):
+                pod_names = poller.discover_workflow_pods("test-workflow")
+                self.assertEqual(pod_names, ["pod-1", "pod-2", "pod-3"])
+        finally:
+            os.unlink(temp_kubeconfig)
+
+    def test_discover_workflow_pods_empty(self):
+        """Test discovering pods when no pods found."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            poller = WorkflowPoller(kubeconfig=temp_kubeconfig)
+
+            # Mock empty response (no pods)
+            mock_result = MagicMock()
+            mock_result.stdout = "''"
+            mock_result.returncode = 0
+
+            with patch('subprocess.run', return_value=mock_result):
+                pod_names = poller.discover_workflow_pods("test-workflow")
+                self.assertEqual(pod_names, [])
+        finally:
+            os.unlink(temp_kubeconfig)
+
+    def test_discover_workflow_pods_not_found(self):
+        """Test discovering pods when workflow not found."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            poller = WorkflowPoller(kubeconfig=temp_kubeconfig)
+
+            # Mock kubectl get pods with NotFound error
+            with patch('subprocess.run', side_effect=subprocess.CalledProcessError(1, 'kubectl', stderr='NotFound')):
+                pod_names = poller.discover_workflow_pods("test-workflow")
+                self.assertEqual(pod_names, [])
+        finally:
+            os.unlink(temp_kubeconfig)
+
+    def test_discover_workflow_pods_single(self):
+        """Test discovering a single pod."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            poller = WorkflowPoller(kubeconfig=temp_kubeconfig)
+
+            # Mock single pod response
+            mock_result = MagicMock()
+            mock_result.stdout = "'workflow-pod-abc123'"
+            mock_result.returncode = 0
+
+            with patch('subprocess.run', return_value=mock_result):
+                pod_names = poller.discover_workflow_pods("test-workflow")
+                self.assertEqual(pod_names, ["workflow-pod-abc123"])
+        finally:
+            os.unlink(temp_kubeconfig)
+
+    def test_get_pod_logs_success(self):
+        """Test fetching logs from a pod."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            poller = WorkflowPoller(kubeconfig=temp_kubeconfig)
+
+            # Mock kubectl logs response
+            mock_result = MagicMock()
+            mock_result.stdout = "Running cargo test...\nTest result: ok"
+            mock_result.returncode = 0
+
+            with patch('subprocess.run', return_value=mock_result):
+                logs = poller.get_pod_logs("test-pod")
+                self.assertEqual(logs, "Running cargo test...\nTest result: ok")
+        finally:
+            os.unlink(temp_kubeconfig)
+
+    def test_get_pod_logs_empty(self):
+        """Test fetching logs when container has no logs."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            poller = WorkflowPoller(kubeconfig=temp_kubeconfig)
+
+            # Mock empty logs response
+            mock_result = MagicMock()
+            mock_result.stdout = ""
+            mock_result.returncode = 0
+
+            with patch('subprocess.run', return_value=mock_result):
+                logs = poller.get_pod_logs("test-pod")
+                self.assertEqual(logs, "")
+        finally:
+            os.unlink(temp_kubeconfig)
+
+    def test_get_pod_logs_container_not_started(self):
+        """Test fetching logs when container hasn't started yet."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            poller = WorkflowPoller(kubeconfig=temp_kubeconfig)
+
+            # Mock kubectl logs error for container waiting to start
+            with patch('subprocess.run', side_effect=subprocess.CalledProcessError(1, 'kubectl', stderr='ContainerCreating')):
+                logs = poller.get_pod_logs("test-pod")
+                self.assertIn("[No logs available", logs)
+        finally:
+            os.unlink(temp_kubeconfig)
+
+    def test_get_pod_logs_failure(self):
+        """Test that kubectl logs failure raises error."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            poller = WorkflowPoller(kubeconfig=temp_kubeconfig)
+
+            # Mock kubectl logs failure
+            with patch('subprocess.run', side_effect=subprocess.CalledProcessError(1, 'kubectl', stderr='Pod not found')):
+                with self.assertRaises(WorkflowPollingError) as cm:
+                    poller.get_pod_logs("test-pod")
+                self.assertIn("kubectl logs failed", str(cm.exception))
+        finally:
+            os.unlink(temp_kubeconfig)
+
+    def test_collect_workflow_logs_multiple_pods(self):
+        """Test collecting logs from multiple pods in a workflow."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            poller = WorkflowPoller(kubeconfig=temp_kubeconfig)
+
+            # Mock pod discovery
+            mock_pods_result = MagicMock()
+            mock_pods_result.stdout = "'pod-1 pod-2'"
+            mock_pods_result.returncode = 0
+
+            # Mock logs from each pod
+            call_count = [0]
+
+            def mock_kubectl(*args, **kwargs):
+                call_count[0] += 1
+                mock_result = MagicMock()
+
+                # First call is pod discovery
+                if call_count[0] == 1:
+                    return mock_pods_result
+
+                # Subsequent calls are log fetching
+                pod_num = (call_count[0] - 2) % 2
+                if pod_num == 0:
+                    mock_result.stdout = "Logs from pod-1"
+                else:
+                    mock_result.stdout = "Logs from pod-2"
+
+                mock_result.returncode = 0
+                return mock_result
+
+            with patch('subprocess.run', side_effect=mock_kubectl):
+                logs = poller.collect_workflow_logs("test-workflow")
+
+                self.assertIn("=== Logs from pod-1 ===", logs)
+                self.assertIn("Logs from pod-1", logs)
+                self.assertIn("=== Logs from pod-2 ===", logs)
+                self.assertIn("Logs from pod-2", logs)
+        finally:
+            os.unlink(temp_kubeconfig)
+
+    def test_collect_workflow_logs_no_pods(self):
+        """Test collecting logs when no pods found."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            poller = WorkflowPoller(kubeconfig=temp_kubeconfig)
+
+            # Mock empty pod discovery
+            mock_pods_result = MagicMock()
+            mock_pods_result.stdout = "''"
+            mock_pods_result.returncode = 0
+
+            with patch('subprocess.run', return_value=mock_pods_result):
+                logs = poller.collect_workflow_logs("test-workflow")
+                self.assertIn("[No pods found for workflow 'test-workflow']", logs)
+        finally:
+            os.unlink(temp_kubeconfig)
+
+    def test_collect_workflow_logs_single_pod(self):
+        """Test collecting logs from a single pod workflow."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            poller = WorkflowPoller(kubeconfig=temp_kubeconfig)
+
+            # Mock single pod discovery
+            mock_pods_result = MagicMock()
+            mock_pods_result.stdout = "'workflow-pod-123'"
+            mock_pods_result.returncode = 0
+
+            # Mock logs response
+            mock_logs_result = MagicMock()
+            mock_logs_result.stdout = "Single pod log output\nTest passed"
+            mock_logs_result.returncode = 0
+
+            call_count = [0]
+
+            def mock_kubectl(*args, **kwargs):
+                call_count[0] += 1
+                if call_count[0] == 1:
+                    return mock_pods_result
+                else:
+                    return mock_logs_result
+
+            with patch('subprocess.run', side_effect=mock_kubectl):
+                logs = poller.collect_workflow_logs("test-workflow")
+
+                self.assertIn("=== Logs from workflow-pod-123 ===", logs)
+                self.assertIn("Single pod log output", logs)
+                self.assertIn("Test passed", logs)
+        finally:
+            os.unlink(temp_kubeconfig)
+
+    def test_collect_workflow_logs_pod_failure(self):
+        """Test collecting logs when one pod fails but others succeed."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            poller = WorkflowPoller(kubeconfig=temp_kubeconfig)
+
+            # Mock pod discovery with 3 pods
+            mock_pods_result = MagicMock()
+            mock_pods_result.stdout = "'pod-1 pod-2 pod-3'"
+            mock_pods_result.returncode = 0
+
+            call_count = [0]
+
+            def mock_kubectl(*args, **kwargs):
+                call_count[0] += 1
+
+                # First call is pod discovery
+                if call_count[0] == 1:
+                    return mock_pods_result
+
+                # Simulate pod-2 failing
+                pod_num = (call_count[0] - 2) % 3
+                if pod_num == 1:
+                    raise subprocess.CalledProcessError(1, 'kubectl', stderr='Pod not found')
+
+                mock_result = MagicMock()
+                mock_result.stdout = f"Logs from pod-{pod_num + 1}"
+                mock_result.returncode = 0
+                return mock_result
+
+            with patch('subprocess.run', side_effect=mock_kubectl):
+                logs = poller.collect_workflow_logs("test-workflow")
+
+                # Should have logs from pod-1 and pod-3, error from pod-2
+                self.assertIn("=== Logs from pod-1 ===", logs)
+                self.assertIn("=== Error fetching logs from pod-2 ===", logs)
+                self.assertIn("=== Logs from pod-3 ===", logs)
+        finally:
+            os.unlink(temp_kubeconfig)
+
+
+class TestConvenienceFunctions(unittest.TestCase):
+    """Tests for convenience functions."""
+
+    def test_collect_workflow_logs_convenience(self):
+        """Test the collect_workflow_logs convenience function."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            # Mock pod discovery and logs
+            mock_pods_result = MagicMock()
+            mock_pods_result.stdout = "'test-pod'"
+            mock_pods_result.returncode = 0
+
+            mock_logs_result = MagicMock()
+            mock_logs_result.stdout = "Test log output"
+            mock_logs_result.returncode = 0
+
+            call_count = [0]
+
+            def mock_kubectl(*args, **kwargs):
+                call_count[0] += 1
+                if call_count[0] == 1:
+                    return mock_pods_result
+                else:
+                    return mock_logs_result
+
+            with patch('subprocess.run', side_effect=mock_kubectl):
+                logs = collect_workflow_logs("test-workflow", kubeconfig=temp_kubeconfig)
+                self.assertIn("=== Logs from test-pod ===", logs)
+                self.assertIn("Test log output", logs)
         finally:
             os.unlink(temp_kubeconfig)
 

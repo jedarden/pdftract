@@ -1,24 +1,33 @@
 #!/usr/bin/env python3
 """
-Workflow polling module for Argo Workflows on iad-ci.
+Workflow polling and log collection module for Argo Workflows on iad-ci.
 
-This module provides functionality to poll workflow status until completion,
-handling timeouts and returning the final phase.
+This module provides functionality to:
+- Poll workflow status until completion
+- Collect pod logs from completed workflows
+- Handle timeouts and return final phase
 
 Usage:
     from workflow_poller import WorkflowPoller
 
     poller = WorkflowPoller(kubeconfig="~/.kube/iad-ci.kubeconfig")
+
+    # Poll workflow status
     phase = poller.poll_until_completion("workflow-name", timeout=1800)
     if phase == "Succeeded":
         print("Workflow succeeded!")
+
+    # Collect logs from completed workflow
+    logs = poller.collect_workflow_logs("workflow-name")
+    print(logs)
 """
 
 import subprocess
 import time
 import os
+import json
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 from dataclasses import dataclass
 
 
@@ -196,6 +205,163 @@ class WorkflowPoller:
                     )
                 time.sleep(self.poll_interval)
 
+    def discover_workflow_pods(
+        self,
+        workflow_name: str,
+        namespace: str = "argo-workflows"
+    ) -> List[str]:
+        """
+        Discover all pods created by a workflow.
+
+        Args:
+            workflow_name: Name of the workflow to discover pods for
+            namespace: Kubernetes namespace (default: argo-workflows)
+
+        Returns:
+            List of pod names created by the workflow
+
+        Raises:
+            WorkflowPollingError: If pod discovery fails
+        """
+        cmd = [
+            "kubectl",
+            "--kubeconfig", str(self.kubeconfig),
+            "get", "pods",
+            "-n", namespace,
+            "-l", f"workflows.argoproj.io/workflow={workflow_name}",
+            "-o", "jsonpath='{.items[*].metadata.name}'"
+        ]
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=30
+            )
+
+            # Extract pod names from output
+            pod_output = result.stdout.strip().strip("'").strip('"')
+
+            if not pod_output:
+                # No pods found - workflow may have been deleted or no pods created
+                return []
+
+            # Split by whitespace to get individual pod names
+            pod_names = pod_output.split()
+            return pod_names
+
+        except subprocess.TimeoutExpired as e:
+            raise WorkflowPollingError(f"kubectl command timed out: {e}")
+        except subprocess.CalledProcessError as e:
+            # If pods not found (404), return empty list gracefully
+            stderr_lower = e.stderr.lower() if e.stderr else ""
+            if "not found" in stderr_lower or "notfound" in stderr_lower.replace(" ", ""):
+                return []
+            raise WorkflowPollingError(
+                f"kubectl command failed (exit {e.returncode}): {e.stderr}"
+            )
+        except Exception as e:
+            raise WorkflowPollingError(f"Failed to discover workflow pods: {e}")
+
+    def get_pod_logs(
+        self,
+        pod_name: str,
+        container: str = "main",
+        namespace: str = "argo-workflows"
+    ) -> str:
+        """
+        Fetch logs from a specific pod container.
+
+        Args:
+            pod_name: Name of the pod to fetch logs from
+            container: Container name (default: main)
+            namespace: Kubernetes namespace (default: argo-workflows)
+
+        Returns:
+            Log output as string
+
+        Raises:
+            WorkflowPollingError: If log fetching fails
+        """
+        cmd = [
+            "kubectl",
+            "--kubeconfig", str(self.kubeconfig),
+            "logs", pod_name,
+            "-n", namespace,
+            "-c", container
+        ]
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=30
+            )
+
+            return result.stdout
+
+        except subprocess.TimeoutExpired as e:
+            raise WorkflowPollingError(f"kubectl logs command timed out: {e}")
+        except subprocess.CalledProcessError as e:
+            # If container hasn't started yet or no logs, treat gracefully
+            stderr_lower = e.stderr.lower() if e.stderr else ""
+            if ("waiting to start" in stderr_lower or "no logs" in stderr_lower or
+                "containercreating" in stderr_lower or "container creating" in stderr_lower):
+                return f"[No logs available for {pod_name}/{container}]"
+            raise WorkflowPollingError(
+                f"kubectl logs failed for {pod_name}/{container} (exit {e.returncode}): {e.stderr}"
+            )
+        except Exception as e:
+            raise WorkflowPollingError(f"Failed to get logs from {pod_name}: {e}")
+
+    def collect_workflow_logs(
+        self,
+        workflow_name: str,
+        container: str = "main",
+        namespace: str = "argo-workflows"
+    ) -> str:
+        """
+        Collect logs from all pods created by a workflow.
+
+        This method discovers all pods belonging to the workflow and fetches
+        logs from the specified container, returning concatenated output.
+
+        Args:
+            workflow_name: Name of the workflow to collect logs from
+            container: Container name (default: main)
+            namespace: Kubernetes namespace (default: argo-workflows)
+
+        Returns:
+            Concatenated log output from all workflow pods as string
+
+        Raises:
+            WorkflowPollingError: If log collection fails
+        """
+        pod_names = self.discover_workflow_pods(workflow_name, namespace)
+
+        if not pod_names:
+            return f"[No pods found for workflow '{workflow_name}']"
+
+        # Collect logs from each pod
+        all_logs = []
+        for pod_name in pod_names:
+            try:
+                pod_logs = self.get_pod_logs(pod_name, container, namespace)
+                all_logs.append(f"=== Logs from {pod_name} ===")
+                all_logs.append(pod_logs)
+                all_logs.append("")  # Empty line between pods
+            except WorkflowPollingError as e:
+                # Include error in output but continue with other pods
+                all_logs.append(f"=== Error fetching logs from {pod_name} ===")
+                all_logs.append(f"Error: {e}")
+                all_logs.append("")
+
+        return "\n".join(all_logs)
+
 
 def poll_workflow(
     workflow_name: str,
@@ -227,22 +393,64 @@ def poll_workflow(
     return poller.poll_until_completion(workflow_name)
 
 
+def collect_workflow_logs(
+    workflow_name: str,
+    kubeconfig: Optional[str] = None,
+    container: str = "main",
+    namespace: str = "argo-workflows"
+) -> str:
+    """
+    Convenience function to collect logs from a completed workflow.
+
+    Args:
+        workflow_name: Name of the workflow to collect logs from
+        kubeconfig: Path to kubectl config
+        container: Container name (default: main)
+        namespace: Kubernetes namespace (default: argo-workflows)
+
+    Returns:
+        Concatenated log output from all workflow pods
+
+    Raises:
+        WorkflowPollingError: If log collection fails
+    """
+    poller = WorkflowPoller(kubeconfig=kubeconfig)
+    return poller.collect_workflow_logs(workflow_name, container, namespace)
+
+
 if __name__ == "__main__":
     import sys
 
     # CLI interface for testing
     if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} <workflow-name> [namespace] [timeout]")
+        print(f"Usage: {sys.argv[0]} <workflow-name> [--poll | --logs] [namespace] [timeout]")
+        print("  --poll: Poll workflow until completion (default)")
+        print("  --logs: Collect logs from completed workflow")
         sys.exit(1)
 
     workflow_name = sys.argv[1]
-    namespace = sys.argv[2] if len(sys.argv) > 2 else "argo-workflows"
-    timeout = int(sys.argv[3]) if len(sys.argv) > 3 else 1800
+    mode = "poll"  # default mode
+
+    # Check if mode is specified
+    if len(sys.argv) >= 3 and sys.argv[2] in ("--poll", "--logs"):
+        mode = sys.argv[2].lstrip("--")
+        offset = 2
+    else:
+        offset = 0
+
+    namespace = sys.argv[offset + 2] if len(sys.argv) > offset + 1 else "argo-workflows"
+    timeout = int(sys.argv[offset + 3]) if len(sys.argv) > offset + 2 else 1800
 
     try:
-        phase = poll_workflow(workflow_name, timeout=timeout)
-        print(f"Workflow '{workflow_name}' completed with phase: {phase}")
-        sys.exit(0 if phase == "Succeeded" else 1)
+        if mode == "poll":
+            phase = poll_workflow(workflow_name, timeout=timeout)
+            print(f"Workflow '{workflow_name}' completed with phase: {phase}")
+            sys.exit(0 if phase == "Succeeded" else 1)
+        elif mode == "logs":
+            logs = collect_workflow_logs(workflow_name, namespace=namespace)
+            print(f"Logs from workflow '{workflow_name}':")
+            print(logs)
+            sys.exit(0)
     except WorkflowTimeoutError as e:
         print(f"Timeout: {e}")
         sys.exit(2)
