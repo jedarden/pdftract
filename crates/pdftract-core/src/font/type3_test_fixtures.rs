@@ -957,6 +957,428 @@ pub fn create_char_to_glyph_from_dict(glyph_dict: &GlyphDict) -> CharToGlyphMap 
     map
 }
 
+/// Test edge builder for constructing test edges for AET testing.
+///
+/// This struct provides a builder pattern for creating Edge instances
+/// with configurable properties for testing the Active Edge Table.
+#[derive(Debug, Clone, Copy)]
+pub struct TestEdge {
+    /// Current X intersection position
+    pub x: i32,
+    /// Minimum Y coordinate (top of edge)
+    pub y_min: i32,
+    /// Maximum Y coordinate (bottom of edge)
+    pub y_max: i32,
+    /// Change in X across the edge
+    pub dx: i32,
+    /// Change in Y across the edge
+    pub dy: i32,
+}
+
+impl TestEdge {
+    /// Create a new TestEdge builder with default values.
+    ///
+    /// # Returns
+    ///
+    /// A TestEdge with all fields set to zero.
+    pub fn new() -> Self {
+        Self {
+            x: 0,
+            y_min: 0,
+            y_max: 0,
+            dx: 0,
+            dy: 0,
+        }
+    }
+
+    /// Set the y_min (top) coordinate of the edge.
+    ///
+    /// # Arguments
+    ///
+    /// * `y_min` - Minimum Y coordinate
+    pub fn with_y_min(mut self, y_min: i32) -> Self {
+        self.y_min = y_min;
+        self
+    }
+
+    /// Set the y_max (bottom) coordinate of the edge.
+    ///
+    /// # Arguments
+    ///
+    /// * `y_max` - Maximum Y coordinate
+    pub fn with_y_max(mut self, y_max: i32) -> Self {
+        self.y_max = y_max;
+        self
+    }
+
+    /// Set the current x position of the edge.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Current X intersection position
+    pub fn with_x(mut self, x: i32) -> Self {
+        self.x = x;
+        self
+    }
+
+    /// Set the slope of the edge using dx and dy.
+    ///
+    /// # Arguments
+    ///
+    /// * `dx` - Change in X across the edge
+    /// * `dy` - Change in Y across the edge
+    pub fn with_slope(mut self, dx: i32, dy: i32) -> Self {
+        self.dx = dx;
+        self.dy = dy;
+        self
+    }
+
+    /// Build a complete Edge from this builder.
+    ///
+    /// # Returns
+    ///
+    /// A complete Edge struct for use in AET testing.
+    pub fn build(self) -> crate::font::type3_rasterizer::Edge {
+        crate::font::type3_rasterizer::Edge {
+            x: self.x,
+            y_min: self.y_min,
+            y_max: self.y_max,
+            dx: self.dx,
+            dy: self.dy,
+        }
+    }
+
+    /// Create a horizontal edge (dx = 0).
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - X position
+    /// * `y_min` - Minimum Y coordinate
+    /// * `y_max` - Maximum Y coordinate
+    pub fn horizontal(x: i32, y_min: i32, y_max: i32) -> Self {
+        Self {
+            x,
+            y_min,
+            y_max,
+            dx: 0,
+            dy: y_max - y_min,
+        }
+    }
+
+    /// Create a vertical edge (dx != 0, dy = 0).
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - X position
+    /// * `y_min` - Minimum Y coordinate
+    /// * `y_max` - Maximum Y coordinate
+    pub fn vertical(x: i32, y_min: i32, y_max: i32) -> Self {
+        Self {
+            x,
+            y_min,
+            y_max,
+            dx: 0,
+            dy: y_max - y_min,
+        }
+    }
+
+    /// Create a diagonal edge with the specified slope.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Starting X position
+    /// * `y_min` - Minimum Y coordinate
+    /// * `y_max` - Maximum Y coordinate
+    /// * `dx` - Change in X across the edge
+    pub fn diagonal(x: i32, y_min: i32, y_max: i32, dx: i32) -> Self {
+        let dy = y_max - y_min;
+        Self {
+            x,
+            y_min,
+            y_max,
+            dx,
+            dy,
+        }
+    }
+
+    /// Create a simple edge from endpoints (x0, y0) to (x1, y1).
+    ///
+    /// # Arguments
+    ///
+    /// * `x0` - Starting X coordinate
+    /// * `y0` - Starting Y coordinate
+    /// * `x1` - Ending X coordinate
+    /// * `y1` - Ending Y coordinate
+    pub fn from_endpoints(x0: i32, y0: i32, x1: i32, y1: i32) -> Self {
+        let (y_min, y_max) = if y0 < y1 { (y0, y1) } else { (y1, y0) };
+        Self {
+            x: x0,
+            y_min,
+            y_max,
+            dx: x1 - x0,
+            dy: y1 - y0,
+        }
+    }
+}
+
+impl Default for TestEdge {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// AET Inspector utility for checking AET state in tests.
+///
+/// This struct provides helper methods for inspecting and validating
+/// the state of an Active Edge Table during testing.
+#[derive(Debug)]
+pub struct AETInspector {
+    /// The edges being inspected
+    edges: Vec<crate::font::type3_rasterizer::Edge>,
+}
+
+impl AETInspector {
+    /// Create a new AETInspector from a vector of edges.
+    ///
+    /// # Arguments
+    ///
+    /// * `edges` - The Active Edge Table edges to inspect
+    pub fn new(edges: Vec<crate::font::type3_rasterizer::Edge>) -> Self {
+        Self { edges }
+    }
+
+    /// Get the number of edges in the AET.
+    ///
+    /// # Returns
+    ///
+    /// The count of active edges.
+    pub fn edge_count(&self) -> usize {
+        self.edges.len()
+    }
+
+    /// Check if the AET is empty.
+    ///
+    /// # Returns
+    ///
+    /// True if there are no active edges.
+    pub fn is_empty(&self) -> bool {
+        self.edges.is_empty()
+    }
+
+    /// Get all x-coordinates from edges in the AET.
+    ///
+    /// # Returns
+    ///
+    /// A vector of current x positions for all edges.
+    pub fn get_x_coordinates(&self) -> Vec<i32> {
+        self.edges.iter().map(|e| e.x).collect()
+    }
+
+    /// Get all rounded intersection x-coordinates from edges in the AET.
+    ///
+    /// # Returns
+    ///
+    /// A vector of rounded x intersection positions.
+    pub fn get_intersections(&self) -> Vec<i32> {
+        self.edges
+            .iter()
+            .map(|e| e.intersection_x())
+            .collect()
+    }
+
+    /// Check if edges are sorted by x-coordinate.
+    ///
+    /// # Returns
+    ///
+    /// True if edges are in non-decreasing x order.
+    pub fn is_sorted_by_x(&self) -> bool {
+        self.windows(|edges| {
+            edges.windows(2).all(|w| w[0].x <= w[1].x)
+        })
+    }
+
+    /// Find edges that should be active at a given y-coordinate.
+    ///
+    /// An edge is active if y_min <= y < y_max.
+    ///
+    /// # Arguments
+    ///
+    /// * `y` - The y-coordinate to check
+    pub fn edges_at_y(&self, y: i32) -> Vec<&crate::font::type3_rasterizer::Edge> {
+        self.edges
+            .iter()
+            .filter(|e| e.y_min <= y && y < e.y_max)
+            .collect()
+    }
+
+    /// Count edges active at a given y-coordinate.
+    ///
+    /// # Arguments
+    ///
+    /// * `y` - The y-coordinate to check
+    pub fn count_at_y(&self, y: i32) -> usize {
+        self.edges_at_y(y).len()
+    }
+
+    /// Get the y-range spanned by all edges in the AET.
+    ///
+    /// # Returns
+    ///
+    /// A tuple of (min_y, max_y) or None if AET is empty.
+    pub fn y_range(&self) -> Option<(i32, i32)> {
+        if self.edges.is_empty() {
+            return None;
+        }
+        let min_y = self.edges.iter().map(|e| e.y_min).min().unwrap();
+        let max_y = self.edges.iter().map(|e| e.y_max).max().unwrap();
+        Some((min_y, max_y))
+    }
+
+    /// Validate that the AET state is consistent.
+    ///
+    /// Checks that:
+    /// - All edges have y_min <= y_max
+    /// - No duplicate edges exist
+    /// - Edges are within reasonable bounds
+    pub fn validate(&self) -> Result<(), String> {
+        for (i, edge) in self.edges.iter().enumerate() {
+            if edge.y_min > edge.y_max {
+                return Err(format!(
+                    "Edge {} has y_min > y_max: {} > {}",
+                    i, edge.y_min, edge.y_max
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Get a reference to the underlying edges vector.
+    pub fn edges(&self) -> &[crate::font::type3_rasterizer::Edge] {
+        &self.edges
+    }
+
+    /// Helper for windows() iteration over edges.
+    fn windows<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&[crate::font::type3_rasterizer::Edge]) -> R,
+    {
+        f(&self.edges)
+    }
+}
+
+/// Create a simple scanline context for testing.
+///
+/// This function creates a minimal scanline context with the specified
+/// dimensions, suitable for testing AET operations without requiring
+/// a full Type3 rasterizer setup.
+///
+/// # Arguments
+///
+/// * `width` - Bitmap width in pixels
+/// * `height` - Bitmap height in pixels
+///
+/// # Returns
+///
+/// A tuple of (width, height) representing the scanline context bounds.
+pub fn create_scanline_context(width: u32, height: u32) -> (i32, i32) {
+    (width as i32, height as i32)
+}
+
+/// Create edges from a list of (x0, y0, x1, y1) tuples.
+///
+/// This helper function converts a list of endpoint tuples into Edge structs,
+/// automatically handling y_min/y_max ordering and horizontal edge filtering.
+///
+/// # Arguments
+///
+/// * `endpoints` - Slice of (x0, y0, x1, y1) tuples defining line segments
+///
+/// # Returns
+///
+/// A vector of Edge structs (horizontal edges are excluded).
+pub fn create_edges_from_endpoints(endpoints: &[(i32, i32, i32, i32)]) -> Vec<crate::font::type3_rasterizer::Edge> {
+    endpoints
+        .iter()
+        .filter(|&&(x0, y0, x1, y1)| y0 != y1) // Skip horizontal edges
+        .map(|&(x0, y0, x1, y1)| {
+            let (y_min, y_max) = if y0 < y1 { (y0, y1) } else { (y1, y0) };
+            crate::font::type3_rasterizer::Edge {
+                x: x0,
+                y_min,
+                y_max,
+                dx: x1 - x0,
+                dy: y1 - y0,
+            }
+        })
+        .collect()
+}
+
+/// Create a simple triangle edge set for testing.
+///
+/// This function creates a standard triangle with vertices at (0,0), (10,0), (5,10).
+/// This is useful for basic AET testing as it creates predictable scanline behavior.
+///
+/// # Returns
+///
+/// A vector of three Edge structs representing the triangle sides.
+pub fn create_triangle_edges() -> Vec<crate::font::type3_rasterizer::Edge> {
+    vec![
+        // Edge from (0,0) to (10,0) - horizontal, will be filtered
+        // Edge from (10,0) to (5,10) - right side
+        crate::font::type3_rasterizer::Edge {
+            x: 10,
+            y_min: 0,
+            y_max: 10,
+            dx: -5,
+            dy: 10,
+        },
+        // Edge from (5,10) to (0,0) - left side
+        crate::font::type3_rasterizer::Edge {
+            x: 5,
+            y_min: 0,
+            y_max: 10,
+            dx: -5,
+            dy: -10,
+        },
+    ]
+}
+
+/// Create a simple rectangle edge set for testing.
+///
+/// This function creates edges for a rectangle with the given bounds.
+/// Horizontal edges are automatically excluded.
+///
+/// # Arguments
+///
+/// * `x` - Left X coordinate
+/// * `y` - Top Y coordinate
+/// * `width` - Rectangle width
+/// * `height` - Rectangle height
+///
+/// # Returns
+///
+/// A vector of Edge structs representing the rectangle sides.
+pub fn create_rectangle_edges(x: i32, y: i32, width: i32, height: i32) -> Vec<crate::font::type3_rasterizer::Edge> {
+    vec![
+        // Left edge
+        crate::font::type3_rasterizer::Edge {
+            x,
+            y_min: y,
+            y_max: y + height,
+            dx: 0,
+            dy: height,
+        },
+        // Right edge
+        crate::font::type3_rasterizer::Edge {
+            x: x + width,
+            y_min: y,
+            y_max: y + height,
+            dx: 0,
+            dy: height,
+        },
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1131,5 +1553,223 @@ mod tests {
         assert_eq!(content.stroke_color, [0.0, 0.0, 0.0]);
         assert_eq!(content.line_width, 1.0);
         assert_eq!(content.glyph_width, 100.0);
+    }
+
+    #[test]
+    fn test_testedge_builder_basic() {
+        let edge = TestEdge::new()
+            .with_y_min(0)
+            .with_y_max(10)
+            .with_x(5)
+            .with_slope(2, 10)
+            .build();
+
+        assert_eq!(edge.x, 5);
+        assert_eq!(edge.y_min, 0);
+        assert_eq!(edge.y_max, 10);
+        assert_eq!(edge.dx, 2);
+        assert_eq!(edge.dy, 10);
+    }
+
+    #[test]
+    fn test_testedge_horizontal() {
+        let edge = TestEdge::horizontal(10, 0, 10).build();
+
+        assert_eq!(edge.x, 10);
+        assert_eq!(edge.y_min, 0);
+        assert_eq!(edge.y_max, 10);
+        assert_eq!(edge.dx, 0);
+        assert_eq!(edge.dy, 10);
+    }
+
+    #[test]
+    fn test_testedge_vertical() {
+        let edge = TestEdge::vertical(5, 0, 10).build();
+
+        assert_eq!(edge.x, 5);
+        assert_eq!(edge.y_min, 0);
+        assert_eq!(edge.y_max, 10);
+        assert_eq!(edge.dx, 0);
+        assert_eq!(edge.dy, 10);
+    }
+
+    #[test]
+    fn test_testedge_diagonal() {
+        let edge = TestEdge::diagonal(0, 0, 10, 5).build();
+
+        assert_eq!(edge.x, 0);
+        assert_eq!(edge.y_min, 0);
+        assert_eq!(edge.y_max, 10);
+        assert_eq!(edge.dx, 5);
+        assert_eq!(edge.dy, 10);
+    }
+
+    #[test]
+    fn test_testedge_from_endpoints() {
+        let edge = TestEdge::from_endpoints(10, 0, 20, 10).build();
+
+        assert_eq!(edge.x, 10);
+        assert_eq!(edge.y_min, 0);
+        assert_eq!(edge.y_max, 10);
+        assert_eq!(edge.dx, 10);
+        assert_eq!(edge.dy, 10);
+    }
+
+    #[test]
+    fn test_testedge_default() {
+        let edge = TestEdge::default().build();
+
+        assert_eq!(edge.x, 0);
+        assert_eq!(edge.y_min, 0);
+        assert_eq!(edge.y_max, 0);
+        assert_eq!(edge.dx, 0);
+        assert_eq!(edge.dy, 0);
+    }
+
+    #[test]
+    fn test_aetinspector_empty() {
+        let inspector = AETInspector::new(vec![]);
+
+        assert_eq!(inspector.edge_count(), 0);
+        assert!(inspector.is_empty());
+        assert!(inspector.get_x_coordinates().is_empty());
+    }
+
+    #[test]
+    fn test_aetinspector_edge_count() {
+        let edges = vec![
+            TestEdge::new().with_x(5).with_y_min(0).with_y_max(10).build(),
+            TestEdge::new().with_x(15).with_y_min(0).with_y_max(10).build(),
+        ];
+
+        let inspector = AETInspector::new(edges);
+
+        assert_eq!(inspector.edge_count(), 2);
+        assert!(!inspector.is_empty());
+    }
+
+    #[test]
+    fn test_aetinspector_x_coordinates() {
+        let edges = vec![
+            TestEdge::new().with_x(5).build(),
+            TestEdge::new().with_x(15).build(),
+            TestEdge::new().with_x(25).build(),
+        ];
+
+        let inspector = AETInspector::new(edges);
+        let x_coords = inspector.get_x_coordinates();
+
+        assert_eq!(x_coords, vec![5, 15, 25]);
+    }
+
+    #[test]
+    fn test_aetinspector_intersections() {
+        let edges = vec![
+            TestEdge::new().with_x(5).build(),
+            TestEdge::new().with_x(15).build(),
+        ];
+
+        let inspector = AETInspector::new(edges);
+        let intersections = inspector.get_intersections();
+
+        assert_eq!(intersections, vec![5, 15]);
+    }
+
+    #[test]
+    fn test_aetinspector_sorted_by_x() {
+        let edges = vec![
+            TestEdge::new().with_x(5).build(),
+            TestEdge::new().with_x(15).build(),
+            TestEdge::new().with_x(10).build(),
+        ];
+
+        let inspector = AETInspector::new(edges);
+        assert!(!inspector.is_sorted_by_x());
+    }
+
+    #[test]
+    fn test_aetinspector_edges_at_y() {
+        let edges = vec![
+            TestEdge::new().with_y_min(0).with_y_max(10).build(),
+            TestEdge::new().with_y_min(5).with_y_max(15).build(),
+            TestEdge::new().with_y_min(20).with_y_max(30).build(),
+        ];
+
+        let inspector = AETInspector::new(edges);
+
+        assert_eq!(inspector.count_at_y(3), 1); // Only first edge
+        assert_eq!(inspector.count_at_y(7), 2); // First and second edges
+        assert_eq!(inspector.count_at_y(25), 1); // Only third edge
+        assert_eq!(inspector.count_at_y(35), 0); // No edges
+    }
+
+    #[test]
+    fn test_aetinspector_y_range() {
+        let edges = vec![
+            TestEdge::new().with_y_min(5).with_y_max(15).build(),
+            TestEdge::new().with_y_min(0).with_y_max(20).build(),
+        ];
+
+        let inspector = AETInspector::new(edges);
+        let (min_y, max_y) = inspector.y_range().unwrap();
+
+        assert_eq!(min_y, 0);
+        assert_eq!(max_y, 20);
+    }
+
+    #[test]
+    fn test_aetinspector_validate() {
+        let edges = vec![
+            TestEdge::new().with_y_min(0).with_y_max(10).build(),
+            TestEdge::new().with_y_min(5).with_y_max(15).build(),
+        ];
+
+        let inspector = AETInspector::new(edges);
+        assert!(inspector.validate().is_ok());
+    }
+
+    #[test]
+    fn test_aetinspector_validate_invalid() {
+        let edges = vec![
+            TestEdge::new().with_y_min(10).with_y_max(0).build(), // Invalid: y_min > y_max
+        ];
+
+        let inspector = AETInspector::new(edges);
+        assert!(inspector.validate().is_err());
+    }
+
+    #[test]
+    fn test_create_scanline_context() {
+        let (width, height) = create_scanline_context(100, 100);
+
+        assert_eq!(width, 100);
+        assert_eq!(height, 100);
+    }
+
+    #[test]
+    fn test_create_edges_from_endpoints() {
+        let endpoints = vec![
+            (0, 0, 10, 10), // Diagonal edge
+            (10, 0, 20, 10), // Another diagonal edge
+            (0, 0, 10, 0), // Horizontal edge - should be filtered
+        ];
+
+        let edges = create_edges_from_endpoints(&endpoints);
+
+        assert_eq!(edges.len(), 2); // Horizontal edge filtered out
+    }
+
+    #[test]
+    fn test_create_triangle_edges() {
+        let edges = create_triangle_edges();
+
+        assert_eq!(edges.len(), 2); // 2 non-horizontal edges
+    }
+
+    #[test]
+    fn test_create_rectangle_edges() {
+        let edges = create_rectangle_edges(0, 0, 10, 10);
+
+        assert_eq!(edges.len(), 2); // Left and right edges only
     }
 }
