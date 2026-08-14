@@ -2333,7 +2333,12 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::font::type3_test_fixtures::create_glyph_dict_with_basic_properties;
+    use crate::font::type3_test_fixtures::{
+        create_basic_glyph_dict, create_charproc_stream_with_curves, create_empty_content_stream,
+        create_glyph_dict_with_basic_properties, create_main_content_stream, create_main_content_stream_multi,
+        create_minimal_glyph_dict, create_minimal_type3_font, create_rectangle_charproc_stream,
+        create_simple_charproc_stream, to_charprocs_map, Content, GlyphDict, GlyphEntry,
+    };
     use crate::parser::object::types::PdfDict;
 
     #[test]
