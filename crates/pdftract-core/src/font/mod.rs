@@ -22,6 +22,7 @@ pub mod unmapped;
 #[cfg(test)]
 mod type3_rasterizer_test;
 
+pub mod test_fixtures;
 pub mod test_glyph_helper;
 pub mod type3_test_fixtures;
 
