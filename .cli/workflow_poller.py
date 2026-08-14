@@ -30,6 +30,7 @@ import random
 from pathlib import Path
 from typing import Optional, List
 from dataclasses import dataclass
+from typing import Dict, Any
 
 
 class WorkflowPollingError(Exception):
@@ -55,6 +56,20 @@ class WorkflowStatus:
     def is_success(self) -> bool:
         """Check if workflow succeeded."""
         return self.phase == "Succeeded"
+
+
+@dataclass
+class WorkflowResult:
+    """Structured result from a completed workflow."""
+    exit_code: int  # 0 = pass, non-zero = fail
+    phase: str     # Succeeded, Failed, or Errored
+    output: str    # Full output log
+    result: str    # "pass" or "fail" from output parameters
+    message: Optional[str] = None  # Error message if failed
+
+    def is_success(self) -> bool:
+        """Check if workflow completed successfully."""
+        return self.exit_code == 0 and self.phase == "Succeeded" and self.result == "pass"
 
 
 class WorkflowPoller:
@@ -174,6 +189,160 @@ class WorkflowPoller:
             )
         except Exception as e:
             raise WorkflowPollingError(f"Failed to get workflow status: {e}")
+
+    def get_workflow_output_parameter(
+        self,
+        workflow_name: str,
+        parameter_name: str,
+        namespace: str = "argo-workflows"
+    ) -> Optional[str]:
+        """
+        Get a specific output parameter from a completed workflow.
+
+        Args:
+            workflow_name: Name of the workflow
+            parameter_name: Name of the output parameter to retrieve
+            namespace: Kubernetes namespace (default: argo-workflows)
+
+        Returns:
+            Parameter value as string, or None if not found
+        """
+        cmd = [
+            "kubectl",
+            "--kubeconfig", str(self.kubeconfig),
+            "get", "workflow", workflow_name,
+            "-n", namespace,
+            "-o", f"jsonpath='{{.status.outputs.parameters[?(@.name==\"{parameter_name}\")].value}}'"
+        ]
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=30
+            )
+
+            # Extract value (remove quotes if present)
+            value = result.stdout.strip().strip("'").strip('"')
+            return value if value else None
+
+        except subprocess.CalledProcessError:
+            # Parameter may not exist or workflow not complete
+            return None
+        except subprocess.TimeoutExpired as e:
+            raise WorkflowPollingError(f"kubectl command timed out: {e}")
+        except Exception as e:
+            raise WorkflowPollingError(f"Failed to get output parameter: {e}")
+
+    def get_workflow_outputs(
+        self,
+        workflow_name: str,
+        namespace: str = "argo-workflows"
+    ) -> Dict[str, str]:
+        """
+        Get all output parameters from a completed workflow.
+
+        Args:
+            workflow_name: Name of the workflow
+            namespace: Kubernetes namespace (default: argo-workflows)
+
+        Returns:
+            Dictionary mapping parameter names to values
+        """
+        outputs = {}
+
+        # Try to get common output parameters
+        for param_name in ["result", "output", "exit-code"]:
+            value = self.get_workflow_output_parameter(workflow_name, param_name, namespace)
+            if value is not None:
+                outputs[param_name] = value
+
+        return outputs
+
+    def get_rust_verify_result(
+        self,
+        workflow_name: str,
+        namespace: str = "argo-workflows"
+    ) -> WorkflowResult:
+        """
+        Get structured result from a rust-verify workflow.
+
+        Parses workflow output parameters to extract exit code and output.
+        The rust-verify workflow template provides:
+        - result: "pass" or "fail"
+        - output: Full build/test log
+
+        Args:
+            workflow_name: Name of the workflow
+            namespace: Kubernetes namespace (default: argo-workflows)
+
+        Returns:
+            WorkflowResult with exit_code, phase, output, and result
+
+        Raises:
+            WorkflowPollingError: If result cannot be extracted
+        """
+        # Get workflow phase
+        status = self.get_workflow_status(workflow_name, namespace)
+
+        # Get output parameters
+        outputs = self.get_workflow_outputs(workflow_name, namespace)
+
+        # Extract result (pass/fail)
+        result = outputs.get("result", "").lower()
+        if result not in ("pass", "fail"):
+            result = "fail"  # Default to fail if unclear
+
+        # Extract output log
+        output = outputs.get("output", "")
+
+        # Extract message if workflow failed
+        message = status.message
+        if not message and status.phase != "Succeeded":
+            message = f"Workflow completed with phase: {status.phase}"
+
+        # Determine exit code (0 for pass, 1 for fail)
+        exit_code = 0 if (status.phase == "Succeeded" and result == "pass") else 1
+
+        return WorkflowResult(
+            exit_code=exit_code,
+            phase=status.phase,
+            output=output,
+            result=result,
+            message=message
+        )
+
+    def poll_workflow_result(
+        self,
+        workflow_name: str,
+        namespace: str = "argo-workflows",
+        timeout: Optional[int] = None
+    ) -> WorkflowResult:
+        """
+        Poll workflow until completion and return structured result.
+
+        This is a convenience method that combines polling and result extraction
+        for a complete workflow execution result.
+
+        Args:
+            workflow_name: Name of the workflow to poll
+            namespace: Kubernetes namespace (default: argo-workflows)
+            timeout: Maximum time to wait in seconds (overrides instance timeout)
+
+        Returns:
+            WorkflowResult with exit code, phase, and output
+
+        Raises:
+            WorkflowTimeoutError: If workflow does not complete within timeout
+            WorkflowPollingError: If polling or result extraction fails
+        """
+        # First poll until completion
+        final_phase = self.poll_until_completion(workflow_name, namespace, timeout)
+
+        # Then get the structured result
+        return self.get_rust_verify_result(workflow_name, namespace)
 
     def poll_until_completion(
         self,
@@ -410,6 +579,45 @@ class WorkflowPoller:
         return "\n".join(all_logs)
 
 
+def poll_workflow_result(
+    workflow_name: str,
+    kubeconfig: Optional[str] = None,
+    timeout: int = 1800,
+    poll_interval: int = 10,
+    initial_poll_interval: int = 5,
+    max_poll_interval: int = 60,
+    jitter_percent: float = 0.2
+) -> WorkflowResult:
+    """
+    Convenience function to poll workflow and return structured result.
+
+    Args:
+        workflow_name: Name of the workflow to poll
+        kubeconfig: Path to kubectl config
+        timeout: Maximum time to wait in seconds (default: 1800)
+        poll_interval: DEPRECATED - Seconds between status checks (default: 10)
+        initial_poll_interval: Initial seconds between status checks (default: 5)
+        max_poll_interval: Maximum seconds between status checks (default: 60)
+        jitter_percent: Percentage of jitter to apply (default: 0.2 for ±20%)
+
+    Returns:
+        WorkflowResult with exit_code, phase, output, and result
+
+    Raises:
+        WorkflowTimeoutError: If workflow does not complete within timeout
+        WorkflowPollingError: If polling or result extraction fails
+    """
+    poller = WorkflowPoller(
+        kubeconfig=kubeconfig,
+        poll_interval=poll_interval,
+        timeout=timeout,
+        initial_poll_interval=initial_poll_interval,
+        max_poll_interval=max_poll_interval,
+        jitter_percent=jitter_percent
+    )
+    return poller.poll_workflow_result(workflow_name)
+
+
 def poll_workflow(
     workflow_name: str,
     kubeconfig: Optional[str] = None,
@@ -479,23 +687,24 @@ if __name__ == "__main__":
 
     # CLI interface for testing
     if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} <workflow-name> [--poll | --logs] [namespace] [timeout]")
+        print(f"Usage: {sys.argv[0]} <workflow-name> [--poll | --logs | --result] [namespace] [timeout]")
         print("  --poll: Poll workflow until completion (default)")
         print("  --logs: Collect logs from completed workflow")
+        print("  --result: Poll workflow and return structured result with exit code")
         sys.exit(1)
 
     workflow_name = sys.argv[1]
     mode = "poll"  # default mode
 
     # Check if mode is specified
-    if len(sys.argv) >= 3 and sys.argv[2] in ("--poll", "--logs"):
+    if len(sys.argv) >= 3 and sys.argv[2] in ("--poll", "--logs", "--result"):
         mode = sys.argv[2].lstrip("--")
         offset = 2
     else:
         offset = 0
 
-    namespace = sys.argv[offset + 2] if len(sys.argv) > offset + 1 else "argo-workflows"
-    timeout = int(sys.argv[offset + 3]) if len(sys.argv) > offset + 2 else 1800
+    namespace = sys.argv[offset + 2] if len(sys.argv) > offset + 2 else "argo-workflows"
+    timeout = int(sys.argv[offset + 3]) if len(sys.argv) > offset + 3 else 1800
 
     try:
         if mode == "poll":
@@ -507,6 +716,20 @@ if __name__ == "__main__":
             print(f"Logs from workflow '{workflow_name}':")
             print(logs)
             sys.exit(0)
+        elif mode == "result":
+            result = poll_workflow_result(workflow_name, timeout=timeout)
+            print(f"Workflow '{workflow_name}' completed:")
+            print(f"  Phase: {result.phase}")
+            print(f"  Exit Code: {result.exit_code}")
+            print(f"  Result: {result.result}")
+            if result.message:
+                print(f"  Message: {result.message}")
+            if result.output:
+                print(f"\nOutput:")
+                print(result.output[:1000])  # Print first 1000 chars
+                if len(result.output) > 1000:
+                    print(f"\n... ({len(result.output) - 1000} more characters)")
+            sys.exit(result.exit_code)
     except WorkflowTimeoutError as e:
         print(f"Timeout: {e}")
         sys.exit(2)

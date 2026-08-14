@@ -23,8 +23,10 @@ from workflow_poller import (
     WorkflowPollingError,
     WorkflowTimeoutError,
     WorkflowStatus,
+    WorkflowResult,
     poll_workflow,
-    collect_workflow_logs
+    collect_workflow_logs,
+    poll_workflow_result
 )
 
 
@@ -907,6 +909,389 @@ class TestConvenienceFunctions(unittest.TestCase):
                 logs = collect_workflow_logs("test-workflow", kubeconfig=temp_kubeconfig)
                 self.assertIn("=== Logs from test-pod ===", logs)
                 self.assertIn("Test log output", logs)
+        finally:
+            os.unlink(temp_kubeconfig)
+
+
+class TestWorkflowResult(unittest.TestCase):
+    """Tests for WorkflowResult dataclass."""
+
+    def test_workflow_result_success(self):
+        """Test WorkflowResult for successful workflow."""
+        result = WorkflowResult(
+            exit_code=0,
+            phase="Succeeded",
+            output="Build passed",
+            result="pass"
+        )
+        self.assertTrue(result.is_success())
+        self.assertEqual(result.exit_code, 0)
+        self.assertEqual(result.result, "pass")
+
+    def test_workflow_result_failure(self):
+        """Test WorkflowResult for failed workflow."""
+        result = WorkflowResult(
+            exit_code=1,
+            phase="Failed",
+            output="Build failed",
+            result="fail"
+        )
+        self.assertFalse(result.is_success())
+        self.assertEqual(result.exit_code, 1)
+        self.assertEqual(result.result, "fail")
+
+    def test_workflow_result_phase_mismatch(self):
+        """Test WorkflowResult when phase doesn't match result."""
+        # Succeeded phase but fail result should be failure
+        result = WorkflowResult(
+            exit_code=1,
+            phase="Succeeded",
+            output="Build failed",
+            result="fail"
+        )
+        self.assertFalse(result.is_success())
+
+
+class TestOutputParameterExtraction(unittest.TestCase):
+    """Tests for workflow output parameter extraction."""
+
+    def test_get_workflow_output_parameter_success(self):
+        """Test getting a specific output parameter."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            poller = WorkflowPoller(kubeconfig=temp_kubeconfig)
+
+            # Mock kubectl get workflow output parameter
+            mock_result = MagicMock()
+            mock_result.stdout = "'pass'"
+            mock_result.returncode = 0
+
+            with patch('subprocess.run', return_value=mock_result):
+                value = poller.get_workflow_output_parameter("test-workflow", "result")
+                self.assertEqual(value, "pass")
+        finally:
+            os.unlink(temp_kubeconfig)
+
+    def test_get_workflow_output_parameter_not_found(self):
+        """Test getting output parameter that doesn't exist."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            poller = WorkflowPoller(kubeconfig=temp_kubeconfig)
+
+            # Mock kubectl failure (parameter not found)
+            with patch('subprocess.run', side_effect=subprocess.CalledProcessError(1, 'kubectl')):
+                value = poller.get_workflow_output_parameter("test-workflow", "result")
+                self.assertIsNone(value)
+        finally:
+            os.unlink(temp_kubeconfig)
+
+    def test_get_workflow_outputs_multiple(self):
+        """Test getting multiple output parameters."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            poller = WorkflowPoller(kubeconfig=temp_kubeconfig)
+
+            call_count = [0]
+
+            def mock_kubectl(*args, **kwargs):
+                call_count[0] += 1
+                mock_result = MagicMock()
+                if call_count[0] == 1:
+                    mock_result.stdout = "'pass'"
+                elif call_count[0] == 2:
+                    mock_result.stdout = "'full output log'"
+                else:
+                    mock_result.stdout = "''"
+                mock_result.returncode = 0
+                return mock_result
+
+            with patch('subprocess.run', side_effect=mock_kubectl):
+                outputs = poller.get_workflow_outputs("test-workflow")
+                self.assertEqual(outputs.get("result"), "pass")
+                self.assertEqual(outputs.get("output"), "full output log")
+        finally:
+            os.unlink(temp_kubeconfig)
+
+
+class TestRustVerifyResultParsing(unittest.TestCase):
+    """Tests for rust-verify result parsing."""
+
+    def test_get_rust_verify_result_success(self):
+        """Test parsing successful rust-verify result."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            poller = WorkflowPoller(kubeconfig=temp_kubeconfig)
+
+            call_count = [0]
+
+            def mock_kubectl(*args, **kwargs):
+                call_count[0] += 1
+                mock_result = MagicMock()
+
+                # Check command arguments as strings
+                args_str = ' '.join(str(arg) for arg in args)
+
+                # Mock workflow status call
+                if "status.phase" in args_str:
+                    mock_result.stdout = "'Succeeded'"
+                # Mock output parameters
+                elif '"result"' in args_str and "outputs" in args_str:
+                    mock_result.stdout = "'pass'"
+                elif '"output"' in args_str and "outputs" in args_str:
+                    mock_result.stdout = "'Build successful'"
+                else:
+                    mock_result.stdout = "''"
+
+                mock_result.returncode = 0
+                return mock_result
+
+            with patch('subprocess.run', side_effect=mock_kubectl):
+                result = poller.get_rust_verify_result("test-workflow")
+                self.assertTrue(result.is_success())
+                self.assertEqual(result.exit_code, 0)
+                self.assertEqual(result.phase, "Succeeded")
+                self.assertEqual(result.result, "pass")
+                self.assertIn("Build successful", result.output)
+        finally:
+            os.unlink(temp_kubeconfig)
+
+    def test_get_rust_verify_result_failure(self):
+        """Test parsing failed rust-verify result."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            poller = WorkflowPoller(kubeconfig=temp_kubeconfig)
+
+            call_count = [0]
+
+            def mock_kubectl(*args, **kwargs):
+                call_count[0] += 1
+                mock_result = MagicMock()
+
+                # Check command arguments as strings
+                args_str = ' '.join(str(arg) for arg in args)
+
+                # Mock workflow status call
+                if "status.phase" in args_str:
+                    mock_result.stdout = "'Failed'"
+                # Mock output parameters
+                elif '"result"' in args_str and "outputs" in args_str:
+                    mock_result.stdout = "'fail'"
+                elif '"output"' in args_str and "outputs" in args_str:
+                    mock_result.stdout = "'Build failed: clippy warnings'"
+                else:
+                    mock_result.stdout = "''"
+
+                mock_result.returncode = 0
+                return mock_result
+
+            with patch('subprocess.run', side_effect=mock_kubectl):
+                result = poller.get_rust_verify_result("test-workflow")
+                self.assertFalse(result.is_success())
+                self.assertEqual(result.exit_code, 1)
+                self.assertEqual(result.phase, "Failed")
+                self.assertEqual(result.result, "fail")
+                self.assertIn("Build failed", result.output)
+        finally:
+            os.unlink(temp_kubeconfig)
+
+    def test_get_rust_verify_result_no_outputs(self):
+        """Test parsing when output parameters are missing."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            poller = WorkflowPoller(kubeconfig=temp_kubeconfig)
+
+            def mock_kubectl(*args, **kwargs):
+                mock_result = MagicMock()
+
+                # Check command arguments as strings
+                args_str = ' '.join(str(arg) for arg in args)
+
+                # Mock workflow status call
+                if "status.phase" in args_str:
+                    mock_result.stdout = "'Errored'"
+                else:
+                    # Output parameters not found
+                    raise subprocess.CalledProcessError(1, 'kubectl')
+
+                mock_result.returncode = 0
+                return mock_result
+
+            with patch('subprocess.run', side_effect=mock_kubectl):
+                result = poller.get_rust_verify_result("test-workflow")
+                self.assertFalse(result.is_success())
+                self.assertEqual(result.exit_code, 1)
+                self.assertEqual(result.phase, "Errored")
+                # Should default to "fail" when result not found
+                self.assertEqual(result.result, "fail")
+        finally:
+            os.unlink(temp_kubeconfig)
+
+
+class TestPollWorkflowResult(unittest.TestCase):
+    """Tests for poll_workflow_result method and convenience function."""
+
+    def test_poll_workflow_result_success(self):
+        """Test polling workflow and getting structured result (success)."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            poller = WorkflowPoller(kubeconfig=temp_kubeconfig, poll_interval=1, timeout=10)
+
+            call_count = [0]
+
+            def mock_kubectl(*args, **kwargs):
+                call_count[0] += 1
+                mock_result = MagicMock()
+
+                # Check command arguments as strings
+                args_str = ' '.join(str(arg) for arg in args)
+
+                # Mock workflow progression
+                if "status.phase" in args_str:
+                    if call_count[0] <= 2:
+                        mock_result.stdout = "'Running'"
+                    else:
+                        mock_result.stdout = "'Succeeded'"
+                # Mock output parameters
+                elif '"result"' in args_str and "outputs" in args_str:
+                    mock_result.stdout = "'pass'"
+                elif '"output"' in args_str and "outputs" in args_str:
+                    mock_result.stdout = "'Build OK'"
+                else:
+                    mock_result.stdout = "''"
+
+                mock_result.returncode = 0
+                return mock_result
+
+            with patch('subprocess.run', side_effect=mock_kubectl):
+                result = poller.poll_workflow_result("test-workflow")
+                self.assertTrue(result.is_success())
+                self.assertEqual(result.phase, "Succeeded")
+                self.assertEqual(result.result, "pass")
+        finally:
+            os.unlink(temp_kubeconfig)
+
+    def test_poll_workflow_result_failure(self):
+        """Test polling workflow and getting structured result (failure)."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            poller = WorkflowPoller(kubeconfig=temp_kubeconfig, poll_interval=1, timeout=10)
+
+            call_count = [0]
+
+            def mock_kubectl(*args, **kwargs):
+                call_count[0] += 1
+                mock_result = MagicMock()
+
+                # Check command arguments as strings
+                args_str = ' '.join(str(arg) for arg in args)
+
+                # Mock workflow progression
+                if "status.phase" in args_str:
+                    if call_count[0] <= 2:
+                        mock_result.stdout = "'Running'"
+                    else:
+                        mock_result.stdout = "'Failed'"
+                # Mock output parameters
+                elif '"result"' in args_str and "outputs" in args_str:
+                    mock_result.stdout = "'fail'"
+                elif '"output"' in args_str and "outputs" in args_str:
+                    mock_result.stdout = "'Test failed'"
+                else:
+                    mock_result.stdout = "''"
+
+                mock_result.returncode = 0
+                return mock_result
+
+            with patch('subprocess.run', side_effect=mock_kubectl):
+                result = poller.poll_workflow_result("test-workflow")
+                self.assertFalse(result.is_success())
+                self.assertEqual(result.phase, "Failed")
+                self.assertEqual(result.result, "fail")
+        finally:
+            os.unlink(temp_kubeconfig)
+
+    def test_poll_workflow_result_convenience_function(self):
+        """Test the poll_workflow_result convenience function."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            call_count = [0]
+
+            def mock_kubectl(*args, **kwargs):
+                call_count[0] += 1
+                mock_result = MagicMock()
+
+                # Check command arguments as strings
+                args_str = ' '.join(str(arg) for arg in args)
+
+                # Mock workflow progression
+                if "status.phase" in args_str:
+                    if call_count[0] == 1:
+                        mock_result.stdout = "'Running'"
+                    else:
+                        mock_result.stdout = "'Succeeded'"
+                # Mock output parameters
+                elif '"result"' in args_str and "outputs" in args_str:
+                    mock_result.stdout = "'pass'"
+                elif '"output"' in args_str and "outputs" in args_str:
+                    mock_result.stdout = "'Success'"
+                else:
+                    mock_result.stdout = "''"
+
+                mock_result.returncode = 0
+                return mock_result
+
+            with patch('subprocess.run', side_effect=mock_kubectl):
+                result = poll_workflow_result("test-workflow", kubeconfig=temp_kubeconfig, timeout=10, poll_interval=1)
+                self.assertTrue(result.is_success())
+                self.assertEqual(result.result, "pass")
+        finally:
+            os.unlink(temp_kubeconfig)
+
+    def test_poll_workflow_result_timeout(self):
+        """Test that timeout is raised during poll_workflow_result."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kubeconfig', delete=False) as f:
+            temp_kubeconfig = f.name
+            f.write("# mock kubeconfig\n")
+
+        try:
+            poller = WorkflowPoller(kubeconfig=temp_kubeconfig, poll_interval=1, timeout=3)
+
+            # Mock workflow that never completes
+            mock_result = MagicMock()
+            mock_result.stdout = "'Running'"
+            mock_result.returncode = 0
+
+            with patch('subprocess.run', return_value=mock_result):
+                with self.assertRaises(WorkflowTimeoutError) as cm:
+                    poller.poll_workflow_result("test-workflow")
+                self.assertIn("did not complete within", str(cm.exception))
         finally:
             os.unlink(temp_kubeconfig)
 
