@@ -103,3 +103,46 @@ pub fn type3_font_minimal() -> crate::font::type3::Type3Font {
         raster_cache: Arc::new(DashMap::new()),
     }
 }
+
+/// Creates a mock glyph dictionary (CharProcs) with basic properties.
+///
+/// This function creates a HashMap mapping glyph names to their object references,
+/// which is the core structure needed for Type3 glyph rendering. The dictionary
+/// contains a ".notdef" glyph (the standard PDF "missing glyph" symbol) as its
+/// entry, which can be populated with actual content stream data in subsequent
+/// test setup.
+///
+/// # Returns
+///
+/// A `HashMap<Arc<str>, ObjRef>` with:
+/// - ".notdef" mapped to ObjRef(1, 0) (placeholder reference to glyph stream)
+/// - Additional entries can be added as needed for specific test scenarios
+///
+/// # Use in Tests
+///
+/// ```rust
+/// use pdftract_core::font::test_fixtures::mock_glyph_dict;
+/// use std::sync::Arc;
+///
+/// let char_procs = mock_glyph_dict();
+/// assert!(char_procs.contains_key(".notdef"));
+/// assert_eq!(char_procs.len(), 1);
+///
+/// // Add more glyphs as needed
+/// char_procs.insert(Arc::from("A"), ObjRef::new(2, 0));
+/// ```
+///
+/// # Purpose
+///
+/// The glyph dictionary (CharProcs) maps character names to their drawing programs.
+/// Without it, the rasterizer has nothing to render. The ".notdef" glyph is a
+/// required glyph in PDF fonts that represents the "undefined character" - it's
+/// what gets rendered when a glyph name is not found in the font.
+pub fn mock_glyph_dict() -> HashMap<Arc<str>, ObjRef> {
+    let mut char_procs = HashMap::new();
+    // Add the standard ".notdef" glyph (PDF's "missing glyph" symbol)
+    // ObjRef(1, 0) is a placeholder reference - the actual content stream
+    // will be provided by the test resolver function
+    char_procs.insert(Arc::from(".notdef"), ObjRef::new(1, 0));
+    char_procs
+}
