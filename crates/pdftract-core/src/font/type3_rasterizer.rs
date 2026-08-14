@@ -4547,38 +4547,254 @@ mod tests {
     #[test]
     fn test_edge_removal_after_y_max() {
         // Test that edges are removed from AET when scanline passes y_max
-        use crate::parser::object::types::PdfDict;
-        use crate::font::type3::Type3Font;
+        use crate::parser::object::types::{intern, PdfDict};
 
-        let font_dict = PdfDict::new();
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(intern("/FontMatrix"), PdfObject::Array(Box::new(vec![
+            PdfObject::Real(1.0), PdfObject::Real(0.0),
+            PdfObject::Real(0.0), PdfObject::Real(1.0),
+            PdfObject::Real(0.0), PdfObject::Real(0.0),
+        ])));
+        font_dict.insert(intern("/FontBBox"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0), PdfObject::Integer(0),
+            PdfObject::Integer(31), PdfObject::Integer(31),
+        ])));
+
         let font = Type3Font::load(&font_dict);
         let mut ctx = RasterizerContext::new(&font);
 
-        // Create edges with different y_max values
-        // Edge 1: active from y=5 to y=10
-        // Edge 2: active from y=5 to y=15
+        // Create two triangles with different y_max values
+        // Triangle 1: (10, 5) -> (20, 5) -> (15, 10) -> (10, 5), y_min=5, y_max=10
+        // Triangle 2: (15, 5) -> (25, 5) -> (20, 15) -> (15, 5), y_min=5, y_max=15
         let edges = vec![
-            (10, 5, 20, 10),  // Edge 1: y_min=5, y_max=10
-            (15, 5, 25, 15),  // Edge 2: y_min=5, y_max=15
+            // Triangle 1 edges
+            (10, 5, 20, 5),
+            (20, 5, 15, 10),
+            (15, 10, 10, 5),
+            // Triangle 2 edges
+            (15, 5, 25, 5),
+            (25, 5, 20, 15),
+            (20, 15, 15, 5),
         ];
 
         ctx.fill_polygon(&edges);
 
-        // At y=10 (edge1 y_max): both edges should still be active (y <= y_max)
+        // At y=10 (triangle 1 y_max): both triangles should still be active (y <= y_max)
         let filled_at_10: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 10) == Some(0)).collect();
-        assert!(!filled_at_10.is_empty(), "Pixels should be filled at y=10 (both edges at y_max)");
+        assert!(!filled_at_10.is_empty(), "Pixels should be filled at y=10 (both triangles at y_max)");
+        assert!(filled_at_10.contains(&15), "Triangle 1 apex at x=15 should be filled at y=10");
+        assert!(filled_at_10.contains(&20), "Triangle 2 area should be filled at y=10");
 
-        // At y=11 (after edge1 y_max): only edge2 should be active
+        // At y=11 (after triangle 1 y_max): only triangle 2 should be active
         let filled_at_11: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 11) == Some(0)).collect();
-        assert!(!filled_at_11.is_empty(), "Pixels should be filled at y=11 (edge2 still active)");
+        assert!(!filled_at_11.is_empty(), "Pixels should be filled at y=11 (triangle 2 still active)");
+        assert!(!filled_at_11.contains(&15), "Triangle 1 should be removed after y_max=10");
+        assert!(filled_at_11.contains(&20), "Triangle 2 should still be active at y=11");
 
-        // At y=15 (edge2 y_max): edge2 should still be active (y <= y_max)
+        // At y=15 (triangle 2 y_max): triangle 2 should still be active (y <= y_max)
         let filled_at_15: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 15) == Some(0)).collect();
-        assert!(!filled_at_15.is_empty(), "Pixels should be filled at y=15 (edge2 at y_max)");
+        assert!(!filled_at_15.is_empty(), "Pixels should be filled at y=15 (triangle 2 at y_max)");
+        assert!(filled_at_15.contains(&20), "Triangle 2 apex should be filled at y=15");
 
-        // At y=16 (after edge2 y_max): no edges should be active
+        // At y=16 (after triangle 2 y_max): no edges should be active
         let filled_at_16: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 16) == Some(0)).collect();
         assert!(filled_at_16.is_empty(), "No pixels should be filled at y=16 (after all y_max)");
+    }
+
+    #[test]
+    fn test_edge_removal_single_edge_various_y_max() {
+        // Test edge removal at various y_max positions
+        use crate::parser::object::types::{intern, PdfDict};
+
+        for y_max in [1, 5, 10, 15, 20, 30] {
+            let mut font_dict = PdfDict::new();
+            font_dict.insert(intern("/FontMatrix"), PdfObject::Array(Box::new(vec![
+                PdfObject::Real(1.0), PdfObject::Real(0.0),
+                PdfObject::Real(0.0), PdfObject::Real(1.0),
+                PdfObject::Real(0.0), PdfObject::Real(0.0),
+            ])));
+            font_dict.insert(intern("/FontBBox"), PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(0), PdfObject::Integer(0),
+                PdfObject::Integer(31), PdfObject::Integer(31),
+            ])));
+
+            let font = Type3Font::load(&font_dict);
+            let mut ctx = RasterizerContext::new(&font);
+
+            // Create a triangle with the target y_max
+            // Triangle: (10, 0) -> (20, 0) -> (15, y_max) -> (10, 0)
+            let edges = vec![
+                (10, 0, 20, 0),
+                (20, 0, 15, y_max as i32),
+                (15, y_max as i32, 10, 0),
+            ];
+
+            ctx.fill_polygon(&edges);
+
+            // Edge should be active at y_max (pixel should be filled)
+            let filled_at_y_max: Vec<i32> = (0..32)
+                .filter(|&x| ctx.bitmap.get(x, y_max as i32) == Some(0))
+                .collect();
+            assert!(!filled_at_y_max.is_empty(),
+                "At y_max={}: pixels should be filled (edge still active)", y_max);
+
+            // Edge should be removed at y_max + 1 (no pixels filled from this edge)
+            if y_max < 31 {
+                let filled_at_y_max_plus_1: Vec<i32> = (0..32)
+                    .filter(|&x| ctx.bitmap.get(x, (y_max + 1) as i32) == Some(0))
+                    .collect();
+                assert!(filled_at_y_max_plus_1.is_empty(),
+                    "At y_max+1={}: no pixels should be filled (edge removed)", y_max + 1);
+            }
+        }
+    }
+
+    #[test]
+    fn test_edge_removal_multiple_edges_different_y_max() {
+        // Test multiple edges with different y_max values
+        use crate::parser::object::types::{intern, PdfDict};
+
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(intern("/FontMatrix"), PdfObject::Array(Box::new(vec![
+            PdfObject::Real(1.0), PdfObject::Real(0.0),
+            PdfObject::Real(0.0), PdfObject::Real(1.0),
+            PdfObject::Real(0.0), PdfObject::Real(0.0),
+        ])));
+        font_dict.insert(intern("/FontBBox"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0), PdfObject::Integer(0),
+            PdfObject::Integer(31), PdfObject::Integer(31),
+        ])));
+
+        let font = Type3Font::load(&font_dict);
+        let mut ctx = RasterizerContext::new(&font);
+
+        // Create three triangles with different y_max values
+        // Triangle 1: y_min=0, y_max=10  (centered at x=10)
+        // Triangle 2: y_min=0, y_max=20  (centered at x=15)
+        // Triangle 3: y_min=0, y_max=30  (centered at x=20)
+        let edges = vec![
+            // Triangle 1: (5, 0) -> (15, 0) -> (10, 10) -> (5, 0)
+            (5, 0, 15, 0),
+            (15, 0, 10, 10),
+            (10, 10, 5, 0),
+            // Triangle 2: (12, 0) -> (18, 0) -> (15, 20) -> (12, 0)
+            (12, 0, 18, 0),
+            (18, 0, 15, 20),
+            (15, 20, 12, 0),
+            // Triangle 3: (17, 0) -> (23, 0) -> (20, 30) -> (17, 0)
+            (17, 0, 23, 0),
+            (23, 0, 20, 30),
+            (20, 30, 17, 0),
+        ];
+
+        ctx.fill_polygon(&edges);
+
+        // At y=10: All three triangles should be active (y <= y_max)
+        let filled_at_10: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 10) == Some(0)).collect();
+        assert!(!filled_at_10.is_empty(), "Pixels should be filled at y=10");
+        assert!(filled_at_10.contains(&10), "Triangle 1 apex should be filled at y=10");
+        assert!(filled_at_10.contains(&15), "Triangle 2 area should be filled at y=10");
+        assert!(filled_at_10.contains(&20), "Triangle 3 area should be filled at y=10");
+
+        // At y=11: Triangle 1 should be removed (y > y_max=10)
+        let filled_at_11: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 11) == Some(0)).collect();
+        assert!(!filled_at_11.contains(&10), "Triangle 1 should be removed after y_max=10");
+        assert!(filled_at_11.contains(&15), "Triangle 2 should still be active at y=11");
+        assert!(filled_at_11.contains(&20), "Triangle 3 should still be active at y=11");
+
+        // At y=21: Triangle 2 should be removed (y > y_max=20)
+        let filled_at_21: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 21) == Some(0)).collect();
+        assert!(!filled_at_21.contains(&10), "Triangle 1 should still be removed at y=21");
+        assert!(!filled_at_21.contains(&15), "Triangle 2 should be removed after y_max=20");
+        assert!(filled_at_21.contains(&20), "Triangle 3 should still be active at y=21");
+
+        // At y=31: All triangles should be removed (y > all y_max values)
+        let filled_at_31: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 31) == Some(0)).collect();
+        assert!(filled_at_31.is_empty(), "No pixels should be filled at y=31 (all edges removed)");
+    }
+
+    #[test]
+    fn test_edge_removal_aet_empty_after_all_edges() {
+        // Test that AET is empty after all edges removed
+        use crate::parser::object::types::{intern, PdfDict};
+
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(intern("/FontMatrix"), PdfObject::Array(Box::new(vec![
+            PdfObject::Real(1.0), PdfObject::Real(0.0),
+            PdfObject::Real(0.0), PdfObject::Real(1.0),
+            PdfObject::Real(0.0), PdfObject::Real(0.0),
+        ])));
+        font_dict.insert(intern("/FontBBox"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0), PdfObject::Integer(0),
+            PdfObject::Integer(31), PdfObject::Integer(31),
+        ])));
+
+        let font = Type3Font::load(&font_dict);
+        let mut ctx = RasterizerContext::new(&font);
+
+        // Create a single small triangle at the bottom of the bounding box
+        // Triangle: (10, 0) -> (20, 0) -> (15, 5) -> (10, 0), y_min=0, y_max=5
+        let edges = vec![
+            (10, 0, 20, 0),
+            (20, 0, 15, 5),
+            (15, 5, 10, 0),
+        ];
+
+        ctx.fill_polygon(&edges);
+
+        // Verify active at y_max
+        let filled_at_5: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 5) == Some(0)).collect();
+        assert!(!filled_at_5.is_empty(), "Pixels should be filled at y_max=5");
+
+        // Verify removed immediately after y_max
+        let filled_at_6: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 6) == Some(0)).collect();
+        assert!(filled_at_6.is_empty(), "No pixels should be filled at y=6 (after y_max=5)");
+
+        // Verify AET remains empty for all subsequent scanlines
+        for y in 7..32 {
+            let filled_at_y: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, y) == Some(0)).collect();
+            assert!(filled_at_y.is_empty(),
+                "AET should remain empty at y={} (all edges removed since y=6)", y);
+        }
+    }
+
+    #[test]
+    fn test_edge_removal_edge_presence_at_y_max() {
+        // Test that edges are present in AET at y_max scanline
+        use crate::parser::object::types::{intern, PdfDict};
+
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(intern("/FontMatrix"), PdfObject::Array(Box::new(vec![
+            PdfObject::Real(1.0), PdfObject::Real(0.0),
+            PdfObject::Real(0.0), PdfObject::Real(1.0),
+            PdfObject::Real(0.0), PdfObject::Real(0.0),
+        ])));
+        font_dict.insert(intern("/FontBBox"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0), PdfObject::Integer(0),
+            PdfObject::Integer(31), PdfObject::Integer(31),
+        ])));
+
+        let font = Type3Font::load(&font_dict);
+        let mut ctx = RasterizerContext::new(&font);
+
+        // Create a triangle with specific y_max=15
+        // Triangle: (10, 5) -> (20, 5) -> (15, 15) -> (10, 5)
+        let edges = vec![
+            (10, 5, 20, 5),
+            (20, 5, 15, 15),
+            (15, 15, 10, 5),
+        ];
+
+        ctx.fill_polygon(&edges);
+
+        // At y=15 (y_max): Edge should still be active
+        let filled_at_15: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 15) == Some(0)).collect();
+        assert!(!filled_at_15.is_empty(), "Edge should be present in AET at y_max=15");
+        assert!(filled_at_15.contains(&15), "Apex should be filled at y_max=15");
+
+        // At y=16 (y_max+1): Edge should be absent from AET
+        let filled_at_16: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 16) == Some(0)).collect();
+        assert!(filled_at_16.is_empty(), "Edge should be absent from AET at y_max+1=16");
     }
 
     #[test]
@@ -7075,5 +7291,718 @@ mod tests {
         // - glyph dict fixtures (create_minimal_glyph_dict, create_basic_glyph_dict, etc.)
         // - charproc fixtures (create_simple_charproc_stream, create_rectangle_charproc_stream, etc.)
         // - content stream fixtures (create_empty_content_stream, create_main_content_stream, etc.)
+    }
+
+    #[test]
+    fn test_edge_properties_preserved_at_y_min() {
+        // Test that edge properties (x, y_max, slope) are preserved when edge is activated at y_min
+        use crate::parser::object::types::PdfDict;
+        use crate::font::type3::Type3Font;
+
+        let font_dict = PdfDict::new();
+        let font = Type3Font::load(&font_dict);
+        let mut ctx = RasterizerContext::new(&font);
+
+        // Create a diagonal edge with known properties:
+        // From (10, 8) to (20, 12)
+        // Properties: x=10, y_min=8, y_max=12, dx=10, dy=2, slope=dx/dy=5
+        let edges = vec![(10, 8, 20, 12)];
+
+        ctx.fill_polygon(&edges);
+
+        // Verify initial x position is preserved at y_min
+        // At y=8 (y_min), the edge should start at x=10
+        let filled_at_8: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 8) == Some(0)).collect();
+        assert!(!filled_at_8.is_empty(), "Edge should be active at y_min=8");
+        assert!(filled_at_8.contains(&10), "Initial x position (10) should be preserved at y_min");
+
+        // Verify slope is preserved - x should increment by dx/dy = 10/2 = 5 each scanline
+        // At y=9: x should be 10 + 5 = 15
+        let filled_at_9: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 9) == Some(0)).collect();
+        assert!(!filled_at_9.is_empty(), "Edge should still be active at y=9");
+        assert!(filled_at_9.contains(&15), "X position should increment by slope (15 at y=9)");
+
+        // At y=10: x should be 10 + 2*5 = 20
+        let filled_at_10: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 10) == Some(0)).collect();
+        assert!(!filled_at_10.is_empty(), "Edge should still be active at y=10");
+        assert!(filled_at_10.contains(&20), "X position should continue incrementing (20 at y=10)");
+
+        // Verify y_max is preserved - edge should deactivate at y_max
+        // At y=12 (y_max): edge should still be active
+        let filled_at_12: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 12) == Some(0)).collect();
+        assert!(!filled_at_12.is_empty(), "Edge should still be active at y_max=12");
+
+        // At y=13 (after y_max): edge should be inactive
+        let filled_at_13: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 13) == Some(0)).collect();
+        assert!(filled_at_13.is_empty(), "Edge should be inactive after y_max=12");
+    }
+
+    #[test]
+    fn test_multiple_edges_activation_at_respective_y_mins() {
+        // Test that multiple edges are activated at their respective y_min values with correct properties
+        use crate::parser::object::types::PdfDict;
+        use crate::font::type3::Type3Font;
+
+        let font_dict = PdfDict::new();
+        let font = Type3Font::load(&font_dict);
+        let mut ctx = RasterizerContext::new(&font);
+
+        // Create three edges with different y_min values:
+        // Edge 1: (5, 5) to (10, 10) - y_min=5, y_max=10, slope=1
+        // Edge 2: (15, 8) to (25, 13) - y_min=8, y_max=13, slope=2
+        // Edge 3: (8, 12) to (18, 17) - y_min=12, y_max=17, slope=2
+        let edges = vec![
+            (5, 5, 10, 10),
+            (15, 8, 25, 13),
+            (8, 12, 18, 17),
+        ];
+
+        ctx.fill_polygon(&edges);
+
+        // At y=4 (before any y_min): no edges should be active
+        let filled_at_4: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 4) == Some(0)).collect();
+        assert!(filled_at_4.is_empty(), "No edges should be active before y=5");
+
+        // At y=5 (edge1 y_min): only edge1 should be active at x=5
+        let filled_at_5: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 5) == Some(0)).collect();
+        assert!(!filled_at_5.is_empty(), "Edge1 should be active at y_min=5");
+        assert!(filled_at_5.contains(&5), "Edge1 initial x=5 should be preserved");
+        assert!(!filled_at_5.contains(&15), "Edge2 should not be active at y=5");
+
+        // At y=8 (edge2 y_min): edge1 and edge2 should both be active
+        let filled_at_8: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 8) == Some(0)).collect();
+        assert!(!filled_at_8.is_empty(), "Multiple edges should be active at y=8");
+        // Edge1 at y=8: x = 5 + 3*1 = 8
+        assert!(filled_at_8.contains(&8), "Edge1 x position should be 8 at y=8");
+        // Edge2 at y=8: x = 15 (initial)
+        assert!(filled_at_8.contains(&15), "Edge2 should be active at its y_min=8 with x=15");
+
+        // At y=12 (edge3 y_min): all three edges should be active
+        let filled_at_12: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 12) == Some(0)).collect();
+        assert!(!filled_at_12.is_empty(), "All edges should be active at y=12");
+        // Edge1 at y=12: x = 5 + 7*1 = 12 (but y_max=10, so edge1 should be gone)
+        assert!(!filled_at_12.contains(&12), "Edge1 should be inactive after y_max=10");
+        // Edge2 at y=12: x = 15 + 4*2 = 23
+        assert!(filled_at_12.contains(&23), "Edge2 x position should be 23 at y=12");
+        // Edge3 at y=12: x = 8 (initial)
+        assert!(filled_at_12.contains(&8), "Edge3 should be active at its y_min=12 with x=8");
+
+        // At y=14 (after edge1 y_max, edge2 and edge3 active):
+        let filled_at_14: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 14) == Some(0)).collect();
+        assert!(!filled_at_14.is_empty(), "Some edges should still be active at y=14");
+        // Edge2 at y=14: x = 15 + 6*2 = 27
+        assert!(filled_at_14.contains(&27), "Edge2 x position should be 27 at y=14");
+        // Edge3 at y=14: x = 8 + 2*2 = 12
+        assert!(filled_at_14.contains(&12), "Edge3 x position should be 12 at y=14");
+    }
+
+    #[test]
+    fn test_edge_activation_multiple_y_min_positions() {
+        // Test that multiple edges are activated at their respective y_min positions
+        use crate::parser::object::types::{intern, PdfDict};
+
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(intern("/FontMatrix"), PdfObject::Array(Box::new(vec![
+            PdfObject::Real(1.0), PdfObject::Real(0.0),
+            PdfObject::Real(0.0), PdfObject::Real(1.0),
+            PdfObject::Real(0.0), PdfObject::Real(0.0),
+        ])));
+        font_dict.insert(intern("/FontBBox"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0), PdfObject::Integer(0),
+            PdfObject::Integer(31), PdfObject::Integer(31),
+        ])));
+
+        let font = Type3Font::load(&font_dict);
+        let mut ctx = RasterizerContext::new(&font);
+
+        // Create a triangle with vertices at different y levels
+        // Triangle: (5, 5) -> (25, 5) -> (15, 25) -> (5, 5)
+        // This creates edges with y_min at 5 and 15
+        let edges = vec![
+            (5, 5, 25, 5),    // Top edge (horizontal, will be skipped)
+            (25, 5, 15, 25),  // Right edge: y_min=5, y_max=25
+            (15, 25, 5, 5),   // Left edge: y_min=5, y_max=25
+        ];
+
+        ctx.fill_polygon(&edges);
+
+        // At y=4: No edges should be active (before y_min)
+        let filled_at_4: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 4) == Some(0)).collect();
+        assert_eq!(filled_at_4.len(), 0, "No edges should be active before y=5");
+
+        // At y=5: Both edges should be active (at their y_min=5)
+        let filled_at_5: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 5) == Some(0)).collect();
+        assert!(!filled_at_5.is_empty(), "Edges should be active at y_min=5");
+        // The triangle spans from x=5 to x=25 at y=5
+        assert!(filled_at_5.contains(&5), "Triangle should include x=5 at y=5");
+        assert!(filled_at_5.contains(&25), "Triangle should include x=25 at y=5");
+    }
+
+    #[test]
+    fn test_edge_activation_at_y_min_zero() {
+        // Test that edges with y_min = 0 are activated at the first scanline
+        use crate::parser::object::types::{intern, PdfDict};
+
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(intern("/FontMatrix"), PdfObject::Array(Box::new(vec![
+            PdfObject::Real(1.0), PdfObject::Real(0.0),
+            PdfObject::Real(0.0), PdfObject::Real(1.0),
+            PdfObject::Real(0.0), PdfObject::Real(0.0),
+        ])));
+        font_dict.insert(intern("/FontBBox"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0), PdfObject::Integer(0),
+            PdfObject::Integer(31), PdfObject::Integer(31),
+        ])));
+
+        let font = Type3Font::load(&font_dict);
+        let mut ctx = RasterizerContext::new(&font);
+
+        // Triangle starting at y=0: (10, 0) -> (20, 0) -> (15, 10) -> (10, 0)
+        let edges = vec![
+            (10, 0, 20, 0),   // Top edge (horizontal, will be skipped)
+            (20, 0, 15, 10),  // Right edge: y_min=0, y_max=10
+            (15, 10, 10, 0),  // Left edge: y_min=0, y_max=10
+        ];
+
+        ctx.fill_polygon(&edges);
+
+        // At y=0: Edges should be active immediately
+        let filled_at_0: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 0) == Some(0)).collect();
+        assert!(!filled_at_0.is_empty(), "Edges with y_min=0 should be active at first scanline");
+        assert!(filled_at_0.contains(&10), "Triangle should include x=10 at y=0");
+        assert!(filled_at_0.contains(&20), "Triangle should include x=20 at y=0");
+    }
+
+    #[test]
+    fn test_edge_activation_multiple_edges_same_y_min() {
+        // Test that multiple edges with the same y_min are all activated
+        use crate::parser::object::types::{intern, PdfDict};
+
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(intern("/FontMatrix"), PdfObject::Array(Box::new(vec![
+            PdfObject::Real(1.0), PdfObject::Real(0.0),
+            PdfObject::Real(0.0), PdfObject::Real(1.0),
+            PdfObject::Real(0.0), PdfObject::Real(0.0),
+        ])));
+        font_dict.insert(intern("/FontBBox"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0), PdfObject::Integer(0),
+            PdfObject::Integer(31), PdfObject::Integer(31),
+        ])));
+
+        let font = Type3Font::load(&font_dict);
+        let mut ctx = RasterizerContext::new(&font);
+
+        // Triangle with all edges starting at y_min = 10
+        // Triangle: (5, 10) -> (25, 10) -> (15, 20) -> (5, 10)
+        let edges = vec![
+            (5, 10, 25, 10),  // Top edge (horizontal, will be skipped)
+            (25, 10, 15, 20), // Right edge: y_min=10, y_max=20
+            (15, 20, 5, 10),  // Left edge: y_min=10, y_max=20
+        ];
+
+        ctx.fill_polygon(&edges);
+
+        // At y=9: No edges should be active
+        let filled_at_9: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 9) == Some(0)).collect();
+        assert_eq!(filled_at_9.len(), 0, "No edges should be active before y=10");
+
+        // At y=10: Both edges should be active
+        let filled_at_10: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 10) == Some(0)).collect();
+        assert!(!filled_at_10.is_empty(), "Edges should be active at y=10");
+        assert!(filled_at_10.contains(&5), "Triangle should include x=5 at y=10");
+        assert!(filled_at_10.contains(&25), "Triangle should include x=25 at y=10");
+    }
+
+    #[test]
+    fn test_edge_property_preservation_at_activation() {
+        // Test that edge properties (x, y_max, slope) are preserved when activated
+        use crate::parser::object::types::{intern, PdfDict};
+
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(intern("/FontMatrix"), PdfObject::Array(Box::new(vec![
+            PdfObject::Real(1.0), PdfObject::Real(0.0),
+            PdfObject::Real(0.0), PdfObject::Real(1.0),
+            PdfObject::Real(0.0), PdfObject::Real(0.0),
+        ])));
+        font_dict.insert(intern("/FontBBox"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0), PdfObject::Integer(0),
+            PdfObject::Integer(31), PdfObject::Integer(31),
+        ])));
+
+        let font = Type3Font::load(&font_dict);
+        let mut ctx = RasterizerContext::new(&font);
+
+        // Triangle to test edge with slope = 1.0
+        // Triangle: (10, 10) -> (20, 10) -> (15, 20) -> (10, 10)
+        // Right edge: (20, 10) -> (15, 20), slope = -5/10 = -0.5
+        // Left edge: (15, 20) -> (10, 10), slope = -5/-10 = 0.5
+        let edges = vec![
+            (10, 10, 20, 10), // Top edge (horizontal, will be skipped)
+            (20, 10, 15, 20), // Right edge: y_min=10, y_max=20
+            (15, 20, 10, 10), // Left edge: y_min=10, y_max=20
+        ];
+
+        ctx.fill_polygon(&edges);
+
+        // At y=10 (activation): triangle spans from x=10 to x=20
+        assert_eq!(ctx.bitmap.get(10, 10), Some(0), "Triangle should include x=10 at activation");
+        assert_eq!(ctx.bitmap.get(20, 10), Some(0), "Triangle should include x=20 at activation");
+
+        // At y=15: triangle is narrower (slopes converge)
+        // Right edge at y=15: x = 20 + (-0.5 * 5) = 17.5 ≈ 18
+        // Left edge at y=15: x = 15 + (0.5 * -5) = 12.5 ≈ 13
+        let filled_at_15: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 15) == Some(0)).collect();
+        assert!(filled_at_15.contains(&13), "Left edge should advance with slope");
+        assert!(filled_at_15.contains(&18), "Right edge should advance with slope");
+
+        // At y=20 (y_max): triangle converges to point at x=15
+        assert_eq!(ctx.bitmap.get(15, 20), Some(0), "Triangle should converge at apex");
+
+        // At y=21: Edge should be removed (after y_max)
+        assert_eq!(ctx.bitmap.get(15, 21), Some(255), "Edge should be removed after y_max");
+    }
+
+    #[test]
+    fn test_edge_activation_negative_slope() {
+        // Test edge activation with negative slope (edges that go left as y increases)
+        use crate::parser::object::types::{intern, PdfDict};
+
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(intern("/FontMatrix"), PdfObject::Array(Box::new(vec![
+            PdfObject::Real(1.0), PdfObject::Real(0.0),
+            PdfObject::Real(0.0), PdfObject::Real(1.0),
+            PdfObject::Real(0.0), PdfObject::Real(0.0),
+        ])));
+        font_dict.insert(intern("/FontBBox"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0), PdfObject::Integer(0),
+            PdfObject::Integer(31), PdfObject::Integer(31),
+        ])));
+
+        let font = Type3Font::load(&font_dict);
+        let mut ctx = RasterizerContext::new(&font);
+
+        // Triangle with negative slopes: (10, 10) -> (30, 10) -> (20, 20) -> (10, 10)
+        // Right edge: (30, 10) -> (20, 20), slope = -10/10 = -1.0
+        // Left edge: (20, 20) -> (10, 10), slope = -10/-10 = 1.0
+        let edges = vec![
+            (10, 10, 30, 10), // Top edge (horizontal, will be skipped)
+            (30, 10, 20, 20), // Right edge: y_min=10, y_max=20, negative slope
+            (20, 20, 10, 10), // Left edge: y_min=10, y_max=20, positive slope
+        ];
+
+        ctx.fill_polygon(&edges);
+
+        // At y=10 (activation): triangle spans from x=10 to x=30
+        let filled_at_10: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 10) == Some(0)).collect();
+        assert!(filled_at_10.contains(&10), "Triangle should include x=10 at activation");
+        assert!(filled_at_10.contains(&30), "Triangle should include x=30 at activation");
+
+        // At y=15: right edge has moved left (negative slope)
+        // Right edge at y=15: x = 30 + (-1.0 * 5) = 25
+        // Left edge at y=15: x = 20 + (1.0 * -5) = 15
+        let filled_at_15: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 15) == Some(0)).collect();
+        assert!(filled_at_15.contains(&15), "Left edge should advance");
+        assert!(filled_at_15.contains(&25), "Right edge should advance left (negative slope)");
+
+        // At y=20 (y_max): triangle converges to point at x=20
+        assert_eq!(ctx.bitmap.get(20, 20), Some(0), "Triangle should converge at apex");
+    }
+
+    #[test]
+    fn test_edge_activation_high_slope() {
+        // Test edge activation with steep slope (> 1.0)
+        use crate::parser::object::types::{intern, PdfDict};
+
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(intern("/FontMatrix"), PdfObject::Array(Box::new(vec![
+            PdfObject::Real(1.0), PdfObject::Real(0.0),
+            PdfObject::Real(0.0), PdfObject::Real(1.0),
+            PdfObject::Real(0.0), PdfObject::Real(0.0),
+        ])));
+        font_dict.insert(intern("/FontBBox"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0), PdfObject::Integer(0),
+            PdfObject::Integer(31), PdfObject::Integer(31),
+        ])));
+
+        let font = Type3Font::load(&font_dict);
+        let mut ctx = RasterizerContext::new(&font);
+
+        // Triangle with high slope: (5, 10) -> (25, 10) -> (15, 15) -> (5, 10)
+        // Right edge: (25, 10) -> (15, 15), slope = -10/5 = -2.0
+        // Left edge: (15, 15) -> (5, 10), slope = -10/-5 = 2.0
+        let edges = vec![
+            (5, 10, 25, 10),  // Top edge (horizontal, will be skipped)
+            (25, 10, 15, 15), // Right edge: y_min=10, y_max=15, steep negative slope
+            (15, 15, 5, 10),  // Left edge: y_min=10, y_max=15, steep positive slope
+        ];
+
+        ctx.fill_polygon(&edges);
+
+        // At y=10 (activation): triangle spans from x=5 to x=25
+        assert_eq!(ctx.bitmap.get(5, 10), Some(0), "Triangle should include x=5 at activation");
+        assert_eq!(ctx.bitmap.get(25, 10), Some(0), "Triangle should include x=25 at activation");
+
+        // At y=12: edges have moved rapidly (high slope)
+        // Right edge at y=12: x = 25 + (-2.0 * 2) = 21
+        // Left edge at y=12: x = 15 + (2.0 * -3) = 9
+        let filled_at_12: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 12) == Some(0)).collect();
+        assert!(filled_at_12.contains(&9), "Left edge should advance rapidly");
+        assert!(filled_at_12.contains(&21), "Right edge should advance rapidly");
+
+        // At y=15 (y_max): triangle converges to point at x=15
+        assert_eq!(ctx.bitmap.get(15, 15), Some(0), "Triangle should converge at apex");
+    }
+
+    #[test]
+    fn test_edge_activation_shallow_slope() {
+        // Test edge activation with shallow slope (< 1.0)
+        use crate::parser::object::types::{intern, PdfDict};
+
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(intern("/FontMatrix"), PdfObject::Array(Box::new(vec![
+            PdfObject::Real(1.0), PdfObject::Real(0.0),
+            PdfObject::Real(0.0), PdfObject::Real(1.0),
+            PdfObject::Real(0.0), PdfObject::Real(0.0),
+        ])));
+        font_dict.insert(intern("/FontBBox"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0), PdfObject::Integer(0),
+            PdfObject::Integer(31), PdfObject::Integer(31),
+        ])));
+
+        let font = Type3Font::load(&font_dict);
+        let mut ctx = RasterizerContext::new(&font);
+
+        // Triangle with shallow slope: (10, 10) -> (20, 10) -> (15, 20) -> (10, 10)
+        // Right edge: (20, 10) -> (15, 20), slope = -5/10 = -0.5
+        // Left edge: (15, 20) -> (10, 10), slope = -5/-10 = 0.5
+        let edges = vec![
+            (10, 10, 20, 10), // Top edge (horizontal, will be skipped)
+            (20, 10, 15, 20), // Right edge: y_min=10, y_max=20, shallow negative slope
+            (15, 20, 10, 10), // Left edge: y_min=10, y_max=20, shallow positive slope
+        ];
+
+        ctx.fill_polygon(&edges);
+
+        // At y=10 (activation): triangle spans from x=10 to x=20
+        assert_eq!(ctx.bitmap.get(10, 10), Some(0), "Triangle should include x=10 at activation");
+        assert_eq!(ctx.bitmap.get(20, 10), Some(0), "Triangle should include x=20 at activation");
+
+        // At y=15: edges have moved slowly (shallow slope)
+        // Right edge at y=15: x = 20 + (-0.5 * 5) = 17.5 ≈ 18
+        // Left edge at y=15: x = 15 + (0.5 * -5) = 12.5 ≈ 13
+        let filled_at_15: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 15) == Some(0)).collect();
+        assert!(filled_at_15.contains(&13), "Left edge should advance slowly");
+        assert!(filled_at_15.contains(&18), "Right edge should advance slowly");
+
+        // At y=20 (y_max): triangle converges to point at x=15
+        assert_eq!(ctx.bitmap.get(15, 20), Some(0), "Triangle should converge at apex");
+    }
+
+    #[test]
+    fn test_edge_activation_at_boundary() {
+        // Test edge activation at bitmap boundary
+        use crate::parser::object::types::{intern, PdfDict};
+
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(intern("/FontMatrix"), PdfObject::Array(Box::new(vec![
+            PdfObject::Real(1.0), PdfObject::Real(0.0),
+            PdfObject::Real(0.0), PdfObject::Real(1.0),
+            PdfObject::Real(0.0), PdfObject::Real(0.0),
+        ])));
+        font_dict.insert(intern("/FontBBox"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0), PdfObject::Integer(0),
+            PdfObject::Integer(31), PdfObject::Integer(31),
+        ])));
+
+        let font = Type3Font::load(&font_dict);
+        let mut ctx = RasterizerContext::new(&font);
+
+        // Triangle at bitmap boundary: (5, 20) -> (25, 20) -> (15, 31) -> (5, 20)
+        // This places y_min at 20 and y_max at 31 (bitmap boundary)
+        let edges = vec![
+            (5, 20, 25, 20),  // Bottom edge (horizontal, will be skipped)
+            (25, 20, 15, 31), // Right edge: y_min=20, y_max=31
+            (15, 31, 5, 20),  // Left edge: y_min=20, y_max=31
+        ];
+
+        ctx.fill_polygon(&edges);
+
+        // At y=19: Edges should not be active
+        let filled_at_19: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 19) == Some(0)).collect();
+        assert_eq!(filled_at_19.len(), 0, "Edges should not be active before y_min=20");
+
+        // At y=20 (y_min): Edges should be active
+        let filled_at_20: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 20) == Some(0)).collect();
+        assert!(!filled_at_20.is_empty(), "Edges should be active at y_min=20");
+        assert!(filled_at_20.contains(&5), "Triangle should include x=5 at y=20");
+        assert!(filled_at_20.contains(&25), "Triangle should include x=25 at y=20");
+
+        // At y=31 (y_max, bitmap boundary): Triangle converges to point at x=15
+        let filled_at_31: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 31) == Some(0)).collect();
+        assert!(!filled_at_31.is_empty(), "Edges should be active at y_max=31");
+        assert!(filled_at_31.contains(&15), "Triangle should converge at apex x=15");
+    }
+
+    #[test]
+    fn test_aet_edge_removal_various_y_max_positions() {
+        // Test edge removal with multiple edges at various y_max positions
+        // This covers acceptance criteria 1: Test fixtures with edges at various y_max positions
+        use crate::parser::object::types::{intern, PdfDict};
+
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(intern("/FontMatrix"), PdfObject::Array(Box::new(vec![
+            PdfObject::Real(1.0), PdfObject::Real(0.0),
+            PdfObject::Real(0.0), PdfObject::Real(1.0),
+            PdfObject::Real(0.0), PdfObject::Real(0.0),
+        ])));
+        font_dict.insert(intern("/FontBBox"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0), PdfObject::Integer(0),
+            PdfObject::Integer(31), PdfObject::Integer(31),
+        ])));
+
+        let font = Type3Font::load(&font_dict);
+        let mut ctx = RasterizerContext::new(&font);
+
+        // Create two triangles with different y_max positions
+        // Triangle 1: (5, 5) -> (15, 5) -> (10, 15) -> (5, 5), y_max = 15
+        // Triangle 2: (20, 8) -> (30, 8) -> (25, 25) -> (20, 8), y_max = 25
+        let edges = vec![
+            // Triangle 1 edges
+            (5, 5, 15, 5),   // Top edge (horizontal, skipped)
+            (15, 5, 10, 15), // Right edge: y_min=5, y_max=15
+            (10, 15, 5, 5),  // Left edge: y_min=5, y_max=15
+            // Triangle 2 edges
+            (20, 8, 30, 8),  // Top edge (horizontal, skipped)
+            (30, 8, 25, 25), // Right edge: y_min=8, y_max=25
+            (25, 25, 20, 8), // Left edge: y_min=8, y_max=25
+        ];
+
+        ctx.fill_polygon(&edges);
+
+        // AC2: Assert edge is present in AET at y_max scanline (via bitmap output)
+        // At y=15 (triangle 1 y_max): Triangle 1 should be active
+        let filled_at_15: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 15) == Some(0)).collect();
+        assert!(!filled_at_15.is_empty(), "Triangle 1 should be active at y_max=15");
+        assert!(filled_at_15.contains(&10), "Triangle 1 apex should be filled at y=15");
+
+        // AC3: Assert edge is absent from AET at y_max + 1 scanline
+        // At y=16 (after triangle 1 y_max): Triangle 1 should be removed, Triangle 2 still active
+        let filled_at_16: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 16) == Some(0)).collect();
+        assert!(!filled_at_16.contains(&10), "Triangle 1 should be removed after y_max=15");
+        assert!(!filled_at_16.is_empty(), "Triangle 2 should still be active at y=16");
+
+        // At y=25 (triangle 2 y_max): Triangle 2 should be active
+        let filled_at_25: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 25) == Some(0)).collect();
+        assert!(!filled_at_25.is_empty(), "Triangle 2 should be active at y_max=25");
+        assert!(filled_at_25.contains(&25), "Triangle 2 apex should be filled at y=25");
+
+        // AC4: Assert AET is empty after all edges removed
+        // At y=26 (after all y_max): No edges should be active
+        let filled_at_26: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 26) == Some(0)).collect();
+        assert!(filled_at_26.is_empty(), "All edges should be removed after y_max values");
+    }
+
+    #[test]
+    fn test_aet_edge_removal_single_edge_boundary_cases() {
+        // Test edge removal at boundary conditions: y_max at 0, y_max at height-1
+        use crate::parser::object::types::{intern, PdfDict};
+
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(intern("/FontMatrix"), PdfObject::Array(Box::new(vec![
+            PdfObject::Real(1.0), PdfObject::Real(0.0),
+            PdfObject::Real(0.0), PdfObject::Real(1.0),
+            PdfObject::Real(0.0), PdfObject::Real(0.0),
+        ])));
+        font_dict.insert(intern("/FontBBox"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0), PdfObject::Integer(0),
+            PdfObject::Integer(31), PdfObject::Integer(31),
+        ])));
+
+        let font = Type3Font::load(&font_dict);
+        let mut ctx = RasterizerContext::new(&font);
+
+        // Triangle at y_max = 0 (boundary case)
+        // (10, 0) -> (20, 0) -> (15, 0) -> (10, 0) - effectively a horizontal line
+        let edges = vec![
+            (10, 0, 20, 0),
+            (20, 0, 15, 0),
+            (15, 0, 10, 0),
+        ];
+
+        ctx.fill_polygon(&edges);
+
+        // At y=0 (y_max): Edge should be active
+        assert_eq!(ctx.bitmap.get(15, 0), Some(0), "Edge should be active at y_max=0");
+
+        // At y=1 (after y_max): Edge should be removed
+        let filled_at_1: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 1) == Some(0)).collect();
+        assert!(filled_at_1.is_empty(), "Edge should be removed after y_max=0");
+    }
+
+    #[test]
+    fn test_aet_edge_removal_multiple_edges_same_y_max() {
+        // Test that multiple edges with the same y_max are all removed together
+        use crate::parser::object::types::{intern, PdfDict};
+
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(intern("/FontMatrix"), PdfObject::Array(Box::new(vec![
+            PdfObject::Real(1.0), PdfObject::Real(0.0),
+            PdfObject::Real(0.0), PdfObject::Real(1.0),
+            PdfObject::Real(0.0), PdfObject::Real(0.0),
+        ])));
+        font_dict.insert(intern("/FontBBox"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0), PdfObject::Integer(0),
+            PdfObject::Integer(31), PdfObject::Integer(31),
+        ])));
+
+        let font = Type3Font::load(&font_dict);
+        let mut ctx = RasterizerContext::new(&font);
+
+        // Create two triangles with the same y_max but different y_min
+        // Triangle 1: (2, 2) -> (8, 2) -> (5, 10) -> (2, 2), y_min=2, y_max=10
+        // Triangle 2: (22, 5) -> (28, 5) -> (25, 10) -> (22, 5), y_min=5, y_max=10
+        let edges = vec![
+            // Triangle 1 edges
+            (2, 2, 8, 2),
+            (8, 2, 5, 10),
+            (5, 10, 2, 2),
+            // Triangle 2 edges
+            (22, 5, 28, 5),
+            (28, 5, 25, 10),
+            (25, 10, 22, 5),
+        ];
+
+        ctx.fill_polygon(&edges);
+
+        // At y=9 (before y_max): Both triangles should be active
+        let filled_at_9: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 9) == Some(0)).collect();
+        assert!(!filled_at_9.is_empty(), "Both triangles should be active at y=9");
+        assert!(filled_at_9.contains(&5), "Triangle 1 should be active at y=9");
+        assert!(filled_at_9.contains(&25), "Triangle 2 should be active at y=9");
+
+        // At y=10 (at y_max): Both triangles should still be active (y <= y_max)
+        let filled_at_10: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 10) == Some(0)).collect();
+        assert!(!filled_at_10.is_empty(), "Both triangles should be active at y_max=10");
+
+        // At y=11 (after y_max): Both triangles should be removed together
+        let filled_at_11: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 11) == Some(0)).collect();
+        assert!(filled_at_11.is_empty(), "All edges should be removed after y_max=10");
+    }
+
+    #[test]
+    fn test_aet_edge_removal_different_y_min_same_y_max() {
+        // Test edges that start at different y_min but end at the same y_max
+        use crate::parser::object::types::{intern, PdfDict};
+
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(intern("/FontMatrix"), PdfObject::Array(Box::new(vec![
+            PdfObject::Real(1.0), PdfObject::Real(0.0),
+            PdfObject::Real(0.0), PdfObject::Real(1.0),
+            PdfObject::Real(0.0), PdfObject::Real(0.0),
+        ])));
+        font_dict.insert(intern("/FontBBox"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0), PdfObject::Integer(0),
+            PdfObject::Integer(31), PdfObject::Integer(31),
+        ])));
+
+        let font = Type3Font::load(&font_dict);
+        let mut ctx = RasterizerContext::new(&font);
+
+        // Triangle 1: y_min=3, y_max=12
+        // Triangle 2: y_min=8, y_max=12
+        // Triangle 3: y_min=10, y_max=12
+        let edges = vec![
+            // Triangle 1: (3, 3) -> (7, 3) -> (5, 12) -> (3, 3)
+            (3, 3, 7, 3),
+            (7, 3, 5, 12),
+            (5, 12, 3, 3),
+            // Triangle 2: (13, 8) -> (17, 8) -> (15, 12) -> (13, 8)
+            (13, 8, 17, 8),
+            (17, 8, 15, 12),
+            (15, 12, 13, 8),
+            // Triangle 3: (23, 10) -> (27, 10) -> (25, 12) -> (23, 10)
+            (23, 10, 27, 10),
+            (27, 10, 25, 12),
+            (25, 12, 23, 10),
+        ];
+
+        ctx.fill_polygon(&edges);
+
+        // At y=2: No edges should be active (before all y_min)
+        let filled_at_2: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 2) == Some(0)).collect();
+        assert!(filled_at_2.is_empty(), "No edges should be active at y=2");
+
+        // At y=5: Only triangle 1 should be active
+        let filled_at_5: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 5) == Some(0)).collect();
+        assert!(!filled_at_5.is_empty(), "Triangle 1 should be active at y=5");
+        assert!(filled_at_5.contains(&5), "Triangle 1 apex area should be filled");
+
+        // At y=9: Triangles 1 and 2 should be active, triangle 3 not yet
+        let filled_at_9: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 9) == Some(0)).collect();
+        assert!(filled_at_9.contains(&5), "Triangle 1 should be active at y=9");
+        assert!(filled_at_9.contains(&15), "Triangle 2 should be active at y=9");
+        assert!(!filled_at_9.contains(&25), "Triangle 3 should not be active at y=9");
+
+        // At y=11: All three triangles should be active
+        let filled_at_11: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 11) == Some(0)).collect();
+        assert!(filled_at_11.contains(&5), "Triangle 1 should be active at y=11");
+        assert!(filled_at_11.contains(&15), "Triangle 2 should be active at y=11");
+        assert!(filled_at_11.contains(&25), "Triangle 3 should be active at y=11");
+
+        // At y=12 (all y_max): All triangles should still be active
+        let filled_at_12: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 12) == Some(0)).collect();
+        assert!(!filled_at_12.is_empty(), "All triangles should be active at y_max=12");
+
+        // At y=13 (after all y_max): No edges should be active
+        let filled_at_13: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 13) == Some(0)).collect();
+        assert!(filled_at_13.is_empty(), "All edges should be removed after y_max=12");
+    }
+
+    #[test]
+    fn test_aet_empty_after_complete_removal() {
+        // Test that AET becomes completely empty after all edges are removed
+        // This specifically tests AC4: Assert AET is empty after all edges removed
+        use crate::parser::object::types::{intern, PdfDict};
+
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(intern("/FontMatrix"), PdfObject::Array(Box::new(vec![
+            PdfObject::Real(1.0), PdfObject::Real(0.0),
+            PdfObject::Real(0.0), PdfObject::Real(1.0),
+            PdfObject::Real(0.0), PdfObject::Real(0.0),
+        ])));
+        font_dict.insert(intern("/FontBBox"), PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0), PdfObject::Integer(0),
+            PdfObject::Integer(31), PdfObject::Integer(31),
+        ])));
+
+        let font = Type3Font::load(&font_dict);
+        let mut ctx = RasterizerContext::new(&font);
+
+        // Single triangle: (10, 10) -> (20, 10) -> (15, 15) -> (10, 10)
+        // y_min=10, y_max=15
+        let edges = vec![
+            (10, 10, 20, 10),
+            (20, 10, 15, 15),
+            (15, 15, 10, 10),
+        ];
+
+        ctx.fill_polygon(&edges);
+
+        // Verify that edges are active during their lifetime
+        let filled_at_10: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 10) == Some(0)).collect();
+        assert!(!filled_at_10.is_empty(), "Edges should be active at y=10");
+
+        let filled_at_15: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 15) == Some(0)).collect();
+        assert!(!filled_at_15.is_empty(), "Edges should be active at y_max=15");
+
+        // AC4: After y_max, AET should be empty (no pixels filled)
+        let filled_at_16: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 16) == Some(0)).collect();
+        assert!(filled_at_16.is_empty(), "AET should be empty after all edges removed at y=16");
+
+        let filled_at_20: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 20) == Some(0)).collect();
+        assert!(filled_at_20.is_empty(), "AET should remain empty beyond y_max");
+
+        let filled_at_30: Vec<i32> = (0..32).filter(|&x| ctx.bitmap.get(x, 30) == Some(0)).collect();
+        assert!(filled_at_30.is_empty(), "AET should remain empty at end of bitmap");
     }
 }
