@@ -3,7 +3,11 @@
 # Bead store: SQLite and history stay local; the JSONL checkpoint is tracked.
 # Must be `.beads/*`, not `.beads/` — git cannot re-include a file whose
 # parent directory is excluded.
-.beads/*
+# bead-rs: the checkpoint under .beads/ is the durable store and IS tracked.
+# .beads/.gitignore excludes the SQLite db and scratch files.
+.beads/*.db
+.beads/*.db-shm
+.beads/*.db-wal
 !.beads/issues.jsonl
 
 # Node.js and Python caches
