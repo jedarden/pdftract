@@ -1026,8 +1026,11 @@ pub fn extract_pdf(
             Ok(beads) => {
                 threads_json.push(thread_to_json(header, &beads));
             }
-            Err(_) => {
-                // Skip threads with malformed bead chains but continue processing others
+            Err(diagnostics) => {
+                // Record diagnostics for malformed bead chains but continue processing others
+                for diag in diagnostics {
+                    all_diagnostics.push(diag.message.as_ref().to_string());
+                }
                 continue;
             }
         }
