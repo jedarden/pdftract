@@ -2,7 +2,7 @@
 
 This directory contains hybrid PDF fixtures with mixed vector text and scanned image content for testing the PageClass::Hybrid classifier and hybrid extraction pipeline (Phase 5.2.4).
 
-## Primary Fixtures (First 3)
+## Primary Fixtures (Fixtures 1-3)
 
 ### hybrid-001: Vector Header Over Scan
 **File**: `hybrid-001-vector-header-over-scan.pdf` (1.2 KB)
@@ -76,6 +76,38 @@ This directory contains hybrid PDF fixtures with mixed vector text and scanned i
 - **Test focus**: Scattered hybrid region detection with form-specific layout, form field extraction precision, rectangular border handling, duplicate text elimination
 - **Generation**: `hybrid-007-generator.py`
 
+## Additional Fixtures (Fixtures 8-10)
+
+### hybrid-008: Rotated Vector Text
+**File**: `hybrid-008-rotated-vector.pdf` (1.4 KB)
+**Pattern**: Scanned document with vector text overlay rotated at multiple angles
+- **Vector regions**: Page header text plus multiple rotated vector text elements positioned throughout the page at various angles: 15°, 30°, 45°, -15°, and -30° (using CTM transformations)
+- **Scanned regions**: Full-page scanned document background (1-bit grayscale image XObject with horizontal text line pattern)
+- **Hybrid cells**: ~24 cells (37.5% - distributed rotated overlay)
+- **Classification challenge**: Rotated text crosses grid cell boundaries at oblique angles, creating partial cell overlaps; multiple rotation angles create diverse hybrid cell patterns; tests classifier robustness on non-axis-aligned vector elements
+- **Test focus**: Rotated text extraction precision across multiple angles, hybrid cell detection with angular vector elements, grid cell boundary handling for rotated content, merge rule accuracy on rotated vs axis-aligned OCR spans
+- **Generation**: `hybrid-008-generator.py`
+
+### hybrid-009: Transparent Vector Overlay
+**File**: `hybrid-009-transparent-vector.pdf` (1.6 KB)
+**Pattern**: Scanned document with semi-transparent vector text overlay
+- **Vector regions**: Page header text plus semi-transparent vector text overlays with varying opacity levels (50% and 30% transparency) positioned throughout the page (using PDF ExtGState graphics state)
+- **Scanned regions**: Full-page scanned document background (1-bit grayscale image XObject with horizontal text line pattern)
+- **Hybrid cells**: ~20 cells (31.25% - transparent overlay)
+- **Classification challenge**: Semi-transparent vector content may have lower visual weight but still represents true hybrid content; tests whether classifier detects hybrid content when vector layer has reduced opacity; transparency effects can affect OCR quality
+- **Test focus**: Transparency-aware hybrid cell detection, OCR quality on content behind semi-transparent overlays, merge rule behavior with transparent vs opaque vector layers, classification accuracy when vector content has reduced visual weight
+- **Generation**: `hybrid-009-generator.py`
+
+### hybrid-010: Complex Layered Layout
+**File**: `hybrid-010-complex-layered.pdf` (1.8 KB)
+**Pattern**: Complex layered PDF with multiple overlapping vector and scanned elements including geometric shapes
+- **Vector regions**: Multiple distinct vector layers: header section (top ~10%), footer section (bottom ~10%), sidebar column (left ~25%), main column (right ~60%), annotation box (bottom right corner), comprehensive vector shapes (circles at multiple positions with varying radii, rectangles, horizontal dividers, vertical separator line)
+- **Scanned regions**: Full-page scanned document background (1-bit grayscale image XObject with horizontal text line pattern)
+- **Hybrid cells**: ~56 cells (87.5% - complex layered)
+- **Classification challenge**: Multiple non-contiguous vector regions require comprehensive cell-level scanning; complex layering tests merge rule comprehensiveness; vector shapes (circles, lines, rectangles) add geometric hybrid content beyond text; high hybrid cell percentage tests upper-bound classification behavior
+- **Test focus**: Complex multi-region hybrid cell detection, merge rule accuracy with multiple non-overlapping vector regions, geometric shape handling in hybrid context, circle/curve operator processing, classification confidence on high-percentage hybrid pages
+- **Generation**: `hybrid-010-generator-enhanced.py`
+
 ## Purpose
 
 These fixtures support:
@@ -83,6 +115,9 @@ These fixtures support:
 - **Phase 5.5 classifier tuning**: 10 known-tricky hybrid cases for testing page-classifier decision rules
 - **8×8 grid cell evaluation**: Testing hybrid cell detection (≥15% image-heavy cells threshold)
 - **Merge rule validation**: Testing bbox overlap rule (IoU > 0.5) for merging vector and OCR spans
+- **Geometric shape handling**: Testing circle/curve operators in hybrid context (hybrid-010)
+- **Transparency model**: Testing semi-transparent vector overlay detection (hybrid-009)
+- **Rotated content**: Testing angular vector element classification (hybrid-008)
 
 ## What Makes a PDF "Hybrid"?
 
@@ -123,6 +158,15 @@ hybrid/
 ├── hybrid-007-textbox-overlay.pdf             # Fixture 7: textbox overlay
 ├── hybrid-007-textbox-overlay.pdf.metadata.json
 ├── hybrid-007-generator.py                     # Fixture 7 generator script
+├── hybrid-008-rotated-vector.pdf              # Fixture 8: rotated vector text overlay
+├── hybrid-008-rotated-vector.pdf.metadata.json
+├── hybrid-008-generator.py                     # Fixture 8 generator script
+├── hybrid-009-transparent-vector.pdf          # Fixture 9: semi-transparent vector overlay
+├── hybrid-009-transparent-vector.pdf.metadata.json
+├── hybrid-009-generator.py                     # Fixture 9 generator script
+├── hybrid-010-complex-layered.pdf             # Fixture 10: complex layered layout with shapes
+├── hybrid-010-complex-layered.pdf.metadata.json
+├── hybrid-010-generator-enhanced.py            # Fixture 10 generator script
 ├── receipt-overtext/                           # Receipt with scanned body + vector overlay text
 ├── letterhead-image/                           # Letterhead: vector header + scanned body
 ├── form-mixed/                                 # Form: vector fields + scanned background
@@ -315,6 +359,9 @@ Resolution strategy: Use these 10 fixtures to measure and tune:
 | **hybrid-005** (vector-footer-over-scan) | ✅ | ✅ | ✅ | ~8 (12.5%) | Complete |
 | **hybrid-006** (stamp-annotation) | ✅ | ✅ | ✅ | ~12 (18.75%) | Complete |
 | **hybrid-007** (textbox-overlay) | ✅ | ✅ | ✅ | ~28 (43.75%) | Complete |
+| **hybrid-008** (rotated-vector) | ✅ | ✅ | ✅ | ~24 (37.5%) | Complete |
+| **hybrid-009** (transparent-vector) | ✅ | ✅ | ✅ | ~20 (31.25%) | Complete |
+| **hybrid-010** (complex-layered) | ✅ | ✅ | ✅ | ~56 (87.5%) | Complete |
 | receipt-overtext | ❌ | ✅ | ✅ | ~24 | Pending |
 | letterhead-image | ❌ | ✅ | ✅ | ~40 | Pending |
 | form-mixed | ❌ | ✅ | ✅ | ~45 | Pending |
