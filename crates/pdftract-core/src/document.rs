@@ -386,7 +386,7 @@ pub type DocumentResult<T> = std::result::Result<T, DocumentError>;
 ///
 /// # Returns
 ///
-/// A tuple of (fingerprint, catalog, pages, resolver)
+/// A tuple of (fingerprint, catalog, pages, resolver, trailer)
 pub fn parse_pdf_file(
     pdf_path: &std::path::Path,
 ) -> Result<(
@@ -394,6 +394,7 @@ pub fn parse_pdf_file(
     Catalog,
     Vec<crate::parser::pages::PageDict>,
     XrefResolver,
+    crate::parser::object::PdfDict,
 )> {
     // Open the PDF file
     let source = ParserFileSource::open(pdf_path).context("Failed to open PDF file")?;
@@ -414,10 +415,9 @@ pub fn parse_pdf_file(
     let resolver = XrefResolver::from_section(xref_section.clone());
 
     // Get the root reference from trailer
-    let root_ref = xref_section
-        .trailer
-        .as_ref()
-        .and_then(|trailer| trailer.get("Root"))
+    let trailer = xref_section.trailer.as_ref().ok_or_else(|| anyhow!("No trailer in xref section"))?;
+    let root_ref = trailer
+        .get("Root")
         .and_then(|obj| obj.as_ref())
         .ok_or_else(|| anyhow!("No /Root reference in trailer"))?;
 
@@ -447,7 +447,7 @@ pub fn parse_pdf_file(
         .and_then(|o| o.as_dict().map(|d| d.clone()));
 
     // Build fingerprint input
-    let fingerprint_input = build_fingerprint_input(&catalog, &pages, &resolver, &acroform);
+    let fingerprint_input = build_fingerprint_input(&catalog, &pages, &resolver, &acroform, trailer);
 
     // Compute fingerprint with source available for content stream decoding
     let fingerprint = compute_fingerprint(
@@ -456,7 +456,7 @@ pub fn parse_pdf_file(
         Some(&source as &dyn ParserPdfSource),
     );
 
-    Ok((fingerprint, catalog, pages, resolver))
+    Ok((fingerprint, catalog, pages, resolver, trailer.clone()))
 }
 
 /// Parse a PDF from a generic source and return document components.
@@ -494,11 +494,15 @@ pub fn parse_pdf_source(
     // Create resolver from xref section
     let resolver = XrefResolver::from_section(xref_section.clone());
 
-    // Get the root reference from trailer
-    let root_ref = xref_section
+    // Extract the trailer dictionary
+    let trailer = xref_section
         .trailer
         .as_ref()
-        .and_then(|trailer| trailer.get("Root"))
+        .ok_or_else(|| anyhow!("No trailer in xref section"))?;
+
+    // Get the root reference from trailer
+    let root_ref = trailer
+        .get("Root")
         .and_then(|obj| obj.as_ref())
         .ok_or_else(|| anyhow!("No /Root reference in trailer"))?;
 
@@ -528,7 +532,7 @@ pub fn parse_pdf_source(
         .and_then(|o| o.as_dict().map(|d| d.clone()));
 
     // Build fingerprint input
-    let fingerprint_input = build_fingerprint_input(&catalog, &pages, &resolver, &acroform);
+    let fingerprint_input = build_fingerprint_input(&catalog, &pages, &resolver, &acroform, trailer);
 
     // Compute fingerprint with source available
     let fingerprint = compute_fingerprint(
@@ -593,6 +597,7 @@ fn build_fingerprint_input(
     pages: &[crate::parser::pages::PageDict],
     resolver: &XrefResolver,
     acroform: &Option<PdfDict>,
+    trailer: &crate::parser::object::PdfDict,
 ) -> FingerprintInput {
     let page_count = pages.len() as u32;
 
@@ -617,9 +622,12 @@ fn build_fingerprint_input(
     let contains_javascript = detect_javascript(catalog, pages, acroform, resolver);
     let contains_xfa = detect_xfa(acroform);
 
+    // Check if document is encrypted by looking for /Encrypt in trailer
+    let is_encrypted = trailer.get("/Encrypt").is_some();
+
     // Build catalog flags
     let catalog_flags = CatalogFlags {
-        is_encrypted: false, // TODO: detect encryption
+        is_encrypted,
         contains_javascript,
         contains_xfa,
         ocg_present: catalog
@@ -656,7 +664,7 @@ pub fn extract_spans_from_page(
     page_index: usize,
 ) -> Result<Vec<SpanData>> {
     // Parse the PDF
-    let (_fingerprint, _catalog, pages, _resolver) = parse_pdf_file(pdf_path)?;
+    let (_fingerprint, _catalog, pages, _resolver, _trailer) = parse_pdf_file(pdf_path)?;
 
     // Check page index bounds
     if page_index >= pages.len() {
@@ -695,7 +703,7 @@ pub fn extract_spans_from_page(
 ///
 /// The fingerprint string in the format "pdftract-v1:\<hex\>"
 pub fn compute_pdf_fingerprint(pdf_path: &std::path::Path) -> Result<String> {
-    let (fingerprint, _catalog, _pages, _resolver) = parse_pdf_file(pdf_path)?;
+    let (fingerprint, _catalog, _pages, _resolver, _trailer) = parse_pdf_file(pdf_path)?;
     Ok(fingerprint)
 }
 
@@ -2089,7 +2097,7 @@ startxref
         let pdf_path = temp_dir.path().join("test.pdf");
         create_minimal_pdf(&pdf_path).unwrap();
 
-        let (fingerprint, catalog, pages, resolver) = parse_pdf_file(&pdf_path).unwrap();
+        let (fingerprint, catalog, pages, resolver, _trailer) = parse_pdf_file(&pdf_path).unwrap();
 
         assert!(fingerprint.starts_with("pdftract-v1:"));
         assert_eq!(pages.len(), 1);
@@ -5192,7 +5200,7 @@ startxref
         assert!(error_msg.len() > 20, "Error message should be descriptive (not just a few chars)");
 
         // Test 3: validate_pages_structure returns DocumentResult
-        let (fingerprint, catalog, _pages, resolver) = parse_pdf_file(&pdf_path).unwrap();
+        let (fingerprint, catalog, _pages, resolver, _trailer) = parse_pdf_file(&pdf_path).unwrap();
         let validate_result: DocumentResult<()> = validate_pages_structure(&catalog, &resolver, &pdf_path.display().to_string());
         assert!(validate_result.is_ok(), "Valid document structure should return Ok");
     }
