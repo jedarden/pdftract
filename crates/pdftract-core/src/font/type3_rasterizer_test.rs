@@ -26,6 +26,28 @@ use crate::parser::object::types::{intern, ObjRef, PdfDict, PdfObject, PdfStream
 use crate::parser::xref::XrefResolver;
 use crate::parser::stream::MemorySource;
 
+// Import all test fixtures for comprehensive integration
+// Note: TestEdge is imported locally in specific tests to avoid conflicts with local struct
+use crate::font::type3_test_fixtures::{
+    // Content stream fixtures
+    Content, create_simple_charproc_stream, create_charproc_stream_with_curves,
+    create_rectangle_charproc_stream,
+    create_empty_content_stream, create_main_content_stream, create_main_content_stream_multi,
+    // Glyph dictionary fixtures
+    GlyphEntry, GlyphDict, create_glyph_dict_with_basic_properties,
+    create_basic_glyph_dict, create_minimal_glyph_dict, to_charprocs_map,
+    // Type3Font fixtures
+    create_minimal_type3_font,
+    // Mock fixtures
+    MockResolver, MockSource, MockCounter, mock_resolver, mock_source, mock_counter,
+    // Character mapping fixtures
+    CharToGlyphMap, create_basic_char_to_glyph_map, create_minimal_char_to_glyph_map,
+    create_char_to_glyph_from_dict,
+    // AET testing fixtures (note: TestEdge imported locally in tests that need builder pattern)
+    AETInspector, create_edges_from_endpoints, create_triangle_edges,
+    create_rectangle_edges, create_scanline_context,
+};
+
 // ============================================================================
 // Test Infrastructure Helper Functions
 // ============================================================================
@@ -1866,7 +1888,7 @@ fn test_detect_char_proc_type_identifies_ref_type() {
 
     // Should be Unknown, not Other with a type name
     match result {
-        CharProcType::Other("unknown".to_string()) => {
+        CharProcType::Other(name) if name == "unknown" => {
             // Expected - references without context return Unknown
         }
         CharProcType::Other(name) => {
@@ -2493,4 +2515,91 @@ fn test_detect_char_proc_type_with_context_circular_reference_detection() {
     // only applies if we can actually dereference)
     assert_eq!(result, CharProcType::Other("unknown".to_string()),
         "Circular reference with no resolver should return Unknown");
+}
+
+// ============================================================================
+// Comprehensive Integration Test - All Fixtures Accessible
+// ============================================================================
+
+/// Integration test that verifies all test fixtures are accessible and functional.
+///
+/// This test serves as a compilation check to ensure that:
+/// 1. All fixtures from type3_test_fixtures are properly imported
+/// 2. All fixture types can be instantiated
+/// 3. The test module has complete access to all fixture functionality
+///
+/// This is bead bf-535crb's integration verification step.
+#[test]
+fn test_all_fixtures_accessible() {
+    use crate::font::type3_test_fixtures::{
+        // Content stream fixtures
+        Content, create_simple_charproc_stream, create_charproc_stream_with_curves,
+        create_rectangle_charproc_stream, create_empty_content_stream,
+        create_main_content_stream, create_main_content_stream_multi,
+        // Glyph dictionary fixtures
+        GlyphEntry, GlyphDict, create_glyph_dict_with_basic_properties,
+        create_basic_glyph_dict, create_minimal_glyph_dict, to_charprocs_map,
+        // Type3Font fixtures
+        create_minimal_type3_font,
+        // Mock fixtures
+        MockResolver, MockSource, MockCounter, mock_resolver, mock_source, mock_counter,
+        // Character mapping fixtures
+        CharToGlyphMap, create_basic_char_to_glyph_map, create_minimal_char_to_glyph_map,
+        create_char_to_glyph_from_dict,
+        // AET testing fixtures
+        AETInspector, create_edges_from_endpoints, create_triangle_edges,
+        create_rectangle_edges, create_scanline_context,
+    };
+
+    // Verify Content fixture type
+    let _content = Content::with_defaults(b"test commands".to_vec());
+    let _stream = create_simple_charproc_stream();
+    let _curved_stream = create_charproc_stream_with_curves();
+    let _rect_stream = create_rectangle_charproc_stream();
+    let _empty_stream = create_empty_content_stream();
+    let _main_stream = create_main_content_stream();
+    let _multi_stream = create_main_content_stream_multi();
+
+    // Verify Glyph dictionary fixtures
+    let test_ref = ObjRef::new(100, 0);
+    let _glyph_dict = create_glyph_dict_with_basic_properties(test_ref);
+
+    let notdef_ref = ObjRef::new(101, 0);
+    let test_ref2 = ObjRef::new(102, 0);
+    let _basic_dict = create_basic_glyph_dict(notdef_ref, test_ref2);
+
+    let _minimal_dict = create_minimal_glyph_dict(notdef_ref);
+    let _charprocs = to_charprocs_map(&_basic_dict);
+
+    // Verify Type3Font fixtures
+    let notdef_ref3 = ObjRef::new(103, 0);
+    let _font = create_minimal_type3_font(notdef_ref3);
+
+    // Verify Mock fixtures
+    let _resolver: MockResolver = mock_resolver();
+    let _source: MockSource = mock_source();
+    let _counter: MockCounter = mock_counter();
+
+    // Verify Character mapping fixtures
+    let _char_map = create_basic_char_to_glyph_map();
+    let _minimal_map = create_minimal_char_to_glyph_map();
+    let _dict_map = create_char_to_glyph_from_dict(&_basic_dict);
+
+    // Verify AET testing fixtures
+    let edges = create_edges_from_endpoints(&[(0, 0, 10, 10), (10, 0, 20, 10)]);
+    let _triangle_edges = create_triangle_edges();
+    let _rect_edges = create_rectangle_edges(0, 0, 100, 100);
+    let (width, height) = create_scanline_context(100, 100);
+
+    // Verify AETInspector with edges
+    let _inspector = AETInspector::new(edges);
+
+    // Verify basic compilation of fixture usage
+    assert_eq!(width, 100);
+    assert_eq!(height, 100);
+
+    // Verify GlyphEntry type is accessible
+    let _entry = GlyphEntry::minimal("test".to_string(), test_ref);
+
+    // Test passes - all fixtures are accessible and functional
 }
