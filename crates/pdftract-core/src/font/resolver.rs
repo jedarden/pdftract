@@ -694,7 +694,7 @@ fn resolve_type3_level4(
 
     let bitmap = if let (Some(resolver), Some(source), Some(counter)) = (resolver, source, doc_decompress_counter) {
         // Create document context for Type3 rasterization
-        let doc_ctx = Type3DocumentContext { source };
+        let doc_ctx = Type3DocumentContext { resolver: Some(resolver), source: Some(source) };
 
         // Use helper function to create a closure-compatible callback
         // This is a workaround for lifetime issues with closures capturing references
@@ -704,7 +704,7 @@ fn resolve_type3_level4(
 
         rasterize_type3_glyph(font, &glyph_name, Some(&doc_ctx), Some(&callback))
     } else {
-        // No document context available - use placeholder
+        // No document context available - cannot resolve stream, will return None
         rasterize_type3_glyph(font, &glyph_name, None::<&Type3DocumentContext>, None::<&StreamResolverFn>)
     };
 
