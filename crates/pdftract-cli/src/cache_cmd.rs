@@ -322,6 +322,9 @@ pub fn clear_cache(cache_dir: &Path, yes: bool) -> Result<()> {
 
     // Delete all entry files (preserve index.json and sentinel)
     let mut deleted = 0;
+    let mut failed = 0;
+    let mut error_paths = Vec::new();
+
     for prefix1_entry in fs::read_dir(cache_dir)?.filter_map(|e| e.ok()).filter(|e| {
         e.path().is_dir()
             && e.file_name().to_string_lossy().len() == 2
@@ -353,28 +356,56 @@ pub fn clear_cache(cache_dir: &Path, yes: bool) -> Result<()> {
                 for entry in fp_dir.read_dir()?.filter_map(|e| e.ok()) {
                     let path = entry.path();
                     if path.is_file() {
-                        let _ = fs::remove_file(&path);
-                        deleted += 1;
+                        match fs::remove_file(&path) {
+                            Ok(()) => deleted += 1,
+                            Err(e) => {
+                                failed += 1;
+                                error_paths.push((path.to_string_lossy().to_string(), e.to_string()));
+                            }
+                        }
                     }
                 }
 
                 // Remove the empty fingerprint directory
-                let _ = fs::remove_dir(&fp_dir);
+                if fp_dir.read_dir()?.next().is_none() {
+                    if let Err(e) = fs::remove_dir(&fp_dir) {
+                        error_paths.push((fp_dir.to_string_lossy().to_string(), e.to_string()));
+                    }
+                }
             }
 
             // Remove empty second-level prefix directory
             if prefix2_dir.read_dir()?.next().is_none() {
-                let _ = fs::remove_dir(&prefix2_dir);
+                if let Err(e) = fs::remove_dir(&prefix2_dir) {
+                    error_paths.push((prefix2_dir.to_string_lossy().to_string(), e.to_string()));
+                }
             }
         }
 
         // Remove empty first-level prefix directory
         if prefix1_dir.read_dir()?.next().is_none() {
-            let _ = fs::remove_dir(&prefix1_dir);
+            if let Err(e) = fs::remove_dir(&prefix1_dir) {
+                error_paths.push((prefix1_dir.to_string_lossy().to_string(), e.to_string()));
+            }
         }
     }
 
-    // Reset index.json entry count and hit statistics
+    // If any deletions failed, report the error and do NOT reset the index
+    if failed > 0 {
+        eprintln!("ERROR: Failed to delete {}/{} cache entries:", failed, entry_count);
+        for (path, err) in error_paths.iter().take(10) {
+            eprintln!("  - {}: {}", path, err);
+        }
+        if error_paths.len() > 10 {
+            eprintln!("  ... and {} more", error_paths.len() - 10);
+        }
+        bail!(
+            "Cache clear incomplete: {} files could not be deleted. Index not reset to maintain consistency.",
+            failed
+        );
+    }
+
+    // Only reset index if ALL deletions succeeded
     let mut index = layout::load_index(cache_dir)?.unwrap_or_default();
     index.entry_count = 0;
     index.total_bytes = 0;
@@ -402,6 +433,8 @@ pub fn purge_cache_older_than(cache_dir: &Path, duration_str: &str) -> Result<()
         .saturating_sub(duration.as_secs());
 
     let mut deleted = 0;
+    let mut failed = 0;
+    let mut error_paths = Vec::new();
 
     for prefix1_entry in fs::read_dir(cache_dir)?.filter_map(|e| e.ok()).filter(|e| {
         e.path().is_dir()
@@ -439,8 +472,13 @@ pub fn purge_cache_older_than(cache_dir: &Path, duration_str: &str) -> Result<()
                                 if let Ok(duration) = modified.duration_since(UNIX_EPOCH) {
                                     let mtime_secs = duration.as_secs();
                                     if mtime_secs < cutoff_secs {
-                                        let _ = fs::remove_file(&path);
-                                        deleted += 1;
+                                        match fs::remove_file(&path) {
+                                            Ok(()) => deleted += 1,
+                                            Err(e) => {
+                                                failed += 1;
+                                                error_paths.push((path.to_string_lossy().to_string(), e.to_string()));
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -450,20 +488,41 @@ pub fn purge_cache_older_than(cache_dir: &Path, duration_str: &str) -> Result<()
 
                 // Remove empty fingerprint directory
                 if fp_dir.read_dir()?.next().is_none() {
-                    let _ = fs::remove_dir(&fp_dir);
+                    if let Err(e) = fs::remove_dir(&fp_dir) {
+                        error_paths.push((fp_dir.to_string_lossy().to_string(), e.to_string()));
+                    }
                 }
             }
 
             // Remove empty second-level prefix directory
             if prefix2_dir.read_dir()?.next().is_none() {
-                let _ = fs::remove_dir(&prefix2_dir);
+                if let Err(e) = fs::remove_dir(&prefix2_dir) {
+                    error_paths.push((prefix2_dir.to_string_lossy().to_string(), e.to_string()));
+                }
             }
         }
 
         // Remove empty first-level prefix directory
         if prefix1_dir.read_dir()?.next().is_none() {
-            let _ = fs::remove_dir(&prefix1_dir);
+            if let Err(e) = fs::remove_dir(&prefix1_dir) {
+                error_paths.push((prefix1_dir.to_string_lossy().to_string(), e.to_string()));
+            }
         }
+    }
+
+    // If any deletions failed, report the error and do NOT update the index
+    if failed > 0 {
+        eprintln!("ERROR: Failed to delete {}/{} cache entries:", failed, deleted + failed);
+        for (path, err) in error_paths.iter().take(10) {
+            eprintln!("  - {}: {}", path, err);
+        }
+        if error_paths.len() > 10 {
+            eprintln!("  ... and {} more", error_paths.len() - 10);
+        }
+        bail!(
+            "Cache purge incomplete: {} files could not be deleted. Index not updated to maintain consistency.",
+            failed
+        );
     }
 
     // Update index (preserve hit stats, update entry count and bytes)
@@ -690,5 +749,75 @@ mod tests {
 
         let count = count_entries(cache_dir).unwrap();
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_clear_cache_with_permission_failure() {
+        let temp_dir = TempDir::new().unwrap();
+        let cache_dir = temp_dir.path();
+
+        // Create a test entry
+        let fp = "e7a1f3deadbeef00000000000000000000000000000000000000000000000000";
+        let opts = "9b21c0ffee000000000000000000000000000000000000000000000000000000";
+        let fp_dir = cache_dir.join("e7").join("a1").join(fp);
+        fs::create_dir_all(&fp_dir).unwrap();
+
+        let entry_path = fp_dir.join(format!("{}-1000.json.zst", opts));
+        fs::write(&entry_path, b"x".repeat(1000)).unwrap();
+
+        // Create index
+        let mut index = CacheIndex::default();
+        index.entry_count = 1;
+        index.total_bytes = 1000;
+        layout::save_index(cache_dir, &index).unwrap();
+
+        // Simulate permission failure by making the file read-only and making its parent directory non-writable
+        // Then create a new file that can't be deleted
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            // Make the file read-only
+            let mut perms = fs::metadata(&entry_path).unwrap().permissions();
+            perms.set_readonly(true);
+            fs::set_permissions(&entry_path, perms).unwrap();
+
+            // Make the fp_dir non-writable
+            let mut dir_perms = fs::metadata(&fp_dir).unwrap().permissions();
+            dir_perms.set_mode(0o500); // r-x for owner
+            fs::set_permissions(&fp_dir, dir_perms).unwrap();
+        }
+
+        // clear_cache should fail due to permission error
+        let result = clear_cache(cache_dir, true);
+
+        #[cfg(unix)]
+        {
+            // Should fail
+            assert!(result.is_err());
+
+            // Index should NOT have been reset (still shows 1 entry)
+            let loaded = layout::load_index(cache_dir).unwrap().unwrap();
+            assert_eq!(loaded.entry_count, 1);
+
+            // File should still exist
+            assert!(entry_path.exists());
+
+            // Restore permissions for cleanup
+            use std::os::unix::fs::PermissionsExt;
+            let mut dir_perms = fs::metadata(&fp_dir).unwrap().permissions();
+            dir_perms.set_mode(0o755);
+            fs::set_permissions(&fp_dir, dir_perms).unwrap();
+
+            let mut perms = fs::metadata(&entry_path).unwrap().permissions();
+            perms.set_readonly(false);
+            fs::set_permissions(&entry_path, perms).unwrap();
+        }
+
+        #[cfg(not(unix))]
+        {
+            // On non-Unix systems, we can't easily simulate permission failures
+            // Just verify the function succeeds
+            assert!(result.is_ok());
+        }
     }
 }
