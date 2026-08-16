@@ -816,7 +816,7 @@ pub extern "C" fn pdftract_classify(source: *const c_char) -> *mut c_char {
         let pdf_path = Path::new(&source_path);
 
         // Get basic info
-        let (fingerprint, _catalog, pages, _resolver) = match parse_pdf_file(pdf_path) {
+        let (fingerprint, _catalog, pages, _resolver, _page_labels) = match parse_pdf_file(pdf_path) {
             Ok(result) => result,
             Err(e) => return FfiResult::Err(anyhow_to_json_error(e)),
         };

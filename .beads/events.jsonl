@@ -116,3 +116,15 @@
 {"adapter":"claude-code-glm-4.7","bead":"bf-575vmf","event":"dispatch","model":"glm-4.7","strand":"auto","ts":"2026-08-16T22:01:14.655407317+00:00","worker":"lab-test-fix"}
 {"bead":"bf-2w5yyl","event":"claim","strand":"explore","ts":"2026-08-16T22:01:40.030893059+00:00","worker":"lab-screenferry"}
 {"adapter":"claude-code-glm-4.7","bead":"bf-2w5yyl","event":"dispatch","model":"glm-4.7","strand":"explore","ts":"2026-08-16T22:01:40.044067015+00:00","worker":"lab-screenferry"}
+{"bead":"bf-30nsos","duration_ms":417250,"event":"complete","exit_code":0,"outcome":"success","strand":"explore","ts":"2026-08-16T22:57:31.705294018+00:00","worker":"lab-drawrace"}
+{"bead":"bf-6bxja3","event":"claim","strand":"explore","ts":"2026-08-16T22:57:34.465054175+00:00","worker":"lab-drawrace"}
+{"adapter":"claude-code-glm-4.7","bead":"bf-6bxja3","event":"dispatch","model":"glm-4.7","strand":"explore","ts":"2026-08-16T22:57:34.799940556+00:00","worker":"lab-drawrace"}
+{"bead":"bf-wh3ztf","duration_ms":156803,"event":"complete","exit_code":0,"outcome":"success","strand":"auto","ts":"2026-08-16T22:57:57.220263828+00:00","worker":"lab-test-fix"}
+{"bead":"bf-lgc4dy","event":"claim","strand":"auto","ts":"2026-08-16T22:57:57.232795704+00:00","worker":"lab-test-fix"}
+{"adapter":"claude-code-glm-4.7","bead":"bf-lgc4dy","event":"dispatch","model":"glm-4.7","strand":"auto","ts":"2026-08-16T22:57:57.234659823+00:00","worker":"lab-test-fix"}
+{"bead":"bf-t7gh1v","duration_ms":363952,"event":"fail","exit_code":1,"outcome":"failure","strand":"explore","ts":"2026-08-16T22:58:40.707081230+00:00","worker":"lab-roam-1"}
+{"bead":"bf-t7gh1v","event":"claim","strand":"explore","ts":"2026-08-16T22:58:41.117077663+00:00","worker":"lab-roam-1"}
+{"adapter":"claude-code-glm-4.7","bead":"bf-t7gh1v","event":"dispatch","model":"glm-4.7","strand":"explore","ts":"2026-08-16T22:58:41.131702749+00:00","worker":"lab-roam-1"}
+{"bead":"bf-lgc4dy","duration_ms":111427,"event":"complete","exit_code":0,"outcome":"success","strand":"auto","ts":"2026-08-16T22:59:48.666133354+00:00","worker":"lab-test-fix"}
+{"bead":"bf-16iiz8","event":"claim","strand":"auto","ts":"2026-08-16T22:59:48.676373245+00:00","worker":"lab-test-fix"}
+{"adapter":"claude-code-glm-4.7","bead":"bf-16iiz8","event":"dispatch","model":"glm-4.7","strand":"auto","ts":"2026-08-16T22:59:48.678276811+00:00","worker":"lab-test-fix"}

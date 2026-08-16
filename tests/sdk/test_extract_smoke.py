@@ -82,11 +82,11 @@ def test_extract_returns_document_instance():
 
     # Verify the chain of nested objects is correctly preserved
     assert isinstance(first_span, Span), \
-        "Type chain verification failed: Span instance check"
+        f"Type chain verification failed: doc.pages[0].spans[0] should be Span instance, got {type(first_span).__name__}"
     assert isinstance(first_page, Page), \
-        "Type chain verification failed: Page instance check"
+        f"Type chain verification failed: doc.pages[0] should be Page instance, got {type(first_page).__name__}"
     assert isinstance(doc, Document), \
-        "Type chain verification failed: Document instance check"
+        f"Type chain verification failed: extract() should return Document instance, got {type(doc).__name__}"
     print(f"   - Type chain correctly preserved: ✓")
 
     print(f"\n✅ All nested type assertions passed!")
