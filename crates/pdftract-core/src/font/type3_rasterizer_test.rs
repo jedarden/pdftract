@@ -50,7 +50,7 @@ use crate::parser::stream::MemorySource;
 /// let doc_context = create_test_document_context();
 /// let ref_obj = PdfObject::Ref(ObjRef::new(10, 0));
 /// let result = detect_char_proc_type(&ref_obj, Some(&doc_context));
-/// // Result will be CharProcType::Unknown (resolver can't find the ref)
+/// // Result will be CharProcType::Other("unknown".to_string()) (resolver can't find the ref)
 /// ```
 pub fn create_test_document_context() -> DocumentContext<'static> {
     let resolver = XrefResolver::new();
@@ -1611,7 +1611,7 @@ fn test_detect_char_proc_type_ref_with_empty_context_returns_unknown() {
     let result = detect_char_proc_type(&ref_obj, Some(&doc_context));
 
     // Verify Unknown is returned (no panic)
-    assert_eq!(result, CharProcType::Unknown,
+    assert_eq!(result, CharProcType::Other("unknown".to_string()),
         "Reference with empty DocumentContext should return Unknown without panicking");
 }
 
@@ -1628,7 +1628,7 @@ fn test_detect_char_proc_type_ref_without_context_returns_unknown() {
     let result = detect_char_proc_type(&ref_obj, None);
 
     // Verify Unknown is returned (no panic)
-    assert_eq!(result, CharProcType::Unknown,
+    assert_eq!(result, CharProcType::Other("unknown".to_string()),
         "Reference without DocumentContext should return Unknown without panicking");
 }
 
@@ -1655,7 +1655,7 @@ fn test_detect_char_proc_type_with_context_detects_circular_ref() {
 
     // Since resolver is None, it should return Unknown (circular detection
     // only applies if we can actually dereference)
-    assert_eq!(result, CharProcType::Unknown,
+    assert_eq!(result, CharProcType::Other("unknown".to_string()),
         "Circular reference with no resolver should return Unknown");
 }
 
@@ -1680,7 +1680,7 @@ fn test_detect_char_proc_type_ref_does_not_panic_on_invalid_ref() {
         let result = detect_char_proc_type(&ref_obj, None);
 
         // All should return Unknown gracefully
-        assert_eq!(result, CharProcType::Unknown,
+        assert_eq!(result, CharProcType::Other("unknown".to_string()),
             "Invalid reference should return Unknown without panicking");
     }
 }
@@ -1708,7 +1708,7 @@ fn test_detect_char_proc_type_ref_integration_with_valid_context() {
     let result = detect_char_proc_type(&ref_obj, Some(&doc_context));
 
     // Should return Unknown (reference not found, but no panic)
-    assert_eq!(result, CharProcType::Unknown,
+    assert_eq!(result, CharProcType::Other("unknown".to_string()),
         "Reference not found should return Unknown without panicking");
 }
 
@@ -1866,7 +1866,7 @@ fn test_detect_char_proc_type_identifies_ref_type() {
 
     // Should be Unknown, not Other with a type name
     match result {
-        CharProcType::Unknown => {
+        CharProcType::Other("unknown".to_string()) => {
             // Expected - references without context return Unknown
         }
         CharProcType::Other(name) => {
@@ -1936,7 +1936,7 @@ fn test_detect_char_proc_type_ref_various_scenarios() {
 
         // Test without context - should return Unknown
         let result_no_ctx = detect_char_proc_type(&ref_obj, None);
-        assert_eq!(result_no_ctx, CharProcType::Unknown,
+        assert_eq!(result_no_ctx, CharProcType::Other("unknown".to_string()),
             "{} without context should return Unknown", description);
 
         // Test with empty context - should return Unknown
@@ -1945,7 +1945,7 @@ fn test_detect_char_proc_type_ref_various_scenarios() {
             source: None,
         };
         let result_empty_ctx = detect_char_proc_type(&ref_obj, Some(&empty_ctx));
-        assert_eq!(result_empty_ctx, CharProcType::Unknown,
+        assert_eq!(result_empty_ctx, CharProcType::Other("unknown".to_string()),
             "{} with empty context should return Unknown", description);
     }
 }
@@ -1963,7 +1963,7 @@ fn test_detect_char_proc_type_ref_chain_robustness() {
     let result = detect_char_proc_type(&ref_obj, None);
 
     // Should gracefully return Unknown
-    assert_eq!(result, CharProcType::Unknown,
+    assert_eq!(result, CharProcType::Other("unknown".to_string()),
         "Reference should return Unknown when resolution is not possible");
 }
 
@@ -2040,7 +2040,7 @@ fn test_detect_char_proc_type_ref_with_valid_context_and_stream() {
 /// Test that detect_char_proc_type handles invalid references gracefully.
 ///
 /// This test verifies that when a PdfObject::Ref contains an object reference
-/// ID that does not exist in the document, the function returns CharProcType::Unknown
+/// ID that does not exist in the document, the function returns CharProcType::Other("unknown".to_string())
 /// without panicking. This covers scenarios where:
 /// - Reference IDs are not present in the xref table
 /// - References have been deleted or corrupted
@@ -2072,7 +2072,7 @@ fn test_detect_char_proc_type_ref_with_invalid_reference() {
         let result = detect_char_proc_type(&ref_obj, Some(&doc_context));
 
         // Verify Unknown is returned for all invalid references
-        assert_eq!(result, CharProcType::Unknown,
+        assert_eq!(result, CharProcType::Other("unknown".to_string()),
             "Reference to non-existent object {} {} should return Unknown without panicking",
             obj_ref.object, obj_ref.generation);
     }
@@ -2082,7 +2082,7 @@ fn test_detect_char_proc_type_ref_with_invalid_reference() {
 ///
 /// This test verifies that when a PdfObject::Ref contains an object reference
 /// that points beyond the valid range of object numbers in the document, the
-/// function returns CharProcType::Unknown without panicking. This covers edge cases:
+/// function returns CharProcType::Other("unknown".to_string()) without panicking. This covers edge cases:
 /// - Object number 0 (invalid in PDF spec)
 /// - Extremely large object numbers
 /// - Object numbers beyond u32::MAX / 2 (theoretical bounds)
@@ -2114,7 +2114,7 @@ fn test_detect_char_proc_type_ref_with_nonexistent_object() {
         let result = detect_char_proc_type(&ref_obj, Some(&doc_context));
 
         // Verify Unknown is returned for all out-of-bounds references
-        assert_eq!(result, CharProcType::Unknown,
+        assert_eq!(result, CharProcType::Other("unknown".to_string()),
             "Out-of-bounds reference {} {} should return Unknown without panicking",
             obj_ref.object, obj_ref.generation);
     }
@@ -2151,7 +2151,7 @@ fn test_detect_char_proc_type_ref_with_mismatched_generation() {
     let result = detect_char_proc_type(&ref_obj, Some(&doc_context));
 
     // Verify Unknown is returned for generation-mismatched references
-    assert_eq!(result, CharProcType::Unknown,
+    assert_eq!(result, CharProcType::Other("unknown".to_string()),
         "Reference with mismatched generation number should return Unknown");
 }
 
@@ -2185,7 +2185,7 @@ fn test_detect_char_proc_type_ref_with_free_object() {
     let result = detect_char_proc_type(&ref_obj, Some(&doc_context));
 
     // Verify Unknown is returned for references to free objects
-    assert_eq!(result, CharProcType::Unknown,
+    assert_eq!(result, CharProcType::Other("unknown".to_string()),
         "Reference to free object should return Unknown");
 }
 
@@ -2299,7 +2299,7 @@ fn test_detect_char_proc_type_ref_to_dict_returns_dict() {
 /// Test that PdfObject::Ref with invalid reference returns Unknown without panicking.
 ///
 /// This test verifies that when a reference cannot be resolved (object not found,
-/// invalid offset, etc.), the function returns CharProcType::Unknown gracefully
+/// invalid offset, etc.), the function returns CharProcType::Other("unknown".to_string()) gracefully
 /// instead of panicking.
 #[test]
 fn test_detect_char_proc_type_ref_invalid_returns_unknown_no_panic() {
@@ -2330,7 +2330,7 @@ fn test_detect_char_proc_type_ref_invalid_returns_unknown_no_panic() {
         let result = detect_char_proc_type(&ref_obj, Some(&doc_context));
 
         // Verify Unknown is returned
-        assert_eq!(result, CharProcType::Unknown,
+        assert_eq!(result, CharProcType::Other("unknown".to_string()),
             "Invalid reference {} {} should return Unknown without panicking",
             obj_ref.object, obj_ref.generation);
     }
@@ -2401,7 +2401,7 @@ fn test_detect_char_proc_type_ref_multiple_objects_mixed_types() {
     // Test reference to non-existent object returns Unknown
     let invalid_ref = PdfObject::Ref(ObjRef::new(30, 0));
     let invalid_result = detect_char_proc_type(&invalid_ref, Some(&doc_context));
-    assert_eq!(invalid_result, CharProcType::Unknown,
+    assert_eq!(invalid_result, CharProcType::Other("unknown".to_string()),
         "Reference to non-existent object should return Unknown");
 }
 
@@ -2417,7 +2417,7 @@ fn test_detect_char_proc_type_ref_without_context_comprehensive() {
     // Should return Unknown gracefully without panicking
     let result = detect_char_proc_type(&ref_obj, None);
 
-    assert_eq!(result, CharProcType::Unknown,
+    assert_eq!(result, CharProcType::Other("unknown".to_string()),
         "Reference without DocumentContext should return Unknown");
 }
 
@@ -2491,6 +2491,6 @@ fn test_detect_char_proc_type_with_context_circular_reference_detection() {
 
     // Since resolver is None, it should return Unknown (circular detection
     // only applies if we can actually dereference)
-    assert_eq!(result, CharProcType::Unknown,
+    assert_eq!(result, CharProcType::Other("unknown".to_string()),
         "Circular reference with no resolver should return Unknown");
 }

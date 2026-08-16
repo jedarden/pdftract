@@ -120,8 +120,6 @@ pub enum CharProcType {
     Stream,
     /// PDF dictionary object (contains key-value pairs)
     Dict,
-    /// Unknown type - returned when reference dereferencing fails
-    Unknown,
     /// Any other PDF object type with a descriptive name
     Other(String),
 }
@@ -253,26 +251,26 @@ fn detect_char_proc_type_with_context_impl<'a>(
                                 }
                                 Type3Error::Io(msg) => {
                                     debug!("I/O error during char_proc reference dereferencing: {}", msg);
-                                    CharProcType::Unknown
+                                    CharProcType::Other("unknown".to_string())
                                 }
                                 Type3Error::CircularRef { ref_id } => {
                                     warn!("Circular reference detected at: {}", ref_id);
-                                    CharProcType::Unknown
+                                    CharProcType::Other("unknown".to_string())
                                 }
                                 // These errors shouldn't occur during dereferencing
                                 // (they're validation errors from successful derefs)
                                 Type3Error::InvalidCharProcType { .. } |
                                 Type3Error::MissingRequiredKey { .. } => {
                                     debug!("Validation error during char_proc dereferencing: {}", err);
-                                    CharProcType::Unknown
+                                    CharProcType::Other("unknown".to_string())
                                 }
                             }
                         }
                     }
                 }
                 None => {
-                    // No context provided - cannot dereference, return Unknown
-                    CharProcType::Unknown
+                    // No context provided - cannot dereference, return Other("unknown")
+                    CharProcType::Other("unknown".to_string())
                 }
             }
         }
@@ -392,13 +390,6 @@ pub fn validate_char_proc_structure(object: &PdfObject) -> Result<(), Type3Error
             }
 
             Ok(())
-        }
-        CharProcType::Unknown => {
-            // Unknown type (from failed reference dereferencing)
-            Err(Type3Error::InvalidCharProcType {
-                got: "unknown".to_string(),
-                expected: "stream or dictionary".to_string(),
-            })
         }
         CharProcType::Other(type_name) => {
             // For any other type, return InvalidCharProcType error
