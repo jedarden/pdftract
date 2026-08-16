@@ -1,61 +1,45 @@
+// Package pdftract provides Go types for the pdftract PDF processing library.
+// These types correspond to the core data structures used across pdftract's SDKs.
 package pdftract
 
-// Document represents a PDF document with pages and metadata.
-type Document struct {
-	Path     string
-	Pages    []Page
-	Metadata Metadata
-}
-
-// Page represents a single page in the document.
+// Page represents a single page in a PDF document.
+// It contains the page's dimensions and rotation information.
 type Page struct {
-	Number   int
-	Width    int
-	Height   int
-	Rotation int
+	Number   int // Page number (1-indexed)
+	Width    int // Page width in points
+	Height   int // Page height in points
+	Rotation int // Page rotation in degrees (0, 90, 180, 270)
 }
 
-// Metadata represents PDF document metadata.
+// Metadata contains document-level metadata extracted from a PDF.
+// It includes standard PDF information fields and document properties.
 type Metadata struct {
-	Pages        int
-	Title        string
-	Author       string
-	Subject      string
-	Keywords     []string
-	Creator      string
-	Producer     string
-	CreationDate string
-	ModDate      string
-	Tagged       bool
-	Form         bool
-	Encrypted    bool
+	Pages       int      // Total number of pages
+	Title       string   // Document title
+	Author      string   // Document author
+	Subject     string   // Document subject
+	Keywords    []string // Keywords/tags associated with the document
+	Creator     string   // Application that created the PDF
+	Producer    string   // Application that generated the PDF
+	CreationDate string // Date the document was created
+	ModDate     string   // Date the document was last modified
+	Tagged      bool     // Whether the PDF is tagged (accessible)
+	Form        bool     // Whether the PDF contains form fields
+	Encrypted   bool     // Whether the PDF is encrypted
 }
 
-// Fingerprint represents document hash information.
+// Fingerprint provides a unique identifier for a PDF document.
+// It enables deduplication and change detection across document sets.
 type Fingerprint struct {
-	Hash      string
-	Algorithm string
-	Pages     int
+	Hash      string // Document hash (e.g., SHA-256)
+	Algorithm string // Hash algorithm used (e.g., "SHA256")
+	Pages     int    // Number of pages in the document
 }
 
-// Classification represents document classification results.
+// Classification represents a machine learning classification result.
+// It categorizes content with an associated confidence score.
 type Classification struct {
-	Type       string
-	Confidence float64
-	Label      string
-}
-
-// PageResult represents the result of a page extraction operation.
-type PageResult struct {
-	PageNum int
-	Content string
-	Err     error
-}
-
-// MatchResult represents a search match with position and scoring information.
-type MatchResult struct {
-	PageNum  int
-	Position []int
-	Snippet  string
-	Score    float64
+	Type       string  // Classification category/type
+	Confidence float64 // Confidence score (0.0 to 1.0)
+	Label      string  // Human-readable label for the classification
 }
