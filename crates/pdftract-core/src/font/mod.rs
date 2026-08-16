@@ -4,6 +4,7 @@
 //! and handling font subset prefixes.
 
 pub mod agl;
+pub mod charproc_stream;
 pub mod cmap;
 pub mod codespace;
 pub mod embedded;
@@ -26,6 +27,7 @@ pub mod test_fixtures;
 pub mod test_glyph_helper;
 pub mod type3_test_fixtures;
 
+pub use charproc_stream::{CharProcStream, PathCommand};
 pub use path_commands::{closepath, curveto, lineto, moveto, rectangle};
 pub use type3_test_fixtures::{
     AETInspector, CharToGlyphMap, Content, GlyphDict, GlyphEntry, TestEdge,
