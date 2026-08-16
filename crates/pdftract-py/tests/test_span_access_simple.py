@@ -163,8 +163,9 @@ def test_create_sample_span():
 
     span = Span.from_native(span_data)
 
-    # Verify it's a Span instance
-    assert isinstance(span, Span)
+    # Verify it's a Span instance with descriptive error message
+    assert isinstance(span, Span), \
+        f'Expected Span type, got {type(span).__name__}'
     print("✓ Created Span instance successfully")
 
     # Verify attributes
@@ -202,8 +203,9 @@ def test_create_page_with_single_span():
 
     page = Page.from_native(page_data)
 
-    # Verify it's a Page instance
-    assert isinstance(page, Page)
+    # Verify it's a Page instance with descriptive error message
+    assert isinstance(page, Page), \
+        f'Expected Page type, got {type(page).__name__}'
     print("✓ Created Page instance successfully")
 
     # Use infrastructure to access the single span
@@ -211,7 +213,8 @@ def test_create_page_with_single_span():
 
     # Test accessing first span
     first_span = infra.access_first_span(page)
-    assert isinstance(first_span, Span)
+    assert isinstance(first_span, Span), \
+        f'Expected Span type, got {type(first_span).__name__}'
     assert first_span.text == "Single span text"
     print("✓ Successfully accessed single Span from Page")
 
@@ -266,35 +269,40 @@ def test_create_page_with_multiple_spans():
 
     page = Page.from_native(page_data)
 
-    # Verify it's a Page instance
-    assert isinstance(page, Page)
+    # Verify it's a Page instance with descriptive error message
+    assert isinstance(page, Page), \
+        f'Expected Page type, got {type(page).__name__}'
     print("✓ Created Page instance with multiple spans")
 
     # Use infrastructure to access spans
     infra = SpanAccessInfrastructure()
 
-    # Test accessing first span
+    # Test accessing first span with descriptive error message
     first_span = infra.access_first_span(page)
-    assert isinstance(first_span, Span)
+    assert isinstance(first_span, Span), \
+        f'Expected Span type, got {type(first_span).__name__}'
     assert first_span.text == "First span"
     print("✓ Successfully accessed first Span")
 
-    # Test accessing last span
+    # Test accessing last span with descriptive error message
     last_span = infra.access_last_span(page)
-    assert isinstance(last_span, Span)
+    assert isinstance(last_span, Span), \
+        f'Expected Span type, got {type(last_span).__name__}'
     assert last_span.text == "Third span"
     print("✓ Successfully accessed last Span")
 
-    # Test accessing span by index
+    # Test accessing span by index with descriptive error message
     middle_span = infra.access_span_by_index(page, 1)
-    assert isinstance(middle_span, Span)
+    assert isinstance(middle_span, Span), \
+        f'Expected Span type, got {type(middle_span).__name__}'
     assert middle_span.text == "Second span"
     print("✓ Successfully accessed middle Span by index")
 
-    # Test accessing all spans
+    # Test accessing all spans with descriptive error message
     all_spans = infra.access_all_spans(page)
     assert len(all_spans) == 3
-    assert all(isinstance(s, Span) for s in all_spans)
+    assert all(isinstance(s, Span) for s in all_spans), \
+        "All items in all_spans should be Span instances"
     print("✓ Successfully accessed all Spans with type verification")
 
     # Test span count
