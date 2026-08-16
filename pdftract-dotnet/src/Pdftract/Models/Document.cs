@@ -1,12 +1,13 @@
 using MessagePack;
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 
 namespace Pdftract.Models;
 
 /// <summary>
 /// Represents a PDF document with pages and metadata.
 /// </summary>
-[GenerateSerializer]
+[MessagePackObject]
 public record Document
 {
     [Key(0)]
