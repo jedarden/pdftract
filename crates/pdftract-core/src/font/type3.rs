@@ -14,6 +14,7 @@ use std::sync::Arc;
 use dashmap::DashMap;
 
 use crate::diagnostics::{DiagCode, Diagnostic};
+use crate::font::charproc_stream::CharProcStream;
 use crate::font::encoding::FontEncoding;
 use crate::graphics_state::Matrix3x3;
 use crate::parser::object::types::{ObjRef, PdfDict, PdfObject};
@@ -52,6 +53,122 @@ impl std::fmt::Display for Type3Error {
 }
 
 impl std::error::Error for Type3Error {}
+
+/// Type 3 glyph data.
+///
+/// Represents a single glyph in a Type 3 font with its parsed charproc stream.
+/// The charproc stream contains the PDF drawing commands that define the glyph's appearance.
+#[derive(Clone, Debug)]
+pub struct Type3Glyph {
+    /// The glyph name (e.g., "A", "B", "zero")
+    pub name: Arc<str>,
+    /// Parsed charproc stream containing PDF drawing commands
+    pub charproc_stream: CharProcStream,
+    /// Width of the glyph in glyph space
+    pub width: f64,
+}
+
+impl Type3Glyph {
+    /// Create a new Type3Glyph with the given name and charproc stream.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The glyph name
+    /// * `charproc_stream` - The parsed charproc stream
+    ///
+    /// # Returns
+    ///
+    /// A Type3Glyph with zero width (can be set later)
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use std::sync::Arc;
+    /// use pdftract_core::font::type3::Type3Glyph;
+    /// use pdftract_core::font::charproc_stream::CharProcStream;
+    ///
+    /// let glyph = Type3Glyph::new(
+    ///     Arc::from("A"),
+    ///     CharProcStream::new()
+    /// );
+    /// ```
+    pub fn new(name: Arc<str>, charproc_stream: CharProcStream) -> Self {
+        Self {
+            name,
+            charproc_stream,
+            width: 0.0,
+        }
+    }
+
+    /// Create a new Type3Glyph with the given name, charproc stream, and width.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The glyph name
+    /// * `charproc_stream` - The parsed charproc stream
+    /// * `width` - The glyph width in glyph space
+    ///
+    /// # Returns
+    ///
+    /// A Type3Glyph with all fields populated
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use std::sync::Arc;
+    /// use pdftract_core::font::type3::Type3Glyph;
+    /// use pdftract_core::font::charproc_stream::CharProcStream;
+    ///
+    /// let glyph = Type3Glyph::with_width(
+    ///     Arc::from("A"),
+    ///     CharProcStream::new(),
+    ///     500.0
+    /// );
+    /// ```
+    pub fn with_width(name: Arc<str>, charproc_stream: CharProcStream, width: f64) -> Self {
+        Self {
+            name,
+            charproc_stream,
+            width,
+        }
+    }
+
+    /// Set the glyph width.
+    ///
+    /// # Arguments
+    ///
+    /// * `width` - The new width in glyph space
+    pub fn set_width(&mut self, width: f64) {
+        self.width = width;
+    }
+
+    /// Get the glyph name.
+    ///
+    /// # Returns
+    ///
+    /// A reference to the glyph name
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Check if the charproc stream is empty (contains no drawing commands).
+    ///
+    /// # Returns
+    ///
+    /// `true` if the stream has no commands, `false` otherwise
+    pub fn is_empty(&self) -> bool {
+        self.charproc_stream.is_empty()
+    }
+
+    /// Get the number of drawing commands in the charproc stream.
+    ///
+    /// # Returns
+    ///
+    /// The count of path commands in the stream
+    pub fn command_count(&self) -> usize {
+        self.charproc_stream.len()
+    }
+}
 
 /// Type 3 font data.
 ///
