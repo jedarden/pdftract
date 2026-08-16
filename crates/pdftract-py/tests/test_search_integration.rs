@@ -12,6 +12,7 @@ use pdftract_py::*;
 #[cfg(test)]
 mod search_integration_tests {
     use std::path::Path;
+    use pdftract_core::sdk;
 
     /// Test scaffold for search functionality
     ///
@@ -34,10 +35,19 @@ mod search_integration_tests {
         // Verify the fixture exists for when we add actual search calls
         let path = Path::new(fixture_path);
 
-        // Basic setup code - no search call yet
-        // This will be expanded in subsequent beads
+        // Basic setup code - search call added
+        // This will be expanded with assertions in subsequent beads
         if path.exists() {
-            // Fixture is available for future search calls
+            // Fixture is available for search calls
+            // Add the actual pdftract.search() call with a simple pattern
+            let _ = sdk::search(
+                path,
+                "test",           // Simple search pattern
+                false,            // case_insensitive
+                false,            // use_regex
+                false,            // whole_word
+            );
+
             assert!(true, "Fixture path setup successful");
         } else {
             // If fixture doesn't exist, we can still compile the test
