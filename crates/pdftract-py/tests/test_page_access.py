@@ -339,6 +339,46 @@ class TestPageAccessPatterns:
             assert isinstance(first_span, pdftract.Span), \
                 f"Expected Span type, got {type(first_span).__name__}"
 
+    def test_span_type_assertions_from_page_result(self, sample_document: pdftract.Document,
+                                                   infrastructure: PageAccessInfrastructure) -> None:
+        """Test Span type assertions when accessing Span objects from Page results.
+
+        Parent bead: bf-6d70ph
+        This test ensures that Span objects accessed from Page results maintain
+        correct type contracts in the type hierarchy. It validates isinstance()
+        assertions for Span type when accessing spans from Page results.
+        """
+        # Access Page from Document result
+        page = infrastructure.access_first_page(sample_document)
+
+        # Verify Page has spans attribute
+        assert hasattr(page, "spans"), "Page should have spans attribute"
+        assert isinstance(page.spans, (list, tuple)), \
+            f"page.spans should be a list or tuple, got {type(page.spans).__name__}"
+
+        # Skip test if page has no spans
+        if len(page.spans) == 0:
+            pytest.skip("No spans found in first page - cannot test span type assertions")
+
+        # Test: Access Span objects from Page result
+        # Add isinstance() assertion for Span type (not generic type)
+        for span_idx, span in enumerate(page.spans):
+            assert isinstance(span, pdftract.Span), \
+                f"page.spans[{span_idx}] should be Span type, got {type(span).__name__}"
+            assert not isinstance(span, dict), \
+                f"page.spans[{span_idx}] should be typed Span instance, not raw dict"
+
+        # Verify first span specifically has Span type
+        first_span = page.spans[0]
+        assert isinstance(first_span, pdftract.Span), \
+            f"Expected Span type for first span, got {type(first_span).__name__}"
+
+        # Verify all spans maintain Span type (not generic types)
+        for span in page.spans:
+            assert isinstance(span, pdftract.Span), \
+                f"Expected Span type, got {type(span).__name__}"
+            # Assertion would fail if Span type is incorrect
+
     def test_pattern_filter_pages_by_criteria(self, sample_document: pdftract.Document,
                                               infrastructure: PageAccessInfrastructure) -> None:
         """Test pattern: filter pages based on criteria."""
