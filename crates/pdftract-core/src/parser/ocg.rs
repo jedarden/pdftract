@@ -229,6 +229,18 @@ impl OcProperties {
             .unwrap_or_else(|| self.base_state.as_bool())
     }
 
+    /// Get the set of OCG refs that are OFF by default.
+    ///
+    /// Returns a HashSet containing all OCG object references that are
+    /// OFF in the default configuration. Used by content stream parsing
+    /// to determine visibility of marked content sequences.
+    pub fn off_ocg_set(&self) -> std::collections::HashSet<ObjRef> {
+        self.default_visibility
+            .iter()
+            .filter_map(|(&ref_, &visible)| if !visible { Some(ref_) } else { None })
+            .collect()
+    }
+
     /// Check if an OCMD is visible by default.
     ///
     /// Evaluates the OCMD's policy against the current visibility states.

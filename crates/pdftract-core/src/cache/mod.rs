@@ -118,7 +118,7 @@ pub fn extract_with_cache(
 
     // First, we need the fingerprint to compute the cache key
     // We can't get this without parsing the PDF, so we parse but don't extract
-    let (fingerprint, _catalog, _pages, _resolver) = crate::document::parse_pdf_file(pdf_path)
+    let (fingerprint, _catalog, _pages, _resolver, _trailer) = crate::document::parse_pdf_file(pdf_path)
         .context("Failed to parse PDF file for fingerprint")?;
 
     // Compute cache key
