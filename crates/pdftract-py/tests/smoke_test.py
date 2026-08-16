@@ -104,6 +104,15 @@ def test_extract_returns_typed_document() -> None:
             f"Page {i} should have height attribute"
     print("✓ Document has typed Page objects")
 
+    # ===== Specific first-page span type check =====
+    # Verify the first page's first span is properly typed (deepest hierarchy level)
+
+    assert len(doc.pages[0].spans) > 0, \
+        f"First page should contain at least one span for type verification, found {len(doc.pages[0].spans)} spans"
+    assert isinstance(doc.pages[0].spans[0], pdftract.Span), \
+        f"doc.pages[0].spans[0] should be Span instance, got {type(doc.pages[0].spans[0]).__name__}"
+    print("✓ doc.pages[0].spans[0] is typed Span instance (deepest hierarchy level validated)")
+
     # ===== Span-level type verification =====
     # Verify Span objects exist and are properly typed with expected attributes
 
