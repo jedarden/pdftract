@@ -164,7 +164,9 @@ public class SourceTests
     [InlineData("MyProperty", "my_property")]
     [InlineData("XMLParser", "xml_parser")]
     [InlineData("PDFDocument", "pdf_document")]
+    [InlineData("PDFTract", "pdf_tract")]
     [InlineData("GetURLHandler", "get_url_handler")]
+    [InlineData("URL", "url")]
     [InlineData("FilePath", "file_path")]
     public void SnakeCaseNamingPolicy_ConvertsCorrectly(string input, string expected)
     {
