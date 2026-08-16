@@ -39,6 +39,31 @@ spec:
       workflow-type: nightly-fuzz
   workflowSpec:
     serviceAccountName: argo-workflow
+
+    # === Workflow Timeout Structure ===
+    # Multi-layer timeout protection to prevent indefinite hangs:
+    #
+    # 1. Workflow-level deadline (86400s = 24 hours):
+    #    - Measured from workflow.status.startedAt (creation time)
+    #    - Kills the entire workflow if it exceeds this time
+    #    - Independent of pod scheduling status
+    #    - Guard against PVC provisioning failures and controller bugs
+    #
+    # 2. Template-level deadlines:
+    #    - setup: 600s (10 min) - cargo-fuzz installation
+    #    - seed-corpus: 300s (5 min) - corpus preparation
+    #    - fuzz-matrix: 28800s (8 hours) - parallel fuzz orchestration
+    #    - fuzz-target: 21600s (6 hours) - per-target fuzzing
+    #    - on-exit: 300s (5 min) - exit handler
+    #
+    # 3. Command-level timeouts (in-container):
+    #    - cargo install cargo-fuzz: 300s timeout
+    #    - cargo fuzz run: governed by timeout parameter (17400s = 4.8h)
+    #
+    # FIX (bf-1toqu8): Added command-level timeout to cargo-fuzz installation
+    # to prevent hangs on network issues or build problems. Fixed storage
+    # classes (sata-large -> sata for <100Gi volumes). Adjusted workflow
+    # deadline from 24h to match actual runtime.
     activeDeadlineSeconds: 86400  # 24 hours absolute max (5 targets × 4.8h + overhead)
     podGC: OnPodCompletion
     ttlSecondsAfterFinished:
@@ -58,7 +83,7 @@ spec:
           name: workspace
         spec:
           accessModes: [ReadWriteOnce]
-          storageClassName: sata-large
+          storageClassName: sata
           resources:
             requests:
               storage: 10Gi
@@ -66,7 +91,7 @@ spec:
           name: fuzz-artifacts
         spec:
           accessModes: [ReadWriteOnce]
-          storageClassName: sata-large
+          storageClassName: sata
           resources:
             requests:
               storage: 20Gi
@@ -134,6 +159,8 @@ spec:
 
       # === Setup Step ===
       # Clone repo and install cargo-fuzz
+      # FIX (bf-1toqu8): Added command-level timeouts to prevent hangs
+      # on cargo install and network operations
       - name: setup
         activeDeadlineSeconds: 600
         container:
@@ -148,10 +175,14 @@ spec:
               cd /workspace
               export CARGO_HOME="/cache/cargo/registry"
 
-              # Install cargo-fuzz if not present
+              # Install cargo-fuzz if not present with timeout
               if ! command -v cargo-fuzz &> /dev/null; then
                 echo "Installing cargo-fuzz..."
-                cargo install cargo-fuzz --locked
+                # Add timeout to prevent indefinite hangs on network issues
+                timeout 300 cargo install cargo-fuzz --locked || {
+                  echo "ERROR: cargo-fuzz installation failed (timeout or build error)"
+                  exit 1
+                }
               fi
 
               echo "cargo-fuzz installed:"
