@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "crates" / "pdftract-py" / "python"))
 
 import pdftract
-from pdftract import Document
+from pdftract import Document, Page, Span
 
 
 def test_extract_returns_document_instance():
@@ -52,6 +52,46 @@ def test_extract_returns_document_instance():
     print(f"   - Type verified: {type(doc).__name__}")
     print(f"   - Not a dict: ✓")
     print(f"   - Not plain JSON: ✓")
+
+    # Verify nested type assertions for Page and Span objects
+    print(f"\n🔍 Verifying nested type assertions...")
+
+    # Check if doc.pages exists and has at least one page
+    assert hasattr(doc, 'pages'), \
+        "Document should have 'pages' attribute"
+    assert len(doc.pages) > 0, \
+        "Document should contain at least one page for testing nested types"
+
+    # Verify the first page is a Page instance
+    first_page = doc.pages[0]
+    assert isinstance(first_page, Page), \
+        f"doc.pages[0] should be a Page instance, got {type(first_page).__name__}"
+    print(f"   - doc.pages[0] is Page instance: ✓")
+
+    # Check if the page has spans and at least one span
+    assert hasattr(first_page, 'spans'), \
+        "Page should have 'spans' attribute"
+    assert len(first_page.spans) > 0, \
+        "Page should contain at least one span for testing nested types"
+
+    # Verify the first span is a Span instance
+    first_span = first_page.spans[0]
+    assert isinstance(first_span, Span), \
+        f"doc.pages[0].spans[0] should be a Span instance, got {type(first_span).__name__}"
+    print(f"   - doc.pages[0].spans[0] is Span instance: ✓")
+
+    # Verify the chain of nested objects is correctly preserved
+    assert isinstance(first_span, Span), \
+        "Type chain verification failed: Span instance check"
+    assert isinstance(first_page, Page), \
+        "Type chain verification failed: Page instance check"
+    assert isinstance(doc, Document), \
+        "Type chain verification failed: Document instance check"
+    print(f"   - Type chain correctly preserved: ✓")
+
+    print(f"\n✅ All nested type assertions passed!")
+    print(f"   - Document → Page → Span type chain verified")
+    print(f"   - {len(doc.pages)} page(s), {len(first_page.spans)} span(s) in first page")
 
 
 if __name__ == "__main__":
