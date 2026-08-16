@@ -297,6 +297,50 @@ def test_type_assertions_from_fixture_data(fixture_data: dict[str, Any]) -> None
                 f"{list_field} should be a list"
 
 
+def test_page_type_assertion_from_document() -> None:
+    """Test that Page objects accessed from Document are properly typed.
+
+    This test verifies that Page objects returned from Document are the correct type.
+    It is the first level of nested type verification, ensuring that when you access
+    doc.pages, each Page object is a properly typed Page instance, not a raw dict.
+
+    The test uses descriptive error messages that clearly indicate what type was
+    expected vs received, making debugging easier if type assertions fail.
+    """
+    fixture_path = Path(__file__).parent.parent.parent.parent / "tests" / "fixtures" / "encrypted" / "EC-04-rc4-encrypted.expected.json"
+
+    if not fixture_path.exists():
+        pytest.skip(f"Fixture file not found: {fixture_path}")
+
+    with fixture_path.open("r") as f:
+        fixture_data = json.load(f)
+
+    # Create Document from fixture data
+    doc = pdftract.Document.from_native(fixture_data)
+
+    # Verify Document is properly typed first
+    assert isinstance(doc, pdftract.Document), \
+        f"Expected Document type, got {type(doc).__name__}"
+
+    # Access Page objects from Document result
+    pages = doc.pages
+
+    # Verify pages is a list
+    assert isinstance(pages, list), \
+        f"doc.pages should be a list, got {type(pages).__name__}"
+
+    # Verify document has at least one page
+    assert len(pages) > 0, \
+        f"Document should contain at least one page, got {len(pages)} pages"
+
+    # Add isinstance() assertion for Page type with descriptive error message
+    for page_idx, page in enumerate(pages):
+        assert isinstance(page, pdftract.Page), \
+            f"Expected Page type for doc.pages[{page_idx}], got {type(page).__name__}"
+        assert not isinstance(page, dict), \
+            f"doc.pages[{page_idx}] should be a typed Page instance, not a raw dict"
+
+
 def test_span_type_assertion(fixture_data: dict[str, Any]) -> None:
     """Test that span objects within Pages are properly typed.
 
