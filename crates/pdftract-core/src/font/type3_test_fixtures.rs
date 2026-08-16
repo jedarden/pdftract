@@ -1772,4 +1772,62 @@ mod tests {
 
         assert_eq!(edges.len(), 2); // Left and right edges only
     }
+
+    /// Create a rectangle charproc stream using the CharProcStream builder.
+    ///
+    /// This function demonstrates creating a simple 10x10 rectangle glyph
+    /// using the CharProcStream builder pattern with explicit path commands:
+    /// moveto(0,0) → lineto(10,0) → lineto(10,10) → lineto(0,10) → closepath → fill
+    ///
+    /// # Returns
+    ///
+    /// A `CharProcStream` containing the rectangle drawing commands.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdftract_core::font::type3_test_fixtures::create_rectangle_charproc_stream_builder;
+    ///
+    /// let stream = create_rectangle_charproc_stream_builder();
+    /// let pdf_bytes = stream.to_pdf_bytes();
+    /// assert_eq!(pdf_bytes, b"0 0 m 10 0 l 10 10 l 0 10 l h f");
+    /// ```
+    pub fn create_rectangle_charproc_stream_builder() -> crate::font::charproc_stream::CharProcStream {
+        use crate::font::charproc_stream::CharProcStream;
+
+        let mut stream = CharProcStream::new();
+
+        // Create a 10x10 rectangle at the origin using explicit path commands
+        stream
+            .add_moveto(0.0, 0.0)      // Start at origin (0, 0)
+            .add_lineto(10.0, 0.0)     // Line to (10, 0) - top edge
+            .add_lineto(10.0, 10.0)    // Line to (10, 10) - right edge
+            .add_lineto(0.0, 10.0)     // Line to (0, 10) - bottom edge
+            .add_closepath()           // Close path back to origin
+            .add_fill();               // Fill the path
+
+        stream
+    }
+
+    #[test]
+    fn test_create_rectangle_charproc_stream_builder() {
+        let stream = create_rectangle_charproc_stream_builder();
+        let pdf_bytes = stream.to_pdf_bytes();
+
+        // Verify the PDF content stream is correctly formatted
+        assert_eq!(pdf_bytes, b"0 0 m 10 0 l 10 10 l 0 10 l h f");
+
+        // Verify the stream has the correct number of commands
+        assert_eq!(stream.len(), 6); // moveto + 3 lineto + closepath + fill
+
+        // Verify the commands are in the correct order
+        use crate::font::charproc_stream::PathCommand;
+        let commands = stream.commands();
+        assert_eq!(commands[0], PathCommand::MoveTo(0.0, 0.0));
+        assert_eq!(commands[1], PathCommand::LineTo(10.0, 0.0));
+        assert_eq!(commands[2], PathCommand::LineTo(10.0, 10.0));
+        assert_eq!(commands[3], PathCommand::LineTo(0.0, 10.0));
+        assert_eq!(commands[4], PathCommand::ClosePath);
+        assert_eq!(commands[5], PathCommand::Fill);
+    }
 }
