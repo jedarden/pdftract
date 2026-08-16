@@ -449,10 +449,10 @@ impl Default for TextMatrix {
 /// # let content = b"BT (Hello) Tj ET";
 /// # let resources = ResourceDict::new();
 /// // Normal mode: extract text with Unicode resolution
-/// let glyphs = process_with_mode(content, &resources, ProcessingMode::Normal, None, None, None);
+/// let glyphs = process_with_mode(content, &resources, ProcessingMode::Normal, None, None);
 ///
 /// // PositionHint mode: get geometry only
-/// let hints = process_with_mode(content, &resources, ProcessingMode::PositionHint, None, None, None);
+/// let hints = process_with_mode(content, &resources, ProcessingMode::PositionHint, None, None);
 ///
 /// // With OCG visibility data
 /// let off_ocgs = HashSet::new();
@@ -2344,7 +2344,7 @@ mod tests {
         let resources = ResourceDict::new();
 
         // Normal mode
-        let normal_result = process_with_mode(content, &resources, ProcessingMode::Normal, None, None, None);
+        let normal_result = process_with_mode(content, &resources, ProcessingMode::Normal, None, None);
         assert!(normal_result.is_ok());
         let normal_glyphs = normal_result.unwrap();
         assert_eq!(normal_glyphs.len(), 1);
@@ -2353,7 +2353,7 @@ mod tests {
 
         // PositionHint mode
         let hint_result =
-            process_with_mode(content, &resources, ProcessingMode::PositionHint, None, None, None);
+            process_with_mode(content, &resources, ProcessingMode::PositionHint, None, None);
         assert!(hint_result.is_ok());
         let hint_glyphs = hint_result.unwrap();
         assert_eq!(hint_glyphs.len(), 1);

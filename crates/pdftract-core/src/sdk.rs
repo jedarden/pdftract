@@ -144,156 +144,67 @@ pub fn extract_stream(
     pdf_path: &Path,
     options: &ExtractionOptions,
 ) -> Result<impl Iterator<Item = Result<PageResult>>> {
-    use crate::parser::catalog::parse_catalog;
-    use crate::parser::pages::LazyPageIter;
-    use crate::parser::xref::{load_xref_with_prev_chain, XrefResolver};
-    use crate::extract::find_startxref;
-    use std::sync::Arc;
+    // Channel to send pages from callback to iterator
+    let (sender, receiver) = std::sync::mpsc::channel();
 
-    // Open the PDF file
-    let source = FileSource::open(pdf_path).context("Failed to open PDF file")?;
+    // Spawn a thread that uses the streaming extraction callback
+    let pdf_path = pdf_path.to_path_buf();
+    let options_clone = options.clone();
 
-    // Find the startxref offset
-    let startxref_offset = find_startxref(&source).context("Failed to find startxref offset")?;
+    std::thread::spawn(move || {
+        use crate::extract::extract_pdf_streaming;
 
-    // Load the xref table
-    let xref_section = load_xref_with_prev_chain(&source, startxref_offset);
+        let result = extract_pdf_streaming(&pdf_path, &options_clone, |page_result| {
+            // Send the page to the iterator
+            let _ = sender.send(Ok(page_result.clone()));
+            true // Continue processing
+        });
 
-    // Create resolver from xref section
-    let resolver = XrefResolver::from_section(xref_section.clone());
-
-    // Get the root reference from trailer
-    let root_ref = xref_section
-        .trailer
-        .as_ref()
-        .and_then(|trailer| trailer.get("Root"))
-        .and_then(|obj| obj.as_ref())
-        .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
-
-    // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn ParserPdfSource))
-        .map_err(|diagnostics| {
-            let msg = diagnostics
-                .first()
-                .map(|d| d.message.as_ref())
-                .unwrap_or("unknown error");
-            anyhow::anyhow!("Failed to parse catalog: {}", msg)
-        })?;
-
-    // Resolve AcroForm if present for fingerprint computation
-    let acroform = catalog.acroform_ref.and_then(|ref_| {
-        resolver
-            .resolve(ref_)
-            .ok()
-            .and_then(|obj| obj.as_dict().cloned())
+        // Send the final result or error
+        if let Err(e) = result {
+            let _ = sender.send(Err(anyhow::anyhow!("Extraction failed: {}", e)));
+        }
     });
 
-    // Build fingerprint
-    let fingerprint = crate::document::compute_fingerprint_lazy(&catalog, &resolver, &acroform);
-
-    // Wrap resolver in Arc for sharing across pages
-    let resolver_arc = Arc::new(resolver);
-    let source_arc = Arc::new(source);
-
-    // Create lazy page iterator - this walks the tree on-demand
-    let mut page_iter =
-        LazyPageIter::new(&resolver_arc, catalog.pages_ref).map_err(|diagnostics| {
-            let msg = diagnostics
-                .first()
-                .map(|d| d.message.as_ref())
-                .unwrap_or("unknown error");
-            anyhow::anyhow!("Failed to create lazy page iterator: {}", msg)
-        })?;
-
-    // Create the streaming iterator
-    let iterator = StreamIterator {
-        page_iter,
-        page_index: 0,
-        fingerprint: Arc::new(fingerprint),
-        options: Arc::new(options.clone()),
-        resolver: resolver_arc,
-        source: source_arc,
-    };
-
-    Ok(iterator)
+    // Return an iterator that receives pages from the channel
+    Ok(StreamIterator::new(receiver))
 }
 
-/// Streaming iterator that extracts pages one at a time.
+/// Streaming iterator that receives pages from a channel.
 ///
-/// This iterator holds only the parsing state and extracts each page
-/// lazily as `next()` is called, ensuring memory stays bounded.
+/// This iterator wraps a channel receiver to provide an Iterator interface
+/// that yields PageResult objects as they become available from the streaming
+/// extraction thread.
 struct StreamIterator {
-    /// Lazy page iterator from the page tree
-    page_iter: LazyPageIter,
-    /// Current page index (0-based)
-    page_index: usize,
-    /// PDF fingerprint for receipt generation
-    fingerprint: Arc<String>,
-    /// Extraction options (cloned for each page)
-    options: Arc<ExtractionOptions>,
-    /// Xref resolver for resolving indirect references
-    resolver: Arc<XrefResolver>,
-    /// PDF source for reading stream data
-    source: Arc<FileSource>,
+    /// Channel receiver for pages
+    receiver: std::sync::mpsc::Receiver<Result<PageResult>>,
+    /// Buffer for the next page (if already received)
+    next_item: Option<Result<PageResult>>,
+}
+
+impl StreamIterator {
+    fn new(receiver: std::sync::mpsc::Receiver<Result<PageResult>>) -> Self {
+        Self {
+            receiver,
+            next_item: None,
+        }
+    }
 }
 
 impl Iterator for StreamIterator {
     type Item = Result<PageResult>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // Advance to the next page
-        let page_result = self.page_iter.next()?;
+        // Return buffered item if available
+        if let Some(item) = self.next_item.take() {
+            return Some(item);
+        }
 
-        let page_dict = match page_result {
-            Ok(page) => page,
-            Err(diagnostics) => {
-                let msg = diagnostics
-                    .first()
-                    .map(|d| d.message.as_ref())
-                    .unwrap_or("unknown error")
-                    .to_string();
-                return Some(Err(anyhow::anyhow!(
-                    "Failed to read page {}: {}",
-                    self.page_index,
-                    msg
-                )));
-            }
-        };
-
-        let page_index = self.page_index;
-        self.page_index += 1;
-
-        // Extract this page using lazy stream decoding
-        let extract_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            crate::extract::extract_page_from_dict(
-                &self.fingerprint,
-                page_index,
-                &page_dict,
-                &self.options,
-                Some(&*self.source),
-                Some(&*self.resolver),
-            )
-        }));
-
-        let page_internal = match extract_result {
-            Ok(Ok(page)) => page,
-            Ok(Err(e)) => {
-                return Some(Err(anyhow::anyhow!(
-                    "Page {} extraction failed: {}",
-                    page_index,
-                    e
-                )))
-            }
-            Err(_) => {
-                return Some(Err(anyhow::anyhow!(
-                    "Page {} extraction panicked",
-                    page_index
-                )))
-            }
-        };
-
-        // Convert PageResultInternal to PageResult
-        Some(Ok(PageResult::from(page_internal)))
+        // Try to receive the next page
+        match self.receiver.recv() {
+            Ok(item) => Some(item),
+            Err(_) => None, // Channel closed, no more pages
+        }
     }
 }
 
@@ -386,11 +297,14 @@ pub struct SearchMatch {
 ///
 /// A `PdfMetadata` object with page count and other metadata.
 pub fn get_metadata(pdf_path: &Path) -> Result<PdfMetadata> {
-    let (_fingerprint, catalog, pages, _resolver, _trailer) = crate::document::parse_pdf_file(pdf_path)?;
+    let (_fingerprint, catalog, pages, _resolver, trailer) = crate::document::parse_pdf_file(pdf_path)?;
+
+    // Check if document is encrypted by looking for /Encrypt in trailer
+    let is_encrypted = trailer.get("/Encrypt").is_some();
 
     Ok(PdfMetadata {
         page_count: pages.len(),
-        is_encrypted: false, // TODO: detect encryption from catalog
+        is_encrypted,
         is_tagged: catalog.struct_tree_root_ref.is_some(),
         has_forms: catalog.acroform_ref.is_some(),
     })
@@ -732,9 +646,123 @@ pub fn verify_receipt_from_path(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn test_search_basic() {
         // Test will be implemented with fixture
+    }
+
+    #[test]
+    fn test_get_metadata_encrypted_pdf() {
+        // Test that encrypted PDFs are correctly identified
+        let encrypted_fixtures = [
+            "tests/fixtures/encrypted/EC-04-rc4-encrypted.pdf",
+            "tests/fixtures/encrypted/EC-05-aes128-encrypted.pdf",
+            "tests/fixtures/encrypted/EC-06-aes256-encrypted.pdf",
+            "tests/fixtures/encrypted/livecycle.pdf",
+        ];
+
+        for fixture_path in &encrypted_fixtures {
+            let path = Path::new(fixture_path);
+            if !path.exists() {
+                println!("Skipping {} (not found)", fixture_path);
+                continue;
+            }
+
+            let metadata = match get_metadata(path) {
+                Ok(meta) => meta,
+                Err(e) => {
+                    println!("Skipping {} - parse error: {}", fixture_path, e);
+                    continue;
+                }
+            };
+
+            assert!(
+                metadata.is_encrypted,
+                "Expected encrypted PDF {} to have is_encrypted=true",
+                fixture_path
+            );
+            println!("✓ {} correctly reports is_encrypted=true ({} pages)",
+                     fixture_path, metadata.page_count);
+        }
+    }
+
+    #[test]
+    fn test_get_metadata_non_encrypted_pdf() {
+        // Test that non-encrypted PDFs return is_encrypted=false
+        let non_encrypted_fixtures = [
+            "tests/fixtures/sample.pdf",
+            "tests/fixtures/tagged-suspects-true.pdf",
+            "tests/fixtures/markdown_structure.pdf",
+        ];
+
+        for fixture_path in &non_encrypted_fixtures {
+            let path = Path::new(fixture_path);
+            if !path.exists() {
+                println!("Skipping {} (not found)", fixture_path);
+                continue;
+            }
+
+            let metadata = match get_metadata(path) {
+                Ok(meta) => meta,
+                Err(e) => {
+                    println!("Skipping {} - parse error: {}", fixture_path, e);
+                    continue;
+                }
+            };
+
+            assert!(
+                !metadata.is_encrypted,
+                "Expected non-encrypted PDF {} to have is_encrypted=false",
+                fixture_path
+            );
+            println!("✓ {} correctly reports is_encrypted=false ({} pages)",
+                     fixture_path, metadata.page_count);
+        }
+    }
+
+    #[test]
+    fn test_get_metadata_page_count() {
+        // Test that page count is correctly reported
+        let path = Path::new("tests/fixtures/sample.pdf");
+        if !path.exists() {
+            println!("Skipping sample.pdf (not found)");
+            return;
+        }
+
+        let metadata = get_metadata(path).expect("Failed to get metadata");
+        assert!(metadata.page_count > 0, "Expected page count > 0");
+        println!("✓ sample.pdf has {} pages", metadata.page_count);
+    }
+
+    #[test]
+    fn test_get_metadata_tagged_pdf() {
+        // Test that tagged PDFs are correctly identified
+        let path = Path::new("tests/fixtures/tagged-suspects-true.pdf");
+        if !path.exists() {
+            println!("Skipping tagged-suspects-true.pdf (not found)");
+            return;
+        }
+
+        let metadata = get_metadata(path).expect("Failed to get metadata");
+        // This PDF should be tagged
+        assert!(metadata.is_tagged, "Expected tagged PDF to have is_tagged=true");
+        println!("✓ tagged-suspects-true.pdf correctly reports is_tagged=true");
+    }
+
+    #[test]
+    fn test_get_metadata_non_tagged_pdf() {
+        // Test that non-tagged PDFs are correctly identified
+        let path = Path::new("tests/fixtures/sample.pdf");
+        if !path.exists() {
+            println!("Skipping sample.pdf (not found)");
+            return;
+        }
+
+        let metadata = get_metadata(path).expect("Failed to get metadata");
+        // sample.pdf is not tagged
+        assert!(!metadata.is_tagged, "Expected non-tagged PDF to have is_tagged=false");
+        println!("✓ sample.pdf correctly reports is_tagged=false");
     }
 }

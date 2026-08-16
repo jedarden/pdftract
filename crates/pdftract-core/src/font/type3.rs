@@ -29,6 +29,13 @@ pub enum Type3Error {
         /// The glyph name that was not found
         glyph_name: String,
     },
+    /// Character procedure reference points to an invalid object type.
+    InvalidCharProcType {
+        /// The actual object type that was found
+        got: String,
+        /// The expected object type
+        expected: String,
+    },
 }
 
 impl std::fmt::Display for Type3Error {
@@ -36,6 +43,9 @@ impl std::fmt::Display for Type3Error {
         match self {
             Type3Error::MissingCharProcRef { glyph_name } => {
                 write!(f, "character procedure reference not found for glyph '{}'", glyph_name)
+            }
+            Type3Error::InvalidCharProcType { got, expected } => {
+                write!(f, "Invalid char_proc type: expected {}, got {}", expected, got)
             }
         }
     }
@@ -1279,6 +1289,32 @@ mod tests {
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("MissingGlyph"));
         assert!(error_msg.contains("character procedure reference not found"));
+    }
+
+    #[test]
+    fn test_invalid_char_proc_type_error_display() {
+        // Test that InvalidCharProcType error displays correctly
+        let error = Type3Error::InvalidCharProcType {
+            got: "Dictionary".to_string(),
+            expected: "Stream".to_string(),
+        };
+
+        let error_msg = error.to_string();
+        assert!(error_msg.contains("Invalid char_proc type"));
+        assert!(error_msg.contains("expected Stream"));
+        assert!(error_msg.contains("got Dictionary"));
+    }
+
+    #[test]
+    fn test_invalid_char_proc_type_error_implies_error() {
+        // Test that InvalidCharProcType implements std::error::Error
+        let error = Type3Error::InvalidCharProcType {
+            got: "Integer".to_string(),
+            expected: "Stream".to_string(),
+        };
+
+        // This should compile, confirming it implements std::error::Error
+        let _: &dyn std::error::Error = &error;
     }
 
     #[test]
