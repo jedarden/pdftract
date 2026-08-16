@@ -238,7 +238,7 @@ def test_document_type_from_fixture_data(fixture_data: dict[str, Any]) -> None:
 
     # Verify first page is a Page instance with descriptive error
     assert isinstance(result.pages[0], pdftract.Page), \
-        f'Expected Page type, got {type(result.pages[0]).__name__}'
+        f'Expected Page, got {type(result.pages[0]).__name__}'
 
     for page_idx, page in enumerate(result.pages):
         assert isinstance(page, pdftract.Page), \
