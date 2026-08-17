@@ -24,4 +24,4 @@ pub use image_compositing::{collect_image_placements, ImageBytesRef, ImagePlacem
 pub use pdfium_path::has_full_render;
 
 pub use path::{CurrentPath, PathCommand, Point};
-pub use scanline::{fill_polygon, fill_polygon_from_tuples, Bitmap, Edge};
+pub use scanline::{fill_polygon, fill_polygon_from_tuples, Bitmap, Edge, ActiveEdgeTable, GlobalEdgeTable};
