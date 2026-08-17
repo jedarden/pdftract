@@ -14,25 +14,25 @@ type Page struct {
 // Metadata contains document-level metadata extracted from a PDF.
 // It includes standard PDF information fields and document properties.
 type Metadata struct {
-	Pages       int      // Total number of pages
-	Title       string   // Document title
-	Author      string   // Document author
-	Subject     string   // Document subject
-	Keywords    []string // Keywords/tags associated with the document
-	Creator     string   // Application that created the PDF
-	Producer    string   // Application that generated the PDF
-	CreationDate string // Date the document was created
-	ModDate     string   // Date the document was last modified
-	Tagged      bool     // Whether the PDF is tagged (accessible)
-	Form        bool     // Whether the PDF contains form fields
-	Encrypted   bool     // Whether the PDF is encrypted
+	Pages        int      // Total number of pages
+	Title        string   // Document title
+	Author       string   // Document author
+	Subject      string   // Document subject
+	Keywords     []string // Keywords/tags associated with the document
+	Creator      string   // Application that created the PDF
+	Producer     string   // Application that generated the PDF
+	CreationDate string   // Date the document was created
+	ModDate      string   // Date the document was last modified
+	Tagged       bool     // Whether the PDF is tagged (accessible)
+	Form         bool     // Whether the PDF contains form fields
+	Encrypted    bool     // Whether the PDF is encrypted
 }
 
 // Document represents a fully parsed PDF document.
 type Document struct {
-	Path     string    // Filesystem path to the PDF
-	Pages    []Page    // All pages in the document
-	Metadata Metadata  // Document metadata
+	Path     string   // Filesystem path to the PDF
+	Pages    []Page   // All pages in the document
+	Metadata Metadata // Document metadata
 }
 
 // Fingerprint provides a unique identifier for a PDF document.
@@ -49,4 +49,21 @@ type Classification struct {
 	Type       string  // Classification category/type
 	Confidence float64 // Confidence score (0.0 to 1.0)
 	Label      string  // Human-readable label for the classification
+}
+
+// PageResult represents the result of extracting text from a single page.
+// It wraps the page number and extracted content along with any error that occurred.
+type PageResult struct {
+	PageNum int    // Page number (1-indexed)
+	Content string // Extracted text content
+	Err     error  // Error if extraction failed (nil on success)
+}
+
+// MatchResult represents a single search match within a document.
+// It provides the match location, context snippet, and relevance score.
+type MatchResult struct {
+	PageNum  int     // Page number where the match was found
+	Position []int   // Character position offsets [start, end]
+	Snippet  string  // Context snippet around the match
+	Score    float64 // Match relevance score (0.0 to 1.0)
 }
