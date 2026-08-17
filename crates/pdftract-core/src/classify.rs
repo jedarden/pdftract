@@ -28,6 +28,179 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
+/// Comprehensive error type for page classification failures.
+///
+/// This enum provides specific error types for various failure modes
+/// that can occur during page classification, enabling better error handling,
+/// user feedback, and recovery strategies.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ClassificationError {
+    /// Page context contains invalid data (e.g., negative dimensions, invalid values)
+    InvalidContext {
+        /// Description of what makes the context invalid
+        reason: String,
+    },
+
+    /// Grid cell data is invalid or malformed
+    InvalidGridCell {
+        /// Cell index that is invalid
+        cell_index: usize,
+        /// Description of the problem
+        reason: String,
+    },
+
+    /// Confidence score is outside valid range [0.0, 1.0]
+    InvalidConfidence {
+        /// The invalid confidence value
+        value: f32,
+        /// Description of why this value is invalid
+        reason: String,
+    },
+
+    /// Signal strength is outside valid range [0.0, 1.0]
+    InvalidSignalStrength {
+        /// The invalid strength value
+        value: f32,
+        /// Signal name that produced invalid strength
+        signal_name: String,
+        /// Description of why this value is invalid
+        reason: String,
+    },
+
+    /// Validation failed during classification
+    ValidationFailed {
+        /// Validation stage that failed
+        stage: String,
+        /// Detailed error message
+        message: String,
+    },
+
+    /// Grid-based classification failed
+    GridClassificationFailed {
+        /// Detailed error message
+        message: String,
+    },
+
+    /// Generic classification failure with context
+    ClassificationFailed {
+        /// Detailed error message
+        message: String,
+    },
+}
+
+impl std::fmt::Display for ClassificationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidContext { reason } => {
+                write!(f, "Invalid page context: {}", reason)
+            }
+            Self::InvalidGridCell { cell_index, reason } => {
+                write!(f, "Invalid grid cell at index {}: {}", cell_index, reason)
+            }
+            Self::InvalidConfidence { value, reason } => {
+                write!(f, "Invalid confidence value {}: {}", value, reason)
+            }
+            Self::InvalidSignalStrength { value, signal_name, reason } => {
+                write!(
+                    f,
+                    "Invalid signal strength {} from '{}': {}",
+                    value, signal_name, reason
+                )
+            }
+            Self::ValidationFailed { stage, message } => {
+                write!(f, "Classification validation failed at stage '{}': {}", stage, message)
+            }
+            Self::GridClassificationFailed { message } => {
+                write!(f, "Grid classification failed: {}", message)
+            }
+            Self::ClassificationFailed { message } => {
+                write!(f, "Page classification failed: {}", message)
+            }
+        }
+    }
+}
+
+impl std::error::Error for ClassificationError {}
+
+/// Result type alias for classification operations.
+pub type ClassificationResult<T> = std::result::Result<T, ClassificationError>;
+
+/// Error context helper for adding diagnostic information to classification errors.
+///
+/// This struct provides methods to enrich error messages with additional
+/// context like page index, signal names, and formatted error chains.
+#[derive(Debug, Clone)]
+pub struct ErrorContext {
+    /// Optional page index for context
+    page_index: Option<usize>,
+    /// Optional signal or component name
+    component: Option<String>,
+    /// Additional context information
+    context: Vec<String>,
+}
+
+impl ErrorContext {
+    /// Create a new error context.
+    pub fn new() -> Self {
+        Self {
+            page_index: None,
+            component: None,
+            context: Vec::new(),
+        }
+    }
+
+    /// Add page index to the error context.
+    pub fn with_page_index(mut self, page_index: usize) -> Self {
+        self.page_index = Some(page_index);
+        self
+    }
+
+    /// Add signal/component name to the error context.
+    pub fn with_signal(mut self, signal_name: &str) -> Self {
+        self.component = Some(signal_name.to_string());
+        self
+    }
+
+    /// Add additional context information.
+    pub fn with_context(mut self, info: &str) -> Self {
+        self.context.push(info.to_string());
+        self
+    }
+
+    /// Format the error with all accumulated context.
+    pub fn format_error(&self, base_error: &str) -> String {
+        let mut parts = Vec::new();
+
+        if let Some(page_idx) = self.page_index {
+            parts.push(format!("page {}", page_idx));
+        }
+
+        if let Some(component) = &self.component {
+            parts.push(format!("'{}'", component));
+        }
+
+        let location = if parts.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", parts.join(" in "))
+        };
+
+        let mut result = format!("{}{}", base_error, location);
+
+        for ctx in &self.context {
+            result.push_str(&format!(": {}", ctx));
+        }
+
+        result
+    }
+}
+
+impl Default for ErrorContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Signal evaluator configuration constants.
 ///
 /// Centralizes all threshold constants used by signal evaluators.
@@ -535,8 +708,15 @@ pub fn image_coverage_fraction(ctx: &PageContext) -> Option<Vote> {
 ///
 /// # Returns
 ///
-/// A `PageClassification` containing the class, confidence, and
+/// A `ClassificationResult<PageClassification>` containing the class, confidence, and
 /// optionally the set of hybrid cell indexes for Hybrid pages.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The page context contains invalid data (negative dimensions, invalid values)
+/// - Grid cell data is malformed
+/// - Validation fails during classification
 ///
 /// # Examples
 ///
@@ -561,12 +741,119 @@ pub fn image_coverage_fraction(ctx: &PageContext) -> Option<Vote> {
 ///     grid_cells: None,
 /// };
 ///
-/// let classification = classify_page(&ctx);
+/// let classification = classify_page(&ctx).unwrap();
 /// assert_eq!(classification.class, pdftract_core::classify::PageClass::Vector);
 /// ```
-pub fn classify_page(ctx: &PageContext) -> PageClassification {
+pub fn classify_page(ctx: &PageContext) -> ClassificationResult<PageClassification> {
+    // Validate page context before classification
+    validate_page_context(ctx)?;
+
     let classifier = PageClassifier::new();
-    classifier.classify(ctx)
+    let result = classifier.classify(ctx);
+
+    // Validate the classification result
+    validate_classification_result(&result)?;
+
+    Ok(result)
+}
+
+/// Validate page context data before classification.
+///
+/// Checks for invalid values like negative dimensions, invalid confidence scores,
+/// and other data integrity issues.
+fn validate_page_context(ctx: &PageContext) -> ClassificationResult<()> {
+    // Check for invalid dimensions
+    if ctx.width < 0.0 || ctx.height < 0.0 {
+        let error_ctx = ErrorContext::new()
+            .with_context(&format!("width={}, height={}", ctx.width, ctx.height));
+
+        let error_msg = error_ctx.format_error("Page has invalid dimensions");
+        return Err(ClassificationError::InvalidContext {
+            reason: error_msg,
+        });
+    }
+
+    // Check for zero or negative density ratio
+    if ctx.density_ratio < 0.0 {
+        let error_ctx = ErrorContext::new()
+            .with_context(&format!("density_ratio={}", ctx.density_ratio));
+
+        let error_msg = error_ctx.format_error("Page has invalid density ratio");
+        return Err(ClassificationError::InvalidContext {
+            reason: error_msg,
+        });
+    }
+
+    // Check for invalid character validity rate
+    let validity = ctx.char_validity_rate();
+    if !(0.0..=1.0).contains(&validity) {
+        let error_ctx = ErrorContext::new()
+            .with_context(&format!("char_validity_rate={}", validity));
+
+        let error_msg = error_ctx.format_error("Page has invalid character validity rate");
+        return Err(ClassificationError::InvalidContext {
+            reason: error_msg,
+        });
+    }
+
+    // Check for invalid image coverage
+    if !(0.0..=1.0).contains(&ctx.image_coverage) {
+        let error_ctx = ErrorContext::new()
+            .with_context(&format!("image_coverage={}", ctx.image_coverage));
+
+        let error_msg = error_ctx.format_error("Page has invalid image coverage");
+        return Err(ClassificationError::InvalidContext {
+            reason: error_msg,
+        });
+    }
+
+    // Validate grid cells if present
+    if let Some(cells) = &ctx.grid_cells {
+        for (i, cell) in cells.iter().enumerate() {
+            if !(0.0..=1.0).contains(&cell.char_validity) {
+                let error_ctx = ErrorContext::new()
+                    .with_context(&format!("cell_index={}, char_validity={}", i, cell.char_validity));
+
+                let error_msg = error_ctx.format_error("Grid cell has invalid character validity");
+                return Err(ClassificationError::InvalidGridCell {
+                    cell_index: i,
+                    reason: error_msg,
+                });
+            }
+
+            if !(0.0..=1.0).contains(&cell.image_coverage) {
+                let error_ctx = ErrorContext::new()
+                    .with_context(&format!("cell_index={}, image_coverage={}", i, cell.image_coverage));
+
+                let error_msg = error_ctx.format_error("Grid cell has invalid image coverage");
+                return Err(ClassificationError::InvalidGridCell {
+                    cell_index: i,
+                    reason: error_msg,
+                });
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate the classification result for data integrity.
+///
+/// Ensures that confidence scores are in valid range and other invariants hold.
+fn validate_classification_result(result: &PageClassification) -> ClassificationResult<()> {
+    // Check confidence is in valid range [0.0, 1.0]
+    if !(0.0..=1.0).contains(&result.confidence) {
+        let error_ctx = ErrorContext::new()
+            .with_context(&format!("confidence={}", result.confidence));
+
+        let error_msg = error_ctx.format_error("Classification result has invalid confidence score");
+        return Err(ClassificationError::InvalidConfidence {
+            value: result.confidence,
+            reason: error_msg,
+        });
+    }
+
+    Ok(())
 }
 
 /// Page classifier that runs all signal evaluators and produces a decision.
