@@ -4,7 +4,8 @@
 // organizing them into logical modules for maintainability.
 
 // Standard library imports
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 // PyPdfProcessor import from pdftract-py crate
 // Note: The import path uses the [lib] name from Cargo.toml (pdftract_py), matching the package name
