@@ -231,23 +231,44 @@ def test_document_type_from_fixture_data(fixture_data: dict[str, Any]) -> None:
 
     # Verify Document type
     assert isinstance(result, pdftract.Document), \
-        f'Expected Document, got {type(result).__name__}'
+        f'Expected Document type, got {type(result).__name__}'
+
+    # Verify Document is not a raw dict
+    assert not isinstance(result, dict), \
+        "Document should be a typed Document instance, not a raw dict"
 
     # Verify ALL pages are Page instances (handle multiple objects)
     assert len(result.pages) > 0, "Document should have at least one page"
 
+    # Verify pages is a list
+    assert isinstance(result.pages, list), \
+        f"doc.pages should be a list, got {type(result.pages).__name__}"
+
     # Verify first page is a Page instance with descriptive error
     assert isinstance(result.pages[0], pdftract.Page), \
-        f'Expected Page, got {type(result.pages[0]).__name__}'
+        f'Expected Page type for doc.pages[0], got {type(result.pages[0]).__name__}'
 
+    # Verify first page is not a raw dict
+    assert not isinstance(result.pages[0], dict), \
+        "doc.pages[0] should be a typed Page instance, not a raw dict"
+
+    # Add isinstance() assertion for Page type with descriptive error message
+    # Handle all pages in the result list with a for loop
     for page_idx, page in enumerate(result.pages):
+        # Verify each page is a Page instance with detailed error
         assert isinstance(page, pdftract.Page), \
-            f'Expected Page type, got {type(page).__name__}'
+            f"Expected Page type for doc.pages[{page_idx}], got {type(page).__name__}"
+
+        # Verify each page is not a raw dict
+        assert not isinstance(page, dict), \
+            f"doc.pages[{page_idx}] should be a typed Page instance, not a raw dict"
 
         # Verify ALL spans in this page are Span instances (handle multiple objects)
         for span_idx, span in enumerate(page.spans):
             assert isinstance(span, pdftract.Span), \
-                f'page.pages[{page_idx}].spans[{span_idx}] should be Span instance, got {type(span).__name__}'
+                f"doc.pages[{page_idx}].spans[{span_idx}] should be Span instance, got {type(span).__name__}"
+            assert not isinstance(span, dict), \
+                f"doc.pages[{page_idx}].spans[{span_idx}] should be typed Span instance, not a raw dict"
 
 
 def test_type_assertions_from_fixture_data(fixture_data: dict[str, Any]) -> None:
