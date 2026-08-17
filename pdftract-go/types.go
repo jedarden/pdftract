@@ -28,6 +28,13 @@ type Metadata struct {
 	Encrypted   bool     // Whether the PDF is encrypted
 }
 
+// Document represents a fully parsed PDF document.
+type Document struct {
+	Path     string    // Filesystem path to the PDF
+	Pages    []Page    // All pages in the document
+	Metadata Metadata  // Document metadata
+}
+
 // Fingerprint provides a unique identifier for a PDF document.
 // It enables deduplication and change detection across document sets.
 type Fingerprint struct {
