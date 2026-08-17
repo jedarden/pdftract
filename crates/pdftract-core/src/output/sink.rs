@@ -19,10 +19,10 @@
 
 use crate::atomic_file_writer::AtomicFileWriter;
 use crate::markdown::{
-    form_fields_to_markdown, page_to_markdown_with_links_and_footnotes, threads_to_markdown,
+    page_to_markdown_with_links_and_footnotes,
     MarkdownOptions,
 };
-use crate::schema::{BlockJson, FormFieldJson, LinkJson, Output, PageJson, SpanJson, ThreadJson};
+use crate::schema::{BlockJson, LinkJson, Output, PageJson, SpanJson};
 use anyhow::Result;
 use std::io::{self, Write};
 

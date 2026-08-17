@@ -11,7 +11,6 @@
 
 include!(concat!(env!("OUT_DIR"), "/agl.rs"));
 
-use crate::diagnostics::DiagCode;
 
 /// Lookup a single Unicode codepoint for a glyph name.
 ///

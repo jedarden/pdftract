@@ -241,7 +241,7 @@ pub fn score_span_readability(text: &str, confidence: f32, document_lang: Option
 /// function to work with any span type that has text and a score.
 pub trait ScoredSpan {
     /// Get the text content of this span.
-    fn text(&self) -> Cow<str>;
+    fn text(&self) -> Cow<'_, str>;
 
     /// Get the readability score for this span [0.0, 1.0].
     ///

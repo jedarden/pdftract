@@ -31,7 +31,7 @@ use crate::graphics_state::ColorSpace;
 use crate::parser::lexer::Lexer;
 use crate::parser::lexer::Token;
 use crate::parser::marked_content_stack::MarkedContentStack;
-use crate::parser::object::{intern, ObjRef, PdfDict, PdfObject};
+use crate::parser::object::{ObjRef, PdfDict, PdfObject};
 use crate::parser::resources::ResourceDict;
 use std::sync::Arc;
 
@@ -463,7 +463,7 @@ pub fn process_with_mode(
     resources: &ResourceDict,
     mode: ProcessingMode,
     marked_content_stack: Option<&MarkedContentStack>,
-    default_off_ocgs: Option<&std::collections::HashSet<crate::parser::object::ObjRef>>,
+    _default_off_ocgs: Option<&std::collections::HashSet<crate::parser::object::ObjRef>>,
 ) -> Result<Vec<Glyph>, Vec<Diagnostic>> {
     let mut glyphs = Vec::new();
     let mut diagnostics = Vec::new();
@@ -2025,7 +2025,7 @@ fn parse_inline_dict_from_buffer(
     operand_buffer: &[Token],
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<PdfObject> {
-    use crate::parser::object::{intern, PdfDict};
+    use crate::parser::object::intern;
     use indexmap::IndexMap;
 
     // Find the DictStart and DictEnd positions

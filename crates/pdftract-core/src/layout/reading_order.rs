@@ -17,7 +17,6 @@
 //! When XY-cut produces > 10 regions with < 3 blocks each, the caller should
 //! switch to the Docstrum algorithm (nearest-neighbor graph traversal).
 
-use std::collections::HashSet;
 
 /// Maximum recursion depth for XY-cut to prevent stack overflow on pathological layouts.
 const MAX_DEPTH: u32 = 20;
@@ -187,7 +186,7 @@ where
     }
 
     // Try vertical split first (columns dominate)
-    if let Some((x_split, left_indices, right_indices)) =
+    if let Some((_x_split, left_indices, right_indices)) =
         find_vertical_split(blocks, indices, region_bbox)
     {
         // Recurse on left and right halves
@@ -208,7 +207,7 @@ where
     }
 
     // Try horizontal split (top/bottom)
-    if let Some((y_split, top_indices, bottom_indices)) =
+    if let Some((_y_split, top_indices, bottom_indices)) =
         find_horizontal_split(blocks, indices, region_bbox)
     {
         // Recurse on top and bottom halves

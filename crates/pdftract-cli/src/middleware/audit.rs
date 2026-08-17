@@ -20,7 +20,6 @@ use axum::{
     response::Response,
 };
 use pdftract_core::audit::AuditLogWriter;
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 

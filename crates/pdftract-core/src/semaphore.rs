@@ -62,7 +62,7 @@ impl Semaphore {
     /// # Panics
     /// Panics if releasing would cause the permit count to exceed the initial limit.
     pub fn release(&self) {
-        let prev = self.permits.fetch_add(1, Ordering::Release);
+        let _prev = self.permits.fetch_add(1, Ordering::Release);
         // Notify one waiting thread
         self.condvar.notify_one();
     }

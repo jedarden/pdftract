@@ -3,7 +3,6 @@ use anyhow::{Context, Result};
 use secrecy::{ExposeSecret, SecretString};
 use sha2::{Digest, Sha256};
 use std::env;
-use std::path::Path;
 
 /// Runs the MCP server.
 ///

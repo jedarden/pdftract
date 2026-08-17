@@ -10,7 +10,6 @@
 //! Lettered (a., b.) and Roman (I., II.) lists are NOT covered in v0.1.0.
 //! Indented sub-bullets (nesting) is deferred.
 
-use std::sync::OnceLock;
 
 /// Bullet pattern: optional whitespace followed by bullet character followed by whitespace.
 ///

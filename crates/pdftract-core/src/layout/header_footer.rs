@@ -200,7 +200,7 @@ enum Zone {
 /// Returns Footer if bbox.bottom <= 0.07 * page_height (bottom 7%)
 /// Returns Body otherwise
 fn classify_zone(block: &BlockJson, page_height: f64) -> Zone {
-    let [x0, y0, x1, y1] = block.bbox;
+    let [_x0, y0, _x1, y1] = block.bbox;
 
     // Top 7%: bbox[3] (top) >= 0.93 * page_height
     if y1 >= 0.93 * page_height {

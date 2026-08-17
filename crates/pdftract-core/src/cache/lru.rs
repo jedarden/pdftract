@@ -5,7 +5,7 @@
 //! the total compressed size exceeds the configured limit (default 1 GiB).
 
 use crate::cache::layout::{
-    entry_path, parse_opts_hash_from_filename, parse_size_from_filename, sentinel_path,
+    parse_opts_hash_from_filename, parse_size_from_filename, sentinel_path,
 };
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};

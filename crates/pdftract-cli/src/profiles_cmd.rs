@@ -3,8 +3,7 @@
 //! This module implements the `pdftract profiles` command family for managing
 //! document type profiles (list, show, export, install, validate).
 
-use anyhow::{Context, Result};
-use std::fs;
+use anyhow::Result;
 use std::path::PathBuf;
 
 /// Arguments for the profiles subcommand.
@@ -162,7 +161,7 @@ fn run_list() -> Result<()> {
 }
 
 /// Show a profile's YAML content.
-fn run_show(name_or_path: &str) -> Result<()> {
+fn run_show(_name_or_path: &str) -> Result<()> {
     #[cfg(feature = "profiles")]
     {
         use pdftract_core::profiles::extraction_loader;
@@ -189,7 +188,7 @@ fn run_show(name_or_path: &str) -> Result<()> {
 }
 
 /// Export a built-in profile to stdout.
-fn run_export(name: &str) -> Result<()> {
+fn run_export(_name: &str) -> Result<()> {
     #[cfg(feature = "profiles")]
     {
         use pdftract_core::profiles::extraction_loader;
@@ -222,7 +221,7 @@ fn run_export(name: &str) -> Result<()> {
 }
 
 /// Install a profile to the user config directory.
-fn run_install(path: &PathBuf) -> Result<()> {
+fn run_install(_path: &PathBuf) -> Result<()> {
     #[cfg(feature = "profiles")]
     {
         use pdftract_core::profiles::extraction_loader;
@@ -275,7 +274,7 @@ fn run_install(path: &PathBuf) -> Result<()> {
 }
 
 /// Validate a profile file.
-fn run_validate(path: &PathBuf) -> Result<()> {
+fn run_validate(_path: &PathBuf) -> Result<()> {
     #[cfg(feature = "profiles")]
     {
         use pdftract_core::profiles::extraction_loader;

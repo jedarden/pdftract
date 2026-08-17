@@ -693,7 +693,7 @@ pub fn check_coverage_for_pages(
     mark_info: &MarkInfo,
     pages_with_mcids: &[(usize, Option<i32>, std::collections::HashSet<u32>)],
 ) -> CoverageCheckResult {
-    use crate::parser::catalog::{MarkInfo, ReadingOrderAlgorithm};
+    use crate::parser::catalog::ReadingOrderAlgorithm;
 
     let mut result = CoverageCheckResult::new();
 
@@ -1651,7 +1651,7 @@ pub fn structure_type_to_block_kind(std_type: StructureType) -> BlockKind {
 /// # Returns
 ///
 /// `true` if this is an artifact that should be suppressed.
-pub fn is_artifact(std_type: StructureType) -> bool {
+pub fn is_artifact(_std_type: StructureType) -> bool {
     // Note: StructureType doesn't have an Artifact variant because Artifact
     // is handled as a marked-content tag, not a structure type.
     // This function is a placeholder for future Artifact marked-content integration.

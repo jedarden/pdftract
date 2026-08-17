@@ -7,10 +7,10 @@
 //! - `purge DIR --version CONSTRAINT` - delete entries matching version constraint
 
 use anyhow::{bail, Context, Result};
-use pdftract_core::cache::layout::{self, CacheIndex};
+use pdftract_core::cache::layout::{self};
 use std::fs;
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Get current time as seconds since Unix epoch.

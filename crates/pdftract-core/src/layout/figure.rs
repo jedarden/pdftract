@@ -22,7 +22,6 @@
 //! - Phase 3.5: Inline images (BI/ID/EI sequence)
 
 use crate::content_stream::ImageXObject;
-use std::sync::Arc;
 
 /// Block with layout properties for figure classification.
 ///

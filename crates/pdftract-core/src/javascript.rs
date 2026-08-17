@@ -6,7 +6,7 @@
 
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::parser::catalog::Catalog;
-use crate::parser::object::{ObjRef, PdfDict, PdfObject};
+use crate::parser::object::PdfObject;
 use crate::parser::xref::XrefResolver;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};

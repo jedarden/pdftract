@@ -492,7 +492,7 @@ fn merge_cells_down(
     absorbed: &mut Vec<Vec<bool>>,
     row: usize,
     col: usize,
-    col_count: usize,
+    _col_count: usize,
     diagnostics: &mut Vec<String>,
 ) {
     // Find the surviving cell

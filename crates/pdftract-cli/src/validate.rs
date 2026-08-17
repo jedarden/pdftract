@@ -8,7 +8,6 @@ use anyhow::{Context, Result};
 use serde_json::Value;
 use std::fs;
 use std::io::{self, Read};
-use std::path::Path;
 
 /// The bundled JSON Schema for pdftract extraction output v1.0.
 ///

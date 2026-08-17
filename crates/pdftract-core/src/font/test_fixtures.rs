@@ -9,10 +9,9 @@ use std::sync::Arc;
 
 use dashmap::DashMap;
 
-use crate::diagnostics::Diagnostic;
 use crate::font::encoding::FontEncoding;
 use crate::graphics_state::Matrix3x3;
-use crate::parser::object::types::{ObjRef, PdfDict};
+use crate::parser::object::types::ObjRef;
 
 /// Placeholder function to verify compilation.
 ///

@@ -342,7 +342,7 @@ impl EmbeddedFont {
         };
 
         // Determine which font program stream to use based on font type
-        let (stream_key, expected_type) = match kind {
+        let (stream_key, _expected_type) = match kind {
             FontKind::TrueType => ("/FontFile2", "TrueType"),
             FontKind::OpenTypeCFF => ("/FontFile3", "OpenType"),
             FontKind::Type1 => ("/FontFile", "Type1"),

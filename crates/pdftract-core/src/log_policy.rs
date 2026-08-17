@@ -17,7 +17,6 @@
 //!
 //! Plan lines 966-973 (NEVER-log list), 897 (TH-08 definition)
 
-use anyhow::Result;
 use regex::Regex;
 use std::sync::{Arc, LazyLock, OnceLock};
 

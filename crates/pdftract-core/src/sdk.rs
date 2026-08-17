@@ -3,24 +3,16 @@
 //! This module exposes the 9-method SDK contract that all language SDKs implement.
 //! Rust users import pdftract-core directly and use these functions to match the SDK contract.
 
-use crate::classify::{classify_page, PageClass, PageClassification, PageContext};
+use crate::classify::{PageClass, PageClassification};
 use crate::extract::{
     extract_pdf, extract_text as extract_text_impl, ExtractionResult, PageResult,
 };
-use crate::fingerprint::compute_fingerprint;
-use crate::markdown::page_to_markdown;
 use crate::options::ExtractionOptions;
-use crate::parser::catalog::parse_catalog;
-use crate::parser::pages::{flatten_page_tree, LazyPageIter, PageDict};
 use crate::parser::stream::PdfSource as ParserPdfSource;
-use crate::parser::xref::{load_xref_with_prev_chain, XrefResolver};
 use crate::receipts::verifier::{verify_receipt, SpanData, VerificationResult};
 use crate::receipts::Receipt;
-use crate::source::FileSource;
 use anyhow::{Context, Result};
 use regex::Regex;
-use serde_json::Value;
-use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
 
@@ -551,7 +543,7 @@ fn find_pdftract_binary() -> Result<String> {
         search_paths.push(cwd);
 
         // Also check debug directory
-        if let Some(release_idx) = search_paths.last().and_then(|p| Some(p.to_string_lossy().contains("release"))) {
+        if let Some(_release_idx) = search_paths.last().and_then(|p| Some(p.to_string_lossy().contains("release"))) {
             let mut debug_path = search_paths.last().unwrap().clone();
             debug_path.set_file_name("debug");
             debug_path.push(binary_name);

@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::diagnostics::{DiagCode, Diagnostic};
-use crate::font::embedded::{EmbeddedFont, OpenTypeMetrics};
+use crate::font::embedded::EmbeddedFont;
 use crate::font::FontKind;
 use crate::parser::object::types::{PdfDict, PdfObject};
 use crate::parser::stream::{decode_stream, ExtractionOptions};

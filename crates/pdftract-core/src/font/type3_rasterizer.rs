@@ -158,10 +158,62 @@ pub enum CharProcType {
 /// assert_eq!(detect_char_proc_type(&dict_obj, None, None), CharProcType::Dict);
 /// assert_eq!(detect_char_proc_type(&int_obj, None, None), CharProcType::Other("integer".to_string()));
 /// ```
+/// Detect the type of PDF object for Type 3 CharProc validation.
+///
+/// This is a convenience function that starts recursion at depth 0.
+/// For most use cases, this is the preferred API. Use detect_char_proc_type_with_depth
+/// only when you need to control the initial recursion depth.
+///
+/// # Arguments
+///
+/// * `object` - The PdfObject to classify
+/// * `doc_context` - Optional document resolver context for dereferencing
+///
+/// # Returns
+///
+/// `CharProcType::Stream` if the object is a stream,
+/// `CharProcType::Dict` if the object is a dictionary,
+/// `CharProcType::Other(name)` for any other type with its descriptive name.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use pdftract_core::font::type3_rasterizer::detect_char_proc_type;
+/// use pdftract_core::parser::object::types::PdfObject;
+///
+/// let stream_obj = PdfObject::Stream(/* ... */);
+/// let dict_obj = PdfObject::Dict(/* ... */);
+/// let int_obj = PdfObject::Integer(42);
+///
+/// assert_eq!(detect_char_proc_type(&stream_obj, None), CharProcType::Stream);
+/// assert_eq!(detect_char_proc_type(&dict_obj, None), CharProcType::Dict);
+/// assert_eq!(detect_char_proc_type(&int_obj, None), CharProcType::Other("integer".to_string()));
+/// ```
 pub fn detect_char_proc_type(object: &PdfObject, doc_context: Option<&DocumentContext>) -> CharProcType {
+    // Start with default depth of 0
+    detect_char_proc_type_with_depth(object, doc_context, 0)
+}
+
+/// Detect the type of PDF object for Type 3 CharProc validation with explicit depth.
+///
+/// This function allows you to specify the initial recursion depth, which is useful
+/// for advanced scenarios like limiting recursion depth or tracking nested references.
+///
+/// # Arguments
+///
+/// * `object` - The PdfObject to classify
+/// * `doc_context` - Optional document resolver context for dereferencing
+/// * `depth` - Current recursion depth (0 for top-level calls)
+///
+/// # Returns
+///
+/// `CharProcType::Stream` if the object is a stream,
+/// `CharProcType::Dict` if the object is a dictionary,
+/// `CharProcType::Other(name)` for any other type with its descriptive name.
+pub fn detect_char_proc_type_with_depth(object: &PdfObject, doc_context: Option<&DocumentContext>, depth: usize) -> CharProcType {
     // Delegate to the _with_context version which has proper circular reference protection
     // This ensures graceful error handling for all broken references, including circular refs
-    detect_char_proc_type_with_context(object, doc_context)
+    detect_char_proc_type_with_context(object, doc_context, depth)
 }
 
 /// Detect the type of PDF object for Type 3 CharProc validation with reference handling.
@@ -206,14 +258,16 @@ pub fn detect_char_proc_type(object: &PdfObject, doc_context: Option<&DocumentCo
 pub fn detect_char_proc_type_with_context<'a>(
     object: &PdfObject,
     doc_context: Option<&'a DocumentContext<'a>>,
+    depth: usize,
 ) -> CharProcType {
-    detect_char_proc_type_with_context_impl(object, doc_context, &mut std::collections::HashSet::new())
+    detect_char_proc_type_with_context_impl(object, doc_context, depth, &mut std::collections::HashSet::new())
 }
 
 /// Internal implementation with cycle detection via visited set.
 fn detect_char_proc_type_with_context_impl<'a>(
     object: &PdfObject,
     doc_context: Option<&'a DocumentContext<'a>>,
+    depth: usize,
     visited: &mut std::collections::HashSet<ObjRef>,
 ) -> CharProcType {
     match object {
@@ -237,6 +291,7 @@ fn detect_char_proc_type_with_context_impl<'a>(
                             detect_char_proc_type_with_context_impl(
                                 &dereferenced_obj,
                                 doc_context,
+                                depth + 1,
                                 visited,
                             )
                         }
@@ -1252,7 +1307,7 @@ impl<'a> RasterizerContext<'a> {
         if name_stack.is_empty() {
             return;
         }
-        let name = name_stack.pop().unwrap();
+        let _name = name_stack.pop().unwrap();
 
         // Check recursion depth
         if self.depth >= MAX_GLYPH_DEPTH {
@@ -1974,7 +2029,7 @@ impl PathToEdges {
     /// - `ClosePath` - Creates edge from current point back to move point
     #[must_use]
     pub fn process_commands(commands: &[crate::render::path::PathCommand], ctm: &Matrix3x3) -> Vec<PathEdge> {
-        let mut edges = Vec::new();
+        let edges = Vec::new();
         let mut current_point: Option<(f64, f64)> = None;
         let mut move_point: Option<(f64, f64)> = None;
 
@@ -2288,7 +2343,7 @@ pub fn calculate_bitmap_size_from_bounds(bbox: &[f32; 4], padding_pixels: Option
 pub fn rasterize_type3_glyph<'a, R>(
     font: &Type3Font,
     glyph_name: &str,
-    doc_context: Option<&'a DocumentContext<'a>>,
+    _doc_context: Option<&'a DocumentContext<'a>>,
     resolve_stream: Option<&R>,
 ) -> Option<Vec<u8>>
 where
@@ -2877,7 +2932,7 @@ mod tests {
         let ref_obj = PdfObject::Ref(ObjRef::new(10, 0));
 
         // Test without document context (should return Unknown)
-        let char_proc_type = detect_char_proc_type(&ref_obj, None);
+        let char_proc_type = detect_char_proc_type(&ref_obj, None, 0);
         assert_eq!(char_proc_type, CharProcType::Unknown,
                    "Should return Unknown when no document context is provided");
 
@@ -2886,7 +2941,7 @@ mod tests {
             resolver: None,
             source: None,
         };
-        let char_proc_type = detect_char_proc_type(&ref_obj, Some(&doc_context));
+        let char_proc_type = detect_char_proc_type(&ref_obj, Some(&doc_context), 0);
         assert_eq!(char_proc_type, CharProcType::Unknown,
                    "Should return Unknown when document context has no resolver");
     }
@@ -3562,7 +3617,7 @@ mod tests {
         use crate::parser::object::types::PdfDict;
 
         let dict_obj = PdfObject::Dict(Box::new(PdfDict::new()));
-        assert_eq!(detect_char_proc_type(&dict_obj, None), CharProcType::Dict);
+        assert_eq!(detect_char_proc_type(&dict_obj, None, 0), CharProcType::Dict);
     }
 
     #[test]
@@ -3572,14 +3627,14 @@ mod tests {
         let dict = PdfDict::new();
         let stream = PdfStream::new(dict, 0, None);
         let stream_obj = PdfObject::Stream(Box::new(stream));
-        assert_eq!(detect_char_proc_type(&stream_obj, None), CharProcType::Stream);
+        assert_eq!(detect_char_proc_type(&stream_obj, None, 0), CharProcType::Stream);
     }
 
     #[test]
     fn test_detect_char_proc_type_integer() {
         let int_obj = PdfObject::Integer(42);
         assert_eq!(
-            detect_char_proc_type(&int_obj, None),
+            detect_char_proc_type(&int_obj, None, 0),
             CharProcType::Other("integer".to_string())
         );
     }
@@ -3588,7 +3643,7 @@ mod tests {
     fn test_detect_char_proc_type_real() {
         let real_obj = PdfObject::Real(3.14);
         assert_eq!(
-            detect_char_proc_type(&real_obj, None),
+            detect_char_proc_type(&real_obj, None, 0),
             CharProcType::Other("real".to_string())
         );
     }
@@ -3597,7 +3652,7 @@ mod tests {
     fn test_detect_char_proc_type_boolean() {
         let bool_obj = PdfObject::Bool(true);
         assert_eq!(
-            detect_char_proc_type(&bool_obj, None),
+            detect_char_proc_type(&bool_obj, None, 0),
             CharProcType::Other("boolean".to_string())
         );
     }
@@ -3881,10 +3936,10 @@ mod tests {
         let int_obj = PdfObject::Integer(42);
 
         // The no-context version should work exactly as before
-        assert_eq!(detect_char_proc_type(&dict_obj, None), CharProcType::Dict);
-        assert_eq!(detect_char_proc_type(&stream_obj, None), CharProcType::Stream);
+        assert_eq!(detect_char_proc_type(&dict_obj, None, 0), CharProcType::Dict);
+        assert_eq!(detect_char_proc_type(&stream_obj, None, 0), CharProcType::Stream);
         assert_eq!(
-            detect_char_proc_type(&int_obj, None),
+            detect_char_proc_type(&int_obj, None, 0),
             CharProcType::Other("integer".to_string())
         );
 

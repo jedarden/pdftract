@@ -248,11 +248,10 @@ fn extract_choice_values(
 
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::parser::catalog::Catalog;
-use crate::parser::object::{intern, ObjRef, PdfDict, PdfObject};
+use crate::parser::object::{ObjRef, PdfDict, PdfObject};
 use crate::parser::pages::PageDict;
 use crate::parser::xref::XrefResolver;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 /// Result type for form operations.
 pub type Result<T> = std::result::Result<T, Vec<Diagnostic>>;
@@ -549,7 +548,7 @@ pub fn walk_acroform_fields(
 fn build_widget_page_map(
     resolver: &XrefResolver,
     pages: &[PageDict],
-    diagnostics: &mut Vec<Diagnostic>,
+    _diagnostics: &mut Vec<Diagnostic>,
 ) -> HashMap<ObjRef, usize> {
     let mut page_map = HashMap::new();
 

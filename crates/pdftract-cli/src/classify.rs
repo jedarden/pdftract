@@ -4,8 +4,6 @@
 //! a PDF document type without performing full extraction.
 
 use anyhow::{Context, Result};
-use pdftract_core::extract::extract_pdf;
-use pdftract_core::options::ExtractionOptions;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 

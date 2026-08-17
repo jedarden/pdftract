@@ -20,7 +20,7 @@ use crate::attachment::name_tree::walk_embedded_files;
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::document::compute_fingerprint_lazy;
 use crate::forms::{
-    acro_field_to_value, combine, walk_acroform_fields, AcroFormField, FormFieldValue,
+    acro_field_to_value, combine, walk_acroform_fields, FormFieldValue,
 };
 use crate::options::{ExtractionOptions, ReceiptsMode};
 use crate::page_extraction_error::PageExtractionError;
@@ -31,7 +31,7 @@ use crate::source::FileSource;
 use secrecy::ExposeSecret;
 // Import both PdfSource traits with aliases to avoid ambiguity
 use crate::parser::stream::PdfSource as ParserPdfSource;
-use crate::parser::struct_tree::{check_coverage_for_pages, parse_struct_tree};
+use crate::parser::struct_tree::check_coverage_for_pages;
 use crate::receipts::Receipt;
 use crate::schema::{
     AnnotationJson, AttachmentJson, BlockJson, ChoiceValueJson, FormFieldJson, FormFieldTypeJson,
@@ -42,22 +42,18 @@ use crate::semaphore::{Semaphore, SemaphoreExt};
 use crate::signature::{discover, extract_signatures};
 use crate::source::PdfSource as SourcePdfSource;
 use crate::table::{
-    detect_two_page_tables, grid_to_table_json, GridCandidate, PageContext, TableDetector,
+    detect_two_page_tables, grid_to_table_json, GridCandidate, TableDetector,
 };
-use crate::table::{TableCell as Cell, TableSpan};
+use crate::table::TableCell as Cell;
 
 // Phase 4 imports for full layout analysis pipeline
-use crate::glyph::{emit_glyph, new_raw_glyph_list, Glyph};
-use crate::graphics_state::GraphicsState;
+use crate::glyph::Glyph;
 use crate::layout::reading_order::XYCutResult;
 use crate::layout::{
-    assign_columns_to_lines, build_x0_histogram, classify_caption, classify_code, classify_figure,
-    classify_formula, classify_list, classify_watermark, cluster_spans_into_lines,
-    compute_baseline, detect_headers_and_footers, group_lines_into_blocks, xy_cut, Block,
-    BlockInput, Column, Line, PageContext as LayoutPageContext,
+    build_x0_histogram, cluster_spans_into_lines, group_lines_into_blocks, xy_cut,
 };
 use crate::span::merge_glyphs_to_spans;
-use crate::span::{CssHexColor, Span};
+use crate::span::CssHexColor;
 
 use anyhow::{Context, Result};
 use rayon::prelude::*;
@@ -65,7 +61,6 @@ use rayon::prelude::*;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::cmp::Ordering;
 use std::sync::Arc;
 
 #[cfg(feature = "receipts")]
@@ -188,7 +183,7 @@ fn decode_page_content_streams(
 fn process_content_stream_to_glyphs(
     decoded_streams: &[u8],
     page: &crate::parser::pages::PageDict,
-    resolver: &crate::parser::xref::XrefResolver,
+    _resolver: &crate::parser::xref::XrefResolver,
     page_index: usize,
 ) -> Result<Vec<Glyph>, PageExtractionError> {
     use crate::content_stream::{process_with_mode, ProcessingMode};
@@ -605,7 +600,7 @@ pub fn extract_pdf(
 
     // Detect and handle encryption (Phase 1.4)
     #[cfg(feature = "decrypt")]
-    let decryption_context = {
+    let _decryption_context = {
         use crate::encryption::decrypt_with_password;
 
         // Get the trailer for encryption detection
@@ -694,7 +689,7 @@ pub fn extract_pdf(
     let options_arc = Arc::new(options.clone());
 
     // Create a semaphore to bound the number of in-flight pages
-    let semaphore = Arc::new(Semaphore::new(options.max_parallel_pages));
+    let _semaphore = Arc::new(Semaphore::new(options.max_parallel_pages));
 
     // First, collect all PageDict objects for annotation extraction
     // We need these before extracting content so we can dispatch annotations once
@@ -717,7 +712,7 @@ pub fn extract_pdf(
     }
 
     // Parse page range if specified
-    let mut page_count = all_pages.len();
+    let page_count = all_pages.len();
     let mut page_range_diagnostics = Vec::new();
     let page_filter: Option<std::collections::BTreeSet<usize>> =
         if let Some(ref range_str) = options.pages {
@@ -970,7 +965,7 @@ pub fn extract_pdf(
     // Extract XFA fields if present (requires re-opening the source for stream access)
     let xfa_fields = if catalog.acroform_ref.is_some() {
         // Resolve the AcroForm dictionary
-        use crate::parser::xref::XrefResolver;
+        
         let acroform_ref = catalog.acroform_ref.unwrap();
         if let Ok(acroform_obj) = resolver_arc.resolve(acroform_ref) {
             if let Some(acroform_dict) = acroform_obj.as_dict() {
@@ -1144,8 +1139,8 @@ fn apply_two_page_table_detection(
 fn convert_form_field_to_json(
     name: String,
     value: FormFieldValue,
-    resolver: &crate::parser::xref::XrefResolver,
-    catalog: &crate::parser::catalog::Catalog,
+    _resolver: &crate::parser::xref::XrefResolver,
+    _catalog: &crate::parser::catalog::Catalog,
 ) -> FormFieldJson {
     match value {
         FormFieldValue::Text {
@@ -1173,7 +1168,7 @@ fn convert_form_field_to_json(
         },
 
         FormFieldValue::Button {
-            kind,
+            kind: _,
             selected,
             state_name,
             default_selected,
@@ -1202,7 +1197,7 @@ fn convert_form_field_to_json(
             value,
             default,
             options,
-            is_combo,
+            is_combo: _,
             is_multi_select,
         } => {
             let json_value = match value {
@@ -1777,7 +1772,7 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
     let mut total_spans = 0u64;
     let mut total_blocks = 0u64;
     let mut error_count = 0u64;
-    let mut page_count = 0usize;
+    let _page_count = 0usize;
 
     // Phase 7.1.4: Collect page data for coverage check
     // Track MCIDs and struct_parents for each page
@@ -1811,7 +1806,7 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
     }
 
     // Parse page range if specified
-    let mut page_count = all_pages.len();
+    let page_count = all_pages.len();
     let mut page_range_diagnostics = Vec::new();
     let page_filter: Option<std::collections::BTreeSet<usize>> =
         if let Some(ref range_str) = options.pages {
@@ -2448,7 +2443,7 @@ fn extract_page_from_dict(
     };
 
     // Step 2: Merge glyphs into spans (Phase 4.1)
-    let mut spans = merge_glyphs_to_spans(&glyphs);
+    let spans = merge_glyphs_to_spans(&glyphs);
 
     // Step 3: Cluster spans into lines (Phase 4.2)
     let page_width_f32 = page_width as f32;
@@ -2874,7 +2869,7 @@ pub mod page_helpers {
 
     use crate::extract::{ExtractionResult, PageResult};
     use crate::page_extraction_error::{PageExtractionError, PageResult as PageExtractionResult};
-    use anyhow::Result;
+    
 
     /// Extract all Page objects from an ExtractionResult.
     ///

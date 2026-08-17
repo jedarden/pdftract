@@ -25,9 +25,8 @@ use crate::mcp::framing::{BatchMessage, ErrorObject, Id, Notification, Request, 
 use crate::mcp::tools;
 use crate::middleware::audit::RequestMetadata;
 use crate::middleware::{audit_middleware, AuditState};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use axum::{
-    body::Body,
     extract::{DefaultBodyLimit, Extension, Request as AxumRequest, State},
     http::{HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Json, Response as AxumResponse, Sse},
@@ -160,7 +159,7 @@ pub async fn run_server(
         root.map(|p| p.to_path_buf()),
         audit_writer,
     );
-    let max_body_bytes = state.max_body_bytes;
+    let _max_body_bytes = state.max_body_bytes;
 
     // Build the router
     // Note: Set DefaultBodyLimit to a very high value (256 MB) so our handler

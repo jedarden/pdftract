@@ -379,7 +379,7 @@ pub fn parse_hint_stream_from_linearized(
     hint_stream_length: u64,
     diagnostics: &mut Vec<crate::diagnostics::Diagnostic>,
 ) -> Option<HintTable> {
-    use crate::parser::stream::{get_decoder, FlateDecoder, DEFAULT_MAX_DECOMPRESS_BYTES};
+    use crate::parser::stream::{get_decoder, DEFAULT_MAX_DECOMPRESS_BYTES};
 
     // Fetch the hint stream data
     let hint_stream_data = source

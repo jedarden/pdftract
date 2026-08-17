@@ -5,11 +5,10 @@
 //! Metadata, PageLabels, OCProperties, OpenAction, AA, and Version entries.
 
 use crate::diagnostics::{DiagCode, Diagnostic};
-use crate::parser::object::{intern, ObjRef, PdfObject};
+use crate::parser::object::{ObjRef, PdfObject};
 use crate::parser::ocg::{parse_oc_properties, OcProperties};
 use crate::parser::stream::PdfSource;
 use crate::parser::xref::XrefResolver;
-use indexmap::IndexMap;
 
 /// Result type for catalog parsing.
 pub type Result<T> = std::result::Result<T, Vec<Diagnostic>>;

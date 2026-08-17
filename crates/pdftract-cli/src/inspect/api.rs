@@ -18,7 +18,6 @@ use super::render::anchors;
 use super::render::blocks;
 use super::render::columns;
 use super::render::confidence_heatmap;
-use super::render::mcid;
 use super::render::ocr_regions;
 use super::render::reading_order;
 use super::render::spans;
@@ -31,7 +30,6 @@ use pdftract_core::schema::BlockJson;
 use pdftract_core::schema::SpanJson;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Query parameters for the search endpoint.
@@ -1073,7 +1071,7 @@ fn render_page_svg(page: &JsonValue, width: f64, height: f64, thumbnail: bool) -
 /// This enables users to copy-paste text from the inspector.
 fn render_selection_layer(spans: &[SpanJson], page_height: f64) -> Vec<String> {
     spans.iter().map(|span| {
-        let [x0, y0, x1, y1] = span.bbox;
+        let [x0, _y0, _x1, y1] = span.bbox;
 
         // Flip Y coordinate for SVG (PDF y-up, SVG y-down)
         let svg_y = page_height - y1;

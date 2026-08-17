@@ -7,7 +7,7 @@
 //! containing all resources from its ancestor /Pages nodes, with per-key
 //! last-write-wins semantics at the page level.
 
-use crate::parser::object::{intern, ObjRef, PdfDict, PdfObject};
+use crate::parser::object::{intern, ObjRef, PdfObject};
 use indexmap::IndexMap;
 use std::sync::Arc;
 

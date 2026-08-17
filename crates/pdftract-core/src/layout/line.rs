@@ -392,7 +392,7 @@ pub struct BlockInput<L> {
 /// Finalize a block from accumulated lines.
 fn finalize_block<L>(
     lines: Vec<L>,
-    avg_x0: f32,
+    _avg_x0: f32,
     median_font_size: f32,
     column: usize,
 ) -> BlockInput<L>

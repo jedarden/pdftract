@@ -10,7 +10,6 @@
 //! - Error recovery per INV-8 (never panic, always return partial bytes)
 
 use std::io::Read;
-use std::io::Seek;
 use std::path::Path;
 
 use flate2::read::{DeflateDecoder, ZlibDecoder};
@@ -3239,7 +3238,7 @@ impl<'de> serde::Deserialize<'de> for ExtractionOptions {
     where
         D: serde::Deserializer<'de>,
     {
-        use serde::de::{self, MapAccess, SeqAccess, Visitor};
+        use serde::de::{self, MapAccess, Visitor};
         use serde::Deserialize;
 
         #[derive(Deserialize)]
@@ -3329,7 +3328,7 @@ pub trait PdfSource {
 /// to work with parser functions that expect parser::stream::PdfSource (with read_at).
 impl<T: crate::source::PdfSource> PdfSource for T {
     fn read_at(&self, offset: u64, len: usize) -> std::io::Result<Vec<u8>> {
-        use bytes::Buf;
+        
         let data = self.read_range(offset, len)?;
         Ok(data.to_vec())
     }
@@ -3369,7 +3368,7 @@ impl SourceAdapter {
 
 impl PdfSource for SourceAdapter {
     fn read_at(&self, offset: u64, len: usize) -> std::io::Result<Vec<u8>> {
-        use bytes::Buf;
+        
         let data = self.inner.read_range(offset, len)?;
         Ok(data.to_vec())
     }
@@ -3473,7 +3472,7 @@ impl crate::source::PdfSource for FileSource {
 
 // Implement Read + Seek for source::PdfSource compatibility
 impl std::io::Read for FileSource {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+    fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
         // For a memory-mapped source, we can't really "read" progressively
         // since we have the entire file in memory. This implementation
         // is provided for trait compatibility but shouldn't be used
@@ -3745,7 +3744,7 @@ fn decode_stream_impl(
     let mut current_bytes = raw_bytes.clone();
     #[cfg(feature = "decrypt")]
     if let (Some(ctx), Some(obj_ref)) = (decryption_context, obj_ref) {
-        use crate::encryption::decryptor::DecryptionContext;
+        
         // Decrypt the stream data using the per-object key
         match ctx.decrypt_stream(&current_bytes, obj_ref.object, obj_ref.generation as u16) {
             Ok(decrypted) => {
@@ -3955,7 +3954,7 @@ fn decode_stream_impl(
                             meta: stream_meta,
                         };
                     }
-                    Err(e) => {
+                    Err(_e) => {
                         // Hard error - return raw bytes for this filter
                         break;
                     }

@@ -32,7 +32,7 @@
 //! }
 //! ```
 
-use super::cycle::{is_resolving, ResolutionGuard, RESOLVING};
+use super::cycle::{is_resolving, ResolutionGuard};
 use super::{ObjRef, PdfObject};
 use crate::diagnostics::{DiagCode, Diagnostic as Diag};
 use lru::LruCache;

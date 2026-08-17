@@ -25,7 +25,6 @@
 //! ureq automatically sets `Authorization: Basic <base64>` from URL credentials.
 
 use std::collections::HashMap;
-use url::Url;
 
 /// Error type for URL parsing failures.
 #[derive(Debug, Clone, PartialEq)]
@@ -298,7 +297,7 @@ pub fn combine_headers_with_credentials(
     custom_headers: &HashMap<String, String>,
     parsed_url: Option<&ParsedUrl>,
 ) -> HashMap<String, String> {
-    let mut result = custom_headers.clone();
+    let result = custom_headers.clone();
 
     // If the URL has credentials, ureq will automatically add the
     // Authorization header when we pass the URL with embedded credentials.

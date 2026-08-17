@@ -11,7 +11,7 @@
 //! - If a required inheritable attribute is missing and not inherited, use a safe default
 
 use crate::diagnostics::{DiagCode, Diagnostic};
-use crate::parser::object::{intern, ObjRef, PdfDict, PdfObject};
+use crate::parser::object::{ObjRef, PdfDict, PdfObject};
 use crate::parser::resources::{merge_resources, ResourceDict};
 use crate::parser::xref::XrefResolver;
 use std::collections::HashSet;

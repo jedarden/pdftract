@@ -141,7 +141,7 @@ impl OcGroup {
     }
 
     /// Parse an OcGroup from a PdfObject.
-    fn parse(obj: &PdfObject, diagnostics: &mut Vec<Diagnostic>) -> Self {
+    fn parse(obj: &PdfObject, _diagnostics: &mut Vec<Diagnostic>) -> Self {
         let mut group = OcGroup::new();
 
         let dict = match obj.as_dict() {

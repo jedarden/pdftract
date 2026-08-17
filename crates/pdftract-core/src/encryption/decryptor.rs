@@ -9,7 +9,7 @@
 use crate::diagnostics::{DiagCode, Diagnostic};
 #[cfg(feature = "decrypt")]
 use crate::encryption::{
-    aes_128::{aes_128_decrypt, derive_aes_128_object_key},
+    aes_128::aes_128_decrypt,
     aes_256::{aes_256_decrypt, Aes256Decryptor, FileKeyResult as Aes256FileKeyResult},
     detection::{detect_encryption, CryptFilterMethod, EncryptionInfo},
     rc4::{
@@ -18,8 +18,6 @@ use crate::encryption::{
 };
 #[cfg(feature = "decrypt")]
 use crate::parser::xref::XrefResolver;
-#[cfg(feature = "decrypt")]
-use secrecy::SecretString;
 
 /// Error during PDF decryption.
 #[cfg(feature = "decrypt")]

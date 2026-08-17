@@ -358,7 +358,7 @@ pub fn walk_beads(
         let page_ref = match (bead_dict.get("R"), bead_dict.get("P")) {
             (Some(PdfObject::Ref(r)), _) => Some(*r),
             (_, Some(PdfObject::Ref(r))) => Some(*r),
-            (Some(other), _) => {
+            (Some(_other), _) => {
                 diagnostics.push(Diagnostic::with_dynamic_no_offset(
                     DiagCode::StructMissingKey,
                     format!("Bead {:?} has /R but it's not a reference", current_ref,),
@@ -532,7 +532,7 @@ fn get_next_bead_ref(
 ///
 /// Per PDF 1.7 spec, the rect is stored in /V. However, some PDFs may
 /// use other keys, so we also check for common alternatives.
-fn extract_bead_rect(bead_dict: &PdfDict, current_ref: ObjRef) -> Option<[f32; 4]> {
+fn extract_bead_rect(bead_dict: &PdfDict, _current_ref: ObjRef) -> Option<[f32; 4]> {
     // Try /V first (per spec)
     let rect_obj = bead_dict.get("V").or_else(|| bead_dict.get("Rect"))?;
 

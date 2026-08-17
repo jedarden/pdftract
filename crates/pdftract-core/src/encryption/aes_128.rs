@@ -59,7 +59,7 @@ pub fn derive_aes_128_object_key(
     md5.update(&gen_bytes); // Both bytes of generation number
     md5.update(&AES_SALT); // "sAlT" suffix is mandatory for AES in V=4
 
-    let mut hash = md5.finalize();
+    let hash = md5.finalize();
 
     // For AES-128, we use the first 16 bytes of the hash
     let mut key = [0u8; AES_BLOCK_SIZE];

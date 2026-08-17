@@ -665,7 +665,7 @@ fn parse_decode_parms_value(token: Token, lexer: &mut Lexer) -> Option<DecodePar
                 match next_token {
                     Token::ArrayEnd => break,
                     Token::DictStart => {
-                        let mut dict = Vec::new();
+                        let dict = Vec::new();
                         // Parse dictionary (simplified)
                         dicts.push(dict);
                     }

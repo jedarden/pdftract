@@ -21,11 +21,10 @@ use crate::font::agl::{unicode_for_glyph_name, unicode_for_glyph_name_multi};
 use crate::font::cmap::ToUnicodeMap;
 use crate::font::encoding::FontEncoding;
 use crate::font::fingerprint::CachedFingerprint;
-use crate::font::shape::{lookup_shape, phash_glyph};
 use crate::font::type3::Type3Font;
 #[cfg(feature = "shape-db")]
 use crate::font::type3_rasterizer::{rasterize_type3_glyph, DocumentContext as Type3DocumentContext, StreamResolverFn};
-use crate::parser::stream::{decode_stream, ExtractionOptions, PdfSource as ParserPdfSource};
+use crate::parser::stream::PdfSource as ParserPdfSource;
 use crate::parser::xref::XrefResolver;
 
 /// A loaded PDF font with encoding resolution capabilities.
@@ -534,9 +533,9 @@ pub fn resolve_type3(
     font: &Type3Font,
     to_unicode: Option<&ToUnicodeMap>,
     char_code: u8,
-    resolver: Option<&XrefResolver>,
-    source: Option<&dyn ParserPdfSource>,
-    doc_decompress_counter: Option<&mut u64>,
+    _resolver: Option<&XrefResolver>,
+    _source: Option<&dyn ParserPdfSource>,
+    _doc_decompress_counter: Option<&mut u64>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> ResolvedGlyph {
     // Level 1: ToUnicode CMap
@@ -557,7 +556,7 @@ pub fn resolve_type3(
 
     // Check if we have a glyph name from encoding that's not in AGL
     // This is the heuristic for "arbitrary glyph name" that requires L4
-    let glyph_name_for_l4 = encoding.glyph_name_for(char_code);
+    let _glyph_name_for_l4 = encoding.glyph_name_for(char_code);
 
     // Level 3: SKIPPED for Type 3 fonts (no embedded program)
     // Per the plan: "Type 3 fonts have no embedded program; L3 fingerprinting not applicable"

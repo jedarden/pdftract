@@ -24,4 +24,3 @@ pub const CODE_PATH_INVALID: &str = "PATH_INVALID";
 pub const CODE_NOT_YET_IMPLEMENTED: &str = "NOT_YET_IMPLEMENTED";
 pub const CODE_SSRF_BLOCKED: &str = "SSRF_BLOCKED";
 
-use std::path::Path;

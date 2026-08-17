@@ -6,14 +6,11 @@
 //! for Type3 font testing.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::Arc;
 
-use dashmap::DashMap;
 
-use crate::font::encoding::{FontEncoding, NamedEncoding};
 use crate::font::type3::Type3Font;
-use crate::graphics_state::Matrix3x3;
 use crate::parser::object::types::ObjRef;
 use crate::parser::object::{intern, PdfDict, PdfObject};
 
@@ -1299,7 +1296,7 @@ pub fn create_scanline_context(width: u32, height: u32) -> (i32, i32) {
 pub fn create_edges_from_endpoints(endpoints: &[(i32, i32, i32, i32)]) -> Vec<crate::font::type3_rasterizer::Edge> {
     endpoints
         .iter()
-        .filter(|&&(x0, y0, x1, y1)| y0 != y1) // Skip horizontal edges
+        .filter(|&&(_x0, y0, _x1, y1)| y0 != y1) // Skip horizontal edges
         .map(|&(x0, y0, x1, y1)| {
             let (y_min, y_max) = if y0 < y1 { (y0, y1) } else { (y1, y0) };
             crate::font::type3_rasterizer::Edge {

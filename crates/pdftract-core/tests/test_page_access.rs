@@ -11,7 +11,6 @@
 //!
 //! Refers to: bf-49jplg
 
-use anyhow::Result;
 use pdftract_core::document::parse_pdf_file;
 use pdftract_core::parser::pages::PageDict;
 use std::path::PathBuf;
@@ -19,7 +18,7 @@ use std::path::PathBuf;
 /// Returns the path to a simple test fixture with known content
 fn test_fixture_path() -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.push("../../tests/fixtures/encrypted/EC-04-rc4-encrypted.pdf");
+    path.push("../../tests/fixtures/test-minimal.pdf");
     path
 }
 
@@ -33,39 +32,24 @@ fn test_document_parse_fixture() {
         path.display()
     );
 
-    match parse_pdf_file(&path) {
-        Ok((fingerprint, _catalog, pages, _resolver)) => {
-            println!("✓ Document parsed successfully");
-            println!("  Fingerprint: {}", fingerprint);
-            println!("  Page count: {}", pages.len());
-        }
-        Err(e) => {
-            println!("Note: Could not parse document (expected for encrypted fixtures): {}", e);
-        }
-    }
+    let (fingerprint, _catalog, pages, _resolver, _trailer) = parse_pdf_file(&path)
+        .expect("Document should parse successfully");
+
+    println!("✓ Document parsed successfully");
+    println!("  Fingerprint: {}", fingerprint);
+    println!("  Page count: {}", pages.len());
 }
 
 /// Test accessing a single Page from parse_pdf_file result
 #[test]
 fn test_access_single_page() {
     let path = test_fixture_path();
-    if !path.exists() {
-        println!("⚠ Fixture not found, skipping test");
-        return;
-    }
+    assert!(path.exists(), "Fixture file should exist");
 
-    let (_fingerprint, _catalog, pages, _resolver) = match parse_pdf_file(&path) {
-        Ok(result) => result,
-        Err(e) => {
-            println!("⚠ Could not parse document (expected for encrypted): {}", e);
-            return;
-        }
-    };
+    let (_fingerprint, _catalog, pages, _resolver, _trailer) = parse_pdf_file(&path)
+        .expect("Document should parse successfully");
 
-    if pages.is_empty() {
-        println!("⚠ Document has no pages");
-        return;
-    }
+    assert!(!pages.is_empty(), "Document should have at least one page");
 
     // Access the first page only (single Page access pattern)
     let first_page = &pages[0];
@@ -86,18 +70,10 @@ fn test_access_single_page() {
 #[test]
 fn test_access_multiple_pages() {
     let path = test_fixture_path();
-    if !path.exists() {
-        println!("⚠ Fixture not found, skipping test");
-        return;
-    }
+    assert!(path.exists(), "Fixture file should exist");
 
-    let (_fingerprint, _catalog, pages, _resolver) = match parse_pdf_file(&path) {
-        Ok(result) => result,
-        Err(e) => {
-            println!("⚠ Could not parse document (expected for encrypted): {}", e);
-            return;
-        }
-    };
+    let (_fingerprint, _catalog, pages, _resolver, _trailer) = parse_pdf_file(&path)
+        .expect("Document should parse successfully");
 
     println!("✓ Accessed {} page(s)", pages.len());
 
@@ -120,23 +96,12 @@ fn test_access_multiple_pages() {
 #[test]
 fn test_page_type_assertions() {
     let path = test_fixture_path();
-    if !path.exists() {
-        println!("⚠ Fixture not found, skipping test");
-        return;
-    }
+    assert!(path.exists(), "Fixture file should exist");
 
-    let (_fingerprint, _catalog, pages, _resolver) = match parse_pdf_file(&path) {
-        Ok(result) => result,
-        Err(e) => {
-            println!("⚠ Could not parse document (expected for encrypted): {}", e);
-            return;
-        }
-    };
+    let (_fingerprint, _catalog, pages, _resolver, _trailer) = parse_pdf_file(&path)
+        .expect("Document should parse successfully");
 
-    if pages.is_empty() {
-        println!("⚠ Document has no pages");
-        return;
-    }
+    assert!(!pages.is_empty(), "Document should have at least one page");
 
     // Test that we get the correct type from parse_pdf_file
     let first_page = &pages[0];
@@ -167,13 +132,8 @@ fn test_page_vector_access_patterns() {
         return;
     }
 
-    let (_fingerprint, _catalog, pages, _resolver) = match parse_pdf_file(&path) {
-        Ok(result) => result,
-        Err(e) => {
-            println!("⚠ Could not parse document (expected for encrypted): {}", e);
-            return;
-        }
-    };
+    let (_fingerprint, _catalog, pages, _resolver, _trailer) = parse_pdf_file(&path)
+        .expect("Document should parse successfully");
 
     // Test 1: Vector length access
     let page_count = pages.len();
@@ -210,23 +170,12 @@ fn test_page_vector_access_patterns() {
 #[test]
 fn test_page_field_access() {
     let path = test_fixture_path();
-    if !path.exists() {
-        println!("⚠ Fixture not found, skipping test");
-        return;
-    }
+    assert!(path.exists(), "Fixture file should exist");
 
-    let (_fingerprint, _catalog, pages, _resolver) = match parse_pdf_file(&path) {
-        Ok(result) => result,
-        Err(e) => {
-            println!("⚠ Could not parse document (expected for encrypted): {}", e);
-            return;
-        }
-    };
+    let (_fingerprint, _catalog, pages, _resolver, _trailer) = parse_pdf_file(&path)
+        .expect("Document should parse successfully");
 
-    if pages.is_empty() {
-        println!("⚠ Document has no pages");
-        return;
-    }
+    assert!(!pages.is_empty(), "Document should have at least one page");
 
     for page in &pages {
         // MediaBox validation

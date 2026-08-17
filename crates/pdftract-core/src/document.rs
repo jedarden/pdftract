@@ -19,8 +19,8 @@ use crate::parser::object::PdfDict;
 use crate::parser::pages::{flatten_page_tree, LazyPageIter, PageDict};
 use crate::parser::stream::{FileSource as ParserFileSource, PdfSource as ParserPdfSource};
 use crate::parser::xref::{
-    detect_linearization, load_xref_linearized, load_xref_with_prev_chain, LinearizationInfo,
-    XrefResolver, XrefSection,
+    detect_linearization, load_xref_linearized, load_xref_with_prev_chain,
+    XrefResolver,
 };
 use crate::receipts::verifier::SpanData;
 use crate::source::{FileSource, PdfSource};

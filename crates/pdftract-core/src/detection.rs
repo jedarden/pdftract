@@ -15,10 +15,10 @@
 //! Per INV-8, all detection functions are resilient and never panic.
 
 use crate::parser::catalog::Catalog;
-use crate::parser::object::{ObjRef, PdfDict, PdfObject};
+use crate::parser::object::{PdfDict, PdfObject};
 use crate::parser::pages::PageDict;
 use crate::parser::xref::XrefResolver;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Detect JavaScript presence in a PDF document.
 ///

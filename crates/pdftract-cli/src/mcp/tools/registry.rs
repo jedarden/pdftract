@@ -6,7 +6,7 @@
 
 use super::args::*;
 use super::{
-    CODE_IO_ERROR, CODE_PATH_INVALID, CODE_SSRF_BLOCKED, ERROR_IO_ERROR, ERROR_NOT_YET_IMPLEMENTED,
+    CODE_IO_ERROR, CODE_PATH_INVALID, CODE_SSRF_BLOCKED, ERROR_IO_ERROR,
     ERROR_PATH_INVALID, ERROR_SSRF_BLOCKED,
 };
 use crate::mcp::framing::ErrorObject;
@@ -209,7 +209,7 @@ struct PdfContext {
 /// * `root` - Optional root directory for path-traversal protection
 fn open_pdf(
     path: &str,
-    password: Option<&str>,
+    _password: Option<&str>,
     root: Option<&Path>,
 ) -> Result<PdfContext, ErrorObject> {
     // Validate and resolve the path using the root if set
@@ -343,7 +343,7 @@ fn is_url(path: &str) -> bool {
 ///
 /// Returns Ok(()) if the URL is safe to fetch.
 fn validate_url_no_ssrf(url: &str) -> Result<(), String> {
-    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+    use std::net::IpAddr;
 
     // Parse URL to extract host
     let host = if let Some(start) = url.find("://") {

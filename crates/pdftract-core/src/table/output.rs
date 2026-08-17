@@ -4,9 +4,7 @@
 //! (GridCandidate, Cell) to the JSON output format (TableJson, RowJson, CellJson).
 
 use crate::schema::{CellJson, RowJson, TableJson};
-use crate::table::cell::TableSpan;
 use crate::table::{Cell, GridCandidate};
-use anyhow::Result;
 
 /// Distance from page edge to consider a table as "continued" (50 pt).
 const CONTINUED_THRESHOLD: f32 = 50.0;
@@ -189,7 +187,7 @@ pub fn detect_two_page_tables(
 ) -> Vec<Vec<(bool, bool)>> {
     let mut results = Vec::new();
 
-    for (page_idx, page_tables) in all_tables.iter().enumerate() {
+    for (_page_idx, page_tables) in all_tables.iter().enumerate() {
         let page_flags = if page_tables.is_empty() {
             Vec::new()
         } else {
@@ -200,7 +198,7 @@ pub fn detect_two_page_tables(
 
     // Check adjacent page pairs
     for page_idx in 0..all_tables.len().saturating_sub(1) {
-        let current_page_height = page_heights.get(page_idx).copied().unwrap_or(792.0);
+        let _current_page_height = page_heights.get(page_idx).copied().unwrap_or(792.0);
         let next_page_height = page_heights.get(page_idx + 1).copied().unwrap_or(792.0);
 
         let current_tables = &all_tables[page_idx];

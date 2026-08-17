@@ -153,7 +153,7 @@ pub fn extract_one(
     filespec_ref: ObjRef,
     source: Option<&dyn PdfSource>,
 ) -> Result<AttachmentBuilder> {
-    let mut diagnostics = Vec::new();
+    let diagnostics = Vec::new();
 
     // Resolve the Filespec dictionary
     let filespec_obj = resolver.resolve(filespec_ref).map_err(|e| {

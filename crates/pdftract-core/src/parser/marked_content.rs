@@ -19,7 +19,6 @@
 
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::parser::lexer::Lexer;
-use crate::parser::object::PdfObject;
 use std::collections::HashSet;
 
 /// Result type for marked content operations.
@@ -244,7 +243,7 @@ pub fn compute_coverage_from_sets(
 /// - If `<properties>` contains /MCID N, the MCID N is recorded
 /// - Artifact marked content (/Artifact) is tracked separately
 pub fn track_mcids_from_content_stream(content_bytes: &[u8], tracker: &mut McidTracker) {
-    use std::collections::HashSet;
+    
 
     let mut lexer = Lexer::new(content_bytes);
     let mut artifact_depth = 0;

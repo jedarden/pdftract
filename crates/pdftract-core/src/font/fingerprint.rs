@@ -23,7 +23,6 @@
 //! Unicode codepoint.
 
 use sha2::{Digest, Sha256};
-use std::sync::Arc;
 
 // Include the generated phf map
 include!(concat!(env!("OUT_DIR"), "/font_fingerprints.rs"));

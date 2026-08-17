@@ -49,7 +49,7 @@ impl GridCandidate {
     /// `Some(grid)` if at least 4 intersection points form a closed grid,
     /// `None` otherwise.
     pub fn from_intersections(
-        mut intersections: Vec<(f32, f32)>,
+        intersections: Vec<(f32, f32)>,
         segments: Vec<super::Segment>,
     ) -> Option<Self> {
         if intersections.len() < 4 {

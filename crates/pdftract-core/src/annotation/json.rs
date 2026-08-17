@@ -3,7 +3,7 @@
 //! This module provides conversion functions from internal annotation types
 //! to their JSON-serializable equivalents.
 
-use crate::annotation::links::{DestArray, FitType, LinkAnnotation};
+use crate::annotation::links::{FitType, LinkAnnotation};
 use crate::annotation::other::{Annotation, AnnotationSpecific};
 use crate::schema::{
     AnnotationJson, AnnotationSpecificJson, DestArrayJson, DestTypeJson, LinkJson,

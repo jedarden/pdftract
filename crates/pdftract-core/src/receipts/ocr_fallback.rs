@@ -8,7 +8,6 @@
 //! This module is only available when both `receipts` and `full-render`
 //! features are enabled.
 
-use base64::prelude::*;
 
 #[cfg(all(feature = "receipts", feature = "full-render"))]
 use crate::render::pdfium_path::render_page_via_pdfium;

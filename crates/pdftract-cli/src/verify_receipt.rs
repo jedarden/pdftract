@@ -5,8 +5,8 @@
 
 use anyhow::{Context, Result};
 use clap::Args;
-use pdftract_core::document::{self, compute_pdf_fingerprint, extract_spans_from_page};
-use pdftract_core::receipts::verifier::{exit_code, SpanData, VerificationResult};
+use pdftract_core::document::{self};
+use pdftract_core::receipts::verifier::{exit_code, VerificationResult};
 use pdftract_core::receipts::Receipt;
 use std::fs;
 use std::io::{self, Read};

@@ -456,7 +456,7 @@ fn get_font_advance(font_dict: &PdfDict, char_code: u32) -> u16 {
 }
 
 /// Get advance width for Type0 fonts (CID fonts).
-fn get_type0_advance(font_dict: &PdfDict, char_code: u32) -> u16 {
+fn get_type0_advance(_font_dict: &PdfDict, _char_code: u32) -> u16 {
     // Type0 fonts have a descendant CIDFont with /W array
     // The /W array maps CID ranges to widths
     // For now, return a default width
@@ -516,7 +516,7 @@ fn get_widths_advance(font_dict: &PdfDict, char_code: u32) -> u16 {
 ///
 /// Returns [x_min, y_min, x_max, y_max] in font units.
 /// For Std14 fonts, uses font_bbox. For embedded fonts, queries glyph metrics.
-fn get_font_glyph_bbox(font_dict: &PdfDict, char_code: u32) -> [f64; 4] {
+fn get_font_glyph_bbox(font_dict: &PdfDict, _char_code: u32) -> [f64; 4] {
     let kind = classify_font(font_dict);
 
     #[cfg(test)]
@@ -556,7 +556,7 @@ fn get_font_glyph_bbox(font_dict: &PdfDict, char_code: u32) -> [f64; 4] {
         }
         _ => {
             // Check /FontDescriptor for /FontBBox
-            if let Some(PdfObject::Ref(descriptor_ref)) = font_dict.get("/FontDescriptor") {
+            if let Some(PdfObject::Ref(_descriptor_ref)) = font_dict.get("/FontDescriptor") {
                 // Would need to resolve the reference
                 // For now, use a default bbox
             }

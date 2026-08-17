@@ -48,7 +48,7 @@
 //! ```
 
 use crate::document::{Document, PageExtraction};
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use std::fmt;
 
 /// Errors that can occur during page extraction.
@@ -251,7 +251,7 @@ pub fn extract_page(document: &Document, page_index: usize) -> Result<PageExtrac
     }
 
     // Iterate to the requested page
-    let mut page_iter = document.pages();
+    let page_iter = document.pages();
     for (idx, page_result) in page_iter.enumerate() {
         if idx == page_index {
             let page = page_result.map_err(|e| {
@@ -451,7 +451,7 @@ pub fn extract_page_range(document: &Document, start: usize, end: usize) -> Resu
     let mut pages = Vec::new();
 
     // Iterate to the start index
-    let mut page_iter = document.pages();
+    let page_iter = document.pages();
     for (idx, page_result) in page_iter.enumerate() {
         if idx < start {
             continue; // Skip pages before start

@@ -13,11 +13,9 @@
 //! detects such patterns and attempts to recover the original text by
 //! re-decoding the bytes as windows-1252.
 
-use encoding_rs::WINDOWS_1252;
 
-use crate::font::UnicodeSource;
 use crate::glyph::Glyph;
-use crate::layout::line::{Block, Line, LineMetadata};
+use crate::layout::line::{Block, LineMetadata};
 use crate::span::Span;
 
 /// Unicode script category for word-break normalization.
@@ -901,7 +899,7 @@ const LIGATURE_GAP_THRESHOLD: f32 = 0.1;
 /// assert_eq!(span.text, "fiect");
 /// ```
 pub fn repair_split_ligatures(span: &mut Span, neighbor_glyphs: &[Glyph]) -> bool {
-    let original_text = span.text.clone();
+    let _original_text = span.text.clone();
     let mut modified = false;
 
     // Fast-path: no U+FFFD in text or no glyphs
@@ -918,7 +916,7 @@ pub fn repair_split_ligatures(span: &mut Span, neighbor_glyphs: &[Glyph]) -> boo
     // U+FFFD characters in the text should have corresponding glyphs in the array
     let mut char_to_glyph: Vec<usize> = Vec::with_capacity(chars.len());
 
-    for (char_idx, &ch) in chars.iter().enumerate() {
+    for (_char_idx, &ch) in chars.iter().enumerate() {
         // For U+FFFD, find a glyph with U+FFFD codepoint
         // For other characters, find a glyph with matching codepoint
         if ch == '\u{FFFD}' {

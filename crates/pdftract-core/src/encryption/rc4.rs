@@ -239,7 +239,7 @@ fn rc4_decrypt_direct(key: &[u8], data: &[u8]) -> Vec<u8> {
     let mut i: u8 = 0;
     let mut j: u8 = 0;
 
-    for (k, byte) in result.iter_mut().enumerate() {
+    for (_k, byte) in result.iter_mut().enumerate() {
         i = i.wrapping_add(1);
         j = j.wrapping_add(s[i as usize]);
         s.swap(i as usize, j as usize);
@@ -292,7 +292,7 @@ pub fn decrypt_object(
 #[must_use]
 pub fn validate_user_password_r2(password: &[u8], file_key: &[u8], user_hash: &[u8]) -> bool {
     // Step 1: Pad password to 32 bytes
-    let padded_password = pad_password(password);
+    let _padded_password = pad_password(password);
 
     // Step 2: RC4-encrypt the padding string with the file key
     let encrypted_padding = rc4_decrypt(file_key, &PASSWORD_PADDING);

@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 
 use crate::parser::object::{ObjRef, PdfDict, PdfObject};
 use crate::{
-    diagnostics::{DiagCode, Diagnostic},
+    diagnostics::Diagnostic,
     emit,
 };
 

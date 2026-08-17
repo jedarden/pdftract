@@ -24,9 +24,7 @@
 //! ```
 
 use bytes::Bytes;
-use std::fs::File;
-use std::io::{self, Read, Seek, SeekFrom};
-use std::path::Path;
+use std::io::{self, Read, Seek};
 
 /// Abstraction over PDF byte sources.
 ///

@@ -55,7 +55,7 @@ pub fn render_mcid_labels(
         }
 
         let block = &blocks[block_index];
-        let [x0, _y0, x1, y1] = block.bbox;
+        let [_x0, _y0, x1, y1] = block.bbox;
         let data_kind = escape_xml_attr(&block.kind);
 
         // Position text at top-right corner with a small offset

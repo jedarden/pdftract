@@ -5,7 +5,7 @@
 //! \[anchor text\](URL). The anchor text is the concatenated span text; the URL is from
 //! the link annotation's /A /URI or /Dest resolved to a URL fragment.
 
-use crate::annotation::links::{DestArray, FitType, LinkAnnotation};
+use crate::annotation::links::{DestArray, LinkAnnotation};
 use crate::schema::{LinkJson, SpanJson};
 
 /// A resolved link target for Markdown emission.

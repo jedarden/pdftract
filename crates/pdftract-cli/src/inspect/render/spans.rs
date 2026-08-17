@@ -48,7 +48,7 @@ use pdftract_core::schema::{BlockJson, SpanJson};
 /// - `data-bbox`: the bounding box [x0, y0, x1, y1]
 /// - `data-block-ref`: the block reference (e.g., "paragraph #14")
 /// - `data-column`: the column index (0-based), if detected
-pub fn render_spans(spans: &[SpanJson], blocks: &[BlockJson]) -> Vec<String> {
+pub fn render_spans(spans: &[SpanJson], _blocks: &[BlockJson]) -> Vec<String> {
     spans.iter().enumerate().map(|(index, span)| {
         let [x0, y0, x1, y1] = span.bbox;
         let width = x1 - x0;

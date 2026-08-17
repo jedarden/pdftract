@@ -821,7 +821,7 @@ fn parse_xref_entry(
 /// Read a line from the source at a specific position (without updating position).
 ///
 /// Returns None on EOF or error.
-fn read_line_at(source: &dyn PdfSource, mut pos: u64) -> Option<String> {
+fn read_line_at(source: &dyn PdfSource, pos: u64) -> Option<String> {
     let mut result = String::new();
     let mut chunk_pos = 0;
     let chunk_size = 256;
@@ -871,7 +871,7 @@ fn read_line_at(source: &dyn PdfSource, mut pos: u64) -> Option<String> {
 /// Read a line from the source, updating the position.
 ///
 /// Returns None on EOF or error.
-fn read_line(source: &dyn PdfSource, pos: &mut u64, diagnostics: &mut Vec<Diag>) -> Option<String> {
+fn read_line(source: &dyn PdfSource, pos: &mut u64, _diagnostics: &mut Vec<Diag>) -> Option<String> {
     let line = read_line_at(source, *pos)?;
     // Advance position past the line (including line ending)
     // We need to find the actual line ending length
@@ -1224,7 +1224,7 @@ fn check_trailing_whitespace(source: &dyn PdfSource, offset: u64, source_len: u6
 ///
 /// This is a specialized version for small files that can be entirely
 /// loaded into memory. Uses memchr for efficient scanning.
-fn forward_scan_memory(data: &[u8], source_len: u64) -> XrefSection {
+fn forward_scan_memory(data: &[u8], _source_len: u64) -> XrefSection {
     let mut result = XrefSection::new();
     let mut entries_found = 0u64;
 

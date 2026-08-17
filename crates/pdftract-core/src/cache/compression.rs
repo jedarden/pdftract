@@ -128,7 +128,7 @@ pub fn decode(data: &[u8]) -> io::Result<Vec<u8>> {
     // Decode with bomb protection
     let mut result = Vec::with_capacity(data.len().min(MAX_DECOMPRESSED_SIZE));
     {
-        let mut decoder = zstd::Decoder::new(data)?;
+        let decoder = zstd::Decoder::new(data)?;
         decoder
             .take(MAX_DECOMPRESSED_SIZE as u64)
             .read_to_end(&mut result)?;
@@ -252,7 +252,7 @@ pub fn decode_into_writer<W: Write>(data: &[u8], mut writer: W) -> io::Result<us
     }
 
     // Decode with bomb protection
-    let mut decoder = zstd::Decoder::new(data)?;
+    let decoder = zstd::Decoder::new(data)?;
     let mut limited_decoder = decoder.take(MAX_DECOMPRESSED_SIZE as u64);
 
     // Copy decompressed data with a limited buffer

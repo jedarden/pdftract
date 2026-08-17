@@ -12,7 +12,6 @@
 
 use crate::options::ExtractionOptions;
 use crate::output::ndjson::frames::{FooterFrame, HeaderFrame, PageFrame};
-use crate::page_class::PageClass;
 use crate::schema::ExtractionQuality;
 use anyhow::{Context, Result};
 use serde_json::json;

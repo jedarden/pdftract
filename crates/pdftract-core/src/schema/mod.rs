@@ -19,7 +19,6 @@
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 use crate::layout::correction::CorrectableText;
 use crate::receipts::Receipt;

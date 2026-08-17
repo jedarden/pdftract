@@ -72,7 +72,7 @@ use anyhow::{Context, Result};
 use axum::{
     body::Body,
     extract::{DefaultBodyLimit, Extension, Multipart, State},
-    http::{HeaderMap, HeaderValue, Request, Response, StatusCode},
+    http::{HeaderValue, Request, Response, StatusCode},
     response::{IntoResponse, Json, Response as AxumResponse},
     routing::{get, post},
     Router,
@@ -81,14 +81,12 @@ use bytes;
 use pdftract_core::audit::AuditLogWriter;
 use pdftract_core::cache;
 use pdftract_core::diagnostics::DiagCode;
-use pdftract_core::extract::{extract_pdf, extract_pdf_ndjson, result_to_json};
+use pdftract_core::extract::result_to_json;
 use pdftract_core::options::{ExtractionOptions, ReceiptsMode};
-use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use serde::Serialize;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tower_http::limit::RequestBodyLimitLayer;
-use tower_http::trace::TraceLayer;
 
 /// Cache state for the HTTP server.
 #[derive(Clone)]
