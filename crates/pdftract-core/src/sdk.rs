@@ -435,7 +435,6 @@ fn classify_from_temp_file(
     let output = Command::new(&pdftract_binary)
         .arg("extract")
         .arg("--json")
-        .arg("-")  // Write JSON to stdout
         .arg(&temp_file)  // PDF input file
         .output()
         .with_context(|| format!("Failed to spawn pdftract binary: {}", pdftract_binary))?;
