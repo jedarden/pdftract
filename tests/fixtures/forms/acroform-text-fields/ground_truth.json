@@ -1,0 +1,85 @@
+{
+  "form_fields": [
+    {
+      "name": "employee_name",
+      "field_type": "Tx",
+      "value": "John Doe",
+      "default_value": "Jane Doe",
+      "flags": {
+        "read_only": false,
+        "required": true,
+        "multiline": false,
+        "password": false
+      },
+      "max_length": 50
+    },
+    {
+      "name": "address",
+      "field_type": "Tx",
+      "value": "123 Main St\nAnytown, USA",
+      "default_value": null,
+      "flags": {
+        "read_only": false,
+        "required": false,
+        "multiline": true,
+        "password": false
+      },
+      "max_length": null
+    },
+    {
+      "name": "is_manager",
+      "field_type": "Btn",
+      "value": "Yes",
+      "default_value": "Off",
+      "flags": {
+        "read_only": false,
+        "required": false,
+        "radio": false,
+        "pushbutton": false
+      },
+      "button_kind": "checkbox",
+      "checked": true
+    },
+    {
+      "name": "department.sales",
+      "field_type": "Btn",
+      "value": "sales",
+      "default_value": null,
+      "flags": {
+        "read_only": false,
+        "required": false,
+        "radio": true,
+        "pushbutton": false
+      },
+      "button_kind": "radio",
+      "checked": true
+    },
+    {
+      "name": "department.engineering",
+      "field_type": "Btn",
+      "value": "Off",
+      "default_value": null,
+      "flags": {
+        "read_only": false,
+        "required": false,
+        "radio": true,
+        "pushbutton": false
+      },
+      "button_kind": "radio",
+      "checked": false
+    },
+    {
+      "name": "role",
+      "field_type": "Ch",
+      "value": "developer",
+      "default_value": null,
+      "flags": {
+        "read_only": false,
+        "required": false,
+        "combo": true,
+        "multi_select": false
+      },
+      "options": ["manager", "developer", "designer"]
+    }
+  ]
+}
