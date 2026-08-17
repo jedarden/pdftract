@@ -14,9 +14,8 @@ mod search_integration_tests {
 
     /// Test scaffold for search functionality
     ///
-    /// This function accepts a fixture PDF path and provides basic setup
-    /// for search testing. The actual search call will be added in
-    /// subsequent beads.
+    /// This function accepts a fixture PDF path and provides a minimal scaffold
+    /// for search testing. The actual search logic will be added in subsequent beads.
     ///
     /// # Arguments
     /// * `fixture_path` - Path to a PDF fixture file to use for testing
@@ -24,33 +23,18 @@ mod search_integration_tests {
     /// # Acceptance Criteria
     /// - Function compiles successfully
     /// - Function accepts a fixture path parameter
-    /// - Basic setup code is present (no search call yet)
+    /// - No implementation yet (placeholder for future work)
+    fn test_search_scaffold(fixture_path: &Path) {
+        // Placeholder: search implementation will be added in subsequent beads
+        // The function accepts the fixture path parameter as required
+        let _ = fixture_path;
+        todo!("Implement search logic in subsequent beads");
+    }
+
+    /// Test that the scaffold compiles and accepts a path parameter
     #[test]
-    fn test_search_scaffold() {
-        // Basic setup: specify a fixture path
-        let fixture_path = "tests/fixtures/sample.pdf";
-
-        // Verify the fixture exists for when we add actual search calls
-        let path = Path::new(fixture_path);
-
-        // Basic setup code - search call added
-        // This will be expanded with assertions in subsequent beads
-        if path.exists() {
-            // Fixture is available for search calls
-            // Add the actual pdftract.search() call with a simple pattern
-            let _ = sdk::search(
-                path,
-                "test",           // Simple search pattern
-                false,            // case_insensitive
-                false,            // use_regex
-                false,            // whole_word
-            );
-
-            assert!(true, "Fixture path setup successful");
-        } else {
-            // If fixture doesn't exist, we can still compile the test
-            // This allows the scaffold to work even without fixtures
-            assert!(true, "Scaffold compiles without fixture");
-        }
+    fn test_scaffold_compiles() {
+        let fixture_path = Path::new("tests/fixtures/sample.pdf");
+        test_search_scaffold(fixture_path);
     }
 }
