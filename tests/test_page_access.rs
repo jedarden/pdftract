@@ -7,7 +7,7 @@
 //! - Handling multiple Pages in list/array correctly
 //! - Page object type assertions and validation
 
-use pdftract_core::{extract_pdf, ExtractionOptions, OutputOptions};
+use pdftract_core::{extract_pdf, ExtractionOptions};
 use pdftract_core::document::parse_pdf_file;
 use std::path::Path;
 
@@ -24,7 +24,6 @@ fn test_access_pages_from_extraction_result() {
     let result = extract_pdf(
         fixture_path,
         &ExtractionOptions::default(),
-        &OutputOptions::default(),
     );
 
     assert!(result.is_ok(), "Extraction should succeed: {:?}", result.err());
@@ -55,7 +54,7 @@ fn test_access_pages_from_parse_result() {
         return;
     }
 
-    let (_fingerprint, _catalog, pages, _resolver) =
+    let (_fingerprint, _catalog, pages, _resolver, _dict) =
         parse_pdf_file(fixture_path).expect("Should parse PDF file");
 
     // Verify we can access the pages vector
@@ -83,7 +82,6 @@ fn test_single_page_access() {
     let result = extract_pdf(
         fixture_path,
         &ExtractionOptions::default(),
-        &OutputOptions::default(),
     );
 
     assert!(result.is_ok(), "Extraction should succeed");
@@ -113,7 +111,6 @@ fn test_multiple_pages_access() {
     let result = extract_pdf(
         fixture_path,
         &ExtractionOptions::default(),
-        &OutputOptions::default(),
     );
 
     assert!(result.is_ok(), "Extraction should succeed");
@@ -153,7 +150,6 @@ fn test_page_type_assertions() {
     let result = extract_pdf(
         fixture_path,
         &ExtractionOptions::default(),
-        &OutputOptions::default(),
     );
 
     assert!(result.is_ok(), "Extraction should succeed");
@@ -196,7 +192,7 @@ fn test_pagedict_access_from_parse() {
         return;
     }
 
-    let (_fingerprint, _catalog, pages, _resolver) =
+    let (_fingerprint, _catalog, pages, _resolver, _dict) =
         parse_pdf_file(fixture_path).expect("Should parse PDF");
 
     // Type assertion: pages should be Vec<PageDict>
@@ -233,7 +229,6 @@ fn test_page_iteration_patterns() {
     let result = extract_pdf(
         fixture_path,
         &ExtractionOptions::default(),
-        &OutputOptions::default(),
     );
 
     assert!(result.is_ok(), "Extraction should succeed");
@@ -291,7 +286,6 @@ fn test_page_indexing_bounds() {
     let result = extract_pdf(
         fixture_path,
         &ExtractionOptions::default(),
-        &OutputOptions::default(),
     );
 
     assert!(result.is_ok(), "Extraction should succeed");
