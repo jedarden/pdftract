@@ -7,7 +7,7 @@ license.workspace = true
 publish = false
 
 [lib]
-name = "pdftract"
+name = "pdftract_py"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]

@@ -7,11 +7,11 @@
 use std::path::PathBuf;
 
 // PyPdfProcessor import from pdftract-py crate
-// Note: The import path uses the [lib] name from Cargo.toml (pdftract), not the package name (pdftract-py)
-use pdftract::PyPdfProcessor;
+// Note: The import path uses the [lib] name from Cargo.toml (pdftract_py), matching the package name
+use pdftract_py::PyPdfProcessor;
 
-// Exception types from pdftract crate (PyO3 exceptions)
-use pdftract::{
+// Exception types from pdftract-py crate (PyO3 exceptions)
+use pdftract_py::{
     CorruptPdfError, EncryptionError, PdftractError, ReceiptVerifyError,
     RemoteFetchInterruptedError, SourceUnreachableError, TlsError, UnsupportedOperationError,
 };
