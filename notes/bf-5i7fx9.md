@@ -30,8 +30,8 @@ Successfully committed and pushed the fix to populate both fields in Type3Docume
 
 ✅ **PASS:** Push commit to Forgejo
 - Successfully pushed to `origin` (git.ardenone.com/jedarden/pdftract)
-- Commit hash: `1a48b8838e9d889ce1a00772da8cf30c2d4d2a5f`
-- Resolved branch divergence via rebase with remote
+- Commit hash: `4b75ccbae330e68b9566d3495d1c44e06aaffc9d`
+- Commit is on origin/main and synchronized
 
 ✅ **PASS:** Update verification note with commit reference
 - This verification note documents the completed task
@@ -55,7 +55,7 @@ let doc_ctx = Type3DocumentContext { resolver: Some(resolver), source: Some(sour
 - ✅ No regression in related font resolution code
 
 ### Commit Details
-- **Commit:** 1a48b8838e9d889ce1a00772da8cf30c2d4d2a5f
+- **Commit:** 4b75ccbae330e68b9566d3495d1c44e06aaffc9d
 - **Author:** jedarden <github@jedarden.com>
 - **Date:** Sun Aug 16 13:31:25 2026 -0400
 - **Co-Authored-By:** Claude <noreply@anthropic.com>
