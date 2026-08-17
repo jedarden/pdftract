@@ -356,49 +356,77 @@ pub fn hash(pdf_path: &Path) -> Result<String> {
 /// - The JSON output cannot be parsed
 /// - The page index is out of bounds
 pub fn classify(pdf_path: &Path, page_index: usize) -> Result<PageClassification> {
-    use std::io::Write;
     use std::process::Command;
 
     // Read the PDF file
     let pdf_bytes = std::fs::read(pdf_path)
         .with_context(|| format!("Failed to read PDF file: {}", pdf_path.display()))?;
 
-    // Validate PDF has minimal content
-    if pdf_bytes.is_empty() {
-        return Err(anyhow::anyhow!("PDF input is empty"));
-    }
+    // Create temporary file using the helper function
+    let identifier = format!("page-{}", page_index);
+    let (temp_file, _temp_guard) = create_temp_pdf_file(&pdf_bytes, &identifier)?;
 
-    // Check for PDF signature
-    if !pdf_bytes.starts_with(b"%PDF") {
-        return Err(anyhow::anyhow!("Invalid PDF: missing PDF signature (expected to start with '%PDF')"));
-    }
+    classify_from_temp_file(&temp_file, page_index, _temp_guard)
+}
 
-    // Create a temporary file for the PDF
-    let temp_dir = std::env::temp_dir();
-    let temp_file = temp_dir.join(format!(
-        "pdftract-classify-{}-{}.pdf",
-        std::process::id(),
-        page_index
-    ));
+/// Classify a PDF page directly from PDF bytes.
+///
+/// This function provides a direct interface for page classification when you
+/// already have the PDF content in memory. It handles temporary file creation
+/// internally and returns the classification result.
+///
+/// # Arguments
+///
+/// * `pdf_bytes` - The PDF content as bytes (must start with "%PDF" signature)
+/// * `page_index` - The zero-based index of the page to classify
+///
+/// # Returns
+///
+/// A `PageClassification` containing the class, confidence, and optionally
+/// hybrid cell indexes for Hybrid pages.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - PDF bytes are empty
+/// - PDF bytes don't start with the "%PDF" signature
+/// - Temp file creation fails
+/// - The pdftract binary cannot be found
+/// - The pdftract binary fails to execute
+/// - The JSON output cannot be parsed
+/// - The page index is out of bounds
+///
+/// # Examples
+///
+/// ```no_run
+/// use pdftract_core::sdk::classify_page;
+///
+/// # fn main() -> anyhow::Result<()> {
+/// let pdf_bytes = std::fs::read("document.pdf")?;
+/// let classification = classify_page(&pdf_bytes, 0)?;
+/// println!("Page classification: {:?}", classification);
+/// # Ok(())
+/// # }
+/// ```
+pub fn classify_page(pdf_bytes: &[u8], page_index: usize) -> Result<PageClassification> {
+    use std::process::Command;
 
-    // Write PDF bytes to temp file
-    {
-        let mut file = std::fs::File::create(&temp_file)
-            .with_context(|| format!("Failed to create temporary file: {}", temp_file.display()))?;
-        file.write_all(&pdf_bytes)
-            .with_context(|| format!("Failed to write PDF to temporary file: {}", temp_file.display()))?;
-        file.flush()
-            .with_context(|| format!("Failed to flush temporary file: {}", temp_file.display()))?;
-    }
+    // Create temporary file using the helper function
+    let identifier = format!("page-{}", page_index);
+    let (temp_file, temp_guard) = create_temp_pdf_file(pdf_bytes, &identifier)?;
 
-    // Ensure temp file is cleaned up using a manual RAII guard
-    struct TempFileGuard(std::path::PathBuf);
-    impl Drop for TempFileGuard {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_file(&self.0);
-        }
-    }
-    let _temp_guard = TempFileGuard(temp_file.clone());
+    classify_from_temp_file(&temp_file, page_index, temp_guard)
+}
+
+/// Internal helper to classify from a temporary file path.
+///
+/// This function handles the actual pdftract binary invocation and JSON parsing,
+/// using a temporary file that will be cleaned up by the provided guard.
+fn classify_from_temp_file(
+    temp_file: &std::path::Path,
+    page_index: usize,
+    _temp_guard: impl Drop,
+) -> Result<PageClassification> {
 
     // Find the pdftract binary
     let pdftract_binary = find_pdftract_binary()?;
@@ -503,6 +531,103 @@ pub fn classify(pdf_path: &Path, page_index: usize) -> Result<PageClassification
         confidence,
         hybrid_cells,
     })
+}
+
+/// Create a temporary file from PDF bytes for pdftract processing.
+///
+/// This function handles the creation of a temporary PDF file that can be
+/// processed by the pdftract binary. It includes proper validation, error handling,
+/// and cleanup via RAII guard.
+///
+/// # Arguments
+///
+/// * `pdf_bytes` - The PDF content as bytes
+/// * `identifier` - An identifier string for the temp file name (e.g., page index or operation name)
+///
+/// # Returns
+///
+/// A tuple containing:
+/// - The path to the temporary file
+/// - An RAII guard that automatically removes the temp file when dropped
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - PDF bytes are empty
+/// - PDF bytes don't start with the "%PDF" signature
+/// - Temp file creation fails
+/// - Writing PDF bytes to temp file fails
+/// - Flushing temp file fails
+///
+/// # Examples
+///
+/// ```no_run
+/// use pdftract_core::sdk::create_temp_pdf_file;
+///
+/// # fn main() -> anyhow::Result<()> {
+/// let pdf_bytes = std::fs::read("document.pdf")?;
+/// let (temp_path, _guard) = create_temp_pdf_file(&pdf_bytes, "page-0")?;
+/// // Use temp_path with pdftract binary
+/// // _guard automatically cleans up when dropped
+/// # Ok(())
+/// # }
+/// ```
+pub fn create_temp_pdf_file(
+    pdf_bytes: &[u8],
+    identifier: &str,
+) -> anyhow::Result<(std::path::PathBuf, impl Drop)> {
+    use std::io::Write;
+
+    // Validate PDF has minimal content
+    if pdf_bytes.is_empty() {
+        return Err(anyhow::anyhow!("PDF input is empty"));
+    }
+
+    // Check for PDF signature
+    if !pdf_bytes.starts_with(b"%PDF") {
+        return Err(anyhow::anyhow!(
+            "Invalid PDF: missing PDF signature (expected to start with '%PDF')"
+        ));
+    }
+
+    // Create a temporary file for the PDF
+    let temp_dir = std::env::temp_dir();
+    let temp_file = temp_dir.join(format!(
+        "pdftract-classify-{}-{}.pdf",
+        std::process::id(),
+        identifier
+    ));
+
+    // Write PDF bytes to temp file
+    {
+        let mut file = std::fs::File::create(&temp_file).with_context(|| {
+            format!("Failed to create temporary file: {}", temp_file.display())
+        })?;
+        file.write_all(pdf_bytes).with_context(|| {
+            format!(
+                "Failed to write PDF to temporary file: {}",
+                temp_file.display()
+            )
+        })?;
+        file.flush().with_context(|| {
+            format!(
+                "Failed to flush temporary file: {}",
+                temp_file.display()
+            )
+        })?;
+    }
+
+    // Ensure temp file is cleaned up using a manual RAII guard
+    struct TempFileGuard(std::path::PathBuf);
+    impl Drop for TempFileGuard {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+
+    let temp_guard = TempFileGuard(temp_file.clone());
+
+    Ok((temp_file, temp_guard))
 }
 
 /// Find the pdftract binary in standard locations.
