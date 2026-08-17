@@ -819,7 +819,7 @@ impl Edge {
     /// This method rounds the current x position to the nearest integer
     /// using standard rounding rules. Used in scanline intersection calculation.
     pub(crate) fn intersection_x(&self) -> i32 {
-        round_x(self.x as f64)
+        (self.x as f64).round() as i32
     }
 }
 
