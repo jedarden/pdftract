@@ -7,8 +7,6 @@
 //! - Case sensitivity options
 //! - Multi-PDF search behavior
 
-use pdftract_py::*;
-
 #[cfg(test)]
 mod search_integration_tests {
     use std::path::Path;

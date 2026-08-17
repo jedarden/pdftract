@@ -18,6 +18,7 @@ use std::path::Path;
 /// }
 /// ```
 #[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)]
 struct UnmappedGlyphNamesConfig {
     /// List of glyph names to skip during CMAP and ToUnicode entry creation.
     ///

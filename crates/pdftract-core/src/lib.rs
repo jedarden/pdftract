@@ -248,6 +248,13 @@ pub use temp_file::PdfTempFile;
 pub use text::{serialize_document_text, serialize_page_text, TextOptions};
 pub use word_boundary::{TextState, WordBoundaryDetector, WordBoundaryManager};
 
+// Re-export error types for convenience (pdftract-bf-sbkopb)
+pub use document::DocumentError;
+#[cfg(feature = "decrypt")]
+pub use encryption::DecryptError;
+#[cfg(feature = "decrypt")]
+pub use encryption::decryptor::DecryptionError;
+
 // Re-export PdfSource types (pdftract-1mmq9)
 // Note: PdfSource trait is available via pdftract_core::source::PdfSource to avoid conflict with parser::stream::PdfSource
 pub use source::{FileSource, MmapSource};

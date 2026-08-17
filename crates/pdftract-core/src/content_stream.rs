@@ -3003,6 +3003,7 @@ mod tests {
             None,
             None,
             &[],
+            None,
         );
 
         // Count overflow diagnostics
@@ -3027,7 +3028,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"Q"; // Q at depth 0
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         // Should emit underflow diagnostic
         let underflow_count = result
@@ -3050,7 +3051,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 5 Tc ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         // Check that the operator was processed without error
         assert_eq!(result.diagnostics.len(), 0);
@@ -3062,7 +3063,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 10 Tw ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         assert_eq!(result.diagnostics.len(), 0);
     }
@@ -3075,7 +3076,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 0 Tz ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         // Should emit HORIZ_SCALING_ZERO diagnostic
         let diag_count = result
@@ -3094,7 +3095,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT -10 Tz ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         // Should emit HORIZ_SCALING_ZERO diagnostic
         let diag_count = result
@@ -3111,7 +3112,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 150 Tz ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         assert_eq!(result.diagnostics.len(), 0);
     }
@@ -3122,7 +3123,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 15 TL ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         assert_eq!(result.diagnostics.len(), 0);
     }
@@ -3133,7 +3134,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 3 Ts ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         assert_eq!(result.diagnostics.len(), 0);
     }
@@ -3144,7 +3145,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT -5 Tc -10 Tw -3 Ts ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         // Should not emit any diagnostics
         assert_eq!(result.diagnostics.len(), 0);
@@ -3156,7 +3157,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 3 Tr ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         assert_eq!(result.diagnostics.len(), 0);
     }
@@ -3169,7 +3170,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 9 Tr ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         // Should emit TEXT_RENDERING_MODE_CLAMPED diagnostic
         let diag_count = result
@@ -3209,7 +3210,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"5 Tc 10 Tw 150 Tz 15 TL 3 Ts 3 Tr";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         // Should not crash; diagnostics may or may not be emitted
         // The key is that the function returns successfully
@@ -3222,7 +3223,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 5 Tc 10 Tw 120 Tz 15 TL 3 Ts 2 Tr ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         assert_eq!(result.diagnostics.len(), 0);
     }
@@ -3305,7 +3306,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT /UnknownFont 12 Tf ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         let diag_count = result
             .diagnostics
@@ -3346,7 +3347,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 100 200 Td 50 0 Td (Test) Tj ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         // Should have one glyph
         assert_eq!(result.glyphs.len(), 1);
@@ -3361,7 +3362,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 1 0 0 1 100 200 Tm 50 0 Td (Test) Tj ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         // Should have one glyph
         assert_eq!(result.glyphs.len(), 1);
@@ -3376,7 +3377,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 0 -12 TD (Test) Tj ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         // Should have one glyph
         assert_eq!(result.glyphs.len(), 1);
@@ -3390,7 +3391,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 0 -12 TD ET BT (Test1) Tj ET BT (Test2) T* Tj ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         // Should have two glyphs (one from each text block)
         assert_eq!(result.glyphs.len(), 2);
@@ -3404,7 +3405,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT (Test) Tj ET BT 0 TL T* (Test) Tj ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         let diag_count = result
             .diagnostics
@@ -3420,7 +3421,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT /F1 0 Tf (Test) Tj ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         let diag_count = result
             .diagnostics
@@ -3441,7 +3442,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT [(Hello)(World)] TJ ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         // Should have 2 glyphs (one per string)
         assert_eq!(result.glyphs.len(), 2);
@@ -3457,7 +3458,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT [(Hello)250(World)] TJ ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         // Should have 2 glyphs
         assert_eq!(result.glyphs.len(), 2);
@@ -3477,7 +3478,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT [(kern)-10(ing)] TJ ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         // Should have 2 glyphs
         assert_eq!(result.glyphs.len(), 2);
@@ -3492,7 +3493,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT [(A)0(B)] TJ ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         assert_eq!(result.glyphs.len(), 2);
         assert!(!result.glyphs[0].is_word_boundary);
@@ -3505,7 +3506,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT [(a)500(b)500(c)] TJ ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         assert_eq!(result.glyphs.len(), 3);
         assert!(!result.glyphs[0].is_word_boundary);
@@ -3525,7 +3526,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT [] TJ ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         assert_eq!(result.glyphs.len(), 0);
     }
@@ -3537,7 +3538,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT [(A)200(B)] TJ ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         assert_eq!(result.glyphs.len(), 2);
         // 200 is NOT > 200, so no boundary
@@ -3550,7 +3551,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT [(A)201(B)] TJ ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         assert_eq!(result.glyphs.len(), 2);
         // 201 > 200, so boundary IS triggered
@@ -3563,7 +3564,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"[(Hello)] TJ";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         // Should have diagnostic for TJ outside BT
         assert!(result
@@ -3580,7 +3581,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT (Hello) Tj BT (World) Tj ET ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         // Should emit BT_NESTED diagnostic
         let diag_count = result
@@ -3597,7 +3598,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         // Should emit ET_WITHOUT_BT diagnostic
         let diag_count = result
@@ -3614,7 +3615,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"ET BT (Test) Tj ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         // Should still be able to process text after the stray ET
         assert_eq!(result.glyphs.len(), 1);
@@ -3626,7 +3627,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"(Hello) Tj";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         // Should emit TEXT_SHOW_OUTSIDE_BT diagnostic
         let diag_count = result
@@ -3645,7 +3646,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"(Hello) Tj (World) Tj";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         // Should produce no glyphs
         assert_eq!(result.glyphs.len(), 0);
@@ -3664,7 +3665,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT (Hello) Tj ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         // Should produce one glyph
         assert_eq!(result.glyphs.len(), 1);
@@ -3683,7 +3684,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT (First) Tj ET (Between) Tj BT (Second) Tj ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         // Should produce two glyphs (one from each block)
         assert_eq!(result.glyphs.len(), 2);
@@ -3702,7 +3703,7 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 100 200 Td BT (Test) Tj ET ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[]);
+        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
 
         // The nested BT should reset matrices, so the glyph should be near origin
         // not at (100, 200) where the first Td would have placed it

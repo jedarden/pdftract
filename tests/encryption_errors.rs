@@ -22,8 +22,8 @@ use pdftract_cli::hash::{EXIT_ENCRYPTED, EXIT_SUCCESS};
 // Import diagnostic types for error message validation
 use pdftract_core::diagnostics::{DiagCode, Diagnostic};
 
-// Import encryption error types for testing
-use pdftract_core::encryption::decryptor::DecryptionError;
+// Import encryption error types for testing (now exported from pdftract_core)
+use pdftract_core::{DecryptionError, DecryptError};
 
 // ============================================================================
 // Test Constants and Fixtures

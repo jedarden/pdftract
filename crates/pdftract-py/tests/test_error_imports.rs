@@ -1,0 +1,17 @@
+//! Test error type imports from pdftract crate
+//!
+//! This test verifies that all PyO3 exception types can be imported
+//! from the pdftract crate (pdftract-py with library name "pdftract").
+
+use pdftract::{
+    CorruptPdfError, EncryptionError, PdftractError, ReceiptVerifyError,
+    RemoteFetchInterruptedError, SourceUnreachableError, TlsError, UnsupportedOperationError,
+};
+
+#[test]
+fn test_error_types_import() {
+    // This test just verifies that the imports compile
+    // The actual error types are PyO3 exceptions and require
+    // Python GIL to instantiate, so we just check compilation here
+    assert!(true);
+}

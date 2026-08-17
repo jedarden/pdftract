@@ -26,7 +26,7 @@ use std::collections::HashMap;
 /// A `LinkJson` suitable for JSON serialization.
 pub fn link_to_json(
     link: &LinkAnnotation,
-    page_ref_to_index: &Option<HashMap<u64, usize>>,
+    _page_ref_to_index: &Option<HashMap<u64, usize>>,
 ) -> LinkJson {
     let rect = link.common.rect.unwrap_or([0.0, 0.0, 0.0, 0.0]);
     let page_index = link.common.page_index;

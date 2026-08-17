@@ -687,7 +687,7 @@ impl PageClassifier {
     ///
     /// Returns Hybrid classification if the ≥15% rule is met,
     /// otherwise returns a non-Hybrid classification based on cell counts.
-    fn classify_hybrid(&self, ctx: &PageContext, cells: &[CellData; 64]) -> PageClassification {
+    fn classify_hybrid(&self, _ctx: &PageContext, cells: &[CellData; 64]) -> PageClassification {
         let mut vector_count = 0u32;
         let mut scanned_count = 0u32;
         let mut scanned_cells = BTreeSet::new();

@@ -205,7 +205,7 @@ fn process_content_stream_to_glyphs(
         &page.resources,
         ProcessingMode::Normal,
         None,
-        None, // default_off_ocgs
+        None,
     )
     .map_err(|e| PageExtractionError::GlyphExtractionFailed {
         page_index,
