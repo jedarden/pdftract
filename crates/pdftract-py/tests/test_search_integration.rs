@@ -23,12 +23,17 @@ mod search_integration_tests {
     /// # Acceptance Criteria
     /// - Function compiles successfully
     /// - Function accepts a fixture path parameter
-    /// - No implementation yet (placeholder for future work)
+    /// - Basic pdftract.search() call is present
     fn test_search_scaffold(fixture_path: &Path) {
-        // Placeholder: search implementation will be added in subsequent beads
-        // The function accepts the fixture path parameter as required
-        let _ = fixture_path;
-        todo!("Implement search logic in subsequent beads");
+        // Minimal search call with a simple literal pattern
+        let _matches = sdk::search(
+            fixture_path,
+            "test",           // simple literal pattern
+            false,            // case_sensitive (not case_insensitive)
+            false,            // not a regex, just literal string
+            false,            // not whole_word only
+        );
+        // No assertions yet - just verify the call compiles
     }
 
     /// Test that the scaffold compiles and accepts a path parameter
