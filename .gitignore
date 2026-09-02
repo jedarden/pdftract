@@ -189,6 +189,8 @@ build/
 /.beads/diagnostics/
 /logs/
 /tools/test_rust_markdown
+/tests/test_discovery
+/crates/pdftract-py/python/pdftract/*.so
 /pdftract-dotnet/msbuild.log
 /cargo_check_output.txt
 /warnings-check.txt
