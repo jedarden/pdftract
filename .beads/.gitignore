@@ -12,3 +12,7 @@
 
 # Journals
 *.journal
+
+# Worker-local diagnostics and execution traces
+diagnostics/
+traces/

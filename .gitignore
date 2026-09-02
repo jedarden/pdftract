@@ -182,3 +182,14 @@ test_trailer_debug2
 test_trailer_parse
 test_trailer_parse2
 build/
+
+# Generated repository-maintenance and diagnostic artifacts
+/.beads.backup.*
+/.beads/traces/
+/.beads/diagnostics/
+/logs/
+/tools/test_rust_markdown
+/pdftract-dotnet/msbuild.log
+/cargo_check_output.txt
+/warnings-check.txt
+/warnings-test.txt
