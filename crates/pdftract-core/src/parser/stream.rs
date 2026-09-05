@@ -9,7 +9,6 @@
 //! - Enforcing decompression limits (bomb protection)
 //! - Error recovery per INV-8 (never panic, always return partial bytes)
 
-use std::io::Read;
 use std::path::Path;
 
 use flate2::read::{DeflateDecoder, ZlibDecoder};

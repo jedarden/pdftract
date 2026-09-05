@@ -8,7 +8,6 @@ use crate::extract::{
     extract_pdf, extract_text as extract_text_impl, ExtractionResult, PageResult,
 };
 use crate::options::ExtractionOptions;
-use crate::parser::stream::PdfSource as ParserPdfSource;
 use crate::receipts::verifier::{verify_receipt, SpanData, VerificationResult};
 use crate::receipts::Receipt;
 use anyhow::{Context, Result};
@@ -356,8 +355,6 @@ pub fn hash(pdf_path: &Path) -> Result<String> {
 /// - The JSON output cannot be parsed
 /// - The page index is out of bounds
 pub fn classify(pdf_path: &Path, page_index: usize) -> Result<PageClassification> {
-    use std::process::Command;
-
     // Read the PDF file
     let pdf_bytes = std::fs::read(pdf_path)
         .with_context(|| format!("Failed to read PDF file: {}", pdf_path.display()))?;
@@ -409,8 +406,6 @@ pub fn classify(pdf_path: &Path, page_index: usize) -> Result<PageClassification
 /// # }
 /// ```
 pub fn classify_page(pdf_bytes: &[u8], page_index: usize) -> Result<PageClassification> {
-    use std::process::Command;
-
     // Create temporary file using the helper function
     let identifier = format!("page-{}", page_index);
     let (temp_file, temp_guard) = create_temp_pdf_file(pdf_bytes, &identifier)?;

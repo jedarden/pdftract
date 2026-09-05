@@ -22,7 +22,7 @@ use extract_markdown::extract_markdown_fn;
 
 // Re-export core types
 use pdftract_core::{AttachmentJson, ExtractionOptions, PageResult, TableJson};
-use pdftract_core::sdk::{search as sdk_search, SearchMatch};
+use pdftract_core::sdk::search as sdk_search;
 
 // ============================================================================
 // PyPdfProcessor - Python-facing PDF processor

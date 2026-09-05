@@ -56,7 +56,6 @@ use crate::span::merge_glyphs_to_spans;
 use crate::span::CssHexColor;
 
 use anyhow::{Context, Result};
-use rayon::prelude::*;
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -1694,7 +1693,6 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
     use crate::parser::catalog::parse_catalog;
     use crate::parser::pages::LazyPageIter;
     use crate::parser::xref::{load_xref_with_prev_chain, XrefResolver};
-    use std::io::Write;
 
     // Open the PDF file
     let source = FileSource::open(pdf_path).context("Failed to open PDF file")?;

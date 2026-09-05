@@ -23,7 +23,7 @@ use crate::parser::xref::{
     XrefResolver,
 };
 use crate::receipts::verifier::SpanData;
-use crate::source::{FileSource, PdfSource};
+use crate::source::FileSource;
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fmt;

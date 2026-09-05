@@ -15,7 +15,7 @@
 
 
 use crate::glyph::Glyph;
-use crate::layout::line::{Block, LineMetadata};
+use crate::layout::line::Block;
 use crate::span::Span;
 
 /// Unicode script category for word-break normalization.

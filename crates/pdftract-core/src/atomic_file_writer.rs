@@ -188,7 +188,7 @@ impl Write for AtomicFileWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         if self.target_path == Path::new("-") {
             // Write directly to stdout for passthrough
-            use std::io::{self, Write};
+            use std::io;
             io::stdout().write_all(buf)?;
             Ok(buf.len())
         } else {
