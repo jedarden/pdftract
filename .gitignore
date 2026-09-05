@@ -183,6 +183,13 @@ test_trailer_parse
 test_trailer_parse2
 build/
 
+# crates/pdftract-core/build/ is build-time INPUT data (std14 metrics, AGL,
+# named encodings, font fingerprints, predefined CMaps, wordlist) that
+# crates/pdftract-core/build.rs reads to generate Rust tables. It is not
+# generated output, despite the directory name — do not sweep it.
+!crates/pdftract-core/build/
+!crates/pdftract-core/build/**
+
 # Generated repository-maintenance and diagnostic artifacts
 /.beads.backup.*
 /.beads/traces/
