@@ -13,9 +13,11 @@ namespace Pdftract.Models;
 public abstract class Source
 {
     /// <summary>
-    /// Type discriminator for JSON serialization.
+    /// Type discriminator for JSON serialization. Ignored during (de)serialization:
+    /// the "type" key is owned by the class-level JsonPolymorphic discriminator, so
+    /// serializing this property too would emit two "type" keys in the same object.
     /// </summary>
-    [JsonPropertyName("type")]
+    [JsonIgnore]
     public string Type { get; private set; } = string.Empty;
 
     /// <summary>
@@ -37,10 +39,15 @@ public abstract class Source
         public string Path { get; private set; } = string.Empty;
 
         /// <summary>
-        /// Private constructor - use FromPath factory method.
+        /// Constructor used by JSON deserialization and by the FromPath factory method.
+        /// System.Text.Json can only populate this type through an annotated constructor:
+        /// the properties deliberately expose no public setters.
         /// </summary>
-        private FilePath()
+        /// <param name="path">The file system path to the PDF.</param>
+        [JsonConstructor]
+        internal FilePath(string path)
         {
+            Path = path;
             Type = "FilePath";
         }
 
@@ -51,7 +58,7 @@ public abstract class Source
         /// <returns>A FilePath source instance.</returns>
         public static FilePath FromPath(string path)
         {
-            return new FilePath { Path = path };
+            return new FilePath(path);
         }
     }
 
@@ -67,10 +74,13 @@ public abstract class Source
         public string Data { get; private set; } = string.Empty;
 
         /// <summary>
-        /// Private constructor - use FromBase64 factory method.
+        /// Constructor used by JSON deserialization and by the FromBase64 factory method.
         /// </summary>
-        private Base64()
+        /// <param name="data">The base64-encoded PDF data.</param>
+        [JsonConstructor]
+        internal Base64(string data)
         {
+            Data = data;
             Type = "Base64";
         }
 
@@ -81,7 +91,7 @@ public abstract class Source
         /// <returns>A Base64 source instance.</returns>
         public static Base64 FromBase64(string data)
         {
-            return new Base64 { Data = data };
+            return new Base64(data);
         }
     }
 
@@ -97,10 +107,15 @@ public abstract class Source
         public string UrlValue { get; private set; } = string.Empty;
 
         /// <summary>
-        /// Private constructor - use FromUrl factory method.
+        /// Constructor used by JSON deserialization and by the FromUrl factory method.
+        /// The parameter name matches the UrlValue property, which System.Text.Json
+        /// requires for constructor binding; the wire key stays "url" via JsonPropertyName.
         /// </summary>
-        private Url()
+        /// <param name="urlValue">The URL pointing to the PDF.</param>
+        [JsonConstructor]
+        internal Url(string urlValue)
         {
+            UrlValue = urlValue;
             Type = "Url";
         }
 
@@ -111,7 +126,7 @@ public abstract class Source
         /// <returns>A Url source instance.</returns>
         public static Url FromUrl(string url)
         {
-            return new Url { UrlValue = url };
+            return new Url(url);
         }
     }
 }

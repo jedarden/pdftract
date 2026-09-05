@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using Pdftract.Models;
 using SourceBase = Pdftract.Models.Source;
 using Xunit;
@@ -210,25 +212,122 @@ public class SourceTests
         // Verify snake_case conversion (no PascalCase property names in output).
         // Anchored on the quote/colon so the "FilePath" discriminator value cannot match.
         Assert.DoesNotContain("\"Path\":", json);
+        // The Type property must not be written in addition to the discriminator,
+        // which would produce two "type" keys in the same object.
+        Assert.Equal(1, CountOccurrences(json, "\"type\":"));
     }
 
     /// <summary>
     /// Tests case-insensitive property name matching during deserialization.
+    /// Property keys are matched case-insensitively, but the discriminator key is
+    /// matched exactly, so it has to be spelled "type" in the payload.
     /// </summary>
     [Fact]
     public void JsonDeserialization_CaseInsensitive_WorksCorrectly()
     {
-        // Arrange - mixed case property names
-        string mixedCaseJson = """{"Type":"FilePath","Path":"/path/to/document.pdf"}""";
+        // Arrange - PascalCase property key with the lowercase discriminator key
+        string mixedCaseJson = """{"type":"FilePath","Path":"/path/to/document.pdf"}""";
 
         // Act
         var source = JsonSerializer.Deserialize<SourceBase>(mixedCaseJson, JsonOptions.Instance);
 
         // Assert
         Assert.NotNull(source);
-        Assert.IsType<SourceBase.FilePath>(source);
-        var filePath = source as SourceBase.FilePath;
-        Assert.Equal("/path/to/document.pdf", filePath!.Path);
+        var filePath = Assert.IsType<SourceBase.FilePath>(source);
+        Assert.Equal("FilePath", filePath.Type);
+        Assert.Equal("/path/to/document.pdf", filePath.Path);
+    }
+
+    /// <summary>
+    /// Tests that an unrecognized type discriminator is rejected rather than silently
+    /// producing some other Source variant.
+    /// </summary>
+    [Fact]
+    public void JsonDeserialization_UnknownDiscriminator_Throws()
+    {
+        // Arrange
+        string json = """{"type":"Unknown","path":"/path/to/document.pdf"}""";
+
+        // Act & Assert
+        Assert.ThrowsAny<JsonException>(() =>
+            JsonSerializer.Deserialize<SourceBase>(json, JsonOptions.Instance));
+    }
+
+    /// <summary>
+    /// Tests that a Source nested inside another object graph still resolves its
+    /// variant and maps snake_case keys, both when reading and when writing.
+    /// </summary>
+    [Fact]
+    public void JsonDeserialization_NestedSource_MapsSnakeCaseToPascalCase()
+    {
+        // Arrange
+        string json = """{"pdf_source":{"type":"Base64","data":"JVBERi0xLjQKJcTg"}}""";
+
+        // Act
+        var envelope = JsonSerializer.Deserialize<SourceEnvelope>(json, TestOptions);
+
+        // Assert
+        Assert.NotNull(envelope?.PdfSource);
+        var nested = Assert.IsType<SourceBase.Base64>(envelope!.PdfSource);
+        Assert.Equal("Base64", nested.Type);
+        Assert.Equal("JVBERi0xLjQKJcTg", nested.Data);
+    }
+
+    /// <summary>
+    /// Tests that serializing a nested Source emits snake_case keys at every level.
+    /// </summary>
+    [Fact]
+    public void JsonSerialization_NestedSource_EmitsSnakeCaseKeys()
+    {
+        // Arrange
+        var envelope = new SourceEnvelope { PdfSource = SourceBase.FilePath.FromPath("/tmp/invoice.pdf") };
+
+        // Act
+        string json = JsonSerializer.Serialize(envelope, TestOptions);
+
+        // Assert
+        Assert.Contains("\"pdf_source\":", json);
+        Assert.Contains("\"path\":\"/tmp/invoice.pdf\"", json);
+        Assert.DoesNotContain("PdfSource", json);
+        Assert.Equal(1, CountOccurrences(json, "\"type\":"));
+    }
+
+    /// <summary>
+    /// Options that can resolve the test-local SourceEnvelope type. JsonOptions.Instance
+    /// resolves types from the AOT source generation context only, which deliberately
+    /// does not list test types, so the product context is combined with a reflection
+    /// resolver. The naming policy and other settings are inherited from JsonOptions.
+    /// </summary>
+    private static JsonSerializerOptions TestOptions { get; } = new(JsonOptions.Instance)
+    {
+        TypeInfoResolver = JsonTypeInfoResolver.Combine(
+            PdftractJsonContext.Default,
+            new DefaultJsonTypeInfoResolver()),
+    };
+
+    /// <summary>
+    /// Envelope used to exercise a Source nested one level below the JSON root.
+    /// </summary>
+    private sealed class SourceEnvelope
+    {
+        [JsonPropertyName("pdf_source")]
+        public SourceBase? PdfSource { get; set; }
+    }
+
+    /// <summary>
+    /// Counts the occurrences of a substring in a JSON string.
+    /// </summary>
+    private static int CountOccurrences(string json, string needle)
+    {
+        int count = 0;
+        int index = 0;
+        while ((index = json.IndexOf(needle, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += needle.Length;
+        }
+
+        return count;
     }
 
     /// <summary>
