@@ -54,6 +54,110 @@ impl std::fmt::Display for Type3Error {
 
 impl std::error::Error for Type3Error {}
 
+/// Classification of a resolved PDF object as a char_proc target.
+///
+/// Type 3 /CharProcs entries point at objects that should be content streams;
+/// malformed fonts sometimes point at plain dictionaries or at scalars. This
+/// enum partitions the resolved object into the two shapes the rasterizer can
+/// act on (`Stream`, `Dict`) and everything else.
+///
+/// This is the context-free primitive. [`crate::font::type3_rasterizer`]
+/// provides `detect_char_proc_type`, which layers indirect-reference
+/// resolution and cycle detection on top of the same classification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ObjectType {
+    /// Stream object — a char_proc content stream with its own dictionary.
+    Stream,
+    /// Dictionary object — no stream data attached.
+    Dict,
+    /// Any other object; carries `PdfObject::type_name()` for diagnostics
+    /// (e.g. `Other("null")`, or `Other("reference")` for an indirect
+    /// reference that was never resolved).
+    Other(&'static str),
+}
+
+impl ObjectType {
+    /// The PDF type name of this classification, matching
+    /// [`PdfObject::type_name`] vocabulary.
+    ///
+    /// [`PdfObject::type_name`]: crate::parser::object::types::PdfObject::type_name
+    #[inline]
+    pub fn type_name(self) -> &'static str {
+        match self {
+            ObjectType::Stream => "stream",
+            ObjectType::Dict => "dictionary",
+            ObjectType::Other(name) => name,
+        }
+    }
+
+    /// Returns true if this is a stream object.
+    #[inline]
+    pub fn is_stream(self) -> bool {
+        matches!(self, ObjectType::Stream)
+    }
+
+    /// Returns true if this is a dictionary object.
+    #[inline]
+    pub fn is_dict(self) -> bool {
+        matches!(self, ObjectType::Dict)
+    }
+}
+
+/// Detect whether a resolved PDF object is a stream, dictionary, or other type.
+///
+/// A char_proc target must resolve to a stream; this helper classifies a
+/// resolved object so callers can branch on the shape they actually got
+/// instead of pattern-matching the enum themselves.
+///
+/// Streams are checked before dictionaries: a stream owns a dictionary but is
+/// not one, so a stream never classifies as [`ObjectType::Dict`].
+///
+/// Edge cases:
+/// - `PdfObject::Null` → `ObjectType::Other("null")` (never a stream or dict).
+/// - `PdfObject::Ref` → `ObjectType::Other("reference")`; an indirect
+///   reference still holding its ref form was never resolved, and this
+///   function takes no resolver, so it is reported as-is rather than guessed.
+/// - `PdfObject::Indirect` → classified by looking through the wrapper at the
+///   object it carries.
+///
+/// # Arguments
+///
+/// * `object` - The resolved [`PdfObject`] to classify
+///
+/// # Returns
+///
+/// [`ObjectType::Stream`] for a stream, [`ObjectType::Dict`] for a dictionary,
+/// [`ObjectType::Other`] with the type name otherwise.
+///
+/// # Example
+///
+/// ```
+/// use pdftract_core::font::type3::{detect_object_type, ObjectType};
+/// use pdftract_core::parser::object::types::{PdfDict, PdfObject, PdfStream};
+///
+/// let stream = PdfObject::Stream(Box::new(PdfStream::new(PdfDict::new(), 0, None)));
+/// assert_eq!(detect_object_type(&stream), ObjectType::Stream);
+///
+/// let dict = PdfObject::Dict(Box::new(PdfDict::new()));
+/// assert_eq!(detect_object_type(&dict), ObjectType::Dict);
+///
+/// assert_eq!(detect_object_type(&PdfObject::Null), ObjectType::Other("null"));
+/// ```
+#[inline]
+pub fn detect_object_type(object: &PdfObject) -> ObjectType {
+    if object.as_stream().is_some() {
+        return ObjectType::Stream;
+    }
+    if object.as_dict().is_some() {
+        return ObjectType::Dict;
+    }
+    match object {
+        // A wrapper statement is not a type of its own: classify what it holds.
+        PdfObject::Indirect(inner) => detect_object_type(&inner.obj),
+        other => ObjectType::Other(other.type_name()),
+    }
+}
+
 /// Type 3 glyph data.
 ///
 /// Represents a single glyph in a Type 3 font with its parsed charproc stream.
@@ -1029,7 +1133,7 @@ impl Type3FontBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::object::types::intern;
+    use crate::parser::object::types::{intern, PdfIndirect, PdfStream};
 
     #[test]
     fn test_type3_load_minimal() {
@@ -1943,5 +2047,154 @@ mod tests {
         assert!(result.is_some(), "rasterize_type3_glyph should succeed with helper output");
         let bitmap = result.unwrap();
         assert!(!bitmap.is_empty(), "Bitmap should not be empty");
+    }
+
+    // --- detect_object_type / ObjectType ---
+
+    fn make_charproc_stream_dict() -> PdfDict {
+        let mut dict = PdfDict::new();
+        dict.insert(intern("/Type"), PdfObject::Name(intern("/XObject")));
+        dict.insert(intern("/Subtype"), PdfObject::Name(intern("/Form")));
+        dict.insert(
+            intern("/BBox"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+                PdfObject::Integer(100),
+                PdfObject::Integer(100),
+            ])),
+        );
+        dict
+    }
+
+    #[test]
+    fn test_detect_object_type_stream() {
+        let stream = PdfObject::Stream(Box::new(PdfStream::new(
+            make_charproc_stream_dict(),
+            512,
+            Some(42),
+        )));
+        assert_eq!(detect_object_type(&stream), ObjectType::Stream);
+        assert!(detect_object_type(&stream).is_stream());
+        assert!(!detect_object_type(&stream).is_dict());
+    }
+
+    #[test]
+    fn test_detect_object_type_dict() {
+        let dict = PdfObject::Dict(Box::new(make_charproc_stream_dict()));
+        assert_eq!(detect_object_type(&dict), ObjectType::Dict);
+        assert!(detect_object_type(&dict).is_dict());
+        assert!(!detect_object_type(&dict).is_stream());
+    }
+
+    #[test]
+    fn test_stream_is_not_confused_with_its_dictionary() {
+        // A stream owns a dictionary; the two must classify differently even
+        // when the stream dictionary carries the same keys a dict target would.
+        let stream = PdfObject::Stream(Box::new(PdfStream::new(
+            make_charproc_stream_dict(),
+            0,
+            None,
+        )));
+        let dict = PdfObject::Dict(Box::new(make_charproc_stream_dict()));
+        assert_ne!(detect_object_type(&stream), detect_object_type(&dict));
+        assert_eq!(detect_object_type(&stream), ObjectType::Stream);
+        assert_eq!(detect_object_type(&dict), ObjectType::Dict);
+    }
+
+    #[test]
+    fn test_detect_object_type_empty_dict() {
+        assert_eq!(
+            detect_object_type(&PdfObject::Dict(Box::new(PdfDict::new()))),
+            ObjectType::Dict
+        );
+    }
+
+    #[test]
+    fn test_detect_object_type_null() {
+        assert_eq!(
+            detect_object_type(&PdfObject::Null),
+            ObjectType::Other("null")
+        );
+    }
+
+    #[test]
+    fn test_detect_object_type_scalars() {
+        let cases: Vec<(PdfObject, ObjectType)> = vec![
+            (PdfObject::Bool(true), ObjectType::Other("boolean")),
+            (PdfObject::Integer(7), ObjectType::Other("integer")),
+            (PdfObject::Real(1.5), ObjectType::Other("real")),
+            (
+                PdfObject::String(Box::new(b"/F0 12 Tf".to_vec())),
+                ObjectType::Other("string"),
+            ),
+            (PdfObject::Name(intern("/Type3")), ObjectType::Other("name")),
+            (
+                PdfObject::Array(Box::new(vec![PdfObject::Integer(0)])),
+                ObjectType::Other("array"),
+            ),
+        ];
+        for (object, expected) in cases {
+            assert_eq!(
+                detect_object_type(&object),
+                expected,
+                "mismatch for {}",
+                expected.type_name()
+            );
+        }
+    }
+
+    #[test]
+    fn test_detect_object_type_unresolved_reference() {
+        // An unresolved indirect reference is reported as-is: this helper takes
+        // no resolver, so it must not guess at what the ref points to.
+        let reference = PdfObject::Ref(ObjRef::new(42, 0));
+        assert_eq!(
+            detect_object_type(&reference),
+            ObjectType::Other("reference")
+        );
+    }
+
+    #[test]
+    fn test_detect_object_type_looks_through_indirect_wrapper() {
+        let stream = PdfObject::Indirect(Box::new(PdfIndirect {
+            id: ObjRef::new(10, 0),
+            obj: PdfObject::Stream(Box::new(PdfStream::new(PdfDict::new(), 0, None))),
+        }));
+        assert_eq!(detect_object_type(&stream), ObjectType::Stream);
+
+        let dict = PdfObject::Indirect(Box::new(PdfIndirect {
+            id: ObjRef::new(11, 0),
+            obj: PdfObject::Dict(Box::new(PdfDict::new())),
+        }));
+        assert_eq!(detect_object_type(&dict), ObjectType::Dict);
+
+        let null = PdfObject::Indirect(Box::new(PdfIndirect {
+            id: ObjRef::new(12, 0),
+            obj: PdfObject::Null,
+        }));
+        assert_eq!(detect_object_type(&null), ObjectType::Other("null"));
+    }
+
+    #[test]
+    fn test_object_type_type_name_round_trips() {
+        // The carried name feeds Type3Error::InvalidCharProcType { got, .. }.
+        assert_eq!(ObjectType::Stream.type_name(), "stream");
+        assert_eq!(ObjectType::Dict.type_name(), "dictionary");
+        assert_eq!(ObjectType::Other("null").type_name(), "null");
+        assert_eq!(ObjectType::Other("reference").type_name(), "reference");
+    }
+
+    #[test]
+    fn test_other_name_feeds_invalid_char_proc_type() {
+        let detected = detect_object_type(&PdfObject::Null);
+        let error = Type3Error::InvalidCharProcType {
+            got: detected.type_name().to_string(),
+            expected: "stream".to_string(),
+        };
+        assert_eq!(
+            error.to_string(),
+            "Invalid char_proc type: expected stream, got null"
+        );
     }
 }
