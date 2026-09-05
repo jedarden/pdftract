@@ -100,7 +100,7 @@ use std::sync::Arc;
 use tracing::{debug, warn};
 
 use crate::diagnostics::{DiagCode, Diagnostic};
-use crate::font::type3::Type3Font;
+use crate::font::type3::{detect_object_type, ObjectType, Type3Font};
 use crate::graphics_state::{GraphicsState, GraphicsStateStack, Matrix3x3};
 use crate::parser::lexer::Lexer;
 use crate::parser::object::types::ObjRef;
@@ -349,34 +349,59 @@ fn detect_char_proc_type_with_context_impl<'a>(
 ///
 /// # Validation Rules
 ///
-/// - **Stream objects**: Must have /Type, /Subtype, /Width, /Height keys
-/// - **Dict objects**: Must have /Type, /Subtype keys (basic char_proc structure)
-/// - **Other types**: Returns `Err(InvalidCharProcType)`
+/// The object is classified with [`detect_object_type`], the context-free
+/// helper, which also looks through an indirect wrapper so a
+/// `PdfObject::Indirect` is judged by the object it carries.
+///
+/// - **Stream objects**: being a stream is structural — a stream is a
+///   dictionary followed by the `stream` keyword, not a dictionary entry —
+///   so there is no `/Stream` key to look up and the classifier's
+///   `Stream` arm *is* that check. The stream's dictionary must then carry
+///   /Type, /Subtype, /Width and /Height. /Filter is never required.
+/// - **Dict objects**: must carry /Type and /Subtype.
+/// - **Other types**: rejected with `Type3Error::InvalidCharProcType`.
+///
+/// # Errors
+///
+/// A wrong object type produces `Type3Error::InvalidCharProcType`, as does a
+/// `PdfObject::Ref` this resolver-less check cannot follow (reported as
+/// `"unknown"` rather than as a wrong type — see bf-5on6og). A stream or
+/// dictionary that is merely missing a required key produces the more
+/// precise `Type3Error::MissingRequiredKey` instead.
 ///
 /// # Example
 ///
-/// ```rust,no_run
+/// ```
 /// use pdftract_core::font::type3_rasterizer::validate_char_proc_structure;
-/// use pdftract_core::parser::object::types::PdfObject;
+/// use pdftract_core::parser::object::types::{intern, PdfDict, PdfObject, PdfStream};
 ///
-/// let stream_obj = PdfObject::Stream(Box::new(/* ... */));
-/// match validate_char_proc_structure(&stream_obj) {
-///     Ok(()) => println!("Valid char_proc structure"),
-///     Err(e) => println!("Validation failed: {}", e),
-/// }
+/// let mut dict = PdfDict::new();
+/// dict.insert(intern("/Type"), PdfObject::Name(intern("/XObject")));
+/// dict.insert(intern("/Subtype"), PdfObject::Name(intern("/Form")));
+/// dict.insert(intern("/Width"), PdfObject::Integer(16));
+/// dict.insert(intern("/Height"), PdfObject::Integer(16));
+/// let char_proc = PdfObject::Stream(Box::new(PdfStream::new(dict, 0, Some(24))));
+///
+/// assert_eq!(validate_char_proc_structure(&char_proc), Ok(()));
+/// assert!(validate_char_proc_structure(&PdfObject::Null).is_err());
 /// ```
 pub fn validate_char_proc_structure(object: &PdfObject) -> Result<(), Type3Error> {
-    // Detect the object type first (without document context for basic structure check)
-    let char_proc_type = detect_char_proc_type(object, None);
+    // An indirect wrapper is not a type of its own: validate what it carries.
+    let resolved = match object {
+        PdfObject::Indirect(inner) => &inner.obj,
+        other => other,
+    };
 
-    match char_proc_type {
-        CharProcType::Stream => {
+    // Classify with the context-free object type detection helper (bf-2dsnob).
+    // Stream-ness is structural, so this match arm *is* the /Stream check.
+    match detect_object_type(resolved) {
+        ObjectType::Stream => {
             // For streams, verify required keys: /Type, /Subtype, /Width, /Height
-            let stream_dict = match object {
+            let stream_dict = match resolved {
                 PdfObject::Stream(stream) => &stream.dict,
                 _ => {
                     return Err(Type3Error::InvalidCharProcType {
-                        got: object.type_name().to_string(),
+                        got: resolved.type_name().to_string(),
                         expected: "stream".to_string(),
                     })
                 }
@@ -416,13 +441,13 @@ pub fn validate_char_proc_structure(object: &PdfObject) -> Result<(), Type3Error
 
             Ok(())
         }
-        CharProcType::Dict => {
+        ObjectType::Dict => {
             // For dicts, verify basic structure: /Type, /Subtype
-            let dict = match object {
+            let dict = match resolved {
                 PdfObject::Dict(d) => d.as_ref(),
                 _ => {
                     return Err(Type3Error::InvalidCharProcType {
-                        got: object.type_name().to_string(),
+                        got: resolved.type_name().to_string(),
                         expected: "dictionary".to_string(),
                     })
                 }
@@ -446,10 +471,16 @@ pub fn validate_char_proc_structure(object: &PdfObject) -> Result<(), Type3Error
 
             Ok(())
         }
-        CharProcType::Other(type_name) => {
+        ObjectType::Other(type_name) => {
             // For any other type, return InvalidCharProcType error
             Err(Type3Error::InvalidCharProcType {
-                got: type_name,
+                // A reference this resolver-less check cannot follow is
+                // unknown, not a wrong type (bf-5on6og).
+                got: if matches!(resolved, PdfObject::Ref(_)) {
+                    "unknown".to_string()
+                } else {
+                    type_name.to_string()
+                },
                 expected: "stream or dictionary".to_string(),
             })
         }
@@ -4259,6 +4290,31 @@ mod tests {
         assert!(error_msg.contains("missing required key"));
         assert!(error_msg.contains("/Type"));
         assert!(error_msg.contains("stream"));
+    }
+
+    #[test]
+    fn test_validate_char_proc_structure_indirect_stream() {
+        // bf-oufxf7: an indirect wrapper is not a type of its own, so a valid
+        // stream behind one validates instead of being rejected as "indirect".
+        // The rest of the indirect-wrapper coverage for this function lives in
+        // crates/pdftract-core/tests/type3_charproc_structure.rs, which runs
+        // while the in-file unit test target is being repaired (bf-2o61br).
+        use crate::parser::object::types::{
+            intern, ObjRef, PdfDict, PdfIndirect, PdfObject, PdfStream,
+        };
+
+        let mut dict = PdfDict::new();
+        dict.insert(intern("/Type"), PdfObject::Name(intern("/XObject")));
+        dict.insert(intern("/Subtype"), PdfObject::Name(intern("/Form")));
+        dict.insert(intern("/Width"), PdfObject::Integer(16));
+        dict.insert(intern("/Height"), PdfObject::Integer(16));
+
+        let wrapped = PdfObject::Indirect(Box::new(PdfIndirect {
+            id: ObjRef::new(7, 0),
+            obj: PdfObject::Stream(Box::new(PdfStream::new(dict, 0, Some(24)))),
+        }));
+
+        assert_eq!(validate_char_proc_structure(&wrapped), Ok(()));
     }
 
     #[test]
