@@ -107,18 +107,20 @@ public class SourceTests
     [Fact]
     public void JsonSerialization_PascalCaseToSnakeCase_WorksCorrectly()
     {
-        // Arrange
-        var filePath = Source.FilePath.FromPath("/path/to/document.pdf");
+        // Arrange - declare as the polymorphic base type; System.Text.Json only emits
+        // the type discriminator when the serialized value's declared type is the base type
+        SourceBase source = SourceBase.FilePath.FromPath("/path/to/document.pdf");
 
         // Act
-        string json = JsonSerializer.Serialize(filePath, JsonOptions.Instance);
+        string json = JsonSerializer.Serialize(source, JsonOptions.Instance);
 
         // Assert
         Assert.NotNull(json);
         Assert.Contains("\"type\":\"FilePath\"", json);
         Assert.Contains("\"path\":\"/path/to/document.pdf\"", json);
-        // Verify snake_case conversion (no PascalCase in output)
-        Assert.DoesNotContain("Path", json);
+        // Verify snake_case conversion (no PascalCase property names in output).
+        // Anchored on the quote/colon so the "FilePath" discriminator value cannot match.
+        Assert.DoesNotContain("\"Path\":", json);
     }
 
     /// <summary>
@@ -131,12 +133,12 @@ public class SourceTests
         string mixedCaseJson = """{"Type":"FilePath","Path":"/path/to/document.pdf"}""";
 
         // Act
-        var source = JsonSerializer.Deserialize<Source>(mixedCaseJson, JsonOptions.Instance);
+        var source = JsonSerializer.Deserialize<SourceBase>(mixedCaseJson, JsonOptions.Instance);
 
         // Assert
         Assert.NotNull(source);
-        Assert.IsType<Source.FilePath>(source);
-        var filePath = source as Source.FilePath;
+        Assert.IsType<SourceBase.FilePath>(source);
+        var filePath = source as SourceBase.FilePath;
         Assert.Equal("/path/to/document.pdf", filePath!.Path);
     }
 
