@@ -14,84 +14,114 @@ Each fixture has a paired .txt ground truth file.
 import os
 import struct
 
+# Character code -> glyph name table for no-mapping.pdf, taken verbatim from the
+# fixture design (notes/bf-68f9i-design.md) and the glyph selection
+# (notes/bf-68f9i-glyphs.md).
+#
+# Each entry is (char_code, glyph_name, unmapped, expected_extraction):
+#   unmapped            - True when every level of the 4-level fallback chain must fail
+#   expected_extraction - what a correct extractor emits for this code
+#
+# Codes 0-6 are unmapped: no /ToUnicode exists (Level 1), the names are absent from
+# the Adobe Glyph List and match neither algorithmic convention `uniXXXX`/`uXXXXXX`
+# (Level 2), the font is not embedded so there is nothing to fingerprint (Level 3),
+# and no shape record exists (Level 4). They must each surface as U+FFFD.
+# Codes 7-9 are standard AGL names, kept as the success-path control group.
+NO_MAPPING_GLYPHS = [
+    (0, "g001", True, "�"),        # PUA: arbitrary numeric name, not in AGL
+    (1, "g002", True, "�"),        # PUA
+    (2, "g003", True, "�"),        # PUA
+    (3, "CustomA", True, "�"),     # custom encoding, meaningful-looking but non-AGL
+    (4, "CustomB", True, "�"),     # custom encoding
+    (5, "NotAGlyph", True, "�"),   # orphaned: named in /Differences, defined nowhere
+    (6, "glyph_0041", True, "�"),  # hex digits, but `glyph_` is not an AGL
+                                        # algorithmic prefix (uniXXXX / uXXXXXX only)
+    (7, "A", False, "A"),               # AGL direct entry -> U+0041
+    (8, "B", False, "B"),               # AGL direct entry -> U+0042
+    (9, "space", False, " "),           # AGL direct entry -> U+0020
+]
+
+# Text lines as laid out in the content stream: line 1 is the PUA glyphs, line 2 the
+# custom/orphaned/non-AGL names, line 3 the AGL control group.
+NO_MAPPING_LINES = [
+    (0, 1, 2),
+    (3, 4, 5, 6),
+    (7, 8, 9),
+]
+
+
+def no_mapping_ground_truth():
+    """Expected extraction output, derived from the glyph table."""
+    return "".join(expected for _, _, _, expected in NO_MAPPING_GLYPHS)
+
+
 def create_no_mapping_pdf():
     """
     Create PDF with no ToUnicode CMap and custom encoding.
 
-    This PDF uses a Type1 font with custom glyph names that don't map to AGL.
-    Expected behavior: All glyphs fail Levels 1-3, only Level 4 shape recognition
-    might recover some content (U+FFFD otherwise).
+    This PDF uses a Type1 font whose /Differences array assigns the design-doc glyph
+    names to character codes 0-9. Expected behavior: codes 0-6 fail all four recovery
+    levels and surface as U+FFFD; codes 7-9 recover through Level 2 AGL lookup.
+
+    Object offsets and the /Length of the content stream are computed rather than
+    hard-coded, so editing NO_MAPPING_GLYPHS or NO_MAPPING_LINES cannot desynchronize
+    the xref table from the objects it describes.
     """
-    pdf = b"""%PDF-1.4
-1 0 obj
-<<
-/Type /Catalog
-/Pages 2 0 R
->>
-endobj
-2 0 obj
-<<
-/Type /Pages
-/Kids [3 0 R]
-/Count 1
->>
-endobj
-3 0 obj
-<<
-/Type /Page
-/Parent 2 0 R
-/MediaBox [0 0 612 792]
-/Resources <<
-/Font <<
-/F1 4 0 R
->>
->>
-/Contents 5 0 R
->>
-endobj
-4 0 obj
-<<
-/Type /Font
-/Subtype /Type1
-/BaseFont /CustomFont
-/Encoding <<
-/Type /Encoding
-/Differences [0 /g00 /g01 /g02 /g03 /g04 /g05]
->>
->>
-endobj
-5 0 obj
-<<
-/Length 65
->>
-stream
-BT
-/F1 12 Tf
-50 700 Td
-/g00 /g01 /g02 /g03 Tj
-50 680 Td
-/g04 /g05 Tj
-ET
-endstream
-endobj
-xref
-0 6
-0000000000 65535 f
-0000000009 00000 n
-0000000058 00000 n
-0000000115 00000 n
-0000000348 00000 n
-0000000509 00000 n
-trailer
-<<
-/Size 6
-/Root 1 0 R
->>
-startxref
-645
-%%EOF
-"""
-    return pdf
+    # /Differences is [starting_code /name /name ...]: the leading integer sets the
+    # first code and each following name increments it, so the base code comes from
+    # the table's first entry and every glyph name follows it in order.
+    base_code = NO_MAPPING_GLYPHS[0][0]
+    differences = " ".join(
+        [str(base_code)] + [f"/{name}" for _, name, _, _ in NO_MAPPING_GLYPHS]
+    )
+
+    show_ops = "".join(
+        "<{}> Tj\n".format("".join(f"{code:02X}" for code in codes))
+        for codes in NO_MAPPING_LINES
+    )
+    content_ops = (
+        "BT\n"
+        "/F1 12 Tf\n"
+        "50 700 Td\n"
+        + show_ops +
+        "ET"
+    )
+
+    # Object numbering: 1 Catalog, 2 Pages, 3 Page, 4 Font, 5 Content stream.
+    objects = [
+        b"<<\n/Type /Catalog\n/Pages 2 0 R\n>>",
+        b"<<\n/Type /Pages\n/Kids [3 0 R]\n/Count 1\n>>",
+        b"<<\n/Type /Page\n/Parent 2 0 R\n/MediaBox [0 0 612 792]\n"
+        b"/Resources <<\n/Font <<\n/F1 4 0 R\n>>\n>>\n/Contents 5 0 R\n>>",
+        (
+            "<<\n/Type /Font\n/Subtype /Type1\n/BaseFont /UnmappedTestFont\n"
+            "/Encoding <<\n/Type /Encoding\n"
+            f"/Differences [{differences}]\n"
+            ">>\n>>"
+        ).encode("ascii"),
+        (
+            f"<<\n/Length {len(content_ops)}\n>>\nstream\n{content_ops}\nendstream"
+        ).encode("ascii"),
+    ]
+
+    pdf = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for number, body in enumerate(objects, start=1):
+        offsets.append(len(pdf))
+        pdf += f"{number} 0 obj\n".encode("ascii") + body + b"\nendobj\n"
+
+    xref_offset = len(pdf)
+    pdf += f"xref\n0 {len(objects) + 1}\n".encode("ascii")
+    pdf += b"0000000000 65535 f \n"
+    for offset in offsets:
+        pdf += f"{offset:010d} 00000 n \n".encode("ascii")
+    pdf += (
+        "trailer\n"
+        f"<<\n/Size {len(objects) + 1}\n/Root 1 0 R\n>>\n"
+        f"startxref\n{xref_offset}\n"
+        "%%EOF\n"
+    ).encode("ascii")
+    return bytes(pdf)
 
 def create_agl_only_pdf():
     """
@@ -376,13 +406,14 @@ def main():
     os.makedirs("tests/fixtures/encoding", exist_ok=True)
 
     # Fixture 1: no-mapping.pdf
-    # Ground truth: mostly U+FFFD replacement chars, minimal recovery
+    # Ground truth: U+FFFD for each of the 7 unmapped codes, then the AGL control
+    # group "AB " recovered via Level 2. Blocks are joined without separators,
+    # matching how encoding_recovery.rs concatenates extracted text blocks.
     pdf1 = create_no_mapping_pdf()
     with open("tests/fixtures/encoding/no-mapping.pdf", "wb") as f:
         f.write(pdf1)
-    # Ground truth: expected to be mostly U+FFFD with current implementation
-    with open("tests/fixtures/encoding/no-mapping.txt", "w") as f:
-        f.write("����\n��")
+    with open("tests/fixtures/encoding/no-mapping.txt", "w", encoding="utf-8") as f:
+        f.write(no_mapping_ground_truth())
     print("Created: tests/fixtures/encoding/no-mapping.pdf")
 
     # Fixture 2: agl-only.pdf
