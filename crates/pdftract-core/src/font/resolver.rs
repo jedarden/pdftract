@@ -9,6 +9,40 @@
 //!
 //! The resolver maintains a per-font LRU cache of resolved glyphs and emits
 //! the GLYPH_UNMAPPED diagnostic exactly once per (font, code) miss.
+//!
+//! # `FONT_GLYPH_UNMAPPED` message formats
+//!
+//! Every miss diagnostic carries [`DiagCode::FontGlyphUnmapped`] (string form
+//! `"FONT_GLYPH_UNMAPPED"`, severity `Severity::Warning`, recoverable), and
+//! is serialized into the extraction output's `errors` array. The message text
+//! differs by font class, and each variant is emitted at most once per
+//! `(font, code)` pair per document — see `ResolverCache::mark_emitted_miss`.
+//!
+//! Regular fonts (Type1, TrueType, CIDFont, Type0) get one generic form, with
+//! the whole byte string rendered as concatenated uppercase hex and the font
+//! id in `Debug` form:
+//!
+//! ```text
+//! Character code {HEX} could not be resolved to Unicode (font ID: {FONT_ID:?})
+//! ```
+//!
+//! Type 3 fonts get specific forms, always with a single byte as `0x{02X}` and
+//! no font id (the font is implicit in the call):
+//!
+//! ```text
+//! Type3 font: character code 0x{02X} could not be resolved to Unicode
+//! Type3 font: character code 0x{02X} could not be resolved (shape recognition disabled)   [not(shape-db)]
+//! Type3 font: character code 0x{02X} has no glyph name in encoding
+//! Type3 font: glyph '{NAME}' not found in /CharProcs for code 0x{02X}
+//! Type3 font: failed to rasterize glyph '{NAME}' for code 0x{02X}
+//! Type3 font: shape match for '{NAME}' (code 0x{02X}) found but distance {DIST} exceeds threshold   [shape-db]
+//! ```
+//!
+//! The last two are the only ones that indicate a malformed PDF rather than
+//! merely an unresolvable one: a name in `/Encoding` that is absent from
+//! `/CharProcs`, and a `/CharProcs` stream that fails to rasterize. The
+//! shape-match form additionally means Level 4 *found* a candidate but
+//! rejected it past the Hamming-distance threshold.
 
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
