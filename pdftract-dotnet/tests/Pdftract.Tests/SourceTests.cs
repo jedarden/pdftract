@@ -102,6 +102,95 @@ public class SourceTests
     }
 
     /// <summary>
+    /// Tests that deserializing a snake_case FilePath payload into the polymorphic base type
+    /// selects the FilePath variant and populates its PascalCase property.
+    /// </summary>
+    [Fact]
+    public void JsonDeserialization_FilePathKind_MapsSnakeCaseToPascalCase()
+    {
+        // Arrange - snake_case wire keys emitted by the pdftract binary
+        string json = """{"type":"FilePath","path":"/tmp/invoice.pdf"}""";
+
+        // Act
+        var source = JsonSerializer.Deserialize<SourceBase>(json, JsonOptions.Instance);
+
+        // Assert
+        var filePath = Assert.IsType<SourceBase.FilePath>(source);
+        Assert.Equal("FilePath", filePath.Type);
+        Assert.Equal("/tmp/invoice.pdf", filePath.Path);
+    }
+
+    /// <summary>
+    /// Tests that deserializing a snake_case Base64 payload into the polymorphic base type
+    /// selects the Base64 variant and populates its PascalCase property.
+    /// </summary>
+    [Fact]
+    public void JsonDeserialization_Base64Kind_MapsSnakeCaseToPascalCase()
+    {
+        // Arrange
+        string json = """{"type":"Base64","data":"JVBERi0xLjQKJcTg"}""";
+
+        // Act
+        var source = JsonSerializer.Deserialize<SourceBase>(json, JsonOptions.Instance);
+
+        // Assert
+        var base64 = Assert.IsType<SourceBase.Base64>(source);
+        Assert.Equal("Base64", base64.Type);
+        Assert.Equal("JVBERi0xLjQKJcTg", base64.Data);
+    }
+
+    /// <summary>
+    /// Tests that deserializing a snake_case Url payload into the polymorphic base type
+    /// selects the Url variant and populates its PascalCase property.
+    /// </summary>
+    [Fact]
+    public void JsonDeserialization_UrlKind_MapsSnakeCaseToPascalCase()
+    {
+        // Arrange
+        string json = """{"type":"Url","url":"https://example.com/invoice.pdf"}""";
+
+        // Act
+        var source = JsonSerializer.Deserialize<SourceBase>(json, JsonOptions.Instance);
+
+        // Assert
+        var url = Assert.IsType<SourceBase.Url>(source);
+        Assert.Equal("Url", url.Type);
+        Assert.Equal("https://example.com/invoice.pdf", url.UrlValue);
+    }
+
+    /// <summary>
+    /// Tests the full round trip for all three Source kinds: a factory-created instance
+    /// serializes to snake_case keys with a type discriminator, and deserializing that JSON
+    /// back restores the same variant and PascalCase property values.
+    /// </summary>
+    [Fact]
+    public void JsonRoundTrip_AllKinds_PreserveVariantAndProperties()
+    {
+        // Arrange - declared as the polymorphic base type so the discriminator is emitted
+        SourceBase filePath = SourceBase.FilePath.FromPath("/tmp/invoice.pdf");
+        SourceBase base64 = SourceBase.Base64.FromBase64("JVBERi0xLjQKJcTg");
+        SourceBase url = SourceBase.Url.FromUrl("https://example.com/invoice.pdf");
+
+        // Act
+        var filePathRestored = JsonSerializer.Deserialize<SourceBase>(
+            JsonSerializer.Serialize(filePath, JsonOptions.Instance), JsonOptions.Instance);
+        var base64Restored = JsonSerializer.Deserialize<SourceBase>(
+            JsonSerializer.Serialize(base64, JsonOptions.Instance), JsonOptions.Instance);
+        var urlRestored = JsonSerializer.Deserialize<SourceBase>(
+            JsonSerializer.Serialize(url, JsonOptions.Instance), JsonOptions.Instance);
+
+        // Assert - variant and value both survive the round trip
+        var filePathValue = Assert.IsType<SourceBase.FilePath>(filePathRestored);
+        Assert.Equal("/tmp/invoice.pdf", filePathValue.Path);
+
+        var base64Value = Assert.IsType<SourceBase.Base64>(base64Restored);
+        Assert.Equal("JVBERi0xLjQKJcTg", base64Value.Data);
+
+        var urlValue = Assert.IsType<SourceBase.Url>(urlRestored);
+        Assert.Equal("https://example.com/invoice.pdf", urlValue.UrlValue);
+    }
+
+    /// <summary>
     /// Tests that JSON serialization correctly converts PascalCase properties to snake_case.
     /// </summary>
     [Fact]
