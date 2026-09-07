@@ -190,7 +190,7 @@ pub fn sort_annotations(annotations: &mut Vec<AnnotationJson>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::annotation::links::LinkAnnotation;
+    use crate::annotation::links::{DestArray, LinkAnnotation};
     use crate::annotation::other::{Annotation, AnnotationSpecific};
     use crate::annotation::AnnotationCommon;
 
