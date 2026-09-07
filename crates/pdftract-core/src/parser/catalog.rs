@@ -10,6 +10,13 @@ use crate::parser::ocg::{parse_oc_properties, OcProperties};
 use crate::parser::stream::PdfSource;
 use crate::parser::xref::XrefResolver;
 
+// Test fixture builders intern PDF names and build IndexMap-backed dicts directly;
+// production paths receive both pre-interned / pre-built.
+#[cfg(test)]
+use crate::parser::object::intern;
+#[cfg(test)]
+use indexmap::IndexMap;
+
 /// Result type for catalog parsing.
 pub type Result<T> = std::result::Result<T, Vec<Diagnostic>>;
 
@@ -680,6 +687,21 @@ impl Catalog {
     fn emit_diagnostic(&mut self, code: DiagCode, message: String) {
         self.diagnostics
             .push(Diagnostic::with_dynamic_no_offset(code, message));
+    }
+
+    /// Get the set of OCG refs that are OFF by default.
+    ///
+    /// Delegates to [`OcProperties::off_ocg_set`], which only contains refs
+    /// explicitly recorded in `default_visibility`; OCGs absent from that map
+    /// inherit BaseState and are treated visible per spec (ISO 32000-2
+    /// 8.11.4.4). Returns an empty set when /OCProperties is absent
+    /// (`oc_properties` is None or `present == false`).
+    pub fn default_off_ocgs(&self) -> std::collections::HashSet<ObjRef> {
+        self.oc_properties
+            .as_ref()
+            .filter(|p| p.present)
+            .map(|p| p.off_ocg_set())
+            .unwrap_or_default()
     }
 }
 
