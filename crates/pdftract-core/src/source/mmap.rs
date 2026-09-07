@@ -4,6 +4,15 @@
 //! memory-mapped local file. It applies `madvise(MADV_SEQUENTIAL)` on content
 //! stream reads to hint the OS for prefetch. This is the default source for
 //! local files when mmap succeeds.
+//!
+//! # Prefetch error handling
+//!
+//! [`PdfSource::prefetch`](crate::source::PdfSource::prefetch) is advisory: a
+//! failed `madvise` degrades readahead but never correctness, so the error is
+//! not propagated. It is still observable — every failure, including the
+//! out-of-range requests that indicate a caller-side offset calculation bug,
+//! is emitted as a `tracing::trace` event with `offset`, `length`, `file_len`
+//! and `error` fields (see [`MmapSource::prefetch`]).
 
 use crate::source::PdfSource;
 use bytes::Bytes;
@@ -123,8 +132,24 @@ impl PdfSource for MmapSource {
     }
 
     fn prefetch(&self, offset: u64, length: usize) {
-        // Apply MADV_SEQUENTIAL for content streams
-        let _ = self.advise_sequential(offset, length);
+        // Apply MADV_SEQUENTIAL for content streams. This is a best-effort
+        // readahead hint: a failure degrades performance but never correctness,
+        // so it is not propagated to the caller. Logged at trace level so a
+        // calculation bug producing bad ranges (e.g. past EOF) is still
+        // observable when debugging, without polluting default log output.
+        if let Err(e) = self.advise_sequential(offset, length) {
+            // Structured fields so an out-of-range request (the usual
+            // calculation bug) is diagnosable and queryable from the log
+            // line alone.
+            tracing::trace!(
+                offset,
+                length,
+                file_len = self.len(),
+                error = %e,
+                "madvise(MADV_SEQUENTIAL) failed in prefetch; \
+                 continuing without readahead hint"
+            );
+        }
     }
 }
 
@@ -175,7 +200,6 @@ unsafe impl Sync for MmapSource {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
     use std::io::Write;
     use std::sync::Arc;
     use std::thread;
@@ -407,8 +431,19 @@ mod tests {
         temp_file.write_all(b"0123456789").unwrap();
 
         let source = MmapSource::open(temp_file.path()).unwrap();
-        // prefetch is a no-op that calls advise_sequential
         source.prefetch(0, 10); // Should not panic
+    }
+
+    #[test]
+    fn test_prefetch_past_eof() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(b"test").unwrap();
+
+        let source = MmapSource::open(temp_file.path()).unwrap();
+        // advise_sequential rejects a range past EOF; prefetch must swallow
+        // that error rather than propagate or panic (it returns ()).
+        source.prefetch(0, 100);
+        source.prefetch(u64::MAX, 10);
     }
 
     #[test]
