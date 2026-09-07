@@ -2215,6 +2215,23 @@ pub fn deref_char_proc_ref(
 /// `Ok(Vec<u8>)` with the decoded content stream bytes,
 /// `Err(Type3Error)` if extraction fails (wrong type, I/O error, or invalid reference).
 ///
+/// # Errors
+///
+/// In the order they are raised:
+///
+/// 1. Missing `DocumentContext` plumbing comes first: no `resolver` or no
+///    `source` yields `Type3Error::Io` before any validation runs.
+/// 2. `validate_char_proc_structure` then rejects a structurally invalid
+///    char_proc: an object that is neither stream nor dictionary (an
+///    `Indirect` wrapper is unwrapped before classification) yields
+///    `Type3Error::InvalidCharProcType`, and a stream or dictionary missing a
+///    required key yields `Type3Error::MissingRequiredKey`.
+/// 3. A `PdfObject::Ref` is exempt from entry validation: the resolver-less
+///    validator cannot follow it and would only report it as "unknown". The
+///    Ref arm resolves the target (`From<ResolveError>` supplies the mapping)
+///    and the recursive call re-enters this validation with the concrete
+///    target.
+///
 /// # Error Context
 ///
 /// Error messages include the object type/reference to aid debugging.
@@ -2234,6 +2251,15 @@ pub fn extract_content_stream_bytes(
             "PdfSource not provided in DocumentContext - cannot extract stream".to_string()
         )
     })?;
+
+    // Entry validation: reject a structurally invalid char_proc before any
+    // decoding, mirroring what deref_char_proc_ref enforces at the resolve
+    // seam. A Ref is exempt because the resolver-less validator cannot follow
+    // it (it would only report "unknown"); the Ref arm below resolves it and
+    // the recursive call re-enters this validation with the concrete target.
+    if !matches!(resolved_obj, PdfObject::Ref(_)) {
+        validate_char_proc_structure(&resolved_obj)?;
+    }
 
     match resolved_obj {
         PdfObject::Stream(stream) => {
