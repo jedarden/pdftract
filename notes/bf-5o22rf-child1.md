@@ -112,3 +112,20 @@ Parent bf-5o22rf criterion (a): *"Log madvise failures at trace level for debugg
 expect `test_prefetch_madvise_failure_is_traced`, `test_prefetch` and
 `test_prefetch_past_eof` to pass. Until then, criterion (a) stands as verified by
 code-path analysis (file:line evidence above); the WARN is environmental.
+
+## 4. Follow-up bead (filed by pdftract-2efded34)
+
+The verdict is PASS **with a WARN rider**, and the task for pdftract-2efded34
+routes any FAIL/WARN outcome to a follow-up bead rather than a clean "no follow-up
+needed" close. The gap is not in the implementation — every `Err` path reaches the
+trace event — it is that **criterion (a) has no runtime test evidence**: the pinning
+test has never executed because the `--lib` test target fails to compile on
+unrelated sibling edits.
+
+Follow-up: **pdftract-b716bac5** — "Re-run source::mmap tests for runtime evidence
+of the prefetch madvise trace event (bf-5o22rf WARN handoff)". It owns the handoff
+paragraph above: precondition-check the compile, re-run the mmap suite once it
+passes, append a runtime-evidence section here converting the WARN to PASS (or a
+recorded FAIL + fix bead), and cross-link the outcome on the umbrella note bead
+pdftract-adda71a4. It explicitly forbids touching the four files breaking the
+build.
