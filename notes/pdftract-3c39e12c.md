@@ -238,3 +238,40 @@ section is append-only, like the two before it.
 compile (cargo exit **101**, 89 errors: `classify.rs` 54 / `font/type3_rasterizer.rs` 29 /
 `render/scanline.rs` 5 / `content_stream.rs` 1); no `cargo test` run may start against this
 tree; the per-file clearance list in section (e) stands verbatim.
+
+## Freshly re-verified after second reopen — 2026-09-08T20:10:40Z (pdftract-f34a11cf)
+
+The 19:42:47Z re-close of pdftract-f34a11cf (commit `1cfe95dd`) was reopened with no
+defect reason recorded — the bead's event log shows four successful completions (15:41,
+17:29, 19:23, 19:51) followed by re-dispatch, matching the reopen-without-reason pattern
+this chain has documented throughout. Per the bead's own requirement that this note reflect
+freshly verified state rather than an earlier assertion, every acceptance-criteria fact was
+re-derived under the fifth dispatch. **Result: nothing above changed** — append-only again.
+
+- **Verdict and exit code re-confirmed at source:** `notes/b716bac5-child1.md` line 10
+  `## VERDICT: NO-GO`, line 12 `cargo exited **101**`, line 22 `cargo exit code | **101**`;
+  `notes/b716bac5-child1-handoff.md` line 18 `Gate exit code: 101`; raw log at `336bf8ee`
+  ends `error: could not compile \`pdftract-core\` (lib test) due to 89 previous errors;
+  129 warnings emitted`. All three sources in the tree are byte-identical to their certified
+  commits (`git diff --stat` against `10df3676` / `1702ba6b` / `336bf8ee` each empty).
+- **Publication:** `git fetch origin` clean; **origin/main tip `24f65b80`** (full
+  `24f65b80d466a7e4e9e89d866d09f4f3513bb846`) == local HEAD, divergence `0 / 0`. All eight
+  record SHAs are ancestors of origin/main via `git merge-base --is-ancestor`: `7f2b93eb`,
+  `e9036d20`, `336bf8ee`, `10df3676`, `1702ba6b`, `05c9def6`, `90ed37f6`, `1cfe95dd`.
+- **Freshness of NO-GO:** `0364a3a8..origin/main` is now **27 commits** (was 20 at the
+  previous stamp) and **zero of them touch `crates/`, `tests/`, `Cargo.toml` or
+  `Cargo.lock`** (`git log --oneline 0364a3a8..origin/main -- crates/ tests/ Cargo.toml
+  Cargo.lock` is empty). Section (e)'s freshness argument holds unchanged and the gate was
+  **not** re-run — NO-GO remains the last verified compile state.
+- **Close-time process sweep:** CLEAN. The AC-named `pgrep -af "cargo test|pdftract"`
+  matched only five NEEDLE dispatcher `bash -c` wrappers (prompts d5598671, 0078d4a6, this
+  bead's own f34a11cf, 7a8da184, 36076d6d), each matching only on the literal substring
+  "pdftract" in the repo path / prompt filename. Exact `ps -eo comm=` scan for
+  `cargo|rustc|pdftract|nextest`: **0**. `pdftract[ ]mcp` and `TH[-_]0` probes: no match.
+  Nothing chain-spawned is alive; nothing killed.
+
+**HANDOFF STATEMENT (unchanged): NO-GO** — the `pdftract-core` lib test target does not
+compile (cargo exit **101**, 89 errors: `classify.rs` 54 / `font/type3_rasterizer.rs` 29 /
+`render/scanline.rs` 5 / `content_stream.rs` 1); no `cargo test` run may start against this
+tree; the per-file clearance list in section (e) stands verbatim. Runtime evidence for the
+umbrella (origin bf-5o22rf criterion (a)) stays blocked until the gate clears.
