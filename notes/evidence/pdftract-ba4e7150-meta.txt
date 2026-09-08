@@ -1,4 +1,4 @@
-pre-commit HEAD: f785930f
+pre-commit HEAD: a0a4e17a
 wall-clock seconds: 8
 cargo exit: 101
 dirty crates/ files: 49
