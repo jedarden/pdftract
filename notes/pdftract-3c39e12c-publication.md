@@ -24,3 +24,13 @@
 ## Conclusion
 
 PASS — the four commits of the b716bac5 child-1 compile-gate verdict chain (`e9036d20`, `336bf8ee`, `10df3676`, `1702ba6b`) are all published to Forgejo `origin/main`, with zero unpushed local commits. Later children may quote this note as publication evidence instead of re-fetching.
+
+## Postscript — re-verified after this note was itself published
+
+This note was committed as `905c229c` and pushed; Forgejo `origin/main` had
+meanwhile advanced to `d68d9dfe` (a sibling worker's docs commit on top of it).
+Ancestry was re-checked against the new tip: all four chain SHAs remain
+ancestors of `origin/main`, `git rev-list --count origin/main..HEAD` is still 0,
+and `905c229c` (this note's own commit) is an ancestor of `origin/main`. The
+SHAs above remain the authoritative run-time tip values for the original check.
+
