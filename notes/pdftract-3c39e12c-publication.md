@@ -34,3 +34,11 @@ ancestors of `origin/main`, `git rev-list --count origin/main..HEAD` is still 0,
 and `905c229c` (this note's own commit) is an ancestor of `origin/main`. The
 SHAs above remain the authoritative run-time tip values for the original check.
 
+**Second re-verification (2026-09-08, bead pdftract-b6d69433 re-dispatch):**
+fresh `git fetch origin`; tip advanced again to `20fac636420300e810d14bf98dc3af851ec901fb`
+(sibling docs commits `1cfe95dd`, `eeb0d65c`, `20fac636` on top). All four chain
+SHAs (`e9036d20`, `336bf8ee`, `10df3676`, `1702ba6b`) are still ancestors of
+`origin/main` (4/4 PASS); `git rev-list --count origin/main..HEAD` is **0**;
+local `HEAD` == `origin/main` == `20fac636`. Both of this note's own commits
+(`905c229c`, `eeb0d65c`) are also ancestors of `origin/main`.
+
