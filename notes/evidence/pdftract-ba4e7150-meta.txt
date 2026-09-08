@@ -1,0 +1,5 @@
+pre-commit HEAD: f785930f
+wall-clock seconds: 8
+cargo exit: 101
+dirty crates/ files: 49
+crates/ diffstat:  44 files changed, 2146 insertions(+), 535 deletions(-)
