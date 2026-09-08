@@ -1,11 +1,35 @@
-# pdftract-1ce1beaf — Dated duplicate-owner sweep, mmap-suite runtime re-run (re-run 2)
+# pdftract-1ce1beaf — Dated duplicate-owner sweep, mmap-suite runtime re-run (re-run 3)
 
-**Date of this sweep:** 2026-09-08 (later than 12:18Z; bead created 12:53:48Z, executed ~20:35Z)
+**Date of this sweep:** 2026-09-08 (bead created 12:53:48Z; re-run 2 executed ~20:35Z; **this
+re-run 3 executed ~21:00Z**, after the bead's `verification-failed` reopen)
 **Scope of enumeration:** every bead created after **2026-09-08T05:15Z** (the prior ownership check), all statuses.
 **Bead:** split child 4 of 5 of pdftract-cd0c29e6 (auto-split umbrella, coordination-only, read-only).
 **Guard honored:** no cargo invocation, no test execution, no crates/ edits, no beads filed, no other bead status touched. Read-only `bead`/`git`/`jq` commands plus this note.
 
-## Result
+## Result (re-run 3, ~21:00Z)
+
+**SWEEP RESULT 2026-09-08 (re-run 3): NONE FOUND.**
+
+- Enumeration re-run from live store state, all four statuses queried separately
+  (`open` / `in_progress` / `deferred` / `closed`, `--limit 999999`, JSONL — one object per
+  bead, so no jq array concat): **2753 beads total, 2753 unique IDs** (disjoint, complete).
+  Post-05:15Z count: **72 — identical to re-run 2.** The newest bead in the entire store is
+  pdftract-f141d045 at **2026-09-08T19:44:55Z**, so *zero* beads have been created since the
+  re-run 2 window ended, let alone since its execution. Every one of the 72 IDs is checked
+  present in the re-run 2 classification below — nothing new to classify.
+- Owner chain re-verified live, still all `open`: pdftract-b716bac5 (rev 13), fa233a5e
+  (rev 11), 030e8414 / ec0e6526 / 38700c39 (rev 1 each). The runtime-run child 030e8414
+  remains open and unexecuted.
+- Dependency edges re-grepped across all 72: **zero** blockers point at any owner-chain bead
+  (b716bac5, fa233a5e, 030e8414, ec0e6526, 38700c39) — re-run 2's finding holds.
+- Status mix of the 72: 28 closed / 42 open / 2 in_progress — the two in_progress are this
+  bead and pdftract-61ab92de (a Class B read-only README/publication certification); neither
+  executes tests.
+- No commit has touched `crates/pdftract-core/src/source/` since 05:15Z (git log re-checked),
+  so criterion-(a) runtime evidence is still not landed and no "duplicate re-run already
+  satisfied" branch applies.
+
+## Result (re-run 2, ~20:35Z)
 
 **SWEEP RESULT 2026-09-08 (re-run 2): NONE FOUND.**
 No bead created after 2026-09-08T05:15Z is a second owner of the bf-5o22rf criterion-(a)
