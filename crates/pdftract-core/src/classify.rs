@@ -2170,7 +2170,8 @@ mod tests {
         // Edge case: blank page (no text, no images)
         let ctx = PageContext::new();
 
-        let result = classify_page(&ctx);
+        let result =
+            classify_page(&ctx).expect("classify_page should succeed for a blank page");
 
         // Blank pages return Vector with 0.0 confidence as a sentinel
         assert_eq!(result.class, PageClass::Vector);
@@ -2188,7 +2189,8 @@ mod tests {
         ctx.image_coverage = 0.95;
         ctx.has_full_page_image = true;
 
-        let result = classify_page(&ctx);
+        let result = classify_page(&ctx)
+            .expect("classify_page should succeed for an image-only page");
 
         // No text + images = Scanned (will route to OCR)
         assert_eq!(result.class, PageClass::Scanned);
