@@ -1,26 +1,43 @@
 # pdftract-cd0c29e6 — mmap-re-run sibling beads: duplicate-ownership check
 
 **Bead:** pdftract-cd0c29e6 (split child 2 of 4 of umbrella pdftract-c08a9ede; blocked by
-child 1, the owner-status check pdftract-adb806f2, which closed).
+child 1, the owner-status check pdftract-adb806f2, which closed). Now also the
+consolidation record for cd0c29e6's own auto-split (children 1–5, ref `split:cd0c29e6-childN`).
 **Type:** read-only coordination check. **Guard honored:** no mmap-suite run, no cargo
 test of any kind, no production code change, no bead filed, no other bead's status touched.
 **Check performed:** 2026-09-08T11:41Z (re-verification of the 11:09 UTC pass recorded in
 the bead notes; all conclusions re-confirmed unchanged against the live store at rev HEAD
 `ddc65fb4`).
+**Consolidation performed:** 2026-09-08T22:29Z by pdftract-3128538a (split child 5 of 5),
+merging the child 1–4 verdicts below into the final single-owner conclusion. All bead
+statuses in this file re-checked against the live store at that time.
 
-## Conclusion
+## Conclusion (consolidated 2026-09-08T22:29Z)
 
-**pdftract-b716bac5 and its serial 4-child chain remain the SINGLE owner of the
-mmap-suite runtime re-run. No duplicate or competing owner exists.**
+**pdftract-b716bac5 and its serial 4-child chain (pdftract-fa233a5e compile gate →
+pdftract-030e8414 run source::mmap → pdftract-ec0e6526 verdict → pdftract-38700c39
+cross-link/push) remain the SINGLE owner of the bf-5o22rf criterion-(a) mmap-suite
+runtime re-run. No duplicate or competing owner exists — confirmed independently by the
+2026-09-08T12:18Z coordination pass, children 1–3 of this split, and child 4's dated
+sweep re-runs through re-run 4 (22:11Z).**
 
-Runtime evidence has NOT yet landed — no commit to point at. The latest gate state is
-child 1's NO-GO capture (`notes/b716bac5-child1.md`, 09:20 UTC: `cargo test -p
-pdftract-core --lib --no-run` exit 101, 89 errors in 4 sibling TEST modules, zero in
-`source/mmap.rs`); child 1 pdftract-fa233a5e is InProgress right now (claimed by
-`glm-tgp`, updated 11:36 UTC) re-working the gate. Per the task guard, no duplicate
-re-run bead was filed.
+**b716bac5 status re-checked at consolidation time (2026-09-08T22:29Z): Open, rev 13,
+unchanged since 2026-09-08T05:07:27Z — runtime evidence has still NOT landed and there
+is no evidence commit to cite.** The suite has never executed. `notes/bf-5o22rf-child1.md`
+still ends on the "append a runtime-evidence section here" handoff (last touched by
+`b19a9e52`), `notes/b716bac5-child2.md` is still absent, and the gate remains NO-GO —
+latest composition from child 4's sweep re-run 4: exit 101, 89 errors, all in sibling
+TEST modules (classify.rs 54, font/type3_rasterizer.rs 29, scanline.rs 5,
+content_stream.rs 1), zero in `source/mmap.rs`. The gate bead fa233a5e, InProgress under
+`glm-tgp` at 11:36Z, has been released back to Open (updated 11:49Z) and is now itself
+carrying a re-split (3e8309f4 / 68091d06 / 003ddcd1 / 3c39e12c). Per the task guard, no
+duplicate re-run bead was filed.
 
 ## Non-owner reasons (one line each)
+
+Statuses in the table below re-checked 2026-09-08T22:29Z — all six still Open, and each
+row's reason has since been independently CONFIRMED with no drift by this split's
+children 1–3 (see "Split-family consolidation" below).
 
 | Bead | Status | Why it is NOT the re-run owner |
 |---|---|---|
@@ -45,7 +62,45 @@ owner of the re-run:
 - **4× pdftract-c08a9ede coordination children** (adb806f2 — closed, cd0c29e6 — this bead,
   eb967150, c02b4878): record ownership conclusions only; execute nothing by design.
 
-## Owner chain state at check time
+**Re-pass 2026-09-08T12:18Z — result: NONE FOUND.** The parent bead's second coordination
+pass (closed 12:19:16Z, then reopened by dispatch churn) re-enumerated post-cutoff beads
+across open/in_progress/deferred/closed separately (plain `bead list` is priority-ordered
+and truncates): 24 beads created after the 05:15Z cutoff out of 2,705 total, still no
+second owner. Nearest neighbors unchanged, plus the gate re-split of the owner's own
+chain (pdftract-68091d06 / 003ddcd1 / 3c39e12c — children of the gate fa233a5e, i.e. the
+owner's own precondition sub-work, not competitors).
+
+**Child-4 sweep re-runs, through re-run 4 dated 2026-09-08T22:11Z (commit `df7b7de2`) —
+result: NONE FOUND every time.** Split child 4 (pdftract-1ce1beaf) extended coverage to
+every bead created after 12:18Z: 48 new + 24 prior, each classified NOT-OWNER into three
+classes — (A) cd0c29e6's own split family, 9 coordination-only beads including this
+consolidation; (B) 28 read-only git/bead-state forensics on the notes README and commit
+`0364a3a8`; (C) 11 owner-chain handoff publication and hygiene beads. Zero post-05:15Z
+bead depends on the owner chain; zero executes or re-scopes the re-run. Full
+per-bead classification: `notes/pdftract-1ce1beaf.md`.
+
+## Split-family consolidation (child 5 of 5, pdftract-3128538a)
+
+pdftract-cd0c29e6 was auto-split into five children (unique-ref `split:cd0c29e6-childN`);
+children 1–4 each verified one slice of the non-owner record above against the live
+store, and this section merges their verdicts. Per-child results:
+
+| Child | Bead | Verdict | Evidence |
+|---|---|---|---|
+| 1 | pdftract-cae26b95 (closed 13:45Z) | **CONFIRMED, no drift** — the two ADD-regression-test beads a8f096bc and 931e6649 are a different artifact class (new tests as code+commit); neither lands criterion-(a) runtime evidence | `notes/pdftract-cae26b95.md`, commit `9c9db3bf` |
+| 2 | pdftract-1f1cf7a5 (Open — dispatch/quarantine churn, failure-count 6; work itself complete) | **CONFIRMED, no drift** — adda71a4 is umbrella NOTE consolidation only; its final suite check is a confirmation step feeding a hygiene criterion, not the owned re-run | `notes/pdftract-1f1cf7a5.md` (committed); its own split children 62d653ec, 3df8a46a, 686bdc40, 0078d4a6 all closed |
+| 3 | pdftract-d2fd5467 (closed 14:38Z) | **CONFIRMED, no drift** — the three anchor beads bf-5o22rf (parent acceptance bead the re-run serves), bf-3a1p3b (sibling umbrella whose notes end "do not re-implement the mmap.rs logging"), de16d7aa (audit-only chain anchor whose WARN rider spawned b716bac5) | `notes/pdftract-d2fd5467.md`, commit `576705dd` |
+| 4 | pdftract-1ce1beaf (Open — sweep re-runs ongoing) | **NONE FOUND** — dated duplicate-owner sweeps re-run 1–4 (latest 22:11Z, `df7b7de2`), zero second owners across all post-cutoff creation | `notes/pdftract-1ce1beaf.md` |
+| 5 | pdftract-3128538a (this bead) | Merges 1–4 into the consolidated conclusion at the top of this file | this note |
+
+One imprecision child 1 flagged in the committed version of this note is resolved here:
+the note previously documented only the 11:41Z pass, while the 12:18Z pass lived in the
+parent bead's Notes. Both are now recorded above; substance identical, conclusion
+unaffected.
+
+## Owner chain state
+
+At the 11:41Z check:
 
 - pdftract-b716bac5 — **Open**, unassigned, unchanged since 05:07 UTC. Sole owner.
 - pdftract-fa233a5e (child 1, compile go/no-go gate) — **InProgress**, claimed by
@@ -55,6 +110,12 @@ owner of the re-run:
 - pdftract-ec0e6526 (child 3, verdict into notes/bf-5o22rf-child1.md) — Open, blocked.
 - pdftract-38700c39 (child 4, cross-link + push) — Open, blocked.
 
-`notes/b716bac5-child2.md` is absent; `notes/bf-5o22rf-child1.md` still ends on the
-"append a runtime-evidence section here" handoff — both confirm the evidence has not
-landed and no worker other than the owner chain has produced it.
+Re-checked at consolidation time 2026-09-08T22:29Z: b716bac5 still **Open** (rev 13,
+unchanged since 05:07Z — no runtime evidence landed, no commit to cite); fa233a5e now
+**Open** again (released 11:49Z, its gate re-split 3e8309f4/68091d06/003ddcd1/3c39e12c
+carries the compile work); 030e8414, ec0e6526 and 38700c39 all still **Open**, unchanged
+since 04:59Z. The serial order and single ownership are intact.
+
+`notes/b716bac5-child2.md` is absent (re-confirmed 22:29Z); `notes/bf-5o22rf-child1.md`
+still ends on the "append a runtime-evidence section here" handoff — both confirm the
+evidence has not landed and no worker other than the owner chain has produced it.
