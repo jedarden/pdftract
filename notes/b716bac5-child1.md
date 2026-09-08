@@ -1,106 +1,122 @@
-# pdftract-b716bac5 — child 1: pdftract-core lib test target compile gate
+# pdftract-b716bac5 — child 1: pdftract-core lib test target compile gate — VERDICT
 
-**Bead:** pdftract-fa233a5e (auto-split child 1 of 4; umbrella pdftract-b716bac5;
-origin bf-5o22rf, criterion (a) runtime evidence).
-**Scope of this bead:** run the compile precondition exactly once and record the
-verdict. No source changes of any kind.
+**Bead:** pdftract-003ddcd1 (grandchild 3 of 4 of pdftract-fa233a5e; umbrella pdftract-b716bac5)
+**Input:** `notes/b716bac5-child1-gate-raw.log` — the verbatim combined stdout+stderr of the
+single gated invocation captured by pdftract-68091d06 and committed at `336bf8ee`.
+**Tree baseline:** `notes/b716bac5-child1-baseline.md` (pdftract-3e8309f4).
+**This note is analysis only:** no cargo command of any kind was run to produce it; every
+number below is parsed out of that one committed log.
 
-> This capture **supersedes** the 2026-09-08 07:11 UTC NO-GO capture of the same
-> bead (preserved in git history at commit `20189f01`). Two sibling commits
-> landed in between (`e7a75b9e` → `f785930f`); the gate was re-run against the
-> updated tip as the bead's re-inventory requirement directs.
+## VERDICT: NO-GO
 
-## Verdict: **NO-GO**
+cargo exited **101**. The `pdftract-core` lib test target does **not** compile, so the
+umbrella's children 2–4 must **not** proceed with any test run until this gate clears.
 
-The `pdftract-core` lib test target does **not** compile. Children 2–4 of this
-split must **not** proceed with test runs until this gate clears.
+## Run record (the one invocation this verdict describes)
 
-## Run record
+| Field | Value |
+|---|---|
+| Command | `set -o pipefail; timeout --kill-after=30s 600s cargo test -p pdftract-core --lib --no-run 2>&1 \| tee notes/b716bac5-child1-gate-raw.log \| tail -120` |
+| UTC start | 2026-09-08T12:28:32Z |
+| UTC end | 2026-09-08T12:28:41Z (~9 s wall — incremental build, deps cached by sibling runs) |
+| cargo exit code | **101** (rustc compile failure; captured as `${PIPESTATUS[0]}`, not `tail`'s status — no timeout kill, so 124/137 does not apply) |
+| Invocations | exactly **one**; no retries, no overlapping runs |
+| rustc summary | ``error: could not compile `pdftract-core` (lib test) due to 89 previous errors; 129 warnings emitted`` (verbatim, log line 2220) |
+| Tree | HEAD `0364a3a89eabf5a02715b7ef7daba764f42d23d7` on `main`, dirty working tree (64 pre-existing uncommitted paths from other in-flight work); nothing under `crates/` modified by the gate bead |
 
-- **Command (exactly as run, single invocation, no retry):**
-  `timeout --kill-after=30s 600s cargo test -p pdftract-core --lib --no-run 2>&1 | tee <ephemeral log> | tail -120`
-  (run under `set -o pipefail`; the recorded exit code is the pipeline status,
-  i.e. cargo's own exit code, not `tail`'s)
-- **Start:** 2026-09-08T09:20:54Z — **End:** 2026-09-08T09:21:03Z (~9 s wall;
-  incremental build, dependencies already cached by sibling runs)
-- **Exit code:** `101` (rustc compile failure)
-- **rustc summary line:** `error: could not compile \`pdftract-core\` (lib test) due to 89 previous errors; 129 warnings emitted`
-- **Harness note:** the tree carries uncommitted sibling edits, so the
-  `~/.local/bin/cargo` wrapper took its documented local cgroup-limited fallback
-  rather than submitting to iad-ci; the invocation itself was timeout-wrapped per
-  the repo test-hygiene rule. Raw output was captured to an ephemeral
-  `/tmp/fa233a5e-gate-0915.log` and deliberately not committed (this note is the
-  durable artifact; the tree must stay free of build logs).
+> This verdict **supersedes** the earlier 2026-09-08T09:20:54Z NO-GO capture of the same
+> gate (prior content of this file, introduced by `a0a4e17a`, still present at
+> `336bf8ee`~1). The inventory below is identical to that run's — third consecutive
+> identical error set — but the provenance here is the *committed* raw log of
+> pdftract-68091d06, not a re-run.
 
-## Per-file error inventory (89 errors total)
+## Per-file error inventory — 89 errors, 4 files
 
-| File | Errors | Codes |
-|---|---:|---|
-| `crates/pdftract-core/src/classify.rs` | 54 | 52× E0609, 2× E0277 |
-| `crates/pdftract-core/src/font/type3_rasterizer.rs` | 29 | 24× E0061, 5× E0599 |
-| `crates/pdftract-core/src/render/scanline.rs` | 5 | 2× E0277, 2× E0308, 1× E0599 |
-| `crates/pdftract-core/src/content_stream.rs` | 1 | 1× E0061 |
-| **Total** | **89** | E0609×52, E0061×25, E0599×6, E0277×4, E0308×2 |
+Format: `file -> error codes -> counts`.
 
-## `source/mmap.rs` — explicitly checked: **zero errors** (expected: none ✓)
+```
+crates/pdftract-core/src/classify.rs            -> E0609 x52, E0277 x2                     -> 54
+crates/pdftract-core/src/font/type3_rasterizer.rs -> E0061 x24, E0599 x5                   -> 29
+crates/pdftract-core/src/render/scanline.rs     -> E0277 x2, E0308 x2, E0599 x1            -> 5
+crates/pdftract-core/src/content_stream.rs      -> E0061 x1                                -> 1
+-------------------------------------------------------------------------------------------
+TOTAL                                                                                      -> 89
+```
 
-`crates/pdftract-core/src/source/mmap.rs` produced **0** error diagnostics
-(parsed across every `-->` span in the full 89-error log). The mmap
-observability work this chain came from (commit `08ec8db8`, plus in-flight test
-additions) is not the blocker; the gate failure is entirely sibling TEST-module
-edits elsewhere.
+Code distribution across all 89: `E0609 x52, E0061 x25, E0599 x6, E0277 x4, E0308 x2`.
 
-## Drift vs. the 03:10 UTC blocker set and the 07:11 UTC capture
+## `crates/pdftract-core/src/source/mmap.rs` — explicitly checked: **zero errors** (expected: none ✓)
 
-**No drift — third consecutive identical inventory.** The live run reproduces
-byte-for-byte the same four files with the same counts and the same code
-distribution recorded at 03:10 UTC (umbrella description) and at 07:11 UTC
-(prior capture of this bead). `signature/mod.rs` and `word_boundary.rs`, which
-broke earlier runs, remain clear: `signature/mod.rs` contributed only
-unused-`mut`/unused-variable **warnings**, no errors.
+Parsed every `error[E…]` primary span in the committed log: **no error points into
+`source/mmap.rs`**. The file has **zero mentions in the entire 2,220-line log** — not even a
+warning. The mmap observability work this chain exists to verify (commit `08ec8db8`, trace
+logging under test, plus its in-flight test additions) is **not** the blocker; the gate
+failure is entirely sibling test-module code in four other files.
 
-## Git state at check time
+## Git state at gate time (HEAD vs origin/main)
 
-- `git rev-parse HEAD` = `f785930ff77d76efbe2732b0b5300481248d26de`
-- `origin/main` (Forgejo, fetched immediately before the run) = `f785930ff77d76efbe2732b0b5300481248d26de`
-- Divergence: `0 0` — HEAD is exactly at the pushed remote tip.
+From the pre-gate baseline (pdftract-3e8309f4, captured 2026-09-08T11:48:28Z):
 
-Dirty-state split of the four error files (matters for who unblocks the gate):
+- Baseline HEAD `3dcfb6bee55b1ff11cb3e73dbb06e97b76494e13` = `origin/main` (Forgejo,
+  re-fetched at capture), divergence `0 / 0` — exactly at the pushed remote tip.
+- The gate ran ~40 min later at HEAD `0364a3a8`. Exactly **two** commits sit in between,
+  both docs-only under `notes/` and touching **nothing under `crates/`**:
+  `e9036d20` (adds `notes/b716bac5-child1-baseline.md` itself) and `0364a3a8` (adds
+  `notes/evidence/README.md`). Both are ancestors of `origin/main` (verified read-only via
+  `git show --stat`). The baseline's `crates/` inventory therefore describes the gate tree
+  exactly.
+
+Dirty-vs-clean split of the four error files at that tree — this decides who can clear the gate:
 
 | File | Working tree vs HEAD | Consequence |
 |---|---|---|
-| `classify.rs` | **clean** | Its 54 errors are **committed** at HEAD — a sibling committing/pushing in-flight work will not clear these |
-| `render/scanline.rs` | **clean** | Its 5 errors are likewise **committed** at HEAD |
-| `font/type3_rasterizer.rs` | modified (local sibling edits) | 29 errors sit in a locally-edited tree state |
-| `content_stream.rs` | modified (local sibling edits) | Its 1 error sits in a locally-edited tree state |
-| `source/mmap.rs` | modified (+local sibling edits, no errors) | The mmap work under test is clean |
+| `classify.rs` | **clean** | its 54 errors are **committed** at the pushed tip of `main` |
+| `render/scanline.rs` | **clean** | its 5 errors are likewise **committed** at the pushed tip |
+| `font/type3_rasterizer.rs` | modified (uncommitted sibling edits) | its 29 errors sit in a locally-edited state |
+| `content_stream.rs` | modified (uncommitted sibling edits) | its 1 error sits in a locally-edited state |
+| `source/mmap.rs` | modified (uncommitted sibling edits, **no errors**) | the mmap work under test is **not implicated** in the gate failure |
 
-Same key finding for children 2–4 as the 07:11 capture: **59 of 89 errors (in
-`classify.rs` + `render/scanline.rs`) are broken at the committed tip of
-`main`**, not merely in uncommitted in-flight edits, and the two sibling
-commits that landed between the two captures did not change that. The gate will
-not clear on its own via sibling commits; the test modules have to catch up to
-the changed production signatures.
+**Key finding for children 2–4: 59 of the 89 errors (`classify.rs` + `render/scanline.rs`)
+are broken at the committed, pushed tip of `main`** — not merely in uncommitted in-flight
+edits — so the gate will not clear on its own via sibling commits. The `#[cfg(test)]`
+modules have to catch up to the changed production signatures.
 
-## Error character (representative samples, this run)
+At verdict-writing time (2026-09-08, this bead) the picture is unchanged: HEAD =
+`origin/main` = `336bf8ee` (the commit carrying the raw log), and the tree is still dirty
+with the same 49 in-flight paths under `crates/` (`source/mmap.rs` included).
 
-All 89 errors are in `#[cfg(test)]` test code lagging behind changed production
-signatures — no production-source breakage:
+## Error character — all 89 are `#[cfg(test)]` test code, zero production breakage
 
-- `E0609` at `classify.rs:2211` — `result.class` read off a type that is now
-  `Result<PageClassification, ClassificationError>`: the test predates the
-  `Result`-returning signature.
-- `E0061` at `content_stream.rs:3347` — `execute_with_do(...)` takes 7 arguments,
-  test supplies 6.
-- `E0277` at `classify.rs:2694` — `ClassificationError: serde::Serialize` is
-  not satisfied, so `serde_json::to_string(&result)` in the test cannot compile.
+Every error's primary span lies inside the file's test module (verified: `classify.rs`
+`#[cfg(test)]` starts at line 1607, errors span 2211–2793; `scanline.rs` 657, errors
+904–938; `type3_rasterizer.rs` 2436, errors 2986–4007; `content_stream.rs` 2409, error
+3347). Representative diagnostics, verbatim from the log:
+
+- `E0609` `classify.rs:2211` — `assert_eq!(result.class, PageClass::Scanned)`: the test
+  reads `.class` off a `Result<PageClassification, ClassificationError>`; rustc suggests
+  `result.unwrap().class`. Tests predate the `Result`-returning production signature.
+- `E0277` `classify.rs:2694` — `serde_json::to_string(&result)` needs
+  `ClassificationError: Serialize`, which the production enum does not implement.
+- `E0061` `content_stream.rs:3347` — `execute_with_do(...)` now takes 7 arguments; the test
+  supplies 6 (missing `argument #7 … Option<&xref::XrefResolver>`).
+- `E0061` `type3_rasterizer.rs:2986` / `2995` — `detect_char_proc_type` now takes 2
+  arguments; tests still pass a third (`{integer}`).
+- `E0599` `type3_rasterizer.rs:2987` — `CharProcType::Unknown` no longer exists.
+- `E0308`/`E0277` `scanline.rs:904`, `926` — `edge.x` is now `i32` and `edge.slope()`
+  returns `(i32, i32)`; tests still compare against floats (`10.0`, `1.0`).
+
+`signature/mod.rs` and `word_boundary.rs`, which broke earlier runs, are clear in this log:
+`signature/mod.rs` contributes only unused-`mut` **warnings**.
+
+## Directive to children 2–4 of this split
+
+Do **not** run `cargo test` against this tree — the gate is NO-GO. Runtime evidence for the
+umbrella (origin bf-5o22rf criterion (a)) waits on the four test modules being brought up to
+the changed signatures; 59 of 89 errors need a commit to `main`, not just local edits.
 
 ## Compliance
 
-- No file under `crates/` was touched by this bead — the working tree's
-  `crates/` modifications belong to sibling workers and were left exactly as
-  found.
-- Single gated invocation; no overlapping retries were launched (pre-run check
-  showed no `cargo test`/`cargo-remote` process running).
-- Orphan check before close: `pgrep -af "cargo test|pdftract"` — see close
-  record on the bead.
+- No cargo command was run by this bead (verdict derived purely from the committed log).
+- No file under `crates/` was touched; the only file this bead writes is this note.
+- No error was "repaired" while inventorying it.
+- Orphan check at close: no `cargo`/`pdftract` process spawned by this bead exists.
