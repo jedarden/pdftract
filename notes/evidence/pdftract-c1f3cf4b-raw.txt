@@ -1,4 +1,3 @@
-    Blocking waiting for file lock on artifact directory
    Compiling pdftract-core v0.1.0 (/home/coding/pdftract/crates/pdftract-core)
 warning: pdftract-core@0.1.0: unmapped-glyph-names.json not found at /home/coding/pdftract/build/unmapped-glyph-names.json, using default set
 warning: pdftract-core@0.1.0: glyph-shapes.json not found at /home/coding/pdftract/build/glyph-shapes.json, generating empty shape database
