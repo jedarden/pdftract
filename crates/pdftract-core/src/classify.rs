@@ -2063,7 +2063,8 @@ mod tests {
         ctx.has_visible_text = true;
         ctx.density_ratio = 0.85;
 
-        let result = classify_page(&ctx);
+        let result =
+            classify_page(&ctx).expect("classify_page should succeed for pure vector text page");
 
         // High validity + no images = Vector with high confidence
         assert_eq!(result.class, PageClass::Vector);
@@ -2082,7 +2083,8 @@ mod tests {
         ctx.has_full_page_image = true;
         ctx.density_ratio = 0.0;
 
-        let result = classify_page(&ctx);
+        let result =
+            classify_page(&ctx).expect("classify_page should succeed for image-only scanned page");
 
         // No text + high image coverage = Scanned
         assert_eq!(result.class, PageClass::Scanned);
@@ -2108,7 +2110,8 @@ mod tests {
         // 0.95 * 484,704 = 460,468.8, so use 460,500 to be safely above threshold
         ctx.image_xobject_areas.push(460_500.0); // >= 95% coverage
 
-        let result = classify_page(&ctx);
+        let result = classify_page(&ctx)
+            .expect("classify_page should succeed for invisible-text-over-image page");
 
         // Invisible text + full-page image = BrokenVector
         assert_eq!(result.class, PageClass::BrokenVector);
@@ -2153,7 +2156,8 @@ mod tests {
         }
         ctx.grid_cells = Some(cells);
 
-        let result = classify_page(&ctx);
+        let result =
+            classify_page(&ctx).expect("classify_page should succeed for page with valid grid cells");
 
         // Hybrid detection should trigger
         assert_eq!(result.class, PageClass::Hybrid);
