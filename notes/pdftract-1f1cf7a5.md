@@ -43,3 +43,32 @@ from the live store (Rev 2, status Open, updated 2026-09-08T01:24Z).
   warrants (that step does prescribe a final suite run); the 12:18Z phrasing — the one this
   bead was asked to confirm — is the accurate characterization. Both records agree on the
   substance: non-owner, consolidation-only, still Open as tabulated.
+
+## Reconciliation with the pdftract-686bdc40 verdict (terminal step, child 4 of 4)
+
+**Verdict: CONFIRMED, no drift** — recorded by pdftract-686bdc40
+(notes/pdftract-686bdc40.md, commit 30c640bb; close reason 2026-09-08T19:06:20Z), after
+this file was written. The one-liner above survives it unchanged; **7651c71e is verified
+sufficient** — nothing in the original note needed correcting, because it already cites
+both required anchors: the adda71a4 scope (section 1 above, Scope line + step 3) and the
+12:18Z record (section 2 above, verbatim match). This section only adds what postdates
+it — the verdict itself — and re-checks the note's live assertions:
+
+- The verdict's field-by-field table independently confirms each clause of the one-liner:
+  consolidation deliverable `notes/bf-5o22rf.md` (still absent — bead not yet executed),
+  step 3 as the labeled "Final full-suite check" confirmation gate, owned criterion-(a)
+  re-run on pdftract-b716bac5 (Open, rev 13), and never-ready status (blocker
+  pdftract-76df861c still Open).
+- `git diff 3dcfb6be HEAD -- notes/pdftract-cd0c29e6.md` re-run at reconciliation time:
+  still empty — the transcribed record is the checked-in text, as this note claimed.
+- Fresh read at **2026-09-08T19:16:16Z**: adda71a4 unchanged (Status Open, Revision 2,
+  Updated 2026-09-08T01:24:07Z, assignee null, sole blocker pdftract-76df861c) — matching
+  child 2's 16:18:06Z capture and the verdict's 18:43:55Z / 19:00:13Z re-checks.
+
+Chain framing: 1f1cf7a5 is the umbrella of the 4-child serial chain created by commit
+43e7227d after this file's original commit (62d653ec verbatim record → 3df8a46a live
+capture → 686bdc40 verdict → this reconciliation, pdftract-0078d4a6, terminal). The
+header above preserves the bead's
+original position as coordination child 2 of 5 of pdftract-cd0c29e6; both framings are
+true at different times. Guard honored: no test execution, no production code change,
+read-only bead commands plus this note only.
