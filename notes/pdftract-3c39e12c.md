@@ -1,0 +1,130 @@
+# pdftract-3c39e12c — consolidated handoff verification record
+
+**Bead:** pdftract-f34a11cf (auto-split child 4 of 4 of pdftract-3c39e12c; umbrella chain
+pdftract-fa233a5e → pdftract-b716bac5). This is the single place that says whether the
+umbrella's children 2–4 may proceed. Consolidates children 1–3 of this split's results;
+every section below was freshly re-verified at write time, not copied forward blindly.
+
+**Split of pdftract-3c39e12c:**
+
+| Child | Bead | Role | Status at consolidation |
+|---|---|---|---|
+| 1 | pdftract-082f2f0f | audit handoff note vs its sources | **closed** — result recorded on the bead |
+| 2 | pdftract-ab076af2 | publication check (SHAs on forgejo main) | open — check re-executed fresh by this bead |
+| 3 | pdftract-ca47706e | orphaned-process sweep | open — sweep re-executed fresh by this bead |
+| 4 | pdftract-f34a11cf | this consolidation | this note |
+
+Children 2 and 3 were still open and unassigned at write time, so their checks were
+re-executed here (read-only git, `pgrep`) and the fresh results are what this record
+carries. If those beads later record a different result, their bead notes supersede
+this one for their own scope.
+
+## (a) The verdict — quoted from `notes/b716bac5-child1.md`
+
+> ## VERDICT: NO-GO
+>
+> cargo exited **101**. The `pdftract-core` lib test target does **not** compile, so the
+> umbrella's children 2–4 must **not** proceed with any test run until this gate clears.
+
+**Gate exit code: 101** — rustc compile failure, `${PIPESTATUS[0]}` of the single gated
+invocation `timeout --kill-after=30s 600s cargo test -p pdftract-core --lib --no-run`,
+run 2026-09-08T12:28:32Z → 12:28:41Z at HEAD `0364a3a8` (raw log:
+`notes/b716bac5-child1-gate-raw.log`, committed at `336bf8ee`, summary at line 2220:
+``error: could not compile `pdftract-core` (lib test) due to 89 previous errors; 129
+warnings emitted``). No re-run was performed for this note; this remains the **last
+verified** compile check.
+
+## (b) Child 1 — audit result: PASS, no correction commit
+
+pdftract-082f2f0f (closed) audited `notes/b716bac5-child1-handoff.md` (commit `1702ba6b`)
+against its three sources. All three checks **PASS**; the note matches its sources, so **no
+correction commit exists or is needed**:
+
+1. **Verdict quote: PASS** — handoff lines 13–16 quote `notes/b716bac5-child1.md` lines
+   10–13 verbatim; handoff states "Gate exit code: 101".
+2. **Error inventory vs the committed gate log: PASS** — parsing every error block and
+   attributing it to its first `-->` span reproduces the handoff exactly: 89 total;
+   classify.rs 54 {E0609 x52, E0277 x2}; font/type3_rasterizer.rs 29 {E0061 x24, E0599 x5};
+   render/scanline.rs 5 {E0277 x2, E0308 x2, E0599 x1}; content_stream.rs 1 {E0061 x1};
+   `source/mmap.rs` 0 errors and 0 mentions in the whole log.
+3. **Certified SHAs: PASS** — `git log -1 -- <file>` returns `e9036d20` for the baseline
+   (pdftract-3e8309f4), `336bf8ee` for the raw log (pdftract-68091d06), `10df3676` for the
+   verdict note (pdftract-003ddcd1), matching the handoff table.
+
+## (c) Child 2 — publication result: all certified SHAs are on forgejo main (fresh check)
+
+Executed by this bead at write time (child 2's bead still open). Remote `origin` =
+`https://git.ardenone.com/jedarden/pdftract.git` (Forgejo, the push target); `git fetch
+origin` clean. With **origin/main tip observed at `576705dd`** (full SHA
+`576705ddb9b8fea95367d5dbf21ff9abae14a11a`, == local HEAD, divergence `0 / 0`):
+
+| Certified SHA | Artifact | Ancestor of origin/main |
+|---|---|---|
+| `e9036d20` | pre-gate baseline (pdftract-3e8309f4) | **yes** (`git merge-base --is-ancestor`) |
+| `336bf8ee` | raw gate log, exit 101 (pdftract-68091d06) | **yes** |
+| `10df3676` | verdict note (pdftract-003ddcd1) | **yes** |
+| `1702ba6b` | the handoff commit itself (pdftract-3c39e12c) | **yes** |
+
+The verdict and the handoff that certifies it are durably published on Forgejo `main`,
+not just local.
+
+## (d) Child 3 — process-sweep result: clean (fresh check)
+
+Executed by this bead at write time (child 3's bead still open):
+`pgrep -af "cargo test|pdftract"` returned **no `cargo test` process and no `pdftract`
+binary**. The only matches were the needle harness `bash -c` wrappers whose command lines
+contain the repo path — PIDs 2794581 (prompt pdftract-3c39e12c), 2930290 (pdftract-cf349714),
+2961703 (this bead's own session), 3009481 (pdftract-1f1cf7a5) — plus the `pgrep` itself.
+No process spawned by any bead in the gate chain is alive; nothing was killed because
+nothing needed killing.
+
+## (e) HANDOFF STATEMENT: **NO-GO** (as of the last verified check)
+
+**The umbrella's children 2–4 may NOT start any `cargo test` run against this tree.** The
+`pdftract-core` lib test target does not compile: cargo exit **101**, **89 errors across
+4 files — classify.rs 54 / font/type3_rasterizer.rs 29 / render/scanline.rs 5 /
+content_stream.rs 1**. Runtime evidence for the umbrella (origin bf-5o22rf criterion (a))
+stays blocked until the gate clears.
+
+Freshness of the NO-GO: every commit between the gate tree and the origin/main tip
+observed here (`0364a3a8..576705dd`) touched only `.beads/` checkpoint state and `notes/`
+— verified via `git log 0364a3a8..HEAD -- crates/ tests/ Cargo.toml Cargo.lock` (empty).
+No new compile evidence exists, so the gate result stands as the last verified state, and
+this bead did not re-run the gate.
+
+### Per-file clearance list (carried forward from `notes/b716bac5-child1-handoff.md`)
+
+All 89 errors are inside `#[cfg(test)]` test modules — zero production breakage.
+
+| File | Errors | Working tree vs HEAD (re-confirmed at write time) | Clearance needed |
+|---|---|---|---|
+| `crates/pdftract-core/src/classify.rs` | 54 (E0609 x52, E0277 x2) | **clean** | a **commit to `main`** — broken at the pushed tip |
+| `crates/pdftract-core/src/font/type3_rasterizer.rs` | 29 (E0061 x24, E0599 x5) | modified (sibling in-flight edits) | local edits + commit |
+| `crates/pdftract-core/src/render/scanline.rs` | 5 (E0277 x2, E0308 x2, E0599 x1) | **clean** | a **commit to `main`** — broken at the pushed tip |
+| `crates/pdftract-core/src/content_stream.rs` | 1 (E0061 x1) | modified (sibling in-flight edits) | local edits + commit |
+
+**59 of 89** errors (`classify.rs` + `render/scanline.rs`) are broken at the committed,
+pushed tip of `main`, so the gate will not clear on its own via sibling commits: those two
+test modules must catch up to the changed production signatures (`Result`-returning
+`classify`, integer `edge.x`/`slope()`, 2-arg `detect_char_proc_type`, 7-arg
+`execute_with_do`, no `CharProcType::Unknown`) **in a commit**.
+
+Explicitly **not** a blocker: `crates/pdftract-core/src/source/mmap.rs` — zero errors and
+zero mentions in the 2,220-line gate log (still dirty with sibling in-flight edits, none of
+them implicated). The mmap observability work this chain exists to verify is clean.
+
+## Compliance (this bead, pdftract-f34a11cf)
+
+- No cargo invocation of any kind; the gate was **not** re-run. Verification was read-only
+  git (`remote -v`, `fetch`, `rev-parse`, `merge-base --is-ancestor`, `log -- <path>`,
+  `status --porcelain -- <paths>`) plus `pgrep`.
+- No file under `crates/` was touched; the only file this bead writes is this note, staged
+  alone (the tree carries sibling in-flight edits that are not ours).
+- Orphan check at close time: see (d) — re-checked immediately before closing; clean.
+
+## References
+
+`notes/b716bac5-child1.md` (verdict, pdftract-003ddcd1); `notes/b716bac5-child1-gate-raw.log`
+(raw log, pdftract-68091d06); `notes/b716bac5-child1-baseline.md` (pdftract-3e8309f4);
+`notes/b716bac5-child1-handoff.md` (handoff, pdftract-3c39e12c, commit `1702ba6b`);
+pdftract-fa233a5e; pdftract-b716bac5; pdftract-082f2f0f; pdftract-ab076af2; pdftract-ca47706e.
