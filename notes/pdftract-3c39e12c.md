@@ -128,3 +128,16 @@ them implicated). The mmap observability work this chain exists to verify is cle
 (raw log, pdftract-68091d06); `notes/b716bac5-child1-baseline.md` (pdftract-3e8309f4);
 `notes/b716bac5-child1-handoff.md` (handoff, pdftract-3c39e12c, commit `1702ba6b`);
 pdftract-fa233a5e; pdftract-b716bac5; pdftract-082f2f0f; pdftract-ab076af2; pdftract-ca47706e.
+
+## Freshly re-verified — 2026-09-08T18:16:34Z (pdftract-a4eb4a16, split child 3 of 4)
+
+Children 1–2 of the pdftract-f34a11cf split found nothing to correct (pdftract-c04460c3:
+5/5 source audit PASS, no discrepancies; pdftract-02de535f: publication + freshness PASS),
+so everything above stands unchanged apart from this stamp. Re-verified fresh at the stamp
+time, read-only git only, no cargo: `git fetch origin` clean; **origin/main tip `d2510888`**
+(full `d2510888b2f102039e986b51cb58b2dee4a395a3`) == local HEAD, 0 unpublished commits; all
+five certified SHAs (7f2b93eb, e9036d20, 336bf8ee, 10df3676, 1702ba6b) still ancestors of
+origin/main; `0364a3a8..origin/main` (14 commits) touches no `crates/` / `tests/` /
+`Cargo.toml` / `Cargo.lock` path, so the (e) NO-GO freshness statement holds as-is and the
+gate was not re-run — NO-GO remains the last verified compile state. Process sweep clean
+(no `cargo test`, no `pdftract` binary).
