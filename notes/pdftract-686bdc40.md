@@ -60,3 +60,45 @@ note, while the owned re-run lives on pdftract-b716bac5's chain.**
 | Explicit CONFIRMED or DRIFT verdict backed by evidence cited from children 1–2 | **PASS** — CONFIRMED, per the table above; sources: notes/pdftract-62d653ec.md (763bd822), notes/pdftract-3df8a46a.md (7d88e435) |
 | One-line non-owner reason for pdftract-adda71a4, citing its own scope | **PASS** — the restatement above names the consolidation deliverable, the step-3 confirmation gate, and owner b716bac5 |
 | Note committed citing this bead ID | **PASS** — this file, Conventional Commit citing pdftract-686bdc40 |
+
+## Dispatch (2026-09-08T19:46Z): auto-split request — declined
+
+The dispatcher sent this bead to the auto-split path ("failed 3 times, break into
+3–5 children"). **Declined; no children created, no labels or dependency edges
+added.** The premise does not hold, and a split would be pure regression:
+
+- **The deliverable is complete and has been closed twice with evidence.** The
+  CONFIRMED verdict above was committed at 30c640bb (note clean vs HEAD at
+  dispatch time). The forensic log records two evidence-bearing closes —
+  2026-09-08T18:46:21Z and 19:06:20Z — each reopened by the automated
+  close-reason verifier within 91 seconds and 4m27s respectively
+  (`verification-failed`, failure-count 2→3, re-quarantine). The "3 failures in
+  a row" are therefore: one first session that had not yet closed when checked,
+  plus two *correct* closes the verifier rejected. None is a work failure;
+  none says anything about task size or complexity.
+- **Every acceptance criterion is PASS** in the table above, citing child 1
+  (pdftract-62d653ec, commit 763bd822) and child 2 (pdftract-3df8a46a, commit
+  7d88e435).
+- **The verdict has already been consumed downstream.** Terminal child 4
+  (pdftract-0078d4a6) reconciled notes/pdftract-1f1cf7a5.md against this
+  verdict (commit eb58ac3a; closed 19:23:02Z, itself since churn-reopened with
+  failure-count:1). Re-verified live for this dispatch at 2026-09-08T19:46:18Z:
+  `bead show pdftract-adda71a4` returns Status Open / Revision 2 / Updated
+  2026-09-08T01:24:07.607849986Z — byte-identical to the field table above, so
+  the CONFIRMED verdict still holds at dispatch time.
+- **This bead is itself an auto-split child** (child 3 of 4 of pdftract-1f1cf7a5)
+  in a chain that was already split once, and whose umbrella's own auto-split
+  re-request was declined earlier today for the same reason
+  (notes/pdftract-1f1cf7a5.md § "Dispatch 5", commit a5521a88). A 3–5 child
+  split of "compare record vs capture, write verdict" — a comparison performed
+  and verdicted twice — makes each child's deliverable a note about this note,
+  with no convergent end state.
+
+**Recommendation:** close this bead with this note as evidence (all criteria
+PASS; guard honored on every dispatch — no test execution, no cargo command, no
+production code change), and gate the auto-split dispatcher on deliverable
+incompleteness rather than failure-count, because failure-count on this chain is
+an artifact of the close-reason verifier reopening evidence-bearing closes. The
+bead was left open and released because this dispatch explicitly instructed
+"Do NOT close this bead"; closing it is the one action the evidence supports
+and remains a human/dispatcher call.
