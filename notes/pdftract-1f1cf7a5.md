@@ -72,3 +72,33 @@ header above preserves the bead's
 original position as coordination child 2 of 5 of pdftract-cd0c29e6; both framings are
 true at different times. Guard honored: no test execution, no production code change,
 read-only bead commands plus this note only.
+
+## Dispatch 5 (2026-09-08T19:28:30Z): auto-split re-request — declined
+
+The dispatcher re-issued this bead to the auto-split path ("failed 4 times, break into
+3–5 children"). **Declined; no children created, no labels or dependency edges added.**
+The premise no longer holds, and a second split would be pure regression:
+
+- The bead was **already split once** (43e7227d → 62d653ec → 3df8a46a → 686bdc40 →
+  0078d4a6) and **all four children are closed** — terminal child 0078d4a6 closed at
+  2026-09-08T19:23:02Z, one minute before this dispatch. The bead already carries both
+  `split-child` and `umbrella`.
+- **Both blocker edges are closed** (0078d4a6, cae26b95): the bead is at the head of its
+  chain. Adding a dependency on a new "last child" could only postpone closure, never
+  advance it.
+- **Every acceptance criterion is already PASS in this file**: the one-liner above, the
+  no-drift confirmation against the 12:18Z record, and the committed note (7651c71e,
+  reconciled by eb58ac3a, clean vs HEAD at dispatch time). Re-checked live for this
+  dispatch: pdftract-adda71a4 unchanged (Open, rev 2, no new events);
+  notes/pdftract-cd0c29e6.md:29 still matches the quoted record.
+- A 3–5 child split of a one-note read-only confirmation makes each child's deliverable a
+  note about this note — the fifth such split in today's log (fe0cf5f2, 54a39076,
+  43e7227d, 5e8cf6ab, and this request), with no convergent end state. The
+  `failure-count:4` / `verification-failed` labels reflect reopen churn, not task size.
+
+**Recommendation:** close pdftract-1f1cf7a5 with this note as evidence (all criteria
+PASS; guard honored on every dispatch — no test execution, no production code, no bead
+records mutated), and gate the auto-split dispatcher on beads that do not already carry
+`umbrella` with all children closed. The bead was left open because this dispatch
+explicitly instructed "Do NOT close this bead"; closing it is the one action the
+evidence supports and is a human/dispatcher call.
