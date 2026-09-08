@@ -1,0 +1,225 @@
+   Compiling pdftract-core v0.1.0 (/home/coding/pdftract/crates/pdftract-core)
+warning: pdftract-core@0.1.0: unmapped-glyph-names.json not found at /home/coding/pdftract/build/unmapped-glyph-names.json, using default set
+warning: pdftract-core@0.1.0: glyph-shapes.json not found at /home/coding/pdftract/build/glyph-shapes.json, generating empty shape database
+crates/pdftract-core/src/extract.rs:3568:13: warning: unused import: `crate::diagnostics::DiagCode`
+crates/pdftract-core/src/parser/object/cache.rs:50:1: warning: unused doc comment
+crates/pdftract-core/src/parser/object/cycle.rs:33:1: warning: unused doc comment
+crates/pdftract-core/src/classify.rs:2211:27: error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2212:24: error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2233:27: error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2234:24: error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2251:27: error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2252:24: error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2268:27: error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2269:24: error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2285:27: error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2286:24: error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2302:27: error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2303:24: error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2303:51: error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2319:28: error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2319:43: error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2320:28: error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2320:48: error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2322:21: error[E0609]: no field `hybrid_cells` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2323:21: error[E0609]: no field `hybrid_cells` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2349:24: error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2349:52: error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2351:24: error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2374:27: error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2375:24: error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2658:48: error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2660:20: error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2663:27: error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2666:20: error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2669:24: error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2669:52: error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2672:20: error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2675:24: error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2678:20: error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2682:24: error[E0609]: no field `hybrid_cells` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2685:20: error[E0609]: no field `hybrid_cells` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2688:26: error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2688:63: error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2694:49: error[E0277]: the trait bound `ClassificationError: serde::Serialize` is not satisfied: unsatisfied trait bound
+crates/pdftract-core/src/classify.rs:2719:27: error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2722:20: error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2723:27: error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2726:20: error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2727:27: error[E0609]: no field `hybrid_cells` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2730:20: error[E0609]: no field `hybrid_cells` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2766:24: error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2766:52: error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2767:76: error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2770:27: error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2771:89: error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2774:24: error[E0609]: no field `hybrid_cells` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2778:49: error[E0277]: the trait bound `ClassificationError: serde::Serialize` is not satisfied: unsatisfied trait bound
+crates/pdftract-core/src/classify.rs:2791:27: error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2792:27: error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/classify.rs:2793:27: error[E0609]: no field `hybrid_cells` on type `std::result::Result<classify::PageClassification, ClassificationError>`: unknown field
+crates/pdftract-core/src/content_stream.rs:3347:26: error[E0061]: this function takes 7 arguments but 6 arguments were supplied
+crates/pdftract-core/src/font/type3_rasterizer.rs:2986:30: error[E0061]: this function takes 2 arguments but 3 arguments were supplied
+crates/pdftract-core/src/font/type3_rasterizer.rs:2987:50: error[E0599]: no variant, associated function, or constant named `Unknown` found for enum `type3_rasterizer::CharProcType` in the current scope: variant, associated function, or constant not found in `type3_rasterizer::CharProcType`
+crates/pdftract-core/src/font/type3_rasterizer.rs:2995:30: error[E0061]: this function takes 2 arguments but 3 arguments were supplied
+crates/pdftract-core/src/font/type3_rasterizer.rs:2996:50: error[E0599]: no variant, associated function, or constant named `Unknown` found for enum `type3_rasterizer::CharProcType` in the current scope: variant, associated function, or constant not found in `type3_rasterizer::CharProcType`
+crates/pdftract-core/src/font/type3_rasterizer.rs:3671:20: error[E0061]: this function takes 2 arguments but 3 arguments were supplied
+crates/pdftract-core/src/font/type3_rasterizer.rs:3681:20: error[E0061]: this function takes 2 arguments but 3 arguments were supplied
+crates/pdftract-core/src/font/type3_rasterizer.rs:3688:13: error[E0061]: this function takes 2 arguments but 3 arguments were supplied
+crates/pdftract-core/src/font/type3_rasterizer.rs:3697:13: error[E0061]: this function takes 2 arguments but 3 arguments were supplied
+crates/pdftract-core/src/font/type3_rasterizer.rs:3706:13: error[E0061]: this function takes 2 arguments but 3 arguments were supplied
+crates/pdftract-core/src/font/type3_rasterizer.rs:3759:27: error[E0599]: no variant, associated function, or constant named `Unknown` found for enum `type3_rasterizer::CharProcType` in the current scope: variant, associated function, or constant not found in `type3_rasterizer::CharProcType`
+crates/pdftract-core/src/font/type3_rasterizer.rs:3790:13: error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+crates/pdftract-core/src/font/type3_rasterizer.rs:3803:13: error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+crates/pdftract-core/src/font/type3_rasterizer.rs:3816:13: error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+crates/pdftract-core/src/font/type3_rasterizer.rs:3817:27: error[E0599]: no variant, associated function, or constant named `Unknown` found for enum `type3_rasterizer::CharProcType` in the current scope: variant, associated function, or constant not found in `type3_rasterizer::CharProcType`
+crates/pdftract-core/src/font/type3_rasterizer.rs:3843:13: error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+crates/pdftract-core/src/font/type3_rasterizer.rs:3844:27: error[E0599]: no variant, associated function, or constant named `Unknown` found for enum `type3_rasterizer::CharProcType` in the current scope: variant, associated function, or constant not found in `type3_rasterizer::CharProcType`
+crates/pdftract-core/src/font/type3_rasterizer.rs:3857:13: error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+crates/pdftract-core/src/font/type3_rasterizer.rs:3872:13: error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+crates/pdftract-core/src/font/type3_rasterizer.rs:3888:13: error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+crates/pdftract-core/src/font/type3_rasterizer.rs:3921:13: error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+crates/pdftract-core/src/font/type3_rasterizer.rs:3937:13: error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+crates/pdftract-core/src/font/type3_rasterizer.rs:3955:13: error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+crates/pdftract-core/src/font/type3_rasterizer.rs:3975:13: error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+crates/pdftract-core/src/font/type3_rasterizer.rs:3990:20: error[E0061]: this function takes 2 arguments but 3 arguments were supplied
+crates/pdftract-core/src/font/type3_rasterizer.rs:3991:20: error[E0061]: this function takes 2 arguments but 3 arguments were supplied
+crates/pdftract-core/src/font/type3_rasterizer.rs:3993:13: error[E0061]: this function takes 2 arguments but 3 arguments were supplied
+crates/pdftract-core/src/font/type3_rasterizer.rs:3999:13: error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+crates/pdftract-core/src/font/type3_rasterizer.rs:4003:13: error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+crates/pdftract-core/src/font/type3_rasterizer.rs:4007:13: error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+crates/pdftract-core/src/render/scanline.rs:904:9: error[E0277]: can't compare `i32` with `{float}`: no implementation for `i32 == {float}`
+crates/pdftract-core/src/render/scanline.rs:904:9: error[E0308]: mismatched types: expected `i32`, found floating-point number
+crates/pdftract-core/src/render/scanline.rs:926:34: error[E0308]: mismatched types: expected `(i32, i32)`, found floating-point number
+crates/pdftract-core/src/render/scanline.rs:929:36: error[E0599]: no method named `is_nan` found for tuple `(i32, i32)` in the current scope: method not found in `(i32, i32)`
+crates/pdftract-core/src/render/scanline.rs:938:39: error[E0277]: cannot add `{float}` to `i32`: no implementation for `i32 + {float}`
+crates/pdftract-core/src/atomic_file_writer.rs:295:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/attachment/filespec.rs:598:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/attachment/name_tree.rs:473:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/classify.rs:2414:13: warning: unused variable: `classifier`: help: if this is intentional, prefix it with an underscore: `_classifier`
+crates/pdftract-core/src/classify.rs:2438:13: warning: unused variable: `classifier`: help: if this is intentional, prefix it with an underscore: `_classifier`
+crates/pdftract-core/src/classify.rs:2459:13: warning: unused variable: `classifier`: help: if this is intentional, prefix it with an underscore: `_classifier`
+crates/pdftract-core/src/cmap/codespace.rs:827:14: warning: unused variable: `ranges`: help: if this is intentional, prefix it with an underscore: `_ranges`
+crates/pdftract-core/src/cmap/codespace.rs:884:13: warning: unused variable: `input`: help: if this is intentional, prefix it with an underscore: `_input`
+crates/pdftract-core/src/content_stream.rs:966:5: warning: unused variable: `marked_content_stack`: help: if this is intentional, prefix it with an underscore: `_marked_content_stack`
+crates/pdftract-core/src/document.rs:2100:27: warning: unused variable: `catalog`: help: if this is intentional, prefix it with an underscore: `_catalog`
+crates/pdftract-core/src/document.rs:2649:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/document.rs:3223:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/document.rs:5196:14: warning: unused variable: `fingerprint`: help: if this is intentional, prefix it with an underscore: `_fingerprint`
+crates/pdftract-core/src/encryption/aes_128.rs:221:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/extract.rs:3597:13: warning: unused variable: `deferred_diag`: help: if this is intentional, prefix it with an underscore: `_deferred_diag`
+crates/pdftract-core/src/font/encoding.rs:1195:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/font/type3_rasterizer.rs:2914:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/font/type3_rasterizer.rs:2911:13: warning: unused variable: `obj_ref`: help: if this is intentional, prefix it with an underscore: `_obj_ref`
+crates/pdftract-core/src/font/type3_rasterizer.rs:3339:9: warning: value assigned to `dummy_array` is never read
+crates/pdftract-core/src/font/type3_rasterizer.rs:3828:45: warning: unused variable: `len`: help: if this is intentional, prefix it with an underscore: `_len`
+crates/pdftract-core/src/font/type3_rasterizer.rs:3899:45: warning: unused variable: `len`: help: if this is intentional, prefix it with an underscore: `_len`
+crates/pdftract-core/src/font/type3_rasterizer_test.rs:319:34: warning: variable does not need to be mutable
+crates/pdftract-core/src/font/type3_rasterizer_test.rs:783:9: warning: unused variable: `obj_ref`: help: if this is intentional, prefix it with an underscore: `_obj_ref`
+crates/pdftract-core/src/font/type3_rasterizer_test.rs:1282:11: warning: unused variable: `x0`: help: if this is intentional, prefix it with an underscore: `_x0`
+crates/pdftract-core/src/font/type3_rasterizer_test.rs:1282:19: warning: unused variable: `x1`: help: if this is intentional, prefix it with an underscore: `_x1`
+crates/pdftract-core/src/font/type3_rasterizer_test.rs:1299:11: warning: unused variable: `x0`: help: if this is intentional, prefix it with an underscore: `_x0`
+crates/pdftract-core/src/font/type3_rasterizer_test.rs:1299:19: warning: unused variable: `x1`: help: if this is intentional, prefix it with an underscore: `_x1`
+crates/pdftract-core/src/forms/mod.rs:838:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/forms/mod.rs:929:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/forms/mod.rs:990:14: warning: variable does not need to be mutable
+crates/pdftract-core/src/forms/mod.rs:990:27: warning: variable does not need to be mutable
+crates/pdftract-core/src/forms/mod.rs:1063:14: warning: variable does not need to be mutable
+crates/pdftract-core/src/forms/mod.rs:1063:27: warning: variable does not need to be mutable
+crates/pdftract-core/src/forms/mod.rs:1110:14: warning: variable does not need to be mutable
+crates/pdftract-core/src/forms/mod.rs:1110:27: warning: variable does not need to be mutable
+crates/pdftract-core/src/forms/mod.rs:1152:14: warning: variable does not need to be mutable
+crates/pdftract-core/src/forms/mod.rs:1152:27: warning: variable does not need to be mutable
+crates/pdftract-core/src/forms/mod.rs:1194:14: warning: variable does not need to be mutable
+crates/pdftract-core/src/forms/mod.rs:1194:27: warning: variable does not need to be mutable
+crates/pdftract-core/src/forms/mod.rs:1236:14: warning: variable does not need to be mutable
+crates/pdftract-core/src/forms/mod.rs:1236:27: warning: variable does not need to be mutable
+crates/pdftract-core/src/forms/mod.rs:1274:14: warning: variable does not need to be mutable
+crates/pdftract-core/src/forms/mod.rs:1274:27: warning: variable does not need to be mutable
+crates/pdftract-core/src/forms/mod.rs:1350:14: warning: variable does not need to be mutable
+crates/pdftract-core/src/forms/mod.rs:1350:27: warning: variable does not need to be mutable
+crates/pdftract-core/src/graphics_state.rs:1094:13: warning: unused variable: `initial_ctm`: help: if this is intentional, prefix it with an underscore: `_initial_ctm`
+crates/pdftract-core/src/layout/columns.rs:1041:13: warning: unused variable: `threshold`: help: if this is intentional, prefix it with an underscore: `_threshold`
+crates/pdftract-core/src/layout/columns.rs:1060:13: warning: unused variable: `threshold`: help: if this is intentional, prefix it with an underscore: `_threshold`
+crates/pdftract-core/src/layout/correction.rs:374:13: warning: unreachable pattern: no value can reach this
+crates/pdftract-core/src/layout/header_footer.rs:415:13: warning: unused variable: `text_a`: help: if this is intentional, prefix it with an underscore: `_text_a`
+crates/pdftract-core/src/layout/header_footer.rs:416:13: warning: unused variable: `text_b`: help: if this is intentional, prefix it with an underscore: `_text_b`
+crates/pdftract-core/src/layout/header_footer.rs:433:13: warning: unused variable: `text_a`: help: if this is intentional, prefix it with an underscore: `_text_a`
+crates/pdftract-core/src/layout/header_footer.rs:434:13: warning: unused variable: `text_b`: help: if this is intentional, prefix it with an underscore: `_text_b`
+crates/pdftract-core/src/layout/reading_order.rs:111:28: warning: value assigned to `region_count` is never read: this value is reassigned later and never used
+crates/pdftract-core/src/layout/reading_order.rs:112:34: warning: value assigned to `small_region_count` is never read: this value is reassigned later and never used
+crates/pdftract-core/src/layout/reading_order.rs:1166:23: warning: unused variable: `first_main`: help: if this is intentional, prefix it with an underscore: `_first_main`
+crates/pdftract-core/src/parser/catalog.rs:1246:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/parser/catalog.rs:1304:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/parser/lexer/mod.rs:528:13: warning: variable `sign_count` is assigned to, but never used
+crates/pdftract-core/src/parser/lexer/mod.rs:537:13: warning: value assigned to `sign_count` is never read
+crates/pdftract-core/src/parser/lexer/mod.rs:1761:20: warning: variable does not need to be mutable
+crates/pdftract-core/src/parser/objstm.rs:724:9: warning: value assigned to `offset` is never read
+crates/pdftract-core/src/parser/objstm.rs:781:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/parser/objstm.rs:1159:13: warning: unused variable: `has_bomb_diag`: help: if this is intentional, prefix it with an underscore: `_has_bomb_diag`
+crates/pdftract-core/src/parser/ocg.rs:445:22: warning: unused variable: `obj_ref`: help: if this is intentional, prefix it with an underscore: `_obj_ref`
+crates/pdftract-core/src/parser/ocg.rs:505:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/parser/ocg.rs:542:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/parser/ocg.rs:575:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/parser/ocg.rs:619:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/parser/ocg.rs:656:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/parser/ocg.rs:692:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/parser/ocg.rs:718:13: warning: unused variable: `resolver`: help: if this is intentional, prefix it with an underscore: `_resolver`
+crates/pdftract-core/src/parser/ocg.rs:868:21: warning: variable does not need to be mutable
+crates/pdftract-core/src/parser/outline.rs:1065:24: warning: unused variable: `diags`: help: if this is intentional, prefix it with an underscore: `_diags`
+crates/pdftract-core/src/parser/outline.rs:1107:24: warning: unused variable: `diags`: help: if this is intentional, prefix it with an underscore: `_diags`
+crates/pdftract-core/src/parser/outline.rs:1165:24: warning: unused variable: `diags`: help: if this is intentional, prefix it with an underscore: `_diags`
+crates/pdftract-core/src/parser/outline.rs:1222:24: warning: unused variable: `diags`: help: if this is intentional, prefix it with an underscore: `_diags`
+crates/pdftract-core/src/parser/outline.rs:1335:24: warning: unused variable: `diags`: help: if this is intentional, prefix it with an underscore: `_diags`
+crates/pdftract-core/src/parser/outline.rs:1434:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/parser/outline.rs:1485:24: warning: unused variable: `diags`: help: if this is intentional, prefix it with an underscore: `_diags`
+crates/pdftract-core/src/parser/pages.rs:1344:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/parser/pages.rs:1592:25: warning: value assigned to `inherited` is never read
+crates/pdftract-core/src/parser/pages.rs:1573:41: warning: value assigned to `inherited` is never read
+crates/pdftract-core/src/parser/pages.rs:1561:37: warning: value assigned to `inherited` is never read
+crates/pdftract-core/src/parser/pages.rs:1584:33: warning: value assigned to `inherited` is never read
+crates/pdftract-core/src/parser/pages.rs:1525:29: warning: value assigned to `inherited` is never read
+crates/pdftract-core/src/parser/pages.rs:1516:29: warning: value assigned to `inherited` is never read
+crates/pdftract-core/src/parser/pages.rs:1597:21: warning: value assigned to `inherited` is never read
+crates/pdftract-core/src/parser/pages.rs:1710:40: warning: unused variable: `max_depth`: help: if this is intentional, prefix it with an underscore: `_max_depth`
+crates/pdftract-core/src/parser/resources.rs:327:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/parser/xref.rs:907:21: warning: value assigned to `depth` is never read: this value is reassigned later and never used
+crates/pdftract-core/src/parser/xref.rs:4590:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/parser/xref.rs:4597:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/parser/xref.rs:4604:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/parser/xref.rs:4644:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/parser/xref.rs:4683:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/parser/xref.rs:4715:13: warning: unused variable: `rev_base`: help: if this is intentional, prefix it with an underscore: `_rev_base`
+crates/pdftract-core/src/parser/xref.rs:4835:13: warning: unused variable: `rev1_offset`: help: if this is intentional, prefix it with an underscore: `_rev1_offset`
+crates/pdftract-core/src/parser/xref.rs:4926:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/parser/xref.rs:4965:51: warning: unused variable: `has_prev`: help: if this is intentional, prefix it with an underscore: `_has_prev`
+crates/pdftract-core/src/render/scanline.rs:758:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/word_boundary.rs:440:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/signature/mod.rs:837:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/signature/mod.rs:908:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/signature/mod.rs:932:14: warning: variable does not need to be mutable
+crates/pdftract-core/src/signature/mod.rs:932:27: warning: variable does not need to be mutable
+crates/pdftract-core/src/signature/mod.rs:968:14: warning: variable does not need to be mutable
+crates/pdftract-core/src/signature/mod.rs:968:27: warning: variable does not need to be mutable
+crates/pdftract-core/src/signature/mod.rs:1001:14: warning: variable does not need to be mutable
+crates/pdftract-core/src/signature/mod.rs:1001:27: warning: variable does not need to be mutable
+crates/pdftract-core/src/signature/mod.rs:1044:14: warning: variable does not need to be mutable
+crates/pdftract-core/src/signature/mod.rs:1044:27: warning: variable does not need to be mutable
+crates/pdftract-core/src/signature/mod.rs:1069:14: warning: variable does not need to be mutable
+crates/pdftract-core/src/signature/mod.rs:1069:27: warning: variable does not need to be mutable
+crates/pdftract-core/src/signature/mod.rs:1087:14: warning: variable does not need to be mutable
+crates/pdftract-core/src/signature/mod.rs:1087:27: warning: variable does not need to be mutable
+crates/pdftract-core/src/signature/mod.rs:1107:14: warning: variable does not need to be mutable
+crates/pdftract-core/src/signature/mod.rs:1107:27: warning: variable does not need to be mutable
+crates/pdftract-core/src/signature/mod.rs:1200:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/signature/mod.rs:1182:13: warning: unused variable: `v_ref`: help: if this is intentional, prefix it with an underscore: `_v_ref`
+crates/pdftract-core/src/signature/mod.rs:1258:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/signature/mod.rs:1314:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/signature/mod.rs:1400:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/signature/mod.rs:1428:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/signature/mod.rs:1456:13: warning: variable does not need to be mutable
+crates/pdftract-core/src/signature/mod.rs:1490:13: warning: variable does not need to be mutable
+warning: `pdftract-core` (lib test) generated 129 warnings
+warning: pdftract-core@0.1.0: unmapped-glyph-names.json not found at /home/coding/pdftract/build/unmapped-glyph-names.json, using default set
+warning: pdftract-core@0.1.0: glyph-shapes.json not found at /home/coding/pdftract/build/glyph-shapes.json, generating empty shape database
+error: could not compile `pdftract-core` (lib test) due to 89 previous errors; 129 warnings emitted
