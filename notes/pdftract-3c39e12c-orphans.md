@@ -4,6 +4,9 @@
 pdftract-b716bac5; blocked-on child 1 = pdftract-b6d69433).
 **Date:** 2026-09-08, 16:34–16:41 local (EDT; UTC-4). Checker: NEEDLE worker
 `claude-code-glm-5.3-flash-glm-armor`, dispatch wrapper PID 1135953.
+**Re-verified** 17:15–17:19 local (21:15–21:19 UTC) by the re-dispatched worker
+`claude-code-glm-5.3-glm-roam-16` (wrapper PID 1424527) after a no-reason reopen at
+21:00:55Z — see the final section. Still CLEAN.
 **Scope:** process hygiene only — no cargo invocation, no source edits, no publication
 re-check (child 1 owns that). Nothing under `crates/` was touched.
 
@@ -146,6 +149,91 @@ killed; nothing needed to be. The chain's only cargo invocation —
 `timeout --kill-after=30s 600s cargo test -p pdftract-core --lib --no-run`,
 12:28:32Z→12:28:41Z — was wall-clock-bounded and exited 101, consistent with nothing
 surviving it.
+
+*(Re-dispatch re-verification 2026-09-08 21:15–21:19 UTC, after the 21:00:55Z reopen:
+re-checked live on a fully turned-over process population — still CLEAN. Final section.)*
+
+---
+
+## Re-dispatch re-verification — 2026-09-08 17:15–17:19 EDT (21:15–21:19 UTC)
+
+**Why a second pass.** The first run of this bead closed at 20:56:55Z on the evidence above
+(commit `92b1ecf0`, pushed to origin/main); the dispatcher reopened it at 21:00:55Z with no
+stated reason and re-dispatched it (assignee `claude-code-glm-5.3-glm-roam-16`, revision 9).
+This run re-verified live instead of restating: **no PID from Checks 1–2 survives** — the
+process population has completely turned over — so this is an independent second CLEAN
+result ~40 minutes later.
+
+Checker this run: NEEDLE worker `claude-code-glm-5.3-glm-roam-16`, dispatch wrapper PID
+1424527 (`prompt-pdftract-d5598671-2506330.md`, started 17:14:32 local).
+
+### Check 3 — first tool round of this dispatch (~17:15 EDT), raw output (verbatim, exit=0)
+
+`pgrep -af "cargo[ ]test|pdftract[ ]mcp|/pdftract"`:
+
+```
+1294622 bash -c cd /home/coding/pdftract && git rev-parse HEAD > .needle-predispatch-sha 2>/dev/null; unset CLAUDECODE; CARGO_BUILD_JOBS='2' RUST_TEST_THREADS='2' CARGO_INCREMENTAL='0' RUSTFLAGS='-C codegen-units=1' NODE_TLS_REJECT_UNAUTHORIZED='0' ANTHROPIC_BASE_URL='https://zai-proxy-mcp-apexalgo-iad-ts.ardenone.com:8444' ANTHROPIC_AUTH_TOKEN='proxy-handles-auth' ANTHROPIC_MODEL='glm-5.3-flash' ANTHROPIC_DEFAULT_OPUS_MODEL='glm-5.3-flash' ANTHROPIC_DEFAULT_SONNET_MODEL='glm-5.3-flash' ANTHROPIC_DEFAULT_HAIKU_MODEL='glm-5.3-flash' CLAUDE_CODE_SUBAGENT_MODEL='glm-5.3-flash' DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1 NODE_TLS_REJECT_UNAUTHORIZED=0 /home/coding/.local/bin/claude --print --verbose --output-format stream-json --include-partial-messages --model glm-5.3-flash --max-turns 100 --dangerously-skip-permissions < /tmp/needle/prompt-pdftract-1ce1beaf-3403114.md | cat
+1392366 bash -c cd /home/coding/pdftract && git rev-parse HEAD > .needle-predispatch-sha 2>/dev/null; unset CLAUDECODE; CARGO_BUILD_JOBS='2' RUST_TEST_THREADS='2' CARGO_INCREMENTAL='0' RUSTFLAGS='-C codegen-units=1' NODE_TLS_REJECT_UNAUTHORIZED='0' ANTHROPIC_BASE_URL='https://zai-proxy-mcp-apexalgo-iad-ts.ardenone.com:8444' ANTHROPIC_AUTH_TOKEN='proxy-handles-auth' ANTHROPIC_MODEL='glm-5.3-flash' ANTHROPIC_DEFAULT_OPUS_MODEL='glm-5.3-flash' ANTHROPIC_DEFAULT_SONNET_MODEL='glm-5.3-flash' ANTHROPIC_DEFAULT_HAIKU_MODEL='glm-5.3-flash' CLAUDE_CODE_SUBAGENT_MODEL='glm-5.3-flash' DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1 NODE_TLS_REJECT_UNAUTHORIZED=0 /home/coding/.local/bin/claude --print --verbose --output-format stream-json --include-partial-messages --model glm-5.3-flash --max-turns 100 --dangerously-skip-permissions < /tmp/needle/prompt-pdftract-bf10a431-2855268.md | cat
+1394665 bash -c cd /home/coding/pdftract && git rev-parse HEAD > .needle-predispatch-sha 2>/dev/null; unset CLAUDECODE; CARGO_BUILD_JOBS='2' RUST_TEST_THREADS='2' CARGO_INCREMENTAL='0' RUSTFLAGS='-C codegen-units=1' NODE_TLS_REJECT_UNAUTHORIZED='0' ANTHROPIC_BASE_URL='https://zai-proxy-mcp-apexalgo-iad-ts.ardenone.com:8444' ANTHROPIC_AUTH_TOKEN='proxy-handles-auth' ANTHROPIC_MODEL='glm-5.3-flash' ANTHROPIC_DEFAULT_OPUS_MODEL='glm-5.3-flash' ANTHROPIC_DEFAULT_SONNET_MODEL='glm-5.3-flash' ANTHROPIC_DEFAULT_HAIKU_MODEL='glm-5.3-flash' CLAUDE_CODE_SUBAGENT_MODEL='glm-5.3-flash' DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1 NODE_TLS_REJECT_UNAUTHORIZED=0 /home/coding/.local/bin/claude --print --verbose --output-format stream-json --include-partial-messages --model glm-5.3-flash --max-turns 100 --dangerously-skip-permissions < /tmp/needle/prompt-pdftract-61ab92de-4107690.md | cat
+1424527 bash -c cd /home/coding/pdftract && git rev-parse HEAD > .needle-predispatch-sha 2>/dev/null; unset CLAUDECODE; CARGO_BUILD_JOBS='2' RUST_TEST_THREADS='2' CARGO_INCREMENTAL='0' RUSTFLAGS='-C codegen-units=1' NODE_TLS_REJECT_UNAUTHORIZED='0' ANTHROPIC_BASE_URL='https://zai-proxy-mcp-apexalgo-iad-ts.ardenone.com:8444' ANTHROPIC_AUTH_TOKEN='proxy-handles-auth' ANTHROPIC_MODEL='glm-5.3' ANTHROPIC_DEFAULT_OPUS_MODEL='glm-5.3' ANTHROPIC_DEFAULT_SONNET_MODEL='glm-5.3' ANTHROPIC_DEFAULT_HAIKU_MODEL='glm-5.3' CLAUDE_CODE_SUBAGENT_MODEL='glm-5.3' DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1 NODE_TLS_REJECT_UNAUTHORIZED=0 /home/coding/.local/bin/claude --print --verbose --output-format stream-json --include-partial-messages --model glm-5.3 --max-turns 100 --dangerously-skip-permissions < /tmp/needle/prompt-pdftract-d5598671-2506330.md | cat
+1444405 /run/current-system/sw/bin/bash -c source /home/coding/.claude/shell-snapshots/snapshot-bash-1788902205630-szo0y3.sh 2>/dev/null || true && shopt -u extglob 2>/dev/null || true && { \builtin unalias -- 'unsetenv'; \builtin unset -f -- 'unsetenv'; } >/dev/null 2>&1 || true && eval 'pgrep -af "cargo[ ]test|pdftract[ ]mcp|/pdftract"; echo "===specified-check-exit=$?==="' < /dev/null && pwd -P >| /tmp/claude-ed7d-cwd
+```
+
+(`ANTHROPIC_AUTH_TOKEN='proxy-handles-auth'` is again the dispatch template's non-secret
+placeholder, part of the verbatim argv.)
+
+### Check 4 — 2026-09-08T17:18:58-04:00
+
+Same command → the **same four wrapper PIDs with byte-identical argv** as Check 3 (not
+reprinted), plus this check's own shell (raw, verbatim):
+
+```
+1463316 /run/current-system/sw/bin/bash -c source /home/coding/.claude/shell-snapshots/snapshot-bash-1788902205630-szo0y3.sh 2>/dev/null || true && shopt -u extglob 2>/dev/null || true && { \builtin unalias -- 'unsetenv'; \builtin unset -f -- 'unsetenv'; } >/dev/null 2>&1 || true && eval 'echo "== detail pass $(date -Is) =="; ps -o pid,ppid,comm,etimes,lstart -p 1294622,1392366,1394665,1424527,1444405 2>/dev/null; echo; echo "== second sweep $(date -Is) =="; pgrep -af "cargo[ ]test|pdftract[ ]mcp|/pdftract"; echo "exit=$?"; for c in pdftract cargo rustc nextest; do pgrep -x "$c" >/dev/null; echo "exact-comm $c: exit=$?"; done' < /dev/null && pwd -P >| /tmp/claude-d199-cwd
+```
+
+Detail pass at the same instant (`ps -o pid,ppid,comm,etimes,lstart`), verbatim:
+
+```
+    PID    PPID COMMAND         ELAPSED                  STARTED
+1294622 3403114 bash               1467 Tue Sep  8 16:54:30 2026
+1392366 2855268 bash                560 Tue Sep  8 17:09:37 2026
+1394665 4107690 bash                547 Tue Sep  8 17:09:50 2026
+1424527 2506330 bash                265 Tue Sep  8 17:14:32 2026
+```
+
+(1444405 is absent — Check 3's shell exited when its check returned, exactly as classified.)
+Exact-comm checks, Check 4: `pgrep -x pdftract` exit=1, `cargo` exit=1, `rustc` exit=1,
+`nextest` exit=1 — no process exists under any of those comm names.
+
+### Check 3/4 — per-PID classification
+
+| PID | comm | verdict | chain-spawned? |
+|---|---|---|---|
+| 1294622 | bash | NEEDLE harness wrapper, `prompt-pdftract-1ce1beaf-3403114.md` (bead pdftract-1ce1beaf), ppid 3403114, started 16:54:30 | **No** — sibling bead, not in the chain set. Left alone. |
+| 1392366 | bash | NEEDLE harness wrapper, `prompt-pdftract-bf10a431-2855268.md` (bead pdftract-bf10a431), ppid 2855268, started 17:09:37 | **No** — sibling bead. Left alone. |
+| 1394665 | bash | NEEDLE harness wrapper, `prompt-pdftract-61ab92de-4107690.md` (bead pdftract-61ab92de), ppid 4107690, started 17:09:50 | **No** — sibling bead. Left alone. |
+| 1424527 | bash | **This re-dispatch's own wrapper**, `prompt-pdftract-d5598671-2506330.md`, ppid 2506330, started 17:14:32 (the live dispatch running this check) | **No** — the checker's own harness, not a `cargo`/`pdftract` process. Killing it would kill this dispatch. |
+| 1444405 | bash | Check 3's own Bash-tool check shell; matched only via the literal `/pdftract` in its `eval` text | **No** — self-match; exited with the check (gone by the 17:18:58 detail pass). |
+| 1463316 | bash | Check 4's own check shell, same self-match class | **No** — exits with the check. |
+
+Chain-ID corroboration: of the six PIDs above, the only one whose prompt path names a
+3c39e12c-chain bead is **1424527** — this bead's own live dispatch wrapper, not a test
+process. The siblings' beads (`1ce1beaf`, `bf10a431`, `61ab92de`) are not in the chain
+reference set `3e8309f4|68091d06|003ddcd1|3c39e12c|b716bac5|b6d69433|d5598671`.
+
+### Kill step (this run) — nothing to kill
+
+This dispatch tree spawned no `cargo`/`rustc`/`nextest`/`pdftract` process (the task itself
+forbids cargo invocation; none was run). **Zero processes were killed** and no sibling
+worker's harness was touched.
+
+### Conclusion (re-dispatch) — STILL CLEAN
+
+**No `cargo test`, `cargo`, `rustc`, `nextest`, or `pdftract` process from the
+pdftract-3c39e12c chain is alive as of 2026-09-08T21:18:58Z.** Every hit in both sweeps of
+this run is a `bash`-comm NEEDLE harness wrapper (three siblings plus this bead's own
+wrapper) or the check shell itself. Combined with Checks 1–2 (16:34/16:40 EDT), the chain
+is now verified orphan-free across two fully disjoint process generations ~40 minutes apart.
 
 ## References
 
