@@ -141,3 +141,63 @@ origin/main; `0364a3a8..origin/main` (14 commits) touches no `crates/` / `tests/
 `Cargo.toml` / `Cargo.lock` path, so the (e) NO-GO freshness statement holds as-is and the
 gate was not re-run — NO-GO remains the last verified compile state. Process sweep clean
 (no `cargo test`, no `pdftract` binary).
+
+## Final consolidation — 2026-09-08T19:16:44Z (pdftract-f34a11cf, the split umbrella)
+
+Every bead in the pdftract-fa233a5e → pdftract-b716bac5 → pdftract-3c39e12c chain is now
+**closed**; this section is the durable end-state record. The "open" rows in the split
+table near the top of this file describe the state at the original consolidation and are
+superseded by the results below — the note itself needed no correction, so this section is
+append-only, as with the stamp above.
+
+### Split of pdftract-3c39e12c (the parent split) — all closed
+
+| Child | Bead | Role | Final result |
+|---|---|---|---|
+| 1 | pdftract-082f2f0f | audit handoff note vs its sources | **closed** 2026-09-08 — audit PASS, **no correction commit** |
+| 2 | pdftract-ab076af2 | publication check | **closed** 2026-09-08T15:57:00Z — all four certified SHAs (`e9036d20`, `336bf8ee`, `10df3676`, `1702ba6b`) ancestors of origin/main at tip `7f2b93eb`; no push/repair needed |
+| 3 | pdftract-ca47706e | orphaned-process sweep | **closed** 2026-09-08T16:17:37Z — **CLEAN**: 7 pgrep hits all NEEDLE dispatch wrappers matching on the literal substring "pdftract" in argv; zero cargo/rustc/pdftract/nextest binaries, zero `pdftract mcp`, zero TH-*, zero zombies |
+| 4 | pdftract-f34a11cf | this consolidation | this bead |
+
+### Split of pdftract-f34a11cf (this bead's own 4 children) — all closed
+
+| Child | Bead | Role | Final result |
+|---|---|---|---|
+| 1 | pdftract-c04460c3 | audit the published note vs its cited sources | **closed** 2026-09-08T17:43:48Z — **5/5 PASS**, no discrepancies, no correction commit; sources in tree byte-identical to their certified commits (`child1.md`==`10df3676`, `child1-handoff.md`==`1702ba6b`, `child1-gate-raw.log`==`336bf8ee`) |
+| 2 | pdftract-02de535f | forgejo publication + freshness | **closed** 2026-09-08T18:00:48Z — **PASS**: origin/main tip `d2510888`, local HEAD identical, 0 unpublished; all five certified SHAs ancestors; `crates/` untouched since the note's tip |
+| 3 | pdftract-a4eb4a16 | republish with freshly verified state | **closed** 2026-09-08T18:26:18Z — append-only stamp (above), commit `05c9def6` |
+| 4 | pdftract-78053a71 | close-time process sweep + final state | **closed** 2026-09-08T19:08:46Z — **CLEAN** (sweep 18:58:00Z–19:00:17Z): zero pdftract binaries, zero MCP servers, zero TH harness processes; nothing killed because nothing chain-spawned existed |
+
+### Freshly verified at this stamp (read-only git; no cargo, gate not re-run)
+
+`git fetch origin` clean; **origin/main tip observed at `5e8cf6ab`** (full
+`5e8cf6ab82ce4856540e6c03d613cd9941c9017c`, subject "docs(pdftract-c0acafa1): auto-split
+c0acafa1 path-set capture into 4-child umbrella chain") == local HEAD, divergence `0 / 0`.
+All six record SHAs are ancestors of `origin/main` (`git merge-base --is-ancestor`):
+`7f2b93eb` (this note's first consolidation), `e9036d20`, `336bf8ee`, `10df3676`,
+`1702ba6b`, `05c9def6` (the a4eb4a16 stamp). `0364a3a8..origin/main` is **17 commits, none
+touching `crates/`, `tests/`, `Cargo.toml` or `Cargo.lock`** — the freshness argument in
+section (e) still holds, so **NO-GO remains the last verified compile state**.
+
+### HANDOFF STATEMENT (unchanged): **NO-GO**
+
+**No `cargo test` run may start against this tree.** The `pdftract-core` lib test target
+does not compile — cargo exit **101**, **89 errors across 4 files: `classify.rs` 54 /
+`font/type3_rasterizer.rs` 29 / `render/scanline.rs` 5 / `content_stream.rs` 1**. The
+per-file clearance list in section (e) above (carried forward from
+`notes/b716bac5-child1-handoff.md`) stands verbatim: `classify.rs` and `render/scanline.rs`
+(59 of 89 errors) are broken at the committed, pushed tip of `main` and need a **commit**;
+`font/type3_rasterizer.rs` and `content_stream.rs` need local edits + commit;
+`source/mmap.rs` remains explicitly not a blocker. Runtime evidence for the umbrella
+(origin bf-5o22rf criterion (a)) stays blocked until the gate clears.
+
+### Close-time process sweep (this bead, immediately before closing): CLEAN
+
+`pgrep -af 'cargo[ ]test|pdftrac[t]'` at 2026-09-08T19:16Z matched only four NEEDLE
+dispatch `bash -c` wrappers — PIDs 492729 (prompt pdftract-ff5c577d), **517572 (this bead's
+own session, prompt pdftract-f34a11cf)**, 524230 (pdftract-0078d4a6), 530264
+(pdftract-bc29f726) — each matching only on the literal substring "pdftract" in the repo
+path / prompt filename. Exact-match `ps -eo comm=` scan for
+`cargo|rustc|pdftract|nextest` returned **0**; `pdftract[ ]mcp` and `TH[-_]0` probes
+matched nothing but the probe's own shell. Nothing chain-spawned is alive; nothing was
+killed.
