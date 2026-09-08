@@ -96,3 +96,18 @@ crates/pdftract-core/src/render/scanline.rs`; empty ⇒ NO-GO stands) — not an
   chain root pdftract-fa233a5e; split children pdftract-b6d69433 / pdftract-d5598671 /
   pdftract-778fc59c
 - All eight notes listed in sections 1 and 4 above
+
+## Postscript — publication provenance (2026-09-08)
+
+This note's content first reached Forgejo `origin/main` inside commit **`e58fb369`**
+("docs(pdftract-3128538a): consolidate single-owner conclusion for mmap re-run into
+notes/pdftract-cd0c29e6.md"), which is **another worker's commit** for bead
+pdftract-3128538a: its staging swept this then-untracked file in alongside its own
+`notes/pdftract-cd0c29e6.md` edit. The swept copy is content-identical to what this bead
+wrote (98 insertions, blob unchanged); nothing was altered, but that commit message does
+not cite this bead. **The commit that certifies pdftract-f141d045 is the one that adds
+this postscript**, which carries the same path with the bead-citing message; `e58fb369`
+remains the first-published SHA for the sections above. Recorded here so the next reader
+is not confused by finding this file's history rooted in a different bead's commit — and
+as a live instance of the shared-checkout hazard the repo guidance warns about with
+blanket staging (`git add notes/` instead of naming the path).
