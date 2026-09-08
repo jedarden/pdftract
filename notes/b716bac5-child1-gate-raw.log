@@ -1,0 +1,2220 @@
+# pdftract-core lib test compile gate — RAW LOG
+# Bead: pdftract-68091d06 (grandchild of pdftract-fa233a5e; umbrella: pdftract-b716bac5)
+# Command: set -o pipefail; timeout --kill-after=30s 600s cargo test -p pdftract-core --lib --no-run 2>&1 | tee notes/b716bac5-child1-gate-raw.log | tail -120
+# UTC start: 2026-09-08T12:28:32Z
+# UTC end:   2026-09-08T12:28:41Z
+# cargo exit code: 101  ("error: could not compile `pdftract-core` (lib test) due to 89 previous errors; 129 warnings emitted")
+# Invocations: exactly ONE cargo invocation was made. No retries, no overlapping runs, no timeout kill
+#   (exit code 101 is cargo's own exit code, captured via ${PIPESTATUS[0]}, not tail's).
+# Tree: HEAD 0364a3a89eabf5a02715b7ef7daba764f42d23d7 with a dirty working tree (64 pre-existing
+#   uncommitted paths belonging to other in-flight work; this bead modified nothing under crates/).
+#   Baseline note for the tree this run executed on: pdftract-3e8309f4.
+# Everything below this header line is cargo's verbatim combined stdout+stderr.
+   Compiling pdftract-core v0.1.0 (/home/coding/pdftract/crates/pdftract-core)
+warning: pdftract-core@0.1.0: unmapped-glyph-names.json not found at /home/coding/pdftract/build/unmapped-glyph-names.json, using default set
+warning: pdftract-core@0.1.0: glyph-shapes.json not found at /home/coding/pdftract/build/glyph-shapes.json, generating empty shape database
+warning: unused import: `crate::diagnostics::DiagCode`
+    --> crates/pdftract-core/src/extract.rs:3568:13
+     |
+3568 |         use crate::diagnostics::DiagCode;
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused doc comment
+  --> crates/pdftract-core/src/parser/object/cache.rs:50:1
+   |
+50 | / /// Per-thread resolution depth counter.
+51 | | ///
+52 | | /// Each thread gets its own independent depth counter, allowing concurrent
+53 | | /// page processing in rayon without lock contention.
+   | |_----------------------------------------------------^
+   |   |
+   |   rustdoc does not generate documentation for macro invocations
+   |
+   = help: to document an item produced by a macro, the macro must produce the documentation as part of its expansion
+   = note: `#[warn(unused_doc_comments)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused doc comment
+  --> crates/pdftract-core/src/parser/object/cycle.rs:33:1
+   |
+33 | / /// Per-thread set of object references currently being resolved.
+34 | | ///
+35 | | /// Each thread gets its own independent HashSet, allowing concurrent
+36 | | /// page processing in rayon without lock contention.
+37 | | ///
+38 | | /// Capacity of 64 is conservative: typical PDF resolution depth is < 10.
+   | |_------------------------------------------------------------------------^
+   |   |
+   |   rustdoc does not generate documentation for macro invocations
+   |
+   = help: to document an item produced by a macro, the macro must produce the documentation as part of its expansion
+
+error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2211:27
+     |
+2211 |         assert_eq!(result.class, PageClass::Scanned);
+     |                           ^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2211 |         assert_eq!(result.unwrap().class, PageClass::Scanned);
+     |                           +++++++++
+
+error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2212:24
+     |
+2212 |         assert!(result.confidence >= 0.95);
+     |                        ^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2212 |         assert!(result.unwrap().confidence >= 0.95);
+     |                        +++++++++
+
+error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2233:27
+     |
+2233 |         assert_eq!(result.class, PageClass::BrokenVector);
+     |                           ^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2233 |         assert_eq!(result.unwrap().class, PageClass::BrokenVector);
+     |                           +++++++++
+
+error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2234:24
+     |
+2234 |         assert!(result.confidence > 0.95);
+     |                        ^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2234 |         assert!(result.unwrap().confidence > 0.95);
+     |                        +++++++++
+
+error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2251:27
+     |
+2251 |         assert_eq!(result.class, PageClass::BrokenVector);
+     |                           ^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2251 |         assert_eq!(result.unwrap().class, PageClass::BrokenVector);
+     |                           +++++++++
+
+error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2252:24
+     |
+2252 |         assert!(result.confidence > 0.90);
+     |                        ^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2252 |         assert!(result.unwrap().confidence > 0.90);
+     |                        +++++++++
+
+error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2268:27
+     |
+2268 |         assert_eq!(result.class, PageClass::Scanned);
+     |                           ^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2268 |         assert_eq!(result.unwrap().class, PageClass::Scanned);
+     |                           +++++++++
+
+error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2269:24
+     |
+2269 |         assert!(result.confidence > 0.85);
+     |                        ^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2269 |         assert!(result.unwrap().confidence > 0.85);
+     |                        +++++++++
+
+error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2285:27
+     |
+2285 |         assert_eq!(result.class, PageClass::Scanned);
+     |                           ^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2285 |         assert_eq!(result.unwrap().class, PageClass::Scanned);
+     |                           +++++++++
+
+error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2286:24
+     |
+2286 |         assert!(result.confidence > 0.70);
+     |                        ^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2286 |         assert!(result.unwrap().confidence > 0.70);
+     |                        +++++++++
+
+error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2302:27
+     |
+2302 |         assert_eq!(result.class, PageClass::Vector);
+     |                           ^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2302 |         assert_eq!(result.unwrap().class, PageClass::Vector);
+     |                           +++++++++
+
+error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2303:24
+     |
+2303 |         assert!(result.confidence > 0.4 && result.confidence < 0.7);
+     |                        ^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2303 |         assert!(result.unwrap().confidence > 0.4 && result.confidence < 0.7);
+     |                        +++++++++
+
+error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2303:51
+     |
+2303 |         assert!(result.confidence > 0.4 && result.confidence < 0.7);
+     |                                                   ^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2303 |         assert!(result.confidence > 0.4 && result.unwrap().confidence < 0.7);
+     |                                                   +++++++++
+
+error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2319:28
+     |
+2319 |         assert_eq!(result1.class, result2.class);
+     |                            ^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2319 |         assert_eq!(result1.unwrap().class, result2.class);
+     |                            +++++++++
+
+error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2319:43
+     |
+2319 |         assert_eq!(result1.class, result2.class);
+     |                                           ^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2319 |         assert_eq!(result1.class, result2.unwrap().class);
+     |                                           +++++++++
+
+error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2320:28
+     |
+2320 |         assert_eq!(result1.confidence, result2.confidence);
+     |                            ^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2320 |         assert_eq!(result1.unwrap().confidence, result2.confidence);
+     |                            +++++++++
+
+error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2320:48
+     |
+2320 |         assert_eq!(result1.confidence, result2.confidence);
+     |                                                ^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2320 |         assert_eq!(result1.confidence, result2.unwrap().confidence);
+     |                                                +++++++++
+
+error[E0609]: no field `hybrid_cells` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2322:21
+     |
+2322 |             result1.hybrid_cells.is_some(),
+     |                     ^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2322 |             result1.unwrap().hybrid_cells.is_some(),
+     |                     +++++++++
+
+error[E0609]: no field `hybrid_cells` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2323:21
+     |
+2323 |             result2.hybrid_cells.is_some()
+     |                     ^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2323 |             result2.unwrap().hybrid_cells.is_some()
+     |                     +++++++++
+
+error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2349:24
+     |
+2349 |                 result.confidence >= 0.0 && result.confidence <= 1.0,
+     |                        ^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2349 |                 result.unwrap().confidence >= 0.0 && result.confidence <= 1.0,
+     |                        +++++++++
+
+error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2349:52
+     |
+2349 |                 result.confidence >= 0.0 && result.confidence <= 1.0,
+     |                                                    ^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2349 |                 result.confidence >= 0.0 && result.unwrap().confidence <= 1.0,
+     |                                                    +++++++++
+
+error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2351:24
+     |
+2351 |                 result.confidence,
+     |                        ^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2351 |                 result.unwrap().confidence,
+     |                        +++++++++
+
+error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2374:27
+     |
+2374 |         assert_eq!(result.class, PageClass::Vector);
+     |                           ^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2374 |         assert_eq!(result.unwrap().class, PageClass::Vector);
+     |                           +++++++++
+
+error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2375:24
+     |
+2375 |         assert!(result.confidence > 0.85);
+     |                        ^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2375 |         assert!(result.unwrap().confidence > 0.85);
+     |                        +++++++++
+
+error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2658:48
+     |
+2658 |         assert!(valid_classes.contains(&result.class),
+     |                                                ^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2658 |         assert!(valid_classes.contains(&result.unwrap().class),
+     |                                                +++++++++
+
+error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2660:20
+     |
+2660 |             result.class, valid_classes);
+     |                    ^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2660 |             result.unwrap().class, valid_classes);
+     |                    +++++++++
+
+error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2663:27
+     |
+2663 |         assert_eq!(result.class, PageClass::Vector,
+     |                           ^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2663 |         assert_eq!(result.unwrap().class, PageClass::Vector,
+     |                           +++++++++
+
+error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2666:20
+     |
+2666 |             result.class);
+     |                    ^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2666 |             result.unwrap().class);
+     |                    +++++++++
+
+error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2669:24
+     |
+2669 |         assert!(result.confidence >= 0.0 && result.confidence <= 1.0,
+     |                        ^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2669 |         assert!(result.unwrap().confidence >= 0.0 && result.confidence <= 1.0,
+     |                        +++++++++
+
+error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2669:52
+     |
+2669 |         assert!(result.confidence >= 0.0 && result.confidence <= 1.0,
+     |                                                    ^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2669 |         assert!(result.confidence >= 0.0 && result.unwrap().confidence <= 1.0,
+     |                                                    +++++++++
+
+error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2672:20
+     |
+2672 |             result.confidence);
+     |                    ^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2672 |             result.unwrap().confidence);
+     |                    +++++++++
+
+error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2675:24
+     |
+2675 |         assert!(result.confidence > 0.5,
+     |                        ^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2675 |         assert!(result.unwrap().confidence > 0.5,
+     |                        +++++++++
+
+error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2678:20
+     |
+2678 |             result.confidence);
+     |                    ^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2678 |             result.unwrap().confidence);
+     |                    +++++++++
+
+error[E0609]: no field `hybrid_cells` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2682:24
+     |
+2682 |         assert!(result.hybrid_cells.is_none(),
+     |                        ^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2682 |         assert!(result.unwrap().hybrid_cells.is_none(),
+     |                        +++++++++
+
+error[E0609]: no field `hybrid_cells` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2685:20
+     |
+2685 |             result.hybrid_cells);
+     |                    ^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2685 |             result.unwrap().hybrid_cells);
+     |                    +++++++++
+
+error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2688:26
+     |
+2688 |         assert!(!(result.class == PageClass::Vector && result.confidence == 0.0),
+     |                          ^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2688 |         assert!(!(result.unwrap().class == PageClass::Vector && result.confidence == 0.0),
+     |                          +++++++++
+
+error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2688:63
+     |
+2688 |         assert!(!(result.class == PageClass::Vector && result.confidence == 0.0),
+     |                                                               ^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2688 |         assert!(!(result.class == PageClass::Vector && result.unwrap().confidence == 0.0),
+     |                                                               +++++++++
+
+error[E0277]: the trait bound `ClassificationError: serde::Serialize` is not satisfied
+    --> crates/pdftract-core/src/classify.rs:2694:49
+     |
+2694 |         let json_output = serde_json::to_string(&result);
+     |                           --------------------- ^^^^^^^ unsatisfied trait bound
+     |                           |
+     |                           required by a bound introduced by this call
+     |
+help: the trait `Serialize` is not implemented for `ClassificationError`
+    --> crates/pdftract-core/src/classify.rs:37:1
+     |
+  37 | pub enum ClassificationError {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     = note: for local types consider adding `#[derive(serde::Serialize)]` to your `ClassificationError` type
+     = note: for types from other crates check whether the crate offers a `serde` feature flag
+     = help: the following other types implement trait `Serialize`:
+               &'a T
+               &'a mut T
+               ()
+               (T,)
+               (T0, T1)
+               (T0, T1, T2)
+               (T0, T1, T2, T3)
+               (T0, T1, T2, T3, T4)
+             and 195 others
+     = note: required for `std::result::Result<classify::PageClassification, ClassificationError>` to implement `Serialize`
+note: required by a bound in `serde_json::to_string`
+    --> /home/coding/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_json-1.0.150/src/ser.rs:2247:17
+     |
+2245 | pub fn to_string<T>(value: &T) -> Result<String>
+     |        --------- required by a bound in this function
+2246 | where
+2247 |     T: ?Sized + Serialize,
+     |                 ^^^^^^^^^ required by this bound in `to_string`
+
+error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2719:27
+     |
+2719 |         assert_eq!(result.class, result_deserialized.class,
+     |                           ^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2719 |         assert_eq!(result.unwrap().class, result_deserialized.class,
+     |                           +++++++++
+
+error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2722:20
+     |
+2722 |             result.class, result_deserialized.class);
+     |                    ^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2722 |             result.unwrap().class, result_deserialized.class);
+     |                    +++++++++
+
+error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2723:27
+     |
+2723 |         assert_eq!(result.confidence, result_deserialized.confidence,
+     |                           ^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2723 |         assert_eq!(result.unwrap().confidence, result_deserialized.confidence,
+     |                           +++++++++
+
+error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2726:20
+     |
+2726 |             result.confidence, result_deserialized.confidence);
+     |                    ^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2726 |             result.unwrap().confidence, result_deserialized.confidence);
+     |                    +++++++++
+
+error[E0609]: no field `hybrid_cells` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2727:27
+     |
+2727 |         assert_eq!(result.hybrid_cells, result_deserialized.hybrid_cells,
+     |                           ^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2727 |         assert_eq!(result.unwrap().hybrid_cells, result_deserialized.hybrid_cells,
+     |                           +++++++++
+
+error[E0609]: no field `hybrid_cells` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2730:20
+     |
+2730 |             result.hybrid_cells, result_deserialized.hybrid_cells);
+     |                    ^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2730 |             result.unwrap().hybrid_cells, result_deserialized.hybrid_cells);
+     |                    +++++++++
+
+error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2766:24
+     |
+2766 |         assert!(result.confidence >= 0.0 && result.confidence <= 1.0,
+     |                        ^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2766 |         assert!(result.unwrap().confidence >= 0.0 && result.confidence <= 1.0,
+     |                        +++++++++
+
+error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2766:52
+     |
+2766 |         assert!(result.confidence >= 0.0 && result.confidence <= 1.0,
+     |                                                    ^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2766 |         assert!(result.confidence >= 0.0 && result.unwrap().confidence <= 1.0,
+     |                                                    +++++++++
+
+error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2767:76
+     |
+2767 |             "Confidence must be in valid range [0.0, 1.0], got {}", result.confidence);
+     |                                                                            ^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2767 |             "Confidence must be in valid range [0.0, 1.0], got {}", result.unwrap().confidence);
+     |                                                                            +++++++++
+
+error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2770:27
+     |
+2770 |         assert_eq!(result.class, PageClass::Vector,
+     |                           ^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2770 |         assert_eq!(result.unwrap().class, PageClass::Vector,
+     |                           +++++++++
+
+error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2771:89
+     |
+2771 |             "Expected Vector classification for simple text-only PDF, got {:?}", result.class);
+     |                                                                                         ^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2771 |             "Expected Vector classification for simple text-only PDF, got {:?}", result.unwrap().class);
+     |                                                                                         +++++++++
+
+error[E0609]: no field `hybrid_cells` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2774:24
+     |
+2774 |         assert!(result.hybrid_cells.is_none(),
+     |                        ^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2774 |         assert!(result.unwrap().hybrid_cells.is_none(),
+     |                        +++++++++
+
+error[E0277]: the trait bound `ClassificationError: serde::Serialize` is not satisfied
+    --> crates/pdftract-core/src/classify.rs:2778:49
+     |
+2778 |         let json_result = serde_json::to_string(&result);
+     |                           --------------------- ^^^^^^^ unsatisfied trait bound
+     |                           |
+     |                           required by a bound introduced by this call
+     |
+help: the trait `Serialize` is not implemented for `ClassificationError`
+    --> crates/pdftract-core/src/classify.rs:37:1
+     |
+  37 | pub enum ClassificationError {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     = note: for local types consider adding `#[derive(serde::Serialize)]` to your `ClassificationError` type
+     = note: for types from other crates check whether the crate offers a `serde` feature flag
+     = help: the following other types implement trait `Serialize`:
+               &'a T
+               &'a mut T
+               ()
+               (T,)
+               (T0, T1)
+               (T0, T1, T2)
+               (T0, T1, T2, T3)
+               (T0, T1, T2, T3, T4)
+             and 195 others
+     = note: required for `std::result::Result<classify::PageClassification, ClassificationError>` to implement `Serialize`
+note: required by a bound in `serde_json::to_string`
+    --> /home/coding/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_json-1.0.150/src/ser.rs:2247:17
+     |
+2245 | pub fn to_string<T>(value: &T) -> Result<String>
+     |        --------- required by a bound in this function
+2246 | where
+2247 |     T: ?Sized + Serialize,
+     |                 ^^^^^^^^^ required by this bound in `to_string`
+
+error[E0609]: no field `class` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2791:27
+     |
+2791 |         assert_eq!(result.class, result_deser.class, "Class should match after round-trip");
+     |                           ^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2791 |         assert_eq!(result.unwrap().class, result_deser.class, "Class should match after round-trip");
+     |                           +++++++++
+
+error[E0609]: no field `confidence` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2792:27
+     |
+2792 |         assert_eq!(result.confidence, result_deser.confidence, "Confidence should match after round-trip");
+     |                           ^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2792 |         assert_eq!(result.unwrap().confidence, result_deser.confidence, "Confidence should match after round-trip");
+     |                           +++++++++
+
+error[E0609]: no field `hybrid_cells` on type `std::result::Result<classify::PageClassification, ClassificationError>`
+    --> crates/pdftract-core/src/classify.rs:2793:27
+     |
+2793 |         assert_eq!(result.hybrid_cells, result_deser.hybrid_cells, "hybrid_cells should match after round-trip");
+     |                           ^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2793 |         assert_eq!(result.unwrap().hybrid_cells, result_deser.hybrid_cells, "hybrid_cells should match after round-trip");
+     |                           +++++++++
+
+error[E0061]: this function takes 7 arguments but 6 arguments were supplied
+    --> crates/pdftract-core/src/content_stream.rs:3347:26
+     |
+3347 |               let result = execute_with_do(
+     |  __________________________^^^^^^^^^^^^^^^-
+3348 | |                 content.as_bytes(),
+3349 | |                 &resources,
+3350 | |                 ProcessingMode::PositionHint,
+...    |
+3353 | |                 &[],
+3354 | |             );
+     | |_____________- argument #7 of type `std::option::Option<&xref::XrefResolver>` is missing
+     |
+note: function defined here
+    --> crates/pdftract-core/src/content_stream.rs:962:8
+     |
+ 962 | pub fn execute_with_do(
+     |        ^^^^^^^^^^^^^^^
+...
+ 969 |     resolver: Option<&crate::parser::xref::XrefResolver>,
+     |     ----------------------------------------------------
+help: provide the argument
+     |
+3347 |             let result = execute_with_do(
+ ...
+3353 |                 &[],
+3354 ~                 /* std::option::Option<&xref::XrefResolver> */,
+3355 ~             );
+     |
+
+error[E0061]: this function takes 2 arguments but 3 arguments were supplied
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:2986:30
+     |
+2986 |         let char_proc_type = detect_char_proc_type(&ref_obj, None, 0);
+     |                              ^^^^^^^^^^^^^^^^^^^^^                 - unexpected argument #3 of type `{integer}`
+     |
+note: function defined here
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:192:8
+     |
+ 192 | pub fn detect_char_proc_type(object: &PdfObject, doc_context: Option<&DocumentContext>) -> CharProcType {
+     |        ^^^^^^^^^^^^^^^^^^^^^
+help: remove the extra argument
+     |
+2986 -         let char_proc_type = detect_char_proc_type(&ref_obj, None, 0);
+2986 +         let char_proc_type = detect_char_proc_type(&ref_obj, None);
+     |
+
+error[E0599]: no variant, associated function, or constant named `Unknown` found for enum `type3_rasterizer::CharProcType` in the current scope
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:2987:50
+     |
+ 118 | pub enum CharProcType {
+     | --------------------- variant, associated function, or constant `Unknown` not found for this enum
+...
+2987 |         assert_eq!(char_proc_type, CharProcType::Unknown,
+     |                                                  ^^^^^^^ variant, associated function, or constant not found in `type3_rasterizer::CharProcType`
+
+error[E0061]: this function takes 2 arguments but 3 arguments were supplied
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:2995:30
+     |
+2995 |         let char_proc_type = detect_char_proc_type(&ref_obj, Some(&doc_context), 0);
+     |                              ^^^^^^^^^^^^^^^^^^^^^                               - unexpected argument #3 of type `{integer}`
+     |
+note: function defined here
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:192:8
+     |
+ 192 | pub fn detect_char_proc_type(object: &PdfObject, doc_context: Option<&DocumentContext>) -> CharProcType {
+     |        ^^^^^^^^^^^^^^^^^^^^^
+help: remove the extra argument
+     |
+2995 -         let char_proc_type = detect_char_proc_type(&ref_obj, Some(&doc_context), 0);
+2995 +         let char_proc_type = detect_char_proc_type(&ref_obj, Some(&doc_context));
+     |
+
+error[E0599]: no variant, associated function, or constant named `Unknown` found for enum `type3_rasterizer::CharProcType` in the current scope
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:2996:50
+     |
+ 118 | pub enum CharProcType {
+     | --------------------- variant, associated function, or constant `Unknown` not found for this enum
+...
+2996 |         assert_eq!(char_proc_type, CharProcType::Unknown,
+     |                                                  ^^^^^^^ variant, associated function, or constant not found in `type3_rasterizer::CharProcType`
+
+error[E0061]: this function takes 2 arguments but 3 arguments were supplied
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3671:20
+     |
+3671 |         assert_eq!(detect_char_proc_type(&dict_obj, None, 0), CharProcType::Dict);
+     |                    ^^^^^^^^^^^^^^^^^^^^^                  - unexpected argument #3 of type `{integer}`
+     |
+note: function defined here
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:192:8
+     |
+ 192 | pub fn detect_char_proc_type(object: &PdfObject, doc_context: Option<&DocumentContext>) -> CharProcType {
+     |        ^^^^^^^^^^^^^^^^^^^^^
+help: remove the extra argument
+     |
+3671 -         assert_eq!(detect_char_proc_type(&dict_obj, None, 0), CharProcType::Dict);
+3671 +         assert_eq!(detect_char_proc_type(&dict_obj, None), CharProcType::Dict);
+     |
+
+error[E0061]: this function takes 2 arguments but 3 arguments were supplied
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3681:20
+     |
+3681 |         assert_eq!(detect_char_proc_type(&stream_obj, None, 0), CharProcType::Stream);
+     |                    ^^^^^^^^^^^^^^^^^^^^^                    - unexpected argument #3 of type `{integer}`
+     |
+note: function defined here
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:192:8
+     |
+ 192 | pub fn detect_char_proc_type(object: &PdfObject, doc_context: Option<&DocumentContext>) -> CharProcType {
+     |        ^^^^^^^^^^^^^^^^^^^^^
+help: remove the extra argument
+     |
+3681 -         assert_eq!(detect_char_proc_type(&stream_obj, None, 0), CharProcType::Stream);
+3681 +         assert_eq!(detect_char_proc_type(&stream_obj, None), CharProcType::Stream);
+     |
+
+error[E0061]: this function takes 2 arguments but 3 arguments were supplied
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3688:13
+     |
+3688 |             detect_char_proc_type(&int_obj, None, 0),
+     |             ^^^^^^^^^^^^^^^^^^^^^                 - unexpected argument #3 of type `{integer}`
+     |
+note: function defined here
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:192:8
+     |
+ 192 | pub fn detect_char_proc_type(object: &PdfObject, doc_context: Option<&DocumentContext>) -> CharProcType {
+     |        ^^^^^^^^^^^^^^^^^^^^^
+help: remove the extra argument
+     |
+3688 -             detect_char_proc_type(&int_obj, None, 0),
+3688 +             detect_char_proc_type(&int_obj, None),
+     |
+
+error[E0061]: this function takes 2 arguments but 3 arguments were supplied
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3697:13
+     |
+3697 |             detect_char_proc_type(&real_obj, None, 0),
+     |             ^^^^^^^^^^^^^^^^^^^^^                  - unexpected argument #3 of type `{integer}`
+     |
+note: function defined here
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:192:8
+     |
+ 192 | pub fn detect_char_proc_type(object: &PdfObject, doc_context: Option<&DocumentContext>) -> CharProcType {
+     |        ^^^^^^^^^^^^^^^^^^^^^
+help: remove the extra argument
+     |
+3697 -             detect_char_proc_type(&real_obj, None, 0),
+3697 +             detect_char_proc_type(&real_obj, None),
+     |
+
+error[E0061]: this function takes 2 arguments but 3 arguments were supplied
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3706:13
+     |
+3706 |             detect_char_proc_type(&bool_obj, None, 0),
+     |             ^^^^^^^^^^^^^^^^^^^^^                  - unexpected argument #3 of type `{integer}`
+     |
+note: function defined here
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:192:8
+     |
+ 192 | pub fn detect_char_proc_type(object: &PdfObject, doc_context: Option<&DocumentContext>) -> CharProcType {
+     |        ^^^^^^^^^^^^^^^^^^^^^
+help: remove the extra argument
+     |
+3706 -             detect_char_proc_type(&bool_obj, None, 0),
+3706 +             detect_char_proc_type(&bool_obj, None),
+     |
+
+error[E0599]: no variant, associated function, or constant named `Unknown` found for enum `type3_rasterizer::CharProcType` in the current scope
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3759:27
+     |
+ 118 | pub enum CharProcType {
+     | --------------------- variant, associated function, or constant `Unknown` not found for this enum
+...
+3759 |             CharProcType::Unknown
+     |                           ^^^^^^^ variant, associated function, or constant not found in `type3_rasterizer::CharProcType`
+
+error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3790:13
+     |
+3790 |             detect_char_proc_type_with_context(&stream_obj, None),
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^------------------- argument #3 of type `usize` is missing
+     |
+note: function defined here
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:258:8
+     |
+ 258 | pub fn detect_char_proc_type_with_context<'a>(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 261 |     depth: usize,
+     |     ------------
+help: provide the argument
+     |
+3790 |             detect_char_proc_type_with_context(&stream_obj, None, /* usize */),
+     |                                                                 +++++++++++++
+
+error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3803:13
+     |
+3803 |             detect_char_proc_type_with_context(&dict_obj, None),
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^----------------- argument #3 of type `usize` is missing
+     |
+note: function defined here
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:258:8
+     |
+ 258 | pub fn detect_char_proc_type_with_context<'a>(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 261 |     depth: usize,
+     |     ------------
+help: provide the argument
+     |
+3803 |             detect_char_proc_type_with_context(&dict_obj, None, /* usize */),
+     |                                                               +++++++++++++
+
+error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3816:13
+     |
+3816 |             detect_char_proc_type_with_context(&ref_obj, None),
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^---------------- argument #3 of type `usize` is missing
+     |
+note: function defined here
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:258:8
+     |
+ 258 | pub fn detect_char_proc_type_with_context<'a>(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 261 |     depth: usize,
+     |     ------------
+help: provide the argument
+     |
+3816 |             detect_char_proc_type_with_context(&ref_obj, None, /* usize */),
+     |                                                              +++++++++++++
+
+error[E0599]: no variant, associated function, or constant named `Unknown` found for enum `type3_rasterizer::CharProcType` in the current scope
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3817:27
+     |
+ 118 | pub enum CharProcType {
+     | --------------------- variant, associated function, or constant `Unknown` not found for this enum
+...
+3817 |             CharProcType::Unknown
+     |                           ^^^^^^^ variant, associated function, or constant not found in `type3_rasterizer::CharProcType`
+
+error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3843:13
+     |
+3843 |             detect_char_proc_type_with_context(&ref_obj, None),
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^---------------- argument #3 of type `usize` is missing
+     |
+note: function defined here
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:258:8
+     |
+ 258 | pub fn detect_char_proc_type_with_context<'a>(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 261 |     depth: usize,
+     |     ------------
+help: provide the argument
+     |
+3843 |             detect_char_proc_type_with_context(&ref_obj, None, /* usize */),
+     |                                                              +++++++++++++
+
+error[E0599]: no variant, associated function, or constant named `Unknown` found for enum `type3_rasterizer::CharProcType` in the current scope
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3844:27
+     |
+ 118 | pub enum CharProcType {
+     | --------------------- variant, associated function, or constant `Unknown` not found for this enum
+...
+3844 |             CharProcType::Unknown
+     |                           ^^^^^^^ variant, associated function, or constant not found in `type3_rasterizer::CharProcType`
+
+error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3857:13
+     |
+3857 |             detect_char_proc_type_with_context(&ref_obj, None),
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^---------------- argument #3 of type `usize` is missing
+     |
+note: function defined here
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:258:8
+     |
+ 258 | pub fn detect_char_proc_type_with_context<'a>(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 261 |     depth: usize,
+     |     ------------
+help: provide the argument
+     |
+3857 |             detect_char_proc_type_with_context(&ref_obj, None, /* usize */),
+     |                                                              +++++++++++++
+
+error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3872:13
+     |
+3872 |             detect_char_proc_type_with_context(&ref_obj, None),
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^---------------- argument #3 of type `usize` is missing
+     |
+note: function defined here
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:258:8
+     |
+ 258 | pub fn detect_char_proc_type_with_context<'a>(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 261 |     depth: usize,
+     |     ------------
+help: provide the argument
+     |
+3872 |             detect_char_proc_type_with_context(&ref_obj, None, /* usize */),
+     |                                                              +++++++++++++
+
+error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3888:13
+     |
+3888 |             detect_char_proc_type_with_context(&ref_obj, None),
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^---------------- argument #3 of type `usize` is missing
+     |
+note: function defined here
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:258:8
+     |
+ 258 | pub fn detect_char_proc_type_with_context<'a>(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 261 |     depth: usize,
+     |     ------------
+help: provide the argument
+     |
+3888 |             detect_char_proc_type_with_context(&ref_obj, None, /* usize */),
+     |                                                              +++++++++++++
+
+error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3921:13
+     |
+3921 |             detect_char_proc_type_with_context(&ref_obj, Some(&doc_context)),
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^------------------------------ argument #3 of type `usize` is missing
+     |
+note: function defined here
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:258:8
+     |
+ 258 | pub fn detect_char_proc_type_with_context<'a>(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 261 |     depth: usize,
+     |     ------------
+help: provide the argument
+     |
+3921 |             detect_char_proc_type_with_context(&ref_obj, Some(&doc_context), /* usize */),
+     |                                                                            +++++++++++++
+
+error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3937:13
+     |
+3937 |             detect_char_proc_type_with_context(&ref_obj, None),
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^---------------- argument #3 of type `usize` is missing
+     |
+note: function defined here
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:258:8
+     |
+ 258 | pub fn detect_char_proc_type_with_context<'a>(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 261 |     depth: usize,
+     |     ------------
+help: provide the argument
+     |
+3937 |             detect_char_proc_type_with_context(&ref_obj, None, /* usize */),
+     |                                                              +++++++++++++
+
+error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3955:13
+     |
+3955 |             detect_char_proc_type_with_context(&ref_obj, Some(&doc_context)),
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^------------------------------ argument #3 of type `usize` is missing
+     |
+note: function defined here
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:258:8
+     |
+ 258 | pub fn detect_char_proc_type_with_context<'a>(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 261 |     depth: usize,
+     |     ------------
+help: provide the argument
+     |
+3955 |             detect_char_proc_type_with_context(&ref_obj, Some(&doc_context), /* usize */),
+     |                                                                            +++++++++++++
+
+error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3975:13
+     |
+3975 |             detect_char_proc_type_with_context(&ref_obj, Some(&doc_context)),
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^------------------------------ argument #3 of type `usize` is missing
+     |
+note: function defined here
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:258:8
+     |
+ 258 | pub fn detect_char_proc_type_with_context<'a>(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 261 |     depth: usize,
+     |     ------------
+help: provide the argument
+     |
+3975 |             detect_char_proc_type_with_context(&ref_obj, Some(&doc_context), /* usize */),
+     |                                                                            +++++++++++++
+
+error[E0061]: this function takes 2 arguments but 3 arguments were supplied
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3990:20
+     |
+3990 |         assert_eq!(detect_char_proc_type(&dict_obj, None, 0), CharProcType::Dict);
+     |                    ^^^^^^^^^^^^^^^^^^^^^                  - unexpected argument #3 of type `{integer}`
+     |
+note: function defined here
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:192:8
+     |
+ 192 | pub fn detect_char_proc_type(object: &PdfObject, doc_context: Option<&DocumentContext>) -> CharProcType {
+     |        ^^^^^^^^^^^^^^^^^^^^^
+help: remove the extra argument
+     |
+3990 -         assert_eq!(detect_char_proc_type(&dict_obj, None, 0), CharProcType::Dict);
+3990 +         assert_eq!(detect_char_proc_type(&dict_obj, None), CharProcType::Dict);
+     |
+
+error[E0061]: this function takes 2 arguments but 3 arguments were supplied
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3991:20
+     |
+3991 |         assert_eq!(detect_char_proc_type(&stream_obj, None, 0), CharProcType::Stream);
+     |                    ^^^^^^^^^^^^^^^^^^^^^                    - unexpected argument #3 of type `{integer}`
+     |
+note: function defined here
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:192:8
+     |
+ 192 | pub fn detect_char_proc_type(object: &PdfObject, doc_context: Option<&DocumentContext>) -> CharProcType {
+     |        ^^^^^^^^^^^^^^^^^^^^^
+help: remove the extra argument
+     |
+3991 -         assert_eq!(detect_char_proc_type(&stream_obj, None, 0), CharProcType::Stream);
+3991 +         assert_eq!(detect_char_proc_type(&stream_obj, None), CharProcType::Stream);
+     |
+
+error[E0061]: this function takes 2 arguments but 3 arguments were supplied
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3993:13
+     |
+3993 |             detect_char_proc_type(&int_obj, None, 0),
+     |             ^^^^^^^^^^^^^^^^^^^^^                 - unexpected argument #3 of type `{integer}`
+     |
+note: function defined here
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:192:8
+     |
+ 192 | pub fn detect_char_proc_type(object: &PdfObject, doc_context: Option<&DocumentContext>) -> CharProcType {
+     |        ^^^^^^^^^^^^^^^^^^^^^
+help: remove the extra argument
+     |
+3993 -             detect_char_proc_type(&int_obj, None, 0),
+3993 +             detect_char_proc_type(&int_obj, None),
+     |
+
+error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3999:13
+     |
+3999 |             detect_char_proc_type_with_context(&dict_obj, None),
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^----------------- argument #3 of type `usize` is missing
+     |
+note: function defined here
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:258:8
+     |
+ 258 | pub fn detect_char_proc_type_with_context<'a>(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 261 |     depth: usize,
+     |     ------------
+help: provide the argument
+     |
+3999 |             detect_char_proc_type_with_context(&dict_obj, None, /* usize */),
+     |                                                               +++++++++++++
+
+error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:4003:13
+     |
+4003 |             detect_char_proc_type_with_context(&stream_obj, None),
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^------------------- argument #3 of type `usize` is missing
+     |
+note: function defined here
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:258:8
+     |
+ 258 | pub fn detect_char_proc_type_with_context<'a>(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 261 |     depth: usize,
+     |     ------------
+help: provide the argument
+     |
+4003 |             detect_char_proc_type_with_context(&stream_obj, None, /* usize */),
+     |                                                                 +++++++++++++
+
+error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:4007:13
+     |
+4007 |             detect_char_proc_type_with_context(&int_obj, None),
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^---------------- argument #3 of type `usize` is missing
+     |
+note: function defined here
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:258:8
+     |
+ 258 | pub fn detect_char_proc_type_with_context<'a>(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 261 |     depth: usize,
+     |     ------------
+help: provide the argument
+     |
+4007 |             detect_char_proc_type_with_context(&int_obj, None, /* usize */),
+     |                                                              +++++++++++++
+
+error[E0277]: can't compare `i32` with `{float}`
+    --> crates/pdftract-core/src/render/scanline.rs:904:9
+     |
+ 904 |         assert_eq!(edge.x, 10.0);
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^ no implementation for `i32 == {float}`
+     |
+     = help: the trait `PartialEq<{float}>` is not implemented for `i32`
+help: `i32` implements trait `PartialEq<Rhs>`
+    --> /home/coding/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/cmp.rs:1876:13
+     |
+1876 |               impl const PartialEq for $t {
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^ `PartialEq`
+...
+1898 | /     partial_eq_impl! {
+1899 | |         bool char usize u8 u16 u32 u64 u128 isize i8 i16 i32 i64 i128 f16 f32 f64 f128
+1900 | |     }
+     | |_____- in this macro invocation
+     |
+    ::: /home/coding/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_json-1.0.150/src/value/partial_eq.rs:76:13
+     |
+  76 |               impl PartialEq<Value> for $ty {
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `PartialEq<serde_json::Value>`
+...
+  97 | / partialeq_numeric! {
+  98 | |     eq_i64[i8 i16 i32 i64 isize]
+  99 | |     eq_u64[u8 u16 u32 u64 usize]
+ 100 | |     eq_f32[f32]
+ 101 | |     eq_f64[f64]
+ 102 | |     eq_bool[bool]
+ 103 | | }
+     | |_- in this macro invocation
+     = note: this error originates in the macro `assert_eq` which comes from the expansion of the macro `partialeq_numeric` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+   --> crates/pdftract-core/src/render/scanline.rs:904:9
+    |
+904 |         assert_eq!(edge.x, 10.0);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^ expected `i32`, found floating-point number
+
+error[E0308]: mismatched types
+   --> crates/pdftract-core/src/render/scanline.rs:926:34
+    |
+926 |         assert_eq!(edge.slope(), 1.0);
+    |                                  ^^^ expected `(i32, i32)`, found floating-point number
+    |
+    = note: expected tuple `(i32, i32)`
+                found type `{float}`
+
+error[E0599]: no method named `is_nan` found for tuple `(i32, i32)` in the current scope
+   --> crates/pdftract-core/src/render/scanline.rs:929:36
+    |
+929 |         assert!(horizontal.slope().is_nan());
+    |                                    ^^^^^^ method not found in `(i32, i32)`
+
+error[E0277]: cannot add `{float}` to `i32`
+   --> crates/pdftract-core/src/render/scanline.rs:938:39
+    |
+938 |         assert_eq!(edge.x, original_x + 1.0);
+    |                                       ^ no implementation for `i32 + {float}`
+    |
+    = help: the trait `Add<{float}>` is not implemented for `i32`
+    = help: the following other types implement trait `Add<Rhs>`:
+              `&i32` implements `Add<i32>`
+              `&i32` implements `Add`
+              `i32` implements `Add<&i32>`
+              `i32` implements `Add<zerocopy::byteorder::I32<O>>`
+              `i32` implements `Add`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/atomic_file_writer.rs:295:13
+    |
+295 |         for mut writer in writers {
+    |             ----^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/attachment/filespec.rs:598:13
+    |
+598 |         let mut uf_bytes = filename
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/attachment/name_tree.rs:473:13
+    |
+473 |         let mut names_dict = IndexMap::new();
+    |             ----^^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: unused variable: `classifier`
+    --> crates/pdftract-core/src/classify.rs:2414:13
+     |
+2414 |         let classifier = PageClassifier::default();
+     |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_classifier`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `classifier`
+    --> crates/pdftract-core/src/classify.rs:2438:13
+     |
+2438 |         let classifier = PageClassifier::default();
+     |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_classifier`
+
+warning: unused variable: `classifier`
+    --> crates/pdftract-core/src/classify.rs:2459:13
+     |
+2459 |         let classifier = PageClassifier::default();
+     |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_classifier`
+
+warning: unused variable: `ranges`
+   --> crates/pdftract-core/src/cmap/codespace.rs:827:14
+    |
+827 |         let (ranges, diags) = parser.parse();
+    |              ^^^^^^ help: if this is intentional, prefix it with an underscore: `_ranges`
+
+warning: unused variable: `input`
+   --> crates/pdftract-core/src/cmap/codespace.rs:884:13
+    |
+884 |         let input = b"1 begincodespacerace <00> <7F> endcodespacerace";
+    |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_input`
+
+warning: unused variable: `marked_content_stack`
+   --> crates/pdftract-core/src/content_stream.rs:966:5
+    |
+966 |     marked_content_stack: Option<&MarkedContentStack>,
+    |     ^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_marked_content_stack`
+
+warning: unused variable: `catalog`
+    --> crates/pdftract-core/src/document.rs:2100:27
+     |
+2100 |         let (fingerprint, catalog, pages, resolver, _trailer) = parse_pdf_file(&pdf_path).unwrap();
+     |                           ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_catalog`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/document.rs:2649:13
+     |
+2649 |         let mut resolver = XrefResolver::new();
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/document.rs:3223:13
+     |
+3223 |         let mut resolver = XrefResolver::new();
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: unused variable: `fingerprint`
+    --> crates/pdftract-core/src/document.rs:5196:14
+     |
+5196 |         let (fingerprint, catalog, _pages, resolver, _trailer) = parse_pdf_file(&pdf_path).unwrap();
+     |              ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_fingerprint`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/encryption/aes_128.rs:221:13
+    |
+221 |         let mut data = vec![0u8; 33];
+    |             ----^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: unused variable: `deferred_diag`
+    --> crates/pdftract-core/src/extract.rs:3597:13
+     |
+3597 |         let deferred_diag = result
+     |             ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_deferred_diag`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/font/encoding.rs:1195:13
+     |
+1195 |         let mut diagnostics: Vec<Diagnostic> = Vec::new();
+     |             ----^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:2914:13
+     |
+2914 |         let mut stream_dict = PdfDict::new();
+     |             ----^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: unused variable: `obj_ref`
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:2911:13
+     |
+2911 |         let obj_ref = ObjRef::new(10, 0);
+     |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_obj_ref`
+
+warning: value assigned to `dummy_array` is never read
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3339:9
+     |
+3339 |         dummy_array[height - 1] = 2;
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+     = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `len`
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3828:45
+     |
+3828 |             fn read_at(&self, _offset: u64, len: usize) -> std::io::Result<Vec<u8>> {
+     |                                             ^^^ help: if this is intentional, prefix it with an underscore: `_len`
+
+warning: unused variable: `len`
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3899:45
+     |
+3899 |             fn read_at(&self, _offset: u64, len: usize) -> std::io::Result<Vec<u8>> {
+     |                                             ^^^ help: if this is intentional, prefix it with an underscore: `_len`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/font/type3_rasterizer_test.rs:319:34
+    |
+319 |     for (obj_nr, offset, gen_nr, mut obj_bytes) in object_configs {
+    |                                  ----^^^^^^^^^
+    |                                  |
+    |                                  help: remove this `mut`
+
+warning: unused variable: `obj_ref`
+   --> crates/pdftract-core/src/font/type3_rasterizer_test.rs:783:9
+    |
+783 |         obj_ref: ObjRef,
+    |         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_obj_ref`
+
+warning: unused variable: `x0`
+    --> crates/pdftract-core/src/font/type3_rasterizer_test.rs:1282:11
+     |
+1282 |     for &(x0, y0, x1, y1) in &horizontal_edges {
+     |           ^^ help: if this is intentional, prefix it with an underscore: `_x0`
+
+warning: unused variable: `x1`
+    --> crates/pdftract-core/src/font/type3_rasterizer_test.rs:1282:19
+     |
+1282 |     for &(x0, y0, x1, y1) in &horizontal_edges {
+     |                   ^^ help: if this is intentional, prefix it with an underscore: `_x1`
+
+warning: unused variable: `x0`
+    --> crates/pdftract-core/src/font/type3_rasterizer_test.rs:1299:11
+     |
+1299 |     for &(x0, y0, x1, y1) in &mixed_edges {
+     |           ^^ help: if this is intentional, prefix it with an underscore: `_x0`
+
+warning: unused variable: `x1`
+    --> crates/pdftract-core/src/font/type3_rasterizer_test.rs:1299:19
+     |
+1299 |     for &(x0, y0, x1, y1) in &mixed_edges {
+     |                   ^^ help: if this is intentional, prefix it with an underscore: `_x1`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/forms/mod.rs:838:13
+    |
+838 |         let mut resolver = XrefResolver::new();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/forms/mod.rs:929:13
+    |
+929 |         let mut resolver = XrefResolver::new();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/forms/mod.rs:990:14
+    |
+990 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+    |              ----^^^^^^^
+    |              |
+    |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/forms/mod.rs:990:27
+    |
+990 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+    |                           ----^^^^^^^^
+    |                           |
+    |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1063:14
+     |
+1063 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1063:27
+     |
+1063 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1110:14
+     |
+1110 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1110:27
+     |
+1110 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1152:14
+     |
+1152 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1152:27
+     |
+1152 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1194:14
+     |
+1194 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1194:27
+     |
+1194 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1236:14
+     |
+1236 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1236:27
+     |
+1236 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1274:14
+     |
+1274 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1274:27
+     |
+1274 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1350:14
+     |
+1350 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1350:27
+     |
+1350 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: unused variable: `initial_ctm`
+    --> crates/pdftract-core/src/graphics_state.rs:1094:13
+     |
+1094 |         let initial_ctm = state.ctm;
+     |             ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_initial_ctm`
+
+warning: unused variable: `threshold`
+    --> crates/pdftract-core/src/layout/columns.rs:1041:13
+     |
+1041 |         let threshold = (page_width * 0.03_f32).ceil() as usize; // 9
+     |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_threshold`
+
+warning: unused variable: `threshold`
+    --> crates/pdftract-core/src/layout/columns.rs:1060:13
+     |
+1060 |         let threshold = (page_width * 0.03_f32).ceil() as usize; // 18
+     |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_threshold`
+
+warning: unreachable pattern
+   --> crates/pdftract-core/src/layout/correction.rs:374:13
+    |
+360 |             0x0178 => 0x8E, // Ÿ (Latin capital letter Y with diaeresis)
+    |             ------ matches all the relevant values
+...
+374 |             0x0178 => 0x9E, // Ÿ (Latin small letter y with diaeresis) - duplicate codepoint, 9F is correct
+    |             ^^^^^^ no value can reach this
+    |
+    = note: `#[warn(unreachable_patterns)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `text_a`
+   --> crates/pdftract-core/src/layout/header_footer.rs:415:13
+    |
+415 |         let text_a = "ACME Corporation XYZ";
+    |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_text_a`
+
+warning: unused variable: `text_b`
+   --> crates/pdftract-core/src/layout/header_footer.rs:416:13
+    |
+416 |         let text_b = "ACME CorporationsXYZ"; // 1 char diff (added 's')
+    |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_text_b`
+
+warning: unused variable: `text_a`
+   --> crates/pdftract-core/src/layout/header_footer.rs:433:13
+    |
+433 |         let text_a = "ACME Corporation ".repeat(6); // ~114 chars
+    |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_text_a`
+
+warning: unused variable: `text_b`
+   --> crates/pdftract-core/src/layout/header_footer.rs:434:13
+    |
+434 |         let text_b = "ACME Corporation ".repeat(5).to_string() + "ACME Corporution "; // typo
+    |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_text_b`
+
+warning: value assigned to `region_count` is never read
+   --> crates/pdftract-core/src/layout/reading_order.rs:111:28
+    |
+111 |     let mut region_count = 0;
+    |                            ^ this value is reassigned later and never used
+...
+118 |     region_count = stats.region_count;
+    |     --------------------------------- `region_count` is overwritten here before the previous value is read
+
+warning: value assigned to `small_region_count` is never read
+   --> crates/pdftract-core/src/layout/reading_order.rs:112:34
+    |
+112 |     let mut small_region_count = 0;
+    |                                  ^ this value is reassigned later and never used
+...
+119 |     small_region_count = stats.small_region_count;
+    |     --------------------------------------------- `small_region_count` is overwritten here before the previous value is read
+
+warning: unused variable: `first_main`
+    --> crates/pdftract-core/src/layout/reading_order.rs:1166:23
+     |
+1166 |         if let (Some(&first_main), Some(&last_main), Some(&first_sidebar)) =
+     |                       ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_first_main`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/catalog.rs:1246:13
+     |
+1246 |         let mut resolver = XrefResolver::new();
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/catalog.rs:1304:13
+     |
+1304 |         let mut resolver = XrefResolver::new();
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable `sign_count` is assigned to, but never used
+   --> crates/pdftract-core/src/parser/lexer/mod.rs:528:13
+    |
+528 |         let mut sign_count = 0;
+    |             ^^^^^^^^^^^^^^
+    |
+    = note: consider using `_sign_count` instead
+
+warning: value assigned to `sign_count` is never read
+   --> crates/pdftract-core/src/parser/lexer/mod.rs:537:13
+    |
+537 |             sign_count = 1;
+    |             ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/lexer/mod.rs:1761:20
+     |
+1761 |         .prop_map(|mut bytes| {
+     |                    ----^^^^^
+     |                    |
+     |                    help: remove this `mut`
+
+warning: value assigned to `offset` is never read
+   --> crates/pdftract-core/src/parser/objstm.rs:724:9
+    |
+724 |         offset += b"5 0 R\n".len() as u64;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/objstm.rs:781:13
+    |
+781 |         let mut dict = PdfDict::new();
+    |             ----^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: unused variable: `has_bomb_diag`
+    --> crates/pdftract-core/src/parser/objstm.rs:1159:13
+     |
+1159 |         let has_bomb_diag = diags.iter().any(|d| d.code == DiagCode::StreamBomb);
+     |             ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_has_bomb_diag`
+
+warning: unused variable: `obj_ref`
+   --> crates/pdftract-core/src/parser/ocg.rs:445:22
+    |
+445 |     fn make_test_ocg(obj_ref: ObjRef, name: &str, intent: Option<&str>) -> PdfObject {
+    |                      ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_obj_ref`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/ocg.rs:505:13
+    |
+505 |         let mut resolver = make_test_resolver();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/ocg.rs:542:13
+    |
+542 |         let mut resolver = make_test_resolver();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/ocg.rs:575:13
+    |
+575 |         let mut resolver = make_test_resolver();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/ocg.rs:619:13
+    |
+619 |         let mut resolver = make_test_resolver();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/ocg.rs:656:13
+    |
+656 |         let mut resolver = make_test_resolver();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/ocg.rs:692:13
+    |
+692 |         let mut resolver = make_test_resolver();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: unused variable: `resolver`
+   --> crates/pdftract-core/src/parser/ocg.rs:718:13
+    |
+718 |         let resolver = make_test_resolver();
+    |             ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_resolver`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/ocg.rs:868:21
+    |
+868 |                 let mut resolver = make_test_resolver();
+    |                     ----^^^^^^^^
+    |                     |
+    |                     help: remove this `mut`
+
+warning: unused variable: `diags`
+    --> crates/pdftract-core/src/parser/outline.rs:1065:24
+     |
+1065 |         let (outlines, diags) = parse_outlines(&resolver, Some(ObjRef::new(99, 0)), &pages);
+     |                        ^^^^^ help: if this is intentional, prefix it with an underscore: `_diags`
+
+warning: unused variable: `diags`
+    --> crates/pdftract-core/src/parser/outline.rs:1107:24
+     |
+1107 |         let (outlines, diags) = parse_outlines(&resolver, Some(ObjRef::new(99, 0)), &pages);
+     |                        ^^^^^ help: if this is intentional, prefix it with an underscore: `_diags`
+
+warning: unused variable: `diags`
+    --> crates/pdftract-core/src/parser/outline.rs:1165:24
+     |
+1165 |         let (outlines, diags) = parse_outlines(&resolver, Some(ObjRef::new(99, 0)), &pages);
+     |                        ^^^^^ help: if this is intentional, prefix it with an underscore: `_diags`
+
+warning: unused variable: `diags`
+    --> crates/pdftract-core/src/parser/outline.rs:1222:24
+     |
+1222 |         let (outlines, diags) = parse_outlines(&resolver, Some(ObjRef::new(99, 0)), &pages);
+     |                        ^^^^^ help: if this is intentional, prefix it with an underscore: `_diags`
+
+warning: unused variable: `diags`
+    --> crates/pdftract-core/src/parser/outline.rs:1335:24
+     |
+1335 |         let (outlines, diags) = parse_outlines(&resolver, Some(ObjRef::new(99, 0)), &pages);
+     |                        ^^^^^ help: if this is intentional, prefix it with an underscore: `_diags`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/outline.rs:1434:13
+     |
+1434 |         let mut root_dict = IndexMap::new();
+     |             ----^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: unused variable: `diags`
+    --> crates/pdftract-core/src/parser/outline.rs:1485:24
+     |
+1485 |         let (outlines, diags) = parse_outlines(&resolver, Some(ObjRef::new(99, 0)), &pages);
+     |                        ^^^^^ help: if this is intentional, prefix it with an underscore: `_diags`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/pages.rs:1344:13
+     |
+1344 |         let mut root_resources = PdfDict::new(); // Empty resources dict
+     |             ----^^^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1592:25
+     |
+1592 |                         inherited = parent_inherited;
+     |                         ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1573:41
+     |
+1573 | ...                   inherited = parent_inherited;
+     |                       ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1561:37
+     |
+1561 | ...                   inherited = parent_inherited;
+     |                       ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1584:33
+     |
+1584 | ...                   inherited = parent_inherited;
+     |                       ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1525:29
+     |
+1525 | ...                   inherited = parent_inherited;
+     |                       ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1516:29
+     |
+1516 | ...                   inherited = parent_inherited;
+     |                       ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1597:21
+     |
+1597 |                     inherited = parent_inherited;
+     |                     ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: unused variable: `max_depth`
+    --> crates/pdftract-core/src/parser/pages.rs:1710:40
+     |
+1710 |     fn arb_pages_dict_with_direct_kids(max_depth: u8) -> impl Strategy<Value = PdfDict> {
+     |                                        ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_max_depth`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/resources.rs:327:13
+    |
+327 |         let mut ancestor = ResourceDict::new();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: value assigned to `depth` is never read
+   --> crates/pdftract-core/src/parser/xref.rs:907:21
+    |
+907 |     let mut depth = 0;
+    |                     ^ this value is reassigned later and never used
+...
+936 |                         depth = 1;
+    |                         --------- `depth` is overwritten here before the previous value is read
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/xref.rs:4590:13
+     |
+4590 |         let mut rev2_with_prev = rev2.to_vec();
+     |             ----^^^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/xref.rs:4597:13
+     |
+4597 |         let mut rev3_with_prev = rev3.to_vec();
+     |             ----^^^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/xref.rs:4604:13
+     |
+4604 |         let mut rev4_with_prev = rev4.to_vec();
+     |             ----^^^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/xref.rs:4644:13
+     |
+4644 |         let mut rev2_with_prev = rev2.to_vec();
+     |             ----^^^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/xref.rs:4683:13
+     |
+4683 |         let mut rev2_with_prev = rev2.to_vec();
+     |             ----^^^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: unused variable: `rev_base`
+    --> crates/pdftract-core/src/parser/xref.rs:4715:13
+     |
+4715 |         let rev_base = b"xref\n0 1\n\
+     |             ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_rev_base`
+
+warning: unused variable: `rev1_offset`
+    --> crates/pdftract-core/src/parser/xref.rs:4835:13
+     |
+4835 |         let rev1_offset = file_data.len() as u64;
+     |             ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_rev1_offset`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/xref.rs:4926:13
+     |
+4926 |         let mut rev2_with_prev = rev2_trad.to_vec();
+     |             ----^^^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: unused variable: `has_prev`
+    --> crates/pdftract-core/src/parser/xref.rs:4965:51
+     |
+4965 |                 for (i, (obj_num, offset, gen_nr, has_prev)) in revisions.iter().enumerate() {
+     |                                                   ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_has_prev`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/render/scanline.rs:758:13
+    |
+758 |         let mut bitmap = TestBitmap::white(32, 32);
+    |             ----^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/word_boundary.rs:440:13
+    |
+440 |         let mut manager = WordBoundaryManager::new();
+    |             ----^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/signature/mod.rs:837:13
+    |
+837 |         let mut resolver = XrefResolver::new();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/signature/mod.rs:908:13
+    |
+908 |         let mut resolver = XrefResolver::new();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/signature/mod.rs:932:14
+    |
+932 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+    |              ----^^^^^^^
+    |              |
+    |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/signature/mod.rs:932:27
+    |
+932 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+    |                           ----^^^^^^^^
+    |                           |
+    |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/signature/mod.rs:968:14
+    |
+968 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+    |              ----^^^^^^^
+    |              |
+    |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/signature/mod.rs:968:27
+    |
+968 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+    |                           ----^^^^^^^^
+    |                           |
+    |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1001:14
+     |
+1001 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1001:27
+     |
+1001 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1044:14
+     |
+1044 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1044:27
+     |
+1044 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1069:14
+     |
+1069 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1069:27
+     |
+1069 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1087:14
+     |
+1087 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1087:27
+     |
+1087 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1107:14
+     |
+1107 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1107:27
+     |
+1107 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1200:13
+     |
+1200 |         let mut resolver = XrefResolver::new();
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: unused variable: `v_ref`
+    --> crates/pdftract-core/src/signature/mod.rs:1182:13
+     |
+1182 |         let v_ref = ObjRef::new(500, 0);
+     |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_v_ref`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1258:13
+     |
+1258 |         let mut resolver = XrefResolver::new();
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1314:13
+     |
+1314 |         let mut resolver = XrefResolver::new();
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1400:13
+     |
+1400 |         let mut resolver = XrefResolver::new();
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1428:13
+     |
+1428 |         let mut resolver = XrefResolver::new();
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1456:13
+     |
+1456 |         let mut resolver = XrefResolver::new();
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1490:13
+     |
+1490 |         let mut resolver = XrefResolver::new();
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+Some errors have detailed explanations: E0061, E0277, E0308, E0599, E0609.
+For more information about an error, try `rustc --explain E0061`.
+warning: `pdftract-core` (lib test) generated 129 warnings
+warning: pdftract-core@0.1.0: unmapped-glyph-names.json not found at /home/coding/pdftract/build/unmapped-glyph-names.json, using default set
+warning: pdftract-core@0.1.0: glyph-shapes.json not found at /home/coding/pdftract/build/glyph-shapes.json, generating empty shape database
+error: could not compile `pdftract-core` (lib test) due to 89 previous errors; 129 warnings emitted
