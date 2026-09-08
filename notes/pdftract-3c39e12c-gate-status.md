@@ -53,3 +53,41 @@ condition is not met (no fixing commit SHA exists to quote — `git log
 `pdftract-core` (lib test) does not compile at the pushed tip, and children 2–4 of
 pdftract-3c39e12c must still not proceed with any test run until a commit to `main`
 fixes `classify.rs` and `render/scanline.rs`.
+
+---
+
+# Re-affirmation log
+
+## 2026-09-08 (2nd check) — tip `e58fb369` — **NO-GO stands**
+
+Re-derived from git alone after the tip advanced one docs commit past the 1st check
+(`df7b7de2` → `e58fb369`, "consolidate single-owner conclusion for mmap re-run").
+Still **no cargo run** — same rule, same gate evidence (raw log re-validated this
+check: cargo summary line reads *"could not compile `pdftract-core` (lib test) due to
+89 previous errors"*, exit 101; counting each diagnostic's **primary** `-->` location
+reproduces the table exactly: classify.rs 54, type3_rasterizer.rs 29, scanline.rs 5,
+content_stream.rs 1 = 89).
+
+Fresh evidence at `e58fb369c951e5646e648913d3678fa859203eed`:
+
+- `0364a3a8` still an ancestor of `origin/main`; range now **39 commits**, all
+  docs-only (`0364a3a8..origin/main -- . ':(exclude)notes' ':(exclude).beads'` → empty).
+- **Zero commits touch any of the four files** (`git log 0364a3a8..origin/main --
+  <file>` empty for all four; `--since=2026-09-08` likewise empty).
+
+| File | Errors at gate | Commits on `origin/main` since gate | Working tree |
+|---|---|---|---|
+| `classify.rs` | 54 | **none** | **clean** |
+| `render/scanline.rs` | 5 | **none** | **clean** |
+| `font/type3_rasterizer.rs` | 29 | none | modified (uncommitted, 10 lines) |
+| `content_stream.rs` | 1 | none | modified (uncommitted, 305 lines) |
+
+Rule applied unchanged: GO requires a fixing commit on `origin/main` for BOTH
+`classify.rs` AND `render/scanline.rs`; both remain byte-identical to what the gate
+compiled at `0364a3a8` and their combined 59 errors are still **committed at the tip**.
+The two modified files are sibling in-flight edits, which the rule says can never clear
+them.
+
+> **VERDICT (2026-09-08, tip `e58fb369`): NO-GO stands.** No fixing commit SHA exists
+> to quote. Children 2–4 of pdftract-3c39e12c must still not run tests until a commit
+> to `main` fixes `classify.rs` and `render/scanline.rs`.
