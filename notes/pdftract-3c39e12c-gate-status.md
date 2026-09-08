@@ -91,3 +91,59 @@ them.
 > **VERDICT (2026-09-08, tip `e58fb369`): NO-GO stands.** No fixing commit SHA exists
 > to quote. Children 2–4 of pdftract-3c39e12c must still not run tests until a commit
 > to `main` fixes `classify.rs` and `render/scanline.rs`.
+
+## 2026-09-08 (3rd check) — tip `a0dc9569` — **NO-GO stands**
+
+Re-derived from git alone after the tip advanced five more docs commits
+(`e58fb369` → `a0dc9569`). Still **no cargo run**. Gate raw log re-validated this
+check: `# cargo exit code: 101` in the header and the verbatim summary line at
+log line 2220 — *"could not compile `pdftract-core` (lib test) due to 89 previous
+errors; 129 warnings emitted"*. Counting each diagnostic's **primary** `-->`
+location reproduces the table exactly: classify.rs 54, type3_rasterizer.rs 29,
+scanline.rs 5, content_stream.rs 1 = 89. (Do not naively `grep '^\s*-->' | sort |
+uniq -c` the log: that counts secondary spans too — "required by this bound",
+lifetimes, etc. — and inflates every file. Anchor on the `^error` line, take the
+*first* `-->` after it.)
+
+### ⚠ Trap found this round: `--since=2026-09-08` is NOT the fixing-commit test
+
+`git log origin/main --oneline --since=2026-09-08 -- crates/pdftract-core/src/classify.rs`
+**returns two commits**:
+
+- `ff006426` "fix(pdftract-6fb49cdb): unwrap classify_page Result in blank_page and image_only_figure tests"
+- `f40117c3` "fix(pdftract-72b4cbdf): land Result unwraps in 4 classify_page outcome tests"
+
+**These are not fixes.** Both are ancestors of the gate HEAD (`git merge-base
+--is-ancestor ff006426 0364a3a8` → yes; same for `f40117c3`) — commit dates
+2026-09-07 21:31 −0400 = 2026-09-08 01:31Z, over ten hours *before* the gate ran
+(12:28Z). The gate already compiled them; they are the *origin* of the 54
+classify.rs errors, which is why the summary blames `Result<classify::PageClassification, _>`
+field access on `classify_page`. The correct fixing-commit test is the range
+`git log 0364a3a8..origin/main -- <file>` (empty here), not `--since`. A future
+re-check that reads `--since` output as "a commit landed, maybe GO" would flip
+this verdict wrongly to GO.
+
+### Fresh evidence at `a0dc95697b96c757dcb80b7e172f3aa5fb8327eb`
+
+- `git fetch origin` — no-op; local HEAD == `origin/main` == `a0dc9569`.
+- `0364a3a8` still an ancestor of `origin/main`; range now **44 commits**, all
+  docs-only (`0364a3a8..origin/main -- . ':(exclude)notes' ':(exclude).beads'` →
+  empty; `0364a3a8..origin/main -- crates/` → empty). Zero commits touch any of
+  the four inventory files in the range.
+
+| File | Errors at gate | Commits on `origin/main` since gate (`0364a3a8..origin/main`) | Working tree |
+|---|---|---|---|
+| `classify.rs` | 54 | **none** — the two `--since` hits above are pre-gate ancestors | **clean** |
+| `render/scanline.rs` | 5 | **none** (`--since` also empty; last touch 2026-08-16) | **clean** |
+| `font/type3_rasterizer.rs` | 29 | none | modified (uncommitted, 10 lines) |
+| `content_stream.rs` | 1 | none | modified (uncommitted, 305 lines) |
+
+Rule applied unchanged: GO requires a fixing commit on `origin/main` for BOTH
+`classify.rs` AND `render/scanline.rs`. Both remain byte-identical to what the
+gate compiled at `0364a3a8` (clean working tree, zero commits in range) — their
+combined 59 errors are still **committed at the pushed tip**. The two modified
+files remain sibling in-flight edits, which the rule says can never clear them.
+
+> **VERDICT (2026-09-08, tip `a0dc9569`): NO-GO stands.** No fixing commit SHA
+> exists to quote. Children 2–4 of pdftract-3c39e12c must still not run tests
+> until a commit to `main` fixes `classify.rs` and `render/scanline.rs`.
