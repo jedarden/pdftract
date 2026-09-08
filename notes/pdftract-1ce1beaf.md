@@ -1,10 +1,55 @@
-# pdftract-1ce1beaf — Dated duplicate-owner sweep, mmap-suite runtime re-run (re-run 4)
+# pdftract-1ce1beaf — Dated duplicate-owner sweep, mmap-suite runtime re-run (re-run 5)
 
 **Date of this sweep:** 2026-09-08 (bead created 12:53:48Z; re-run 2 executed ~20:35Z; re-run 3
-executed ~21:00Z; **this re-run 4 executed ~22:15Z**, on the fifth dispatch)
+executed ~21:00Z; re-run 4 executed ~22:13Z; **this re-run 5 executed 22:51Z**, on the sixth
+dispatch — the third to arrive as an auto-split order)
 **Scope of enumeration:** every bead created after **2026-09-08T05:15Z** (the prior ownership check), all statuses.
 **Bead:** split child 4 of 5 of pdftract-cd0c29e6 (auto-split umbrella, coordination-only, read-only).
 **Guard honored:** no cargo invocation, no test execution, no crates/ edits, no beads filed, no other bead status touched. Read-only `bead`/`git`/`jq` commands plus this note.
+
+## Result (re-run 5, 22:51Z)
+
+**SWEEP RESULT 2026-09-08 (re-run 5): NONE FOUND.**
+
+- Dispatch context: sixth dispatch, arrived 22:45:07Z as an **auto-split order**
+  (`failure-count:4`, `quarantine-until:2026-09-08T22:43:48Z`, expired). The count decomposes
+  from `.beads/events.jsonl` exactly as re-run 4 recorded: 20:43:33Z `glm-spaxel2` success
+  (re-run 2), 21:19:05Z `glm-tgp` failure-after-commit (re-run 3, `efb27707`), 21:41:06Z
+  `glm-spaxel2` failure (no new commit), 22:13:48Z `glm-armor` **`outcome: success`** (re-run 4,
+  `df7b7de2`) — after which the evidence-bearing close was reopened again and this dispatch
+  was queued. Re-run 4's close succeeded; the reopen is dispatcher churn, not task failure.
+- Fresh enumeration from live store state at 22:51Z (all four statuses queried separately,
+  `--limit 999999`, JSONL): **2753 beads total, 2753 unique IDs** (disjoint, complete), **72
+  created after 05:15Z — identical to re-runs 2, 3 and 4.** Newest bead store-wide is still
+  pdftract-f141d045 at **2026-09-08T19:44:55Z**: zero beads created since the re-run 2/3/4
+  window, so no new candidate can exist.
+- Programmatic set-diff of all 72 IDs against this note (bare 8-hex form, since continuation
+  children are listed unprefixed): **ALL 72 already classified below — nothing uncovered,**
+  nothing new to classify.
+- Owner chain re-verified live, still all `open`: pdftract-b716bac5 (rev 13), fa233a5e
+  (rev 11), 030e8414 / ec0e6526 / 38700c39 (rev 1 each). The runtime-run child 030e8414
+  remains open and unexecuted.
+- Dependency edges re-grepped across all 72: **zero** blockers point at any owner-chain bead
+  (b716bac5, fa233a5e, 030e8414, ec0e6526, 38700c39) — re-runs 2–4 hold.
+- Status mix of the 72: **30 closed / 41 open / 1 in_progress** — the sole in-progress bead is
+  this bead itself. (d5598671 closed since re-run 4; the 61ab92de in-progress noted there is
+  no longer open.) No member executes tests.
+- No commit has touched `crates/pdftract-core/src/source/` since 05:15Z (git log re-checked at
+  HEAD `2241ea6b`), so criterion-(a) runtime evidence is still not landed and no "duplicate
+  re-run already satisfied" branch applies.
+
+### Split declined (this dispatch's order)
+
+Declined for the four reasons recorded under re-run 4, unchanged: the bead's own acceptance
+criteria say **"no beads filed, no other bead status touched"**; the task is atomic (one
+enumeration pass + one dated note, now satisfied at HEAD four times); a third coordination
+level multiplies the redispatch churn that *is* the failure count (parent cd0c29e6 at
+`failure-count:4`, sibling 1f1cf7a5 at `failure-count:6` / `cycling` / `quarantined`, this bead
+now reissued on the expiry of a quarantine that re-arms each cycle); and seven same-day sibling
+beads have filed dated split-decline notes and closed on committed evidence instead. Terminal
+action is the evidence close of this bead, which unblocks the one dependent
+(pdftract-3128538a, umbrella child 5, the consolidation bead); sole blocker pdftract-d2fd5467
+is already closed.
 
 ## Result (re-run 4, ~22:15Z)
 
