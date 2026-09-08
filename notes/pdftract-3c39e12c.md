@@ -201,3 +201,40 @@ path / prompt filename. Exact-match `ps -eo comm=` scan for
 `cargo|rustc|pdftract|nextest` returned **0**; `pdftract[ ]mcp` and `TH[-_]0` probes
 matched nothing but the probe's own shell. Nothing chain-spawned is alive; nothing was
 killed.
+
+## Freshly re-verified after reopen — 2026-09-08T19:42:47Z (pdftract-f34a11cf)
+
+The 19:20:17Z close of pdftract-f34a11cf (commit `90ed37f6`) was reopened at 19:23:02Z with
+no defect reason recorded, so this dispatch re-verified every acceptance-criteria fact from
+scratch rather than re-asserting the earlier close. **Result: nothing above changed** — this
+section is append-only, like the two before it.
+
+- **Verdict and exit code re-confirmed at source:** `notes/b716bac5-child1.md` line 10
+  `## VERDICT: NO-GO`, line 12 `cargo exited **101**`; handoff line 18 `Gate exit code: 101`;
+  raw log at `336bf8ee` ends with `error: could not compile \`pdftract-core\` (lib test) due
+  to 89 previous errors; 129 warnings emitted`. All three source files in the tree are
+  byte-identical to their certified commits (`git diff --stat 10df3676 --` /
+  `1702ba6b` / `336bf8ee` each empty).
+- **Publication:** `git fetch origin` clean; **origin/main tip `a5521a88`** (full
+  `a5521a88b71efe9657185204f1b9d56a54846c98`) == local HEAD, divergence `0 / 0`. All seven
+  record SHAs are ancestors of origin/main via `git merge-base --is-ancestor`: `7f2b93eb`,
+  `e9036d20`, `336bf8ee`, `10df3676`, `1702ba6b`, `05c9def6`, and `90ed37f6` (the final
+  consolidation that was pushed before the reopen).
+- **Freshness of NO-GO:** `0364a3a8..origin/main` is now **20 commits** (was 17 at the
+  previous stamp) and **zero of them touch `crates/`, `tests/`, `Cargo.toml` or
+  `Cargo.lock`** (`git log --oneline 0364a3a8..origin/main -- crates/ tests/ Cargo.toml
+  Cargo.lock` is empty). Section (e)'s freshness argument therefore holds unchanged and the
+  gate was **not** re-run — NO-GO remains the last verified compile state.
+- **Note integrity:** working-tree copy of this file has zero drift from HEAD
+  (`git status --porcelain -- notes/pdftract-3c39e12c.md` empty before this stamp).
+- **Close-time process sweep:** CLEAN. The AC-named `pgrep -af "cargo test|pdftract"`
+  matched only NEEDLE dispatcher `bash -c` wrappers for other beads' prompts (f4043374,
+  3c39e12c, 87de95ea, b6d69433, 36076d6d, 686bdc40, this bead's own dispatcher 650246) plus
+  the sweep shell — each matching on the literal substring "pdftract" in argv. Exact
+  `ps -eo comm=` scan for `cargo|rustc|pdftract|nextest`: **0**. `pdftract[ ]mcp` and
+  `TH[-_]0` probes: no match. Nothing chain-spawned is alive; nothing killed.
+
+**HANDOFF STATEMENT (unchanged): NO-GO** — the `pdftract-core` lib test target does not
+compile (cargo exit **101**, 89 errors: `classify.rs` 54 / `font/type3_rasterizer.rs` 29 /
+`render/scanline.rs` 5 / `content_stream.rs` 1); no `cargo test` run may start against this
+tree; the per-file clearance list in section (e) stands verbatim.
