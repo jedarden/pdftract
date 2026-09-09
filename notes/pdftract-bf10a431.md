@@ -35,3 +35,33 @@ Its deliverable (`notes/evidence/README.md` at `0364a3a8`) is on origin/main,
 its prior consolidated record (`d2510888`) is on origin/main, all four chain
 checks above are PASS with checkable evidence, and this file is the single
 current record of that fact. The umbrella closes last, after this bead.
+
+## Re-issue log — auto-split re-issues declined
+
+**2026-09-09, 4th auto-split re-issue: DECLINED (no children created).** The
+dispatcher re-issued bead `pdftract-bf10a431` as "failed 3 times in a row, too
+big or complex — split into 3–5 children." Both premises are contradicted by
+the record and by fresh re-derivation:
+
+- The three counted "failures" are not work failures. The forensic log shows
+  three evidence-bearing PASS closes on this bead — 20:58:54Z, 21:20:41Z,
+  22:19:26Z on 2026-09-08 — each reopened within minutes with no stated
+  reason. `failure-count:3` counts those reopens.
+- The scope is one atomic action (one note file, one-path commit, one push).
+  It has no decomposition into 3–5 independently completable children; any
+  such split would fabricate micro-beads for work already merged, and would
+  re-dispatch workers onto evidence artifacts this chain forbids re-committing.
+
+Fresh re-derivation at tip `7b7792cc` (= `git ls-remote origin main`, 0
+ahead / 0 behind), all PASS:
+
+| Check | Result |
+|---|---|
+| `notes/pdftract-bf10a431.md` exists, matches committed state | PASS — 37 lines, `git diff HEAD` empty |
+| Commit `e07d070d` touches only that one path | PASS — 1 file changed, +37; `crates/` path count 0 |
+| `e07d070d` is an ancestor of origin/main | PASS — `git merge-base --is-ancestor` exit 0 |
+| Cited deliverables `0364a3a8`, `d2510888` are ancestors of origin/main | PASS — both exit 0 |
+
+Decline recorded in the single-path addendum commit on top of tip `7b7792cc`;
+the bead is re-closed on this evidence. No file under `notes/evidence/` and no
+file under `crates/` was touched, and no build or test was run.
