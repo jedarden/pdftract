@@ -147,3 +147,50 @@ files remain sibling in-flight edits, which the rule says can never clear them.
 > **VERDICT (2026-09-08, tip `a0dc9569`): NO-GO stands.** No fixing commit SHA
 > exists to quote. Children 2–4 of pdftract-3c39e12c must still not run tests
 > until a commit to `main` fixes `classify.rs` and `render/scanline.rs`.
+
+## 2026-09-08 (4th check) — tip `589f8c55` — **NO-GO stands**
+
+Re-derived from git alone after the tip advanced four more docs commits
+(`a0dc9569` → `589f8c55`). Still **no cargo run**. This check exists because the
+auto-split dispatcher re-issued the bead a 4th time (reopen as
+`verification-failed`, `failure-count:3`, quarantine expired 23:51Z); the
+`failure-count` is the prior evidence-bearing closes being reopened, not real
+work failures — hence re-derive and re-close rather than split.
+
+Fresh evidence at `589f8c55`:
+
+- `git fetch origin` — no-op; local HEAD == `origin/main` == `589f8c55`.
+- `0364a3a8` still an ancestor of `origin/main`; range now **48 commits**, all
+  docs-only (`0364a3a8..origin/main -- . ':(exclude)notes' ':(exclude).beads'` →
+  empty). Zero commits touch any of the four inventory files in the range.
+- Fixing-commit test done with the **range** form, per the trap finding above
+  (`git log 0364a3a8..origin/main -- <file>` → empty for all four). Plain
+  `--since=2026-09-08` returned empty for all four in this shell too — but that
+  is *not* load-bearing: the range test is the authoritative one.
+
+| File | Errors at gate | Commits on `origin/main` since gate (`0364a3a8..origin/main`) | Working tree |
+|---|---|---|---|
+| `classify.rs` | 54 | **none** | **clean** — still broken as committed at the tip |
+| `render/scanline.rs` | 5 | **none** | **clean** — still broken as committed at the tip |
+| `font/type3_rasterizer.rs` | 29 | none | modified (uncommitted sibling in-flight edits, 10 lines) |
+| `content_stream.rs` | 1 | none | modified (uncommitted sibling in-flight edits, 305 lines) |
+
+Rule applied unchanged: GO requires a fixing commit on `origin/main` for BOTH
+`classify.rs` AND `render/scanline.rs`. Both remain byte-identical to what the
+gate compiled at `0364a3a8` (clean working tree, zero commits in range) — their
+combined 59 errors are still **committed at the pushed tip**. The two modified
+files remain sibling in-flight edits, which the rule says can never clear them.
+
+> **VERDICT (2026-09-08, tip `589f8c55`): NO-GO stands.** No fixing commit SHA
+> exists to quote. Children 2–4 of pdftract-3c39e12c must still not run tests
+> until a commit to `main` fixes `classify.rs` and `render/scanline.rs`.
+
+### Auto-split re-issue declined (this check)
+
+The dispatcher's 4th issue asks to split this bead into 3–5 children and convert
+it to an umbrella. Declined: this bead is itself a leaf `split-child` (child 3 of
+4 of pdftract-3c39e12c), its scope is a single read-only note, and every
+acceptance criterion is already met at HEAD (see the 1st–4th checks above and the
+three citing commits `8ee27f95`, `60d981cf`, `bd12b867`). Splitting a satisfied
+leaf would multiply redispatch surface, not shrink it. The terminal action is
+this evidence close.
