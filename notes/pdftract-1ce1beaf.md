@@ -1,13 +1,56 @@
-# pdftract-1ce1beaf — Dated duplicate-owner sweep, mmap-suite runtime re-run (re-run 7)
+# pdftract-1ce1beaf — Dated duplicate-owner sweep, mmap-suite runtime re-run (re-run 8)
 
 **Date of this sweep:** 2026-09-08/09 (bead created 2026-09-08T12:53:48Z; re-run 2 executed
 ~20:35Z; re-run 3 executed ~21:00Z; re-run 4 executed ~22:13Z; re-run 5 executed 22:51Z;
-re-run 6 executed 2026-09-09T01:06Z; **this re-run 7 executed 2026-09-09T05:34Z**, on the
-eighth dispatch — the fifth auto-split order, re-issued on expiry of the quarantine-round:2
-set at 01:21:36Z)
+re-run 6 executed 2026-09-09T01:06Z; re-run 7 executed 2026-09-09T05:34Z; **this re-run 8
+executed 2026-09-09T13:56Z**, on the ninth dispatch — the sixth auto-split order, re-issued
+on expiry of the quarantine-round:3 set at 13:38:26Z)
 **Scope of enumeration:** every bead created after **2026-09-08T05:15Z** (the prior ownership check), all statuses.
 **Bead:** split child 4 of 5 of pdftract-cd0c29e6 (auto-split umbrella, coordination-only, read-only).
 **Guard honored:** no cargo invocation, no test execution, no crates/ edits, no beads filed, no other bead status touched. Read-only `bead`/`git`/`jq` commands plus this note.
+
+## Result (re-run 8, 2026-09-09T13:56Z)
+
+**SWEEP RESULT 2026-09-09 (re-run 8): NONE FOUND.**
+
+- Dispatch context: ninth dispatch, arrived as an **auto-split order** again
+  (`failure-count:7`, `quarantine-round:3`, `cycling`, `quarantined`,
+  `quarantine-until:2026-09-09T13:38:26Z`, expired → redispatch re-armed at 13:42:28Z, four
+  minutes later). The count still decomposes into dispatch churn, not task failure: the
+  forensic log for this bead records **5 closes / 5 reopens**, every close evidence-bearing
+  and every reopen `actor: system` with **no reason field at all** (e.g. closed 20:41:01Z,
+  reopened 20:43:32Z with only `prior_assignee`/`prior_base_status`/
+  `resulting_base_status`) — so `failure-count:7` counts redispatch cycles on an answered
+  question, zero of which were actual task failures.
+- Fresh enumeration from live store state at 13:56Z (all four statuses queried separately,
+  `--limit 999999`, JSONL): **2753 beads total, 2753 unique IDs**, **still 72 created after
+  05:15Z — identical to re-runs 2, 3, 4, 5, 6 and 7.** Newest bead store-wide is STILL
+  pdftract-f141d045 at **2026-09-08T19:44:55Z**: zero beads created in the ~18h11m since,
+  so no new candidate can exist and there is nothing new to classify.
+- Programmatic set-diff of all 72 live IDs against this note: **zero uncovered** — every
+  candidate already carries a classification below.
+- Owner chain re-verified live, still all `open`: pdftract-b716bac5 (rev 13), fa233a5e
+  (rev 14), 030e8414 (rev 4), ec0e6526 (rev 1), 38700c39 (rev 1) — runtime child 030e8414
+  remains open and unexecuted.
+- Dependency edges re-checked across all 72 from list JSON: **zero** blockers point at any
+  owner-chain bead — re-runs 2–7 hold.
+- Status mix of the 72: **31 closed / 40 open / 1 in_progress** — the sole in-progress bead
+  is this bead itself. No member executes tests.
+- No commit has touched `crates/pdftract-core/src/source/` since 05:15Z (git log re-checked
+  at HEAD `9976c4ff`; last touch is 08ec8db8, 2026-09-07), so criterion-(a) runtime evidence
+  is still not landed and no "duplicate re-run already satisfied" branch applies.
+
+### Split declined (this dispatch's order)
+
+Declined for the four reasons recorded under re-run 4 and repeated under re-runs 5–7,
+unchanged: the bead's own acceptance criteria say **"no beads filed, no other bead status
+touched"** — the split order violates the contract it dispatches against; the task is atomic
+(one enumeration pass + one dated note), now satisfied by seven consecutive executions of
+this bead (re-runs 2–8); a third coordination level multiplies the redispatch churn that *is*
+the failure count, and each new child is a fresh post-05:15Z bead the next sweep must
+classify — the split grows the very queue it claims to shrink; and same-day sibling beads
+filed dated split-decline notes and closed on committed evidence instead. The terminal action
+remains the evidence close of this bead. No `SPLIT_COMPLETE` emitted.
 
 ## Result (re-run 7, 2026-09-09T05:34Z)
 
