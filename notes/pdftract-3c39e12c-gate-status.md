@@ -194,3 +194,51 @@ acceptance criterion is already met at HEAD (see the 1st–4th checks above and 
 three citing commits `8ee27f95`, `60d981cf`, `bd12b867`). Splitting a satisfied
 leaf would multiply redispatch surface, not shrink it. The terminal action is
 this evidence close.
+
+## 2026-09-09 (5th check) — tip `378bd894` — **NO-GO stands**
+
+Re-derived from git alone after the tip advanced three more docs commits
+(`589f8c55` → `378bd894`). Still **no cargo run**. This check exists because the
+auto-split dispatcher re-issued the bead a 5th time after the quarantine re-armed
+(`failure-count:4`, `verification-failed`); the count is the prior
+evidence-bearing closes being reopened, not real work failures — so the same
+terminal action applies: re-derive at HEAD, re-close with evidence, decline the
+split again.
+
+Fresh evidence at `378bd894b9d822685b9c8d2ba01e14599ae45592`:
+
+- `git fetch origin` — no-op; local HEAD == `origin/main` == `378bd894`.
+- `0364a3a8` still an ancestor of `origin/main`; range now **51 commits**, all
+  docs-only (`0364a3a8..origin/main -- . ':(exclude)notes' ':(exclude).beads'` →
+  0 commits). Zero commits touch any of the four inventory files in the range.
+- Fixing-commit test done with the **range** form, per the trap finding in the
+  3rd check (`git log 0364a3a8..origin/main -- <file>` → 0 for all four).
+  Plain `--since=2026-09-08` was also empty for all four this round, but the
+  range test remains the authoritative one either way.
+
+| File | Errors at gate | Commits on `origin/main` since gate (`0364a3a8..origin/main`) | Working tree |
+|---|---|---|---|
+| `classify.rs` | 54 | **none** | **clean** — still broken as committed at the tip |
+| `render/scanline.rs` | 5 | **none** | **clean** — still broken as committed at the tip |
+| `font/type3_rasterizer.rs` | 29 | none | modified (uncommitted sibling in-flight edits, 10 lines — unchanged since the 1st check) |
+| `content_stream.rs` | 1 | none | modified (uncommitted sibling in-flight edits, 305 lines — unchanged since the 1st check) |
+
+Rule applied unchanged: GO requires a fixing commit on `origin/main` for BOTH
+`classify.rs` AND `render/scanline.rs`. Both remain byte-identical to what the
+gate compiled at `0364a3a8` (clean working tree, zero commits in range) — their
+combined 59 errors are still **committed at the pushed tip**. The two modified
+files remain sibling in-flight edits, which the rule says can never clear them.
+
+> **VERDICT (2026-09-09, tip `378bd894`): NO-GO stands.** No fixing commit SHA
+> exists to quote. Children 2–4 of pdftract-3c39e12c must still not run tests
+> until a commit to `main` fixes `classify.rs` and `render/scanline.rs`.
+
+### Auto-split re-issue declined again (this check)
+
+Same disposition as the 4th check. This bead is already a leaf `split-child`
+(child 3 of 4 of pdftract-3c39e12c) — the parent was already decomposed, and
+re-splitting a satisfied leaf produces 3–5 duplicate children for a single
+read-only note whose every acceptance criterion is met at HEAD (citing commits
+`8ee27f95`, `60d981cf`, `bd12b867`, `abde046f`, and this one). The quarantine
+re-arms, the failure count re-arms, and the next dispatch repeats the same ask.
+The terminal action remains the evidence close, not another split.
