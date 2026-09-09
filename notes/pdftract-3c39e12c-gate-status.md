@@ -295,3 +295,58 @@ acceptance criterion is met at HEAD — so the 6th issue's ask (3–5 new childr
 beneath a satisfied leaf and forbid the one action that actually retires the
 redispatch. No duplicate worker holds this checkout this round (pgrep clean),
 so this evidence close is issued once, by one worker.
+
+## 2026-09-09 (7th check) — tip `b1f2e735` — **NO-GO stands**
+
+Re-derived from git alone after the tip advanced two more docs commits
+(`14844f5f` → `9b6553a0` → `b1f2e735`: the pdftract-3c39e12c 2nd re-issue
+decline and the pdftract-1ce1beaf duplicate-owner sweep re-run). Still **no
+cargo run**. This check exists because the round-2 quarantine expired
+(`quarantine-until:2026-09-09T07:11:46Z`) and the auto-split dispatcher
+re-issued the bead a 7th time (bead updated 07:13:07Z, `failure-count:6`) —
+the count still reflects prior evidence-bearing closes reopened as
+`verification-failed`, not real work failures. Same terminal action: re-derive
+at HEAD, re-close with evidence, decline the split again.
+
+Gate raw log re-validated unchanged this check (mtime still 2026-09-08 08:31,
+95,200 bytes): header `# cargo exit code: 101`, verbatim summary *"could not
+compile `pdftract-core` (lib test) due to 89 previous errors; 129 warnings
+emitted"*.
+
+Fresh evidence at `b1f2e735`:
+
+- `git fetch origin` — no-op; local HEAD == `origin/main` == `b1f2e735`.
+- `0364a3a8` still an ancestor of `origin/main`; range now **57 commits**, all
+  docs-only (`0364a3a8..origin/main -- crates/` → 0 commits; the range
+  excluding `notes` and `.beads` → 0 commits).
+- Fixing-commit test done with the **range** form, per the trap finding in the
+  3rd check (`git log 0364a3a8..origin/main -- <file>` → 0 for all four).
+
+| File | Errors at gate | Commits on `origin/main` since gate (`0364a3a8..origin/main`) | Working tree |
+|---|---|---|---|
+| `classify.rs` | 54 | **none** | **clean** — still broken as committed at the tip |
+| `render/scanline.rs` | 5 | **none** | **clean** — still broken as committed at the tip |
+| `font/type3_rasterizer.rs` | 29 | none | modified (uncommitted sibling in-flight edits, 10 changed lines — same shape as every prior check) |
+| `content_stream.rs` | 1 | none | modified (uncommitted sibling in-flight edits, 305 changed lines — same shape as every prior check) |
+
+Rule applied unchanged: GO requires a fixing commit on `origin/main` for BOTH
+`classify.rs` AND `render/scanline.rs`. Both remain byte-identical to what the
+gate compiled at `0364a3a8` (clean working tree, zero commits in range) — their
+combined 59 errors are still **committed at the pushed tip**. The two modified
+files remain sibling in-flight edits, which the rule says can never clear them.
+
+> **VERDICT (2026-09-09, tip `b1f2e735`): NO-GO stands.** No fixing commit SHA
+> exists to quote. Children 2–4 of pdftract-3c39e12c must still not run tests
+> until a commit to `main` fixes `classify.rs` and `render/scanline.rs`.
+
+### Auto-split re-issue declined again (this check)
+
+Same disposition as the 4th through 6th checks. The bead is already a leaf
+`split-child` (child 3 of 4 of pdftract-3c39e12c, which itself has a
+consolidated split record), its scope is one read-only note, and every
+acceptance criterion is met at HEAD — so the 7th issue's ask (3–5 new children
++ umbrella conversion + "do not close") would manufacture 3–5 duplicate
+grandchildren beneath a satisfied leaf and forbid the one action that actually
+retires the redispatch. No duplicate worker holds this checkout this round
+(pgrep clean; the only matches were this worker's own launcher and probe), so
+this evidence close is issued once, by one worker.
