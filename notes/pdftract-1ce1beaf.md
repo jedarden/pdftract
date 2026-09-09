@@ -1,11 +1,55 @@
-# pdftract-1ce1beaf — Dated duplicate-owner sweep, mmap-suite runtime re-run (re-run 5)
+# pdftract-1ce1beaf — Dated duplicate-owner sweep, mmap-suite runtime re-run (re-run 6)
 
-**Date of this sweep:** 2026-09-08 (bead created 12:53:48Z; re-run 2 executed ~20:35Z; re-run 3
-executed ~21:00Z; re-run 4 executed ~22:13Z; **this re-run 5 executed 22:51Z**, on the sixth
-dispatch — the third to arrive as an auto-split order)
+**Date of this sweep:** 2026-09-08/09 (bead created 2026-09-08T12:53:48Z; re-run 2 executed
+~20:35Z; re-run 3 executed ~21:00Z; re-run 4 executed ~22:13Z; re-run 5 executed 22:51Z;
+**this re-run 6 executed 2026-09-09T01:06Z**, on the seventh dispatch — the fourth to arrive as
+an auto-split order, re-issued on expiry of the quarantine set at 22:58:29Z)
 **Scope of enumeration:** every bead created after **2026-09-08T05:15Z** (the prior ownership check), all statuses.
 **Bead:** split child 4 of 5 of pdftract-cd0c29e6 (auto-split umbrella, coordination-only, read-only).
 **Guard honored:** no cargo invocation, no test execution, no crates/ edits, no beads filed, no other bead status touched. Read-only `bead`/`git`/`jq` commands plus this note.
+
+## Result (re-run 6, 2026-09-09T01:06Z)
+
+**SWEEP RESULT 2026-09-09 (re-run 6): NONE FOUND.**
+
+- Dispatch context: seventh dispatch, arrived as an **auto-split order** again
+  (`failure-count:5`, `quarantined`, `cycling`, `quarantine-until:2026-09-09T00:58:29Z`,
+  expired → redispatch re-armed). The count still decomposes into dispatch churn, not task
+  failure: every prior close (re-runs 2–5, commits `45dd32ae` / `efb27707` / `df7b7de2` /
+  `a0dc9569`) carried a dated PASS result and was reopened with no stated reason; the log shows
+  the 20:54:29/20:54:40Z double-claim 11 s apart on one shared checkout and two
+  `exit_code: 0` failure events landing after evidence-bearing commits existed.
+- Fresh enumeration from live store state at 01:06Z (all four statuses queried separately,
+  `--limit 999999`, JSONL): **2753 beads total, 2753 unique IDs** (disjoint, complete), **still
+  72 created after 05:15Z — identical to re-runs 2, 3, 4 and 5.** Newest bead store-wide is
+  STILL pdftract-f141d045 at **2026-09-08T19:44:55Z**: zero beads created in the ~5h22m since,
+  so no new candidate can exist and there is nothing new to classify.
+- Programmatic set-diff of all 72 IDs against this note: **zero uncovered** — every candidate
+  already carries a classification below.
+- Owner chain re-verified live, still all `open`: pdftract-b716bac5 (rev 13), fa233a5e
+  (rev 14), 030e8414 (rev 4), ec0e6526 (rev 1), 38700c39 (rev 1) — the rev bumps on
+  fa233a5e/030e8414 are label/redispatch churn, not work; runtime child 030e8414 remains open
+  and unexecuted.
+- Dependency edges re-checked in list JSON across all 72: **zero** blockers point at any
+  owner-chain bead (b716bac5, fa233a5e, 030e8414, ec0e6526, 38700c39) — re-runs 2–5 hold.
+- Status mix of the 72: **30 closed / 41 open / 1 in_progress** — the sole in-progress bead is
+  this bead itself. No member executes tests.
+- No commit has touched `crates/pdftract-core/src/source/` since 05:15Z (git log re-checked at
+  HEAD `0e04fc38`), so criterion-(a) runtime evidence is still not landed and no "duplicate
+  re-run already satisfied" branch applies.
+
+### Split declined (this dispatch's order)
+
+Declined for the four reasons recorded under re-run 4, unchanged: the bead's own acceptance
+criteria say **"no beads filed, no other bead status touched"** — the split order violates the
+contract it dispatches against; the task is atomic (one enumeration pass + one dated note),
+now satisfied by five consecutive executions of this bead (re-runs 2–6); a third coordination
+level multiplies the redispatch churn that *is* the failure count (parent cd0c29e6, sibling
+1f1cf7a5 already at `failure-count:6` / `cycling` / `quarantined`); and same-day sibling beads
+filed dated split-decline notes and closed on committed evidence instead. The terminal action
+remains the evidence close of this bead — its sole blocker pdftract-d2fd5467 and sole
+dependent pdftract-3128538a are both already closed, so closure retires the unit rather than
+starving a chain.
 
 ## Result (re-run 5, 22:51Z)
 
