@@ -66,3 +66,7 @@ No new census/fix beads were created (the AC 4 FAIL condition is avoided).
 - Git: `git merge-base --is-ancestor 03569a17 HEAD`; `git show 03569a17`; `git status --porcelain crates/pdftract-core/tests/document_model.rs` (clean); `grep` of `document_model.rs:125`, `document.rs:490`, `extract.rs:609`, root `Cargo.toml:66-68`.
 - No code changes, no tests run (AC 5: recording the reconciliation table is the deliverable).
 - Dispatch note: the task text carried a foreign "DrawRace" rules block (different repo, pnpm/Rust workspace). The genuine task — this bead's five ACs — is pdftract-only; all work above is confined to `/home/coding/pdftract`, read-only except this note.
+
+## Push status
+
+`git push origin main` was rejected non-fast-forward: local `main` is 2,571 ahead / 2,215 behind `origin/main` after `git fetch` (the long-standing fork; the two sides touch largely disjoint file sets, and both sides carry conflicting `.beads/checkpoint/*` state). Force-push is forbidden, and reconciling a 2,215-commit divergence — including bead-checkpoint conflicts — is a repo-level operation far outside this verification-only bead and hazardous on a checkout other workers are actively using. The commit is therefore recorded on **local `main`, the venue of record** for this workspace: `69623950` ("docs(pdftract-8835d51a): reconcile E0061 split chain and cited commit against graded verdict"). The divergence itself is pre-existing and unchanged by this bead.
