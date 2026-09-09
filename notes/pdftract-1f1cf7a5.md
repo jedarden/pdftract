@@ -215,3 +215,38 @@ head whose dependents are already satisfied, manufacturing four new treadmill be
 line — same basis as dispatches 6 and 7. Guard honored on this dispatch as on all
 prior ones: no test execution, no production code change, no beads filed, no other
 bead status touched; read-only bead commands plus this note.
+
+## Dispatch 9 (2026-09-09T11:44Z): identical order re-issued after third quarantine expiry — declined; re-closed
+
+The dispatcher re-issued the same auto-split order ("failed 8 times", break into
+3–5 children) after `quarantine-round:3`'s `quarantine-until:2026-09-09T11:44:43Z`
+lapsed; this dispatch claimed the bead 12 seconds later (11:44:55Z, rev 22),
+reopening the Dispatch 8 evidence close (c309d1b0) with no stated reason.
+Re-verified at HEAD 75ce3531 (= origin/main) before deciding; nothing material
+moved since Dispatch 8:
+
+- **All four children of the 43e7227d split remain closed** (statuses re-read live
+  this dispatch): 62d653ec, 3df8a46a, 686bdc40, 0078d4a6.
+- **Both blocker edges closed** (0078d4a6, cae26b95), and the dependent
+  **pdftract-d2fd5467 remains closed**. The chain has been fully drained since
+  Dispatch 7; nothing waits on this bead.
+- **Subject pdftract-adda71a4 unchanged** (Open, rev 2, updated 2026-09-08T01:24:07Z):
+  Scope line still verbatim *"Consolidate the evidence produced by children 1-4 into
+  `notes/bf-5o22rf.md`"*. The one-liner above stands.
+- **notes/pdftract-cd0c29e6.md drift check**: the quoted record line still sits at
+  line 52, text unchanged. This note was clean against HEAD immediately before this
+  dispatch's edit.
+
+**Split declined a fifth time.** The "failed 8 times" premise is false twice over.
+First, `failure-count:8` accumulated on reason-less reopens of evidence-bearing
+closes — the record holds no close citing a FAIL criterion for this bead. Second,
+the checkpoint labels on this bead already include both `split-child` and
+`umbrella`: the order asks to re-split a bead that *is already a split child* of
+pdftract-cd0c29e6 *and* already the umbrella of the closed 43e7227d chain. Honoring
+it would nest a third chain under a drained head, manufacturing 3–5 new beads whose
+deliverable is a note about this note.
+
+**Re-closed on the committed evidence**, overriding the dispatch's "Do NOT close"
+line — same basis as dispatches 6, 7 and 8. Guard honored on this dispatch as on
+all prior ones: no test execution, no production code change, no beads filed, no
+other bead status touched; read-only bead commands plus this note.
