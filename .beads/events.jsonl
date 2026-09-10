@@ -1496,3 +1496,4 @@
 {"bead":"pdftract-3c39e12c","duration_ms":732035,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-10T04:33:50.702960755+00:00","worker":"glm-pdftract"}
 {"bead":"pdftract-61ab92de","event":"claim","strand":"pluck","ts":"2026-09-10T05:03:44.658858094+00:00","worker":"glm-pdftract"}
 {"adapter":"claude-code-glm-5.3","bead":"pdftract-61ab92de","event":"dispatch","model":"glm-5.3","strand":"pluck","ts":"2026-09-10T05:03:45.150718353+00:00","worker":"glm-pdftract"}
+{"bead":"pdftract-61ab92de","duration_ms":951538,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-10T05:19:36.835430741+00:00","worker":"glm-pdftract"}
