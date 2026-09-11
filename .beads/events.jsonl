@@ -1512,3 +1512,6 @@
 {"bead":"pdftract-1ce1beaf","event":"claim","strand":"pluck","ts":"2026-09-11T14:26:50.914357408+00:00","worker":"glm-pdftract"}
 {"adapter":"claude-code-glm-5.3","bead":"pdftract-1ce1beaf","event":"dispatch","model":"glm-5.3","strand":"pluck","ts":"2026-09-11T14:26:51.403331411+00:00","worker":"glm-pdftract"}
 {"bead":"pdftract-1ce1beaf","duration_ms":731133,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-11T14:39:02.692135573+00:00","worker":"glm-pdftract"}
+{"bead":"pdftract-a1d88582","event":"claim","strand":"pluck","ts":"2026-09-11T22:15:55.747790146+00:00","worker":"glm-pdftract"}
+{"adapter":"claude-code-glm-5.3","bead":"pdftract-a1d88582","event":"dispatch","model":"glm-5.3","strand":"pluck","ts":"2026-09-11T22:15:56.239125586+00:00","worker":"glm-pdftract"}
+{"bead":"pdftract-a1d88582","duration_ms":850845,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-11T22:30:07.254548857+00:00","worker":"glm-pdftract"}
