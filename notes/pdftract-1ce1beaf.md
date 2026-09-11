@@ -1,14 +1,66 @@
-# pdftract-1ce1beaf — Dated duplicate-owner sweep, mmap-suite runtime re-run (re-run 9)
+# pdftract-1ce1beaf — Dated duplicate-owner sweep, mmap-suite runtime re-run (re-run 10)
 
-**Date of this sweep:** 2026-09-08/10 (bead created 2026-09-08T12:53:48Z; re-run 2 executed
+**Date of this sweep:** 2026-09-08/11 (bead created 2026-09-08T12:53:48Z; re-run 2 executed
 ~20:35Z; re-run 3 executed ~21:00Z; re-run 4 executed ~22:13Z; re-run 5 executed 22:51Z;
 re-run 6 executed 2026-09-09T01:06Z; re-run 7 executed 2026-09-09T05:34Z; re-run 8 executed
-2026-09-09T13:56Z; **this re-run 9 executed 2026-09-10T06:19Z**, on the tenth dispatch —
-the seventh auto-split order, re-issued on expiry of the quarantine-round:4 set at
-2026-09-10T06:06:12Z)
+2026-09-09T13:56Z; re-run 9 executed 2026-09-10T06:19Z; **this re-run 10 executed
+2026-09-11T14:29Z**, on the eleventh dispatch — the eighth auto-split order, re-issued on
+expiry of the quarantine-round:5 set at 2026-09-11T14:25:16Z)
 **Scope of enumeration:** every bead created after **2026-09-08T05:15Z** (the prior ownership check), all statuses.
 **Bead:** split child 4 of 5 of pdftract-cd0c29e6 (auto-split umbrella, coordination-only, read-only).
 **Guard honored:** no cargo invocation, no test execution, no crates/ edits, no beads filed, no other bead status touched. Read-only `bead`/`git`/`jq` commands plus this note.
+
+## Result (re-run 10, 2026-09-11T14:29Z)
+
+**SWEEP RESULT 2026-09-11 (re-run 10): NONE FOUND.**
+
+- Dispatch context: eleventh dispatch, arrived as an **auto-split order** for the eighth time
+  (`failure-count:9`, `quarantine-round:5`, `cycling`, `quarantined`,
+  `quarantine-until:2026-09-11T14:25:16Z`, expired → this dispatch at ~14:26Z, four minutes
+  later). The count still decomposes into dispatch churn, not task failure: the forensic log
+  for this bead now records **7 closes / 7 reopens**, every close evidence-bearing and every
+  reopen `actor: system` with **no reason field at all** — re-run 9's close at
+  2026-09-10T06:23:40Z was reopened **94 seconds later** at 06:25:15Z carrying only
+  `prior_assignee`/`prior_base_status`/`resulting_base_status`. So `failure-count:9` counts
+  redispatch cycles on an answered question, zero of which were actual task failures.
+- Fresh enumeration from live store state at 14:29Z (all four statuses queried separately,
+  `--limit 999999`, JSONL): **2753 beads total, 2753 unique IDs**, **still 72 created after
+  05:15Z — identical to re-runs 2–9.** Newest bead store-wide is STILL pdftract-f141d045 at
+  **2026-09-08T19:44:55Z**: zero beads created in the ~66.5h since, so no new candidate can
+  exist and there is nothing new to classify.
+- Suffix-aware set-diff of all 72 live IDs against the full notes/ classification corpus
+  (this note plus the cd0c29e6 consolidation note; matches full `pdftract-XXXXXXXX` and
+  short-form mentions in comma-lists): **zero uncovered** — every candidate already carries
+  a classification.
+- Owner chain re-verified live, still all `open`, revisions unchanged from re-run 9:
+  pdftract-b716bac5 (rev 13), fa233a5e (rev 14), 030e8414 (rev 4), ec0e6526 (rev 1),
+  38700c39 (rev 1) — runtime child 030e8414 remains open and unexecuted.
+- Dependency edges re-checked **store-wide** (all 2753 beads, stronger than the prior
+  72-only check): **zero** blockers point at any owner-chain bead — re-runs 2–9 hold.
+- Status mix of the 72 is **46 closed / 25 open / 1 in_progress**, identical to re-run 9 —
+  no ownership change; the sole in-progress bead is this bead itself. No member executes
+  tests.
+- Regex intent scan (title + description, mmap / cargo test / runtime re-run language) over
+  all 72 candidates surfaces only the four previously adjudicated not-owner classes (all 72
+  covered by the corpus, zero uncovered): the classify.rs **compile-evidence** chains, the
+  **coordination/sweep siblings** that themselves certify single ownership, the
+  **README/evidence certification** chains, and **handoff-publication/hygiene**. No new
+  candidate; no second owner.
+- No commit has touched `crates/pdftract-core/src/source/` since 05:15Z (git log re-checked
+  at HEAD `46ac4568`; zero commits in the window), so criterion-(a) runtime evidence is
+  still not landed and no "duplicate re-run already satisfied" branch applies.
+
+### Split declined (this dispatch's order — eighth auto-split order)
+
+Declined for the same four reasons recorded under re-run 4 and repeated under re-runs 5–9,
+unchanged: the bead's own acceptance criteria say **"no beads filed, no other bead status
+touched"** — the split order violates the contract it dispatches against; the task is atomic
+(one enumeration pass + one dated note), now satisfied by nine consecutive executions of
+this bead (re-runs 2–10); a third coordination level multiplies the redispatch churn that
+*is* the failure count, and each new child would be a fresh post-05:15Z bead the next sweep
+must classify — the split grows the very queue it claims to shrink; and same-day sibling
+beads filed dated split-decline notes and closed on committed evidence instead. The terminal
+action remains the evidence close of this bead. No `SPLIT_COMPLETE` emitted.
 
 ## Result (re-run 9, 2026-09-10T06:19Z)
 
