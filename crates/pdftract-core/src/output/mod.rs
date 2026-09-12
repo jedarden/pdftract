@@ -7,3 +7,4 @@ pub mod inspector;
 pub mod markdown;
 pub mod ndjson;
 pub mod sink;
+pub mod unmapped;
