@@ -93,6 +93,13 @@ pub fn extract_markdown(pdf_path: &Path, options: &ExtractionOptions) -> Result<
     Ok(markdown)
 }
 
+/// Maximum number of extracted pages buffered between the extraction thread
+/// and the consumer in [`extract_stream`]. Small on purpose: each buffered
+/// page is a fully-extracted `PageResult` that has already left the
+/// per-page memory budget, so this bound — not the consumer's speed — caps
+/// how many of them are resident at once.
+const STREAM_CHANNEL_BOUND: usize = 4;
+
 /// Extract a PDF page by page as an iterator.
 ///
 /// This is the streaming variant that yields pages one at a time, keeping
@@ -101,8 +108,11 @@ pub fn extract_markdown(pdf_path: &Path, options: &ExtractionOptions) -> Result<
 /// # Memory Bounding
 ///
 /// This implementation uses lazy page iteration that processes one page at a time.
-/// Peak RSS stays under the 256MB ceiling regardless of page count (plan requirement
-/// docs/plan/plan.md:74-75).
+/// Pages cross to the consumer through a bounded channel (`STREAM_CHANNEL_BOUND`
+/// slots): the extraction thread blocks when the buffer is full, so residency is
+/// constant in page count even when the consumer is slower than the producer, and
+/// stopping iteration early terminates extraction. Peak RSS stays under the 256MB
+/// ceiling regardless of page count (plan requirement docs/plan/plan.md:74-75).
 ///
 /// # Arguments
 ///
@@ -135,8 +145,12 @@ pub fn extract_stream(
     pdf_path: &Path,
     options: &ExtractionOptions,
 ) -> Result<impl Iterator<Item = Result<PageResult>>> {
-    // Channel to send pages from callback to iterator
-    let (sender, receiver) = std::sync::mpsc::channel();
+    // Bounded channel: at most STREAM_CHANNEL_BOUND fully-extracted pages are
+    // ever buffered, so residency stays constant in page count regardless of
+    // how fast the consumer drains the iterator (plan.md:74-75, 256MB
+    // streaming ceiling). An unbounded channel would let a slow consumer
+    // accumulate the whole document in memory.
+    let (sender, receiver) = std::sync::mpsc::sync_channel(STREAM_CHANNEL_BOUND);
 
     // Spawn a thread that uses the streaming extraction callback
     let pdf_path = pdf_path.to_path_buf();
@@ -146,9 +160,11 @@ pub fn extract_stream(
         use crate::extract::extract_pdf_streaming;
 
         let result = extract_pdf_streaming(&pdf_path, &options_clone, |page_result| {
-            // Send the page to the iterator
-            let _ = sender.send(Ok(page_result.clone()));
-            true // Continue processing
+            // Send blocks while the buffer is full (backpressure onto the
+            // extraction thread) and fails once the consumer drops the
+            // iterator; returning false then stops extraction instead of
+            // churning through every remaining page.
+            sender.send(Ok(page_result.clone())).is_ok()
         });
 
         // Send the final result or error
