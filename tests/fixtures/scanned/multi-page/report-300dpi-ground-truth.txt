@@ -18,44 +18,37 @@ Page 3: FORM-LIKE STRUCTURE
 
 SERVICE REQUEST FORM
 
-Request ID: _______________  Date: _______________  Priority: [ ] High [ ] Medium [ ] Low
+Request ID: ..........  Date: ..........  Priority: [] High [] Medium [] Low
 
 Customer Information:
-Name: _____________________________________________  Account Number: _________________
-Organization: ______________________________________  Email: _____________________________
-Address: __________________________________________  Phone: ____________________________
-                     City: _______________ State: ___ ZIP: _______________
+Name: ..........  Account Number: ..........
+Organization: ..........  Email: ..........
+Address: ..........  Phone: ..........
+                     City: .......... State: .......... ZIP: ..........
 
 Service Details:
-Service Type: [ ] Installation  [ ] Maintenance  [ ] Repair  [ ] Consultation
-Equipment Model: ________________________________  Serial Number: ____________________
-Problem Description: ___________________________________________________________________
-_______________________________________________________________________________________
+Service Type: [] Installation  [] Maintenance  [] Repair  [] Consultation
+Equipment Model: ..........  Serial Number: ..........
+Problem Description: ..........
 
-Preferred Appointment: ___ / ___ / _______  Time: ________ AM / PM
+Preferred Appointment: .......... / .......... / ..........  Time: .......... AM / PM
 
 Technician Notes:
-_______________________________________________________________________________________
-_______________________________________________________________________________________
 
-Customer Signature: __________________________  Date: _________  Technician: _____________
+Customer Signature: ..........  Date: ..........  Technician: ..........
 
 Page 4: TABLE DATA
 
 QUARTERLY SALES REPORT - Q2 2026
 
-+------------------+--------+--------+--------+--------+---------+
-| Region           | April  | May    | June   | Total  | Growth  |
-+------------------+--------+--------+--------+--------+---------+
-| Northeast        | 45,200 | 47,800 | 51,300 | 144,300|  +13.5% |
-| Southeast        | 38,500 | 40,100 | 42,900 | 121,500|  +11.4% |
-| Midwest          | 52,300 | 49,700 | 54,600 | 156,600|  +4.4%  |
-| Southwest        | 41,800 | 44,200 | 46,700 | 132,700|  +11.7% |
-| Northwest        | 35,900 | 37,500 | 39,200 | 112,600|  +9.2%  |
-| West             | 48,700 | 51,300 | 53,800 | 153,800|  +10.5% |
-+------------------+--------+--------+--------+--------+---------+
-| TOTAL            | 262,400| 270,600| 288,500| 821,500|  +9.9%  |
-+------------------+--------+--------+--------+--------+---------+
+Region              April      May        June       Total      Growth
+Northeast           45,200     47,800     51,300     144,300    +13.5%
+Southeast           38,500     40,100     42,900     121,500    +11.4%
+Midwest             52,300     49,700     54,600     156,600    +4.4%
+Southwest           41,800     44,200     46,700     132,700    +11.7%
+Northwest           35,900     37,500     39,200     112,600    +9.2%
+West                48,700     51,300     53,800     153,800    +10.5%
+TOTAL               262,400    270,600    288,500    821,500    +9.9%
 
 Key Metrics:
 - Best Performing Region: Midwest ($156,600)

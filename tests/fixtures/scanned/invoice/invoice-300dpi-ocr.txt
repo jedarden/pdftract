@@ -1,0 +1,38 @@
+INVOICE
+
+Invoice Number: INV-2026-001
+Date: June 15, 2026
+Due Date: July 15, 2026
+
+FROM:
+
+Acme Supplies Inc.
+
+123 Industrial Boulevard
+Chicago, IL 60601
+
+TO:
+
+Smith Manufacturing
+456 Production Road
+Detroit, MI 48201
+
+Item Description Qty Unit Price Total
+Industrial Fasteners (M8 x 20mm) 500 $0.25 $125.00
+Steel Brackets (2 inch) 150 $1.50 $225.00
+Hydraulic Hoses (3/8 inch ID) 25  $12.50 $312.50
+Electrical Connectors (6-pin) 100 $2.75 $275.00
+Safety Gloves (Medium) 20 $8.50 $170.00
+Power Tool Accessories Kit 5 $45.00 $225.00
+Subtotal: $1,332.50
+
+Shipping: $85.00
+
+Tax (8%): $106.60
+
+TOTAL: $1,524.10
+
+Payment Terms: Net 30 Days
+Please include invoice number on payment.
+
+Thank you for your business!
