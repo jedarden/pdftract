@@ -99,7 +99,7 @@ This directory contains hybrid PDF fixtures with mixed vector text and scanned i
 - **Generation**: `hybrid-009-generator.py`
 
 ### hybrid-010: Complex Layered Layout
-**File**: `hybrid-010-complex-layered.pdf` (1.8 KB)
+**File**: `hybrid-010-complex-layered.pdf` (2.0 KB)
 **Pattern**: Complex layered PDF with multiple overlapping vector and scanned elements including geometric shapes
 - **Vector regions**: Multiple distinct vector layers: header section (top ~10%), footer section (bottom ~10%), sidebar column (left ~25%), main column (right ~60%), annotation box (bottom right corner), comprehensive vector shapes (circles at multiple positions with varying radii, rectangles, horizontal dividers, vertical separator line)
 - **Scanned regions**: Full-page scanned document background (1-bit grayscale image XObject with horizontal text line pattern)
@@ -109,6 +109,8 @@ This directory contains hybrid PDF fixtures with mixed vector text and scanned i
 - **Generation**: `hybrid-010-generator-enhanced.py`
 
 ## Purpose
+
+**Structural validation (2026-09-13, qpdf 12.3.2)**: all 10 primary fixtures pass `qpdf --check` with no warnings or recovery (1 page each). hybrid-009 and hybrid-010 were repaired at that time — hybrid-009's xref had correct offsets attached to sequential slots (object numbering skips 4) and no entry for object 9 (the content stream); hybrid-010's page dict was missing one `>>` (the `/Pages` tree's only kid was unreadable, so the file had no findable pages) and its xref table was absent entirely. Both repairs rebuilt only the dictionary tail / xref table; content and image streams are byte-identical to the pre-repair files.
 
 These fixtures support:
 - **KU-2 resolution**: Tesseract behaviour on Hybrid pages with overlapping vector + scan content
