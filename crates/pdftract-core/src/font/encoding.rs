@@ -224,7 +224,16 @@ impl DifferencesOverlay {
                         // Skip unmapped glyph names (e.g., .notdef) to prevent them from
                         // appearing in text extraction output. These glyphs have no valid
                         // Unicode mapping and should emit GLYPH_UNMAPPED diagnostics instead.
-                        if !overlay.is_unmapped_glyph_name(&name) {
+                        if overlay.is_unmapped_glyph_name(&name) {
+                            // Structured fields so a wrongly-configured skip set (the usual
+                            // debugging question: "why is this glyph missing?") is answerable
+                            // from the log line alone.
+                            tracing::trace!(
+                                code = cursor,
+                                glyph_name = %name,
+                                "skipping CMAP entry for unmapped glyph name"
+                            );
+                        } else {
                             overlay.entries.push((cursor as u8, Arc::clone(name)));
                         }
                     }
