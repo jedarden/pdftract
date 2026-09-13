@@ -679,3 +679,117 @@ fn test_differences_overlay_filters_all_g_series_unmapped() {
         overlay.len()
     );
 }
+
+/// Test that unmapped glyphs are absent from ToUnicode output.
+///
+/// This is the ToUnicode counterpart of the /Differences skip tests above:
+/// `ToUnicodeMap::add_mapping_for_glyph` checks the glyph name against the
+/// configured unmapped_glyph_names set before creating an entry, mirroring the
+/// CMAP skip in `DifferencesOverlay::parse`. Unmapped glyphs get no ToUnicode
+/// entry (they remain usable via glyph name only); normal glyphs are unaffected.
+///
+/// Uses `.notdef` for the default-set case (it is present in every variant of
+/// the configuration, including the .notdef-only fallback build.rs emits when
+/// build/unmapped-glyph-names.json is absent) and a custom set for the
+/// fixture-name case, so the test does not depend on that file being committed.
+#[test]
+fn test_tounicode_unmapped_glyph_absent_from_output() {
+    use pdftract_core::font::cmap::ToUnicodeMap;
+    use std::collections::HashSet;
+
+    // Default configuration: .notdef must be skipped, normal glyphs must not be.
+    let mut map = ToUnicodeMap::new();
+    map.add_mapping_for_glyph(vec![0x00], ".notdef", vec!['\u{FFFD}']);
+    map.add_mapping_for_glyph(vec![0x01], "A", vec!['A']);
+    map.add_mapping_for_glyph(vec![0x02], "space", vec![' ']);
+
+    assert_eq!(
+        map.lookup(&[0x00]),
+        None,
+        "Unmapped glyph .notdef should be absent from ToUnicode output. \
+         Expected: None (entry skipped). \
+         Found: {:?}. \
+         Why this matters: .notdef has no valid Unicode mapping; if it acquired one \
+         through ToUnicode it would leak into text extraction instead of surfacing \
+         as GLYPH_UNMAPPED.",
+        map.lookup(&[0x00])
+    );
+    assert_eq!(
+        map.lookup(&[0x01]),
+        Some(&['A'][..]),
+        "Normal glyph 'A' should be present in ToUnicode output. \
+         Expected: Some(\"A\"). \
+         Found: {:?}. \
+         Why this matters: the skip must be selective - normal glyphs keep their \
+         entries exactly as before.",
+        map.lookup(&[0x01])
+    );
+    assert_eq!(
+        map.lookup(&[0x02]),
+        Some(&[' '][..]),
+        "Normal glyph 'space' should be present in ToUnicode output. \
+         Expected: Some(\" \"). \
+         Found: {:?}. \
+         Why this matters: whitespace glyphs must never be filtered.",
+        map.lookup(&[0x02])
+    );
+    assert_eq!(
+        map.len(),
+        2,
+        "ToUnicode output should contain exactly the 2 normal-glyph entries. \
+         Expected: 2 entries. \
+         Found: {} entries. \
+         Why this matters: the skipped .notdef entry must leave no partial or \
+         placeholder trace in the output structure.",
+        map.len()
+    );
+
+    // Custom configuration with a fixture-style unmapped name (hermetic).
+    let mut custom = HashSet::new();
+    custom.insert("g001".to_string());
+    custom.insert("CustomA".to_string());
+    let mut custom_map = ToUnicodeMap::with_unmapped_glyph_names(custom);
+    custom_map.add_mapping_for_glyph(vec![0x00], "g001", vec!['\u{FFFD}']);
+    custom_map.add_mapping_for_glyph(vec![0x03], "CustomA", vec!['\u{FFFD}']);
+    custom_map.add_mapping_for_glyph(vec![0x07], "A", vec!['A']);
+
+    assert_eq!(
+        custom_map.lookup(&[0x00]),
+        None,
+        "g001 (custom-unmapped) should be absent from ToUnicode output. \
+         Expected: None. \
+         Found: {:?}. \
+         Why this matters: g001 is configured unmapped in the custom set, matching the \
+         no-mapping fixture design where PUA-style names must not map to Unicode.",
+        custom_map.lookup(&[0x00])
+    );
+    assert_eq!(
+        custom_map.lookup(&[0x03]),
+        None,
+        "CustomA (custom-unmapped) should be absent from ToUnicode output. \
+         Expected: None. \
+         Found: {:?}. \
+         Why this matters: CustomA is configured unmapped in the custom set; a \
+         meaningful-looking name must not bypass the filter.",
+        custom_map.lookup(&[0x03])
+    );
+    assert_eq!(
+        custom_map.lookup(&[0x07]),
+        Some(&['A'][..]),
+        "Normal glyph 'A' should be present under the custom set too. \
+         Expected: Some(\"A\"). \
+         Found: {:?}. \
+         Why this matters: the custom set replaces the default entirely, and 'A' is \
+         not a member, so it must be mapped.",
+        custom_map.lookup(&[0x07])
+    );
+    assert_eq!(
+        custom_map.len(),
+        1,
+        "Custom-set ToUnicode output should contain exactly 1 entry. \
+         Expected: 1 entry (A at 0x07). \
+         Found: {} entries. \
+         Why this matters: both configured-unmapped glyphs were skipped whole.",
+        custom_map.len()
+    );
+}

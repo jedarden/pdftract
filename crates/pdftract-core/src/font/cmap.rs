@@ -68,6 +68,10 @@ pub struct ToUnicodeMap {
     /// Mapping from source byte sequence to destination Unicode codepoints.
     /// Uses `Vec\<u8\>` as key (source bytes) and `Vec\<char\>` as value (destination chars).
     mappings: HashMap<Vec<u8>, Vec<char>>,
+    /// Glyph names that should be skipped during ToUnicode entry creation.
+    /// These glyphs have no valid Unicode mapping and should not appear in text extraction.
+    /// Defaults to the global UNMAPPED_GLYPH_NAMES set if not explicitly configured.
+    unmapped_glyph_names: std::collections::HashSet<String>,
 }
 
 impl ToUnicodeMap {
@@ -75,16 +79,68 @@ impl ToUnicodeMap {
     pub fn new() -> Self {
         Self {
             mappings: HashMap::new(),
+            unmapped_glyph_names: Self::default_unmapped_glyph_names(),
         }
+    }
+
+    /// Create a new empty ToUnicode map with custom unmapped glyph names.
+    ///
+    /// # Arguments
+    ///
+    /// * `unmapped_glyph_names` - Set of glyph names to skip during ToUnicode entry creation
+    pub fn with_unmapped_glyph_names(
+        unmapped_glyph_names: std::collections::HashSet<String>,
+    ) -> Self {
+        Self {
+            mappings: HashMap::new(),
+            unmapped_glyph_names,
+        }
+    }
+
+    /// Get the default set of unmapped glyph names.
+    ///
+    /// Returns the global UNMAPPED_GLYPH_NAMES set as a HashSet<String>.
+    fn default_unmapped_glyph_names() -> std::collections::HashSet<String> {
+        crate::font::unmapped::UNMAPPED_GLYPH_NAMES
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
     }
 
     /// Add a single mapping from source bytes to destination chars.
     ///
     /// MARKER: CMAP entry creation point - this is where individual ToUnicode
-    /// mappings are stored. Called by parse_beginbfchar() and parse_beginbfrange().
+    /// mappings are stored. Called by parse_beginbfchar() and parse_beginbfrange(),
+    /// and by add_mapping_for_glyph() when the glyph is not configured unmapped.
     /// See notes/bf-e4uvb-child-1.md for documentation.
     pub fn add_mapping(&mut self, src: Vec<u8>, dst: Vec<char>) {
         self.mappings.insert(src, dst);
+    }
+
+    /// Add a mapping from source bytes to destination chars for a named glyph,
+    /// skipping glyphs configured as unmapped.
+    ///
+    /// MARKER: ToUnicode entry creation point (glyph-name-aware) - companion to
+    /// `add_mapping` for callers that know the glyph name behind the source code.
+    /// If `glyph_name` is in the configured `unmapped_glyph_names` set, no entry
+    /// is created: the glyph keeps no Unicode mapping (it remains usable via its
+    /// glyph name) and must surface as GLYPH_UNMAPPED instead. Mirrors the CMAP
+    /// skip in `DifferencesOverlay::parse` (see notes/bf-2nob5-child-1.md).
+    pub fn add_mapping_for_glyph(&mut self, src: Vec<u8>, glyph_name: &str, dst: Vec<char>) {
+        if self.is_unmapped_glyph_name(glyph_name) {
+            // Structured fields so a wrongly-configured skip set (the usual
+            // debugging question: "why is this glyph missing?") is answerable
+            // from the log line alone. Same style as the CMAP skip trace in
+            // DifferencesOverlay::parse.
+            let code = src.iter().map(|b| format!("{b:02X}")).collect::<String>();
+            tracing::trace!(
+                code = %code,
+                glyph_name = %glyph_name,
+                "skipping ToUnicode entry for unmapped glyph name"
+            );
+        } else {
+            self.add_mapping(src, dst);
+        }
     }
 
     /// Look up a source byte sequence and return the mapped Unicode characters.
@@ -111,6 +167,38 @@ impl ToUnicodeMap {
     /// of the CMAP structure.
     pub fn iter(&self) -> impl Iterator<Item = (&Vec<u8>, &Vec<char>)> {
         self.mappings.iter()
+    }
+
+    /// Check if a glyph name is in the unmapped glyph names set.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The glyph name to check (with or without leading `/`)
+    ///
+    /// # Returns
+    ///
+    /// `true` if the glyph name is in the unmapped set, `false` otherwise.
+    fn is_unmapped_glyph_name(&self, name: &str) -> bool {
+        // Strip leading slash if present
+        let clean_name = name.strip_prefix('/').unwrap_or(name);
+        self.unmapped_glyph_names.contains(clean_name)
+    }
+
+    /// Get a reference to the unmapped glyph names set.
+    pub fn unmapped_glyph_names(&self) -> &std::collections::HashSet<String> {
+        &self.unmapped_glyph_names
+    }
+
+    /// Set the unmapped glyph names set.
+    ///
+    /// # Arguments
+    ///
+    /// * `unmapped_glyph_names` - New set of glyph names to skip during ToUnicode entry creation
+    pub fn set_unmapped_glyph_names(
+        &mut self,
+        unmapped_glyph_names: std::collections::HashSet<String>,
+    ) {
+        self.unmapped_glyph_names = unmapped_glyph_names;
     }
 }
 
@@ -1118,6 +1206,258 @@ mod tests {
              Found: empty diagnostics (0 messages). \
              Why this matters: The parser must detect that lo > hi and report it as a \
              parsing error, not silently accept an invalid range."
+        );
+    }
+
+    #[test]
+    fn test_tounicode_skips_unmapped_glyph() {
+        // Glyphs configured as unmapped must not get ToUnicode entries.
+        let mut map = ToUnicodeMap::new();
+        map.add_mapping_for_glyph(vec![0x00], ".notdef", vec!['\u{FFFD}']);
+        map.add_mapping_for_glyph(vec![0x01], "A", vec!['A']);
+
+        assert_eq!(
+            map.lookup(&[0x00]),
+            None,
+            "Code 0x00 should have no ToUnicode entry (.notdef skipped). \
+             Expected: None. \
+             Found: {:?}. \
+             Why this matters: .notdef is in the default unmapped_glyph_names set (from \
+             build/unmapped-glyph-names.json), so it must not acquire a Unicode mapping \
+             through ToUnicode and must surface as GLYPH_UNMAPPED instead.",
+            map.lookup(&[0x00])
+        );
+        assert_eq!(
+            map.lookup(&[0x01]),
+            Some(&['A'][..]),
+            "Code 0x01 should map to 'A'. \
+             Expected: Some(\"A\"). \
+             Found: {:?}. \
+             Why this matters: 'A' is not in the unmapped_glyph_names set, so its entry \
+             must be created exactly as before the skip logic existed.",
+            map.lookup(&[0x01])
+        );
+        assert_eq!(
+            map.len(),
+            1,
+            "Map should contain exactly 1 entry after the skip. \
+             Expected: 1 entry (A at 0x01). \
+             Found: {} entries. \
+             Why this matters: .notdef at 0x00 was skipped whole - no partial or \
+             placeholder entry may remain for a configured-unmapped glyph.",
+            map.len()
+        );
+    }
+
+    #[test]
+    fn test_tounicode_skips_unmapped_glyph_with_slash() {
+        // The glyph-name check must be slash-tolerant, like DifferencesOverlay's.
+        let mut map = ToUnicodeMap::new();
+        map.add_mapping_for_glyph(vec![0x0A], "/.notdef", vec!['\u{FFFD}']);
+        map.add_mapping_for_glyph(vec![0x0B], "grave", vec!['`']);
+
+        assert_eq!(
+            map.lookup(&[0x0A]),
+            None,
+            "Code 0x0A should have no ToUnicode entry (/.notdef skipped). \
+             Expected: None. \
+             Found: {:?}. \
+             Why this matters: /.notdef (with leading slash) must be matched as an \
+             unmapped glyph name the same way the CMAP skip in DifferencesOverlay \
+             matches it, so PDF name tokens cannot smuggle an unmapped glyph into \
+             ToUnicode output.",
+            map.lookup(&[0x0A])
+        );
+        assert_eq!(
+            map.lookup(&[0x0B]),
+            Some(&['`'][..]),
+            "Code 0x0B should map to '`' (grave). \
+             Expected: Some(\"`\"). \
+             Found: {:?}. \
+             Why this matters: 'grave' is a normal AGL glyph and must keep its entry.",
+            map.lookup(&[0x0B])
+        );
+        assert_eq!(
+            map.len(),
+            1,
+            "Map should contain exactly 1 entry. \
+             Expected: 1 entry (grave at 0x0B). \
+             Found: {} entries. \
+             Why this matters: only the /.notdef entry was skipped; the slash variant \
+             must filter exactly like the bare name.",
+            map.len()
+        );
+    }
+
+    #[test]
+    fn test_tounicode_custom_unmapped_glyph_names() {
+        // A custom set replaces the default entirely, exactly as in DifferencesOverlay.
+        let mut custom = std::collections::HashSet::new();
+        custom.insert("g001".to_string());
+        let mut map = ToUnicodeMap::with_unmapped_glyph_names(custom);
+
+        // g001 is in the custom set -> skipped; g002 and .notdef are not -> kept.
+        map.add_mapping_for_glyph(vec![0x00], "g001", vec!['\u{FFFD}']);
+        map.add_mapping_for_glyph(vec![0x01], "g002", vec!['B']);
+        map.add_mapping_for_glyph(vec![0x02], ".notdef", vec!['C']);
+
+        assert_eq!(
+            map.lookup(&[0x00]),
+            None,
+            "Code 0x00 should have no entry (g001 in custom unmapped set). \
+             Expected: None. \
+             Found: {:?}. \
+             Why this matters: g001 is configured unmapped in the custom set, so it \
+             must be skipped regardless of the default configuration.",
+            map.lookup(&[0x00])
+        );
+        assert_eq!(
+            map.lookup(&[0x01]),
+            Some(&['B'][..]),
+            "Code 0x01 should map to 'B' (g002 not in custom set). \
+             Expected: Some(\"B\"). \
+             Found: {:?}. \
+             Why this matters: the custom set replaces the default rather than extending \
+             it, so g002 stays mapped unless explicitly configured unmapped.",
+            map.lookup(&[0x01])
+        );
+        assert_eq!(
+            map.lookup(&[0x02]),
+            Some(&['C'][..]),
+            "Code 0x02 should map to 'C' (.notdef not in custom set). \
+             Expected: Some(\"C\"). \
+             Found: {:?}. \
+             Why this matters: with a custom set in force, only its members are skipped; \
+             .notdef is skipped under the default set, not this one.",
+            map.lookup(&[0x02])
+        );
+        assert_eq!(
+            map.len(),
+            2,
+            "Map should contain exactly 2 entries. \
+             Expected: 2 entries (g002 at 0x01, .notdef at 0x02). \
+             Found: {} entries. \
+             Why this matters: only g001 was configured unmapped, so exactly one of the \
+             three adds must be dropped.",
+            map.len()
+        );
+
+        // set_unmapped_glyph_names must take effect for subsequent additions.
+        let mut replacement = std::collections::HashSet::new();
+        replacement.insert("g002".to_string());
+        map.set_unmapped_glyph_names(replacement);
+        map.add_mapping_for_glyph(vec![0x03], "g002", vec!['D']);
+        map.add_mapping_for_glyph(vec![0x04], "g001", vec!['E']);
+
+        assert_eq!(
+            map.lookup(&[0x03]),
+            None,
+            "Code 0x03 should have no entry (g002 unmapped after set_unmapped_glyph_names). \
+             Expected: None. \
+             Found: {:?}. \
+             Why this matters: the setter must redirect the skip decision for entries \
+             created after it runs.",
+            map.lookup(&[0x03])
+        );
+        assert_eq!(
+            map.lookup(&[0x04]),
+            Some(&['E'][..]),
+            "Code 0x04 should map to 'E' (g001 no longer unmapped after replacement). \
+             Expected: Some(\"E\"). \
+             Found: {:?}. \
+             Why this matters: the replacement set fully replaces the previous one; the \
+             earlier g001 skip must not leak into later decisions.",
+            map.lookup(&[0x04])
+        );
+        assert_eq!(
+            map.len(),
+            3,
+            "Map should contain exactly 3 entries after the replacement set. \
+             Expected: 3 entries (0x01, 0x02, 0x04). \
+             Found: {} entries. \
+             Why this matters: pre-existing entries are untouched by reconfiguration; \
+             only new additions are filtered by the updated set.",
+            map.len()
+        );
+        assert!(
+            map.unmapped_glyph_names().contains("g002"),
+            "unmapped_glyph_names() should expose the configured set. \
+             Expected: set containing g002. \
+             Found: {:?}. \
+             Why this matters: the getter mirrors DifferencesOverlay::unmapped_glyph_names \
+             so callers can audit which names are being skipped.",
+            map.unmapped_glyph_names()
+        );
+    }
+
+    #[test]
+    fn test_tounicode_normal_glyphs_still_mapped() {
+        // Normal glyphs must be unaffected by the skip logic, and the plain
+        // (name-unaware) add_mapping path must behave exactly as before.
+        let mut map = ToUnicodeMap::new();
+        map.add_mapping_for_glyph(vec![0x00], "A", vec!['A']);
+        map.add_mapping_for_glyph(vec![0x01], "B", vec!['B']);
+        map.add_mapping_for_glyph(vec![0x02], "space", vec![' ']);
+        map.add_mapping_for_glyph(vec![0x03], "fi", vec!['f', 'i']);
+        // Pre-existing API: raw entry creation without a glyph name.
+        map.add_mapping(vec![0x04], vec!['Z']);
+
+        assert_eq!(
+            map.lookup(&[0x00]),
+            Some(&['A'][..]),
+            "Normal glyph 'A' should still be mapped. \
+             Expected: Some(\"A\"). \
+             Found: {:?}. \
+             Why this matters: the skip logic must never filter normal glyphs.",
+            map.lookup(&[0x00])
+        );
+        assert_eq!(
+            map.lookup(&[0x01]),
+            Some(&['B'][..]),
+            "Normal glyph 'B' should still be mapped. \
+             Expected: Some(\"B\"). \
+             Found: {:?}. \
+             Why this matters: the skip logic must never filter normal glyphs.",
+            map.lookup(&[0x01])
+        );
+        assert_eq!(
+            map.lookup(&[0x02]),
+            Some(&[' '][..]),
+            "Normal glyph 'space' should still be mapped. \
+             Expected: Some(\" \"). \
+             Found: {:?}. \
+             Why this matters: whitespace glyphs must be preserved.",
+            map.lookup(&[0x02])
+        );
+        assert_eq!(
+            map.lookup(&[0x03]),
+            Some(&['f', 'i'][..]),
+            "Ligature 'fi' should still map to two codepoints. \
+             Expected: Some([\"f\", \"i\"]). \
+             Found: {:?}. \
+             Why this matters: multi-codepoint destinations must pass through the \
+             glyph-aware path unchanged.",
+            map.lookup(&[0x03])
+        );
+        assert_eq!(
+            map.lookup(&[0x04]),
+            Some(&['Z'][..]),
+            "Plain add_mapping should still create entries. \
+             Expected: Some(\"Z\"). \
+             Found: {:?}. \
+             Why this matters: the CMapParser path (which has no glyph names) must keep \
+             working exactly as before this change.",
+            map.lookup(&[0x04])
+        );
+        assert_eq!(
+            map.len(),
+            5,
+            "All 5 normal-glyph entries should be present. \
+             Expected: 5 entries. \
+             Found: {} entries. \
+             Why this matters: none of these glyphs is configured unmapped, so the map \
+             must be indistinguishable from one built before the skip logic existed.",
+            map.len()
         );
     }
 }
