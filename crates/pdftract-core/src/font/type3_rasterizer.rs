@@ -2388,7 +2388,8 @@ pub fn calculate_bitmap_size_from_bounds(bbox: &[f32; 4], padding_pixels: Option
 ///
 /// * `font` - The Type3 font containing the glyph
 /// * `glyph_name` - The name of the glyph to rasterize
-/// * `doc_context` - Document resolver context (may be None)
+/// * `doc_context` - Document resolver context; dereferences the char_proc
+///   ObjRef when no `resolve_stream` callback is supplied (may be None)
 /// * `resolve_stream` - Callback to resolve ObjRef to stream bytes (may be None)
 ///
 /// # Returns
@@ -2396,12 +2397,20 @@ pub fn calculate_bitmap_size_from_bounds(bbox: &[f32; 4], padding_pixels: Option
 /// Some(bitmap) if the glyph exists and rasterized successfully,
 /// None if the glyph name is not in /CharProcs or stream resolution fails.
 ///
+/// # Stream resolution order
+///
+/// 1. If `resolve_stream` is provided it is authoritative: its result, even
+///    `None`, is final. The shape-db resolver path supplies one so it can
+///    thread the document-wide decompression-bomb counter through decoding.
+/// 2. Otherwise the char_proc ObjRef is dereferenced through `doc_context`
+///    (XrefResolver + PdfSource) and decoded with `decode_stream`.
+///
 /// The bitmap size is calculated from the font's FontBBox using
 /// calculate_bitmap_dimensions (bf-407xp6).
 pub fn rasterize_type3_glyph<'a, R>(
     font: &Type3Font,
     glyph_name: &str,
-    _doc_context: Option<&'a DocumentContext<'a>>,
+    doc_context: Option<&'a DocumentContext<'a>>,
     resolve_stream: Option<&R>,
 ) -> Option<Vec<u8>>
 where
@@ -2410,28 +2419,50 @@ where
     // Check if glyph exists and get its ObjRef
     let char_proc_ref = font.char_proc(glyph_name)?;
 
-    // Document context is passed for potential future use (e.g., form XObject resolution)
-    // Stream resolution happens via the resolver callback pattern
-    // doc_context is now active and available for use
-
-    // Try to resolve the content stream if a resolver is provided
+    // Resolve the glyph's content stream bytes (Step 1 of the 4-step pipeline)
     let stream_bytes = match resolve_stream {
         Some(resolver) => resolver(char_proc_ref),
-        None => None,
+        None => resolve_char_proc_via_context(char_proc_ref, doc_context?),
+    }?;
+
+    // Execute the content stream against a fresh rasterizer state (Steps 2-4)
+    let mut ctx = RasterizerContext::new(font);
+    ctx.execute_content_stream(&stream_bytes);
+    Some(ctx.bitmap.as_bytes().to_vec())
+}
+
+/// Dereference a char_proc ObjRef through a [`DocumentContext`] and decode the
+/// stream it points at.
+///
+/// Unlike [`deref_char_proc_ref`], no structural validation is imposed on the
+/// target: real Type3 charprocs are plain content streams whose dictionaries
+/// carry no required keys, so demanding Form-XObject keys there would reject
+/// well-formed glyph programs. This mirrors what the shape-db resolver
+/// callback does at its own call site.
+fn resolve_char_proc_via_context(
+    char_proc_ref: ObjRef,
+    doc_context: &DocumentContext,
+) -> Option<Vec<u8>> {
+    let resolver = doc_context.resolver?;
+    let source = doc_context.source?;
+
+    let obj = resolver.resolve_with_source(char_proc_ref, source).ok()?;
+
+    let stream = match obj {
+        PdfObject::Stream(stream) => *stream,
+        // A char_proc that does not resolve to a stream cannot be executed
+        _ => return None,
     };
 
-    match stream_bytes {
-        Some(bytes) => {
-            // Successfully resolved - execute the content stream and rasterize
-            let mut ctx = RasterizerContext::new(font);
-            ctx.execute_content_stream(&bytes);
-            Some(ctx.bitmap.as_bytes().to_vec())
-        }
-        None => {
-            // No resolver provided or resolution failed - cannot rasterize
-            None
-        }
-    }
+    // Per-glyph decompression budget: the document-wide counter is only
+    // reachable through the resolve_stream callback, whose caller owns it.
+    let mut decompress_counter = 0u64;
+    Some(decode_stream(
+        &stream,
+        source,
+        &ExtractionOptions::default(),
+        &mut decompress_counter,
+    ))
 }
 
 #[cfg(test)]

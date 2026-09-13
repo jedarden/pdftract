@@ -58,6 +58,10 @@ use crate::font::fingerprint::CachedFingerprint;
 use crate::font::type3::Type3Font;
 #[cfg(feature = "shape-db")]
 use crate::font::type3_rasterizer::{rasterize_type3_glyph, DocumentContext as Type3DocumentContext, StreamResolverFn};
+#[cfg(feature = "shape-db")]
+use crate::font::{lookup_shape, phash_glyph};
+#[cfg(feature = "shape-db")]
+use crate::parser::stream::{decode_stream, ExtractionOptions};
 use crate::parser::stream::PdfSource as ParserPdfSource;
 use crate::parser::xref::XrefResolver;
 
@@ -567,9 +571,9 @@ pub fn resolve_type3(
     font: &Type3Font,
     to_unicode: Option<&ToUnicodeMap>,
     char_code: u8,
-    _resolver: Option<&XrefResolver>,
-    _source: Option<&dyn ParserPdfSource>,
-    _doc_decompress_counter: Option<&mut u64>,
+    resolver: Option<&XrefResolver>,
+    source: Option<&dyn ParserPdfSource>,
+    doc_decompress_counter: Option<&mut u64>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> ResolvedGlyph {
     // Level 1: ToUnicode CMap
@@ -590,7 +594,7 @@ pub fn resolve_type3(
 
     // Check if we have a glyph name from encoding that's not in AGL
     // This is the heuristic for "arbitrary glyph name" that requires L4
-    let _glyph_name_for_l4 = encoding.glyph_name_for(char_code);
+    let glyph_name_for_l4 = encoding.glyph_name_for(char_code);
 
     // Level 3: SKIPPED for Type 3 fonts (no embedded program)
     // Per the plan: "Type 3 fonts have no embedded program; L3 fingerprinting not applicable"
@@ -623,7 +627,11 @@ pub fn resolve_type3(
     }
     #[cfg(not(feature = "shape-db"))]
     {
-        // Level 4 not available, emit miss and return failure
+        // Level 4 not available, emit miss and return failure.
+        // resolver/source/counter and the L4 glyph name are consumed only by
+        // the shape-db branch above; touch them here so the default build
+        // stays free of unused-variable warnings.
+        let _ = (resolver, source, doc_decompress_counter, glyph_name_for_l4);
         diagnostics.push(Diagnostic::with_dynamic_no_offset(
             DiagCode::FontGlyphUnmapped,
             format!(
@@ -729,10 +737,17 @@ fn resolve_type3_level4(
         // Create document context for Type3 rasterization
         let doc_ctx = Type3DocumentContext { resolver: Some(resolver), source: Some(source) };
 
+        // decode_stream advances the document-wide decompression counter
+        // (&mut u64), but the resolver callback must be `Fn` — a &mut cannot
+        // be handed out from behind the closure's &self, so the counter
+        // travels through interior mutability instead.
+        let counter = std::cell::RefCell::new(counter);
+
         // Use helper function to create a closure-compatible callback
         // This is a workaround for lifetime issues with closures capturing references
         let callback = |obj_ref: crate::parser::object::ObjRef| -> Option<Vec<u8>> {
-            resolve_stream_bytes(obj_ref, resolver, source, counter)
+            let mut counter = counter.borrow_mut();
+            resolve_stream_bytes(obj_ref, resolver, source, &mut **counter)
         };
 
         rasterize_type3_glyph(font, &glyph_name, Some(&doc_ctx), Some(&callback))
@@ -755,8 +770,23 @@ fn resolve_type3_level4(
         }
     };
 
-    // Compute pHash
-    let phash = phash_glyph(&bitmap);
+    // Compute pHash over the fixed 32x32 bitmap. The rasterizer contract
+    // guarantees 1024 bytes; a different size means the contract was violated
+    // and the glyph cannot be shape-matched.
+    let bitmap_arr: [u8; 1024] = match bitmap.as_slice().try_into() {
+        Ok(arr) => arr,
+        Err(_) => {
+            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                DiagCode::FontGlyphUnmapped,
+                format!(
+                    "Type3 font: rasterized glyph '{}' for code 0x{:02X} produced {} bitmap bytes, expected 1024",
+                    glyph_name, char_code, bitmap.len()
+                ),
+            ));
+            return ResolvedGlyph::failure();
+        }
+    };
+    let phash = phash_glyph(&bitmap_arr);
 
     // Look up in shape database
     match lookup_shape(phash) {

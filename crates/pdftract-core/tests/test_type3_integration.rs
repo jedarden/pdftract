@@ -409,6 +409,60 @@ fn test_all_four_fixture_types_accessible() {
 
 #[test]
 fn test_rasterize_type3_glyph() {
-    // Empty test function for Type3 glyph rasterization
-    // Will be implemented in subsequent tasks
+    // End-to-end through the document resolver: the fixture charproc bytes
+    // become a real indirect object, the font's /CharProcs points at it, and
+    // the rasterizer must dereference and execute it through the
+    // DocumentContext alone (no callback), producing ink exactly where the
+    // fixture drew it.
+    use pdftract_core::font::type3_rasterizer::{
+        rasterize_type3_glyph, DocumentContext, StreamResolverFn,
+    };
+    use pdftract_core::parser::stream::MemorySource;
+    use pdftract_core::parser::xref::{XrefEntry, XrefResolver};
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    // create_rectangle_charproc_stream() draws a filled 10x10 square at the
+    // origin; with an identity FontMatrix and a [0,0,20,20] FontBBox the
+    // resulting bitmap is 22x22 with the square inked from (0,0) to (10,10)
+    // (the scanline fill is endpoint-inclusive).
+    let charproc = create_rectangle_charproc_stream();
+    let body = format!(
+        "7 0 obj\n<< /Length {} >>\nstream\n",
+        charproc.len()
+    );
+
+    let mut bytes = body.into_bytes();
+    bytes.extend_from_slice(&charproc);
+    bytes.extend_from_slice(b"\nendstream\nendobj\n");
+
+    let mut resolver = XrefResolver::new();
+    resolver.add_entry(7, XrefEntry::InUse { offset: 0, gen_nr: 0 });
+
+    let doc_context = DocumentContext {
+        resolver: Some(Box::leak(Box::new(resolver))),
+        source: Some(Box::leak(Box::new(MemorySource::new(bytes)))),
+    };
+
+    let mut char_procs = HashMap::new();
+    char_procs.insert(Arc::from("box"), ObjRef::new(7, 0));
+    let font = Type3Font::type3_font_full()
+        .with_char_procs(char_procs)
+        .with_font_bbox([0.0, 0.0, 20.0, 20.0])
+        .build();
+
+    let bitmap = rasterize_type3_glyph(&font, "box", Some(&doc_context), None::<&StreamResolverFn>)
+        .expect("fixture charproc must rasterize through the DocumentContext");
+
+    // 22x22 bitmap (20-point bbox + 1px padding per side).
+    assert_eq!(bitmap.len(), 22 * 22);
+
+    let pixel = |x: usize, y: usize| bitmap[y * 22 + x];
+    // Inside the drawn square: black.
+    assert_eq!(pixel(0, 0), 0, "origin corner of the square must be inked");
+    assert_eq!(pixel(5, 5), 0, "square interior must be inked");
+    assert_eq!(pixel(10, 10), 0, "far corner (endpoint-inclusive) must be inked");
+    // Outside: white, proving this is the real glyph, not a placeholder.
+    assert_eq!(pixel(15, 15), 255, "outside the square must stay white");
+    assert_eq!(pixel(21, 21), 255, "the padding ring must stay white");
 }
