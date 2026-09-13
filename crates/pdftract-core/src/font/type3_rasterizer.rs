@@ -239,9 +239,10 @@ pub fn detect_char_proc_type_with_depth(object: &PdfObject, doc_context: Option<
 /// When encountering a `PdfObject::Ref`:
 /// - If `doc_context` is provided, the reference is dereferenced and the
 ///   underlying object is classified recursively
-/// - Reference cycles are detected and return `CharProcType::Other("circular-reference".to_string())`
-/// - Dereferencing errors (not found, I/O error) return `CharProcType::Unknown`
-/// - If `doc_context` is None, references are classified as `CharProcType::Unknown`
+/// - Reference cycles are detected and return `Other("circular-reference")`
+/// - Dereferencing failures return `Other("error")` (reference not found)
+///   or `Other("unknown")` (I/O failure)
+/// - If `doc_context` is None, references are classified as `Other("unknown")`
 ///
 /// # Example
 ///
@@ -253,7 +254,7 @@ pub fn detect_char_proc_type_with_depth(object: &PdfObject, doc_context: Option<
 /// let doc_context = DocumentContext { /* ... */ };
 ///
 /// // Dereferences and classifies the underlying object
-/// let char_proc_type = detect_char_proc_type_with_context(&ref_obj, Some(&doc_context));
+/// let char_proc_type = detect_char_proc_type_with_context(&ref_obj, Some(&doc_context), 0);
 /// ```
 pub fn detect_char_proc_type_with_context<'a>(
     object: &PdfObject,
@@ -2436,12 +2437,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::font::type3_test_fixtures::{
-        create_basic_glyph_dict, create_charproc_stream_with_curves, create_empty_content_stream,
-        create_glyph_dict_with_basic_properties, create_main_content_stream, create_main_content_stream_multi,
-        create_minimal_glyph_dict, create_minimal_type3_font, create_rectangle_charproc_stream,
-        create_simple_charproc_stream, to_charprocs_map, Content, GlyphDict, GlyphEntry,
-    };
     use crate::parser::object::types::PdfDict;
 
     #[test]
@@ -2982,25 +2977,25 @@ mod tests {
 
     #[test]
     fn test_detect_char_proc_type_returns_unknown_for_failed_deref() {
-        // Test that failed reference dereferencing returns CharProcType::Unknown
+        // Test that failed reference dereferencing returns CharProcType::Other("unknown".to_string())
         use crate::parser::object::types::ObjRef;
 
         // Create a reference object
         let ref_obj = PdfObject::Ref(ObjRef::new(10, 0));
 
         // Test without document context (should return Unknown)
-        let char_proc_type = detect_char_proc_type(&ref_obj, None, 0);
-        assert_eq!(char_proc_type, CharProcType::Unknown,
-                   "Should return Unknown when no document context is provided");
+        let char_proc_type = detect_char_proc_type(&ref_obj, None);
+        assert_eq!(char_proc_type, CharProcType::Other("unknown".to_string()),
+                   "Should return Other(\"unknown\") when no document context is provided");
 
         // Test with empty document context (no resolver/source - should return Unknown)
         let doc_context = DocumentContext {
             resolver: None,
             source: None,
         };
-        let char_proc_type = detect_char_proc_type(&ref_obj, Some(&doc_context), 0);
-        assert_eq!(char_proc_type, CharProcType::Unknown,
-                   "Should return Unknown when document context has no resolver");
+        let char_proc_type = detect_char_proc_type(&ref_obj, Some(&doc_context));
+        assert_eq!(char_proc_type, CharProcType::Other("unknown".to_string()),
+                   "Should return Other(\"unknown\") when document context has no resolver");
     }
 
     #[test]
@@ -3674,7 +3669,7 @@ mod tests {
         use crate::parser::object::types::PdfDict;
 
         let dict_obj = PdfObject::Dict(Box::new(PdfDict::new()));
-        assert_eq!(detect_char_proc_type(&dict_obj, None, 0), CharProcType::Dict);
+        assert_eq!(detect_char_proc_type(&dict_obj, None), CharProcType::Dict);
     }
 
     #[test]
@@ -3684,14 +3679,14 @@ mod tests {
         let dict = PdfDict::new();
         let stream = PdfStream::new(dict, 0, None);
         let stream_obj = PdfObject::Stream(Box::new(stream));
-        assert_eq!(detect_char_proc_type(&stream_obj, None, 0), CharProcType::Stream);
+        assert_eq!(detect_char_proc_type(&stream_obj, None), CharProcType::Stream);
     }
 
     #[test]
     fn test_detect_char_proc_type_integer() {
         let int_obj = PdfObject::Integer(42);
         assert_eq!(
-            detect_char_proc_type(&int_obj, None, 0),
+            detect_char_proc_type(&int_obj, None),
             CharProcType::Other("integer".to_string())
         );
     }
@@ -3700,7 +3695,7 @@ mod tests {
     fn test_detect_char_proc_type_real() {
         let real_obj = PdfObject::Real(3.14);
         assert_eq!(
-            detect_char_proc_type(&real_obj, None, 0),
+            detect_char_proc_type(&real_obj, None),
             CharProcType::Other("real".to_string())
         );
     }
@@ -3709,7 +3704,7 @@ mod tests {
     fn test_detect_char_proc_type_boolean() {
         let bool_obj = PdfObject::Bool(true);
         assert_eq!(
-            detect_char_proc_type(&bool_obj, None, 0),
+            detect_char_proc_type(&bool_obj, None),
             CharProcType::Other("boolean".to_string())
         );
     }
@@ -3762,7 +3757,7 @@ mod tests {
         let ref_obj = PdfObject::Ref(ObjRef::new(10, 0));
         assert_eq!(
             detect_char_proc_type(&ref_obj, None),
-            CharProcType::Unknown
+            CharProcType::Other("unknown".to_string())
         );
     }
 
@@ -3793,7 +3788,7 @@ mod tests {
 
         // Direct stream object should still be classified as Stream
         assert_eq!(
-            detect_char_proc_type_with_context(&stream_obj, None),
+            detect_char_proc_type_with_context(&stream_obj, None, 0),
             CharProcType::Stream
         );
     }
@@ -3806,7 +3801,7 @@ mod tests {
 
         // Direct dict object should still be classified as Dict
         assert_eq!(
-            detect_char_proc_type_with_context(&dict_obj, None),
+            detect_char_proc_type_with_context(&dict_obj, None, 0),
             CharProcType::Dict
         );
     }
@@ -3817,10 +3812,10 @@ mod tests {
 
         let ref_obj = PdfObject::Ref(ObjRef::new(10, 0));
 
-        // Without context, references are classified as Unknown (bf-5on6og)
+        // Without context, references cannot be dereferenced and classify as Other("unknown") (bf-5on6og)
         assert_eq!(
-            detect_char_proc_type_with_context(&ref_obj, None),
-            CharProcType::Unknown
+            detect_char_proc_type_with_context(&ref_obj, None, 0),
+            CharProcType::Other("unknown".to_string())
         );
     }
 
@@ -3844,10 +3839,10 @@ mod tests {
         // Full integration testing requires complete document parsing infrastructure
         let ref_obj = PdfObject::Ref(ObjRef::new(10, 0));
 
-        // Without context, references are classified as Unknown (bf-5on6og)
+        // Without context, references cannot be dereferenced and classify as Other("unknown") (bf-5on6og)
         assert_eq!(
-            detect_char_proc_type_with_context(&ref_obj, None),
-            CharProcType::Unknown
+            detect_char_proc_type_with_context(&ref_obj, None, 0),
+            CharProcType::Other("unknown".to_string())
         );
     }
 
@@ -3858,10 +3853,10 @@ mod tests {
         // Test that references are classified as Other("reference") when no context is provided
         let ref_obj = PdfObject::Ref(ObjRef::new(20, 0));
 
-        // Without context, references are classified as Other("reference")
+        // Without context, references cannot be dereferenced: Other("unknown")
         assert_eq!(
-            detect_char_proc_type_with_context(&ref_obj, None),
-            CharProcType::Other("reference".to_string())
+            detect_char_proc_type_with_context(&ref_obj, None, 0),
+            CharProcType::Other("unknown".to_string())
         );
     }
 
@@ -3873,10 +3868,10 @@ mod tests {
         let ref_a = ObjRef::new(25, 0);
         let ref_obj = crate::parser::object::types::PdfObject::Ref(ref_a);
 
-        // Without context, nested references are classified as Other("reference")
+        // Without context, nested references cannot be dereferenced: Other("unknown")
         assert_eq!(
-            detect_char_proc_type_with_context(&ref_obj, None),
-            CharProcType::Other("reference".to_string())
+            detect_char_proc_type_with_context(&ref_obj, None, 0),
+            CharProcType::Other("unknown".to_string())
         );
     }
 
@@ -3889,10 +3884,10 @@ mod tests {
         // handles references gracefully when no context is provided.
         let ref_obj = PdfObject::Ref(ObjRef::new(40, 0));
 
-        // Without context, references are classified as Other("reference")
+        // Without context, references cannot be dereferenced: Other("unknown")
         assert_eq!(
-            detect_char_proc_type_with_context(&ref_obj, None),
-            CharProcType::Other("reference".to_string())
+            detect_char_proc_type_with_context(&ref_obj, None, 0),
+            CharProcType::Other("unknown".to_string())
         );
     }
 
@@ -3924,7 +3919,7 @@ mod tests {
 
         // Invalid references (not found in resolver) should return "error"
         assert_eq!(
-            detect_char_proc_type_with_context(&ref_obj, Some(&doc_context)),
+            detect_char_proc_type_with_context(&ref_obj, Some(&doc_context), 0),
             CharProcType::Other("error".to_string())
         );
     }
@@ -3938,10 +3933,10 @@ mod tests {
         // handles references gracefully when no context is provided.
         let ref_obj = PdfObject::Ref(ObjRef::new(50, 0));
 
-        // Without context, references are classified as Other("reference")
+        // Without context, references cannot be dereferenced: Other("unknown")
         assert_eq!(
-            detect_char_proc_type_with_context(&ref_obj, None),
-            CharProcType::Other("reference".to_string())
+            detect_char_proc_type_with_context(&ref_obj, None, 0),
+            CharProcType::Other("unknown".to_string())
         );
     }
 
@@ -3951,15 +3946,15 @@ mod tests {
 
         let ref_obj = PdfObject::Ref(ObjRef::new(10, 0));
 
-        // DocumentContext without resolver should classify as "reference"
+        // DocumentContext without resolver fails deref with an I/O error: Other("unknown")
         let doc_context = DocumentContext {
             resolver: None,
             source: None,
         };
 
         assert_eq!(
-            detect_char_proc_type_with_context(&ref_obj, Some(&doc_context)),
-            CharProcType::Other("reference".to_string())
+            detect_char_proc_type_with_context(&ref_obj, Some(&doc_context), 0),
+            CharProcType::Other("unknown".to_string())
         );
     }
 
@@ -3976,10 +3971,10 @@ mod tests {
             source: None,
         };
 
-        // Should classify as "reference" since source is required for dereferencing
+        // Missing source fails deref with an I/O error: Other("unknown")
         assert_eq!(
-            detect_char_proc_type_with_context(&ref_obj, Some(&doc_context)),
-            CharProcType::Other("reference".to_string())
+            detect_char_proc_type_with_context(&ref_obj, Some(&doc_context), 0),
+            CharProcType::Other("unknown".to_string())
         );
     }
 
@@ -3993,24 +3988,24 @@ mod tests {
         let int_obj = PdfObject::Integer(42);
 
         // The no-context version should work exactly as before
-        assert_eq!(detect_char_proc_type(&dict_obj, None, 0), CharProcType::Dict);
-        assert_eq!(detect_char_proc_type(&stream_obj, None, 0), CharProcType::Stream);
+        assert_eq!(detect_char_proc_type(&dict_obj, None), CharProcType::Dict);
+        assert_eq!(detect_char_proc_type(&stream_obj, None), CharProcType::Stream);
         assert_eq!(
-            detect_char_proc_type(&int_obj, None, 0),
+            detect_char_proc_type(&int_obj, None),
             CharProcType::Other("integer".to_string())
         );
 
         // The with_context version with None should match the no-context version
         assert_eq!(
-            detect_char_proc_type_with_context(&dict_obj, None),
+            detect_char_proc_type_with_context(&dict_obj, None, 0),
             detect_char_proc_type(&dict_obj, None)
         );
         assert_eq!(
-            detect_char_proc_type_with_context(&stream_obj, None),
+            detect_char_proc_type_with_context(&stream_obj, None, 0),
             detect_char_proc_type(&stream_obj, None)
         );
         assert_eq!(
-            detect_char_proc_type_with_context(&int_obj, None),
+            detect_char_proc_type_with_context(&int_obj, None, 0),
             detect_char_proc_type(&int_obj, None)
         );
     }
@@ -6678,9 +6673,7 @@ mod tests {
 
     #[test]
     fn test_test_glyph_helper_multiple_glyphs_single_resolver() {
-        use crate::font::test_glyph_helper::{
-            make_rect_glyph, make_test_char_procs, make_test_resolver,
-        };
+        use crate::font::test_glyph_helper::{make_rect_glyph, make_test_resolver};
         use std::collections::HashMap;
 
         // Create multiple glyphs with different sizes
@@ -7507,14 +7500,124 @@ mod tests {
         assert!(ctx.gstate.ctm.is_identity(), "CTM should remain identity after degenerate cm");
     }
 
+    /// End-to-end integration test for Type3 glyph bitmap generation (bf-5rvp9w).
+    ///
+    /// Exercises the complete rasterization pipeline in a single pass:
+    ///
+    /// ```text
+    /// /CharProcs["A"] --ObjRef--> resolver callback --content stream bytes-->
+    /// Lexer + operator dispatch ('5 5 10 10 re f') --> op_rect + op_fill -->
+    /// fill_polygon scanline fill --> grayscale bitmap (0 = ink, 255 = paper)
+    /// ```
+    ///
+    /// The font uses an identity /FontMatrix (1 glyph-space unit == 1 pixel)
+    /// and /FontBBox [0 0 32 32], so `RasterizerContext::new` allocates a
+    /// 34x34 bitmap (32 px + 1 px anti-aliasing padding per side, per
+    /// `calculate_bitmap_dimensions`) and glyph-space coordinates in the
+    /// content stream land on pixel coordinates unchanged.
     #[test]
-    fn test_rasterize_type3_glyph() {
-        // Empty test function - skeleton for future implementation
-        // All fixtures are already imported and accessible:
-        // - Type3Font (via super::*)
-        // - glyph dict fixtures (create_minimal_glyph_dict, create_basic_glyph_dict, etc.)
-        // - charproc fixtures (create_simple_charproc_stream, create_rectangle_charproc_stream, etc.)
-        // - content stream fixtures (create_empty_content_stream, create_main_content_stream, etc.)
+    fn test_rasterize_type3_glyph_end_to_end() {
+        use crate::parser::object::types::{intern, ObjRef, PdfDict, PdfObject};
+        use std::sync::{Arc, Mutex};
+
+        // --- Arrange: a Type3 font whose /CharProcs maps "A" to object 7 ---
+        const GLYPH_STREAM_OBJ: u32 = 7;
+        let expected_ref = ObjRef::new(GLYPH_STREAM_OBJ, 0);
+
+        let mut char_procs = PdfDict::new();
+        char_procs.insert(intern("/A"), PdfObject::Ref(expected_ref));
+
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(intern("/CharProcs"), PdfObject::Dict(Box::new(char_procs)));
+        // Identity FontMatrix: glyph-space coordinates reach the bitmap unscaled.
+        font_dict.insert(
+            intern("/FontMatrix"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(1),
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+                PdfObject::Integer(1),
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+            ])),
+        );
+        font_dict.insert(
+            intern("/FontBBox"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+                PdfObject::Integer(32),
+                PdfObject::Integer(32),
+            ])),
+        );
+
+        let font = Type3Font::load(&font_dict);
+        assert!(font.has_glyph("A"), "glyph A must be present in /CharProcs");
+
+        // Resolver callback standing in for the document layer: it receives
+        // the glyph's ObjRef and returns the decoded content stream bytes.
+        // It records every ref it is called with (proving the CharProcs ->
+        // resolver wiring) and fails resolution for any other object.
+        let received_refs: Arc<Mutex<Vec<ObjRef>>> = Arc::new(Mutex::new(Vec::new()));
+        let received_clone = received_refs.clone();
+        let resolver = move |obj_ref: ObjRef| -> Option<Vec<u8>> {
+            received_clone.lock().unwrap().push(obj_ref);
+            (obj_ref == ObjRef::new(GLYPH_STREAM_OBJ, 0))
+                .then(|| b"5 5 10 10 re f".to_vec())
+        };
+
+        let doc_context = DocumentContext {
+            resolver: None,
+            source: None,
+        };
+
+        // --- Act: run resolver -> rasterizer -> bitmap in one call ---
+        let bitmap = rasterize_type3_glyph(&font, "A", Some(&doc_context), Some(&resolver));
+
+        // The resolver must have been consulted exactly once, with the
+        // ObjRef taken from the /CharProcs dictionary.
+        let received = received_refs.lock().unwrap();
+        assert_eq!(
+            *received, vec![expected_ref],
+            "resolver must be called once with the /CharProcs ObjRef"
+        );
+        drop(received);
+
+        // Stream resolution succeeded: a bitmap must come back (not None).
+        let pixels = bitmap.expect("successful stream resolution must yield a bitmap");
+
+        // Bitmap dimensions derive from FontBBox: 32x32 units + 1 px padding
+        // per side => 34x34 pixels, stored row-major.
+        let (width, height) = calculate_bitmap_dimensions(&font.font_bbox, None);
+        assert_eq!((width, height), (34, 34), "FontBBox [0 0 32 32] + padding");
+        assert_eq!(pixels.len(), width * height, "bitmap must be row-major width*height");
+
+        let px = |x: usize, y: usize| pixels[y * width + x];
+
+        // '5 5 10 10 re f' fills the rectangle from (5,5) to (15,15) in
+        // glyph space; with the identity FontMatrix that is pixels x=5..=15,
+        // y=5..=15 set to 0 (black ink). This proves real rasterization ran
+        // rather than an all-white placeholder being returned.
+        assert_eq!(px(10, 10), 0, "rect centre must be black ink");
+        assert_eq!(px(5, 5), 0, "rect lower-left corner must be black ink");
+        assert_eq!(px(15, 15), 0, "rect upper-right corner must be black ink");
+
+        let inked = pixels.iter().filter(|&&p| p != 255).count();
+        assert_eq!(inked, 11 * 11, "scanline fill must cover exactly the 11x11 pixel rect");
+        assert!(inked > 0, "bitmap must contain non-white pixels");
+
+        // Pixels outside the rectangle stay white (255).
+        assert_eq!(px(0, 0), 255, "top-left padding pixel must stay white");
+        assert_eq!(px(33, 33), 255, "bottom-right padding pixel must stay white");
+        assert_eq!(px(20, 10), 255, "pixel right of the rect must stay white");
+
+        // --- Failure path: a resolver that cannot produce the stream bytes
+        // (e.g. broken xref, missing object) must degrade gracefully to
+        // None instead of panicking or emitting a placeholder bitmap. ---
+        let failing_resolver = |_obj_ref: ObjRef| -> Option<Vec<u8>> { None };
+        let failed =
+            rasterize_type3_glyph(&font, "A", Some(&doc_context), Some(&failing_resolver));
+        assert!(failed.is_none(), "failed stream resolution must return None");
     }
 
     #[test]
