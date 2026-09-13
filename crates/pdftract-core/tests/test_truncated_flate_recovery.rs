@@ -12,8 +12,7 @@
 //! - Partial decompression where possible
 //! - Fallback to raw stream data when decompression fails
 
-use anyhow::Result;
-use pdftract_core::document::{parse_pdf_file, PageExtraction, PdfExtractor};
+use pdftract_core::document::{parse_pdf_file, PdfExtractor};
 use pdftract_core::extract::extract_pdf;
 use pdftract_core::options::ExtractionOptions;
 use std::path::PathBuf;
