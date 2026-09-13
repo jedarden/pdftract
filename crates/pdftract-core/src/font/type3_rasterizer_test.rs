@@ -1673,7 +1673,7 @@ fn test_detect_char_proc_type_with_context_detects_circular_ref() {
     };
 
     // Use the with_context variant that has cycle detection
-    let result = detect_char_proc_type_with_context(&ref_obj, Some(&doc_context));
+    let result = detect_char_proc_type_with_context(&ref_obj, Some(&doc_context), 0);
 
     // Since resolver is None, it should return Unknown (circular detection
     // only applies if we can actually dereference)
@@ -2509,7 +2509,7 @@ fn test_detect_char_proc_type_with_context_circular_reference_detection() {
     };
 
     // Use the with_context variant that has cycle detection
-    let result = detect_char_proc_type_with_context(&ref_obj, Some(&doc_context));
+    let result = detect_char_proc_type_with_context(&ref_obj, Some(&doc_context), 0);
 
     // Since resolver is None, it should return Unknown (circular detection
     // only applies if we can actually dereference)

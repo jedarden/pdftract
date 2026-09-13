@@ -8,6 +8,10 @@
 
 use anyhow::{bail, Context, Result};
 use pdftract_core::cache::layout::{self};
+
+// CacheIndex drives the index-rendering assertions in the test module below.
+#[cfg(test)]
+use pdftract_core::cache::layout::CacheIndex;
 use std::fs;
 use std::io::{self, Write};
 use std::path::Path;

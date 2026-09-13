@@ -331,6 +331,7 @@ pub fn detect_conformance(metadata_stream: Option<&[u8]>) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use crate::parser::object::ObjRef;
     use super::*;
     use std::sync::Arc;
 

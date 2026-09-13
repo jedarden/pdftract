@@ -1184,6 +1184,7 @@ impl TestBlock {
 
 #[cfg(test)]
 mod tests {
+    use crate::font::resolver::UnicodeSource;
     use super::*;
     use crate::layout::line::{Block, Line, LineDirection};
     use std::sync::Arc;

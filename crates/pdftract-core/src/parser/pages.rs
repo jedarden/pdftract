@@ -17,6 +17,11 @@ use crate::parser::xref::XrefResolver;
 use std::collections::HashSet;
 use std::sync::Arc;
 
+// Interning helper used by the cfg(test) page-dict builders below; gated so
+// non-test builds never see an unused import.
+#[cfg(test)]
+use crate::parser::object::intern;
+
 /// Default MediaBox when none is specified (US Letter: 612 x 792 points).
 ///
 /// Per EC-09: Page with no MediaBox and no inherited MediaBox substitutes

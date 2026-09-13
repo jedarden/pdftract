@@ -901,7 +901,7 @@ mod tests {
     #[test]
     fn test_scanline_edge_from_endpoints() {
         let edge = Edge::from_endpoints(10, 5, 30, 25);
-        assert_eq!(edge.x, 10.0);
+        assert_eq!(edge.x, 10);
         assert_eq!(edge.y_min, 5);
         assert_eq!(edge.y_max, 25);
         assert_eq!(edge.dx, 20);
@@ -923,10 +923,11 @@ mod tests {
     #[test]
     fn test_scanline_edge_slope() {
         let edge = Edge::from_endpoints(10, 5, 30, 25);
-        assert_eq!(edge.slope(), 1.0);
+        assert_eq!(edge.slope(), (20, 20));
 
         let horizontal = Edge::from_endpoints(10, 5, 30, 5);
-        assert!(horizontal.slope().is_nan());
+        // horizontal edges carry no slope; the (dx, dy) pair collapses to zero
+        assert_eq!(horizontal.slope(), (0, 0));
     }
 
     #[test]
@@ -934,8 +935,8 @@ mod tests {
         let mut edge = Edge::from_endpoints(10, 5, 30, 25);
         let original_x = edge.x;
         edge.advance_scanline();
-        // After advancing, x should increase by slope (1.0 in this case)
-        assert_eq!(edge.x, original_x + 1.0);
+        // After advancing, x steps by the rounded slope (20/20 = 1 here)
+        assert_eq!(edge.x, original_x + 1);
     }
 
     #[test]

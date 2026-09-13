@@ -391,7 +391,7 @@ fn extract_spans_from_page(
     let decoded = decode_page_streams(page, resolver, source)?;
 
     // Process content stream to extract glyphs
-    let glyphs = process_with_mode(&decoded, &resources, ProcessingMode::Normal, None).map_err(
+    let glyphs = process_with_mode(&decoded, &resources, ProcessingMode::Normal, None, None).map_err(
         |diagnostics| {
             let msg = diagnostics
                 .first()

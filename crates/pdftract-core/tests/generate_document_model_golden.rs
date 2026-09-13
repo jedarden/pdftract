@@ -78,7 +78,7 @@ fn generate_expected_json_files() {
 fn generate_expected_json(pdf_path: &Path, name: &str) -> Result<String, String> {
     // Parse the PDF - for now we use the unencrypted parse since the test
     // infrastructure doesn't support password-protected files yet
-    let (_fingerprint, catalog, pages, resolver) =
+    let (_fingerprint, catalog, pages, resolver, _objects) =
         parse_pdf_file(pdf_path).map_err(|e| format!("Failed to parse PDF: {}", e))?;
 
     // Check for encryption

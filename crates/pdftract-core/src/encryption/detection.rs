@@ -436,6 +436,7 @@ fn parse_auth_event(obj: Option<&PdfObject>) -> Option<AuthEvent> {
 
 #[cfg(test)]
 mod tests {
+    use crate::diagnostics::DiagCode;
     use super::*;
 
     // Mock resolver for testing

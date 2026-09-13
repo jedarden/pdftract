@@ -267,7 +267,8 @@ fn test_page_classification_fixtures() {
         let ctx = create_page_context_for_fixture(fixture);
 
         // Classify the page
-        let result = pdftract_core::classify::classify_page(&ctx);
+        let result = pdftract_core::classify::classify_page(&ctx)
+        .expect("classify_page failed");
 
         // Convert class to string
         let result_class_str = page_class_to_string(result.class);
@@ -334,8 +335,10 @@ fn test_page_classification_reproducibility() {
         let ctx = create_page_context_for_fixture(fixture);
 
         // Classify twice
-        let result1 = pdftract_core::classify::classify_page(&ctx);
-        let result2 = pdftract_core::classify::classify_page(&ctx);
+        let result1 = pdftract_core::classify::classify_page(&ctx)
+        .expect("classify_page failed");
+        let result2 = pdftract_core::classify::classify_page(&ctx)
+        .expect("classify_page failed");
 
         // Serialize both results to JSON
         let json1 = serde_json::to_string_pretty(&result1).expect("Failed to serialize result1");
@@ -448,8 +451,10 @@ fn test_reproducibility_gate_with_perturbation() {
     ctx.has_visible_text = true;
 
     // Classify twice
-    let result1 = classify_page(&ctx);
-    let mut result2 = classify_page(&ctx);
+    let result1 = classify_page(&ctx)
+        .expect("classify_page failed");
+    let mut result2 = classify_page(&ctx)
+        .expect("classify_page failed");
 
     // Intentionally perturb the confidence
     result2.confidence += 0.01;
@@ -555,7 +560,8 @@ fn test_classify_page_smoke() {
     ctx.grid_cells = None;
 
     // Call classify_page - this should not panic and return valid output
-    let result = classify_page(&ctx);
+    let result = classify_page(&ctx)
+        .expect("classify_page failed");
 
     // ============================================================
     // FIELD-LEVEL VERIFICATION: classification field

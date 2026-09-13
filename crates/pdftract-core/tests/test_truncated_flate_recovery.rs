@@ -62,7 +62,7 @@ fn test_truncated_flate_parses_as_pdf() {
         panic!("Should parse truncated-flate.pdf as a valid PDF document: {}", e);
     }
 
-    let (_fingerprint, _catalog, pages, _resolver) = result.unwrap();
+    let (_fingerprint, _catalog, pages, _resolver, _objects) = result.unwrap();
     // Verify basic document structure
     assert!(
         !pages.is_empty(),
@@ -79,7 +79,7 @@ fn test_truncated_flate_parses_as_pdf() {
 #[test]
 fn test_truncated_flate_emits_diagnostics() {
     let path = fixture_path();
-    let (_fingerprint, _catalog, _pages, _resolver) = parse_pdf_file(&path)
+    let (_fingerprint, _catalog, _pages, _resolver, _objects) = parse_pdf_file(&path)
         .expect("Should parse document");
 
     // Note: Diagnostics are not currently surfaced through parse_pdf_file
@@ -96,7 +96,7 @@ fn test_truncated_flate_emits_diagnostics() {
 #[test]
 fn test_truncated_flate_partial_content_accessible() {
     let path = fixture_path();
-    let (_fingerprint, _catalog, pages, _resolver) = parse_pdf_file(&path)
+    let (_fingerprint, _catalog, pages, _resolver, _objects) = parse_pdf_file(&path)
         .expect("Should parse document");
 
     // Try to access the first page

@@ -3198,6 +3198,7 @@ mod tests {
                 None,
                 None,
                 &[],
+                None,
             );
 
             assert_eq!(result.diagnostics.len(), 0, "Tr {} should be valid", mode);

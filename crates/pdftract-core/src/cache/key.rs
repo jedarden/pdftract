@@ -11,6 +11,11 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
+// Acceptance tests construct raw JSON object maps; production paths
+// serialize typed option structs instead.
+#[cfg(test)]
+use serde_json::Map;
+
 /// Cache key for a (fingerprint, extraction_options) pair.
 ///
 /// The key consists of:

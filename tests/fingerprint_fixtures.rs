@@ -68,10 +68,10 @@ fn test_fingerprint_fixture_pairs() {
         assert!(v2_path.exists(), "v2.pdf does not exist for {}", fixture.name);
 
         // Parse both PDFs and compute fingerprints
-        let (fp1, _, _, _) = parse_pdf_file(&v1_path)
+        let (fp1, _, _, _, _) = parse_pdf_file(&v1_path)
             .unwrap_or_else(|e| panic!("Failed to parse v1.pdf for {}: {}", fixture.name, e));
 
-        let (fp2, _, _, _) = parse_pdf_file(&v2_path)
+        let (fp2, _, _, _, _) = parse_pdf_file(&v2_path)
             .unwrap_or_else(|e| panic!("Failed to parse v2.pdf for {}: {}", fixture.name, e));
 
         // Verify INV-13 format: ^pdftract-v1:[0-9a-f]{64}$

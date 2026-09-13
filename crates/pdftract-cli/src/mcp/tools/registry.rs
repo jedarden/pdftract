@@ -1075,6 +1075,7 @@ impl Tool for ClassifyTool {
 
 #[cfg(test)]
 mod tests {
+    use super::super::ERROR_NOT_YET_IMPLEMENTED;
     use super::*;
 
     #[test]

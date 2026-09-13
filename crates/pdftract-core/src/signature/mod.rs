@@ -829,6 +829,7 @@ pub fn discover(resolver: &XrefResolver, catalog: &Catalog) -> Vec<SigFieldRef> 
 
 #[cfg(test)]
 mod tests {
+    use crate::parser::object::PdfDict;
     use super::*;
     use crate::parser::object::{intern, PdfObject};
 

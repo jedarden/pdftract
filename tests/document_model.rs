@@ -67,7 +67,7 @@ struct DiagnosticInfo {
 /// Load a fixture PDF and extract its document model.
 fn load_fixture(fixture_path: &Path) -> Result<DocumentModelGolden, Box<dyn std::error::Error>> {
     // Parse the PDF
-    let (_fingerprint, catalog, pages, resolver) = parse_pdf_file(fixture_path)?;
+    let (_fingerprint, catalog, pages, resolver, _trailer) = parse_pdf_file(fixture_path)?;
 
     // Check encryption status
     let encryption_info = check_encryption(&resolver);

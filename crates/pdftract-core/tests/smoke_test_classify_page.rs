@@ -42,7 +42,8 @@ fn test_classify_basic_vector_page() {
     // Run classification
     // Note: classify_page returns PageClassification directly (not a Result),
     // so success means the function returns without panic and produces valid output
-    let result = classify_page(&ctx);
+    let result = classify_page(&ctx)
+        .expect("classify_page failed");
 
     // VERIFY SUCCESS: classify_page executed without panic and returned valid classification
     // This is the "Ok()" case for the direct-return API - successful execution is
@@ -156,7 +157,8 @@ fn test_classify_basic_scanned_page() {
     // Run classification
     // Note: classify_page returns PageClassification directly (not a Result),
     // so success means the function returns without panic and produces valid output
-    let result = classify_page(&ctx);
+    let result = classify_page(&ctx)
+        .expect("classify_page failed");
 
     // VERIFY SUCCESS: classify_page executed without panic and returned valid classification
     // This is the "Ok()" case for the direct-return API - successful execution is
@@ -268,7 +270,8 @@ fn test_classify_page_returns_valid_result_for_valid_input() {
 
     // EXECUTE: Call classify_page with valid input
     // SUCCESS CRITERIA: Function returns without panic and produces valid PageClassification
-    let result = classify_page(&ctx);
+    let result = classify_page(&ctx)
+        .expect("classify_page failed");
 
     // ========== OUTPUT FORMAT VERIFICATION ==========
     // Comprehensive validation of PageClassification structure
@@ -404,7 +407,8 @@ fn test_classify_page_output_format_comprehensive() {
     ctx_vector.height = 792.0;
     ctx_vector.rotation = 0;
 
-    let result_vector = classify_page(&ctx_vector);
+    let result_vector = classify_page(&ctx_vector)
+        .expect("classify_page failed");
 
     // COMPREHENSIVE OUTPUT FORMAT VALIDATION FOR VECTOR CLASSIFICATION
 
@@ -465,7 +469,8 @@ fn test_classify_page_output_format_comprehensive() {
     ctx_scanned.height = 792.0;
     ctx_scanned.rotation = 0;
 
-    let result_scanned = classify_page(&ctx_scanned);
+    let result_scanned = classify_page(&ctx_scanned)
+        .expect("classify_page failed");
 
     // COMPREHENSIVE OUTPUT FORMAT VALIDATION FOR SCANNED CLASSIFICATION
 

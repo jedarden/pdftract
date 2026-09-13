@@ -8,6 +8,10 @@ use crate::cache::layout::{
     parse_opts_hash_from_filename, parse_size_from_filename, sentinel_path,
 };
 use std::collections::HashMap;
+
+// Entry-layout helpers are exercised directly by the tests in this file.
+#[cfg(test)]
+use crate::cache::layout::entry_path;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};

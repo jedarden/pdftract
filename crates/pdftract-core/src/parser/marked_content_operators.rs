@@ -373,6 +373,7 @@ mod tests {
             &PdfObject::Dict(Box::new(props)),
             &ResourceDict::new(),
             None,
+            None,
             None
         ));
         assert_eq!(stack.depth(), 1);
@@ -394,6 +395,7 @@ mod tests {
             &PdfObject::Name(Arc::from("MyProps")),
             &resources,
             None,
+            None,
             None
         ));
         assert_eq!(stack.depth(), 1);
@@ -412,7 +414,8 @@ mod tests {
             &PdfObject::Name(Arc::from("UnknownProps")),
             &resources,
             None,
-            Some(&mut diagnostics)
+            Some(&mut diagnostics),
+            None
         ));
         assert_eq!(stack.depth(), 1);
         assert_eq!(stack.innermost_mcid(), None);
@@ -518,6 +521,7 @@ mod tests {
             &ResourceDict::new(),
             None,
             None,
+            None,
         );
 
         // Inner BMC
@@ -557,6 +561,7 @@ mod tests {
             Arc::from("/P"),
             &PdfObject::Dict(Box::new(props)),
             &ResourceDict::new(),
+            None,
             None,
             None,
         );
@@ -611,6 +616,7 @@ mod tests {
             &PdfObject::Dict(Box::new(props)),
             &ResourceDict::new(),
             None,
+            None,
             None
         ));
         assert_eq!(stack.depth(), 1);
@@ -634,6 +640,7 @@ mod tests {
             &PdfObject::Dict(Box::new(props)),
             &ResourceDict::new(),
             Some(&off_set),
+            None,
             None
         ));
         assert_eq!(stack.depth(), 1);
@@ -657,6 +664,7 @@ mod tests {
             &PdfObject::Dict(Box::new(props)),
             &ResourceDict::new(),
             Some(&off_set),
+            None,
             None
         ));
         assert_eq!(stack.depth(), 1);
@@ -682,6 +690,7 @@ mod tests {
             &ResourceDict::new(),
             Some(&off_set),
             None,
+            None,
         ));
         assert_eq!(stack.depth(), 1);
         assert!(stack.is_hidden()); // /OC with leading slash works
@@ -706,6 +715,7 @@ mod tests {
             &PdfObject::Dict(Box::new(props)),
             &ResourceDict::new(),
             Some(&off_set),
+            None,
             None,
         ));
         assert_eq!(stack.depth(), 1);

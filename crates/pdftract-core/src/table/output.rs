@@ -269,6 +269,7 @@ fn columns_similar(grid1: &GridCandidate, grid2: &GridCandidate) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use crate::table::cell::TableSpan;
     use super::*;
     use crate::table::Segment;
 

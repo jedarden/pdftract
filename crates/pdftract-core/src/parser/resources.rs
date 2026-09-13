@@ -252,6 +252,7 @@ pub fn extract_resources(resources_obj: &PdfObject) -> ResourceDict {
 
 #[cfg(test)]
 mod tests {
+    use crate::parser::object::PdfDict;
     use super::*;
 
     #[test]

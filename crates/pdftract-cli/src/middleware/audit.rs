@@ -139,6 +139,8 @@ pub async fn audit_middleware(
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Audit fixtures are addressed by absolute path in the tests below.
+    use std::path::Path;
 
     #[test]
     fn test_extract_client_ip_from_headers_single() {

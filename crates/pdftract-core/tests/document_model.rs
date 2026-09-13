@@ -122,7 +122,7 @@ fn test_fixture(fixture: Fixture) {
     println!("Testing fixture: {}", fixture.name);
 
     // Parse the PDF
-    let (_fingerprint, catalog, pages, resolver) = parse_pdf_file(&fixture.pdf_path)
+    let (_fingerprint, catalog, pages, resolver, _objects) = parse_pdf_file(&fixture.pdf_path)
         .unwrap_or_else(|e| panic!("Failed to parse fixture {}: {}", fixture.name, e));
 
     // Read the expected JSON if it exists

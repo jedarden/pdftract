@@ -294,6 +294,7 @@ fn extract_js_code(
 
 #[cfg(test)]
 mod tests {
+    use crate::parser::object::{ObjRef, PdfDict};
     use super::*;
 
     #[test]

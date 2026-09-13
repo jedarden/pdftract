@@ -424,6 +424,7 @@ pub fn emit_page_links_from_json(
 
 #[cfg(test)]
 mod tests {
+    use crate::annotation::links::FitType;
     use super::*;
     use crate::annotation::AnnotationCommon;
 

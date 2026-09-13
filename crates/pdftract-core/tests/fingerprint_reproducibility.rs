@@ -25,7 +25,7 @@ fn fingerprint_from_path(relative_path: &str) -> Result<String, Box<dyn std::err
         .unwrap_or(base)
         .join(relative_path);
 
-    let (fingerprint, _catalog, _pages, _resolver) = parse_pdf_file(&fixture_path)
+    let (fingerprint, _catalog, _pages, _resolver, _objects) = parse_pdf_file(&fixture_path)
         .map_err(|e| format!("Failed to open {}: {:?}", fixture_path.display(), e))?;
     Ok(fingerprint)
 }

@@ -261,6 +261,7 @@ fn bboxes_intersect(a: &[f32; 4], b: &[f32; 4]) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use super::*;
     use crate::parser::object::ObjRef;
 

@@ -2205,7 +2205,8 @@ mod tests {
         ctx.text_op_count = 0;
         ctx.image_coverage = 0.50;
 
-        let result = classify_page(&ctx);
+        let result = classify_page(&ctx)
+            .expect("classify_page failed");
 
         // Should short-circuit to Scanned with >=0.95 confidence
         assert_eq!(result.class, PageClass::Scanned);
@@ -2227,7 +2228,8 @@ mod tests {
         // 0.95 * 484,704 = 460,468.8, so use 460,500 to be safely above threshold
         ctx.image_xobject_areas.push(460_500.0); // >= 95% coverage
 
-        let result = classify_page(&ctx);
+        let result = classify_page(&ctx)
+            .expect("classify_page failed");
 
         // Should short-circuit to BrokenVector with >0.95 confidence
         assert_eq!(result.class, PageClass::BrokenVector);
@@ -2245,7 +2247,8 @@ mod tests {
         ctx.image_coverage = 0.10;
         ctx.density_ratio = 0.25;
 
-        let result = classify_page(&ctx);
+        let result = classify_page(&ctx)
+            .expect("classify_page failed");
 
         // Low validity should push toward BrokenVector
         assert_eq!(result.class, PageClass::BrokenVector);
@@ -2262,7 +2265,8 @@ mod tests {
         ctx.image_coverage = 0.90;
         ctx.density_ratio = 0.20;
 
-        let result = classify_page(&ctx);
+        let result = classify_page(&ctx)
+            .expect("classify_page failed");
 
         // High image coverage should push toward Scanned
         assert_eq!(result.class, PageClass::Scanned);
@@ -2279,7 +2283,8 @@ mod tests {
         ctx.image_coverage = 0.10;
         ctx.density_ratio = 0.02; // Below threshold
 
-        let result = classify_page(&ctx);
+        let result = classify_page(&ctx)
+            .expect("classify_page failed");
 
         // Low density should push toward Scanned
         assert_eq!(result.class, PageClass::Scanned);
@@ -2296,7 +2301,8 @@ mod tests {
         ctx.image_coverage = 0.30;
         ctx.density_ratio = 0.20;
 
-        let result = classify_page(&ctx);
+        let result = classify_page(&ctx)
+            .expect("classify_page failed");
 
         // Default to Vector with 0.5 confidence
         assert_eq!(result.class, PageClass::Vector);
@@ -2313,8 +2319,10 @@ mod tests {
         ctx.image_coverage = 0.15;
         ctx.density_ratio = 0.60;
 
-        let result1 = classify_page(&ctx);
-        let result2 = classify_page(&ctx);
+        let result1 = classify_page(&ctx)
+            .expect("classify_page failed");
+        let result2 = classify_page(&ctx)
+            .expect("classify_page failed");
 
         assert_eq!(result1.class, result2.class);
         assert_eq!(result1.confidence, result2.confidence);
@@ -2344,7 +2352,8 @@ mod tests {
             ctx.image_coverage = img_cov;
             ctx.density_ratio = density;
 
-            let result = classify_page(&ctx);
+            let result = classify_page(&ctx)
+            .expect("classify_page failed");
             assert!(
                 result.confidence >= 0.0 && result.confidence <= 1.0,
                 "confidence {} out of range for case ({}, {}, {}, {}, {})",
@@ -2369,7 +2378,8 @@ mod tests {
         ctx.density_ratio = 0.75;
 
         // This should use the default PageClassifier
-        let result = classify_page(&ctx);
+        let result = classify_page(&ctx)
+            .expect("classify_page failed");
 
         assert_eq!(result.class, PageClass::Vector);
         assert!(result.confidence > 0.85);
@@ -2647,7 +2657,8 @@ mod tests {
 
         // Call classify_page - returns PageClassification directly (no Result type)
         // Function is infallible for valid PageContext input
-        let result = classify_page(&ctx);
+        let result = classify_page(&ctx)
+            .expect("classify_page failed");
 
         // OUTPUT FORMAT VERIFICATION
         // All assertions include descriptive messages for format mismatch diagnosis
@@ -2760,7 +2771,8 @@ mod tests {
         ctx.rotation = 0;                 // No rotation
 
         // Call classify_page - should succeed without errors
-        let result = classify_page(&ctx);
+        let result = classify_page(&ctx)
+            .expect("classify_page failed");
 
         // Basic output format verification
         assert!(result.confidence >= 0.0 && result.confidence <= 1.0,
