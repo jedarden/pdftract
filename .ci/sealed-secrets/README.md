@@ -1,45 +1,26 @@
-# Sealed Secrets for pdftract CI
+# Sealed Secrets for pdftract CI — REMOVED 2026-09-13
 
-This directory contains SealedSecret manifests for the pdftract CI pipeline on iad-ci.
+The `forgejo-ci-token` SealedSecret (argo-workflows namespace) that lived in
+this directory was deleted and must **not** be re-created or applied.
 
-## SealedSecret Details
+## Why it was removed
 
-### forgejo-ci-token.yaml
+- The underlying 2026-08-07 Forgejo PATs were exposed in legacy pdftract bead
+  notes and are being revoked — see P0 bead `pdftract-3eea9d13` ("Rotate
+  Forgejo credentials exposed in historical pdftract bead notes").
+- declarative-config commit `f9e86590` ("drop orphaned forgejo-ci-token
+  SealedSecrets") removed its two copies of the same ciphertext
+  (`k8s/iad-ci/sealed-secrets/`, `k8s/iad-ci/external-secrets/`) for that
+  reason. The file here was the identical ciphertext (verified by
+  fingerprint) and was the last stray copy.
+- No WorkflowTemplate references `forgejo-ci-token` in argo-workflows; the
+  Secret it materialized was unused.
 
-- **Purpose**: Forgejo API token for CI authentication
-- **Namespace**: argo-workflows
-- **Sealed with**: kubeseal v0.27.1
-- **Controller**: sealed-secrets-controller (via rs-manager cluster)
-- **Date sealed**: 2026-08-06
-- **Token scope**: CI/CD automation for pdftract repository
+## How CI actually authenticates to git.ardenone.com
 
-## Usage
-
-SealedSecrets are automatically decrypted by the sealed-secrets controller in the cluster.
-Apply the manifest to create the actual Secret:
-
-```bash
-kubectl --kubeconfig ~/.kube/iad-ci.kubeconfig apply -f .ci/sealed-secrets/forgejo-ci-token.yaml
-```
-
-## Regenerating
-
-If a secret needs to be re-sealed:
-
-1. Create a standard Kubernetes Secret manifest
-2. Use kubeseal with the appropriate cluster context:
-
-```bash
-kubeseal --kubeconfig ~/.kube/rs-manager.kubeconfig \
-  --controller-name sealed-secrets-controller \
-  --controller-namespace sealed-secrets \
-  --format yaml < secret.yaml > sealed-secret.yaml
-```
-
-Note: The sealed-secrets controller runs on rs-manager cluster. Secrets are sealed there
-and can be applied to any cluster with the same certificate.
-
-## Security
-
-SealedSecrets can be safely committed to git as they are encrypted with the cluster's
-public key. Only the sealed-secrets controller can decrypt them.
+The `rust-verify` template (and other iad-ci templates) inject
+`FORGEJO_TOKEN` from Secret `forgejo-webhook-token` (argo-workflows
+namespace), an ExternalSecret pulling from OpenBao
+`secret/rs-manager/iad-ci/forgejo/ci-token`. Rotation happens at the OpenBao
+path and External Secrets Operator syncs it — credentials must not be sealed
+into git.
