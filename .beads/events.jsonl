@@ -7217,3 +7217,12 @@
 {"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a09888-3b3b-7f40-b016-c96403a3d60a","bead":"pdftract-1w22d","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-13T02:11:00.028005858+00:00","worker":"glm-pdftract"}
 {"bead":"pdftract-3eea9d13","event":"claim","strand":"explore","ts":"2026-09-13T02:11:50.722245890+00:00","worker":"glm-roam-19"}
 {"adapter":"claude-code-glm-5.3","attempt_id":"01a09889-040c-7853-aa19-fb45e2d64592","bead":"pdftract-3eea9d13","event":"dispatch","model":"glm-5.3","strand":"explore","ts":"2026-09-13T02:11:51.436269441+00:00","worker":"glm-roam-19"}
+{"bead":"pdftract-c52e8471","duration_ms":3603089,"event":"timeout","exit_code":124,"outcome":"timeout","strand":"explore","ts":"2026-09-13T02:29:50.064129934+00:00","worker":"cgov-sonnet-tgplat3"}
+{"bead":"bf-33zjo","event":"claim","strand":"explore","ts":"2026-09-13T02:32:41.612204239+00:00","worker":"glm-roam-18"}
+{"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a0989c-1a58-7a52-80ea-99c2385317c4","bead":"bf-33zjo","event":"dispatch","model":"glm-5.3-flash","strand":"explore","ts":"2026-09-13T02:32:42.328365413+00:00","worker":"glm-roam-18"}
+{"bead":"pdftract-1w22d","duration_ms":2102255,"event":"fail","exit_code":0,"outcome":"failure","strand":"pluck","ts":"2026-09-13T02:46:02.447931060+00:00","worker":"glm-pdftract"}
+{"bead":"bf-hyhjnl","event":"claim","strand":"pluck","ts":"2026-09-13T02:46:45.154485965+00:00","worker":"glm-pdftract"}
+{"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a098a8-f8ef-7a43-abde-6626eb6a1808","bead":"bf-hyhjnl","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-13T02:46:45.743160327+00:00","worker":"glm-pdftract"}
+{"bead":"bf-wts1b","duration_ms":3602269,"event":"timeout","exit_code":124,"outcome":"timeout","strand":"explore","ts":"2026-09-13T02:56:13.690654629+00:00","worker":"codex-sol-tgplat"}
+{"bead":"bf-yu5ni","event":"claim","strand":"explore","ts":"2026-09-13T02:59:41.401129383+00:00","worker":"glm-roam-18"}
+{"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a098b4-d1da-7881-ad69-18e66f7fb67e","bead":"bf-yu5ni","event":"dispatch","model":"glm-5.3-flash","strand":"explore","ts":"2026-09-13T02:59:42.170346869+00:00","worker":"glm-roam-18"}
