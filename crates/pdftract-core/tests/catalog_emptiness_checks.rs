@@ -15,7 +15,6 @@ use pdftract_core::document::{validate_pages_structure, DocumentError};
 use pdftract_core::parser::catalog::{Catalog, is_catalog_dict_empty, is_catalog_dict_none, catalog_dict_missing_essential_keys};
 use pdftract_core::parser::object::{PdfObject, ObjRef};
 use pdftract_core::parser::xref::XrefResolver;
-use indexmap::indexmap;
 
 /// Test 1: Empty catalog.dictionary triggers DocumentError::EmptyDocument
 #[test]

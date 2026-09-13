@@ -16,7 +16,7 @@
 //! - Per-field accuracy: >= 90% on the 5-fixture corpus (relaxed for slide_titles which is best-effort)
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Get the workspace root directory
 fn workspace_root() -> PathBuf {
@@ -349,7 +349,7 @@ fn test_slide_deck_match_predicates() {
 /// Test fixture count meets minimum requirement
 #[test]
 fn test_fixture_count() {
-    let fixture_dir = fixture_dir();
+    let _fixture_dir = fixture_dir();
 
     // Count expected output files (excluding README and PROVENANCE)
     let expected_count = SLIDE_DECK_FIXTURES.len();
@@ -638,7 +638,7 @@ fn test_exclusion_patterns() {
 
 #[cfg(test)]
 mod integration_tests {
-    use super::*;
+
 
     /// Integration test: Verify profile can be loaded and parsed
     ///

@@ -1,5 +1,5 @@
 use indexmap::IndexMap;
-use pdftract_core::parser::object::{PdfDict, PdfObject};
+use pdftract_core::parser::object::PdfObject;
 #[allow(unused_imports)]
 use pdftract_core::parser::stream::{LZWDecoder, StreamDecoder};
 use std::sync::Arc;

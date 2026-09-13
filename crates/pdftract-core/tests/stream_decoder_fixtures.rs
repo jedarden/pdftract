@@ -5,7 +5,7 @@
 
 use indexmap::IndexMap;
 use pdftract_core::diagnostics::DiagCode;
-use pdftract_core::parser::object::{PdfDict, PdfObject};
+use pdftract_core::parser::object::PdfObject;
 use pdftract_core::parser::stream::{
     normalize_filter_name, ASCII85Decoder, ASCIIHexDecoder, CCITTFaxDecoder, CryptDecoder,
     DCTDecoder, FlateDecoder, JpxStreamDecoder, LZWDecoder, PassthroughDecoder, RunLengthDecoder,

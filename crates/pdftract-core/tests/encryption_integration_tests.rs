@@ -9,25 +9,21 @@
 //! - Unsupported handler detection
 
 #[cfg(feature = "decrypt")]
-use pdftract_core::diagnostics::{DiagCode, Diagnostic};
+use pdftract_core::diagnostics::DiagCode;
 #[cfg(feature = "decrypt")]
 use pdftract_core::encryption::{
     aes_128::{aes_128_decrypt, derive_aes_128_object_key},
-    aes_256::{aes_256_decrypt, Aes256Decryptor, FileKeyResult as Aes256FileKeyResult},
-    decryptor::{decrypt_with_password, DecryptionError, PasswordValidation},
+    aes_256::Aes256Decryptor,
     detection::{
-        detect_encryption, CryptFilterMethod, EncryptionInfo,
+        detect_encryption,
         ResolveError as DetectionResolveError, XrefResolver as DetectionXrefResolver,
     },
     rc4::{
-        decrypt_object, derive_file_key, derive_object_key, pad_password, rc4_decrypt,
-        validate_user_password, FileKeyResult as Rc4FileKeyResult,
+        derive_file_key, derive_object_key, pad_password, rc4_decrypt,
     },
 };
 #[cfg(feature = "decrypt")]
 use pdftract_core::parser::object::{PdfDict, PdfObject};
-#[cfg(feature = "decrypt")]
-use pdftract_core::parser::xref::{XrefEntry, XrefResolver};
 
 /// Mock resolver for testing.
 #[cfg(feature = "decrypt")]

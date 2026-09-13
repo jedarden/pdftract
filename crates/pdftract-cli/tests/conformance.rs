@@ -8,9 +8,7 @@
 
 use anyhow::{Context, Result};
 use serde_json::Value;
-use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 const SUITE_PATH: &str = "tests/sdk-conformance/cases.json";
@@ -184,7 +182,7 @@ fn run_test_case(case: &Value, schema_version: &str) -> Result<TestResult> {
     let id = case["id"].as_str().unwrap_or("unknown").to_string();
     let start = Instant::now();
 
-    let feature = case.get("feature").and_then(|v| v.as_str());
+    let _feature = case.get("feature").and_then(|v| v.as_str());
     let min_schema = case.get("min_schema_version").and_then(|v| v.as_str());
 
     if let Some(min_ver) = min_schema {
@@ -260,7 +258,7 @@ fn run_test_case(case: &Value, schema_version: &str) -> Result<TestResult> {
     Ok(result)
 }
 
-fn execute_method(method: &str, fixture: &str, options: &Value) -> Result<Value> {
+fn execute_method(method: &str, _fixture: &str, options: &Value) -> Result<Value> {
     match method {
         "extract" => {
             let _ocr_lang = options.get("ocr_language").and_then(|v| v.as_str());

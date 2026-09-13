@@ -18,9 +18,9 @@
 
 mod fixture_discovery;
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
-use fixture_discovery::{fixtures_root, discover_all_fixtures, discover_fixtures_by_category, discover_fixtures_in_dir, fixture_categories};
+use fixture_discovery::{fixtures_root, discover_all_fixtures, discover_fixtures_by_category, fixture_categories};
 
 /// Get the path to the pdftract binary (cargo build output)
 fn pdftract_bin() -> PathBuf {
@@ -339,7 +339,7 @@ fn test_cli_invocation_on_all_fixtures() {
 /// * `Ok(None)` - Process terminated by signal
 /// * `Err(String)` - Timeout or execution error
 fn invoke_cli_with_timeout(bin: &PathBuf, pdf_path: &PathBuf, timeout_secs: u64) -> Result<Option<i32>, String> {
-    use std::thread;
+
     use std::time::{Duration, Instant};
 
     // Spawn the CLI process

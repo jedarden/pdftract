@@ -10,7 +10,7 @@
 //! - Error handling works for missing Page data
 
 use pdftract_core::{extract_pdf, page_helpers, ExtractionOptions};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Get the workspace root directory
 fn workspace_root() -> PathBuf {

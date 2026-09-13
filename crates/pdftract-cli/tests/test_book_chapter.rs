@@ -539,7 +539,7 @@ fn test_lowest_priority() {
 
 #[cfg(test)]
 mod integration_tests {
-    use super::*;
+
 
     /// Integration test: Verify profile can be loaded and parsed
     ///

@@ -16,10 +16,11 @@
 //! documented signatures and must pass the conformance suite.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+#[cfg(feature = "receipts")]
+use std::path::Path;
 
 use anyhow::{anyhow, Result};
-use regex::Regex;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -413,7 +414,7 @@ fn run_extract_text_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
     let text = sdk::extract_text(&fixture_path, &options)
         .map_err(|e| anyhow!("Extract text failed: {}", e))?;
 
-    let mut result = serde_json::json!({
+    let result = serde_json::json!({
         "output_type": "string",
         "text": text,
         "length": text.len(),
@@ -451,7 +452,7 @@ fn run_extract_markdown_test(case: &TestCase) -> Result<(Value, Vec<String>)> {
     let markdown = sdk::extract_markdown(&fixture_path, &options)
         .map_err(|e| anyhow!("Extract markdown failed: {}", e))?;
 
-    let mut result = serde_json::json!({
+    let result = serde_json::json!({
         "output_type": "string",
         "markdown": markdown,
         "length": markdown.len(),

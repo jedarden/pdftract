@@ -216,7 +216,7 @@ pub fn kill_processes_matching_patterns(
         for (pid, _cmd) in processes {
             // Try to kill the process
             if let Ok(pid_num) = pid.parse::<u32>() {
-                use std::io::ErrorKind;
+
 
                 // Send SIGTERM
                 if unsafe { libc::kill(pid_num as i32, libc::SIGTERM) } == 0 {

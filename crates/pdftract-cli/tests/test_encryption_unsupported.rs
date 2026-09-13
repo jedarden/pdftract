@@ -6,12 +6,6 @@
 
 use std::process::{Command, Stdio};
 
-// CLI module imports for encryption testing
-use pdftract_cli::password;
-use pdftract_core::diagnostics::{
-    DiagCode, DiagInfo, Diagnostic, DiagnosticsCollector, ObjRef, Severity, DIAGNOSTIC_CATALOG,
-};
-
 #[test]
 fn test_livecycle_pdf_emits_encryption_unsupported() {
     // Test that livecycle.pdf (unsupported Adobe.APS encryption handler)

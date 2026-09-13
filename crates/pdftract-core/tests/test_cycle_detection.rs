@@ -128,9 +128,6 @@ fn test_cache_hit_ratio_90_percent() {
     }
 
     // Access them randomly 1000 times (should hit most of the time)
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
     for i in 0..num_accesses {
         // Deterministic "random" sequence
         let idx = (i as u32) % num_unique as u32;

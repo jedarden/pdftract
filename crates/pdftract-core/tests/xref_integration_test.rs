@@ -7,13 +7,12 @@ mod xref_helpers;
 
 use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use pdftract_core::diagnostics::Diagnostic;
 use pdftract_core::parser::stream::{MemorySource, PdfSource};
 use pdftract_core::parser::xref::{
-    detect_linearization, forward_scan_xref, load_xref_linearized, load_xref_with_prev_chain,
-    merge_hybrid, parse_traditional_xref, parse_xref_stream, XrefEntry, XrefSection,
+    detect_linearization, forward_scan_xref, load_xref_linearized, load_xref_with_prev_chain, XrefEntry, XrefSection,
 };
 
 /// Fixture directory containing the test PDF files.

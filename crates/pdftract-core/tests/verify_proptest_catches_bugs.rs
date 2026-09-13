@@ -64,7 +64,7 @@ fn verify_infrastructure_complete() {
     // Final verification that all required infrastructure is in place
 
     // 1. All 10 fixtures exist
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     let fixtures_dir = PathBuf::from("tests/object_parser/fixtures");
     let required_fixtures = vec![
         "nested_dict",

@@ -1,8 +1,6 @@
 //! Standalone test program to list all PDF fixtures in the fixtures directory.
 //! This demonstrates the fixture_discovery module functionality.
 
-use std::path::Path;
-
 // Import the discovery functions from the fixture_discovery module
 mod fixture_discovery {
     use std::path::{Path, PathBuf};

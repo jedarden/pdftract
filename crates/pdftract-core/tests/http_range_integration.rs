@@ -3,7 +3,6 @@
 //! These tests require a local HTTP server to properly test Range request behavior.
 //! Uses mock_server to simulate various server responses.
 
-use pdftract_core::source::PdfSource;
 use std::io;
 use std::sync::Arc;
 

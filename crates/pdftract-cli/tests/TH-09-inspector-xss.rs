@@ -4,7 +4,7 @@
 //! responses and SVG-based rendering (not innerHTML) prevents XSS from
 //! crafted PDF content.
 
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::time::Duration;
 
 /// Path to the pdftract binary.

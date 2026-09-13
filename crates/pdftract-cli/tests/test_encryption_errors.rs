@@ -19,13 +19,10 @@
 //! - Plan line 1132: RC4 and AES-128/256 decryption implementation
 //! - Plan line 1149: Encrypted file with unknown handler error handling
 
-use std::error::Error;
 use std::env;
 use std::fs;
-use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::time::Duration;
 
 // NOTE: This test file uses a subprocess approach (spawning the CLI binary via
 // std::process::Command) rather than directly calling internal modules. The CLI
@@ -322,7 +319,7 @@ mod fixture_validation {
 
 #[cfg(test)]
 mod integration_tests {
-    use super::*;
+
 
     /// Integration test: Complete extraction workflow for supported encrypted PDFs
     #[test]

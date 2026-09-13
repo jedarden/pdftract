@@ -9,6 +9,7 @@
 //!
 //! Run with: cargo test --test ocr_integration --features ocr -- --ignored
 
+#[cfg(feature = "ocr")]
 use std::path::Path;
 
 /// Only run these tests if Tesseract is available.

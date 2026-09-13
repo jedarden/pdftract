@@ -12,8 +12,8 @@
 //! 4. No listener accepts connections during the failure window
 
 use std::io::{BufRead, BufReader};
-use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
-use std::process::{Child, ChildStderr, ChildStdout, Command, Stdio};
+use std::net::{SocketAddr, ToSocketAddrs};
+use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::Duration;
 

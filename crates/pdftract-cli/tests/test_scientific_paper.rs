@@ -18,7 +18,7 @@
 //! - Per-field accuracy: >= 90% on the 5-fixture corpus
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Get the workspace root directory
 fn workspace_root() -> PathBuf {
@@ -356,7 +356,7 @@ fn test_scientific_paper_match_predicates() {
 /// Test fixture count meets minimum requirement
 #[test]
 fn test_fixture_count() {
-    let fixture_dir = fixture_dir();
+    let _fixture_dir = fixture_dir();
 
     // Count expected output files (excluding README and PROVENANCE)
     let expected_count = SCIENTIFIC_PAPER_FIXTURES.len();
@@ -504,7 +504,7 @@ fn test_doi_regex_format() {
 
 #[cfg(test)]
 mod integration_tests {
-    use super::*;
+
 
     /// Integration test: Verify profile can be loaded and parsed
     ///

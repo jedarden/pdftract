@@ -1,9 +1,9 @@
 //! Quick debug test for failing stream decoder fixtures.
 
 use indexmap::IndexMap;
-use pdftract_core::parser::object::{PdfDict, PdfObject};
+use pdftract_core::parser::object::PdfObject;
 use pdftract_core::parser::stream::{
-    normalize_filter_name, ASCII85Decoder, FlateDecoder, LZWDecoder, StreamDecoder,
+    ASCII85Decoder, FlateDecoder, LZWDecoder, StreamDecoder,
 };
 
 #[test]

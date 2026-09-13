@@ -14,7 +14,7 @@
 //! - output.form_fields is populated (when Phase 7.4 is integrated)
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Get the workspace root directory
 fn workspace_root() -> PathBuf {
@@ -268,7 +268,7 @@ fn test_form_profile_is_degenerate() {
     // which is the expected degenerate behavior per plan line 3045.
 
     let profile_path = profile_path();
-    let content = fs::read_to_string(profile_path).expect("Failed to read form profile");
+    let _content = fs::read_to_string(profile_path).expect("Failed to read form profile");
 
     // The classification profile (profile.yaml) doesn't have fields,
     // but the extraction profile (classification/form.yaml) should have

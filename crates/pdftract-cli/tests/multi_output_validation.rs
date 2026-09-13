@@ -3,7 +3,6 @@
 //! This test suite verifies that the CLI properly validates multi-output
 //! flags according to the rules in Phase 6.6 of the plan.
 
-use std::path::PathBuf;
 use std::process::Command;
 
 /// Helper to run pdftract extract with the given arguments.

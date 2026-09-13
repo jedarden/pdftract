@@ -897,7 +897,7 @@ mod tests {
 
     #[test]
     fn test_fixture_info_from_path_derives_name_and_description() {
-        let mut discovered = discover_all_fixtures();
+        let discovered = discover_all_fixtures();
         assert!(!discovered.is_empty(), "Need at least one fixture to test");
         // Use a nested fixture (under a category dir) so the category-derived
         // description is exercised. Fall back to the first fixture if none are
