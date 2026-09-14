@@ -1,0 +1,1589 @@
+    Blocking waiting for file lock on build directory
+   Compiling pdftract-core v0.1.0 (/data/tmp-pdftract-c2-headgate/crates/pdftract-core)
+warning: pdftract-core@0.1.0: glyph-shapes.json not found at /data/tmp-pdftract-c2-headgate/build/glyph-shapes.json, generating empty shape database
+warning: unused import: `PdfDict`
+   --> crates/pdftract-core/src/attachment/filespec.rs:583:41
+    |
+583 |     use crate::parser::object::{intern, PdfDict, PdfObject, PdfStream};
+    |                                         ^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `PdfDict`
+   --> crates/pdftract-core/src/attachment/name_tree.rs:420:41
+    |
+420 |     use crate::parser::object::{intern, PdfDict, PdfObject};
+    |                                         ^^^^^^^
+
+warning: unused import: `std::io::Cursor`
+   --> crates/pdftract-core/src/audit.rs:183:9
+    |
+183 |     use std::io::Cursor;
+    |         ^^^^^^^^^^^^^^^
+
+warning: unused import: `indexmap::indexmap`
+   --> crates/pdftract-core/src/decoder/jbig2.rs:154:9
+    |
+154 |     use indexmap::indexmap;
+    |         ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `parse_catalog`
+    --> crates/pdftract-core/src/document.rs:2564:38
+     |
+2564 |         use crate::parser::catalog::{parse_catalog, Catalog};
+     |                                      ^^^^^^^^^^^^^
+
+warning: unused import: `crate::parser::object::PdfObject`
+    --> crates/pdftract-core/src/document.rs:2766:13
+     |
+2766 |         use crate::parser::object::PdfObject;
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::parser::object::ObjRef`
+    --> crates/pdftract-core/src/document.rs:2767:13
+     |
+2767 |         use crate::parser::object::ObjRef;
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::parser::ocg::OcProperties`
+    --> crates/pdftract-core/src/document.rs:2768:13
+     |
+2768 |         use crate::parser::ocg::OcProperties;
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::parser::object::ObjRef`
+    --> crates/pdftract-core/src/document.rs:2900:13
+     |
+2900 |         use crate::parser::object::ObjRef;
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::parser::object::ObjRef`
+    --> crates/pdftract-core/src/document.rs:2940:13
+     |
+2940 |         use crate::parser::object::ObjRef;
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ObjRef` and `intern`
+    --> crates/pdftract-core/src/document.rs:3025:37
+     |
+3025 |         use crate::parser::object::{intern, ObjRef, PdfObject};
+     |                                     ^^^^^^  ^^^^^^
+
+warning: unused imports: `ObjRef` and `intern`
+    --> crates/pdftract-core/src/document.rs:3052:37
+     |
+3052 |         use crate::parser::object::{intern, ObjRef, PdfObject};
+     |                                     ^^^^^^  ^^^^^^
+
+warning: unused imports: `ObjRef` and `intern`
+    --> crates/pdftract-core/src/document.rs:3282:37
+     |
+3282 |         use crate::parser::object::{intern, ObjRef, PdfObject};
+     |                                     ^^^^^^  ^^^^^^
+
+warning: unused import: `ObjRef`
+    --> crates/pdftract-core/src/document.rs:3304:45
+     |
+3304 |         use crate::parser::object::{intern, ObjRef, PdfObject};
+     |                                             ^^^^^^
+
+warning: unused imports: `ObjRef` and `intern`
+    --> crates/pdftract-core/src/document.rs:3439:37
+     |
+3439 |         use crate::parser::object::{intern, ObjRef, PdfObject};
+     |                                     ^^^^^^  ^^^^^^
+
+warning: unused imports: `ObjRef` and `intern`
+    --> crates/pdftract-core/src/document.rs:3465:37
+     |
+3465 |         use crate::parser::object::{intern, ObjRef, PdfObject};
+     |                                     ^^^^^^  ^^^^^^
+
+warning: unused imports: `ObjRef` and `intern`
+    --> crates/pdftract-core/src/document.rs:3521:37
+     |
+3521 |         use crate::parser::object::{intern, ObjRef, PdfObject};
+     |                                     ^^^^^^  ^^^^^^
+
+warning: unused imports: `ObjRef` and `intern`
+    --> crates/pdftract-core/src/document.rs:3543:37
+     |
+3543 |         use crate::parser::object::{intern, ObjRef, PdfObject};
+     |                                     ^^^^^^  ^^^^^^
+
+warning: unused import: `crate::parser::object::ObjRef`
+    --> crates/pdftract-core/src/document.rs:4138:13
+     |
+4138 |         use crate::parser::object::ObjRef;
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::parser::object::ObjRef`
+    --> crates/pdftract-core/src/document.rs:4187:13
+     |
+4187 |         use crate::parser::object::ObjRef;
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::diagnostics::DiagCode`
+    --> crates/pdftract-core/src/extract.rs:3562:13
+     |
+3562 |         use crate::diagnostics::DiagCode;
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `make_rect_glyph` and `make_test_resolver`
+    --> crates/pdftract-core/src/font/type3.rs:1836:13
+     |
+1836 |             make_rect_glyph, make_test_char_procs, make_test_resolver,
+     |             ^^^^^^^^^^^^^^^                        ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+    --> crates/pdftract-core/src/font/type3.rs:1838:13
+     |
+1838 |         use std::collections::HashMap;
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `AtomicBool` and `AtomicU64`
+  --> crates/pdftract-core/src/font/type3_rasterizer_test.rs:21:25
+   |
+21 | use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+   |                         ^^^^^^^^^^  ^^^^^^^^^
+
+warning: unused imports: `AETInspector`, `CharToGlyphMap`, `Content`, `GlyphDict`, `GlyphEntry`, `MockCounter`, `MockResolver`, `MockSource`, `create_basic_char_to_glyph_map`, `create_basic_glyph_dict`, `create_char_to_glyph_from_dict`, `create_charproc_stream_with_curves`, `create_edges_from_endpoints`, `create_empty_content_stream`, `create_glyph_dict_with_basic_properties`, `create_main_content_stream_multi`, `create_main_content_stream`, `create_minimal_char_to_glyph_map`, `create_minimal_glyph_dict`, `create_minimal_type3_font`, `create_rectangle_charproc_stream`, `create_rectangle_edges`, `create_scanline_context`, `create_simple_charproc_stream`, `create_triangle_edges`, `mock_counter`, `mock_resolver`, `mock_source`, and `to_charprocs_map`
+  --> crates/pdftract-core/src/font/type3_rasterizer_test.rs:33:5
+   |
+33 |     Content, create_simple_charproc_stream, create_charproc_stream_with_curves,
+   |     ^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+34 |     create_rectangle_charproc_stream,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+35 |     create_empty_content_stream, create_main_content_stream, create_main_content_stream_multi,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+36 |     // Glyph dictionary fixtures
+37 |     GlyphEntry, GlyphDict, create_glyph_dict_with_basic_properties,
+   |     ^^^^^^^^^^  ^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+38 |     create_basic_glyph_dict, create_minimal_glyph_dict, to_charprocs_map,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+39 |     // Type3Font fixtures
+40 |     create_minimal_type3_font,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+41 |     // Mock fixtures
+42 |     MockResolver, MockSource, MockCounter, mock_resolver, mock_source, mock_counter,
+   |     ^^^^^^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^  ^^^^^^^^^^^^
+43 |     // Character mapping fixtures
+44 |     CharToGlyphMap, create_basic_char_to_glyph_map, create_minimal_char_to_glyph_map,
+   |     ^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+45 |     create_char_to_glyph_from_dict,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+46 |     // AET testing fixtures (note: TestEdge imported locally in tests that need builder pattern)
+47 |     AETInspector, create_edges_from_endpoints, create_triangle_edges,
+   |     ^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^
+48 |     create_rectangle_edges, create_scanline_context,
+   |     ^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::parser::xref::XrefEntry`
+    --> crates/pdftract-core/src/font/type3_rasterizer_test.rs:2329:9
+     |
+2329 |     use crate::parser::xref::XrefEntry;
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `CharToGlyphMap` and `GlyphDict`
+    --> crates/pdftract-core/src/font/type3_rasterizer_test.rs:2540:21
+     |
+2540 |         GlyphEntry, GlyphDict, create_glyph_dict_with_basic_properties,
+     |                     ^^^^^^^^^
+...
+2547 |         CharToGlyphMap, create_basic_char_to_glyph_map, create_minimal_char_to_glyph_map,
+     |         ^^^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+   --> crates/pdftract-core/src/forms/mod.rs:835:9
+    |
+835 |     use std::sync::Arc;
+    |         ^^^^^^^^^^^^^^
+
+warning: unused import: `super::*`
+    --> crates/pdftract-core/src/layout/correction.rs:1214:9
+     |
+1214 |     use super::*;
+     |         ^^^^^^^^
+
+warning: unused import: `std::io::Cursor`
+   --> crates/pdftract-core/src/output/ndjson/frames.rs:286:9
+    |
+286 |     use std::io::Cursor;
+    |         ^^^^^^^^^^^^^^^
+
+warning: unused import: `super::*`
+   --> crates/pdftract-core/src/output/ndjson/pipeline.rs:140:9
+    |
+140 |     use super::*;
+    |         ^^^^^^^^
+
+warning: unused import: `std::hash::Hasher`
+   --> crates/pdftract-core/src/page_class.rs:248:13
+    |
+248 |         use std::hash::Hasher;
+    |             ^^^^^^^^^^^^^^^^^
+
+warning: unused doc comment
+  --> crates/pdftract-core/src/parser/object/cache.rs:50:1
+   |
+50 | / /// Per-thread resolution depth counter.
+51 | | ///
+52 | | /// Each thread gets its own independent depth counter, allowing concurrent
+53 | | /// page processing in rayon without lock contention.
+   | |_----------------------------------------------------^
+   |   |
+   |   rustdoc does not generate documentation for macro invocations
+   |
+   = help: to document an item produced by a macro, the macro must produce the documentation as part of its expansion
+   = note: `#[warn(unused_doc_comments)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused doc comment
+  --> crates/pdftract-core/src/parser/object/cycle.rs:33:1
+   |
+33 | / /// Per-thread set of object references currently being resolved.
+34 | | ///
+35 | | /// Each thread gets its own independent HashSet, allowing concurrent
+36 | | /// page processing in rayon without lock contention.
+37 | | ///
+38 | | /// Capacity of 64 is conservative: typical PDF resolution depth is < 10.
+   | |_------------------------------------------------------------------------^
+   |   |
+   |   rustdoc does not generate documentation for macro invocations
+   |
+   = help: to document an item produced by a macro, the macro must produce the documentation as part of its expansion
+
+warning: unused import: `Hasher`
+    --> crates/pdftract-core/src/parser/stream.rs:1917:31
+     |
+1917 |         use std::hash::{Hash, Hasher};
+     |                               ^^^^^^
+
+warning: unused import: `crate::font::UnicodeSource`
+    --> crates/pdftract-core/src/span/mod.rs:1279:13
+     |
+1279 |         use crate::font::UnicodeSource;
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::table::Segment`
+   --> crates/pdftract-core/src/table/output.rs:274:9
+    |
+274 |     use crate::table::Segment;
+    |         ^^^^^^^^^^^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/atomic_file_writer.rs:295:13
+    |
+295 |         for mut writer in writers {
+    |             ----^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/attachment/filespec.rs:598:13
+    |
+598 |         let mut uf_bytes = filename
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/attachment/name_tree.rs:473:13
+    |
+473 |         let mut names_dict = IndexMap::new();
+    |             ----^^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: unused variable: `classifier`
+    --> crates/pdftract-core/src/classify.rs:2424:13
+     |
+2424 |         let classifier = PageClassifier::default();
+     |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_classifier`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `classifier`
+    --> crates/pdftract-core/src/classify.rs:2448:13
+     |
+2448 |         let classifier = PageClassifier::default();
+     |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_classifier`
+
+warning: unused variable: `classifier`
+    --> crates/pdftract-core/src/classify.rs:2469:13
+     |
+2469 |         let classifier = PageClassifier::default();
+     |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_classifier`
+
+warning: unused variable: `ranges`
+   --> crates/pdftract-core/src/cmap/codespace.rs:827:14
+    |
+827 |         let (ranges, diags) = parser.parse();
+    |              ^^^^^^ help: if this is intentional, prefix it with an underscore: `_ranges`
+
+warning: unused variable: `input`
+   --> crates/pdftract-core/src/cmap/codespace.rs:884:13
+    |
+884 |         let input = b"1 begincodespacerace <00> <7F> endcodespacerace";
+    |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_input`
+
+warning: unused variable: `catalog`
+    --> crates/pdftract-core/src/document.rs:2100:27
+     |
+2100 |         let (fingerprint, catalog, pages, resolver, _trailer) = parse_pdf_file(&pdf_path).unwrap();
+     |                           ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_catalog`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/document.rs:2649:13
+     |
+2649 |         let mut resolver = XrefResolver::new();
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/document.rs:3228:13
+     |
+3228 |         let mut resolver = XrefResolver::new();
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: unused variable: `fingerprint`
+    --> crates/pdftract-core/src/document.rs:5203:14
+     |
+5203 |         let (fingerprint, catalog, _pages, resolver, _trailer) = parse_pdf_file(&pdf_path).unwrap();
+     |              ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_fingerprint`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/encryption/aes_128.rs:221:13
+    |
+221 |         let mut data = vec![0u8; 33];
+    |             ----^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: unused variable: `deferred_diag`
+    --> crates/pdftract-core/src/extract.rs:3591:13
+     |
+3591 |         let deferred_diag = result
+     |             ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_deferred_diag`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/font/encoding.rs:1204:13
+     |
+1204 |         let mut diagnostics: Vec<Diagnostic> = Vec::new();
+     |             ----^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:2946:13
+     |
+2946 |         let mut stream_dict = PdfDict::new();
+     |             ----^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: unused variable: `obj_ref`
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:2943:13
+     |
+2943 |         let obj_ref = ObjRef::new(10, 0);
+     |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_obj_ref`
+
+warning: value assigned to `dummy_array` is never read
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3371:9
+     |
+3371 |         dummy_array[height - 1] = 2;
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+     = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `len`
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3860:45
+     |
+3860 |             fn read_at(&self, _offset: u64, len: usize) -> std::io::Result<Vec<u8>> {
+     |                                             ^^^ help: if this is intentional, prefix it with an underscore: `_len`
+
+warning: unused variable: `len`
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3931:45
+     |
+3931 |             fn read_at(&self, _offset: u64, len: usize) -> std::io::Result<Vec<u8>> {
+     |                                             ^^^ help: if this is intentional, prefix it with an underscore: `_len`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/font/type3_rasterizer_test.rs:340:34
+    |
+340 |     for (obj_nr, offset, gen_nr, mut obj_bytes) in object_configs {
+    |                                  ----^^^^^^^^^
+    |                                  |
+    |                                  help: remove this `mut`
+
+warning: unused variable: `obj_ref`
+   --> crates/pdftract-core/src/font/type3_rasterizer_test.rs:804:9
+    |
+804 |         obj_ref: ObjRef,
+    |         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_obj_ref`
+
+warning: unused variable: `x0`
+    --> crates/pdftract-core/src/font/type3_rasterizer_test.rs:1303:11
+     |
+1303 |     for &(x0, y0, x1, y1) in &horizontal_edges {
+     |           ^^ help: if this is intentional, prefix it with an underscore: `_x0`
+
+warning: unused variable: `x1`
+    --> crates/pdftract-core/src/font/type3_rasterizer_test.rs:1303:19
+     |
+1303 |     for &(x0, y0, x1, y1) in &horizontal_edges {
+     |                   ^^ help: if this is intentional, prefix it with an underscore: `_x1`
+
+warning: unused variable: `x0`
+    --> crates/pdftract-core/src/font/type3_rasterizer_test.rs:1320:11
+     |
+1320 |     for &(x0, y0, x1, y1) in &mixed_edges {
+     |           ^^ help: if this is intentional, prefix it with an underscore: `_x0`
+
+warning: unused variable: `x1`
+    --> crates/pdftract-core/src/font/type3_rasterizer_test.rs:1320:19
+     |
+1320 |     for &(x0, y0, x1, y1) in &mixed_edges {
+     |                   ^^ help: if this is intentional, prefix it with an underscore: `_x1`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/forms/mod.rs:839:13
+    |
+839 |         let mut resolver = XrefResolver::new();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/forms/mod.rs:930:13
+    |
+930 |         let mut resolver = XrefResolver::new();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/forms/mod.rs:991:14
+    |
+991 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+    |              ----^^^^^^^
+    |              |
+    |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/forms/mod.rs:991:27
+    |
+991 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+    |                           ----^^^^^^^^
+    |                           |
+    |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1064:14
+     |
+1064 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1064:27
+     |
+1064 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1111:14
+     |
+1111 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1111:27
+     |
+1111 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1153:14
+     |
+1153 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1153:27
+     |
+1153 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1195:14
+     |
+1195 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1195:27
+     |
+1195 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1237:14
+     |
+1237 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1237:27
+     |
+1237 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1275:14
+     |
+1275 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1275:27
+     |
+1275 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1351:14
+     |
+1351 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/forms/mod.rs:1351:27
+     |
+1351 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: unused variable: `initial_ctm`
+    --> crates/pdftract-core/src/graphics_state.rs:1094:13
+     |
+1094 |         let initial_ctm = state.ctm;
+     |             ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_initial_ctm`
+
+warning: unused variable: `threshold`
+    --> crates/pdftract-core/src/layout/columns.rs:1041:13
+     |
+1041 |         let threshold = (page_width * 0.03_f32).ceil() as usize; // 9
+     |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_threshold`
+
+warning: unused variable: `threshold`
+    --> crates/pdftract-core/src/layout/columns.rs:1060:13
+     |
+1060 |         let threshold = (page_width * 0.03_f32).ceil() as usize; // 18
+     |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_threshold`
+
+warning: unreachable pattern
+   --> crates/pdftract-core/src/layout/correction.rs:374:13
+    |
+360 |             0x0178 => 0x8E, // Ÿ (Latin capital letter Y with diaeresis)
+    |             ------ matches all the relevant values
+...
+374 |             0x0178 => 0x9E, // Ÿ (Latin small letter y with diaeresis) - duplicate codepoint, 9F is correct
+    |             ^^^^^^ no value can reach this
+    |
+    = note: `#[warn(unreachable_patterns)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `text_a`
+   --> crates/pdftract-core/src/layout/header_footer.rs:415:13
+    |
+415 |         let text_a = "ACME Corporation XYZ";
+    |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_text_a`
+
+warning: unused variable: `text_b`
+   --> crates/pdftract-core/src/layout/header_footer.rs:416:13
+    |
+416 |         let text_b = "ACME CorporationsXYZ"; // 1 char diff (added 's')
+    |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_text_b`
+
+warning: unused variable: `text_a`
+   --> crates/pdftract-core/src/layout/header_footer.rs:433:13
+    |
+433 |         let text_a = "ACME Corporation ".repeat(6); // ~114 chars
+    |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_text_a`
+
+warning: unused variable: `text_b`
+   --> crates/pdftract-core/src/layout/header_footer.rs:434:13
+    |
+434 |         let text_b = "ACME Corporation ".repeat(5).to_string() + "ACME Corporution "; // typo
+    |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_text_b`
+
+warning: value assigned to `region_count` is never read
+   --> crates/pdftract-core/src/layout/reading_order.rs:111:28
+    |
+111 |     let mut region_count = 0;
+    |                            ^ this value is reassigned later and never used
+...
+118 |     region_count = stats.region_count;
+    |     --------------------------------- `region_count` is overwritten here before the previous value is read
+
+warning: value assigned to `small_region_count` is never read
+   --> crates/pdftract-core/src/layout/reading_order.rs:112:34
+    |
+112 |     let mut small_region_count = 0;
+    |                                  ^ this value is reassigned later and never used
+...
+119 |     small_region_count = stats.small_region_count;
+    |     --------------------------------------------- `small_region_count` is overwritten here before the previous value is read
+
+warning: unused variable: `first_main`
+    --> crates/pdftract-core/src/layout/reading_order.rs:1166:23
+     |
+1166 |         if let (Some(&first_main), Some(&last_main), Some(&first_sidebar)) =
+     |                       ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_first_main`
+
+warning: variable `sign_count` is assigned to, but never used
+   --> crates/pdftract-core/src/parser/lexer/mod.rs:528:13
+    |
+528 |         let mut sign_count = 0;
+    |             ^^^^^^^^^^^^^^
+    |
+    = note: consider using `_sign_count` instead
+
+warning: value assigned to `sign_count` is never read
+   --> crates/pdftract-core/src/parser/lexer/mod.rs:537:13
+    |
+537 |             sign_count = 1;
+    |             ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/lexer/mod.rs:1761:20
+     |
+1761 |         .prop_map(|mut bytes| {
+     |                    ----^^^^^
+     |                    |
+     |                    help: remove this `mut`
+
+warning: value assigned to `offset` is never read
+   --> crates/pdftract-core/src/parser/objstm.rs:724:9
+    |
+724 |         offset += b"5 0 R\n".len() as u64;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/objstm.rs:781:13
+    |
+781 |         let mut dict = PdfDict::new();
+    |             ----^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: unused variable: `has_bomb_diag`
+    --> crates/pdftract-core/src/parser/objstm.rs:1159:13
+     |
+1159 |         let has_bomb_diag = diags.iter().any(|d| d.code == DiagCode::StreamBomb);
+     |             ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_has_bomb_diag`
+
+warning: unused variable: `obj_ref`
+   --> crates/pdftract-core/src/parser/ocg.rs:445:22
+    |
+445 |     fn make_test_ocg(obj_ref: ObjRef, name: &str, intent: Option<&str>) -> PdfObject {
+    |                      ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_obj_ref`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/ocg.rs:505:13
+    |
+505 |         let mut resolver = make_test_resolver();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/ocg.rs:542:13
+    |
+542 |         let mut resolver = make_test_resolver();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/ocg.rs:575:13
+    |
+575 |         let mut resolver = make_test_resolver();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/ocg.rs:619:13
+    |
+619 |         let mut resolver = make_test_resolver();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/ocg.rs:656:13
+    |
+656 |         let mut resolver = make_test_resolver();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/ocg.rs:692:13
+    |
+692 |         let mut resolver = make_test_resolver();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: unused variable: `resolver`
+   --> crates/pdftract-core/src/parser/ocg.rs:718:13
+    |
+718 |         let resolver = make_test_resolver();
+    |             ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_resolver`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/ocg.rs:868:21
+    |
+868 |                 let mut resolver = make_test_resolver();
+    |                     ----^^^^^^^^
+    |                     |
+    |                     help: remove this `mut`
+
+warning: unused variable: `diags`
+    --> crates/pdftract-core/src/parser/outline.rs:1065:24
+     |
+1065 |         let (outlines, diags) = parse_outlines(&resolver, Some(ObjRef::new(99, 0)), &pages);
+     |                        ^^^^^ help: if this is intentional, prefix it with an underscore: `_diags`
+
+warning: unused variable: `diags`
+    --> crates/pdftract-core/src/parser/outline.rs:1107:24
+     |
+1107 |         let (outlines, diags) = parse_outlines(&resolver, Some(ObjRef::new(99, 0)), &pages);
+     |                        ^^^^^ help: if this is intentional, prefix it with an underscore: `_diags`
+
+warning: unused variable: `diags`
+    --> crates/pdftract-core/src/parser/outline.rs:1165:24
+     |
+1165 |         let (outlines, diags) = parse_outlines(&resolver, Some(ObjRef::new(99, 0)), &pages);
+     |                        ^^^^^ help: if this is intentional, prefix it with an underscore: `_diags`
+
+warning: unused variable: `diags`
+    --> crates/pdftract-core/src/parser/outline.rs:1222:24
+     |
+1222 |         let (outlines, diags) = parse_outlines(&resolver, Some(ObjRef::new(99, 0)), &pages);
+     |                        ^^^^^ help: if this is intentional, prefix it with an underscore: `_diags`
+
+warning: unused variable: `diags`
+    --> crates/pdftract-core/src/parser/outline.rs:1335:24
+     |
+1335 |         let (outlines, diags) = parse_outlines(&resolver, Some(ObjRef::new(99, 0)), &pages);
+     |                        ^^^^^ help: if this is intentional, prefix it with an underscore: `_diags`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/outline.rs:1434:13
+     |
+1434 |         let mut root_dict = IndexMap::new();
+     |             ----^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: unused variable: `diags`
+    --> crates/pdftract-core/src/parser/outline.rs:1485:24
+     |
+1485 |         let (outlines, diags) = parse_outlines(&resolver, Some(ObjRef::new(99, 0)), &pages);
+     |                        ^^^^^ help: if this is intentional, prefix it with an underscore: `_diags`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/pages.rs:1345:13
+     |
+1345 |         let mut root_resources = PdfDict::new(); // Empty resources dict
+     |             ----^^^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1593:25
+     |
+1593 |                         inherited = parent_inherited;
+     |                         ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1574:41
+     |
+1574 | ...                   inherited = parent_inherited;
+     |                       ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1562:37
+     |
+1562 | ...                   inherited = parent_inherited;
+     |                       ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1585:33
+     |
+1585 | ...                   inherited = parent_inherited;
+     |                       ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1526:29
+     |
+1526 | ...                   inherited = parent_inherited;
+     |                       ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1517:29
+     |
+1517 | ...                   inherited = parent_inherited;
+     |                       ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `inherited` is never read
+    --> crates/pdftract-core/src/parser/pages.rs:1598:21
+     |
+1598 |                     inherited = parent_inherited;
+     |                     ^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: unused variable: `max_depth`
+    --> crates/pdftract-core/src/parser/pages.rs:1711:40
+     |
+1711 |     fn arb_pages_dict_with_direct_kids(max_depth: u8) -> impl Strategy<Value = PdfDict> {
+     |                                        ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_max_depth`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/parser/resources.rs:335:13
+    |
+335 |         let mut ancestor = ResourceDict::new();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: value assigned to `depth` is never read
+   --> crates/pdftract-core/src/parser/xref.rs:907:21
+    |
+907 |     let mut depth = 0;
+    |                     ^ this value is reassigned later and never used
+...
+936 |                         depth = 1;
+    |                         --------- `depth` is overwritten here before the previous value is read
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/xref.rs:4590:13
+     |
+4590 |         let mut rev2_with_prev = rev2.to_vec();
+     |             ----^^^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/xref.rs:4597:13
+     |
+4597 |         let mut rev3_with_prev = rev3.to_vec();
+     |             ----^^^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/xref.rs:4604:13
+     |
+4604 |         let mut rev4_with_prev = rev4.to_vec();
+     |             ----^^^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/xref.rs:4644:13
+     |
+4644 |         let mut rev2_with_prev = rev2.to_vec();
+     |             ----^^^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/xref.rs:4683:13
+     |
+4683 |         let mut rev2_with_prev = rev2.to_vec();
+     |             ----^^^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: unused variable: `rev_base`
+    --> crates/pdftract-core/src/parser/xref.rs:4715:13
+     |
+4715 |         let rev_base = b"xref\n0 1\n\
+     |             ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_rev_base`
+
+warning: unused variable: `rev1_offset`
+    --> crates/pdftract-core/src/parser/xref.rs:4835:13
+     |
+4835 |         let rev1_offset = file_data.len() as u64;
+     |             ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_rev1_offset`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/parser/xref.rs:4926:13
+     |
+4926 |         let mut rev2_with_prev = rev2_trad.to_vec();
+     |             ----^^^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: unused variable: `has_prev`
+    --> crates/pdftract-core/src/parser/xref.rs:4965:51
+     |
+4965 |                 for (i, (obj_num, offset, gen_nr, has_prev)) in revisions.iter().enumerate() {
+     |                                                   ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_has_prev`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/render/scanline.rs:758:13
+    |
+758 |         let mut bitmap = TestBitmap::white(32, 32);
+    |             ----^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/word_boundary.rs:440:13
+    |
+440 |         let mut manager = WordBoundaryManager::new();
+    |             ----^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/signature/mod.rs:838:13
+    |
+838 |         let mut resolver = XrefResolver::new();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/signature/mod.rs:909:13
+    |
+909 |         let mut resolver = XrefResolver::new();
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/signature/mod.rs:933:14
+    |
+933 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+    |              ----^^^^^^^
+    |              |
+    |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/signature/mod.rs:933:27
+    |
+933 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+    |                           ----^^^^^^^^
+    |                           |
+    |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/signature/mod.rs:969:14
+    |
+969 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+    |              ----^^^^^^^
+    |              |
+    |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/pdftract-core/src/signature/mod.rs:969:27
+    |
+969 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+    |                           ----^^^^^^^^
+    |                           |
+    |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1002:14
+     |
+1002 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1002:27
+     |
+1002 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1045:14
+     |
+1045 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1045:27
+     |
+1045 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1070:14
+     |
+1070 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1070:27
+     |
+1070 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1088:14
+     |
+1088 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1088:27
+     |
+1088 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1108:14
+     |
+1108 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |              ----^^^^^^^
+     |              |
+     |              help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1108:27
+     |
+1108 |         let (mut catalog, mut resolver) = make_test_acroform(fields);
+     |                           ----^^^^^^^^
+     |                           |
+     |                           help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1201:13
+     |
+1201 |         let mut resolver = XrefResolver::new();
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: unused variable: `v_ref`
+    --> crates/pdftract-core/src/signature/mod.rs:1183:13
+     |
+1183 |         let v_ref = ObjRef::new(500, 0);
+     |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_v_ref`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1259:13
+     |
+1259 |         let mut resolver = XrefResolver::new();
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1315:13
+     |
+1315 |         let mut resolver = XrefResolver::new();
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1401:13
+     |
+1401 |         let mut resolver = XrefResolver::new();
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1429:13
+     |
+1429 |         let mut resolver = XrefResolver::new();
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1457:13
+     |
+1457 |         let mut resolver = XrefResolver::new();
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/pdftract-core/src/signature/mod.rs:1491:13
+     |
+1491 |         let mut resolver = XrefResolver::new();
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: type `type3_rasterizer::Edge` is more private than the item `type3_test_fixtures::TestEdge::build`
+    --> crates/pdftract-core/src/font/type3_test_fixtures.rs:1038:5
+     |
+1038 |     pub fn build(self) -> crate::font::type3_rasterizer::Edge {
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ method `type3_test_fixtures::TestEdge::build` is reachable at visibility `pub`
+     |
+note: but type `type3_rasterizer::Edge` is only usable at visibility `pub(crate)`
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:835:1
+     |
+ 835 | pub(crate) struct Edge {
+     | ^^^^^^^^^^^^^^^^^^^^^^
+     = note: `#[warn(private_interfaces)]` on by default
+
+warning: type `type3_rasterizer::Edge` is more private than the item `type3_test_fixtures::AETInspector::new`
+    --> crates/pdftract-core/src/font/type3_test_fixtures.rs:1143:5
+     |
+1143 |     pub fn new(edges: Vec<crate::font::type3_rasterizer::Edge>) -> Self {
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ associated function `type3_test_fixtures::AETInspector::new` is reachable at visibility `pub`
+     |
+note: but type `type3_rasterizer::Edge` is only usable at visibility `pub(crate)`
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:835:1
+     |
+ 835 | pub(crate) struct Edge {
+     | ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `type3_rasterizer::Edge` is more private than the item `type3_test_fixtures::AETInspector::edges_at_y`
+    --> crates/pdftract-core/src/font/type3_test_fixtures.rs:1204:5
+     |
+1204 |     pub fn edges_at_y(&self, y: i32) -> Vec<&crate::font::type3_rasterizer::Edge> {
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ method `type3_test_fixtures::AETInspector::edges_at_y` is reachable at visibility `pub`
+     |
+note: but type `type3_rasterizer::Edge` is only usable at visibility `pub(crate)`
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:835:1
+     |
+ 835 | pub(crate) struct Edge {
+     | ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `type3_rasterizer::Edge` is more private than the item `type3_test_fixtures::AETInspector::edges`
+    --> crates/pdftract-core/src/font/type3_test_fixtures.rs:1253:5
+     |
+1253 |     pub fn edges(&self) -> &[crate::font::type3_rasterizer::Edge] {
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ method `type3_test_fixtures::AETInspector::edges` is reachable at visibility `pub`
+     |
+note: but type `type3_rasterizer::Edge` is only usable at visibility `pub(crate)`
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:835:1
+     |
+ 835 | pub(crate) struct Edge {
+     | ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `type3_rasterizer::Edge` is more private than the item `type3_test_fixtures::create_edges_from_endpoints`
+    --> crates/pdftract-core/src/font/type3_test_fixtures.rs:1296:1
+     |
+1296 | pub fn create_edges_from_endpoints(endpoints: &[(i32, i32, i32, i32)]) -> Vec<crate::font::type3_rasterizer::Edge> {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `type3_test_fixtures::create_edges_from_endpoints` is reachable at visibility `pub`
+     |
+note: but type `type3_rasterizer::Edge` is only usable at visibility `pub(crate)`
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:835:1
+     |
+ 835 | pub(crate) struct Edge {
+     | ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `type3_rasterizer::Edge` is more private than the item `type3_test_fixtures::create_triangle_edges`
+    --> crates/pdftract-core/src/font/type3_test_fixtures.rs:1321:1
+     |
+1321 | pub fn create_triangle_edges() -> Vec<crate::font::type3_rasterizer::Edge> {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `type3_test_fixtures::create_triangle_edges` is reachable at visibility `pub`
+     |
+note: but type `type3_rasterizer::Edge` is only usable at visibility `pub(crate)`
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:835:1
+     |
+ 835 | pub(crate) struct Edge {
+     | ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `type3_rasterizer::Edge` is more private than the item `type3_test_fixtures::create_rectangle_edges`
+    --> crates/pdftract-core/src/font/type3_test_fixtures.rs:1358:1
+     |
+1358 | pub fn create_rectangle_edges(x: i32, y: i32, width: i32, height: i32) -> Vec<crate::font::type3_rasterizer::Edge> {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `type3_test_fixtures::create_rectangle_edges` is reachable at visibility `pub`
+     |
+note: but type `type3_rasterizer::Edge` is only usable at visibility `pub(crate)`
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:835:1
+     |
+ 835 | pub(crate) struct Edge {
+     | ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `extract_destination_name` is never used
+   --> crates/pdftract-core/src/annotation/links.rs:491:4
+    |
+491 | fn extract_destination_name(dest_obj: Option<&PdfObject>) -> Option<String> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `make_filespec` is never used
+   --> crates/pdftract-core/src/attachment/filespec.rs:587:8
+    |
+587 |     fn make_filespec(
+    |        ^^^^^^^^^^^^^
+
+warning: function `make_ef_stream` is never used
+   --> crates/pdftract-core/src/attachment/filespec.rs:629:8
+    |
+629 |     fn make_ef_stream(
+    |        ^^^^^^^^^^^^^^
+
+warning: field `0` is never read
+   --> crates/pdftract-core/src/cmap/codespace.rs:644:16
+    |
+644 |     Unexpected(u8),
+    |     ---------- ^^
+    |     |
+    |     field in this variant
+    |
+    = note: `Token` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+    |
+644 -     Unexpected(u8),
+644 +     Unexpected(()),
+    |
+
+warning: variants `Stream` and `Error` are never constructed
+    --> crates/pdftract-core/src/content_stream.rs:1614:5
+     |
+1613 | enum XObjectResolveResult {
+     |      -------------------- variants in this enum
+1614 |     Stream(PdfDict, Vec<u8>),
+     |     ^^^^^^
+1615 |     Error(Diagnostic),
+     |     ^^^^^
+
+warning: constant `DECODER` is never used
+   --> crates/pdftract-core/src/decoder/jbig2.rs:221:15
+    |
+221 |         const DECODER: Jbig2Decoder = Jbig2Decoder::new();
+    |               ^^^^^^^
+
+warning: field `source` is never read
+    --> crates/pdftract-core/src/document.rs:1793:5
+     |
+1785 | pub struct PageIter<'a> {
+     |            -------- field in this struct
+...
+1793 |     source: Option<&'a dyn ParserPdfSource>,
+     |     ^^^^^^
+
+warning: field `page_height` is never read
+   --> crates/pdftract-core/src/extract.rs:404:9
+    |
+390 | struct PageResultInternal {
+    |        ------------------ field in this struct
+...
+404 |     pub page_height: f64,
+    |         ^^^^^^^^^^^
+    |
+    = note: `PageResultInternal` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: function `extract_page` is never used
+    --> crates/pdftract-core/src/extract.rs:1355:4
+     |
+1355 | fn extract_page(
+     |    ^^^^^^^^^^^^
+
+warning: field `font` is never read
+   --> crates/pdftract-core/src/font/type3_rasterizer.rs:924:5
+    |
+914 | pub struct RasterizerContext<'a> {
+    |            ----------------- field in this struct
+...
+924 |     font: &'a Type3Font,
+    |     ^^^^
+
+warning: struct `MockSource` is never constructed
+    --> crates/pdftract-core/src/font/type3_rasterizer.rs:3858:16
+     |
+3858 |         struct MockSource;
+     |                ^^^^^^^^^^
+
+warning: function `create_test_document_context` is never used
+  --> crates/pdftract-core/src/font/type3_rasterizer_test.rs:77:8
+   |
+77 | pub fn create_test_document_context() -> DocumentContext<'static> {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `create_test_document_context_with_entries` is never used
+   --> crates/pdftract-core/src/font/type3_rasterizer_test.rs:110:8
+    |
+110 | pub fn create_test_document_context_with_entries(entries: Vec<(u32, crate::parser::xref::XrefEntry)>) -> DocumentContext<'static> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `create_test_dict` is never used
+   --> crates/pdftract-core/src/font/type3_rasterizer_test.rs:190:8
+    |
+190 | pub fn create_test_dict(entries: Option<Vec<(Arc<str>, PdfObject)>>) -> PdfObject {
+    |        ^^^^^^^^^^^^^^^^
+
+warning: function `create_test_stream` is never used
+   --> crates/pdftract-core/src/font/type3_rasterizer_test.rs:230:8
+    |
+230 | pub fn create_test_stream(
+    |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `setup_test_context` is never used
+   --> crates/pdftract-core/src/font/type3_rasterizer_test.rs:267:8
+    |
+267 | pub fn setup_test_context() -> DocumentContext<'static> {
+    |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `setup_test_context_with_source` is never used
+   --> crates/pdftract-core/src/font/type3_rasterizer_test.rs:293:8
+    |
+293 | pub fn setup_test_context_with_source(data: Vec<u8>) -> DocumentContext<'static> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `create_mock_context_with_refs` is never used
+   --> crates/pdftract-core/src/font/type3_rasterizer_test.rs:453:8
+    |
+453 | pub fn create_mock_context_with_refs() -> DocumentContext<'static> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `create_ref_to_dict` is never used
+   --> crates/pdftract-core/src/font/type3_rasterizer_test.rs:484:8
+    |
+484 | pub fn create_ref_to_dict(object_number: u32) -> PdfObject {
+    |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `create_ref_to_stream` is never used
+   --> crates/pdftract-core/src/font/type3_rasterizer_test.rs:508:8
+    |
+508 | pub fn create_ref_to_stream(object_number: u32) -> PdfObject {
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `is_repeated_header_footer` is never used
+   --> crates/pdftract-core/src/layout/header_footer.rs:225:4
+    |
+225 | fn is_repeated_header_footer(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `with_text` is never used
+   --> crates/pdftract-core/src/layout/line.rs:871:12
+    |
+860 |     impl TestSpan {
+    |     ------------- associated function in this implementation
+...
+871 |         fn with_text(bbox: [f32; 4], font_size: f32, text: &str) -> Self {
+    |            ^^^^^^^^^
+
+warning: constant `REGION_COUNT_THRESHOLD` is never used
+  --> crates/pdftract-core/src/layout/reading_order.rs:26:7
+   |
+26 | const REGION_COUNT_THRESHOLD: usize = 10;
+   |       ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: fields `distance` and `angle` are never read
+   --> crates/pdftract-core/src/layout/reading_order.rs:719:5
+    |
+713 | struct Edge {
+    |        ---- fields in this struct
+...
+719 |     distance: f32,
+    |     ^^^^^^^^
+720 |     /// Angle in radians between centers.
+721 |     angle: f32,
+    |     ^^^^^
+    |
+    = note: `Edge` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: struct `TestBlock` is never constructed
+   --> crates/pdftract-core/src/layout/watermark_formula.rs:111:12
+    |
+111 |     struct TestBlock {
+    |            ^^^^^^^^^
+
+warning: method `emit_diagnostic` is never used
+   --> crates/pdftract-core/src/parser/catalog.rs:687:8
+    |
+664 | impl Catalog {
+    | ------------ method in this implementation
+...
+687 |     fn emit_diagnostic(&mut self, code: DiagCode, message: String) {
+    |        ^^^^^^^^^^^^^^^
+
+warning: fields `shared_object_number_bits` and `shared_group_length_bits` are never read
+   --> crates/pdftract-core/src/parser/hint_stream.rs:180:5
+    |
+172 | struct HintHeader {
+    |        ---------- fields in this struct
+...
+180 |     shared_object_number_bits: u8,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+181 |     /// Bit width for shared object hint group lengths
+182 |     shared_group_length_bits: u8,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `HintHeader` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: method `lex_unknown` is never used
+    --> crates/pdftract-core/src/parser/lexer/mod.rs:1108:8
+     |
+ 117 | impl<'a> Lexer<'a> {
+     | ------------------ method in this implementation
+...
+1108 |     fn lex_unknown(&mut self) -> Option<Token> {
+     |        ^^^^^^^^^^^
+
+warning: method `emit_diagnostic` is never used
+  --> crates/pdftract-core/src/parser/marked_content.rs:82:8
+   |
+40 | impl McidTracker {
+   | ---------------- method in this implementation
+...
+82 |     fn emit_diagnostic(&mut self, code: DiagCode, message: String) {
+   |        ^^^^^^^^^^^^^^^
+
+warning: function `make_test_resolver` is never used
+    --> crates/pdftract-core/src/parser/struct_tree.rs:1754:8
+     |
+1754 |     fn make_test_resolver() -> XrefResolver {
+     |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `round_coord` is never used
+   --> crates/pdftract-core/src/receipts/ocr_fallback.rs:238:4
+    |
+238 | fn round_coord(value: f64) -> f64 {
+    |    ^^^^^^^^^^^
+
+warning: field `font_id` is never read
+  --> crates/pdftract-core/src/word_boundary.rs:39:5
+   |
+37 | pub struct WordBoundaryDetector {
+   |            -------------------- field in this struct
+38 |     /// Font identifier for this detector.
+39 |     font_id: FontId,
+   |     ^^^^^^^
+   |
+   = note: `WordBoundaryDetector` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: comparison is useless due to type limits
+    --> crates/pdftract-core/src/content_stream.rs:3218:17
+     |
+3218 |         assert!(result.diagnostics.len() >= 0);
+     |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(unused_comparisons)]` on by default
+
+warning: static variable `HASH_56a45233d29f11b4dfb86d248e921939d115778f87325e7ae8cc108383d6664d` should have an upper case name
+ --> /data/tmp-pdftract-c2-headgate/target/debug/build/pdftract-core-a98788f1c0b26ae4/out/font_fingerprints.rs:7:8
+  |
+7 | static HASH_56a45233d29f11b4dfb86d248e921939d115778f87325e7ae8cc108383d6664d: &[(u16, u32)] = &[(1, 32), (2, 33), (3, 34), (4, 35), (...
+  |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(non_upper_case_globals)]` (part of `#[warn(nonstandard_style)]`) on by default
+help: convert the identifier to upper case
+  |
+7 - static HASH_56a45233d29f11b4dfb86d248e921939d115778f87325e7ae8cc108383d6664d: &[(u16, u32)] = &[(1, 32), (2, 33), (3, 34), (4, 35), (5, 36), (6, 37), (7, 38), (8, 39), (9, 40), (10, 41), (11, 42), (12, 43), (13, 44), (14, 45), (15, 46), (16, 47), (17, 48), (18, 49), (19, 50), (20, 51), (21, 52), (22, 53), (23, 54), (24, 55), (25, 56), (26, 57), (27, 58), (28, 59), (29, 60), (30, 61), (31, 62), (32, 63), (33, 64), (34, 65), (35, 66), (36, 67), (37, 68), (38, 69), (39, 70), (40, 71), (41, 72), (42, 73), (43, 74), (44, 75), (45, 76), (46, 77), (47, 78), (48, 79), (49, 80), (50, 81), (51, 82), (52, 83), (53, 84), (54, 85), (55, 86), (56, 87), (57, 88), (58, 89), (59, 90), (60, 91), (61, 92), (62, 93), (63, 94), (64, 95), (65, 96), (66, 97), (67, 98), (68, 99), (69, 100), (70, 101), (71, 102), (72, 103), (73, 104), (74, 105), (75, 106), (76, 107), (77, 108), (78, 109), (79, 110), (80, 111), (81, 112), (82, 113), (83, 114), (84, 115), (85, 116), (86, 117), (87, 118), (88, 119), (89, 120), (90, 121), (91, 122), (92, 123), (93, 124), (94, 125), (95, 126)];
+7 + static HASH_56A45233D29F11B4DFB86D248E921939D115778F87325E7AE8CC108383D6664D: &[(u16, u32)] = &[(1, 32), (2, 33), (3, 34), (4, 35), (5, 36), (6, 37), (7, 38), (8, 39), (9, 40), (10, 41), (11, 42), (12, 43), (13, 44), (14, 45), (15, 46), (16, 47), (17, 48), (18, 49), (19, 50), (20, 51), (21, 52), (22, 53), (23, 54), (24, 55), (25, 56), (26, 57), (27, 58), (28, 59), (29, 60), (30, 61), (31, 62), (32, 63), (33, 64), (34, 65), (35, 66), (36, 67), (37, 68), (38, 69), (39, 70), (40, 71), (41, 72), (42, 73), (43, 74), (44, 75), (45, 76), (46, 77), (47, 78), (48, 79), (49, 80), (50, 81), (51, 82), (52, 83), (53, 84), (54, 85), (55, 86), (56, 87), (57, 88), (58, 89), (59, 90), (60, 91), (61, 92), (62, 93), (63, 94), (64, 95), (65, 96), (66, 97), (67, 98), (68, 99), (69, 100), (70, 101), (71, 102), (72, 103), (73, 104), (74, 105), (75, 106), (76, 107), (77, 108), (78, 109), (79, 110), (80, 111), (81, 112), (82, 113), (83, 114), (84, 115), (85, 116), (86, 117), (87, 118), (88, 119), (89, 120), (90, 121), (91, 122), (92, 123), (93, 124), (94, 125), (95, 126)];
+  |
+
+warning: bounds on `impl Drop: Drop` are most likely incorrect, consider instead using `std::mem::needs_drop` to detect whether a type can be trivially dropped
+   --> crates/pdftract-core/src/sdk.rs:439:23
+    |
+439 |     _temp_guard: impl Drop,
+    |                       ^^^^
+    |
+    = note: `#[warn(drop_bounds)]` on by default
+
+warning: `pdftract-core` (lib test) generated 202 warnings (run `cargo fix --lib -p pdftract-core --tests` to apply 144 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 48.92s
+     Running unittests src/lib.rs (target/debug/deps/pdftract_core-01467a2e479d2729)
+
+running 25 tests
+test source::mmap::tests::test_advise_sequential_overflow ... ok
+test source::mmap::tests::test_advise_sequential ... ok
+test source::mmap::tests::test_advise_sequential_past_eof ... ok
+test source::mmap::tests::test_empty_file ... ok
+test source::mmap::tests::test_as_slice ... ok
+test source::mmap::tests::test_is_empty ... ok
+test source::mmap::tests::test_len_matches_file_size ... ok
+test source::mmap::tests::test_large_file ... ok
+test source::mmap::tests::test_open_nonexistent_file ... ok
+test source::mmap::tests::test_open_valid_file ... ok
+test source::mmap::tests::test_prefetch ... ok
+test source::mmap::tests::test_prefetch_past_eof ... ok
+test source::mmap::tests::test_prefetch_madvise_failure_is_traced ... ok
+test source::mmap::tests::test_read_mixed_with_seek ... ok
+test source::mmap::tests::test_read_range ... ok
+test source::mmap::tests::test_read_range_overflow ... ok
+test source::mmap::tests::test_read_range_partial ... ok
+test source::mmap::tests::test_read_range_past_eof ... ok
+test source::mmap::tests::test_seek_before_start ... ok
+test source::mmap::tests::test_read_trait ... ok
+test source::mmap::tests::test_seek_from_end ... ok
+test source::mmap::tests::test_seek_trait ... ok
+test source::mmap::tests::test_send_sync ... ok
+test source::mmap::tests::test_stream_position ... ok
+test source::mmap::tests::test_sync_multiple_threads ... ok
+
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 3562 filtered out; finished in 0.00s
+
