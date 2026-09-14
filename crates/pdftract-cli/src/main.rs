@@ -541,6 +541,24 @@ enum ProfilesCommands {
     },
 }
 
+/// Render a command error together with its full `anyhow` cause chain.
+///
+/// `Display` on an `anyhow::Error` renders only the outermost context message
+/// (e.g. "Failed to extract PDF"), which is what made extraction failures
+/// indistinguishable from one another; `Debug` renders that same message
+/// followed by a `Caused by:` section for every underlying cause. Chain text is
+/// passed through the same SecretString redaction the panic hook applies to
+/// backtraces, so surfacing the chain does not surface credentials.
+fn format_error(err: &anyhow::Error) -> String {
+    panic_hook::redact_secret_patterns(format!("{:?}", err).trim_end())
+}
+
+/// Print a command error to stderr with its full cause chain (see
+/// [`format_error`]).
+fn report_error(err: &anyhow::Error) {
+    eprintln!("Error: {}", format_error(err));
+}
+
 fn main() -> Result<()> {
     // Initialize tracing subscriber to capture and output debug events
     // This respects the RUST_LOG environment variable (e.g., RUST_LOG=debug)
@@ -642,8 +660,8 @@ fn main() -> Result<()> {
                 include_hidden_layers,
                 include_watermarks,
             ) {
+                report_error(&e);
                 let error_msg = e.to_string();
-                eprintln!("Error: {}", error_msg);
 
                 // Exit code 3 for encryption errors (per spec)
                 if error_msg.contains("decryption failed")
@@ -674,8 +692,8 @@ fn main() -> Result<()> {
                 top_k,
                 exit_on_unknown,
             ) {
+                report_error(&e);
                 let error_msg = e.to_string();
-                eprintln!("Error: {}", error_msg);
 
                 // Exit code 3 for encryption errors (per spec)
                 if error_msg.contains("decryption failed")
@@ -1277,9 +1295,11 @@ fn cmd_extract(
             (result, "skipped".to_string(), None) // Cache not applicable for remote
         }
     } else {
-        // Local file extraction path (with cache)
+        // Local file extraction path (with cache). Name the input path in the
+        // outermost context so a failure identifies WHICH file failed — the
+        // io error beneath it carries only the errno text, not the path.
         cache::extract_with_cache(&input, &options, cache_dir_ref, no_cache, cache_size_bytes)
-            .context("Failed to extract PDF")?
+            .with_context(|| format!("Failed to extract PDF: {}", input.display()))?
     };
 
     // Set cache status metadata
@@ -2444,5 +2464,65 @@ fn print_compare_result(results: &std::collections::HashMap<String, CompareResul
 
     if failed > 0 {
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod error_reporting_tests {
+    use super::format_error;
+
+    #[test]
+    fn format_error_renders_full_cause_chain() {
+        let err = anyhow::Error::msg("No such file or directory (os error 2)")
+            .context("Failed to open PDF file: /path/that/does/not/exist.pdf")
+            .context("Failed to extract PDF");
+        let rendered = format_error(&err);
+        assert!(
+            rendered.starts_with("Failed to extract PDF"),
+            "missing outermost context: {rendered}"
+        );
+        assert!(
+            rendered.contains("Caused by:"),
+            "missing cause chain: {rendered}"
+        );
+        assert!(
+            rendered.contains("/path/that/does/not/exist.pdf"),
+            "missing input path: {rendered}"
+        );
+        assert!(
+            rendered.contains("No such file or directory"),
+            "missing io error: {rendered}"
+        );
+    }
+
+    #[test]
+    fn format_error_distinguishes_parse_failure_from_io_failure() {
+        let io_err = anyhow::Error::msg("No such file or directory (os error 2)")
+            .context("Failed to open PDF file: /tmp/missing.pdf")
+            .context("Failed to extract PDF");
+        let parse_err =
+            anyhow::Error::msg("No /Root reference in trailer").context("Failed to extract PDF");
+        let io_rendered = format_error(&io_err);
+        let parse_rendered = format_error(&parse_err);
+        assert_ne!(io_rendered, parse_rendered);
+        assert!(io_rendered.contains("/tmp/missing.pdf"));
+        assert!(parse_rendered.contains("No /Root reference in trailer"));
+    }
+
+    #[test]
+    fn format_error_applies_secret_redaction() {
+        let err =
+            anyhow::Error::msg("leaked SecretString contents").context("Failed to extract PDF");
+        let rendered = format_error(&err);
+        // The redaction token is itself "[REDACTED:SecretString]", so assert on
+        // the surrounding raw text being gone and the token being present.
+        assert!(
+            !rendered.contains("leaked SecretString"),
+            "unredacted: {rendered}"
+        );
+        assert!(
+            rendered.contains("[REDACTED:SecretString]"),
+            "redaction token missing: {rendered}"
+        );
     }
 }
