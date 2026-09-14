@@ -10,40 +10,48 @@ the bead notes; all conclusions re-confirmed unchanged against the live store at
 `ddc65fb4`).
 **Consolidation performed:** 2026-09-08T22:29Z by pdftract-3128538a (split child 5 of 5),
 merging the child 1–4 verdicts below into the final single-owner conclusion (commit
-`e58fb369`), and re-affirmed at **2026-09-08T23:04Z** on the bead's re-dispatch: every
-status in this file re-checked against the live store at that time, and child 4's sweep
-re-run 5 (22:51Z, `a0dc9569`) folded in. No conclusion changed.
+`e58fb369`), re-affirmed at **2026-09-08T23:04Z** on the bead's re-dispatch (sweep re-run
+5 folded in), and re-affirmed again at **2026-09-14T12:35Z** on the bead's twelfth
+dispatch: every status in this file re-checked against the live store at that time, and
+child 4's sweep re-runs 6–11 folded in (latest re-run 11 at 2026-09-14T12:13Z,
+`8fd61522`). No conclusion changed.
 
-## Conclusion (consolidated 22:29Z, re-affirmed 2026-09-08T23:04Z)
+## Conclusion (consolidated 22:29Z, re-affirmed 2026-09-08T23:04Z and 2026-09-14T12:35Z)
 
 **pdftract-b716bac5 and its serial 4-child chain (pdftract-fa233a5e compile gate →
 pdftract-030e8414 run source::mmap → pdftract-ec0e6526 verdict → pdftract-38700c39
 cross-link/push) remain the SINGLE owner of the bf-5o22rf criterion-(a) mmap-suite
 runtime re-run. No duplicate or competing owner exists — confirmed independently by the
 2026-09-08T12:18Z coordination pass, children 1–3 of this split, and child 4's dated
-sweep re-runs through re-run 5 (22:51Z, commit `a0dc9569`).**
+sweep re-runs through re-run 11 (2026-09-14T12:13Z, commit `8fd61522`).**
 
-**b716bac5 status re-checked at consolidation time (2026-09-08T23:04Z, on re-dispatch;
-unchanged from the 22:29Z consolidation): Open, rev 13, unchanged since
-2026-09-08T05:07:27Z — runtime evidence has still NOT landed and there is no evidence
-commit to cite.** The suite has never executed. `notes/bf-5o22rf-child1.md` still ends on
-the "append a runtime-evidence section here" handoff (line 128; last touched by
-`b19a9e52`), `notes/b716bac5-child2.md` is still absent, and the gate remains NO-GO —
-latest composition from child 4's sweep re-run 4: exit 101, 89 errors, all in sibling
-TEST modules (classify.rs 54, font/type3_rasterizer.rs 29, scanline.rs 5,
-content_stream.rs 1), zero in `source/mmap.rs`. Child 4's re-run 5 additionally
-re-confirmed at HEAD `2241ea6b` that no commit has touched
-`crates/pdftract-core/src/source/` since 05:15Z, so no "duplicate re-run already
-satisfied" branch applies. The gate bead fa233a5e, InProgress under `glm-tgp` at 11:36Z,
-has been released back to Open (updated 11:49Z) and is now itself carrying a re-split
-(3e8309f4 / 68091d06 / 003ddcd1 / 3c39e12c). Per the task guard, no duplicate re-run
-bead was filed.
+**b716bac5 status re-checked at consolidation time (2026-09-14T12:35Z, on re-dispatch;
+unchanged from every prior pass): Open, rev 13, unchanged since 2026-09-08T05:07:27Z —
+runtime evidence has still NOT landed and there is no evidence commit to cite.** The
+suite has never executed. `notes/bf-5o22rf-child1.md` still ends on the
+"append a runtime-evidence section here" handoff (last touched by `b19a9e52`; no commit
+since re-run 10 per re-run 11, re-confirmed today), and the gate remains NO-GO — the
+error set is unchanged across every derivation: exit 101, 89 errors, all in sibling TEST
+modules (classify.rs 54, font/type3_rasterizer.rs 29, scanline.rs 5, content_stream.rs
+1), zero in `source/mmap.rs`. Two state changes since the 23:04Z pass, neither of which
+affects ownership: (1) `notes/b716bac5-child2.md` now exists (committed `7b7792cc`,
+2026-09-09T00:13Z) — it is the run bead 030e8414's own **compile-blocked NO-GO record**
+(one gate re-derivation at 00:01:50Z, exit 101, byte-identical 89-error set, no test
+executable produced, no test executed), not landed runtime evidence; (2) no commit has
+touched `crates/pdftract-core/src/source/mmap.rs` since 2026-09-08T23:00Z (re-confirmed
+today), so the "duplicate re-run already satisfied" branch still does not apply —
+re-run 11 additionally notes the only commit touching `source/` since the 05:15Z cutoff
+is `55858677`, compile hygiene, not a test execution. Per the task guard, no duplicate
+re-run bead was filed on this pass either.
 
 ## Non-owner reasons (one line each)
 
-Statuses in the table below re-checked 2026-09-08T23:04Z — all six still Open, and each
-row's reason has since been independently CONFIRMED with no drift by this split's
-children 1–3 (see "Split-family consolidation" below).
+Statuses in the table below re-checked 2026-09-14T12:35Z — five still Open
+(a8f096bc rev 1, adda71a4 rev 2, de16d7aa rev 11, bf-5o22rf rev 11, bf-3a1p3b rev 10);
+**931e6649 is now InProgress** (rev 4, claimed by a worker for its own regression-test
+delivery — an ownership-irrelevant status change: its artifact class is unchanged). Each
+row's reason has been independently CONFIRMED with no drift by this split's children 1–3
+(see "Split-family consolidation" below).
 
 | Bead | Status | Why it is NOT the re-run owner |
 |---|---|---|
@@ -89,6 +97,21 @@ store-wide still pdftract-f141d045 at 19:44:55Z (store static since), and zero d
 edges into any owner-chain bead. Full per-bead classification:
 `notes/pdftract-1ce1beaf.md`.
 
+**Sweep re-runs 6–11, through re-run 11 dated 2026-09-14T12:13Z (commit `8fd61522`) —
+result: NONE FOUND every time.** Child 4 (pdftract-1ce1beaf, closed 2026-09-14T12:19Z,
+rev 31) re-executed the sweep on each re-dispatch: re-run 6 (2026-09-09T01:06Z), 7
+(05:34Z), 8 (13:56Z), 9 (2026-09-10T06:19Z), 10 (2026-09-11T14:29Z), 11 (2026-09-14
+12:13Z). Re-run 11's fresh enumeration: **2,779 beads total, 2,779 unique IDs; 98
+created after the 05:15Z cutoff (re-runs 2–10 had all seen 72), of which 26 new since
+re-run 10 — all classified NOT-OWNER** (jedi-autocomplete verification, sccache-Garage
+CI wiring, and other sibling-SDK/infra work; regex intent scan for mmap/madvise/
+source::mmap/prefetch over the 26: zero matches). Dependency edges re-checked store-wide
+at 12:13Z: the only edges referencing any owner-chain bead remain the chain's own four
+internal serial edges. **Consolidation-time delta check (2026-09-14T12:35Z): the store is
+unchanged since re-run 11 — 2,779 total / 2,779 unique, and zero beads created after
+12:13Z** (all four statuses queried separately with `--limit 999999`), and all five
+owner-chain revisions byte-match re-run 11's record.
+
 ## Split-family consolidation (child 5 of 5, pdftract-3128538a)
 
 pdftract-cd0c29e6 was auto-split into five children (unique-ref `split:cd0c29e6-childN`);
@@ -98,10 +121,10 @@ store, and this section merges their verdicts. Per-child results:
 | Child | Bead | Verdict | Evidence |
 |---|---|---|---|
 | 1 | pdftract-cae26b95 (closed 13:45Z) | **CONFIRMED, no drift** — the two ADD-regression-test beads a8f096bc and 931e6649 are a different artifact class (new tests as code+commit); neither lands criterion-(a) runtime evidence | `notes/pdftract-cae26b95.md`, commit `9c9db3bf` |
-| 2 | pdftract-1f1cf7a5 (Open at rev 18, 22:46Z — dispatch/quarantine churn continues; declined the dispatch-7 auto-split re-issue at rev 17 and re-closed on committed evidence, reopened again; failure-count 6 is double-claim churn per child 4 re-run 5; work itself complete) | **CONFIRMED, no drift** — adda71a4 is umbrella NOTE consolidation only; its final suite check is a confirmation step feeding a hygiene criterion, not the owned re-run | `notes/pdftract-1f1cf7a5.md` (committed); its own split children 62d653ec, 3df8a46a, 686bdc40, 0078d4a6 all closed |
+| 2 | pdftract-1f1cf7a5 (Closed as of 2026-09-09T19:33Z, rev 25 — dispatch/quarantine churn continued after the 23:04Z pass, then the evidence-bearing close held; work itself complete) | **CONFIRMED, no drift** — adda71a4 is umbrella NOTE consolidation only; its final suite check is a confirmation step feeding a hygiene criterion, not the owned re-run | `notes/pdftract-1f1cf7a5.md` (committed); its own split children 62d653ec, 3df8a46a, 686bdc40, 0078d4a6 all closed |
 | 3 | pdftract-d2fd5467 (closed — PASS close 14:38Z reopened 78s later by churn, re-closed on committed evidence 20:29Z) | **CONFIRMED, no drift** — the three anchor beads bf-5o22rf (parent acceptance bead the re-run serves), bf-3a1p3b (sibling umbrella whose notes end "do not re-implement the mmap.rs logging"), de16d7aa (audit-only chain anchor whose WARN rider spawned b716bac5) | `notes/pdftract-d2fd5467.md`, commit `576705dd` |
-| 4 | pdftract-1ce1beaf (Open — dispatcher churn after evidence-bearing closes; five dated sweeps committed) | **NONE FOUND** — dated duplicate-owner sweeps re-run 1–5 (latest 22:51Z, `a0dc9569`), zero second owners across all post-cutoff creation | `notes/pdftract-1ce1beaf.md` |
-| 5 | pdftract-3128538a (this bead) | Merges 1–4 into the consolidated conclusion at the top of this file; re-affirmed live at 23:04Z on re-dispatch | this note |
+| 4 | pdftract-1ce1beaf (Closed as of 2026-09-14T12:19Z, rev 31 — eleven dated sweeps committed across twelve dispatches) | **NONE FOUND** — dated duplicate-owner sweeps re-run 1–11 (latest 2026-09-14T12:13Z, `8fd61522`), zero second owners across all post-cutoff creation | `notes/pdftract-1ce1beaf.md` |
+| 5 | pdftract-3128538a (this bead) | Merges 1–4 into the consolidated conclusion at the top of this file; re-affirmed live at 23:04Z (08th) and at 12:35Z 2026-09-14 on re-dispatch | this note |
 
 One imprecision child 1 flagged in the committed version of this note is resolved here:
 the note previously documented only the 11:41Z pass, while the 12:18Z pass lived in the
@@ -120,14 +143,19 @@ At the 11:41Z check:
 - pdftract-ec0e6526 (child 3, verdict into notes/bf-5o22rf-child1.md) — Open, blocked.
 - pdftract-38700c39 (child 4, cross-link + push) — Open, blocked.
 
-Re-checked at consolidation time 2026-09-08T23:04Z (re-affirmation pass; identical to the
-22:29Z consolidation): b716bac5 still **Open** (rev 13, unchanged since 05:07Z — no
-runtime evidence landed, no commit to cite); fa233a5e now **Open** again (rev 11,
-released 11:49Z, its gate re-split 3e8309f4/68091d06/003ddcd1/3c39e12c carries the
-compile work); 030e8414, ec0e6526 and 38700c39 all still **Open** (rev 1 each, unchanged
-since 04:59Z). The serial order and single ownership are intact.
+Re-checked at consolidation time **2026-09-14T12:35Z** (second re-affirmation pass): all
+five chain beads remain **Open** and the serial order and single ownership are intact —
+b716bac5 (rev 13, unchanged since 05:07Z 09-08 — no runtime evidence landed, no commit to
+cite), fa233a5e (rev 14, updated 23:58Z 09-08; its gate re-split
+3e8309f4/68091d06/003ddcd1/3c39e12c delivered the NO-GO verdict note), 030e8414 (rev 4,
+updated 00:17Z 09-09 — recorded its own compile-blocked NO-GO, no test executed),
+ec0e6526 (rev 1) and 38700c39 (rev 1, both unchanged since 04:59Z 09-08). All five
+revisions byte-match re-run 11's record from twelve minutes earlier.
 
-`notes/b716bac5-child2.md` is absent (re-confirmed 23:04Z); `notes/bf-5o22rf-child1.md`
-still ends on the "append a runtime-evidence section here" handoff (line 128, last commit
-`b19a9e52`) — both confirm the evidence has not landed and no worker other than the owner
-chain has produced it.
+`notes/b716bac5-child1.md` (NO-GO gate verdict, commit `10df3676`) and
+`notes/b716bac5-child2.md` (compile-blocked NO-GO from the run bead, commit `7b7792cc`,
+2026-09-09T00:13Z — it was absent at the 23:04Z pass) both now exist as **NO-GO records,
+not runtime evidence**; `notes/bf-5o22rf-child1.md` still ends on the
+"append a runtime-evidence section here" handoff (last commit `b19a9e52`, no commit
+since) — together these confirm the evidence has not landed and no worker other than the
+owner chain has produced it.
