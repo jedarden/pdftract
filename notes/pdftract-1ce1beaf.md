@@ -1,14 +1,107 @@
-# pdftract-1ce1beaf — Dated duplicate-owner sweep, mmap-suite runtime re-run (re-run 10)
+# pdftract-1ce1beaf — Dated duplicate-owner sweep, mmap-suite runtime re-run (re-run 11)
 
-**Date of this sweep:** 2026-09-08/11 (bead created 2026-09-08T12:53:48Z; re-run 2 executed
+**Date of this sweep:** 2026-09-08/14 (bead created 2026-09-08T12:53:48Z; re-run 2 executed
 ~20:35Z; re-run 3 executed ~21:00Z; re-run 4 executed ~22:13Z; re-run 5 executed 22:51Z;
 re-run 6 executed 2026-09-09T01:06Z; re-run 7 executed 2026-09-09T05:34Z; re-run 8 executed
-2026-09-09T13:56Z; re-run 9 executed 2026-09-10T06:19Z; **this re-run 10 executed
-2026-09-11T14:29Z**, on the eleventh dispatch — the eighth auto-split order, re-issued on
-expiry of the quarantine-round:5 set at 2026-09-11T14:25:16Z)
+2026-09-09T13:56Z; re-run 9 executed 2026-09-10T06:19Z; re-run 10 executed 2026-09-11T14:29Z
+on the eleventh dispatch; **this re-run 11 executed 2026-09-14T12:13Z**, on the twelfth
+dispatch — the ninth auto-split order, re-issued on expiry of the quarantine-round:6 set at
+2026-09-13T14:39:00Z, ~26h before this dispatch)
 **Scope of enumeration:** every bead created after **2026-09-08T05:15Z** (the prior ownership check), all statuses.
 **Bead:** split child 4 of 5 of pdftract-cd0c29e6 (auto-split umbrella, coordination-only, read-only).
 **Guard honored:** no cargo invocation, no test execution, no crates/ edits, no beads filed, no other bead status touched. Read-only `bead`/`git`/`jq` commands plus this note.
+
+## Result (re-run 11, 2026-09-14T12:13Z)
+
+**SWEEP RESULT 2026-09-14 (re-run 11): NONE FOUND.**
+
+- Dispatch context: twelfth dispatch, arrived as an **auto-split order for the ninth time**
+  (`failure-count:10`, `quarantine-round:6`, `cycling`, `quarantined`,
+  `quarantine-until:2026-09-13T14:39:00.805304140+00:00`, expired ~26h before this
+  dispatch). The forensic log for this bead now records **8 closes / 8 reopens**, every
+  close evidence-bearing and every reopen `actor: system` with **no reason field at all** —
+  `failure-count:10` still decomposes into dispatch churn on an answered question, zero
+  of which were actual task failures.
+- Fresh enumeration from live store state at 12:13Z (all four statuses queried separately,
+  `--limit 999999`, JSONL): **2779 beads total, 2779 unique IDs** (disjoint, complete) —
+  the store **grew for the first time since re-run 2**: **98 created after 05:15Z**
+  (re-runs 2–10 all saw 72; status mix 55 closed / 31 open / 12 in_progress), of which
+  **26 are new since re-run 10** (created 2026-09-12T15:21Z – 2026-09-14T10:25Z). All 26
+  are classified below. Suffix-aware set-diff of all 98 live IDs against the full
+  classification corpus (this note plus notes/pdftract-cd0c29e6.md; matches full
+  `pdftract-XXXXXXXX` and short-form comma-list mentions): **zero uncovered beyond those
+  26** — every one of the original 72 still carries its classification, re-runs 2–10 hold.
+- Owner chain re-verified live, still all `open`, revisions unchanged from re-run 10:
+  pdftract-b716bac5 (rev 13), fa233a5e (rev 14), 030e8414 (rev 4), ec0e6526 (rev 1),
+  38700c39 (rev 1) — runtime child 030e8414 remains open and unexecuted.
+- Dependency edges re-checked store-wide: the only edges referencing any owner-chain bead
+  are the chain's own four internal serial edges (38700c39→b716bac5, fa233a5e→030e8414,
+  030e8414→ec0e6526, ec0e6526→38700c39). **No external or post-05:15Z bead depends on the
+  chain** — re-runs 2–10 hold.
+- Criterion-(a) runtime evidence still not landed: exactly one commit has touched
+  `crates/pdftract-core/src/source/` since 05:15Z — 55858677 (chore(bf-3ef3rd): remove
+  feature-gated unused imports; compile hygiene, not a test execution) — and
+  `notes/bf-5o22rf-child1.md` has **no commits since re-run 10**. The "duplicate re-run
+  already satisfied" branch still does not apply.
+- Regex intent scan (title + description, mmap / madvise / source::mmap / prefetch) over
+  the 26 new candidates: zero matches — none of them even mentions the suite; the three
+  store-wide intent hits (003ddcd1, c02b4878, eb967150) are already-classified
+  coordination/gate children whose descriptions legitimately reference the owner chain.
+
+### New 26 (created after re-run 10's 2026-09-11T14:29Z) — each classified NOT-OWNER
+
+**Class D — pdftract-py jedi-autocomplete verification (3).** pdftract-589fac97 (closed) →
+04c108e8 → f9ddce09, split children of parent bf-3e5rky. *Reason:* headless jedi completion
+enumeration for the Python SDK's Document/Page/Span/Block doc verification — IDE-docs work
+on a sibling SDK repo, no relation to the Rust `source::mmap` suite.
+
+**Class E — sccache-Garage topology / CI wiring (4).** pdftract-3c7ade37 (closed) →
+3c788aca → 4b8f47ad → 05ec6ccb, split children of bf-1eu56. *Reason:* iad-ci INFRA
+(pinning the authoritative Garage endpoint, verifying Secret delivery, RUSTC_WRAPPER
+wiring, cache-hit proof); no crate test target involved at all.
+
+**Class F — Type3 glyph rasterizer chain (4).** pdftract-0ed4425f → 93bdb518 → 384db234 →
+c1ac91f1, split children of bf-5r6rdo. *Reason:* wires DocumentContext into
+`rasterize_type3_glyph` and runs the Type3/font-resolver suites under
+`crates/pdftract-core/src/font/` — a different artifact class and test target than
+`source::mmap`; produces no criterion-(a) runtime evidence.
+
+**Class G — stream-decoder + diagnostic-code verification (5).** pdftract-7747e33e
+(closed; STREAM_DECOMPRESS vs STREAM_DECODE naming/assertion audit), 7fba1720 (closed) →
+62d62af5 → 9356414f (truncated-flate isolated run and stream-decoder regression suites,
+parents bf-hyhjnl/bf-4bx00), plus gate-fingerprint statistician pdftract-f9503a80
+(default_rust `cargo check --all-targets` failure forensics — no test execution of its
+own). *Reason:* different test targets (parser/stream decoder); nothing touches mmap.
+
+**Class H — OCR feature repair (1).** pdftract-ecad3b80. *Reason:* migrates `src/ocr.rs`
+to the tesseract 0.15 API behind the `ocr` feature; touches neither `source/` nor any
+suite the chain owns.
+
+**Class I — Forgejo credential rotation (4).** pdftract-84a37be0 → 72f87c27 → 486fb12b →
+fd445bea, split children of 3eea9d13. *Reason:* credential inventory, non-logging
+liveness classification, OpenBao-mediated rotation, SecretSynced verification — security
+work with zero test execution.
+
+**Class J — MCP dogfood fixes + phase-2 pilot (5).** pdftract-c7c43f45 (forward_scan_xref
+wedge on >1 MiB PDFs), 257d92c3 (trailer/xref "No /Root" extraction failures), 36474cfa
+(JSON-RPC protocol conformance), 3b44b696 (unadvertise unimplemented tools), bb45d65b
+(phase-2 real-client pilot; depends on the four). *Reason:* parser/MCP bug fixes serving
+bf-5jt6ra's dogfood pilot; they run extraction/MCP repro cases, never the `source::mmap`
+suite.
+
+### Split declined (this dispatch's order — ninth auto-split order)
+
+Declined for the same four reasons recorded under re-runs 4–10, unchanged and now
+nine-times-reiterated: the bead's own acceptance criteria say **"no beads filed, no other
+bead status touched"** — the split order violates the contract it dispatches against; the
+task is atomic (one enumeration pass + one dated note), now satisfied by ten consecutive
+executions of this bead (re-runs 2–11); a third coordination level multiplies the
+redispatch churn that *is* the failure count, and each new child would itself be a fresh
+post-05:15Z bead the next sweep must classify — the split grows the very queue it claims
+to shrink (this run's 26 new beads are all products of other chains' legitimate work, not
+of anything this bead gates); and same-day sibling precedent is dated split-decline notes
+closed on committed evidence instead. The terminal action remains the evidence close of
+this bead. No `SPLIT_COMPLETE` emitted.
 
 ## Result (re-run 10, 2026-09-11T14:29Z)
 
