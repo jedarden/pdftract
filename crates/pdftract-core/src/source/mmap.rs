@@ -200,8 +200,9 @@ unsafe impl Sync for MmapSource {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
     use std::io::Write;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
     use std::thread;
     use tempfile::NamedTempFile;
 
@@ -444,6 +445,145 @@ mod tests {
         // that error rather than propagate or panic (it returns ()).
         source.prefetch(0, 100);
         source.prefetch(u64::MAX, 10);
+    }
+
+    /// A captured copy of a `tracing` event, its fields stringified so
+    /// assertions can address them by name.
+    #[derive(Debug)]
+    struct CapturedEvent {
+        target: String,
+        level: tracing::Level,
+        fields: BTreeMap<String, String>,
+    }
+
+    impl CapturedEvent {
+        fn field(&self, name: &str) -> Option<&str> {
+            self.fields.get(name).map(String::as_str)
+        }
+    }
+
+    /// Field visitor that stringifies every value it sees. A `%`-sigil field
+    /// (`error = %e`) arrives here as a `DisplayValue`, whose `Debug` impl
+    /// delegates to `Display`, so `record_debug` already captures the rendered
+    /// message; the typed `record_*` overrides keep plain integers readable
+    /// instead of routed through the `format_args!` fallback.
+    struct FieldRecorder(BTreeMap<String, String>);
+
+    impl tracing::field::Visit for FieldRecorder {
+        fn record_u64(&mut self, field: &tracing::field::Field, value: u64) {
+            self.0.insert(field.name().to_owned(), value.to_string());
+        }
+
+        fn record_i64(&mut self, field: &tracing::field::Field, value: i64) {
+            self.0.insert(field.name().to_owned(), value.to_string());
+        }
+
+        fn record_bool(&mut self, field: &tracing::field::Field, value: bool) {
+            self.0.insert(field.name().to_owned(), value.to_string());
+        }
+
+        fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+            self.0.insert(field.name().to_owned(), value.to_owned());
+        }
+
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+            self.0.insert(field.name().to_owned(), format!("{value:?}"));
+        }
+    }
+
+    /// Minimal subscriber collecting emitted events into a shared buffer.
+    ///
+    /// Hand-rolled rather than adding `tracing-subscriber` as a
+    /// dev-dependency: this is the only test in the workspace that needs
+    /// field-level capture, and the scoped dispatcher used below installs
+    /// nothing global, so it cannot conflict with a default subscriber
+    /// another test in this binary may have set.
+    #[derive(Default)]
+    struct CapturingSubscriber {
+        events: Arc<Mutex<Vec<CapturedEvent>>>,
+    }
+
+    impl tracing::Subscriber for CapturingSubscriber {
+        fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
+            metadata.level() == &tracing::Level::TRACE
+        }
+
+        fn new_span(&self, _attrs: &tracing::span::Attributes<'_>) -> tracing::Id {
+            // Spans are irrelevant here; hand back a constant id so the
+            // subscriber stays valid if a traced call site opens one.
+            tracing::Id::from_u64(1)
+        }
+
+        fn record(&self, _span: &tracing::Id, _values: &tracing::span::Record<'_>) {}
+
+        fn record_follows_from(&self, _span: &tracing::Id, _follows: &tracing::Id) {}
+
+        fn event(&self, event: &tracing::Event<'_>) {
+            let mut recorder = FieldRecorder(BTreeMap::new());
+            event.record(&mut recorder);
+            self.events.lock().unwrap().push(CapturedEvent {
+                target: event.metadata().target().to_owned(),
+                level: *event.metadata().level(),
+                fields: recorder.0,
+            });
+        }
+
+        fn enter(&self, _span: &tracing::Id) {}
+
+        fn exit(&self, _span: &tracing::Id) {}
+    }
+
+    #[test]
+    fn test_prefetch_madvise_failure_is_traced() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        // 10 bytes, so file_len == 10 and prefetch(0, 100) is past EOF.
+        temp_file.write_all(b"0123456789").unwrap();
+        let source = MmapSource::open(temp_file.path()).unwrap();
+
+        let subscriber = CapturingSubscriber::default();
+        let captured = Arc::clone(&subscriber.events);
+        // Scoped dispatcher: captures trace events from this thread for the
+        // duration of the closure only, leaving any global default subscriber
+        // untouched.
+        tracing::subscriber::with_default(subscriber, || {
+            // In-range prefetch must stay silent — the event signals a
+            // dropped readahead hint, not routine operation.
+            source.prefetch(0, 10);
+            assert!(
+                captured.lock().unwrap().is_empty(),
+                "in-range prefetch must not emit a madvise-failure event"
+            );
+
+            // Past EOF: advise_sequential is guaranteed to fail, so prefetch
+            // has an error to log while still returning () without panicking.
+            source.prefetch(0, 100);
+        });
+
+        let events = captured.lock().unwrap();
+        assert_eq!(events.len(), 1, "expected exactly one trace event: {events:?}");
+        let event = &events[0];
+        assert_eq!(event.level, tracing::Level::TRACE);
+        assert!(
+            event.target.starts_with("pdftract_core::source"),
+            "event came from an unexpected target: {}",
+            event.target
+        );
+        // Each field is asserted on its own so dropping any one of them from
+        // the trace! call fails here rather than passing vacuously.
+        assert_eq!(event.field("offset"), Some("0"));
+        assert_eq!(event.field("length"), Some("100"));
+        assert_eq!(event.field("file_len"), Some("10"));
+        let error = event.field("error").unwrap_or_default();
+        assert!(!error.is_empty(), "error field must carry a message");
+        // The guaranteed failure mode here is the past-EOF range rejection,
+        // so the rendered io::Error must say so — this also proves the
+        // %-sigil Display rendering reached the visitor intact.
+        assert!(error.contains("EOF"), "unexpected error text: {error}");
+        let message = event.field("message").unwrap_or_default();
+        assert!(
+            message.contains("madvise"),
+            "message should name the failed call: {message}"
+        );
     }
 
     #[test]
