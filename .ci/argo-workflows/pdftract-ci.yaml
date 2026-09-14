@@ -248,6 +248,10 @@ spec:
           - name: regression-corpus
             template: regression-corpus
             dependencies: [build-matrix]
+            arguments:
+              artifacts:
+                - name: pdftract-binary
+                  from: "{{tasks.build-matrix.tasks.build-linux-x86-64-musl.outputs.artifacts.pdftract-binary}}"
 
           - name: generate-provenance
             template: generate-provenance
@@ -2104,11 +2108,14 @@ spec:
     # 2. Multi-language: English+French mixed document
     # 3. Performance: 10-page document processing time
     # === WASM32 Compatibility Check (ADR-011) ===
-    # Proves pdftract-core compiles for wasm32-unknown-unknown with the
-    # no-native-deps feature set (native default minus `cache`), and that the
-    # pdftract-wasm scaffold keeps building against it. Catches wasm-hostile
-    # dependency regressions early — e.g. a C-backed -sys crate sneaking back
-    # into the unconditional dependency set (the bf-2uw30r spike failure mode).
+    # Proves pdftract-core compiles for wasm32-unknown-unknown with the bare
+    # minimal set (--no-default-features --features serde, checked natively
+    # too — pdftract-47d894cf), and with the no-native-deps feature set
+    # (native default minus `cache`, exercised through pdftract-wasm's own
+    # dependency features on core), and that the pdftract-wasm scaffold keeps
+    # building against it. Catches wasm-hostile dependency regressions early
+    # — e.g. a C-backed -sys crate sneaking back into the unconditional
+    # dependency set (the bf-2uw30r spike failure mode).
     # CRITICAL: All cargo commands MUST use --locked (or --locked --frozen)
     - name: wasm32-check
       activeDeadlineSeconds: 900
@@ -2130,12 +2137,18 @@ spec:
             rustc --version
             rustup target add wasm32-unknown-unknown
 
+            # Bare minimal feature set (pdftract-47d894cf): `serde` only on
+            # top of --no-default-features. Everything outside the default
+            # set must stay properly cfg-gated so this configuration keeps
+            # compiling — natively and on wasm32.
+            cargo check -p pdftract-core --no-default-features --features serde --locked
+            cargo check -p pdftract-core --no-default-features --features serde --locked --target wasm32-unknown-unknown
+
             # No-native-deps feature set: the native default minus `cache`
             # (zstd-sys needs a C cross-compiler for wasm32; the cache module
-            # also needs a real filesystem and Unix permission bits).
-            cargo check -p pdftract-core --no-default-features --features serde,decrypt,quick-xml --locked --target wasm32-unknown-unknown
-
-            # The binding crate itself, against that feature set.
+            # also needs a real filesystem and Unix permission bits). The
+            # binding crate pulls in core with serde+decrypt+quick-xml, so
+            # those features keep their wasm32 coverage here.
             cargo check -p pdftract-wasm --locked --target wasm32-unknown-unknown
 
             echo "=== wasm32 check passed ==="
@@ -2687,6 +2700,16 @@ spec:
           - name: tier4-results
             path: /workspace/benches/results
     - name: regression-corpus
+      # Receives the built binary from the pipeline DAG. The shards forward it via
+      # inputs; a tasks.build-matrix... expression here cannot resolve (build-matrix
+      # is a pipeline-scope sibling, not visible inside this template), which failed
+      # every workflow submission since the line landed — the controller rejected the
+      # spec outright: "invalid spec: templates.pipeline.tasks.regression-corpus
+      # templates.regression-corpus.tasks.regression-shards failed to resolve
+      # {{tasks.build-matrix...}}" (observed on pdftract-ci-manual-m8k8l).
+      inputs:
+        artifacts:
+          - name: pdftract-binary
       dag:
         tasks:
           - name: build-cer-diff
@@ -2705,7 +2728,7 @@ spec:
                   value: "8"
               artifacts:
                 - name: pdftract-binary
-                  from: "{{tasks.build-matrix.tasks.build-linux-x86-64-musl.outputs.artifacts.pdftract-binary}}"
+                  from: "{{inputs.artifacts.pdftract-binary}}"
 
     # === Build CER Diff Tool ===
     # Build the cer-diff binary for comparing extraction outputs
