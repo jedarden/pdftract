@@ -257,11 +257,27 @@ spec:
             template: generate-provenance
             dependencies: [build-matrix]
             when: "{{workflow.parameters.is-tag}} == true"
+            arguments:
+              artifacts:
+                - name: pdftract-linux-x86_64-musl
+                  from: "{{tasks.build-matrix.tasks.build-linux-x86-64-musl.outputs.artifacts.pdftract-binary}}"
+                - name: pdftract-linux-aarch64-musl
+                  from: "{{tasks.build-matrix.tasks.build-linux-aarch64-musl.outputs.artifacts.pdftract-binary}}"
+                - name: pdftract-darwin-x86_64
+                  from: "{{tasks.build-matrix.tasks.build-darwin-x86-64.outputs.artifacts.pdftract-binary}}"
+                - name: pdftract-darwin-aarch64
+                  from: "{{tasks.build-matrix.tasks.build-darwin-aarch64.outputs.artifacts.pdftract-binary}}"
+                - name: pdftract-windows-x86_64-gnu
+                  from: "{{tasks.build-matrix.tasks.build-windows-x86-64-gnu.outputs.artifacts.pdftract-binary}}"
 
           - name: verify-provenance
             template: verify-provenance
             dependencies: [generate-provenance]
             when: "{{workflow.parameters.is-tag}} == true"
+            arguments:
+              artifacts:
+                - name: provenance
+                  from: "{{tasks.generate-provenance.outputs.artifacts.provenance}}"
 
           - name: publish-if-tag
             template: publish-if-tag
@@ -269,6 +285,16 @@ spec:
             when: "{{workflow.parameters.is-tag}} == true"
             arguments:
               artifacts:
+                - name: pdftract-linux-x86_64-musl
+                  from: "{{tasks.build-matrix.tasks.build-linux-x86-64-musl.outputs.artifacts.pdftract-binary}}"
+                - name: pdftract-linux-aarch64-musl
+                  from: "{{tasks.build-matrix.tasks.build-linux-aarch64-musl.outputs.artifacts.pdftract-binary}}"
+                - name: pdftract-darwin-x86_64
+                  from: "{{tasks.build-matrix.tasks.build-darwin-x86-64.outputs.artifacts.pdftract-binary}}"
+                - name: pdftract-darwin-aarch64
+                  from: "{{tasks.build-matrix.tasks.build-darwin-aarch64.outputs.artifacts.pdftract-binary}}"
+                - name: pdftract-windows-x86_64-gnu
+                  from: "{{tasks.build-matrix.tasks.build-windows-x86-64-gnu.outputs.artifacts.pdftract-binary}}"
                 - name: provenance
                   from: "{{tasks.generate-provenance.outputs.artifacts.provenance}}"
 
@@ -3001,25 +3027,22 @@ spec:
     # CRITICAL: Uses --clobber flag for idempotency - re-running the workflow
     # on the same tag overwrites assets rather than failing.
     - name: publish-if-tag
+      # Artifact sources arrive as arguments from the pipeline DAG task (from is
+      # not valid on input artifact declarations); inputs only carry name +
+      # mount path (+ optional for the SBOM).
       inputs:
         artifacts:
           - name: pdftract-linux-x86_64-musl
-            from: "{{tasks.build-matrix.tasks.build-linux-x86-64-musl.outputs.artifacts.pdftract-binary}}"
             path: /artifacts/pdftract-x86_64-unknown-linux-musl
           - name: pdftract-linux-aarch64-musl
-            from: "{{tasks.build-matrix.tasks.build-linux-aarch64-musl.outputs.artifacts.pdftract-binary}}"
             path: /artifacts/pdftract-aarch64-unknown-linux-musl
           - name: pdftract-darwin-x86_64
-            from: "{{tasks.build-matrix.tasks.build-darwin-x86-64.outputs.artifacts.pdftract-binary}}"
             path: /artifacts/pdftract-x86_64-apple-darwin
           - name: pdftract-darwin-aarch64
-            from: "{{tasks.build-matrix.tasks.build-darwin-aarch64.outputs.artifacts.pdftract-binary}}"
             path: /artifacts/pdftract-aarch64-apple-darwin
           - name: pdftract-windows-x86_64-gnu
-            from: "{{tasks.build-matrix.tasks.build-windows-x86-64-gnu.outputs.artifacts.pdftract-binary}}"
             path: /artifacts/pdftract-x86_64-pc-windows-gnu.exe
           - name: provenance
-            from: "{{tasks.generate-provenance.outputs.artifacts.provenance}}"
             path: /tmp/multiple.intoto.jsonl
           - name: sbom
             path: /artifacts/pdftract-v{{workflow.parameters.ref}}.cdx.json
@@ -3248,22 +3271,20 @@ spec:
     # Generates SLSA Level 3 build provenance in in-toto v1 format
     # Creates multiple.intoto.jsonl with subjects for all binary artifacts
     - name: generate-provenance
+      # Artifact sources arrive as arguments from the pipeline DAG task — `from`
+      # is not valid on input artifact declarations (the controller rejects the
+      # spec: "from not valid in inputs"); inputs only carry name + mount path.
       inputs:
         artifacts:
           - name: pdftract-linux-x86_64-musl
-            from: "{{tasks.build-matrix.tasks.build-linux-x86-64-musl.outputs.artifacts.pdftract-binary}}"
             path: /artifacts/pdftract-x86_64-unknown-linux-musl
           - name: pdftract-linux-aarch64-musl
-            from: "{{tasks.build-matrix.tasks.build-linux-aarch64-musl.outputs.artifacts.pdftract-binary}}"
             path: /artifacts/pdftract-aarch64-unknown-linux-musl
           - name: pdftract-darwin-x86_64
-            from: "{{tasks.build-matrix.tasks.build-darwin-x86-64.outputs.artifacts.pdftract-binary}}"
             path: /artifacts/pdftract-x86_64-apple-darwin
           - name: pdftract-darwin-aarch64
-            from: "{{tasks.build-matrix.tasks.build-darwin-aarch64.outputs.artifacts.pdftract-binary}}"
             path: /artifacts/pdftract-aarch64-apple-darwin
           - name: pdftract-windows-x86_64-gnu
-            from: "{{tasks.build-matrix.tasks.build-windows-x86-64-gnu.outputs.artifacts.pdftract-binary}}"
             path: /artifacts/pdftract-x86_64-pc-windows-gnu.exe
       activeDeadlineSeconds: 300
       container:
@@ -3422,10 +3443,11 @@ spec:
     # Smoke test validation of generated SLSA provenance
     # Downloads slsa-verifier and validates structure (not full crypto)
     - name: verify-provenance
+      # Source arrives as an argument from the pipeline DAG task (from is not
+      # valid on input artifact declarations).
       inputs:
         artifacts:
           - name: provenance
-            from: "{{tasks.generate-provenance.outputs.artifacts.provenance}}"
             path: /tmp/provenance.jsonl
       activeDeadlineSeconds: 300
       container:
