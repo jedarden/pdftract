@@ -1,0 +1,49 @@
+# frozen_string_literal: true
+
+# GENERATED FILE — DO NOT EDIT BY HAND.
+#
+# Rendered by the pdftract-release-cascade's `pdftract-homebrew-publish` leg
+# from packaging/homebrew/pdftract.rb.template in jedarden/pdftract: the render
+# step substitutes the <VERSION> and <SHA256> placeholders and pushes the result
+# to Formula/pdftract.rb in jedarden/homebrew-tap. Hand edits to the tap copy
+# are overwritten on the next release; change this template instead.
+#
+# Rendering policy (docs/notes/homebrew-tap-strategy.md §5-§6): the formula is
+# rendered only from immutable, non-prerelease versioned release tags vX.Y.Z.
+# Moving refs — rolling/alias tags, bare git SHAs, branch names — are rejected
+# by the render step.
+
+class Pdftract < Formula
+  desc "PDF text extraction and conformance testing toolkit"
+  homepage "https://github.com/jedarden/pdftract"
+  url "https://github.com/jedarden/pdftract/archive/refs/tags/v<VERSION>.tar.gz"
+  version "<VERSION>"
+  # sha256 of the exact bytes the url above serves — the tag's source archive
+  # on the GitHub mirror. Filled by the render step at render time; see
+  # packaging/homebrew/README.md for the fill contract.
+  sha256 "<SHA256>"
+  license any_of: ["MIT", "Apache-2.0"]
+
+  # Build from source; the tap ships no bottles in the first iteration
+  # (strategy note §5). "rust" is the build-time dependency providing cargo.
+  depends_on "rust"
+
+  def install
+    # The repository root is a virtual Cargo workspace, so the build targets
+    # the CLI crate that owns the `pdftract` binary. --bin keeps the crate's
+    # fixture/tooling binaries (gen_lexer_golden, test_glob_discovery, ...)
+    # out of the keg; --locked builds strictly against the Cargo.lock committed
+    # in the tag; --no-track keeps cargo's install bookkeeping out of the keg.
+    system "cargo", "install", "--locked", "--path", "crates/pdftract-cli",
+                    "--bin", "pdftract", "--root", prefix, "--no-track"
+  end
+
+  livecheck do
+    url :stable
+    strategy :github_latest
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/pdftract --version")
+  end
+end
