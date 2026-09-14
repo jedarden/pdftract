@@ -18,7 +18,11 @@ umbrella, do not close.
 2. **The requested end state already exists — one generation up.** This bead IS the last
    child (`split-child`) of the already-executed pdftract-fa233a5e split
    (3e8309f4 → 68091d06 → 003ddcd1 → 3c39e12c; children 1–3 closed), and already carries the
-   `umbrella` label. Verified no orphan split-children were ever created citing this bead.
+   `umbrella` label. It is in fact the umbrella of **two prior split generations**, and every
+   child of both is **closed**: c04460c3, 02de535f (first), b6d69433, d5598671, 778fc59c,
+   f141d045, f34a11cf (second) — all seven verified `closed` live on 2026-09-14. The
+   dispatcher's blocker-edge stripping (2026-09-10) plus the closed children mean nothing
+   dangles under this bead; there is nothing left to decompose.
 3. **Every acceptance criterion already passed.** Verified live 2026-09-14 at HEAD
    `87f73e7b` (= `origin/main` after a fresh fetch):
    - `notes/b716bac5-child1-handoff.md` committed at `1702ba6b`, quoting the verdict
