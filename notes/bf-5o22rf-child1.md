@@ -90,6 +90,10 @@ Parent bf-5o22rf criterion (a): *"Log madvise failures at trace level for debugg
 
 **PASS** — with a **WARN** rider on runtime test evidence.
 
+> **[SUPERSEDED 2026-09-14, pdftract-ec0e6526:** the WARN rider is resolved — the
+> pinning test has now executed and passes. Verdict stands at **PASS with no open
+> rider**; see `## Runtime evidence (source::mmap)` at the end of this note.**]**
+
 - **PASS (substantive):** the implementation satisfies the criterion. Both validation
   failure paths (`mmap.rs:85-87` overflow, `mmap.rs:89-94` past EOF) and the kernel
   madvise-failure path (`mmap.rs:96-98`) return `Err` and are unconditionally caught
@@ -105,6 +109,10 @@ Parent bf-5o22rf criterion (a): *"Log madvise failures at trace level for debugg
   `font/type3_rasterizer.rs`, `signature/mod.rs` and `word_boundary.rs` — out of scope
   for this bead and not fixable without a production-code change that would collide
   with those workers.
+  **[SUPERSEDED 2026-09-14, pdftract-ec0e6526:** the `--lib` test target now compiles
+  clean at HEAD and the pinning test has executed — see
+  `## Runtime evidence (source::mmap)`. The compile-blocked state described here no
+  longer exists at the tip.**]**
 
 **Handoff:** once `classify.rs` / `type3_rasterizer.rs` / `signature/mod.rs` /
 `word_boundary.rs` settle, re-run
@@ -112,6 +120,12 @@ Parent bf-5o22rf criterion (a): *"Log madvise failures at trace level for debugg
 expect `test_prefetch_madvise_failure_is_traced`, `test_prefetch` and
 `test_prefetch_past_eof` to pass. Until then, criterion (a) stands as verified by
 code-path analysis (file:line evidence above); the WARN is environmental.
+
+> **[SUPERSEDED 2026-09-14, pdftract-ec0e6526:** the re-run happened — see
+> `## Runtime evidence (source::mmap)`. Expected outcome confirmed: all three tests
+> pass at HEAD; criterion (a) now rests on executed-test evidence. One new finding:
+> the pinning test is flaky under parallel test execution (fix bead
+> pdftract-aa239a61).**]**
 
 ## 4. Follow-up bead (filed by pdftract-2efded34)
 
@@ -129,3 +143,106 @@ passes, append a runtime-evidence section here converting the WARN to PASS (or a
 recorded FAIL + fix bead), and cross-link the outcome on the umbrella note bead
 pdftract-adda71a4. It explicitly forbids touching the four files breaking the
 build.
+
+## Runtime evidence (source::mmap)
+
+**Added 2026-09-14 by pdftract-ec0e6526 — resolves the §3 WARN rider.** Criterion (a)
+now has executed-test evidence; disposition at the end of this section. Inputs: the
+re-run chain's child 2 (pdftract-030e8414, `notes/b716bac5-child2.md`, with committed
+raw logs) plus this bead's own clean-HEAD replica re-derivation at the current tip.
+
+### Run history
+
+| # | UTC (2026-09-14) | HEAD | Mode | Result |
+|---|---|---|---|---|
+| 1 | 12:58:05→12:58:53Z | `cf554653` | parallel (default) | 25/25 PASS — pdftract-030e8414 invocation 3 |
+| 2 | 12:59:41→13:00:30Z | `cf554653` | parallel + RUST_LOG=trace | 25/25 PASS — pdftract-030e8414 invocation 4 |
+| 3 | 13:17:16→13:17:38Z | `c763122a` | parallel (default) | **24/25 — `test_prefetch_madvise_failure_is_traced` FAILED** |
+| 4 | 13:23:31→13:23:53Z | `c763122a` | `--test-threads=1` | 25/25 PASS |
+| 5 | 13:24:33→13:25:00Z | `c763122a` | parallel (default) | 25/25 PASS |
+
+Runs 3–5 were executed by this bead (pdftract-ec0e6526) in a clean-HEAD replica
+(`git archive HEAD` extraction, hardlink-cloned target dir; replica removed after
+capture, raw logs at `/tmp/ec0e6526-headrun*.log` — transient). Each run recompiled
+`pdftract-core` from the extracted source (`Compiling pdftract-core` present in every
+log), so no run reused a binary built from another tree. Every cargo invocation ran
+exactly once, timeout-wrapped, strictly sequential — no overlapping retries.
+
+**All five runs test the same production code:** `git diff --stat cf554653..c763122a`
+touches only `notes/` — zero `crates/` changes.
+
+### Command
+
+```
+CARGO_TARGET_DIR=<replica>/target timeout --kill-after=30s 600s \
+  cargo test -p pdftract-core --lib source::mmap
+```
+
+Run 4 appended `-- --test-threads=1`. Runs 1–2 used the same command shape in
+pdftract-030e8414's own replica (that bead's note records its exact invocations and
+committed raw logs `notes/b716bac5-child2-mmap-run-raw.log` /
+`notes/b716bac5-child2-mmap-run-trace.log`).
+
+### Verbatim per-test lines (run 1; raw log `notes/b716bac5-child2-mmap-run-raw.log`)
+
+```
+test source::mmap::tests::test_prefetch ... ok
+test source::mmap::tests::test_prefetch_past_eof ... ok
+test source::mmap::tests::test_prefetch_madvise_failure_is_traced ... ok
+
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 3562 filtered out; finished in 0.00s
+```
+
+Runs 2, 4 and 5 produced the same 25/25 summary line; run 4 (serial) explicitly
+printed `test source::mmap::tests::test_prefetch_madvise_failure_is_traced ... ok`.
+
+### The failing run (run 3) — verbatim
+
+```
+thread 'source::mmap::tests::test_prefetch_madvise_failure_is_traced' (939189) panicked at crates/pdftract-core/src/source/mmap.rs:563:9:
+assertion `left == right` failed: expected exactly one trace event: []
+  left: 0
+ right: 1
+
+test result: FAILED. 24 passed; 1 failed; 0 ignored; 0 measured; 3562 filtered out; finished in 0.00s
+```
+
+The test's earlier in-range assertion (`prefetch(0, 10)` must emit nothing) passed;
+the past-EOF `prefetch(0, 100)` yielded a **zero-event capture** where exactly one was
+expected.
+
+### Analysis: capture race in the test harness, not a production defect
+
+- The failure path is pure arithmetic, not kernel- or environment-dependent:
+  `advise_sequential` rejects `end > self.mmap.len()` before any `madvise` syscall
+  (`mmap.rs:89-94`, §1 above), and `memmap2` 0.9.10 stores the **requested** mapping
+  length (10 bytes here; `MmapInner::adjust_mmap_params` coerces only zero-size maps),
+  so `prefetch(0, 100)` on a 10-byte file is unconditionally past-EOF → `Err` → the
+  `tracing::trace!` call is unconditionally attempted. Source-identical runs 1, 2, 4
+  and 5 all captured the event, in both parallel and serial modes.
+- The zero-event capture in run 3 is therefore a delivery/capture race under the
+  default parallel test runner. Four other tests in the same binary install their own
+  scoped dispatchers via `tracing::subscriber::with_default`
+  (`font/type3_rasterizer_test.rs`, `forms/value_choice.rs`, `forms/value_text.rs`,
+  `type3_test_fixtures.rs`), so the binary churns dispatchers concurrently. A race in
+  `tracing`'s callsite-interest machinery is the **hypothesized** mechanism — not
+  established by this bead. What is established is the empirical signature:
+  intermittent (1 failure in 5 runs), parallel-mode-only in the one observed failure,
+  serial clean.
+
+### Disposition
+
+**Criterion (a): PASS at runtime.** `test_prefetch`, `test_prefetch_past_eof` and
+`test_prefetch_madvise_failure_is_traced` all pass at HEAD `cf554653` (runs 1–2) and
+at HEAD `c763122a` (runs 4–5); combined with the unconditional code path above, the
+criterion's runtime behavior — madvise failures logged at trace level with
+`offset`/`length`/`file_len`/`error` — is confirmed by execution. The §3 WARN
+("pinning test never executed") is resolved; the parent verdict is **PASS with no
+open rider**.
+
+New, distinct finding (not a criterion-(a) defect): the pinning test is **flaky under
+parallel test execution** — fix bead **pdftract-aa239a61** filed, carrying the run
+history above as evidence. Until it lands, a one-off red
+`test_prefetch_madvise_failure_is_traced` in a parallel `cargo test` run is not, by
+itself, evidence of a criterion-(a) regression; discriminate with
+`-- --test-threads=1`.
