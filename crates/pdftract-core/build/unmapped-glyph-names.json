@@ -1,0 +1,20 @@
+{
+  "unmapped_glyph_names": [
+    ".notdef",
+    ".null",
+    "g000",
+    "g001",
+    "g002",
+    "g003",
+    "g004",
+    "g005",
+    "g006",
+    "g007",
+    "g008",
+    "g009",
+    "CustomA",
+    "CustomB"
+  ],
+  "description": "Glyph names that should be skipped during CMAP and ToUnicode entry creation. A glyph in this set gets no CMap entry, so it stays unmappable from text content while remaining usable via its glyph name, and text extraction surfaces it as GLYPH_UNMAPPED instead. Loaded by crates/pdftract-core/build.rs at compile time; when this file is absent build.rs falls back to a .notdef-only set.",
+  "version": "1.1"
+}

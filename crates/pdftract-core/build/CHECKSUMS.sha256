@@ -20,6 +20,7 @@ b14b625d6bf62d1a1d44bd778e282dfdcc10d787c6ea69cf466d231c5f21cc4a  named-encoding
 c9c1bfb4b995e1d94b5e4132f775b362468e182c69b29596d6b1fca4be59113c  agl.json
 37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570  font-fingerprints.json
 4ed6e5336d7760d281f7e72df31827da880c861363e820d8c65666b0f10d9ac0  wordlist-en-20k.txt
+e526c59e399863da87da4e386cb9246ac355d0cd52ce66ca860a504a8c6ce755  unmapped-glyph-names.json
 
 # Predefined CMap files (in crates/pdftract-core/build/predefined-cmaps/)
 09da49c09f92f1c3e247cc6bc61dcfc7bca6dc5ab5e62b3da30e9be759e12b57  predefined-cmaps/adobe-cns1.json

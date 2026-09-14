@@ -1001,11 +1001,13 @@ pub static EN_WORDLIST_20K: phf::Set<&'static str> = {};
 /// }
 /// ```
 fn generate_unmapped_glyph_names(out_dir: &Path, _unmapped_path: &Path) {
-    // Resolve unmapped_path relative to the workspace root
-    // build.rs runs from the crate directory, but the build/ dir is at workspace root
-    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let workspace_root = crate_dir.ancestors().nth(2).unwrap_or(crate_dir);
-    let actual_unmapped_path = workspace_root.join("build").join("unmapped-glyph-names.json");
+    // Same crate-relative `build/` location as every other build-time data file
+    // (std14-metrics.json, named-encodings.json, …): build.rs runs with the crate
+    // directory as CWD, and the file is committed there and pinned in CHECKSUMS.sha256.
+    // Unlike glyph-shapes.json this file is NOT optional — its contents are asserted
+    // by the unmapped-glyph test suites — so only its absence (not its location)
+    // triggers the fallback below.
+    let actual_unmapped_path = Path::new("build").join("unmapped-glyph-names.json");
 
     // Check if the JSON file exists
     if !actual_unmapped_path.exists() {
