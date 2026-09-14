@@ -159,3 +159,52 @@ not runtime evidence**; `notes/bf-5o22rf-child1.md` still ends on the
 "append a runtime-evidence section here" handoff (last commit `b19a9e52`, no commit
 since) — together these confirm the evidence has not landed and no worker other than the
 owner chain has produced it.
+
+## Re-affirmation 2026-09-14T12:52Z — sweep re-run 12, auto-split order declined, satisfied-umbrella close
+
+Dispatched again (bead event history: 3 evidence closes, 3 reason-less reopens — the
+`failure-count:4` label is reopen churn, not failed attempts). This dispatch carried an
+auto-split order demanding 3–5 new child beads. **Declined** on three grounds:
+
+1. The bead's own guard forbids it: "no beads filed" is an explicit acceptance criterion.
+2. The bead is already a satisfied umbrella: this file IS the consolidation of cd0c29e6's
+   own prior 5-child split (cae26b95 / 1f1cf7a5 / d2fd5467 / 1ce1beaf / 3128538a), and all
+   five children are now Closed — 3128538a (the consolidation child, also this bead's
+   blocker) closed 2026-09-14T12:45:56Z, seven minutes before this pass.
+3. Splitting a completed read-only coordination check creates duplicate-scope beads — the
+   exact failure mode this bead exists to prevent ("do NOT file a duplicate").
+
+**Sweep re-run 12 (2026-09-14T12:52Z, full store, per-status enumeration): NONE FOUND.**
+2779 unique beads — byte-identical count to re-run 11's snapshot; **zero** beads created
+after re-run 11 (2026-09-14T12:13Z). Of the 98 beads created after the 2026-09-08T05:15Z
+ownership-check cutoff, exactly 7 match mmap/re-run/runtime-evidence/prefetch in title —
+all previously classified: d077ca93 + 9935e4b6 (classify.rs compile-evidence, different
+artifact class), adb806f2 / eb967150 / cd0c29e6 (this umbrella's own children/self),
+1ce1beaf / 3128538a (sweep + consolidation children). No second owner exists.
+
+**Status drift since the 12:35Z re-affirm — all ownership-irrelevant or
+ownership-confirming:**
+
+- pdftract-931e6649: InProgress → **Closed** 12:45:01Z (rev 6; regression test landed,
+  commit `454a0daf`). Non-owner reason unchanged: ADD-regression-test artifact class.
+- pdftract-3128538a: → **Closed** 12:45:56Z (rev 9) — blocker satisfied.
+- pdftract-fa233a5e (owner chain, gate): → **Closed** 12:42:28Z (rev 16) with verdict
+  **GO** — lib test target compiles (commit `32e799f5`, gate evidence `fff28e0c`).
+- pdftract-030e8414 (owner chain, the ONLY bead that executes the mmap suite): Open →
+  **InProgress**, claimed 2026-09-14T12:49:29Z (rev 5) — the owner's run is actively
+  underway. The single-owner serialization is doing exactly what it exists for; a
+  competing run bead filed now would collide with a live claim.
+- pdftract-b716bac5: unchanged — Open, rev 13, since 2026-09-08T05:07:27Z. Runtime
+  evidence still NOT landed (fa233a5e's GO is a compile gate verdict, not runtime
+  evidence); no evidence commit to cite; the "closed with evidence" branch still does
+  not apply and no duplicate re-run bead was filed.
+- pdftract-ec0e6526 / pdftract-38700c39: unchanged (Open, rev 1, since 09-08T04:59Z).
+
+**Acceptance criteria re-verified at HEAD (12:52Z):** (1) one-line non-owner reason per
+checked bead — PASS, recorded above and in the bead notes, re-confirmed live; (2) dated
+duplicate sweep result — PASS, re-run 12 NONE FOUND; (3) no test execution, no production
+code change, no bead filed, no other bead's status touched — PASS (guard honored: zero
+cargo invocations; the only artifact is this note section).
+
+**Terminal action:** evidence close of the satisfied umbrella (subtree fully closed,
+blocker closed) — the established exit for this dispatch loop.
