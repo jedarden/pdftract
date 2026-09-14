@@ -79,17 +79,22 @@ impl MarkdownOptions {
     }
 }
 
-/// Regex for parsing pdftract HTML comment anchors.
+/// The anchor grammar as a single regex — the stable public API declared by
+/// `docs/integrations/markdown-anchors.md` ("Regex Schema").
 ///
-/// Format: `<!-- pdftract: page=(\d+) block=(\d+) bbox=\[([\d.,]+)\] kind=(\w+) -->`
+/// This constant and the pattern stated in the doc MUST stay byte-identical;
+/// the schema-freeze test (`tests/markdown_anchor_contract.rs`) enforces it.
+/// New fields may be added to the anchor, but the existing field syntax is
+/// frozen across minor versions:
+/// `<!-- pdftract: page=N block=N bbox=[x0,y0,x1,y1] kind=word -->`
+pub const ANCHOR_REGEX_PATTERN: &str =
+    r#"<!--\s*pdftract:\s*page=(\d+)\s+block=(\d+)\s+bbox=\[([\d.,]+)\]\s+kind=(\w+)\s*-->"#;
+
+/// Regex for parsing pdftract HTML comment anchors, built from
+/// [`ANCHOR_REGEX_PATTERN`].
 fn anchor_regex() -> &'static Regex {
     static REGEX: OnceLock<Regex> = OnceLock::new();
-    REGEX.get_or_init(|| {
-        Regex::new(
-            r"<!--\s*pdftract:\s*page=(\d+)\s+block=(\d+)\s+bbox=\[([\d.,]+)\]\s+kind=(\w+)\s*-->",
-        )
-        .expect("invalid ANCHOR_REGEX")
-    })
+    REGEX.get_or_init(|| Regex::new(ANCHOR_REGEX_PATTERN).expect("invalid ANCHOR_REGEX"))
 }
 
 /// A parsed HTML comment anchor containing positional metadata.
@@ -230,6 +235,25 @@ fn parse_bbox(s: &str) -> Option<[f32; 4]> {
     }
 
     Some(bbox)
+}
+
+/// Format the positional HTML comment anchor for one block.
+///
+/// Shared by every emission path so all anchored output carries identical
+/// anchor syntax (single line, 1-decimal bbox precision).
+fn block_anchor_comment(page_index: usize, block_index: usize, block: &BlockJson) -> String {
+    Anchor::new(
+        page_index,
+        block_index,
+        [
+            block.bbox[0] as f32,
+            block.bbox[1] as f32,
+            block.bbox[2] as f32,
+            block.bbox[3] as f32,
+        ],
+        block.kind.clone(),
+    )
+    .to_comment()
 }
 
 /// Emit a page anchor for internal link targets.
@@ -416,53 +440,64 @@ fn emit_list_blocks(list_blocks: &[BlockJson]) -> String {
     let mut indent_levels: Vec<f64> = Vec::new(); // Track x0 values for each nesting level
 
     for block in list_blocks {
-        let x0 = block.bbox[0];
-
-        // Determine nesting level by comparing x0 to known levels
-        let mut level = 0;
-        for (i, &indent) in indent_levels.iter().enumerate() {
-            if (x0 - indent).abs() < 5.0 {
-                // x0 matches this level (within 5 point tolerance)
-                level = i;
-                break;
-            }
-        }
-
-        // If x0 doesn't match any known level, it's a new level
-        if level == 0 && indent_levels.iter().all(|&v| (x0 - v).abs() >= 5.0) {
-            level = indent_levels.len();
-            indent_levels.push(x0);
-        } else if level < indent_levels.len()
-            && indent_levels
-                .iter()
-                .enumerate()
-                .all(|(i, &v)| i != level || (x0 - v).abs() >= 5.0)
-        {
-            // x0 is a new level beyond current ones
-            level = indent_levels.len();
-            indent_levels.push(x0);
-        }
-
-        // Detect if this is a numbered list item
-        let is_numbered = block
-            .text
-            .chars()
-            .next()
-            .map(|c| c.is_ascii_digit())
-            .unwrap_or(false);
-
-        // Emit with proper indentation
-        let indent = "  ".repeat(level);
-        if is_numbered {
-            // Numbered list item - preserve source numbering
-            result.push_str(&format!("{}{}\n", indent, block.text));
-        } else {
-            // Bulleted list item
-            result.push_str(&format!("{}* {}\n", indent, block.text));
-        }
+        result.push_str(&emit_indented_list_line(block, &mut indent_levels));
     }
 
     result
+}
+
+/// Emit one list item line with its nesting indentation, advancing the
+/// per-run `indent_levels` state shared across the consecutive list run.
+///
+/// Nesting level is inferred from the bbox x0 (left margin) value:
+/// - All items at the same x0 are at the same nesting level
+/// - Items with greater x0 are nested under the previous item
+/// - Each nesting level adds 2 spaces of indentation
+fn emit_indented_list_line(block: &BlockJson, indent_levels: &mut Vec<f64>) -> String {
+    let x0 = block.bbox[0];
+
+    // Determine nesting level by comparing x0 to known levels
+    let mut level = 0;
+    for (i, &indent) in indent_levels.iter().enumerate() {
+        if (x0 - indent).abs() < 5.0 {
+            // x0 matches this level (within 5 point tolerance)
+            level = i;
+            break;
+        }
+    }
+
+    // If x0 doesn't match any known level, it's a new level
+    if level == 0 && indent_levels.iter().all(|&v| (x0 - v).abs() >= 5.0) {
+        level = indent_levels.len();
+        indent_levels.push(x0);
+    } else if level < indent_levels.len()
+        && indent_levels
+            .iter()
+            .enumerate()
+            .all(|(i, &v)| i != level || (x0 - v).abs() >= 5.0)
+    {
+        // x0 is a new level beyond current ones
+        level = indent_levels.len();
+        indent_levels.push(x0);
+    }
+
+    // Detect if this is a numbered list item
+    let is_numbered = block
+        .text
+        .chars()
+        .next()
+        .map(|c| c.is_ascii_digit())
+        .unwrap_or(false);
+
+    // Emit with proper indentation
+    let indent = "  ".repeat(level);
+    if is_numbered {
+        // Numbered list item - preserve source numbering
+        format!("{}{}\n", indent, block.text)
+    } else {
+        // Bulleted list item
+        format!("{}* {}\n", indent, block.text)
+    }
 }
 
 /// Emit a code block with language detection.
@@ -774,10 +809,16 @@ pub fn page_to_markdown_with_options(
                 list_end += 1;
             }
 
-            // Emit the entire list sequence as a group
-            let list_blocks = &blocks[i..list_end];
-            let list_md = emit_list_blocks(list_blocks);
-            result.push_str(&list_md);
+            // Emit the run item by item so every list item gets its own anchor
+            // (the documented round-trip contract requires one anchor per block).
+            let mut indent_levels: Vec<f64> = Vec::new();
+            for (offset, list_block) in blocks[i..list_end].iter().enumerate() {
+                if include_anchor {
+                    result.push_str(&block_anchor_comment(page_index, i + offset, list_block));
+                    result.push('\n');
+                }
+                result.push_str(&emit_indented_list_line(list_block, &mut indent_levels));
+            }
             result.push('\n');
 
             i = list_end;
@@ -1214,23 +1255,6 @@ pub fn page_to_markdown_with_links_and_footnotes(
     while i < blocks.len() {
         let block = &blocks[i];
 
-        // Add anchor comment if requested
-        if include_anchor {
-            let anchor = Anchor::new(
-                page_index,
-                i,
-                [
-                    block.bbox[0] as f32,
-                    block.bbox[1] as f32,
-                    block.bbox[2] as f32,
-                    block.bbox[3] as f32,
-                ],
-                block.kind.clone(),
-            );
-            result.push_str(&anchor.to_comment());
-            result.push('\n');
-        }
-
         // Check if this is a list item and if there are consecutive list items
         if block.kind == "list" || block.kind == "list_item" {
             // Find the end of the consecutive list sequence
@@ -1245,7 +1269,15 @@ pub fn page_to_markdown_with_links_and_footnotes(
             let list_blocks = &blocks[i..list_end];
 
             // For list items with links and footnotes, emit each item with combined support
-            for list_block in list_blocks {
+            for (offset, list_block) in list_blocks.iter().enumerate() {
+                // Add anchor comment if requested — one anchor per block, so
+                // every item of a consecutive list run is individually
+                // addressable in the round-trip (not just the run leader).
+                if include_anchor {
+                    result.push_str(&block_anchor_comment(page_index, i + offset, list_block));
+                    result.push('\n');
+                }
+
                 let block_with_content = block_to_markdown_with_links_and_footnotes(
                     list_block, spans, page_links, footnotes,
                 );
@@ -1271,6 +1303,12 @@ pub fn page_to_markdown_with_links_and_footnotes(
             result.push('\n');
             i = list_end;
         } else {
+            // Add anchor comment if requested
+            if include_anchor {
+                result.push_str(&block_anchor_comment(page_index, i, block));
+                result.push('\n');
+            }
+
             // Non-list block - emit individually
             let block_with_content =
                 block_to_markdown_with_links_and_footnotes(block, spans, page_links, footnotes);
