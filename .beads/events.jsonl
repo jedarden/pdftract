@@ -7383,3 +7383,12 @@
 {"bead":"bf-2hc8pt","duration_ms":1236007,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-14T01:19:25.248890633+00:00","worker":"glm-pdftract"}
 {"bead":"bf-3yzopn","event":"claim","strand":"pluck","ts":"2026-09-14T01:19:29.730089432+00:00","worker":"glm-pdftract"}
 {"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a09d7f-72b7-7782-91aa-9c1234e9cba7","bead":"bf-3yzopn","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-14T01:19:30.487903022+00:00","worker":"glm-pdftract"}
+{"bead":"bf-3yzopn","duration_ms":2233976,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-14T01:56:44.698057044+00:00","worker":"glm-pdftract"}
+{"bead":"bf-1yupei","event":"claim","strand":"pluck","ts":"2026-09-14T01:57:52.000354645+00:00","worker":"glm-pdftract"}
+{"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a09da2-950e-74d1-8973-46b2ae3a0f3b","bead":"bf-1yupei","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-14T01:57:53.038421969+00:00","worker":"glm-pdftract"}
+{"bead":"bf-1yupei","duration_ms":700714,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-14T02:09:34.017644669+00:00","worker":"glm-pdftract"}
+{"bead":"bf-5oytjz","event":"claim","strand":"pluck","ts":"2026-09-14T02:09:38.217121545+00:00","worker":"glm-pdftract"}
+{"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a09dad-5a43-7223-825f-afef6bee1a7f","bead":"bf-5oytjz","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-14T02:09:38.883469888+00:00","worker":"glm-pdftract"}
+{"bead":"bf-5oytjz","duration_ms":1801183,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-14T02:39:40.242596359+00:00","worker":"glm-pdftract"}
+{"bead":"bf-opq1uc","event":"claim","strand":"pluck","ts":"2026-09-14T02:39:47.244758739+00:00","worker":"glm-pdftract"}
+{"adapter":"claude-code-glm-5.3","attempt_id":"01a09dc8-f57b-7cb0-bc53-cc85fbfc52b8","bead":"bf-opq1uc","event":"dispatch","model":"glm-5.3","strand":"pluck","ts":"2026-09-14T02:39:48.091747193+00:00","worker":"glm-pdftract"}
