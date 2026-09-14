@@ -5,6 +5,14 @@
 **HEAD at audit time**: `5c64f38d` (identical at `a1feb210` where the reads
 began — no audited file changed in between; shared checkout, concurrent workers)
 
+> **Re-dispatch update, same day (2026-09-13):** after this audit was written,
+> commits `5a327211` (bf-1yupei) and `d9493485` (bf-3yzopn) landed the
+> reader-side ToUnicode skip and CMAP skip trace logging, and `567e3072`
+> (bf-5v0bgu) moved resolver line numbers. §2's line numbers and §2.1's
+> "no glyph-name-based skip possible" claim are superseded — **§7 re-derives
+> everything at HEAD `9a809efe`**. §1 (generator side) is unchanged and
+> remains valid.
+
 ## Executive summary
 
 **The generator creates zero CMAP and zero ToUnicode entries today — by design.**
@@ -262,6 +270,78 @@ only, §2.1); its guard is the U+FFFD/empty filter at `resolver.rs:428–431`.
   all four font-dict assemblies, and the pinning test at
   `no_mapping_fixture_structure.rs:65`.
 - Read-only audit — no production code changed.
+
+## 7. Re-derivation at HEAD `9a809efe` (2026-09-13, re-dispatch bf-2hc8pt)
+
+`git diff 5c64f38d..9a809efe` touched exactly three audited files
+(`font/cmap.rs` +342, `font/encoding.rs`, `font/resolver.rs`); every
+generator-side and config-side claim in §1/§2.3/§3 was re-verified unchanged.
+
+### 7.1 What landed since §2 was written
+
+| Commit | Bead | Effect on this audit |
+|---|---|---|
+| `5a327211` | bf-1yupei | **The reader-side ToUnicode skip now exists.** `ToUnicodeMap` gained an `unmapped_glyph_names: HashSet<String>` field (cmap.rs:74), `with_unmapped_glyph_names` (:91), `default_unmapped_glyph_names` (:103), `is_unmapped_glyph_name` (:181), accessor (:188), `set_unmapped_glyph_names` (:197), and the glyph-name-aware creation point `add_mapping_for_glyph` (:129) |
+| `d9493485` | bf-3yzopn | The /Differences skip branch in `DifferencesOverlay::parse` gained a structured `tracing::trace!` on the skip path (encoding.rs:227–236) |
+| `567e3072` | bf-5v0bgu | Type3 rasterizer DocumentContext activation — part of the +46 resolver.rs diff |
+
+### 7.2 Supersedes §2.1's "no glyph-name-based skip possible"
+
+Still true of the **parser path**: a ToUnicode CMap stream carries no glyph
+names, so `CMapParser::parse` still inserts unconditionally via plain
+`add_mapping` (bfchar at cmap.rs:306; bfrange explicit-array :376, contiguous
+:389). What changed is that a **font-level primitive now exists**:
+
+```rust
+// cmap.rs:129 — skips + trace-logs when the name is in the configured set,
+// mirroring DifferencesOverlay::parse (see notes/bf-2nob5-child-1.md)
+pub fn add_mapping_for_glyph(&mut self, src: Vec<u8>, glyph_name: &str, dst: Vec<char>)
+```
+
+**It has no production caller.** Verified repo-wide: call sites are tests only
+(`crates/pdftract-core/tests/cmap_unmapped_glyphs.rs:702–754`; unit tests in
+`cmap.rs:1216–1401`). Wiring this primitive into the font-loading path —
+where `/Differences` names are known alongside the font's ToUnicode stream —
+is the remaining reader-side work for bf-2nob5.
+
+### 7.3 Corrected line numbers at `9a809efe` (replaces §2 / §5 values)
+
+| Site | §2 (at `5c64f38d`) | HEAD `9a809efe` |
+|---|---|---|
+| cmap.rs `ToUnicodeMap` struct / skip-set field | 66–71 / — | 67–75 / 74 |
+| cmap.rs `add_mapping` doc/fn | 83–85 / 86–88 | 112–115 / 116–119 |
+| cmap.rs `add_mapping_for_glyph` | (absent) | doc 121–128, fn 129, skip+trace 130–143 |
+| cmap.rs parse dispatch bfchar/bfrange | 145 / 153 / 160 | 241–246 / 248 |
+| cmap.rs `parse_beginbfchar` fn → `add_mapping` | 199 → 218 | 287 → 306 |
+| cmap.rs `parse_beginbfrange` fn → `add_mapping` | 232 → 288 / 301 | 320 → 376 (array) / 389 (contiguous) |
+| encoding.rs `DifferencesOverlay` struct | 128–137 | 129–137 |
+| encoding.rs `parse` fn / MARKER | 190 / 221 | 190 / 221–222 (unchanged) |
+| encoding.rs guard / push | 227–228 | check :227, trace 231–235, push :237 |
+| encoding.rs `is_unmapped_glyph_name` | 274 | 283 |
+| encoding.rs with_/default_/set_ | 153 / 163 / 294 | 153 / 163 / 303 |
+| resolver.rs `resolve_level1` fn | 419 | 423 |
+| resolver.rs empty/U+FFFD filter | 428–431 | 432–435 |
+| resolver.rs MARKER + `ResolvedGlyph::new` | 434–437 | 438–441 |
+
+Unchanged and re-verified by direct read at `9a809efe`: §1 generator sites
+(`generate_encoding_fixtures.py` `NO_MAPPING_GLYPHS` :30, font dict :96–101,
+pin test `no_mapping_fixture_structure.rs:65`), §2.3 codespace
+(`cmap/codespace.rs:371`, `font/codespace.rs` MARKER :274/add :277), §3
+config chain (`build.rs` :31/:89/:1003, `unmapped.rs` :9/:61). §3's WARN
+stands: `build/unmapped-glyph-names.json` is still absent (re-checked
+2026-09-13), so the effective skip set is `{".notdef"}` everywhere.
+
+### 7.4 Bottom line for bf-2nob5 (updated)
+
+1. **Generator side (§1) — unchanged, still the primary target.** Skip logic =
+   emit `beginbfchar` entries only for rows with `unmapped == False` (codes
+   7–9) of `NO_MAPPING_GLYPHS`; keep `/Differences` complete; update the
+   `no_mapping_fixture_structure.rs:65` pin if a ToUnicode stream is added.
+2. **Reader /Differences skip — done** since the child-1 audit
+   (encoding.rs:224–237, now with structured trace).
+3. **Reader ToUnicode skip — primitive done (bf-1yupei), wiring open.**
+   `add_mapping_for_glyph` exists and is tested but nothing in `src/` feeds it
+   glyph names; the CMap parser path deliberately cannot.
 
 ## References
 
