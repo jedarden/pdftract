@@ -143,6 +143,24 @@ fn load_fixture(name: &str) -> (PageDict, XrefResolver) {
         name
     );
     let page = pages.into_iter().next().unwrap();
+
+    // Warm any indirect /Properties targets: parse_bdc resolves property
+    // references through the cache-only `resolve`, the same way this harness
+    // warms the page-tree nodes above. (The direct-dict fixture has no
+    // indirect targets, so this loop is a no-op for it.)
+    for prop_obj in page.resources.properties.values() {
+        if let PdfObject::Ref(prop_ref) = prop_obj {
+            resolver
+                .resolve_with_source(*prop_ref, &source)
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "Failed to resolve /Properties target {} of {}: {}",
+                        prop_ref, name, e
+                    )
+                });
+        }
+    }
+
     (page, resolver)
 }
 
@@ -224,7 +242,7 @@ fn bdc_name_props_indirect_reference_recovers_mcid() {
     // The indirect reference survived merge_resources into /Properties.
     assert_eq!(
         page.resources.lookup_properties("MC0"),
-        Some(ObjRef::new(4, 0)),
+        Some(&PdfObject::Ref(ObjRef::new(4, 0))),
         "/Properties must map MC0 to indirect object 4"
     );
 
@@ -246,20 +264,18 @@ fn bdc_name_props_indirect_reference_recovers_mcid() {
 /// Fixture 2: `/Properties << /MC0 << /MCID 0 ... >> >>` — the property list
 /// is a DIRECT inline dict in the page /Resources.
 ///
-/// `merge_resources()` (crates/pdftract-core/src/parser/resources.rs, the
-/// `/Properties` merge) drops it because it only stores entries where
-/// `obj.as_ref()` is `Some` — a direct dict yields `None`, so `/MC0` never
-/// reaches `ResourceDict.properties` and the lookup misses. This cannot pass
-/// until the child-2 fix lands, so it is ignored rather than left red.
+/// `merge_resources()` stores /Properties values verbatim (bead
+/// pdftract-ff642b7b), so the direct dict survives the merge as
+/// `PdfObject::Dict`, and `parse_bdc` reads /MCID straight out of it without
+/// consulting the resolver.
 #[test]
-#[ignore = "merge_resources() (crates/pdftract-core/src/parser/resources.rs, /Properties merge) drops direct inline property dicts because it only stores entries where obj.as_ref() is Some; /MC0 -> << /MCID 0 ... >> cannot be recovered until the child-2 fix (bf-1a61w9) lands"]
 fn bdc_name_props_direct_inline_dict_recovers_mcid() {
     let (page, resolver) = load_fixture("mc_properties_direct.pdf");
 
     // The direct inline dict must survive merge_resources for this to pass.
     assert!(
         page.resources.lookup_properties("MC0").is_some(),
-        "the direct inline /MC0 dict was dropped by merge_resources (child-2)"
+        "the direct inline /MC0 dict did not survive merge_resources"
     );
 
     let (accepted, mcid, diagnostics) = run_bdc_mc0(&page, &resolver);

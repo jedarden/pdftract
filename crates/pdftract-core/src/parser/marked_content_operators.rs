@@ -136,14 +136,16 @@ fn extract_mcid_from_props(
             let name_str = name_str.strip_prefix('/').unwrap_or(name_str);
 
             match resources.lookup_properties(name_str) {
-                Some(obj_ref) => {
-                    // We have an ObjRef - resolve it if we have a resolver
+                // Direct inline property dict - no resolution needed at all
+                Some(PdfObject::Dict(dict)) => extract_mcid_from_dict(dict),
+                Some(PdfObject::Ref(obj_ref)) => {
+                    // Indirect reference - resolve it if we have a resolver
                     if let Some(resolver) = resolver {
-                        match resolver.resolve(obj_ref) {
+                        match resolver.resolve(*obj_ref) {
                             Ok(resolved_obj) => {
                                 // Extract MCID from the resolved object
                                 match resolved_obj {
-                                    PdfObject::Dict(dict) => extract_mcid_from_dict(&*dict),
+                                    PdfObject::Dict(dict) => extract_mcid_from_dict(&dict),
                                     _ => {
                                         // Resolved object is not a dictionary
                                         if let Some(diags) = diagnostics {
@@ -187,6 +189,16 @@ fn extract_mcid_from_props(
                         None
                     }
                 }
+                Some(_) => {
+                    // Stored value is neither a property dict nor a reference to one
+                    if let Some(diags) = diagnostics {
+                        diags.push(Diagnostic::with_dynamic_no_offset(
+                            DiagCode::StructInvalidBdcOperand,
+                            format!("BDC property '{}' is not a property dictionary", name_str),
+                        ));
+                    }
+                    None
+                }
                 None => {
                     // Unknown property name - emit diagnostic but continue
                     if let Some(diags) = diagnostics {
@@ -203,6 +215,33 @@ fn extract_mcid_from_props(
     }
 }
 
+/// Look up a key in a property dictionary, accepting both key spellings.
+///
+/// Dictionary keys parsed from a file arrive WITHOUT the leading slash (the
+/// lexer consumes it), while hand-built dicts (unit tests, in-process
+/// construction) traditionally use the slashed spelling. Property dicts reach
+/// the BDC path through both routes, so every lookup accepts both.
+///
+/// # Arguments
+///
+/// * `dict` - The property dictionary
+/// * `slashed_key` - The key in its slashed spelling (e.g. "/MCID")
+///
+/// # Returns
+///
+/// The value stored under either spelling of the key, None if absent.
+fn prop_dict_get<'a>(
+    dict: &'a indexmap::IndexMap<Arc<str>, PdfObject>,
+    slashed_key: &str,
+) -> Option<&'a PdfObject> {
+    debug_assert!(
+        slashed_key.starts_with('/'),
+        "pass the slashed spelling; the helper derives both"
+    );
+    dict.get(slashed_key)
+        .or_else(|| dict.get(&slashed_key[1..]))
+}
+
 /// Extract MCID value from a property dictionary.
 ///
 /// # Arguments
@@ -213,7 +252,7 @@ fn extract_mcid_from_props(
 ///
 /// Some(mcid) if /MCID is present and valid, None otherwise.
 fn extract_mcid_from_dict(dict: &indexmap::IndexMap<Arc<str>, PdfObject>) -> Option<u32> {
-    match dict.get("/MCID") {
+    match prop_dict_get(dict, "/MCID") {
         Some(PdfObject::Integer(n)) if *n >= 0 => Some(*n as u32),
         Some(PdfObject::Integer(_)) => {
             // Negative MCID is invalid per spec ("non-negative integer")
@@ -254,34 +293,39 @@ fn extract_ocg_ref_from_props(
     match props {
         PdfObject::Dict(dict) => {
             // Inline property dict - check for /OCG key
-            dict.get("/OCG").and_then(|obj| obj.as_ref())
+            prop_dict_get(dict, "/OCG").and_then(|obj| obj.as_ref())
         }
         PdfObject::Name(name) => {
             // Property resource name - look up in /Properties
             let name_str: &str = name.as_ref();
             let name_str = name_str.strip_prefix('/').unwrap_or(name_str);
 
-            if let Some(obj_ref) = resources.lookup_properties(name_str) {
-                // Resolve the property dictionary to extract /OCG
-                if let Some(resolver) = resolver {
-                    match resolver.resolve(obj_ref) {
-                        Ok(resolved_obj) => {
-                            match resolved_obj {
+            match resources.lookup_properties(name_str) {
+                // Direct inline property dict - no resolution needed at all
+                Some(PdfObject::Dict(dict)) => {
+                    prop_dict_get(dict, "/OCG").and_then(|obj| obj.as_ref())
+                }
+                Some(PdfObject::Ref(obj_ref)) => {
+                    // Indirect reference - resolve the property dict, then read /OCG
+                    if let Some(resolver) = resolver {
+                        match resolver.resolve(*obj_ref) {
+                            Ok(resolved_obj) => match resolved_obj {
                                 PdfObject::Dict(dict) => {
                                     // Extract /OCG from the resolved dictionary
-                                    dict.get("/OCG").and_then(|obj| obj.as_ref())
+                                    prop_dict_get(&dict, "/OCG").and_then(|obj| obj.as_ref())
                                 }
                                 _ => None,
-                            }
+                            },
+                            Err(_) => None,
                         }
-                        Err(_) => None,
+                    } else {
+                        // No resolver available
+                        None
                     }
-                } else {
-                    // No resolver available
-                    None
                 }
-            } else {
-                None
+                // Neither a property dict nor a reference to one
+                Some(_) => None,
+                None => None,
             }
         }
         _ => None,
@@ -385,10 +429,7 @@ mod tests {
     #[test]
     fn test_parse_bdc_with_property_name_found() {
         let mut stack = MarkedContentStack::new();
-        let mut resources = ResourceDict::new();
-        resources
-            .properties
-            .insert(Arc::from("MyProps"), ObjRef::new(10, 0));
+        let resources = resources_with("MyProps", ObjRef::new(10, 0));
 
         // Property name resolution requires full resolver, so this returns None
         assert!(parse_bdc(
@@ -890,6 +931,16 @@ mod tests {
     //                                        resolver_error, no_resolver, lookup_miss}
     //   end-to-end parse_bdc wiring        test_parse_bdc_property_name_{resolves_mcid_via_resolver,
     //                                        no_resolver_emits_diagnostic}
+    //
+    // Coverage map (bead pdftract-ff642b7b) — the direct inline dict branches
+    // added when ResourceDict.properties started storing values verbatim:
+    //   direct dict in /Properties, MCID   test_mcid_direct_inline_property_dict_needs_no_resolver
+    //                                        test_parse_bdc_property_name_direct_dict_recovers_mcid
+    //   direct dict in /Properties, OCG    test_ocg_name_direct_inline_dict_returns_ocg_ref
+    //   file-parsed (slashless) keys       test_mcid_direct_property_dict_slashless_keys
+    //                                        test_ocg_direct_dict_slashless_keys
+    //                                        test_extract_mcid_from_dict_accepts_both_key_spellings
+    //   stored value neither dict nor ref  test_mcid_property_value_neither_dict_nor_ref_emits_diagnostic
     // ------------------------------------------------------------------
 
     /// A property dict containing `/MCID`.
@@ -906,10 +957,17 @@ mod tests {
         PdfObject::Dict(Box::new(dict))
     }
 
-    /// A resource dict whose /Properties maps `name` to `obj_ref`.
+    /// A resource dict whose /Properties maps `name` to an indirect `obj_ref`.
     fn resources_with(name: &str, obj_ref: ObjRef) -> ResourceDict {
+        resources_with_props(name, PdfObject::Ref(obj_ref))
+    }
+
+    /// A resource dict whose /Properties maps `name` to any property value:
+    /// a direct inline property dict (`PdfObject::Dict`) or an indirect
+    /// reference (`PdfObject::Ref`).
+    fn resources_with_props(name: &str, props: PdfObject) -> ResourceDict {
         let mut resources = ResourceDict::new();
-        resources.properties.insert(Arc::from(name), obj_ref);
+        resources.properties.insert(Arc::from(name), props);
         resources
     }
 
@@ -1185,5 +1243,120 @@ mod tests {
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].code, DiagCode::StructInvalidBdcOperand);
         assert!(diagnostics[0].message.contains("no resolver available"));
+    }
+
+    // ------------------------------------------------------------------
+    // Direct inline property dicts in /Properties (bead pdftract-ff642b7b).
+    //
+    // merge_resources stores /Properties values verbatim now, so a property
+    // list need not be an indirect reference: `/Properties << /MC0 << /MCID 0
+    // >> >>` lands in ResourceDict as PdfObject::Dict and recovers MCID with
+    // no resolver at all — exactly the resolver=None production call site.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn test_mcid_direct_inline_property_dict_needs_no_resolver() {
+        let resources = resources_with_props("MyProps", mcid_props(42));
+        let mut diagnostics = Vec::new();
+
+        let mcid = extract_mcid_from_props(
+            &PdfObject::Name(Arc::from("MyProps")),
+            &resources,
+            Some(&mut diagnostics),
+            None, // no resolver: a direct dict must not need one
+        );
+
+        assert_eq!(mcid, Some(42));
+        assert!(diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_mcid_direct_property_dict_slashless_keys() {
+        // File-parsed property dicts store keys WITHOUT the leading slash
+        // (the lexer consumes it) — the convention pinned by the
+        // marked_content_properties_fixtures integrity test.
+        let mut dict = IndexMap::new();
+        dict.insert(intern("MCID"), PdfObject::Integer(0));
+        let resources = resources_with_props("MC0", PdfObject::Dict(Box::new(dict)));
+
+        let mcid =
+            extract_mcid_from_props(&PdfObject::Name(Arc::from("MC0")), &resources, None, None);
+
+        assert_eq!(mcid, Some(0));
+    }
+
+    #[test]
+    fn test_parse_bdc_property_name_direct_dict_recovers_mcid() {
+        let mut stack = MarkedContentStack::new();
+        let resources = resources_with_props("MyProps", mcid_props(7));
+
+        assert!(parse_bdc(
+            &mut stack,
+            Arc::from("P"),
+            &PdfObject::Name(Arc::from("MyProps")),
+            &resources,
+            None,
+            None,
+            None, // no resolver
+        ));
+        assert_eq!(stack.depth(), 1);
+        assert_eq!(stack.innermost_mcid(), Some(7));
+    }
+
+    #[test]
+    fn test_ocg_name_direct_inline_dict_returns_ocg_ref() {
+        let ocg_ref = ObjRef::new(20, 0);
+        let resources = resources_with_props("MyProps", ocg_props(ocg_ref));
+
+        assert_eq!(
+            extract_ocg_ref_from_props(
+                &PdfObject::Name(Arc::from("MyProps")),
+                &resources,
+                None // no resolver: a direct dict must not need one
+            ),
+            Some(ocg_ref)
+        );
+    }
+
+    #[test]
+    fn test_ocg_direct_dict_slashless_keys() {
+        let ocg_ref = ObjRef::new(21, 0);
+        let mut dict = IndexMap::new();
+        dict.insert(intern("OCG"), PdfObject::Ref(ocg_ref));
+        let resources = resources_with_props("OC0", PdfObject::Dict(Box::new(dict)));
+
+        assert_eq!(
+            extract_ocg_ref_from_props(&PdfObject::Name(Arc::from("OC0")), &resources, None),
+            Some(ocg_ref)
+        );
+    }
+
+    #[test]
+    fn test_mcid_property_value_neither_dict_nor_ref_emits_diagnostic() {
+        let resources = resources_with_props("MyProps", PdfObject::Integer(3));
+        let mut diagnostics = Vec::new();
+
+        let mcid = extract_mcid_from_props(
+            &PdfObject::Name(Arc::from("MyProps")),
+            &resources,
+            Some(&mut diagnostics),
+            Some(&XrefResolver::new()),
+        );
+
+        assert_eq!(mcid, None);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].code, DiagCode::StructInvalidBdcOperand);
+        assert!(diagnostics[0].message.contains("not a property dictionary"));
+    }
+
+    #[test]
+    fn test_extract_mcid_from_dict_accepts_both_key_spellings() {
+        let mut slashed = IndexMap::new();
+        slashed.insert(intern("/MCID"), PdfObject::Integer(1));
+        assert_eq!(extract_mcid_from_dict(&slashed), Some(1));
+
+        let mut slashless = IndexMap::new();
+        slashless.insert(intern("MCID"), PdfObject::Integer(1));
+        assert_eq!(extract_mcid_from_dict(&slashless), Some(1));
     }
 }

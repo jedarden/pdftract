@@ -11,6 +11,10 @@ use crate::parser::object::{intern, ObjRef, PdfObject};
 use indexmap::IndexMap;
 use std::sync::Arc;
 
+// Test fixtures build resource dicts directly; production paths receive them parsed.
+#[cfg(test)]
+use crate::parser::object::PdfDict;
+
 /// A merged resource dictionary for a page.
 ///
 /// Contains all resource namespaces from the page's ancestors,
@@ -30,9 +34,13 @@ pub struct ResourceDict {
     pub shadings: IndexMap<Arc<str>, ObjRef>,
     /// /Pattern namespace: maps pattern names to pattern dictionaries
     pub patterns: IndexMap<Arc<str>, ObjRef>,
-    /// /Properties namespace: maps property names to property dictionaries
+    /// /Properties namespace: maps property list names to property dictionaries
     /// Used for marked content and OCG references
-    pub properties: IndexMap<Arc<str>, ObjRef>,
+    ///
+    /// Values are stored verbatim: most PDFs use indirect references
+    /// (`PdfObject::Ref`), but a direct inline dict (`PdfObject::Dict`) is
+    /// equally legal and needs no cross-reference resolution at all.
+    pub properties: IndexMap<Arc<str>, PdfObject>,
     /// /ProcSet array (deprecated in PDF 1.7+)
     /// Informational only; preserved but not enforced
     pub proc_set: Vec<Arc<str>>,
@@ -85,9 +93,12 @@ impl ResourceDict {
 
     /// Look up a property in the /Properties namespace.
     ///
-    /// Returns the ObjRef to the property dictionary if found, None otherwise.
-    pub fn lookup_properties(&self, name: &str) -> Option<ObjRef> {
-        self.properties.get(name).copied()
+    /// Returns the stored value for `name` if found, None otherwise. The
+    /// value is either a `PdfObject::Ref` (indirect property dictionary,
+    /// which the caller resolves through the xref resolver) or a
+    /// `PdfObject::Dict` (direct inline property dictionary, usable as-is).
+    pub fn lookup_properties(&self, name: &str) -> Option<&PdfObject> {
+        self.properties.get(name)
     }
 }
 
@@ -206,13 +217,14 @@ pub fn merge_resources(ancestor: &ResourceDict, child: &PdfObject) -> ResourceDi
         }
     }
 
-    // Merge /Properties namespace
+    // Merge /Properties namespace (can be refs OR direct inline dicts)
     if let Some(prop_obj) = child_dict.get("Properties") {
         if let Some(prop_dict) = prop_obj.as_dict() {
             for (name, obj) in prop_dict.iter() {
-                if let Some(ref_) = obj.as_ref() {
-                    merged.properties.insert(name.clone(), ref_);
-                }
+                // Preserve both refs and direct inline dicts: a direct dict
+                // needs no cross-reference resolution, and dropping it loses
+                // BDC marked-content metadata (bf-1a61w9 child 2).
+                merged.properties.insert(name.clone(), obj.clone());
             }
         }
     }
@@ -252,7 +264,6 @@ pub fn extract_resources(resources_obj: &PdfObject) -> ResourceDict {
 
 #[cfg(test)]
 mod tests {
-    use crate::parser::object::PdfDict;
     use super::*;
 
     #[test]
