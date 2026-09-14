@@ -483,3 +483,19 @@ Purpose: Tests that extract_markdown() properly formats output with #, -, 1., an
 Ground truth: markdown/markdown-structures-expect-text.txt (plain text), markdown/markdown-structures-expect-markdown.txt (Markdown formatted)
 Generated: 2026-08-06 (bf-b03wq4)
 SHA256: d4598b55b8abdb6543ac61f5fb11c3deb7d025c01862ad4590ac6135cdba7319
+
+# tagged/mc_properties_indirect.pdf
+Hand-authored via a throwaway Python script (byte-exact xref offsets computed at write time; script not kept - object layout documented in tagged/README.md)
+PDF 1.7, one page, minimal tagged fixture: content stream marks text with `/P /MC0 BDC ... EMC` where page /Resources /Properties maps /MC0 to the INDIRECT reference `4 0 R` and object 4 is `<< /MCID 0 /ActualText (Tagged content) >>`
+Purpose: exercises parse_bdc -> ResourceDict::lookup_properties -> resolver -> /MCID extraction against a real parsed file (bead pdftract-966fddc5, split child 1/4 of bf-1a61w9); at bead time the MCID is NOT recovered because XrefResolver::resolve is cache-only and extract_mcid_from_dict reads "/MCID" while parsed keys carry no slash - see tagged/README.md
+Consumer: crates/pdftract-core/tests/marked_content_properties_fixtures.rs
+Generated: 2026-09-14 (pdftract-966fddc5)
+SHA256: 71b7fb3b002d93a2ec6865052a24cf85a068946fa4534b3fc5cd7d030ed64ffd
+
+# tagged/mc_properties_direct.pdf
+Hand-authored via a throwaway Python script (byte-exact xref offsets computed at write time; script not kept - object layout documented in tagged/README.md)
+PDF 1.7, one page, minimal tagged fixture: same marked-content shape, but /Properties maps /MC0 to a DIRECT inline dict `<< /MCID 0 /ActualText (Tagged content) >>` (no property object exists)
+Purpose: documents the complementary gap - merge_resources() (crates/pdftract-core/src/parser/resources.rs, /Properties merge) drops the entry because it only stores values where obj.as_ref() is Some, so a direct inline property dict can never reach ResourceDict.properties (bead pdftract-966fddc5)
+Consumer: crates/pdftract-core/tests/marked_content_properties_fixtures.rs (desired-behavior test is #[ignore]d until the child-2 fix lands)
+Generated: 2026-09-14 (pdftract-966fddc5)
+SHA256: 3b8f9dbf5df5493e906f49d5750faa1efab70c22757bf784ef837b6c27278e9d
