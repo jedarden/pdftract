@@ -41,7 +41,7 @@ use pdftract_core::text::{serialize_document_text, TextOptions};
 pub use pdftract_core::diagnostics::{DiagCode, DiagInfo, DIAGNOSTIC_CATALOG};
 
 #[derive(Parser)]
-#[command(name = "pdftract")]
+#[command(version, name = "pdftract")]
 #[command(about = "pdftract CLI - PDF extraction and conformance testing", long_about = None)]
 struct Cli {
     #[command(subcommand)]
