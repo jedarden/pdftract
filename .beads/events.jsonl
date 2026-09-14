@@ -7422,3 +7422,5 @@
 {"bead":"bf-2jwxel","duration_ms":3605214,"event":"timeout","exit_code":124,"outcome":"timeout","strand":"pluck","ts":"2026-09-14T06:05:14.069986584+00:00","worker":"glm-pdftract"}
 {"bead":"bf-1xlu7d","event":"claim","strand":"pluck","ts":"2026-09-14T06:08:38.655025423+00:00","worker":"glm-pdftract"}
 {"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a09e88-2b1d-7210-8190-ec3ef3bf4993","bead":"bf-1xlu7d","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-14T06:08:39.197873281+00:00","worker":"glm-pdftract"}
+{"bead":"pdftract-84a37be0","event":"claim","strand":"explore","ts":"2026-09-14T06:33:01.964655359+00:00","worker":"glm53-adc"}
+{"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a09e9e-7f37-7a60-a600-9bda71b33ba0","bead":"pdftract-84a37be0","event":"dispatch","model":"glm-5.3-flash","strand":"explore","ts":"2026-09-14T06:33:02.519394934+00:00","worker":"glm53-adc"}
