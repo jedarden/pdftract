@@ -2558,11 +2558,14 @@ macro_rules! emit {
     }};
 }
 
-// Static assertion: Diagnostic struct size should be 48-64 bytes
-// Updated to reflect actual size after adding object_ref field (56 bytes)
+// Static assertion: Diagnostic struct size should be 48-64 bytes.
+// Written as >=/<= comparisons (not exact-offset arithmetic) so the guard
+// holds on every target: on 64-bit the struct is 56 bytes, but pointer-width
+// differences (e.g. wasm32) shift the total while staying in range.
 const _: () = {
-    let _assert: [(); 9] = [(); std::mem::size_of::<Diagnostic>() - 47]; // Fails if size < 48 (actual: 56 - 47 = 9)
-    let _assert: [(); 8] = [(); 64 - std::mem::size_of::<Diagnostic>()]; // Fails if size > 64 (actual: 64 - 56 = 8)
+    let _assert_min: [(); 1] = [(); (std::mem::size_of::<Diagnostic>() >= 48) as usize];
+    let _assert_max: [(); 1] = [(); (std::mem::size_of::<Diagnostic>() <= 64) as usize];
+    let _ = (_assert_min, _assert_max);
 };
 
 #[cfg(test)]

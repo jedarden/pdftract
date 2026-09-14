@@ -34,7 +34,7 @@ memchr = { workspace = true }
 unicode-normalization = { workspace = true }
 ttf-parser = "0.24"
 owned_ttf_parser = "0.21"
-zstd = "0.13"
+zstd = { version = "0.13", optional = true }  # cache compression only (cache feature)
 rayon = "1.10"
 phf = "0.11"
 rand = "0.8"
@@ -63,12 +63,19 @@ lru = "0.12"
 ureq = { version = "2.10", default-features = false, features = ["tls"], optional = true }
 rustls = { version = "0.23", optional = true }
 
+# getrandom 0.2 (pulled in by rand) needs the `js` feature to compile for
+# wasm32-unknown-unknown; wasm-bindgen provides the entropy source there.
+# No effect on native targets. See ADR-011.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+
 [features]
-default = ["serde", "decrypt", "quick-xml"]
+default = ["serde", "decrypt", "quick-xml", "cache"]
+cache = ["dep:zstd"]  # Filesystem-backed extraction cache (ADR-005); needs a real FS + Unix perms — excluded from wasm32 builds
 serde = ["dep:serde", "dep:serde_json", "dep:schemars"]
 schemars = ["dep:schemars", "serde"]
 receipts = []  # Enable visual citation receipts (SVG clip generation)
-ocr = ["dep:image", "dep:imageproc", "dep:leptonica-plumbing"]  # Enable OCR path (image compositing + preprocessing + HOCR parsing)
+ocr = ["dep:image", "dep:imageproc", "dep:leptonica-plumbing", "dep:tesseract"]  # Enable OCR path (image compositing + preprocessing + HOCR parsing)
 full-render = ["dep:pdfium-render", "ocr"]  # Enable PDFium-based rendering (requires ocr)
 remote = ["dep:url", "dep:ureq", "dep:nix"]  # Enable remote HTTP source (Phase 1.8)
 profiles = ["dep:serde_yaml"]  # Enable extraction profiles (Phase 7.10)

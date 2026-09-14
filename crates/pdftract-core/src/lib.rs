@@ -157,6 +157,11 @@ pub mod annotation;
 pub mod atomic_file_writer;
 pub mod attachment;
 pub mod audit;
+// Filesystem-backed extraction cache (ADR-005). Gated behind the `cache`
+// feature (on by default) so wasm32 builds (ADR-011) exclude it: it needs a
+// real filesystem, Unix permission bits, and zstd (whose -sys crate needs a
+// C cross-compiler for wasm32).
+#[cfg(feature = "cache")]
 pub mod cache;
 pub mod classify;
 pub mod cmap;

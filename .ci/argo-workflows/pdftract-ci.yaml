@@ -36,6 +36,7 @@
 # - build-matrix: Cross-compile for 5 targets (x86_64/aarch64 Linux musl, macOS x64/ARM64, Windows x64)
 # - test-matrix: Run unit tests across feature combinations (default, full, with OCR)
 # - quality-matrix: Seven Tier 1 quality gates (clippy-fmt, msrv-check, cargo-audit, cargo-deny, cargo-bloat, memory-ceiling, schema-gen)
+# - wasm32-check: wasm32-unknown-unknown compilation gate for pdftract-core's no-native-deps feature set + pdftract-wasm (ADR-011)
 # - bench-matrix: Performance benchmarks (cargo bench) against fixture corpus
 # - publish-if-tag: On tags only, upload binaries to GitHub Releases
 #
@@ -168,6 +169,10 @@ spec:
 
           - name: quality-matrix
             template: quality-matrix
+            dependencies: [setup]
+
+          - name: wasm32-check
+            template: wasm32-check
             dependencies: [setup]
 
           - name: wer-gate
@@ -1315,6 +1320,55 @@ spec:
 
             echo "=== MSRV check passed ==="
             echo "No Rust 1.79+ features detected"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+
+    # === WASM32 Compatibility Check (ADR-011) ===
+    # Proves pdftract-core compiles for wasm32-unknown-unknown with the
+    # no-native-deps feature set (native default minus `cache`), and that the
+    # pdftract-wasm scaffold keeps building against it. Catches wasm-hostile
+    # dependency regressions early — e.g. a C-backed -sys crate sneaking back
+    # into the unconditional dependency set (the bf-2uw30r spike failure mode).
+    # CRITICAL: All cargo commands MUST use --locked (or --locked --frozen)
+    - name: wasm32-check
+      activeDeadlineSeconds: 900
+      container:
+        image: rust:1.83-bookworm
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+
+            echo "=========================================="
+            echo "WASM32 compatibility check (wasm32-unknown-unknown)"
+            echo "=========================================="
+
+            cd /workspace
+            export CARGO_HOME="/cache/cargo/registry"
+            export CARGO_TARGET_DIR="/cache/cargo/target-wasm32"
+
+            rustc --version
+            rustup target add wasm32-unknown-unknown
+
+            # No-native-deps feature set: the native default minus `cache`
+            # (zstd-sys needs a C cross-compiler for wasm32; the cache module
+            # also needs a real filesystem and Unix permission bits).
+            cargo check -p pdftract-core --no-default-features --features serde,decrypt,quick-xml --locked --target wasm32-unknown-unknown
+
+            # The binding crate itself, against that feature set.
+            cargo check -p pdftract-wasm --locked --target wasm32-unknown-unknown
+
+            echo "=== wasm32 check passed ==="
         volumeMounts:
           - name: workspace
             mountPath: /workspace

@@ -170,3 +170,35 @@ This preserves ADR-010's goals (zero-install browser demo, privacy-preserving cl
 - Date: 2026-08-03
 - Workspace: `/home/coding/pdftract`
 - Bead: `bf-2uw30r`
+
+---
+
+## VERDICT (2026-09-14, bead `pdftract-4df4aefb`) — GO, re-scoped; recorded as ADR-011
+
+**Decision: proceed with the `pdftract-wasm` track on the no-native-deps re-scope, per ADR-010's own invalidation-trigger remedy.** Recorded as **ADR-011** in `docs/plan/plan.md`; ADR-010 is marked amended, not rejected. The extraction exports and demo page remain deferred until the native pipeline is green on the regression corpus.
+
+### Correction to the blocker tables above
+
+This spike's check never got past `zstd-sys`, and the "Expected Additional Blockers" tables were analysis, not experiment. Follow-up probing at the pinned `Cargo.lock` versions (`cargo check --target wasm32-unknown-unknown` per crate, 2026-09-14) shows most of the "high-confidence blockers" were wrong:
+
+| Dependency (pinned) | This note said | Probed result |
+|---|---|---|
+| `zstd` 0.13.3 | confirmed blocker | **Confirmed** — `zstd-sys` build script needs a C cross-compiler. Used only by the filesystem cache module (`cache/compression.rs`), not the PDF stream decoders; module is now behind the default-on `cache` feature. |
+| `rand` 0.8.6 | (not examined) | **Confirmed blocker** — `getrandom` 0.2 needs its `js` feature; fixed with a `cfg(target_arch = "wasm32")`-scoped dependency in `pdftract-core`. |
+| `memmap2` 0.9.10 | high-confidence blocker | **Compiles.** Only the Unix-only `Advice`/`advise_range` hint is missing on wasm32 (`#[cfg(unix)]`-gated no-op fallback added). The mmap *sources* are unused on wasm; parsing reads via `MemorySource`. |
+| `rayon` 1.12.0 | high-confidence blocker | **Compiles.** Its only import in `pdftract-core` is in the OCR page-parallelism path (`ocr.rs`, behind the `ocr` feature) — the vector path is already serial. |
+| `tempfile` 3.27.0 | high-confidence blocker | **Compiles.** Non-test usage is in the cache module and file-output paths only. |
+| `dirs` 5.0.1 | high-confidence blocker | **Compiles.** Only consumer is the `profiles` feature's loader. |
+| `parking_lot` 0.12.5 / `chrono` 0.4.44 | moderate concern | **Both compile.** |
+
+### What landed (bead `pdftract-4df4aefb`)
+
+- `pdftract-core`: `cache` feature (default-on) gating the cache module + optional `zstd`; wasm32-target `getrandom`/`js` dependency; `#[cfg(unix)]` no-op fallback for `advise_sequential`; pointer-width-independent `Diagnostic` size guards (`crates/pdftract-core/src/diagnostics.rs`).
+- `crates/pdftract-wasm`: scaffold (publish = false), `pdftract-core` at `default-features = false, features = ["serde", "decrypt", "quick-xml"]` (= native default minus `cache`), `pdftract_version()` wasm-bindgen export.
+- CI: `wasm32-check` leg in `.ci/argo-workflows/pdftract-ci.yaml` (in-tree; declarative-config mirror sync is a follow-up).
+- Verified: `cargo check -p pdftract-core --no-default-features --features serde,decrypt,quick-xml --target wasm32-unknown-unknown` **green**; `cargo check -p pdftract-wasm --target wasm32-unknown-unknown` **green**; native `cargo check -p pdftract-core -p pdftract-cli -p pdftract-wasm` **green**.
+
+### Observed, tracked as follow-ups (not fixed here)
+
+- `--no-default-features` (native, without `decrypt`/`quick-xml`) fails to compile at HEAD: `conformance.rs` references `quick_xml` and `extract.rs`/`parser::stream` reference `crate::encryption` without feature gates. Pre-existing; the wasm check leg uses the `serde,decrypt,quick-xml` set, which compiles.
+- The in-tree `.ci/argo-workflows/pdftract-ci.yaml` has a pre-existing YAML indentation defect in the tier4 artifact `path:` — the file as committed does not parse. The added `wasm32-check` sections were validated to parse in isolation.

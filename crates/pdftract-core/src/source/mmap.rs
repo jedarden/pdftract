@@ -79,23 +79,31 @@ impl MmapSource {
     /// - `offset`: Byte offset of the range start
     /// - `length`: Length of the range in bytes
     pub fn advise_sequential(&self, offset: u64, length: usize) -> io::Result<()> {
-        use memmap2::Advice;
+        // MADV_SEQUENTIAL is a Unix-only hint; memmap2 exposes `Advice`/
+        // `advise_range` behind `#[cfg(unix)]`. Elsewhere this is a no-op —
+        // the hint is a performance optimization, not a correctness need.
+        #[cfg(unix)]
+        {
+            use memmap2::Advice;
 
-        let start = offset as usize;
-        let end = start
-            .checked_add(length)
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "overflow"))?;
+            let start = offset as usize;
+            let end = start
+                .checked_add(length)
+                .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "overflow"))?;
 
-        if end > self.mmap.len() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "range extends beyond EOF",
-            ));
+            if end > self.mmap.len() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "range extends beyond EOF",
+                ));
+            }
+
+            self.mmap
+                .advise_range(Advice::Sequential, start, length)
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         }
-
-        self.mmap
-            .advise_range(Advice::Sequential, start, length)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        #[cfg(not(unix))]
+        let _ = (offset, length);
         Ok(())
     }
 
@@ -497,13 +505,27 @@ mod tests {
     /// dev-dependency: this is the only test in the workspace that needs
     /// field-level capture, and the scoped dispatcher used below installs
     /// nothing global, so it cannot conflict with a default subscriber
-    /// another test in this binary may have set.
+    /// another test in this binary may have set. The one global it does
+    /// touch is the callsite interest cache — see
+    /// [`test_prefetch_madvise_failure_is_traced`] for why that cache is
+    /// racy under the parallel test runner and how the test compensates.
     #[derive(Default)]
     struct CapturingSubscriber {
         events: Arc<Mutex<Vec<CapturedEvent>>>,
     }
 
     impl tracing::Subscriber for CapturingSubscriber {
+        fn register_callsite(
+            &self,
+            _metadata: &tracing::Metadata<'static>,
+        ) -> tracing::subscriber::Interest {
+            // Never let this subscriber be the source of a cached
+            // `Interest::never`: a cached `never` short-circuits the event
+            // *before* the scoped dispatcher is consulted, so while this
+            // subscriber is registered it must answer "ask me per event".
+            tracing::subscriber::Interest::sometimes()
+        }
+
         fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
             metadata.level() == &tracing::Level::TRACE
         }
@@ -540,24 +562,56 @@ mod tests {
         temp_file.write_all(b"0123456789").unwrap();
         let source = MmapSource::open(temp_file.path()).unwrap();
 
-        let subscriber = CapturingSubscriber::default();
-        let captured = Arc::clone(&subscriber.events);
-        // Scoped dispatcher: captures trace events from this thread for the
-        // duration of the closure only, leaving any global default subscriber
+        // One capture round: install the capturing subscriber as a scoped
+        // (thread-local) dispatcher, exercise both prefetch paths, and hand
+        // back the shared event buffer. Scoped, not global, so it leaves any
+        // default subscriber another test in this binary may have set
         // untouched.
-        tracing::subscriber::with_default(subscriber, || {
-            // In-range prefetch must stay silent — the event signals a
-            // dropped readahead hint, not routine operation.
-            source.prefetch(0, 10);
-            assert!(
-                captured.lock().unwrap().is_empty(),
-                "in-range prefetch must not emit a madvise-failure event"
-            );
+        let capture = |source: &MmapSource| {
+            let subscriber = CapturingSubscriber::default();
+            let captured = Arc::clone(&subscriber.events);
+            tracing::subscriber::with_default(subscriber, || {
+                // In-range prefetch must stay silent — the event signals a
+                // dropped readahead hint, not routine operation.
+                source.prefetch(0, 10);
+                assert!(
+                    captured.lock().unwrap().is_empty(),
+                    "in-range prefetch must not emit a madvise-failure event"
+                );
 
-            // Past EOF: advise_sequential is guaranteed to fail, so prefetch
-            // has an error to log while still returning () without panicking.
-            source.prefetch(0, 100);
-        });
+                // Past EOF: advise_sequential is guaranteed to fail, so
+                // prefetch has an error to log while still returning ()
+                // without panicking.
+                source.prefetch(0, 100);
+            });
+            captured
+        };
+
+        let mut captured = capture(&source);
+        // The capture can legitimately come back empty once, without the
+        // production code having changed: a `tracing` callsite's cached
+        // interest is computed lazily at its *first* evaluation, and when the
+        // dispatcher registry holds a single (scoped) dispatch, tracing-core
+        // computes it from the *evaluating thread's* current default rather
+        // than that registered dispatch. `test_prefetch_past_eof` evaluates
+        // this same callsite on a bare thread (no dispatcher installed); if
+        // that first evaluation lands between this test's `with_default`
+        // entry and its own `prefetch(0, 100)`, the callsite caches
+        // `Interest::never` (the no-subscriber default) and the past-EOF
+        // `trace!` is short-circuited before the scoped dispatcher is ever
+        // consulted — zero events captured.
+        //
+        // One bounded retry closes the race deterministically, without sleeps
+        // or timing assumptions: after the first round the callsite is
+        // necessarily registered, its once-only lazy registration cannot
+        // re-poison the cache, and entering a fresh `with_default` constructs
+        // a new `Dispatch`, which rebuilds every registered callsite's
+        // interest through the dispatcher registry — where this subscriber is
+        // visible and answers "ask me per event". A genuinely missing `trace!`
+        // fails identically on the retry, so no assertion is weakened.
+        if captured.lock().unwrap().is_empty() {
+            captured = capture(&source);
+        }
 
         let events = captured.lock().unwrap();
         assert_eq!(events.len(), 1, "expected exactly one trace event: {events:?}");
