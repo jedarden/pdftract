@@ -7622,3 +7622,7 @@
 {"bead":"pdftract-38700c39","duration_ms":980456,"event":"fail","exit_code":0,"outcome":"failure","strand":"explore","ts":"2026-09-14T13:47:00.456566069+00:00","worker":"glm-seam"}
 {"bead":"pdftract-b716bac5","duration_ms":1212064,"event":"fail","exit_code":0,"outcome":"failure","strand":"explore","ts":"2026-09-14T14:06:29.541752339+00:00","worker":"glm-roam-23"}
 {"bead":"pdftract-aa239a61","duration_ms":3602145,"event":"timeout","exit_code":124,"outcome":"timeout","strand":"explore","ts":"2026-09-14T14:34:08.623644569+00:00","worker":"glm-roam-20"}
+{"bead":"pdftract-d79310ab","event":"claim","strand":"pluck","ts":"2026-09-14T19:19:44.277823878+00:00","worker":"glm-pdftract"}
+{"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a0a15c-6f5d-7921-bd5d-e7ad45488efc","bead":"pdftract-d79310ab","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-14T19:19:44.733477331+00:00","worker":"glm-pdftract"}
+{"bead":"pdftract-48954da5","event":"claim","strand":"explore","ts":"2026-09-14T19:33:59.862184427+00:00","worker":"glm-roam-18"}
+{"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a0a169-7d33-71d2-bf76-e696f8d114bb","bead":"pdftract-48954da5","event":"dispatch","model":"glm-5.3-flash","strand":"explore","ts":"2026-09-14T19:34:00.243422549+00:00","worker":"glm-roam-18"}
