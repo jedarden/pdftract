@@ -120,3 +120,56 @@ the changed signatures; 59 of 89 errors need a commit to `main`, not just local 
 - No file under `crates/` was touched; the only file this bead writes is this note.
 - No error was "repaired" while inventorying it.
 - Orphan check at close: no `cargo`/`pdftract` process spawned by this bead exists.
+
+---
+
+# RE-RUN 2026-09-14 — VERDICT: GO (supersedes both NO-GO captures above)
+
+Re-derived at HEAD by pdftract-fa233a5e per the re-issue rule: a go/no-go artifact is a
+*current* signal, and the 2026-09-08 captures were six days stale against continuous
+sibling drift. Run exactly once, no retries, no overlapping invocation.
+
+## Run record
+
+| Field | Value |
+|---|---|
+| Command | `timeout --kill-after=30s 600s cargo test -p pdftract-core --lib --no-run > /tmp/fa233a5e-gate-20260914.log 2>&1` (exit captured directly — no pipe eating the status) |
+| UTC | 2026-09-14T12:40:53Z (completion) |
+| exit code | **0** |
+| rustc summary | ``Finished `test` profile [unoptimized + debuginfo] target(s) in 31.36s`` + ``Executable unittests src/lib.rs (/build/target-workers/debug/deps/pdftract_core-01467a2e479d2729)`` (verbatim) |
+| Errors | **0** — 0 lines matching `^error`, 0 `error[E-NNNN]` codes in 1,335 lines of output; 169 warnings only (unused doc comments, unused vars, drop_bounds) |
+| `source/mmap.rs` | no errors — trivially: zero errors anywhere in the target |
+| Tree | HEAD `fff28e0c4a75a78d673986e18a5150d0c227b229` on `main`, == `origin/main`; 60 pre-existing dirty paths under `crates/` from sibling in-flight work; **no `crates/` file modified by this bead** |
+| Raw log | `/tmp/fa233a5e-gate-20260914.log` (transient; not committed — GO needs no error inventory, and the run is reproducible in ~31 s) |
+
+## What changed since the NO-GO captures
+
+The 89-error set is gone at HEAD: `classify.rs` (E0609 x52, E0277 x2),
+`font/type3_rasterizer.rs` (E0061 x24, E0599 x5), `render/scanline.rs` (E0277/E0308/E0599)
+and `content_stream.rs` (E0061) test modules now compile — the sibling workers' signature
+migrations landed. Supersedes `a0a4e17a` (f785930f) and `20189f01`/`10df3676` (0364a3a8).
+
+## Directive to the umbrella's children 2–4
+
+The gate is **GO**: the `pdftract-core` lib test target compiles at `fff28e0c`. Test runs
+may proceed — for pdftract-b716bac5 that is the mmap runtime-evidence re-run
+(`cargo test -p pdftract-core --lib source::mmap`, timeout-wrapped), still owed against
+this fresh gate. Note the gate speaks only for compile: the ~300 pre-existing *runtime*
+test failures recorded elsewhere at HEAD are unaffected by this verdict.
+
+## Auto-split order on pdftract-fa233a5e — declined; the split already exists and is complete
+
+The 2026-09-14 re-dispatch ordered a 3–5 child split of pdftract-fa233a5e. It was already
+performed by a prior dispatch and is **complete**: sequential children
+`3e8309f4 → 68091d06 → 003ddcd1 → 3c39e12c` (all `split-child`, all **closed** — last
+child `3c39e12c` closed 2026-09-14T10:46Z), parent carrying `umbrella` and dependent on
+the last child (`blocker: pdftract-3c39e12c, kind: blocks`). Creating a second-generation
+chain would duplicate work units on a shared checkout. Record: `notes/fa233a5e-gate-reaffirm.md`
+("that was declined, not forgotten"). This bead's own scope — one gate run, one artifact —
+was executed instead, and the bead closes on this evidence.
+
+## Compliance (this re-run)
+
+- One gated invocation; no retry, no overlapping run, no bare `cargo test`.
+- No file under `crates/` touched; the only tracked file this bead writes is this note.
+- Orphan check at close: nothing spawned by this bead remains (gate ran foreground to completion).
