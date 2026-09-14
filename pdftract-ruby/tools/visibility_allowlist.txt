@@ -1,0 +1,29 @@
+# Methods permitted to be non-public in THIS tree (pdftract-ruby vendored in
+# the pdftract monorepo, hand-written 1.0.0 generation).
+#
+# The lint defaults to deny (tools/lint_visibility.rb): anything not listed
+# here that ends up non-public fails the check, so a newly privatized method
+# is caught rather than silently passing a stale list. Only add a name after
+# confirming it is deliberately internal.
+#
+# The generated tree CI lints (jedarden/pdftract-ruby, codegen generation)
+# passes default-deny with no file -- it only keeps exec/map_error private,
+# which are on the tool's built-in allowlist. This file exists because the
+# hand-written generation has real internal plumbing.
+#
+# Run: ruby tools/lint_visibility.rb --allow-private-file tools/visibility_allowlist.txt lib
+#
+# lib/pdftract/client.rb — argument/normalization plumbing
+normalize_source
+options_to_args
+camel_to_snake
+# lib/pdftract/models.rb — wire-model converters (JSON -> model objects)
+convert_document
+convert_page
+convert_span
+convert_block
+convert_match
+convert_match_context
+convert_fingerprint
+convert_classification
+convert_metadata
