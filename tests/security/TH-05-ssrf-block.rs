@@ -20,9 +20,13 @@ use std::time::Duration;
 /// Path to the pdftract binary.
 const PDFTRACT: &str = env!("CARGO_BIN_EXE_pdftract");
 
-/// Expected error code for SSRF blocking.
-/// This should match the code returned by the MCP server when a URL is blocked.
-const SSRF_BLOCKED_CODE: i64 = -32001;
+/// Expected JSON-RPC error code for SSRF blocking.
+///
+/// Must match `ERROR_SSRF_BLOCKED` in `crates/pdftract-cli/src/mcp/tools/mod.rs`,
+/// which the extract tool emits — alongside `data.code: "SSRF_BLOCKED"` — when
+/// `validate_url_no_ssrf` refuses a URL. (Note: `-32001` is PDF_ENCRYPTED, not
+/// an SSRF code.)
+const SSRF_BLOCKED_CODE: i64 = -32004;
 
 // ============================================================================
 // JSON-RPC Response Parsing Types
@@ -455,6 +459,23 @@ fn test_ipv6_loopback_blocked() {
 ///
 /// * `response_json` - The JSON-RPC response string to check
 /// * `test_description` - Description of the test case (for error messages)
+///
+/// # Example
+///
+/// ```ignore
+/// // Rejecting a private-network URL must surface as an SSRF_BLOCKED error.
+/// // `response` is the raw framed body read back from `pdftract mcp` after
+/// // sending `make_extract_call_request(1, "https://10.0.0.1/doc.pdf")`.
+/// let response = /* read_framed_response over the server's stdout */;
+/// assert_ssrf_blocked_error(&response, "RFC 1918 private network (10.0.0.1)");
+/// ```
+///
+/// # Panics
+///
+/// Panics if `response_json` is not valid JSON, is a success response rather
+/// than an error, lacks the `SSRF_BLOCKED` marker in `error.data.code` or
+/// `error.message`, or carries a numeric `error.code` other than
+/// `SSRF_BLOCKED_CODE`.
 fn assert_ssrf_blocked_error(response_json: &str, test_description: &str) {
     // Parse the JSON-RPC response using the structured type
     let parsed: JsonRpcResponse<serde_json::Value> =
@@ -479,11 +500,15 @@ fn assert_ssrf_blocked_error(response_json: &str, test_description: &str) {
     // Additional verification: ensure we're dealing with a proper error structure
     let error_code = error.code;
 
-    // Error code should be in the server error range or the specific SSRF blocked code
+    // The numeric code must be the one documented for SSRF blocking. Accepting
+    // the whole -32099..=-32000 server-error range here would also pass a
+    // URL refused for an unrelated reason — PDF_ENCRYPTED is -32001 and
+    // IO_ERROR is -32002 — so the marker check above is what carries the
+    // assertion, and this pins the code the extract tool actually emits.
     assert!(
-        error_code == SSRF_BLOCKED_CODE || (-32099..=-32000).contains(&error_code),
-        "Error code {} for {} should be SSRF_BLOCKED_CODE or in server error range",
-        error_code, test_description
+        error_code == SSRF_BLOCKED_CODE,
+        "Error code {} for {} should be SSRF_BLOCKED_CODE ({})",
+        error_code, test_description, SSRF_BLOCKED_CODE
     );
 }
 

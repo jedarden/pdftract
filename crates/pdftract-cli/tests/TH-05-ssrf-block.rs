@@ -373,6 +373,21 @@ fn test_ipv6_loopback_blocked() {
 ///
 /// * `response_json` - The JSON-RPC response string to check
 /// * `test_description` - Description of the test case (for error messages)
+///
+/// # Example
+///
+/// ```ignore
+/// // Rejecting a cloud-metadata URL must surface as an SSRF_BLOCKED error:
+/// let response = send_extract_call(1, "https://169.254.169.254/latest/meta-data/");
+/// assert_ssrf_blocked_error(&response, "cloud metadata endpoint");
+/// ```
+///
+/// # Panics
+///
+/// Panics if `response_json` is not valid JSON, is a success response rather
+/// than an error, lacks the `SSRF_BLOCKED` marker in `error.data.code` or
+/// `error.message`, or carries a numeric `error.code` other than
+/// `SSRF_BLOCKED_CODE`.
 fn assert_ssrf_blocked_error(response_json: &str, test_description: &str) {
     // Parse the JSON-RPC response using the structured type
     let parsed: JsonRpcResponse<serde_json::Value> =
