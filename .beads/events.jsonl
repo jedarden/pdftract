@@ -7374,3 +7374,12 @@
 {"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a09d4c-bf8f-7990-afce-695f84ec90fb","bead":"bf-3ut7rh","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-14T00:24:07.823469376+00:00","worker":"glm-pdftract"}
 {"bead":"bf-5v0bgu","event":"claim","strand":"explore","ts":"2026-09-14T00:26:50.995813278+00:00","worker":"glm-roam-18"}
 {"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a09d4f-3f91-76b0-909f-3f4419f44f61","bead":"bf-5v0bgu","event":"dispatch","model":"glm-5.3-flash","strand":"explore","ts":"2026-09-14T00:26:51.665102193+00:00","worker":"glm-roam-18"}
+{"bead":"bf-3ut7rh","duration_ms":1027478,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-14T00:41:15.655648042+00:00","worker":"glm-pdftract"}
+{"bead":"bf-53knlx","event":"claim","strand":"pluck","ts":"2026-09-14T00:41:19.880049033+00:00","worker":"glm-pdftract"}
+{"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a09d5c-8184-79f1-9612-417b54ef14f8","bead":"bf-53knlx","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-14T00:41:20.516371960+00:00","worker":"glm-pdftract"}
+{"bead":"bf-53knlx","duration_ms":956851,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-14T00:57:17.551064977+00:00","worker":"glm-pdftract"}
+{"bead":"bf-2hc8pt","event":"claim","strand":"pluck","ts":"2026-09-14T00:58:48.323921123+00:00","worker":"glm-pdftract"}
+{"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a09d6c-8160-72e3-a8ae-62cb8738a224","bead":"bf-2hc8pt","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-14T00:58:49.056145653+00:00","worker":"glm-pdftract"}
+{"bead":"bf-2hc8pt","duration_ms":1236007,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-14T01:19:25.248890633+00:00","worker":"glm-pdftract"}
+{"bead":"bf-3yzopn","event":"claim","strand":"pluck","ts":"2026-09-14T01:19:29.730089432+00:00","worker":"glm-pdftract"}
+{"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a09d7f-72b7-7782-91aa-9c1234e9cba7","bead":"bf-3yzopn","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-14T01:19:30.487903022+00:00","worker":"glm-pdftract"}
