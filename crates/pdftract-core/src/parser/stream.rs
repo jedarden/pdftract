@@ -3696,6 +3696,10 @@ pub fn decode_stream_with_decryption(
     obj_ref: Option<ObjRef>,
     #[cfg(feature = "decrypt")] decryption_context: Option<&DecryptionContext>,
 ) -> Vec<u8> {
+    // The impl's trailing context slot is `Option<&DecryptionContext>` under
+    // `decrypt` and `Option<&()>` otherwise; `None` fits both signatures.
+    #[cfg(not(feature = "decrypt"))]
+    let decryption_context = None;
     decode_stream_impl(
         stream,
         source,
@@ -3718,6 +3722,11 @@ fn decode_stream_impl(
     #[cfg(feature = "decrypt")] decryption_context: Option<&DecryptionContext>,
     #[cfg(not(feature = "decrypt"))] _decryption_context: Option<&()>,
 ) -> DecodeResult {
+    // `obj_ref` only feeds stream decryption below; without `decrypt` it has
+    // no consumer in this build.
+    #[cfg(not(feature = "decrypt"))]
+    let _ = obj_ref;
+
     // Step 0: Initialize stream metadata
     let mut stream_meta = StreamMeta::new();
 

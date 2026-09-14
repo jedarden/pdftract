@@ -85,6 +85,11 @@ pub fn detect_conformance_with_diagnostics(
 }
 
 /// Internal implementation of conformance detection.
+///
+/// XMP parsing needs `quick-xml`, which is an optional dependency: the impl
+/// only exists under that feature. Without it the fallback below reports
+/// "not detected" so the public API stays available in every feature set.
+#[cfg(feature = "quick-xml")]
 fn detect_conformance_impl(
     metadata_stream: Option<&[u8]>,
     diagnostics: &mut Vec<Diagnostic>,
@@ -148,6 +153,17 @@ fn detect_conformance_impl(
     };
 
     (result, false)
+}
+
+/// No-`quick-xml` fallback: there is no XMP parser in this build, so PDF/A
+/// conformance detection always reports "not detected". No diagnostic is
+/// emitted — this is a build-configuration limit, not a malformed document.
+#[cfg(not(feature = "quick-xml"))]
+fn detect_conformance_impl(
+    _metadata_stream: Option<&[u8]>,
+    _diagnostics: &mut Vec<Diagnostic>,
+) -> (Option<String>, bool) {
+    (None, false)
 }
 
 /// Detect PDF/A conformance from a catalog's metadata reference.

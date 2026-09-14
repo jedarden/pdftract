@@ -28,6 +28,7 @@ use crate::parser::catalog::ReadingOrderAlgorithm;
 use crate::parser::marked_content::{track_mcids_from_content_stream, McidTracker};
 use crate::parser::stream::DEFAULT_MAX_DECOMPRESS_BYTES;
 use crate::source::FileSource;
+#[cfg(feature = "decrypt")]
 use secrecy::ExposeSecret;
 // Import both PdfSource traits with aliases to avoid ambiguity
 use crate::parser::stream::PdfSource as ParserPdfSource;
@@ -622,8 +623,9 @@ pub fn extract_pdf(
         }
     };
 
-    #[cfg(not(feature = "decrypt"))]
-    let decryption_context = Option::<crate::encryption::decryptor::DecryptionContext>::None;
+    // Without `decrypt` there is no decryption step (and `crate::encryption`
+    // does not exist in this build), so no context is bound here; nothing
+    // downstream consumes one.
 
     // Get the root reference from trailer
     let root_ref = xref_section
