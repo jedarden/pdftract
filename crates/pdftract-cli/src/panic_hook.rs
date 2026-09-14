@@ -54,18 +54,28 @@ pub fn install_panic_hook() {
     }));
 }
 
+/// Redact SecretString-related patterns from arbitrary diagnostic text.
+///
+/// Shared by the panic hook and the CLI error reporter: anywhere pdftract
+/// prints an error chain, the same patterns that are redacted from panic
+/// backtraces are redacted here. Unlike [`redact_backtrace`] this performs no
+/// line truncation, so long but legitimate messages (paths, parse offsets)
+/// survive intact.
+pub(crate) fn redact_secret_patterns(text: &str) -> String {
+    // Redact patterns that suggest SecretString exposure
+    // The secrecy crate stores secrets in a way that doesn't easily appear in backtraces,
+    // but we redact any mentions of the crate's internal types as a precaution.
+    text.replace("<secrecy::", "<[REDACTED:")
+        .replace("SecretString", SECRET_REDACTION)
+        .replace("Inner<", "Inner<[REDACTED]>")
+}
+
 /// Redact SecretString-related patterns from a backtrace string.
 ///
 /// This is a best-effort defense-in-depth mechanism. It looks for patterns
 /// that suggest SecretString exposure (e.g., the secrecy crate internals).
 fn redact_backtrace(backtrace: &str) -> String {
-    // Redact patterns that suggest SecretString exposure
-    // The secrecy crate stores secrets in a way that doesn't easily appear in backtraces,
-    // but we redact any mentions of the crate's internal types as a precaution.
-    let redacted = backtrace
-        .replace("<secrecy::", "<[REDACTED:")
-        .replace("SecretString", SECRET_REDACTION)
-        .replace("Inner<", "Inner<[REDACTED]>");
+    let redacted = redact_secret_patterns(backtrace);
 
     // Also redact any base64 strings longer than 20 characters (potential token leaks)
     // This is heuristic but catches common auth token encoding patterns.
@@ -112,5 +122,17 @@ mod tests {
         let redacted = redact_backtrace(backtrace);
         assert!(redacted.contains("pdftract::parse"));
         assert!(redacted.contains("std::panicking"));
+    }
+
+    #[test]
+    fn test_redact_secret_patterns_redacts_without_truncating() {
+        let text = "SecretString leaked in /very/long/".repeat(12);
+        let redacted = redact_secret_patterns(&text);
+        assert!(redacted.contains(SECRET_REDACTION));
+        assert!(redacted.contains("<[REDACTED:"));
+        // Unlike the backtrace path, long lines are preserved so a real
+        // error message (long path, byte offset) is not cut short.
+        assert!(redacted.len() > 200);
+        assert!(!redacted.contains("[TRUNCATED:"));
     }
 }
