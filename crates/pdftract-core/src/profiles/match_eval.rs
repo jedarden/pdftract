@@ -4,7 +4,7 @@
 //! document signals to determine if a profile matches a document.
 
 use super::engine::FeatureSignals;
-use super::extraction::{ExtractionMatchPredicate, MatchExpr, PageCountRange};
+use super::extraction::{ExtractionMatchPredicate, MatchExpr};
 use regex::Regex;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -379,6 +379,8 @@ fn compile_regex(pattern: &str) -> Result<Regex, regex::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::extraction::PageCountRange;
+    use std::collections::HashSet;
 
     fn test_signals() -> FeatureSignals {
         let mut signals = FeatureSignals {

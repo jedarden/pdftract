@@ -29,10 +29,9 @@
 
 use std::collections::HashSet;
 
-use crate::diagnostics::DiagCode;
 use crate::{diagnostics::Diagnostic, emit};
 
-use super::{CodespaceRange, CodespaceRanges};
+use super::CodespaceRanges;
 
 /// Tokenize a byte string into character codes using codespace ranges.
 ///
@@ -172,6 +171,8 @@ pub fn tokenize_cjk_bytes(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cmap::CodespaceRange;
+    use crate::diagnostics::DiagCode;
 
     #[test]
     fn test_ascii_hello() {

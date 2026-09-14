@@ -25,6 +25,8 @@
 
 use bytes::Bytes;
 use std::io::{self, Read, Seek};
+#[cfg(feature = "remote")]
+use std::io::SeekFrom;
 
 /// Abstraction over PDF byte sources.
 ///

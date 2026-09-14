@@ -4,7 +4,7 @@
 //! XDG config paths, and custom --profile-dir flags.
 
 use super::extraction::ExtractionProfile;
-use super::loader::{check_forbidden_keys, ForbiddenKeyError, ProfileLoadError};
+use super::loader::{check_forbidden_keys, ProfileLoadError};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};

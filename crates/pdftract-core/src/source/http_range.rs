@@ -679,8 +679,6 @@ pub fn download_to_temp_and_mmap(
         // Check disk space
         #[cfg(feature = "remote")]
         {
-            use std::path::Path;
-
             // Get temp directory path - use std::env::temp_dir() to avoid extra allocation
             let temp_path = std::env::temp_dir();
 
@@ -688,7 +686,6 @@ pub fn download_to_temp_and_mmap(
             #[cfg(unix)]
             {
                 use nix::sys::statvfs::statvfs;
-                use nix::sys::statvfs::Statvfs;
 
                 let stat = statvfs(&temp_path).map_err(|e| {
                     io::Error::new(

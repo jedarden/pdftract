@@ -8,9 +8,8 @@ use super::extraction::{ExtractionProfile, ExtractionTuning};
 use super::field_extractor;
 use super::match_eval::{evaluate_match, MatchResult};
 use super::signals::extract_signals_from_results;
-use crate::options::{ExtractionOptions, OutputOptions};
+use crate::options::ExtractionOptions;
 use crate::schema::{BlockJson, PageJson, SpanJson};
-use anyhow::Result;
 use serde_json::json;
 
 /// Apply a profile's extraction tuning to extraction options.
@@ -170,7 +169,6 @@ pub fn apply_profile_to_metadata(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::options::ReceiptsMode;
 
     fn make_test_block(kind: &str, x0: f64, y0: f64, x1: f64, y1: f64) -> BlockJson {
         BlockJson {

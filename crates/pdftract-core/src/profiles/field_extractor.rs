@@ -6,7 +6,7 @@
 //! - Extractors: regex, parse
 //! - Strategies for disambiguating multiple candidates
 
-use super::extraction::{FieldExtraction, FieldSchema, FieldSpec};
+use super::extraction::{FieldExtraction, FieldSpec};
 use crate::schema::BlockJson;
 use regex::Regex;
 use serde_json::Value;
