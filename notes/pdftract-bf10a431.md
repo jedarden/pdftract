@@ -65,3 +65,19 @@ ahead / 0 behind), all PASS:
 Decline recorded in the single-path addendum commit on top of tip `7b7792cc`;
 the bead is re-closed on this evidence. No file under `notes/evidence/` and no
 file under `crates/` was touched, and no build or test was run.
+
+**2026-09-14, 6th auto-split re-issue: DECLINED (no children created).** The
+dispatcher again re-issued this bead as "failed 5 times in a row." The five
+counted failures are the five reason-less reopens of five evidence-bearing
+PASS closes (2026-09-08 20:58:54Z, 21:20:41Z, 22:19:26Z; 2026-09-09 00:33:20Z
+— 4th split declined — and 04:55:05Z — 5th split declined, recorded only in
+its close reason, hence this entry). Re-derivation at tip `355860ee`
+(= `git ls-remote origin main`, 0 ahead / 0 behind), all PASS: note clean vs
+HEAD; `e07d070d` single-path and an ancestor of origin/main; `0364a3a8` and
+`d2510888` both ancestors of origin/main (exit 0); blocker child 3
+`pdftract-61ab92de` closed. No children created — the scope (one note file,
+one-path commit, one push) has no decomposition into independently completable
+children. Bead re-closed on this evidence; no file under `notes/evidence/` or
+`crates/` touched, no build or test run. The umbrella `pdftract-cf349714`
+additionally depends on the separate open chain `pdftract-f4043374`
+(blocked by `pdftract-a1d88582`), which this bead does not touch.
