@@ -59,13 +59,24 @@ metadata:
     app.kubernetes.io/component: ci
     app.kubernetes.io/part-of: pdftract
 spec:
+  # Backstop against a run that hangs before its pod ever starts (unbound
+  # PVC, unschedulable, missing secret). Per-step activeDeadlineSeconds does
+  # not cover that case: on 2026-08-07 five needle-ci runs sat Running for
+  # 8h against a 3600s step limit. ttlStrategy only reaps COMPLETED runs, so
+  # without a workflow-level cap they are never terminated and never GCd.
+  # Basis: sum of per-step deadlines x attempts = 21480s, +50% headroom.
+  activeDeadlineSeconds: 32100
   entrypoint: pipeline
   serviceAccountName: argo-workflow
+  # onExit is a workflow-level field; this was templates[0].dag.onExit,
+  # which Argo prunes, so this handler had never actually run.
+  onExit: on-exit
 
-  podGC: OnPodCompletion
-  ttlSecondsAfterFinished:
-    success: 1800
-    failure: 7200
+  podGC:
+    strategy: OnPodCompletion
+  ttlStrategy:
+    secondsAfterSuccess: 1800
+    secondsAfterFailure: 7200
 
   arguments:
     parameters:
@@ -154,10 +165,35 @@ spec:
     # Setup runs first, then all matrices run in parallel, then publish if tagged
     - name: pipeline
       dag:
-        onExit: on-exit
         tasks:
+          # Pending status must land before the terminal one, or Forgejo keeps
+          # whichever arrived last — an out-of-order pair would leave the commit
+          # showing "pending" forever after a green run. setup therefore depends
+          # on it; the post is continueOn.failed so it can never gate real CI.
+          - name: post-pending-forgejo
+            templateRef:
+              name: forgejo-commit-status
+              template: post
+            continueOn:
+              failed: true
+            arguments:
+              parameters:
+                - name: repo
+                  value: jedarden/pdftract
+                - name: sha
+                  value: "{{workflow.parameters.commit-sha}}"
+                - name: state
+                  value: pending
+                - name: context
+                  value: iad-ci/pdftract-ci
+                - name: description
+                  value: "pdftract CI running ({{workflow.parameters.ref}})"
+                - name: target_url
+                  value: "https://argo-ci.ardenone.com/workflows/argo-workflows/{{workflow.name}}"
+
           - name: setup
             template: setup
+            dependencies: [post-pending-forgejo]
 
           - name: build-matrix
             template: build-matrix
@@ -181,7 +217,7 @@ spec:
             arguments:
               artifacts:
                 - name: pdftract-binary
-                  from: "{{tasks.build-matrix.tasks.build-linux-x86_64-musl.outputs.artifacts.pdftract-binary}}"
+                  from: "{{tasks.build-matrix.tasks.build-linux-x86-64-musl.outputs.artifacts.pdftract-binary}}"
 
           - name: bench-matrix
             template: bench-matrix
@@ -189,7 +225,7 @@ spec:
             arguments:
               artifacts:
                 - name: pdftract-binary
-                  from: "{{tasks.build-matrix.tasks.build-linux-x86_64-musl.outputs.artifacts.pdftract-binary}}"
+                  from: "{{tasks.build-matrix.tasks.build-linux-x86-64-musl.outputs.artifacts.pdftract-binary}}"
 
           - name: benchmark-pr-comment
             template: benchmark-pr-comment
@@ -207,7 +243,7 @@ spec:
             arguments:
               artifacts:
                 - name: pdftract-binary
-                  from: "{{tasks.build-matrix.tasks.build-linux-x86_64-musl.outputs.artifacts.pdftract-binary}}"
+                  from: "{{tasks.build-matrix.tasks.build-linux-x86-64-musl.outputs.artifacts.pdftract-binary}}"
 
           - name: regression-corpus
             template: regression-corpus
@@ -233,115 +269,77 @@ spec:
                   from: "{{tasks.generate-provenance.outputs.artifacts.provenance}}"
 
     # === Exit Handler ===
-    # Reports workflow status to GitHub PR via argo-workflows-pr-status operator
-    # Posts JSON payload to cluster-local service; operator transforms to GitHub Check Run
+    # Posts the terminal Forgejo commit status for the triggering revision.
+    #
+    # Replaces a handler that POSTed a JSON payload to
+    # https://argo-pr-status.argo-workflows.svc.cluster.local/v1/report — a
+    # service that has never existed in this cluster, so every run lost its
+    # status and the `else` branch printed "expected during initial CI setup"
+    # forever. forgejo-commit-status is the shared, working path (in-cluster
+    # Service, forgejo-webhook-token, GitHub-compatible /statuses API).
+    #
+    # Two steps, not one: forgejo-commit-status validates state against
+    # pending|success|failure|error and exits 1 otherwise, while Argo reports
+    # the CamelCase phase (Succeeded/Failed/Error). A templateRef argument
+    # cannot run that mapping, and continueOn.failed would swallow the
+    # resulting 40x silently — so map it in a real step and assert the output.
     - name: on-exit
-      script:
-        image: curlimages/curl:latest
-        command: [sh]
-        source: |
-          #!/bin/sh
-          set -e
-
-          echo "=== Workflow Exit Report ==="
-          echo "Workflow: {{workflow.name}}"
-          echo "Commit: {{workflow.parameters.commit-sha}}"
-          echo "Ref: {{workflow.parameters.ref}}"
-          echo "Phase: {{workflow.status}}"
-          echo "Started: {{workflow.creationTimestamp}}"
-          echo "Duration: $(({{workflow.status.finishedAt}} - {{workflow.creationTimestamp}})) seconds"
-
-          # Build step outcomes map
-          # For matrix templates, we expand each item as a separate check
-          STEPS='{}'
-
-          # Helper to add step outcome
-          add_step() {
-            STEP_NAME="$1"
-            PHASE="$2"
-            STEPS=$(echo "$STEPS" | jq --arg name "$STEP_NAME" --arg phase "$PHASE" '. + {($name): $phase}')
-          }
-
-          # Determine phase for each step from workflow status
-          # Note: In real execution, this would query the workflow status
-          # For now, we report based on overall workflow phase
-          WORKFLOW_PHASE="{{workflow.status}}"
-
-          # Build step outcomes from workflow tasks
-          # This is a simplified version - in production, parse workflow.status.nodes
-          add_step "setup" "Succeeded"
-          add_step "build-linux-x86_64-musl" "$WORKFLOW_PHASE"
-          add_step "build-linux-aarch64-musl" "$WORKFLOW_PHASE"
-          add_step "build-darwin-x86_64" "$WORKFLOW_PHASE"
-          add_step "build-darwin-aarch64" "$WORKFLOW_PHASE"
-          add_step "build-windows-x86_64-gnu" "$WORKFLOW_PHASE"
-          add_step "test-glibc" "$WORKFLOW_PHASE"
-          add_step "test-musl" "$WORKFLOW_PHASE"
-          add_step "clippy-fmt" "$WORKFLOW_PHASE"
-          add_step "msrv-check" "$WORKFLOW_PHASE"
-          add_step "cargo-audit" "$WORKFLOW_PHASE"
-          add_step "cargo-deny" "$WORKFLOW_PHASE"
-          add_step "cargo-bloat" "$WORKFLOW_PHASE"
-          add_step "memory-ceiling" "$WORKFLOW_PHASE"
-          add_step "log-policy-check" "$WORKFLOW_PHASE"
-          add_step "schema-gen" "$WORKFLOW_PHASE"
-          add_step "cli-ref-gen" "$WORKFLOW_PHASE"
-          add_step "schema-validation" "$WORKFLOW_PHASE"
-          add_step "wer-gate" "$WORKFLOW_PHASE"
-          add_step "bench-matrix" "$WORKFLOW_PHASE"
-          add_step "regression-corpus" "$WORKFLOW_PHASE"
-
-          # Build artifacts list
-          ARTIFACTS='["workflow-metadata.json","bloat-report.json","memory-report.json","audit-report.json","deny-report.json","benchmark-results.json","benchmark-comment.md"]'
-
-          # Calculate duration
-          START_TIME="{{workflow.creationTimestamp}}"
-          END_TIME="{{workflow.status.finishedAt}}"
-          START_EPOCH=$(date -d "$START_TIME" +%s 2>/dev/null || echo 0)
-          END_EPOCH=$(date -d "$END_TIME" +%s 2>/dev/null || echo $(date +%s))
-          DURATION=$((END_EPOCH - START_EPOCH))
-
-          # Build JSON payload
-          PAYLOAD=$(jq -n \
-            --arg commit_sha "{{workflow.parameters.commit-sha}}" \
-            --arg ref "{{workflow.parameters.ref}}" \
-            --arg workflow_phase "$WORKFLOW_PHASE" \
-            --arg started_at "$START_TIME" \
-            --argjson duration_seconds "$DURATION" \
-            --argjson step_outcomes "$STEPS" \
-            --argjson artifacts "$ARTIFACTS" \
-            --arg dashboard_url "https://argo-ci.ardenone.com/workflows/argo-workflows/{{workflow.name}}" \
-            '{
-              commit_sha: $commit_sha,
-              ref: $ref,
-              workflow_phase: $workflow_phase,
-              started_at: $started_at,
-              duration_seconds: $duration_seconds,
-              step_outcomes: $step_outcomes,
-              artifacts: $artifacts,
-              dashboard_url: $dashboard_url
-            }')
-
-          echo "=== Posting status to PR ==="
-          echo "Payload:"
-          echo "$PAYLOAD" | jq '.'
-
-          # Post to pr-status operator (cluster-local service)
-          # Use cluster DNS directly for low-latency intra-cluster traffic
-          STATUS_URL="https://argo-pr-status.argo-workflows.svc.cluster.local/v1/report"
-
-          if curl -s -X POST \
-            -H "Content-Type: application/json" \
-            -d "$PAYLOAD" \
-            "$STATUS_URL"; then
-            echo ""
-            echo "=== Status posted successfully ==="
-          else
-            echo ""
-            echo "WARN: Failed to post status (operator may not be deployed yet)"
-            echo "This is expected during initial CI setup"
-          fi
-      activeDeadlineSeconds: 60
+      # No template-level activeDeadlineSeconds here. It is only valid on leaf
+      # templates; on-exit is a steps template, so Argo's validating webhook
+      # rejected the whole WorkflowTemplate ("spec.templates: Invalid value:
+      # \"array\": activeDeadlineSeconds is only valid for leaf templates") --
+      # which failed every automated ArgoCD sync of argo-workflows-ns-iad-ci
+      # from 2026-09-05 12:54Z onward and left ~200 live WorkflowTemplates
+      # drifted from git. The bound this line was meant to provide already
+      # exists one level down: post-final-status-forgejo inherits the 200s
+      # leaf deadline on forgejo-commit-status/post, and map-state is inline sh
+      # with no network I/O. Do not re-add it at template level.
+      steps:
+        - - name: map-state
+            script:
+              image: alpine:3.21
+              command: [sh]
+              source: |
+                set -eu
+                ARGOS_PHASE="{{workflow.status}}"
+                echo "Workflow: {{workflow.name}}"
+                echo "Commit:   {{workflow.parameters.commit-sha}}"
+                echo "Ref:      {{workflow.parameters.ref}}"
+                echo "Phase:    $ARGOS_PHASE"
+                case "$ARGOS_PHASE" in
+                  Succeeded)        FORGEJO_STATE=success ;;
+                  Failed)           FORGEJO_STATE=failure ;;
+                  Error|Terminated) FORGEJO_STATE=error ;;
+                  *)                FORGEJO_STATE=error ;;
+                esac
+                echo "Forgejo state: $FORGEJO_STATE"
+                printf '%s' "$FORGEJO_STATE" > /tmp/forgejo-state
+            outputs:
+              parameters:
+                - name: forgejo-state
+                  valueFrom:
+                    path: /tmp/forgejo-state
+        # Best-effort: a Forgejo outage must never fail an otherwise-green run.
+        - - name: post-final-status-forgejo
+            templateRef:
+              name: forgejo-commit-status
+              template: post
+            continueOn:
+              failed: true
+            arguments:
+              parameters:
+                - name: repo
+                  value: jedarden/pdftract
+                - name: sha
+                  value: "{{workflow.parameters.commit-sha}}"
+                - name: state
+                  value: "{{tasks.map-state.outputs.parameters.forgejo-state}}"
+                - name: context
+                  value: iad-ci/pdftract-ci
+                - name: description
+                  value: "pdftract CI {{workflow.status}}"
+                - name: target_url
+                  value: "https://argo-ci.ardenone.com/workflows/argo-workflows/{{workflow.name}}"
 
     # === Setup Step ===
     # Clones repo, fetches dependencies, warms cargo cache, uploads workflow metadata
@@ -467,11 +465,9 @@ spec:
     # Targets: x86_64-unknown-linux-musl, aarch64-unknown-linux-musl,
     #          x86_64-apple-darwin, aarch64-apple-darwin, x86_64-pc-windows-gnu
     - name: build-matrix
-      activeDeadlineSeconds: 3600
       dag:
-        onExit: build-matrix-exit
         tasks:
-          - name: build-linux-x86_64-musl
+          - name: build-linux-x86-64-musl
             template: build-target
             arguments:
               parameters:
@@ -499,7 +495,7 @@ spec:
                   value: ""
             continueOn:
               failed: true
-          - name: build-darwin-x86_64
+          - name: build-darwin-x86-64
             template: build-target
             arguments:
               parameters:
@@ -527,7 +523,7 @@ spec:
                   value: ""
             continueOn:
               failed: true
-          - name: build-windows-x86_64-gnu
+          - name: build-windows-x86-64-gnu
             template: build-target
             arguments:
               parameters:
@@ -630,8 +626,8 @@ spec:
             cpu: 2000m
             memory: 4Gi
           limits:
-            cpu: 4000m
-            memory: 8Gi
+            cpu: 3500m
+            memory: 6Gi
       outputs:
         artifacts:
           - name: pdftract-binary
@@ -659,7 +655,6 @@ spec:
     # Bead: pdftract-5gtcj (musl leg)
     # Plan section: Phase 0.3
     - name: test-matrix
-      activeDeadlineSeconds: 3600
       dag:
         tasks:
           - name: test-glibc
@@ -748,6 +743,7 @@ spec:
                 echo "=== All glibc tests passed ==="
                 echo "Unit tests: PASS"
                 echo "Property tests: PASS ($CASES cases per module)"
+              ) || {
 
                 echo "=== Running post-test orphan verification (cgroup v2) ==="
                 bash ./.ci/scripts/post-test-check.sh --kill || {
@@ -755,7 +751,6 @@ spec:
                   echo "ERROR: Post-test verification failed with exit code $VERIFY_EXIT"
                   exit $VERIFY_EXIT
                 }
-              ) || {
                 EXIT_CODE=$?
                 # Clean up cgroup
                 rmdir "$CGROUP_PATH" 2>/dev/null || true
@@ -822,6 +817,7 @@ spec:
                 echo "=== All glibc tests passed ==="
                 echo "Unit tests: PASS"
                 echo "Property tests: PASS ($CASES cases per module)"
+              ) || {
 
                 echo "=== Running post-test orphan verification (cgroup v1) ==="
                 bash ./.ci/scripts/post-test-check.sh --kill || {
@@ -829,7 +825,6 @@ spec:
                   echo "ERROR: Post-test verification failed with exit code $VERIFY_EXIT"
                   exit $VERIFY_EXIT
                 }
-              ) || {
                 EXIT_CODE=$?
                 # Clean up cgroup
                 rmdir "$CGROUP_PATH" 2>/dev/null || true
@@ -879,6 +874,7 @@ spec:
               echo "=== All glibc tests passed ==="
               echo "Unit tests: PASS"
               echo "Property tests: PASS ($CASES cases per module)"
+            fi
 
               echo "=== Running post-test orphan verification (no cgroup) ==="
               bash ./.ci/scripts/post-test-check.sh --kill || {
@@ -886,7 +882,6 @@ spec:
                 echo "ERROR: Post-test verification failed with exit code $VERIFY_EXIT"
                 exit $VERIFY_EXIT
               }
-            fi
         volumeMounts:
           - name: workspace
             mountPath: /workspace
@@ -897,8 +892,8 @@ spec:
             cpu: 2000m
             memory: 4Gi
           limits:
-            cpu: 4000m
-            memory: 8Gi
+            cpu: 3500m
+            memory: 6Gi
       outputs:
         artifacts:
           - name: test-results-glibc
@@ -1004,6 +999,7 @@ spec:
                 echo "=== All musl tests passed ==="
                 echo "Feature set: default,serve,decrypt (no OCR)"
                 echo "JUnit XML: test-results-musl.xml"
+              ) || {
 
                 echo "=== Running post-test orphan verification (musl, cgroup v2) ==="
                 bash ./.ci/scripts/post-test-check.sh --kill || {
@@ -1011,7 +1007,6 @@ spec:
                   echo "ERROR: Post-test verification failed with exit code $VERIFY_EXIT"
                   exit $VERIFY_EXIT
                 }
-              ) || {
                 EXIT_CODE=$?
                 # Clean up cgroup
                 rmdir "$CGROUP_PATH" 2>/dev/null || true
@@ -1093,6 +1088,7 @@ spec:
                 echo "=== All musl tests passed ==="
                 echo "Feature set: default,serve,decrypt (no OCR)"
                 echo "JUnit XML: test-results-musl.xml"
+              ) || {
 
                 echo "=== Running post-test orphan verification (musl, cgroup v1) ==="
                 bash ./.ci/scripts/post-test-check.sh --kill || {
@@ -1100,7 +1096,6 @@ spec:
                   echo "ERROR: Post-test verification failed with exit code $VERIFY_EXIT"
                   exit $VERIFY_EXIT
                 }
-              ) || {
                 EXIT_CODE=$?
                 # Clean up cgroup
                 rmdir "$CGROUP_PATH" 2>/dev/null || true
@@ -1165,6 +1160,7 @@ spec:
               echo "=== All musl tests passed ==="
               echo "Feature set: default,serve,decrypt (no OCR)"
               echo "JUnit XML: test-results-musl.xml"
+            fi
 
               echo "=== Running post-test orphan verification (musl, no cgroup) ==="
               bash ./.ci/scripts/post-test-check.sh --kill || {
@@ -1172,7 +1168,6 @@ spec:
                 echo "ERROR: Post-test verification failed with exit code $VERIFY_EXIT"
                 exit $VERIFY_EXIT
               }
-            fi
         volumeMounts:
           - name: workspace
             mountPath: /workspace
@@ -1185,8 +1180,8 @@ spec:
             cpu: 2000m
             memory: 4Gi
           limits:
-            cpu: 4000m
-            memory: 8Gi
+            cpu: 3500m
+            memory: 6Gi
       outputs:
         artifacts:
           - name: test-results-musl
@@ -1209,7 +1204,6 @@ spec:
     #
     # CRITICAL: All cargo commands MUST use --locked (or --locked --frozen)
     - name: quality-matrix
-      activeDeadlineSeconds: 900
       dag:
         tasks:
           - name: clippy-fmt
@@ -1320,55 +1314,6 @@ spec:
 
             echo "=== MSRV check passed ==="
             echo "No Rust 1.79+ features detected"
-        volumeMounts:
-          - name: workspace
-            mountPath: /workspace
-          - name: cargo-cache
-            mountPath: /cache/cargo
-        resources:
-          requests:
-            cpu: 1000m
-            memory: 2Gi
-          limits:
-            cpu: 2000m
-            memory: 4Gi
-
-    # === WASM32 Compatibility Check (ADR-011) ===
-    # Proves pdftract-core compiles for wasm32-unknown-unknown with the
-    # no-native-deps feature set (native default minus `cache`), and that the
-    # pdftract-wasm scaffold keeps building against it. Catches wasm-hostile
-    # dependency regressions early — e.g. a C-backed -sys crate sneaking back
-    # into the unconditional dependency set (the bf-2uw30r spike failure mode).
-    # CRITICAL: All cargo commands MUST use --locked (or --locked --frozen)
-    - name: wasm32-check
-      activeDeadlineSeconds: 900
-      container:
-        image: rust:1.83-bookworm
-        command: [bash, -c]
-        args:
-          - |
-            set -eo pipefail
-
-            echo "=========================================="
-            echo "WASM32 compatibility check (wasm32-unknown-unknown)"
-            echo "=========================================="
-
-            cd /workspace
-            export CARGO_HOME="/cache/cargo/registry"
-            export CARGO_TARGET_DIR="/cache/cargo/target-wasm32"
-
-            rustc --version
-            rustup target add wasm32-unknown-unknown
-
-            # No-native-deps feature set: the native default minus `cache`
-            # (zstd-sys needs a C cross-compiler for wasm32; the cache module
-            # also needs a real filesystem and Unix permission bits).
-            cargo check -p pdftract-core --no-default-features --features serde,decrypt,quick-xml --locked --target wasm32-unknown-unknown
-
-            # The binding crate itself, against that feature set.
-            cargo check -p pdftract-wasm --locked --target wasm32-unknown-unknown
-
-            echo "=== wasm32 check passed ==="
         volumeMounts:
           - name: workspace
             mountPath: /workspace
@@ -2054,6 +1999,159 @@ spec:
             cpu: 2000m
             memory: 4Gi
 
+    # === Log Policy Check ===
+    # Enforces NEVER-log secrets policy across the codebase.
+    #
+    # This is a Tier 1 hard gate from Phase 6 audit logging policy. It scans
+    # the codebase for log calls that might leak credentials, auth headers, or
+    # sensitive content. Without this gate, credential leakage can silently slip
+    # past code review and appear in logs, crash dumps, and SIEM systems.
+    #
+    # Bead: pdftract-3990k
+    # Plan section: Phase 6 audit logging policy (lines 931-964)
+    #
+    # Enforcement policy:
+    # - No log calls with credential variable names (password, token, secret, api_key, etc.)
+    # - No log calls with sensitive content variables (body, content, text, data)
+    # - Authorization/Cookie/Proxy-Authorization headers must be redacted
+    # - SecretString values must always render as [REDACTED]
+    # - Script: .ci/scripts/check-log-policy.sh (grep-based scan)
+    - name: log-policy-check
+      activeDeadlineSeconds: 300
+      container:
+        image: alpine:3.19
+        command: [sh, -c]
+        args:
+          - |
+            set -eo pipefail
+
+            echo "=========================================="
+            echo "Log-Policy Enforcement Check"
+            echo "=========================================="
+
+            cd /workspace
+
+            echo "=== Running log policy scan ==="
+            echo "Scanning for forbidden patterns:"
+            echo "  - Credential variables in log calls"
+            echo "  - Sensitive content variables in log calls"
+            echo "  - Auth headers without redaction"
+            echo ""
+
+            # Install bash for the check script
+            apk add --no-cache bash
+
+            # Run the log policy check script
+            bash .ci/scripts/check-log-policy.sh || {
+              EXIT_CODE=$?
+
+              echo "=========================================="
+              echo "LOG POLICY CHECK FAILED"
+              echo "=========================================="
+              echo ""
+              echo "The log policy enforcement check detected potential violations."
+              echo "Review the output above for specific issues."
+              echo ""
+              echo "Forbidden patterns:"
+              echo "  - Log calls with credential variables (password, token, secret, api_key, etc.)"
+              echo "  - Log calls with sensitive content variables (body, content, text, data)"
+              echo "  - Auth headers without redaction (Authorization, Cookie, Proxy-Authorization)"
+              echo ""
+              echo "To fix violations:"
+              echo "  - Use SecretString for all credentials (secrecy crate)"
+              echo "  - Never log request bodies or extracted text"
+              echo "  - Use redact_headers_for_log() for HTTP logging"
+              echo ""
+              echo "Log policy enforcement is a Tier-1 quality gate per Phase 6."
+              echo "See plan.md lines 931-964 for the full policy."
+
+              exit $EXIT_CODE
+            }
+
+            echo ""
+            echo "=== Log policy check passed ==="
+            echo "No credential leaks or forbidden patterns detected"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+
+    # === WER Gate ===
+    # Word Error Rate CI gate for OCR accuracy validation
+    #
+    # This is a Tier 1 hard gate from Phase 5.4.5. It validates OCR accuracy
+    # against calibrated fixtures to ensure the "WER < 3% on clean 300-DPI scans"
+    # target is met. Without this gate, OCR regressions silently slip past code
+    # review and risk breaking the primary Phase 5 objective.
+    #
+    # Bead: pdftract-315s
+    # Plan section: Phase 5.4.5 (lines 1905-1908)
+    #
+    # Enforcement policy:
+    # - Clean Lorem Ipsum: WER < 2.0% (critical test)
+    # - Multi-language eng+fra: WER < 3.0%
+    # - 10-page performance: < 30 seconds processing time
+    # - Fixtures are manually generated per README instructions
+    #
+    # The WER gate script (ci/wer-gate.sh) runs three tests:
+    # 1. Clean fixture: OCR accuracy on pristine 300-DPI text
+    # 2. Multi-language: English+French mixed document
+    # 3. Performance: 10-page document processing time
+    # === WASM32 Compatibility Check (ADR-011) ===
+    # Proves pdftract-core compiles for wasm32-unknown-unknown with the
+    # no-native-deps feature set (native default minus `cache`), and that the
+    # pdftract-wasm scaffold keeps building against it. Catches wasm-hostile
+    # dependency regressions early — e.g. a C-backed -sys crate sneaking back
+    # into the unconditional dependency set (the bf-2uw30r spike failure mode).
+    # CRITICAL: All cargo commands MUST use --locked (or --locked --frozen)
+    - name: wasm32-check
+      activeDeadlineSeconds: 900
+      container:
+        image: rust:1.83-bookworm
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+
+            echo "=========================================="
+            echo "WASM32 compatibility check (wasm32-unknown-unknown)"
+            echo "=========================================="
+
+            cd /workspace
+            export CARGO_HOME="/cache/cargo/registry"
+            export CARGO_TARGET_DIR="/cache/cargo/target-wasm32"
+
+            rustc --version
+            rustup target add wasm32-unknown-unknown
+
+            # No-native-deps feature set: the native default minus `cache`
+            # (zstd-sys needs a C cross-compiler for wasm32; the cache module
+            # also needs a real filesystem and Unix permission bits).
+            cargo check -p pdftract-core --no-default-features --features serde,decrypt,quick-xml --locked --target wasm32-unknown-unknown
+
+            # The binding crate itself, against that feature set.
+            cargo check -p pdftract-wasm --locked --target wasm32-unknown-unknown
+
+            echo "=== wasm32 check passed ==="
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+
     # === CLI Reference Generation Check ===
     # Regenerates CLI reference documentation from clap definitions and verifies it matches the committed file.
     #
@@ -2227,111 +2325,6 @@ spec:
           limits:
             cpu: 2000m
             memory: 4Gi
-
-    # === Log Policy Check ===
-    # Enforces NEVER-log secrets policy across the codebase.
-    #
-    # This is a Tier 1 hard gate from Phase 6 audit logging policy. It scans
-    # the codebase for log calls that might leak credentials, auth headers, or
-    # sensitive content. Without this gate, credential leakage can silently slip
-    # past code review and appear in logs, crash dumps, and SIEM systems.
-    #
-    # Bead: pdftract-3990k
-    # Plan section: Phase 6 audit logging policy (lines 931-964)
-    #
-    # Enforcement policy:
-    # - No log calls with credential variable names (password, token, secret, api_key, etc.)
-    # - No log calls with sensitive content variables (body, content, text, data)
-    # - Authorization/Cookie/Proxy-Authorization headers must be redacted
-    # - SecretString values must always render as [REDACTED]
-    # - Script: .ci/scripts/check-log-policy.sh (grep-based scan)
-    - name: log-policy-check
-      activeDeadlineSeconds: 300
-      container:
-        image: alpine:3.19
-        command: [sh, -c]
-        args:
-          - |
-            set -eo pipefail
-
-            echo "=========================================="
-            echo "Log-Policy Enforcement Check"
-            echo "=========================================="
-
-            cd /workspace
-
-            echo "=== Running log policy scan ==="
-            echo "Scanning for forbidden patterns:"
-            echo "  - Credential variables in log calls"
-            echo "  - Sensitive content variables in log calls"
-            echo "  - Auth headers without redaction"
-            echo ""
-
-            # Install bash for the check script
-            apk add --no-cache bash
-
-            # Run the log policy check script
-            bash .ci/scripts/check-log-policy.sh || {
-              EXIT_CODE=$?
-
-              echo "=========================================="
-              echo "LOG POLICY CHECK FAILED"
-              echo "=========================================="
-              echo ""
-              echo "The log policy enforcement check detected potential violations."
-              echo "Review the output above for specific issues."
-              echo ""
-              echo "Forbidden patterns:"
-              echo "  - Log calls with credential variables (password, token, secret, api_key, etc.)"
-              echo "  - Log calls with sensitive content variables (body, content, text, data)"
-              echo "  - Auth headers without redaction (Authorization, Cookie, Proxy-Authorization)"
-              echo ""
-              echo "To fix violations:"
-              echo "  - Use SecretString for all credentials (secrecy crate)"
-              echo "  - Never log request bodies or extracted text"
-              echo "  - Use redact_headers_for_log() for HTTP logging"
-              echo ""
-              echo "Log policy enforcement is a Tier-1 quality gate per Phase 6."
-              echo "See plan.md lines 931-964 for the full policy."
-
-              exit $EXIT_CODE
-            }
-
-            echo ""
-            echo "=== Log policy check passed ==="
-            echo "No credential leaks or forbidden patterns detected"
-        volumeMounts:
-          - name: workspace
-            mountPath: /workspace
-        resources:
-          requests:
-            cpu: 500m
-            memory: 512Mi
-          limits:
-            cpu: 1000m
-            memory: 1Gi
-
-    # === WER Gate ===
-    # Word Error Rate CI gate for OCR accuracy validation
-    #
-    # This is a Tier 1 hard gate from Phase 5.4.5. It validates OCR accuracy
-    # against calibrated fixtures to ensure the "WER < 3% on clean 300-DPI scans"
-    # target is met. Without this gate, OCR regressions silently slip past code
-    # review and risk breaking the primary Phase 5 objective.
-    #
-    # Bead: pdftract-315s
-    # Plan section: Phase 5.4.5 (lines 1905-1908)
-    #
-    # Enforcement policy:
-    # - Clean Lorem Ipsum: WER < 2.0% (critical test)
-    # - Multi-language eng+fra: WER < 3.0%
-    # - 10-page performance: < 30 seconds processing time
-    # - Fixtures are manually generated per README instructions
-    #
-    # The WER gate script (ci/wer-gate.sh) runs three tests:
-    # 1. Clean fixture: OCR accuracy on pristine 300-DPI text
-    # 2. Multi-language: English+French mixed document
-    # 3. Performance: 10-page document processing time
     - name: wer-gate
       inputs:
         artifacts:
@@ -2399,8 +2392,8 @@ spec:
             cpu: 2000m
             memory: 4Gi
           limits:
-            cpu: 4000m
-            memory: 8Gi
+            cpu: 3500m
+            memory: 6Gi
 
     # === Bench Matrix ===
     # Competitive benchmarks: pdftract vs pdfminer.six, pypdf, pdfplumber
@@ -2503,14 +2496,14 @@ spec:
             cpu: 2000m
             memory: 4Gi
           limits:
-            cpu: 4000m
-            memory: 8Gi
-        outputs:
-          artifacts:
-            - name: benchmark-results
-              path: /workspace/benchmark-results.json
-            - name: benchmark-comment
-              path: /workspace/benchmark-comment.md
+            cpu: 3500m
+            memory: 6Gi
+      outputs:
+        artifacts:
+          - name: benchmark-results
+            path: /workspace/benchmark-results.json
+          - name: benchmark-comment
+            path: /workspace/benchmark-comment.md
 
     # === Benchmark PR Comment ===
     # Posts benchmark results as a comment on the pull request
@@ -2549,6 +2542,12 @@ spec:
 
             echo "=== Benchmark comment posted successfully ==="
         env:
+          - name: GIT_CONFIG_COUNT
+            value: "1"
+          - name: GIT_CONFIG_KEY_0
+            value: credential.helper
+          - name: GIT_CONFIG_VALUE_0
+            value: '!f() { test "$1" = get && echo "username=x-access-token" && echo "password=$GH_TOKEN"; }; f'
           - name: GH_TOKEN
             valueFrom:
               secretKeyRef:
@@ -2562,6 +2561,9 @@ spec:
             cpu: 500m
             memory: 512Mi
 
+    # === Regression Corpus ===
+    # Run pdftract binary against 500-PDF private regression corpus via ARMOR proxy
+    # Compares per-document CER against baseline; fails if delta > 0.5%
     # === Tier 4 Competitor Runner ===
     # Runs competitor benchmarks and emits per-commit JSON results
     # Only runs on main branch to track performance over time
@@ -2678,20 +2680,14 @@ spec:
             cpu: 2000m
             memory: 4Gi
           limits:
-            cpu: 4000m
-            memory: 8Gi
-        outputs:
-          artifacts:
-            - name: tier4-results
+            cpu: 3500m
+            memory: 6Gi
+      outputs:
+        artifacts:
+          - name: tier4-results
             path: /workspace/benches/results
-
-    # === Regression Corpus ===
-    # Run pdftract binary against 500-PDF private regression corpus via ARMOR proxy
-    # Compares per-document CER against baseline; fails if delta > 0.5%
     - name: regression-corpus
-      activeDeadlineSeconds: 600
       dag:
-        onExit: regression-corpus-exit
         tasks:
           - name: build-cer-diff
             template: build-cer-diff
@@ -2709,7 +2705,7 @@ spec:
                   value: "8"
               artifacts:
                 - name: pdftract-binary
-                  from: "{{tasks.build-matrix.tasks.build-linux-x86_64-musl.outputs.artifacts.pdftract-binary}}"
+                  from: "{{tasks.build-matrix.tasks.build-linux-x86-64-musl.outputs.artifacts.pdftract-binary}}"
 
     # === Build CER Diff Tool ===
     # Build the cer-diff binary for comparing extraction outputs
@@ -2923,11 +2919,11 @@ spec:
           limits:
             cpu: 2000m
             memory: 4Gi
-        outputs:
-          artifacts:
-            - name: shard-results
-              path: /regression/results/shard-{{inputs.parameters.shard-index}}.jsonl
-              optional: true
+      outputs:
+        artifacts:
+          - name: shard-results
+            path: /regression/results/shard-{{inputs.parameters.shard-index}}.jsonl
+            optional: true
 
     # === Regression Corpus Exit Handler ===
     - name: regression-corpus-exit
@@ -2985,19 +2981,19 @@ spec:
       inputs:
         artifacts:
           - name: pdftract-linux-x86_64-musl
-            from: "{{tasks.build-matrix.tasks.build-linux-x86_64-musl.outputs.artifacts.pdftract-binary}}"
+            from: "{{tasks.build-matrix.tasks.build-linux-x86-64-musl.outputs.artifacts.pdftract-binary}}"
             path: /artifacts/pdftract-x86_64-unknown-linux-musl
           - name: pdftract-linux-aarch64-musl
             from: "{{tasks.build-matrix.tasks.build-linux-aarch64-musl.outputs.artifacts.pdftract-binary}}"
             path: /artifacts/pdftract-aarch64-unknown-linux-musl
           - name: pdftract-darwin-x86_64
-            from: "{{tasks.build-matrix.tasks.build-darwin-x86_64.outputs.artifacts.pdftract-binary}}"
+            from: "{{tasks.build-matrix.tasks.build-darwin-x86-64.outputs.artifacts.pdftract-binary}}"
             path: /artifacts/pdftract-x86_64-apple-darwin
           - name: pdftract-darwin-aarch64
             from: "{{tasks.build-matrix.tasks.build-darwin-aarch64.outputs.artifacts.pdftract-binary}}"
             path: /artifacts/pdftract-aarch64-apple-darwin
           - name: pdftract-windows-x86_64-gnu
-            from: "{{tasks.build-matrix.tasks.build-windows-x86_64-gnu.outputs.artifacts.pdftract-binary}}"
+            from: "{{tasks.build-matrix.tasks.build-windows-x86-64-gnu.outputs.artifacts.pdftract-binary}}"
             path: /artifacts/pdftract-x86_64-pc-windows-gnu.exe
           - name: provenance
             from: "{{tasks.generate-provenance.outputs.artifacts.provenance}}"
@@ -3135,7 +3131,7 @@ spec:
 
             # Configure git for gh auth
             git config --global credential.helper store
-            echo "https://x-access-token:${GH_TOKEN}@github.com" > ~/.git-credentials
+            echo "https://github.com" > ~/.git-credentials
 
             # Create or update release
             echo "=== Creating/updating GitHub release ==="
@@ -3202,6 +3198,12 @@ spec:
             echo "URL: https://github.com/jedarden/pdftract/releases/tag/$TAG"
             echo "=========================================="
         env:
+          - name: GIT_CONFIG_COUNT
+            value: "1"
+          - name: GIT_CONFIG_KEY_0
+            value: credential.helper
+          - name: GIT_CONFIG_VALUE_0
+            value: '!f() { test "$1" = get && echo "username=x-access-token" && echo "password=$GH_TOKEN"; }; f'
           - name: GH_TOKEN
             valueFrom:
               secretKeyRef:
@@ -3226,19 +3228,19 @@ spec:
       inputs:
         artifacts:
           - name: pdftract-linux-x86_64-musl
-            from: "{{tasks.build-matrix.tasks.build-linux-x86_64-musl.outputs.artifacts.pdftract-binary}}"
+            from: "{{tasks.build-matrix.tasks.build-linux-x86-64-musl.outputs.artifacts.pdftract-binary}}"
             path: /artifacts/pdftract-x86_64-unknown-linux-musl
           - name: pdftract-linux-aarch64-musl
             from: "{{tasks.build-matrix.tasks.build-linux-aarch64-musl.outputs.artifacts.pdftract-binary}}"
             path: /artifacts/pdftract-aarch64-unknown-linux-musl
           - name: pdftract-darwin-x86_64
-            from: "{{tasks.build-matrix.tasks.build-darwin-x86_64.outputs.artifacts.pdftract-binary}}"
+            from: "{{tasks.build-matrix.tasks.build-darwin-x86-64.outputs.artifacts.pdftract-binary}}"
             path: /artifacts/pdftract-x86_64-apple-darwin
           - name: pdftract-darwin-aarch64
             from: "{{tasks.build-matrix.tasks.build-darwin-aarch64.outputs.artifacts.pdftract-binary}}"
             path: /artifacts/pdftract-aarch64-apple-darwin
           - name: pdftract-windows-x86_64-gnu
-            from: "{{tasks.build-matrix.tasks.build-windows-x86_64-gnu.outputs.artifacts.pdftract-binary}}"
+            from: "{{tasks.build-matrix.tasks.build-windows-x86-64-gnu.outputs.artifacts.pdftract-binary}}"
             path: /artifacts/pdftract-x86_64-pc-windows-gnu.exe
       activeDeadlineSeconds: 300
       container:
@@ -3388,10 +3390,10 @@ spec:
           limits:
             cpu: 500m
             memory: 512Mi
-        outputs:
-          artifacts:
-            - name: provenance
-              path: /tmp/multiple.intoto.jsonl
+      outputs:
+        artifacts:
+          - name: provenance
+            path: /tmp/multiple.intoto.jsonl
 
     # === Verify Provenance ===
     # Smoke test validation of generated SLSA provenance
